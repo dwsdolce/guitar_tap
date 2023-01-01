@@ -133,26 +133,22 @@ class DrawFft(FigureCanvasQTAgg):
         # pylint: disable=trailing-comma-tuple
         return self.line,
 
-# pylint: disable=c-extension-no-member
+
 class MainWindow(QtWidgets.QMainWindow):
     """ Defines the layout of the application window
     """
 
 
-    # pylint: disable=c-extension-no-member
     ampChanged = QtCore.pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
-        # pylint: disable=c-extension-no-member
         self._main = QtWidgets.QWidget()
 
         self.setCentralWidget(self._main)
-        # pylint: disable=c-extension-no-member
         layout = QtWidgets.QVBoxLayout(self._main)
 
         # Add the slider
-        # pylint: disable=c-extension-no-member
         self.threshold_slider = TS.ThresholdSlider(QtCore.Qt.Orientation.Horizontal)
         layout.addWidget(self.threshold_slider)
         self.threshold = 50
