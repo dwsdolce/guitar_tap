@@ -17,21 +17,23 @@ from matplotlib.animation import FuncAnimation
 import freq_anal as FA
 import threshold_slider as TS
 
+# pylint: disable=too-many-instance-attributes
 @dataclass
 class FftData:
     """ Data used to drive the FFT calculations
     """
 
-    def __init__(self, sample_freq: int = 44100, m_time_samples: int = 15001,
-            min_freq: int = 0, max_freq: int = 1000):
+    def __init__(self, sample_freq: int = 44100, m_t: int = 15001,
+            fmin: int = 50, fmax: int = 1000):
         self.sample_freq = sample_freq
-        self.m_time_samples = m_time_samples
-        self.min_freq = min_freq
-        self.max_freq = max_freq
+        self.m_t = m_t
+        self.fmin = fmin
+        self.fmax = fmax
 
-        self.n_freq_samples = int(2 ** (np.ceil(np.log2(self.m_time_samples))))
-        self.window_fcn = get_window('blackman', self.m_time_samples)
-        self.n_max_freq = (self.n_freq_samples * max_freq) // self.sample_freq
+        self.n_f = int(2 ** (np.ceil(np.log2(self.m_t))))
+        self.window_fcn = get_window('blackman', self.m_t)
+        self.n_fmax = (self.n_f * fmax) // self.sample_freq
+        self.n_fmin = (self.n_f * fmin) // self.sample_freq
 
 # pylint: disable=too-many-instance-attributes
 class DrawFft(FigureCanvasQTAgg):
@@ -48,39 +50,46 @@ class DrawFft(FigureCanvasQTAgg):
     skip = 0
     threshold = -50
 
-    def __init__(self, signal, min_freq, max_freq):
-        fig = plt.figure(figsize=(5,3))
+    def __init__(self, signal, fmin, fmax):
+        #fig = plt.figure(figsize=(5,3))
+        fig, fft_axes = plt.subplots(figsize=(5,3))
         self.amp_signal = signal
 
-        self.fft_data = FftData(44100, 15001, min_freq, max_freq)
+        self.fft_data = FftData(44100, 15001, fmin, fmax)
 
         # Get an audio stream
         audio_stream = pyaudio.PyAudio()
 
         # x axis data points
-        x_axis = np.arange(0, self.fft_data.n_max_freq)
-        self.x_axis_freq = x_axis * self.fft_data.max_freq // (self.fft_data.n_max_freq)
+        x_axis = np.arange(self.fft_data.n_fmin, self.fft_data.n_fmax)
+        self.x_axis_freq = x_axis * self.fft_data.fmax // (self.fft_data.n_fmax)
+        self.bounded_mag_y = np.zeros(self.x_axis_freq.size)
+        fft_axes.set_xlim(min(self.x_axis_freq), max(self.x_axis_freq))
 
-        fft_axes = plt.axes(xlim=(min(self.x_axis_freq), max(self.x_axis_freq)), ylim=(-100, 0))
+        # y axis limits
+        fft_axes.set_ylim(-100, 0)
 
+        # Open the audio stream
         self.stream = audio_stream.open(format = pyaudio.paFloat32, channels = 1,
                 rate = self.fft_data.sample_freq, input = True,
-                frames_per_buffer = self.fft_data.m_time_samples)
+                frames_per_buffer = self.fft_data.m_t)
 
+        # set the line and point plots and ini
         self.line, = fft_axes.plot([], [], lw=1)
-        self.bounded_mag_y = np.zeros(self.fft_data.n_max_freq)
+        self.points = fft_axes.scatter([], [])
+        self.scatter_peaks = np.vstack(([], [])).T
 
         self.animation = FuncAnimation(fig, self.update_fft, frames=200,
                 interval=20, blit=True)
         super().__init__(fig)
 
-    def set_min_freq(self, min_freq):
+    def set_fmin(self, fmin):
         """ As it says """
-        self.fft.data.min_freq = min_freq
+        self.fft.data.fmin = fmin
 
-    def set_max_freq(self, max_freq):
+    def set_fmax(self, fmax):
         """ As it says """
-        self.fft.data.max_freq = max_freq
+        self.fft.data.fmax = fmax
 
     def set_threshold(self, threshold):
         """ Set the threshold used to limit both the triggering of a sample
@@ -96,18 +105,18 @@ class DrawFft(FigureCanvasQTAgg):
         is greater than the threshold value.
         """
 
-        chunk = np.frombuffer(self.stream.read(self.fft_data.m_time_samples), dtype=np.float32)
-        mag_y, phase_y = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_freq_samples)
+        chunk = np.frombuffer(self.stream.read(self.fft_data.m_t), dtype=np.float32)
+        mag_y, phase_y = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
 
+        # Find the interpolated peaks from the waveform
         ploc = FA.peak_detection(mag_y, self.threshold)
         iploc, ipmag, _ = FA.peak_interp(mag_y, phase_y, ploc)
-        freq_peaks = self.fft_data.sample_freq * iploc/float(self.fft_data.n_freq_samples)
 
-        bounded_freq_indices = np.where(freq_peaks < self.fft_data.max_freq)
-        bounded_freq_max_index = len(bounded_freq_indices[0])
+        peaks_freq = self.fft_data.sample_freq * iploc/float(self.fft_data.n_f)
 
+        # Get the max of just the frequencies within the range requested
         if mag_y.size > 0:
-            max_mag_y = np.max(mag_y)
+            max_mag_y = np.max(mag_y[self.fft_data.n_fmin:self.fft_data.n_fmax])
         else:
             max_mag_y = -100
         self.amp_signal.emit(int(max_mag_y + 100))
@@ -118,20 +127,34 @@ class DrawFft(FigureCanvasQTAgg):
             max_ipmag = -100
         if max_ipmag > self.threshold:
             if self.skip == 0:
-                print('==================================')
-                print(freq_peaks[0:bounded_freq_max_index])
-                # TODO: freq_peaks MIGHT be empty
-                #self.amp_signal.emit(int(max_ipmag + 100))
-                self.bounded_mag_y = mag_y[0:self.fft_data.n_max_freq]
+                # Check the peaks to see if they are within the desired frequency range
+                bounded_freq_indices = np.nonzero(
+                        (peaks_freq < self.fft_data.fmax) & (peaks_freq > self.fft_data.fmin))
+                if len(bounded_freq_indices[0]) > 0:
+                    bounded_freq_min_index = bounded_freq_indices[0][0]
+                    bounded_freq_max_index = bounded_freq_indices[0][-1] + 1
+                else:
+                    bounded_freq_min_index = 0
+                    bounded_freq_max_index = 0
+
+                if bounded_freq_max_index > 0:
+                    # Update the magnitude and the peaks
+                    self.bounded_mag_y = mag_y[self.fft_data.n_fmin:self.fft_data.n_fmax]
+
+                    bounded_peaks_freq = peaks_freq[bounded_freq_min_index:bounded_freq_max_index]
+                    bounded_peaks_mag = ipmag[bounded_freq_min_index:bounded_freq_max_index]
+                    self.scatter_peaks = np.vstack((bounded_peaks_freq, bounded_peaks_mag)).T
             else:
                 self.skip = 1
         else:
             self.skip = 0
+
         self.line.set_data(self.x_axis_freq, self.bounded_mag_y)
+        self.points.set_offsets(self.scatter_peaks)
 
         # A trailing comma is required here.
         # pylint: disable=trailing-comma-tuple
-        return self.line,
+        return self.line, self.points
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -157,7 +180,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ampChanged.connect(self.threshold_slider.set_amplitude)
 
         # Add an fft Canvas
-        self.fft_canvas = DrawFft(self.ampChanged, 0, 1000)
+        self.fft_canvas = DrawFft(self.ampChanged, 50, 1000)
         self.toolbar = NavigationToolbar(self.fft_canvas, self)
 
         layout.addWidget(self.fft_canvas)
