@@ -4,7 +4,6 @@ import sys
 from dataclasses import dataclass
 
 from PyQt6 import QtWidgets, QtCore
-#from PyQt6.QtCore import Qt, pyqtSignal
 
 import numpy as np
 from scipy.signal import get_window
@@ -44,10 +43,12 @@ class DrawFft(FigureCanvasQTAgg):
 
     skip = False
 
-    def __init__(self, signal, fmin, fmax, threshold):
+    def __init__(self, ampChanged, peaksChanged, fmin, fmax, threshold):
         self.fig, self.fft_axes = plt.subplots(figsize=(5,3))
         plt.grid(color='0.85')
-        self.amp_signal = signal
+        self.amp_signal = ampChanged
+        self.peaks_signal = peaksChanged
+
 
         # Get an audio stream
         audio_stream = pyaudio.PyAudio()
@@ -69,6 +70,7 @@ class DrawFft(FigureCanvasQTAgg):
         # set the line and point plots and ini
         self.line, = self.fft_axes.plot([], [], lw=1)
         self.points = self.fft_axes.scatter([], [])
+        self.line_threshold, = self.fft_axes.plot([], [], lw=1)
 
         x_axis = np.arange(0, self.fft_data.h_n_f + 1)
         self.freq = x_axis * self.fft_data.sample_freq // (self.fft_data.n_f)
@@ -151,6 +153,18 @@ class DrawFft(FigureCanvasQTAgg):
                     self.saved_mag_y = mag_y
                     self.saved_scatter_peaks = scatter_peaks
 
+                    # Alternative is to keep ALL of the peaks that exceed the threshold
+                    # setting and pass them to the signal. The consumer of the signal
+                    # can then decide what to do with them. For example:
+                    #   sort by largest values and then pick N of them and then sort
+                    #   by frequency.
+                    # The other alternative is to filter by the indicated fmin/fmax
+                    # and only send the ones in the range.
+                    """
+                    self.peaks_signal.emit(scatter_peaks)
+                    if self.skip == False:
+                        self.skip = True
+                    """
                     # Check the peaks to see if they are within the desired frequency range
                     bounded_peaks_freq_indices = np.nonzero(
                             (peaks_freq < self.fmax) & (peaks_freq > self.fmin))
@@ -169,7 +183,7 @@ class DrawFft(FigureCanvasQTAgg):
                                 bounded_peaks_freq_min_index:bounded_peaks_freq_max_index]
                         self.bounded_scatter_peaks = np.vstack(
                                 (bounded_peaks_freq, bounded_peaks_mag)).T
-                        #print(self.bounded_scatter_peaks)
+                        self.peaks_signal.emit(self.bounded_scatter_peaks)
                         if self.skip == False:
                             self.skip = True
         else:
@@ -177,8 +191,9 @@ class DrawFft(FigureCanvasQTAgg):
 
         self.line.set_data(self.freq, self.saved_mag_y)
         self.points.set_offsets(self.saved_scatter_peaks)
+        self.line_threshold.set_data([0, self.fft_data.sample_freq//2], [self.threshold - 100, self.threshold - 100])
 
-        return self.line, self.points
+        return self.line, self.points, self.line_threshold
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -186,6 +201,7 @@ class MainWindow(QtWidgets.QMainWindow):
     """
 
     ampChanged = QtCore.pyqtSignal(int)
+    peaksChanged = QtCore.pyqtSignal(np.ndarray)
 
     def __init__(self):
         super().__init__()
@@ -206,11 +222,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.threshold_slider.valueChanged.connect(self.threshold_changed)
 
         self.ampChanged.connect(self.threshold_slider.set_amplitude)
+        self.peaksChanged.connect(self.print_peaks)
 
         # Add an fft Canvas
         f_min = 50
         f_max = 1000
-        self.fft_canvas = DrawFft(self.ampChanged, f_min, f_max, self.threshold)
+        self.fft_canvas = DrawFft(self.ampChanged, self.peaksChanged, f_min, f_max, self.threshold)
         self.toolbar = NavigationToolbar(self.fft_canvas, self)
 
         self.fft_canvas.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
@@ -232,7 +249,7 @@ class MainWindow(QtWidgets.QMainWindow):
         min_layout.addWidget(min_label)
         self.min_spin = QtWidgets.QSpinBox(self._main)
         self.min_spin.setMinimum(0)
-        self.min_spin.setMaximum(20000)
+        self.min_spin.setMaximum(22050)
         self.min_spin.setValue(f_min)
         self.min_spin.valueChanged.connect(self.fmin_changed)
         min_layout.addWidget(self.min_spin)
@@ -245,7 +262,7 @@ class MainWindow(QtWidgets.QMainWindow):
         max_layout.addWidget(max_label)
         self.max_spin = QtWidgets.QSpinBox(self._main)
         self.max_spin.setMinimum(0)
-        self.max_spin.setMaximum(20000)
+        self.max_spin.setMaximum(22050)
         self.max_spin.setValue(f_max)
         self.max_spin.valueChanged.connect(self.fmax_changed)
         max_layout.addWidget(self.max_spin)
@@ -255,6 +272,9 @@ class MainWindow(QtWidgets.QMainWindow):
         control_layout.addLayout(min_max_layout)
 
         hlayout.addLayout(control_layout)
+
+    def print_peaks(self, peaks):
+        print(peaks)
 
     def threshold_changed(self):
         """ Set the threshold used in fft_canvas
