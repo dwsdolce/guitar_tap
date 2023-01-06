@@ -9,26 +9,36 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.axes import Axes
-from matplotlib.projections import register_projection, get_projection_names, get_projection_class
+from matplotlib.projections import register_projection
 from PyQt6 import QtCore
 
 import freq_anal as FA
 
 class PanAxes(Axes):
+    """ Create a new projection so that we can override the start_pan
+        and stop_pan methods.
+        """
     name = 'pan_projection'
 
     def __init__(self, * args, **kwargs):
         super().__init__(*args, **kwargs)
         self.clear()
 
-    def set_pan_signal(self, panSignal):
-        self.pan_signal = panSignal
+    # Disable since pylint does not know that this is
+    # used by the  __init__ for the kwargs """
+    # pylint: disable=attribute-defined-outside-init
+    def set_pan_signal(self, pan_signal):
+        """ Required setter for the pan_signal kw_args passed to subplot
+        """
+        self.pan_signal = pan_signal
 
     def start_pan(self, x, y, button):
+        """ SIgnal that pan has started """
         self.pan_signal.emit(True)
         super().start_pan(x, y, button)
 
     def end_pan(self):
+        """ SIgnal that pan has ended """
         self.pan_signal.emit(False)
         super().end_pan()
 
@@ -64,9 +74,12 @@ class DrawFft(FigureCanvasQTAgg):
     pan_running = QtCore.pyqtSignal(bool)
 
     def __init__(self, ampChanged, peaksChanged, frange, threshold):
-        self.fig, self.fft_axes = plt.subplots(figsize=(5,3), subplot_kw={'projection': 'pan_projection'})
+        self.fig = plt.figure(figsize = (5, 3))
         super().__init__(self.fig)
-        self.fft_axes.set_pan_signal(self.pan_running)
+
+        self.fft_axes = self.fig.subplots(
+            subplot_kw={'projection': 'pan_projection', "pan_signal" : self.pan_running})
+
         self.pan_running.connect(self.pan_animation)
 
         plt.grid(color='0.85')
@@ -136,6 +149,7 @@ class DrawFft(FigureCanvasQTAgg):
         self.threshold = threshold
 
     def pan_animation(self, in_pan):
+        """ Pause andd resume animation when in pan """
         if in_pan:
             if self.animation_running:
                 self.animation.pause()
