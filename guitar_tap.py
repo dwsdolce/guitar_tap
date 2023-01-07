@@ -3,7 +3,7 @@
 import sys
 
 import numpy as np
-from PyQt6 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore, QtGui
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 
 import threshold_slider as TS
@@ -17,16 +17,31 @@ class MainWindow(QtWidgets.QMainWindow):
     peaksChanged = QtCore.pyqtSignal(np.ndarray)
 
     def __init__(self):
-        super().__init__()
-        self._main = QtWidgets.QWidget()
+        super(MainWindow, self).__init__()
 
-        self.setCentralWidget(self._main)
+        main_widget = QtWidgets.QWidget()
+        self.setCentralWidget(main_widget)
 
-        hlayout = QtWidgets.QHBoxLayout(self._main)
+        self.setWindowTitle("Guitar Tap")
+
+        pixmapi = getattr(QtWidgets.QStyle.StandardPixmap, 'SP_MediaSkipBackward')
+        restart_icon = self.style().standardIcon(pixmapi)
+        
+        red_pixmap = QtGui.QPixmap('./icons/led_red.png')
+        self.red_icon = QtGui.QIcon(red_pixmap)
+        green_pixmap = QtGui.QPixmap('./icons/led_green.png')
+        self.green_icon = QtGui.QIcon(green_pixmap)
+        blue_pixmap = QtGui.QPixmap('./icons/led_blue.png')
+        blue_icon = QtGui.QIcon(blue_pixmap)
+
+        hlayout = QtWidgets.QHBoxLayout(main_widget)
 
         # Create layout with threshold slider and fft canvas
         plot_layout = QtWidgets.QVBoxLayout()
 
+        # ==========================================================
+        # Create the plot plus controls
+        # ==========================================================
         # Add the slider
         self.threshold_slider = TS.ThresholdSlider(QtCore.Qt.Orientation.Horizontal)
         plot_layout.addWidget(self.threshold_slider)
@@ -40,6 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         f_range = {'f_min': 50, 'f_max': 1000}
         self.fft_canvas = fft_c.DrawFft(
                 self.ampChanged, self.peaksChanged, f_range, self.threshold)
+        self.fft_canvas.setMinimumSize(600, 400)
         self.toolbar = NavigationToolbar(self.fft_canvas, self)
 
         self.fft_canvas.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
@@ -50,21 +66,114 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hlayout.addLayout(plot_layout)
 
+        # ==========================================================
         # Create control layout
+        # ==========================================================
         control_layout = QtWidgets.QVBoxLayout()
 
-        #run_animation = QtWidgets.QRadioButton("Run Animation", self)
-        #run_animation.setChecked(True)
-        #run_animation.toggled.connect(self.toggle_animation)
-        #control_layout.addWidget(run_animation)
+        #.....
+        # Spacing above controls
+        control_layout.addSpacing(40)
 
+        #.....
+        # Enable Peak hold
+        peak_hold_layout = QtWidgets.QHBoxLayout()
+        peak_hold_label = QtWidgets.QLabel("Peak hold")
+        peak_hold_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        peak_hold_layout.addWidget(peak_hold_label)
+
+        peak_hold = QtWidgets.QToolButton()
+        peak_hold.setIcon(self.green_icon)
+        peak_hold.setIconSize(QtCore.QSize(21, 21))
+        peak_hold.setStyleSheet('border: none')
+        peak_hold.setCheckable(True)
+        peak_hold.setChecked(True)
+        peak_hold_layout.addWidget(peak_hold)
+        peak_hold.toggled.connect(self.set_peak_hold)
+
+        control_layout.addLayout(peak_hold_layout)
+
+        #.....
+        # Number of averages
+        averages_layout = QtWidgets.QHBoxLayout()
+        num_averages_label = QtWidgets.QLabel("Number of averages")
+        num_averages_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        averages_layout.addWidget(num_averages_label)
+
+        num_averages = QtWidgets.QSpinBox(main_widget)
+        averages_layout.addWidget(num_averages)
+
+        control_layout.addLayout(averages_layout)
+
+        #.....
+        # Averages Group Box
+        #avg_group_box = QtWidgets.QGroupBox()
+
+        #.....
+        # Averages completed
+        avg_completed_layout = QtWidgets.QHBoxLayout()
+        #avg_completed_layout = QtWidgets.QHBoxLayout(avg_group_box)
+
+        avg_completed_label = QtWidgets.QLabel("Averages completed")
+        avg_completed_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        avg_completed_layout.addWidget(avg_completed_label)
+
+        avg_completed = QtWidgets.QLabel("0")
+        avg_completed.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        avg_completed_layout.addWidget(avg_completed)
+
+        control_layout.addLayout(avg_completed_layout)
+        #avg_group_box.addLayout(avg_completed_layout)
+
+        #.....
+        # Averaging done
+        avg_done_layout = QtWidgets.QHBoxLayout()
+        #avg_done_layout = QtWidgets.QHBoxLayout(avg_group_box)
+
+        avg_done_label = QtWidgets.QLabel("Averaging done")
+        avg_done_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        avg_done_layout.addWidget(avg_done_label)
+
+        avg_done = QtWidgets.QLabel()
+        avg_done.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        avg_done.setMaximumSize(21, 21)
+        avg_done.setPixmap(red_pixmap)
+        avg_done.setScaledContents(True)
+        avg_done_layout.addWidget(avg_done)
+
+        control_layout.addLayout(avg_done_layout)
+        #avg_group_box.addLayout(avg_done_layout)
+
+        #.....
+        # Restart averaging
+        avg_restart_layout = QtWidgets.QHBoxLayout()
+        #avg_restart_layout = QtWidgets.QHBoxLayout(avg_group_box)
+
+        avg_restart_label = QtWidgets.QLabel("Restart averaging")
+        avg_restart_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        avg_restart_layout.addWidget(avg_restart_label)
+
+        avg_restart = QtWidgets.QPushButton()
+        avg_restart.setIcon(restart_icon)
+        avg_restart_layout.addWidget(avg_restart)
+
+        control_layout.addLayout(avg_restart_layout)
+        #avg_group_box.addLayout(avg_restart_layout)
+        #control_layout.addWidget(avg_group_box)
+
+        #.....
+        # Stretch space to support windo resize
+        control_layout.addStretch()
+
+        #.....
+        # Frequency window for peak results
         min_max_layout = QtWidgets.QHBoxLayout()
 
         min_layout = QtWidgets.QVBoxLayout()
         min_label = QtWidgets.QLabel("Start Freq (Hz)")
         min_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         min_layout.addWidget(min_label)
-        self.min_spin = QtWidgets.QSpinBox(self._main)
+        self.min_spin = QtWidgets.QSpinBox(main_widget)
         self.min_spin.setMinimum(0)
         self.min_spin.setMaximum(22050)
         self.min_spin.setValue(f_range['f_min'])
@@ -77,7 +186,7 @@ class MainWindow(QtWidgets.QMainWindow):
         max_label = QtWidgets.QLabel("Stop Freq (Hz)")
         max_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         max_layout.addWidget(max_label)
-        self.max_spin = QtWidgets.QSpinBox(self._main)
+        self.max_spin = QtWidgets.QSpinBox(main_widget)
         self.max_spin.setMinimum(0)
         self.max_spin.setMaximum(22050)
         self.max_spin.setValue(f_range['f_max'])
@@ -88,7 +197,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         control_layout.addLayout(min_max_layout)
 
+        #.....
+        # Add space at the bottom
+        control_layout.addSpacing(40)
+
         hlayout.addLayout(control_layout)
+
+    def set_peak_hold(self, checked):
+        if checked:
+            self.sender().setIcon(self.green_icon)
+        else:
+            self.sender().setIcon(self.red_icon)
 
     def print_peaks(self, peaks):
         """ Temporary for handling peaks changed signal """
