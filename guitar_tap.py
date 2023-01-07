@@ -17,7 +17,7 @@ class MainWindow(QtWidgets.QMainWindow):
     peaksChanged = QtCore.pyqtSignal(np.ndarray)
 
     def __init__(self):
-        super(MainWindow, self).__init__()
+        super().__init__()
 
         main_widget = QtWidgets.QWidget()
         self.setCentralWidget(main_widget)
@@ -26,13 +26,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         pixmapi = getattr(QtWidgets.QStyle.StandardPixmap, 'SP_MediaSkipBackward')
         restart_icon = self.style().standardIcon(pixmapi)
-        
+
         red_pixmap = QtGui.QPixmap('./icons/led_red.png')
         self.red_icon = QtGui.QIcon(red_pixmap)
         green_pixmap = QtGui.QPixmap('./icons/led_green.png')
         self.green_icon = QtGui.QIcon(green_pixmap)
-        blue_pixmap = QtGui.QPixmap('./icons/led_blue.png')
-        blue_icon = QtGui.QIcon(blue_pixmap)
+        #blue_pixmap = QtGui.QPixmap('./icons/led_blue.png')
+        #blue_icon = QtGui.QIcon(blue_pixmap)
 
         hlayout = QtWidgets.QHBoxLayout(main_widget)
 
@@ -94,25 +94,30 @@ class MainWindow(QtWidgets.QMainWindow):
         control_layout.addLayout(peak_hold_layout)
 
         #.....
-        # Number of averages
-        averages_layout = QtWidgets.QHBoxLayout()
-        num_averages_label = QtWidgets.QLabel("Number of averages")
-        num_averages_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-        averages_layout.addWidget(num_averages_label)
+        # Averages Group Box
+        avg_group_box = QtWidgets.QGroupBox()
+        avg_group_box.setTitle("Spectrum Averaging")
 
-        num_averages = QtWidgets.QSpinBox(main_widget)
-        averages_layout.addWidget(num_averages)
-
-        control_layout.addLayout(averages_layout)
+        #...
+        # Vertical layout of the controls for averaging
+        averages_layout = QtWidgets.QVBoxLayout(avg_group_box)
 
         #.....
-        # Averages Group Box
-        #avg_group_box = QtWidgets.QGroupBox()
+        # Number of averages
+        num_averages_layout = QtWidgets.QHBoxLayout()
+
+        num_averages_label = QtWidgets.QLabel("Number of averages")
+        num_averages_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        num_averages_layout.addWidget(num_averages_label)
+
+        num_averages = QtWidgets.QSpinBox(main_widget)
+        num_averages_layout.addWidget(num_averages)
+
+        averages_layout.addLayout(num_averages_layout)
 
         #.....
         # Averages completed
         avg_completed_layout = QtWidgets.QHBoxLayout()
-        #avg_completed_layout = QtWidgets.QHBoxLayout(avg_group_box)
 
         avg_completed_label = QtWidgets.QLabel("Averages completed")
         avg_completed_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
@@ -122,13 +127,11 @@ class MainWindow(QtWidgets.QMainWindow):
         avg_completed.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         avg_completed_layout.addWidget(avg_completed)
 
-        control_layout.addLayout(avg_completed_layout)
-        #avg_group_box.addLayout(avg_completed_layout)
+        averages_layout.addLayout(avg_completed_layout)
 
         #.....
         # Averaging done
         avg_done_layout = QtWidgets.QHBoxLayout()
-        #avg_done_layout = QtWidgets.QHBoxLayout(avg_group_box)
 
         avg_done_label = QtWidgets.QLabel("Averaging done")
         avg_done_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
@@ -141,13 +144,11 @@ class MainWindow(QtWidgets.QMainWindow):
         avg_done.setScaledContents(True)
         avg_done_layout.addWidget(avg_done)
 
-        control_layout.addLayout(avg_done_layout)
-        #avg_group_box.addLayout(avg_done_layout)
+        averages_layout.addLayout(avg_done_layout)
 
         #.....
         # Restart averaging
         avg_restart_layout = QtWidgets.QHBoxLayout()
-        #avg_restart_layout = QtWidgets.QHBoxLayout(avg_group_box)
 
         avg_restart_label = QtWidgets.QLabel("Restart averaging")
         avg_restart_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
@@ -157,9 +158,9 @@ class MainWindow(QtWidgets.QMainWindow):
         avg_restart.setIcon(restart_icon)
         avg_restart_layout.addWidget(avg_restart)
 
-        control_layout.addLayout(avg_restart_layout)
-        #avg_group_box.addLayout(avg_restart_layout)
-        #control_layout.addWidget(avg_group_box)
+        averages_layout.addLayout(avg_restart_layout)
+
+        control_layout.addWidget(avg_group_box)
 
         #.....
         # Stretch space to support windo resize
@@ -204,6 +205,11 @@ class MainWindow(QtWidgets.QMainWindow):
         hlayout.addLayout(control_layout)
 
     def set_peak_hold(self, checked):
+        """ Change the icon color and also change the fft_plot
+            to do peak holding or not to do peak holding.
+            TODO: If peak holding is not set then the averaging controls
+            need to be disabled.
+        """
         if checked:
             self.sender().setIcon(self.green_icon)
         else:
