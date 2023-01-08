@@ -86,6 +86,8 @@ class DrawFft(FigureCanvasQTAgg):
         self.amp_signal = ampChanged
         self.peaks_signal = peaksChanged
 
+        self.peak_hold = True
+
         # Get an audio stream
         audio_stream = pyaudio.PyAudio()
 
@@ -112,7 +114,7 @@ class DrawFft(FigureCanvasQTAgg):
         self.freq = x_axis * self.fft_data.sample_freq // (self.fft_data.n_f)
 
         self.bounded_scatter_peaks = np.vstack(([], [])).T
-        self.saved_mag_y = []
+        self.saved_mag_y_db = []
         self.saved_scatter_peaks = np.vstack(([], [])).T
 
         self.animation = FuncAnimation(self.fig, self.update_fft, frames=200,
@@ -132,6 +134,9 @@ class DrawFft(FigureCanvasQTAgg):
             self.fft_axes.set_xlim(fmin, fmax)
             if not init:
                 self.fig.canvas.draw()
+
+    def set_peak_hold(self, peak_hold):
+        self.peak_hold = peak_hold
 
     def set_fmin(self, fmin):
         """ As it says """
@@ -173,14 +178,15 @@ class DrawFft(FigureCanvasQTAgg):
         self.amp_signal.emit(int(amplitude * 100))
 
 
-        if (100 * amplitude) > self.threshold:
-            if not self.skip:
-                mag_y = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
-                if not np.any(self.saved_mag_y):
-                    self.saved_mag_y = mag_y
+        if (100 * amplitude) > self.threshold or  not self.peak_hold:
+            if not self.skip or not self.peak_hold:
+                mag_y_db, mag_y = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
+                if not np.any(self.saved_mag_y_db):
+                    self.saved_mag_y_db = mag_y_db
+
                 # Find the interpolated peaks from the waveform
-                ploc = FA.peak_detection(mag_y, self.threshold - 100)
-                iploc, peaks_mag = FA.peak_interp(mag_y, ploc)
+                ploc = FA.peak_detection(mag_y_db, self.threshold - 100)
+                iploc, peaks_mag = FA.peak_interp(mag_y_db, ploc)
 
                 peaks_freq = (iploc * self.fft_data.sample_freq) /float(self.fft_data.n_f)
 
@@ -192,7 +198,7 @@ class DrawFft(FigureCanvasQTAgg):
                     max_peaks_mag = -100
 
                 if max_peaks_mag > (self.threshold - 100):
-                    self.saved_mag_y = mag_y
+                    self.saved_mag_y_db = mag_y_db
                     self.saved_scatter_peaks = scatter_peaks
 
                     # Check the peaks to see if they are within the desired frequency range
@@ -217,15 +223,15 @@ class DrawFft(FigureCanvasQTAgg):
                         notes = np.arange(0, data_len)
                         cents = np.arange(0, data_len)
                         peaks_data = np.vstack(
-                                (bounded_peaks_freq, bounded_peaks_mag, bounded_peaks_freq, bounded_peaks_freq)).T
+                                (bounded_peaks_freq, bounded_peaks_mag)).T
                         self.peaks_signal.emit(peaks_data)
                         if not self.skip:
                             self.skip = True
         else:
             self.skip = False
 
-        if np.any(self.saved_mag_y):
-            self.line.set_data(self.freq, self.saved_mag_y)
+        if np.any(self.saved_mag_y_db):
+            self.line.set_data(self.freq, self.saved_mag_y_db)
         self.points.set_offsets(self.saved_scatter_peaks)
         self.line_threshold.set_data(
                 [0, self.fft_data.sample_freq//2],

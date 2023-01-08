@@ -19,14 +19,17 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     def data(self, index, role):
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            value = self._data[index.row()][index.column()]
             if (index.column() == 0) or (index.column() == 1):
+                value = self._data[index.row()][index.column()]
                 str_value = '{:.1f}'.format(value)
             elif index.column() == 2:
+                value = self._data[index.row()][0]
                 str_value = self.pitch.note(value)
             elif index.column() == 3:
-                str_value = '{:+.1f}'.format(self.pitch.cents(value))
+                value = self._data[index.row()][0]
+                str_value = '{:+.0f}'.format(self.pitch.cents(value))
             else:
+                value = self._data[index.row()][index.column()]
                 str_value = str(value)
             return str_value
         elif role == QtCore.Qt.ItemDataRole.TextAlignmentRole:
@@ -38,6 +41,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 return self.header_names[section]
 
     def updateData(self, data):
+        self.layoutAboutToBeChanged.emit()
         self._data = data
         self.layoutChanged.emit()
 
@@ -45,7 +49,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         return self._data.shape[0]
 
     def columnCount(self, index):
-        return self._data.shape[1]
+        return self._data.shape[1] + 2
 
 class MainWindow(QtWidgets.QMainWindow):
     """ Defines the layout of the application window
@@ -244,7 +248,6 @@ class MainWindow(QtWidgets.QMainWindow):
         control_layout.addSpacing(40)
 
         hlayout.addLayout(control_layout)
-        
 
         #.....
         # Setup a vertical layout to add spacing
@@ -257,11 +260,13 @@ class MainWindow(QtWidgets.QMainWindow):
         #.....
         # Use tableview to display fft peaks
         peak_table = QtWidgets.QTableView()
-        data = np.vstack(([], [], [], [])).T
+        data = np.vstack(([], [])).T
         model = PeaksModel(data)
-        peak_table.setModel(model)
-        #peak_table.setSortingEnabled(True)
-        #peak_table.sortByColumn(0, Qt.AscendingOrder)
+        proxy_model = QtCore.QSortFilterProxyModel()
+        proxy_model.setSourceModel(model)
+        peak_table.setModel(proxy_model) 
+        peak_table.setSortingEnabled(True)
+        peak_table.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
         peak_table.resizeColumnsToContents()
 
         header_width = peak_table.horizontalHeader().length()
@@ -285,8 +290,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if checked:
             self.sender().setIcon(self.green_icon)
+            self.fft_canvas.set_peak_hold(True)
         else:
             self.sender().setIcon(self.red_icon)
+            self.fft_canvas.set_peak_hold(False)
 
     def threshold_changed(self):
         """ Set the threshold used in fft_canvas
