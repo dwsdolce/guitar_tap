@@ -8,10 +8,52 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 
 import threshold_slider as TS
 import fft_canvas as fft_c
+import pitch as pitch_c
+
+class PeaksModel(QtCore.QAbstractTableModel):
+    header_names = ['Frequency', 'Magnitude', 'Pitch', 'Cents']
+    def __init__(self, data):
+        super().__init__()
+        self._data = data
+        self.pitch = pitch_c.Pitch(440)
+
+    def data(self, index, role):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            value = self._data[index.row()][index.column()]
+            if (index.column() == 0) or (index.column() == 1):
+                str_value = '{:.1f}'.format(value)
+            elif index.column() == 2:
+                str_value = self.pitch.note(value)
+            elif index.column() == 3:
+                str_value = '{:+.1f}'.format(self.pitch.cents(value))
+            else:
+                str_value = str(value)
+            return str_value
+        elif role == QtCore.Qt.ItemDataRole.TextAlignmentRole:
+            return QtCore.Qt.AlignmentFlag.AlignRight
+
+    def headerData(self, section, orientation, role):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            if orientation == QtCore.Qt.Orientation.Horizontal:
+                return self.header_names[section]
+
+    def updateData(self, data):
+        self._data = data
+        self.layoutChanged.emit()
+
+    def rowCount(self, index):
+        return self._data.shape[0]
+
+    def columnCount(self, index):
+        return self._data.shape[1]
 
 class MainWindow(QtWidgets.QMainWindow):
     """ Defines the layout of the application window
+        TODO: MainWindow resize and move need to disable the
+        FFT updates.
+        TODO: Need to Set the TableView columns to fix size and align contents
     """
+
 
     ampChanged = QtCore.pyqtSignal(int)
     peaksChanged = QtCore.pyqtSignal(np.ndarray)
@@ -49,7 +91,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.threshold_slider.valueChanged.connect(self.threshold_changed)
 
         self.ampChanged.connect(self.threshold_slider.set_amplitude)
-        self.peaksChanged.connect(self.print_peaks)
 
         # Add an fft Canvas
         f_range = {'f_min': 50, 'f_max': 1000}
@@ -203,6 +244,38 @@ class MainWindow(QtWidgets.QMainWindow):
         control_layout.addSpacing(40)
 
         hlayout.addLayout(control_layout)
+        
+
+        #.....
+        # Setup a vertical layout to add spacing
+        peaks_layout = QtWidgets.QVBoxLayout()
+
+        #.....
+        # Spacing above controls
+        peaks_layout.addSpacing(40)
+
+        #.....
+        # Use tableview to display fft peaks
+        peak_table = QtWidgets.QTableView()
+        data = np.vstack(([], [], [], [])).T
+        model = PeaksModel(data)
+        peak_table.setModel(model)
+        #peak_table.setSortingEnabled(True)
+        #peak_table.sortByColumn(0, Qt.AscendingOrder)
+        peak_table.resizeColumnsToContents()
+
+        header_width = peak_table.horizontalHeader().length()
+        peak_table.setFixedWidth(header_width + 30)
+
+        self.peaksChanged.connect(model.updateData)
+
+        peaks_layout.addWidget(peak_table)
+
+        #.....
+        # Add space at the bottom
+        peaks_layout.addSpacing(40)
+
+        hlayout.addLayout(peaks_layout)
 
     def set_peak_hold(self, checked):
         """ Change the icon color and also change the fft_plot
@@ -214,10 +287,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sender().setIcon(self.green_icon)
         else:
             self.sender().setIcon(self.red_icon)
-
-    def print_peaks(self, peaks):
-        """ Temporary for handling peaks changed signal """
-        print(peaks)
 
     def threshold_changed(self):
         """ Set the threshold used in fft_canvas

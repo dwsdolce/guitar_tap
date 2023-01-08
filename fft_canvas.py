@@ -213,7 +213,12 @@ class DrawFft(FigureCanvasQTAgg):
                                 bounded_peaks_freq_min_index:bounded_peaks_freq_max_index]
                         self.bounded_scatter_peaks = np.vstack(
                                 (bounded_peaks_freq, bounded_peaks_mag)).T
-                        self.peaks_signal.emit(self.bounded_scatter_peaks)
+                        data_len = np.size(bounded_peaks_freq)
+                        notes = np.arange(0, data_len)
+                        cents = np.arange(0, data_len)
+                        peaks_data = np.vstack(
+                                (bounded_peaks_freq, bounded_peaks_mag, bounded_peaks_freq, bounded_peaks_freq)).T
+                        self.peaks_signal.emit(peaks_data)
                         if not self.skip:
                             self.skip = True
         else:
