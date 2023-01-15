@@ -10,12 +10,50 @@ import threshold_slider as TS
 import fft_canvas as fft_c
 import pitch as pitch_c
 
+class PeaksFilterModel(QtCore.QSortFilterProxyModel):
+    def __init__(self):
+        super().__init__()
+
+    def lessThan(self, left, right):
+        less_than = True
+        if (left.column() == 0) or (left.column() == 1):
+            # Sort by numeric value (assumes left and right column are the same)
+            # Use the python value instead of the numpy value so that a bool is returned instead of a
+            # numpy.bool_.
+            less_than = self.sourceModel().dataValue(left).item() < self.sourceModel().dataValue(right).item()
+        elif left.column() == 2:
+            # Get note and octave and sort by octave then note
+            left_pitch, left_oct = self.sourceModel().pitch.pitch(self.sourceModel().freqValue(left))
+            right_pitch, right_oct = self.sourceModel().pitch.pitch(self.sourceModel().freqValue(right))
+            if left_oct < right_oct:
+                less_than = True
+            elif (left_oct == right_oct) and (left_pitch < right_pitch):
+                less_than = True
+            else:
+                less_than = False
+        elif left.column() == 3:
+            # Sort by absolute value of cents (so +/-3 is less than +/- 4)
+            left_cents = self.sourceModel().pitch.cents(self.sourceModel().freqValue(left))
+            right_cents = self.sourceModel().pitch.cents(self.sourceModel().freqValue(right))
+            less_than = abs(left_cents) < abs(right_cents)
+        return less_than
+
 class PeaksModel(QtCore.QAbstractTableModel):
     header_names = ['Frequency', 'Magnitude', 'Pitch', 'Cents']
     def __init__(self, data):
         super().__init__()
         self._data = data
         self.pitch = pitch_c.Pitch(440)
+
+    def freqValue(self, index):
+        return self._data[index.row()][0]
+
+    def dataValue(self, index):
+        if (index.column() == 0) or (index.column() == 1):
+            return(self._data[index.row()][index.column()])
+        elif (index.column() == 2) or (index.column() == 3):
+            return self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
+        return(QtCore.QVariant.QVariant())
 
     def data(self, index, role):
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
@@ -44,6 +82,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
         self._data = data
         self.layoutChanged.emit()
+        return True
 
     def rowCount(self, index):
         return self._data.shape[0]
@@ -67,6 +106,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         main_widget = QtWidgets.QWidget()
         self.setCentralWidget(main_widget)
+
+        #self.installEventFilter(self)
 
         self.setWindowTitle("Guitar Tap")
 
@@ -262,7 +303,8 @@ class MainWindow(QtWidgets.QMainWindow):
         peak_table = QtWidgets.QTableView()
         data = np.vstack(([], [])).T
         model = PeaksModel(data)
-        proxy_model = QtCore.QSortFilterProxyModel()
+        # Use custom QSortFilterProxyModel to define the sort
+        proxy_model = PeaksFilterModel()
         proxy_model.setSourceModel(model)
         peak_table.setModel(proxy_model) 
         peak_table.setSortingEnabled(True)
@@ -316,6 +358,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.toolbar.update()
         self.fft_canvas.set_fmax(self.max_spin.value())
+    
+    #def eventFilter(self, object, event):
+        #print("EventFilter")
+        #print(event)
+        #print(event.type())
+        #return False
 
 if __name__ == "__main__":
     qapp = QtWidgets.QApplication(sys.argv)
