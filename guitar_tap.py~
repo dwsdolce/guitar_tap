@@ -23,13 +23,15 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
             less_than = self.sourceModel().dataValue(left) < self.sourceModel().dataValue(right)
             less_than = less_than.item()
         elif left.column() == 2:
-            # Use the freq to define order
-            # Use the python value instead of the numpy value so that a bool is returned instead of a
-            # numpy.bool_.
-            left_freq = self.sourceModel().freqValue(left)
-            right_freq  = self.sourceModel().freqValue(right)
-            less_than = left_freq < right_freq
-            less_than = less_than.item()
+            # Get note and octave and sort by octave then note
+            left_pitch, left_oct = self.sourceModel().pitch.pitch(self.sourceModel().freqValue(left))
+            right_pitch, right_oct = self.sourceModel().pitch.pitch(self.sourceModel().freqValue(right))
+            if left_oct < right_oct:
+                less_than = True
+            elif (left_oct == right_oct) and (left_pitch < right_pitch):
+                less_than = True
+            else:
+                less_than = False
         elif left.column() == 3:
             # Sort by absolute value of cents (so +/-3 is less than +/- 4)
             left_cents = self.sourceModel().pitch.cents(self.sourceModel().freqValue(left))

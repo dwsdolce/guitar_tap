@@ -1,0 +1,610 @@
+{'_generate_next_value_': <function Enum._generate_next_value_ at 0x00000199CA272020>
+	'__module__': 'PyQt6.QtCore'
+	'_new_member_': <built-in method __new__ of type object at 0x00007FFB8F805E30>
+	'_use_args_': True
+	'_member_names_': ['None_'
+		'Timer'
+		'MouseButtonPress'
+		'MouseButtonRelease'
+		'MouseButtonDblClick'
+		'MouseMove'
+		'KeyPress'
+		'KeyRelease'
+		'FocusIn'
+		'FocusOut'
+		'Enter'
+		'Leave'
+		'Paint'
+		'Move'
+		'Resize'
+		'Show'
+		'Hide'
+		'Close'
+		'ParentChange'
+		'ParentAboutToChange'
+		'ThreadChange'
+		'WindowActivate'
+		'WindowDeactivate'
+		'ShowToParent'
+		'HideToParent'
+		'Wheel'
+		'WindowTitleChange'
+		'WindowIconChange'
+		'ApplicationWindowIconChange'
+		'ApplicationFontChange'
+		'ApplicationLayoutDirectionChange'
+		'ApplicationPaletteChange'
+		'PaletteChange'
+		'Clipboard'
+		'MetaCall'
+		'SockAct'
+		'WinEventAct'
+		'DeferredDelete'
+		'DragEnter'
+		'DragMove'
+		'DragLeave'
+		'Drop'
+		'ChildAdded'
+		'ChildPolished'
+		'ChildRemoved'
+		'PolishRequest'
+		'Polish'
+		'LayoutRequest'
+		'UpdateRequest'
+		'UpdateLater'
+		'ContextMenu'
+		'InputMethod'
+		'TabletMove'
+		'LocaleChange'
+		'LanguageChange'
+		'LayoutDirectionChange'
+		'TabletPress'
+		'TabletRelease'
+		'OkRequest'
+		'IconDrag'
+		'FontChange'
+		'EnabledChange'
+		'ActivationChange'
+		'StyleChange'
+		'IconTextChange'
+		'ModifiedChange'
+		'MouseTrackingChange'
+		'WindowBlocked'
+		'WindowUnblocked'
+		'WindowStateChange'
+		'ToolTip'
+		'WhatsThis'
+		'StatusTip'
+		'ActionChanged'
+		'ActionAdded'
+		'ActionRemoved'
+		'FileOpen'
+		'Shortcut'
+		'ShortcutOverride'
+		'WhatsThisClicked'
+		'ToolBarChange'
+		'ApplicationActivate'
+		'ApplicationDeactivate'
+		'QueryWhatsThis'
+		'EnterWhatsThisMode'
+		'LeaveWhatsThisMode'
+		'ZOrderChange'
+		'HoverEnter'
+		'HoverLeave'
+		'HoverMove'
+		'GraphicsSceneMouseMove'
+		'GraphicsSceneMousePress'
+		'GraphicsSceneMouseRelease'
+		'GraphicsSceneMouseDoubleClick'
+		'GraphicsSceneContextMenu'
+		'GraphicsSceneHoverEnter'
+		'GraphicsSceneHoverMove'
+		'GraphicsSceneHoverLeave'
+		'GraphicsSceneHelp'
+		'GraphicsSceneDragEnter'
+		'GraphicsSceneDragMove'
+		'GraphicsSceneDragLeave'
+		'GraphicsSceneDrop'
+		'GraphicsSceneWheel'
+		'GraphicsSceneResize'
+		'GraphicsSceneMove'
+		'KeyboardLayoutChange'
+		'DynamicPropertyChange'
+		'TabletEnterProximity'
+		'TabletLeaveProximity'
+		'NonClientAreaMouseMove'
+		'NonClientAreaMouseButtonPress'
+		'NonClientAreaMouseButtonRelease'
+		'NonClientAreaMouseButtonDblClick'
+		'MacSizeChange'
+		'ContentsRectChange'
+		'CursorChange'
+		'ToolTipChange'
+		'GrabMouse'
+		'UngrabMouse'
+		'GrabKeyboard'
+		'UngrabKeyboard'
+		'StateMachineSignal'
+		'StateMachineWrapped'
+		'TouchBegin'
+		'TouchUpdate'
+		'TouchEnd'
+		'RequestSoftwareInputPanel'
+		'CloseSoftwareInputPanel'
+		'WinIdChange'
+		'Gesture'
+		'GestureOverride'
+		'FocusAboutToChange'
+		'ScrollPrepare'
+		'Scroll'
+		'Expose'
+		'InputMethodQuery'
+		'OrientationChange'
+		'TouchCancel'
+		'PlatformPanel'
+		'ApplicationStateChange'
+		'ReadOnlyChange'
+		'PlatformSurface'
+		'TabletTrackingChange'
+		'GraphicsSceneLeave'
+		'User'
+		'MaxUser'
+	]
+	'_member_map_': {'None_': <Type.None_: 0>
+		'Timer': <Type.Timer: 1>
+		'MouseButtonPress': <Type.MouseButtonPress: 2>
+		'MouseButtonRelease': <Type.MouseButtonRelease: 3>
+		'MouseButtonDblClick': <Type.MouseButtonDblClick: 4>
+		'MouseMove': <Type.MouseMove: 5>
+		'KeyPress': <Type.KeyPress: 6>
+		'KeyRelease': <Type.KeyRelease: 7>
+		'FocusIn': <Type.FocusIn: 8>
+		'FocusOut': <Type.FocusOut: 9>
+		'Enter': <Type.Enter: 10>
+		'Leave': <Type.Leave: 11>
+		'Paint': <Type.Paint: 12>
+		'Move': <Type.Move: 13>
+		'Resize': <Type.Resize: 14>
+		'Show': <Type.Show: 17>
+		'Hide': <Type.Hide: 18>
+		'Close': <Type.Close: 19>
+		'ParentChange': <Type.ParentChange: 21>
+		'ParentAboutToChange': <Type.ParentAboutToChange: 131>
+		'ThreadChange': <Type.ThreadChange: 22>
+		'WindowActivate': <Type.WindowActivate: 24>
+		'WindowDeactivate': <Type.WindowDeactivate: 25>
+		'ShowToParent': <Type.ShowToParent: 26>
+		'HideToParent': <Type.HideToParent: 27>
+		'Wheel': <Type.Wheel: 31>
+		'WindowTitleChange': <Type.WindowTitleChange: 33>
+		'WindowIconChange': <Type.WindowIconChange: 34>
+		'ApplicationWindowIconChange': <Type.ApplicationWindowIconChange: 35>
+		'ApplicationFontChange': <Type.ApplicationFontChange: 36>
+		'ApplicationLayoutDirectionChange': <Type.ApplicationLayoutDirectionChange: 37>
+		'ApplicationPaletteChange': <Type.ApplicationPaletteChange: 38>
+		'PaletteChange': <Type.PaletteChange: 39>
+		'Clipboard': <Type.Clipboard: 40>
+		'MetaCall': <Type.MetaCall: 43>
+		'SockAct': <Type.SockAct: 50>
+		'WinEventAct': <Type.WinEventAct: 132>
+		'DeferredDelete': <Type.DeferredDelete: 52>
+		'DragEnter': <Type.DragEnter: 60>
+		'DragMove': <Type.DragMove: 61>
+		'DragLeave': <Type.DragLeave: 62>
+		'Drop': <Type.Drop: 63>
+		'ChildAdded': <Type.ChildAdded: 68>
+		'ChildPolished': <Type.ChildPolished: 69>
+		'ChildRemoved': <Type.ChildRemoved: 71>
+		'PolishRequest': <Type.PolishRequest: 74>
+		'Polish': <Type.Polish: 75>
+		'LayoutRequest': <Type.LayoutRequest: 76>
+		'UpdateRequest': <Type.UpdateRequest: 77>
+		'UpdateLater': <Type.UpdateLater: 78>
+		'ContextMenu': <Type.ContextMenu: 82>
+		'InputMethod': <Type.InputMethod: 83>
+		'TabletMove': <Type.TabletMove: 87>
+		'LocaleChange': <Type.LocaleChange: 88>
+		'LanguageChange': <Type.LanguageChange: 89>
+		'LayoutDirectionChange': <Type.LayoutDirectionChange: 90>
+		'TabletPress': <Type.TabletPress: 92>
+		'TabletRelease': <Type.TabletRelease: 93>
+		'OkRequest': <Type.OkRequest: 94>
+		'IconDrag': <Type.IconDrag: 96>
+		'FontChange': <Type.FontChange: 97>
+		'EnabledChange': <Type.EnabledChange: 98>
+		'ActivationChange': <Type.ActivationChange: 99>
+		'StyleChange': <Type.StyleChange: 100>
+		'IconTextChange': <Type.IconTextChange: 101>
+		'ModifiedChange': <Type.ModifiedChange: 102>
+		'MouseTrackingChange': <Type.MouseTrackingChange: 109>
+		'WindowBlocked': <Type.WindowBlocked: 103>
+		'WindowUnblocked': <Type.WindowUnblocked: 104>
+		'WindowStateChange': <Type.WindowStateChange: 105>
+		'ToolTip': <Type.ToolTip: 110>
+		'WhatsThis': <Type.WhatsThis: 111>
+		'StatusTip': <Type.StatusTip: 112>
+		'ActionChanged': <Type.ActionChanged: 113>
+		'ActionAdded': <Type.ActionAdded: 114>
+		'ActionRemoved': <Type.ActionRemoved: 115>
+		'FileOpen': <Type.FileOpen: 116>
+		'Shortcut': <Type.Shortcut: 117>
+		'ShortcutOverride': <Type.ShortcutOverride: 51>
+		'WhatsThisClicked': <Type.WhatsThisClicked: 118>
+		'ToolBarChange': <Type.ToolBarChange: 120>
+		'ApplicationActivate': <Type.ApplicationActivate: 121>
+		'ApplicationActivated': <Type.ApplicationActivate: 121>
+		'ApplicationDeactivate': <Type.ApplicationDeactivate: 122>
+		'ApplicationDeactivated': <Type.ApplicationDeactivate: 122>
+		'QueryWhatsThis': <Type.QueryWhatsThis: 123>
+		'EnterWhatsThisMode': <Type.EnterWhatsThisMode: 124>
+		'LeaveWhatsThisMode': <Type.LeaveWhatsThisMode: 125>
+		'ZOrderChange': <Type.ZOrderChange: 126>
+		'HoverEnter': <Type.HoverEnter: 127>
+		'HoverLeave': <Type.HoverLeave: 128>
+		'HoverMove': <Type.HoverMove: 129>
+		'GraphicsSceneMouseMove': <Type.GraphicsSceneMouseMove: 155>
+		'GraphicsSceneMousePress': <Type.GraphicsSceneMousePress: 156>
+		'GraphicsSceneMouseRelease': <Type.GraphicsSceneMouseRelease: 157>
+		'GraphicsSceneMouseDoubleClick': <Type.GraphicsSceneMouseDoubleClick: 158>
+		'GraphicsSceneContextMenu': <Type.GraphicsSceneContextMenu: 159>
+		'GraphicsSceneHoverEnter': <Type.GraphicsSceneHoverEnter: 160>
+		'GraphicsSceneHoverMove': <Type.GraphicsSceneHoverMove: 161>
+		'GraphicsSceneHoverLeave': <Type.GraphicsSceneHoverLeave: 162>
+		'GraphicsSceneHelp': <Type.GraphicsSceneHelp: 163>
+		'GraphicsSceneDragEnter': <Type.GraphicsSceneDragEnter: 164>
+		'GraphicsSceneDragMove': <Type.GraphicsSceneDragMove: 165>
+		'GraphicsSceneDragLeave': <Type.GraphicsSceneDragLeave: 166>
+		'GraphicsSceneDrop': <Type.GraphicsSceneDrop: 167>
+		'GraphicsSceneWheel': <Type.GraphicsSceneWheel: 168>
+		'GraphicsSceneResize': <Type.GraphicsSceneResize: 181>
+		'GraphicsSceneMove': <Type.GraphicsSceneMove: 182>
+		'KeyboardLayoutChange': <Type.KeyboardLayoutChange: 169>
+		'DynamicPropertyChange': <Type.DynamicPropertyChange: 170>
+		'TabletEnterProximity': <Type.TabletEnterProximity: 171>
+		'TabletLeaveProximity': <Type.TabletLeaveProximity: 172>
+		'NonClientAreaMouseMove': <Type.NonClientAreaMouseMove: 173>
+		'NonClientAreaMouseButtonPress': <Type.NonClientAreaMouseButtonPress: 174>
+		'NonClientAreaMouseButtonRelease': <Type.NonClientAreaMouseButtonRelease: 175>
+		'NonClientAreaMouseButtonDblClick': <Type.NonClientAreaMouseButtonDblClick: 176>
+		'MacSizeChange': <Type.MacSizeChange: 177>
+		'ContentsRectChange': <Type.ContentsRectChange: 178>
+		'CursorChange': <Type.CursorChange: 183>
+		'ToolTipChange': <Type.ToolTipChange: 184>
+		'GrabMouse': <Type.GrabMouse: 186>
+		'UngrabMouse': <Type.UngrabMouse: 187>
+		'GrabKeyboard': <Type.GrabKeyboard: 188>
+		'UngrabKeyboard': <Type.UngrabKeyboard: 189>
+		'StateMachineSignal': <Type.StateMachineSignal: 192>
+		'StateMachineWrapped': <Type.StateMachineWrapped: 193>
+		'TouchBegin': <Type.TouchBegin: 194>
+		'TouchUpdate': <Type.TouchUpdate: 195>
+		'TouchEnd': <Type.TouchEnd: 196>
+		'RequestSoftwareInputPanel': <Type.RequestSoftwareInputPanel: 199>
+		'CloseSoftwareInputPanel': <Type.CloseSoftwareInputPanel: 200>
+		'WinIdChange': <Type.WinIdChange: 203>
+		'Gesture': <Type.Gesture: 198>
+		'GestureOverride': <Type.GestureOverride: 202>
+		'FocusAboutToChange': <Type.FocusAboutToChange: 23>
+		'ScrollPrepare': <Type.ScrollPrepare: 204>
+		'Scroll': <Type.Scroll: 205>
+		'Expose': <Type.Expose: 206>
+		'InputMethodQuery': <Type.InputMethodQuery: 207>
+		'OrientationChange': <Type.OrientationChange: 208>
+		'TouchCancel': <Type.TouchCancel: 209>
+		'PlatformPanel': <Type.PlatformPanel: 212>
+		'ApplicationStateChange': <Type.ApplicationStateChange: 214>
+		'ReadOnlyChange': <Type.ReadOnlyChange: 106>
+		'PlatformSurface': <Type.PlatformSurface: 217>
+		'TabletTrackingChange': <Type.TabletTrackingChange: 219>
+		'GraphicsSceneLeave': <Type.GraphicsSceneLeave: 220>
+		'User': <Type.User: 1000>
+		'MaxUser': <Type.MaxUser: 65535>
+	}
+	'_value2member_map_': {
+		0: <Type.None_: 0>
+		1: <Type.Timer: 1>
+		2: <Type.MouseButtonPress: 2>
+		3: <Type.MouseButtonRelease: 3>
+		4: <Type.MouseButtonDblClick: 4>
+		5: <Type.MouseMove: 5>
+		6: <Type.KeyPress: 6>
+		7: <Type.KeyRelease: 7>
+		8: <Type.FocusIn: 8>
+		9: <Type.FocusOut: 9>
+		10: <Type.Enter: 10>
+		11: <Type.Leave: 11>
+		12: <Type.Paint: 12>
+		13: <Type.Move: 13>
+		14: <Type.Resize: 14>
+		17: <Type.Show: 17>
+		18: <Type.Hide: 18>
+		19: <Type.Close: 19>
+		21: <Type.ParentChange: 21>
+		131: <Type.ParentAboutToChange: 131>
+		22: <Type.ThreadChange: 22>
+		24: <Type.WindowActivate: 24>
+		25: <Type.WindowDeactivate: 25>
+		26: <Type.ShowToParent: 26>
+		27: <Type.HideToParent: 27>
+		31: <Type.Wheel: 31>
+		33: <Type.WindowTitleChange: 33>
+		34: <Type.WindowIconChange: 34>
+		35: <Type.ApplicationWindowIconChange: 35>
+		36: <Type.ApplicationFontChange: 36>
+		37: <Type.ApplicationLayoutDirectionChange: 37>
+		38: <Type.ApplicationPaletteChange: 38>
+		39: <Type.PaletteChange: 39>
+		40: <Type.Clipboard: 40>
+		43: <Type.MetaCall: 43>
+		50: <Type.SockAct: 50>
+		132: <Type.WinEventAct: 132>
+		52: <Type.DeferredDelete: 52>
+		60: <Type.DragEnter: 60>
+		61: <Type.DragMove: 61>
+		62: <Type.DragLeave: 62>
+		63: <Type.Drop: 63>
+		68: <Type.ChildAdded: 68>
+		69: <Type.ChildPolished: 69>
+		71: <Type.ChildRemoved: 71>
+		74: <Type.PolishRequest: 74>
+		75: <Type.Polish: 75>
+		76: <Type.LayoutRequest: 76>
+		77: <Type.UpdateRequest: 77>
+		78: <Type.UpdateLater: 78>
+		82: <Type.ContextMenu: 82>
+		83: <Type.InputMethod: 83>
+		87: <Type.TabletMove: 87>
+		88: <Type.LocaleChange: 88>
+		89: <Type.LanguageChange: 89>
+		90: <Type.LayoutDirectionChange: 90>
+		92: <Type.TabletPress: 92>
+		93: <Type.TabletRelease: 93>
+		94: <Type.OkRequest: 94>
+		96: <Type.IconDrag: 96>
+		97: <Type.FontChange: 97>
+		98: <Type.EnabledChange: 98>
+		99: <Type.ActivationChange: 99>
+		100: <Type.StyleChange: 100>
+		101: <Type.IconTextChange: 101>
+		102: <Type.ModifiedChange: 102>
+		109: <Type.MouseTrackingChange: 109>
+		103: <Type.WindowBlocked: 103>
+		104: <Type.WindowUnblocked: 104>
+		105: <Type.WindowStateChange: 105>
+		110: <Type.ToolTip: 110>
+		111: <Type.WhatsThis: 111>
+		112: <Type.StatusTip: 112>
+		113: <Type.ActionChanged: 113>
+		114: <Type.ActionAdded: 114>
+		115: <Type.ActionRemoved: 115>
+		116: <Type.FileOpen: 116>
+		117: <Type.Shortcut: 117>
+		51: <Type.ShortcutOverride: 51>
+		118: <Type.WhatsThisClicked: 118>
+		120: <Type.ToolBarChange: 120>
+		121: <Type.ApplicationActivate: 121>
+		122: <Type.ApplicationDeactivate: 122>
+		123: <Type.QueryWhatsThis: 123>
+		124: <Type.EnterWhatsThisMode: 124>
+		125: <Type.LeaveWhatsThisMode: 125>
+		126: <Type.ZOrderChange: 126>
+		127: <Type.HoverEnter: 127>
+		128: <Type.HoverLeave: 128>
+		129: <Type.HoverMove: 129>
+		155: <Type.GraphicsSceneMouseMove: 155>
+		156: <Type.GraphicsSceneMousePress: 156>
+		157: <Type.GraphicsSceneMouseRelease: 157>
+		158: <Type.GraphicsSceneMouseDoubleClick: 158>
+		159: <Type.GraphicsSceneContextMenu: 159>
+		160: <Type.GraphicsSceneHoverEnter: 160>
+		161: <Type.GraphicsSceneHoverMove: 161>
+		162: <Type.GraphicsSceneHoverLeave: 162>
+		163: <Type.GraphicsSceneHelp: 163>
+		164: <Type.GraphicsSceneDragEnter: 164>
+		165: <Type.GraphicsSceneDragMove: 165>
+		166: <Type.GraphicsSceneDragLeave: 166>
+		167: <Type.GraphicsSceneDrop: 167>
+		168: <Type.GraphicsSceneWheel: 168>
+		181: <Type.GraphicsSceneResize: 181>
+		182: <Type.GraphicsSceneMove: 182>
+		169: <Type.KeyboardLayoutChange: 169>
+		170: <Type.DynamicPropertyChange: 170>
+		171: <Type.TabletEnterProximity: 171>
+		172: <Type.TabletLeaveProximity: 172>
+		173: <Type.NonClientAreaMouseMove: 173>
+		174: <Type.NonClientAreaMouseButtonPress: 174>
+		175: <Type.NonClientAreaMouseButtonRelease: 175>
+		176: <Type.NonClientAreaMouseButtonDblClick: 176>
+		177: <Type.MacSizeChange: 177>
+		178: <Type.ContentsRectChange: 178>
+		183: <Type.CursorChange: 183>
+		184: <Type.ToolTipChange: 184>
+		186: <Type.GrabMouse: 186>
+		187: <Type.UngrabMouse: 187>
+		188: <Type.GrabKeyboard: 188>
+		189: <Type.UngrabKeyboard: 189>
+		192: <Type.StateMachineSignal: 192>
+		193: <Type.StateMachineWrapped: 193>
+		194: <Type.TouchBegin: 194>
+		195: <Type.TouchUpdate: 195>
+		196: <Type.TouchEnd: 196>
+		199: <Type.RequestSoftwareInputPanel: 199>
+		200: <Type.CloseSoftwareInputPanel: 200>
+		203: <Type.WinIdChange: 203>
+		198: <Type.Gesture: 198>
+		202: <Type.GestureOverride: 202>
+		23: <Type.FocusAboutToChange: 23>
+		204: <Type.ScrollPrepare: 204>
+		205: <Type.Scroll: 205>
+		206: <Type.Expose: 206>
+		207: <Type.InputMethodQuery: 207>
+		208: <Type.OrientationChange: 208>
+		209: <Type.TouchCancel: 209>
+		212: <Type.PlatformPanel: 212>
+		214: <Type.ApplicationStateChange: 214>
+		106: <Type.ReadOnlyChange: 106>
+		217: <Type.PlatformSurface: 217>
+		219: <Type.TabletTrackingChange: 219>
+		220: <Type.GraphicsSceneLeave: 220>
+		1000: <Type.User: 1000>
+		65535: <Type.MaxUser: 65535>
+	}
+
+	'_unhashable_values_': []
+	'_member_type_': <class 'int'>
+	'_value_repr_': <slot wrapper '__repr__' of 'int' objects>
+	'__doc__': None
+	'None_': <Type.None_: 0>
+	'Timer': <Type.Timer: 1>
+	'MouseButtonPress': <Type.MouseButtonPress: 2>
+	'MouseButtonRelease': <Type.MouseButtonRelease: 3>
+	'MouseButtonDblClick': <Type.MouseButtonDblClick: 4>
+	'MouseMove': <Type.MouseMove: 5>
+	'KeyPress': <Type.KeyPress: 6>
+	'KeyRelease': <Type.KeyRelease: 7>
+	'FocusIn': <Type.FocusIn: 8>
+	'FocusOut': <Type.FocusOut: 9>
+	'Enter': <Type.Enter: 10>
+	'Leave': <Type.Leave: 11>
+	'Paint': <Type.Paint: 12>
+	'Move': <Type.Move: 13>
+	'Resize': <Type.Resize: 14>
+	'Show': <Type.Show: 17>
+	'Hide': <Type.Hide: 18>
+	'Close': <Type.Close: 19>
+	'ParentChange': <Type.ParentChange: 21>
+	'ParentAboutToChange': <Type.ParentAboutToChange: 131>
+	'ThreadChange': <Type.ThreadChange: 22>
+	'WindowActivate': <Type.WindowActivate: 24>
+	'WindowDeactivate': <Type.WindowDeactivate: 25>
+	'ShowToParent': <Type.ShowToParent: 26>
+	'HideToParent': <Type.HideToParent: 27>
+	'Wheel': <Type.Wheel: 31>
+	'WindowTitleChange': <Type.WindowTitleChange: 33>
+	'WindowIconChange': <Type.WindowIconChange: 34>
+	'ApplicationWindowIconChange': <Type.ApplicationWindowIconChange: 35>
+	'ApplicationFontChange': <Type.ApplicationFontChange: 36>
+	'ApplicationLayoutDirectionChange': <Type.ApplicationLayoutDirectionChange: 37>
+	'ApplicationPaletteChange': <Type.ApplicationPaletteChange: 38>
+	'PaletteChange': <Type.PaletteChange: 39>
+	'Clipboard': <Type.Clipboard: 40>
+	'MetaCall': <Type.MetaCall: 43>
+	'SockAct': <Type.SockAct: 50>
+	'WinEventAct': <Type.WinEventAct: 132>
+	'DeferredDelete': <Type.DeferredDelete: 52>
+	'DragEnter': <Type.DragEnter: 60>
+	'DragMove': <Type.DragMove: 61>
+	'DragLeave': <Type.DragLeave: 62>
+	'Drop': <Type.Drop: 63>
+	'ChildAdded': <Type.ChildAdded: 68>
+	'ChildPolished': <Type.ChildPolished: 69>
+	'ChildRemoved': <Type.ChildRemoved: 71>
+	'PolishRequest': <Type.PolishRequest: 74>
+	'Polish': <Type.Polish: 75>
+	'LayoutRequest': <Type.LayoutRequest: 76>
+	'UpdateRequest': <Type.UpdateRequest: 77>
+	'UpdateLater': <Type.UpdateLater: 78>
+	'ContextMenu': <Type.ContextMenu: 82>
+	'InputMethod': <Type.InputMethod: 83>
+	'TabletMove': <Type.TabletMove: 87>
+	'LocaleChange': <Type.LocaleChange: 88>
+	'LanguageChange': <Type.LanguageChange: 89>
+	'LayoutDirectionChange': <Type.LayoutDirectionChange: 90>
+	'TabletPress': <Type.TabletPress: 92>
+	'TabletRelease': <Type.TabletRelease: 93>
+	'OkRequest': <Type.OkRequest: 94>
+	'IconDrag': <Type.IconDrag: 96>
+	'FontChange': <Type.FontChange: 97>
+	'EnabledChange': <Type.EnabledChange: 98>
+	'ActivationChange': <Type.ActivationChange: 99>
+	'StyleChange': <Type.StyleChange: 100>
+	'IconTextChange': <Type.IconTextChange: 101>
+	'ModifiedChange': <Type.ModifiedChange: 102>
+	'MouseTrackingChange': <Type.MouseTrackingChange: 109>
+	'WindowBlocked': <Type.WindowBlocked: 103>
+	'WindowUnblocked': <Type.WindowUnblocked: 104>
+	'WindowStateChange': <Type.WindowStateChange: 105>
+	'ToolTip': <Type.ToolTip: 110>
+	'WhatsThis': <Type.WhatsThis: 111>
+	'StatusTip': <Type.StatusTip: 112>
+	'ActionChanged': <Type.ActionChanged: 113>
+	'ActionAdded': <Type.ActionAdded: 114>
+	'ActionRemoved': <Type.ActionRemoved: 115>
+	'FileOpen': <Type.FileOpen: 116>
+	'Shortcut': <Type.Shortcut: 117>
+	'ShortcutOverride': <Type.ShortcutOverride: 51>
+	'WhatsThisClicked': <Type.WhatsThisClicked: 118>
+	'ToolBarChange': <Type.ToolBarChange: 120>
+	'ApplicationActivate': <Type.ApplicationActivate: 121>
+	'ApplicationActivated': <Type.ApplicationActivate: 121>
+	'ApplicationDeactivate': <Type.ApplicationDeactivate: 122>
+	'ApplicationDeactivated': <Type.ApplicationDeactivate: 122>
+	'QueryWhatsThis': <Type.QueryWhatsThis: 123>
+	'EnterWhatsThisMode': <Type.EnterWhatsThisMode: 124>
+	'LeaveWhatsThisMode': <Type.LeaveWhatsThisMode: 125>
+	'ZOrderChange': <Type.ZOrderChange: 126>
+	'HoverEnter': <Type.HoverEnter: 127>
+	'HoverLeave': <Type.HoverLeave: 128>
+	'HoverMove': <Type.HoverMove: 129>
+	'GraphicsSceneMouseMove': <Type.GraphicsSceneMouseMove: 155>
+	'GraphicsSceneMousePress': <Type.GraphicsSceneMousePress: 156>
+	'GraphicsSceneMouseRelease': <Type.GraphicsSceneMouseRelease: 157>
+	'GraphicsSceneMouseDoubleClick': <Type.GraphicsSceneMouseDoubleClick: 158>
+	'GraphicsSceneContextMenu': <Type.GraphicsSceneContextMenu: 159>
+	'GraphicsSceneHoverEnter': <Type.GraphicsSceneHoverEnter: 160>
+	'GraphicsSceneHoverMove': <Type.GraphicsSceneHoverMove: 161>
+	'GraphicsSceneHoverLeave': <Type.GraphicsSceneHoverLeave: 162>
+	'GraphicsSceneHelp': <Type.GraphicsSceneHelp: 163>
+	'GraphicsSceneDragEnter': <Type.GraphicsSceneDragEnter: 164>
+	'GraphicsSceneDragMove': <Type.GraphicsSceneDragMove: 165>
+	'GraphicsSceneDragLeave': <Type.GraphicsSceneDragLeave: 166>
+	'GraphicsSceneDrop': <Type.GraphicsSceneDrop: 167>
+	'GraphicsSceneWheel': <Type.GraphicsSceneWheel: 168>
+	'GraphicsSceneResize': <Type.GraphicsSceneResize: 181>
+	'GraphicsSceneMove': <Type.GraphicsSceneMove: 182>
+	'KeyboardLayoutChange': <Type.KeyboardLayoutChange: 169>
+	'DynamicPropertyChange': <Type.DynamicPropertyChange: 170>
+	'TabletEnterProximity': <Type.TabletEnterProximity: 171>
+	'TabletLeaveProximity': <Type.TabletLeaveProximity: 172>
+	'NonClientAreaMouseMove': <Type.NonClientAreaMouseMove: 173>
+	'NonClientAreaMouseButtonPress': <Type.NonClientAreaMouseButtonPress: 174>
+	'NonClientAreaMouseButtonRelease': <Type.NonClientAreaMouseButtonRelease: 175>
+	'NonClientAreaMouseButtonDblClick': <Type.NonClientAreaMouseButtonDblClick: 176>
+	'MacSizeChange': <Type.MacSizeChange: 177>
+	'ContentsRectChange': <Type.ContentsRectChange: 178>
+	'CursorChange': <Type.CursorChange: 183>
+	'ToolTipChange': <Type.ToolTipChange: 184>
+	'GrabMouse': <Type.GrabMouse: 186>
+	'UngrabMouse': <Type.UngrabMouse: 187>
+	'GrabKeyboard': <Type.GrabKeyboard: 188>
+	'UngrabKeyboard': <Type.UngrabKeyboard: 189>
+	'StateMachineSignal': <Type.StateMachineSignal: 192>
+	'StateMachineWrapped': <Type.StateMachineWrapped: 193>
+	'TouchBegin': <Type.TouchBegin: 194>
+	'TouchUpdate': <Type.TouchUpdate: 195>
+	'TouchEnd': <Type.TouchEnd: 196>
+	'RequestSoftwareInputPanel': <Type.RequestSoftwareInputPanel: 199>
+	'CloseSoftwareInputPanel': <Type.CloseSoftwareInputPanel: 200>
+	'WinIdChange': <Type.WinIdChange: 203>
+	'Gesture': <Type.Gesture: 198>
+	'GestureOverride': <Type.GestureOverride: 202>
+	'FocusAboutToChange': <Type.FocusAboutToChange: 23>
+	'ScrollPrepare': <Type.ScrollPrepare: 204>
+	'Scroll': <Type.Scroll: 205>
+	'Expose': <Type.Expose: 206>
+	'InputMethodQuery': <Type.InputMethodQuery: 207>
+	'OrientationChange': <Type.OrientationChange: 208>
+	'TouchCancel': <Type.TouchCancel: 209>
+	'PlatformPanel': <Type.PlatformPanel: 212>
+	'ApplicationStateChange': <Type.ApplicationStateChange: 214>
+	'ReadOnlyChange': <Type.ReadOnlyChange: 106>
+	'PlatformSurface': <Type.PlatformSurface: 217>
+	'TabletTrackingChange': <Type.TabletTrackingChange: 219>
+	'GraphicsSceneLeave': <Type.GraphicsSceneLeave: 220>
+	'User': <Type.User: 1000>
+	'MaxUser': <Type.MaxUser: 65535>
+	'__format__': <method '__format__' of 'int' objects>
+	'__new__': <function Enum.__new__ at 0x00000199CA271EE0>
+	'_missing_': <built-in method _missing_ of EnumType object at 0x00000199CA11EB70>
+	'__sip__': <capsule object NULL at 0x00000199CA2C23D0>
+}
