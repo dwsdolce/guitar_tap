@@ -100,6 +100,11 @@ class DrawFft(FigureCanvasQTAgg):
         # y axis limits
         self.fft_axes.set_ylim(-100, 0)
 
+        # Set axis labels
+        self.fft_axes.set_ylabel('FFT Magnitude (dB)')
+        self.fft_axes.set_xlabel('Frequency (Hz)')
+        self.fft_axes.set_title('FFT Peaks')
+
         # Open the audio stream
         self.stream = audio_stream.open(format = pyaudio.paFloat32, channels = 1,
                 rate = self.fft_data.sample_freq, input = True,
