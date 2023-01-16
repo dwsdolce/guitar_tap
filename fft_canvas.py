@@ -141,6 +141,9 @@ class DrawFft(FigureCanvasQTAgg):
                 self.fig.canvas.draw()
 
     def set_peak_hold(self, peak_hold):
+        """ Flag to enable/disable the holding of peaks. I.e. if it is false
+            the it free runs (and averaging is disabled).
+        """
         self.peak_hold = peak_hold
 
     def set_fmin(self, fmin):
@@ -224,11 +227,7 @@ class DrawFft(FigureCanvasQTAgg):
                                 bounded_peaks_freq_min_index:bounded_peaks_freq_max_index]
                         self.bounded_scatter_peaks = np.vstack(
                                 (bounded_peaks_freq, bounded_peaks_mag)).T
-                        data_len = np.size(bounded_peaks_freq)
-                        notes = np.arange(0, data_len)
-                        cents = np.arange(0, data_len)
-                        peaks_data = np.vstack(
-                                (bounded_peaks_freq, bounded_peaks_mag)).T
+                        peaks_data = np.vstack( (bounded_peaks_freq, bounded_peaks_mag)).T
                         self.peaks_signal.emit(peaks_data)
                         if not self.skip:
                             self.skip = True

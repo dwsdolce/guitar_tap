@@ -10,83 +10,127 @@ import threshold_slider as TS
 import fft_canvas as fft_c
 import pitch as pitch_c
 
+# pylint: disable=too-few-public-methods
 class PeaksFilterModel(QtCore.QSortFilterProxyModel):
-    def __init__(self):
-        super().__init__()
+    """ Add a custom filter to handle the sorting of the columns. This is required
+        due to the value displayed in the table being a string but we want to sort
+        on the original numeric data or, for the case of cents on the absolute
+        value of the cents.
+    """
 
+    # pylint: disable=invalid-name
     def lessThan(self, left, right):
-        less_than = True
-        if (left.column() == 0) or (left.column() == 1):
-            # Sort by numeric value (assumes left and right column are the same)
-            # Use the python value instead of the numpy value so that a bool is returned instead of a
-            # numpy.bool_.
-            less_than = self.sourceModel().dataValue(left) < self.sourceModel().dataValue(right)
-            less_than = less_than.item()
-        elif left.column() == 2:
-            # Use the freq to define order
-            # Use the python value instead of the numpy value so that a bool is returned instead of a
-            # numpy.bool_.
-            left_freq = self.sourceModel().freqValue(left)
-            right_freq  = self.sourceModel().freqValue(right)
-            less_than = left_freq < right_freq
-            less_than = less_than.item()
-        elif left.column() == 3:
-            # Sort by absolute value of cents (so +/-3 is less than +/- 4)
-            left_cents = self.sourceModel().pitch.cents(self.sourceModel().freqValue(left))
-            right_cents = self.sourceModel().pitch.cents(self.sourceModel().freqValue(right))
-            less_than = abs(left_cents) < abs(right_cents)
+        """ Calculate per the class description. """
+        match left.column():
+            case 0 | 1:
+                # Sort by numeric value (assumes left and right column are the same)
+                # Use the python value instead of the numpy value so that a bool is
+                # returned instead of a numpy.bool_.
+                less_than = (self.sourceModel().data_value(left) <
+                             self.sourceModel().data_value(right))
+                less_than = less_than.item()
+            case 2:
+                # Use the freq to define order
+                # Use the python value instead of the numpy value so that a bool is
+                # returned instead of a numpy.bool_.
+                left_freq = self.sourceModel().freq_value(left)
+                right_freq  = self.sourceModel().freq_value(right)
+                less_than = left_freq < right_freq
+                less_than = less_than.item()
+            case 3:
+                # Sort by absolute value of cents (so +/-3 is less than +/- 4)
+                left_cents = self.sourceModel().pitch.cents(self.sourceModel().freq_value(left))
+                right_cents = self.sourceModel().pitch.cents(self.sourceModel().freq_value(right))
+                less_than = abs(left_cents) < abs(right_cents)
+            case _:
+                less_than = True
         return less_than
 
 class PeaksModel(QtCore.QAbstractTableModel):
+    """ Custom data model to handle deriving pitch and cents from frequency. ALso defines
+        accessing the underlying data model.
+    """
     header_names = ['Frequency', 'Magnitude', 'Pitch', 'Cents']
     def __init__(self, data):
         super().__init__()
         self._data = data
         self.pitch = pitch_c.Pitch(440)
 
-    def freqValue(self, index):
+    def freq_value(self, index):
+        """ Return the frequency valuy from column 0 for the row """
         return self._data[index.row()][0]
 
-    def dataValue(self, index):
-        if (index.column() == 0) or (index.column() == 1):
-            return(self._data[index.row()][index.column()])
-        elif (indetemx.column() == 2) or (index.column() == 3):
-            return self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
-        return(QtCore.QVariant.QVariant())
+    def data_value(self, index):
+        """ Return the value from the data for cols 1/2 and the value in
+            the table for 3/4.
+        """
+        match index.column():
+            case 0 | 1:
+                value = self._data[index.row()][index.column()]
+            case 2 | 3:
+                value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
+            case _:
+                value = QtCore.QVariant()
+        return value
 
     def data(self, index, role):
-        if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            if (index.column() == 0) or (index.column() == 1):
-                value = self._data[index.row()][index.column()]
-                str_value = '{:.1f}'.format(value)
-            elif index.column() == 2:
-                value = self._data[index.row()][0]
-                str_value = self.pitch.note(value)
-            elif index.column() == 3:
-                value = self._data[index.row()][0]
-                str_value = '{:+.0f}'.format(self.pitch.cents(value))
-            else:
-                value = self._data[index.row()][index.column()]
-                str_value = str(value)
-            return str_value
-        elif role == QtCore.Qt.ItemDataRole.TextAlignmentRole:
-            return QtCore.Qt.AlignmentFlag.AlignRight
+        """ Return the requested data based on role. """
+        match role:
+            case QtCore.Qt.ItemDataRole.DisplayRole:
+                match index.column():
+                    case 0 | 1:
+                        value = self._data[index.row()][index.column()]
+                        str_value = f'{value:.1f}'
+                    case 2:
+                        value = self._data[index.row()][0]
+                        str_value = self.pitch.note(value)
+                    case 3:
+                        value = self._data[index.row()][0]
+                        str_value = f'{self.pitch.cents(value):+.0f}'
+                    case _:
+                        value = self._data[index.row()][index.column()]
+                        str_value = str(value)
+                return str_value
+            case QtCore.Qt.ItemDataRole.TextAlignmentRole:
+                return QtCore.Qt.AlignmentFlag.AlignRight
+            case _:
+                return QtCore.QVariant()
 
+    # pylint: disable=invalid-name
     def headerData(self, section, orientation, role):
-        if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            if orientation == QtCore.Qt.Orientation.Horizontal:
-                return self.header_names[section]
+        """ Return the header data """
+        match role:
+            case QtCore.Qt.ItemDataRole.DisplayRole:
+                match orientation:
+                    case QtCore.Qt.Orientation.Horizontal:
+                        return self.header_names[section]
+                    case _:
+                        return QtCore.QVariant()
+            case _:
+                return QtCore.QVariant()
 
+    # pylint: disable=invalid-name
     def updateData(self, data):
+        """ Update the data model from outside the object and
+            then update the table.
+        """
         self.layoutAboutToBeChanged.emit()
         self._data = data
         self.layoutChanged.emit()
         return True
 
-    def rowCount(self, index):
+    # pylint: disable=invalid-name
+    def rowCount(self, parent):
+        """ Return the number of rows """
+        if parent.isValid():
+            return 0
         return self._data.shape[0]
 
-    def columnCount(self, index):
+    # pylint: disable=invalid-name
+    def columnCount(self, parent):
+        """ Return the number of columnes """
+        if parent.isValid():
+            return 0
         return self._data.shape[1] + 2
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -305,7 +349,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Use custom QSortFilterProxyModel to define the sort
         proxy_model = PeaksFilterModel()
         proxy_model.setSourceModel(model)
-        peak_table.setModel(proxy_model) 
+        peak_table.setModel(proxy_model)
         peak_table.setSortingEnabled(True)
         peak_table.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
         peak_table.resizeColumnsToContents()
@@ -357,7 +401,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.toolbar.update()
         self.fft_canvas.set_fmax(self.max_spin.value())
-    
+
     #def eventFilter(self, object, event):
         #print("EventFilter")
         #print(event)
