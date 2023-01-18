@@ -26,26 +26,34 @@ def dft_anal(chunk, window_function, n_freq_samples):
 
     # size of positive spectrum, it includes sample 0
     half_n_freq_samples = (n_freq_samples // 2) + 1
+
     # half analysis window size by rounding
     half_time_samples_1 = (window_function.size + 1) // 2
+
     # half analysis window size by floor
     half_time_samples_2 = window_function.size // 2
+
     # initialize buffer for FFT
     fftbuffer = np.zeros(n_freq_samples)
+
     # normalize analysis window
     window_function = window_function / sum(window_function)
     windowed_chunk = chunk * window_function  # window the input sound
+
     # zero-phase window in fftbuffer
     fftbuffer[:half_time_samples_1] = windowed_chunk[half_time_samples_2:]
     fftbuffer[-half_time_samples_2:] = windowed_chunk[:half_time_samples_2]
     complex_fft = fft(fftbuffer)  # compute FFT
-    # compute ansolute value of positive side
+
+    # compute absolute value of positive side
     abs_fft = abs(complex_fft[:half_n_freq_samples])
+
     # if zeros add epsilon to handle log
     abs_fft[abs_fft < np.finfo(float).eps] = np.finfo(float).eps
+
     # magnitude spectrum of positive frequencies in dB
     magnitude = 20 * np.log10(abs_fft)
-    return magnitude, abs_fft
+    return magnitude, complex_fft[:half_n_freq_samples]
 
 def peak_detection(magnitude, threshold):
     """

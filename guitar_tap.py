@@ -143,6 +143,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     ampChanged = QtCore.pyqtSignal(int)
     peaksChanged = QtCore.pyqtSignal(np.ndarray)
+    averagesChanged = QtCore.pyqtSignal(int)
+    framerateUpdate = QtCore.pyqtSignal(float, float)
 
     def __init__(self):
         super().__init__()
@@ -157,10 +159,10 @@ class MainWindow(QtWidgets.QMainWindow):
         pixmapi = getattr(QtWidgets.QStyle.StandardPixmap, 'SP_MediaSkipBackward')
         restart_icon = self.style().standardIcon(pixmapi)
 
-        red_pixmap = QtGui.QPixmap('./icons/led_red.png')
-        self.red_icon = QtGui.QIcon(red_pixmap)
-        green_pixmap = QtGui.QPixmap('./icons/led_green.png')
-        self.green_icon = QtGui.QIcon(green_pixmap)
+        self.red_pixmap = QtGui.QPixmap('./icons/led_red.png')
+        self.red_icon = QtGui.QIcon(self.red_pixmap)
+        self.green_pixmap = QtGui.QPixmap('./icons/led_green.png')
+        self.green_icon = QtGui.QIcon(self.green_pixmap)
         #blue_pixmap = QtGui.QPixmap('./icons/led_blue.png')
         #blue_icon = QtGui.QIcon(blue_pixmap)
 
@@ -183,7 +185,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Add an fft Canvas
         f_range = {'f_min': 50, 'f_max': 1000}
         self.fft_canvas = fft_c.DrawFft(
-                self.ampChanged, self.peaksChanged, f_range, self.threshold)
+                self.ampChanged, self.peaksChanged, self.averagesChanged, 
+                self.framerateUpdate, f_range, self.threshold)
         self.fft_canvas.setMinimumSize(600, 400)
         self.toolbar = NavigationToolbar(self.fft_canvas, self)
 
@@ -211,14 +214,14 @@ class MainWindow(QtWidgets.QMainWindow):
         peak_hold_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         peak_hold_layout.addWidget(peak_hold_label)
 
-        peak_hold = QtWidgets.QToolButton()
-        peak_hold.setIcon(self.green_icon)
-        peak_hold.setIconSize(QtCore.QSize(21, 21))
-        peak_hold.setStyleSheet('border: none')
-        peak_hold.setCheckable(True)
-        peak_hold.setChecked(True)
-        peak_hold_layout.addWidget(peak_hold)
-        peak_hold.toggled.connect(self.set_peak_hold)
+        self.peak_hold = QtWidgets.QToolButton()
+        self.peak_hold.setIcon(self.green_icon)
+        self.peak_hold.setIconSize(QtCore.QSize(21, 21))
+        self.peak_hold.setStyleSheet('border: none')
+        self.peak_hold.setCheckable(True)
+        self.peak_hold.setChecked(True)
+        peak_hold_layout.addWidget(self.peak_hold)
+        self.peak_hold.toggled.connect(self.set_peak_hold)
 
         control_layout.addLayout(peak_hold_layout)
 
@@ -232,6 +235,26 @@ class MainWindow(QtWidgets.QMainWindow):
         averages_layout = QtWidgets.QVBoxLayout(avg_group_box)
 
         #.....
+        # Enable averaging
+        avg_enable_layout = QtWidgets.QHBoxLayout()
+        avg_enable_label = QtWidgets.QLabel("Averaging enabled")
+        avg_enable_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        avg_enable_layout.addWidget(avg_enable_label)
+
+        self.avg_enable = QtWidgets.QToolButton()
+        self.avg_enable.setIcon(self.red_icon)
+        self.avg_enable.setIconSize(QtCore.QSize(21, 21))
+        self.avg_enable.setStyleSheet('border: none')
+        self.avg_enable.setCheckable(True)
+        self.avg_enable.setChecked(False)
+        avg_enable_layout.addWidget(self.avg_enable)
+
+        self.avg_enable_saved = self.avg_enable.isChecked()
+        self.avg_enable.toggled.connect(self.set_avg_enable)
+
+        averages_layout.addLayout(avg_enable_layout)
+
+        #.....
         # Number of averages
         num_averages_layout = QtWidgets.QHBoxLayout()
 
@@ -239,8 +262,12 @@ class MainWindow(QtWidgets.QMainWindow):
         num_averages_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         num_averages_layout.addWidget(num_averages_label)
 
-        num_averages = QtWidgets.QSpinBox(main_widget)
-        num_averages_layout.addWidget(num_averages)
+        self.num_averages = QtWidgets.QSpinBox(main_widget)
+        self.num_averages.setMinimum(1)
+        self.num_averages.setMaximum(10)
+        self.num_averages.setValue(1)
+        self.num_averages.valueChanged.connect(self.fft_canvas.set_max_average_count)
+        num_averages_layout.addWidget(self.num_averages)
 
         averages_layout.addLayout(num_averages_layout)
 
@@ -252,11 +279,13 @@ class MainWindow(QtWidgets.QMainWindow):
         avg_completed_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         avg_completed_layout.addWidget(avg_completed_label)
 
-        avg_completed = QtWidgets.QLabel("0")
-        avg_completed.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        avg_completed_layout.addWidget(avg_completed)
+        self.avg_completed = QtWidgets.QLabel("0")
+        self.avg_completed.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        avg_completed_layout.addWidget(self.avg_completed)
 
         averages_layout.addLayout(avg_completed_layout)
+
+        self.averagesChanged.connect(self.set_avg_completed)
 
         #.....
         # Averaging done
@@ -266,12 +295,12 @@ class MainWindow(QtWidgets.QMainWindow):
         avg_done_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         avg_done_layout.addWidget(avg_done_label)
 
-        avg_done = QtWidgets.QLabel()
-        avg_done.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        avg_done.setMaximumSize(21, 21)
-        avg_done.setPixmap(red_pixmap)
-        avg_done.setScaledContents(True)
-        avg_done_layout.addWidget(avg_done)
+        self.avg_done = QtWidgets.QLabel()
+        self.avg_done.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.avg_done.setMaximumSize(21, 21)
+        self.avg_done.setPixmap(self.red_pixmap)
+        self.avg_done.setScaledContents(True)
+        avg_done_layout.addWidget(self.avg_done)
 
         averages_layout.addLayout(avg_done_layout)
 
@@ -283,9 +312,11 @@ class MainWindow(QtWidgets.QMainWindow):
         avg_restart_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         avg_restart_layout.addWidget(avg_restart_label)
 
-        avg_restart = QtWidgets.QPushButton()
-        avg_restart.setIcon(restart_icon)
-        avg_restart_layout.addWidget(avg_restart)
+        self.avg_restart = QtWidgets.QPushButton()
+        self.avg_restart.setIcon(restart_icon)
+        avg_restart_layout.addWidget(self.avg_restart)
+
+        self.avg_restart.clicked.connect(self.reset_averaging)
 
         averages_layout.addLayout(avg_restart_layout)
 
@@ -328,8 +359,27 @@ class MainWindow(QtWidgets.QMainWindow):
         control_layout.addLayout(min_max_layout)
 
         #.....
+        # Frame rate
+        framerate_layout = QtWidgets.QHBoxLayout()
+
+        framerate_label = QtWidgets.QLabel("Frame Rate/UpdateTime")
+        framerate_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        framerate_layout.addWidget(framerate_label)
+        self.framerate = QtWidgets.QLabel("0")
+        self.framerate.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        framerate_layout.addWidget(self.framerate)
+
+        self.updatetime = QtWidgets.QLabel("0")
+        self.updatetime.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        framerate_layout.addWidget(self.updatetime)
+
+        control_layout.addLayout(framerate_layout)
+
+        self.framerateUpdate.connect(self.set_framerate)
+
+        #.....
         # Add space at the bottom
-        control_layout.addSpacing(40)
+        control_layout.addSpacing(20)
 
         hlayout.addLayout(control_layout)
 
@@ -367,18 +417,57 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hlayout.addLayout(peaks_layout)
 
-    def set_peak_hold(self, checked):
+        #.....
+        # Set the averaging to false.
+        self.set_avg_enable(False)
+        self.set_peak_hold(False)
+        self.fft_canvas.set_max_average_count(self.num_averages.value())
+
+    def set_framerate(self, framerate, updatetime):
+        self.framerate.setText(f'{framerate:.3f}')
+        self.updatetime.setText(f'{updatetime:.3f}')
+
+    def set_avg_enable(self, checked):
         """ Change the icon color and also change the fft_plot
-            to do peak holding or not to do peak holding.
-            TODO: If peak holding is not set then the averaging controls
+            to do averaging or not.
+            TODO: If averaging is not set then the averaging controls
             need to be disabled.
         """
         if checked:
-            self.sender().setIcon(self.green_icon)
-            self.fft_canvas.set_peak_hold(True)
+            self.avg_enable.setIcon(self.green_icon)
+            self.fft_canvas.set_avg_enable(True)
+
+            self.num_averages.setEnabled(True)
+            self.avg_restart.setEnabled(True)
         else:
-            self.sender().setIcon(self.red_icon)
+            self.avg_enable.setIcon(self.red_icon)
+            self.fft_canvas.set_avg_enable(False)
+
+            # Now disable the items
+            self.num_averages.setEnabled(False)
+            self.avg_restart.setEnabled(False)
+
+
+    def set_peak_hold(self, checked):
+        """ Change the icon color and also change the fft_plot
+            to do peak holding or not to do peak holding.
+        """
+        if checked:
+            self.peak_hold.setIcon(self.green_icon)
+            self.fft_canvas.set_peak_hold(True)
+            # Save current state of avg_enable
+            # and disable it
+            # restore current state of avg_enable
+            self.set_avg_enable(self.avg_enable_saved)
+            self.avg_enable.setEnabled(True)
+        else:
+            self.peak_hold.setIcon(self.red_icon)
             self.fft_canvas.set_peak_hold(False)
+            # Save current state of avg_enable
+            # and disable it
+            self.avg_enable_saved = self.avg_enable.isChecked()
+            self.set_avg_enable(False)
+            self.avg_enable.setEnabled(False)
 
     def threshold_changed(self):
         """ Set the threshold used in fft_canvas
@@ -387,6 +476,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.threshold = self.threshold_slider.value()
         self.fft_canvas.set_threshold(self.threshold)
+
+    def reset_averaging(self):
+        self.fft_canvas.reset_averaging()
+        self.set_avg_completed(0)
+        self.avg_done.setPixmap(self.red_pixmap)
+
+    def set_avg_completed(self, count):
+        self.avg_completed.setText(str(count))
+        if count >= self.num_averages.value():
+            # Change the LED to Green
+            self.avg_done.setPixmap(self.green_pixmap)
 
     def fmin_changed(self):
         """ Change the minimum frequency used on on peak
