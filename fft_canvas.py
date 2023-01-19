@@ -15,6 +15,7 @@ from PyQt6 import QtCore
 import time
 
 import freq_anal as FA
+import microphone as microphone
 
 class PanAxes(Axes):
     """ Create a new projection so that we can override the start_pan
@@ -112,9 +113,7 @@ class DrawFft(FigureCanvasQTAgg):
         self.fft_axes.set_title('FFT Peaks')
 
         # Open the audio stream
-        self.stream = audio_stream.open(format = pyaudio.paFloat32, channels = 1,
-                rate = self.fft_data.sample_freq, input = True,
-                frames_per_buffer = self.fft_data.m_t)
+        self.mic = microphone.Microphone(rate = self.fft_data.sample_freq, chunksize = self.fft_data.m_t)
 
         # set the line and point plots and ini
         self.line, = self.fft_axes.plot([], [], lw=1)
@@ -138,11 +137,13 @@ class DrawFft(FigureCanvasQTAgg):
         self.lastupdate = time.time()
         self.fps = 0.0
 
-        # The interval time is dominated by the cost of updating the graph,
-        # which is around 340ms on current machine.
-        self.animation = FuncAnimation(self.fig, self.update_fft, frames=200,
-                interval=100, blit=True)
-                #interval=100, blit=False)
+        # Start the microphone
+        self.mic.start()
+
+        # Create timer for callbacks
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.update_fft)
+        self.timer.start(100)
 
     def update_axis(self, fmin, fmax, init = False):
         """ Update the mag_y and x_axis """
@@ -229,7 +230,7 @@ class DrawFft(FigureCanvasQTAgg):
             triggered = True
 
             bounded_peaks_freq_min_index = 0
-            bounded_peaks_freq_min_index = 0
+            bounded_peaks_freq_max_index = 0
             # Check the peaks to see if they are within the desired frequency range
             bounded_peaks_freq_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
             if len(bounded_peaks_freq_indices[0]) > 0:
@@ -255,7 +256,7 @@ class DrawFft(FigureCanvasQTAgg):
         self.line_threshold.set_data([0, self.threshold_x], [self.threshold_y, self.threshold_y])
 
     # methods for animation
-    def update_fft(self, _i):
+    def update_fft(self):
         """ Get a chunk from the audio stream, find the fft and interpolate the peaks.
         The rest is used to update the fft plot if the maximum of the fft magnitude
         is greater than the threshold value.
@@ -268,9 +269,12 @@ class DrawFft(FigureCanvasQTAgg):
         fps = 1.0/dt
         self.lastupdate = enter_now
 
-
         # Read Data
-        chunk = np.frombuffer(self.stream.read(self.fft_data.m_t), dtype=np.float32)
+        frames = self.mic.get_frames()
+        if len(frames) <= 0:
+            return
+
+        chunk = frames[-1]
 
         # Find DFT and amplitude
         mag_y_db, complex_fft = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
@@ -385,6 +389,8 @@ class DrawFft(FigureCanvasQTAgg):
 
             # Set line, points, and threshold
             self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
+
+        self.fig.canvas.draw()
 
         exit_now = time.time()
         dt = exit_now - enter_now
