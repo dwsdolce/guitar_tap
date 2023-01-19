@@ -7,7 +7,6 @@ from scipy.signal import get_window
 import pyaudio
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib import pyplot as plt
-from matplotlib.animation import FuncAnimation
 from matplotlib.axes import Axes
 from matplotlib.projections import register_projection
 from PyQt6 import QtCore
@@ -64,16 +63,15 @@ class FftData:
 class DrawFft(FigureCanvasQTAgg):
     """ Sample the audio stream and display the FFT
 
-    The fft is displayed using function animation and during the
-    chunk processing the interpolated peaks are found.
-    The threshold used to sample the peaks is the same as the
+    The fft is displayed using background audio capture and callback
+    for processing. During the chunk processing the interpolated peaks
+    are found.  The threshold used to sample the peaks is the same as the
     threshold used to decide if a new fft is displayed. The
     amplitude of the fft is emitted to the signal passed in the class
     constructor
     """
 
     hold = False
-    animation_running = True
     pan_running = QtCore.pyqtSignal(bool)
 
     def __init__(self, ampChanged, peaksChanged, averagesChanged, framerateUpdate, frange, threshold):
@@ -82,8 +80,6 @@ class DrawFft(FigureCanvasQTAgg):
 
         self.fft_axes = self.fig.subplots(
             subplot_kw={'projection': 'pan_projection', "pan_signal" : self.pan_running})
-
-        self.pan_running.connect(self.pan_animation)
 
         plt.grid(color='0.85')
         self.amp_signal = ampChanged
@@ -160,7 +156,6 @@ class DrawFft(FigureCanvasQTAgg):
                 self.fig.canvas.draw()
 
     def set_max_average_count(self, max_average_count):
-        print(f'DEBUG: Setting max_average_count to {max_average_count}')
         self.max_average_count = max_average_count
     
     def reset_averaging(self):
@@ -195,18 +190,6 @@ class DrawFft(FigureCanvasQTAgg):
         # Set threshold value for drawing threshold line
         self.threshold_x = self.fft_data.sample_freq//2
         self.threshold_y = self.threshold - 100
-
-    def pan_animation(self, in_pan):
-        """ Pause andd resume animation when in pan """
-        if in_pan:
-            if self.animation_running:
-                self.animation.pause()
-                self.animation_running = False
-        else:
-            if not self.animation_running:
-                self.animation.resume()
-                self.fig.canvas.draw()
-                self.animation_running = True
 
     def find_peaks(self, mag_y_db):
         # Find the interpolated peaks from the waveform
@@ -255,7 +238,7 @@ class DrawFft(FigureCanvasQTAgg):
         self.points.set_offsets(peaks)
         self.line_threshold.set_data([0, self.threshold_x], [self.threshold_y, self.threshold_y])
 
-    # methods for animation
+    # methods for processing chunk
     def update_fft(self):
         """ Get a chunk from the audio stream, find the fft and interpolate the peaks.
         The rest is used to update the fft plot if the maximum of the fft magnitude
@@ -287,15 +270,12 @@ class DrawFft(FigureCanvasQTAgg):
             # Is holding peaks flag set?
             if self.peak_hold:
                 # Is the hold flag True
-                print(f"DEBUG: hold = {self.hold}")
                 if self.hold:
                     self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
                 else:
                     # Is Averaging enabled:
                     if self.avg_enable:
                         # Have the maximum number of averages been found
-                        print(f'DEBUG: num_averages = {self.num_averages}')
-                        print(f'DEBUG: self.max_average_count = {self.max_average_count}')
                         if self.num_averages < self.max_average_count:
                             # DWS Calculate FFT Complex Average
                             # Calculate average based on the magnitude of the FFT - ignore phase since it is
@@ -321,7 +301,6 @@ class DrawFft(FigureCanvasQTAgg):
                             avg_mag_y_db = 20 * np.log10(avg_mag_y)
 
                             avg_amplitude = np.max(avg_mag_y_db) + 100
-                            print(f'DEBUG: avg_amplitude = {avg_amplitude}')
                             if avg_amplitude > self.threshold:
                                 # Find peaks using average mag_y_db
                                 triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
