@@ -130,7 +130,8 @@ class DrawFft(FigureCanvasQTAgg):
 
         # Saved averaging data
         self.max_average_count = 1
-        self.complex_fft_sum = []
+        # DWS self.complex_fft_sum = []
+        self.mag_y_sum = []
         self.num_averages = 0
 
         # For framerate calculation
@@ -292,18 +293,28 @@ class DrawFft(FigureCanvasQTAgg):
                         print(f'DEBUG: num_averages = {self.num_averages}')
                         print(f'DEBUG: self.max_average_count = {self.max_average_count}')
                         if self.num_averages < self.max_average_count:
-                            # Calculate FFT Complex Average
+                            # DWS Calculate FFT Complex Average
+                            # Calculate average based on the magnitude of the FFT - ignore phase since it is
+                            # highly variable.
+                            mag_y = abs(complex_fft)
                             if self.num_averages > 0:
-                                complex_fft_sum = self.complex_fft_sum + complex_fft
+                                # DWS complex_fft_sum = self.complex_fft_sum + complex_fft
+                                mag_y_sum = self.mag_y_sum + mag_y
                             else:
-                                complex_fft_sum = complex_fft
+                                # DWS complex_fft_sum = complex_fft
+                                mag_y_sum = mag_y
                             num_averages = self.num_averages + 1
 
-                            complex_fft_sum  = complex_fft_sum/num_averages
+                            # DWS avg_complex_fft  = complex_fft_sum/num_averages
+                            avg_mag_y = mag_y_sum/num_averages
 
-                            abs_fft = abs(complex_fft_sum)
-                            abs_fft[abs_fft < np.finfo(float).eps] = np.finfo(float).eps
-                            avg_mag_y_db = 20 * np.log10(abs_fft)
+                            # DWS avg_mag_complex = abs(avg_complex_fft)
+
+                            # DWS avg_mag_complex[avg_mag_complex < np.finfo(float).eps] = np.finfo(float).eps
+                            avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
+
+                            #avg_mag_y_db = 20 * np.log10(avg_mag_complex)
+                            avg_mag_y_db = 20 * np.log10(avg_mag_y)
 
                             avg_amplitude = np.max(avg_mag_y_db) + 100
                             print(f'DEBUG: avg_amplitude = {avg_amplitude}')
@@ -316,10 +327,13 @@ class DrawFft(FigureCanvasQTAgg):
                                     self.set_draw_data(avg_mag_y_db, avg_peaks)
 
                                     # Save Complex FFT for average
-                                    self.complex_fft_sum = complex_fft_sum
+                                    # DWS self.complex_fft_sum = complex_fft_sum
+                                    self.mag_y_sum = mag_y_sum
+
                                     # Save num_averages and emit num_averages signal
                                     self.num_averages = num_averages
                                     self.averages_signal.emit(int(self.num_averages))
+
                                     # Save mag_y_db and peaks
                                     self.saved_mag_y_db = avg_mag_y_db
                                     self.saved_peaks = avg_peaks
