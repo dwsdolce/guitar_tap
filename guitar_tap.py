@@ -144,7 +144,7 @@ class MainWindow(QtWidgets.QMainWindow):
     ampChanged = QtCore.pyqtSignal(int)
     peaksChanged = QtCore.pyqtSignal(np.ndarray)
     averagesChanged = QtCore.pyqtSignal(int)
-    framerateUpdate = QtCore.pyqtSignal(float, float)
+    framerateUpdate = QtCore.pyqtSignal(float, float, float)
 
     def __init__(self):
         super().__init__()
@@ -362,12 +362,16 @@ class MainWindow(QtWidgets.QMainWindow):
         # Frame rate
         framerate_layout = QtWidgets.QHBoxLayout()
 
-        framerate_label = QtWidgets.QLabel("Frame Rate/UpdateTime")
+        framerate_label = QtWidgets.QLabel("FrameRate/SampleTime/UpdateTime")
         framerate_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         framerate_layout.addWidget(framerate_label)
         self.framerate = QtWidgets.QLabel("0")
         self.framerate.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         framerate_layout.addWidget(self.framerate)
+
+        self.sampletime = QtWidgets.QLabel("0")
+        self.sampletime.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        framerate_layout.addWidget(self.sampletime)
 
         self.updatetime = QtWidgets.QLabel("0")
         self.updatetime.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
@@ -423,8 +427,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_peak_hold(False)
         self.fft_canvas.set_max_average_count(self.num_averages.value())
 
-    def set_framerate(self, framerate, updatetime):
+    def set_framerate(self, framerate, sampletime, updatetime):
         self.framerate.setText(f'{framerate:.3f}')
+        self.sampletime.setText(f'{sampletime:.3f}')
         self.updatetime.setText(f'{updatetime:.3f}')
 
     def set_avg_enable(self, checked):

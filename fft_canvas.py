@@ -96,7 +96,12 @@ class DrawFft(FigureCanvasQTAgg):
         #self.fft_data = FftData(44100, 15001)
         self.fft_data = FftData(11025, 16384)
 
-        self.set_threshold(threshold)
+        #self.set_threshold(threshold)
+        self.threshold = threshold
+
+        # Set threshold value for drawing threshold line
+        self.threshold_x = self.fft_data.sample_freq//2
+        self.threshold_y = self.threshold - 100
 
         self.update_axis(frange['f_min'], frange['f_max'], True)
 
@@ -191,6 +196,9 @@ class DrawFft(FigureCanvasQTAgg):
         self.threshold_x = self.fft_data.sample_freq//2
         self.threshold_y = self.threshold - 100
 
+        self.line_threshold.set_data([0, self.threshold_x], [self.threshold_y, self.threshold_y])
+        self.fig.canvas.draw()
+
     def find_peaks(self, mag_y_db):
         # Find the interpolated peaks from the waveform
         # This must be done again since it may be using an average waveform.
@@ -245,17 +253,18 @@ class DrawFft(FigureCanvasQTAgg):
         is greater than the threshold value.
         """
 
-        enter_now = time.time()
-        dt = enter_now - self.lastupdate
-        if dt <= 0:
-            dt = 0.000000000001
-        fps = 1.0/dt
-        self.lastupdate = enter_now
 
         # Read Data
         frames = self.mic.get_frames()
         if len(frames) <= 0:
             return
+
+        enter_now = time.time()
+        sample_dt = enter_now - self.lastupdate
+        if sample_dt <= 0:
+            sample_dt = 0.000000000001
+        fps = 1.0/sample_dt
+        self.lastupdate = enter_now
 
         chunk = frames[-1]
 
@@ -321,7 +330,7 @@ class DrawFft(FigureCanvasQTAgg):
                                     self.saved_mag_y_db = avg_mag_y_db
                                     self.saved_peaks = avg_peaks
                                     # Set Hold Flag True
-                                    self.hold = True
+                                    #self.hold = True
                                 else:
                                     # Draw Saved mag_y_db and peaks
                                     # Draw threshold
@@ -347,7 +356,7 @@ class DrawFft(FigureCanvasQTAgg):
                             # Draw threshold
                             # Set hold flag True
                             self.set_draw_data(mag_y_db, peaks)
-                            self.hold = True
+                            #self.hold = True
                         else:
                             # Draw Saved mag_y_db and peaks
                             # Draw threshold
@@ -372,7 +381,9 @@ class DrawFft(FigureCanvasQTAgg):
         self.fig.canvas.draw()
 
         exit_now = time.time()
-        dt = exit_now - enter_now
-        self.framerate_signal.emit(float(fps), float(dt))
+        processing_dt = exit_now - enter_now
+        if processing_dt <= 0:
+            processing_dt = 0.000000000001
+        self.framerate_signal.emit(float(fps), float(sample_dt), float(processing_dt))
 
         return self.line, self.points, self.line_threshold
