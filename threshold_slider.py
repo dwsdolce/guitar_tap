@@ -53,12 +53,11 @@ class ThresholdSlider(QtWidgets.QSlider):
         super().__init__(*args, **kwargs)
         self.setStyleSheet(STYLE_SHEET)
         self.setStyle(ProxyStyle())
-        self.setTickPosition(QtWidgets.QSlider.TickPosition.NoTicks)
         self.setMinimum(0)
         self.setMaximum(100)
         self.setValue(50)
         self.setTickPosition(QtWidgets.QSlider.TickPosition.NoTicks)
-        self.setTickInterval(1)
+        self.setTickInterval(10)
         self.setSingleStep(1)
         self.setPageStep(10)
 
@@ -100,13 +99,31 @@ class ThresholdSlider(QtWidgets.QSlider):
         qp.drawRect(grooveTop, grooveLeft, grooveWidth, grooveHeight)
 
         # Draw the tick marks on the amplitude
-        qp.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.lightGray, 1,
-            QtCore.Qt.PenStyle.SolidLine))
-        nTicks = 40
+        qp.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.green, 1, QtCore.Qt.PenStyle.SolidLine))
+        nTicks = 50
         for i in range(nTicks):
             x = (grooveRect.width()*i)//nTicks
-            if x < grooveWidth:
+            if x < grooveRect.width():
                 qp.drawLine(x, grooveRect.top(), x, grooveRect.bottom())
+
+        qp.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.green, 2, QtCore.Qt.PenStyle.SolidLine))
+
+        # Draw major tick marks
+        nTicks = 10
+        for i in range(nTicks):
+            x = (grooveRect.width()*i)//nTicks
+            if x <= grooveRect.width():
+                qp.drawLine(x, grooveRect.top(), x, grooveRect.bottom())
+
+        # Draw recessed border
+        qp.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.black, 1, QtCore.Qt.PenStyle.SolidLine))
+        qp.drawLine(0, 0, self.width(), 0)
+        qp.drawLine(0, 0, 0, self.height())
+        qp.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1, QtCore.Qt.PenStyle.SolidLine))
+        qp.drawLine(0, self.height(), self.width(), self.height())
+        qp.drawLine(self.width(), 0, self.width(), self.height())
+
+
 
         qp.restore()
 

@@ -87,7 +87,6 @@ class DrawFft(FigureCanvasQTAgg):
         self.averages_signal = averagesChanged
         self.framerate_signal = framerateUpdate
 
-        self.peak_hold = True
         self.avg_enable = False
 
         # Get an audio stream
@@ -130,7 +129,6 @@ class DrawFft(FigureCanvasQTAgg):
 
         # Saved averaging data
         self.max_average_count = 1
-        # DWS self.complex_fft_sum = []
         self.mag_y_sum = []
         self.num_averages = 0
 
@@ -158,6 +156,8 @@ class DrawFft(FigureCanvasQTAgg):
 
             self.fft_axes.set_xlim(fmin, fmax)
             if not init:
+                # Update the Peaks
+                self.find_peaks(self.saved_mag_y_db)
                 self.fig.canvas.draw()
 
     def set_max_average_count(self, max_average_count):
@@ -171,11 +171,11 @@ class DrawFft(FigureCanvasQTAgg):
         """
         self.avg_enable = avg_enable
 
-    def set_peak_hold(self, peak_hold):
+    def set_hold_results(self, hold_results):
         """ Flag to enable/disable the holding of peaks. I.e. if it is false
             the it free runs (and averaging is disabled).
         """
-        self.peak_hold = peak_hold
+        self.hold_results = hold_results
 
     def set_fmin(self, fmin):
         """ As it says """
@@ -197,9 +197,15 @@ class DrawFft(FigureCanvasQTAgg):
         self.threshold_y = self.threshold - 100
 
         self.line_threshold.set_data([0, self.threshold_x], [self.threshold_y, self.threshold_y])
+
+        self.find_peaks(self.saved_mag_y_db)
         self.fig.canvas.draw()
 
     def find_peaks(self, mag_y_db):
+        if not np.any(mag_y_db):
+            return False, self.saved_peaks
+
+
         # Find the interpolated peaks from the waveform
         # This must be done again since it may be using an average waveform.
         ploc = FA.peak_detection(mag_y_db, self.threshold - 100)
@@ -235,7 +241,11 @@ class DrawFft(FigureCanvasQTAgg):
                 bounded_peaks_mag = peaks_mag[bounded_peaks_freq_min_index:bounded_peaks_freq_max_index]
                 peaks_data = np.vstack( (bounded_peaks_freq, bounded_peaks_mag)).T
                 self.peaks_signal.emit(peaks_data)
+            else:
+                self.peaks_signal.emit(np.vstack(([], [])).T)
         else:
+            self.saved_peaks = np.vstack(([], [])).T
+            self.peaks_signal.emit(self.saved_peaks)
             triggered = False
 
         return  triggered, peaks
@@ -269,113 +279,86 @@ class DrawFft(FigureCanvasQTAgg):
         chunk = frames[-1]
 
         # Find DFT and amplitude
-        mag_y_db, complex_fft = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
+        mag_y_db, mag_y = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
 
         amplitude = np.max(mag_y_db) + 100
         self.amp_signal.emit(int(amplitude))
 
-        # Is Amplitude above the threshold
-        if amplitude > self.threshold:
-            # Is holding peaks flag set?
-            if self.peak_hold:
-                # Is the hold flag True
-                if self.hold:
-                    self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-                else:
-                    # Is Averaging enabled:
-                    if self.avg_enable:
-                        # Have the maximum number of averages been found
-                        if self.num_averages < self.max_average_count:
-                            # DWS Calculate FFT Complex Average
-                            # Calculate average based on the magnitude of the FFT - ignore phase since it is
-                            # highly variable.
-                            mag_y = abs(complex_fft)
-                            if self.num_averages > 0:
-                                # DWS complex_fft_sum = self.complex_fft_sum + complex_fft
-                                mag_y_sum = self.mag_y_sum + mag_y
-                            else:
-                                # DWS complex_fft_sum = complex_fft
-                                mag_y_sum = mag_y
-                            num_averages = self.num_averages + 1
+        # Is hold_results set?
+        if self.hold_results:
+            self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
 
-                            # DWS avg_complex_fft  = complex_fft_sum/num_averages
-                            avg_mag_y = mag_y_sum/num_averages
-
-                            # DWS avg_mag_complex = abs(avg_complex_fft)
-
-                            # DWS avg_mag_complex[avg_mag_complex < np.finfo(float).eps] = np.finfo(float).eps
-                            avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
-
-                            #avg_mag_y_db = 20 * np.log10(avg_mag_complex)
-                            avg_mag_y_db = 20 * np.log10(avg_mag_y)
-
-                            avg_amplitude = np.max(avg_mag_y_db) + 100
-                            if avg_amplitude > self.threshold:
-                                # Find peaks using average mag_y_db
-                                triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
-                                if triggered:
-                                    # Draw avg_mag_db and avg_peaks
-                                    # Draw threshold
-                                    self.set_draw_data(avg_mag_y_db, avg_peaks)
-
-                                    # Save Complex FFT for average
-                                    # DWS self.complex_fft_sum = complex_fft_sum
-                                    self.mag_y_sum = mag_y_sum
-
-                                    # Save num_averages and emit num_averages signal
-                                    self.num_averages = num_averages
-                                    self.averages_signal.emit(int(self.num_averages))
-
-                                    # Save mag_y_db and peaks
-                                    self.saved_mag_y_db = avg_mag_y_db
-                                    self.saved_peaks = avg_peaks
-                                    # Set Hold Flag True
-                                    #self.hold = True
-                                else:
-                                    # Draw Saved mag_y_db and peaks
-                                    # Draw threshold
-                                    # Set Hold Flag False
-                                    self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-
-                            else:
-                                # Draw Saved mag_y_db and peaks
-                                # Draw threshold
-                                # Set Hold Flag False
-                                self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-                                self.hold = False
-                        else:
-                            # Draw Saved mag_y_db and peaks
-                            # Draw threshold
-                            self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
+        # Is Amplitude above the threshold?
+        elif amplitude > self.threshold:
+            # Is Averaging enabled:
+            if self.avg_enable:
+                # Have the maximum number of averages been found
+                if self.num_averages < self.max_average_count:
+                    # Calculate average based on the magnitude of the FFT -
+                    # ignore phase since it is highly variable.
+                    if self.num_averages > 0:
+                        mag_y_sum = self.mag_y_sum + mag_y
                     else:
-                        # Find peaks
-                        triggered, peaks = self.find_peaks(mag_y_db)
-                        # Were Peaks Triggered?
+                        mag_y_sum = mag_y
+                    num_averages = self.num_averages + 1
+
+                    avg_mag_y = mag_y_sum/num_averages
+
+                    avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
+
+                    avg_mag_y_db = 20 * np.log10(avg_mag_y)
+
+                    avg_amplitude = np.max(avg_mag_y_db) + 100
+                    if avg_amplitude > self.threshold:
+                        # Find peaks using average mag_y_db
+                        triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
                         if triggered:
-                            # Draw mag_y_db and peaks
+                            # Draw avg_mag_db and avg_peaks
                             # Draw threshold
-                            # Set hold flag True
-                            self.set_draw_data(mag_y_db, peaks)
-                            #self.hold = True
+                            self.set_draw_data(avg_mag_y_db, avg_peaks)
+
+                            # Save magnitude FFT for average
+                            self.mag_y_sum = mag_y_sum
+
+                            # Save num_averages and emit num_averages signal
+                            self.num_averages = num_averages
+                            self.averages_signal.emit(int(self.num_averages))
+
+                            # Save mag_y_db and peaks
+                            self.saved_mag_y_db = avg_mag_y_db
+                            self.saved_peaks = avg_peaks
+                            # Set Hold Flag True
                         else:
                             # Draw Saved mag_y_db and peaks
                             # Draw threshold
+                            # Set Hold Flag False
                             self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
+
+                    else:
+                        # Draw Saved mag_y_db and peaks
+                        # Draw threshold
+                        # Set Hold Flag False
+                        self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
+                else:
+                    # Draw Saved mag_y_db and peaks
+                    # Draw threshold
+                    self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
             else:
-                # Draw mag_y_db and peaks
-                # Draw threshold
                 # Find peaks
                 triggered, peaks = self.find_peaks(mag_y_db)
-
-                # Set line, points, and threshold
-                self.set_draw_data(mag_y_db, peaks)
+                # Were Peaks Triggered?
+                if triggered:
+                    # Draw mag_y_db and peaks
+                    # Draw threshold
+                    # Set hold flag True
+                    self.set_draw_data(mag_y_db, peaks)
+                else:
+                    # Draw Saved mag_y_db and peaks
+                    # Draw threshold
+                    self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
         else:
             # Draw Saved mag_y_db and peaks
             # Draw threshold
-            # Set Hold Flag False
-            self.hold = False
-
-            # Set line, points, and threshold
             self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
 
         self.fig.canvas.draw()

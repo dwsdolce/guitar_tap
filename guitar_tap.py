@@ -10,6 +10,11 @@ import threshold_slider as TS
 import fft_canvas as fft_c
 import pitch as pitch_c
 
+class MyNavigationToolbar(NavigationToolbar):
+    def home(self, *args):
+        axes = self.canvas.fft_axes.set_ylim(-100,0)
+        super().home()
+
 # pylint: disable=too-few-public-methods
 class PeaksFilterModel(QtCore.QSortFilterProxyModel):
     """ Add a custom filter to handle the sorting of the columns. This is required
@@ -17,7 +22,6 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
         on the original numeric data or, for the case of cents on the absolute
         value of the cents.
     """
-
     # pylint: disable=invalid-name
     def lessThan(self, left, right):
         """ Calculate per the class description. """
@@ -177,18 +181,19 @@ class MainWindow(QtWidgets.QMainWindow):
         # Add the slider
         self.threshold_slider = TS.ThresholdSlider(QtCore.Qt.Orientation.Horizontal)
         plot_layout.addWidget(self.threshold_slider)
+
         self.threshold = 50
         self.threshold_slider.valueChanged.connect(self.threshold_changed)
 
         self.ampChanged.connect(self.threshold_slider.set_amplitude)
 
         # Add an fft Canvas
-        f_range = {'f_min': 50, 'f_max': 1000}
+        f_range = {'f_min': 75, 'f_max': 350}
         self.fft_canvas = fft_c.DrawFft(
                 self.ampChanged, self.peaksChanged, self.averagesChanged, 
                 self.framerateUpdate, f_range, self.threshold)
         self.fft_canvas.setMinimumSize(600, 400)
-        self.toolbar = NavigationToolbar(self.fft_canvas, self)
+        self.toolbar = MyNavigationToolbar(self.fft_canvas, self)
 
         self.fft_canvas.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         self.fft_canvas.setFocus()
@@ -209,21 +214,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #.....
         # Enable Peak hold
-        peak_hold_layout = QtWidgets.QHBoxLayout()
-        peak_hold_label = QtWidgets.QLabel("Peak hold")
-        peak_hold_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-        peak_hold_layout.addWidget(peak_hold_label)
+        hold_results_layout = QtWidgets.QHBoxLayout()
+        hold_results_label = QtWidgets.QLabel("Hold results")
+        hold_results_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        hold_results_layout.addWidget(hold_results_label)
 
-        self.peak_hold = QtWidgets.QToolButton()
-        self.peak_hold.setIcon(self.green_icon)
-        self.peak_hold.setIconSize(QtCore.QSize(21, 21))
-        self.peak_hold.setStyleSheet('border: none')
-        self.peak_hold.setCheckable(True)
-        self.peak_hold.setChecked(True)
-        peak_hold_layout.addWidget(self.peak_hold)
-        self.peak_hold.toggled.connect(self.set_peak_hold)
+        self.hold_results = QtWidgets.QToolButton()
+        self.hold_results.setIcon(self.green_icon)
+        self.hold_results.setIconSize(QtCore.QSize(21, 21))
+        self.hold_results.setStyleSheet('border: none')
+        self.hold_results.setCheckable(True)
+        self.hold_results.setChecked(True)
+        hold_results_layout.addWidget(self.hold_results)
+        self.hold_results.toggled.connect(self.set_hold_results)
 
-        control_layout.addLayout(peak_hold_layout)
+        control_layout.addLayout(hold_results_layout)
 
         #.....
         # Averages Group Box
@@ -424,7 +429,7 @@ class MainWindow(QtWidgets.QMainWindow):
         #.....
         # Set the averaging to false.
         self.set_avg_enable(False)
-        self.set_peak_hold(False)
+        self.set_hold_results(False)
         self.fft_canvas.set_max_average_count(self.num_averages.value())
 
     def set_framerate(self, framerate, sampletime, updatetime):
@@ -453,26 +458,28 @@ class MainWindow(QtWidgets.QMainWindow):
             self.avg_restart.setEnabled(False)
 
 
-    def set_peak_hold(self, checked):
+    def set_hold_results(self, checked):
         """ Change the icon color and also change the fft_plot
             to do peak holding or not to do peak holding.
         """
         if checked:
-            self.peak_hold.setIcon(self.green_icon)
-            self.fft_canvas.set_peak_hold(True)
-            # Save current state of avg_enable
-            # and disable it
-            # restore current state of avg_enable
-            self.set_avg_enable(self.avg_enable_saved)
-            self.avg_enable.setEnabled(True)
-        else:
-            self.peak_hold.setIcon(self.red_icon)
-            self.fft_canvas.set_peak_hold(False)
+            self.hold_results.setIcon(self.green_icon)
+            self.fft_canvas.set_hold_results(True)
+
             # Save current state of avg_enable
             # and disable it
             self.avg_enable_saved = self.avg_enable.isChecked()
             self.set_avg_enable(False)
             self.avg_enable.setEnabled(False)
+        else:
+            self.hold_results.setIcon(self.red_icon)
+            self.fft_canvas.set_hold_results(False)
+
+            # Save current state of avg_enable
+            # and enable it
+            # restore current state of avg_enable
+            self.set_avg_enable(self.avg_enable_saved)
+            self.avg_enable.setEnabled(True)
 
     def threshold_changed(self):
         """ Set the threshold used in fft_canvas

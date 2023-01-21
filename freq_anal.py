@@ -53,7 +53,7 @@ def dft_anal(chunk, window_function, n_freq_samples):
 
     # magnitude spectrum of positive frequencies in dB
     magnitude = 20 * np.log10(abs_fft)
-    return magnitude, complex_fft[:half_n_freq_samples]
+    return magnitude, abs_fft
 
 def peak_detection(magnitude, threshold):
     """
