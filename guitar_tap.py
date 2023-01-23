@@ -255,9 +255,9 @@ class MainWindow(QtWidgets.QMainWindow):
         num_averages_layout.addWidget(num_averages_label)
 
         self.num_averages = QtWidgets.QSpinBox(main_widget)
-        self.num_averages.setMinimum(1)
+        self.num_averages.setMinimum(0)
         self.num_averages.setMaximum(10)
-        self.num_averages.setValue(1)
+        self.num_averages.setValue(0)
         self.num_averages.valueChanged.connect(self.fft_canvas.set_max_average_count)
         num_averages_layout.addWidget(self.num_averages)
 
@@ -291,6 +291,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.avg_done.setPixmap(self.red_pixmap)
         self.avg_done.setScaledContents(True)
         avg_done_layout.addWidget(self.avg_done)
+
+        self.avg_done_flag = False
 
         averages_layout.addLayout(avg_done_layout)
 
@@ -458,14 +460,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.avg_enable.setIcon(self.green_icon)
             self.fft_canvas.set_avg_enable(True)
 
-            self.num_averages.setEnabled(True)
             self.avg_restart.setEnabled(True)
+
         else:
             self.avg_enable.setIcon(self.red_icon)
             self.fft_canvas.set_avg_enable(False)
 
             # Now disable the items
-            self.num_averages.setEnabled(False)
             self.avg_restart.setEnabled(False)
 
 
@@ -482,6 +483,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.avg_enable_saved = self.avg_enable.isChecked()
             self.set_avg_enable(False)
             self.avg_enable.setEnabled(False)
+
+            if self.avg_enable.isChecked():
+                self.avg_restart.setEnabled(True)
+            else:
+                self.avg_restart.setEnabled(False)
 
             self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.SingleSelection);
         else:
@@ -509,12 +515,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fft_canvas.reset_averaging()
         self.set_avg_completed(0)
         self.avg_done.setPixmap(self.red_pixmap)
+        if self.hold_results.isChecked():
+            self.hold_results.click()
 
     def set_avg_completed(self, count):
         self.avg_completed.setText(str(count))
         if count >= self.num_averages.value():
             # Change the LED to Green
             self.avg_done.setPixmap(self.green_pixmap)
+
+            self.avg_done_flag = True
+            self.num_averages.setEnabled(True)
+            self.avg_restart.setEnabled(True)
+
+            self.hold_results.click()
+        else:
+            self.avg_done_flag = False
+            self.num_averages.setEnabled(False)
+            self.avg_restart.setEnabled(False)
+            self.avg_enable.setEnabled(False)
 
     def fmin_changed(self):
         """ Change the minimum frequency used on on peak
