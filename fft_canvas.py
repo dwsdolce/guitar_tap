@@ -16,36 +16,6 @@ import time
 import freq_anal as FA
 import microphone as microphone
 
-class PanAxes(Axes):
-    """ Create a new projection so that we can override the start_pan
-        and stop_pan methods.
-        """
-    name = 'pan_projection'
-
-    def __init__(self, * args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.clear()
-
-    # Disable since pylint does not know that this is
-    # used by the  __init__ for the kwargs """
-    # pylint: disable=attribute-defined-outside-init
-    def set_pan_signal(self, pan_signal):
-        """ Required setter for the pan_signal kw_args passed to subplot
-        """
-        self.pan_signal = pan_signal
-
-    def start_pan(self, x, y, button):
-        """ SIgnal that pan has started """
-        self.pan_signal.emit(True)
-        super().start_pan(x, y, button)
-
-    def end_pan(self):
-        """ SIgnal that pan has ended """
-        self.pan_signal.emit(False)
-        super().end_pan()
-
-register_projection(PanAxes)
-
 @dataclass
 class FftData:
     """ Data used to drive the FFT calculations
@@ -73,21 +43,20 @@ class DrawFft(FigureCanvasQTAgg):
     """
 
     hold = False
-    pan_running = QtCore.pyqtSignal(bool)
 
-    def __init__(self, ampChanged, peaksChanged, averagesChanged, framerateUpdate, peakSelected, frange, threshold):
+    peakSelected = QtCore.pyqtSignal(int)
+    peaksChanged = QtCore.pyqtSignal(np.ndarray)
+    ampChanged = QtCore.pyqtSignal(int)
+    averagesChanged = QtCore.pyqtSignal(int)
+    framerateUpdate = QtCore.pyqtSignal(float, float, float)
+
+    def __init__(self, frange, threshold):
         self.fig = plt.figure(figsize = (5, 3))
         super().__init__(self.fig)
 
-        self.fft_axes = self.fig.subplots(
-            subplot_kw={'projection': 'pan_projection', "pan_signal" : self.pan_running})
+        self.fft_axes = self.fig.subplots()
 
         plt.grid(color='0.85')
-        self.amp_signal = ampChanged
-        self.peaks_signal = peaksChanged
-        self.averages_signal = averagesChanged
-        self.framerate_signal = framerateUpdate
-        self.peak_selected = peakSelected
 
         self.avg_enable = False
 
@@ -168,7 +137,7 @@ class DrawFft(FigureCanvasQTAgg):
                 if np.any(self.saved_peaks):
                     x_y = self.saved_peaks[ind]
                     #x_y = x_y[0]
-                    self.peak_selected.emit(bounded_ind)
+                    self.peakSelected.emit(bounded_ind)
 
     def update_axis(self, fmin, fmax, init = False):
         """ Update the mag_y and x_axis """
@@ -270,12 +239,12 @@ class DrawFft(FigureCanvasQTAgg):
                 bounded_peaks_freq = peaks_freq[self.bounded_peaks_freq_min_index:self.bounded_peaks_freq_max_index]
                 bounded_peaks_mag = peaks_mag[self.bounded_peaks_freq_min_index:self.bounded_peaks_freq_max_index]
                 peaks_data = np.vstack((bounded_peaks_freq, bounded_peaks_mag)).T
-                self.peaks_signal.emit(peaks_data)
+                self.peaksChanged.emit(peaks_data)
             else:
-                self.peaks_signal.emit(np.vstack(([], [])).T)
+                self.peaksChanged.emit(np.vstack(([], [])).T)
         else:
             self.saved_peaks = np.vstack(([], [])).T
-            self.peaks_signal.emit(self.saved_peaks)
+            self.peaksChanged.emit(self.saved_peaks)
             triggered = False
 
         return  triggered, peaks
@@ -312,7 +281,7 @@ class DrawFft(FigureCanvasQTAgg):
         mag_y_db, mag_y = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
 
         amplitude = np.max(mag_y_db) + 100
-        self.amp_signal.emit(int(amplitude))
+        self.ampChanged.emit(int(amplitude))
 
         # Is hold_results set?
         if self.hold_results:
@@ -352,7 +321,7 @@ class DrawFft(FigureCanvasQTAgg):
 
                             # Save num_averages and emit num_averages signal
                             self.num_averages = num_averages
-                            self.averages_signal.emit(int(self.num_averages))
+                            self.averagesChanged.emit(int(self.num_averages))
 
                             # Save mag_y_db and peaks
                             self.saved_mag_y_db = avg_mag_y_db
@@ -397,6 +366,6 @@ class DrawFft(FigureCanvasQTAgg):
         processing_dt = exit_now - enter_now
         if processing_dt <= 0:
             processing_dt = 0.000000000001
-        self.framerate_signal.emit(float(fps), float(sample_dt), float(processing_dt))
+        self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
 
         return self.line, self.points, self.line_threshold

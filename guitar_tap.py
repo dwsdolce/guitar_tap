@@ -139,17 +139,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
 class MainWindow(QtWidgets.QMainWindow):
     """ Defines the layout of the application window
-        TODO: MainWindow resize and move need to disable the
-        FFT updates.
-        TODO: Need to Set the TableView columns to fix size and align contents
     """
-
-
-    ampChanged = QtCore.pyqtSignal(int)
-    peaksChanged = QtCore.pyqtSignal(np.ndarray)
-    averagesChanged = QtCore.pyqtSignal(int)
-    framerateUpdate = QtCore.pyqtSignal(float, float, float)
-    peakSelected = QtCore.pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
@@ -186,13 +176,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.threshold = 50
         self.threshold_slider.valueChanged.connect(self.threshold_changed)
 
-        self.ampChanged.connect(self.threshold_slider.set_amplitude)
-
         # Add an fft Canvas
         f_range = {'f_min': 75, 'f_max': 350}
-        self.fft_canvas = fft_c.DrawFft(
-                self.ampChanged, self.peaksChanged, self.averagesChanged, 
-                self.framerateUpdate, self.peakSelected, f_range, self.threshold)
+        self.fft_canvas = fft_c.DrawFft(f_range, self.threshold)
         self.fft_canvas.setMinimumSize(600, 400)
         self.toolbar = MyNavigationToolbar(self.fft_canvas, self)
 
@@ -291,8 +277,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         averages_layout.addLayout(avg_completed_layout)
 
-        self.averagesChanged.connect(self.set_avg_completed)
-
         #.....
         # Averaging done
         avg_done_layout = QtWidgets.QHBoxLayout()
@@ -385,7 +369,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         control_layout.addLayout(framerate_layout)
 
-        self.framerateUpdate.connect(self.set_framerate)
 
         #.....
         # Add space at the bottom
@@ -420,9 +403,6 @@ class MainWindow(QtWidgets.QMainWindow):
         header_width = self.peak_table.horizontalHeader().length()
         self.peak_table.setFixedWidth(header_width + 30)
 
-        self.peaksChanged.connect(model.updateData)
-        self.peakSelected.connect(self.selectRow)
-
         peaks_layout.addWidget(self.peak_table)
 
         #.....
@@ -430,6 +410,14 @@ class MainWindow(QtWidgets.QMainWindow):
         peaks_layout.addSpacing(40)
 
         hlayout.addLayout(peaks_layout)
+
+        #.....
+        # Connect externalsignals
+        self.fft_canvas.peaksChanged.connect(model.updateData)
+        self.fft_canvas.peakSelected.connect(self.selectRow)
+        self.fft_canvas.ampChanged.connect(self.threshold_slider.set_amplitude)
+        self.fft_canvas.averagesChanged.connect(self.set_avg_completed)
+        self.fft_canvas.framerateUpdate.connect(self.set_framerate)
 
         #.....
         # Set the averaging to false.
@@ -465,8 +453,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_avg_enable(self, checked):
         """ Change the icon color and also change the fft_plot
             to do averaging or not.
-            TODO: If averaging is not set then the averaging controls
-            need to be disabled.
         """
         if checked:
             self.avg_enable.setIcon(self.green_icon)
