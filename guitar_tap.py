@@ -149,6 +149,7 @@ class MainWindow(QtWidgets.QMainWindow):
     peaksChanged = QtCore.pyqtSignal(np.ndarray)
     averagesChanged = QtCore.pyqtSignal(int)
     framerateUpdate = QtCore.pyqtSignal(float, float, float)
+    peakSelected = QtCore.pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
@@ -191,7 +192,7 @@ class MainWindow(QtWidgets.QMainWindow):
         f_range = {'f_min': 75, 'f_max': 350}
         self.fft_canvas = fft_c.DrawFft(
                 self.ampChanged, self.peaksChanged, self.averagesChanged, 
-                self.framerateUpdate, f_range, self.threshold)
+                self.framerateUpdate, self.peakSelected, f_range, self.threshold)
         self.fft_canvas.setMinimumSize(600, 400)
         self.toolbar = MyNavigationToolbar(self.fft_canvas, self)
 
@@ -224,7 +225,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.hold_results.setIconSize(QtCore.QSize(21, 21))
         self.hold_results.setStyleSheet('border: none')
         self.hold_results.setCheckable(True)
-        self.hold_results.setChecked(True)
+        self.hold_results.setChecked(False)
         hold_results_layout.addWidget(self.hold_results)
         self.hold_results.toggled.connect(self.set_hold_results)
 
@@ -402,23 +403,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #.....
         # Use tableview to display fft peaks
-        peak_table = QtWidgets.QTableView()
+        self.peak_table = QtWidgets.QTableView()
         data = np.vstack(([], [])).T
         model = PeaksModel(data)
         # Use custom QSortFilterProxyModel to define the sort
         proxy_model = PeaksFilterModel()
         proxy_model.setSourceModel(model)
-        peak_table.setModel(proxy_model)
-        peak_table.setSortingEnabled(True)
-        peak_table.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
-        peak_table.resizeColumnsToContents()
+        self.peak_table.setModel(proxy_model)
+        self.peak_table.setSortingEnabled(True)
+        self.peak_table.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
+        self.peak_table.resizeColumnsToContents()
+        self.peak_table.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows);
+        self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.NoSelection);
+        self.peak_table.selectionModel().selectionChanged.connect(self.peak_selection_changed)
 
-        header_width = peak_table.horizontalHeader().length()
-        peak_table.setFixedWidth(header_width + 30)
+        header_width = self.peak_table.horizontalHeader().length()
+        self.peak_table.setFixedWidth(header_width + 30)
 
         self.peaksChanged.connect(model.updateData)
+        self.peakSelected.connect(self.selectRow)
 
-        peaks_layout.addWidget(peak_table)
+        peaks_layout.addWidget(self.peak_table)
 
         #.....
         # Add space at the bottom
@@ -431,6 +436,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_avg_enable(False)
         self.set_hold_results(False)
         self.fft_canvas.set_max_average_count(self.num_averages.value())
+
+    def selectRow(self, freq_index):
+        proxy_model = self.peak_table.model()
+        data_model = proxy_model.sourceModel()
+
+        data_freq_index = data_model.index(freq_index, 0)
+        proxy_freq_index = proxy_model.mapFromSource(data_freq_index)
+        flags = QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent | QtCore.QItemSelectionModel.SelectionFlag.Rows
+        self.peak_table.setFocus()
+        self.peak_table.selectionModel().setCurrentIndex(proxy_freq_index, flags)
+
+    def peak_selection_changed(self, selected, deselected):
+        if np.any(selected):
+            proxy_model = self.peak_table.model()
+            proxy_freq_index = selected.indexes()[0]
+
+            data_freq_index = proxy_model.mapToSource(proxy_freq_index)
+
+            freq = proxy_model.sourceModel().freq_value(data_freq_index)
+            self.fft_canvas.select_peak(freq)
 
     def set_framerate(self, framerate, sampletime, updatetime):
         self.framerate.setText(f'{framerate:.3f}')
@@ -471,6 +496,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.avg_enable_saved = self.avg_enable.isChecked()
             self.set_avg_enable(False)
             self.avg_enable.setEnabled(False)
+
+            self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.SingleSelection);
         else:
             self.hold_results.setIcon(self.red_icon)
             self.fft_canvas.set_hold_results(False)
@@ -480,6 +507,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # restore current state of avg_enable
             self.set_avg_enable(self.avg_enable_saved)
             self.avg_enable.setEnabled(True)
+
+            self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.NoSelection);
+            self.peak_table.clearSelection()
 
     def threshold_changed(self):
         """ Set the threshold used in fft_canvas

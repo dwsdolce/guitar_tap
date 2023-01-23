@@ -55,7 +55,8 @@ class FftData:
         self.sample_freq = sample_freq
         self.m_t = m_t
 
-        self.window_fcn = get_window('blackman', self.m_t)
+        #self.window_fcn = get_window('blackman', self.m_t)
+        self.window_fcn = get_window('boxcar', self.m_t)
         self.n_f = int(2 ** (np.ceil(np.log2(self.m_t))))
         self.h_n_f = self.n_f //2
 
@@ -74,7 +75,7 @@ class DrawFft(FigureCanvasQTAgg):
     hold = False
     pan_running = QtCore.pyqtSignal(bool)
 
-    def __init__(self, ampChanged, peaksChanged, averagesChanged, framerateUpdate, frange, threshold):
+    def __init__(self, ampChanged, peaksChanged, averagesChanged, framerateUpdate, peakSelected, frange, threshold):
         self.fig = plt.figure(figsize = (5, 3))
         super().__init__(self.fig)
 
@@ -86,6 +87,7 @@ class DrawFft(FigureCanvasQTAgg):
         self.peaks_signal = peaksChanged
         self.averages_signal = averagesChanged
         self.framerate_signal = framerateUpdate
+        self.peak_selected = peakSelected
 
         self.avg_enable = False
 
@@ -117,7 +119,9 @@ class DrawFft(FigureCanvasQTAgg):
 
         # set the line and point plots and ini
         self.line, = self.fft_axes.plot([], [], lw=1)
-        self.points = self.fft_axes.scatter([], [])
+        self.points = self.fft_axes.scatter([], [], picker = True)
+        self.selected_point = self.fft_axes.scatter([],[], c = 'red')
+        self.fig.canvas.mpl_connect('pick_event', self.point_picked)
         self.line_threshold, = self.fft_axes.plot([], [], lw=1)
 
         x_axis = np.arange(0, self.fft_data.h_n_f + 1)
@@ -126,6 +130,11 @@ class DrawFft(FigureCanvasQTAgg):
         # Saved waveform data for drawing
         self.saved_mag_y_db = []
         self.saved_peaks = np.vstack(([], [])).T
+        self.selected_peak = np.vstack(([], [])).T
+
+        # Saved peak information
+        self.bounded_peaks_freq_min_index = 0
+        self.bounded_peaks_freq_max_index = 0
 
         # Saved averaging data
         self.max_average_count = 1
@@ -143,6 +152,23 @@ class DrawFft(FigureCanvasQTAgg):
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_fft)
         self.timer.start(100)
+
+    def select_peak(self, freq):
+        if self.hold_results:
+            row = np.where(self.saved_peaks[:,0] == freq)
+            magdb = self.saved_peaks[row][0][1]
+            self.selected_point.set_offsets(np.vstack(([freq], [magdb])).T)
+            self.fig.canvas.draw()
+
+    def point_picked(self, event):
+        if self.hold_results:
+            ind = event.ind[0]
+            if ind >=  self.bounded_peaks_freq_min_index and ind < self.bounded_peaks_freq_max_index:
+                bounded_ind = ind - self.bounded_peaks_freq_min_index
+                if np.any(self.saved_peaks):
+                    x_y = self.saved_peaks[ind]
+                    #x_y = x_y[0]
+                    self.peak_selected.emit(bounded_ind)
 
     def update_axis(self, fmin, fmax, init = False):
         """ Update the mag_y and x_axis """
@@ -176,6 +202,8 @@ class DrawFft(FigureCanvasQTAgg):
             the it free runs (and averaging is disabled).
         """
         self.hold_results = hold_results
+        if not hold_results:
+            self.selected_point.set_offsets(np.vstack(([], [])).T)
 
     def set_fmin(self, fmin):
         """ As it says """
@@ -197,6 +225,8 @@ class DrawFft(FigureCanvasQTAgg):
         self.threshold_y = self.threshold - 100
 
         self.line_threshold.set_data([0, self.threshold_x], [self.threshold_y, self.threshold_y])
+
+        self.selected_point.set_offsets(np.vstack(([], [])).T)
 
         self.find_peaks(self.saved_mag_y_db)
         self.fig.canvas.draw()
@@ -226,20 +256,20 @@ class DrawFft(FigureCanvasQTAgg):
             self.saved_peaks = peaks
             triggered = True
 
-            bounded_peaks_freq_min_index = 0
-            bounded_peaks_freq_max_index = 0
+            self.bounded_peaks_freq_min_index = 0
+            self.bounded_peaks_freq_max_index = 0
             # Check the peaks to see if they are within the desired frequency range
             bounded_peaks_freq_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
             if len(bounded_peaks_freq_indices[0]) > 0:
-                bounded_peaks_freq_min_index = bounded_peaks_freq_indices[0][0]
-                bounded_peaks_freq_max_index = bounded_peaks_freq_indices[0][-1] + 1
+                self.bounded_peaks_freq_min_index = bounded_peaks_freq_indices[0][0]
+                self.bounded_peaks_freq_max_index = bounded_peaks_freq_indices[0][-1] + 1
 
             # If there are peaks in frequency bounds then update the peaks_data signal
-            if bounded_peaks_freq_max_index > 0:
+            if self.bounded_peaks_freq_max_index > 0:
                 # Update the peaks
-                bounded_peaks_freq = peaks_freq[bounded_peaks_freq_min_index:bounded_peaks_freq_max_index]
-                bounded_peaks_mag = peaks_mag[bounded_peaks_freq_min_index:bounded_peaks_freq_max_index]
-                peaks_data = np.vstack( (bounded_peaks_freq, bounded_peaks_mag)).T
+                bounded_peaks_freq = peaks_freq[self.bounded_peaks_freq_min_index:self.bounded_peaks_freq_max_index]
+                bounded_peaks_mag = peaks_mag[self.bounded_peaks_freq_min_index:self.bounded_peaks_freq_max_index]
+                peaks_data = np.vstack((bounded_peaks_freq, bounded_peaks_mag)).T
                 self.peaks_signal.emit(peaks_data)
             else:
                 self.peaks_signal.emit(np.vstack(([], [])).T)
@@ -256,13 +286,13 @@ class DrawFft(FigureCanvasQTAgg):
         self.points.set_offsets(peaks)
         self.line_threshold.set_data([0, self.threshold_x], [self.threshold_y, self.threshold_y])
 
+
     # methods for processing chunk
     def update_fft(self):
         """ Get a chunk from the audio stream, find the fft and interpolate the peaks.
         The rest is used to update the fft plot if the maximum of the fft magnitude
         is greater than the threshold value.
         """
-
 
         # Read Data
         frames = self.mic.get_frames()
