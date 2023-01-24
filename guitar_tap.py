@@ -1,6 +1,7 @@
 """ Samples audio signal and finds the peaks of the guitar tap resonances
 """
 import sys
+import os
 
 import numpy as np
 from PyQt6 import QtWidgets, QtCore, QtGui
@@ -9,6 +10,14 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 import threshold_slider as TS
 import fft_canvas as fft_c
 import pitch as pitch_c
+
+basedir = os.path.dirname(__file__)
+try:
+    from ctypes import windll # Only exists on Windows.
+    myappid = "dolcesfogato.guitar-tap.guitar-tap.0.5"
+    windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+except ImportError:
+    pass
 
 class MyNavigationToolbar(NavigationToolbar):
     def home(self, *args):
@@ -151,12 +160,10 @@ class MainWindow(QtWidgets.QMainWindow):
         pixmapi = getattr(QtWidgets.QStyle.StandardPixmap, 'SP_MediaSkipBackward')
         restart_icon = self.style().standardIcon(pixmapi)
 
-        self.red_pixmap = QtGui.QPixmap('./icons/led_red.png')
+        self.red_pixmap = QtGui.QPixmap(os.path.join(basedir, './icons/led_red.png'))
         self.red_icon = QtGui.QIcon(self.red_pixmap)
-        self.green_pixmap = QtGui.QPixmap('./icons/led_green.png')
+        self.green_pixmap = QtGui.QPixmap(os.path.join(basedir,'./icons/led_green.png'))
         self.green_icon = QtGui.QIcon(self.green_pixmap)
-        #blue_pixmap = QtGui.QPixmap('./icons/led_blue.png')
-        #blue_icon = QtGui.QIcon(blue_pixmap)
 
         hlayout = QtWidgets.QHBoxLayout(main_widget)
 
@@ -638,6 +645,7 @@ if __name__ == "__main__":
     qapp = QtWidgets.QApplication(sys.argv)
 
     app = MainWindow()
+    app.setWindowIcon(QtGui.QIcon(os.path.join(basedir,'icons/guitar-tap.svg')))
     app.resize(800, 500)
     app.show()
     app.activateWindow()
