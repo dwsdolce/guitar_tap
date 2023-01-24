@@ -146,8 +146,6 @@ class MainWindow(QtWidgets.QMainWindow):
         main_widget = QtWidgets.QWidget()
         self.setCentralWidget(main_widget)
 
-        #self.installEventFilter(self)
-
         self.setWindowTitle("Guitar Tap")
 
         pixmapi = getattr(QtWidgets.QStyle.StandardPixmap, 'SP_MediaSkipBackward')
@@ -635,12 +633,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.toolbar.update()
         self.fft_canvas.set_fmax(self.max_spin.value())
-
-    #def eventFilter(self, object, event):
-        #print("EventFilter")
-        #print(event)
-        #print(event.type())
-        #return False
 
 if __name__ == "__main__":
     qapp = QtWidgets.QApplication(sys.argv)
