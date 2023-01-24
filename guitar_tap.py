@@ -140,7 +140,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
 class MainWindow(QtWidgets.QMainWindow):
     """ Defines the layout of the application window
     """
-
     def __init__(self):
         super().__init__()
 
@@ -171,6 +170,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # ==========================================================
         # Add the slider
         self.threshold_slider = TS.ThresholdSlider(QtCore.Qt.Orientation.Horizontal)
+        self.threshold_slider.setToolTip('Shows the magnitude of the FFT of the signal.\nMove the red slider to define threshold used for finding peaks.')
         plot_layout.addWidget(self.threshold_slider)
 
         self.threshold = 50
@@ -178,7 +178,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Add an fft Canvas
         f_range = {'f_min': 75, 'f_max': 350}
-        self.fft_canvas = fft_c.DrawFft(f_range, self.threshold)
+
+        window_length = 16384
+        sampling_rate = 11025
+        spectral_line_resolution = sampling_rate / window_length
+        bandwidth = sampling_rate / 2
+        sample_size = window_length / sampling_rate
+
+        self.fft_canvas = fft_c.DrawFft(window_length, sampling_rate, f_range, self.threshold)
         self.fft_canvas.setMinimumSize(600, 400)
         self.toolbar = MyNavigationToolbar(self.fft_canvas, self)
 
@@ -197,7 +204,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #.....
         # Spacing above controls
-        control_layout.addSpacing(40)
+        control_layout.addSpacing(20)
 
         #.....
         # Enable Peak hold
@@ -212,7 +219,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.hold_results.setStyleSheet('border: none')
         self.hold_results.setCheckable(True)
         self.hold_results.setChecked(False)
+        self.hold_results.setToolTip('Enable to stop sampling audio and hold the current results')
+
         hold_results_layout.addWidget(self.hold_results)
+
         self.hold_results.toggled.connect(self.set_hold_results)
 
         control_layout.addLayout(hold_results_layout)
@@ -229,7 +239,7 @@ class MainWindow(QtWidgets.QMainWindow):
         #.....
         # Enable averaging
         avg_enable_layout = QtWidgets.QHBoxLayout()
-        avg_enable_label = QtWidgets.QLabel("Averaging enabled")
+        avg_enable_label = QtWidgets.QLabel("Averaging enable")
         avg_enable_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         avg_enable_layout.addWidget(avg_enable_label)
 
@@ -239,6 +249,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.avg_enable.setStyleSheet('border: none')
         self.avg_enable.setCheckable(True)
         self.avg_enable.setChecked(False)
+        self.avg_enable.setToolTip('Select to start averaging the fft samples.')
         avg_enable_layout.addWidget(self.avg_enable)
 
         self.avg_enable_saved = self.avg_enable.isChecked()
@@ -258,7 +269,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.num_averages.setMinimum(0)
         self.num_averages.setMaximum(10)
         self.num_averages.setValue(0)
+        self.num_averages.setToolTip('Set the number of fft samples to average')
+
         self.num_averages.valueChanged.connect(self.fft_canvas.set_max_average_count)
+
         num_averages_layout.addWidget(self.num_averages)
 
         averages_layout.addLayout(num_averages_layout)
@@ -306,6 +320,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.avg_restart = QtWidgets.QPushButton()
         self.avg_restart.setIcon(restart_icon)
+        self.avg_restart.setToolTip('Reset the number of averages completed and start averaging')
+
         avg_restart_layout.addWidget(self.avg_restart)
 
         self.avg_restart.clicked.connect(self.reset_averaging)
@@ -313,68 +329,138 @@ class MainWindow(QtWidgets.QMainWindow):
         averages_layout.addLayout(avg_restart_layout)
 
         control_layout.addWidget(avg_group_box)
+  
+        #.....
+        # Spectral line resolution
+        freq_resolution_layout = QtWidgets.QHBoxLayout()
+
+        freq_resolution_label= QtWidgets.QLabel("Frequency resolution")
+        freq_resolution_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        freq_resolution_layout.addWidget(freq_resolution_label)
+
+        freq_res_string = f'{spectral_line_resolution:.1} Hz'
+        freq_resolution = QtWidgets.QLabel(freq_res_string)
+        freq_resolution.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        freq_resolution_layout.addWidget(freq_resolution)
+
+        control_layout.addLayout(freq_resolution_layout)
+  
+        #.....
+        # Bandwidth
+        bandwidth_layout = QtWidgets.QHBoxLayout()
+
+        bandwidth_label= QtWidgets.QLabel("Bandwidth")
+        bandwidth_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        bandwidth_layout.addWidget(bandwidth_label)
+
+        bandwidth_string = f'{bandwidth:.1f} Hz'
+        bandwidth = QtWidgets.QLabel(bandwidth_string)
+        bandwidth.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        bandwidth_layout.addWidget(bandwidth)
+
+        control_layout.addLayout(bandwidth_layout)
+  
+        #.....
+        # Sample length
+        sample_length_layout = QtWidgets.QHBoxLayout()
+
+        sample_length_label= QtWidgets.QLabel("Sample length")
+        sample_length_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        sample_length_layout.addWidget(sample_length_label)
+
+        sample_length_string = f'{sample_size:.1f} s'
+        sample_length = QtWidgets.QLabel(sample_length_string)
+        sample_length.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        sample_length_layout.addWidget(sample_length)
+
+        control_layout.addLayout(sample_length_layout)
+
+        #.....
+        # Frame rate
+        framerate_layout = QtWidgets.QHBoxLayout()
+
+        framerate_label = QtWidgets.QLabel("FrameRate")
+        framerate_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        framerate_layout.addWidget(framerate_label)
+
+        self.framerate = QtWidgets.QLabel("0")
+        self.framerate.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        framerate_layout.addWidget(self.framerate)
+
+        control_layout.addLayout(framerate_layout)
+
+        #.....
+        # Audio sample time
+        sampletime_layout = QtWidgets.QHBoxLayout()
+
+        sampletime_label = QtWidgets.QLabel("Sample time")
+        sampletime_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        sampletime_layout.addWidget(sampletime_label)
+
+        self.sampletime = QtWidgets.QLabel("0")
+        self.sampletime.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        sampletime_layout.addWidget(self.sampletime)
+
+        control_layout.addLayout(sampletime_layout)
+
+        #.....
+        # Processing time
+        processing_layout = QtWidgets.QHBoxLayout()
+
+        processing_label = QtWidgets.QLabel("Processing time")
+        processing_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        processing_layout.addWidget(processing_label)
+
+        self.processingtime = QtWidgets.QLabel("0")
+        self.processingtime.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        processing_layout.addWidget(self.processingtime)
+
+        control_layout.addLayout(processing_layout)
 
         #.....
         # Stretch space to support windo resize
         control_layout.addStretch()
 
         #.....
-        # Frequency window for peak results
-        min_max_layout = QtWidgets.QHBoxLayout()
-
-        min_layout = QtWidgets.QVBoxLayout()
+        # Minimum frequency for peak results
+        min_layout = QtWidgets.QHBoxLayout()
         min_label = QtWidgets.QLabel("Start Freq (Hz)")
-        min_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        min_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+
         min_layout.addWidget(min_label)
+
         self.min_spin = QtWidgets.QSpinBox(main_widget)
         self.min_spin.setMinimum(0)
         self.min_spin.setMaximum(22050)
         self.min_spin.setValue(f_range['f_min'])
         self.min_spin.valueChanged.connect(self.fmin_changed)
+        self.min_spin.setToolTip('The lowest frequency for which peaks are reported')
+
         min_layout.addWidget(self.min_spin)
 
-        min_max_layout.addLayout(min_layout)
+        control_layout.addLayout(min_layout)
 
-        max_layout = QtWidgets.QVBoxLayout()
+        # Maximum frequency for peak results
+        max_layout = QtWidgets.QHBoxLayout()
         max_label = QtWidgets.QLabel("Stop Freq (Hz)")
-        max_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        max_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         max_layout.addWidget(max_label)
+
         self.max_spin = QtWidgets.QSpinBox(main_widget)
         self.max_spin.setMinimum(0)
         self.max_spin.setMaximum(22050)
         self.max_spin.setValue(f_range['f_max'])
+        self.max_spin.setToolTip('The highest frequency for which peaks are reported')
+
         self.max_spin.valueChanged.connect(self.fmax_changed)
+
         max_layout.addWidget(self.max_spin)
 
-        min_max_layout.addLayout(max_layout)
-
-        control_layout.addLayout(min_max_layout)
-
-        #.....
-        # Frame rate
-        framerate_layout = QtWidgets.QHBoxLayout()
-
-        framerate_label = QtWidgets.QLabel("FrameRate/SampleTime/UpdateTime")
-        framerate_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-        framerate_layout.addWidget(framerate_label)
-        self.framerate = QtWidgets.QLabel("0")
-        self.framerate.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        framerate_layout.addWidget(self.framerate)
-
-        self.sampletime = QtWidgets.QLabel("0")
-        self.sampletime.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        framerate_layout.addWidget(self.sampletime)
-
-        self.updatetime = QtWidgets.QLabel("0")
-        self.updatetime.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        framerate_layout.addWidget(self.updatetime)
-
-        control_layout.addLayout(framerate_layout)
-
+        control_layout.addLayout(max_layout)
 
         #.....
         # Add space at the bottom
-        control_layout.addSpacing(20)
+        control_layout.addSpacing(40)
 
         hlayout.addLayout(control_layout)
 
@@ -384,7 +470,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #.....
         # Spacing above controls
-        peaks_layout.addSpacing(40)
+        peaks_layout.addSpacing(20)
 
         #.....
         # Use tableview to display fft peaks
@@ -401,6 +487,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_table.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows);
         self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.NoSelection);
         self.peak_table.selectionModel().selectionChanged.connect(self.peak_selection_changed)
+        self.peak_table.setToolTip('Displays the peaks found. When results are held, select\na cell to highlight the peak in the FFT Peaks display or\nselect a peak on the FFT Peaks waveform to highlight\nthe peak in the table.')
 
         header_width = self.peak_table.horizontalHeader().length()
         self.peak_table.setFixedWidth(header_width + 30)
@@ -447,10 +534,10 @@ class MainWindow(QtWidgets.QMainWindow):
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
             self.fft_canvas.select_peak(freq)
 
-    def set_framerate(self, framerate, sampletime, updatetime):
-        self.framerate.setText(f'{framerate:.3f}')
-        self.sampletime.setText(f'{sampletime:.3f}')
-        self.updatetime.setText(f'{updatetime:.3f}')
+    def set_framerate(self, framerate, sampletime, processingtime):
+        self.framerate.setText(f'{framerate:.1f} fps')
+        self.sampletime.setText(f'{sampletime:.1f} s')
+        self.processingtime.setText(f'{processingtime*1000:.1f} ms')
 
     def set_avg_enable(self, checked):
         """ Change the icon color and also change the fft_plot

@@ -50,7 +50,7 @@ class DrawFft(FigureCanvasQTAgg):
     averagesChanged = QtCore.pyqtSignal(int)
     framerateUpdate = QtCore.pyqtSignal(float, float, float)
 
-    def __init__(self, frange, threshold):
+    def __init__(self, window_length, sampling_rate, frange, threshold):
         self.fig = plt.figure(figsize = (5, 3))
         super().__init__(self.fig)
 
@@ -63,8 +63,7 @@ class DrawFft(FigureCanvasQTAgg):
         # Get an audio stream
         audio_stream = pyaudio.PyAudio()
 
-        #self.fft_data = FftData(44100, 15001)
-        self.fft_data = FftData(11025, 16384)
+        self.fft_data = FftData(sampling_rate, window_length)
 
         #self.set_threshold(threshold)
         self.threshold = threshold
