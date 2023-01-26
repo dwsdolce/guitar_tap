@@ -11,6 +11,9 @@ import threshold_slider as TS
 import fft_canvas as fft_c
 import pitch as pitch_c
 
+if os.name == 'nt':
+    import named_mutex as NM
+
 basedir = os.path.dirname(__file__)
 try:
     from ctypes import windll # Only exists on Windows.
@@ -642,6 +645,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fft_canvas.set_fmax(self.max_spin.value())
 
 if __name__ == "__main__":
+    if os.name == 'nt':
+        mutex = NM.NamedMutex('guitar-tap-running', True)
+
     qapp = QtWidgets.QApplication(sys.argv)
 
     app = MainWindow()
