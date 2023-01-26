@@ -11,6 +11,7 @@
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
 AppId={{E5465C79-EFFD-4DD0-803B-F03E428841C8}
+AppMutex=guitar-tap-running
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 ;AppVerName={#MyAppName} {#MyAppVersion}
@@ -18,7 +19,9 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf64}\{#MyAppName}
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
+DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=C:\Users\dws\src\guitar_tap\LICENSE
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
@@ -26,9 +29,10 @@ LicenseFile=C:\Users\dws\src\guitar_tap\LICENSE
 OutputDir=C:\Users\dws\src\guitar_tap\installer
 OutputBaseFilename=guitar-tap
 Compression=lzma
+SetupIconFile=icons\guitar-tap.ico
 SolidCompression=yes
+UninstallDisplayIcon={app}\{#MyAppExeName}
 WizardStyle=modern
-AppMutex=guitar-tap-running
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

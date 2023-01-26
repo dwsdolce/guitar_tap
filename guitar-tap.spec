@@ -3,12 +3,16 @@
 
 block_cipher = None
 
+added_files = [
+    ('guitar-tap.ico', '.'),
+    ('icons','icons')
+    ]
 
 a = Analysis(
     ['guitar_tap.py'],
     pathex=[],
     binaries=[],
-    datas=[('icons','icons')],
+    datas=added_files,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
