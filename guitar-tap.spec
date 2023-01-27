@@ -53,3 +53,9 @@ coll = COLLECT(
     upx_exclude=[],
     name='guitar-tap',
 )
+
+app = BUNDLE(coll,
+    name='guitar-tap.app',
+    icon='icons/guitar-tap.icns',
+    bundle_identifier=None)
+
