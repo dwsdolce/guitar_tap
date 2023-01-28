@@ -55,7 +55,7 @@ coll = COLLECT(
 )
 
 app = BUNDLE(coll,
-    name='guitar-tap.app',
+    name='Guitar Tap.app',
     icon='icons/guitar-tap.icns',
     bundle_identifier=None)
 
