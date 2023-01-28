@@ -2,6 +2,7 @@
 """
 import sys
 import os
+import csv
 
 import numpy as np
 from PyQt6 import QtWidgets, QtCore, QtGui
@@ -157,6 +158,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         main_widget = QtWidgets.QWidget()
         self.setCentralWidget(main_widget)
+
+        self.saved_path = ""
 
         self.setWindowTitle("Guitar Tap")
 
@@ -503,6 +506,16 @@ class MainWindow(QtWidgets.QMainWindow):
         peaks_layout.addWidget(self.peak_table)
 
         #.....
+        # Save button
+        save_peaks = QtWidgets.QToolButton()
+        save_peaks.setText('Save Peaks')
+        save_peaks.setToolTip('Save the captured peaks and related information to a file')
+
+        peaks_layout.addWidget(save_peaks)
+
+        save_peaks.clicked.connect(self.save_peaks)
+
+        #.....
         # Add space at the bottom
         peaks_layout.addSpacing(40)
 
@@ -521,6 +534,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_avg_enable(False)
         self.set_hold_results(False)
         self.fft_canvas.set_max_average_count(self.num_averages.value())
+
+    def save_peaks(self):
+        if self.saved_path == '':
+            self.saved_path = os.getenv('HOME')
+
+        filename, selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            caption='Save Peaks to CSV',
+            directory=self.saved_path,
+            filter= "Comma Separated Values (*.csv)",
+            initialFilter="Comma Separated Values (*.csv)",
+        )
+        if selected_filter:
+            self.saved_path = os.path.dirname(filename)
+            proxy_model = self.peak_table.model()
+            data_model = proxy_model.sourceModel()
+            columns = range(self.peak_table.horizontalHeader().count())
+            header = [data_model.headerData(column, QtCore.Qt.Orientation.Horizontal, QtCore.Qt.ItemDataRole.DisplayRole)
+                      for column in columns]
+            with open(filename, 'w') as csvfile:
+                writer = csv.writer(csvfile, dialect='excel', lineterminator='\n')
+                writer.writerow(header)
+                for row in range(data_model.rowCount(QtCore.QVariant())):
+                    writer.writerow(data_model.data_value(data_model.index(row, column))
+                        for column in columns)
 
     def selectRow(self, freq_index):
         proxy_model = self.peak_table.model()
