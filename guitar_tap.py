@@ -546,7 +546,7 @@ class MainWindow(QtWidgets.QMainWindow):
             filter= "Comma Separated Values (*.csv)",
             initialFilter="Comma Separated Values (*.csv)",
         )
-        if selected_filter:
+        if filename and selected_filter:
             self.saved_path = os.path.dirname(filename)
             proxy_model = self.peak_table.model()
             data_model = proxy_model.sourceModel()
