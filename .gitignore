@@ -17,6 +17,7 @@ dist/
 downloads/
 eggs/
 .eggs/
+installer/
 lib/
 lib64/
 parts/
@@ -38,6 +39,9 @@ MANIFEST
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+
+# wily reports
+reports/
 
 # Unit test / coverage reports
 htmlcov/

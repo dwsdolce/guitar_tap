@@ -1,20 +1,16 @@
 """ Samples audio signal and finds the peaks of the guitar tap resonances
 """
 from dataclasses import dataclass
+import time
 
 import numpy as np
 from scipy.signal import get_window
-import pyaudio
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib import pyplot as plt
-from matplotlib.axes import Axes
-from matplotlib.projections import register_projection
 from PyQt6 import QtCore
 
-import time
-
 import freq_anal as FA
-import microphone as microphone
+import microphone
 
 @dataclass
 class FftData:
@@ -54,14 +50,13 @@ class DrawFft(FigureCanvasQTAgg):
         self.fig = plt.figure(figsize = (5, 3))
         super().__init__(self.fig)
 
+        self.hold_results = False
+
         self.fft_axes = self.fig.subplots()
 
         plt.grid(color='0.85')
 
         self.avg_enable = False
-
-        # Get an audio stream
-        audio_stream = pyaudio.PyAudio()
 
         self.fft_data = FftData(sampling_rate, window_length)
 
@@ -83,7 +78,8 @@ class DrawFft(FigureCanvasQTAgg):
         self.fft_axes.set_title('FFT Peaks')
 
         # Open the audio stream
-        self.mic = microphone.Microphone(rate = self.fft_data.sample_freq, chunksize = self.fft_data.m_t)
+        self.mic = microphone.Microphone(
+            rate = self.fft_data.sample_freq, chunksize = self.fft_data.m_t)
 
         # set the line and point plots and ini
         self.line, = self.fft_axes.plot([], [], lw=1)
@@ -101,8 +97,8 @@ class DrawFft(FigureCanvasQTAgg):
         self.selected_peak = np.vstack(([], [])).T
 
         # Saved peak information
-        self.bounded_peaks_freq_min_index = 0
-        self.bounded_peaks_freq_max_index = 0
+        self.peaks_f_min_index = 0
+        self.peaks_f_max_index = 0
 
         # Saved averaging data
         self.max_average_count = 1
@@ -122,6 +118,7 @@ class DrawFft(FigureCanvasQTAgg):
         self.timer.start(100)
 
     def select_peak(self, freq):
+        """ Select the peak (scatter point) with the specified frequency """
         if self.hold_results:
             row = np.where(self.saved_peaks[:,0] == freq)
             magdb = self.saved_peaks[row][0][1]
@@ -129,14 +126,15 @@ class DrawFft(FigureCanvasQTAgg):
             self.fig.canvas.draw()
 
     def point_picked(self, event):
+        """ Handle the event for scatter point being picked and emit
+            the index if it is within the min/max frequency range
+        """
         if self.hold_results:
             ind = event.ind[0]
-            if ind >=  self.bounded_peaks_freq_min_index and ind < self.bounded_peaks_freq_max_index:
-                bounded_ind = ind - self.bounded_peaks_freq_min_index
+            if self.peaks_f_min_index <= ind < self.peaks_f_max_index:
+                peak_index = ind - self.peaks_f_min_index
                 if np.any(self.saved_peaks):
-                    x_y = self.saved_peaks[ind]
-                    #x_y = x_y[0]
-                    self.peakSelected.emit(bounded_ind)
+                    self.peakSelected.emit(peak_index)
 
     def update_axis(self, fmin, fmax, init = False):
         """ Update the mag_y and x_axis """
@@ -155,14 +153,15 @@ class DrawFft(FigureCanvasQTAgg):
                 self.fig.canvas.draw()
 
     def set_max_average_count(self, max_average_count):
+        """ Set the number of averages to take """
         self.max_average_count = max_average_count
-    
+
     def reset_averaging(self):
+        """ Reset the number of averages taken to zero. """
         self.num_averages = 0
 
     def set_avg_enable(self, avg_enable):
-        """ Flag to enable/disable the averaging
-        """
+        """ Flag to enable/disable the averaging """
         self.avg_enable = avg_enable
 
     def set_hold_results(self, hold_results):
@@ -200,6 +199,18 @@ class DrawFft(FigureCanvasQTAgg):
         self.fig.canvas.draw()
 
     def find_peaks(self, mag_y_db):
+        """ For the specified magnitude in db:
+            1. detect the peaks that are above the user specified threshold
+            2. interpolate each peak using parabolic interpolation
+            3. If there are peaks above the user specified threashld then
+               from the resulting list of peaks find those that are within the
+               user specified min/max frequency range and emit a signal that
+               the peaks have changed.
+            4. If there are no peaks in the frequency range then emit a signal
+               with an empty list of peaks.
+            5. If there were no peaks within the threshold then emit
+               an peaks changed with the saved set of peaks.
+        """
         if not np.any(mag_y_db):
             return False, self.saved_peaks
 
@@ -224,20 +235,20 @@ class DrawFft(FigureCanvasQTAgg):
             self.saved_peaks = peaks
             triggered = True
 
-            self.bounded_peaks_freq_min_index = 0
-            self.bounded_peaks_freq_max_index = 0
+            self.peaks_f_min_index = 0
+            self.peaks_f_max_index = 0
             # Check the peaks to see if they are within the desired frequency range
-            bounded_peaks_freq_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
-            if len(bounded_peaks_freq_indices[0]) > 0:
-                self.bounded_peaks_freq_min_index = bounded_peaks_freq_indices[0][0]
-                self.bounded_peaks_freq_max_index = bounded_peaks_freq_indices[0][-1] + 1
+            b_peaks_f_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
+            if len(b_peaks_f_indices[0]) > 0:
+                self.peaks_f_min_index = b_peaks_f_indices[0][0]
+                self.peaks_f_max_index = b_peaks_f_indices[0][-1] + 1
 
             # If there are peaks in frequency bounds then update the peaks_data signal
-            if self.bounded_peaks_freq_max_index > 0:
+            if self.peaks_f_max_index > 0:
                 # Update the peaks
-                bounded_peaks_freq = peaks_freq[self.bounded_peaks_freq_min_index:self.bounded_peaks_freq_max_index]
-                bounded_peaks_mag = peaks_mag[self.bounded_peaks_freq_min_index:self.bounded_peaks_freq_max_index]
-                peaks_data = np.vstack((bounded_peaks_freq, bounded_peaks_mag)).T
+                b_peaks_freq = peaks_freq[self.peaks_f_min_index:self.peaks_f_max_index]
+                b_peaks_mag = peaks_mag[self.peaks_f_min_index:self.peaks_f_max_index]
+                peaks_data = np.vstack((b_peaks_freq, b_peaks_mag)).T
                 self.peaksChanged.emit(peaks_data)
             else:
                 self.peaksChanged.emit(np.vstack(([], [])).T)
@@ -249,10 +260,60 @@ class DrawFft(FigureCanvasQTAgg):
         return  triggered, peaks
 
     def set_draw_data(self, mag_db, peaks):
+        """ set the data for each of the 3 plot objects used in update_fft """
         if np.any(mag_db):
             self.line.set_data(self.freq, mag_db)
         self.points.set_offsets(peaks)
         self.line_threshold.set_data([0, self.threshold_x], [self.threshold_y, self.threshold_y])
+
+
+    def process_averages(self, mag_y):
+        """ For the specified magnitude find the average with all the saved magnitudes.
+            If there are magnitudes above the user specified threshold then update
+            the saved averages, the number of averages, the saved peaks, and emit
+            the signal for the average count changes. Update the data to be drawn
+            using the saved mag_db and peaks
+        """
+
+        # Have the maximum number of averages been found
+        if self.num_averages < self.max_average_count:
+            # Calculate average based on the magnitude of the FFT -
+            # ignore phase since it is highly variable.
+            if self.num_averages > 0:
+                mag_y_sum = self.mag_y_sum + mag_y
+            else:
+                mag_y_sum = mag_y
+            num_averages = self.num_averages + 1
+
+            avg_mag_y = mag_y_sum/num_averages
+
+            avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
+
+            avg_mag_y_db = 20 * np.log10(avg_mag_y)
+
+            avg_amplitude = np.max(avg_mag_y_db) + 100
+            if avg_amplitude > self.threshold:
+                # Find peaks using average mag_y_db
+                triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
+                if triggered:
+                    # Draw avg_mag_y_db and avg_peaks
+                    # Draw threshold
+                    self.set_draw_data(avg_mag_y_db, avg_peaks)
+
+                    # Save magnitude FFT for average
+                    self.mag_y_sum = mag_y_sum
+
+                    # Save num_averages and emit num_averages signal
+                    self.num_averages = num_averages
+                    self.averagesChanged.emit(int(self.num_averages))
+
+                    # Save mag_y_db and peaks
+                    self.saved_mag_y_db = avg_mag_y_db
+                    self.saved_peaks = avg_peaks
+
+        # Draw Saved mag_y_db and peaks
+        # Draw threshold
+        self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
 
 
     # methods for processing chunk
@@ -290,57 +351,7 @@ class DrawFft(FigureCanvasQTAgg):
         elif amplitude > self.threshold:
             # Is Averaging enabled:
             if self.avg_enable:
-                # Have the maximum number of averages been found
-                if self.num_averages < self.max_average_count:
-                    # Calculate average based on the magnitude of the FFT -
-                    # ignore phase since it is highly variable.
-                    if self.num_averages > 0:
-                        mag_y_sum = self.mag_y_sum + mag_y
-                    else:
-                        mag_y_sum = mag_y
-                    num_averages = self.num_averages + 1
-
-                    avg_mag_y = mag_y_sum/num_averages
-
-                    avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
-
-                    avg_mag_y_db = 20 * np.log10(avg_mag_y)
-
-                    avg_amplitude = np.max(avg_mag_y_db) + 100
-                    if avg_amplitude > self.threshold:
-                        # Find peaks using average mag_y_db
-                        triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
-                        if triggered:
-                            # Draw avg_mag_db and avg_peaks
-                            # Draw threshold
-                            self.set_draw_data(avg_mag_y_db, avg_peaks)
-
-                            # Save magnitude FFT for average
-                            self.mag_y_sum = mag_y_sum
-
-                            # Save num_averages and emit num_averages signal
-                            self.num_averages = num_averages
-                            self.averagesChanged.emit(int(self.num_averages))
-
-                            # Save mag_y_db and peaks
-                            self.saved_mag_y_db = avg_mag_y_db
-                            self.saved_peaks = avg_peaks
-                            # Set Hold Flag True
-                        else:
-                            # Draw Saved mag_y_db and peaks
-                            # Draw threshold
-                            # Set Hold Flag False
-                            self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-
-                    else:
-                        # Draw Saved mag_y_db and peaks
-                        # Draw threshold
-                        # Set Hold Flag False
-                        self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-                else:
-                    # Draw Saved mag_y_db and peaks
-                    # Draw threshold
-                    self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
+                self.process_averages(mag_y)
             else:
                 # Find peaks
                 triggered, peaks = self.find_peaks(mag_y_db)
@@ -367,4 +378,4 @@ class DrawFft(FigureCanvasQTAgg):
             processing_dt = 0.000000000001
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
 
-        return self.line, self.points, self.line_threshold
+        return
