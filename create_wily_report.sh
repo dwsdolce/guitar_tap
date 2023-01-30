@@ -1,3 +1,4 @@
+echo "Run wily build if you have added files"
 rm -f WILY.txt
 for i in *py
 do
