@@ -19,10 +19,12 @@
  * Download the source code or clone the repository from https://github.com/dwsdolce/guitar_tap
  * Install python from https://www.python.org/
  * Open a cmd window or shell/terminal that can run python
- * pip install numpy scipy pyaudio pyqt6 matplotlib
- * python guitar_tap.py
+	pip install numpy scipy pyaudio pyqt6 matplotlib
+	python guitar_tap.py
 
- NOTE: You may have to use python3 and pip3 on your system (MAC requires this).
- NOTE: On MAC you need to do:
- 	* brew install portaudio
+ **NOTE:** You may have to use python3 and pip3 on your system (MAC requires this).
+ **NOTE:** On MAC you need to do:
+
+ 	brew install portaudio
+
 	before running pip. The brew command makes sure that portaudio is installed on the MAC.
