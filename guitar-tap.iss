@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Guitar Tap"
-#define MyAppVersion "0.6"
+#define MyAppVersion "0.7"
 #define MyAppPublisher "Dolce Sfogato"
 #define MyAppURL "https://www.dolcesfogato.com/"
 #define MyAppExeName "guitar-tap.exe"

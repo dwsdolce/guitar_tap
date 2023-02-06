@@ -53,7 +53,7 @@ coll = COLLECT(
     upx_exclude=[],
     name='guitar-tap',
 )
-package_version='0.6.0'
+package_version='0.7.0'
 
 app = BUNDLE(coll,
     name='Guitar Tap.app',
