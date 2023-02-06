@@ -2,16 +2,24 @@
     This class is inspired by:
     https://flothesof.github.io/pyqt-microphone-fft-application.html
 """
+from sys import platform
+
 import threading
 import atexit
 import pyaudio
 import numpy as np
+if platform == 'darwin':
+    import macAccess
 
 class Microphone():
     """ Run the audio capture in a thread using the rate and buffer
         size specified. Closes on exit.
     """
-    def __init__(self, rate=44100, chunksize=16384):
+    def __init__(self, parent, rate=44100, chunksize=16384):
+
+        if platform == 'darwin':
+            ma = macAccess.MacAccess(parent)
+
         self.rate = rate
         self.chunksize = chunksize
         self.py_audio = pyaudio.PyAudio()

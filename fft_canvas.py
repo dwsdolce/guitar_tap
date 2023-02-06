@@ -79,7 +79,7 @@ class DrawFft(FigureCanvasQTAgg):
 
         # Open the audio stream
         self.mic = microphone.Microphone(
-            rate = self.fft_data.sample_freq, chunksize = self.fft_data.m_t)
+            self, rate = self.fft_data.sample_freq, chunksize = self.fft_data.m_t)
 
         # set the line and point plots and ini
         self.line, = self.fft_axes.plot([], [], lw=1)

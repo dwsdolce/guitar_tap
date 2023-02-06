@@ -40,8 +40,8 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
+    codesign_identity='Developer ID Application: David Smith (43QHHT3XK2)',
+    entitlements_file='entitlements.plist',
 )
 coll = COLLECT(
     exe,
@@ -53,9 +53,22 @@ coll = COLLECT(
     upx_exclude=[],
     name='guitar-tap',
 )
+package_version='0.6.0'
 
 app = BUNDLE(coll,
     name='Guitar Tap.app',
     icon='icons/guitar-tap.icns',
-    bundle_identifier=None)
-
+    version=package_version,
+    bundle_identifier='com.dolcesfogato.guitar-tap',
+    info_plist={
+      'CFBundleName': 'Guitar Tap',
+      'CFBundleDisplayName': 'Guitar Tap',
+      'CFBundleVersion': package_version,
+      'CFBundleShortVersionString': package_version,
+      'NSPrincipalClass': 'NSApplication',
+      'NSAppleScriptEnabled': False,
+      'NSRequiresAquaSystemAppearance': 'No',
+      'NSHighResolutionCapable': 'True',
+      'NSMicrophoneUsageDescription': 'Guitar Tap from the audio inputs to show spectrum and peaks'
+    },
+)
