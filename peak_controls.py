@@ -22,9 +22,11 @@ class PeakControls(QtWidgets.QWidget):
         restart_icon = self.style().standardIcon(pixmapi)
 
         self.red_pixmap = QtGui.QPixmap(os.path.join(basedir, './icons/led_red.png'))
-        self.red_icon = QtGui.QIcon(self.red_pixmap)
+        self.red_button_pixmap = QtGui.QPixmap(os.path.join(basedir, './icons/red_button.png'))
+        self.red_button_icon = QtGui.QIcon(self.red_button_pixmap)
         self.green_pixmap = QtGui.QPixmap(os.path.join(basedir,'./icons/led_green.png'))
-        self.green_icon = QtGui.QIcon(self.green_pixmap)
+        self.green_button_pixmap = QtGui.QPixmap(os.path.join(basedir,'./icons/green_button.png'))
+        self.green_button_icon = QtGui.QIcon(self.green_button_pixmap)
 
         #.....
         # Spacing above controls
@@ -38,7 +40,7 @@ class PeakControls(QtWidgets.QWidget):
         hold_results_layout.addWidget(hold_results_label)
 
         self.hold_results = QtWidgets.QToolButton()
-        self.hold_results.setIcon(self.green_icon)
+        self.hold_results.setIcon(self.green_button_icon)
         self.hold_results.setIconSize(QtCore.QSize(21, 21))
         self.hold_results.setStyleSheet('border: none')
         self.hold_results.setCheckable(True)
@@ -66,7 +68,7 @@ class PeakControls(QtWidgets.QWidget):
         avg_enable_layout.addWidget(avg_enable_label)
 
         self.avg_enable = QtWidgets.QToolButton()
-        self.avg_enable.setIcon(self.red_icon)
+        self.avg_enable.setIcon(self.red_button_icon)
         self.avg_enable.setIconSize(QtCore.QSize(21, 21))
         self.avg_enable.setStyleSheet('border: none')
         self.avg_enable.setCheckable(True)
@@ -290,12 +292,12 @@ class PeakControls(QtWidgets.QWidget):
             to do averaging or not.
         """
         if state:
-            self.avg_enable.setIcon(self.green_icon)
+            self.avg_enable.setIcon(self.green_button_icon)
             # Now enable the items
             self.avg_restart.setEnabled(True)
 
         else:
-            self.avg_enable.setIcon(self.red_icon)
+            self.avg_enable.setIcon(self.red_button_icon)
             # Now disable the items
             self.avg_restart.setEnabled(False)
 
@@ -304,7 +306,7 @@ class PeakControls(QtWidgets.QWidget):
             to do peak holding or not to do peak holding.
         """
         if state:
-            self.hold_results.setIcon(self.green_icon)
+            self.hold_results.setIcon(self.green_button_icon)
             # Save current state of avg_enable
             # and disable it
             self.avg_enable_saved = self.avg_enable.isChecked()
@@ -316,7 +318,7 @@ class PeakControls(QtWidgets.QWidget):
             else:
                 self.avg_restart.setEnabled(False)
         else:
-            self.hold_results.setIcon(self.red_icon)
+            self.hold_results.setIcon(self.red_button_icon)
             # Save current state of avg_enable
             # and enable it
             # restore current state of avg_enable
