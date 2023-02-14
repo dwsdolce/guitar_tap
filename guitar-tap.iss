@@ -27,7 +27,7 @@ LicenseFile=C:\Users\dws\src\guitar_tap\LICENSE
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 OutputDir=C:\Users\dws\src\guitar_tap\installer
-OutputBaseFilename=guitar-tap
+OutputBaseFilename=guitar-tap-v0.8
 Compression=lzma
 SetupIconFile=icons\guitar-tap.ico
 SolidCompression=yes
