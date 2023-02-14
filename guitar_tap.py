@@ -9,6 +9,7 @@ from PyQt6 import QtWidgets, QtGui
 import plot_controls as PC
 import peak_controls as PKC
 import peak_table as PT
+import show_devices as SD
 
 if os.name == 'nt':
     import named_mutex as NM
@@ -58,7 +59,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Create peaks table
         # ==========================================================
         self.peak_widget = PT.PeakTable()
-        #self.peak_table = peak_widget.peak_table
 
         hlayout.addWidget(self.peak_widget)
 
@@ -71,6 +71,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_controls.num_averages.valueChanged.connect(
             self.plot_controls.fft_canvas.set_max_average_count)
         self.peak_controls.avg_restart.clicked.connect(self.reset_averaging)
+        self.peak_controls.show_devices.clicked.connect(self.show_device_dialog)
 
         self.plot_controls.fft_canvas.peaksChanged.connect(self.peak_widget.model.updateData)
         self.plot_controls.fft_canvas.peakSelected.connect(self.peak_widget.select_row)
@@ -85,6 +86,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_avg_enable(False)
         self.set_hold_results(False)
         self.plot_controls.fft_canvas.set_max_average_count(self.peak_controls.num_averages.value())
+
+    def show_device_dialog(self, _):
+        """ Create and show the Devices dialog """
+        dlg = SD.ShowDevices(self.plot_controls.fft_canvas.get_py_audio())
+        dlg.exec()
 
     def peak_selection_changed(self, selected, _deselected):
         """ Process the selection of peaks in the peak table and select

@@ -117,6 +117,10 @@ class DrawFft(FigureCanvasQTAgg):
         self.timer.timeout.connect(self.update_fft)
         self.timer.start(100)
 
+    def get_py_audio(self):
+        """ Return the py_audio opened in the microphone """
+        return self.mic.py_audio
+
     def select_peak(self, freq):
         """ Select the peak (scatter point) with the specified frequency """
         if self.hold_results:

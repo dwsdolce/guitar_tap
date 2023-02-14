@@ -256,6 +256,7 @@ class PeakControls(QtWidgets.QWidget):
 
         control_layout.addLayout(min_layout)
 
+        #.....
         # Maximum frequency for peak results
         max_layout = QtWidgets.QHBoxLayout()
         max_label = QtWidgets.QLabel("Stop Freq (Hz)")
@@ -268,10 +269,16 @@ class PeakControls(QtWidgets.QWidget):
         self.max_spin.setValue(f_range['f_max'])
         self.max_spin.setToolTip('The highest frequency for which peaks are reported')
 
-
         max_layout.addWidget(self.max_spin)
 
         control_layout.addLayout(max_layout)
+
+        #.....
+        # Add devices button to display default devices and known devices
+        self.show_devices = QtWidgets.QPushButton("Devices")
+        self.show_devices.setToolTip('Display the default and all devices')
+
+        control_layout.addWidget(self.show_devices)
 
         #.....
         # Add space at the bottom

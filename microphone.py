@@ -9,7 +9,7 @@ import atexit
 import pyaudio
 import numpy as np
 if platform == 'darwin':
-    import macAccess
+    import mac_access
 
 class Microphone():
     """ Run the audio capture in a thread using the rate and buffer
@@ -18,7 +18,7 @@ class Microphone():
     def __init__(self, parent, rate=44100, chunksize=16384):
 
         if platform == 'darwin':
-            ma = macAccess.MacAccess(parent)
+            mac_access.MacAccess(parent)
 
         self.rate = rate
         self.chunksize = chunksize
