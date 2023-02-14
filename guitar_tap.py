@@ -33,7 +33,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.saved_path = ""
 
-        self.setWindowTitle("Guitar Tap 0.7")
+        self.setWindowTitle("Guitar Tap 0.8")
 
         hlayout = QtWidgets.QHBoxLayout(main_widget)
 

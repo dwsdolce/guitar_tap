@@ -4,7 +4,7 @@ test -f "Guitar Tap.dmg" && rm "Guitar Tap.dmg"
 # Create the dmg.
 echo "Creating DMG"
 create-dmg \
-  --volname "Guitar Tap 0.7 Install" \
+  --volname "Guitar Tap 0.8 Install" \
   --background "icons/guitar-tap-dmg.png" \
   --window-pos 1 1 \
   --icon "Guitar Tap.app" 190 350 \
@@ -16,7 +16,7 @@ create-dmg \
   --format ULFO \
   --hdiutil-verbose \
   --volicon "icons/guitar-tap.icns" \
-  "Guitar Tap.dmg" \
+  "Guitar Tap V0.8.dmg" \
   "dist/"
 
 echo "Signing DMG"
