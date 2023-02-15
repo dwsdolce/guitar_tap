@@ -58,6 +58,7 @@ then
 else
     pyinstaller -y guitar-tap.spec
 fi
+
 echo "Removing dist/guitar-tap"
 rm -rf dist/guitar-tap
 
@@ -83,6 +84,7 @@ create-dmg \
   --volicon "icons/guitar-tap.icns" \
   $dmg_name \
   "dist/"
+
 if [ $? -ne 0 ]; then
     echo "Creating the DMG failed"
     exit 1
@@ -119,3 +121,4 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Done creating ${dmg_name}"
+

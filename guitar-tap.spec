@@ -7,7 +7,8 @@ block_cipher = None
 
 added_files = [
     ('guitar-tap.ico', '.'),
-    ('icons','icons')
+    ('icons','icons'),
+    ('version', '.')
     ]
 
 a = Analysis(
@@ -55,6 +56,7 @@ coll = COLLECT(
     upx_exclude=[],
     name='guitar-tap',
 )
+
 package_version=f'{version}.0'
 
 app = BUNDLE(coll,

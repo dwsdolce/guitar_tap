@@ -49,7 +49,8 @@ rm -rf build
 #===============================================
 # Run pyinstaller
 #===============================================
-version="`cat version`"
+# Get the product version
+export version="`cat version`"
 echo "Creating installer for version ${version}"
 if [[ $current_arch == "i386" ]]
 then
@@ -57,13 +58,10 @@ then
 else
     pyinstaller -y guitar-tap.spec
 fi
+
 echo "Removing dist/guitar-tap"
 rm -rf dist/guitar-tap
 
-s!/bin/sh
-test -f "Guitar Tap.pkg" && rm "Guitar Tap.pkg"
-# Create the pkg.
-productbuild --sign "Developer ID Installer: David Smith (43QHHT3XK2)" --component dist/Guitar\ Tap.app /Applications Guitar\ Tap.pkg
 #===============================================
 # Create the pkg.
 #===============================================

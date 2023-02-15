@@ -32,8 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(main_widget)
 
         self.saved_path = ""
-
-        with open("version","r") as f:
+        with open(os.path.join(basedir, './version'), 'r') as f:
             version = f.read().rstrip()
 
         self.setWindowTitle(f"Guitar Tap {version}")
@@ -146,7 +145,7 @@ if __name__ == "__main__":
     qapp = QtWidgets.QApplication(sys.argv)
 
     app = MainWindow()
-    app.setWindowIcon(QtGui.QIcon(os.path.join(basedir,'icons/guitar-tap.svg')))
+    app.setWindowIcon(QtGui.QIcon(os.path.join(basedir, 'icons/guitar-tap.svg')))
     app.resize(800, 500)
     app.show()
     app.activateWindow()
