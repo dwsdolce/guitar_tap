@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+version = os.getenv('version')
+print(f'Creating build for version {version}')
 
 block_cipher = None
 
@@ -53,7 +55,7 @@ coll = COLLECT(
     upx_exclude=[],
     name='guitar-tap',
 )
-package_version='0.8.0'
+package_version=f'{version}.0'
 
 app = BUNDLE(coll,
     name='Guitar Tap.app',

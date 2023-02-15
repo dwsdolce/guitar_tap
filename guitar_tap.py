@@ -33,7 +33,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.saved_path = ""
 
-        self.setWindowTitle("Guitar Tap 0.8")
+        with open("version","r") as f:
+            version = f.read().rstrip()
+
+        self.setWindowTitle(f"Guitar Tap {version}")
 
         hlayout = QtWidgets.QHBoxLayout(main_widget)
 
