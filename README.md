@@ -14,6 +14,7 @@
  * pyaudio
  * pyqt6
  * matplotlib
+ * pyobjc (on MAC only)
 
  ## To run this software from source:
  * Download the source code or clone the repository from https://github.com/dwsdolce/guitar_tap
