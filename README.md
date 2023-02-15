@@ -26,7 +26,7 @@
 	- python guitar_tap.py
 
  * For MAC
- 	- pip install numpy scipy pyaudio pyqt6 matplotlib pyobj
+ 	- pip install numpy scipy pyaudio pyqt6 matplotlib
 	- pip install pyobjc==8.5.1
 	- python guitar_tap.py
 
