@@ -20,7 +20,12 @@
  * Download the source code or clone the repository from https://github.com/dwsdolce/guitar_tap
  * Install python from https://www.python.org/
  * Open a cmd window or shell/terminal that can run python
+   For Windows or Linux
  	- pip install numpy scipy pyaudio pyqt6 matplotlib
+	- python guitar_tap.py
+   For MAC
+ 	- pip install numpy scipy pyaudio pyqt6 matplotlib pyobj
+	- pip install pyobjc==8.5.1
 	- python guitar_tap.py
 
  **NOTE:** You may have to use python3 and pip3 on your system (MAC requires this).  
