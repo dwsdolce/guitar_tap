@@ -1,6 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-version = os.getenv('version')
+import sys
+import platform
+added_binaries = []
+if sys.platform == 'darwin':
+    if platform.machine() == 'x86_64':
+        added_binaries = [ ('/Users/dws/portaudio/lib/libportaudio.2.dylib', '.') ]
+        
+with open(os.path.abspath('./version'), 'r') as f:
+    version = f.read().rstrip()
+    f.close()
+
 print(f'Creating build for version {version}')
 
 block_cipher = None
@@ -14,7 +24,7 @@ added_files = [
 a = Analysis(
     ['guitar_tap.py'],
     pathex=[],
-    binaries=[],
+    binaries=added_binaries,
     datas=added_files,
     hiddenimports=[],
     hookspath=[],

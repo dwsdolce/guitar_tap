@@ -50,14 +50,9 @@ rm -rf build
 # Run pyinstaller
 #===============================================
 # Get the product version
-export version="`cat version`"
+version="`cat version`"
 echo "Creating installer for version ${version}"
-if [[ $current_arch == "i386" ]]
-then
-    pyinstaller -y guitar-tap-386.spec
-else
-    pyinstaller -y guitar-tap.spec
-fi
+pyinstaller -y guitar-tap.spec
 
 echo "Removing dist/guitar-tap"
 rm -rf dist/guitar-tap
