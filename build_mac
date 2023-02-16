@@ -1,7 +1,10 @@
 #!/bin/zsh
 
-# The only argument to this script is the architecture that should be built.
-# The options are: intel or arm
+# There are two fors for this command:
+#   build_mac help
+# and
+#   build_mac arm|intel dmg|pkg
+#  
 # The script reinvokes if the current architecture is not the desired one.
 #
 if [[ $# == 1 ]]
@@ -75,6 +78,10 @@ rm -rf build
 version="`cat version`"
 echo "Creating installer for version ${version}"
 pyinstaller -y guitar-tap.spec
+if [ $? -ne 0 ]; then
+    echo "Running pyinstaller failed"
+    exit 1
+fi
 
 echo "Removing dist/guitar-tap"
 rm -rf dist/guitar-tap

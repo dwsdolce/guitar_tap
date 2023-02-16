@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Guitar Tap"
-#define MyAppVersion "0.8"
+; #define MyAppVersion "0.8"
 #define MyAppPublisher "Dolce Sfogato"
 #define MyAppURL "https://www.dolcesfogato.com/"
 #define MyAppExeName "guitar-tap.exe"
@@ -27,7 +27,7 @@ LicenseFile=C:\Users\dws\src\guitar_tap\LICENSE
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 OutputDir=C:\Users\dws\src\guitar_tap\installer
-OutputBaseFilename=guitar-tap-v0.8
+OutputBaseFilename=Guitar_Tap_V{#MyAppVersion}
 Compression=lzma
 SetupIconFile=icons\guitar-tap.ico
 SolidCompression=yes
