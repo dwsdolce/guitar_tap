@@ -1,0 +1,145 @@
+#!/bin/zsh
+
+# The only argument to this script is the architecture that should be built.
+# The options are: intel or arm
+# The script reinvokes if the current architecture is not the desired one.
+#
+if [[ $# == 1 ]]
+then
+    if [[ "$1" == "help" ]]
+    then
+        echo "build_mac arm|intel dmg|pkg"
+        exit 0
+     fi
+elif [[ $# !=  2 ]]
+then
+    echo "build_mac arm|intel dmg|pkg"
+    exit 1
+fi
+
+desired="$1"
+if [[ $desired == "intel" ]]
+then
+    desired_arch="i386"
+    desired_arch_option="x86_64"
+elif [[ $desired == "arm" ]]
+then
+    desired_arch="arm64"
+    desired_arch_option="arm64"
+else
+    echo "Unknown platform to build: $desired"
+    echo "build_mac arm|intel dmg|pkg"
+    exit 1
+fi
+
+format="$2"
+if [[ $format != "dmg" && $format != "pkg" ]]
+then
+    echo "Unknown installer format to build: $format"
+    echo "build_mac arm|intel dmg|pkg"
+    exit 1
+fi
+    
+current_arch=`arch`
+if [[ $current_arch != $desired_arch ]]
+then
+    env /usr/bin/arch -$desired_arch_option /bin/zsh ./build_mac $desired $format
+    exit $?
+fi
+
+#===============================================
+# Setup the correct python environment
+#===============================================
+if [[ `arch` == "i386" ]]
+then
+    echo "Activating i386 virtual environment for Python"
+    source /Users/dws/i386/bin/activate
+elif [[ `arch` == 'arm64' ]]
+then
+    echo "Activating arm64 virtual environment for Python"
+    source /Users/dws/arm64/bin/activate
+fi
+
+echo "Running build for `arch` architecure"
+
+#===============================================
+# Clean-up
+#===============================================
+rm -rf dist
+rm -rf build
+
+#===============================================
+# Run pyinstaller
+#===============================================
+# Get the product version
+version="`cat version`"
+echo "Creating installer for version ${version}"
+pyinstaller -y guitar-tap.spec
+
+echo "Removing dist/guitar-tap"
+rm -rf dist/guitar-tap
+
+#===============================================
+# Create the format.
+#===============================================
+echo "Creating the ${format}"
+installer_name="Guitar_Tap_V${version}_${desired}.${format}"
+test -f $installer_name && rm $installer_name
+
+if [[ $format == "dmg" ]]
+then
+    create-dmg \
+        --volname "Guitar Tap $version Install" \
+        --background "icons/guitar-tap-dmg.png" \
+        --window-pos 1 1 \
+        --icon "Guitar Tap.app" 190 350 \
+        --window-size 640 535 \
+        --icon-size 110 \
+        --icon "Applications" 110 110 \
+        --hide-extension "Applications" \
+        --app-drop-link 450 360 \
+        --format ULFO \
+        --hdiutil-verbose \
+        --volicon "icons/guitar-tap.icns" \
+        $installer_name \
+        "dist/"
+else
+    productbuild --sign "Developer ID Installer: David Smith (43QHHT3XK2)" --component dist/Guitar\ Tap.app /Applications $installer_name
+fi
+if [ $? -ne 0 ]; then
+    echo "Creating the ${format} failed"
+    exit 1
+fi
+
+echo "Signing the ${format}"
+/usr/bin/codesign -s "Developer ID Application: David Smith (43QHHT3XK2)" $installer_name
+if [ $? -ne 0 ]; then
+    echo "Signing the ${format} failed"
+    exit 1
+fi
+
+echo "Done Creating the ${format}"
+
+#===============================================
+# Notarize the format.
+#===============================================
+echo "Notarizing the ${format}"
+xcrun notarytool submit $installer_name --wait --apple-id dws@dolcesfogato.com --password ouio-uwqe-qzhz-ukmm --team-id 43QHHT3XK2
+if [ $? -ne 0 ]; then
+    echo "Notarizing the ${format} failed"
+    exit 1
+fi
+echo "Done Notarizing the ${format}"
+
+#===============================================
+# Staple the format.
+#===============================================
+echo "Stapling the ${format}"
+xcrun stapler staple $installer_name
+if [ $? -ne 0 ]; then
+    echo "Stapling the {format} failed"
+    exit 1
+fi
+
+echo "Done creating ${installer_name}"
+
