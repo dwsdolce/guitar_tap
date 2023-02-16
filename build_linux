@@ -4,8 +4,8 @@
 #===============================================
 # Setup the correct python environment
 #===============================================
-echo "Activating win virtual environment for Python"
-. ~/win/Scripts/activate
+echo "Activating linux virtual environment for Python"
+. ~/linux/bin/activate
 
 echo "Running build for `arch` architecure"
 
@@ -24,14 +24,5 @@ echo "Creating installer for version ${version}"
 pyinstaller -y guitar-tap.spec
 if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"
-    exit 1
-fi
-
-installer_file=`pwd`/guitar-tap.iss
-ifile_win=`cygpath -w $installer_file`
-
-"c:/Program Files (x86)/Inno Setup 6"/ISCC.exe /DMyAppVersion=${version} /F $ifile_win
-if [ $? -ne 0 ]; then
-    echo "Creating the installer failed"
     exit 1
 fi
