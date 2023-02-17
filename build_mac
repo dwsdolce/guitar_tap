@@ -75,8 +75,8 @@ rm -rf build
 # Run pyinstaller
 #===============================================
 # Get the product version
-version="`cat version`"
-echo "Creating installer for version ${version}"
+VERSION="`cat version`"
+echo "Creating installer for version ${VERSION}"
 pyinstaller -y guitar-tap.spec
 if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"
@@ -90,13 +90,13 @@ rm -rf dist/guitar-tap
 # Create the format.
 #===============================================
 echo "Creating the ${format}"
-installer_name="Guitar_Tap_V${version}_${desired}.${format}"
+installer_name="Guitar_Tap_V${VERSION}_${desired}.${format}"
 test -f $installer_name && rm $installer_name
 
 if [[ $format == "dmg" ]]
 then
     create-dmg \
-        --volname "Guitar Tap $version Install" \
+        --volname "Guitar Tap $VERSION Install" \
         --background "icons/guitar-tap-dmg.png" \
         --window-pos 1 1 \
         --icon "Guitar Tap.app" 190 350 \
@@ -111,7 +111,19 @@ then
         $installer_name \
         "dist/"
 else
-    productbuild --sign "Developer ID Installer: David Smith (43QHHT3XK2)" --component dist/Guitar\ Tap.app /Applications $installer_name
+    #productbuild --sign "Developer ID Installer: David Smith (43QHHT3XK2)" --component dist/Guitar\ Tap.app /Applications $installer_name
+    rm -rf packages
+    mkdir packages
+    pkgbuild --root ./dist \
+        --component-plist guitar-tap.plist \
+        --identifier "com.dolcesfogato.guitar-tap" \
+        --version "${VERSION}" \
+        --install-location "/Applications" \
+        packages/GuitarTap.pkg
+    productbuild --distribution ./guitar-tap.${desired}.dist  \
+        --package-path ./packages \
+        --sign "Developer ID Installer: David Smith (43QHHT3XK2)" \
+        $installer_name
 fi
 if [ $? -ne 0 ]; then
     echo "Creating the ${format} failed"

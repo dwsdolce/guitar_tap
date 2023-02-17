@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Guitar Tap</title>
+    <domains enable_localSystem="true" enable_anywhere="true" enable_currentUserHome="true"/>
+    <pkg-ref id="com.dolcesfogato.guitar-tap"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.dolcesfogato.guitar-tap"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="com.dolcesfogato.guitar-tap" visible="false">
+        <pkg-ref id="com.dolcesfogato.guitar-tap"/>
+    </choice>
+    <pkg-ref id="com.dolcesfogato.guitar-tap" version="0.8" onConclusion="none">GuitarTap.pkg</pkg-ref> </installer-gui-script>

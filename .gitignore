@@ -23,6 +23,7 @@ eggs/
 installer/
 lib/
 lib64/
+packages/
 parts/
 sdist/
 var/
