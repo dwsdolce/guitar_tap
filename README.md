@@ -6,7 +6,9 @@
  This software is written in Python 3 and can be run on any platform that supports Python and the required packages.
 
  ## Running from Installer:
- There is an installer for MAC OS and for Windows in the directory: https://github.com/dwsdolce/guitar_tap/releases
+ There is an installer for MAC OS and for Windows in the directory: https://github.com/dwsdolce/guitar_tap/releases.
+ Please note that the MAC installer will only run on systems newer than Big Sur (11.0). This is due to the end of life of
+ the earlier systems
  
  ## Required packages to run from Source code
  * numpy
@@ -18,7 +20,7 @@
 
  ## To run this software from source:
  * Download the source code or clone the repository from https://github.com/dwsdolce/guitar_tap
- * Install python from https://www.python.org/
+ * Install python from https://www.python.org/ (the latest python is preferred 3.11).
  * Open a cmd window or shell/terminal that can run python
 
  * For Windows or Linux
