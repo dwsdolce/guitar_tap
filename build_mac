@@ -130,11 +130,14 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "Signing the ${format}"
-/usr/bin/codesign -s "Developer ID Application: David Smith (43QHHT3XK2)" $installer_name
-if [ $? -ne 0 ]; then
-    echo "Signing the ${format} failed"
-    exit 1
+if [[ $format == "dmg" ]]
+then
+    echo "Signing the ${format}"
+    /usr/bin/codesign -s "Developer ID Application: David Smith (43QHHT3XK2)" $installer_name
+    if [ $? -ne 0 ]; then
+        echo "Signing the ${format} failed"
+        exit 1
+    fi
 fi
 
 echo "Done Creating the ${format}"
