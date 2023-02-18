@@ -4,6 +4,9 @@
     <domains enable_localSystem="true" enable_anywhere="true" enable_currentUserHome="true"/>
     <pkg-ref id="com.dolcesfogato.guitar-tap"/>
     <options customize="never" require-scripts="false" hostArchitectures="x86_64"/>
+    <allowed-os-versions>
+        <os-version min="11.0.0" />
+    </allowed-os-versions>
     <choices-outline>
         <line choice="default">
             <line choice="com.dolcesfogato.guitar-tap"/>
