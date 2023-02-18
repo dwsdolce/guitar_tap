@@ -88,9 +88,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """ Return the value from the data for cols 1/2 and the value in
             the table for 3/4.
         """
-        if left.column() == 0 or left.column() == 1:
+        if index.column() == 0 or index.column() == 1:
             value = self._data[index.row()][index.column()]
-        elif left.column() == 2 or left.column() == 3:
+        elif index.column() == 2 or index.column() == 3:
             value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
         else:
             value = QtCore.QVariant()
