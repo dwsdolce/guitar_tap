@@ -56,11 +56,11 @@ fi
 if [[ `arch` == "i386" ]]
 then
     echo "Activating i386 virtual environment for Python"
-    source /Users/dws/i386/bin/activate
+    source ~/i386/bin/activate
 elif [[ `arch` == 'arm64' ]]
 then
     echo "Activating arm64 virtual environment for Python"
-    source /Users/dws/arm64/bin/activate
+    source ~/arm64/bin/activate
 fi
 
 echo "Running build for `arch` architecure"
