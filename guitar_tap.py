@@ -77,6 +77,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.plot_controls.fft_canvas.peaksChanged.connect(self.peak_widget.model.updateData)
         self.plot_controls.fft_canvas.peakSelected.connect(self.peak_widget.select_row)
+        self.plot_controls.fft_canvas.peakDeselected.connect(self.peak_widget.deselect_row)
         self.plot_controls.fft_canvas.averagesChanged.connect(self.peak_controls.set_avg_completed)
         self.plot_controls.fft_canvas.framerateUpdate.connect(self.peak_controls.set_framerate)
 
@@ -94,10 +95,18 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg = SD.ShowDevices(self.plot_controls.fft_canvas.get_py_audio())
         dlg.exec()
 
-    def peak_selection_changed(self, selected, _deselected):
+    def peak_selection_changed(self, selected, deselected):
         """ Process the selection of peaks in the peak table and select
             the corresponding peak in the FFT graph.
         """
+        if np.any(deselected):
+            proxy_model = self.peak_widget.peak_table.model()
+            proxy_freq_index = deselected.indexes()[0]
+
+            data_freq_index = proxy_model.mapToSource(proxy_freq_index)
+            freq = proxy_model.sourceModel().freq_value(data_freq_index)
+            #print(f"peak_selection_changed: deselected: freq: {freq}")
+            self.plot_controls.fft_canvas.deselect_peak(freq)
         if np.any(selected):
             proxy_model = self.peak_widget.peak_table.model()
             proxy_freq_index = selected.indexes()[0]
@@ -105,6 +114,7 @@ class MainWindow(QtWidgets.QMainWindow):
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
 
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
+            #print(f"peak_selection_changed: selected: freq: {freq}")
             self.plot_controls.fft_canvas.select_peak(freq)
 
     def set_avg_enable(self, checked):

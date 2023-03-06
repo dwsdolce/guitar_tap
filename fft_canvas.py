@@ -5,6 +5,8 @@ import time
 
 import numpy as np
 from scipy.signal import get_window
+import matplotlib
+matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib import pyplot as plt
 from PyQt6 import QtCore
@@ -40,6 +42,7 @@ class DrawFft(FigureCanvasQTAgg):
 
     hold = False
 
+    peakDeselected = QtCore.pyqtSignal()
     peakSelected = QtCore.pyqtSignal(int)
     peaksChanged = QtCore.pyqtSignal(np.ndarray)
     ampChanged = QtCore.pyqtSignal(int)
@@ -60,12 +63,15 @@ class DrawFft(FigureCanvasQTAgg):
 
         self.fft_data = FftData(sampling_rate, window_length)
 
-        #self.set_threshold(threshold)
         self.threshold = threshold
 
         # Set threshold value for drawing threshold line
         self.threshold_x = self.fft_data.sample_freq//2
         self.threshold_y = self.threshold - 100
+        # This is used to disable the reseting of the selected_peak
+        # from other tools (table) when the clearing of the 
+        # table row is caused by the movement of the slider.
+        self.disable_selected_peak_reset = False
 
         self.update_axis(frange['f_min'], frange['f_max'], True)
 
@@ -94,7 +100,8 @@ class DrawFft(FigureCanvasQTAgg):
         # Saved waveform data for drawing
         self.saved_mag_y_db = []
         self.saved_peaks = np.vstack(([], [])).T
-        self.selected_peak = np.vstack(([], [])).T
+        self.b_peaks_freq = []
+        self.selected_peak = -1.0
 
         # Saved peak information
         self.peaks_f_min_index = 0
@@ -122,17 +129,33 @@ class DrawFft(FigureCanvasQTAgg):
         return self.mic.py_audio
 
     def select_peak(self, freq):
+        #print(f"select_peak: freq: {freq}")
         """ Select the peak (scatter point) with the specified frequency """
         if self.hold_results:
             row = np.where(self.saved_peaks[:,0] == freq)
             magdb = self.saved_peaks[row][0][1]
             self.selected_point.set_offsets(np.vstack(([freq], [magdb])).T)
+            self.selected_peak = freq
+            self.fig.canvas.draw()
+    
+    def deselect_peak(self, freq):
+        #print(f"deselect_peak: freq: {freq}")
+        """ Deselect the peak (scatter point) with the specified frequency """
+        if self.hold_results:
+            self.selected_point.set_offsets(np.vstack(([], [])).T)
+            if not self.disable_selected_peak_reset:
+                #print("deselect_peak: resetting selected peak")
+                self.selected_peak = -1.0
+            else:
+                #print("deselect_peak: resetting disable selected peak")
+                self.disable_selected_peak_reset = False
             self.fig.canvas.draw()
 
     def point_picked(self, event):
         """ Handle the event for scatter point being picked and emit
             the index if it is within the min/max frequency range
         """
+        #print(f"point_picked")
         if self.hold_results:
             ind = event.ind[0]
             if self.peaks_f_min_index <= ind < self.peaks_f_max_index:
@@ -175,6 +198,7 @@ class DrawFft(FigureCanvasQTAgg):
         self.hold_results = hold_results
         if not hold_results:
             self.selected_point.set_offsets(np.vstack(([], [])).T)
+            self.selected_peak = -1.0
 
     def set_fmin(self, fmin):
         """ As it says """
@@ -197,9 +221,26 @@ class DrawFft(FigureCanvasQTAgg):
 
         self.line_threshold.set_data([0, self.threshold_x], [self.threshold_y, self.threshold_y])
 
-        self.selected_point.set_offsets(np.vstack(([], [])).T)
-
         self.find_peaks(self.saved_mag_y_db)
+
+        # Deselect peak on graph and on table.
+        # Check if peak is still within threshold
+        # Then use selected_peak set peak to new value
+        self.selected_point.set_offsets(np.vstack(([], [])).T)
+        #print(f"set_threshold: setting disable_selected_peak_reset: True")
+        self.disable_selected_peak_reset = True
+        self.peakDeselected.emit()
+        #print(f"set_threshold: b_peaks_freq: {self.b_peaks_freq}")
+        if np.any(self.b_peaks_freq):
+                #print(f"set_threshold: selected_peak: {self.selected_peak}")
+                if self.selected_peak > 0:
+                    peak_index= np.where(self.b_peaks_freq == self.selected_peak)
+                    #print(f"set_threshold: peak_index: {peak_index}")
+                    #print(f"set_threshold: shape(peak_index): {np.shape(peak_index)}")
+                    if len(peak_index[0]):
+                        #print("set_threshold: disable selected peak reset")
+                        self.peakSelected.emit(peak_index[0][0])
+
         self.fig.canvas.draw()
 
     def find_peaks(self, mag_y_db):
@@ -250,11 +291,12 @@ class DrawFft(FigureCanvasQTAgg):
             # If there are peaks in frequency bounds then update the peaks_data signal
             if self.peaks_f_max_index > 0:
                 # Update the peaks
-                b_peaks_freq = peaks_freq[self.peaks_f_min_index:self.peaks_f_max_index]
+                self.b_peaks_freq = peaks_freq[self.peaks_f_min_index:self.peaks_f_max_index]
                 b_peaks_mag = peaks_mag[self.peaks_f_min_index:self.peaks_f_max_index]
-                peaks_data = np.vstack((b_peaks_freq, b_peaks_mag)).T
+                peaks_data = np.vstack((self.b_peaks_freq, b_peaks_mag)).T
                 self.peaksChanged.emit(peaks_data)
             else:
+                self.b_peaks_freq = []
                 self.peaksChanged.emit(np.vstack(([], [])).T)
         else:
             self.saved_peaks = np.vstack(([], [])).T

@@ -283,6 +283,7 @@ class PeakTable(QtWidgets.QWidget):
             in the peak table and set the focus to it. Setting the focus will
             scroll the table so the row is in view and highlight it.
         """
+        #print(f"select_row: freq_index: {freq_index}")
         proxy_model = self.peak_table.model()
         data_model = proxy_model.sourceModel()
 
@@ -293,3 +294,6 @@ class PeakTable(QtWidgets.QWidget):
         flags = select_current | select_rows
         self.peak_table.setFocus()
         self.peak_table.selectionModel().setCurrentIndex(proxy_freq_index, flags)
+
+    def deselect_row(self):
+        self.peak_table.selectionModel().clearSelection()
