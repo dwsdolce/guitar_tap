@@ -9,6 +9,10 @@ __pycache__/
 # Unused
 UNUSED/
 
+# VIM
+*~
+*.swp
+
 # Apple
 .DS_Store
 

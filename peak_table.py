@@ -21,29 +21,6 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
     # pylint: disable=invalid-name
     def lessThan(self, left, right):
         """ Calculate per the class description. """
-        if left.column() == 0 or left.column() == 1:
-            # Sort by numeric value (assumes left and right column are the same)
-            # Use the python value instead of the numpy value so that a bool is
-            # returned instead of a numpy.bool_.
-            less_than = (self.sourceModel().data_value(left) <
-                         self.sourceModel().data_value(right))
-            less_than = less_than.item()
-        elif left.column() == 2:
-            # Use the freq to define order
-            # Use the python value instead of the numpy value so that a bool is
-            # returned instead of a numpy.bool_.
-            left_freq = self.sourceModel().freq_value(left)
-            right_freq  = self.sourceModel().freq_value(right)
-            less_than = left_freq < right_freq
-            less_than = less_than.item()
-        elif left.column() == 3:
-            # Sort by absolute value of cents (so +/-3 is less than +/- 4)
-            left_cents = self.sourceModel().pitch.cents(self.sourceModel().freq_value(left))
-            right_cents = self.sourceModel().pitch.cents(self.sourceModel().freq_value(right))
-            less_than = abs(left_cents) < abs(right_cents)
-        else:
-            less_than = True
-        """
         match left.column():
             case 0 | 1:
                 # Sort by numeric value (assumes left and right column are the same)
@@ -67,11 +44,10 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
                 less_than = abs(left_cents) < abs(right_cents)
             case _:
                 less_than = True
-        """
         return less_than
 
 class PeaksModel(QtCore.QAbstractTableModel):
-    """ Custom data model to handle deriving pitch and cents from frequency. ALso defines
+    """ Custom data model to handle deriving pitch and cents from frequency. Also defines
         accessing the underlying data model.
     """
     header_names = ['Frequency', 'Magnitude', 'Pitch', 'Cents']
@@ -81,19 +57,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.pitch = pitch_c.Pitch(440)
 
     def freq_value(self, index):
-        """ Return the frequency valuy from column 0 for the row """
+        """ Return the frequency value from column 0 for the row """
         return self._data[index.row()][0]
 
     def data_value(self, index):
         """ Return the value from the data for cols 1/2 and the value in
             the table for 3/4.
-        """
-        if index.column() == 0 or index.column() == 1:
-            value = self._data[index.row()][index.column()]
-        elif index.column() == 2 or index.column() == 3:
-            value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
-        else:
-            value = QtCore.QVariant()
         """
         match index.column():
             case 0 | 1:
@@ -102,30 +71,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
             case _:
                 value = QtCore.QVariant()
-        """
         return value
 
     def data(self, index, role):
         """ Return the requested data based on role. """
-        if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            if index.column() == 0 or index.column() == 1:
-                value = self._data[index.row()][index.column()]
-                str_value = f'{value:.1f}'
-            elif index.column() == 2:
-                value = self._data[index.row()][0]
-                str_value = self.pitch.note(value)
-            elif index.column() == 3:
-                value = self._data[index.row()][0]
-                str_value = f'{self.pitch.cents(value):+.0f}'
-            else:
-                value = self._data[index.row()][index.column()]
-                str_value = str(value)
-            return str_value
-        elif role == QtCore.Qt.ItemDataRole.TextAlignmentRole:
-            return QtCore.Qt.AlignmentFlag.AlignRight
-        else:
-            return QtCore.QVariant()
-        """
         match role:
             case QtCore.Qt.ItemDataRole.DisplayRole:
                 match index.column():
@@ -146,19 +95,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 return QtCore.Qt.AlignmentFlag.AlignRight
             case _:
                 return QtCore.QVariant()
-        """
 
     # pylint: disable=invalid-name
     def headerData(self, section, orientation, role):
         """ Return the header data """
-        if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            if orientation == QtCore.Qt.Orientation.Horizontal:
-                return self.header_names[section]
-            else:
-                return QtCore.QVariant()
-        else:
-            return QtCore.QVariant()
-        """
         match role:
             case QtCore.Qt.ItemDataRole.DisplayRole:
                 match orientation:
@@ -168,7 +108,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
                         return QtCore.QVariant()
             case _:
                 return QtCore.QVariant()
-        """
 
     # pylint: disable=invalid-name
     def updateData(self, data):
@@ -178,7 +117,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
         self._data = data
         self.layoutChanged.emit()
-        return True
 
     # pylint: disable=invalid-name
     def rowCount(self, parent):
@@ -249,6 +187,10 @@ class PeakTable(QtWidgets.QWidget):
         peaks_layout.addSpacing(40)
 
         self.setLayout(peaks_layout)
+
+    def updateData(self, data):
+        self.model.updateData(data)
+        return True
 
     def save_peaks(self):
         """ Save the peaks in the table to a CVS file that is compatible with

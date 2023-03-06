@@ -75,7 +75,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_controls.avg_restart.clicked.connect(self.reset_averaging)
         self.peak_controls.show_devices.clicked.connect(self.show_device_dialog)
 
-        self.plot_controls.fft_canvas.peaksChanged.connect(self.peak_widget.model.updateData)
+        self.plot_controls.fft_canvas.peaksChanged.connect(self.peak_widget.updateData)
         self.plot_controls.fft_canvas.peakSelected.connect(self.peak_widget.select_row)
         self.plot_controls.fft_canvas.peakDeselected.connect(self.peak_widget.deselect_row)
         self.plot_controls.fft_canvas.averagesChanged.connect(self.peak_controls.set_avg_completed)
