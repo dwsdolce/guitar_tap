@@ -132,6 +132,16 @@ class PeaksModel(QtCore.QAbstractTableModel):
             return 0
         return self._data.shape[1] + 2
 
+class PeakTableView(QtWidgets.QTableView):
+    clearPeaks = QtCore.pyqtSignal()
+    def mousePressEvent(self,event):
+        mouseBtn = event.button()
+        if mouseBtn == QtCore.Qt.MouseButton.LeftButton:
+            index = self.indexAt(event.pos())
+            if index.row() == -1 and index.column() == -1:
+                self.clearPeaks.emit()
+
+        super().mousePressEvent(event)
 
 class PeakTable(QtWidgets.QWidget):
     """ Table and save button for displaying table of peaks and interacting with it. """
@@ -150,7 +160,7 @@ class PeakTable(QtWidgets.QWidget):
 
         #.....
         # Use tableview to display fft peaks
-        self.peak_table = QtWidgets.QTableView()
+        self.peak_table = PeakTableView()
         data = np.vstack(([], [])).T
         self.model = PeaksModel(data)
         # Use custom QSortFilterProxyModel to define the sort
@@ -225,7 +235,6 @@ class PeakTable(QtWidgets.QWidget):
             in the peak table and set the focus to it. Setting the focus will
             scroll the table so the row is in view and highlight it.
         """
-        #print(f"select_row: freq_index: {freq_index}")
         proxy_model = self.peak_table.model()
         data_model = proxy_model.sourceModel()
 

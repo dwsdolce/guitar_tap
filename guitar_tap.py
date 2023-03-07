@@ -81,6 +81,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_controls.fft_canvas.averagesChanged.connect(self.peak_controls.set_avg_completed)
         self.plot_controls.fft_canvas.framerateUpdate.connect(self.peak_controls.set_framerate)
 
+        self.peak_widget.peak_table.clearPeaks.connect(self.plot_controls.fft_canvas.clear_selected_peak)
         self.peak_widget.peak_table.selectionModel().selectionChanged.connect(
             self.peak_selection_changed)
 
@@ -105,7 +106,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
-            #print(f"peak_selection_changed: deselected: freq: {freq}")
             self.plot_controls.fft_canvas.deselect_peak(freq)
         if np.any(selected):
             proxy_model = self.peak_widget.peak_table.model()
@@ -114,7 +114,6 @@ class MainWindow(QtWidgets.QMainWindow):
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
 
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
-            #print(f"peak_selection_changed: selected: freq: {freq}")
             self.plot_controls.fft_canvas.select_peak(freq)
 
     def set_avg_enable(self, checked):
