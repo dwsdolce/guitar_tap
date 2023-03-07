@@ -4,8 +4,15 @@
 #===============================================
 # Setup the correct python environment
 #===============================================
+# NOTE: activate does not work correctly in Bash
+# in Cygwin.
 echo "Activating win virtual environment for Python"
-. ~/win/Scripts/activate
+export VIRTUAL_ENV="~/win"
+export PATH="${VIRTUAL_ENV}/Scripts:${PATH}"
+if [ -n "${PYTHONHOME:-}" ] ; then
+    _OLD_VIRTUAL_PYTHONHOME="${PYTHONHOME:-}"
+    unset PYTHONHOME
+fi
 
 echo "Running build for `arch` architecure"
 
