@@ -48,6 +48,7 @@ class FftCanvas(FigureCanvasQTAgg):
     ampChanged = QtCore.pyqtSignal(int)
     averagesChanged = QtCore.pyqtSignal(int)
     framerateUpdate = QtCore.pyqtSignal(float, float, float)
+    newSample = QtCore.pyqtSignal(bool)
 
     def __init__(self, window_length, sampling_rate, frange, threshold):
         self.fig = plt.figure(figsize = (5, 3))
@@ -326,6 +327,7 @@ class FftCanvas(FigureCanvasQTAgg):
                 # Find peaks using average mag_y_db
                 triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
                 if triggered:
+                    self.newSample.emit(self.hold_results)
                     # Draw avg_mag_y_db and avg_peaks
                     # Draw threshold
                     self.set_draw_data(avg_mag_y_db, avg_peaks)

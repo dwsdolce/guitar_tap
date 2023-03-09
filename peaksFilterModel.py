@@ -11,7 +11,7 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
     """
 
     # pylint: disable=invalid-name
-    def lessThan(self, left, right):
+    def lessThan(self, left: QtCore.QModelIndex, right: QtCore.QModelIndex):
         """ Calculate per the class description. """
         match left.column():
             case ColumnIndex.Frequency.value | ColumnIndex.Magnitude.value:

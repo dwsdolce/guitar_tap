@@ -3,8 +3,7 @@
 import sys
 import os
 
-import numpy as np
-from PyQt6 import QtWidgets, QtGui
+from PyQt6 import QtWidgets, QtGui, QtCore
 
 import plot_controls as PC
 import peak_controls as PKC
@@ -80,6 +79,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_controls.fft_canvas.peakDeselected.connect(self.peak_widget.deselect_row)
         self.plot_controls.fft_canvas.averagesChanged.connect(self.peak_controls.set_avg_completed)
         self.plot_controls.fft_canvas.framerateUpdate.connect(self.peak_controls.set_framerate)
+        self.plot_controls.fft_canvas.newSample.connect(self.peak_widget.new_data)
 
         self.peak_widget.peak_table.clearPeaks.connect(self.plot_controls.fft_canvas.clear_selected_peak)
         self.peak_widget.peak_table.selectionModel().selectionChanged.connect(
@@ -96,40 +96,42 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg = SD.ShowDevices(self.plot_controls.fft_canvas.get_py_audio())
         dlg.exec()
 
-    def peak_selection_changed(self, selected, deselected):
+    def peak_selection_changed(self, selected: QtCore.QItemSelection, deselected: QtCore.QItemSelection):
         """ Process the selection of peaks in the peak table and select
             the corresponding peak in the FFT graph.
         """
-        if np.any(deselected):
+        if len(deselected.indexes()) > 0:
             proxy_model = self.peak_widget.peak_table.model()
             proxy_freq_index = deselected.indexes()[0]
+            print(f"peak_selection_changed: deselected: {proxy_freq_index.row()}, {proxy_freq_index.column()}")
 
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
             self.plot_controls.fft_canvas.deselect_peak(freq)
-        if np.any(selected):
+        if len(selected.indexes()) > 0:
             proxy_model = self.peak_widget.peak_table.model()
             proxy_freq_index = selected.indexes()[0]
+            print(f"peak_selection_changed: selected: {proxy_freq_index.row()}, {proxy_freq_index.column()}")
 
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
 
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
             self.plot_controls.fft_canvas.select_peak(freq)
 
-    def set_avg_enable(self, checked):
+    def set_avg_enable(self, checked: bool):
         """ Change the icon color and also change the fft_plot
             to do averaging or not.
         """
         self.plot_controls.fft_canvas.set_avg_enable(checked)
         self.peak_controls.set_avg_enable(checked)
 
-    def set_hold_results(self, checked):
+    def set_hold_results(self, checked: bool):
         """ Change the icon color and also change the fft_plot
             to do peak holding or not to do peak holding.
         """
         self.plot_controls.fft_canvas.set_hold_results(checked)
         self.peak_controls.set_hold_results(checked)
-        self.peak_widget.set_hold_results(checked)
+        self.peak_widget.data_held(checked)
 
         if checked:
             self.set_avg_enable(False)

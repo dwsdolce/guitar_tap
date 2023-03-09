@@ -7,14 +7,14 @@ import os
 import csv
 
 import numpy as np
-from PyQt6 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore, QtGui
 import modeComboDelegate as mcd
 import peaksFilterModel as pfm
 import peaksModel as pm
 
 class PeakTableView(QtWidgets.QTableView):
     clearPeaks = QtCore.pyqtSignal()
-    def mousePressEvent(self,event):
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
         mouseBtn = event.button()
         if mouseBtn == QtCore.Qt.MouseButton.LeftButton:
             index = self.indexAt(event.pos())
@@ -81,8 +81,8 @@ class PeakTable(QtWidgets.QWidget):
 
         self.setLayout(peaks_layout)
 
-    def updateData(self, data):
-        #print("Peak: updateData")
+    def updateData(self, data: np.ndarray):
+        #print(f"Peak: updateData: {data}")
         self.model.updateData(data)
         return True
 
@@ -114,7 +114,7 @@ class PeakTable(QtWidgets.QWidget):
                     writer.writerow(data_model.data_value(data_model.index(row, column))
                         for column in columns)
 
-    def select_row(self, freq_index):
+    def select_row(self, freq_index: int):
         #print("PeakTable: select_row")
         """ For the specified frequency index select the corresponding row
             in the peak table and set the focus to it. Setting the focus will
@@ -135,12 +135,12 @@ class PeakTable(QtWidgets.QWidget):
         #print("PeakTable: delect_row")
         self.peak_table.selectionModel().clearSelection()
     
-    def set_hold_results(self, checked):
-        #print("PeakTable: set_hold_results")
+    def data_held(self, held: bool):
+        #print("PeakTable: data_held")
 
-        self.model.set_hold_results(checked)
+        self.model.data_held(held)
 
-        if checked:
+        if held:
             self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.SingleSelection)
             self.peak_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.AllEditTriggers)
         else:
@@ -149,3 +149,5 @@ class PeakTable(QtWidgets.QWidget):
             self.peak_table.clearSelection()
             self.peak_table.reset()
         
+    def new_data(self, held: bool):
+        self.model.new_data(held)

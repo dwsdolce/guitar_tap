@@ -26,9 +26,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     "Cross Tripole T(3,1)"]
 
     header_names = [e.name for e in ColumnIndex]
-    def __init__(self, data):
+    def __init__(self, data: np.ndarray):
         super().__init__()
-        self.clear_data = data
         self._data = data
         self.pitch = pitch_c.Pitch(440)
         self.modes_width = len(max(self.mode_strings, key=len))
@@ -36,11 +35,11 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.modes = {}
         self.disable_editing = True
 
-    def set_mode_value(self, index, value):
+    def set_mode_value(self, index: QtCore.QModelIndex, value: str):
         #print("PeaksModel: set_mode_value")
         self.modes[self.freq_value(index)] = value
 
-    def mode_value(self, index):
+    def mode_value(self, index: QtCore.QModelIndex):
         #print("PeaksModel: mode_value")
         """ Return the mode for the row """
         if self.freq_value(index) in self.modes:
@@ -48,12 +47,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
         else:
             return ""
 
-    def freq_value(self, index):
+    def freq_value(self, index: QtCore.QModelIndex):
         #print("PeaksModel: freq_value")
         """ Return the frequency value from column 0 for the row """
         return self._data[index.row()][ColumnIndex.Frequency.value]
 
-    def data_value(self, index):
+    def data_value(self, index: QtCore.QModelIndex):
         #print("PeaksModel: data_value")
         """ Return the value from the data for cols 1/2 and the value in
             the table for 3/4.
@@ -69,7 +68,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 value = QtCore.QVariant()
         return value
 
-    def data(self, index, role):
+    def data(self, index: QtCore.QModelIndex, role: QtCore.Qt.ItemDataRole):
         #print("PeaksModel: data")
         """ Return the requested data based on role. """
         match role:
@@ -105,7 +104,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 return QtCore.QVariant()
 
     # pylint: disable=invalid-name
-    def headerData(self, section, orientation, role):
+    def headerData(self, section: int, orientation: QtCore.Qt.Orientation, role: QtCore.Qt.ItemDataRole):
         #print(f"PeaksModel: headerData: {section} {orientation} {QtCore.Qt.ItemDataRole(role).name}")
         """ Return the header data """
         match role:
@@ -119,18 +118,19 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 return QtCore.QVariant()
 
     # pylint: disable=invalid-name
-    def updateData(self, data):
-        #print("PeaksModel: updateData")
+    def updateData(self, data: np.ndarray):
         """ Update the data model from outside the object and
             then update the table.
         """
+        print(f"PeaksModel: updateData: data {data}")
+        print(f"PeaksModel: updateData: type {type(data)}")
+
         self.layoutAboutToBeChanged.emit()
         self._data = data
         nrows = data.shape[0]
-        #self.modes = np.full(nrows, "", dtype = object)
         self.layoutChanged.emit()
 
-    def setData(self, index, value, role = QtCore.Qt.ItemDataRole.EditRole):
+    def setData(self, index: QtCore.QModelIndex, value, role = QtCore.Qt.ItemDataRole.EditRole):
         #print("PeaksModel: setData")
         if index.isValid():
             if index.column() == ColumnIndex.Modes.value:
@@ -141,7 +141,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             return False
     
     # pylint: disable=invalid-name
-    def rowCount(self, index):
+    def rowCount(self, index: QtCore.QModelIndex):
         #print("PeaksModel: rowCount")
         """ Return the number of rows """
         if index.isValid():
@@ -153,14 +153,14 @@ class PeaksModel(QtCore.QAbstractTableModel):
         return row_count
 
     # pylint: disable=invalid-name
-    def columnCount(self, index):
+    def columnCount(self, index: QtCore.QModelIndex):
         #print("PeaksModel: columnCount")
         """ Return the number of columnes """
         if index.isValid():
             return 0
         return len(ColumnIndex)
 
-    def flags(self, index):
+    def flags(self, index: QtCore.QModelIndex):
         #print("PeaksModel: flags")
         if self.disable_editing:
             flag = QtCore.Qt.ItemFlag.NoItemFlags
@@ -171,13 +171,13 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     flag = QtCore.Qt.ItemFlag.ItemIsEditable | QtCore.Qt.ItemFlag.ItemIsEnabled | QtCore.Qt.ItemFlag.ItemIsSelectable
         return flag
 
-    def set_hold_results(self, checked):
-        #print(f"set_hold_results: {checked}")
-        if checked:
+    def data_held(self, held: bool):
+        #print(f"data_held: {held}")
+        if held:
             self.disable_editing = False
         else:
             self.disable_editing = True
-            self.beginResetModel()
+    
+    def new_data(self, held: bool):
+        if not held:
             self.modes = {}
-            self.data = self.clear_data
-            self.endResetModel()
