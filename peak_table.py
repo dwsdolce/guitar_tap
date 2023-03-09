@@ -8,129 +8,9 @@ import csv
 
 import numpy as np
 from PyQt6 import QtWidgets, QtCore
-
-import pitch as pitch_c
-
-# pylint: disable=too-few-public-methods
-class PeaksFilterModel(QtCore.QSortFilterProxyModel):
-    """ Add a custom filter to handle the sorting of the columns. This is required
-        due to the value displayed in the table being a string but we want to sort
-        on the original numeric data or, for the case of cents on the absolute
-        value of the cents.
-    """
-    # pylint: disable=invalid-name
-    def lessThan(self, left, right):
-        """ Calculate per the class description. """
-        match left.column():
-            case 0 | 1:
-                # Sort by numeric value (assumes left and right column are the same)
-                # Use the python value instead of the numpy value so that a bool is
-                # returned instead of a numpy.bool_.
-                less_than = (self.sourceModel().data_value(left) <
-                             self.sourceModel().data_value(right))
-                less_than = less_than.item()
-            case 2:
-                # Use the freq to define order
-                # Use the python value instead of the numpy value so that a bool is
-                # returned instead of a numpy.bool_.
-                left_freq = self.sourceModel().freq_value(left)
-                right_freq  = self.sourceModel().freq_value(right)
-                less_than = left_freq < right_freq
-                less_than = less_than.item()
-            case 3:
-                # Sort by absolute value of cents (so +/-3 is less than +/- 4)
-                left_cents = self.sourceModel().pitch.cents(self.sourceModel().freq_value(left))
-                right_cents = self.sourceModel().pitch.cents(self.sourceModel().freq_value(right))
-                less_than = abs(left_cents) < abs(right_cents)
-            case _:
-                less_than = True
-        return less_than
-
-class PeaksModel(QtCore.QAbstractTableModel):
-    """ Custom data model to handle deriving pitch and cents from frequency. Also defines
-        accessing the underlying data model.
-    """
-    header_names = ['Frequency', 'Magnitude', 'Pitch', 'Cents']
-    def __init__(self, data):
-        super().__init__()
-        self._data = data
-        self.pitch = pitch_c.Pitch(440)
-
-    def freq_value(self, index):
-        """ Return the frequency value from column 0 for the row """
-        return self._data[index.row()][0]
-
-    def data_value(self, index):
-        """ Return the value from the data for cols 1/2 and the value in
-            the table for 3/4.
-        """
-        match index.column():
-            case 0 | 1:
-                value = self._data[index.row()][index.column()]
-            case 2 | 3:
-                value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
-            case _:
-                value = QtCore.QVariant()
-        return value
-
-    def data(self, index, role):
-        """ Return the requested data based on role. """
-        match role:
-            case QtCore.Qt.ItemDataRole.DisplayRole:
-                match index.column():
-                    case 0 | 1:
-                        value = self._data[index.row()][index.column()]
-                        str_value = f'{value:.1f}'
-                    case 2:
-                        value = self._data[index.row()][0]
-                        str_value = self.pitch.note(value)
-                    case 3:
-                        value = self._data[index.row()][0]
-                        str_value = f'{self.pitch.cents(value):+.0f}'
-                    case _:
-                        value = self._data[index.row()][index.column()]
-                        str_value = str(value)
-                return str_value
-            case QtCore.Qt.ItemDataRole.TextAlignmentRole:
-                return QtCore.Qt.AlignmentFlag.AlignRight
-            case _:
-                return QtCore.QVariant()
-
-    # pylint: disable=invalid-name
-    def headerData(self, section, orientation, role):
-        """ Return the header data """
-        match role:
-            case QtCore.Qt.ItemDataRole.DisplayRole:
-                match orientation:
-                    case QtCore.Qt.Orientation.Horizontal:
-                        return self.header_names[section]
-                    case _:
-                        return QtCore.QVariant()
-            case _:
-                return QtCore.QVariant()
-
-    # pylint: disable=invalid-name
-    def updateData(self, data):
-        """ Update the data model from outside the object and
-            then update the table.
-        """
-        self.layoutAboutToBeChanged.emit()
-        self._data = data
-        self.layoutChanged.emit()
-
-    # pylint: disable=invalid-name
-    def rowCount(self, parent):
-        """ Return the number of rows """
-        if parent.isValid():
-            return 0
-        return self._data.shape[0]
-
-    # pylint: disable=invalid-name
-    def columnCount(self, parent):
-        """ Return the number of columnes """
-        if parent.isValid():
-            return 0
-        return self._data.shape[1] + 2
+import modeComboDelegate as mcd
+import peaksFilterModel as pfm
+import peaksModel as pm
 
 class PeakTableView(QtWidgets.QTableView):
     clearPeaks = QtCore.pyqtSignal()
@@ -162,16 +42,19 @@ class PeakTable(QtWidgets.QWidget):
         # Use tableview to display fft peaks
         self.peak_table = PeakTableView()
         data = np.vstack(([], [])).T
-        self.model = PeaksModel(data)
+        self.model = pm.PeaksModel(data)
         # Use custom QSortFilterProxyModel to define the sort
-        proxy_model = PeaksFilterModel()
+        proxy_model = pfm.PeaksFilterModel()
         proxy_model.setSourceModel(self.model)
         self.peak_table.setModel(proxy_model)
         self.peak_table.setSortingEnabled(True)
         self.peak_table.sortByColumn(0, QtCore.Qt.SortOrder.AscendingOrder)
         self.peak_table.resizeColumnsToContents()
+        self.peak_table.setColumnWidth(self.model.modes_column, self.model.modes_width*8)
         self.peak_table.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows)
         self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.NoSelection)
+        self.peak_table.setItemDelegateForColumn(self.model.modes_column, mcd.ModeComboDelegate(self, self.model.mode_strings)) 
+        self.peak_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.AllEditTriggers)
         self.peak_table.setToolTip('Displays the peaks found. When results are held, select\n'
             'a cell to highlight the peak in the FFT Peaks display or\n'
             'select a peak on the FFT Peaks waveform to highlight\n'
@@ -199,6 +82,7 @@ class PeakTable(QtWidgets.QWidget):
         self.setLayout(peaks_layout)
 
     def updateData(self, data):
+        #print("Peak: updateData")
         self.model.updateData(data)
         return True
 
@@ -231,6 +115,7 @@ class PeakTable(QtWidgets.QWidget):
                         for column in columns)
 
     def select_row(self, freq_index):
+        #print("PeakTable: select_row")
         """ For the specified frequency index select the corresponding row
             in the peak table and set the focus to it. Setting the focus will
             scroll the table so the row is in view and highlight it.
@@ -247,4 +132,20 @@ class PeakTable(QtWidgets.QWidget):
         self.peak_table.selectionModel().setCurrentIndex(proxy_freq_index, flags)
 
     def deselect_row(self):
+        #print("PeakTable: delect_row")
         self.peak_table.selectionModel().clearSelection()
+    
+    def set_hold_results(self, checked):
+        #print("PeakTable: set_hold_results")
+
+        self.model.set_hold_results(checked)
+
+        if checked:
+            self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.SingleSelection)
+            self.peak_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.AllEditTriggers)
+        else:
+            self.peak_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.NoSelection)
+            self.peak_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.NoEditTriggers)
+            self.peak_table.clearSelection()
+            self.peak_table.reset()
+        

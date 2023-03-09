@@ -61,6 +61,24 @@ class PeakControls(QtWidgets.QWidget):
         averages_layout = QtWidgets.QVBoxLayout(avg_group_box)
 
         #.....
+        # Number of averages
+        num_averages_layout = QtWidgets.QHBoxLayout()
+
+        num_averages_label = QtWidgets.QLabel("Number of averages")
+        num_averages_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        num_averages_layout.addWidget(num_averages_label)
+
+        self.num_averages = QtWidgets.QSpinBox()
+        self.num_averages.setMinimum(0)
+        self.num_averages.setMaximum(10)
+        self.num_averages.setValue(0)
+        self.num_averages.setToolTip('Set the number of fft samples to average')
+
+        num_averages_layout.addWidget(self.num_averages)
+
+        averages_layout.addLayout(num_averages_layout)
+
+        #.....
         # Enable averaging
         avg_enable_layout = QtWidgets.QHBoxLayout()
         avg_enable_label = QtWidgets.QLabel("Averaging enable")
@@ -79,24 +97,6 @@ class PeakControls(QtWidgets.QWidget):
         self.avg_enable_saved = self.avg_enable.isChecked()
 
         averages_layout.addLayout(avg_enable_layout)
-
-        #.....
-        # Number of averages
-        num_averages_layout = QtWidgets.QHBoxLayout()
-
-        num_averages_label = QtWidgets.QLabel("Number of averages")
-        num_averages_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-        num_averages_layout.addWidget(num_averages_label)
-
-        self.num_averages = QtWidgets.QSpinBox()
-        self.num_averages.setMinimum(0)
-        self.num_averages.setMaximum(10)
-        self.num_averages.setValue(0)
-        self.num_averages.setToolTip('Set the number of fft samples to average')
-
-        num_averages_layout.addWidget(self.num_averages)
-
-        averages_layout.addLayout(num_averages_layout)
 
         #.....
         # Averages completed
@@ -287,6 +287,7 @@ class PeakControls(QtWidgets.QWidget):
         self.setLayout(control_layout)
 
     def set_framerate(self, framerate, sampletime, processingtime):
+        #print("PeakControls: set_framerate")
         """ Update the status display for frame rate, sample time, and
             processing time.
         """
@@ -295,6 +296,7 @@ class PeakControls(QtWidgets.QWidget):
         self.processingtime.setText(f'{processingtime*1000:.1f} ms')
 
     def set_avg_enable(self, state):
+        #print("PeakControls: set_avg_enable")
         """ Change the icon color and also change the fft_plot
             to do averaging or not.
         """
@@ -309,6 +311,7 @@ class PeakControls(QtWidgets.QWidget):
             self.avg_restart.setEnabled(False)
 
     def set_hold_results(self, state):
+        #print("PeakControls: set_hold_results")
         """ Change the icon color and also change the fft_plot
             to do peak holding or not to do peak holding.
         """
@@ -339,6 +342,7 @@ class PeakControls(QtWidgets.QWidget):
             self.hold_results.click()
 
     def set_avg_completed(self, count):
+        #print("PeakControls: set_avg_completed")
         """ Check the count to see if the maximum number of averages has been reached.
             If it has then disable the appropriate controls, set the LED red otherwise
             enable the controls, set the LED green, and set hold results.
@@ -353,7 +357,7 @@ class PeakControls(QtWidgets.QWidget):
             self.hold_results.click()
 
             # Eable the restart after holding the results (hold_results sets the
-            # restart to disabled
+            # restart to disabled)
             self.avg_restart.setEnabled(True)
         else:
             self.num_averages.setEnabled(False)

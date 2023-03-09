@@ -129,18 +129,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.plot_controls.fft_canvas.set_hold_results(checked)
         self.peak_controls.set_hold_results(checked)
+        self.peak_widget.set_hold_results(checked)
 
         if checked:
             self.set_avg_enable(False)
-
-            self.peak_widget.peak_table.setSelectionMode(
-                QtWidgets.QTableView.SelectionMode.SingleSelection)
         else:
             self.set_avg_enable(self.peak_controls.avg_enable_saved)
-
-            self.peak_widget.peak_table.setSelectionMode(
-                QtWidgets.QTableView.SelectionMode.NoSelection)
-            self.peak_widget.peak_table.clearSelection()
 
     def reset_averaging(self):
         """ Reset the controls restart averaging """

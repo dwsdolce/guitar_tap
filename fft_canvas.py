@@ -29,7 +29,7 @@ class FftData:
         self.h_n_f = self.n_f //2
 
 # pylint: disable=too-many-instance-attributes
-class DrawFft(FigureCanvasQTAgg):
+class FftCanvas(FigureCanvasQTAgg):
     """ Sample the audio stream and display the FFT
 
     The fft is displayed using background audio capture and callback
