@@ -7,10 +7,13 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 
 basedir = os.path.dirname(__file__)
 
+# pylint: disable=too-many-instance-attributes
 class PeakControls(QtWidgets.QWidget):
     """ Layout of the controls for caculating peaks from the FFT """
 
-    def __init__(self, f_range, fft_settings):
+    # pylint: disable = too-many-locals
+    # pylint: disable = too-many-statements
+    def __init__(self, f_range: dict[str, int], fft_settings: dict[str, int]) -> None:
         super().__init__()
         control_layout = QtWidgets.QVBoxLayout()
 
@@ -94,7 +97,7 @@ class PeakControls(QtWidgets.QWidget):
         self.avg_enable.setToolTip('Select to start averaging the fft samples.')
         avg_enable_layout.addWidget(self.avg_enable)
 
-        self.avg_enable_saved = self.avg_enable.isChecked()
+        self.avg_enable_saved: bool = self.avg_enable.isChecked()
 
         averages_layout.addLayout(avg_enable_layout)
 
@@ -286,7 +289,7 @@ class PeakControls(QtWidgets.QWidget):
 
         self.setLayout(control_layout)
 
-    def set_framerate(self, framerate, sampletime, processingtime):
+    def set_framerate(self, framerate: float, sampletime: float, processingtime: float) -> None:
         #print("PeakControls: set_framerate")
         """ Update the status display for frame rate, sample time, and
             processing time.
@@ -295,7 +298,7 @@ class PeakControls(QtWidgets.QWidget):
         self.sampletime.setText(f'{sampletime:.1f} s')
         self.processingtime.setText(f'{processingtime*1000:.1f} ms')
 
-    def set_avg_enable(self, state):
+    def set_avg_enable(self, state: bool) -> None:
         #print("PeakControls: set_avg_enable")
         """ Change the icon color and also change the fft_plot
             to do averaging or not.
@@ -310,7 +313,7 @@ class PeakControls(QtWidgets.QWidget):
             # Now disable the items
             self.avg_restart.setEnabled(False)
 
-    def set_hold_results(self, state):
+    def set_hold_results(self, state: bool) -> None:
         #print("PeakControls: set_hold_results")
         """ Change the icon color and also change the fft_plot
             to do peak holding or not to do peak holding.
@@ -334,14 +337,14 @@ class PeakControls(QtWidgets.QWidget):
             # restore current state of avg_enable
             self.avg_enable.setEnabled(True)
 
-    def reset_averaging(self):
+    def reset_averaging(self) -> None:
         """ Reset the controls restart averaging """
         self.set_avg_completed(0)
         self.avg_done.setPixmap(self.red_pixmap)
         if self.hold_results.isChecked():
             self.hold_results.click()
 
-    def set_avg_completed(self, count):
+    def set_avg_completed(self, count: int) -> None:
         #print("PeakControls: set_avg_completed")
         """ Check the count to see if the maximum number of averages has been reached.
             If it has then disable the appropriate controls, set the LED red otherwise

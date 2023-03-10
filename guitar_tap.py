@@ -6,8 +6,8 @@ import os
 from PyQt6 import QtWidgets, QtGui, QtCore
 
 import plot_controls as PC
-import peak_controls as PKC
-import peak_table as PT
+import peaks_controls as PKC
+import peaks_table as PT
 import show_devices as SD
 
 if os.name == 'nt':
@@ -24,15 +24,15 @@ except ImportError:
 class MainWindow(QtWidgets.QMainWindow):
     """ Defines the layout of the application window
     """
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
-        main_widget = QtWidgets.QWidget()
+        main_widget: QtWidgets.QWidget = QtWidgets.QWidget()
         self.setCentralWidget(main_widget)
 
-        self.saved_path = ""
-        with open(os.path.join(basedir, './version'), 'r') as f:
-            version = f.read().rstrip()
+        self.saved_path: str = ""
+        with open(os.path.join(basedir, './version'), 'r', encoding='UTF-8') as file_handle:
+            version = file_handle.read().rstrip()
 
         self.setWindowTitle(f"Guitar Tap {version}")
 
@@ -41,9 +41,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # ==========================================================
         # Create the plot plus controls
         # ==========================================================
-        self.threshold = 50
-        fft_settings = {'sampling_rate': 11025, 'window_length': 16384}
-        f_range = {'f_min': 75, 'f_max': 350}
+        self.threshold: int = 50
+        fft_settings: dict[str, int] = {'sampling_rate': 11025, 'window_length': 16384}
+        f_range: dict[str, int] = {'f_min': 75, 'f_max': 350}
         self.plot_controls = PC.PlotControls(self.threshold, f_range, fft_settings)
 
         hlayout.addWidget(self.plot_controls)
@@ -52,9 +52,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Create control layout
         # ==========================================================
 
-        self.peak_controls = PKC.PeakControls(f_range, fft_settings)
+        self.peaks_controls = PKC.PeakControls(f_range, fft_settings)
 
-        hlayout.addWidget(self.peak_controls)
+        hlayout.addWidget(self.peaks_controls)
 
         # ==========================================================
         # Create peaks table
@@ -65,83 +65,85 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #.....
         # Connect externalsignals
-        self.peak_controls.min_spin.valueChanged.connect(self.plot_controls.fmin_changed)
-        self.peak_controls.max_spin.valueChanged.connect(self.plot_controls.fmax_changed)
-        self.peak_controls.hold_results.toggled.connect(self.set_hold_results)
-        self.peak_controls.avg_enable.toggled.connect(self.set_avg_enable)
-        self.peak_controls.num_averages.valueChanged.connect(
+        self.peaks_controls.min_spin.valueChanged.connect(self.plot_controls.fmin_changed)
+        self.peaks_controls.max_spin.valueChanged.connect(self.plot_controls.fmax_changed)
+        self.peaks_controls.hold_results.toggled.connect(self.set_hold_results)
+        self.peaks_controls.avg_enable.toggled.connect(self.set_avg_enable)
+        self.peaks_controls.num_averages.valueChanged.connect(
             self.plot_controls.fft_canvas.set_max_average_count)
-        self.peak_controls.avg_restart.clicked.connect(self.reset_averaging)
-        self.peak_controls.show_devices.clicked.connect(self.show_device_dialog)
+        self.peaks_controls.avg_restart.clicked.connect(self.reset_averaging)
+        self.peaks_controls.show_devices.clicked.connect(self.show_device_dialog)
 
-        self.plot_controls.fft_canvas.peaksChanged.connect(self.peak_widget.updateData)
+        self.plot_controls.fft_canvas.peaksChanged.connect(self.peak_widget.update_data)
         self.plot_controls.fft_canvas.peakSelected.connect(self.peak_widget.select_row)
-        self.plot_controls.fft_canvas.peakDeselected.connect(self.peak_widget.deselect_row)
-        self.plot_controls.fft_canvas.averagesChanged.connect(self.peak_controls.set_avg_completed)
-        self.plot_controls.fft_canvas.framerateUpdate.connect(self.peak_controls.set_framerate)
+        self.plot_controls.fft_canvas.peakDeselected.connect(self.peak_widget.clear_selection)
+        self.plot_controls.fft_canvas.averagesChanged.connect(self.peaks_controls.set_avg_completed)
+        self.plot_controls.fft_canvas.framerateUpdate.connect(self.peaks_controls.set_framerate)
         self.plot_controls.fft_canvas.newSample.connect(self.peak_widget.new_data)
 
-        self.peak_widget.peak_table.clearPeaks.connect(self.plot_controls.fft_canvas.clear_selected_peak)
-        self.peak_widget.peak_table.selectionModel().selectionChanged.connect(
+        self.peak_widget.peaks_table.clearPeaks.connect(
+            self.plot_controls.fft_canvas.clear_selected_peak)
+        self.peak_widget.peaks_table.selectionModel().selectionChanged.connect(
             self.peak_selection_changed)
 
-        #.....
+        #....m
         # Set the averaging to false.
         self.set_avg_enable(False)
         self.set_hold_results(False)
-        self.plot_controls.fft_canvas.set_max_average_count(self.peak_controls.num_averages.value())
+        self.plot_controls.fft_canvas.set_max_average_count(self.peaks_controls.num_averages.value())
 
-    def show_device_dialog(self, _):
+    def show_device_dialog(self, _) -> None:
         """ Create and show the Devices dialog """
         dlg = SD.ShowDevices(self.plot_controls.fft_canvas.get_py_audio())
         dlg.exec()
 
-    def peak_selection_changed(self, selected: QtCore.QItemSelection, deselected: QtCore.QItemSelection):
+    def peak_selection_changed(self,
+                               selected: QtCore.QItemSelection,
+                               deselected: QtCore.QItemSelection
+                              ) -> None:
         """ Process the selection of peaks in the peak table and select
             the corresponding peak in the FFT graph.
         """
         if len(deselected.indexes()) > 0:
-            proxy_model = self.peak_widget.peak_table.model()
+            proxy_model = self.peak_widget.peaks_table.model()
             proxy_freq_index = deselected.indexes()[0]
-            print(f"peak_selection_changed: deselected: {proxy_freq_index.row()}, {proxy_freq_index.column()}")
 
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
             self.plot_controls.fft_canvas.deselect_peak(freq)
         if len(selected.indexes()) > 0:
-            proxy_model = self.peak_widget.peak_table.model()
+            proxy_model = self.peak_widget.peaks_table.model()
             proxy_freq_index = selected.indexes()[0]
-            print(f"peak_selection_changed: selected: {proxy_freq_index.row()}, {proxy_freq_index.column()}")
 
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
 
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
             self.plot_controls.fft_canvas.select_peak(freq)
 
-    def set_avg_enable(self, checked: bool):
+    def set_avg_enable(self, checked: bool) -> None:
         """ Change the icon color and also change the fft_plot
             to do averaging or not.
         """
         self.plot_controls.fft_canvas.set_avg_enable(checked)
-        self.peak_controls.set_avg_enable(checked)
+        self.peaks_controls.set_avg_enable(checked)
 
-    def set_hold_results(self, checked: bool):
+    def set_hold_results(self, checked: bool) -> None:
         """ Change the icon color and also change the fft_plot
             to do peak holding or not to do peak holding.
         """
         self.plot_controls.fft_canvas.set_hold_results(checked)
-        self.peak_controls.set_hold_results(checked)
+        self.peaks_controls.set_hold_results(checked)
         self.peak_widget.data_held(checked)
 
         if checked:
             self.set_avg_enable(False)
         else:
-            self.set_avg_enable(self.peak_controls.avg_enable_saved)
+            self.set_avg_enable(self.peaks_controls.avg_enable_saved)
 
-    def reset_averaging(self):
+    def reset_averaging(self) -> None:
         """ Reset the controls restart averaging """
         self.plot_controls.fft_canvas.reset_averaging()
-        self.peak_controls.reset_averaging()
+        self.peaks_controls.reset_averaging()
 
 if __name__ == "__main__":
     if os.name == 'nt':

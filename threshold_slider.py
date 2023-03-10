@@ -31,7 +31,12 @@ class ProxyStyle(QtWidgets.QProxyStyle):
     """
 
     # pylint: disable=invalid-name
-    def styleHint(self, hint, opt=None, widget=None, returnData=None):
+    def styleHint(self,
+                  hint: QtWidgets.QStyle.StyleHint,
+                  opt: QtWidgets.QStyleOptionComplex = None,
+                  widget: QtWidgets.QWidget = None,
+                  returnData: QtWidgets.QStyleHintReturn = None
+                 ) -> int:
         """ Required override to define the hint for the style """
 
         # pylint: disable=invalid-name
@@ -48,7 +53,7 @@ class ThresholdSlider(QtWidgets.QSlider):
     is used to define the threshold setting.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         self.volume = 0
         super().__init__(*args, **kwargs)
         self.setStyleSheet(STYLE_SHEET)
@@ -61,7 +66,7 @@ class ThresholdSlider(QtWidgets.QSlider):
         self.setSingleStep(1)
         self.setPageStep(10)
 
-    def set_amplitude(self, value):
+    def set_amplitude(self, value: int) -> None:
         """ Sets the value to use to draw the groove rectangle """
 
         # Value is 0 to 100
@@ -69,7 +74,7 @@ class ThresholdSlider(QtWidgets.QSlider):
         self.update()
 
     # pylint: disable=invalid-name
-    def paintEvent(self, _event):
+    def paintEvent(self, _event: QtGui.QPaintEvent) -> None:
         """ standard paint event override """
 
         qp = QtWidgets.QStylePainter(self)
@@ -122,8 +127,6 @@ class ThresholdSlider(QtWidgets.QSlider):
         qp.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.white, 1, QtCore.Qt.PenStyle.SolidLine))
         qp.drawLine(0, self.height(), self.width(), self.height())
         qp.drawLine(self.width(), 0, self.width(), self.height())
-
-
 
         qp.restore()
 

@@ -3,13 +3,14 @@
 """
 import os
 
+import pyaudio
 from PyQt6 import QtWidgets
 
 basedir = os.path.dirname(__file__)
 
 class ShowDevices(QtWidgets.QDialog):
     """ Dialog containing the table of devices """
-    def __init__(self, py_audio):
+    def __init__(self, py_audio: pyaudio.PyAudio) -> None:
         super().__init__()
         self.setWindowTitle("Devices")
         self.setMinimumWidth(800)
@@ -27,7 +28,7 @@ class ShowDevices(QtWidgets.QDialog):
         self.layout.addWidget(button_box)
         self.setLayout(self.layout)
 
-    def add_device(self, default, index, values):
+    def add_device(self, default: str, index: int, values) -> None:
         """ Add a device to the table includeing wether the device is a default device or not """
         self.device_table.setItem(index, 0, QtWidgets.QTableWidgetItem(default))
         column = 1
@@ -35,7 +36,7 @@ class ShowDevices(QtWidgets.QDialog):
             self.device_table.setItem(index, column, QtWidgets.QTableWidgetItem(str(value)))
             column += 1
 
-    def create_device_table(self, py_audio):
+    def create_device_table(self, py_audio: pyaudio.PyAudio) -> None:
         """ The device table shows the pyaudio settings for each device and indicates
             which devices are the default
         """
@@ -46,11 +47,11 @@ class ShowDevices(QtWidgets.QDialog):
         default_output = py_audio.get_default_output_device_info()
         default_output_index = default_output.get("index")
 
-        #Row count
+        # Row count
         number_devices = py_audio.get_device_count()
         self.device_table.setRowCount(number_devices + 1)
 
-        #Column count
+        # Column count
         keys = default_input.keys()
         number_keys = len(keys)
         self.device_table.setColumnCount(number_keys + 1)

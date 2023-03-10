@@ -1,6 +1,6 @@
 """ Calculate the dft, find the peaks, and then interpolate the peaks """
-
 import numpy as np
+import numpy.typing as npt
 from scipy.fftpack import fft
 
 def is_power2(num):
@@ -9,7 +9,10 @@ def is_power2(num):
 	"""
     return ((num & (num - 1)) == 0) and num > 0
 
-def dft_anal(chunk, window_function, n_freq_samples):
+def dft_anal(chunk: npt.NDArray[np.float32],
+             window_function,
+             n_freq_samples: int
+            ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """
 	Analysis of a signal using the discrete Fourier transform
 	x: input signal, w: analysis window, N: FFT size
@@ -55,7 +58,9 @@ def dft_anal(chunk, window_function, n_freq_samples):
     magnitude = 20 * np.log10(abs_fft)
     return magnitude, abs_fft
 
-def peak_detection(magnitude, threshold):
+def peak_detection(magnitude: npt.NDArray[np.float32],
+                   threshold: int
+                  ) -> npt.NDArray[np.signedinteger]:
     """
 	Detect spectral peak locations
 	magnitude: magnitude spectrum, t: threshold
@@ -74,7 +79,9 @@ def peak_detection(magnitude, threshold):
     ploc = ploc.nonzero()[0] + 1  # add 1 to compensate for previous steps
     return ploc
 
-def peak_interp(magnitude, ploc):
+def peak_interp(magnitude: npt.NDArray[np.float32],
+                ploc: npt.NDArray[np.int64]
+                ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """
 	Interpolate peak values using parabolic interpolation
 	magnitude: magnitude spectrum, ploc: locations of

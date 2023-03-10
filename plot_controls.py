@@ -12,7 +12,11 @@ class PlotControls(QtWidgets.QWidget):
         the navigation controls.
     """
 
-    def __init__(self, threshold, f_range, fft_settings):
+    def __init__(self,
+                 threshold: int,
+                 f_range: dict[str, int],
+                 fft_settings: dict[str, int]
+                ) -> None:
         super().__init__()
 
         # ==========================================================
@@ -46,22 +50,21 @@ class PlotControls(QtWidgets.QWidget):
 
         self.setLayout(plot_layout)
 
-    def threshold_changed(self):
+    def threshold_changed(self) -> None:
         """ Set the threshold used in fft_canvas
             The threshold value is always 0 to 100.
         """
-
         threshold = self.threshold_slider.value()
         self.fft_canvas.set_threshold(threshold)
 
-    def fmin_changed(self):
+    def fmin_changed(self) -> None:
         """ Change the minimum frequency used on on peak
         thresholding and for the "home" window size
         """
         self.toolbar.update()
         self.fft_canvas.set_fmin(self.sender().value())
 
-    def fmax_changed(self):
+    def fmax_changed(self) -> None:
         """ Change the maximum frequency used on on peak
         thresholding and for the "home" window size
         """

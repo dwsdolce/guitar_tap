@@ -6,8 +6,6 @@
     Some of these calculations come from:
         https://www.johndcook.com/blog/2016/02/10/musical-pitch-notation/
 """
-
-#from math import log2, pow
 from math import log2
 
 class Pitch():
@@ -20,11 +18,11 @@ class Pitch():
     c_0 = a_4*pow(2, -4.75) # -4 octaves below A4 and -9/12 below A
     name = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
-    def __init__(self, a_4: int):
+    def __init__(self, a_4: int) -> None:
         self.a_4 = a_4
         self.c_0 = a_4*pow(2, -4.75) # -4 octaves below A4 and -9/12 below A
 
-    def pitch(self, f_1: float):
+    def pitch(self, f_1: float) -> tuple[int, int]:
         """ Find the pitch (i.e. note and octave closest to this frequency """
         # This gives the 1/2 steps above c_0
         half_steps = round(12*log2(f_1/self.c_0))
@@ -32,23 +30,23 @@ class Pitch():
         note = half_steps % 12
         return note, octave
 
-    def note(self, f_1: float):
+    def note(self, f_1: float) -> str:
         """ Return a string of the pitch closest to this frequency """
         note, octave = self.pitch(f_1)
         return f'{self.name[note]}{octave}'
 
-    def freq0(self, f_1: float):
+    def freq0(self, f_1: float) -> float:
         """ Return the frequency of the pitch closest to this frequency """
         note, octave = self.pitch(f_1)
         f_0 = self.freq(note, octave)
         return f_0
 
-    def freq(self, pitch: float, octave:int):
+    def freq(self, pitch: float, octave:int) -> float:
         """ Return the frequency of the note specified by pitch and octave """
         freq = 2**(pitch/12) * self.c_0 * pow(2, octave) # need to correct for active
         return freq
 
-    def cents(self, f_1: float):
+    def cents(self, f_1: float) -> float:
         """ Return the cents from the pitch closest to this frequency """
         note, octave = self.pitch(f_1)
         f_0 = self.freq(note, octave)

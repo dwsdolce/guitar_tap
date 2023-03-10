@@ -1,32 +1,37 @@
 """ Samples audio signal and finds the peaks of the guitar tap resonances
 """
 from dataclasses import dataclass
+from typing import List
 import time
 
-import numpy as np
-from scipy.signal import get_window
 import matplotlib
-matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib import pyplot as plt
-from PyQt6 import QtCore
 
-import freq_anal as FA
+import numpy as np
+import numpy.typing as npt
+from scipy.signal import get_window
+from PyQt6 import QtCore
+import pyaudio
+
+import freq_anal as f_a
 import microphone
+
+matplotlib.use('Qt5Agg')
 
 @dataclass
 class FftData:
     """ Data used to drive the FFT calculations
     """
 
-    def __init__(self, sample_freq: int = 44100, m_t: int = 15001):
+    def __init__(self, sample_freq: int = 44100, m_t: int = 15001) -> None:
         self.sample_freq = sample_freq
         self.m_t = m_t
 
         #self.window_fcn = get_window('blackman', self.m_t)
         self.window_fcn = get_window('boxcar', self.m_t)
-        self.n_f = int(2 ** (np.ceil(np.log2(self.m_t))))
-        self.h_n_f = self.n_f //2
+        self.n_f: int = int(2 ** (np.ceil(np.log2(self.m_t))))
+        self.h_n_f: int = self.n_f //2
 
 # pylint: disable=too-many-instance-attributes
 class FftCanvas(FigureCanvasQTAgg):
@@ -40,35 +45,40 @@ class FftCanvas(FigureCanvasQTAgg):
     constructor
     """
 
-    hold = False
+    hold: bool = False
 
-    peakDeselected = QtCore.pyqtSignal()
-    peakSelected = QtCore.pyqtSignal(int)
-    peaksChanged = QtCore.pyqtSignal(np.ndarray)
-    ampChanged = QtCore.pyqtSignal(int)
-    averagesChanged = QtCore.pyqtSignal(int)
-    framerateUpdate = QtCore.pyqtSignal(float, float, float)
-    newSample = QtCore.pyqtSignal(bool)
+    peakDeselected: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    peakSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    peaksChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(np.ndarray)
+    ampChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    averagesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    framerateUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)
+    newSample: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
 
-    def __init__(self, window_length, sampling_rate, frange, threshold):
-        self.fig = plt.figure(figsize = (5, 3))
+    def __init__(self,
+                 window_length: int,
+                 sampling_rate: int,
+                 frange: dict[str, int] ,
+                 threshold: int
+                ) -> None:
+        self.fig: FigureCanvasQTAgg = plt.figure(figsize = (5, 3))
         super().__init__(self.fig)
 
-        self.hold_results = False
+        self.hold_results: bool = False
 
-        self.fft_axes = self.fig.subplots()
+        self.fft_axes: list[plt.Axes] = self.fig.subplots()
 
         plt.grid(color='0.85')
 
-        self.avg_enable = False
+        self.avg_enable: bool = False
 
-        self.fft_data = FftData(sampling_rate, window_length)
+        self.fft_data: FftData = FftData(sampling_rate, window_length)
 
-        self.threshold = threshold
+        self.threshold:int = threshold
 
         # Set threshold value for drawing threshold line
-        self.threshold_x = self.fft_data.sample_freq//2
-        self.threshold_y = self.threshold - 100
+        self.threshold_x: int = self.fft_data.sample_freq//2
+        self.threshold_y: int = self.threshold - 100
 
         self.update_axis(frange['f_min'], frange['f_max'], True)
 
@@ -81,7 +91,7 @@ class FftCanvas(FigureCanvasQTAgg):
         self.fft_axes.set_title('FFT Peaks')
 
         # Open the audio stream
-        self.mic = microphone.Microphone(
+        self.mic: microphone.Microphone = microphone.Microphone(
             self, rate = self.fft_data.sample_freq, chunksize = self.fft_data.m_t)
 
         # set the line and point plots and ini
@@ -91,22 +101,22 @@ class FftCanvas(FigureCanvasQTAgg):
         self.fig.canvas.mpl_connect('pick_event', self.point_picked)
         self.line_threshold, = self.fft_axes.plot([], [], lw=1)
 
-        x_axis = np.arange(0, self.fft_data.h_n_f + 1)
-        self.freq = x_axis * self.fft_data.sample_freq // (self.fft_data.n_f)
+        x_axis: npt.NDArray[np.int64] = np.arange(0, self.fft_data.h_n_f + 1)
+        self.freq: npt.NDArray[np.int64] = x_axis * self.fft_data.sample_freq // (self.fft_data.n_f)
 
         # Saved waveform data for drawing
-        self.saved_mag_y_db = []
-        self.saved_peaks = np.vstack(([], [])).T
-        self.b_peaks_freq = []
-        self.selected_peak = -1.0
+        self.saved_mag_y_db: npt.NDArray[np.float64] = []
+        self.saved_peaks  = np.vstack(([], [])).T
+        self.b_peaks_freq: npt.NDArray[np.float64] = []
+        self.selected_peak: float = -1.0
 
         # Saved peak information
-        self.peaks_f_min_index = 0
-        self.peaks_f_max_index = 0
+        self.peaks_f_min_index: int = 0
+        self.peaks_f_max_index: int = 0
 
         # Saved averaging data
-        self.max_average_count = 1
-        self.mag_y_sum = []
+        self.max_average_count: int = 1
+        self.mag_y_sum: List[float] = []
         self.num_averages = 0
 
         # For framerate calculation
@@ -121,11 +131,11 @@ class FftCanvas(FigureCanvasQTAgg):
         self.timer.timeout.connect(self.update_fft)
         self.timer.start(100)
 
-    def get_py_audio(self):
+    def get_py_audio(self) -> pyaudio.PyAudio:
         """ Return the py_audio opened in the microphone """
         return self.mic.py_audio
 
-    def select_peak(self, freq):
+    def select_peak(self, freq: float) -> None:
         """ Select the peak (scatter point) with the specified frequency """
         if self.hold_results:
             row = np.where(self.saved_peaks[:,0] == freq)
@@ -133,18 +143,18 @@ class FftCanvas(FigureCanvasQTAgg):
             self.selected_point.set_offsets(np.vstack(([freq], [magdb])).T)
             self.selected_peak = freq
             self.fig.canvas.draw()
-    
-    def deselect_peak(self, freq):
+
+    def deselect_peak(self, _freq: float) -> None:
         """ Deselect the peak (scatter point) with the specified frequency """
         if self.hold_results:
             self.selected_point.set_offsets(np.vstack(([], [])).T)
             self.fig.canvas.draw()
-    
-    def clear_selected_peak(self):
+
+    def clear_selected_peak(self) -> None:
+        """ Reset the selected peak. """
         self.selected_peak = -1.0
 
-
-    def point_picked(self, event):
+    def point_picked(self, event) -> None:
         """ Handle the event for scatter point being picked and emit
             the index if it is within the min/max frequency range
         """
@@ -155,7 +165,7 @@ class FftCanvas(FigureCanvasQTAgg):
                 if np.any(self.saved_peaks):
                     self.peakSelected.emit(peak_index)
 
-    def update_axis(self, fmin, fmax, init = False):
+    def update_axis(self, fmin: int, fmax: int, init:bool = False) -> None:
         """ Update the mag_y and x_axis """
 
         # x axis data points
@@ -171,19 +181,19 @@ class FftCanvas(FigureCanvasQTAgg):
                 self.find_peaks(self.saved_mag_y_db)
                 self.fig.canvas.draw()
 
-    def set_max_average_count(self, max_average_count):
+    def set_max_average_count(self, max_average_count: int) -> None:
         """ Set the number of averages to take """
         self.max_average_count = max_average_count
 
-    def reset_averaging(self):
+    def reset_averaging(self) -> None:
         """ Reset the number of averages taken to zero. """
         self.num_averages = 0
 
-    def set_avg_enable(self, avg_enable):
+    def set_avg_enable(self, avg_enable: bool) -> None:
         """ Flag to enable/disable the averaging """
         self.avg_enable = avg_enable
 
-    def set_hold_results(self, hold_results):
+    def set_hold_results(self, hold_results: bool) -> None:
         """ Flag to enable/disable the holding of peaks. I.e. if it is false
             the it free runs (and averaging is disabled).
         """
@@ -192,15 +202,15 @@ class FftCanvas(FigureCanvasQTAgg):
             self.selected_point.set_offsets(np.vstack(([], [])).T)
             self.clear_selected_peak()
 
-    def set_fmin(self, fmin):
+    def set_fmin(self, fmin: int) -> None:
         """ As it says """
         self.update_axis(fmin, self.fmax)
 
-    def set_fmax(self, fmax):
+    def set_fmax(self, fmax: int) -> None:
         """ As it says """
         self.update_axis(self.fmin, fmax)
 
-    def set_threshold(self, threshold):
+    def set_threshold(self, threshold: int) -> None:
         """ Set the threshold used to limit both the triggering of a sample
         and the threshold on finding peaks. The threshold value is always 0 to 100.
         """
@@ -221,10 +231,10 @@ class FftCanvas(FigureCanvasQTAgg):
         self.selected_point.set_offsets(np.vstack(([], [])).T)
         self.peakDeselected.emit()
         if np.any(self.b_peaks_freq):
-                if self.selected_peak > 0:
-                    peak_index= np.where(self.b_peaks_freq == self.selected_peak)
-                    if len(peak_index[0]):
-                        self.peakSelected.emit(peak_index[0][0])
+            if self.selected_peak > 0:
+                peak_index= np.where(self.b_peaks_freq == self.selected_peak)
+                if len(peak_index[0]):
+                    self.peakSelected.emit(peak_index[0][0])
 
         self.fig.canvas.draw()
 
@@ -247,8 +257,8 @@ class FftCanvas(FigureCanvasQTAgg):
 
         # Find the interpolated peaks from the waveform
         # This must be done again since it may be using an average waveform.
-        ploc = FA.peak_detection(mag_y_db, self.threshold - 100)
-        iploc, peaks_mag = FA.peak_interp(mag_y_db, ploc)
+        ploc = f_a.peak_detection(mag_y_db, self.threshold - 100)
+        iploc, peaks_mag = f_a.peak_interp(mag_y_db, ploc)
 
         peaks_freq = (iploc * self.fft_data.sample_freq) /float(self.fft_data.n_f)
 
@@ -367,10 +377,10 @@ class FftCanvas(FigureCanvasQTAgg):
         fps = 1.0/sample_dt
         self.lastupdate = enter_now
 
-        chunk = frames[-1]
+        chunk: npt.NDArray[np.float32] = frames[-1]
 
         # Find DFT and amplitude
-        mag_y_db, mag_y = FA.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
+        mag_y_db, mag_y = f_a.dft_anal(chunk, self.fft_data.window_fcn, self.fft_data.n_f)
 
         amplitude = np.max(mag_y_db) + 100
         self.ampChanged.emit(int(amplitude))

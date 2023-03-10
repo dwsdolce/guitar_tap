@@ -1,6 +1,6 @@
 from PyQt6 import QtWidgets, QtCore
 import pitch as pitch_c
-from peaksModel import ColumnIndex
+from peaks_model import ColumnIndex
 
 # pylint: disable=too-few-public-methods
 class PeaksFilterModel(QtCore.QSortFilterProxyModel):
