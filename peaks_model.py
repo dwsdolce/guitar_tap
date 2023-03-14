@@ -2,6 +2,7 @@
     The data model for the Peaks table.
 """
 from enum import Enum
+import os
 
 import numpy as np
 import numpy.typing as npt
@@ -9,24 +10,27 @@ from PyQt6 import QtCore
 
 import pitch as pitch_c
 
+basedir = os.path.dirname(__file__)
+
 class ColumnIndex(Enum):
     """ Enum class so we can use the values for the headers. """
     # pylint: disable=invalid-name
-    Frequency = 0
+    Show = 0
     # pylint: disable=invalid-name
-    Magnitude = 1
+    Frequency = 1
     # pylint: disable=invalid-name
-    Pitch = 2
+    Magnitude = 2
     # pylint: disable=invalid-name
-    Cents = 3
+    Pitch = 3
     # pylint: disable=invalid-name
-    Modes = 4
+    Cents = 4
+    # pylint: disable=invalid-name
+    Modes = 5
 
 class PeaksModel(QtCore.QAbstractTableModel):
     """ Custom data model to handle deriving pitch and cents from frequency. Also defines
         accessing the underlying data model.
     """
-
     mode_strings: list[str] = ["",
                                "Helmholtz T(1,1)_1",
                                "Top T(1,1)_2",
@@ -43,8 +47,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.pitch: pitch_c.Pitch = pitch_c.Pitch(440)
         self.modes_width: int = len(max(self.mode_strings, key=len))
         self.modes_column: int = ColumnIndex.Modes.value
-        self.modes: list[str] = {}
+        self.modes: dict[float, str] = {}
         self.disable_editing: bool = True
+        self.show: dict[float, str] = {}
+        self.show_column: int = ColumnIndex.Show.value
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """ Sets the value of the mode. """
@@ -58,10 +64,25 @@ class PeaksModel(QtCore.QAbstractTableModel):
             return self.modes[self.freq_value(index)]
         return ""
 
+    def set_show_value(self, index: QtCore.QModelIndex, value: str) -> None:
+        """ Sets the value of the show. """
+        self.show[self.freq_value(index)] = value
+
+    def show_value(self, index: QtCore.QModelIndex) -> str:
+        """ Return the show for the row """
+        if self.freq_value(index) in self.show:
+            return self.show[self.freq_value(index)]
+        return "off"
+
     def freq_value(self, index: QtCore.QModelIndex) -> float:
-        """ Return the frequency value from column 0 for the row """
+        """ Return the frequency value from the correct column for the row """
         #print("PeaksModel: freq_value")
-        return self._data[index.row()][ColumnIndex.Frequency.value]
+        return self._data[index.row()][0]
+
+    def magnitude_value(self, index: QtCore.QModelIndex) -> float:
+        """ Return the magnitude value from the correct column for the row """
+        #print("PeaksModel: freq_value")
+        return self._data[index.row()][1]
 
     def data_value(self, index: QtCore.QModelIndex) -> QtCore.QVariant:
         """ Return the value from the data for cols 1/2 and the value in
@@ -69,8 +90,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """
         #print("PeaksModel: data_value")
         match index.column():
-            case ColumnIndex.Frequency.value | ColumnIndex.Magnitude.value:
-                value = self._data[index.row()][index.column()]
+            case ColumnIndex.Show.value:
+                value = self.show_value[index.row()]
+            case ColumnIndex.Frequency.value:
+                value = self.freq_value(index)
+            case ColumnIndex.Magnitude.value:
+                value = self.magnitude_value(index)
             case ColumnIndex.Pitch.value | ColumnIndex.Cents.value:
                 value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
             case ColumnIndex.Modes.value:
@@ -85,8 +110,13 @@ class PeaksModel(QtCore.QAbstractTableModel):
         match role:
             case QtCore.Qt.ItemDataRole.DisplayRole:
                 match index.column():
-                    case ColumnIndex.Frequency.value | ColumnIndex.Magnitude.value:
-                        value = self._data[index.row()][index.column()]
+                    case ColumnIndex.Show.value:
+                        str_value = self.show_value(index)
+                    case ColumnIndex.Frequency.value:
+                        value = self.freq_value(index)
+                        str_value = f'{value:.1f}'
+                    case ColumnIndex.Magnitude.value:
+                        value = self.magnitude_value(index)
                         str_value = f'{value:.1f}'
                     case ColumnIndex.Pitch.value:
                         str_value = self.pitch.note(self.freq_value(index))
@@ -95,8 +125,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     case ColumnIndex.Modes.value:
                         str_value = self.mode_value(index)
                     case _:
-                        value = self._data[index.row()][index.column()]
-                        str_value = str(value)
+                        str_value = ""
                 return str_value
             case QtCore.Qt.ItemDataRole.EditRole:
                 match index.column():
@@ -149,12 +178,18 @@ class PeaksModel(QtCore.QAbstractTableModel):
             Sets the data in the model from the Editor for the
             column.
         """
+        print("setData called")
         #print("PeaksModel: setData")
         if role == QtCore.Qt.ItemDataRole.EditRole:
-            if index.column() == ColumnIndex.Modes.value:
-                self.set_mode_value(index, value)
-                self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.DisplayRole])
-            return True
+            match index.column():
+                case ColumnIndex.Show.value:
+                    self.set_show_value(index, value)
+                    self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.DisplayRole])
+                    return True
+                case ColumnIndex.Modes.value:
+                    self.set_mode_value(index, value)
+                    self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.DisplayRole])
+                    return True
         return False
 
     # pylint: disable=invalid-name
@@ -185,16 +220,22 @@ class PeaksModel(QtCore.QAbstractTableModel):
             If the disable_editing flag is set from the data_held then
             all selection and editing is disabled.
         """
-        #print("PeaksModel: flags")
+        #print(f"PeaksModel: flags: disable_editing: {self.disable_editing}")
         if self.disable_editing:
+            #flag = QtCore.Qt.ItemFlag.ItemIsEnabled | QtCore.Qt.ItemFlag.ItemIsSelectable
             flag = QtCore.Qt.ItemFlag.NoItemFlags
         else:
             flag = QtCore.Qt.ItemFlag.ItemIsEnabled | QtCore.Qt.ItemFlag.ItemIsSelectable
             if index.isValid():
-                if index.column() == ColumnIndex.Modes.value:
-                    flag = QtCore.Qt.ItemFlag.ItemIsEditable | \
-                           QtCore.Qt.ItemFlag.ItemIsEnabled | \
-                           QtCore.Qt.ItemFlag.ItemIsSelectable
+                match index.column():
+                    case ColumnIndex.Show.value:
+                        flag = QtCore.Qt.ItemFlag.ItemIsEditable | \
+                            QtCore.Qt.ItemFlag.ItemIsEnabled | \
+                            QtCore.Qt.ItemFlag.ItemIsSelectable
+                    case ColumnIndex.Modes.value:
+                        flag = QtCore.Qt.ItemFlag.ItemIsEditable | \
+                            QtCore.Qt.ItemFlag.ItemIsEnabled | \
+                            QtCore.Qt.ItemFlag.ItemIsSelectable
         return flag
 
     def data_held(self, held: bool) -> None:
@@ -203,10 +244,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
             then the table cannot be edited.
         """
         #print(f"data_held: {held}")
+        self.layoutAboutToBeChanged.emit()
         if held:
             self.disable_editing = False
         else:
             self.disable_editing = True
+        self.layoutChanged.emit()
 
     def new_data(self, held: bool) -> None:
         """
@@ -217,3 +260,4 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """
         if not held:
             self.modes = {}
+            self.show = {}

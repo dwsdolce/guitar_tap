@@ -14,6 +14,24 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
     def lessThan(self, left: QtCore.QModelIndex, right: QtCore.QModelIndex):
         """ Calculate per the class description. """
         match left.column():
+            case ColumnIndex.Show.value:
+                left_show: bool = self.sourceModel().show_value(left)
+                right_show: bool = self.sourceModel().show_value(right)
+                match left_show:
+                    case 'on':
+                        match right_show:
+                            case 'on':
+                                less_than = False
+                            case 'off':
+                                less_than = False
+                    case 'off':
+                        match right_show:
+                            case 'on':
+                                less_than = True
+                            case 'off':
+                                less_than = False
+                    case _:
+                        less_than = False
             case ColumnIndex.Frequency.value | ColumnIndex.Magnitude.value:
                 # Sort by numeric value (assumes left and right column are the same)
                 # Use the python value instead of the numpy value so that a bool is

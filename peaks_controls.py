@@ -3,7 +3,8 @@
 """
 import os
 
-from PyQt6 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore
+import gt_images as gt_i
 
 basedir = os.path.dirname(__file__)
 
@@ -24,13 +25,6 @@ class PeakControls(QtWidgets.QWidget):
         pixmapi = getattr(QtWidgets.QStyle.StandardPixmap, 'SP_MediaSkipBackward')
         restart_icon = self.style().standardIcon(pixmapi)
 
-        self.red_pixmap = QtGui.QPixmap(os.path.join(basedir, './icons/led_red.png'))
-        self.red_button_pixmap = QtGui.QPixmap(os.path.join(basedir, './icons/red_button.png'))
-        self.red_button_icon = QtGui.QIcon(self.red_button_pixmap)
-        self.green_pixmap = QtGui.QPixmap(os.path.join(basedir,'./icons/led_green.png'))
-        self.green_button_pixmap = QtGui.QPixmap(os.path.join(basedir,'./icons/green_button.png'))
-        self.green_button_icon = QtGui.QIcon(self.green_button_pixmap)
-
         #.....
         # Spacing above controls
         control_layout.addSpacing(20)
@@ -43,7 +37,7 @@ class PeakControls(QtWidgets.QWidget):
         hold_results_layout.addWidget(hold_results_label)
 
         self.hold_results = QtWidgets.QToolButton()
-        self.hold_results.setIcon(self.green_button_icon)
+        self.hold_results.setIcon(gt_i.GtImages.green_button_icon())
         self.hold_results.setIconSize(QtCore.QSize(21, 21))
         self.hold_results.setStyleSheet('border: none')
         self.hold_results.setCheckable(True)
@@ -89,7 +83,7 @@ class PeakControls(QtWidgets.QWidget):
         avg_enable_layout.addWidget(avg_enable_label)
 
         self.avg_enable = QtWidgets.QToolButton()
-        self.avg_enable.setIcon(self.red_button_icon)
+        self.avg_enable.setIcon(gt_i.GtImages.red_button_icon())
         self.avg_enable.setIconSize(QtCore.QSize(21, 21))
         self.avg_enable.setStyleSheet('border: none')
         self.avg_enable.setCheckable(True)
@@ -126,7 +120,7 @@ class PeakControls(QtWidgets.QWidget):
         self.avg_done = QtWidgets.QLabel()
         self.avg_done.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.avg_done.setMaximumSize(21, 21)
-        self.avg_done.setPixmap(self.red_pixmap)
+        self.avg_done.setPixmap(gt_i.GtImages.red_pixmap())
         self.avg_done.setScaledContents(True)
         avg_done_layout.addWidget(self.avg_done)
 
@@ -304,12 +298,12 @@ class PeakControls(QtWidgets.QWidget):
             to do averaging or not.
         """
         if state:
-            self.avg_enable.setIcon(self.green_button_icon)
+            self.avg_enable.setIcon(gt_i.GtImages.green_button_icon())
             # Now enable the items
             self.avg_restart.setEnabled(True)
 
         else:
-            self.avg_enable.setIcon(self.red_button_icon)
+            self.avg_enable.setIcon(gt_i.GtImages.red_button_icon())
             # Now disable the items
             self.avg_restart.setEnabled(False)
 
@@ -319,7 +313,7 @@ class PeakControls(QtWidgets.QWidget):
             to do peak holding or not to do peak holding.
         """
         if state:
-            self.hold_results.setIcon(self.green_button_icon)
+            self.hold_results.setIcon(gt_i.GtImages.green_button_icon())
             # Save current state of avg_enable
             # and disable it
             self.avg_enable_saved = self.avg_enable.isChecked()
@@ -331,7 +325,7 @@ class PeakControls(QtWidgets.QWidget):
             else:
                 self.avg_restart.setEnabled(False)
         else:
-            self.hold_results.setIcon(self.red_button_icon)
+            self.hold_results.setIcon(gt_i.GtImages.red_button_icon())
             # Save current state of avg_enable
             # and enable it
             # restore current state of avg_enable
@@ -340,7 +334,7 @@ class PeakControls(QtWidgets.QWidget):
     def reset_averaging(self) -> None:
         """ Reset the controls restart averaging """
         self.set_avg_completed(0)
-        self.avg_done.setPixmap(self.red_pixmap)
+        self.avg_done.setPixmap(gt_i.GtImages.red_pixmap())
         if self.hold_results.isChecked():
             self.hold_results.click()
 
@@ -353,7 +347,7 @@ class PeakControls(QtWidgets.QWidget):
         self.avg_completed.setText(str(count))
         if count >= self.num_averages.value():
             # Change the LED to Green
-            self.avg_done.setPixmap(self.green_pixmap)
+            self.avg_done.setPixmap(gt_i.GtImages.green_pixmap())
 
             self.num_averages.setEnabled(True)
 

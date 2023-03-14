@@ -107,18 +107,23 @@ class MainWindow(QtWidgets.QMainWindow):
         if len(deselected.indexes()) > 0:
             proxy_model = self.peak_widget.peaks_table.model()
             proxy_freq_index = deselected.indexes()[0]
+            print(f"MainWindow: peak_selection_changed: deselected: {proxy_freq_index.row()}")
 
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
             self.plot_controls.fft_canvas.deselect_peak(freq)
+            self.peak_widget.selected_freq_index = -1
         if len(selected.indexes()) > 0:
             proxy_model = self.peak_widget.peaks_table.model()
             proxy_freq_index = selected.indexes()[0]
+            print(f"MainWindow: peak_selection_changed: selected: {proxy_freq_index.row()}")
 
+            #data_freq_index: QtCore.QModelIndex = proxy_model.mapToSource(proxy_freq_index)
             data_freq_index = proxy_model.mapToSource(proxy_freq_index)
 
             freq = proxy_model.sourceModel().freq_value(data_freq_index)
             self.plot_controls.fft_canvas.select_peak(freq)
+            self.peak_widget.selected_freq_index = data_freq_index.row()
 
     def set_avg_enable(self, checked: bool) -> None:
         """ Change the icon color and also change the fft_plot
