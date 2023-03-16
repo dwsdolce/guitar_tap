@@ -27,6 +27,7 @@ class ModeComboDelegate(QtWidgets.QStyledItemDelegate):
                                   "padding: 1px 3px 1px 3px;")
         self.editor.addItems(self.items)
         self.editor.currentIndexChanged.connect(self.current_index_changed)
+        self.editor.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         return self.editor
 
     def setEditorData(self, editor: QtWidgets.QComboBox, index: QtCore.QModelIndex) -> None:

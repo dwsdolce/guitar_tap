@@ -60,6 +60,8 @@ class PeakTable(QtWidgets.QWidget):
         #.....
         # Use tableview to display fft peaks
         self.peaks_table = PeakTableView()
+        self.peaks_table.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+
         data: npt.NDArray  = np.vstack(([], [])).T
         self.model: pm.PeaksModel = pm.PeaksModel(data)
         # Use custom QSortFilterProxyModel to define the sort
@@ -199,6 +201,7 @@ class PeakTable(QtWidgets.QWidget):
             flags = select_current | select_rows
             self.peaks_table.selectionModel().select(proxy_freq_index, flags)
 
+        self.peaks_table.activateWindow()
         self.peaks_table.setFocus()
 
         self.selected_freq_index = freq_index
