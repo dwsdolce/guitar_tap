@@ -6,6 +6,7 @@
 import os
 import csv
 
+import typing
 import numpy as np
 import numpy.typing as npt
 from PyQt6 import QtWidgets, QtCore, QtGui
@@ -39,11 +40,14 @@ class PeakTableView(QtWidgets.QTableView):
 
 class PeakTable(QtWidgets.QWidget):
     """ Table and save button for displaying table of peaks and interacting with it. """
+
     def __init__(self) -> None:
         super().__init__()
 
         self.selected_freq_index = -1
+        self.selected_freq = 0.0
         self.saved_path: str = ""
+        self.data_is_held: bool = False
 
         #.....
         # Setup a vertical layout to add spacing
@@ -99,6 +103,20 @@ class PeakTable(QtWidgets.QWidget):
 
         self.setLayout(peaks_layout)
 
+        self.model.dataChanged.connect(self.data_changed)
+
+    def data_changed(
+        self, 
+        topLeft: QtCore.QModelIndex,
+        _bottomRight: QtCore.QModelIndex,
+        _roles: typing.Iterable[int] = ...
+    ) -> None:
+        #print(f"PeakTable: data_changed: topLeft: {topLeft.row()}, {topLeft.column()}")
+        freq_index = self.model.index(topLeft.row(), 1)
+        freq = self.model.freq_value(freq_index)
+        self.select_row(freq)
+        #self.peaks_table.setFocus()
+
     def update_data(self, data: np.ndarray) -> bool:
         """ Update the data model from outside the object and
             then update the table.
@@ -113,12 +131,18 @@ class PeakTable(QtWidgets.QWidget):
 
         #print(f"Peak: update_data: {data}")
         self.model.update_data(data)
+        self.update_selected_freq_index()
+        
         # Create new persistent editors
         #print(f" update_data: rowCount = {self.peaks_table.model().rowCount()}")
         for row in range(0, self.peaks_table.model().rowCount()):
             #print(f"openPersistentEditor: row: {row}, column{pm.ColumnIndex.Show.value}")
             self.peaks_table.openPersistentEditor(self.peaks_table.model().index(row, pm.ColumnIndex.Show.value))
             self.peaks_table.openPersistentEditor(self.peaks_table.model().index(row, pm.ColumnIndex.Modes.value))
+
+        # Select the row.
+        if self.selected_freq > 0:
+            self.select_row(self.selected_freq)
 
         return True
 
@@ -150,31 +174,40 @@ class PeakTable(QtWidgets.QWidget):
                     writer.writerow(data_model.data_value(data_model.index(row, column))
                         for column in columns)
 
-    def select_row(self, freq_index: int) -> None:
+    def select_row(self, freq: int) -> None:
         """ For the specified frequency index select the corresponding row
             in the peak table and set the focus to it. Setting the focus will
             scroll the table so the row is in view and highlight it.
         """
 
-        print(f"PeakTable: select_row {freq_index}")
+        #print(f"PeakTable: select_row {freq}")
 
         proxy_model = self.peaks_table.model()
-        data_model = proxy_model.sourceModel()
+        data_model: pm.PeaksModel = proxy_model.sourceModel()
+        freq_index = data_model.freq_index(freq)
 
-        data_freq_index = data_model.index(freq_index, 0)
-        proxy_freq_index: QtCore.QModelIndex = proxy_model.mapFromSource(data_freq_index)
-        select_current = QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent
-        select_rows = QtCore.QItemSelectionModel.SelectionFlag.Rows
-        flags = select_current | select_rows
+        if freq_index >= 0:
+            data_freq_index = data_model.index(freq_index, 0)
+            proxy_freq_index: QtCore.QModelIndex = proxy_model.mapFromSource(data_freq_index)
+            current_index = self.peaks_table.selectionModel().currentIndex()
+
+            #print(f"PeakTable: select_row: current_index = {current_index.row()}, {current_index.column()}")
+            #print(f"PeakTable: select_row: proxy_freq_index = {proxy_freq_index.row()}, {proxy_freq_index.column()}")
+
+            select_current = QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent
+            select_rows = QtCore.QItemSelectionModel.SelectionFlag.Rows
+            flags = select_current | select_rows
+            self.peaks_table.selectionModel().select(proxy_freq_index, flags)
+
         self.peaks_table.setFocus()
-        self.peaks_table.selectionModel().setCurrentIndex(proxy_freq_index, flags)
 
         self.selected_freq_index = freq_index
+        self.selected_freq = freq
 
     def clear_selection(self) -> None:
         """ Clear all selections form the table. """
 
-        print("PeakTable: clear_selection")
+        #print("PeakTable: clear_selection")
 
         self.peaks_table.selectionModel().clearSelection()
 
@@ -183,23 +216,27 @@ class PeakTable(QtWidgets.QWidget):
             This is used to indicate the change of the data being held. If it is not held
             then the table cannot be edited.
         """
+        self.data_is_held = held
         if held:
             #print("data_hel: enable editing")
             self.showDelegate.enable = True
             self.modeDelegate.enable = True
             self.peaks_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.SingleSelection)
             self.peaks_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.AllEditTriggers)
-            if self.selected_freq_index >= 0:
-                self.select_row(self.selected_freq_index)
+            #if self.selected_freq_index >= 0:
+            #    self.select_row(self.selected_freq_index)
         else:
            #print("data_hel: disable editing")
             self.showDelegate.enable = False
             self.modeDelegate.enable = False
             self.peaks_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.NoSelection)
             self.peaks_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.NoEditTriggers)
-            self.peaks_table.clearSelection()
+            #self.peaks_table.clearSelection()
 
         self.model.data_held(held)
+
+        if self.selected_freq > 0:
+            self.select_row(self.selected_freq)
 
     def new_data(self, held: bool) -> None:
         """
@@ -209,4 +246,18 @@ class PeakTable(QtWidgets.QWidget):
             the underlying data is completely replaced.
         """
         self.model.new_data(held)
+        self.clear_selected_peak()
+    
+    def update_selected_freq_index(self):
+        """
+          For the current selected frequency update the related index. The
+          inde is the index in the table.
+        """
+        if self.selected_freq == 0.0:
+            self.selected_freq_index = -1
+        else:
+            self.selected_freq_index = self.model.freq_index(self.selected_freq)
+
+    def clear_selected_peak(self) -> None:
         self.selected_freq_index = -1
+        self.selected_freq = 0.0

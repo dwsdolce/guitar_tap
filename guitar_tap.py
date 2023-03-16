@@ -83,6 +83,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.peak_widget.peaks_table.clearPeaks.connect(
             self.plot_controls.fft_canvas.clear_selected_peak)
+        self.peak_widget.peaks_table.clearPeaks.connect(
+            self.peak_widget.clear_selected_peak)
         self.peak_widget.peaks_table.selectionModel().selectionChanged.connect(
             self.peak_selection_changed)
 
@@ -96,6 +98,22 @@ class MainWindow(QtWidgets.QMainWindow):
         """ Create and show the Devices dialog """
         dlg = SD.ShowDevices(self.plot_controls.fft_canvas.get_py_audio())
         dlg.exec()
+    
+    def row_deselect(self, deselected: QtCore.QModelIndex) -> None:
+        #print(f"MainWindow: row_deselect: {deselected.row()}, {deselected.column()}")
+        proxy_model = self.peak_widget.peaks_table.model()
+        data_freq_index = proxy_model.mapToSource(deselected)
+        freq = proxy_model.sourceModel().freq_value(data_freq_index)
+        self.plot_controls.fft_canvas.deselect_peak(freq)
+
+    def row_select(self, selected: QtCore.QModelIndex) -> None:
+        #print(f"MainWindow: row_select: {selected.row()}, {selected.column()}")
+        proxy_model = self.peak_widget.peaks_table.model()
+        data_freq_index = proxy_model.mapToSource(selected)
+        freq = proxy_model.sourceModel().freq_value(data_freq_index)
+        self.plot_controls.fft_canvas.select_peak(freq)
+        self.peak_widget.selected_freq = freq
+        self.peak_widget.selected_freq_index = data_freq_index.row()
 
     def peak_selection_changed(self,
                                selected: QtCore.QItemSelection,
@@ -105,25 +123,19 @@ class MainWindow(QtWidgets.QMainWindow):
             the corresponding peak in the FFT graph.
         """
         if len(deselected.indexes()) > 0:
-            proxy_model = self.peak_widget.peaks_table.model()
             proxy_freq_index = deselected.indexes()[0]
-            print(f"MainWindow: peak_selection_changed: deselected: {proxy_freq_index.row()}")
+            for i in range(len(deselected.indexes())):
+                index = deselected.indexes()[i]
+                #print(f"MainWindow: peak_selection_changed: deselected: {index.row()}, {index.column()}")
+            self.row_deselect(proxy_freq_index)
 
-            data_freq_index = proxy_model.mapToSource(proxy_freq_index)
-            freq = proxy_model.sourceModel().freq_value(data_freq_index)
-            self.plot_controls.fft_canvas.deselect_peak(freq)
-            self.peak_widget.selected_freq_index = -1
         if len(selected.indexes()) > 0:
-            proxy_model = self.peak_widget.peaks_table.model()
             proxy_freq_index = selected.indexes()[0]
-            print(f"MainWindow: peak_selection_changed: selected: {proxy_freq_index.row()}")
+            for i in range(len(deselected.indexes())):
+                index = selected.indexes()[i]
+                #print(f"MainWindow: peak_selection_changed: selected: {index.row()}, {index.column()}")
 
-            #data_freq_index: QtCore.QModelIndex = proxy_model.mapToSource(proxy_freq_index)
-            data_freq_index = proxy_model.mapToSource(proxy_freq_index)
-
-            freq = proxy_model.sourceModel().freq_value(data_freq_index)
-            self.plot_controls.fft_canvas.select_peak(freq)
-            self.peak_widget.selected_freq_index = data_freq_index.row()
+            self.row_select(proxy_freq_index)
 
     def set_avg_enable(self, checked: bool) -> None:
         """ Change the icon color and also change the fft_plot
@@ -136,6 +148,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """ Change the icon color and also change the fft_plot
             to do peak holding or not to do peak holding.
         """
+        #print(f"MainWindow: set_hold_results: {checked}")
         self.plot_controls.fft_canvas.set_hold_results(checked)
         self.peaks_controls.set_hold_results(checked)
         self.peak_widget.data_held(checked)

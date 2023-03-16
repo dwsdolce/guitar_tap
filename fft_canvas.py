@@ -48,7 +48,7 @@ class FftCanvas(FigureCanvasQTAgg):
     hold: bool = False
 
     peakDeselected: QtCore.pyqtSignal = QtCore.pyqtSignal()
-    peakSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    peakSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
     peaksChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(np.ndarray)
     ampChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
     averagesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
@@ -108,7 +108,7 @@ class FftCanvas(FigureCanvasQTAgg):
         self.saved_mag_y_db: npt.NDArray[np.float64] = []
         self.saved_peaks  = np.vstack(([], [])).T
         self.b_peaks_freq: npt.NDArray[np.float64] = []
-        self.selected_peak: float = -1.0
+        self.selected_peak: float = 0.0
 
         # Saved peak information
         self.peaks_f_min_index: int = 0
@@ -137,6 +137,7 @@ class FftCanvas(FigureCanvasQTAgg):
 
     def select_peak(self, freq: float) -> None:
         """ Select the peak (scatter point) with the specified frequency """
+        #print(f"FftCanvas: select_peak: freq: {freq}, hold_results: {self.hold_results}")
         if self.hold_results:
             row = np.where(self.saved_peaks[:,0] == freq)
             magdb = self.saved_peaks[row][0][1]
@@ -146,12 +147,14 @@ class FftCanvas(FigureCanvasQTAgg):
 
     def deselect_peak(self, _freq: float) -> None:
         """ Deselect the peak (scatter point) with the specified frequency """
-        if self.hold_results:
-            self.selected_point.set_offsets(np.vstack(([], [])).T)
-            self.fig.canvas.draw()
+        #print(f"FftCanvas: deselect_peak: fred: {_freq}, hold_results: {self.hold_results}")
+        #if self.hold_results:
+        self.selected_point.set_offsets(np.vstack(([], [])).T)
+        self.fig.canvas.draw()
 
     def clear_selected_peak(self) -> None:
         """ Reset the selected peak. """
+        #print("FftCanvas: clear_selected_peak")
         self.selected_peak = -1.0
 
     def point_picked(self, event) -> None:
@@ -159,11 +162,14 @@ class FftCanvas(FigureCanvasQTAgg):
             the index if it is within the min/max frequency range
         """
         if self.hold_results:
-            ind = event.ind[0]
-            if self.peaks_f_min_index <= ind < self.peaks_f_max_index:
-                peak_index = ind - self.peaks_f_min_index
+            index0 = event.ind[0]
+            #print(f"point_picked: index0: {index0}")
+            #print(f"point_picked: index0 type: {type(index0)}")
+            if self.peaks_f_min_index <= index0 < self.peaks_f_max_index:
+                peak_index = index0 - self.peaks_f_min_index
                 if np.any(self.saved_peaks):
-                    self.peakSelected.emit(peak_index)
+                    freq = self.saved_peaks[index0][0]
+                    self.peakSelected.emit(freq)
 
     def update_axis(self, fmin: int, fmax: int, init:bool = False) -> None:
         """ Update the mag_y and x_axis """
@@ -197,6 +203,7 @@ class FftCanvas(FigureCanvasQTAgg):
         """ Flag to enable/disable the holding of peaks. I.e. if it is false
             the it free runs (and averaging is disabled).
         """
+        #print(f"FftCanvas: set_hold_results: hold_results {hold_results}")
         self.hold_results = hold_results
         if not hold_results:
             self.selected_point.set_offsets(np.vstack(([], [])).T)
@@ -234,7 +241,7 @@ class FftCanvas(FigureCanvasQTAgg):
             if self.selected_peak > 0:
                 peak_index= np.where(self.b_peaks_freq == self.selected_peak)
                 if len(peak_index[0]):
-                    self.peakSelected.emit(peak_index[0][0])
+                    self.peakSelected.emit(self.selected_peak)
 
         self.fig.canvas.draw()
 

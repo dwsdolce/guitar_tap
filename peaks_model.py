@@ -73,12 +73,18 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if self.freq_value(index) in self.show:
             return self.show[self.freq_value(index)]
         return "off"
+    
+    def freq_index(self, freq: float) -> QtCore.QModelIndex:
+        index = np.where(self._data[:,0] == freq)
+        if len(index[0]) == 1:
+            return index[0][0]
+        return -1
 
     def freq_value(self, index: QtCore.QModelIndex) -> float:
         """ Return the frequency value from the correct column for the row """
         #print("PeaksModel: freq_value")
         return self._data[index.row()][0]
-
+    
     def magnitude_value(self, index: QtCore.QModelIndex) -> float:
         """ Return the magnitude value from the correct column for the row """
         #print("PeaksModel: freq_value")
@@ -169,6 +175,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
         self.layoutAboutToBeChanged.emit()
         self._data = data
+        
         self.layoutChanged.emit()
 
     def setData(self, index: QtCore.QModelIndex, value: str,
@@ -178,15 +185,15 @@ class PeaksModel(QtCore.QAbstractTableModel):
             Sets the data in the model from the Editor for the
             column.
         """
-        print("setData called")
-        #print("PeaksModel: setData")
         if role == QtCore.Qt.ItemDataRole.EditRole:
             match index.column():
                 case ColumnIndex.Show.value:
+                    #print(f"PeaksModel: setData: Show: index: {index.row()}, {index.column()}")
                     self.set_show_value(index, value)
                     self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.DisplayRole])
                     return True
                 case ColumnIndex.Modes.value:
+                    #print(f"PeaksModel: setData: Modes: index: {index.row()}, {index.column()}")
                     self.set_mode_value(index, value)
                     self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.DisplayRole])
                     return True
@@ -243,7 +250,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             This is used to indicate the change of the data being held. If it is not held
             then the table cannot be edited.
         """
-        #print(f"data_held: {held}")
+        #print(f"PeaksModel: data_held: {held}")
         self.layoutAboutToBeChanged.emit()
         if held:
             self.disable_editing = False

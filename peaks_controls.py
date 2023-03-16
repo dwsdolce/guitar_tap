@@ -308,10 +308,10 @@ class PeakControls(QtWidgets.QWidget):
             self.avg_restart.setEnabled(False)
 
     def set_hold_results(self, state: bool) -> None:
-        #print("PeakControls: set_hold_results")
         """ Change the icon color and also change the fft_plot
             to do peak holding or not to do peak holding.
         """
+        #print(f"PeakControls: set_hold_results: state: {state}")
         if state:
             self.hold_results.setIcon(gt_i.GtImages.green_button_icon())
             # Save current state of avg_enable
