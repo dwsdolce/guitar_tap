@@ -37,6 +37,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(f"Guitar Tap {version}")
 
         hlayout = QtWidgets.QHBoxLayout(main_widget)
+        hlayout.setSpacing(0)
+        hlayout.setContentsMargins(1, 1, 1, 1)
 
         # ==========================================================
         # Create the plot plus controls

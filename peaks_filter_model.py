@@ -32,7 +32,7 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
                                 less_than = False
                     case _:
                         less_than = False
-            case ColumnIndex.Frequency.value | ColumnIndex.Magnitude.value:
+            case ColumnIndex.Freq.value | ColumnIndex.Mag.value:
                 # Sort by numeric value (assumes left and right column are the same)
                 # Use the python value instead of the numpy value so that a bool is
                 # returned instead of a numpy.bool_.

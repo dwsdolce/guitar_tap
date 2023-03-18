@@ -70,7 +70,7 @@ class PeakTable(QtWidgets.QWidget):
         proxy_model.setSourceModel(self.model)
         self.peaks_table.setModel(proxy_model)
         self.peaks_table.setSortingEnabled(True)
-        self.peaks_table.sortByColumn(pm.ColumnIndex.Frequency.value, QtCore.Qt.SortOrder.AscendingOrder)
+        self.peaks_table.sortByColumn(pm.ColumnIndex.Freq.value, QtCore.Qt.SortOrder.AscendingOrder)
         self.peaks_table.resizeColumnsToContents()
         self.peaks_table.setColumnWidth(self.model.modes_column, self.model.modes_width*8)
         self.peaks_table.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows)
@@ -86,7 +86,8 @@ class PeakTable(QtWidgets.QWidget):
             'the peak in the table.')
 
         header_width: int = self.peaks_table.horizontalHeader().length()
-        self.peaks_table.setFixedWidth(header_width + 30)
+        #self.peaks_table.setFixedWidth(header_width + 30)
+        self.peaks_table.setFixedWidth(header_width + 10)
 
         peaks_layout.addWidget(self.peaks_table)
 

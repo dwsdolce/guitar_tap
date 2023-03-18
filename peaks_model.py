@@ -17,9 +17,9 @@ class ColumnIndex(Enum):
     # pylint: disable=invalid-name
     Show = 0
     # pylint: disable=invalid-name
-    Frequency = 1
+    Freq = 1
     # pylint: disable=invalid-name
-    Magnitude = 2
+    Mag = 2
     # pylint: disable=invalid-name
     Pitch = 3
     # pylint: disable=invalid-name
@@ -105,9 +105,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
         match index.column():
             case ColumnIndex.Show.value:
                 value = self.show_value[index.row()]
-            case ColumnIndex.Frequency.value:
+            case ColumnIndex.Freq.value:
                 value = self.freq_value(index)
-            case ColumnIndex.Magnitude.value:
+            case ColumnIndex.Mag.value:
                 value = self.magnitude_value(index)
             case ColumnIndex.Pitch.value | ColumnIndex.Cents.value:
                 value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
@@ -125,10 +125,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 match index.column():
                     case ColumnIndex.Show.value:
                         str_value = self.show_value(index)
-                    case ColumnIndex.Frequency.value:
+                    case ColumnIndex.Freq.value:
                         value = self.freq_value(index)
                         str_value = f'{value:.1f}'
-                    case ColumnIndex.Magnitude.value:
+                    case ColumnIndex.Mag.value:
                         value = self.magnitude_value(index)
                         str_value = f'{value:.1f}'
                     case ColumnIndex.Pitch.value:
