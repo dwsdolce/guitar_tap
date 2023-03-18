@@ -46,7 +46,7 @@ class MainWindow(QtWidgets.QMainWindow):
         f_range: dict[str, int] = {'f_min': 75, 'f_max': 350}
         self.plot_controls = PC.PlotControls(self.threshold, f_range, fft_settings)
 
-        hlayout.addWidget(self.plot_controls)
+        hlayout.addWidget(self.plot_controls, 1)
 
         # ==========================================================
         # Create control layout
@@ -54,14 +54,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.peaks_controls = PKC.PeakControls(f_range, fft_settings)
 
-        hlayout.addWidget(self.peaks_controls)
+        hlayout.addWidget(self.peaks_controls, 0)
 
         # ==========================================================
         # Create peaks table
         # ==========================================================
         self.peak_widget = PT.PeakTable()
 
-        hlayout.addWidget(self.peak_widget)
+        hlayout.addWidget(self.peak_widget, 0)
 
         #.....
         # Connect externalsignals
@@ -81,6 +81,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_controls.fft_canvas.framerateUpdate.connect(self.peaks_controls.set_framerate)
         self.plot_controls.fft_canvas.newSample.connect(self.peak_widget.new_data)
 
+        self.peak_widget.model.annotationUpdate.connect(
+            self.plot_controls.fft_canvas.update_annotation)
         self.peak_widget.peaks_table.clearPeaks.connect(
             self.plot_controls.fft_canvas.clear_selected_peak)
         self.peak_widget.peaks_table.clearPeaks.connect(

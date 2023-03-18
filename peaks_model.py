@@ -31,6 +31,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     """ Custom data model to handle deriving pitch and cents from frequency. Also defines
         accessing the underlying data model.
     """
+    annotationUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(bool, float, float, str)
     mode_strings: list[str] = ["",
                                "Helmholtz T(1,1)_1",
                                "Top T(1,1)_2",
@@ -67,6 +68,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
     def set_show_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """ Sets the value of the show. """
         self.show[self.freq_value(index)] = value
+
+    def show_value_bool(self, index: QtCore.QModelIndex) -> bool:
+        if self.show_value(index) == "on":
+            return True
+        else:
+            return False
 
     def show_value(self, index: QtCore.QModelIndex) -> str:
         """ Return the show for the row """
@@ -177,6 +184,36 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._data = data
         
         self.layoutChanged.emit()
+    
+    def clear_annotations(self) -> None:
+        for freq in self.show:
+            self.annotationUpdate.emit(False, freq, 0.0, "") 
+
+    def update_annotations(self) -> None:
+        for freq in self.show:
+            row = self.freq_index(freq)
+            if row >= 0:
+                index = self.index(row, 0)
+                self.update_annotation(index)
+
+    def update_annotation(self, index: QtCore.QModelIndex) -> None:
+        freq = self.freq_value(index)
+        mag = self.magnitude_value(index)
+        show = self.show_value_bool(index)
+        mode = self.mode_value(index)
+        if show:
+            # Add annotation
+            if mode == "":
+                annotation_text = f"{freq:.1f}"
+            else:
+                annotation_text = f"{mode}\n{freq:.1f}"
+            self.annotationUpdate.emit(True, freq, mag, annotation_text) 
+            print(f"PeaksModel: update_annotation: {annotation_text}")
+        else:
+            # Remove annotations
+            self.annotationUpdate.emit(False, freq, mag, "") 
+            print(f"PeaksModel: update_annotation: remove")
+
 
     def setData(self, index: QtCore.QModelIndex, value: str,
                 role = QtCore.Qt.ItemDataRole.EditRole
@@ -191,11 +228,13 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     #print(f"PeaksModel: setData: Show: index: {index.row()}, {index.column()}")
                     self.set_show_value(index, value)
                     self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.DisplayRole])
+                    self.update_annotation(index)
                     return True
                 case ColumnIndex.Modes.value:
                     #print(f"PeaksModel: setData: Modes: index: {index.row()}, {index.column()}")
                     self.set_mode_value(index, value)
                     self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.DisplayRole])
+                    self.update_annotation(index)
                     return True
         return False
 
@@ -254,8 +293,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
         if held:
             self.disable_editing = False
+            self.update_annotations()
         else:
             self.disable_editing = True
+            self.clear_annotations()
         self.layoutChanged.emit()
 
     def new_data(self, held: bool) -> None:
@@ -266,5 +307,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
             the underlying data is completely replaced.
         """
         if not held:
+            self.clear_annotations()
             self.modes = {}
             self.show = {}

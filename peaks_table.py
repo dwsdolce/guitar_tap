@@ -61,6 +61,7 @@ class PeakTable(QtWidgets.QWidget):
         # Use tableview to display fft peaks
         self.peaks_table = PeakTableView()
         self.peaks_table.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        self.peaks_table.setFocus()
 
         data: npt.NDArray  = np.vstack(([], [])).T
         self.model: pm.PeaksModel = pm.PeaksModel(data)
@@ -219,6 +220,7 @@ class PeakTable(QtWidgets.QWidget):
             This is used to indicate the change of the data being held. If it is not held
             then the table cannot be edited.
         """
+        print(f"PeakTable: data_held: held: {held}, selected_freq = {self.selected_freq}")
         self.data_is_held = held
         if held:
             #print("data_hel: enable editing")

@@ -15,8 +15,8 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
         """ Calculate per the class description. """
         match left.column():
             case ColumnIndex.Show.value:
-                left_show: bool = self.sourceModel().show_value(left)
-                right_show: bool = self.sourceModel().show_value(right)
+                left_show: str = self.sourceModel().show_value(left)
+                right_show: str = self.sourceModel().show_value(right)
                 match left_show:
                     case 'on':
                         match right_show:
