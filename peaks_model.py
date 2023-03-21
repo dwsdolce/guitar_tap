@@ -202,7 +202,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
     def show_annotations(self) -> None:
         """ Show all annotations. """
         for freq in self.show:
-            self.showAnnotation.emit(freq)
+            print(f"PeaksModel: show_annotations: freq: {freq}")
+            index = self.freq_index(freq)
+            if index >= 0 and self.show_value_bool(self.index(index, 0)):
+                self.showAnnotation.emit(freq)
 
     def update_annotation(self, index: QtCore.QModelIndex) -> None:
         """ Update the annotation for the model index. """
