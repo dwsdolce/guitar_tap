@@ -84,18 +84,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_controls.fft_canvas.averagesChanged.connect(self.peaks_controls.set_avg_completed)
         self.plot_controls.fft_canvas.framerateUpdate.connect(self.peaks_controls.set_framerate)
         self.plot_controls.fft_canvas.newSample.connect(self.peak_widget.new_data)
-        self.plot_controls.fft_canvas.restoreFocus.connect(self.peak_widget.restore_focus)
+        self.plot_controls.fft_canvas.annotations.restoreFocus.connect(self.peak_widget.restore_focus)
 
         self.peak_widget.model.annotationUpdate.connect(
-            self.plot_controls.fft_canvas.update_annotation)
+            self.plot_controls.fft_canvas.annotations.update_annotation)
         self.peak_widget.model.clearAnnotations.connect(
-            self.plot_controls.fft_canvas.clear_annotations)
+            self.plot_controls.fft_canvas.annotations.clear_annotations)
         self.peak_widget.model.showAnnotation.connect(
-            self.plot_controls.fft_canvas.show_annotation)
+            self.plot_controls.fft_canvas.annotations.show_annotation)
         self.peak_widget.model.hideAnnotation.connect(
-            self.plot_controls.fft_canvas.hide_annotation)
+            self.plot_controls.fft_canvas.annotations.hide_annotation)
         self.peak_widget.model.hideAnnotations.connect(
-            self.plot_controls.fft_canvas.hide_annotations)
+            self.plot_controls.fft_canvas.annotations.hide_annotations)
+
         self.peak_widget.peaks_table.clearPeaks.connect(
             self.plot_controls.fft_canvas.clear_selected_peak)
         self.peak_widget.peaks_table.clearPeaks.connect(

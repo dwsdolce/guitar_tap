@@ -14,6 +14,7 @@ from scipy.signal import get_window
 from PyQt6 import QtCore
 import pyaudio
 
+import fft_annotations as fft_a
 import freq_anal as f_a
 import microphone
 
@@ -34,7 +35,6 @@ class FftData:
         self.h_n_f: int = self.n_f //2
 
 # pylint: disable=too-many-instance-attributes
-# pylint: disable=too-many-public-methods
 class FftCanvas(FigureCanvasQTAgg):
     """ Sample the audio stream and display the FFT
 
@@ -55,7 +55,6 @@ class FftCanvas(FigureCanvasQTAgg):
     averagesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
     framerateUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)
     newSample: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
-    restoreFocus: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self,
                  window_length: int,
@@ -69,6 +68,8 @@ class FftCanvas(FigureCanvasQTAgg):
         self.hold_results: bool = False
 
         self.fft_axes: list[plt.Axes] = self.fig.subplots()
+
+        self.annotations: fft_a.FftAnnotations = fft_a.FftAnnotations(self.fig, self.fft_axes)
 
         plt.grid(color='0.85')
 
@@ -101,9 +102,9 @@ class FftCanvas(FigureCanvasQTAgg):
         self.points = self.fft_axes.scatter([], [], picker = True)
         self.selected_point = self.fft_axes.scatter([],[], c = 'red')
         self.fig.canvas.mpl_connect('pick_event', self.point_picked)
-        self.fig.canvas.mpl_connect('button_release_event', self.annotation_moved)
+        self.fig.canvas.mpl_connect('button_release_event', self.annotations.annotation_moved)
+        self.fig.canvas.mpl_connect('')
         self.line_threshold, = self.fft_axes.plot([], [], lw=1)
-        self.selected_annotation = -1
 
         x_axis: npt.NDArray[np.int64] = np.arange(0, self.fft_data.h_n_f + 1)
         self.freq: npt.NDArray[np.int64] = x_axis * self.fft_data.sample_freq // (self.fft_data.n_f)
@@ -113,9 +114,6 @@ class FftCanvas(FigureCanvasQTAgg):
         self.saved_peaks  = np.vstack(([], [])).T
         self.b_peaks_freq: npt.NDArray[np.float64] = []
         self.selected_peak: float = 0.0
-        # An array of dictionaries where each dictionary
-        # has a freq and annotation key
-        self.annotations = []
 
         # Saved peak information
         self.peaks_f_min_index: int = 0
@@ -142,94 +140,6 @@ class FftCanvas(FigureCanvasQTAgg):
         """ Return the py_audio opened in the microphone """
         return self.mic.py_audio
 
-    def create_annotation(self, freq: float, mag: float, text: str, xy_text: tuple[float, float]):
-        """ Create an annotation """
-        ann = self.fft_axes.annotate(text,
-                                     xy = (freq, mag),
-                                     xycoords = 'data',
-                                     xytext = xy_text,
-                                     textcoords = 'data',
-                                     horizontalalignment = 'center',
-                                     fontsize = 'large',
-                                     arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
-        ann.draggable()
-        return ann
-
-    def update_annotation(self, freq: float, mag: float, text: str) -> None:
-        """ Update an annotation by creating a new one or updating an existing one.
-            If the annotation dictionary exists then update the text in it.
-        """
-        #print("FftCanvas: add_annotation")
-        idx = self.find_annotation_index(freq)
-        if idx >= 0:
-            ann_dict = self.annotations[idx]
-            if ann_dict['annotation'] is None:
-                xy_text = self.annotations[idx]['xytext']
-                ann = self.create_annotation(freq, mag, text, xy_text)
-                self.annotations[idx]['text'] = text
-                self.annotations[idx]['annotation'] = ann
-            else:
-                self.annotations[idx]['text'] = text
-                self.annotations[idx]['annotation'].set_text(text)
-        else:
-            xy_text = (freq + 10.0, mag + 10.0)
-            ann = self.create_annotation(freq, mag, text, xy_text)
-            ann_element = {
-                'freq': freq,
-                'annotation': ann,
-                'mag': mag,
-                'text': text,
-                'xytext': xy_text}
-            self.annotations.append(ann_element)
-        self.fig.canvas.draw()
-
-    def find_annotation_index(self, freq: float) -> None:
-        """ Find an annotation from an index. """
-        #print("FftCanvas: find_annotation")
-        return next((i for i, item in enumerate(self.annotations) if item['freq'] == freq), -1)
-
-    def show_annotation(self, freq: float) -> None:
-        """ Show an annotation index from freq. """
-        idx = self.find_annotation_index(freq)
-        if idx >= 0:
-            ann_dict = self.annotations[idx]
-            if ann_dict['annotation'] is None:
-                mag = self.annotations[idx]['mag']
-                text = self.annotations[idx]['text']
-                xy_text = self.annotations[idx]['xytext']
-                ann = self.create_annotation(freq, mag, text, xy_text)
-                self.annotations[idx]['annotation'] = ann
-
-    def hide_annotation(self, freq: float) -> None:
-        """ Hide an annotation. """
-        idx = self.find_annotation_index(freq)
-        if idx >= 0:
-            ann_dict = self.annotations[idx]
-            ann = ann_dict['annotation']
-            if ann is not None:
-                ann.remove()
-                ann_dict['annotation'] = None
-                self.fig.canvas.draw()
-
-    def hide_annotations(self) -> None:
-        """ Hide all annotations. """
-        #print(f"FftCanvas: hide_annotations")
-        for ann_dict in self.annotations:
-            #print(f"FftCanvas: hide_annotations: ann: freq: {ann_dict['freq']}")
-            ann = ann_dict['annotation']
-            if ann is not None:
-                ann.remove()
-                ann_dict['annotation'] = None
-        self.fig.canvas.draw()
-
-    def clear_annotations(self) -> None:
-        """ Clear all annotations. """
-        #print("FftCanvas: clear_annotations")
-        for ann_dict in self.annotations:
-            ann_dict['annotation'].remove()
-        self.annotations = []
-        self.fig.canvas.draw()
-
     def select_peak(self, freq: float) -> None:
         """ Select the peak (scatter point) with the specified frequency """
         #print(f"FftCanvas: select_peak: freq: {freq}, hold_results: {self.hold_results}")
@@ -252,28 +162,13 @@ class FftCanvas(FigureCanvasQTAgg):
         #print("FftCanvas: clear_selected_peak")
         self.selected_peak = -1.0
 
-    def annotation_moved(self, _event) -> None:
-        """ Process the event for mouse release - i.e. completion of annotation moved. """
-        #print(f"FftCanvas: annotation_moved: xdata, ydata: {event.xdata}, {event.ydata}")
-        if self.selected_annotation >= 0:
-            ann = self.annotations[self.selected_annotation]["annotation"]
-            #print(f"annotation_moved: xyann: {ann.xyann}")
-            self.annotations[self.selected_annotation]["xytext"] = ann.xyann
-
-            self.selected_annotation = -1
-        self.restoreFocus.emit()
-
-    def point_picked(self, event) -> None:
+    def point_picked(self, event: matplotlib.backend_bases.PickEvent) -> None:
         """ Handle the event for scatter point being picked and emit
             the index if it is within the min/max frequency range
         """
         if self.hold_results:
-            ann_index = next((i for i, item in enumerate(self.annotations)
-                              if item['annotation'] == event.artist), -1)
-            if ann_index >= 0:
-                self.selected_annotation = ann_index
+            if self.annotations.select_annotation(event.artist):
                 return
-            self.selected_annotation = -1
             index0 = event.ind[0]
             #print(f"point_picked: index0: {index0}")
             #print(f"point_picked: index0 type: {type(index0)}")
@@ -456,7 +351,7 @@ class FftCanvas(FigureCanvasQTAgg):
                 triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
                 if triggered:
                     self.newSample.emit(self.hold_results)
-                    self.clear_annotations()
+                    self.annotations.clear_annotations()
                     # Draw avg_mag_y_db and avg_peaks
                     # Draw threshold
                     self.set_draw_data(avg_mag_y_db, avg_peaks)
