@@ -103,7 +103,6 @@ class FftCanvas(FigureCanvasQTAgg):
         self.selected_point = self.fft_axes.scatter([],[], c = 'red')
         self.fig.canvas.mpl_connect('pick_event', self.point_picked)
         self.fig.canvas.mpl_connect('button_release_event', self.annotations.annotation_moved)
-        self.fig.canvas.mpl_connect('')
         self.line_threshold, = self.fft_axes.plot([], [], lw=1)
 
         x_axis: npt.NDArray[np.int64] = np.arange(0, self.fft_data.h_n_f + 1)
