@@ -38,6 +38,7 @@ class PeakTableView(QtWidgets.QTableView):
 
         super().mousePressEvent(event)
 
+# pylint: disable=too-many-instance-attributes
 class PeakTable(QtWidgets.QWidget):
     """ Table and save button for displaying table of peaks and interacting with it. """
 
@@ -75,10 +76,10 @@ class PeakTable(QtWidgets.QWidget):
         self.peaks_table.setColumnWidth(self.model.modes_column, self.model.modes_width*8)
         self.peaks_table.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows)
         self.peaks_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.NoSelection)
-        self.modeDelegate = mcd.ModeComboDelegate(self, self.model.mode_strings)
-        self.peaks_table.setItemDelegateForColumn(self.model.modes_column, self.modeDelegate)
-        self.showDelegate = sbd.ShowComboDelegate(self)
-        self.peaks_table.setItemDelegateForColumn(self.model.show_column, self.showDelegate)
+        self.mode_delegate = mcd.ModeComboDelegate(self, self.model.mode_strings)
+        self.peaks_table.setItemDelegateForColumn(self.model.modes_column, self.mode_delegate)
+        self.show_delegate = sbd.ShowComboDelegate(self)
+        self.peaks_table.setItemDelegateForColumn(self.model.show_column, self.show_delegate)
         self.peaks_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.AllEditTriggers)
         self.peaks_table.setToolTip('Displays the peaks found. When results are held, select\n'
             'a cell to highlight the peak in the FFT Peaks display or\n'
@@ -110,16 +111,16 @@ class PeakTable(QtWidgets.QWidget):
         self.model.dataChanged.connect(self.data_changed)
 
     def data_changed(
-        self, 
-        topLeft: QtCore.QModelIndex,
-        _bottomRight: QtCore.QModelIndex,
-        _roles: typing.Iterable[int] = ...
-    ) -> None:
-        #print(f"PeakTable: data_changed: topLeft: {topLeft.row()}, {topLeft.column()}")
-        freq_index = self.model.index(topLeft.row(), 1)
+            self,
+            top_left: QtCore.QModelIndex,
+            _bottom_right: QtCore.QModelIndex,
+            _roles: typing.Iterable[int] = ...
+        ) -> None:
+        """ Respond to data changes for a particular model index and select it. """
+        #print(f"PeakTable: data_changed: top_left: {top_left.row()}, {top_left.column()}")
+        freq_index = self.model.index(top_left.row(), 1)
         freq = self.model.freq_value(freq_index)
         self.select_row(freq)
-        #self.peaks_table.setFocus()
 
     def update_data(self, data: np.ndarray) -> bool:
         """ Update the data model from outside the object and
@@ -130,19 +131,23 @@ class PeakTable(QtWidgets.QWidget):
         #print(f" update_data: rowCount = {self.peaks_table.model().rowCount()}")
         for row in range(0, self.peaks_table.model().rowCount()):
             #print(f"closePersistentEditor: row: {row}, column{pm.ColumnIndex.Show.value}")
-            self.peaks_table.closePersistentEditor(self.peaks_table.model().index(row, pm.ColumnIndex.Show.value))
-            self.peaks_table.closePersistentEditor(self.peaks_table.model().index(row, pm.ColumnIndex.Modes.value))
+            self.peaks_table.closePersistentEditor(
+                self.peaks_table.model().index(row, pm.ColumnIndex.Show.value))
+            self.peaks_table.closePersistentEditor(
+                self.peaks_table.model().index(row, pm.ColumnIndex.Modes.value))
 
         #print(f"Peak: update_data: {data}")
         self.model.update_data(data)
         self.update_selected_freq_index()
-        
+
         # Create new persistent editors
         #print(f" update_data: rowCount = {self.peaks_table.model().rowCount()}")
         for row in range(0, self.peaks_table.model().rowCount()):
             #print(f"openPersistentEditor: row: {row}, column{pm.ColumnIndex.Show.value}")
-            self.peaks_table.openPersistentEditor(self.peaks_table.model().index(row, pm.ColumnIndex.Show.value))
-            self.peaks_table.openPersistentEditor(self.peaks_table.model().index(row, pm.ColumnIndex.Modes.value))
+            self.peaks_table.openPersistentEditor(
+                self.peaks_table.model().index(row, pm.ColumnIndex.Show.value))
+            self.peaks_table.openPersistentEditor(
+                self.peaks_table.model().index(row, pm.ColumnIndex.Modes.value))
 
         # Select the row.
         if self.selected_freq > 0:
@@ -171,12 +176,24 @@ class PeakTable(QtWidgets.QWidget):
             columns = range(self.peaks_table.horizontalHeader().count())
             header = [data_model.headerData(column, QtCore.Qt.Orientation.Horizontal,
                 QtCore.Qt.ItemDataRole.DisplayRole) for column in columns]
-            with open(filename, 'w', encoding='utf-8-sig') as csvfile:
-                writer = csv.writer(csvfile, dialect='excel', lineterminator='\n')
-                writer.writerow(header)
-                for row in range(data_model.rowCount(QtCore.QVariant())):
-                    writer.writerow(data_model.data_value(data_model.index(row, column))
-                        for column in columns)
+            try:
+                with open(filename, 'w', encoding='utf-8-sig') as csvfile:
+                    writer = csv.writer(csvfile, dialect='excel', lineterminator='\n')
+                    writer.writerow(header)
+                    for row in range(data_model.rowCount(QtCore.QVariant())):
+                        writer.writerow(data_model.data_value(data_model.index(row, column))
+                            for column in columns)
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(self, "Error in saving peaks", f"Table was not saved\n{str(e)}")
+                
+            
+
+    def restore_focus(self) -> None:
+        """ Restore the focus to the peaks_table so selected items higlight
+            correctly.
+        """
+        #print("PeakTable: restore_focus")
+        self.peaks_table.setFocus()
 
     def select_row(self, freq: int) -> None:
         """ For the specified frequency index select the corresponding row
@@ -190,21 +207,19 @@ class PeakTable(QtWidgets.QWidget):
         data_model: pm.PeaksModel = proxy_model.sourceModel()
         freq_index = data_model.freq_index(freq)
 
+        self.peaks_table.setFocus()
+
         if freq_index >= 0:
             data_freq_index = data_model.index(freq_index, 0)
             proxy_freq_index: QtCore.QModelIndex = proxy_model.mapFromSource(data_freq_index)
-            current_index = self.peaks_table.selectionModel().currentIndex()
-
-            #print(f"PeakTable: select_row: current_index = {current_index.row()}, {current_index.column()}")
-            #print(f"PeakTable: select_row: proxy_freq_index = {proxy_freq_index.row()}, {proxy_freq_index.column()}")
 
             select_current = QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent
             select_rows = QtCore.QItemSelectionModel.SelectionFlag.Rows
             flags = select_current | select_rows
+            self.peaks_table.selectionModel().clearSelection()
             self.peaks_table.selectionModel().select(proxy_freq_index, flags)
 
-        self.peaks_table.activateWindow()
-        self.peaks_table.setFocus()
+        #print(f"PeakTable: select_row: is")
 
         self.selected_freq_index = freq_index
         self.selected_freq = freq
@@ -221,20 +236,20 @@ class PeakTable(QtWidgets.QWidget):
             This is used to indicate the change of the data being held. If it is not held
             then the table cannot be edited.
         """
-        print(f"PeakTable: data_held: held: {held}, selected_freq = {self.selected_freq}")
+        #print(f"PeakTable: data_held: held: {held}, selected_freq = {self.selected_freq}")
         self.data_is_held = held
         if held:
             #print("data_hel: enable editing")
-            self.showDelegate.enable = True
-            self.modeDelegate.enable = True
+            self.show_delegate.enable = True
+            self.mode_delegate.enable = True
             self.peaks_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.SingleSelection)
             self.peaks_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.AllEditTriggers)
             #if self.selected_freq_index >= 0:
             #    self.select_row(self.selected_freq_index)
         else:
            #print("data_hel: disable editing")
-            self.showDelegate.enable = False
-            self.modeDelegate.enable = False
+            self.show_delegate.enable = False
+            self.mode_delegate.enable = False
             self.peaks_table.setSelectionMode(QtWidgets.QTableView.SelectionMode.NoSelection)
             self.peaks_table.setEditTriggers(QtWidgets.QTableView.EditTrigger.NoEditTriggers)
             #self.peaks_table.clearSelection()
@@ -253,7 +268,7 @@ class PeakTable(QtWidgets.QWidget):
         """
         self.model.new_data(held)
         self.clear_selected_peak()
-    
+
     def update_selected_freq_index(self):
         """
           For the current selected frequency update the related index. The
@@ -265,5 +280,6 @@ class PeakTable(QtWidgets.QWidget):
             self.selected_freq_index = self.model.freq_index(self.selected_freq)
 
     def clear_selected_peak(self) -> None:
+        """ Clear the information related to the selected peak. """
         self.selected_freq_index = -1
         self.selected_freq = 0.0

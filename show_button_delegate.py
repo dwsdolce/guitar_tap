@@ -9,14 +9,11 @@ class ShowComboDelegate(QtWidgets.QStyledItemDelegate):
 
     enable:bool = True
 
-    def __init__(self, parent) -> None:
-        super().__init__(parent)
-
     # pylint: disable=invalid-name
     def createEditor(self,
                      parent: QtWidgets.QWidget,
                      _option: QtWidgets.QStyleOptionViewItem,
-                     index: QtCore.QModelIndex
+                     _index: QtCore.QModelIndex
                     ) -> QtWidgets.QWidget:
         """ Create the editor for the mode column. """
         #print("ShowComboDelegate: createEditor")
@@ -32,6 +29,7 @@ class ShowComboDelegate(QtWidgets.QStyledItemDelegate):
         self.editor.setChecked(False)
 
         self.editor.toggled.connect(self.button_toggled)
+        self.editor.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         return self.editor
 
     def setEditorData(self, editor: QtWidgets.QToolButton, index: QtCore.QModelIndex) -> None:
@@ -76,13 +74,15 @@ class ShowComboDelegate(QtWidgets.QStyledItemDelegate):
         """ Update the geometry of the editor. """
         #print("ShowComboDelegate: updateEditorGeometry")
         editor.setGeometry(option.rect)
-    
-    def eventFilter(self, object: QtWidgets.QToolButton, event: QtCore.QEvent) -> bool:
+
+    def eventFilter(self, obj: QtWidgets.QToolButton, event: QtCore.QEvent) -> bool:
+        """ Enable editor is there are any events on the item. """
         #print(f"ShowComboDelegate: eventFilter: enable: {self.enable}")
         #print(f"showComboDelegate: eventFilter: {event.type().name}")
 
-        object.setEnabled(self.enable)
-        return super().eventFilter(object, event)
+        obj.setEnabled(self.enable)
+        return super().eventFilter(obj, event)
 
-    def button_toggled(self, checked: bool) -> None:
+    def button_toggled(self, _checked: bool) -> None:
+        """ Respond to toggle of button. """
         self.commitData.emit(self.sender())

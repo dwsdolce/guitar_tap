@@ -27,11 +27,18 @@ class ColumnIndex(Enum):
     # pylint: disable=invalid-name
     Modes = 5
 
+# pylint: disable=too-many-instance-attributes
+# pylint: disable=too-many-public-methods
 class PeaksModel(QtCore.QAbstractTableModel):
     """ Custom data model to handle deriving pitch and cents from frequency. Also defines
         accessing the underlying data model.
     """
-    annotationUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(bool, float, float, str)
+    annotationUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, str)
+    clearAnnotations: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    hideAnnotations: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    hideAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
+    showAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
+
     mode_strings: list[str] = ["",
                                "Helmholtz T(1,1)_1",
                                "Top T(1,1)_2",
@@ -70,18 +77,21 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.show[self.freq_value(index)] = value
 
     def show_value_bool(self, index: QtCore.QModelIndex) -> bool:
-        if self.show_value(index) == "on":
-            return True
-        else:
-            return False
+        """ Return the show value as a boolean. """
+        return bool(self.show_value(index) == "on")
+        #if self.show_value(index) == "on":
+        #    return True
+        #else:
+        #    return False
 
     def show_value(self, index: QtCore.QModelIndex) -> str:
         """ Return the show for the row """
         if self.freq_value(index) in self.show:
             return self.show[self.freq_value(index)]
         return "off"
-    
+
     def freq_index(self, freq: float) -> QtCore.QModelIndex:
+        """ From a frequency return the index in the data array. """
         index = np.where(self._data[:,0] == freq)
         if len(index[0]) == 1:
             return index[0][0]
@@ -91,7 +101,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """ Return the frequency value from the correct column for the row """
         #print("PeaksModel: freq_value")
         return self._data[index.row()][0]
-    
+
     def magnitude_value(self, index: QtCore.QModelIndex) -> float:
         """ Return the magnitude value from the correct column for the row """
         #print("PeaksModel: freq_value")
@@ -104,7 +114,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         #print("PeaksModel: data_value")
         match index.column():
             case ColumnIndex.Show.value:
-                value = self.show_value[index.row()]
+                value = self.show_value(index)
             case ColumnIndex.Freq.value:
                 value = self.freq_value(index)
             case ColumnIndex.Mag.value:
@@ -118,8 +128,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
         return value
 
     def data(self, index: QtCore.QModelIndex, role: QtCore.Qt.ItemDataRole)  -> QtCore.QVariant:
-        #print("PeaksModel: data")
         """ Return the requested data based on role. """
+        #print("PeaksModel: data")
         match role:
             case QtCore.Qt.ItemDataRole.DisplayRole:
                 match index.column():
@@ -182,21 +192,20 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
         self.layoutAboutToBeChanged.emit()
         self._data = data
-        
-        self.layoutChanged.emit()
-    
-    def clear_annotations(self) -> None:
-        for freq in self.show:
-            self.annotationUpdate.emit(False, freq, 0.0, "") 
 
-    def update_annotations(self) -> None:
+        self.layoutChanged.emit()
+
+    def clear_annotations(self) -> None:
+        """ Clear all annotations. """
+        self.clearAnnotations.emit()
+
+    def show_annotations(self) -> None:
+        """ Show all annotations. """
         for freq in self.show:
-            row = self.freq_index(freq)
-            if row >= 0:
-                index = self.index(row, 0)
-                self.update_annotation(index)
+            self.showAnnotation.emit(freq)
 
     def update_annotation(self, index: QtCore.QModelIndex) -> None:
+        """ Update the annotation for the model index. """
         freq = self.freq_value(index)
         mag = self.magnitude_value(index)
         show = self.show_value_bool(index)
@@ -207,12 +216,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 annotation_text = f"{freq:.1f}"
             else:
                 annotation_text = f"{mode}\n{freq:.1f}"
-            self.annotationUpdate.emit(True, freq, mag, annotation_text) 
-            print(f"PeaksModel: update_annotation: {annotation_text}")
+            self.annotationUpdate.emit(freq, mag, annotation_text)
+            #print(f"PeaksModel: update_annotation: {annotation_text}")
         else:
             # Remove annotations
-            self.annotationUpdate.emit(False, freq, mag, "") 
-            print(f"PeaksModel: update_annotation: remove")
+            self.hideAnnotation.emit(freq)
+            #print(f"PeaksModel: update_annotation: remove")
 
 
     def setData(self, index: QtCore.QModelIndex, value: str,
@@ -293,10 +302,11 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
         if held:
             self.disable_editing = False
-            self.update_annotations()
+            self.show_annotations()
         else:
             self.disable_editing = True
-            self.clear_annotations()
+            self.hideAnnotations.emit()
+            #self.clear_annotations()
         self.layoutChanged.emit()
 
     def new_data(self, held: bool) -> None:

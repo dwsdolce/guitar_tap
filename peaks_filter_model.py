@@ -1,5 +1,7 @@
-from PyQt6 import QtWidgets, QtCore
-import pitch as pitch_c
+"""
+    Filter for filter proxy to sort columns based on column data type.
+"""
+from PyQt6 import QtCore
 from peaks_model import ColumnIndex
 
 # pylint: disable=too-few-public-methods

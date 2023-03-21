@@ -27,6 +27,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
 
+        #qapp.focusChanged.connect(self.focus_changed)
+
         main_widget: QtWidgets.QWidget = QtWidgets.QWidget()
         self.setCentralWidget(main_widget)
 
@@ -82,9 +84,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_controls.fft_canvas.averagesChanged.connect(self.peaks_controls.set_avg_completed)
         self.plot_controls.fft_canvas.framerateUpdate.connect(self.peaks_controls.set_framerate)
         self.plot_controls.fft_canvas.newSample.connect(self.peak_widget.new_data)
+        self.plot_controls.fft_canvas.restoreFocus.connect(self.peak_widget.restore_focus)
 
         self.peak_widget.model.annotationUpdate.connect(
             self.plot_controls.fft_canvas.update_annotation)
+        self.peak_widget.model.clearAnnotations.connect(
+            self.plot_controls.fft_canvas.clear_annotations)
+        self.peak_widget.model.showAnnotation.connect(
+            self.plot_controls.fft_canvas.show_annotation)
+        self.peak_widget.model.hideAnnotation.connect(
+            self.plot_controls.fft_canvas.hide_annotation)
+        self.peak_widget.model.hideAnnotations.connect(
+            self.plot_controls.fft_canvas.hide_annotations)
         self.peak_widget.peaks_table.clearPeaks.connect(
             self.plot_controls.fft_canvas.clear_selected_peak)
         self.peak_widget.peaks_table.clearPeaks.connect(
@@ -96,14 +107,22 @@ class MainWindow(QtWidgets.QMainWindow):
         # Set the averaging to false.
         self.set_avg_enable(False)
         self.set_hold_results(False)
-        self.plot_controls.fft_canvas.set_max_average_count(self.peaks_controls.num_averages.value())
+        self.plot_controls.fft_canvas.set_max_average_count(
+            self.peaks_controls.num_averages.value())
+
+    # def focus_changed(self, old: QtWidgets.QWidget, now: QtWidgets.QWidget):
+    #     if old != None:
+    #         print(f"MainWIndow: old: {old.__class__}")
+    #     if now != None:
+    #         print(f"MainWIndow: now: {now.__class__}")
 
     def show_device_dialog(self, _) -> None:
         """ Create and show the Devices dialog """
         dlg = SD.ShowDevices(self.plot_controls.fft_canvas.get_py_audio())
         dlg.exec()
-    
+
     def row_deselect(self, deselected: QtCore.QModelIndex) -> None:
+        """ Deselect the peak associated with the deselected row. """
         #print(f"MainWindow: row_deselect: {deselected.row()}, {deselected.column()}")
         proxy_model = self.peak_widget.peaks_table.model()
         data_freq_index = proxy_model.mapToSource(deselected)
@@ -111,6 +130,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_controls.fft_canvas.deselect_peak(freq)
 
     def row_select(self, selected: QtCore.QModelIndex) -> None:
+        """ Select the peak associated with the selected row. """
         #print(f"MainWindow: row_select: {selected.row()}, {selected.column()}")
         proxy_model = self.peak_widget.peaks_table.model()
         data_freq_index = proxy_model.mapToSource(selected)
@@ -128,17 +148,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if len(deselected.indexes()) > 0:
             proxy_freq_index = deselected.indexes()[0]
-            for i in range(len(deselected.indexes())):
-                index = deselected.indexes()[i]
-                #print(f"MainWindow: peak_selection_changed: deselected: {index.row()}, {index.column()}")
             self.row_deselect(proxy_freq_index)
 
         if len(selected.indexes()) > 0:
             proxy_freq_index = selected.indexes()[0]
-            for i in range(len(deselected.indexes())):
-                index = selected.indexes()[i]
-                #print(f"MainWindow: peak_selection_changed: selected: {index.row()}, {index.column()}")
-
             self.row_select(proxy_freq_index)
 
     def set_avg_enable(self, checked: bool) -> None:

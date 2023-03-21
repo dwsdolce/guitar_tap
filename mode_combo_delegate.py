@@ -60,13 +60,14 @@ class ModeComboDelegate(QtWidgets.QStyledItemDelegate):
         #print("ModeComboDelegate: updateEditorGeometry")
         editor.setGeometry(option.rect)
 
-    def eventFilter(self, object: QtWidgets.QComboBox, event: QtCore.QEvent) -> bool:
+    def eventFilter(self, obj: QtWidgets.QComboBox, event: QtCore.QEvent) -> bool:
+        """ Enable editor is there are any events on the item. """
         #print(f"ShowComboDelegate: eventFilter: enable: {self.enable}")
 
-        object.setEnabled(self.enable)
-        return super().eventFilter(object, event)
+        obj.setEnabled(self.enable)
+        return super().eventFilter(obj, event)
 
-    def current_index_changed(self, index: int) -> None:
+    def current_index_changed(self, _index: int) -> None:
         """ Respond to change of current index. """
         #print("ModeComboDelegate: currentIndexChanged")
         self.commitData.emit(self.sender())

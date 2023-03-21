@@ -1,3 +1,6 @@
+"""
+    Creates static class for loading icons and pixmaps that can be used in multiple modules.
+"""
 import os
 
 from PyQt6 import QtGui
@@ -5,6 +8,7 @@ from PyQt6 import QtGui
 basedir = os.path.dirname(__file__)
 
 class GtImages :
+    """ Static class holding png files that are loaded into icons and pixmaps. """
 
     _red_pixmap = None
     _red_icon = None
@@ -15,6 +19,7 @@ class GtImages :
 
     @staticmethod
     def create_images():
+        """ Load the png files and initialize the static data. """
         GtImages._red_pixmap = QtGui.QPixmap(os.path.join(basedir, './icons/led_red.png'))
         GtImages._red_icon = QtGui.QIcon(GtImages._red_pixmap)
         red_button_pixmap = QtGui.QPixmap(os.path.join(basedir, './icons/red_button.png'))
@@ -24,44 +29,44 @@ class GtImages :
         green_button_pixmap = QtGui.QPixmap(os.path.join(basedir,'./icons/green_button.png'))
         GtImages._green_button_icon = QtGui.QIcon(green_button_pixmap)
 
-    @staticmethod 
+    @staticmethod
     def red_pixmap():
-        if GtImages._red_pixmap == None:
+        """ Initialize the static data and return the red pixmap """
+        if GtImages._red_pixmap is None:
             GtImages.create_images()
         return GtImages._red_pixmap
 
-    @staticmethod 
+    @staticmethod
     def red_icon():
-        if GtImages._red_pixmap == None:
+        """ Initialize the static data and return the red icon """
+        if GtImages._red_pixmap is None:
             GtImages.create_images()
         return GtImages._red_icon
 
     @staticmethod
     def red_button_icon():
-        if GtImages._red_pixmap == None:
+        """ Initialize the static data and return the red button icon """
+        if GtImages._red_pixmap is None:
             GtImages.create_images()
         return GtImages._red_button_icon
 
     @staticmethod
     def green_pixmap():
-        if GtImages._red_pixmap == None:
+        """ Initialize the static data and return the green pixmap """
+        if GtImages._red_pixmap is None:
             GtImages.create_images()
         return GtImages._green_pixmap
 
     @staticmethod
     def green_icon():
-        if GtImages._red_pixmap == None:
+        """ Initialize the static data and return the green icon """
+        if GtImages._red_pixmap is None:
             GtImages.create_images()
         return GtImages._green_icon
 
     @staticmethod
     def green_button_icon():
-        if GtImages._red_pixmap == None:
+        """ Initialize the static data and return the green button icon """
+        if GtImages._red_pixmap is None:
             GtImages.create_images()
         return GtImages._green_button_icon
-
-
-
-
-
-
