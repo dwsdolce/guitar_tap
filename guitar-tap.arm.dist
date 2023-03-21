@@ -13,4 +13,4 @@
     <choice id="com.dolcesfogato.guitar-tap" visible="false">
         <pkg-ref id="com.dolcesfogato.guitar-tap"/>
     </choice>
-    <pkg-ref id="com.dolcesfogato.guitar-tap" version="0.9" onConclusion="none">GuitarTap.pkg</pkg-ref> </installer-gui-script>
+    <pkg-ref id="com.dolcesfogato.guitar-tap" version="0.10" onConclusion="none">GuitarTap.pkg</pkg-ref> </installer-gui-script>
