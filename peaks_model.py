@@ -88,7 +88,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """ Return the show for the row """
         if self.freq_value(index) in self.show:
             return self.show[self.freq_value(index)]
-        return "off"
+        return 'off'
 
     def freq_index(self, freq: float) -> QtCore.QModelIndex:
         """ From a frequency return the index in the data array. """
@@ -134,7 +134,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             case QtCore.Qt.ItemDataRole.DisplayRole:
                 match index.column():
                     case ColumnIndex.Show.value:
-                        str_value = self.show_value(index)
+                        str_value = ""
                     case ColumnIndex.Freq.value:
                         value = self.freq_value(index)
                         str_value = f'{value:.1f}'
@@ -146,7 +146,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     case ColumnIndex.Cents.value:
                         str_value = f'{self.pitch.cents(self.freq_value(index)):+.0f}'
                     case ColumnIndex.Modes.value:
-                        str_value = self.mode_value(index)
+                        str_value = ""
                     case _:
                         str_value = ""
                 return str_value

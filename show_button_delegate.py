@@ -39,7 +39,8 @@ class ShowComboDelegate(QtWidgets.QStyledItemDelegate):
         editor.setStyleSheet("background=-color: white")
 
         if index.isValid():
-            value = index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+            print(f"setEditorData: row = {index.row()}, col = {index.column()}")
+            value = index.model().data_value(index)
             #print(f"setEditorData: value: {value}")
             if value == "on":
                 editor.setChecked(True)
@@ -63,7 +64,7 @@ class ShowComboDelegate(QtWidgets.QStyledItemDelegate):
                 editor.setIcon(gt_i.GtImages.green_icon())
             else:
                 #print(f"setModelData: value: unchecked")
-                model.setData(index, "off")
+                model.setData(index, 'off')
                 editor.setIcon(gt_i.GtImages.red_icon())
 
     def updateEditorGeometry(self,

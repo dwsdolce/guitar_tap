@@ -10,16 +10,15 @@ import peaks_controls as PKC
 import peaks_table as PT
 import show_devices as SD
 
-if os.name == 'nt':
-    import named_mutex as NM
+
 
 basedir = os.path.dirname(__file__)
-try:
+
+if os.name == 'nt':
+    import named_mutex as NM
     from ctypes import windll # Only exists on Windows.
     MY_APP_ID = "dolcesfogato.guitar-tap.guitar-tap.0.5"
     windll.shell32.SetCurrentProcessExplicitAppUserModelID(MY_APP_ID)
-except ImportError:
-    pass
 
 class MainWindow(QtWidgets.QMainWindow):
     """ Defines the layout of the application window

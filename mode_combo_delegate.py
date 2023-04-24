@@ -36,7 +36,7 @@ class ModeComboDelegate(QtWidgets.QStyledItemDelegate):
         editor.blockSignals(True) # block signals that are not caused by the user
         editor.setStyleSheet("background=-color: white")
         if index.isValid():
-            value = index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+            value = index.model().data_value(index)
             num = self.items.index(value)
             editor.setCurrentIndex(num)
         editor.blockSignals(False)
