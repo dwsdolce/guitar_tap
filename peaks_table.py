@@ -185,8 +185,6 @@ class PeakTable(QtWidgets.QWidget):
                             for column in columns)
             except Exception as e:
                 QtWidgets.QMessageBox.warning(self, "Error in saving peaks", f"Table was not saved\n{str(e)}")
-                
-            
 
     def restore_focus(self) -> None:
         """ Restore the focus to the peaks_table so selected items higlight

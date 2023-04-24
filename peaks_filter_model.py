@@ -61,8 +61,9 @@ class PeaksFilterModel(QtCore.QSortFilterProxyModel):
             case _:
                 less_than = True
         return less_than
-    
+
     def data_value(self, index: QtCore.QModelIndex) -> QtCore.QVariant:
+        """ Support calling data_value from item delegate. """
         # Translate filter model index to model index.
 
         return self.sourceModel().data_value(self.mapToSource(index))

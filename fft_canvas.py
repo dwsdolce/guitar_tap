@@ -406,11 +406,6 @@ class FftCanvas(FigureCanvasQTAgg):
         # Is Amplitude above the threshold?
         elif amplitude > self.threshold:
 
-            # Find the Fundamental Frequency using YIN
-            # Results seem less accurate than FFT and compared to a strobe tuner
-            # pitches, harmonic_rates, argmins, times = f_a.compute_yin(chunk, self.fft_data.sample_freq, self.fft_data.sample_freq//4, self.fft_data.sample_freq//8, self.fmin, self.fmax, 0.85)
-            # print(pitches)
-
             # Is Averaging enabled:
             if self.avg_enable:
                 self.process_averages(mag_y)

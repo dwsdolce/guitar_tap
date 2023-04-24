@@ -83,7 +83,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_controls.fft_canvas.averagesChanged.connect(self.peaks_controls.set_avg_completed)
         self.plot_controls.fft_canvas.framerateUpdate.connect(self.peaks_controls.set_framerate)
         self.plot_controls.fft_canvas.newSample.connect(self.peak_widget.new_data)
-        self.plot_controls.fft_canvas.annotations.restoreFocus.connect(self.peak_widget.restore_focus)
+        self.plot_controls.fft_canvas.annotations.restoreFocus.connect(
+            self.peak_widget.restore_focus)
 
         self.peak_widget.model.annotationUpdate.connect(
             self.plot_controls.fft_canvas.annotations.update_annotation)
