@@ -39,7 +39,6 @@ class ShowComboDelegate(QtWidgets.QStyledItemDelegate):
         editor.setStyleSheet("background=-color: white")
 
         if index.isValid():
-            print(f"setEditorData: row = {index.row()}, col = {index.column()}")
             value = index.model().data_value(index)
             #print(f"setEditorData: value: {value}")
             if value == "on":
