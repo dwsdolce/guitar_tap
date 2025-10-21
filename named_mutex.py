@@ -20,7 +20,8 @@ _CloseHandle = ctypes.windll.kernel32.CloseHandle
 _CloseHandle.argtypes = [wintypes.HANDLE]
 _CloseHandle.restype = wintypes.BOOL
 
-class NamedMutex():
+
+class NamedMutex:
     """A named, system-wide mutex that can be acquired and released."""
 
     def __init__(self, name: str, acquired: bool = False) -> None:
@@ -28,7 +29,7 @@ class NamedMutex():
         Mutex names are case sensitive, and a filename (with backslashes in it) is not a
         valid mutex name. Raises WindowsError on error.
         """
-        self.name = bytes(name, 'ascii')
+        self.name = bytes(name, "ascii")
         self.acquired = acquired
         ret = _CreateMutex(None, False, self.name)
         if not ret:
@@ -37,7 +38,7 @@ class NamedMutex():
         if acquired:
             self.acquire()
 
-    def acquire(self, timeout: int =None) -> None:
+    def acquire(self, timeout: int = None) -> None:
         """Acquire ownership of the mutex, returning True if acquired. If a timeout
         is specified, it will wait a maximum of timeout seconds to acquire the mutex,
         returning True if acquired, False on timeout. Raises WindowsError on error.
@@ -81,7 +82,7 @@ class NamedMutex():
 
     def __repr__(self) -> str:
         """Return the Python representation of this mutex."""
-        return f'{self.__class__.__name__}({ self.name!r}, acquired={self.acquired})'
+        return f"{self.__class__.__name__}({ self.name!r}, acquired={self.acquired})"
 
     __str__ = __repr__
 

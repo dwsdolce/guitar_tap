@@ -23,7 +23,14 @@
  * Install python from https://www.python.org/ (the latest python is preferred 3.11).
  * Open a cmd window or shell/terminal that can run python
 
- * For Windows or Linux
+ * For Windows
+  	- pip install numpy scipy pyaudio pyqt6 matplotlib
+	- python guitar_tap.py
+
+ * For Linux
+ 	- sudo apt update
+ 	- sudo apt install portaudio19-dev python3-pyaudio
+	- sudo apt-get install -y libxcb-cursor-dev
  	- pip install numpy scipy pyaudio pyqt6 matplotlib
 	- python guitar_tap.py
 
@@ -34,4 +41,10 @@
 
  **NOTE:** You may have to use python3 and pip3 on your system (MAC requires this).  
  **NOTE:** On MAC, before running pip you need to:
-- brew install portaudio
+	- brew install portaudio
+
+ * To build an installer you need to:
+	- pip install pyinstaller
+	- build_{linux, mac, win}
+
+ **NOTE:**  For Windows and MACOS there are additional packaged required for signing the installer. See the scripts.

@@ -1,23 +1,25 @@
 """ Calculate the dft, find the peaks, and then interpolate the peaks """
+
 import numpy as np
 import numpy.typing as npt
 from scipy.fftpack import fft
 
+
 def is_power2(num):
     """
-	Check if num is power of two
-	"""
+    Check if num is power of two
+    """
     return ((num & (num - 1)) == 0) and num > 0
 
-def dft_anal(chunk: npt.NDArray[np.float32],
-             window_function,
-             n_freq_samples: int
-            ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+
+def dft_anal(
+    chunk: npt.NDArray[np.float32], window_function, n_freq_samples: int
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """
-	Analysis of a signal using the discrete Fourier transform
-	x: input signal, w: analysis window, N: FFT size
-	returns magnitude
-	"""
+    Analysis of a signal using the discrete Fourier transform
+    x: input signal, w: analysis window, N: FFT size
+    returns magnitude
+    """
 
     # raise error if N not a power of two
     if not is_power2(n_freq_samples):
@@ -58,18 +60,18 @@ def dft_anal(chunk: npt.NDArray[np.float32],
     magnitude = 20 * np.log10(abs_fft)
     return magnitude, abs_fft
 
-def peak_detection(magnitude: npt.NDArray[np.float32],
-                   threshold: int
-                  ) -> npt.NDArray[np.signedinteger]:
+
+def peak_detection(
+    magnitude: npt.NDArray[np.float32], threshold: int
+) -> npt.NDArray[np.signedinteger]:
     """
-	Detect spectral peak locations
-	magnitude: magnitude spectrum, t: threshold
-	returns ploc: peak locations
-	"""
+    Detect spectral peak locations
+    magnitude: magnitude spectrum, t: threshold
+    returns ploc: peak locations
+    """
 
     # locations above threshold
-    thresh_values = np.where(
-            np.greater(magnitude[1:-1], threshold), magnitude[1:-1], 0)
+    thresh_values = np.where(np.greater(magnitude[1:-1], threshold), magnitude[1:-1], 0)
     # locations higher than the next one
     next_minor = np.where(magnitude[1:-1] > magnitude[2:], magnitude[1:-1], 0)
     # locations higher than the previous one
@@ -79,15 +81,16 @@ def peak_detection(magnitude: npt.NDArray[np.float32],
     ploc = ploc.nonzero()[0] + 1  # add 1 to compensate for previous steps
     return ploc
 
-def peak_interp(magnitude: npt.NDArray[np.float32],
-                ploc: npt.NDArray[np.int64]
-                ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+
+def peak_interp(
+    magnitude: npt.NDArray[np.float32], ploc: npt.NDArray[np.int64]
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """
-	Interpolate peak values using parabolic interpolation
-	magnitude: magnitude spectrum, ploc: locations of
-        peaks returns iploc, ipmag: interpolated peak location,
-        magnitude
-	"""
+    Interpolate peak values using parabolic interpolation
+    magnitude: magnitude spectrum, ploc: locations of
+    peaks returns iploc, ipmag: interpolated peak location,
+    magnitude
+    """
 
     val = magnitude[ploc]  # magnitude of peak bin
     lval = magnitude[ploc - 1]  # magnitude of bin at left

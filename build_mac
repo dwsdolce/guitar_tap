@@ -53,15 +53,15 @@ fi
 #===============================================
 # Setup the correct python environment
 #===============================================
-if [[ `arch` == "i386" ]]
-then
-    echo "Activating i386 virtual environment for Python"
-    source ~/i386/bin/activate
-elif [[ `arch` == 'arm64' ]]
-then
-    echo "Activating arm64 virtual environment for Python"
-    source ~/arm64/bin/activate
-fi
+#if [[ `arch` == "i386" ]]
+#then
+#    echo "Activating i386 virtual environment for Python"
+#    source ~/i386/bin/activate
+#elif [[ `arch` == 'arm64' ]]
+#then
+#    echo "Activating arm64 virtual environment for Python"
+#    source ~/arm64/bin/activate
+#fi
 
 echo "Running build for `arch` architecure"
 
