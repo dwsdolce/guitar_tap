@@ -8,11 +8,7 @@ import platform
 import threading
 import atexit
 
-# import pyaudio
-if platform.system() == "Windows":
-    import pyaudiowpatch as pyaudio
-else:
-    import pyaudio
+import sounddevice as sd
 import numpy as np
 import numpy.typing as npt
 
@@ -32,35 +28,31 @@ class Microphone:
 
         self.rate: int = rate
         self.chunksize: int = chunksize
-        self.py_audio: pyaudio.PyAudio = pyaudio.PyAudio()
-        self.stream = self.py_audio.open(
-            format=pyaudio.paFloat32,
+        self.stream: sd.InputStream = sd.InputStream(
             channels=1,
-            rate=self.rate,
-            input=True,
-            # DWS
-            input_device_index=1,
-            frames_per_buffer=self.chunksize,
-            stream_callback=self.new_frame,
-        )
+            samplerate=self.rate,
+            dtype=np.float32,
+            blocksize=self.chunksize,
+            callback=self.new_frame)
+
         self.lock: threading.Lock = threading.Lock()
-        self.is_stoppeed: bool = False
+        self.is_stopped: bool = False
         self.frames: list[npt.NDArray[np.float32]] = []
         atexit.register(self.close)
 
     # pylint: disable=unused-argument
-    def new_frame(self, data, _frame_count, _time_info, _status) -> tuple[None, int]:
-        """Callback used by pyaudio stream to capture the
+    def new_frame(self, data: np.ndarray, _frame_count, _time_info, _status) -> tuple[None, int]:
+        """Callback used by sounddevice stream to capture the
         next buffer. If the buffers are short then this could
-        be slow (append is not particularly fast
+        be slow (append is not particularly fast)
         """
         # print(f"Microphone: new_frame: data type: {type(data)}")
-        data: npt.NDArray[np.float32] = np.frombuffer(data, np.float32)
         with self.lock:
-            self.frames.append(data)
-            if self.is_stoppeed:
-                return None, pyaudio.paComplete
-        return None, pyaudio.paContinue
+            self.frames.append(data[:, 0])  # take first channel
+            if self.is_stopped:
+                raise sd.CallbackStop
+
+        return None
 
     def get_frames(self) -> list[npt.NDArray[np.float32]]:
         """Get the frames that have be saved"""
@@ -71,17 +63,16 @@ class Microphone:
 
     def start(self) -> None:
         """Start the thread."""
-        self.stream.start_stream()
+        self.stream.start()
 
     def stop(self) -> None:
         """Stop the thread."""
         with self.lock:
-            self.is_stoppeed = True
-        self.stream.stop_stream()
+            self.is_stopped = True
+        self.stream.stop()
 
     def close(self) -> None:
         """close the thread"""
         with self.lock:
-            self.is_stoppeed = True
+            self.is_stopped = True
         self.stream.close()
-        self.py_audio.terminate()

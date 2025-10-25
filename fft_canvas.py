@@ -15,14 +15,19 @@ import numpy.typing as npt
 from scipy.signal import get_window
 from PyQt6 import QtCore
 
-if platform.system() == "Windows":
-    import pyaudiowpatch as pyaudio
-else:
-    import pyaudio
-
 import fft_annotations as fft_a
 import freq_anal as f_a
-import microphone
+import configure as CD
+if CD.USE_SOUNDDEVICE:
+    import microphone_sd as microphone
+
+else:
+    import microphone
+
+    if platform.system() == "Windows":
+        import pyaudiowpatch as pyaudio
+    else:
+        import pyaudio
 
 matplotlib.use("Qt5Agg")
 
@@ -150,9 +155,10 @@ class FftCanvas(FigureCanvasQTAgg):
         self.timer.timeout.connect(self.update_fft)
         self.timer.start(100)
 
-    def get_py_audio(self) -> pyaudio.PyAudio:
-        """Return the py_audio opened in the microphone"""
-        return self.mic.py_audio
+    if not CD.USE_SOUNDDEVICE:
+        def get_pyaudio(self) -> pyaudio.PyAudio:
+            """Return the py_audio opened in the microphone"""
+            return self.mic.py_audio
 
     def select_peak(self, freq: float) -> None:
         """Select the peak (scatter point) with the specified frequency"""
@@ -402,7 +408,7 @@ class FftCanvas(FigureCanvasQTAgg):
         frames = self.mic.get_frames()
         if len(frames) <= 0:
             return
-
+        # print(f"FftCanvas: update_fft: frames received: {len(frames)}")
         enter_now = time.time()
         sample_dt = enter_now - self.lastupdate
         if sample_dt <= 0:
@@ -411,6 +417,10 @@ class FftCanvas(FigureCanvasQTAgg):
         self.lastupdate = enter_now
 
         chunk: npt.NDArray[np.float32] = frames[-1]
+        # print(f"FftCanvas: update_fft: frames type: {type(frames)}")
+        # print(f"FftCanvas: update_fft: length of frames: {len(frames)}")
+        # print(f"FftCanvas: update_fft: frames[-1] shape: {frames[-1].shape}")
+        # print(f"FftCanvas: update_fft: chunk shape: {chunk.shape}")
 
         # Find DFT and amplitude
         mag_y_db, mag_y = f_a.dft_anal(

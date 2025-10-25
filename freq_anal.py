@@ -42,7 +42,12 @@ def dft_anal(
     fftbuffer = np.zeros(n_freq_samples)
 
     # normalize analysis window
+    # print(f"Shape of window function: {window_function.shape}")
+
     window_function = window_function / sum(window_function)
+    # print(f"value and Shape of window function sum: {sum(window_function)} {sum(window_function).shape}")
+    # print(f"Shape of window function/ sum: {window_function.shape}")
+    # print(f"Type and Shape of chunk: {type(chunk)} {chunk.shape}")
     windowed_chunk = chunk * window_function  # window the input sound
 
     # zero-phase window in fftbuffer

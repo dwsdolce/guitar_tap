@@ -13,7 +13,7 @@
  ## Required packages to run from Source code
  * numpy
  * scipy
- * pyaudio
+ * sounddevice
  * pyqt6
  * matplotlib
  * pyobjc (on MAC only)
@@ -23,28 +23,25 @@
  * Install python from https://www.python.org/ (the latest python is preferred 3.11).
  * Open a cmd window or shell/terminal that can run python
 
- * For Windows
-  	- pip install numpy scipy pyaudio pyqt6 matplotlib
-	- python guitar_tap.py
-
- * For Linux
- 	- sudo apt update
- 	- sudo apt install portaudio19-dev python3-pyaudio
-	- sudo apt-get install -y libxcb-cursor-dev
- 	- pip install numpy scipy pyaudio pyqt6 matplotlib
+ * For Windows and Linux
+  	- pip install numpy scipy sounddevice pyqt6 matplotlib
 	- python guitar_tap.py
 
  * For MAC
- 	- pip install numpy scipy pyaudio pyqt6 matplotlib
+ 	- pip install numpy scipy sounddevice pyqt6 matplotlib
 	- pip install pyobjc==8.5.1
 	- python guitar_tap.py
 
  **NOTE:** You may have to use python3 and pip3 on your system (MAC requires this).  
  **NOTE:** On MAC, before running pip you need to:
 	- brew install portaudio
+ **NOTE:** On Linux, before running pip you need to:
+    - sudo apt update
+ 	- sudo apt install portaudio19-dev
+	- sudo apt-get install -y libxcb-cursor-dev
 
  * To build an installer you need to:
 	- pip install pyinstaller
 	- build_{linux, mac, win}
 
- **NOTE:**  For Windows and MACOS there are additional packaged required for signing the installer. See the scripts.
+ **NOTE:**  For Windows and MACOS there are additional packages required for signing the installer. See the scripts.

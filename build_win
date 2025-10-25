@@ -37,6 +37,9 @@ fi
 installer_file=`pwd`/guitar-tap.iss
 ifile_win=`cygpath -w $installer_file`
 
+#===============================================
+# You must install Inno Setup 6 to build the installer
+#===============================================
 "c:/Program Files (x86)/Inno Setup 6"/ISCC.exe /DMyAppVersion=${version} /F $ifile_win
 if [ $? -ne 0 ]; then
     echo "Creating the installer failed"

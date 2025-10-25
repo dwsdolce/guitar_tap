@@ -9,8 +9,11 @@ from PyQt6 import QtWidgets, QtGui, QtCore
 import plot_controls as PC
 import peaks_controls as PKC
 import peaks_table as PT
-import show_devices as SD
-
+import configure as CD
+if CD.USE_SOUNDDEVICE:
+    import show_devices_sd as SD
+else:
+    import show_devices as SD
 
 basedir = os.path.dirname(__file__)
 
@@ -150,7 +153,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def show_device_dialog(self, _) -> None:
         """Create and show the Devices dialog"""
-        dlg = SD.ShowInputDevices(self.plot_controls.fft_canvas.get_py_audio())
+        if CD.USE_SOUNDDEVICE:
+            dlg = SD.ShowInputDevices()
+        else:   
+            dlg = SD.ShowInputDevices(self.plot_controls.fft_canvas.get_pyaudio())
         dlg.exec()
 
     def row_deselect(self, deselected: QtCore.QModelIndex) -> None:
