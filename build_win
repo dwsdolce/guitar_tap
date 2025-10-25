@@ -1,5 +1,4 @@
 #!/bin/bash
-#
 
 #===============================================
 # Setup the correct python environment
@@ -7,13 +6,15 @@
 # NOTE: activate does not work correctly in Bash
 # in Cygwin.
 echo "Activating win virtual environment for Python"
-export VIRTUAL_ENV="~/win"
-export PATH="${VIRTUAL_ENV}/Scripts:${PATH}"
-if [ -n "${PYTHONHOME:-}" ] ; then
-    _OLD_VIRTUAL_PYTHONHOME="${PYTHONHOME:-}"
-    unset PYTHONHOME
+source ".venv/Scripts/activate"
+if [ $? -ne 0 ]; then
+    echo "Activating virtual environment failed"
+    exit 1
 fi
 
+#===============================================
+# Running build for architecture
+#===============================================
 echo "Running build for `arch` architecure"
 
 #===============================================
@@ -33,15 +34,20 @@ if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"
     exit 1
 fi
-
+#===============================================
+# Prepare installer path
+#===============================================
 installer_file=`pwd`/guitar-tap.iss
 ifile_win=`cygpath -w $installer_file`
+ISCC_PATH="C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
 
 #===============================================
 # You must install Inno Setup 6 to build the installer
 #===============================================
-"c:/Program Files (x86)/Inno Setup 6"/ISCC.exe /DMyAppVersion=${version} /F $ifile_win
+"$ISCC_PATH" /DMyAppVersion=${version} /F $ifile_win
 if [ $? -ne 0 ]; then
     echo "Creating the installer failed"
     exit 1
 fi
+
+echo "Installer created successfully"

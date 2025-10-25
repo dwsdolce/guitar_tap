@@ -3,9 +3,12 @@
 REM ===============================================
 REM  Setup the correct python environment
 REM ===============================================
-REM Activating Windows virtual environment for Python
 echo "Activating win virtual environment for Python"
 call ".venv\Scripts\activate.bat"
+if errorlevel 1 (
+    echo Activating virtual environment failed
+    exit /b 1
+)
 
 REM ===============================================
 REM Running build for architecture
@@ -35,12 +38,12 @@ REM ===============================================
 REM Prepare installer path
 REM ===============================================
 set "installer_file=%cd%\guitar-tap.iss"
+set "ISCC_PATH=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
 REM ===============================================
 REM You must install Inno Setup 6 to build the installer
 REM ===============================================
-set "ISCC_PATH=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-"%ISCC_PATH%" /DMyAppVersion=%version% /F "%installer_file%"
+"%ISCC_PATH%" "/DMyAppVersion=%version%" /F "%installer_file%"
 if errorlevel 1 (
     echo Creating the installer failed
     exit /b 1
