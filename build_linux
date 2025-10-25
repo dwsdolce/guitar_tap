@@ -5,7 +5,7 @@
 # Setup the correct python environment
 #===============================================
 echo "Activating linux virtual environment for Python"
-. ~/linux/bin/activate
+source ".venv/Scripts/activate"
 
 echo "Running build for `arch` architecure"
 
