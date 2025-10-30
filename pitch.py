@@ -32,6 +32,22 @@ class Pitch:
         note = half_steps % 12
         return note, octave
 
+    def pitch_range(self, f_1: float) -> tuple[float, float]:
+        """Return the frequencies of the upper and lower notes for this frequency"""
+        note, octave = self.pitch(f_1)
+        cents = self.cents(f_1)
+        if cents >= 0:
+            upper_note = self.freq(note + 1, octave)
+            lower_note = self.freq(note, octave)
+            if note == 11:
+                upper_note = self.freq(0, octave + 1)
+        else:
+            upper_note = self.freq(note, octave)
+            lower_note = self.freq(note - 1, octave)
+            if note == 0:
+                lower_note = self.freq(11, octave - 1)
+        return upper_note, lower_note
+
     def note(self, f_1: float) -> str:
         """Return a string of the pitch closest to this frequency"""
         note, octave = self.pitch(f_1)

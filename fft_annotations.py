@@ -5,6 +5,7 @@
 import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+import pitch as pitch_c
 
 from PyQt6 import QtCore
 
@@ -19,16 +20,47 @@ class FftAnnotations(QtCore.QObject):
 
     restoreFocus: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
-    def __init__(self, fig: FigureCanvasQTAgg, axes: list[plt.Axes]):
+    def __init__(self, fig: FigureCanvasQTAgg, axes: list[plt.Axes], note_axis: plt.Axes):
         super().__init__()
         self.fft_axes = axes
+        self.note_axis = note_axis
         self.fig: FigureCanvasQTAgg = fig
+        self.pitch: pitch_c.Pitch = pitch_c.Pitch(440)
 
         self.selected_annotation = -1
         # An array of dictionaries where each dictionary
         # has all the information required to re-create an
         # annotation
         self.annotations = []
+
+    def update_note_axis(self, create: bool, lower_freq: float, upper_freq: float, lower_note: str, upper_note: str):
+        """Update the secondary x-axis with note labels."""
+        # Get the current ticks and labels
+        ticks = self.note_axis.get_xticks().tolist()
+        labels = self.note_axis.get_xticklabels()
+
+        if create:
+            # Find the lower and upper freq ticks if they exist
+            if lower_freq not in ticks:
+                ticks.append(lower_freq)
+                labels.append(f"{lower_note}")
+            if upper_freq not in ticks:
+                ticks.append(upper_freq)
+                labels.append(f"{upper_note}")
+        else:
+            # Remove the lower and upper freq ticks if they exist
+            if lower_freq in ticks:
+                idx = ticks.index(lower_freq)
+                ticks.pop(idx)
+                labels.pop(idx)
+            if upper_freq in ticks:
+                idx = ticks.index(upper_freq)
+                ticks.pop(idx)
+                labels.pop(idx)
+
+        # Reset the ticks and labels
+        self.note_axis.set_xticks(ticks)
+        self.note_axis.set_xticklabels(labels)
 
     def create_annotation(
         self, freq: float, mag: float, text: str, xy_text: tuple[float, float]
@@ -45,7 +77,20 @@ class FftAnnotations(QtCore.QObject):
             arrowprops=dict(arrowstyle="->", connectionstyle="arc3"),
         )
         ann.draggable()
-        return ann
+
+        # Create Upper and Lower notes for the annotation range
+        upper_freq, lower_freq = self.pitch.pitch_range(freq)
+        upper_note = self.pitch.note(upper_freq)
+        lower_note = self.pitch.note(lower_freq)
+        upper_line = self.fft_axes.axvline(
+            upper_freq, color="red", linestyle="--")
+        lower_line = self.fft_axes.axvline(
+            lower_freq, color="red", linestyle="--")
+
+        self.update_note_axis(True, lower_freq, upper_freq,
+                              lower_note, upper_note)
+
+        return ann, dict(upper_line=upper_line, upper_freq=upper_freq, upper_note=upper_note, lower_line=lower_line, lower_freq=lower_freq, lower_note=lower_note)
 
     def update_annotation(self, freq: float, mag: float, text: str) -> None:
         """Update an annotation by creating a new one or updating an existing one.
@@ -57,18 +102,21 @@ class FftAnnotations(QtCore.QObject):
             ann_dict = self.annotations[idx]
             if ann_dict["annotation"] is None:
                 xy_text = self.annotations[idx]["xytext"]
-                ann = self.create_annotation(freq, mag, text, xy_text)
+                ann, ann_range = self.create_annotation(
+                    freq, mag, text, xy_text)
                 self.annotations[idx]["text"] = text
                 self.annotations[idx]["annotation"] = ann
+                self.annotations[idx]["annotation_range"] = ann_range
             else:
                 self.annotations[idx]["text"] = text
                 self.annotations[idx]["annotation"].set_text(text)
         else:
             xy_text = (freq + 10.0, mag + 10.0)
-            ann = self.create_annotation(freq, mag, text, xy_text)
+            ann, ann_range = self.create_annotation(freq, mag, text, xy_text)
             ann_element = {
                 "freq": freq,
                 "annotation": ann,
+                "annotation_range": ann_range,
                 "mag": mag,
                 "text": text,
                 "xytext": xy_text,
@@ -98,7 +146,8 @@ class FftAnnotations(QtCore.QObject):
         """Find an annotation from an index."""
         # print("FftCanvas: find_annotation")
         return next(
-            (i for i, item in enumerate(self.annotations) if item["freq"] == freq), -1
+            (i for i, item in enumerate(self.annotations)
+             if item["freq"] == freq), -1
         )
 
     def show_annotation(self, freq: float) -> None:
@@ -110,8 +159,10 @@ class FftAnnotations(QtCore.QObject):
                 mag = self.annotations[idx]["mag"]
                 text = self.annotations[idx]["text"]
                 xy_text = self.annotations[idx]["xytext"]
-                ann = self.create_annotation(freq, mag, text, xy_text)
+                ann, ann_range = self.create_annotation(
+                    freq, mag, text, xy_text)
                 self.annotations[idx]["annotation"] = ann
+                self.annotations[idx]["annotation_range"] = ann_range
 
     def hide_annotation(self, freq: float) -> None:
         """Hide an annotation."""
@@ -123,6 +174,16 @@ class FftAnnotations(QtCore.QObject):
                 ann.remove()
                 ann_dict["annotation"] = None
                 self.fig.canvas.draw()
+            ann_range = ann_dict["annotation_range"]
+            if ann_range is not None:
+                ann_range["upper_line"].remove()
+                ann_range["lower_line"].remove()
+
+                # Remove upper and lower note ticks from secondary axis
+                self.update_note_axis(
+                    False, ann_range["lower_freq"], ann_range["upper_freq"], ann_range["lower_note"], ann_range["upper_note"])
+                ann_dict["annotation_range"] = None
+                self.fig.canvas.draw()
 
     def hide_annotations(self) -> None:
         """Hide all annotations."""
@@ -133,6 +194,14 @@ class FftAnnotations(QtCore.QObject):
             if ann is not None:
                 ann.remove()
                 ann_dict["annotation"] = None
+            if ann_dict["annotation_range"] is not None:
+                ann_range = ann_dict["annotation_range"]
+                ann_range["upper_line"].remove()
+                ann_range["lower_line"].remove()
+                # Remove upper and lower note ticks from secondary axis
+                self.update_note_axis(
+                    False, ann_range["lower_freq"], ann_range["upper_freq"], ann_range["lower_note"], ann_range["upper_note"])
+                ann_dict["annotation_range"] = None
         self.fig.canvas.draw()
 
     def clear_annotations(self) -> None:
@@ -140,6 +209,15 @@ class FftAnnotations(QtCore.QObject):
         # print("FftCanvas: clear_annotations")
         for ann_dict in self.annotations:
             ann_dict["annotation"].remove()
+            if ann_dict["annotation_range"] is not None:
+                ann_range = ann_dict["annotation_range"]
+                ann_range["upper_line"].remove()
+                ann_range["lower_line"].remove()
+                self.update_note_axis(
+                    False, ann_range["lower_freq"], ann_range["upper_freq"], ann_range["lower_note"], ann_range["upper_note"])
+
+                # Remove upper and lower note ticks from secondary axis
+                # TBD
         self.annotations = []
         self.fig.canvas.draw()
 

@@ -81,9 +81,11 @@ class FftCanvas(FigureCanvasQTAgg):
         self.hold_results: bool = False
 
         self.fft_axes: list[plt.Axes] = self.fig.subplots()
+        self.fft_note_axis: plt.Axes = self.fft_axes.secondary_xaxis('top')
+        self.fft_note_axis.set_xticks([])
 
         self.annotations: fft_a.FftAnnotations = fft_a.FftAnnotations(
-            self.fig, self.fft_axes
+            self.fig, self.fft_axes, self.fft_note_axis
         )
 
         plt.grid(color="0.85")
@@ -204,8 +206,10 @@ class FftCanvas(FigureCanvasQTAgg):
         if fmin < fmax:
             self.fmin = fmin
             self.fmax = fmax
-            self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
-            self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
+            self.n_fmin = (self.fft_data.n_f *
+                           fmin) // self.fft_data.sample_freq
+            self.n_fmax = (self.fft_data.n_f *
+                           fmax) // self.fft_data.sample_freq
 
             self.fft_axes.set_xlim(fmin, fmax)
             if not init:
@@ -294,7 +298,8 @@ class FftCanvas(FigureCanvasQTAgg):
         ploc = f_a.peak_detection(mag_y_db, self.threshold - 100)
         iploc, peaks_mag = f_a.peak_interp(mag_y_db, ploc)
 
-        peaks_freq = (iploc * self.fft_data.sample_freq) / float(self.fft_data.n_f)
+        peaks_freq = (iploc * self.fft_data.sample_freq) / \
+            float(self.fft_data.n_f)
 
         peaks = np.vstack((peaks_freq, peaks_mag)).T
 
@@ -323,9 +328,9 @@ class FftCanvas(FigureCanvasQTAgg):
             if self.peaks_f_max_index > 0:
                 # Update the peaks
                 self.b_peaks_freq = peaks_freq[
-                    self.peaks_f_min_index : self.peaks_f_max_index
+                    self.peaks_f_min_index: self.peaks_f_max_index
                 ]
-                b_peaks_mag = peaks_mag[self.peaks_f_min_index : self.peaks_f_max_index]
+                b_peaks_mag = peaks_mag[self.peaks_f_min_index: self.peaks_f_max_index]
                 peaks_data = np.vstack((self.b_peaks_freq, b_peaks_mag)).T
                 self.peaksChanged.emit(peaks_data)
             else:
@@ -464,6 +469,7 @@ class FftCanvas(FigureCanvasQTAgg):
         processing_dt = exit_now - enter_now
         if processing_dt <= 0:
             processing_dt = 0.000000000001
-        self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
+        self.framerateUpdate.emit(float(fps), float(
+            sample_dt), float(processing_dt))
 
         return
