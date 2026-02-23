@@ -44,7 +44,7 @@ class Microphone:
             stream_callback=self.new_frame,
         )
         self.lock: threading.Lock = threading.Lock()
-        self.is_stoppeed: bool = False
+        self.is_stopped: bool = False
         self.frames: list[npt.NDArray[np.float32]] = []
         atexit.register(self.close)
 
@@ -52,13 +52,13 @@ class Microphone:
     def new_frame(self, data, _frame_count, _time_info, _status) -> tuple[None, int]:
         """Callback used by pyaudio stream to capture the
         next buffer. If the buffers are short then this could
-        be slow (append is not particularly fast
+        be slow (append is not particularly fast)
         """
         # print(f"Microphone: new_frame: data type: {type(data)}")
         data: npt.NDArray[np.float32] = np.frombuffer(data, np.float32)
         with self.lock:
             self.frames.append(data)
-            if self.is_stoppeed:
+            if self.is_stopped:
                 return None, pyaudio.paComplete
         return None, pyaudio.paContinue
 
@@ -76,12 +76,12 @@ class Microphone:
     def stop(self) -> None:
         """Stop the thread."""
         with self.lock:
-            self.is_stoppeed = True
+            self.is_stopped = True
         self.stream.stop_stream()
 
     def close(self) -> None:
         """close the thread"""
         with self.lock:
-            self.is_stoppeed = True
+            self.is_stopped = True
         self.stream.close()
         self.py_audio.terminate()
