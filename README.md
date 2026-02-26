@@ -24,12 +24,12 @@
  * Open a cmd window or shell/terminal that can run python
 
  * For Windows and Linux
-  	- pip install numpy scipy sounddevice pyqt6 matplotlib
+  	- pip install numpy scipy scipy-stubs sounddevice pyqt6 matplotlib
 	- python guitar_tap.py
 
  * For MAC
- 	- pip install numpy scipy sounddevice pyqt6 matplotlib
-	- pip install pyobjc==8.5.1
+ 	- pip install numpy scipy scipy-stubs sounddevice pyqt6 matplotlib
+	- pip install pyobjc
 	- python guitar_tap.py
 
  **NOTE:** You may have to use python3 and pip3 on your system (MAC requires this).  

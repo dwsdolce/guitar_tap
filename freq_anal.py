@@ -2,10 +2,11 @@
 
 import numpy as np
 import numpy.typing as npt
-from scipy.fftpack import fft
+from scipy.fft import fft
 
+Float64_1D = npt.NDArray[np.float64]
 
-def is_power2(num):
+def is_power2(num: int) -> bool:
     """
     Check if num is power of two
     """
@@ -13,7 +14,7 @@ def is_power2(num):
 
 
 def dft_anal(
-    chunk: npt.NDArray[np.float32], window_function, n_freq_samples: int
+    chunk: npt.NDArray[np.float32], window_function: Float64_1D, n_freq_samples: int
 ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     """
     Analysis of a signal using the discrete Fourier transform
