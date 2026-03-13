@@ -17,17 +17,7 @@ from PyQt6 import QtCore
 
 import fft_annotations as fft_a
 import freq_anal as f_a
-import configure as CD
-if CD.USE_SOUNDDEVICE:
-    import microphone_sd as microphone
-
-else:
-    import microphone
-
-    if platform.system() == "Windows":
-        import pyaudiowpatch as pyaudio
-    else:
-        import pyaudio
+import microphone
 
 matplotlib.use("Qt5Agg")
 
@@ -157,10 +147,6 @@ class FftCanvas(FigureCanvasQTAgg):
         self.timer.timeout.connect(self.update_fft)
         self.timer.start(100)
 
-    if not CD.USE_SOUNDDEVICE:
-        def get_pyaudio(self) -> pyaudio.PyAudio:
-            """Return the py_audio opened in the microphone"""
-            return self.mic.py_audio
 
     def select_peak(self, freq: float) -> None:
         """Select the peak (scatter point) with the specified frequency"""
