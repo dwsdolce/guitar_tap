@@ -6,20 +6,15 @@ from typing import List
 import time
 import platform
 
-import matplotlib
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-from matplotlib import pyplot as plt
-
+import pyqtgraph as pg
 import numpy as np
 import numpy.typing as npt
 from scipy.signal import get_window
-from PyQt6 import QtCore
+from PyQt6 import QtCore, QtWidgets
 
 import fft_annotations as fft_a
 import freq_anal as f_a
 import microphone
-
-matplotlib.use("Qt5Agg")
 
 
 @dataclass
@@ -36,8 +31,19 @@ class FftData:
         self.h_n_f: int = self.n_f // 2
 
 
+class _SceneMouseReleaseFilter(QtCore.QObject):
+    """Event filter that emits a signal on QGraphicsScene mouse release."""
+
+    released = QtCore.pyqtSignal(object)
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() == QtCore.QEvent.Type.GraphicsSceneMouseRelease:
+            self.released.emit(event)
+        return False
+
+
 # pylint: disable=too-many-instance-attributes
-class FftCanvas(FigureCanvasQTAgg):
+class FftCanvas(pg.PlotWidget):
     """Sample the audio stream and display the FFT
 
     The fft is displayed using background audio capture and callback
@@ -65,20 +71,26 @@ class FftCanvas(FigureCanvasQTAgg):
         frange: dict[str, int],
         threshold: int,
     ) -> None:
-        self.fig: FigureCanvasQTAgg = plt.figure(figsize=(5, 3))
-        super().__init__(self.fig)
+        super().__init__()
 
         self.hold_results: bool = False
 
-        self.fft_axes: list[plt.Axes] = self.fig.subplots()
-        self.fft_note_axis: plt.Axes = self.fft_axes.secondary_xaxis('top')
-        self.fft_note_axis.set_xticks([])
+        # Configure plot appearance
+        self.setBackground("w")
+        self.showGrid(x=True, y=True, alpha=0.15)
+        self.setLabel("left", "FFT Magnitude (dB)")
+        self.setLabel("bottom", "Frequency (Hz)")
+        self.setTitle("FFT Peaks")
+        self.setYRange(-100, 0, padding=0)
 
-        self.annotations: fft_a.FftAnnotations = fft_a.FftAnnotations(
-            self.fig, self.fft_axes, self.fft_note_axis
-        )
+        # Enable and configure top axis for note labels
+        plot_item = self.getPlotItem()
+        plot_item.showAxis("top")
+        top_axis = plot_item.getAxis("top")
+        top_axis.setStyle(showValues=True)
+        top_axis.setTicks([[]])
 
-        plt.grid(color="0.85")
+        self.annotations: fft_a.FftAnnotations = fft_a.FftAnnotations(self)
 
         self.avg_enable: bool = False
 
@@ -92,28 +104,32 @@ class FftCanvas(FigureCanvasQTAgg):
 
         self.update_axis(frange["f_min"], frange["f_max"], True)
 
-        # y axis limits
-        self.fft_axes.set_ylim(-100, 0)
-
-        # Set axis labels
-        self.fft_axes.set_ylabel("FFT Magnitude (dB)")
-        self.fft_axes.set_xlabel("Frequency (Hz)")
-        self.fft_axes.set_title("FFT Peaks")
-
         # Open the audio stream
         self.mic: microphone.Microphone = microphone.Microphone(
             self, rate=self.fft_data.sample_freq, chunksize=self.fft_data.m_t
         )
 
-        # set the line and point plots and ini
-        (self.line,) = self.fft_axes.plot([], [], lw=1)
-        self.points = self.fft_axes.scatter([], [], picker=True)
-        self.selected_point = self.fft_axes.scatter([], [], c="red")
-        self.fig.canvas.mpl_connect("pick_event", self.point_picked)
-        self.fig.canvas.mpl_connect(
-            "button_release_event", self.annotations.annotation_moved
+        # FFT line
+        self.fft_line: pg.PlotDataItem = self.plot(
+            [], [], pen=pg.mkPen("b", width=1)
         )
-        (self.line_threshold,) = self.fft_axes.plot([], [], lw=1)
+
+        # Peak scatter points
+        self.points: pg.ScatterPlotItem = pg.ScatterPlotItem(
+            size=8, pen=pg.mkPen(None), brush=pg.mkBrush(30, 100, 200, 200)
+        )
+        self.selected_point: pg.ScatterPlotItem = pg.ScatterPlotItem(
+            size=10, pen=pg.mkPen(None), brush=pg.mkBrush(220, 30, 30, 220)
+        )
+        self.addItem(self.points)
+        self.addItem(self.selected_point)
+
+        self.points.sigClicked.connect(self.point_picked)
+
+        # Threshold line
+        self.line_threshold: pg.PlotDataItem = self.plot(
+            [], [], pen=pg.mkPen("g", width=1)
+        )
 
         x_axis: npt.NDArray[np.int64] = np.arange(0, self.fft_data.h_n_f + 1)
         self.freq: npt.NDArray[np.int64] = (
@@ -139,6 +155,11 @@ class FftCanvas(FigureCanvasQTAgg):
         self.lastupdate = time.time()
         self.fps = 0.0
 
+        # Scene event filter to detect end of annotation drag
+        self._scene_filter = _SceneMouseReleaseFilter(self)
+        self._scene_filter.released.connect(self.annotations.annotation_moved)
+        self.scene().installEventFilter(self._scene_filter)
+
         # Start the microphone
         self.mic.start()
 
@@ -147,61 +168,46 @@ class FftCanvas(FigureCanvasQTAgg):
         self.timer.timeout.connect(self.update_fft)
         self.timer.start(100)
 
-
     def select_peak(self, freq: float) -> None:
         """Select the peak (scatter point) with the specified frequency"""
-        # print(f"FftCanvas: select_peak: freq: {freq}, hold_results: {self.hold_results}")
         if self.hold_results:
             row = np.where(self.saved_peaks[:, 0] == freq)
             magdb = self.saved_peaks[row][0][1]
-            self.selected_point.set_offsets(np.vstack(([freq], [magdb])).T)
+            self.selected_point.setData(x=[freq], y=[magdb])
             self.selected_peak = freq
-            self.fig.canvas.draw()
 
     def deselect_peak(self, _freq: float) -> None:
         """Deselect the peak (scatter point) with the specified frequency"""
-        # print(f"FftCanvas: deselect_peak: fred: {_freq}, hold_results: {self.hold_results}")
-        # if self.hold_results:
-        self.selected_point.set_offsets(np.vstack(([], [])).T)
-        self.fig.canvas.draw()
+        self.selected_point.setData(x=[], y=[])
 
     def clear_selected_peak(self) -> None:
         """Reset the selected peak."""
-        # print("FftCanvas: clear_selected_peak")
         self.selected_peak = -1.0
 
-    def point_picked(self, event: matplotlib.backend_bases.PickEvent) -> None:
-        """Handle the event for scatter point being picked and emit
-        the index if it is within the min/max frequency range
-        """
-        if self.hold_results:
-            if self.annotations.select_annotation(event.artist):
+    def point_picked(
+        self, scatter: pg.ScatterPlotItem, points: list, ev
+    ) -> None:
+        """Handle scatter point click: emit peakSelected if within frequency range."""
+        if self.hold_results and len(points) > 0:
+            if self.annotations.select_annotation(scatter):
                 return
-            index0 = event.ind[0]
-            # print(f"point_picked: index0: {index0}")
-            # print(f"point_picked: index0 type: {type(index0)}")
+            index0 = points[0].index()
             if self.peaks_f_min_index <= index0 < self.peaks_f_max_index:
                 if np.any(self.saved_peaks):
                     freq = self.saved_peaks[index0][0]
                     self.peakSelected.emit(freq)
 
     def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
-        """Update the mag_y and x_axis"""
-
-        # x axis data points
+        """Update the x-axis frequency range"""
         if fmin < fmax:
             self.fmin = fmin
             self.fmax = fmax
-            self.n_fmin = (self.fft_data.n_f *
-                           fmin) // self.fft_data.sample_freq
-            self.n_fmax = (self.fft_data.n_f *
-                           fmax) // self.fft_data.sample_freq
+            self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
+            self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
 
-            self.fft_axes.set_xlim(fmin, fmax)
+            self.setXRange(fmin, fmax, padding=0)
             if not init:
-                # Update the Peaks
                 self.find_peaks(self.saved_mag_y_db)
-                self.fig.canvas.draw()
 
     def set_max_average_count(self, max_average_count: int) -> None:
         """Set the number of averages to take"""
@@ -216,13 +222,10 @@ class FftCanvas(FigureCanvasQTAgg):
         self.avg_enable = avg_enable
 
     def set_hold_results(self, hold_results: bool) -> None:
-        """Flag to enable/disable the holding of peaks. I.e. if it is false
-        the it free runs (and averaging is disabled).
-        """
-        # print(f"FftCanvas: set_hold_results: hold_results {hold_results}")
+        """Flag to enable/disable the holding of peaks."""
         self.hold_results = hold_results
         if not hold_results:
-            self.selected_point.set_offsets(np.vstack(([], [])).T)
+            self.selected_point.setData(x=[], y=[])
             self.clear_selected_peak()
 
     def set_fmin(self, fmin: int) -> None:
@@ -237,23 +240,18 @@ class FftCanvas(FigureCanvasQTAgg):
         """Set the threshold used to limit both the triggering of a sample
         and the threshold on finding peaks. The threshold value is always 0 to 100.
         """
-
         self.threshold = threshold
 
-        # Set threshold value for drawing threshold line
         self.threshold_x = self.fft_data.sample_freq // 2
         self.threshold_y = self.threshold - 100
 
-        self.line_threshold.set_data(
+        self.line_threshold.setData(
             [0, self.threshold_x], [self.threshold_y, self.threshold_y]
         )
 
         self.find_peaks(self.saved_mag_y_db)
 
-        # Deselect peak on graph and on table.
-        # Check if peak is still within threshold
-        # Then use selected_peak set peak to new value
-        self.selected_point.set_offsets(np.vstack(([], [])).T)
+        self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()
         if np.any(self.b_peaks_freq):
             if self.selected_peak > 0:
@@ -261,31 +259,26 @@ class FftCanvas(FigureCanvasQTAgg):
                 if len(peak_index[0]):
                     self.peakSelected.emit(self.selected_peak)
 
-        self.fig.canvas.draw()
-
     def find_peaks(self, mag_y_db):
         """For the specified magnitude in db:
         1. detect the peaks that are above the user specified threshold
         2. interpolate each peak using parabolic interpolation
-        3. If there are peaks above the user specified threashld then
+        3. If there are peaks above the user specified threshold then
            from the resulting list of peaks find those that are within the
            user specified min/max frequency range and emit a signal that
            the peaks have changed.
         4. If there are no peaks in the frequency range then emit a signal
            with an empty list of peaks.
         5. If there were no peaks within the threshold then emit
-           an peaks changed with the saved set of peaks.
+           a peaks changed with the saved set of peaks.
         """
         if not np.any(mag_y_db):
             return False, self.saved_peaks
 
-        # Find the interpolated peaks from the waveform
-        # This must be done again since it may be using an average waveform.
         ploc = f_a.peak_detection(mag_y_db, self.threshold - 100)
         iploc, peaks_mag = f_a.peak_interp(mag_y_db, ploc)
 
-        peaks_freq = (iploc * self.fft_data.sample_freq) / \
-            float(self.fft_data.n_f)
+        peaks_freq = (iploc * self.fft_data.sample_freq) / float(self.fft_data.n_f)
 
         peaks = np.vstack((peaks_freq, peaks_mag)).T
 
@@ -294,7 +287,6 @@ class FftCanvas(FigureCanvasQTAgg):
         else:
             max_peaks_mag = -100
 
-        # If there are peaks above the threshold then update the saved mag_db and scatter peaks
         if max_peaks_mag > (self.threshold - 100):
             self.saved_mag_y_db = mag_y_db
             self.saved_peaks = peaks
@@ -302,7 +294,6 @@ class FftCanvas(FigureCanvasQTAgg):
 
             self.peaks_f_min_index = 0
             self.peaks_f_max_index = 0
-            # Check the peaks to see if they are within the desired frequency range
             b_peaks_f_indices = np.nonzero(
                 (peaks_freq < self.fmax) & (peaks_freq > self.fmin)
             )
@@ -310,13 +301,11 @@ class FftCanvas(FigureCanvasQTAgg):
                 self.peaks_f_min_index = b_peaks_f_indices[0][0]
                 self.peaks_f_max_index = b_peaks_f_indices[0][-1] + 1
 
-            # If there are peaks in frequency bounds then update the peaks_data signal
             if self.peaks_f_max_index > 0:
-                # Update the peaks
                 self.b_peaks_freq = peaks_freq[
-                    self.peaks_f_min_index: self.peaks_f_max_index
+                    self.peaks_f_min_index : self.peaks_f_max_index
                 ]
-                b_peaks_mag = peaks_mag[self.peaks_f_min_index: self.peaks_f_max_index]
+                b_peaks_mag = peaks_mag[self.peaks_f_min_index : self.peaks_f_max_index]
                 peaks_data = np.vstack((self.b_peaks_freq, b_peaks_mag)).T
                 self.peaksChanged.emit(peaks_data)
             else:
@@ -329,27 +318,21 @@ class FftCanvas(FigureCanvasQTAgg):
 
         return triggered, peaks
 
-    def set_draw_data(self, mag_db, peaks):
-        """set the data for each of the 3 plot objects used in update_fft"""
+    def set_draw_data(self, mag_db, peaks) -> None:
+        """Set the data for each of the plot objects used in update_fft"""
         if np.any(mag_db):
-            self.line.set_data(self.freq, mag_db)
-        self.points.set_offsets(peaks)
-        self.line_threshold.set_data(
+            self.fft_line.setData(self.freq, mag_db)
+        if hasattr(peaks, "size") and peaks.size > 0:
+            self.points.setData(x=peaks[:, 0], y=peaks[:, 1])
+        else:
+            self.points.setData(x=[], y=[])
+        self.line_threshold.setData(
             [0, self.threshold_x], [self.threshold_y, self.threshold_y]
         )
 
-    def process_averages(self, mag_y):
-        """For the specified magnitude find the average with all the saved magnitudes.
-        If there are magnitudes above the user specified threshold then update
-        the saved averages, the number of averages, the saved peaks, and emit
-        the signal for the average count changes. Update the data to be drawn
-        using the saved mag_db and peaks
-        """
-
-        # Have the maximum number of averages been found
+    def process_averages(self, mag_y) -> None:
+        """For the specified magnitude find the average with all the saved magnitudes."""
         if self.num_averages < self.max_average_count:
-            # Calculate average based on the magnitude of the FFT -
-            # ignore phase since it is highly variable.
             if self.num_averages > 0:
                 mag_y_sum = self.mag_y_sum + mag_y
             else:
@@ -364,42 +347,27 @@ class FftCanvas(FigureCanvasQTAgg):
 
             avg_amplitude = np.max(avg_mag_y_db) + 100
             if avg_amplitude > self.threshold:
-                # Find peaks using average mag_y_db
                 triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
                 if triggered:
                     self.newSample.emit(self.hold_results)
                     self.annotations.clear_annotations()
-                    # Draw avg_mag_y_db and avg_peaks
-                    # Draw threshold
                     self.set_draw_data(avg_mag_y_db, avg_peaks)
 
-                    # Save magnitude FFT for average
                     self.mag_y_sum = mag_y_sum
-
-                    # Save num_averages and emit num_averages signal
                     self.num_averages = num_averages
                     self.averagesChanged.emit(int(self.num_averages))
 
-                    # Save mag_y_db and peaks
                     self.saved_mag_y_db = avg_mag_y_db
                     self.saved_peaks = avg_peaks
 
-        # Draw Saved mag_y_db and peaks
-        # Draw threshold
         self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
 
-    # methods for processing chunk
-    def update_fft(self):
-        """Get a chunk from the audio stream, find the fft and interpolate the peaks.
-        The rest is used to update the fft plot if the maximum of the fft magnitude
-        is greater than the threshold value.
-        """
-
-        # Read Data
+    def update_fft(self) -> None:
+        """Get a chunk from the audio stream, find the fft and interpolate the peaks."""
         frames = self.mic.get_frames()
         if len(frames) <= 0:
             return
-        # print(f"FftCanvas: update_fft: frames received: {len(frames)}")
+
         enter_now = time.time()
         sample_dt = enter_now - self.lastupdate
         if sample_dt <= 0:
@@ -408,12 +376,7 @@ class FftCanvas(FigureCanvasQTAgg):
         self.lastupdate = enter_now
 
         chunk: npt.NDArray[np.float32] = frames[-1]
-        # print(f"FftCanvas: update_fft: frames type: {type(frames)}")
-        # print(f"FftCanvas: update_fft: length of frames: {len(frames)}")
-        # print(f"FftCanvas: update_fft: frames[-1] shape: {frames[-1].shape}")
-        # print(f"FftCanvas: update_fft: chunk shape: {chunk.shape}")
 
-        # Find DFT and amplitude
         mag_y_db, mag_y = f_a.dft_anal(
             chunk, self.fft_data.window_fcn, self.fft_data.n_f
         )
@@ -421,41 +384,22 @@ class FftCanvas(FigureCanvasQTAgg):
         amplitude = np.max(mag_y_db) + 100
         self.ampChanged.emit(int(amplitude))
 
-        # Is hold_results set?
         if self.hold_results:
             self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-
-        # Is Amplitude above the threshold?
         elif amplitude > self.threshold:
-
-            # Is Averaging enabled:
             if self.avg_enable:
                 self.process_averages(mag_y)
             else:
-                # Find peaks
                 triggered, peaks = self.find_peaks(mag_y_db)
-                # Were Peaks Triggered?
                 if triggered:
-                    # Draw mag_y_db and peaks
-                    # Draw threshold
-                    # Set hold flag True
                     self.set_draw_data(mag_y_db, peaks)
                 else:
-                    # Draw Saved mag_y_db and peaks
-                    # Draw threshold
                     self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
         else:
-            # Draw Saved mag_y_db and peaks
-            # Draw threshold
             self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-
-        self.fig.canvas.draw()
 
         exit_now = time.time()
         processing_dt = exit_now - enter_now
         if processing_dt <= 0:
             processing_dt = 0.000000000001
-        self.framerateUpdate.emit(float(fps), float(
-            sample_dt), float(processing_dt))
-
-        return
+        self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
