@@ -120,6 +120,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     def set_guitar_type(self, guitar_type: str) -> None:
         """Change the guitar type used for auto mode classification."""
+        self.layoutAboutToBeChanged.emit()
         self.guitar_type = gm.GuitarType(guitar_type)
         self.layoutChanged.emit()
 

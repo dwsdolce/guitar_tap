@@ -1610,13 +1610,19 @@ class MainWindow(QtWidgets.QMainWindow):
         meas_type_combo.addItems(MEAS_TYPES)
         meas_type_combo.setCurrentText(cur_unified)
         meas_type_combo.setEditable(True)
+        meas_type_combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
+        )
+        meas_type_combo.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
         le = meas_type_combo.lineEdit()
         if le is not None:
             le.setAlignment(
                 QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
             )
             le.setReadOnly(True)
-        meas_type_row.addWidget(meas_type_combo, stretch=1)
+        meas_type_row.addWidget(meas_type_combo)
         mg.addLayout(meas_type_row)
 
         meas_desc_lbl = QtWidgets.QLabel(MEAS_DESCRIPTIONS.get(cur_unified, ""))
@@ -1634,10 +1640,39 @@ class MainWindow(QtWidgets.QMainWindow):
         mode_header.setFont(hdr_font)
         guitar_layout.addWidget(mode_header)
 
-        mode_ranges_lbl = QtWidgets.QLabel()
-        mode_ranges_lbl.setFont(small)
-        mode_ranges_lbl.setWordWrap(True)
-        guitar_layout.addWidget(mode_ranges_lbl)
+        mode_ranges_widget = QtWidgets.QWidget()
+        _mr_hbox = QtWidgets.QHBoxLayout(mode_ranges_widget)
+        _mr_hbox.setContentsMargins(0, 0, 0, 0)
+        _mr_hbox.setSpacing(0)
+
+        _mr_left_grid = QtWidgets.QGridLayout()
+        _mr_left_grid.setHorizontalSpacing(4)
+        _mr_left_grid.setVerticalSpacing(2)
+        _mr_right_grid = QtWidgets.QGridLayout()
+        _mr_right_grid.setHorizontalSpacing(4)
+        _mr_right_grid.setVerticalSpacing(2)
+
+        _mode_name_labels: list[QtWidgets.QLabel] = []
+        _mode_range_labels: list[QtWidgets.QLabel] = []
+        for _ in range(5):
+            nl = QtWidgets.QLabel()
+            nl.setFont(small)
+            rl = QtWidgets.QLabel()
+            rl.setFont(small)
+            _mode_name_labels.append(nl)
+            _mode_range_labels.append(rl)
+
+        for i, (nl, rl) in enumerate(zip(_mode_name_labels[:3], _mode_range_labels[:3])):
+            _mr_left_grid.addWidget(nl, i, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
+            _mr_left_grid.addWidget(rl, i, 1, QtCore.Qt.AlignmentFlag.AlignLeft)
+        for i, (nl, rl) in enumerate(zip(_mode_name_labels[3:], _mode_range_labels[3:])):
+            _mr_right_grid.addWidget(nl, i, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
+            _mr_right_grid.addWidget(rl, i, 1, QtCore.Qt.AlignmentFlag.AlignLeft)
+
+        _mr_hbox.addLayout(_mr_left_grid)
+        _mr_hbox.addStretch()
+        _mr_hbox.addLayout(_mr_right_grid)
+        guitar_layout.addWidget(mode_ranges_widget)
 
         mg.addWidget(guitar_widget)
 
@@ -1660,30 +1695,39 @@ class MainWindow(QtWidgets.QMainWindow):
             sb.setSuffix(f" {suffix}")
             return sb
 
-        plate_form = QtWidgets.QFormLayout()
-        plate_form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        def _dim_row(text: str, widget: QtWidgets.QWidget) -> QtWidgets.QHBoxLayout:
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(QtWidgets.QLabel(text))
+            row.addStretch()
+            widget.setFixedWidth(110)
+            row.addWidget(widget)
+            return row
 
         plate_length_spin = _dim_spinbox("mm", 2000.0)
         plate_length_spin.setValue(AS.AppSettings.plate_length())
-        plate_form.addRow("Length (along grain):", plate_length_spin)
-
         plate_width_spin = _dim_spinbox("mm", 1000.0)
         plate_width_spin.setValue(AS.AppSettings.plate_width())
-        plate_form.addRow("Width (cross grain):", plate_width_spin)
-
         plate_thick_spin = _dim_spinbox("mm", 50.0)
         plate_thick_spin.setValue(AS.AppSettings.plate_thickness())
-        plate_form.addRow("Thickness:", plate_thick_spin)
-
         plate_mass_spin = _dim_spinbox("g", 5000.0)
         plate_mass_spin.setValue(AS.AppSettings.plate_mass())
-        plate_form.addRow("Mass:", plate_mass_spin)
 
         plate_density_lbl = QtWidgets.QLabel("—")
         plate_density_lbl.setFont(small)
-        plate_form.addRow("Calculated Density:", plate_density_lbl)
+        plate_density_lbl.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+        )
 
-        plate_layout.addLayout(plate_form)
+        plate_layout.addLayout(_dim_row("Length (along grain):", plate_length_spin))
+        plate_layout.addLayout(_dim_row("Width (cross grain):", plate_width_spin))
+        plate_layout.addLayout(_dim_row("Thickness:", plate_thick_spin))
+        plate_layout.addLayout(_dim_row("Mass:", plate_mass_spin))
+
+        _density_row = QtWidgets.QHBoxLayout()
+        _density_row.addWidget(QtWidgets.QLabel("Calculated Density:"))
+        _density_row.addStretch()
+        _density_row.addWidget(plate_density_lbl)
+        plate_layout.addLayout(_density_row)
 
         def _update_plate_density() -> None:
             L = plate_length_spin.value()
@@ -1726,15 +1770,12 @@ class MainWindow(QtWidgets.QMainWindow):
         gore_desc.setWordWrap(True)
         plate_layout.addWidget(gore_desc)
 
-        gore_form = QtWidgets.QFormLayout()
-        gore_form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         gore_body_len_spin = _dim_spinbox("mm", 1000.0)
         gore_body_len_spin.setValue(AS.AppSettings.guitar_body_length())
-        gore_form.addRow("Body Length (a):", gore_body_len_spin)
         gore_body_wid_spin = _dim_spinbox("mm", 1000.0)
         gore_body_wid_spin.setValue(AS.AppSettings.guitar_body_width())
-        gore_form.addRow("Lower Bout Width (b):", gore_body_wid_spin)
-        plate_layout.addLayout(gore_form)
+        plate_layout.addLayout(_dim_row("Body Length (a):", gore_body_len_spin))
+        plate_layout.addLayout(_dim_row("Lower Bout Width (b):", gore_body_wid_spin))
         plate_layout.addWidget(_hsep())
 
         fvs_hdr = QtWidgets.QLabel("Plate Vibrational Stiffness (f_vs)")
@@ -1757,10 +1798,27 @@ class MainWindow(QtWidgets.QMainWindow):
         ]
         fvs_combo = QtWidgets.QComboBox()
         fvs_combo.addItems(PRESET_DISPLAY_NAMES)
+        fvs_combo.setEditable(True)
+        _fvs_le = fvs_combo.lineEdit()
+        if _fvs_le is not None:
+            _fvs_le.setAlignment(
+                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+            )
+            _fvs_le.setReadOnly(True)
         saved_preset = AS.AppSettings.plate_stiffness_preset()
         if saved_preset in PRESET_STORAGE_NAMES:
             fvs_combo.setCurrentIndex(PRESET_STORAGE_NAMES.index(saved_preset))
-        plate_layout.addWidget(fvs_combo)
+        fvs_combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
+        )
+        fvs_combo.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        _panel_type_row = QtWidgets.QHBoxLayout()
+        _panel_type_row.addWidget(QtWidgets.QLabel("Panel Type:"))
+        _panel_type_row.addStretch()
+        _panel_type_row.addWidget(fvs_combo)
+        plate_layout.addLayout(_panel_type_row)
 
         custom_fvs_widget = QtWidgets.QWidget()
         custom_fvs_row = QtWidgets.QHBoxLayout(custom_fvs_widget)
@@ -1790,36 +1848,42 @@ class MainWindow(QtWidgets.QMainWindow):
         brace_dims_hdr.setFont(hdr_font)
         brace_layout.addWidget(brace_dims_hdr)
 
-        brace_form = QtWidgets.QFormLayout()
-        brace_form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-
         brace_length_spin = _dim_spinbox("mm", 1000.0)
         brace_length_spin.setValue(AS.AppSettings.brace_length())
-        brace_form.addRow("Length (along grain):", brace_length_spin)
-
         brace_width_spin = _dim_spinbox("mm", 200.0)
         brace_width_spin.setValue(AS.AppSettings.brace_width())
-        brace_form.addRow("Width (breadth):", brace_width_spin)
-
         brace_thick_spin = _dim_spinbox("mm", 200.0)
         brace_thick_spin.setValue(AS.AppSettings.brace_thickness())
-        brace_form.addRow("Height (tap direction):", brace_thick_spin)
+        brace_mass_spin = _dim_spinbox("g", 500.0)
+        brace_mass_spin.setValue(AS.AppSettings.brace_mass())
+
+        brace_density_lbl = QtWidgets.QLabel("—")
+        brace_density_lbl.setFont(small)
+        brace_density_lbl.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+        )
+
+        brace_layout.addLayout(_dim_row("Length (along grain):", brace_length_spin))
+        brace_layout.addLayout(_dim_row("Width (breadth):", brace_width_spin))
+        brace_layout.addLayout(_dim_row("Height (tap direction):", brace_thick_spin))
 
         height_note = QtWidgets.QLabel(
             "Brace height when lying flat — this is the t dimension in the stiffness formula"
         )
         height_note.setFont(small)
         height_note.setWordWrap(True)
-        brace_form.addRow("", height_note)
+        _height_note_row = QtWidgets.QHBoxLayout()
+        _height_note_row.addWidget(height_note, stretch=1)
+        _height_note_row.addSpacing(110)
+        brace_layout.addLayout(_height_note_row)
 
-        brace_mass_spin = _dim_spinbox("g", 500.0)
-        brace_mass_spin.setValue(AS.AppSettings.brace_mass())
-        brace_form.addRow("Mass:", brace_mass_spin)
+        brace_layout.addLayout(_dim_row("Mass:", brace_mass_spin))
 
-        brace_density_lbl = QtWidgets.QLabel("—")
-        brace_density_lbl.setFont(small)
-        brace_form.addRow("Calculated Density:", brace_density_lbl)
-        brace_layout.addLayout(brace_form)
+        _brace_density_row = QtWidgets.QHBoxLayout()
+        _brace_density_row.addWidget(QtWidgets.QLabel("Calculated Density:"))
+        _brace_density_row.addStretch()
+        _brace_density_row.addWidget(brace_density_lbl)
+        brace_layout.addLayout(_brace_density_row)
 
         def _update_brace_density() -> None:
             L = brace_length_spin.value()
@@ -1839,6 +1903,21 @@ class MainWindow(QtWidgets.QMainWindow):
         _update_brace_density()
         mg.addWidget(brace_widget)
 
+        # ---- Measurement type footer (conditional) ----
+        _GUITAR_FOOTER = "Select your guitar type for accurate mode classification."
+        _PLATE_FOOTER = (
+            "Enter the dimensions and mass of your rectangular wood sample. "
+            "The app will calculate stiffness, speed of sound, and radiation "
+            "ratio from the tap frequencies."
+        )
+        _is_guitar_initial = cur_unified in GUITAR_TYPE_MAP
+        meas_footer_lbl = QtWidgets.QLabel(
+            _GUITAR_FOOTER if _is_guitar_initial else _PLATE_FOOTER
+        )
+        meas_footer_lbl.setFont(small)
+        meas_footer_lbl.setWordWrap(True)
+        mg.addWidget(meas_footer_lbl)
+
         # ---- Mode ranges display ----
         _MODE_DISPLAY_NAMES = {
             "Helmholtz T(1,1)_1": "Air",
@@ -1857,12 +1936,18 @@ class MainWindow(QtWidgets.QMainWindow):
             except ValueError:
                 return
             bands = GM.get_bands(gt)
-            parts = [
-                f"{_MODE_DISPLAY_NAMES[name]}: {int(lo)}–{int(hi)} Hz"
+            entries = [
+                (_MODE_DISPLAY_NAMES[name], f"{int(lo)}–{int(hi)} Hz")
                 for lo, hi, name, _ in bands
                 if name in _MODE_DISPLAY_NAMES
             ]
-            mode_ranges_lbl.setText("  |  ".join(parts))
+            for i, (nl, rl) in enumerate(zip(_mode_name_labels, _mode_range_labels)):
+                if i < len(entries):
+                    nl.setText(entries[i][0] + ":")
+                    rl.setText(entries[i][1])
+                else:
+                    nl.setText("")
+                    rl.setText("")
 
         # ---- Show/hide type-specific widgets ----
         def _on_meas_type_changed(unified: str) -> None:
@@ -1872,6 +1957,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.guitar_type_combo.setCurrentText(guitar_t)
             is_guitar = meas_t == "Guitar"
             meas_desc_lbl.setText(MEAS_DESCRIPTIONS.get(unified, ""))
+            meas_footer_lbl.setText(_GUITAR_FOOTER if is_guitar else _PLATE_FOOTER)
             guitar_widget.setVisible(is_guitar)
             plate_widget.setVisible(meas_t == "Plate")
             brace_widget.setVisible(meas_t == "Brace")
@@ -2117,13 +2203,19 @@ class MainWindow(QtWidgets.QMainWindow):
         device_combo = QtWidgets.QComboBox()
         device_combo.setToolTip("Select the microphone or audio input device to use")
         device_combo.setEditable(True)
+        device_combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
+        )
+        device_combo.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
         le = device_combo.lineEdit()
         if le is not None:
             le.setAlignment(
                 QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
             )
             le.setReadOnly(True)
-        dev_row.addWidget(device_combo, stretch=1)
+        dev_row.addWidget(device_combo)
         aud.addLayout(dev_row)
 
         input_devices: list[tuple[int, str, float]] = []
@@ -2210,13 +2302,19 @@ class MainWindow(QtWidgets.QMainWindow):
         cal_row.addWidget(QtWidgets.QLabel("Calibration:"))
         cal_combo = QtWidgets.QComboBox()
         cal_combo.setEditable(True)
+        cal_combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
+        )
+        cal_combo.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
         le = cal_combo.lineEdit()
         if le is not None:
             le.setAlignment(
                 QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
             )
             le.setReadOnly(True)
-        cal_row.addWidget(cal_combo, stretch=1)
+        cal_row.addWidget(cal_combo)
         aud.addLayout(cal_row)
 
         def _rebuild_cal_combo() -> None:
