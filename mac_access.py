@@ -3,23 +3,51 @@
     This requires the application to be correctly signed.
 """
 
+import subprocess
 import sys
-import time
 
 import AVFoundation
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore, QtWidgets
+
+_PRIV_URL = (
+    "x-apple.systempreferences:"
+    "com.apple.settings.PrivacySecurity.extension?Privacy_Microphone"
+)
+
+_DENIED_TEXT = (
+    "Microphone access has been denied.\n\n"
+    "Guitar Tap needs microphone access to operate.\n\n"
+    "Open System Settings \u2192 Privacy \u0026 Security \u2192 Microphone "
+    "and enable Guitar Tap, then relaunch the app."
+)
+
+_RESTRICTED_TEXT = (
+    "Microphone access is restricted on this system.\n"
+    "You are not able to run this program."
+)
+
+
+def _show_denied(parent: QtWidgets.QWidget) -> None:
+    """Show the mic-denied dialog with a button to open System Settings."""
+    msg_box = QtWidgets.QMessageBox(parent)
+    msg_box.setWindowTitle("Microphone Access Denied")
+    msg_box.setText(_DENIED_TEXT)
+    open_btn = msg_box.addButton("Open System Settings", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+    msg_box.addButton(QtWidgets.QMessageBox.StandardButton.Close)
+    msg_box.exec()
+    if msg_box.clickedButton() is open_btn:
+        subprocess.run(["open", _PRIV_URL], check=False)
+    sys.exit()
 
 
 # pylint: disable=too-few-public-methods
 class MacAccess:
-    """Use MacOS AVFoundation to check and request access to the microphone."""
+    """Use macOS AVFoundation to check and request access to the microphone."""
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         self.access = False
         self.access_set = False
 
-        # If Mac we need to check if we are authorized to access the
-        # microphone and request it if not
         state = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
             AVFoundation.AVMediaTypeAudio
         )
@@ -27,53 +55,40 @@ class MacAccess:
         match state:
             case AVFoundation.AVAuthorizationStatusAuthorized:
                 self.access = True
+
             case AVFoundation.AVAuthorizationStatusNotDetermined:
                 AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
                     AVFoundation.AVMediaTypeAudio, self.callback
                 )
-
-                # Now wait until self.acces is set true or false
-                while not self.access_set:
-                    time.sleep(1)
+                # Poll without blocking the Qt event loop.
+                loop = QtCore.QEventLoop()
+                timer = QtCore.QTimer()
+                timer.timeout.connect(lambda: loop.quit() if self.access_set else None)
+                timer.start(100)
+                loop.exec()
+                timer.stop()
 
                 if not self.access:
-                    msg_box = QtWidgets.QMessageBox(parent)
-                    msg_box.setWindowTitle("Microphone Access")
-                    msg_box.setText(
-                        "Microphone access has been denied.\nIt is required to be able to\
-                            access the microphone to run this program.\nPlease reset the\
-                            Microphone access in Settings & Privacy -> Security -> Guitar Tap."
-                    )
-                    msg_box.exec()
-                    sys.exit()
+                    _show_denied(parent)
+
             case AVFoundation.AVAuthorizationStatusDenied:
-                msg_box = QtWidgets.QMessageBox(parent)
-                msg_box.setWindowTitle("Microphone Access")
-                msg_box.setText(
-                    "Microphone access has been denied.\nIt is required to be\
-                            able to access the microphone to run this program.\nPlease reset the\
-                            Microphone access in Settings & Privacy -> Security -> Guitar Tap."
-                )
-                msg_box.exec()
-                sys.exit()
+                _show_denied(parent)
+
             case AVFoundation.AVAuthorizationStatusRestricted:
                 msg_box = QtWidgets.QMessageBox(parent)
                 msg_box.setWindowTitle("Microphone Access Restricted")
-                msg_box.setText(
-                    "Microphone access is restricted.\nYou are not able to run this program."
-                )
-                msg_box.exec()
-                sys.exit()
-            case _:
-                print("Unknown value")
-                msg_box.setText("Unknown value")
-                msg_box = QtWidgets.QMessageBox(parent)
-                msg_box.setWindowTitle("Microphone Access Restricted")
-                msg_box.setText("Unknown error. Please contact the developer.")
+                msg_box.setText(_RESTRICTED_TEXT)
                 msg_box.exec()
                 sys.exit()
 
-    def callback(self, state) -> None:
-        """Used to wait for the user to respond to request to access the microphone."""
+            case _:
+                msg_box = QtWidgets.QMessageBox(parent)
+                msg_box.setWindowTitle("Microphone Access")
+                msg_box.setText("Unknown microphone authorization state. Please contact the developer.")
+                msg_box.exec()
+                sys.exit()
+
+    def callback(self, granted: bool) -> None:
+        """Called by AVFoundation (on a background thread) when the user responds."""
+        self.access = granted
         self.access_set = True
-        self.access = state

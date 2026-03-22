@@ -1,5 +1,6 @@
 """
-    Dialog displaying the current attached devices
+    Dialog displaying the current attached input devices, allowing the user
+    to select one as the active recording device.
 """
 
 import os
@@ -11,125 +12,103 @@ basedir = os.path.dirname(__file__)
 
 
 class ShowInputDevices(QtWidgets.QDialog):
-    """Dialog containing the table of devices"""
+    """Dialog containing the table of input devices.
 
-    def __init__(self) -> None:
+    After exec(), call selected_device_index() to get the chosen device
+    index, or -1 if the user cancelled or made no selection.
+    """
+
+    def __init__(self, current_device_index: int = -1) -> None:
         super().__init__()
         self.setWindowTitle("Input Devices")
         self.setMinimumWidth(800)
         self.setMinimumHeight(300)
 
-        button = QtWidgets.QDialogButtonBox.StandardButton.Ok
-        button_box = QtWidgets.QDialogButtonBox(button)
-        button_box.clicked.connect(self.accept)
+        self._device_indices: list[int] = []
+        self._selected_index: int = -1
 
-        self.layout = QtWidgets.QVBoxLayout()
-
-        self.create_device_table()
-        self.layout.addWidget(self.device_table)
-
-        self.layout.addWidget(button_box)
-        self.setLayout(self.layout)
-
-    def add_device(
-        self, default: str, row_index: int, values, supported_rates: list[int]
-    ) -> None:
-        """Add a device to the table includeing wether the device is a default device or not"""
-        self.device_table.setItem(
-            row_index, 0, QtWidgets.QTableWidgetItem(default))
-        column = 1
-        for value in values:
-            self.device_table.setItem(
-                row_index, column, QtWidgets.QTableWidgetItem(str(value))
-            )
-            column += 1
-        self.device_table.setItem(
-            row_index, column, QtWidgets.QTableWidgetItem(str(supported_rates))
+        buttons = (
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
         )
+        button_box = QtWidgets.QDialogButtonBox(buttons)
+        button_box.accepted.connect(self._on_accept)
+        button_box.rejected.connect(self.reject)
 
-    def create_device_table(self) -> None:
-        """The device table shows the sounddevice settings for each device and indicates
-        which devices are the default
-        """
-        self.device_table = QtWidgets.QTableWidget()
+        layout = QtWidgets.QVBoxLayout()
+        self._device_table = self._create_device_table(current_device_index)
+        layout.addWidget(self._device_table)
+        layout.addWidget(button_box)
+        self.setLayout(layout)
 
-        default_input = sd.query_devices(device=sd.default.device, kind='input')
+    # ------------------------------------------------------------------ #
+
+    def selected_device_index(self) -> int:
+        """Return the sounddevice index of the row the user selected, or -1."""
+        return self._selected_index
+
+    def _on_accept(self) -> None:
+        rows = self._device_table.selectionModel().selectedRows()
+        if rows:
+            row = rows[0].row()
+            if 0 <= row < len(self._device_indices):
+                self._selected_index = self._device_indices[row]
+        self.accept()
+
+    # ------------------------------------------------------------------ #
+
+    def _create_device_table(self, current_device_index: int) -> QtWidgets.QTableWidget:
+        default_input = sd.query_devices(device=sd.default.device, kind="input")
         default_input_index = default_input.get("index")
 
-        # Get the host APIs
-        host_apis = []
-        for host_api in sd.query_hostapis():
-            host_apis.append(host_api["name"])
+        host_apis = [h["name"] for h in sd.query_hostapis()]
 
-        # for i in range(py_audio.get_host_api_count()):
-        #     host_api = py_audio.get_host_api_info_by_index(i)
-        #     host_apis.append(host_api["name"])
+        input_devices = [d for d in sd.query_devices() if d["max_input_channels"] > 0]
 
-        # Get lits of input devices
-        input_devices = []
-        for device in sd.query_devices():
-            if device["max_input_channels"] > 0:
-                input_devices.append(device)
+        desired_keys = [k for k in default_input.keys() if "output" not in k.lower()]
 
-        # Row count
-        number_devices = len(input_devices)
-        self.device_table.setRowCount(number_devices)
+        table = QtWidgets.QTableWidget()
+        table.setRowCount(len(input_devices))
+        table.setColumnCount(len(desired_keys) + 2)   # default marker + keys + supported rates
+        table.setHorizontalHeaderLabels([""] + list(desired_keys) + ["Supported Rates"])
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
 
-        # Column count
-        keys = default_input.keys()
-        desired_keys = []
-        for key in keys:
-            if "Output" not in key:
-                desired_keys.append(key)
-        number_keys = len(desired_keys)
-        # The count is the number of devices plus the default column and the supported rates
-        self.device_table.setColumnCount(number_keys + 2)
+        current_row = -1
+        for row, device in enumerate(input_devices):
+            idx = device["index"]
+            self._device_indices.append(idx)
 
-        # Add header
-        header = [""] + list(desired_keys) + ["Supported Rates"]
-        self.device_table.setHorizontalHeaderLabels(header)
+            marker = "default" if idx == default_input_index else ""
+            table.setItem(row, 0, QtWidgets.QTableWidgetItem(marker))
 
-        row_index = 0
-        for device in input_devices:
-            index = device["index"]
-            desired_device_values = [device[x] for x in desired_keys]
-            host_api_key = desired_keys.index("hostapi")
-            desired_device_values[host_api_key] = host_apis[device["hostapi"]]
+            for col, key in enumerate(desired_keys, start=1):
+                value = device[key]
+                if key == "hostapi":
+                    value = host_apis[value]
+                table.setItem(row, col, QtWidgets.QTableWidgetItem(str(value)))
 
-            if index == default_input_index:
-                default = "default"
-            else:
-                default = ""
-            default_sample_rate = device["default_samplerate"]
-            supported_rates = self.get_supported_rates(
-                index, default_sample_rate
-            )
-            self.add_device(default, row_index,
-                            desired_device_values, supported_rates)
-            row_index += 1
+            rates = self._get_supported_rates(idx, device["default_samplerate"])
+            table.setItem(row, len(desired_keys) + 1, QtWidgets.QTableWidgetItem(str(rates)))
 
-        self.device_table.resizeColumnsToContents()
-        self.device_table.setEditTriggers(
-            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
-        )
+            if idx == current_device_index:
+                current_row = row
 
-    def get_supported_rates(
-        self, index: int, default_sample_rate: int
-    ) -> list[int]:
-        """Get the supported sample rates for the input devices"""
-        supported_rates = []
-        for rate in [
-            default_sample_rate,
-            default_sample_rate // 2,
-            default_sample_rate // 4,
-        ]:
+        table.resizeColumnsToContents()
+
+        if current_row >= 0:
+            table.selectRow(current_row)
+
+        return table
+
+    @staticmethod
+    def _get_supported_rates(index: int, default_sample_rate: float) -> list[int]:
+        rates: list[int] = []
+        for rate in [default_sample_rate, default_sample_rate / 2, default_sample_rate / 4]:
             try:
-                sd.check_input_settings(
-                    device=index, channels=1, samplerate=rate, dtype='float32')
-                supported_rates.append(rate)
-            except sd.PortAudioError as _e:
-                # print(
-                    # f"Sample rate {rate} for device {index} not supported: {e}")
+                sd.check_input_settings(device=index, channels=1, samplerate=rate, dtype="float32")
+                rates.append(int(rate))
+            except sd.PortAudioError:
                 continue
-
-        return supported_rates
+        return rates

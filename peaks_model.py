@@ -10,6 +10,7 @@ import numpy.typing as npt
 from PyQt6 import QtCore
 
 import pitch as pitch_c
+import guitar_modes as gm
 
 basedir = os.path.dirname(__file__)
 
@@ -19,16 +20,12 @@ class ColumnIndex(Enum):
 
     # pylint: disable=invalid-name
     Show = 0
-    # pylint: disable=invalid-name
     Freq = 1
-    # pylint: disable=invalid-name
     Mag = 2
-    # pylint: disable=invalid-name
-    Pitch = 3
-    # pylint: disable=invalid-name
-    Cents = 4
-    # pylint: disable=invalid-name
-    Modes = 5
+    Q = 3
+    Pitch = 4
+    Cents = 5
+    Modes = 6
 
 
 # pylint: disable=too-many-instance-attributes
@@ -67,6 +64,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.disable_editing: bool = True
         self.show: dict[float, str] = {}
         self.show_column: int = ColumnIndex.Show.value
+        self.guitar_type: gm.GuitarType = gm.GuitarType.CLASSICAL
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the mode."""
@@ -74,11 +72,11 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.modes[self.freq_value(index)] = value
 
     def mode_value(self, index: QtCore.QModelIndex) -> str:
-        """Return the mode for the row"""
-        # print("PeaksModel: mode_value")
-        if self.freq_value(index) in self.modes:
-            return self.modes[self.freq_value(index)]
-        return ""
+        """Return mode: manual override if set, else auto-classified."""
+        freq = self.freq_value(index)
+        if freq in self.modes:
+            return self.modes[freq]
+        return gm.classify_peak(freq, self.guitar_type)
 
     def set_show_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the show."""
@@ -112,14 +110,23 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     def magnitude_value(self, index: QtCore.QModelIndex) -> float:
         """Return the magnitude value from the correct column for the row"""
-        # print("PeaksModel: freq_value")
         return self._data[index.row()][1]
+
+    def q_value(self, index: QtCore.QModelIndex) -> float:
+        """Return the Q factor for the row (0 if not available)."""
+        if self._data.shape[1] > 2:
+            return float(self._data[index.row()][2])
+        return 0.0
+
+    def set_guitar_type(self, guitar_type: str) -> None:
+        """Change the guitar type used for auto mode classification."""
+        self.guitar_type = gm.GuitarType(guitar_type)
+        self.layoutChanged.emit()
 
     def data_value(self, index: QtCore.QModelIndex) -> QtCore.QVariant:
         """Return the value from the data for cols 1/2 and the value in
         the table for 3/4.
         """
-        # print("PeaksModel: data_value")
         match index.column():
             case ColumnIndex.Show.value:
                 value = self.show_value(index)
@@ -127,6 +134,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 value = self.freq_value(index)
             case ColumnIndex.Mag.value:
                 value = self.magnitude_value(index)
+            case ColumnIndex.Q.value:
+                value = self.q_value(index)
             case ColumnIndex.Pitch.value | ColumnIndex.Cents.value:
                 value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
             case ColumnIndex.Modes.value:
@@ -146,17 +155,18 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     case ColumnIndex.Show.value:
                         str_value = ""
                     case ColumnIndex.Freq.value:
-                        value = self.freq_value(index)
-                        str_value = f"{value:.1f}"
+                        str_value = f"{self.freq_value(index):.1f}"
                     case ColumnIndex.Mag.value:
-                        value = self.magnitude_value(index)
-                        str_value = f"{value:.1f}"
+                        str_value = f"{self.magnitude_value(index):.1f}"
+                    case ColumnIndex.Q.value:
+                        q = self.q_value(index)
+                        str_value = f"{q:.0f}" if q > 0 else ""
                     case ColumnIndex.Pitch.value:
                         str_value = self.pitch.note(self.freq_value(index))
                     case ColumnIndex.Cents.value:
                         str_value = f"{self.pitch.cents(self.freq_value(index)):+.0f}"
                     case ColumnIndex.Modes.value:
-                        str_value = ""
+                        str_value = self.mode_value(index)
                     case _:
                         str_value = ""
                 return str_value
@@ -211,12 +221,33 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.clearAnnotations.emit()
 
     def show_annotations(self) -> None:
-        """Show all annotations."""
+        """Show annotations for peaks that have the show flag set."""
         for freq in self.show:
-            # print(f"PeaksModel: show_annotations: freq: {freq}")
             index = self.freq_index(freq)
             if index >= 0 and self.show_value_bool(self.index(index, 0)):
                 self.showAnnotation.emit(freq)
+
+    def select_all_peaks(self) -> None:
+        """Set the show/selected flag on every peak and show its annotation."""
+        for row in range(self.rowCount(QtCore.QModelIndex())):
+            idx = self.index(row, self.show_column)
+            self.setData(idx, "on")
+
+    def deselect_all_peaks(self) -> None:
+        """Clear the show/selected flag on every peak and hide its annotation."""
+        for row in range(self.rowCount(QtCore.QModelIndex())):
+            idx = self.index(row, self.show_column)
+            self.setData(idx, "off")
+
+    def show_all_annotations(self) -> None:
+        """Show annotations for every peak regardless of the show flag."""
+        for row in range(self.rowCount(QtCore.QModelIndex())):
+            idx = self.index(row, 0)
+            freq = self.freq_value(idx)
+            mag  = self.magnitude_value(idx)
+            mode = self.mode_value(idx)
+            text = f"{mode}\n{freq:.1f}" if mode else f"{freq:.1f}"
+            self.annotationUpdate.emit(freq, mag, text)
 
     def update_annotation(self, index: QtCore.QModelIndex) -> None:
         """Update the annotation for the model index."""

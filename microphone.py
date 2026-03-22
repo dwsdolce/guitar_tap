@@ -21,14 +21,17 @@ class Microphone:
     size specified. Closes on exit.
     """
 
-    def __init__(self, parent, rate: int = 44100, chunksize: int = 16384):
+    def __init__(self, parent, rate: int = 44100, chunksize: int = 16384,
+                 device_index: int | None = None):
 
         if platform.system() == "Darwin":
             mac_access.MacAccess(parent)
 
         self.rate: int = rate
         self.chunksize: int = chunksize
+        self.device_index: int | None = device_index
         self.stream: sd.InputStream = sd.InputStream(
+            device=self.device_index,
             channels=1,
             samplerate=self.rate,
             dtype=np.float32,
@@ -70,6 +73,21 @@ class Microphone:
         with self.lock:
             self.is_stopped = True
         self.stream.stop()
+
+    def set_device(self, device_index: int) -> None:
+        """Switch to a different input device without re-checking permissions."""
+        self.close()
+        self.device_index = device_index
+        self.is_stopped = False
+        self.stream = sd.InputStream(
+            device=self.device_index,
+            channels=1,
+            samplerate=self.rate,
+            dtype=np.float32,
+            blocksize=self.chunksize,
+            callback=self.new_frame,
+        )
+        self.stream.start()
 
     def close(self) -> None:
         """close the thread"""

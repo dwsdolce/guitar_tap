@@ -1,97 +1,69 @@
 """
-    Custom editor for the mode column
+    Delegate for the peak selection column — renders a filled/empty star.
 """
 
-from PyQt6 import QtWidgets, QtCore
-import gt_images as gt_i
+from PyQt6 import QtWidgets, QtCore, QtGui
 
 
 class ShowComboDelegate(QtWidgets.QStyledItemDelegate):
-    """Provides a combobox for selecting mode values."""
+    """Renders a ★ (selected) or ☆ (unselected) star in the Show column."""
 
     enable: bool = True
 
-    # pylint: disable=invalid-name
+    _STAR_ON  = "★"
+    _STAR_OFF = "☆"
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        value = index.model().data_value(index) if index.isValid() else "off"
+        glyph = self._STAR_ON if value == "on" else self._STAR_OFF
+        painter.save()
+        if option.state & QtWidgets.QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+        color = QtGui.QColor(30, 120, 255) if value == "on" else QtGui.QColor(160, 160, 160)
+        painter.setPen(color)
+        font = painter.font()
+        font.setPointSize(13)
+        painter.setFont(font)
+        painter.drawText(option.rect, QtCore.Qt.AlignmentFlag.AlignCenter, glyph)
+        painter.restore()
+
     def createEditor(
         self,
         parent: QtWidgets.QWidget,
         _option: QtWidgets.QStyleOptionViewItem,
         _index: QtCore.QModelIndex,
-    ) -> QtWidgets.QWidget:
-        """Create the editor for the mode column."""
-        # print("ShowComboDelegate: createEditor")
-        # pylint: disable=attribute-defined-outside-init
-        self.editor = QtWidgets.QToolButton(parent)
-        self.editor.setStyleSheet(
-            "background=-color: red; \n"
-            "border: 1px solid blue; \n"
-            "padding: 1px 1px 1px 1px;"
-        )
-        self.editor.setIcon(gt_i.GtImages.red_icon())
-        self.editor.setIconSize(QtCore.QSize(21, 21))
-        self.editor.setStyleSheet("border: none")
-        self.editor.setCheckable(True)
-        self.editor.setChecked(False)
+    ) -> QtWidgets.QWidget | None:
+        if not self.enable:
+            return None
+        # Transparent button — click commits toggle immediately via editorEvent
+        return None
 
-        self.editor.toggled.connect(self.button_toggled)
-        self.editor.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        return self.editor
-
-    def setEditorData(
-        self, editor: QtWidgets.QToolButton, index: QtCore.QModelIndex
-    ) -> None:
-        """Set the data in the editor from the model data."""
-        # print("ShowComboDelegate: setEditorData")
-        editor.blockSignals(True)  # block signals that are not caused by the user
-        editor.setStyleSheet("background=-color: white")
-
-        if index.isValid():
-            value = index.model().data_value(index)
-            # print(f"setEditorData: value: {value}")
-            if value == "on":
-                editor.setChecked(True)
-                editor.setIcon(gt_i.GtImages.green_icon())
-            else:
-                editor.setChecked(False)
-                editor.setIcon(gt_i.GtImages.red_icon())
-        editor.blockSignals(False)
-
-    def setModelData(
+    def editorEvent(
         self,
-        editor: QtWidgets.QToolButton,
+        event: QtCore.QEvent,
         model: QtCore.QAbstractItemModel,
-        index: QtCore.QModelIndex,
-    ) -> None:
-        """Use the data from the editor to set the model."""
-        # print("ShowComboDelegate: setModelData")
-        if index.isValid():
-            if editor.isChecked():
-                # print(f"setModelData: value: checked")
-                model.setData(index, "on")
-                editor.setIcon(gt_i.GtImages.green_icon())
-            else:
-                # print(f"setModelData: value: unchecked")
-                model.setData(index, "off")
-                editor.setIcon(gt_i.GtImages.red_icon())
-
-    def updateEditorGeometry(
-        self,
-        editor: QtWidgets.QWidget,
         option: QtWidgets.QStyleOptionViewItem,
-        _index: QtCore.QModelIndex,
-    ) -> None:
-        """Update the geometry of the editor."""
-        # print("ShowComboDelegate: updateEditorGeometry")
-        editor.setGeometry(option.rect)
+        index: QtCore.QModelIndex,
+    ) -> bool:
+        if not self.enable:
+            return False
+        if event.type() == QtCore.QEvent.Type.MouseButtonRelease:
+            current = model.data_value(index) if index.isValid() else "off"
+            model.setData(index, "off" if current == "on" else "on")
+            return True
+        return False
 
-    def eventFilter(self, obj: QtWidgets.QToolButton, event: QtCore.QEvent) -> bool:
-        """Enable editor is there are any events on the item."""
-        # print(f"ShowComboDelegate: eventFilter: enable: {self.enable}")
-        # print(f"showComboDelegate: eventFilter: {event.type().name}")
+    def sizeHint(
+        self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex
+    ) -> QtCore.QSize:
+        return QtCore.QSize(28, 22)
 
-        obj.setEnabled(self.enable)
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if hasattr(obj, "setEnabled"):
+            obj.setEnabled(self.enable)  # type: ignore[union-attr]
         return super().eventFilter(obj, event)
-
-    def button_toggled(self, _checked: bool) -> None:
-        """Respond to toggle of button."""
-        self.commitData.emit(self.sender())

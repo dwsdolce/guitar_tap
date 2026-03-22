@@ -88,6 +88,82 @@ def peak_detection(
     return ploc
 
 
+def peak_q_factor(
+    magnitude: Float64_1D,
+    ploc: npt.NDArray[np.signedinteger],
+    iploc: Float64_1D,
+    ipmag: Float64_1D,
+    sample_freq: int,
+    n_f: int,
+) -> Float64_1D:
+    """Compute Q = f0 / bandwidth for each peak using the −3 dB method.
+
+    Walks left and right from each integer peak bin until the spectrum
+    drops below peak_mag − 3 dB, then Q = f0 / (f_hi − f_lo).
+    Returns 0 for peaks where the boundary is not found within the spectrum.
+    """
+    hz_per_bin = sample_freq / n_f
+    q_values = np.zeros(len(ploc), dtype=np.float64)
+
+    for i, peak_bin in enumerate(ploc):
+        half_power = ipmag[i] - 3.0
+
+        bin_lo = int(peak_bin) - 1
+        while bin_lo > 0 and magnitude[bin_lo] > half_power:
+            bin_lo -= 1
+
+        bin_hi = int(peak_bin) + 1
+        while bin_hi < len(magnitude) - 1 and magnitude[bin_hi] > half_power:
+            bin_hi += 1
+
+        bandwidth = (bin_hi - bin_lo) * hz_per_bin
+        if bandwidth > 0:
+            q_values[i] = (iploc[i] * hz_per_bin) / bandwidth
+
+    return q_values
+
+
+def hps_peak_freq(
+    mag_linear: npt.NDArray[np.float32],
+    sample_freq: float,
+    n_f: int,
+    f_min: float = 50.0,
+    f_max: float = 2000.0,
+    harmonics: int = 4,
+) -> float:
+    """Harmonic Product Spectrum peak-frequency estimator.
+
+    Multiplies the spectrum by progressively downsampled copies of itself to
+    reinforce the fundamental and suppress harmonics.  Returns the dominant
+    fundamental frequency (Hz) within [f_min, f_max], or 0.0 if no peak is
+    found.
+
+    Args:
+        mag_linear:  Linear (not dB) magnitude spectrum — the abs_fft returned
+                     by dft_anal.
+        sample_freq: Audio sample rate (Hz).
+        n_f:         FFT size (number of samples).
+        f_min:       Lower frequency search limit (Hz).
+        f_max:       Upper frequency search limit (Hz).
+        harmonics:   Number of harmonics to include (2 → 4 is typical).
+    """
+    hps = mag_linear.astype(np.float64).copy()
+
+    for h in range(2, harmonics + 1):
+        downsampled = mag_linear[::h]
+        n = min(len(hps), len(downsampled))
+        hps[:n] *= downsampled[:n]
+
+    bin_min = max(1, int(f_min * n_f / sample_freq))
+    bin_max = min(len(hps) - 1, int(f_max * n_f / sample_freq))
+
+    if bin_max <= bin_min:
+        return 0.0
+
+    peak_bin = int(np.argmax(hps[bin_min : bin_max + 1])) + bin_min
+    return float(peak_bin * sample_freq / n_f)
+
+
 def peak_interp(
     magnitude: npt.NDArray[np.float32], ploc: npt.NDArray[np.int64]
 ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
