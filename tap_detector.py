@@ -80,14 +80,14 @@ class TapDetector(QtCore.QObject):
     def __init__(
         self,
         tap_threshold: int = 60,
-        hysteresis_margin: int = 3,
+        hysteresis_margin: float = 3.0,
         warmup_frames: int = 5,   # ~0.5 s at 10 fps
         cooldown_frames: int = 5, # ~0.5 s at 10 fps
         parent: QtCore.QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.tap_threshold: int = tap_threshold
-        self.hysteresis_margin: int = hysteresis_margin
+        self.hysteresis_margin: float = hysteresis_margin
         self.warmup_frames: int = warmup_frames
         self.cooldown_frames: int = cooldown_frames
 
@@ -109,8 +109,8 @@ class TapDetector(QtCore.QObject):
     def set_tap_threshold(self, value: int) -> None:
         self.tap_threshold = value
 
-    def set_hysteresis_margin(self, value: int) -> None:
-        self.hysteresis_margin = max(1, value)
+    def set_hysteresis_margin(self, value: float) -> None:
+        self.hysteresis_margin = max(1.0, value)
 
     def pause(self) -> None:
         """Pause detection — remember current state for resume."""

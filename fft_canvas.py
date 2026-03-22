@@ -72,6 +72,7 @@ class FftCanvas(pg.PlotWidget):
     tapCountChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)  # (captured, total)
     devicesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(list)       # new device-name list
     currentDeviceLost: QtCore.pyqtSignal = QtCore.pyqtSignal(str)     # lost device name
+    _devicesRefreshed: QtCore.pyqtSignal = QtCore.pyqtSignal()         # internal: thread → main
     plateStatusChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)    # plate capture status
     plateAnalysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)  # fL, fC
     tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)   # True=paused
@@ -131,9 +132,22 @@ class FftCanvas(pg.PlotWidget):
         except Exception:
             pass
 
+        # If the saved device wasn't found, resolve the actual default input device
+        # so that AppSettings and _calibration_device_name reflect reality.
+        if not saved_device_name:
+            try:
+                default_info = sd.query_devices(kind="input")
+                if default_info is not None:
+                    saved_device_name = str(default_info["name"])
+                    _as.AppSettings.set_device_name(saved_device_name)
+            except Exception:
+                pass
+
+        self._devicesRefreshed.connect(self._on_devices_refreshed)
         self.mic: microphone.Microphone = microphone.Microphone(
             self, rate=self.fft_data.sample_freq, chunksize=self.fft_data.m_t,
             device_index=saved_device_index,
+            on_devices_changed=self._devicesRefreshed.emit,  # no-arg, thread-safe
         )
 
         # Auto-load calibration for the starting device
@@ -163,7 +177,7 @@ class FftCanvas(pg.PlotWidget):
         # Threshold lines — use InfiniteLine so labels stay in view when panned
         _peak_y: int = self.threshold_y
         _tap_y: int  = _as.AppSettings.tap_threshold() - 100
-        _hyst: int   = _as.AppSettings.hysteresis_margin()
+        _hyst: float = _as.AppSettings.hysteresis_margin()
 
         # Label opts: anchors are (x, y) where x=0 left-align, x=1 right-align;
         #             y=0 text below position, y=1 text above position.
@@ -296,11 +310,6 @@ class FftCanvas(pg.PlotWidget):
         # Initialise mode bands for the saved guitar type
         self.set_guitar_type_bands(_as.AppSettings.guitar_type())
 
-        # Snapshot of known input device names for hot-plug detection
-        self._known_device_names: set[str] = {
-            d["name"] for d in sd.query_devices() if d["max_input_channels"] > 0
-        }
-
         # Overlay text shown when analyzer is not running
         self._overlay_label = pg.TextItem(
             text="Press Start to begin",
@@ -321,11 +330,6 @@ class FftCanvas(pg.PlotWidget):
         # Create timer for FFT updates — NOT started until start_analyzer() called
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_fft)
-
-        # Hot-plug polling timer (every 2 s)
-        self._hotplug_timer = QtCore.QTimer()
-        self._hotplug_timer.timeout.connect(self._check_devices)
-        self._hotplug_timer.start(2000)
 
     # ------------------------------------------------------------------ #
     # Analyzer start / stop
@@ -431,25 +435,29 @@ class FftCanvas(pg.PlotWidget):
         self._crosshair_h.setVisible(True)
         self._cursor_label.setVisible(True)
 
-    def _check_devices(self) -> None:
-        """Poll for input-device changes and emit signals when they occur."""
+    def _on_devices_refreshed(self) -> None:
+        """Handle a hot-plug event from Microphone (always on main thread).
+
+        PortAudio caches its device list at Pa_Initialize() time, so we must
+        reinitialize it before calling sd.query_devices() to get accurate data.
+        reinitialize_portaudio() stops the stream, reinits PortAudio, and
+        attempts to restart on the same device — all safely on the main thread.
+        """
+        self.mic.reinitialize_portaudio()
+
         try:
-            current: set[str] = {
-                d["name"] for d in sd.query_devices() if d["max_input_channels"] > 0
-            }
+            names: list[str] = sorted(
+                str(d["name"]) for d in sd.query_devices() if d["max_input_channels"] > 0
+            )
         except Exception:
-            return
+            names = []
 
-        if current == self._known_device_names:
-            return
-
-        self._known_device_names = current
-        self.devicesChanged.emit(sorted(current))
+        self.devicesChanged.emit(names)
 
         # Check if the active device has disappeared
         if (
             self._calibration_device_name
-            and self._calibration_device_name not in current
+            and self._calibration_device_name not in names
         ):
             self.currentDeviceLost.emit(self._calibration_device_name)
 
@@ -566,8 +574,8 @@ class FftCanvas(pg.PlotWidget):
         self.line_reset_threshold.setPos(reset_y)
         self.line_reset_threshold.label.setText(f"Reset: {reset_y} dB")
 
-    def set_hysteresis_margin(self, value: int) -> None:
-        """Update the tap-detection hysteresis margin (in dB, 1–10)."""
+    def set_hysteresis_margin(self, value: float) -> None:
+        """Update the tap-detection hysteresis margin (in dB, 1.0–10.0)."""
         self._tap_detector.set_hysteresis_margin(value)
         self._update_reset_line()
 

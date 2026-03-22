@@ -138,11 +138,12 @@ class AppSettings:
     # Tap-detection hysteresis margin (dB, 1–10)
     # ------------------------------------------------------------------ #
     @classmethod
-    def hysteresis_margin(cls) -> int:
-        return int(cls._get("analysis/hysteresis_margin", 3))
+    def hysteresis_margin(cls) -> float:
+        v = cls._get("analysis/hysteresis_margin", None)
+        return float(v) if v is not None else 3.0
 
     @classmethod
-    def set_hysteresis_margin(cls, v: int) -> None:
+    def set_hysteresis_margin(cls, v: float) -> None:
         cls._set("analysis/hysteresis_margin", v)
 
     # ------------------------------------------------------------------ #

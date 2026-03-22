@@ -775,6 +775,12 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.tapCountChanged.connect(self.set_tap_count)
         canvas.devicesChanged.connect(self._on_devices_changed)
         canvas.currentDeviceLost.connect(self._on_device_lost)
+        try:
+            self._known_input_device_names: set[str] = {
+                str(d["name"]) for d in sd.query_devices() if d["max_input_channels"] > 0
+            }
+        except Exception:
+            self._known_input_device_names = set()
 
         # Toolbar / controls buttons
         self.new_tap_btn.clicked.connect(self._on_new_tap)
@@ -1418,17 +1424,58 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _on_devices_changed(self, device_names: list[str]) -> None:
-        self.device_status_lbl.setText(
-            "⚠ Audio devices changed — open Settings to reselect"
-        )
+        """A device was added or removed. Auto-select any newly arrived device."""
+        new_names = set(device_names)
+        added = new_names - self._known_input_device_names
+        self._known_input_device_names = new_names
+
+        if not added:
+            return
+
+        # Find the index of the first newly arrived device and select it
+        new_name = next(iter(added))
+        try:
+            for d in sd.query_devices():
+                if str(d["name"]) == new_name and d["max_input_channels"] > 0:
+                    self.fft_canvas.set_device(int(d["index"]))
+                    AS.AppSettings.set_device_name(new_name)
+                    self.device_status_lbl.setText(new_name)
+                    self.set_calibration_status(
+                        AS.AppSettings.calibration_for_device(new_name)
+                    )
+                    break
+        except Exception:
+            pass
 
     def _on_device_lost(self, device_name: str) -> None:
-        QtWidgets.QMessageBox.warning(
-            self,
-            "Audio Device Disconnected",
-            f'The recording device "{device_name}" has been disconnected.\n\n'
-            "Open Settings to select another device.",
-        )
+        """Active device disconnected — fall back to system default input."""
+        try:
+            default_idx = int(sd.default.device[0])
+            default_info = sd.query_devices(default_idx)
+            if default_info["max_input_channels"] > 0:
+                fallback_idx = default_idx
+                fallback_name = str(default_info["name"])
+            else:
+                raise ValueError("default device has no input channels")
+        except Exception:
+            # No system default — take first available input
+            try:
+                available = [
+                    (int(d["index"]), str(d["name"]))
+                    for d in sd.query_devices()
+                    if d["max_input_channels"] > 0
+                ]
+            except Exception:
+                available = []
+            if not available:
+                self.device_status_lbl.setText("⚠ No audio input device available")
+                return
+            fallback_idx, fallback_name = available[0]
+
+        self.fft_canvas.set_device(fallback_idx)
+        AS.AppSettings.set_device_name(fallback_name)
+        self.device_status_lbl.setText(fallback_name)
+        self.set_calibration_status(AS.AppSettings.calibration_for_device(fallback_name))
 
     def import_calibration(self) -> None:
         start_dir = AS.AppSettings.calibration_path() or os.path.expanduser("~")
@@ -1502,11 +1549,27 @@ class MainWindow(QtWidgets.QMainWindow):
         hdr_font = QtGui.QFont(small)
         hdr_font.setBold(True)
 
+        def _group_header(icon_name: str, text: str) -> QtWidgets.QWidget:
+            """Bold icon + text header row matching Swift section Label style."""
+            w = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(w)
+            row.setContentsMargins(0, 2, 0, 4)
+            row.setSpacing(6)
+            icon_lbl = QtWidgets.QLabel()
+            icon_lbl.setPixmap(qta.icon(icon_name).pixmap(16, 16))
+            row.addWidget(icon_lbl)
+            title_lbl = QtWidgets.QLabel(text)
+            title_lbl.setFont(hdr_font)
+            row.addWidget(title_lbl)
+            row.addStretch()
+            return w
+
         # =====================================================
         # 1. Measurement Type Section
         # =====================================================
-        meas_group = QtWidgets.QGroupBox("Measurement Type")
+        meas_group = QtWidgets.QGroupBox("")
         mg = QtWidgets.QVBoxLayout(meas_group)
+        mg.addWidget(_group_header("mdi.music", "Measurement Type"))
 
         MEAS_TYPES = [
             "Classical Guitar",
@@ -1541,10 +1604,20 @@ class MainWindow(QtWidgets.QMainWindow):
         cur_guitar = self.guitar_type_combo.currentText()
         cur_unified = f"{cur_guitar} Guitar" if cur_meas == "Guitar" else f"Material ({cur_meas})"
 
+        meas_type_row = QtWidgets.QHBoxLayout()
+        meas_type_row.addWidget(QtWidgets.QLabel("Measurement Type:"))
         meas_type_combo = QtWidgets.QComboBox()
         meas_type_combo.addItems(MEAS_TYPES)
         meas_type_combo.setCurrentText(cur_unified)
-        mg.addWidget(meas_type_combo)
+        meas_type_combo.setEditable(True)
+        le = meas_type_combo.lineEdit()
+        if le is not None:
+            le.setAlignment(
+                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+            )
+            le.setReadOnly(True)
+        meas_type_row.addWidget(meas_type_combo, stretch=1)
+        mg.addLayout(meas_type_row)
 
         meas_desc_lbl = QtWidgets.QLabel(MEAS_DESCRIPTIONS.get(cur_unified, ""))
         meas_desc_lbl.setFont(small)
@@ -1566,14 +1639,6 @@ class MainWindow(QtWidgets.QMainWindow):
         mode_ranges_lbl.setWordWrap(True)
         guitar_layout.addWidget(mode_ranges_lbl)
 
-        show_unknown_cb = QtWidgets.QCheckBox("Show Unknown Modes")
-        show_unknown_cb.setToolTip("Display peaks that don't fall within known mode classification ranges")
-        show_unknown_cb.setChecked(AS.AppSettings.show_unknown_modes())
-        show_unknown_cb.toggled.connect(AS.AppSettings.set_show_unknown_modes)
-        unknown_desc = QtWidgets.QLabel("Display peaks outside known mode ranges")
-        unknown_desc.setFont(small)
-        guitar_layout.addWidget(show_unknown_cb)
-        guitar_layout.addWidget(unknown_desc)
         mg.addWidget(guitar_widget)
 
         # ---- Plate-specific content ----
@@ -1775,6 +1840,14 @@ class MainWindow(QtWidgets.QMainWindow):
         mg.addWidget(brace_widget)
 
         # ---- Mode ranges display ----
+        _MODE_DISPLAY_NAMES = {
+            "Helmholtz T(1,1)_1": "Air",
+            "Top T(1,1)_2": "Top",
+            "Back T(1,1)_3": "Back",
+            "Long Dipole T(1,2)": "Dipole",
+            "Cross Tripole T(3,1)": "Ring",
+        }
+
         def _update_mode_ranges(unified_type: str) -> None:
             gt_str = GUITAR_TYPE_MAP.get(unified_type)
             if gt_str is None:
@@ -1784,8 +1857,11 @@ class MainWindow(QtWidgets.QMainWindow):
             except ValueError:
                 return
             bands = GM.get_bands(gt)
-            parts = [f"{name.split()[0]} {name.split()[1]}: {int(lo)}–{int(hi)} Hz"
-                     for lo, hi, name, _ in bands]
+            parts = [
+                f"{_MODE_DISPLAY_NAMES[name]}: {int(lo)}–{int(hi)} Hz"
+                for lo, hi, name, _ in bands
+                if name in _MODE_DISPLAY_NAMES
+            ]
             mode_ranges_lbl.setText("  |  ".join(parts))
 
         # ---- Show/hide type-specific widgets ----
@@ -1799,19 +1875,20 @@ class MainWindow(QtWidgets.QMainWindow):
             guitar_widget.setVisible(is_guitar)
             plate_widget.setVisible(meas_t == "Plate")
             brace_widget.setVisible(meas_t == "Brace")
+            show_unknown_widget.setEnabled(is_guitar)
             peak_thresh_widget.setEnabled(is_guitar)
             max_peaks_widget.setEnabled(is_guitar)
             if is_guitar and guitar_t:
                 _update_mode_ranges(unified)
 
         meas_type_combo.currentTextChanged.connect(_on_meas_type_changed)
-        vbox.addWidget(meas_group)
 
         # =====================================================
         # 2. Display Settings Section
         # =====================================================
-        disp_group = QtWidgets.QGroupBox("Display Settings")
+        disp_group = QtWidgets.QGroupBox("")
         dg = QtWidgets.QVBoxLayout(disp_group)
+        dg.addWidget(_group_header("mdi.chart-line", "Display Settings"))
 
         disp_form = QtWidgets.QFormLayout()
         disp_form.addRow("Start (Hz):", self.min_spin)
@@ -1868,13 +1945,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         reset_disp_btn.clicked.connect(_reset_display_defaults)
         dg.addWidget(reset_disp_btn)
-        vbox.addWidget(disp_group)
 
         # =====================================================
         # 3. Analysis Settings Section
         # =====================================================
-        analysis_group = QtWidgets.QGroupBox("Analysis Settings")
+        analysis_group = QtWidgets.QGroupBox("")
         an = QtWidgets.QVBoxLayout(analysis_group)
+        an.addWidget(_group_header("mdi.pulse", "Analysis Settings"))
 
         an_form = QtWidgets.QFormLayout()
 
@@ -1895,6 +1972,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
         an_f_min_spin.valueChanged.connect(lambda v: AS.AppSettings.set_analysis_f_min(v))
         an_f_max_spin.valueChanged.connect(lambda v: AS.AppSettings.set_analysis_f_max(v))
+
+        # Show Unknown Modes (guitar only)
+        show_unknown_widget = QtWidgets.QWidget()
+        su_layout = QtWidgets.QVBoxLayout(show_unknown_widget)
+        su_layout.setContentsMargins(0, 4, 0, 0)
+        su_layout.setSpacing(2)
+        show_unknown_cb = QtWidgets.QCheckBox("Show Unknown Modes")
+        show_unknown_cb.setToolTip("Display peaks that don't fall within known mode classification ranges")
+        show_unknown_cb.setChecked(AS.AppSettings.show_unknown_modes())
+        show_unknown_cb.toggled.connect(AS.AppSettings.set_show_unknown_modes)
+        unknown_desc = QtWidgets.QLabel("Display peaks outside known mode ranges")
+        unknown_desc.setFont(small)
+        su_layout.addWidget(show_unknown_cb)
+        su_layout.addWidget(unknown_desc)
+        an.addWidget(show_unknown_widget)
 
         # Peak Detection Minimum (guitar only)
         peak_thresh_widget = QtWidgets.QWidget()
@@ -1962,14 +2054,16 @@ class MainWindow(QtWidgets.QMainWindow):
         an.addWidget(QtWidgets.QLabel("Hysteresis Margin"))
         hyst_row = QtWidgets.QHBoxLayout()
         hyst_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        hyst_slider.setRange(1, 10)
-        hyst_slider.setValue(AS.AppSettings.hysteresis_margin())
+        # Steps of 0.5 dB over 1.0–10.0 dB range: slider range 2–20, value = steps * 0.5
+        hyst_slider.setRange(2, 20)
+        saved_hyst = AS.AppSettings.hysteresis_margin()
+        hyst_slider.setValue(int(saved_hyst * 2))
         hyst_slider.setToolTip(
             "How far the signal must drop below the threshold before the\n"
             "detector resets and is ready for the next tap"
         )
         hyst_row.addWidget(hyst_slider)
-        hyst_readout = QtWidgets.QLabel(f"{AS.AppSettings.hysteresis_margin():.1f} dB")
+        hyst_readout = QtWidgets.QLabel(f"{saved_hyst:.1f} dB")
         hyst_readout.setMinimumWidth(50)
         hyst_readout.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
@@ -1978,8 +2072,8 @@ class MainWindow(QtWidgets.QMainWindow):
         hyst_reset = QtWidgets.QToolButton()
         hyst_reset.setIcon(qta.icon("mdi.undo"))
         hyst_reset.setStyleSheet("border: none")
-        hyst_reset.setToolTip("Reset to default (3 dB)")
-        hyst_reset.clicked.connect(lambda: hyst_slider.setValue(3))
+        hyst_reset.setToolTip("Reset to default (3.0 dB)")
+        hyst_reset.clicked.connect(lambda: hyst_slider.setValue(6))  # 6 steps × 0.5 = 3.0 dB
         hyst_row.addWidget(hyst_reset)
         an.addLayout(hyst_row)
         hyst_desc = QtWidgets.QLabel(
@@ -1992,9 +2086,10 @@ class MainWindow(QtWidgets.QMainWindow):
         an.addWidget(hyst_desc)
 
         def _on_hyst_changed(val: int) -> None:
-            self.fft_canvas.set_hysteresis_margin(val)
-            AS.AppSettings.set_hysteresis_margin(val)
-            hyst_readout.setText(f"{val:.1f} dB")
+            db = val * 0.5
+            self.fft_canvas.set_hysteresis_margin(db)
+            AS.AppSettings.set_hysteresis_margin(db)
+            hyst_readout.setText(f"{db:.1f} dB")
 
         hyst_slider.valueChanged.connect(_on_hyst_changed)
 
@@ -2005,22 +2100,31 @@ class MainWindow(QtWidgets.QMainWindow):
             an_f_max_spin.setValue(2000.0)
             peak_thresh_spin.setValue(-60.0)
             mp_all_cb.setChecked(True)
-            hyst_slider.setValue(3)
+            hyst_slider.setValue(6)  # 6 steps × 0.5 = 3.0 dB default
 
         reset_analysis_btn.clicked.connect(_reset_analysis_settings)
         an.addWidget(reset_analysis_btn)
 
-        vbox.addWidget(analysis_group)
-
         # =====================================================
         # 4. Audio Input & Calibration Section
         # =====================================================
-        audio_group = QtWidgets.QGroupBox("Audio Input & Calibration")
+        audio_group = QtWidgets.QGroupBox("")
         aud = QtWidgets.QVBoxLayout(audio_group)
+        aud.addWidget(_group_header("mdi.microphone", "Audio Input & Calibration"))
 
-        aud.addWidget(QtWidgets.QLabel("Audio Input Device:"))
+        dev_row = QtWidgets.QHBoxLayout()
+        dev_row.addWidget(QtWidgets.QLabel("Audio Input Device:"))
         device_combo = QtWidgets.QComboBox()
         device_combo.setToolTip("Select the microphone or audio input device to use")
+        device_combo.setEditable(True)
+        le = device_combo.lineEdit()
+        if le is not None:
+            le.setAlignment(
+                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+            )
+            le.setReadOnly(True)
+        dev_row.addWidget(device_combo, stretch=1)
+        aud.addLayout(dev_row)
 
         input_devices: list[tuple[int, str, float]] = []
         try:
@@ -2040,20 +2144,25 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_dev_idx = list_idx
         if current_dev_idx >= 0:
             device_combo.setCurrentIndex(current_dev_idx)
-        aud.addWidget(device_combo)
 
-        sr_lbl = QtWidgets.QLabel()
+        sr_row = QtWidgets.QHBoxLayout()
+        sr_lbl = QtWidgets.QLabel("Sample Rate:")
         sr_lbl.setFont(small)
+        sr_val = QtWidgets.QLabel()
+        sr_val.setFont(small)
+        sr_val.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        sr_row.addWidget(sr_lbl)
+        sr_row.addWidget(sr_val, stretch=1)
+        aud.addLayout(sr_row)
 
         def _update_sr_lbl(combo_idx: int) -> None:
             if 0 <= combo_idx < len(input_devices):
-                sr_lbl.setText(f"Sample Rate: {input_devices[combo_idx][2] / 1000:.0f} kHz")
+                sr_val.setText(f"{input_devices[combo_idx][2] / 1000:.0f} kHz")
             else:
-                sr_lbl.setText("")
+                sr_val.setText("")
 
         _update_sr_lbl(device_combo.currentIndex())
         device_combo.currentIndexChanged.connect(_update_sr_lbl)
-        aud.addWidget(sr_lbl)
 
         def _on_device_selected(combo_idx: int) -> None:
             if 0 <= combo_idx < len(input_devices):
@@ -2066,11 +2175,49 @@ class MainWindow(QtWidgets.QMainWindow):
                     _update_cal_display()
 
         device_combo.currentIndexChanged.connect(_on_device_selected)
+
+        def _rebuild_device_combo(_: list[str]) -> None:
+            """Refresh the device combo when sounddevice reports a change."""
+            nonlocal input_devices
+            try:
+                new_devices: list[tuple[int, str, float]] = [
+                    (int(dev["index"]), str(dev["name"]), float(dev["default_samplerate"]))
+                    for dev in sd.query_devices()
+                    if dev["max_input_channels"] > 0
+                ]
+            except Exception:
+                return
+            input_devices = new_devices
+            saved = AS.AppSettings.device_name()
+            device_combo.blockSignals(True)
+            device_combo.clear()
+            restore_idx = -1
+            for list_idx, (_, dev_name, _) in enumerate(input_devices):
+                device_combo.addItem(dev_name)
+                if dev_name == saved:
+                    restore_idx = list_idx
+            device_combo.blockSignals(False)
+            if restore_idx >= 0:
+                device_combo.setCurrentIndex(restore_idx)
+            elif input_devices:
+                device_combo.setCurrentIndex(0)
+            _update_sr_lbl(device_combo.currentIndex())
+
         aud.addWidget(_hsep())
 
         # Calibration picker
-        aud.addWidget(QtWidgets.QLabel("Calibration:"))
+        cal_row = QtWidgets.QHBoxLayout()
+        cal_row.addWidget(QtWidgets.QLabel("Calibration:"))
         cal_combo = QtWidgets.QComboBox()
+        cal_combo.setEditable(True)
+        le = cal_combo.lineEdit()
+        if le is not None:
+            le.setAlignment(
+                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+            )
+            le.setReadOnly(True)
+        cal_row.addWidget(cal_combo, stretch=1)
+        aud.addLayout(cal_row)
 
         def _rebuild_cal_combo() -> None:
             cal_combo.blockSignals(True)
@@ -2086,7 +2233,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _update_cal_display() -> None:
             _rebuild_cal_combo()
-            cur_dev = AS.AppSettings.device_name()
+            # Use the device currently shown in the combo, not the stale saved name.
+            # AppSettings.device_name() may refer to a device from a previous session
+            # that is no longer active (e.g. UMIK-1 saved but not plugged in).
+            cur_dev = device_combo.currentText()
             cur_cal = AS.AppSettings.calibration_for_device(cur_dev)
             if cur_cal:
                 for i in range(cal_combo.count()):
@@ -2098,14 +2248,103 @@ class MainWindow(QtWidgets.QMainWindow):
                 cal_combo.setCurrentIndex(0)
 
         _update_cal_display()
-        aud.addWidget(cal_combo)
 
-        import_btn = QtWidgets.QPushButton("Import Calibration File...")
-        import_btn.clicked.connect(self.import_calibration)
-        import_btn.clicked.connect(_update_cal_display)
-        aud.addWidget(import_btn)
+        def _import_cal() -> None:
+            start_dir = AS.AppSettings.calibration_path() or os.path.expanduser("~")
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                dlg,
+                "Import Microphone Calibration",
+                start_dir,
+                "Calibration files (*.cal *.txt);;All files (*)",
+            )
+            if not path:
+                return
+            if self.fft_canvas.load_calibration(path):
+                AS.AppSettings.set_calibration_path(os.path.dirname(path))
+                dev_name = self.fft_canvas.current_calibration_device() or AS.AppSettings.device_name()
+                if dev_name:
+                    AS.AppSettings.set_calibration_for_device(dev_name, path)
+                self.set_calibration_status(path)
+                _update_cal_display()
+            else:
+                QtWidgets.QMessageBox.warning(
+                    dlg,
+                    "Calibration Error",
+                    f"Could not parse calibration file:\n{path}",
+                )
 
-        delete_cal_btn = QtWidgets.QPushButton("Delete All Calibrations")
+        import_btn = QtWidgets.QPushButton(
+            qta.icon("mdi.file-plus-outline"), "Import Calibration File..."
+        )
+        import_btn.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
+        )
+        import_btn.clicked.connect(_import_cal)
+        import_row = QtWidgets.QHBoxLayout()
+        import_row.addWidget(import_btn)
+        import_row.addStretch()
+        aud.addLayout(import_row)
+
+        # Calibration metadata display
+        cal_meta_widget = QtWidgets.QWidget()
+        cal_meta_layout = QtWidgets.QHBoxLayout(cal_meta_widget)
+        cal_meta_layout.setContentsMargins(0, 2, 0, 2)
+        cal_meta_layout.setSpacing(4)
+        cal_meta_left = QtWidgets.QVBoxLayout()
+        cal_meta_left.setSpacing(1)
+        cal_meta_sens_lbl = QtWidgets.QLabel()
+        cal_meta_sens_lbl.setFont(small)
+        cal_meta_points_lbl = QtWidgets.QLabel()
+        cal_meta_points_lbl.setFont(small)
+        cal_meta_left.addWidget(cal_meta_sens_lbl)
+        cal_meta_left.addWidget(cal_meta_points_lbl)
+        cal_meta_range_lbl = QtWidgets.QLabel()
+        cal_meta_range_lbl.setFont(small)
+        cal_meta_range_lbl.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+        )
+        cal_meta_layout.addLayout(cal_meta_left)
+        cal_meta_layout.addStretch()
+        cal_meta_layout.addWidget(cal_meta_range_lbl)
+        cal_meta_widget.setVisible(False)
+        aud.addWidget(cal_meta_widget)
+
+        def _update_cal_meta() -> None:
+            import mic_calibration as _mc
+            idx = cal_combo.currentIndex()
+            data = cal_combo.itemData(idx)
+            if not data:
+                cal_meta_widget.setVisible(False)
+                return
+            _, path = data
+            try:
+                meta = _mc.parse_cal_metadata(path)
+            except Exception:
+                cal_meta_widget.setVisible(False)
+                return
+            if meta["sensitivity_db"] is not None:
+                cal_meta_sens_lbl.setText(f"Sensitivity: {meta['sensitivity_db']:.2f} dB")
+                cal_meta_sens_lbl.setVisible(True)
+            else:
+                cal_meta_sens_lbl.setVisible(False)
+            cal_meta_points_lbl.setText(f"Data points: {meta['data_points']}")
+            if meta["freq_min"] is not None and meta["freq_max"] is not None:
+                cal_meta_range_lbl.setText(
+                    f"{meta['freq_min']:.0f}–{meta['freq_max']:.0f} Hz"
+                )
+            else:
+                cal_meta_range_lbl.setText("")
+            cal_meta_widget.setVisible(True)
+
+        cal_combo.currentIndexChanged.connect(lambda _: _update_cal_meta())
+        _update_cal_meta()
+
+        delete_cal_btn = QtWidgets.QPushButton(
+            qta.icon("mdi.trash-can-outline"), "Delete All Calibrations"
+        )
+        delete_cal_btn.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
+        )
 
         def _delete_all_calibrations() -> None:
             reply = QtWidgets.QMessageBox.question(
@@ -2121,14 +2360,26 @@ class MainWindow(QtWidgets.QMainWindow):
                 _update_cal_display()
 
         delete_cal_btn.clicked.connect(_delete_all_calibrations)
-        aud.addWidget(delete_cal_btn)
-        vbox.addWidget(audio_group)
+        delete_row = QtWidgets.QHBoxLayout()
+        delete_row.addWidget(delete_cal_btn)
+        delete_row.addStretch()
+        aud.addLayout(delete_row)
+
+        cal_footer = QtWidgets.QLabel(
+            "Select audio input device. Import a calibration file (.txt or .cal) "
+            "from your measurement microphone to compensate for its frequency "
+            "response. Calibrations are automatically associated with each device."
+        )
+        cal_footer.setFont(small)
+        cal_footer.setWordWrap(True)
+        aud.addWidget(cal_footer)
 
         # =====================================================
         # 5. FFT Processing Section
         # =====================================================
-        fft_group = QtWidgets.QGroupBox("FFT Processing")
+        fft_group = QtWidgets.QGroupBox("")
         fg = QtWidgets.QVBoxLayout(fft_group)
+        fg.addWidget(_group_header("mdi.waveform", "FFT Processing"))
 
         hop_hdr_row = QtWidgets.QHBoxLayout()
         hop_hdr = QtWidgets.QLabel("Hop Size Overlap")
@@ -2183,13 +2434,13 @@ class MainWindow(QtWidgets.QMainWindow):
         hop_note.setFont(small)
         hop_note.setWordWrap(True)
         fg.addWidget(hop_note)
-        vbox.addWidget(fft_group)
 
         # =====================================================
         # 6. About & Help Section
         # =====================================================
-        about_group = QtWidgets.QGroupBox("About & Help")
-        ab = QtWidgets.QFormLayout(about_group)
+        about_group = QtWidgets.QGroupBox("")
+        ab = QtWidgets.QVBoxLayout(about_group)
+        ab.addWidget(_group_header("mdi.information", "About & Help"))
 
         try:
             with open(os.path.join(basedir, "version"), "r", encoding="UTF-8") as fh:
@@ -2197,18 +2448,77 @@ class MainWindow(QtWidgets.QMainWindow):
         except OSError:
             ver = "—"
 
-        ab.addRow("Version:", QtWidgets.QLabel(ver))
+        ver_row = QtWidgets.QHBoxLayout()
+        ver_lbl = QtWidgets.QLabel("Version")
+        ver_val = QtWidgets.QLabel(ver)
+        ver_val.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+        )
+        ver_row.addWidget(ver_lbl)
+        ver_row.addWidget(ver_val, stretch=1)
+        ab.addLayout(ver_row)
+
+        copyright_lbl = QtWidgets.QLabel(
+            "Copyright \u00a9 2026 David W. Smith dba Dolce Sfogato"
+        )
+        copyright_lbl.setFont(small)
+        copyright_lbl.setWordWrap(True)
+        ab.addWidget(copyright_lbl)
 
         help_btn = QtWidgets.QPushButton("Help")
         help_btn.clicked.connect(self._show_help)
-        ab.addRow("", help_btn)
+        ab.addWidget(help_btn)
+
+        # =====================================================
+        # Final layout — matches Swift TapSettingsView.body order:
+        # audioInputSection, measurementTypeSection,
+        # Advanced (collapsible: Display, Analysis, FFT), aboutSection
+        # =====================================================
+        vbox.addWidget(audio_group)
+        vbox.addWidget(meas_group)
+
+        # Advanced collapsible section header — flat QPushButton avoids QToolButton sizing issues
+        adv_btn = QtWidgets.QPushButton("\u25b6  Advanced")
+        adv_btn.setCheckable(True)
+        adv_btn.setChecked(False)
+        adv_btn.setFlat(True)
+        adv_btn.setFont(hdr_font)
+        adv_btn.setStyleSheet("QPushButton { text-align: left; padding: 4px 6px; }")
+        vbox.addWidget(adv_btn)
+
+        # Advanced collapsible content (Display, Analysis, FFT)
+        adv_content = QtWidgets.QWidget()
+        adv_cl = QtWidgets.QVBoxLayout(adv_content)
+        adv_cl.setContentsMargins(0, 0, 0, 0)
+        adv_cl.setSpacing(8)
+        adv_cl.addWidget(disp_group)
+        adv_cl.addWidget(analysis_group)
+        adv_cl.addWidget(fft_group)
+        adv_content.setVisible(False)
+        vbox.addWidget(adv_content)
+
+        def _toggle_advanced(checked: bool) -> None:
+            adv_btn.setText("\u25bc  Advanced" if checked else "\u25b6  Advanced")
+            adv_content.setVisible(checked)
+
+        adv_btn.toggled.connect(_toggle_advanced)
+
         vbox.addWidget(about_group)
 
         # Apply initial visibility
         _on_meas_type_changed(cur_unified)
 
+        def _on_device_list_changed(_: list[str]) -> None:
+            """Update device combo, calibration combo and metadata when devices change."""
+            _rebuild_device_combo(_)
+            _update_cal_display()
+            _update_cal_meta()
+
+        # Refresh device and calibration display live while the dialog is open
+        self.fft_canvas.devicesChanged.connect(_on_device_list_changed)
         dlg.resize(460, 700)
         dlg.exec()
+        self.fft_canvas.devicesChanged.disconnect(_on_device_list_changed)
 
         # Persist plate / brace / gore / f_vs settings on close
         AS.AppSettings.set_plate_length(plate_length_spin.value())

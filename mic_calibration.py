@@ -16,8 +16,61 @@
         20000.0  1.43
 """
 
+import re
 import numpy as np
 import numpy.typing as npt
+
+
+_SENS_RE = re.compile(r"([-+]?\d+\.?\d*)\s*dB", re.IGNORECASE)
+
+
+def parse_cal_metadata(path: str) -> dict:
+    """Return metadata from a calibration file without loading correction data.
+
+    Returns a dict with keys:
+      'sensitivity_db' : float | None  — from header (e.g. "Sens Factor = -18.39 dB")
+      'data_points'    : int           — number of frequency/correction pairs
+      'freq_min'       : float | None  — lowest frequency in the file
+      'freq_max'       : float | None  — highest frequency in the file
+    """
+    sensitivity: float | None = None
+    data_points = 0
+    freq_min: float | None = None
+    freq_max: float | None = None
+
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith('"') or line.startswith("*"):
+                lower = line.lower()
+                if "sens" in lower:
+                    m = _SENS_RE.search(line)
+                    if m:
+                        sensitivity = float(m.group(1))
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            try:
+                freq = float(parts[0])
+                float(parts[1])
+                if freq > 0:
+                    data_points += 1
+                    if freq_min is None or freq < freq_min:
+                        freq_min = freq
+                    if freq_max is None or freq > freq_max:
+                        freq_max = freq
+            except ValueError:
+                continue
+
+    return {
+        "sensitivity_db": sensitivity,
+        "data_points": data_points,
+        "freq_min": freq_min,
+        "freq_max": freq_max,
+    }
 
 
 def parse_cal_file(path: str) -> npt.NDArray[np.float64]:
