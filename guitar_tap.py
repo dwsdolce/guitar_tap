@@ -598,7 +598,7 @@ class MainWindow(QtWidgets.QMainWindow):
         sub_font = QtGui.QFont(dlg.font())
         sub_font.setPointSize(max(8, sub_font.pointSize() - 2))
         mono_font = QtGui.QFont(dlg.font())
-        mono_font.setFamily("Menlo, Courier, monospace")
+        mono_font.setFamily("Courier New")
         mono_font.setStyleHint(QtGui.QFont.StyleHint.Monospace)
 
         def _fmt_freq(hz: float) -> str:
@@ -1525,9 +1525,20 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg.setWindowTitle("Settings")
         dlg.setMinimumWidth(460)
 
-        # Outer layout wraps a scroll area so the dialog stays manageable on small screens
+        # Top-level layout contains a QStackedWidget:
+        #   page 0 — settings (scroll area + Cancel/Done buttons)
+        #   page 1 — in-panel Quick-Start Guide (back button + QTextBrowser)
         outer = QtWidgets.QVBoxLayout(dlg)
-        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        stack = QtWidgets.QStackedWidget()
+        outer.addWidget(stack)
+
+        # ── Page 0: Settings ──────────────────────────────────────────────
+        settings_page = QtWidgets.QWidget()
+        settings_outer = QtWidgets.QVBoxLayout(settings_page)
+        settings_outer.setContentsMargins(8, 8, 8, 8)
+        settings_outer.setSpacing(8)
 
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1536,12 +1547,35 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox = QtWidgets.QVBoxLayout(content)
         vbox.setSpacing(8)
         scroll.setWidget(content)
-        outer.addWidget(scroll)
+        settings_outer.addWidget(scroll)
+        stack.addWidget(settings_page)   # index 0
 
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.setDefault(True)
-        close_btn.clicked.connect(dlg.accept)
-        outer.addWidget(close_btn)
+        # ── Page 1: Quick-Start Guide ─────────────────────────────────────
+        import help_dialog as _HD
+        help_page = QtWidgets.QWidget()
+        help_layout = QtWidgets.QVBoxLayout(help_page)
+        help_layout.setContentsMargins(8, 8, 8, 8)
+        help_layout.setSpacing(6)
+        back_btn = QtWidgets.QPushButton("← Settings")
+        back_btn.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
+        )
+        help_layout.addWidget(back_btn)
+        help_browser = QtWidgets.QTextBrowser()
+        help_browser.setOpenExternalLinks(True)
+        help_browser.setHtml(_HD.get_help_html())
+        help_layout.addWidget(help_browser)
+        stack.addWidget(help_page)       # index 1
+
+        def _show_help_page() -> None:
+            stack.setCurrentIndex(1)
+            dlg.setWindowTitle("Quick-Start Guide")
+
+        def _show_settings_page() -> None:
+            stack.setCurrentIndex(0)
+            dlg.setWindowTitle("Settings")
+
+        back_btn.clicked.connect(_show_settings_page)
 
         # Shared font helpers
         small = QtGui.QFont(dlg.font())
@@ -1952,9 +1986,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # ---- Show/hide type-specific widgets ----
         def _on_meas_type_changed(unified: str) -> None:
             meas_t, guitar_t = MEAS_TO_COMBO[unified]
-            self.measurement_type_combo.setCurrentText(meas_t)
-            if guitar_t:
-                self.guitar_type_combo.setCurrentText(guitar_t)
+            # Main-window combos updated on Apply only
             is_guitar = meas_t == "Guitar"
             meas_desc_lbl.setText(MEAS_DESCRIPTIONS.get(unified, ""))
             meas_footer_lbl.setText(_GUITAR_FOOTER if is_guitar else _PLATE_FOOTER)
@@ -1976,27 +2008,60 @@ class MainWindow(QtWidgets.QMainWindow):
         dg = QtWidgets.QVBoxLayout(disp_group)
         dg.addWidget(_group_header("mdi.chart-line", "Display Settings"))
 
-        disp_form = QtWidgets.QFormLayout()
-        disp_form.addRow("Start (Hz):", self.min_spin)
-        disp_form.addRow("Stop (Hz):", self.max_spin)
+        def _range_block(
+            layout: QtWidgets.QVBoxLayout,
+            title: str,
+            min_widget: QtWidgets.QWidget,
+            max_widget: QtWidgets.QWidget,
+            unit: str,
+            description: str,
+        ) -> None:
+            title_lbl = QtWidgets.QLabel(title)
+            title_lbl.setFont(hdr_font)
+            layout.addWidget(title_lbl)
+
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(QtWidgets.QLabel("Min"))
+            row.addWidget(min_widget)
+            row.addWidget(QtWidgets.QLabel("to"))
+            row.addWidget(QtWidgets.QLabel("Max"))
+            row.addWidget(max_widget)
+            row.addWidget(QtWidgets.QLabel(unit))
+            row.addStretch()
+            layout.addLayout(row)
+
+            desc_lbl = QtWidgets.QLabel(description)
+            desc_lbl.setFont(small)
+            layout.addWidget(desc_lbl)
 
         db_min_spin = QtWidgets.QDoubleSpinBox()
         db_min_spin.setRange(-120, 20)
         db_min_spin.setDecimals(1)
         db_min_spin.setSuffix(" dB")
         db_min_spin.setValue(AS.AppSettings.db_min())
-        disp_form.addRow("Min Magnitude:", db_min_spin)
 
         db_max_spin = QtWidgets.QDoubleSpinBox()
         db_max_spin.setRange(-120, 20)
         db_max_spin.setDecimals(1)
         db_max_spin.setSuffix(" dB")
         db_max_spin.setValue(AS.AppSettings.db_max())
-        disp_form.addRow("Max Magnitude:", db_max_spin)
-        dg.addLayout(disp_form)
 
-        db_min_spin.valueChanged.connect(lambda v: AS.AppSettings.set_db_min(v))
-        db_max_spin.valueChanged.connect(lambda v: AS.AppSettings.set_db_max(v))
+        _range_block(
+            dg,
+            "Frequency Range",
+            self.min_spin, self.max_spin,
+            "Hz",
+            "Frequency range shown in the spectrum chart",
+        )
+        _range_block(
+            dg,
+            "Magnitude Range",
+            db_min_spin, db_max_spin,
+            "dB",
+            "Magnitude range shown in the spectrum chart",
+        )
+
+        # db range persisted on Apply only
 
         save_view_btn = QtWidgets.QPushButton("Save Current View")
         save_view_btn.setToolTip("Persist the current pan/zoom state as the default view")
@@ -2039,27 +2104,7 @@ class MainWindow(QtWidgets.QMainWindow):
         an = QtWidgets.QVBoxLayout(analysis_group)
         an.addWidget(_group_header("mdi.pulse", "Analysis Settings"))
 
-        an_form = QtWidgets.QFormLayout()
-
-        an_f_min_spin = QtWidgets.QDoubleSpinBox()
-        an_f_min_spin.setRange(0, 22050)
-        an_f_min_spin.setDecimals(0)
-        an_f_min_spin.setSuffix(" Hz")
-        an_f_min_spin.setValue(AS.AppSettings.analysis_f_min())
-        an_form.addRow("Analysis Min:", an_f_min_spin)
-
-        an_f_max_spin = QtWidgets.QDoubleSpinBox()
-        an_f_max_spin.setRange(0, 22050)
-        an_f_max_spin.setDecimals(0)
-        an_f_max_spin.setSuffix(" Hz")
-        an_f_max_spin.setValue(AS.AppSettings.analysis_f_max())
-        an_form.addRow("Analysis Max:", an_f_max_spin)
-        an.addLayout(an_form)
-
-        an_f_min_spin.valueChanged.connect(lambda v: AS.AppSettings.set_analysis_f_min(v))
-        an_f_max_spin.valueChanged.connect(lambda v: AS.AppSettings.set_analysis_f_max(v))
-
-        # Show Unknown Modes (guitar only)
+        # Show Unknown Modes (guitar only) — first, matching Swift order
         show_unknown_widget = QtWidgets.QWidget()
         su_layout = QtWidgets.QVBoxLayout(show_unknown_widget)
         su_layout.setContentsMargins(0, 4, 0, 0)
@@ -2067,14 +2112,37 @@ class MainWindow(QtWidgets.QMainWindow):
         show_unknown_cb = QtWidgets.QCheckBox("Show Unknown Modes")
         show_unknown_cb.setToolTip("Display peaks that don't fall within known mode classification ranges")
         show_unknown_cb.setChecked(AS.AppSettings.show_unknown_modes())
-        show_unknown_cb.toggled.connect(AS.AppSettings.set_show_unknown_modes)
-        unknown_desc = QtWidgets.QLabel("Display peaks outside known mode ranges")
+        # show_unknown persisted on Apply only
+        unknown_desc = QtWidgets.QLabel("Display peaks that don't fall within known mode ranges")
         unknown_desc.setFont(small)
         su_layout.addWidget(show_unknown_cb)
         su_layout.addWidget(unknown_desc)
         an.addWidget(show_unknown_widget)
 
-        # Peak Detection Minimum (guitar only)
+        # Analysis Frequency Range — same _range_block pattern as Display
+        an_f_min_spin = QtWidgets.QDoubleSpinBox()
+        an_f_min_spin.setRange(0, 22050)
+        an_f_min_spin.setDecimals(0)
+        an_f_min_spin.setSuffix(" Hz")
+        an_f_min_spin.setValue(AS.AppSettings.analysis_f_min())
+
+        an_f_max_spin = QtWidgets.QDoubleSpinBox()
+        an_f_max_spin.setRange(0, 22050)
+        an_f_max_spin.setDecimals(0)
+        an_f_max_spin.setSuffix(" Hz")
+        an_f_max_spin.setValue(AS.AppSettings.analysis_f_max())
+
+        # analysis range persisted on Apply only
+
+        _range_block(
+            an,
+            "Analysis Frequency Range",
+            an_f_min_spin, an_f_max_spin,
+            "Hz",
+            "Frequency range used for peak detection",
+        )
+
+        # Peak Detection Minimum
         peak_thresh_widget = QtWidgets.QWidget()
         pt_layout = QtWidgets.QVBoxLayout(peak_thresh_widget)
         pt_layout.setContentsMargins(0, 4, 0, 0)
@@ -2095,7 +2163,7 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_desc.setFont(small)
         pt_desc.setWordWrap(True)
         pt_layout.addWidget(pt_desc)
-        peak_thresh_spin.valueChanged.connect(lambda v: AS.AppSettings.set_peak_threshold(v))
+        # peak_thresh persisted on Apply only
         an.addWidget(peak_thresh_widget)
 
         # Maximum Peaks (guitar only)
@@ -2127,17 +2195,16 @@ class MainWindow(QtWidgets.QMainWindow):
         mp_layout.addWidget(mp_desc)
 
         def _on_all_peaks_toggled(checked: bool) -> None:
-            mp_spin.setEnabled(not checked)
-            AS.AppSettings.set_max_peaks(0 if checked else mp_spin.value())
+            mp_spin.setEnabled(not checked)  # UI only — persisted on Apply
 
         mp_all_cb.toggled.connect(_on_all_peaks_toggled)
-        mp_spin.valueChanged.connect(
-            lambda v: AS.AppSettings.set_max_peaks(v) if not mp_all_cb.isChecked() else None
-        )
+        # mp_spin persisted on Apply only
         an.addWidget(max_peaks_widget)
 
         # Hysteresis Margin
-        an.addWidget(QtWidgets.QLabel("Hysteresis Margin"))
+        hyst_hdr = QtWidgets.QLabel("Hysteresis Margin")
+        hyst_hdr.setFont(hdr_font)
+        an.addWidget(hyst_hdr)
         hyst_row = QtWidgets.QHBoxLayout()
         hyst_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         # Steps of 0.5 dB over 1.0–10.0 dB range: slider range 2–20, value = steps * 0.5
@@ -2172,10 +2239,7 @@ class MainWindow(QtWidgets.QMainWindow):
         an.addWidget(hyst_desc)
 
         def _on_hyst_changed(val: int) -> None:
-            db = val * 0.5
-            self.fft_canvas.set_hysteresis_margin(db)
-            AS.AppSettings.set_hysteresis_margin(db)
-            hyst_readout.setText(f"{db:.1f} dB")
+            hyst_readout.setText(f"{val * 0.5:.1f} dB")  # UI only — persisted on Apply
 
         hyst_slider.valueChanged.connect(_on_hyst_changed)
 
@@ -2464,9 +2528,9 @@ class MainWindow(QtWidgets.QMainWindow):
         aud.addLayout(delete_row)
 
         cal_footer = QtWidgets.QLabel(
-            "Select audio input device. Import a calibration file (.txt or .cal) "
-            "from your measurement microphone to compensate for its frequency "
-            "response. Calibrations are automatically associated with each device."
+            "Audio input and calibration changes take effect immediately and are "
+            "not affected by Cancel. Calibrations are automatically associated "
+            "with each device."
         )
         cal_footer.setFont(small)
         cal_footer.setWordWrap(True)
@@ -2505,6 +2569,7 @@ class MainWindow(QtWidgets.QMainWindow):
         hop_context_lbl = QtWidgets.QLabel()
         hop_context_lbl.setFont(small)
         hop_context_lbl.setWordWrap(True)
+        hop_context_lbl.setStyleSheet("color: #007AFF;")  # blue, matches Swift accent
 
         def _hop_context(pct: int) -> str:
             if pct == 0:
@@ -2523,15 +2588,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hop_slider.valueChanged.connect(_on_hop_changed)
         _on_hop_changed(hop_slider.value())
-        fg.addWidget(hop_context_lbl)
 
         hop_note = QtWidgets.QLabel(
-            "Controls the overlap between FFT windows. Higher overlap provides smoother results "
-            "but reduces frame rate. Changes take effect on next analyzer restart."
+            "Controls the overlap between FFT windows. Higher overlap provides smoother "
+            "results but reduces frame rate."
         )
         hop_note.setFont(small)
         hop_note.setWordWrap(True)
         fg.addWidget(hop_note)
+        fg.addWidget(hop_context_lbl)
 
         # =====================================================
         # 6. About & Help Section
@@ -2564,7 +2629,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ab.addWidget(copyright_lbl)
 
         help_btn = QtWidgets.QPushButton("Help")
-        help_btn.clicked.connect(self._show_help)
+        help_btn.clicked.connect(_show_help_page)
         ab.addWidget(help_btn)
 
         # =====================================================
@@ -2612,29 +2677,99 @@ class MainWindow(QtWidgets.QMainWindow):
             _update_cal_display()
             _update_cal_meta()
 
+        # ── Snapshot live main-window state for Cancel revert ─────────────
+        # (dialog-local widgets are discarded on Cancel; only live-updated
+        #  main-window widgets need explicit restoration)
+        _snap_f_min = self.min_spin.value()
+        _snap_f_max = self.max_spin.value()
+        _snap_meas_t = self.measurement_type_combo.currentText()
+        _snap_guitar_t = self.guitar_type_combo.currentText()
+
+        def _apply_settings() -> None:
+            # Measurement type → main window
+            unified = meas_type_combo.currentText()
+            meas_t, guitar_t = MEAS_TO_COMBO[unified]
+            self.measurement_type_combo.setCurrentText(meas_t)
+            if guitar_t:
+                self.guitar_type_combo.setCurrentText(guitar_t)
+
+            # Display frequency range (min_spin/max_spin already live via _on_fmin/fmax_changed)
+            AS.AppSettings.set_f_min(self.min_spin.value(), meas_t)
+            AS.AppSettings.set_f_max(self.max_spin.value(), meas_t)
+
+            # Display magnitude range
+            AS.AppSettings.set_db_min(db_min_spin.value())
+            AS.AppSettings.set_db_max(db_max_spin.value())
+
+            # Analysis frequency range
+            AS.AppSettings.set_analysis_f_min(an_f_min_spin.value())
+            AS.AppSettings.set_analysis_f_max(an_f_max_spin.value())
+
+            # Show Unknown Modes
+            AS.AppSettings.set_show_unknown_modes(show_unknown_cb.isChecked())
+
+            # Peak threshold → AppSettings + main-window slider + graph
+            final_db = int(peak_thresh_spin.value())
+            AS.AppSettings.set_peak_threshold(float(final_db))
+            AS.AppSettings.set_threshold(final_db + 100)
+            slider_val = max(-100, min(-20, final_db))
+            if self.threshold_slider.value() != slider_val:
+                self.threshold_slider.setValue(slider_val)
+
+            # Max peaks
+            AS.AppSettings.set_max_peaks(0 if mp_all_cb.isChecked() else mp_spin.value())
+
+            # Hysteresis margin
+            hyst_db = hyst_slider.value() * 0.5
+            self.fft_canvas.set_hysteresis_margin(hyst_db)
+            AS.AppSettings.set_hysteresis_margin(hyst_db)
+
+            # Plate / brace / gore / f_vs dimensions
+            AS.AppSettings.set_plate_length(plate_length_spin.value())
+            AS.AppSettings.set_plate_width(plate_width_spin.value())
+            AS.AppSettings.set_plate_thickness(plate_thick_spin.value())
+            AS.AppSettings.set_plate_mass(plate_mass_spin.value())
+            AS.AppSettings.set_measure_flc(measure_flc_cb.isChecked())
+            AS.AppSettings.set_guitar_body_length(gore_body_len_spin.value())
+            AS.AppSettings.set_guitar_body_width(gore_body_wid_spin.value())
+            fvs_idx = fvs_combo.currentIndex()
+            AS.AppSettings.set_plate_stiffness_preset(
+                PRESET_STORAGE_NAMES[fvs_idx] if 0 <= fvs_idx < len(PRESET_STORAGE_NAMES) else "Steel String Top"
+            )
+            AS.AppSettings.set_custom_plate_stiffness(custom_fvs_spin.value())
+            AS.AppSettings.set_brace_length(brace_length_spin.value())
+            AS.AppSettings.set_brace_width(brace_width_spin.value())
+            AS.AppSettings.set_brace_thickness(brace_thick_spin.value())
+            AS.AppSettings.set_brace_mass(brace_mass_spin.value())
+
+            dlg.accept()
+
+        def _cancel_settings() -> None:
+            # Restore main-window frequency range (fires _on_fmin/fmax_changed → canvas + AppSettings)
+            self.min_spin.setValue(_snap_f_min)
+            self.max_spin.setValue(_snap_f_max)
+            # Restore measurement type combos
+            self.measurement_type_combo.setCurrentText(_snap_meas_t)
+            self.guitar_type_combo.setCurrentText(_snap_guitar_t)
+            dlg.reject()
+
+        # ── Apply / Cancel buttons ─────────────────────────────────────────
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.clicked.connect(_cancel_settings)
+        apply_btn = QtWidgets.QPushButton("Done")
+        apply_btn.setDefault(True)
+        apply_btn.clicked.connect(_apply_settings)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(apply_btn)
+        settings_outer.addLayout(btn_row)
+
         # Refresh device and calibration display live while the dialog is open
         self.fft_canvas.devicesChanged.connect(_on_device_list_changed)
         dlg.resize(460, 700)
         dlg.exec()
         self.fft_canvas.devicesChanged.disconnect(_on_device_list_changed)
-
-        # Persist plate / brace / gore / f_vs settings on close
-        AS.AppSettings.set_plate_length(plate_length_spin.value())
-        AS.AppSettings.set_plate_width(plate_width_spin.value())
-        AS.AppSettings.set_plate_thickness(plate_thick_spin.value())
-        AS.AppSettings.set_plate_mass(plate_mass_spin.value())
-        AS.AppSettings.set_measure_flc(measure_flc_cb.isChecked())
-        AS.AppSettings.set_guitar_body_length(gore_body_len_spin.value())
-        AS.AppSettings.set_guitar_body_width(gore_body_wid_spin.value())
-        fvs_idx = fvs_combo.currentIndex()
-        AS.AppSettings.set_plate_stiffness_preset(
-            PRESET_STORAGE_NAMES[fvs_idx] if 0 <= fvs_idx < len(PRESET_STORAGE_NAMES) else "Steel String Top"
-        )
-        AS.AppSettings.set_custom_plate_stiffness(custom_fvs_spin.value())
-        AS.AppSettings.set_brace_length(brace_length_spin.value())
-        AS.AppSettings.set_brace_width(brace_width_spin.value())
-        AS.AppSettings.set_brace_thickness(brace_thick_spin.value())
-        AS.AppSettings.set_brace_mass(brace_mass_spin.value())
 
         # Re-hide the reparented widgets
         self.min_spin.setParent(None)  # type: ignore[call-overload]

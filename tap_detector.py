@@ -1,9 +1,24 @@
 """
     Hysteresis-based tap detector.
 
-    Monitors FFT peak amplitude and emits tapDetected when a tap event is
-    confirmed (rising edge above threshold, with warmup, cooldown, and
-    hysteresis margin to avoid false triggers).
+    Matches the Swift GuitarTap TapToneAnalyzer+TapDetection.swift
+    implementation in both algorithm and timing:
+
+    Guitar mode  — absolute threshold on the RMS input level.
+        risingThreshold  = tapDetectionThreshold
+        fallingThreshold = tapDetectionThreshold − hysteresisMargin
+
+    Plate/Brace mode — EMA-relative threshold on the RMS input level.
+        noiseFloor = α × level + (1 − α) × noiseFloor   (α = 0.05, τ ≈ 190 ms at 10 Hz)
+        headroom   = max(tapDetectionThreshold − noiseFloor, 10 dB)
+        risingThreshold  = noiseFloor + headroom
+        fallingThreshold = noiseFloor + max(headroom − hysteresisMargin, 4 dB)
+        Motivation: long-window continuous FFT dilutes plate/brace tap
+        transients by ~15 dB; adaptive thresholds reject small ambient
+        spikes while catching real taps 12-30 dB above the noise floor.
+
+    Warmup and cooldown are measured in real time (seconds) so that
+    behaviour is independent of the audio block size or call rate.
 """
 
 import time as _time
@@ -14,11 +29,12 @@ from PyQt6 import QtCore
 class DecayTracker(QtCore.QObject):
     """Measures ring-out time after a tap.
 
-    Call start() when a tap is detected with the peak amplitude.
-    Call update() on every subsequent frame.  ringOutMeasured is emitted
-    once when the amplitude drops decay_threshold_db below the tap peak.
+    Call start() when a tap is detected.
+    Call update() on every subsequent RMS level sample.
+    ringOutMeasured is emitted once when the level drops
+    decay_threshold_db below the tap peak.
 
-    Amplitude uses the 0–100 scale (dB + 100) used throughout the app.
+    Amplitude uses the 0–100 scale (dBFS + 100) used throughout the app.
     """
 
     ringOutMeasured: QtCore.pyqtSignal = QtCore.pyqtSignal(float)  # seconds
@@ -54,20 +70,28 @@ class DecayTracker(QtCore.QObject):
 
 
 class TapDetector(QtCore.QObject):
-    """State machine that detects tap events from a stream of amplitude values.
+    """Hysteresis rising-edge tap detector with Guitar and Plate/Brace modes.
 
-    Amplitude is on the 0–100 scale used by the rest of the app
-    (0 = −100 dBFS, 100 = 0 dBFS).
+    The detector is fed RMS input levels (0-100 scale, 0 = -100 dBFS,
+    100 = 0 dBFS) from small audio buffers (~85 ms at 48 kHz), matching
+    the Swift implementation's fast `inputLevelDB` path.
+
+    Guitar mode  uses a fixed absolute threshold.
+    Plate/Brace  uses an EMA noise-floor tracker to produce adaptive
+                 rising and falling thresholds, making it robust to slowly
+                 varying ambient noise while still catching sharp tap transients.
 
     States:
-        WARMUP   — ignoring input for the first `warmup_frames` frames after
-                   start or reset (suppresses false triggers at startup).
-        IDLE     — waiting for amplitude to rise above `tap_threshold`.
-        TRIGGERED — tap confirmed; waiting for amplitude to fall below
-                   `tap_threshold - hysteresis_margin` before arming again.
-        COOLDOWN — brief lockout after the triggered state expires, preventing
-                   double-triggers on the same tap.
+        WARMUP    — ignoring input for `warmup_s` seconds after start/reset.
+        IDLE      — waiting for a rising edge above the effective threshold.
+        TRIGGERED — tap confirmed; waiting for level to drop below the
+                    falling threshold before rearming.
+        COOLDOWN  — brief lockout (`cooldown_s` s) after the falling edge,
+                    preventing double-triggers from the same tap ring-out.
     """
+
+    MODE_GUITAR: str = "guitar"
+    MODE_PLATE_BRACE: str = "plate_brace"
 
     tapDetected: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
@@ -81,30 +105,55 @@ class TapDetector(QtCore.QObject):
         self,
         tap_threshold: int = 60,
         hysteresis_margin: float = 3.0,
-        warmup_frames: int = 5,   # ~0.5 s at 10 fps
-        cooldown_frames: int = 5, # ~0.5 s at 10 fps
+        warmup_s: float = 0.5,          # matches Swift warm-up period
+        cooldown_s: float = 0.4,        # matches Swift tap cooldown
+        mode: str = MODE_GUITAR,
         parent: QtCore.QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.tap_threshold: int = tap_threshold
         self.hysteresis_margin: float = hysteresis_margin
-        self.warmup_frames: int = warmup_frames
-        self.cooldown_frames: int = cooldown_frames
+        self.warmup_s: float = warmup_s
+        self.cooldown_s: float = cooldown_s
+
+        self._mode: str = mode
+
+        # EMA noise-floor state for Plate/Brace mode
+        # α = 0.05 → τ ≈ 190 ms at 10 Hz update rate (matches Swift)
+        self._ema_alpha: float = 0.05
+        self._noise_floor_db: float = -80.0   # dBFS; reset on mode switch
+        self._min_headroom_db: float = 10.0   # minimum headroom safety floor
+        self._min_falling_db: float = 4.0     # minimum falling headroom
 
         self._state: str = self._WARMUP
-        self._frame_count: int = 0
+        self._state_entry_time: float = _time.monotonic()
         self._pre_pause_state: str = self._WARMUP
 
+    # ------------------------------------------------------------------ #
+    # Public API
     # ------------------------------------------------------------------ #
 
     @property
     def is_paused(self) -> bool:
         return self._state == self._PAUSED
 
+    def set_mode(self, mode: str) -> None:
+        """Switch between Guitar and Plate/Brace detection algorithms.
+
+        Resets the EMA noise-floor estimate when entering Plate/Brace mode
+        so it adapts quickly to current conditions (matches Swift behaviour
+        of re-anchoring state on mode transitions).
+        """
+        if mode == self._mode:
+            return
+        self._mode = mode
+        if mode == self.MODE_PLATE_BRACE:
+            self._noise_floor_db = -80.0  # will catch up within ~2 s at α=0.05
+
     def reset(self) -> None:
-        """Restart warmup (call after device change, stream restart, etc.)."""
+        """Restart warmup (call after device change, new tap sequence, etc.)."""
         self._state = self._WARMUP
-        self._frame_count = 0
+        self._state_entry_time = _time.monotonic()
 
     def set_tap_threshold(self, value: int) -> None:
         self.tap_threshold = value
@@ -113,51 +162,97 @@ class TapDetector(QtCore.QObject):
         self.hysteresis_margin = max(1.0, value)
 
     def pause(self) -> None:
-        """Pause detection — remember current state for resume."""
         if self._state != self._PAUSED:
             self._pre_pause_state = self._state
             self._state = self._PAUSED
 
     def resume(self) -> None:
-        """Resume from a paused state."""
         if self._state == self._PAUSED:
             self._state = self._pre_pause_state
 
     def cancel(self) -> None:
         """Cancel the current sequence and return to IDLE (no warmup)."""
         self._state = self._IDLE
-        self._frame_count = 0
+        self._state_entry_time = _time.monotonic()
 
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
+
+    def _compute_thresholds(self, level_db: float) -> tuple[float, float]:
+        """Return (rising_threshold_dBFS, falling_threshold_dBFS).
+
+        Guitar mode: fixed thresholds from the user-set tap_threshold.
+        Plate/Brace: EMA-adaptive thresholds tracking the noise floor.
+        Both match the corresponding Swift algorithm exactly.
+        """
+        tap_db = float(self.tap_threshold) - 100.0   # 0-100 → dBFS
+
+        if self._mode == self.MODE_GUITAR:
+            return tap_db, tap_db - self.hysteresis_margin
+
+        # --- Plate/Brace EMA adaptive threshold ---
+        self._noise_floor_db = (
+            self._ema_alpha * level_db
+            + (1.0 - self._ema_alpha) * self._noise_floor_db
+        )
+        headroom = max(tap_db - self._noise_floor_db, self._min_headroom_db)
+        rising  = self._noise_floor_db + headroom
+        falling = self._noise_floor_db + max(
+            headroom - self.hysteresis_margin, self._min_falling_db
+        )
+        return rising, falling
+
+    # ------------------------------------------------------------------ #
+    # Core update — call for every RMS level sample (~10-12 Hz)
     # ------------------------------------------------------------------ #
 
     def update(self, amplitude: int) -> None:
-        """Feed the latest peak amplitude (0–100 scale).
+        """Feed the latest RMS input level (0–100 scale).
 
         Emits tapDetected exactly once per confirmed tap.
+        Safe to call at any rate; warmup/cooldown use the monotonic clock.
         """
         if self._state == self._PAUSED:
             return
 
+        level_db = float(amplitude) - 100.0          # 0-100 → dBFS
+        rising_db, falling_db = self._compute_thresholds(level_db)
+
+        # Work in 0-100 scale to stay consistent with the rest of the app
+        rising_amp  = rising_db  + 100.0
+        falling_amp = falling_db + 100.0
+
+        now = _time.monotonic()
+
         match self._state:
             case self._WARMUP:
-                self._frame_count += 1
-                if self._frame_count >= self.warmup_frames:
-                    self._state = self._IDLE
-                    self._frame_count = 0
+                if now - self._state_entry_time >= self.warmup_s:
+                    # Re-anchor to current level on warmup exit (Swift behaviour):
+                    # don't fire immediately if signal is already above threshold.
+                    if amplitude >= rising_amp:
+                        self._state = self._TRIGGERED
+                    else:
+                        self._state = self._IDLE
+                    self._state_entry_time = now
 
             case self._IDLE:
-                if amplitude >= self.tap_threshold:
+                if amplitude >= rising_amp:
                     self._state = self._TRIGGERED
+                    self._state_entry_time = now
                     self.tapDetected.emit()
 
             case self._TRIGGERED:
-                # Wait for signal to fall back below the lower hysteresis bound
-                if amplitude < self.tap_threshold - self.hysteresis_margin:
+                if amplitude < falling_amp:
                     self._state = self._COOLDOWN
-                    self._frame_count = 0
+                    self._state_entry_time = now
 
             case self._COOLDOWN:
-                self._frame_count += 1
-                if self._frame_count >= self.cooldown_frames:
-                    self._state = self._IDLE
-                    self._frame_count = 0
+                if now - self._state_entry_time >= self.cooldown_s:
+                    # Re-anchor on cooldown exit (Swift behaviour): prevents an
+                    # immediate re-trigger if the ring-out is still elevated.
+                    if amplitude >= rising_amp:
+                        self._state = self._TRIGGERED
+                    else:
+                        self._state = self._IDLE
+                    self._state_entry_time = now

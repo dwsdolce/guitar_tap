@@ -145,7 +145,7 @@ class FftCanvas(pg.PlotWidget):
 
         self._devicesRefreshed.connect(self._on_devices_refreshed)
         self.mic: microphone.Microphone = microphone.Microphone(
-            self, rate=self.fft_data.sample_freq, chunksize=self.fft_data.m_t,
+            self, rate=self.fft_data.sample_freq, chunksize=4096,
             device_index=saved_device_index,
             on_devices_changed=self._devicesRefreshed.emit,  # no-arg, thread-safe
         )
@@ -253,12 +253,34 @@ class FftCanvas(pg.PlotWidget):
         # Tap-level accumulator
         self._tap_num: int = 1           # number of taps to accumulate
         self._tap_spectra: list[npt.NDArray[np.float64]] = []
+        # Snapshot of the spectrum for the frame that triggered the tap
+        # (saved before the tap detector fires so the accumulator always
+        # captures the current tap frame, not the previous one).
+        self._last_tap_mag_y_db: npt.NDArray[np.float64] = np.array([])
+        # Last value fed to the tap detector (0-100 scale).
+        # Guitar mode: FFT peak magnitude; Plate/Brace: per-chunk RMS.
+        # Used for stale ticks (no-frames path) to advance time-based state.
+        self._last_detector_amp: int = 0
+        # Last per-chunk RMS amplitude (0-100 scale) for ampChanged signal.
+        self._last_rms_amp: int = 0
+        # Ring buffer for large-window FFT display; filled with 4096-sample
+        # chunks from the microphone.  Decouples detection rate from the FFT
+        # window size (m_t samples).
+        self._audio_ring: npt.NDArray[np.float32] = np.zeros(
+            self.fft_data.m_t, dtype=np.float32
+        )
+        self._ring_fill: int = 0
+        # Number of new samples accumulated since the last FFT computation.
+        # FFT is recomputed (and display updated) once per full hop = m_t samples
+        # (0% overlap), matching the Swift ~0.7 Hz frame rate for Guitar mode.
+        self._samples_since_last_fft: int = 0
 
         # Tap detector + decay tracker
         import app_settings as _as
         self._tap_detector = td.TapDetector(
             tap_threshold=_as.AppSettings.tap_threshold(),
             hysteresis_margin=_as.AppSettings.hysteresis_margin(),
+            mode=td.TapDetector.MODE_GUITAR,
             parent=self,
         )
         self._decay_tracker = td.DecayTracker(parent=self)
@@ -512,9 +534,11 @@ class FftCanvas(pg.PlotWidget):
 
     def _on_tap_accumulate(self) -> None:
         """Called on every confirmed tap; accumulate spectrum until tap_num reached."""
-        if not np.any(self.saved_mag_y_db):
+        # Use the spectrum saved just before the tap fired (current frame),
+        # not saved_mag_y_db which is from the previous frame.
+        if not np.any(self._last_tap_mag_y_db):
             return
-        self._tap_spectra.append(self.saved_mag_y_db.copy())
+        self._tap_spectra.append(self._last_tap_mag_y_db.copy())
         captured = len(self._tap_spectra)
         self.tapCountChanged.emit(captured, self._tap_num)
 
@@ -534,8 +558,8 @@ class FftCanvas(pg.PlotWidget):
             self._tap_detector.reset()
 
     def _on_tap_for_decay(self) -> None:
-        """Start ring-out tracking using the last known amplitude."""
-        self._decay_tracker.start(int(np.max(self.saved_mag_y_db) + 100) if np.any(self.saved_mag_y_db) else 0)
+        """Start ring-out tracking using the amplitude at tap time."""
+        self._decay_tracker.start(self._last_detector_amp)
 
     def _on_tap_for_plate(self) -> None:
         """Forward tap events to the plate capture state machine when active."""
@@ -545,6 +569,10 @@ class FftCanvas(pg.PlotWidget):
     def set_measurement_type(self, measurement_type: str) -> None:
         """Switch between Guitar / Plate / Brace analysis modes."""
         self._measurement_type = measurement_type
+        if measurement_type == "Guitar":
+            self._tap_detector.set_mode(td.TapDetector.MODE_GUITAR)
+        else:
+            self._tap_detector.set_mode(td.TapDetector.MODE_PLATE_BRACE)
 
     def start_plate_analysis(self) -> None:
         """Arm the plate capture state machine for the next two taps."""
@@ -819,43 +847,101 @@ class FftCanvas(pg.PlotWidget):
         self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
 
     def update_fft(self) -> None:
-        """Get a chunk from the audio stream, find the fft and interpolate the peaks."""
+        """Process incoming audio chunks, update ring buffer, and drive the display.
+
+        Matches the Swift architecture exactly:
+
+        Guitar mode:
+          - 4096-sample chunks accumulate into a 65536-sample ring buffer.
+          - FFT is computed and display updated once per full hop (65536 new
+            samples, ~1.4 s, ~0.7 Hz) — matching the Swift frame rate.
+          - Tap detector is fed the FFT peak magnitude once per FFT frame.
+
+        Plate/Brace mode:
+          - Same ring buffer accumulation and FFT frame rate.
+          - Tap detector is additionally fed per-chunk RMS at ~12 Hz so that
+            short tap transients (diluted by ~15 dB in the long FFT window)
+            are still reliably detected.
+
+        Time-based warmup/cooldown (in TapDetector) is advanced on every 100 ms
+        timer call via a stale-level tick when no new chunks are available.
+        """
         frames = self.mic.get_frames()
-        if len(frames) <= 0:
+
+        if not frames:
+            # No new chunks — tick with the last known detector level so that
+            # time-based warmup/cooldown periods advance at the timer rate.
+            if not self.is_frozen:
+                self._tap_detector.update(self._last_detector_amp)
+            self._decay_tracker.update(self._last_detector_amp)
             return
 
         enter_now = time.time()
+        is_guitar = (self._measurement_type == "Guitar")
+
+        # Step 1: Update ring buffer; for Plate/Brace also tick detector per chunk
+        for chunk in frames:
+            n = len(chunk)
+            self._audio_ring = np.concatenate(
+                [self._audio_ring[n:], chunk[:n].astype(np.float32)]
+            )
+            self._ring_fill = min(self._ring_fill + n, self.fft_data.m_t)
+            self._samples_since_last_fft += n
+
+            # Per-chunk RMS for level meter and Plate/Brace tap detection
+            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+            level_db = 20.0 * np.log10(max(rms, 1e-10))
+            rms_amp = int(level_db + 100.0)
+            self._last_rms_amp = rms_amp
+
+            if not is_guitar:
+                # Plate/Brace: tick detector on every chunk with RMS level
+                self._last_detector_amp = rms_amp
+                self.ampChanged.emit(rms_amp)
+                if not self.is_frozen:
+                    self._tap_detector.update(rms_amp)
+                self._decay_tracker.update(rms_amp)
+
+        # Step 2: Compute FFT once per full hop (0% overlap = m_t new samples),
+        # matching the Swift ~0.7 Hz frame rate.
+        if self._samples_since_last_fft < self.fft_data.m_t:
+            return
+        self._samples_since_last_fft -= self.fft_data.m_t
+
         sample_dt = enter_now - self.lastupdate
         if sample_dt <= 0:
-            sample_dt = 0.000000000001
+            sample_dt = 1e-12
         fps = 1.0 / sample_dt
         self.lastupdate = enter_now
 
-        chunk: npt.NDArray[np.float32] = frames[-1]
-
         mag_y_db, mag_y = f_a.dft_anal(
-            chunk, self.fft_data.window_fcn, self.fft_data.n_f
+            self._audio_ring, self.fft_data.window_fcn, self.fft_data.n_f
         )
         mag_y_db = self._apply_calibration(mag_y_db)
 
-        amplitude = np.max(mag_y_db) + 100
-        self.ampChanged.emit(int(amplitude))
-
+        # Save current spectrum BEFORE the tap detector fires so that
+        # _on_tap_accumulate() captures this frame's spectrum.
+        self._last_tap_mag_y_db = mag_y_db
         self._current_mag_y = mag_y  # snapshot for plate capture HPS
-        if not self.is_frozen:
-            self._tap_detector.update(int(amplitude))
-        self._decay_tracker.update(int(amplitude))
 
+        if is_guitar:
+            # Guitar: tap detector uses FFT peak magnitude, once per FFT frame
+            fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+            self._last_detector_amp = fft_peak_amp
+            self.ampChanged.emit(fft_peak_amp)
+            if not self.is_frozen:
+                self._tap_detector.update(fft_peak_amp)
+            self._decay_tracker.update(fft_peak_amp)
+
+        # Step 3: Update display
         if self.is_frozen:
             self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
         else:
-            # Always display the live spectrum regardless of amplitude level.
-            # Tap detection is separately gated by the threshold inside TapDetector.
             _, peaks = self.find_peaks(mag_y_db)
             self.set_draw_data(mag_y_db, peaks)
 
         exit_now = time.time()
         processing_dt = exit_now - enter_now
         if processing_dt <= 0:
-            processing_dt = 0.000000000001
+            processing_dt = 1e-12
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
