@@ -4,6 +4,7 @@
 """
 
 import platform
+import queue
 import threading
 import atexit
 import time
@@ -40,9 +41,9 @@ class Microphone:
             blocksize=self.chunksize,
             callback=self.new_frame)
 
-        self.lock: threading.Lock = threading.Lock()
+        self._stop_lock: threading.Lock = threading.Lock()
         self.is_stopped: bool = False
-        self.frames: list[npt.NDArray[np.float32]] = []
+        self.queue: queue.Queue[npt.NDArray[np.float32]] = queue.Queue()
 
         self._on_devices_changed = on_devices_changed
         self._monitor_stop = threading.Event()
@@ -54,23 +55,25 @@ class Microphone:
     # pylint: disable=unused-argument
     def new_frame(self, data: np.ndarray, _frame_count, _time_info, _status) -> tuple[None, int]:
         """Callback used by sounddevice stream to capture the
-        next buffer. If the buffers are short then this could
-        be slow (append is not particularly fast)
+        next buffer. Puts the new chunk into the queue for consumption
+        by FftProcessingThread.
         """
-        # print(f"Microphone: new_frame: data type: {type(data)}")
-        with self.lock:
-            self.frames.append(data[:, 0])  # take first channel
+        with self._stop_lock:
             if self.is_stopped:
                 raise sd.CallbackStop
+        self.queue.put(data[:, 0])  # take first channel
 
         return None
 
     def get_frames(self) -> list[npt.NDArray[np.float32]]:
-        """Get the frames that have be saved"""
-        with self.lock:
-            frames = self.frames
-            self.frames = []
-            return frames
+        """Non-blocking shim that drains the queue and returns all available frames."""
+        frames: list[npt.NDArray[np.float32]] = []
+        try:
+            while True:
+                frames.append(self.queue.get_nowait())
+        except queue.Empty:
+            pass
+        return frames
 
     def start(self) -> None:
         """Start the thread."""
@@ -78,7 +81,7 @@ class Microphone:
 
     def stop(self) -> None:
         """Stop the thread."""
-        with self.lock:
+        with self._stop_lock:
             self.is_stopped = True
         self.stream.stop()
 
@@ -86,7 +89,8 @@ class Microphone:
         """Switch to a different input device without re-checking permissions."""
         self._close_stream_only()
         self.device_index = device_index
-        self.is_stopped = False
+        with self._stop_lock:
+            self.is_stopped = False
         self.stream = sd.InputStream(
             device=self.device_index,
             channels=1,
@@ -115,7 +119,8 @@ class Microphone:
         except Exception:
             pass
         try:
-            self.is_stopped = False
+            with self._stop_lock:
+                self.is_stopped = False
             self.stream = sd.InputStream(
                 device=self.device_index,
                 channels=1,
@@ -141,7 +146,7 @@ class Microphone:
 
     def _close_stream_only(self) -> None:
         """Stop and close the audio stream without touching the hotplug monitor."""
-        with self.lock:
+        with self._stop_lock:
             self.is_stopped = True
         try:
             self.stream.stop()
