@@ -44,7 +44,7 @@ class ModeComboDelegate(QtWidgets.QStyledItemDelegate):
         editor.setStyleSheet("background=-color: white")
         if index.isValid():
             value = index.model().data_value(index)
-            num = self.items.index(value)
+            num = self.items.index(value) if value in self.items else 0
             editor.setCurrentIndex(num)
         editor.blockSignals(False)
 

@@ -10,14 +10,16 @@ from PyQt6 import QtWidgets, QtGui, QtCore
 
 import fft_canvas as fft_c
 import fft_toolbar as fft_t
-import peaks_table as PT
+import peak_card_widget as PT
 import show_devices as SD
 import app_settings as AS
 import measurement as M
 import measurements_dialog as MD
 import plate_analysis as PA
 import plate_dialog as PD
+import guitar_type as GT
 import guitar_modes as GM
+import measurement_type as MT
 import help_dialog as HD
 import gt_images as gt_i
 import qtawesome as qta
@@ -133,7 +135,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Left: canvas + pyqtgraph toolbar
         canvas_widget = QtWidgets.QWidget()
         cv = QtWidgets.QVBoxLayout(canvas_widget)
-        cv.setContentsMargins(0, 0, 0, 0)
+        cv.setContentsMargins(0, 0, 8, 0)
         cv.setSpacing(0)
         cv.addWidget(self.fft_canvas, stretch=1)
         self._fft_toolbar = fft_t.FftToolbar(self.fft_canvas, canvas_widget)
@@ -437,7 +439,7 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addLayout(peaks_header)
 
         # Peaks table — the main content (takes all available vertical space)
-        self.peak_widget = PT.PeakTable()
+        self.peak_widget = PT.PeakListWidget()
         vbox.addWidget(self.peak_widget, stretch=1)
 
         vbox.addWidget(_hsep())
@@ -760,13 +762,10 @@ class MainWindow(QtWidgets.QMainWindow):
         model.hideAnnotation.connect(canvas.annotations.hide_annotation)
         model.hideAnnotations.connect(canvas.annotations.hide_annotations)
 
-        self.peak_widget.peaks_table.clearPeaks.connect(canvas.clear_selected_peak)
-        self.peak_widget.peaks_table.clearPeaks.connect(
-            self.peak_widget.clear_selected_peak
-        )
-        self.peak_widget.peaks_table.selectionModel().selectionChanged.connect(
-            self.peak_selection_changed
-        )
+        self.peak_widget.clearPeaks.connect(canvas.clear_selected_peak)
+        self.peak_widget.clearPeaks.connect(self.peak_widget.clear_selected_peak)
+        self.peak_widget.peakSelected.connect(self._on_peak_selected)
+        self.peak_widget.peakDeselected.connect(self._on_peak_deselected)
 
         # Tap events
         canvas.tapDetected.connect(self._on_tap_detected)
@@ -800,6 +799,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.guitar_type_combo.setCurrentText(saved_gt)
         self.peak_widget.model.set_guitar_type(saved_gt)
         canvas.set_guitar_type_bands(saved_gt)
+        self._update_measurement_badge()
 
         self.set_frozen(False)
 
@@ -1057,7 +1057,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_tap_buttons(self) -> None:
         """Refresh enabled/disabled state of New Tap, Pause, and Cancel buttons."""
         tap_num = self.tap_num_spin.value()
-        is_plate = self.measurement_type_combo.currentText() in ("Plate", "Brace")
+        is_plate = not self._current_mt().is_guitar
         is_detecting = self._is_running and not self._is_frozen
 
         # New Tap is only meaningful when the spectrum is frozen (results held).
@@ -1116,7 +1116,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_tap_detected(self) -> None:
         """Auto-hold results when a tap fires (guitar mode only)."""
-        if self.measurement_type_combo.currentText() != "Guitar":
+        if not self._current_mt().is_guitar:
             return
         if not self._is_frozen:
             self.set_frozen(True)
@@ -1150,10 +1150,18 @@ class MainWindow(QtWidgets.QMainWindow):
     # Guitar type
     # ================================================================
 
+    def _current_mt(self) -> MT.MeasurementType:
+        """Return the MeasurementType that reflects both UI combos."""
+        return MT.MeasurementType.from_combo_values(
+            self.measurement_type_combo.currentText(),
+            self.guitar_type_combo.currentText(),
+        )
+
     def _on_guitar_type_changed(self, guitar_type: str) -> None:
         AS.AppSettings.set_guitar_type(guitar_type)
         self.peak_widget.model.set_guitar_type(guitar_type)
         self.fft_canvas.set_guitar_type_bands(guitar_type)
+        self._update_measurement_badge()
 
     # ================================================================
     # Peaks / ratios
@@ -1165,7 +1173,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         guitar_type_str = self.guitar_type_combo.currentText()
         try:
-            guitar_type = GM.GuitarType(guitar_type_str)
+            guitar_type = GT.GuitarType(guitar_type_str)
         except ValueError:
             return
         mode_freqs: dict[str, float] = {}
@@ -1176,43 +1184,36 @@ class MainWindow(QtWidgets.QMainWindow):
                 mode_freqs[mode] = freq
         self.update_tap_tone_ratios(mode_freqs)
 
-    def peak_selection_changed(
-        self, selected: QtCore.QItemSelection, deselected: QtCore.QItemSelection
-    ) -> None:
-        if len(deselected.indexes()) > 0:
-            self._row_deselect(deselected.indexes()[0])
-        if len(selected.indexes()) > 0:
-            self._row_select(selected.indexes()[0])
-
-    def _row_deselect(self, proxy_idx: QtCore.QModelIndex) -> None:
-        proxy_model = self.peak_widget.peaks_table.model()
-        src_idx = proxy_model.mapToSource(proxy_idx)
-        freq = proxy_model.sourceModel().freq_value(src_idx)
-        self.fft_canvas.deselect_peak(freq)
-
-    def _row_select(self, proxy_idx: QtCore.QModelIndex) -> None:
-        proxy_model = self.peak_widget.peaks_table.model()
-        src_idx = proxy_model.mapToSource(proxy_idx)
-        freq = proxy_model.sourceModel().freq_value(src_idx)
+    def _on_peak_selected(self, freq: float) -> None:
         self.fft_canvas.select_peak(freq)
         self.peak_widget.selected_freq = freq
-        self.peak_widget.selected_freq_index = src_idx.row()
+        idx = self.peak_widget.model.freq_index(freq)
+        self.peak_widget.selected_freq_index = int(idx) if idx >= 0 else -1
+
+    def _on_peak_deselected(self, freq: float) -> None:
+        self.fft_canvas.deselect_peak(freq)
 
     # ================================================================
     # Measurement type / plate analysis
     # ================================================================
 
-    def _on_measurement_type_changed(self, measurement_type: str) -> None:
-        self.fft_canvas.set_measurement_type(measurement_type)
-        self.plate_analysis_btn.setVisible(
-            measurement_type in ("Plate", "Brace")
+    def _on_measurement_type_changed(self, _: str) -> None:
+        mt = self._current_mt()
+        self.fft_canvas.set_measurement_type(mt)
+        self.plate_analysis_btn.setVisible(not mt.is_guitar)
+        self._update_measurement_badge()
+
+    def _update_measurement_badge(self) -> None:
+        """Refresh the badge in the Analysis Results panel to show the current
+        measurement type short name (e.g. 'Classical', 'Flamenco', 'Plate')."""
+        mt = MT.MeasurementType.from_combo_values(
+            self.measurement_type_combo.currentText(),
+            self.guitar_type_combo.currentText(),
         )
-        # Update read-only badge in results panel
-        is_guitar = measurement_type not in ("Plate", "Brace")
-        self.measurement_type_badge.setText(measurement_type)
+        self.measurement_type_badge.setText(mt.short_name)
         self.measurement_type_badge.setStyleSheet(
             "background: rgba(0,100,255,0.15); border-radius: 4px; padding: 1px 6px;"
-            if is_guitar else
+            if mt.is_guitar else
             "background: rgba(255,140,0,0.20); border-radius: 4px; padding: 1px 6px;"
         )
 
@@ -1275,7 +1276,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 M.AnnotationEntry(
                     freq=ann_dict["freq"],
                     mag=ann_dict["mag"],
-                    text=ann_dict["text"],
+                    mode_str=ann_dict["mode_str"],
                     xytext=list(ann_dict["xytext"]),
                 )
             )
@@ -1345,15 +1346,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
         canvas.annotations.clear_annotations()
         for ann in m.annotations:
+            mode_str = (
+                ann.mode_str
+                or model.modes.get(ann.freq)
+                or GM.classify_peak(ann.freq, model.guitar_type)
+            )
+            html = model.annotation_html(ann.freq, ann.mag, mode_str)
             canvas.annotations.annotations.append(
                 {
-                    "freq": ann.freq,
+                    "freq":       ann.freq,
                     "annotation": None,
                     "arrow_line": None,
-                    "annotation_range": None,
-                    "mag": ann.mag,
-                    "text": ann.text,
-                    "xytext": tuple(ann.xytext),
+                    "mag":        ann.mag,
+                    "html":       html,
+                    "mode_str":   mode_str,
+                    "xytext":     tuple(ann.xytext),
                 }
             )
 
@@ -1605,38 +1612,10 @@ class MainWindow(QtWidgets.QMainWindow):
         mg = QtWidgets.QVBoxLayout(meas_group)
         mg.addWidget(_group_header("mdi.music", "Measurement Type"))
 
-        MEAS_TYPES = [
-            "Classical Guitar",
-            "Flamenco Guitar",
-            "Acoustic Guitar",
-            "Material (Plate)",
-            "Material (Brace)",
-        ]
-        MEAS_DESCRIPTIONS = {
-            "Classical Guitar": "Nylon string, fan-braced, deep body",
-            "Flamenco Guitar": "Nylon string, light bracing, shallow body",
-            "Acoustic Guitar": "Steel string, X-braced (Dreadnought, OM, etc.)",
-            "Material (Plate)": "Rectangular wood plate for calculating stiffness and sound radiation",
-            "Material (Brace)": "Brace strip — measures longitudinal stiffness (fL only)",
-        }
-        # Maps unified name → (measurement_type_combo value, guitar_type_combo value | None)
-        MEAS_TO_COMBO: dict[str, tuple[str, str | None]] = {
-            "Classical Guitar": ("Guitar", "Classical"),
-            "Flamenco Guitar": ("Guitar", "Flamenco"),
-            "Acoustic Guitar": ("Guitar", "Acoustic"),
-            "Material (Plate)": ("Plate", None),
-            "Material (Brace)": ("Brace", None),
-        }
-        GUITAR_TYPE_MAP = {
-            "Classical Guitar": "Classical",
-            "Flamenco Guitar": "Flamenco",
-            "Acoustic Guitar": "Acoustic",
-        }
+        MEAS_TYPES = [mt.value for mt in MT.MeasurementType]
 
         # Derive the current unified type from the existing hidden combos
-        cur_meas = self.measurement_type_combo.currentText()
-        cur_guitar = self.guitar_type_combo.currentText()
-        cur_unified = f"{cur_guitar} Guitar" if cur_meas == "Guitar" else f"Material ({cur_meas})"
+        cur_unified = self._current_mt().value
 
         meas_type_row = QtWidgets.QHBoxLayout()
         meas_type_row.addWidget(QtWidgets.QLabel("Measurement Type:"))
@@ -1659,7 +1638,7 @@ class MainWindow(QtWidgets.QMainWindow):
         meas_type_row.addWidget(meas_type_combo)
         mg.addLayout(meas_type_row)
 
-        meas_desc_lbl = QtWidgets.QLabel(MEAS_DESCRIPTIONS.get(cur_unified, ""))
+        meas_desc_lbl = QtWidgets.QLabel(MT.MeasurementType(cur_unified).description)
         meas_desc_lbl.setFont(small)
         meas_desc_lbl.setWordWrap(True)
         mg.addWidget(meas_desc_lbl)
@@ -1944,7 +1923,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "The app will calculate stiffness, speed of sound, and radiation "
             "ratio from the tap frequencies."
         )
-        _is_guitar_initial = cur_unified in GUITAR_TYPE_MAP
+        _is_guitar_initial = MT.MeasurementType(cur_unified).is_guitar
         meas_footer_lbl = QtWidgets.QLabel(
             _GUITAR_FOOTER if _is_guitar_initial else _PLATE_FOOTER
         )
@@ -1953,27 +1932,22 @@ class MainWindow(QtWidgets.QMainWindow):
         mg.addWidget(meas_footer_lbl)
 
         # ---- Mode ranges display ----
-        _MODE_DISPLAY_NAMES = {
-            "Helmholtz T(1,1)_1": "Air",
-            "Top T(1,1)_2": "Top",
-            "Back T(1,1)_3": "Back",
-            "Long Dipole T(1,2)": "Dipole",
-            "Cross Tripole T(3,1)": "Ring",
-        }
-
         def _update_mode_ranges(unified_type: str) -> None:
-            gt_str = GUITAR_TYPE_MAP.get(unified_type)
-            if gt_str is None:
+            mt_val = MT.MeasurementType(unified_type)
+            guitar_type_enum = mt_val.guitar_type
+            if guitar_type_enum is None:
                 return
             try:
-                gt = GM.GuitarType(gt_str)
+                guitar_type = GT.GuitarType(guitar_type_enum.value)
             except ValueError:
                 return
-            bands = GM.get_bands(gt)
+            r = guitar_type.mode_ranges
             entries = [
-                (_MODE_DISPLAY_NAMES[name], f"{int(lo)}–{int(hi)} Hz")
-                for lo, hi, name, _ in bands
-                if name in _MODE_DISPLAY_NAMES
+                ("Air",    f"{int(r.air[0])}–{int(r.air[1])} Hz"),
+                ("Top",    f"{int(r.top[0])}–{int(r.top[1])} Hz"),
+                ("Back",   f"{int(r.back[0])}–{int(r.back[1])} Hz"),
+                ("DP",     f"{int(r.dipole[0])}–{int(r.dipole[1])} Hz"),
+                ("Ring",   f"{int(r.ring_mode[0])}–{int(r.ring_mode[1])} Hz"),
             ]
             for i, (nl, rl) in enumerate(zip(_mode_name_labels, _mode_range_labels)):
                 if i < len(entries):
@@ -1985,18 +1959,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ---- Show/hide type-specific widgets ----
         def _on_meas_type_changed(unified: str) -> None:
-            meas_t, guitar_t = MEAS_TO_COMBO[unified]
-            # Main-window combos updated on Apply only
-            is_guitar = meas_t == "Guitar"
-            meas_desc_lbl.setText(MEAS_DESCRIPTIONS.get(unified, ""))
+            mt_val = MT.MeasurementType(unified)
+            is_guitar = mt_val.is_guitar
+            meas_desc_lbl.setText(mt_val.description)
             meas_footer_lbl.setText(_GUITAR_FOOTER if is_guitar else _PLATE_FOOTER)
             guitar_widget.setVisible(is_guitar)
-            plate_widget.setVisible(meas_t == "Plate")
-            brace_widget.setVisible(meas_t == "Brace")
+            plate_widget.setVisible(mt_val is MT.MeasurementType.PLATE)
+            brace_widget.setVisible(mt_val is MT.MeasurementType.BRACE)
             show_unknown_widget.setEnabled(is_guitar)
             peak_thresh_widget.setEnabled(is_guitar)
             max_peaks_widget.setEnabled(is_guitar)
-            if is_guitar and guitar_t:
+            if is_guitar:
                 _update_mode_ranges(unified)
 
         meas_type_combo.currentTextChanged.connect(_on_meas_type_changed)
@@ -2688,14 +2661,17 @@ class MainWindow(QtWidgets.QMainWindow):
         def _apply_settings() -> None:
             # Measurement type → main window
             unified = meas_type_combo.currentText()
-            meas_t, guitar_t = MEAS_TO_COMBO[unified]
-            self.measurement_type_combo.setCurrentText(meas_t)
-            if guitar_t:
-                self.guitar_type_combo.setCurrentText(guitar_t)
+            mt_val = MT.MeasurementType(unified)
+            self.measurement_type_combo.setCurrentText(
+                "Guitar" if mt_val.is_guitar else mt_val.short_name
+            )
+            gt = mt_val.guitar_type
+            if gt is not None:
+                self.guitar_type_combo.setCurrentText(gt.value)
 
             # Display frequency range (min_spin/max_spin already live via _on_fmin/fmax_changed)
-            AS.AppSettings.set_f_min(self.min_spin.value(), meas_t)
-            AS.AppSettings.set_f_max(self.max_spin.value(), meas_t)
+            AS.AppSettings.set_f_min(self.min_spin.value(), mt_val)
+            AS.AppSettings.set_f_max(self.max_spin.value(), mt_val)
 
             # Display magnitude range
             AS.AppSettings.set_db_min(db_min_spin.value())

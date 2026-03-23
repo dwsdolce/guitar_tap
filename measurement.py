@@ -23,7 +23,7 @@ class PeakEntry:
 class AnnotationEntry:
     freq: float
     mag: float
-    text: str
+    mode_str: str
     xytext: list[float]  # [x, y]
 
 
@@ -72,7 +72,7 @@ class PeakMeasurement:
             AnnotationEntry(
                 freq=a["freq"],
                 mag=a["mag"],
-                text=a["text"],
+                mode_str=a.get("mode_str", ""),  # "text" key in older files is ignored
                 xytext=list(a["xytext"]),
             )
             for a in d.get("annotations", [])

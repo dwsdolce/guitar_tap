@@ -10,6 +10,7 @@ import numpy.typing as npt
 from PyQt6 import QtCore
 
 import pitch as pitch_c
+import guitar_type as gt
 import guitar_modes as gm
 
 basedir = os.path.dirname(__file__)
@@ -35,7 +36,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     accessing the underlying data model.
     """
 
-    annotationUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, str)
+    annotationUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, str, str)  # (freq, mag, html, mode_str)
     clearAnnotations: QtCore.pyqtSignal = QtCore.pyqtSignal()
     hideAnnotations: QtCore.pyqtSignal = QtCore.pyqtSignal()
     hideAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
@@ -43,6 +44,13 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     mode_strings: list[str] = [
         "",
+        "Air (Helmholtz)",
+        "Top",
+        "Back",
+        "Dipole",
+        "Ring Mode",
+        "Upper Modes",
+        "Unknown",
         "Helmholtz T(1,1)_1",
         "Top T(1,1)_2",
         "Back T(1,1)_3",
@@ -64,12 +72,16 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.disable_editing: bool = True
         self.show: dict[float, str] = {}
         self.show_column: int = ColumnIndex.Show.value
-        self.guitar_type: gm.GuitarType = gm.GuitarType.CLASSICAL
+        self.guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the mode."""
         # print("PeaksModel: set_mode_value")
         self.modes[self.freq_value(index)] = value
+
+    def reset_mode_value(self, index: QtCore.QModelIndex) -> None:
+        """Remove any manual mode override, reverting to auto-classification."""
+        self.modes.pop(self.freq_value(index), None)
 
     def mode_value(self, index: QtCore.QModelIndex) -> str:
         """Return mode: manual override if set, else auto-classified."""
@@ -118,10 +130,42 @@ class PeaksModel(QtCore.QAbstractTableModel):
             return float(self._data[index.row()][2])
         return 0.0
 
+    def annotation_html(self, freq: float, mag: float, mode: str) -> str:
+        """Build the HTML label for an annotation, matching Swift PeakAnnotationLabel.
+
+        Layout (top to bottom):
+          • Mode name  — bold, mode colour
+          • Pitch / cents  — purple
+          • Frequency (Hz) — dark
+          • Magnitude (dB) — grey
+        """
+        guitar_mode = gm.GuitarMode.from_mode_string(mode)
+        r, g, b = guitar_mode.color
+        display = gm.mode_display_name(mode) or ""
+
+        note   = self.pitch.note(freq)
+        cents  = self.pitch.cents(freq)
+
+        rows: list[str] = []
+        if display:
+            rows.append(
+                f'<b style="color:rgb({r},{g},{b});">{display}</b>'
+            )
+        rows.append(
+            f'<span style="color:rgb(120,60,180);">&#9834; {note}&nbsp;&nbsp;{cents:+.0f}&#162;</span>'
+        )
+        rows.append(
+            f'<span style="color:rgb(50,50,50);">{freq:.2f} Hz</span>'
+        )
+        rows.append(
+            f'<span style="color:rgb(110,110,110);">{mag:.1f} dB</span>'
+        )
+        return '<center>' + '<br/>'.join(rows) + '</center>'
+
     def set_guitar_type(self, guitar_type: str) -> None:
         """Change the guitar type used for auto mode classification."""
         self.layoutAboutToBeChanged.emit()
-        self.guitar_type = gm.GuitarType(guitar_type)
+        self.guitar_type = gt.GuitarType(guitar_type)
         self.layoutChanged.emit()
 
     def data_value(self, index: QtCore.QModelIndex) -> QtCore.QVariant:
@@ -247,8 +291,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
             freq = self.freq_value(idx)
             mag  = self.magnitude_value(idx)
             mode = self.mode_value(idx)
-            text = f"{mode}\n{freq:.1f}" if mode else f"{freq:.1f}"
-            self.annotationUpdate.emit(freq, mag, text)
+            html = self.annotation_html(freq, mag, mode)
+            self.annotationUpdate.emit(freq, mag, html, mode)
 
     def update_annotation(self, index: QtCore.QModelIndex) -> None:
         """Update the annotation for the model index."""
@@ -257,12 +301,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
         show = self.show_value_bool(index)
         mode = self.mode_value(index)
         if show:
-            # Add annotation
-            if mode == "":
-                annotation_text = f"{freq:.1f}"
-            else:
-                annotation_text = f"{mode}\n{freq:.1f}"
-            self.annotationUpdate.emit(freq, mag, annotation_text)
+            html = self.annotation_html(freq, mag, mode)
+            self.annotationUpdate.emit(freq, mag, html, mode)
             # print(f"PeaksModel: update_annotation: {annotation_text}")
         else:
             # Remove annotations

@@ -15,10 +15,12 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 import fft_annotations as fft_a
 import freq_anal as f_a
+import guitar_type as gt
 import guitar_modes as gm
 import microphone
 import tap_detector as td
 import plate_capture as pc
+import measurement_type as mt_mod
 
 
 @dataclass
@@ -102,6 +104,11 @@ class FftCanvas(pg.PlotWidget):
         top_axis = plot_item.getAxis("top")
         top_axis.setStyle(showValues=True)
         top_axis.setTicks([[]])
+
+        plot_item.showAxis("right")
+        right_axis = plot_item.getAxis("right")
+        right_axis.setStyle(showValues=False, tickLength=0)
+        right_axis.setWidth(10)
 
         self.annotations: fft_a.FftAnnotations = fft_a.FftAnnotations(self)
 
@@ -253,6 +260,7 @@ class FftCanvas(pg.PlotWidget):
         # Tap-level accumulator
         self._tap_num: int = 1           # number of taps to accumulate
         self._tap_spectra: list[npt.NDArray[np.float64]] = []
+        self._tap_pending: bool = False  # True when tap fired; capture on next FFT frame
         # Snapshot of the spectrum for the frame that triggered the tap
         # (saved before the tap detector fires so the accumulator always
         # captures the current tap frame, not the previous one).
@@ -291,7 +299,7 @@ class FftCanvas(pg.PlotWidget):
         self._decay_tracker.ringOutMeasured.connect(self.ringOutMeasured)
 
         # Plate / brace analysis state machine
-        self._measurement_type: str = "Guitar"
+        self._measurement_type: mt_mod.MeasurementType = mt_mod.MeasurementType.CLASSICAL
         self._plate_capture = pc.PlateCapture(
             sample_freq=self.fft_data.sample_freq,
             n_f=self.fft_data.n_f,
@@ -371,6 +379,7 @@ class FftCanvas(pg.PlotWidget):
         self.set_frozen(False)
         self._tap_detector.reset()
         self._tap_spectra.clear()
+        self._tap_pending = False
         self.timer.start(100)
 
     def stop_analyzer(self) -> None:
@@ -388,17 +397,18 @@ class FftCanvas(pg.PlotWidget):
         """Rebuild the mode band overlays for the given guitar type."""
         self._remove_mode_bands()
         try:
-            gt = gm.GuitarType(guitar_type_str)
+            guitar_type = gt.GuitarType(guitar_type_str)
         except ValueError:
             return
-        for lo, hi, mode_name, rgba in gm.get_bands(gt):
+        for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):
             r, g, b, _ = rgba
             pen = pg.mkPen((r, g, b), width=1, style=QtCore.Qt.PenStyle.DashLine)
+            abbrev = gm.GuitarMode.from_mode_string(mode_name).abbreviation
             lbl_opts = {"position": 0.96, "color": (r, g, b), "anchors": [(0, 1), (0, 1)]}
 
             lo_line = pg.InfiniteLine(
                 pos=lo, angle=90, movable=False, pen=pen,
-                label=mode_name, labelOpts=lbl_opts,
+                label=abbrev, labelOpts=lbl_opts,
             )
             lo_line.setZValue(-10)
             lo_line.setVisible(self._mode_bands_visible)
@@ -524,6 +534,7 @@ class FftCanvas(pg.PlotWidget):
     def start_tap_sequence(self) -> None:
         """Begin a fresh tap sequence: clear any accumulated spectra and restart warmup."""
         self._tap_spectra.clear()
+        self._tap_pending = False
         self._tap_detector.reset()          # enters WARMUP → prevents false immediate trigger
         self.tapCountChanged.emit(0, self._tap_num)
 
@@ -533,19 +544,26 @@ class FftCanvas(pg.PlotWidget):
         self._tap_spectra.clear()
 
     def _on_tap_accumulate(self) -> None:
-        """Called on every confirmed tap; accumulate spectrum until tap_num reached."""
-        # Use the spectrum saved just before the tap fired (current frame),
-        # not saved_mag_y_db which is from the previous frame.
-        if not np.any(self._last_tap_mag_y_db):
+        """Called on every confirmed tap; defer spectrum capture to the next FFT frame.
+
+        The tap detector fires on the per-chunk RMS rising edge, which is before the
+        current FFT frame is computed.  Setting _tap_pending here lets update_fft()
+        capture the spectrum once the FFT result is available — matching Swift's
+        behaviour of detecting the tap early and capturing the spectrum at the next frame.
+        """
+        self._tap_pending = True
+
+    def _do_capture_tap(self, mag_y_db: npt.NDArray[np.float64]) -> None:
+        """Capture one tap spectrum; called from update_fft() when _tap_pending is set."""
+        self._tap_pending = False
+        if not np.any(mag_y_db):
             return
-        self._tap_spectra.append(self._last_tap_mag_y_db.copy())
+        self._tap_spectra.append(mag_y_db.copy())
         captured = len(self._tap_spectra)
         self.tapCountChanged.emit(captured, self._tap_num)
 
         if captured >= self._tap_num:
             # Power-average all captured spectra (dB → linear → mean → dB).
-            # This is the physically correct way to average independent tap responses
-            # and matches the Swift implementation.
             stacked = np.stack(self._tap_spectra)
             avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
             self.saved_mag_y_db = avg_db
@@ -566,10 +584,14 @@ class FftCanvas(pg.PlotWidget):
         if self._plate_capture.is_active and len(self._current_mag_y) > 0:
             self._plate_capture.on_tap(self._current_mag_y)
 
-    def set_measurement_type(self, measurement_type: str) -> None:
+    def set_measurement_type(self, measurement_type: mt_mod.MeasurementType | str) -> None:
         """Switch between Guitar / Plate / Brace analysis modes."""
+        if isinstance(measurement_type, str):
+            measurement_type = mt_mod.MeasurementType.from_combo_values(
+                measurement_type, ""
+            )
         self._measurement_type = measurement_type
-        if measurement_type == "Guitar":
+        if measurement_type.is_guitar:
             self._tap_detector.set_mode(td.TapDetector.MODE_GUITAR)
         else:
             self._tap_detector.set_mode(td.TapDetector.MODE_PLATE_BRACE)
@@ -620,6 +642,7 @@ class FftCanvas(pg.PlotWidget):
     def cancel_tap_sequence(self) -> None:
         """Cancel the in-progress multi-tap sequence and rearm for a fresh tap."""
         self._tap_spectra.clear()
+        self._tap_pending = False
         self._tap_detector.cancel()
         self.tapCountChanged.emit(0, self._tap_num)
 
@@ -877,7 +900,7 @@ class FftCanvas(pg.PlotWidget):
             return
 
         enter_now = time.time()
-        is_guitar = (self._measurement_type == "Guitar")
+        is_guitar = self._measurement_type.is_guitar
 
         # Step 1: Update ring buffer; for Plate/Brace also tick detector per chunk
         for chunk in frames:
@@ -888,7 +911,7 @@ class FftCanvas(pg.PlotWidget):
             self._ring_fill = min(self._ring_fill + n, self.fft_data.m_t)
             self._samples_since_last_fft += n
 
-            # Per-chunk RMS for level meter and Plate/Brace tap detection
+            # Per-chunk RMS for Plate/Brace tap detection and level meter
             rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
             level_db = 20.0 * np.log10(max(rms, 1e-10))
             rms_amp = int(level_db + 100.0)
@@ -919,19 +942,16 @@ class FftCanvas(pg.PlotWidget):
         )
         mag_y_db = self._apply_calibration(mag_y_db)
 
-        # Save current spectrum BEFORE the tap detector fires so that
-        # _on_tap_accumulate() captures this frame's spectrum.
         self._last_tap_mag_y_db = mag_y_db
         self._current_mag_y = mag_y  # snapshot for plate capture HPS
 
         if is_guitar:
-            # Guitar: tap detector uses FFT peak magnitude, once per FFT frame
             fft_peak_amp = int(np.max(mag_y_db) + 100.0)
-            self._last_detector_amp = fft_peak_amp
             self.ampChanged.emit(fft_peak_amp)
-            if not self.is_frozen:
-                self._tap_detector.update(fft_peak_amp)
-            self._decay_tracker.update(fft_peak_amp)
+
+        # If a tap fired per-chunk, capture the spectrum now that the FFT is ready.
+        if self._tap_pending and not self.is_frozen:
+            self._do_capture_tap(mag_y_db)
 
         # Step 3: Update display
         if self.is_frozen:

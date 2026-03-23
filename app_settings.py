@@ -2,7 +2,24 @@
     Persistent application settings backed by QSettings.
 """
 
+from __future__ import annotations
 from PyQt6 import QtCore
+
+
+def _meas_key(meas_type) -> str:
+    """Return the storage-key string for a measurement type argument.
+
+    Accepts either a MeasurementType enum value or a plain string
+    (e.g. the legacy combo-box text "Guitar", "Plate", "Brace").
+    Importing here avoids a circular dependency at module load time.
+    """
+    try:
+        from measurement_type import MeasurementType  # noqa: PLC0415
+        if isinstance(meas_type, MeasurementType):
+            return meas_type.storage_key
+    except ImportError:
+        pass
+    return str(meas_type)
 
 
 class AppSettings:
@@ -34,27 +51,31 @@ class AppSettings:
     # Display frequency range (per-measurement-type keys)
     # ------------------------------------------------------------------ #
     @classmethod
-    def f_min(cls, meas_type: str = "") -> int:
-        key = f"display/f_min_{meas_type}" if meas_type else "display/f_min"
+    def f_min(cls, meas_type: "str | object" = "") -> int:
+        key_str = _meas_key(meas_type)
+        key = f"display/f_min_{key_str}" if key_str else "display/f_min"
         defaults = {"Plate": 30, "Brace": 30}
-        default = defaults.get(meas_type, 75)
+        default = defaults.get(key_str, 75)
         return int(cls._get(key, default))
 
     @classmethod
-    def set_f_min(cls, v: int, meas_type: str = "") -> None:
-        key = f"display/f_min_{meas_type}" if meas_type else "display/f_min"
+    def set_f_min(cls, v: int, meas_type: "str | object" = "") -> None:
+        key_str = _meas_key(meas_type)
+        key = f"display/f_min_{key_str}" if key_str else "display/f_min"
         cls._set(key, v)
 
     @classmethod
-    def f_max(cls, meas_type: str = "") -> int:
-        key = f"display/f_max_{meas_type}" if meas_type else "display/f_max"
+    def f_max(cls, meas_type: "str | object" = "") -> int:
+        key_str = _meas_key(meas_type)
+        key = f"display/f_max_{key_str}" if key_str else "display/f_max"
         defaults = {"Plate": 600, "Brace": 1000}
-        default = defaults.get(meas_type, 350)
+        default = defaults.get(key_str, 350)
         return int(cls._get(key, default))
 
     @classmethod
-    def set_f_max(cls, v: int, meas_type: str = "") -> None:
-        key = f"display/f_max_{meas_type}" if meas_type else "display/f_max"
+    def set_f_max(cls, v: int, meas_type: "str | object" = "") -> None:
+        key_str = _meas_key(meas_type)
+        key = f"display/f_max_{key_str}" if key_str else "display/f_max"
         cls._set(key, v)
 
     # ------------------------------------------------------------------ #
