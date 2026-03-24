@@ -250,6 +250,81 @@ class FftProcessingThread(QtCore.QThread):
         self._tap_detector.cancel()
 
 
+# ── Zoom & Pan help popup ─────────────────────────────────────────────────────
+
+class _ZoomPanPopup(QtWidgets.QFrame):
+    """Floating popover listing zoom/pan keyboard+mouse controls.
+
+    Matches the Swift SpectrumView 'Zoom & Pan Controls' popover.
+    Uses Qt.Popup so it auto-dismisses when the user clicks outside.
+    """
+
+    _ROWS: list[tuple[str, str] | None] = [
+        ("Scroll over plot",    "Zoom both axes around cursor"),
+        ("Scroll over freq axis", "Zoom frequency only"),
+        ("Scroll over mag axis",  "Zoom magnitude only"),
+        ("⇧ + Scroll",          "Pan frequency axis"),
+        ("⌥ + Scroll",          "Pan magnitude axis"),
+        ("⌘ / ⌃ + Scroll",      "Zoom both axes"),
+        None,
+        ("Drag over plot",      "Pan both axes"),
+        ("Drag over freq axis", "Pan frequency only"),
+        ("Drag over mag axis",  "Pan magnitude only"),
+        ("Right-click",         "Reset axes & labels"),
+    ]
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(
+            parent,
+            QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint,
+        )
+        self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(3)
+
+        title = QtWidgets.QLabel("<b>Zoom &amp; Pan Controls</b>")
+        layout.addWidget(title)
+        layout.addSpacing(2)
+
+        _key_font = QtGui.QFont()
+        _key_font.setBold(True)
+        _key_font.setPointSize(10)
+        _desc_font = QtGui.QFont()
+        _desc_font.setPointSize(10)
+
+        for row in self._ROWS:
+            if row is None:
+                sep = QtWidgets.QFrame()
+                sep.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+                sep.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+                layout.addWidget(sep)
+            else:
+                key, desc = row
+                hl = QtWidgets.QHBoxLayout()
+                hl.setSpacing(10)
+                hl.setContentsMargins(0, 0, 0, 0)
+                key_lbl = QtWidgets.QLabel(key)
+                key_lbl.setFont(_key_font)
+                key_lbl.setMinimumWidth(130)
+                desc_lbl = QtWidgets.QLabel(desc)
+                desc_lbl.setFont(_desc_font)
+                desc_lbl.setStyleSheet("color: gray;")
+                hl.addWidget(key_lbl)
+                hl.addWidget(desc_lbl, 1)
+                layout.addLayout(hl)
+
+    def show_near(self, global_pos: QtCore.QPoint) -> None:
+        """Show the popup with its top-right corner near *global_pos*."""
+        self.adjustSize()
+        x = global_pos.x() - self.width()
+        y = global_pos.y()
+        self.move(x, y)
+        self.show()
+
+
 # pylint: disable=too-many-instance-attributes
 class FftCanvas(pg.PlotWidget):
     """Sample the audio stream and display the FFT
@@ -302,6 +377,7 @@ class FftCanvas(pg.PlotWidget):
 
         # Enable and configure top axis for note labels
         plot_item = self.getPlotItem()
+        plot_item.hideButtons()  # remove the built-in auto-range "A" button
         plot_item.showAxis("top")
         top_axis = plot_item.getAxis("top")
         top_axis.setStyle(showValues=True)
@@ -523,6 +599,22 @@ class FftCanvas(pg.PlotWidget):
         self.addItem(self._overlay_label)
         # Position the overlay after the view is fully set up
         QtCore.QTimer.singleShot(0, self._center_overlay)
+
+        # ⓘ Info button — upper-right overlay, shows Zoom & Pan help popup
+        self._info_btn = QtWidgets.QToolButton(self)
+        self._info_btn.setText("ⓘ")
+        self._info_btn.setFixedSize(22, 22)
+        self._info_btn.setStyleSheet(
+            "QToolButton { border: none; background: transparent;"
+            " color: rgba(120,120,120,180); font-size: 15px; }"
+            "QToolButton:hover { color: rgba(60,60,60,220); }"
+        )
+        self._info_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._info_btn.setToolTip("Zoom & Pan Controls")
+        self._info_btn.clicked.connect(self._show_zoom_help)
+        self._zoom_popup = _ZoomPanPopup(self)
+        # Defer initial position until the widget has been laid out
+        QtCore.QTimer.singleShot(0, self._reposition_info_btn)
 
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
@@ -870,6 +962,77 @@ class FftCanvas(pg.PlotWidget):
                 if np.any(self.saved_peaks):
                     freq = self.saved_peaks[index0][0]
                     self.peakSelected.emit(freq)
+
+    # ── info button & zoom/pan help ───────────────────────────────────────────
+
+    def _reposition_info_btn(self) -> None:
+        btn = getattr(self, "_info_btn", None)
+        if btn is None:
+            return
+        btn.move(self.width() - btn.width() - 4, 4)
+        btn.raise_()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._reposition_info_btn()
+
+    def _show_zoom_help(self) -> None:
+        btn_br = self._info_btn.mapToGlobal(
+            QtCore.QPoint(self._info_btn.width(), self._info_btn.height())
+        )
+        self._zoom_popup.show_near(btn_br)
+
+    # ── wheel event with modifier-key bindings ────────────────────────────────
+
+    def wheelEvent(self, ev: QtGui.QWheelEvent) -> None:
+        """Scroll-wheel zoom/pan with modifier keys matching Swift SpectrumView.
+
+        No modifier  — pyqtgraph default (zoom around cursor)
+        ⇧ Shift      — pan frequency (X) axis
+        ⌥ Alt/Option — pan magnitude (Y) axis
+        ⌘ Cmd / ⌃ Ctrl — zoom both axes around centre
+        """
+        mods = ev.modifiers()
+        Mod = QtCore.Qt.KeyboardModifier
+        vb = self.getViewBox()
+
+        # On macOS, Shift+scroll converts vertical to horizontal scroll,
+        # so read whichever axis has a non-zero delta.
+        delta = ev.angleDelta().y()
+        if delta == 0:
+            delta = ev.angleDelta().x()
+        if delta == 0:
+            ev.accept()
+            return
+
+        if mods & Mod.ShiftModifier:
+            # Pan X: scroll up / right → higher frequencies
+            x0, x1 = vb.viewRange()[0]
+            shift = (x1 - x0) * 0.10 * (1 if delta > 0 else -1)
+            vb.setXRange(x0 + shift, x1 + shift, padding=0)
+            ev.accept()
+
+        elif mods & Mod.AltModifier:
+            # Pan Y: scroll up → up (higher magnitude)
+            y0, y1 = vb.viewRange()[1]
+            shift = (y1 - y0) * 0.10 * (1 if delta > 0 else -1)
+            vb.setYRange(y0 + shift, y1 + shift, padding=0)
+            ev.accept()
+
+        elif mods & (Mod.ControlModifier | Mod.MetaModifier):
+            # Zoom both axes around centre
+            factor = 1.15 ** (delta / 120.0)
+            x0, x1 = vb.viewRange()[0]
+            y0, y1 = vb.viewRange()[1]
+            xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
+            xh = (x1 - x0) / 2 / factor
+            yh = (y1 - y0) / 2 / factor
+            vb.setXRange(xc - xh, xc + xh, padding=0)
+            vb.setYRange(yc - yh, yc + yh, padding=0)
+            ev.accept()
+
+        else:
+            super().wheelEvent(ev)
 
     # ── context menu (replaces pyqtgraph default) ─────────────────────────────
 

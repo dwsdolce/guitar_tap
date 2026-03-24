@@ -139,8 +139,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cv.setContentsMargins(0, 0, 8, 0)
         cv.setSpacing(0)
         cv.addWidget(self.fft_canvas, stretch=1)
-        self._fft_toolbar = fft_t.FftToolbar(self.fft_canvas, canvas_widget)
-        cv.addWidget(self._fft_toolbar)
+
         ch.addWidget(canvas_widget, stretch=1)
 
         ch.addWidget(_vsep())
