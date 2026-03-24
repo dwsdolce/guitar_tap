@@ -17,6 +17,7 @@ import measurement as M
 import measurements_dialog as MD
 import plate_analysis as PA
 import plate_dialog as PD
+import plate_stiffness_preset as PSP
 import guitar_type as GT
 import guitar_modes as GM
 import measurement_type as MT
@@ -436,6 +437,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.deselect_all_btn.setEnabled(False)
         peaks_header.addWidget(self.deselect_all_btn)
 
+        self.reset_auto_selection_btn = QtWidgets.QToolButton()
+        self.reset_auto_selection_btn.setIcon(qta.icon("fa5s.magic", color="gray"))
+        self.reset_auto_selection_btn.setIconSize(QtCore.QSize(14, 14))
+        self.reset_auto_selection_btn.setFixedSize(22, 22)
+        self.reset_auto_selection_btn.setToolTip("Reset to automatic mode selection")
+        self.reset_auto_selection_btn.setEnabled(False)
+        self.reset_auto_selection_btn.setVisible(False)
+        peaks_header.addWidget(self.reset_auto_selection_btn)
+
         vbox.addLayout(peaks_header)
 
         # Peaks table — the main content (takes all available vertical space)
@@ -729,9 +739,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # Annotations cycling button
         self.annotations_btn.clicked.connect(self._on_cycle_annotation_mode)
 
-        # Select / deselect all peaks
+        # Select / deselect / reset-auto all peaks
         self.select_all_btn.clicked.connect(self._on_select_all_peaks)
         self.deselect_all_btn.clicked.connect(self._on_deselect_all_peaks)
+        self.reset_auto_selection_btn.clicked.connect(self._on_reset_auto_selection)
+        self.peak_widget.model.userModifiedSelectionChanged.connect(
+            self._on_user_modified_selection_changed
+        )
 
         # Guitar type
         self.guitar_type_combo.currentTextChanged.connect(self._on_guitar_type_changed)
@@ -800,6 +814,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_widget.model.set_guitar_type(saved_gt)
         canvas.set_guitar_type_bands(saved_gt)
         self._update_measurement_badge()
+        self.reset_auto_selection_btn.setVisible(self._current_mt().is_guitar)
 
         self.set_frozen(False)
 
@@ -908,9 +923,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._metrics_status_lbl.setText("Stopped")
 
     def update_tap_tone_ratios(self, mode_freqs: dict[str, float]) -> None:
-        helm = mode_freqs.get("Helmholtz T(1,1)_1")
-        top  = mode_freqs.get("Top T(1,1)_2")
-        back = mode_freqs.get("Back T(1,1)_3")
+        helm = mode_freqs.get("Air (Helmholtz)")
+        top  = mode_freqs.get("Top")
+        back = mode_freqs.get("Back")
 
         def _fmt(a: float | None, b: float | None) -> str:
             if a and b and b > 0:
@@ -953,6 +968,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.export_pdf_btn.setEnabled(True)
             self.select_all_btn.setEnabled(True)
             self.deselect_all_btn.setEnabled(True)
+            self.reset_auto_selection_btn.setEnabled(
+                self.peak_widget.model.user_has_modified_peak_selection
+            )
         else:
             self.avg_enable.setEnabled(True)
             self.save_measurement_btn.setEnabled(False)
@@ -960,6 +978,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.export_pdf_btn.setEnabled(False)
             self.select_all_btn.setEnabled(False)
             self.deselect_all_btn.setEnabled(False)
+            self.reset_auto_selection_btn.setEnabled(False)
         self._update_tap_buttons()
 
     def reset_averaging(self) -> None:
@@ -1120,6 +1139,11 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if not self._is_frozen:
             self.set_frozen(True)
+            try:
+                guitar_type = GT.GuitarType(self.guitar_type_combo.currentText())
+                self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
+            except Exception:
+                pass
 
     def _on_new_tap(self) -> None:
         """Begin a new tap sequence, clearing any in-progress accumulated spectra."""
@@ -1145,6 +1169,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_deselect_all_peaks(self) -> None:
         self.peak_widget.model.deselect_all_peaks()
+
+    def _on_reset_auto_selection(self) -> None:
+        try:
+            guitar_type = GT.GuitarType(self.guitar_type_combo.currentText())
+            self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
+        except Exception:
+            pass
+
+    def _on_user_modified_selection_changed(self, modified: bool) -> None:
+        self.reset_auto_selection_btn.setEnabled(
+            modified and self._is_frozen
+        )
 
     # ================================================================
     # Guitar type
@@ -1176,12 +1212,14 @@ class MainWindow(QtWidgets.QMainWindow):
             guitar_type = GT.GuitarType(guitar_type_str)
         except ValueError:
             return
+        peaks_data = [(float(row[0]), float(row[1])) for row in peaks]
+        idx_map = GM.GuitarMode.classify_all(peaks_data, guitar_type)
         mode_freqs: dict[str, float] = {}
-        for row in range(peaks.shape[0]):
-            freq = float(peaks[row, 0])
-            mode = GM.classify_peak(freq, guitar_type)
-            if mode and mode not in mode_freqs:
-                mode_freqs[mode] = freq
+        for i, mode in idx_map.items():
+            if mode is not GM.GuitarMode.UNKNOWN:
+                mode_val = mode.value
+                if mode_val not in mode_freqs:
+                    mode_freqs[mode_val] = peaks_data[i][0]
         self.update_tap_tone_ratios(mode_freqs)
 
     def _on_peak_selected(self, freq: float) -> None:
@@ -1201,6 +1239,7 @@ class MainWindow(QtWidgets.QMainWindow):
         mt = self._current_mt()
         self.fft_canvas.set_measurement_type(mt)
         self.plate_analysis_btn.setVisible(not mt.is_guitar)
+        self.reset_auto_selection_btn.setVisible(mt.is_guitar)
         self._update_measurement_badge()
 
     def _update_measurement_badge(self) -> None:
@@ -1795,20 +1834,8 @@ class MainWindow(QtWidgets.QMainWindow):
         fvs_hdr.setFont(hdr_font)
         plate_layout.addWidget(fvs_hdr)
 
-        PRESET_DISPLAY_NAMES = [
-            "Steel String Top (75)",
-            "Steel String Back (55)",
-            "Classical Top (60)",
-            "Classical Back (50)",
-            "Custom",
-        ]
-        PRESET_STORAGE_NAMES = [
-            "Steel String Top",
-            "Steel String Back",
-            "Classical Top",
-            "Classical Back",
-            "Custom",
-        ]
+        PRESET_DISPLAY_NAMES = [p.short_name for p in PSP.PlateStiffnessPreset]
+        PRESET_STORAGE_NAMES = [p.value for p in PSP.PlateStiffnessPreset]
         fvs_combo = QtWidgets.QComboBox()
         fvs_combo.addItems(PRESET_DISPLAY_NAMES)
         fvs_combo.setEditable(True)
@@ -2773,6 +2800,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
         AS.AppSettings.set_window_geometry(self.saveGeometry())
+        # Stop the processing thread and wait for it to finish before Qt
+        # destroys the widget tree.  Without this, QThread::~QThread() is
+        # reached while the thread is still running, which causes Qt to
+        # fatal-abort (SIGABRT) during Python's atexit cleanup.
+        self.fft_canvas.shutdown()
         super().closeEvent(event)
 
 

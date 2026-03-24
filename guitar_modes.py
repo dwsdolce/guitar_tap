@@ -65,7 +65,7 @@ def classify_peak(freq: float, guitar_type: GuitarType) -> str:
     Returns ``""`` (unknown) if no band matches.
     """
     mode = GuitarMode.classify(freq, guitar_type)
-    return "" if mode is GuitarMode.UNKNOWN else mode.value
+    return mode.value
 
 
 def mode_display_name(mode_str: str) -> str:
@@ -248,6 +248,65 @@ class GuitarMode(Enum):
             if lo <= freq <= hi:
                 return mode
         return cls.UNKNOWN
+
+    @classmethod
+    def classify_all(
+        cls,
+        peaks: list[tuple[float, float]],
+        guitar_type: GuitarType,
+    ) -> dict[int, GuitarMode]:
+        """Classify a list of (freq, magnitude) peaks using context-aware claiming.
+
+        Mirrors Swift ``GuitarMode.classifyAll``:
+        1. Modes are visited in ascending lower-bound order.
+        2. For each mode the highest-magnitude unclaimed peak in its range is
+           claimed; no other mode can later claim the same peak.
+        3. Unclaimed peaks are classified individually via ``classify()``.
+
+        Returns a dict mapping each peak's index to its ``GuitarMode``.
+        """
+        ordered_modes = sorted(
+            [cls.AIR, cls.TOP, cls.BACK, cls.DIPOLE, cls.RING_MODE, cls.UPPER_MODES],
+            key=lambda m: m.mode_range(guitar_type)[0],
+        )
+        result: dict[int, GuitarMode] = {}
+        claimed: set[int] = set()
+
+        for mode in ordered_modes:
+            lo, hi = mode.mode_range(guitar_type)
+            candidates = [
+                (i, mag) for i, (freq, mag) in enumerate(peaks)
+                if lo <= freq <= hi and i not in claimed
+            ]
+            if candidates:
+                best_i = max(candidates, key=lambda x: x[1])[0]
+                result[best_i] = mode
+                claimed.add(best_i)
+
+        for i, (freq, _) in enumerate(peaks):
+            if i not in result:
+                result[i] = cls.classify(freq, guitar_type)
+
+        return result
+
+    @staticmethod
+    def is_known(freq: float, guitar_type: GuitarType) -> bool:
+        """Return True if *freq* falls within any named mode range.
+
+        Mirrors Swift ``GuitarMode.isKnown(frequency:guitarType:)``.
+        Use this instead of checking whether ``classify()`` returns ``UNKNOWN``
+        when a frequency is in an overlap zone — it is always "known" regardless
+        of which mode ``classify_all`` ultimately assigns it to.
+        """
+        r = guitar_type.mode_ranges
+        return (
+            r.air[0]         <= freq <= r.air[1]         or
+            r.top[0]         <= freq <= r.top[1]         or
+            r.back[0]        <= freq <= r.back[1]        or
+            r.dipole[0]      <= freq <= r.dipole[1]      or
+            r.ring_mode[0]   <= freq <= r.ring_mode[1]   or
+            r.upper_modes[0] <= freq <= r.upper_modes[1]
+        )
 
     # ── conversion from legacy Python mode strings ────────────────────────
 

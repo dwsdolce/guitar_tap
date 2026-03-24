@@ -31,7 +31,7 @@ import pitch as pitch_c
 
 def _short_mode(mode: str) -> str:
     if not mode:
-        return "?"
+        return gm.GuitarMode.UNKNOWN.display_name  # "Unknown"
     gmode = gm.GuitarMode.from_mode_string(mode)
     if gmode is not gm.GuitarMode.UNKNOWN:
         return gmode.abbreviation

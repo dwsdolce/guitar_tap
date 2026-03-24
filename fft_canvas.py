@@ -498,6 +498,9 @@ class FftCanvas(pg.PlotWidget):
 
         self.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
+        # Guitar type — updated by set_guitar_type_bands(); used for peak deduplication
+        self._guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
+
         # Initialise mode bands for the saved guitar type
         self.set_guitar_type_bands(_as.AppSettings.guitar_type())
 
@@ -570,6 +573,16 @@ class FftCanvas(pg.PlotWidget):
         self._overlay_label.setText("Stopped")
         self._overlay_label.setVisible(True)
 
+    def shutdown(self) -> None:
+        """Stop the processing thread and wait for it to exit.
+
+        Must be called before the widget is destroyed (e.g. from the main
+        window's closeEvent) to prevent Qt from aborting on QThread::~QThread()
+        while the thread is still running.
+        """
+        self._proc_thread.stop()
+        self._proc_thread.wait(2000)
+
     # ------------------------------------------------------------------ #
     # Guitar mode band overlays
     # ------------------------------------------------------------------ #
@@ -581,6 +594,7 @@ class FftCanvas(pg.PlotWidget):
             guitar_type = gt.GuitarType(guitar_type_str)
         except ValueError:
             return
+        self._guitar_type = guitar_type
         for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):
             r, g, b, _ = rgba
             pen = pg.mkPen((r, g, b), width=1, style=QtCore.Qt.PenStyle.DashLine)
@@ -914,6 +928,68 @@ class FftCanvas(pg.PlotWidget):
                 if len(peak_index[0]):
                     self.peakSelected.emit(self.selected_peak)
 
+    def _apply_mode_priority(self, peaks: np.ndarray) -> np.ndarray:
+        """Apply mode-priority selection and 2 Hz deduplication.
+
+        Mirrors the Swift findPeaks Step 3 + removeDuplicatePeaks algorithm:
+
+        1. Identify the guaranteed peak for each known mode range — the
+           highest-magnitude peak whose frequency falls within the mode's
+           classification band.
+        2. Deduplicate the full set: walk peaks in descending-magnitude order,
+           keep each peak and mark all others within 2 Hz as consumed.
+        3. Restore any guaranteed peaks that were consumed by a stronger
+           nearby peak so each mode always has a slot in the output.
+        4. Sort by frequency ascending for consistent table display.
+        """
+        if peaks.shape[0] == 0:
+            return peaks
+
+        freqs = peaks[:, 0]
+        mags  = peaks[:, 1]
+
+        # Pass 1 — one guaranteed peak per known mode range (highest magnitude)
+        known_modes = [
+            gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK,
+            gm.GuitarMode.DIPOLE, gm.GuitarMode.RING_MODE, gm.GuitarMode.UPPER_MODES,
+        ]
+        guaranteed: set[int] = set()
+        in_any_mode = np.zeros(len(freqs), dtype=bool)
+        for mode in known_modes:
+            lo, hi = mode.mode_range(self._guitar_type)
+            in_range = np.where((freqs >= lo) & (freqs <= hi))[0]
+            if in_range.size > 0:
+                guaranteed.add(int(in_range[np.argmax(mags[in_range])]))
+                in_any_mode[in_range] = True
+
+        # Deduplicate guaranteed peaks at 2 Hz — mirrors Swift's
+        # removeDuplicatePeaks(Array(strongestPeakPerMode.values)):
+        # if two guaranteed peaks are within 2 Hz (e.g. from the Top/Back
+        # overlap zone), keep only the higher-magnitude one.
+        guaranteed_list = sorted(guaranteed, key=lambda i: -float(mags[i]))
+        deduped_g: list[int] = []
+        used_g = np.zeros(len(freqs), dtype=bool)
+        for idx in guaranteed_list:
+            if not used_g[idx]:
+                deduped_g.append(idx)
+                used_g |= np.abs(freqs - freqs[idx]) < 2.0
+        guaranteed = set(deduped_g)
+
+        # Pass 2 — peaks outside all mode ranges, deduped at 2 Hz
+        outside = np.where(~in_any_mode)[0]
+        used = np.zeros(len(freqs), dtype=bool)
+        for idx in guaranteed:
+            used |= np.abs(freqs - freqs[idx]) < 2.0
+        extra: list[int] = []
+        for i in np.argsort(-mags[outside]):
+            idx = int(outside[i])
+            if not used[idx]:
+                extra.append(idx)
+                used |= np.abs(freqs - freqs[idx]) < 2.0
+
+        final = guaranteed | set(extra)
+        return peaks[sorted(final, key=lambda i: freqs[i])]
+
     def find_peaks(self, mag_y_db):
         """For the specified magnitude in db:
         1. detect the peaks that are above the user specified threshold
@@ -942,6 +1018,14 @@ class FftCanvas(pg.PlotWidget):
                 self.fft_data.sample_freq, self.fft_data.n_f,
             )
             peaks = np.column_stack((peaks_freq, peaks_mag, q_values))
+            # Two-pass mode-priority + 2 Hz deduplication (mirrors Swift findPeaks)
+            peaks = self._apply_mode_priority(peaks)
+            if peaks.shape[0] > 0:
+                peaks_freq = peaks[:, 0]
+                max_peaks_mag = np.max(peaks[:, 1])
+            else:
+                peaks_freq = np.array([])
+                max_peaks_mag = -100
         else:
             max_peaks_mag = -100
             peaks = np.zeros((0, 3))

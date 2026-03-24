@@ -41,6 +41,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     hideAnnotations: QtCore.pyqtSignal = QtCore.pyqtSignal()
     hideAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
     showAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
+    userModifiedSelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
 
     mode_strings: list[str] = [
         "",
@@ -73,6 +74,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.show: dict[float, str] = {}
         self.show_column: int = ColumnIndex.Show.value
         self.guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
+        self.user_has_modified_peak_selection: bool = False
+        self._programmatic_update: bool = False
+        self._auto_mode_map: dict[float, gm.GuitarMode] = {}  # freq → mode, from classify_all
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the mode."""
@@ -83,11 +87,29 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """Remove any manual mode override, reverting to auto-classification."""
         self.modes.pop(self.freq_value(index), None)
 
+    def _recompute_auto_modes(self) -> None:
+        """Rebuild the context-aware mode map from current peak data.
+
+        Mirrors Swift identifiedModes computed via GuitarMode.classifyAll —
+        overlapping mode ranges resolve correctly because the claiming algorithm
+        visits modes in ascending lower-bound order and marks each peak as used.
+        """
+        if self._data.shape[0] == 0:
+            self._auto_mode_map = {}
+            return
+        peaks = [(float(self._data[i, 0]), float(self._data[i, 1]))
+                 for i in range(self._data.shape[0])]
+        idx_map = gm.GuitarMode.classify_all(peaks, self.guitar_type)
+        self._auto_mode_map = {peaks[i][0]: mode for i, mode in idx_map.items()}
+
     def mode_value(self, index: QtCore.QModelIndex) -> str:
         """Return mode: manual override if set, else auto-classified."""
         freq = self.freq_value(index)
         if freq in self.modes:
             return self.modes[freq]
+        mode = self._auto_mode_map.get(freq)
+        if mode is not None:
+            return mode.value
         return gm.classify_peak(freq, self.guitar_type)
 
     def set_show_value(self, index: QtCore.QModelIndex, value: str) -> None:
@@ -166,6 +188,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """Change the guitar type used for auto mode classification."""
         self.layoutAboutToBeChanged.emit()
         self.guitar_type = gt.GuitarType(guitar_type)
+        self._recompute_auto_modes()   # mirrors Swift reclassifyPeaks()
         self.layoutChanged.emit()
 
     def data_value(self, index: QtCore.QModelIndex) -> QtCore.QVariant:
@@ -253,13 +276,24 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """Update the data model from outside the object and
         then update the table.
         """
-        # print(f"PeaksModel: update_data: data {data}")
-        # print(f"PeaksModel: update_data: type {type(data)}")
-
         self.layoutAboutToBeChanged.emit()
         self._data = data
-
+        self._recompute_auto_modes()   # mirrors Swift identifiedModes update
         self.layoutChanged.emit()
+
+        # Reconcile annotations with the new peak set — mirrors Swift's reactive
+        # identifiedModes/selectedPeakIDs which automatically drop annotations
+        # for peaks that fell below the threshold.
+        # Clear everything, then re-create annotations only for peaks that still
+        # exist in _data and have show == "on".
+        self.clearAnnotations.emit()
+        for row in range(self._data.shape[0]):
+            idx = self.index(row, 0)
+            if self.show_value_bool(idx):
+                freq = self.freq_value(idx)
+                mag  = self.magnitude_value(idx)
+                mode = self.mode_value(idx)
+                self.annotationUpdate.emit(freq, mag, self.annotation_html(freq, mag, mode), mode)
 
     def clear_annotations(self) -> None:
         """Clear all annotations."""
@@ -274,15 +308,30 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     def select_all_peaks(self) -> None:
         """Set the show/selected flag on every peak and show its annotation."""
-        for row in range(self.rowCount(QtCore.QModelIndex())):
-            idx = self.index(row, self.show_column)
-            self.setData(idx, "on")
+        self._programmatic_update = True
+        try:
+            for row in range(self.rowCount(QtCore.QModelIndex())):
+                idx = self.index(row, self.show_column)
+                self.setData(idx, "on")
+        finally:
+            self._programmatic_update = False
+        self._set_user_modified(True)
 
     def deselect_all_peaks(self) -> None:
         """Clear the show/selected flag on every peak and hide its annotation."""
-        for row in range(self.rowCount(QtCore.QModelIndex())):
-            idx = self.index(row, self.show_column)
-            self.setData(idx, "off")
+        self._programmatic_update = True
+        try:
+            for row in range(self.rowCount(QtCore.QModelIndex())):
+                idx = self.index(row, self.show_column)
+                self.setData(idx, "off")
+        finally:
+            self._programmatic_update = False
+        self._set_user_modified(True)
+
+    def _set_user_modified(self, value: bool) -> None:
+        if self.user_has_modified_peak_selection != value:
+            self.user_has_modified_peak_selection = value
+            self.userModifiedSelectionChanged.emit(value)
 
     def show_all_annotations(self) -> None:
         """Show annotations for every peak regardless of the show flag."""
@@ -328,6 +377,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
                         index, index, [QtCore.Qt.ItemDataRole.DisplayRole]
                     )
                     self.update_annotation(index)
+                    if not self._programmatic_update:
+                        self._set_user_modified(True)
                     return True
                 case ColumnIndex.Modes.value:
                     # print(f"PeaksModel: setData: Modes: index: {index.row()}, {index.column()}")
@@ -407,6 +458,51 @@ class PeaksModel(QtCore.QAbstractTableModel):
             # self.clear_annotations()
         self.layoutChanged.emit()
 
+    def auto_select_peaks_by_mode(self, guitar_type: gt.GuitarType) -> None:
+        """Auto-select the highest-magnitude peak assigned to each guitar mode.
+
+        Mirrors Swift guitarModeSelectedPeakIDs (updated algorithm):
+        1. Use the classifyAll mode map (_auto_mode_map) to get the mode
+           already assigned to each peak via context-aware claiming.
+        2. For each named mode, pick the highest-magnitude peak assigned to it.
+        3. Select exactly those peaks (one per mode at most).
+
+        The claiming/overlap logic is entirely delegated to classifyAll —
+        this method just picks the best representative of each assigned mode.
+        """
+        self.show = {}
+        self._programmatic_update = True
+        self._set_user_modified(False)
+        self.clearAnnotations.emit()
+        # Notify the view that all show-column cells may have changed.
+        rows = self.rowCount(QtCore.QModelIndex())
+        if rows > 0:
+            top_left = self.index(0, self.show_column)
+            bot_right = self.index(rows - 1, self.show_column)
+            self.dataChanged.emit(top_left, bot_right, [QtCore.Qt.ItemDataRole.DisplayRole])
+
+        named_modes = {
+            gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK,
+            gm.GuitarMode.DIPOLE, gm.GuitarMode.RING_MODE, gm.GuitarMode.UPPER_MODES,
+        }
+        # best_per_mode: mode → (row index, magnitude)
+        best_per_mode: dict[gm.GuitarMode, tuple[int, float]] = {}
+        for row in range(rows):
+            idx = self.index(row, 0)
+            freq = self.freq_value(idx)
+            mode = self._auto_mode_map.get(freq)
+            if mode is None or mode not in named_modes:
+                continue
+            mag = self.magnitude_value(idx)
+            if mode not in best_per_mode or mag > best_per_mode[mode][1]:
+                best_per_mode[mode] = (row, mag)
+
+        for best_row, _ in best_per_mode.values():
+            show_idx = self.index(best_row, self.show_column)
+            self.setData(show_idx, "on")
+
+        self._programmatic_update = False
+
     def new_data(self, held: bool) -> None:
         """
         This is called if there is new data availble (as upposed to an
@@ -418,3 +514,4 @@ class PeaksModel(QtCore.QAbstractTableModel):
             self.clear_annotations()
             self.modes = {}
             self.show = {}
+            self._auto_mode_map = {}
