@@ -286,26 +286,6 @@ class PeakCardWidget(QtWidgets.QFrame):
 
         menu = QtWidgets.QMenu(self)
 
-        # ── Standard Modes (GuitarMode.current_cases) ─────────────────────
-        hdr = menu.addAction("Standard Modes")
-        hdr.setEnabled(False)
-        for mode in gm.GuitarMode.current_cases:
-            action = menu.addAction(mode.value)
-            action.setCheckable(True)
-            action.setChecked(mode.value == self._mode)
-
-        menu.addSeparator()
-
-        # ── Extended Modes (GuitarMode.additional_mode_labels) ────────────
-        hdr2 = menu.addAction("Extended Modes")
-        hdr2.setEnabled(False)
-        for mode_str in gm.GuitarMode.additional_mode_labels:
-            action = menu.addAction(mode_str)
-            action.setCheckable(True)
-            action.setChecked(mode_str == self._mode)
-
-        menu.addSeparator()
-
         # ── Reset to auto (only when a manual override is active) ─────────
         reset_action = None
         if self._is_manual:
@@ -313,6 +293,18 @@ class PeakCardWidget(QtWidgets.QFrame):
             auto_label = gm.mode_display_name(auto_str) or "Unknown"
             reset_action = menu.addAction(f"Reset to Auto-Detected ({auto_label})")
             menu.addSeparator()
+
+        # ── Standard Modes (GuitarMode.current_cases) ─────────────────────
+        for mode in gm.GuitarMode.current_cases:
+            menu.addAction(mode.value)
+
+        menu.addSeparator()
+
+        # ── Extended Modes (GuitarMode.additional_mode_labels) ────────────
+        for mode_str in gm.GuitarMode.additional_mode_labels:
+            menu.addAction(mode_str)
+
+        menu.addSeparator()
 
         # ── Custom… ───────────────────────────────────────────────────────
         custom_action = menu.addAction("Custom…")

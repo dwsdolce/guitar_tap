@@ -938,11 +938,14 @@ class FftCanvas(pg.PlotWidget):
         1. Identify the guaranteed peak for each known mode range — the
            highest-magnitude peak whose frequency falls within the mode's
            classification band.
-        2. Deduplicate the full set: walk peaks in descending-magnitude order,
-           keep each peak and mark all others within 2 Hz as consumed.
-        3. Restore any guaranteed peaks that were consumed by a stronger
-           nearby peak so each mode always has a slot in the output.
-        4. Sort by frequency ascending for consistent table display.
+        2. Deduplicate guaranteed peaks at 2 Hz to resolve overlapping mode
+           ranges (e.g. Top/Back overlap).
+        3. Deduplicate ALL remaining peaks at 2 Hz (descending magnitude) —
+           mirrors Swift's removeDuplicatePeaks which operates on all peaks,
+           allowing multiple peaks per mode range as long as they are >2 Hz apart.
+        4. Restore any guaranteed peaks that were consumed in step 3 so each
+           mode always has a slot in the output.
+        5. Sort by frequency ascending for consistent table display.
         """
         if peaks.shape[0] == 0:
             return peaks
@@ -956,13 +959,11 @@ class FftCanvas(pg.PlotWidget):
             gm.GuitarMode.DIPOLE, gm.GuitarMode.RING_MODE, gm.GuitarMode.UPPER_MODES,
         ]
         guaranteed: set[int] = set()
-        in_any_mode = np.zeros(len(freqs), dtype=bool)
         for mode in known_modes:
             lo, hi = mode.mode_range(self._guitar_type)
             in_range = np.where((freqs >= lo) & (freqs <= hi))[0]
             if in_range.size > 0:
                 guaranteed.add(int(in_range[np.argmax(mags[in_range])]))
-                in_any_mode[in_range] = True
 
         # Deduplicate guaranteed peaks at 2 Hz — mirrors Swift's
         # removeDuplicatePeaks(Array(strongestPeakPerMode.values)):
@@ -977,20 +978,25 @@ class FftCanvas(pg.PlotWidget):
                 used_g |= np.abs(freqs - freqs[idx]) < 2.0
         guaranteed = set(deduped_g)
 
-        # Pass 2 — peaks outside all mode ranges, deduped at 2 Hz
-        outside = np.where(~in_any_mode)[0]
+        # Pass 2 — deduplicate ALL peaks at 2 Hz (descending magnitude).
+        # Mirrors Swift's removeDuplicatePeaks which operates on the full peak
+        # list, not just peaks outside mode ranges.  This allows multiple peaks
+        # in the same mode range to survive provided they are >2 Hz apart.
         used = np.zeros(len(freqs), dtype=bool)
-        for idx in guaranteed:
-            used |= np.abs(freqs - freqs[idx]) < 2.0
-        extra: list[int] = []
-        for i in np.argsort(-mags[outside]):
-            idx = int(outside[i])
+        kept: list[int] = []
+        for i in np.argsort(-mags):
+            idx = int(i)
             if not used[idx]:
-                extra.append(idx)
+                kept.append(idx)
                 used |= np.abs(freqs - freqs[idx]) < 2.0
 
-        final = guaranteed | set(extra)
-        return peaks[sorted(final, key=lambda i: freqs[i])]
+        # Pass 3 — restore guaranteed peaks consumed by a stronger neighbour
+        kept_set = set(kept)
+        for g_idx in guaranteed:
+            if g_idx not in kept_set:
+                kept.append(g_idx)
+
+        return peaks[sorted(kept, key=lambda i: freqs[i])]
 
     def find_peaks(self, mag_y_db):
         """For the specified magnitude in db:
