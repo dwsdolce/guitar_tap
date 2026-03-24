@@ -23,6 +23,7 @@ import microphone
 import tap_detector as td
 import plate_capture as pc
 import measurement_type as mt_mod
+import app_settings as _as
 
 
 @dataclass
@@ -312,6 +313,9 @@ class FftCanvas(pg.PlotWidget):
         right_axis.setWidth(10)
 
         self.annotations: fft_a.FftAnnotations = fft_a.FftAnnotations(self)
+
+        # Disable pyqtgraph's built-in right-click menu; we provide our own.
+        self.getPlotItem().setMenuEnabled(False)
 
         self.avg_enable: bool = False
 
@@ -866,6 +870,55 @@ class FftCanvas(pg.PlotWidget):
                 if np.any(self.saved_peaks):
                     freq = self.saved_peaks[index0][0]
                     self.peakSelected.emit(freq)
+
+    # ── context menu (replaces pyqtgraph default) ─────────────────────────────
+
+    def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
+        """Right-click menu matching the Swift SpectrumView context menu."""
+        menu = QtWidgets.QMenu(self)
+
+        # ── Reset to Saved (persisted AppSettings values) ─────────────────
+        menu.addAction("Reset Both Axes to Saved",    self._reset_both_to_saved)
+        menu.addAction("Reset Frequency Axis to Saved", self._reset_freq_to_saved)
+        menu.addAction("Reset Magnitude Axis to Saved", self._reset_mag_to_saved)
+
+        menu.addSeparator()
+
+        # ── Reset to Defaults (factory hard-coded values) ─────────────────
+        menu.addAction("Reset Both Axes to Defaults",    self._reset_both_to_defaults)
+        menu.addAction("Reset Frequency Axis to Defaults", self._reset_freq_to_defaults)
+        menu.addAction("Reset Magnitude Axis to Defaults", self._reset_mag_to_defaults)
+
+        menu.addSeparator()
+
+        # ── Reset Labels ──────────────────────────────────────────────────
+        act = menu.addAction("Reset Labels", self.annotations.reset_all_positions)
+        act.setEnabled(self.annotations.has_moved_annotations)
+
+        menu.exec(event.globalPos())
+        event.accept()
+
+    def _reset_freq_to_saved(self) -> None:
+        mt = self._measurement_type
+        self.update_axis(_as.AppSettings.f_min(mt), _as.AppSettings.f_max(mt))
+
+    def _reset_mag_to_saved(self) -> None:
+        self.setYRange(_as.AppSettings.db_min(), _as.AppSettings.db_max(), padding=0)
+
+    def _reset_both_to_saved(self) -> None:
+        self._reset_freq_to_saved()
+        self._reset_mag_to_saved()
+
+    def _reset_freq_to_defaults(self) -> None:
+        mt = self._measurement_type
+        self.update_axis(_as.AppSettings.default_f_min(mt), _as.AppSettings.default_f_max(mt))
+
+    def _reset_mag_to_defaults(self) -> None:
+        self.setYRange(_as.AppSettings.default_db_min(), _as.AppSettings.default_db_max(), padding=0)
+
+    def _reset_both_to_defaults(self) -> None:
+        self._reset_freq_to_defaults()
+        self._reset_mag_to_defaults()
 
     def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
         """Update the x-axis frequency range"""

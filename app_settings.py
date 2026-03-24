@@ -51,11 +51,30 @@ class AppSettings:
     # Display frequency range (per-measurement-type keys)
     # ------------------------------------------------------------------ #
     @classmethod
+    def default_f_min(cls, meas_type: "str | object" = "") -> int:
+        """Factory default fmin — does not read QSettings."""
+        key_str = _meas_key(meas_type)
+        return 30 if key_str in ("Plate", "Brace") else 75
+
+    @classmethod
+    def default_f_max(cls, meas_type: "str | object" = "") -> int:
+        """Factory default fmax — does not read QSettings."""
+        key_str = _meas_key(meas_type)
+        return {"Plate": 600, "Brace": 1000}.get(key_str, 350)
+
+    @classmethod
+    def default_db_min(cls) -> float:
+        return -100.0
+
+    @classmethod
+    def default_db_max(cls) -> float:
+        return 0.0
+
+    @classmethod
     def f_min(cls, meas_type: "str | object" = "") -> int:
         key_str = _meas_key(meas_type)
         key = f"display/f_min_{key_str}" if key_str else "display/f_min"
-        defaults = {"Plate": 30, "Brace": 30}
-        default = defaults.get(key_str, 75)
+        default = cls.default_f_min(meas_type)
         return int(cls._get(key, default))
 
     @classmethod
@@ -68,8 +87,7 @@ class AppSettings:
     def f_max(cls, meas_type: "str | object" = "") -> int:
         key_str = _meas_key(meas_type)
         key = f"display/f_max_{key_str}" if key_str else "display/f_max"
-        defaults = {"Plate": 600, "Brace": 1000}
-        default = defaults.get(key_str, 350)
+        default = cls.default_f_max(meas_type)
         return int(cls._get(key, default))
 
     @classmethod

@@ -300,3 +300,27 @@ class FftAnnotations(QtCore.QObject):
                 pos = ann.pos()
                 ann_dict["xytext"] = (pos.x(), pos.y())
         self.restoreFocus.emit()
+
+    # ── label reset ───────────────────────────────────────────────────────────
+
+    @property
+    def has_moved_annotations(self) -> bool:
+        """True if any visible annotation label has been dragged from its default position."""
+        for ann_dict in self.annotations:
+            ann = ann_dict["annotation"]
+            if ann is None or ann._default_pos is None:
+                continue
+            dp = ann._default_pos
+            pos = ann.pos()
+            if abs(pos.x() - dp.x()) > 1e-6 or abs(pos.y() - dp.y()) > 1e-6:
+                return True
+        return False
+
+    def reset_all_positions(self) -> None:
+        """Reset every visible annotation label to its default (auto-placed) position."""
+        for ann_dict in self.annotations:
+            ann = ann_dict["annotation"]
+            if ann is not None and ann._default_pos is not None:
+                ann.setPos(ann._default_pos)
+                ann._update_arrow()
+        self.restoreFocus.emit()
