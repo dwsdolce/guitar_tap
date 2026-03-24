@@ -775,6 +775,7 @@ class MainWindow(QtWidgets.QMainWindow):
         model.showAnnotation.connect(canvas.annotations.show_annotation)
         model.hideAnnotation.connect(canvas.annotations.hide_annotation)
         model.hideAnnotations.connect(canvas.annotations.hide_annotations)
+        model.modeColorsChanged.connect(canvas.update_mode_colors)
 
         self.peak_widget.clearPeaks.connect(canvas.clear_selected_peak)
         self.peak_widget.clearPeaks.connect(self.peak_widget.clear_selected_peak)

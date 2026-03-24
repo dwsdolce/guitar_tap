@@ -42,6 +42,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     hideAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
     showAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
     userModifiedSelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    modeColorsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(object)  # dict[float, tuple[int,int,int]]
 
     mode_strings: list[str] = [
         "",
@@ -86,6 +87,11 @@ class PeaksModel(QtCore.QAbstractTableModel):
     def reset_mode_value(self, index: QtCore.QModelIndex) -> None:
         """Remove any manual mode override, reverting to auto-classification."""
         self.modes.pop(self.freq_value(index), None)
+
+    def _emit_mode_colors(self) -> None:
+        """Emit modeColorsChanged with the current freq→RGB color map."""
+        color_map = {freq: mode.color for freq, mode in self._auto_mode_map.items()}
+        self.modeColorsChanged.emit(color_map)
 
     def _recompute_auto_modes(self) -> None:
         """Rebuild the context-aware mode map from current peak data.
@@ -189,6 +195,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
         self.guitar_type = gt.GuitarType(guitar_type)
         self._recompute_auto_modes()   # mirrors Swift reclassifyPeaks()
+        self._emit_mode_colors()
         self.layoutChanged.emit()
 
     def data_value(self, index: QtCore.QModelIndex) -> QtCore.QVariant:
@@ -279,6 +286,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
         self._data = data
         self._recompute_auto_modes()   # mirrors Swift identifiedModes update
+        self._emit_mode_colors()
         self.layoutChanged.emit()
 
         # Reconcile annotations with the new peak set — mirrors Swift's reactive
@@ -387,6 +395,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                         index, index, [QtCore.Qt.ItemDataRole.DisplayRole]
                     )
                     self.update_annotation(index)
+                    self._emit_mode_colors()
                     return True
         return False
 

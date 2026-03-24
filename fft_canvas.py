@@ -375,7 +375,8 @@ class FftCanvas(pg.PlotWidget):
             size=8, pen=pg.mkPen(None), brush=pg.mkBrush(30, 100, 200, 200)
         )
         self.selected_point: pg.ScatterPlotItem = pg.ScatterPlotItem(
-            size=10, pen=pg.mkPen(None), brush=pg.mkBrush(220, 30, 30, 220)
+            size=16, pen=pg.mkPen((180, 0, 0, 220), width=1),
+            brush=pg.mkBrush(220, 30, 30, 220), symbol='star',
         )
         self.addItem(self.points)
         self.addItem(self.selected_point)
@@ -445,6 +446,7 @@ class FftCanvas(pg.PlotWidget):
         self.saved_peaks: npt.NDArray[np.float64] = np.zeros((0, 3))  # freq, mag, Q
         self.b_peaks_freq: npt.NDArray[np.float64] = []
         self.selected_peak: float = 0.0
+        self._mode_color_map: dict[float, tuple[int, int, int]] = {}  # freq → RGB
 
         # Saved peak information
         self.peaks_f_min_index: int = 0
@@ -1060,12 +1062,33 @@ class FftCanvas(pg.PlotWidget):
 
         return triggered, peaks
 
+    def _peak_brushes(self, freqs) -> list:
+        """Return a list of QBrush objects, one per peak, coloured by mode."""
+        brushes = []
+        for f in freqs:
+            r, g, b = self._mode_color_map.get(float(f), (30, 100, 200))
+            brushes.append(pg.mkBrush(r, g, b, 200))
+        return brushes
+
+    def update_mode_colors(self, color_map: dict) -> None:
+        """Update the per-peak mode colour map and redraw scatter points."""
+        self._mode_color_map = color_map
+        if self.saved_peaks.size > 0 and self.peaks_f_max_index > 0:
+            peaks_data = self.saved_peaks[self.peaks_f_min_index:self.peaks_f_max_index]
+            self.points.setData(
+                x=peaks_data[:, 0], y=peaks_data[:, 1],
+                brush=self._peak_brushes(peaks_data[:, 0]),
+            )
+
     def set_draw_data(self, mag_db, peaks) -> None:
         """Set the data for each of the plot objects used in update_fft"""
         if np.any(mag_db):
             self.fft_line.setData(self.freq, mag_db)
         if hasattr(peaks, "size") and peaks.size > 0:
-            self.points.setData(x=peaks[:, 0], y=peaks[:, 1])
+            self.points.setData(
+                x=peaks[:, 0], y=peaks[:, 1],
+                brush=self._peak_brushes(peaks[:, 0]),
+            )
         else:
             self.points.setData(x=[], y=[])
         if self._auto_scale_db and np.any(mag_db):
