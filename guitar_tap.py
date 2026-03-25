@@ -63,6 +63,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_paused: bool = False
         self._is_frozen: bool = False
         self._tap_count_captured: int = 0
+        self._tap_count_total: int = 1
         self._plate_dialog: PD.PlateDialog | None = None
         self._help_dialog: HD.HelpDialog | None = None
         self._metrics_dialog: QtWidgets.QDialog | None = None
@@ -555,32 +556,120 @@ class MainWindow(QtWidgets.QMainWindow):
         return strip
 
     def _build_status_bar(self) -> QtWidgets.QWidget:
-        """Bottom status bar: device name | calibration | running status."""
+        """Bottom status bar matching the Swift fullStatusBar layout."""
         bar = QtWidgets.QWidget()
         bar.setObjectName("bottom_status_bar")
         bar.setStyleSheet("#bottom_status_bar { border-top: 1px solid palette(mid); }")
-        hl = QtWidgets.QHBoxLayout(bar)
-        hl.setContentsMargins(8, 3, 8, 3)
-        hl.setSpacing(8)
 
-        small_font = QtGui.QFont()
-        small_font.setPointSize(10)
+        vl = QtWidgets.QVBoxLayout(bar)
+        vl.setContentsMargins(8, 3, 8, 3)
+        vl.setSpacing(2)
 
-        self.device_status_lbl = QtWidgets.QLabel("No device")
-        self.device_status_lbl.setFont(small_font)
-        hl.addWidget(self.device_status_lbl)
+        # ── Optional progress bar (shown when currentTapCount > 0) ──────
+        self._sb_progress = QtWidgets.QProgressBar()
+        self._sb_progress.setRange(0, 100)
+        self._sb_progress.setFixedHeight(6)
+        self._sb_progress.setTextVisible(False)
+        self._sb_progress.setStyleSheet(
+            "QProgressBar { border: none; border-radius: 3px;"
+            " background: palette(mid); }"
+            "QProgressBar::chunk { background: palette(highlight);"
+            " border-radius: 3px; }"
+        )
+        self._sb_progress.setVisible(False)
+        vl.addWidget(self._sb_progress)
 
-        hl.addWidget(_vsep())
+        # ── Main row ──────────────────────────────────────────────────────
+        hl = QtWidgets.QHBoxLayout()
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(6)
 
-        self.cal_status = QtWidgets.QLabel("Calibration: none")
-        self.cal_status.setFont(small_font)
-        hl.addWidget(self.cal_status)
+        small = QtGui.QFont()
+        small.setPointSize(14)
+        caption = QtGui.QFont()
+        caption.setPointSize(12)
 
-        hl.addStretch()
+        # Hidden labels kept so existing call sites don't crash
+        self.device_status_lbl = QtWidgets.QLabel()
+        self.device_status_lbl.setVisible(False)
+        self.cal_status = QtWidgets.QLabel()
+        self.cal_status.setVisible(False)
 
-        self.status_label = QtWidgets.QLabel("● Stopped")
-        self.status_label.setFont(small_font)
-        hl.addWidget(self.status_label)
+        # Tap detection dot
+        self._sb_tap_dot = QtWidgets.QLabel("●")
+        self._sb_tap_dot.setFont(caption)
+        self._sb_tap_dot.setStyleSheet("color: gray;")
+        hl.addWidget(self._sb_tap_dot)
+
+        # Tap message
+        self._sb_tap_msg = QtWidgets.QLabel("Waiting for tap…")
+        self._sb_tap_msg.setFont(small)
+        self._sb_tap_msg.setStyleSheet("color: gray;")
+        hl.addWidget(self._sb_tap_msg)
+
+        # Bullet separator
+        _b1 = QtWidgets.QLabel("•")
+        _b1.setFont(caption)
+        _b1.setStyleSheet("color: gray;")
+        hl.addWidget(_b1)
+
+        # Average magnitude
+        self._sb_avg_lbl = QtWidgets.QLabel("-100.0 dB")
+        self._sb_avg_lbl.setFont(small)
+        self._sb_avg_lbl.setStyleSheet("color: gray;")
+        hl.addWidget(self._sb_avg_lbl)
+
+        hl.addStretch(1)
+
+        # Frozen indicator (hidden by default)
+        self._sb_frozen_wgt = QtWidgets.QWidget()
+        frozen_hl = QtWidgets.QHBoxLayout(self._sb_frozen_wgt)
+        frozen_hl.setContentsMargins(0, 0, 0, 0)
+        frozen_hl.setSpacing(3)
+        _frozen_icon = QtWidgets.QLabel("⏸")
+        _frozen_icon.setFont(caption)
+        _frozen_icon.setStyleSheet("color: orange;")
+        frozen_hl.addWidget(_frozen_icon)
+        _frozen_txt = QtWidgets.QLabel("Frozen")
+        _frozen_txt.setFont(caption)
+        _frozen_txt.setStyleSheet("color: orange;")
+        frozen_hl.addWidget(_frozen_txt)
+        _frozen_sep = QtWidgets.QLabel("•")
+        _frozen_sep.setFont(caption)
+        _frozen_sep.setStyleSheet("color: gray;")
+        frozen_hl.addWidget(_frozen_sep)
+        self._sb_frozen_wgt.setVisible(False)
+        hl.addWidget(self._sb_frozen_wgt)
+
+        # Peak info
+        self._sb_peak_lbl = QtWidgets.QLabel("")
+        self._sb_peak_lbl.setFont(caption)
+        self._sb_peak_lbl.setStyleSheet("color: rgb(40,100,210);")
+        hl.addWidget(self._sb_peak_lbl)
+
+        # Detection state dot
+        self._sb_detect_dot = QtWidgets.QLabel("●")
+        self._sb_detect_dot.setFont(caption)
+        self._sb_detect_dot.setStyleSheet("color: orange;")
+        hl.addWidget(self._sb_detect_dot)
+
+        # Status message
+        self._sb_detect_msg = QtWidgets.QLabel("Stopped")
+        self._sb_detect_msg.setFont(caption)
+        self._sb_detect_msg.setStyleSheet("color: orange;")
+        hl.addWidget(self._sb_detect_msg)
+
+        # Tap count (hidden by default)
+        self._sb_tap_count = QtWidgets.QLabel("")
+        self._sb_tap_count.setFont(caption)
+        self._sb_tap_count.setStyleSheet("color: rgb(40,100,210); font-weight: bold;")
+        self._sb_tap_count.setVisible(False)
+        hl.addWidget(self._sb_tap_count)
+
+        vl.addLayout(hl)
+
+        # Keep status_label as a no-op alias so old call sites don't crash
+        self.status_label = self._sb_detect_msg
 
         return bar
 
@@ -764,6 +853,8 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peakDeselected.connect(self.peak_widget.clear_selection)
         canvas.averagesChanged.connect(self.set_avg_completed)
         canvas.framerateUpdate.connect(self._on_framerate_update)
+        canvas.levelChanged.connect(self._on_level_changed)
+        canvas.peakInfoChanged.connect(self._on_peak_info)
         canvas.newSample.connect(self.peak_widget.new_data)
         canvas.annotations.restoreFocus.connect(self.peak_widget.restore_focus)
 
@@ -833,16 +924,26 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_running(self, running: bool) -> None:
         if running:
-            self.status_label.setText("● Listening for tap…")
+            self._sb_detect_dot.setStyleSheet("color: green;")
+            self._sb_detect_msg.setText("Listening for tap…")
+            self._sb_detect_msg.setStyleSheet("")
         else:
-            self.status_label.setText("● Stopped")
+            self._sb_detect_dot.setStyleSheet("color: orange;")
+            self._sb_detect_msg.setText("Stopped")
+            self._sb_detect_msg.setStyleSheet("color: orange;")
             self._is_paused = False
         self._update_tap_buttons()
 
     def set_tap_count(self, captured: int, total: int) -> None:
         self._tap_count_captured = captured
-        if total > 1:
-            self.status_label.setText(f"● Tap {captured} / {total}")
+        self._tap_count_total = total
+        show = captured > 0
+        if show:
+            pct = int(captured * 100 / max(total, 1))
+            self._sb_progress.setValue(pct)
+            self._sb_tap_count.setText(f"{captured}/{total}")
+        self._sb_progress.setVisible(show)
+        self._sb_tap_count.setVisible(show)
         self._update_tap_buttons()
 
     def set_ring_out(self, time_s: float) -> None:
@@ -853,6 +954,24 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cal_status.setText(f"Cal: {os.path.basename(path)}")
         else:
             self.cal_status.setText("Calibration: none")
+
+    def _on_level_changed(self, amp: int) -> None:
+        db = amp - 100.0
+        self._sb_avg_lbl.setText(f"{db:.1f} dB")
+
+    def _on_peak_info(self, peak_hz: float, peak_db: float) -> None:
+        if self._is_running:
+            self._sb_peak_lbl.setText(f"Peak: {peak_db:.1f} dB @ {peak_hz:.1f} Hz")
+
+    def _sb_update_frozen_state(self, frozen: bool) -> None:
+        if frozen:
+            self._sb_tap_dot.setStyleSheet("color: green;")
+            self._sb_tap_msg.setText("Tap Detected!")
+            self._sb_tap_msg.setStyleSheet("color: green;")
+        else:
+            self._sb_tap_dot.setStyleSheet("color: rgba(128,128,128,77);")
+            self._sb_tap_msg.setText("Waiting for tap…")
+            self._sb_tap_msg.setStyleSheet("color: gray;")
 
     def _on_auto_db_toggled(self, enabled: bool) -> None:
         if enabled:
@@ -979,6 +1098,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.select_all_btn.setEnabled(False)
             self.deselect_all_btn.setEnabled(False)
             self.reset_auto_selection_btn.setEnabled(False)
+        self._sb_frozen_wgt.setVisible(checked)
+        self._sb_update_frozen_state(checked)
         self._update_tap_buttons()
 
     def reset_averaging(self) -> None:
@@ -1144,6 +1265,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
             except Exception:
                 pass
+        n_peaks = len(self.fft_canvas.saved_peaks)
+        n_taps = max(self._tap_count_captured, 1)
+        msg = (
+            f"Analysis complete! {n_peaks} peaks identified"
+            f" (from {n_taps} averaged tap{'s' if n_taps != 1 else ''})."
+        )
+        self._sb_detect_msg.setText(msg)
+        self._sb_detect_msg.setStyleSheet("color: orange;")
+        self._sb_detect_dot.setStyleSheet("color: orange;")
 
     def _on_new_tap(self) -> None:
         """Begin a new tap sequence, clearing any in-progress accumulated spectra."""
@@ -1153,9 +1283,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # start_tap_sequence clears accumulated spectra and restarts the warmup,
         # preventing leftover spectra from a previous partial sequence polluting the next one.
         self.fft_canvas.start_tap_sequence()
-        n = self.tap_num_spin.value()
-        if n == 1:
-            self.status_label.setText("● Listening for tap…")
+        self._tap_count_captured = 0
+        self._sb_tap_count.setVisible(False)
+        self._sb_progress.setVisible(False)
+        self._sb_detect_msg.setText("Listening for tap…")
+        self._sb_detect_msg.setStyleSheet("")
 
     def _on_ring_out_measured(self, time_s: float) -> None:
         self._ring_out_s = time_s
@@ -2834,6 +2966,7 @@ if __name__ == "__main__":
     if os.name == "nt":
         mutex = NM.NamedMutex("guitar-tap-running", True)
 
+    os.environ["QT_LOGGING_TO_CONSOLE"] = "1"
     qapp = QtWidgets.QApplication(sys.argv)
 
     app = MainWindow()

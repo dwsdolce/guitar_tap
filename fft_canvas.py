@@ -186,7 +186,14 @@ class FftProcessingThread(QtCore.QThread):
                 self._decay_tracker.update(fft_peak_amp)
 
             tap_fired = self._tap_pending and not is_frozen
+            if self._tap_pending and is_frozen:
+                print(
+                    f"TAP_DEBUG [run] tap_pending=True but is_frozen=True → tap suppressed"
+                )
             if tap_fired:
+                print(
+                    f"TAP_DEBUG [run] tap_fired=True → forwarding to _do_capture_tap"
+                )
                 self._tap_pending = False
 
             exit_now = time.time()
@@ -355,6 +362,8 @@ class FftCanvas(pg.PlotWidget):
     plateStatusChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)    # plate capture status
     plateAnalysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)  # fL, fC
     tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)   # True=paused
+    peakInfoChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)  # (peak_hz, peak_db)
+    levelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)              # level 0-100 (dB+100)
 
     def __init__(
         self,
@@ -835,10 +844,21 @@ class FftCanvas(pg.PlotWidget):
 
     def _do_capture_tap(self, mag_y_db: npt.NDArray[np.float64], tap_amp: int) -> None:
         """Capture one tap spectrum; called from _on_fft_frame_ready() when tap_fired is True."""
+        print(
+            f"TAP_DEBUG [handleTapDetection] ENTERED | "
+            f"tap_amp={tap_amp} is_guitar={self._proc_thread._is_guitar} "
+            f"captured_so_far={len(self._tap_spectra)} numberOfTaps={self._tap_num}"
+        )
         if not np.any(mag_y_db):
+            print("TAP_DEBUG [handleTapDetection] SKIPPED — mag_y_db is all zeros")
             return
         self._tap_spectra.append(mag_y_db.copy())
         captured = len(self._tap_spectra)
+        print(
+            f"TAP_DEBUG [handleTapDetection] GUITAR TAP STORED | "
+            f"currentTapCount={captured} numberOfTaps={self._tap_num} "
+            f"tapProgress={captured/max(self._tap_num,1):.2f}"
+        )
         self.tapCountChanged.emit(captured, self._tap_num)
 
         if captured >= self._tap_num:
@@ -1388,3 +1408,7 @@ class FftCanvas(pg.PlotWidget):
             self.set_draw_data(mag_y_db, peaks)
 
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
+        self.levelChanged.emit(tap_amp)
+        peak_idx = int(np.argmax(mag_y_db))
+        if peak_idx < len(self.freq):
+            self.peakInfoChanged.emit(float(self.freq[peak_idx]), float(mag_y_db[peak_idx]))

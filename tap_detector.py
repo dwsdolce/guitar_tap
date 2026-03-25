@@ -189,6 +189,7 @@ class TapDetector(QtCore.QObject):
         tap_db = float(self.tap_threshold) - 100.0   # 0-100 → dBFS
 
         if self._mode == self.MODE_GUITAR:
+            self._last_headroom: float = 0.0
             return tap_db, tap_db - self.hysteresis_margin
 
         # --- Plate/Brace EMA adaptive threshold ---
@@ -197,6 +198,7 @@ class TapDetector(QtCore.QObject):
             + (1.0 - self._ema_alpha) * self._noise_floor_db
         )
         headroom = max(tap_db - self._noise_floor_db, self._min_headroom_db)
+        self._last_headroom = headroom
         rising  = self._noise_floor_db + headroom
         falling = self._noise_floor_db + max(
             headroom - self.hysteresis_margin, self._min_falling_db
@@ -225,30 +227,100 @@ class TapDetector(QtCore.QObject):
 
         now = _time.monotonic()
 
+        # TAP_DEBUG: mode/threshold print (every frame, mirrors Swift detectTap top-of-function)
+        if self._mode == self.MODE_PLATE_BRACE:
+            print(
+                f"TAP_DEBUG [detectTap] RELATIVE mode | "
+                f"peakMag={level_db:.2f} noiseFloor={self._noise_floor_db:.2f} "
+                f"headroom={getattr(self, '_last_headroom', 0.0):.2f} "
+                f"risingThresh={rising_db:.2f} fallingThresh={falling_db:.2f} "
+                f"state={self._state}"
+            )
+        else:
+            print(
+                f"TAP_DEBUG [detectTap] ABSOLUTE mode | "
+                f"peakMag={level_db:.2f} "
+                f"risingThresh={rising_db:.2f} fallingThresh={falling_db:.2f} "
+                f"state={self._state}"
+            )
+
         match self._state:
             case self._WARMUP:
-                if now - self._state_entry_time >= self.warmup_s:
+                remaining = self.warmup_s - (now - self._state_entry_time)
+                if remaining > 0:
+                    print(
+                        f"TAP_DEBUG [detectTap] WARMUP in progress | "
+                        f"remaining={remaining:.2f}s peakMag={level_db:.2f}"
+                    )
+                else:
                     # Re-anchor to current level on warmup exit (Swift behaviour):
                     # don't fire immediately if signal is already above threshold.
                     if amplitude >= rising_amp:
                         self._state = self._TRIGGERED
+                        print(
+                            f"TAP_DEBUG [detectTap] WARMUP EXIT (already above) | "
+                            f"peakMag={level_db:.2f} risingThresh={rising_db:.2f} "
+                            f"→ state=TRIGGERED"
+                        )
                     else:
                         self._state = self._IDLE
+                        if self._mode == self.MODE_PLATE_BRACE:
+                            print(
+                                f"TAP_DEBUG [detectTap] WARMUP EXIT (relative) | "
+                                f"peakMag={level_db:.2f} "
+                                f"noiseFloorAnchored={self._noise_floor_db:.2f} "
+                                f"risingAnchored={rising_db:.2f} isAboveThreshold=False"
+                            )
+                        else:
+                            print(
+                                f"TAP_DEBUG [detectTap] WARMUP EXIT (absolute) | "
+                                f"peakMag={level_db:.2f} "
+                                f"risingThresh={rising_db:.2f} isAboveThreshold=False"
+                            )
                     self._state_entry_time = now
 
             case self._IDLE:
-                if amplitude >= rising_amp:
+                now_above = amplitude >= rising_amp
+                print(
+                    f"TAP_DEBUG [detectTap] HYSTERESIS eval | "
+                    f"peakMag={level_db:.2f} wasAbove=False nowAbove={now_above} "
+                    f"risingThresh={rising_db:.2f} fallingThresh={falling_db:.2f} "
+                    f"isDetecting=True currentTapCount=?"
+                )
+                if now_above:
+                    print(
+                        f"TAP_DEBUG [detectTap] RISING EDGE FIRED | "
+                        f"peakMag={level_db:.2f} risingThresh={rising_db:.2f}"
+                    )
                     self._state = self._TRIGGERED
                     self._state_entry_time = now
                     self.tapDetected.emit()
 
             case self._TRIGGERED:
-                if amplitude < falling_amp:
+                now_above = amplitude >= falling_amp
+                print(
+                    f"TAP_DEBUG [detectTap] HYSTERESIS eval | "
+                    f"peakMag={level_db:.2f} wasAbove=True nowAbove={now_above} "
+                    f"risingThresh={rising_db:.2f} fallingThresh={falling_db:.2f} "
+                    f"isDetecting=False currentTapCount=?"
+                )
+                if not now_above:
+                    print(
+                        f"TAP_DEBUG [detectTap] FALLING EDGE | "
+                        f"peakMag={level_db:.2f} fallingThresh={falling_db:.2f} "
+                        f"— signal settled, entering COOLDOWN"
+                    )
                     self._state = self._COOLDOWN
                     self._state_entry_time = now
 
             case self._COOLDOWN:
-                if now - self._state_entry_time >= self.cooldown_s:
+                remaining = self.cooldown_s - (now - self._state_entry_time)
+                if remaining > 0:
+                    print(
+                        f"TAP_DEBUG [detectTap] COOLDOWN active | "
+                        f"remaining={remaining:.3f}s peakMag={level_db:.2f}"
+                    )
+                else:
                     # Re-anchor on cooldown exit (Swift behaviour): prevents an
                     # immediate re-trigger if the ring-out is still elevated.
                     if amplitude >= rising_amp:
