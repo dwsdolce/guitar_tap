@@ -152,6 +152,10 @@ class TapDetector(QtCore.QObject):
 
     def reset(self) -> None:
         """Restart warmup (call after device change, new tap sequence, etc.)."""
+        import traceback as _tb
+        print("TAP_DEBUG [TapDetector.reset] called from:")
+        for line in _tb.format_stack()[:-1]:
+            print("  ", line.strip())
         self._state = self._WARMUP
         self._state_entry_time = _time.monotonic()
 

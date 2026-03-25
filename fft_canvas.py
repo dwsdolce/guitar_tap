@@ -447,12 +447,7 @@ class FftCanvas(pg.PlotWidget):
             on_devices_changed=self._devicesRefreshed.emit,  # no-arg, thread-safe
         )
 
-        # Auto-load calibration for the starting device
-        self._calibration_device_name = saved_device_name
-        if saved_device_name:
-            cal_path = _as.AppSettings.calibration_for_device(saved_device_name)
-            if cal_path:
-                self.load_calibration(cal_path)
+        # Calibration is auto-loaded below, after self.freq is initialised.
 
         # FFT line
         self.fft_line: pg.PlotDataItem = self.plot(
@@ -525,7 +520,14 @@ class FftCanvas(pg.PlotWidget):
 
         # Microphone calibration corrections (dB per bin, or None)
         self._calibration_corrections: npt.NDArray[np.float64] | None = None
-        self._calibration_device_name: str = ""
+        self._calibration_device_name: str = saved_device_name
+
+        # Auto-load the calibration profile stored for this device
+        if saved_device_name:
+            import mic_calibration as _mc
+            _cal = _mc.CalibrationStorage.calibration_for_device(saved_device_name)
+            if _cal is not None:
+                self._calibration_corrections = _cal.interpolate_to_bins(self.freq)
 
         # Auto-scale dB
         self._auto_scale_db: bool = False
@@ -814,6 +816,13 @@ class FftCanvas(pg.PlotWidget):
             return True
         except Exception:
             return False
+
+    def load_calibration_from_profile(self, cal: "mic_calibration.MicrophoneCalibration") -> None:
+        """Apply a pre-parsed MicrophoneCalibration profile to the FFT pipeline."""
+        import mic_calibration
+        self._calibration_corrections = cal.interpolate_to_bins(self.freq)
+        if hasattr(self, "_proc_thread"):
+            self._proc_thread.set_calibration(self._calibration_corrections)
 
     def clear_calibration(self) -> None:
         """Remove the active calibration (no dB correction applied)."""
