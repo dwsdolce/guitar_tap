@@ -1305,6 +1305,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_widget.model.deselect_all_peaks()
 
     def _on_reset_auto_selection(self) -> None:
+        # Swift Fix 3: do NOT clear _loaded_measurement_peaks here.
+        # Clearing it would cause subsequent threshold slider moves to switch to
+        # spectrum re-analysis, losing peaks that only exist in the saved data.
+        # The loaded peaks remain authoritative for the lifetime of the loaded
+        # measurement — only unfreezing (returning to live capture) clears them.
         try:
             guitar_type = GT.GuitarType(self.guitar_type_combo.currentText())
             self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
@@ -1581,6 +1586,7 @@ class MainWindow(QtWidgets.QMainWindow):
             peaks_array = np.zeros((0, 3), dtype=np.float64)
 
         canvas.saved_peaks = peaks_array
+        canvas._loaded_measurement_peaks = peaks_array  # authoritative; used by threshold/range sliders
         canvas.b_peaks_freq = peaks_array[:, 0] if len(peaks_array) > 0 else []
         canvas.peaks_f_min_index = 0
         canvas.peaks_f_max_index = len(peaks_array)

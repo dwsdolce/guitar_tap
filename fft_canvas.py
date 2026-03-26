@@ -536,6 +536,11 @@ class FftCanvas(pg.PlotWidget):
         self.saved_mag_y_db: npt.NDArray[np.float64] = []
         self.saved_peaks: npt.NDArray[np.float64] = np.zeros((0, 3))  # freq, mag, Q
         self.b_peaks_freq: npt.NDArray[np.float64] = []
+        # When a measurement is loaded from file these are the authoritative peaks.
+        # set_threshold / update_axis filter this array instead of re-analysing the
+        # spectrum, so peaks can never be permanently lost by sliding the threshold.
+        # Cleared when the display is unfrozen (returning to live capture).
+        self._loaded_measurement_peaks: npt.NDArray[np.float64] | None = None
         self.selected_peak: float = 0.0
         self._mode_color_map: dict[float, tuple[int, int, int]] = {}  # freq → RGB
 
@@ -1122,7 +1127,10 @@ class FftCanvas(pg.PlotWidget):
 
             self.setXRange(fmin, fmax, padding=0)
             if not init:
-                self.find_peaks(self.saved_mag_y_db)
+                if self._loaded_measurement_peaks is not None:
+                    self._emit_loaded_peaks_at_threshold()
+                else:
+                    self.find_peaks(self.saved_mag_y_db)
 
     def set_max_average_count(self, max_average_count: int) -> None:
         """Set the number of averages to take"""
@@ -1144,6 +1152,7 @@ class FftCanvas(pg.PlotWidget):
             self.selected_point.setData(x=[], y=[])
             self.clear_selected_peak()
             self._tap_spectra.clear()
+            self._loaded_measurement_peaks = None
 
     def set_fmin(self, fmin: int) -> None:
         """As it says"""
@@ -1152,6 +1161,40 @@ class FftCanvas(pg.PlotWidget):
     def set_fmax(self, fmax: int) -> None:
         """As it says"""
         self.update_axis(self.fmin, fmax)
+
+    def _emit_loaded_peaks_at_threshold(self) -> None:
+        """Filter the loaded-measurement peaks by the current threshold and
+        fmin/fmax, then emit peaksChanged.  Used instead of re-running the full
+        spectrum analysis when a measurement has been loaded from file — mirrors
+        Swift's recalculateFrozenPeaksIfNeeded fast-path.
+        """
+        assert self._loaded_measurement_peaks is not None
+        threshold_db = self.threshold - 100
+        peaks: npt.NDArray[np.float64] = self._loaded_measurement_peaks[
+            self._loaded_measurement_peaks[:, 1] >= threshold_db
+        ]
+
+        empty: npt.NDArray[np.float64] = np.zeros((0, 3))
+        if peaks.shape[0] == 0:
+            self.saved_peaks = empty
+            self.b_peaks_freq = np.array([], dtype=np.float64)
+            self.peaksChanged.emit(empty)
+            return
+
+        self.saved_peaks = peaks
+        peaks_freq: npt.NDArray[np.float64] = peaks[:, 0]
+
+        b_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
+        if len(b_indices[0]) > 0:
+            self.peaks_f_min_index = int(b_indices[0][0])
+            self.peaks_f_max_index = int(b_indices[0][-1]) + 1
+            self.b_peaks_freq = peaks_freq[self.peaks_f_min_index:self.peaks_f_max_index]
+            self.peaksChanged.emit(peaks[self.peaks_f_min_index:self.peaks_f_max_index])
+        else:
+            self.peaks_f_min_index = 0
+            self.peaks_f_max_index = 0
+            self.b_peaks_freq = np.array([], dtype=np.float64)
+            self.peaksChanged.emit(empty)
 
     def set_threshold(self, threshold: int) -> None:
         """Set the threshold used to limit both the triggering of a sample
@@ -1165,7 +1208,10 @@ class FftCanvas(pg.PlotWidget):
         self.line_threshold.setPos(self.threshold_y)
         self.line_threshold.label.setText(f"Peak: {self.threshold_y} dB")
 
-        self.find_peaks(self.saved_mag_y_db)
+        if self._loaded_measurement_peaks is not None:
+            self._emit_loaded_peaks_at_threshold()
+        else:
+            self.find_peaks(self.saved_mag_y_db)
 
         self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()
@@ -1178,19 +1224,20 @@ class FftCanvas(pg.PlotWidget):
     def _apply_mode_priority(self, peaks: np.ndarray) -> np.ndarray:
         """Apply mode-priority selection and 2 Hz deduplication.
 
-        Mirrors the Swift findPeaks Step 3 + removeDuplicatePeaks algorithm:
+        Mirrors the updated Swift findPeaks pass-1 algorithm:
 
-        1. Identify the guaranteed peak for each known mode range — the
-           highest-magnitude peak whose frequency falls within the mode's
-           classification band.
-        2. Deduplicate guaranteed peaks at 2 Hz to resolve overlapping mode
-           ranges (e.g. Top/Back overlap).
-        3. Deduplicate ALL remaining peaks at 2 Hz (descending magnitude) —
-           mirrors Swift's removeDuplicatePeaks which operates on all peaks,
-           allowing multiple peaks per mode range as long as they are >2 Hz apart.
-        4. Restore any guaranteed peaks that were consumed in step 3 so each
-           mode always has a slot in the output.
-        5. Sort by frequency ascending for consistent table display.
+        1. Scan modes in ascending frequency order using a lastClaimedFrequency
+           cursor.  Each mode only considers peaks strictly above the previous
+           mode's claimed frequency, preventing two modes from claiming the same
+           physical peak (critical in the Top/Back overlap zone ~190-230 Hz).
+           A per-claim 2 Hz duplicate check also discards a candidate that is
+           within 2 Hz of an already-claimed peak.
+        2. Deduplicate ALL remaining peaks at 2 Hz (descending magnitude) —
+           mirrors Swift's removeDuplicatePeaks, allowing multiple peaks per
+           mode range provided they are >2 Hz apart.
+        3. Restore any guaranteed peaks consumed in step 2 so each mode always
+           has a slot in the output.
+        4. Sort by frequency ascending for consistent table display.
         """
         if peaks.shape[0] == 0:
             return peaks
@@ -1198,35 +1245,34 @@ class FftCanvas(pg.PlotWidget):
         freqs = peaks[:, 0]
         mags  = peaks[:, 1]
 
-        # Pass 1 — one guaranteed peak per known mode range (highest magnitude)
-        known_modes = [
-            gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK,
-            gm.GuitarMode.DIPOLE, gm.GuitarMode.RING_MODE, gm.GuitarMode.UPPER_MODES,
-        ]
+        # Pass 1 — sequential scan with lastClaimedFrequency cursor.
+        # Modes are visited in ascending lower-bound order so the cursor advances
+        # monotonically, matching the new Swift findPeaks pass-1 logic.
+        known_modes = sorted(
+            [gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK,
+             gm.GuitarMode.DIPOLE, gm.GuitarMode.RING_MODE, gm.GuitarMode.UPPER_MODES],
+            key=lambda m: m.mode_range(self._guitar_type)[0],
+        )
         guaranteed: set[int] = set()
+        last_claimed_freq: float = -1.0
+
         for mode in known_modes:
             lo, hi = mode.mode_range(self._guitar_type)
-            in_range = np.where((freqs >= lo) & (freqs <= hi))[0]
-            if in_range.size > 0:
-                guaranteed.add(int(in_range[np.argmax(mags[in_range])]))
-
-        # Deduplicate guaranteed peaks at 2 Hz — mirrors Swift's
-        # removeDuplicatePeaks(Array(strongestPeakPerMode.values)):
-        # if two guaranteed peaks are within 2 Hz (e.g. from the Top/Back
-        # overlap zone), keep only the higher-magnitude one.
-        guaranteed_list = sorted(guaranteed, key=lambda i: -float(mags[i]))
-        deduped_g: list[int] = []
-        used_g = np.zeros(len(freqs), dtype=bool)
-        for idx in guaranteed_list:
-            if not used_g[idx]:
-                deduped_g.append(idx)
-                used_g |= np.abs(freqs - freqs[idx]) < 2.0
-        guaranteed = set(deduped_g)
+            # Only consider peaks above the last claimed frequency (cursor)
+            candidates = np.where(
+                (freqs >= lo) & (freqs <= hi) & (freqs > last_claimed_freq)
+            )[0]
+            if candidates.size == 0:
+                continue
+            best = int(candidates[np.argmax(mags[candidates])])
+            # Post-claim 2 Hz duplicate check — discard if too close to an
+            # already-claimed peak from an earlier mode
+            if any(abs(freqs[best] - freqs[g]) < 2.0 for g in guaranteed):
+                continue
+            guaranteed.add(best)
+            last_claimed_freq = float(freqs[best])
 
         # Pass 2 — deduplicate ALL peaks at 2 Hz (descending magnitude).
-        # Mirrors Swift's removeDuplicatePeaks which operates on the full peak
-        # list, not just peaks outside mode ranges.  This allows multiple peaks
-        # in the same mode range to survive provided they are >2 Hz apart.
         used = np.zeros(len(freqs), dtype=bool)
         kept: list[int] = []
         for i in np.argsort(-mags):

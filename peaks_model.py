@@ -289,11 +289,24 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._emit_mode_colors()
         self.layoutChanged.emit()
 
-        # Reconcile annotations with the new peak set — mirrors Swift's reactive
-        # identifiedModes/selectedPeakIDs which automatically drop annotations
-        # for peaks that fell below the threshold.
-        # Clear everything, then re-create annotations only for peaks that still
-        # exist in _data and have show == "on".
+        # Carry-forward: rebuild self.show against the new peak set, explicitly
+        # preserving entries whose frequency has no match in the new data (i.e.
+        # peak dropped below threshold).  This mirrors Swift Fix 2 — the carry-
+        # forward loop that keeps a frequency in carriedFreqs unchanged when no
+        # matching peak is found, so the selection is restored when the threshold
+        # is later lowered again.
+        new_freqs = set(data[:, 0]) if data.shape[0] > 0 else set()  # col 0 = frequency
+        carried: dict[float, str] = {}
+        for freq, val in self.show.items():
+            if freq in new_freqs:
+                carried[freq] = val   # peak still present — carry forward as-is
+            else:
+                carried[freq] = val   # peak below threshold — preserve so it can
+                                      # be re-selected when threshold is lowered
+        self.show = carried
+
+        # Reconcile annotations: clear everything, then re-create only for peaks
+        # that are currently in _data and have show == "on".
         self.clearAnnotations.emit()
         for row in range(self._data.shape[0]):
             idx = self.index(row, 0)

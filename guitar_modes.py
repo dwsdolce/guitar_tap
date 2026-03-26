@@ -257,11 +257,14 @@ class GuitarMode(Enum):
     ) -> dict[int, GuitarMode]:
         """Classify a list of (freq, magnitude) peaks using context-aware claiming.
 
-        Mirrors Swift ``GuitarMode.classifyAll``:
+        Mirrors the updated Swift ``GuitarMode.classifyAll``:
         1. Modes are visited in ascending lower-bound order.
-        2. For each mode the highest-magnitude unclaimed peak in its range is
-           claimed; no other mode can later claim the same peak.
-        3. Unclaimed peaks are classified individually via ``classify()``.
+        2. A ``last_claimed_freq`` cursor advances with each claim — each mode
+           only considers peaks strictly above the previous mode's claimed
+           frequency, preventing two modes from claiming the same physical peak.
+        3. A per-claim 2 Hz duplicate check discards a candidate within 2 Hz of
+           an already-claimed peak from an earlier mode.
+        4. Unclaimed peaks are classified individually via ``classify()``.
 
         Returns a dict mapping each peak's index to its ``GuitarMode``.
         """
@@ -271,17 +274,26 @@ class GuitarMode(Enum):
         )
         result: dict[int, GuitarMode] = {}
         claimed: set[int] = set()
+        last_claimed_freq: float = -1.0
+        claimed_freqs: list[float] = []
 
         for mode in ordered_modes:
             lo, hi = mode.mode_range(guitar_type)
             candidates = [
                 (i, mag) for i, (freq, mag) in enumerate(peaks)
-                if lo <= freq <= hi and i not in claimed
+                if lo <= freq <= hi and i not in claimed and freq > last_claimed_freq
             ]
-            if candidates:
-                best_i = max(candidates, key=lambda x: x[1])[0]
-                result[best_i] = mode
-                claimed.add(best_i)
+            if not candidates:
+                continue
+            best_i = max(candidates, key=lambda x: x[1])[0]
+            best_freq = peaks[best_i][0]
+            # Post-claim 2 Hz duplicate check
+            if any(abs(best_freq - f) < 2.0 for f in claimed_freqs):
+                continue
+            result[best_i] = mode
+            claimed.add(best_i)
+            last_claimed_freq = best_freq
+            claimed_freqs.append(best_freq)
 
         for i, (freq, _) in enumerate(peaks):
             if i not in result:
