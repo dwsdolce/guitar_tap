@@ -3,7 +3,7 @@ Card-based peak list — replaces the QTableView-based PeakTable.
 
 Each detected peak is displayed as a card with:
   • Star toggle     — show/hide the annotation on the FFT plot
-  • Mode colour chip — tinted square in the mode's colour + in-range badge
+  • Mode icon       — qtawesome icon in the mode's colour + in-range badge
   • Mode label      — clickable menu for manual override (italic when overridden)
   • Frequency       — right-aligned, bold
   • Pitch / cents   — purple, below frequency
@@ -22,6 +22,7 @@ import numpy as np
 import numpy.typing as npt
 
 from PyQt6 import QtCore, QtGui, QtWidgets
+import qtawesome as qta
 
 import guitar_type as gt
 import guitar_modes as gm
@@ -118,7 +119,8 @@ class PeakCardWidget(QtWidgets.QFrame):
         chip_col.setContentsMargins(0, 0, 0, 0)
 
         self._chip = QtWidgets.QLabel()
-        self._chip.setFixedSize(28, 28)
+        self._chip.setFixedSize(26, 26)
+        self._chip.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         chip_col.addWidget(self._chip, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
 
         self._badge = QtWidgets.QLabel()
@@ -225,10 +227,13 @@ class PeakCardWidget(QtWidgets.QFrame):
         color = _mode_color(self._mode)
         r, g, b = color.red(), color.green(), color.blue()
 
-        # Colour chip
-        self._chip.setStyleSheet(
-            f"background: rgba({r},{g},{b},180); border-radius: 6px;"
+        # Mode icon chip
+        guitar_mode = gm.GuitarMode.from_mode_string(self._mode)
+        pixmap = qta.icon(guitar_mode.icon, color=QtGui.QColor(r, g, b)).pixmap(
+            QtCore.QSize(22, 22)
         )
+        self._chip.setPixmap(pixmap)
+        self._chip.setStyleSheet("")
 
         # Mode button label
         display = _short_mode(self._mode)
@@ -443,16 +448,16 @@ class PeakListWidget(QtWidgets.QWidget):
         # Ensure the right panel is never narrower than a readable card width
         self.setMinimumWidth(240)
 
+        # Keep cards in sync when the model changes via external calls
+        # (select_all, deselect_all, set_guitar_type, auto_select, etc.)
+        self.model.dataChanged.connect(self._on_model_data_changed)
+        self.model.layoutChanged.connect(self._on_model_layout_changed)
+
     def sizeHint(self) -> QtCore.QSize:
         # Preferred width grows slightly with content but stays readable
         card_count = len(self._cards)
         w = max(240, 260 if card_count > 0 else 240)
         return QtCore.QSize(w, super().sizeHint().height())
-
-    # Keep cards in sync when the model changes via external calls
-    # (select_all, deselect_all, set_guitar_type, etc.)
-        self.model.dataChanged.connect(self._on_model_data_changed)
-        self.model.layoutChanged.connect(self._on_model_layout_changed)
 
     # ── card management ───────────────────────────────────────────────────────
 
@@ -535,9 +540,10 @@ class PeakListWidget(QtWidgets.QWidget):
         """Refresh mode displays when guitar_type changes."""
         for card in self._cards:
             card.set_guitar_type(self.model.guitar_type)
-            src_idx = self.model.index(
-                int(self.model.freq_index(card.freq)), 0
-            )
+            row = int(self.model.freq_index(card.freq))
+            if row < 0:
+                continue
+            src_idx = self.model.index(row, 0)
             card.set_mode(
                 self.model.mode_value(src_idx),
                 is_manual=(card.freq in self.model.modes),

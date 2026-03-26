@@ -84,10 +84,10 @@ class TapDetector(QtCore.QObject):
     States:
         WARMUP    — ignoring input for `warmup_s` seconds after start/reset.
         IDLE      — waiting for a rising edge above the effective threshold.
-        TRIGGERED — tap confirmed; waiting for level to drop below the
-                    falling threshold before rearming.
-        COOLDOWN  — brief lockout (`cooldown_s` s) after the falling edge,
-                    preventing double-triggers from the same tap ring-out.
+                    Checks time-based cooldown (`cooldown_s`) from the last
+                    fired tap before emitting (matches Swift tapCooldown).
+        TRIGGERED — tap confirmed (or cooldown-blocked rise); waiting for
+                    level to drop below the falling threshold before rearming.
     """
 
     MODE_GUITAR: str = "guitar"
@@ -128,6 +128,7 @@ class TapDetector(QtCore.QObject):
         self._state: str = self._WARMUP
         self._state_entry_time: float = _time.monotonic()
         self._pre_pause_state: str = self._WARMUP
+        self._last_tap_time: float | None = None  # time of last fired tap (for cooldown)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -158,6 +159,7 @@ class TapDetector(QtCore.QObject):
             print("  ", line.strip())
         self._state = self._WARMUP
         self._state_entry_time = _time.monotonic()
+        self._last_tap_time = None
 
     def set_tap_threshold(self, value: int) -> None:
         self.tap_threshold = value
@@ -292,13 +294,29 @@ class TapDetector(QtCore.QObject):
                     f"isDetecting=True currentTapCount=?"
                 )
                 if now_above:
-                    print(
-                        f"TAP_DEBUG [detectTap] RISING EDGE FIRED | "
-                        f"peakMag={level_db:.2f} risingThresh={rising_db:.2f}"
+                    # Check time-based cooldown from last tap (matches Swift tapCooldown)
+                    cooldown_remaining = (
+                        self.cooldown_s - (now - self._last_tap_time)
+                        if self._last_tap_time is not None else 0.0
                     )
-                    self._state = self._TRIGGERED
-                    self._state_entry_time = now
-                    self.tapDetected.emit()
+                    if cooldown_remaining > 0:
+                        print(
+                            f"TAP_DEBUG [detectTap] COOLDOWN active | "
+                            f"remaining={cooldown_remaining:.3f}s peakMag={level_db:.2f}"
+                        )
+                        # Signal is rising but still in cooldown — track as TRIGGERED
+                        # without firing, so we wait for it to drop and re-arm.
+                        self._state = self._TRIGGERED
+                        self._state_entry_time = now
+                    else:
+                        print(
+                            f"TAP_DEBUG [detectTap] RISING EDGE FIRED | "
+                            f"peakMag={level_db:.2f} risingThresh={rising_db:.2f}"
+                        )
+                        self._last_tap_time = now
+                        self._state = self._TRIGGERED
+                        self._state_entry_time = now
+                        self.tapDetected.emit()
 
             case self._TRIGGERED:
                 now_above = amplitude >= falling_amp
@@ -312,23 +330,7 @@ class TapDetector(QtCore.QObject):
                     print(
                         f"TAP_DEBUG [detectTap] FALLING EDGE | "
                         f"peakMag={level_db:.2f} fallingThresh={falling_db:.2f} "
-                        f"— signal settled, entering COOLDOWN"
+                        f"— signal settled, returning to IDLE"
                     )
-                    self._state = self._COOLDOWN
-                    self._state_entry_time = now
-
-            case self._COOLDOWN:
-                remaining = self.cooldown_s - (now - self._state_entry_time)
-                if remaining > 0:
-                    print(
-                        f"TAP_DEBUG [detectTap] COOLDOWN active | "
-                        f"remaining={remaining:.3f}s peakMag={level_db:.2f}"
-                    )
-                else:
-                    # Re-anchor on cooldown exit (Swift behaviour): prevents an
-                    # immediate re-trigger if the ring-out is still elevated.
-                    if amplitude >= rising_amp:
-                        self._state = self._TRIGGERED
-                    else:
-                        self._state = self._IDLE
+                    self._state = self._IDLE
                     self._state_entry_time = now

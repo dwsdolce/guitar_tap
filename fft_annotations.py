@@ -86,12 +86,8 @@ class DraggableTextItem(pg.TextItem):
             self._update_arrow()
         return super().itemChange(change, value)
 
-    # ── right-click context menu ──────────────────────────────────────────────
-
-    def contextMenuEvent(self, event: QtWidgets.QGraphicsSceneContextMenuEvent) -> None:
+    def _show_context_menu(self, screen_pos: QtCore.QPoint) -> None:
         """RMB menu — matches Swift DraggablePeakAnnotation context menu."""
-        menu = QtWidgets.QMenu()
-        reset_action = menu.addAction("Reset Position")
         has_moved = (
             self._default_pos is not None
             and (
@@ -99,12 +95,13 @@ class DraggableTextItem(pg.TextItem):
                 or abs(self.pos().y() - self._default_pos.y()) > 1e-6
             )
         )
+        menu = QtWidgets.QMenu()
+        reset_action = menu.addAction("Reset Position")
         reset_action.setEnabled(has_moved)
-        chosen = menu.exec(event.screenPos())
+        chosen = menu.exec(screen_pos)
         if chosen is reset_action and self._default_pos is not None:
             self.setPos(self._default_pos)
             self._update_arrow()
-        event.accept()
 
 
 # ── annotation manager ────────────────────────────────────────────────────────
@@ -128,6 +125,37 @@ class FftAnnotations(QtCore.QObject):
         super().__init__()
         self.plot_item = plot_widget.getPlotItem()
         self.annotations: list[_AnnDict] = []
+        # Intercept QContextMenuEvent at the widget level so we can show our own
+        # annotation menu before QGraphicsView::contextMenuEvent delivers to the
+        # scene (where it would reach the ViewBox instead of our annotation items).
+        self._plot_view = plot_widget
+        plot_widget.installEventFilter(self)
+        plot_widget.viewport().installEventFilter(self)
+
+    # ── widget-level context menu interception ────────────────────────────────
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        """Intercept QContextMenuEvent on the PlotWidget before the ViewBox sees it.
+
+        If the RMB click position maps to any annotation label, show our menu
+        and consume the event.  Otherwise let the normal ViewBox menu appear.
+        """
+        if event.type() == QtCore.QEvent.Type.ContextMenu:
+            view = self._plot_view
+            # Map widget-local click pos → scene coordinates
+            widget_pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            scene_pos = view.mapToScene(widget_pos)
+            for ann_dict in self.annotations:
+                ann = ann_dict["annotation"]
+                if ann is None:
+                    continue
+                local_pos = ann.mapFromScene(scene_pos)
+                if ann.boundingRect().contains(local_pos):
+                    ann._show_context_menu(event.globalPosition().toPoint()
+                                           if hasattr(event, "globalPosition")
+                                           else event.globalPos())
+                    return True   # consumed — ViewBox never sees it
+        return False
 
     # ── item factories ────────────────────────────────────────────────────────
 
