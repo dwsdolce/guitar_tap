@@ -2,6 +2,7 @@
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List
 import queue
 import threading
@@ -114,7 +115,7 @@ class FftProcessingThread(QtCore.QThread):
 
         # Settings protected by a lock (written from main thread, read from run())
         self._settings_lock = threading.Lock()
-        self._is_frozen: bool = False
+        self._is_measurement_complete: bool = False
         self._is_guitar: bool = True
         self._calibration: npt.NDArray | None = None
 
@@ -140,7 +141,7 @@ class FftProcessingThread(QtCore.QThread):
 
             # Snapshot mutable settings
             with self._settings_lock:
-                is_frozen = self._is_frozen
+                is_frozen = self._is_measurement_complete
                 is_guitar = self._is_guitar
                 calibration = self._calibration
 
@@ -188,7 +189,7 @@ class FftProcessingThread(QtCore.QThread):
             tap_fired = self._tap_pending and not is_frozen
             if self._tap_pending and is_frozen:
                 print(
-                    f"TAP_DEBUG [run] tap_pending=True but is_frozen=True → tap suppressed"
+                    f"TAP_DEBUG [run] tap_pending=True but is_measurement_complete=True → tap suppressed"
                 )
             if tap_fired:
                 print(
@@ -223,9 +224,9 @@ class FftProcessingThread(QtCore.QThread):
         self._stop_event.clear()
         self._tap_detector.reset()
 
-    def set_frozen(self, value: bool) -> None:
+    def set_measurement_complete(self, value: bool) -> None:
         with self._settings_lock:
-            self._is_frozen = value
+            self._is_measurement_complete = value
 
     def set_measurement_type(self, is_guitar: bool) -> None:
         with self._settings_lock:
@@ -364,6 +365,16 @@ class FftCanvas(pg.PlotWidget):
     tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)   # True=paused
     peakInfoChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)  # (peak_hz, peak_db)
     levelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)              # level 0-100 (dB+100)
+    comparisonChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)         # True=entering, False=leaving
+
+    # Color palette for comparison overlays — mirrors comparisonPalette in TapToneAnalyzer.swift
+    _COMPARISON_PALETTE: list[tuple[int, int, int]] = [
+        (0,   122, 255),   # blue
+        (255, 149,   0),   # orange
+        (52,  199,  89),   # green
+        (175,  82, 222),   # purple
+        (48,  176, 199),   # teal
+    ]
 
     def __init__(
         self,
@@ -374,7 +385,7 @@ class FftCanvas(pg.PlotWidget):
     ) -> None:
         super().__init__()
 
-        self.is_frozen: bool = False
+        self.is_measurement_complete: bool = False
 
         # Configure plot appearance
         self.setBackground("w")
@@ -632,6 +643,11 @@ class FftCanvas(pg.PlotWidget):
         # Defer initial position until the widget has been laid out
         QtCore.QTimer.singleShot(0, self._reposition_info_btn)
 
+        # Comparison overlay state — mirrors comparisonSpectra in TapToneAnalyzer.swift
+        self._comparison_curves: list[pg.PlotDataItem] = []
+        self.comparison_labels: list[tuple[str, tuple[int, int, int]]] = []
+        self._comparison_legend: pg.LegendItem | None = None
+
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
 
@@ -667,7 +683,7 @@ class FftCanvas(pg.PlotWidget):
     def start_analyzer(self) -> None:
         """Start the processing thread and hide the idle overlay."""
         self._overlay_label.setVisible(False)
-        self.set_frozen(False)
+        self.set_measurement_complete(False)
         if self._proc_thread.isRunning():
             self._proc_thread.stop()
             self._proc_thread.wait(500)
@@ -757,7 +773,7 @@ class FftCanvas(pg.PlotWidget):
         mouse_freq = float(view_pos.x())
         mouse_db   = float(view_pos.y())
 
-        if self.is_frozen and np.any(self.saved_mag_y_db):
+        if self.is_measurement_complete and np.any(self.saved_mag_y_db):
             # Snap to nearest FFT bin on the frozen curve
             idx = int(np.searchsorted(self.freq, mouse_freq))
             idx = max(0, min(idx, len(self.freq) - 1))
@@ -970,7 +986,7 @@ class FftCanvas(pg.PlotWidget):
 
     def select_peak(self, freq: float) -> None:
         """Select the peak (scatter point) with the specified frequency"""
-        if self.is_frozen:
+        if self.is_measurement_complete:
             row = np.where(self.saved_peaks[:, 0] == freq)
             magdb = self.saved_peaks[row][0][1]
             self.selected_point.setData(x=[freq], y=[magdb])
@@ -988,7 +1004,7 @@ class FftCanvas(pg.PlotWidget):
         self, scatter: pg.ScatterPlotItem, points: list, ev
     ) -> None:
         """Handle scatter point click: emit peakSelected if within frequency range."""
-        if self.is_frozen and len(points) > 0:
+        if self.is_measurement_complete and len(points) > 0:
             if self.annotations.select_annotation(scatter):
                 return
             index0 = points[0].index()
@@ -1144,15 +1160,117 @@ class FftCanvas(pg.PlotWidget):
         """Flag to enable/disable the averaging"""
         self.avg_enable = avg_enable
 
-    def set_frozen(self, is_frozen: bool) -> None:
+    # ------------------------------------------------------------------ #
+    # Comparison overlay — mirrors loadComparison / clearComparison in
+    # TapToneAnalyzer+MeasurementManagement.swift
+    # ------------------------------------------------------------------ #
+
+    @property
+    def is_comparing(self) -> bool:
+        """True when comparison overlay curves are active — mirrors !comparisonSpectra.isEmpty."""
+        return bool(self._comparison_curves)
+
+    @staticmethod
+    def _comparison_label(m: object) -> str:
+        """Short label for the legend — mirrors comparisonLabel(for:) in Swift."""
+        loc = getattr(m, "tap_location", None)
+        if loc:
+            return loc
+        ts = getattr(m, "timestamp", "")
+        try:
+            dt = datetime.fromisoformat(ts)
+            return dt.strftime("%b %-d %H:%M")
+        except Exception:
+            return ts[:16]
+
+    def load_comparison(self, measurements: list) -> None:
+        """Load guitar measurements as comparison overlays.
+
+        Mirrors loadComparison(measurements:) in TapToneAnalyzer+MeasurementManagement.swift:
+        - Filters to measurements that have a spectrum_snapshot.
+        - Assigns a colour from _COMPARISON_PALETTE (cycles if >5 measurements).
+        - Adds one PlotDataItem curve per measurement, with a legend entry.
+        - Updates the axis ranges to the union of all snapshot display ranges.
+        """
+        self.clear_comparison()
+
+        with_snapshots = [m for m in measurements if m.spectrum_snapshot is not None]
+        for idx, m in enumerate(with_snapshots):
+            snap = m.spectrum_snapshot
+            color = self._COMPARISON_PALETTE[idx % len(self._COMPARISON_PALETTE)]
+            freq_arr = np.array(snap.frequencies, dtype=np.float64)
+            mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
+            label = self._comparison_label(m)
+            curve = pg.PlotDataItem(
+                freq_arr, mag_arr,
+                pen=pg.mkPen(color, width=1.5),
+                name=label,
+            )
+            self.addItem(curve)
+            self._comparison_curves.append(curve)
+            self.comparison_labels.append((label, color))
+
+        if with_snapshots:
+            # Legend — anchored top-right of the plot area
+            self._comparison_legend = pg.LegendItem(offset=(-10, 10))
+            self._comparison_legend.setParentItem(self.getPlotItem())
+            for curve, (label, _) in zip(self._comparison_curves, self.comparison_labels):
+                self._comparison_legend.addItem(curve, label)
+
+            # Broadcast the union of all snapshot axis ranges —
+            # mirrors the loadedMinFreq / loadedMaxFreq / loadedMinDB / loadedMaxDB
+            # updates in Swift's loadComparison(measurements:).
+            snaps = [m.spectrum_snapshot for m in with_snapshots]
+            min_freq = int(min(s.min_freq for s in snaps))
+            max_freq = int(max(s.max_freq for s in snaps))
+            min_db   = float(min(s.min_db for s in snaps))
+            max_db   = float(max(s.max_db for s in snaps))
+            self.update_axis(min_freq, max_freq)
+            self.setYRange(min_db, max_db, padding=0)
+
+        self._set_comparison_visibility()
+        self.comparisonChanged.emit(self.is_comparing)
+
+    def clear_comparison(self) -> None:
+        """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
+        was_comparing = self.is_comparing
+        for curve in self._comparison_curves:
+            self.removeItem(curve)
+        self._comparison_curves.clear()
+        self.comparison_labels.clear()
+        if self._comparison_legend is not None:
+            self._comparison_legend.scene().removeItem(self._comparison_legend)
+            self._comparison_legend = None
+        if was_comparing:
+            self._set_comparison_visibility()
+            self.comparisonChanged.emit(False)
+
+    def _set_comparison_visibility(self) -> None:
+        """Show/hide peaks and threshold lines based on comparison state.
+
+        Mirrors the isComparing checks in TapToneAnalysisView+SpectrumViews.swift:
+            peaks: isComparing ? nil : tap.currentPeaks
+            thresholdLines: isComparing ? [] : thresholds
+        """
+        showing = not self.is_comparing
+        self.points.setVisible(showing)
+        self.selected_point.setVisible(showing)
+        self.line_threshold.setVisible(showing)
+        self.line_tap_threshold.setVisible(showing)
+        self.line_reset_threshold.setVisible(showing)
+
+    def set_measurement_complete(self, is_measurement_complete: bool) -> None:
         """Flag to enable/disable the holding of peaks."""
-        self.is_frozen = is_frozen
-        self._proc_thread.set_frozen(is_frozen)
-        if not is_frozen:
+        self.is_measurement_complete = is_measurement_complete
+        self._proc_thread.set_measurement_complete(is_measurement_complete)
+        if not is_measurement_complete:
             self.selected_point.setData(x=[], y=[])
             self.clear_selected_peak()
             self._tap_spectra.clear()
             self._loaded_measurement_peaks = None
+            # Starting a new tap sequence always clears any active comparison overlay —
+            # mirrors self.comparisonSpectra = [] in startTapSequence() in Swift.
+            self.clear_comparison()
 
     def set_fmin(self, fmin: int) -> None:
         """As it says"""
@@ -1421,7 +1539,7 @@ class FftCanvas(pg.PlotWidget):
             if avg_amplitude > self.threshold:
                 triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
                 if triggered:
-                    self.newSample.emit(self.is_frozen)
+                    self.newSample.emit(self.is_measurement_complete)
                     self.annotations.clear_annotations()
                     self.set_draw_data(avg_mag_y_db, avg_peaks)
 
@@ -1456,7 +1574,7 @@ class FftCanvas(pg.PlotWidget):
             self._on_tap_for_plate()
 
         # Update display
-        if self.is_frozen:
+        if self.is_measurement_complete:
             self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
         else:
             _, peaks = self.find_peaks(mag_y_db)

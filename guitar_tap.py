@@ -62,7 +62,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._ring_out_s: float | None = None
         self._is_running: bool = False
         self._is_paused: bool = False
-        self._is_frozen: bool = False
+        self._is_measurement_complete: bool = False
         self._tap_count_captured: int = 0
         self._tap_count_total: int = 1
         self._plate_dialog: PD.PlateDialog | None = None
@@ -858,6 +858,7 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peakInfoChanged.connect(self._on_peak_info)
         canvas.newSample.connect(self.peak_widget.new_data)
         canvas.annotations.restoreFocus.connect(self.peak_widget.restore_focus)
+        canvas.comparisonChanged.connect(self._on_comparison_changed)
 
         # Peaks table → canvas annotations
         model = self.peak_widget.model
@@ -908,7 +909,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_measurement_badge()
         self.reset_auto_selection_btn.setVisible(self._current_mt().is_guitar)
 
-        self.set_frozen(False)
+        self.set_measurement_complete(False)
 
         # Restore calibration status label and device name in status bar
         device_name = canvas.current_calibration_device() or AS.AppSettings.device_name()
@@ -1066,9 +1067,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.avg_enable.setIcon(gt_i.GtImages.red_button_icon() or QtGui.QIcon())
             self.avg_restart.setEnabled(False)
 
-    def set_frozen(self, checked: bool) -> None:
-        self._is_frozen = checked
-        self.fft_canvas.set_frozen(checked)
+    def set_measurement_complete(self, checked: bool) -> None:
+        self._is_measurement_complete = checked
+        self.fft_canvas.set_measurement_complete(checked)
         self.peak_widget.data_held(checked)
         if checked:
             # Re-apply the current annotation mode (data_held always defaults to Selected)
@@ -1110,8 +1111,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _px = gt_i.GtImages.red_pixmap()
         if _px is not None:
             self.avg_done.setPixmap(_px)
-        if self._is_frozen:
-            self.set_frozen(False)
+        if self._is_measurement_complete:
+            self.set_measurement_complete(False)
 
     def set_avg_completed(self, count: int) -> None:
         self.avg_completed.setText(str(count))
@@ -1120,7 +1121,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if _px is not None:
                 self.avg_done.setPixmap(_px)
             self.num_averages.setEnabled(True)
-            self.set_frozen(True)
+            self.set_measurement_complete(True)
             self.avg_restart.setEnabled(True)
         else:
             self.num_averages.setEnabled(False)
@@ -1200,11 +1201,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """Refresh enabled/disabled state of New Tap, Pause, and Cancel buttons."""
         tap_num = self.tap_num_spin.value()
         is_plate = not self._current_mt().is_guitar
-        is_detecting = self._is_running and not self._is_frozen
+        is_detecting = self._is_running and not self._is_measurement_complete
 
         # New Tap is only meaningful when the spectrum is frozen (results held).
         # On startup the app auto-listens, so New Tap is disabled until a tap is captured.
-        self.new_tap_btn.setEnabled(self._is_running and self._is_frozen)
+        self.new_tap_btn.setEnabled(self._is_running and self._is_measurement_complete)
 
         self.pause_tap_btn.setEnabled(is_detecting and (tap_num > 1 or is_plate))
         self.cancel_tap_btn.setEnabled(
@@ -1260,8 +1261,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """Auto-hold results when a tap fires (guitar mode only)."""
         if not self._current_mt().is_guitar:
             return
-        if not self._is_frozen:
-            self.set_frozen(True)
+        if not self._is_measurement_complete:
+            self.set_measurement_complete(True)
             try:
                 guitar_type = GT.GuitarType(self.guitar_type_combo.currentText())
                 self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
@@ -1279,8 +1280,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_new_tap(self) -> None:
         """Begin a new tap sequence, clearing any in-progress accumulated spectra."""
-        if self._is_frozen:
-            self.set_frozen(False)
+        if self._is_measurement_complete:
+            self.set_measurement_complete(False)
         self._is_paused = False
         # start_tap_sequence clears accumulated spectra and restarts the warmup,
         # preventing leftover spectra from a previous partial sequence polluting the next one.
@@ -1318,7 +1319,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_user_modified_selection_changed(self, modified: bool) -> None:
         self.reset_auto_selection_btn.setEnabled(
-            modified and self._is_frozen
+            modified and self._is_measurement_complete
         )
 
     # ================================================================
@@ -1429,6 +1430,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Calculation Error", str(exc))
             return
         self._plate_dialog.show_results(f_long, f_cross, props)
+        self.set_measurement_complete(True)
 
     # ================================================================
     # Measurements save / load / export
@@ -1551,13 +1553,50 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_open_measurements(self) -> None:
         dlg = MD.MeasurementsDialog(self)
         dlg.measurementSelected.connect(self._restore_measurement)
+        dlg.comparisonRequested.connect(self._on_comparison_requested)
         dlg.exec()
+
+    def _on_comparison_requested(self, measurements: list) -> None:
+        """Load comparison overlays onto the main chart.
+
+        Called when the user presses Compare(N) in the measurements dialog.
+        Mirrors the loadComparison() call triggered by the Compare button in Swift's
+        MeasurementsListView.
+        """
+        self.fft_canvas.load_comparison(measurements)
+
+    def _on_comparison_changed(self, is_comparing: bool) -> None:
+        """Update UI when comparison overlay state changes.
+
+        Mirrors the isComparing checks scattered across TapToneAnalysisView+SpectrumViews.swift
+        and TapToneAnalysisView+Controls.swift:
+          - Suppress peak annotations while comparing (annotation positions belong to the
+            previous measurement and would render incorrectly over the comparison curves).
+          - Disable peak-selection controls (Select All / Deselect All / Reset) while comparing.
+        """
+        if is_comparing:
+            self.fft_canvas.annotations.hide_annotations()
+        else:
+            self.fft_canvas.annotations.show_all_annotations()
+
+        # Disable peak-selection buttons while comparing —
+        # mirrors .disabled(!tap.comparisonSpectra.isEmpty) in TapToneAnalysisView+Controls.swift
+        can_select = self._is_measurement_complete and not is_comparing
+        self.select_all_btn.setEnabled(can_select)
+        self.deselect_all_btn.setEnabled(can_select)
+        self.reset_auto_selection_btn.setEnabled(
+            can_select and self.peak_widget.model.user_has_modified_peak_selection
+        )
 
     def _restore_measurement(self, m: M.TapToneMeasurement) -> None:
         canvas = self.fft_canvas
 
-        if self._is_frozen:
-            self.set_frozen(False)
+        # Loading a measurement exits comparison mode —
+        # mirrors comparisonSpectra = [] at the top of loadMeasurement() in Swift.
+        canvas.clear_comparison()
+
+        if self._is_measurement_complete:
+            self.set_measurement_complete(False)
 
         # Restore display settings
         if m.guitar_type:
@@ -1649,7 +1688,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 }
             )
 
-        self.set_frozen(True)
+        self.set_measurement_complete(True)
 
     def _on_export_spectrum(self) -> None:
         from pyqtgraph.exporters import ImageExporter

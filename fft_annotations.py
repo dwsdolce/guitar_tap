@@ -310,6 +310,20 @@ class FftAnnotations(QtCore.QObject):
                 ann_dict["annotation"] = None
                 ann_dict["arrow_line"] = None
 
+    def show_all_annotations(self) -> None:
+        """Re-add all hidden annotations to the plot (inverse of hide_annotations)."""
+        for ann_dict in self.annotations:
+            if ann_dict["annotation"] is None:
+                ann, arrow_line = self.create_annotation(
+                    ann_dict["freq"],
+                    ann_dict["mag"],
+                    ann_dict["html"],
+                    ann_dict["mode_str"],
+                    ann_dict["xytext"],
+                )
+                ann_dict["annotation"] = ann
+                ann_dict["arrow_line"] = arrow_line
+
     def clear_annotations(self) -> None:
         """Remove all annotations from the plot and clear the list."""
         for ann_dict in self.annotations:

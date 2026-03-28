@@ -220,6 +220,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
     """
 
     measurementSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(object)
+    comparisonRequested: QtCore.pyqtSignal = QtCore.pyqtSignal(object)  # list[TapToneMeasurement]
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -410,22 +411,17 @@ class MeasurementsDialog(QtWidgets.QDialog):
             self._rebuild_list()
 
     def _open_comparison(self) -> None:
+        """Emit comparisonRequested and close — mirrors the loadComparison() call path in Swift.
+
+        Only measurements with a spectrum_snapshot are included (mirrors the
+        `filter { $0.spectrumSnapshot != nil }` guard in loadComparison()).
+        """
         selected = [m for m in self._measurements if m.id in self._compare_ids]
-        if len(selected) < 2:
+        with_snapshots = [m for m in selected if m.spectrum_snapshot is not None]
+        if len(with_snapshots) < 2:
             return
-        lines = [f"Comparing {len(selected)} measurements:\n"]
-        for m in selected:
-            name = m.tap_location or m.timestamp[:16]
-            lines.append(f"{name}  ({len(m.peaks)} peaks)")
-            for p in sorted(m.peaks, key=lambda x: x.frequency)[:8]:
-                lines.append(
-                    f"  •  {(p.mode_label or '—'):14s}  {p.frequency:.1f} Hz  "
-                    f"{p.magnitude:.1f} dB"
-                )
-            lines.append("")
-        QtWidgets.QMessageBox.information(
-            self, "Compare Measurements", "\n".join(lines)
-        )
+        self.comparisonRequested.emit(with_snapshots)
+        self.accept()
 
     def _on_done(self) -> None:
         if self._compare_mode:
@@ -528,7 +524,12 @@ class MeasurementsDialog(QtWidgets.QDialog):
         box.exec()
         if box.clickedButton() != delete_btn:
             return
-        self._measurements = [x for x in self._measurements if x.id != m.id]
+        # Remove only the first occurrence matching this id. Using index rather than a
+        # list comprehension ensures that if the same file was imported twice (producing
+        # two entries with identical ids) only the intended entry is deleted.
+        idx = next((i for i, x in enumerate(self._measurements) if x.id == m.id), None)
+        if idx is not None:
+            self._measurements.pop(idx)
         M.save_all_measurements(self._measurements)
         self._compare_ids.discard(m.id)
         self._rebuild_list()
