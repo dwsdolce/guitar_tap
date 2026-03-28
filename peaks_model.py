@@ -183,7 +183,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             f'<span style="color:rgb(120,60,180);">&#9834; {note}&nbsp;&nbsp;{cents:+.0f}&#162;</span>'
         )
         rows.append(
-            f'<span style="color:rgb(50,50,50);">{freq:.2f} Hz</span>'
+            f'<span style="color:rgb(50,50,50);">{freq:.1f} Hz</span>'
         )
         rows.append(
             f'<span style="color:rgb(110,110,110);">{mag:.1f} dB</span>'

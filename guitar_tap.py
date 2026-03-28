@@ -1522,9 +1522,9 @@ class MainWindow(QtWidgets.QMainWindow):
             selected_peak_ids=selected_ids or None,
             peak_mode_overrides=peak_mode_overrides or None,
             annotation_offsets=annotation_offsets or None,
-            tap_detection_threshold=float(self.threshold_slider.value() + 100),
-            number_of_taps=getattr(canvas, "_tap_num", None),
-            peak_threshold=float(self.threshold_slider.value() + 100),
+            tap_detection_threshold=float(self.tap_threshold_slider.value()),
+            number_of_taps=self.tap_num_spin.value(),
+            peak_threshold=float(self.threshold_slider.value()),
             microphone_name=mic_name,
             measurement_type=self.measurement_type_combo.currentText(),
             guitar_type=self.guitar_type_combo.currentText(),
@@ -1604,18 +1604,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if m.measurement_type:
             self.measurement_type_combo.setCurrentText(m.measurement_type)
 
-        # Restore spectrum snapshot if available
-        if m.spectrum_snapshot is not None:
-            snap = m.spectrum_snapshot
-            self.min_spin.setValue(int(snap.min_freq))
-            self.max_spin.setValue(int(snap.max_freq))
-            # Restore spectrum data
-            freq_arr = np.array(snap.frequencies, dtype=np.float64)
-            mag_arr  = np.array(snap.magnitudes, dtype=np.float64)
-            canvas.saved_mag_y_db = mag_arr
-            canvas.freq = freq_arr.astype(np.int64)
-
-        # Restore peaks
+        # Restore peaks (built early so _loaded_measurement_peaks is set before
+        # update_axis fires, preventing a stale find_peaks call from the spinner signals)
         if m.peaks:
             peaks_array = np.array(
                 [[p.frequency, p.magnitude, p.quality] for p in m.peaks],
@@ -1629,6 +1619,26 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.b_peaks_freq = peaks_array[:, 0] if len(peaks_array) > 0 else []
         canvas.peaks_f_min_index = 0
         canvas.peaks_f_max_index = len(peaks_array)
+
+        # Restore spectrum snapshot if available.
+        # Block spinner valueChanged signals while setting values to prevent
+        # spurious update_axis → find_peaks calls with stale magnitude data.
+        if m.spectrum_snapshot is not None:
+            snap = m.spectrum_snapshot
+            freq_arr = np.array(snap.frequencies, dtype=np.float64)
+            mag_arr  = np.array(snap.magnitudes, dtype=np.float64)
+            canvas.saved_mag_y_db = mag_arr
+            # Keep as float64 — int64 would quantize sub-Hz bins to 0, distorting the plot.
+            canvas.freq = freq_arr
+            with QtCore.QSignalBlocker(self.min_spin):
+                self.min_spin.setValue(int(snap.min_freq))
+            with QtCore.QSignalBlocker(self.max_spin):
+                self.max_spin.setValue(int(snap.max_freq))
+            # Restore dB axis range from snapshot, then update the frequency axis.
+            canvas.setYRange(snap.min_db, snap.max_db, padding=0)
+            canvas.update_axis(int(snap.min_freq), int(snap.max_freq))
+            canvas.set_draw_data(mag_arr, peaks_array)
+
         canvas.peaksChanged.emit(peaks_array)
 
         # Restore ring-out
@@ -1638,8 +1648,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Restore mode overrides and show/hide state
         peak_model = self.peak_widget.model
-        # Build freq→id map from the measurement peaks
-        freq_to_peak = {p.frequency: p for p in m.peaks}
 
         # Manual mode overrides (keyed by UUID in new format)
         if m.peak_mode_overrides:
@@ -1651,7 +1659,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             peak_model.modes = {}
 
-        # Show/hide selection
+        # Show/hide selection — mirrors Swift: selectedPeakIDs ?? all peaks
         selected_ids = set(
             m.selected_peak_ids if m.selected_peak_ids is not None
             else [p.id for p in m.peaks]
@@ -1661,10 +1669,27 @@ class MainWindow(QtWidgets.QMainWindow):
             if p.id in selected_ids:
                 peak_model.show[p.frequency] = "on"
 
+        # Mark as user-modified so threshold changes carry selections forward by
+        # frequency proximity — mirrors Swift: userHasModifiedPeakSelection = true
+        peak_model._set_user_modified(True)
+
+        # Restore analysis settings saved with the measurement.
+        # Format: Swift saves dBFS (negative); old Python saves internal 0-100 scale (positive).
+        # Detect by sign: negative → dBFS directly; non-negative → convert (value - 100).
+        if m.tap_detection_threshold is not None:
+            val = float(m.tap_detection_threshold)
+            db = int(val) if val < 0 else int(val - 100)
+            self.tap_threshold_slider.setValue(max(-80, min(-20, db)))
+        if m.peak_threshold is not None:
+            val = float(m.peak_threshold)
+            db = int(val) if val < 0 else int(val - 100)
+            self.threshold_slider.setValue(max(-100, min(-20, db)))
+        if m.number_of_taps is not None:
+            self.tap_num_spin.setValue(m.number_of_taps)
+
         # Restore annotations
         canvas.annotations.clear_annotations()
         ann_offsets = m.annotation_offsets or {}
-        id_to_freq = {p.id: p.frequency for p in m.peaks}
         for p in m.peaks:
             freq = p.frequency
             mag  = p.magnitude
@@ -1674,7 +1699,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 or GM.classify_peak(freq, peak_model.guitar_type)
             )
             xytext_list = ann_offsets.get(p.id)
-            xytext = tuple(xytext_list) if xytext_list else (20.0, -30.0)
+            xytext = tuple(xytext_list) if xytext_list else (freq, mag + 14.0)
             html = peak_model.annotation_html(freq, mag, mode_str)
             canvas.annotations.annotations.append(
                 {
@@ -1687,6 +1712,18 @@ class MainWindow(QtWidgets.QMainWindow):
                     "xytext":     xytext,
                 }
             )
+
+        # Restore annotation visibility mode — mirrors Swift: annotationVisibilityMode ?? .all
+        _mode_name_map = {"all": "All", "selected": "Selected", "none": "None"}
+        target_mode = _mode_name_map.get(
+            (m.annotation_visibility_mode or "all").lower(), "All"
+        )
+        target_idx = next(
+            (i for i, (name, _) in enumerate(self._ANN_MODES) if name == target_mode),
+            self._ann_mode_idx,
+        )
+        self._ann_mode_idx = target_idx
+        self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[target_idx][1]))
 
         self.set_measurement_complete(True)
 

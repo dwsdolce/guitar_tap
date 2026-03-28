@@ -30,7 +30,7 @@ class DraggableTextItem(pg.TextItem):
 
     def __init__(
         self,
-        anchor: tuple[float, float] = (0.5, 1.0),
+        anchor: tuple[float, float] = (0.5, 0.5),
         fill: QtGui.QBrush | None = None,
         border: QtGui.QPen | None = None,
     ) -> None:
@@ -48,6 +48,10 @@ class DraggableTextItem(pg.TextItem):
     def set_html(self, html: str) -> None:
         """Update the label content and reflow the text bounding rect."""
         self.textItem.setHtml(html)
+        # Qt only centres text when the document has a fixed width; set it to
+        # the natural (widest-line) width so text-align:center is honoured.
+        doc = self.textItem.document()
+        doc.setTextWidth(doc.idealWidth())
         self.updateTextPos()
 
     def restyle(self, mode_color: tuple[int, int, int]) -> None:
@@ -119,7 +123,7 @@ class FftAnnotations(QtCore.QObject):
     restoreFocus: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     # Vertical offset (in dB) from peak to default label position.
-    _LABEL_OFFSET_DB: float = 18.0
+    _LABEL_OFFSET_DB: float = 14.0
 
     def __init__(self, plot_widget: pg.PlotWidget):
         super().__init__()
@@ -170,7 +174,7 @@ class FftAnnotations(QtCore.QObject):
     ) -> DraggableTextItem:
         r, g, b = mode_color
         item = DraggableTextItem(
-            anchor=(0.5, 1.0),
+            anchor=(0.5, 0.5),
             fill=pg.mkBrush(r, g, b, 25),
             border=pg.mkPen((r, g, b, 180), width=1.5),
         )

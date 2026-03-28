@@ -485,9 +485,9 @@ class FftCanvas(pg.PlotWidget):
 
         # Label opts: anchors are (x, y) where x=0 left-align, x=1 right-align;
         #             y=0 text below position, y=1 text above position.
-        _lbl_opts_peak    = {"position": 0.04, "color": (0, 200, 0),   "anchors": [(0, 1), (0, 1)]}
-        _lbl_opts_trigger = {"position": 0.96, "color": (220, 130, 0), "anchors": [(1, 1), (1, 1)]}
-        _lbl_opts_reset   = {"position": 0.04, "color": (220, 130, 0), "anchors": [(0, 0), (0, 0)]}
+        _lbl_opts_peak    = {"position": 0.01, "color": (0, 200, 0),   "anchors": [(0, 1), (0, 1)]}
+        _lbl_opts_trigger = {"position": 0.99, "color": (220, 130, 0), "anchors": [(1, 1), (1, 1)]}
+        _lbl_opts_reset   = {"position": 0.01, "color": (220, 130, 0), "anchors": [(0, 0), (0, 0)]}
         _dash = QtCore.Qt.PenStyle.DashLine
         _dot  = QtCore.Qt.PenStyle.DotLine
 
@@ -587,7 +587,7 @@ class FftCanvas(pg.PlotWidget):
 
         # Hover cursor readout
         self._cursor_label = pg.TextItem(
-            text="", anchor=(0.0, 1.0), color=(60, 60, 60),
+            html="", anchor=(0.0, 1.0),
             fill=pg.mkBrush(255, 255, 255, 180),
         )
         self._cursor_label.setZValue(200)
@@ -786,7 +786,17 @@ class FftCanvas(pg.PlotWidget):
 
         self._crosshair_v.setPos(display_freq)
         self._crosshair_h.setPos(display_db)
-        self._cursor_label.setText(f"{display_freq:.1f} Hz  {display_db:.1f} dB")
+        freq_str = f"{display_freq/1000:.2f} kHz" if display_freq >= 1000 else f"{display_freq:.1f} Hz"
+        html = (
+            f'<center>'
+            f'<b style="color:rgb(220,50,50);">{freq_str}</b><br/>'
+            f'<span style="color:rgb(130,130,130);">{display_db:.1f} dB</span>'
+            f'</center>'
+        )
+        self._cursor_label.setHtml(html)
+        doc = self._cursor_label.textItem.document()
+        doc.setTextWidth(-1)
+        doc.setTextWidth(doc.idealWidth())
         self._cursor_label.setPos(display_freq, display_db)
         self._crosshair_v.setVisible(True)
         self._crosshair_h.setVisible(True)

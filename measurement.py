@@ -61,9 +61,27 @@ class SpectrumSnapshot:
 
     @staticmethod
     def from_dict(d: dict) -> "SpectrumSnapshot":
+        import base64, struct
+
+        # Mirrors SpectrumSnapshot.swift: try compact binary first, fall back to legacy arrays.
+        # Swift encodes float32 arrays as little-endian bytes, then base64-encoded.
+        if "frequenciesData" in d:
+            raw = base64.b64decode(d["frequenciesData"])
+            n = len(raw) // 4
+            frequencies: list[float] = list(struct.unpack(f"<{n}f", raw))
+        else:
+            frequencies = d.get("frequencies", [])
+
+        if "magnitudesData" in d:
+            raw = base64.b64decode(d["magnitudesData"])
+            n = len(raw) // 4
+            magnitudes: list[float] = list(struct.unpack(f"<{n}f", raw))
+        else:
+            magnitudes = d.get("magnitudes", [])
+
         return SpectrumSnapshot(
-            frequencies=d.get("frequencies", []),
-            magnitudes=d.get("magnitudes", []),
+            frequencies=frequencies,
+            magnitudes=magnitudes,
             min_freq=d.get("minFreq", 75.0),
             max_freq=d.get("maxFreq", 350.0),
             min_db=d.get("minDB", -90.0),
@@ -287,16 +305,62 @@ class TapToneMeasurement:
         snap_d = d.get("spectrumSnapshot")
         snapshot = SpectrumSnapshot.from_dict(snap_d) if snap_d else None
 
-        # Annotation offsets: Swift uses {uuid: {"x":..., "y":...}}, Python [[x, y]]
+        # Annotation offsets — absolute plot coordinates (Hz, dB).
+        # Python native format: {uuid: [abs_hz, abs_dB]}
+        # Swift new format: interleaved list [uuid, {"hzOffset":..., "dbOffset":...}, ...]
+        #   where offsets are deltas from the default label position in data-space units.
+        #   Default label position = (peak_freq, peak_mag + 18.0).
+        #   Absolute = (peak_freq + hzOffset, peak_mag + 18.0 + dbOffset).
+        # Swift legacy format: interleaved list [uuid, {"x":..., "y":...}, ...]
+        #   (old CGPoint encoding — same interpretation as new format, x=hz, y=dB delta).
+        _LABEL_OFFSET_DB = 14.0
+        peak_by_id: dict[str, PeakEntry] = {p.id.upper(): p for p in peaks}
         ann_raw = d.get("peakAnnotationOffsets")
         ann_offsets: dict[str, list[float]] | None = None
-        if ann_raw:
+        if ann_raw and isinstance(ann_raw, dict):
+            # Python native: already absolute coordinates
             ann_offsets = {}
             for k, v in ann_raw.items():
                 if isinstance(v, dict):
                     ann_offsets[k] = [float(v.get("x", 0)), float(v.get("y", 0))]
                 elif isinstance(v, list) and len(v) >= 2:
                     ann_offsets[k] = [float(v[0]), float(v[1])]
+        elif ann_raw and isinstance(ann_raw, list) and len(ann_raw) >= 2:
+            # Swift interleaved: convert deltas to absolute using peak positions
+            ann_offsets = {}
+            it = iter(ann_raw)
+            for uid, val in zip(it, it):
+                uid_upper = str(uid).upper()
+                peak = peak_by_id.get(uid_upper)
+                if peak is None or not isinstance(val, dict):
+                    continue
+                hz_delta = float(val.get("hzOffset", val.get("x", 0)))
+                db_delta = float(val.get("dbOffset", val.get("y", 0)))
+                # Swift dbOffset is in screen-Y direction (positive = downward = lower dB).
+                # Python data Y is inverted (positive = higher dB), so negate the delta.
+                ann_offsets[uid_upper] = [
+                    peak.frequency + hz_delta,
+                    peak.magnitude + _LABEL_OFFSET_DB - db_delta,
+                ]
+
+        # Mode overrides.
+        # Python native format: {uuid: "mode_string"}
+        # Swift format: interleaved flat list [uuid, {"type":"auto"/"assigned","label":...}, ...]
+        mode_raw = d.get("peakModeOverrides")
+        peak_mode_overrides: dict[str, str] | None = None
+        if isinstance(mode_raw, dict):
+            # Python native: keys are UUIDs, values are mode strings already
+            peak_mode_overrides = mode_raw if mode_raw else None
+        elif isinstance(mode_raw, list) and len(mode_raw) >= 2:
+            # Swift interleaved: [uuid, {type:..., label:...}, ...]
+            overrides: dict[str, str] = {}
+            it = iter(mode_raw)
+            for uid, val in zip(it, it):
+                if isinstance(val, dict) and val.get("type") == "assigned":
+                    label = val.get("label", "")
+                    if label:
+                        overrides[str(uid)] = label
+            peak_mode_overrides = overrides if overrides else None
 
         return TapToneMeasurement(
             id=d.get("id", str(uuid.uuid4())),
@@ -311,7 +375,7 @@ class TapToneMeasurement:
             number_of_taps=d.get("numberOfTaps"),
             peak_threshold=d.get("peakThreshold"),
             selected_peak_ids=d.get("selectedPeakIDs"),
-            peak_mode_overrides=d.get("peakModeOverrides"),
+            peak_mode_overrides=peak_mode_overrides,
             annotation_offsets=ann_offsets,
             annotation_visibility_mode=d.get("annotationVisibilityMode"),
             microphone_name=d.get("microphoneName"),
