@@ -51,6 +51,275 @@ def _hsep() -> QtWidgets.QFrame:
     return sep
 
 
+class MaterialPeakListWidget(QtWidgets.QWidget):
+    """Plate/brace peak list with L/C/FLC mode-assignment buttons.
+
+    Mirrors Swift's MaterialPeakRowView rows inside peaksAndModesSection.
+    Each row shows: star toggle | frequency | magnitude | L button | [C] | [FLC]
+    Instruction text is shown below the peak list.
+    """
+
+    # Emits (long_freq, cross_freq, flc_freq); 0.0 = not assigned.
+    assignmentChanged = QtCore.pyqtSignal(float, float, float)
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._peaks:      list[tuple[float, float]] = []
+        self._long_freq:  float = 0.0
+        self._cross_freq: float = 0.0
+        self._flc_freq:   float = 0.0
+        self._show_cross: bool  = True   # False for brace
+        self._show_flc:   bool  = False
+        self._selected:   set[float] = set()
+
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── scrollable peak rows ────────────────────────────────────────
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self._peak_container = QtWidgets.QWidget()
+        self._peak_layout = QtWidgets.QVBoxLayout(self._peak_container)
+        self._peak_layout.setContentsMargins(0, 0, 0, 0)
+        self._peak_layout.setSpacing(2)
+        self._peak_layout.addStretch()
+        scroll.setWidget(self._peak_container)
+        outer.addWidget(scroll, stretch=1)
+
+        # ── instruction text (fixed, below scroll) ──────────────────────
+        instr = QtWidgets.QWidget()
+        il = QtWidgets.QVBoxLayout(instr)
+        il.setContentsMargins(0, 6, 0, 0)
+        il.setSpacing(4)
+        il.addWidget(_hsep())
+
+        _bold9 = QtGui.QFont()
+        _bold9.setPointSize(9)
+        _bold9.setBold(True)
+        self._instr_title = QtWidgets.QLabel()
+        self._instr_title.setFont(_bold9)
+        il.addWidget(self._instr_title)
+
+        _small9 = QtGui.QFont()
+        _small9.setPointSize(9)
+        self._instr_body = QtWidgets.QLabel()
+        self._instr_body.setFont(_small9)
+        self._instr_body.setWordWrap(True)
+        il.addWidget(self._instr_body)
+
+        _italic9 = QtGui.QFont()
+        _italic9.setPointSize(9)
+        _italic9.setItalic(True)
+        self._instr_footer = QtWidgets.QLabel()
+        self._instr_footer.setFont(_italic9)
+        self._instr_footer.setWordWrap(True)
+        self._instr_footer.setStyleSheet("color: palette(dark);")
+        il.addWidget(self._instr_footer)
+
+        outer.addWidget(instr)
+        self._rebuild_instructions()
+
+    # ── public API ──────────────────────────────────────────────────────
+
+    def set_mode(self, show_cross: bool, show_flc: bool) -> None:
+        self._show_cross = show_cross
+        self._show_flc   = show_flc
+        self._rebuild_instructions()
+        self._rebuild_rows()
+
+    def update_peaks(self, data: np.ndarray) -> None:
+        """Refresh from a (N, ≥2) numpy array [freq, mag, ...]."""
+        if isinstance(data, np.ndarray) and data.ndim == 2 and data.shape[0] > 0:
+            self._peaks = [(float(data[i, 0]), float(data[i, 1]))
+                           for i in range(data.shape[0])]
+        else:
+            self._peaks = []
+        existing = {f for f, _ in self._peaks}
+        if self._long_freq  not in existing: self._long_freq  = 0.0
+        if self._cross_freq not in existing: self._cross_freq = 0.0
+        if self._flc_freq   not in existing: self._flc_freq   = 0.0
+        self._selected = set(existing)
+        self._rebuild_rows()
+
+    def set_assignment(self, long_freq: float, cross_freq: float = 0.0,
+                       flc_freq: float = 0.0) -> None:
+        self._long_freq  = long_freq
+        self._cross_freq = cross_freq
+        self._flc_freq   = flc_freq
+        self._rebuild_rows()
+
+    def long_freq(self)  -> float: return self._long_freq
+    def cross_freq(self) -> float: return self._cross_freq
+    def flc_freq(self)   -> float: return self._flc_freq
+
+    def select_all(self) -> None:
+        self._selected = {f for f, _ in self._peaks}
+        self._rebuild_rows()
+
+    def deselect_all(self) -> None:
+        self._selected.clear()
+        self._rebuild_rows()
+
+    # ── private helpers ─────────────────────────────────────────────────
+
+    def _rebuild_rows(self) -> None:
+        # Remove all rows (everything before the trailing stretch)
+        while self._peak_layout.count() > 1:
+            item = self._peak_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for freq, mag in sorted(self._peaks, key=lambda x: x[0]):
+            row = self._make_row(freq, mag)
+            self._peak_layout.insertWidget(self._peak_layout.count() - 1, row)
+
+    def _make_row(self, freq: float, mag: float) -> QtWidgets.QWidget:
+        w  = QtWidgets.QWidget()
+        hl = QtWidgets.QHBoxLayout(w)
+        hl.setContentsMargins(0, 2, 0, 2)
+        hl.setSpacing(8)
+
+        # Star toggle
+        star = QtWidgets.QToolButton()
+        star.setFixedSize(22, 22)
+        is_sel = freq in self._selected
+        app_style = QtWidgets.QApplication.style()
+        star.setIcon(app_style.standardIcon(
+            QtWidgets.QStyle.StandardPixmap.SP_DialogApplyButton if is_sel
+            else QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton
+        ))
+        star.setCheckable(True)
+        star.setChecked(is_sel)
+        star.clicked.connect(lambda chk, f=freq: self._toggle_sel(f, chk))
+        hl.addWidget(star)
+
+        # Frequency + magnitude labels
+        txt = QtWidgets.QWidget()
+        tv  = QtWidgets.QVBoxLayout(txt)
+        tv.setContentsMargins(0, 0, 0, 0)
+        tv.setSpacing(0)
+        f_lbl = QtWidgets.QLabel(f"{freq:.1f} Hz")
+        f_fnt = QtGui.QFont()
+        f_fnt.setBold(True)
+        f_fnt.setPointSize(11)
+        f_lbl.setFont(f_fnt)
+        tv.addWidget(f_lbl)
+        m_lbl = QtWidgets.QLabel(f"{mag:.1f} dB")
+        m_fnt = QtGui.QFont()
+        m_fnt.setPointSize(9)
+        m_lbl.setFont(m_fnt)
+        m_lbl.setStyleSheet("color: palette(dark);")
+        tv.addWidget(m_lbl)
+        hl.addWidget(txt, stretch=1)
+
+        # L button (always shown)
+        is_l = (freq == self._long_freq)
+        l_btn = self._mode_btn("L", is_l, "#1976D2")
+        l_btn.clicked.connect(lambda _, f=freq: self._assign_long(f))
+        hl.addWidget(l_btn)
+
+        # C button (plate only)
+        if self._show_cross:
+            is_c = (freq == self._cross_freq)
+            c_btn = self._mode_btn("C", is_c, "#E65100")
+            c_btn.clicked.connect(lambda _, f=freq: self._assign_cross(f))
+            hl.addWidget(c_btn)
+
+        # FLC button (plate + FLC only)
+        if self._show_flc:
+            is_flc = (freq == self._flc_freq)
+            flc_btn = self._mode_btn("FLC", is_flc, "#7B1FA2", width=42)
+            flc_btn.clicked.connect(lambda _, f=freq: self._assign_flc(f))
+            hl.addWidget(flc_btn)
+
+        return w
+
+    @staticmethod
+    def _mode_btn(label: str, active: bool, color: str,
+                  width: int = 36) -> QtWidgets.QPushButton:
+        btn = QtWidgets.QPushButton(label)
+        fnt = QtGui.QFont()
+        fnt.setBold(True)
+        fnt.setPointSize(10 if len(label) <= 1 else 8)
+        btn.setFont(fnt)
+        btn.setFixedSize(width, 32)
+        bg  = color if active else "rgba(128,128,128,0.2)"
+        clr = "white" if active else "palette(text)"
+        btn.setStyleSheet(
+            f"QPushButton {{background-color: {bg}; color: {clr};"
+            "border-radius: 6px; border: none;}"
+        )
+        return btn
+
+    def _toggle_sel(self, freq: float, checked: bool) -> None:
+        if checked: self._selected.add(freq)
+        else:       self._selected.discard(freq)
+        self._rebuild_rows()
+
+    def _assign_long(self, freq: float) -> None:
+        if self._long_freq == freq:
+            self._long_freq = 0.0
+        else:
+            if self._cross_freq == freq: self._cross_freq = 0.0
+            if self._flc_freq   == freq: self._flc_freq   = 0.0
+            self._long_freq = freq
+        self._rebuild_rows()
+        self.assignmentChanged.emit(self._long_freq, self._cross_freq, self._flc_freq)
+
+    def _assign_cross(self, freq: float) -> None:
+        if self._cross_freq == freq:
+            self._cross_freq = 0.0
+        else:
+            if self._long_freq == freq: self._long_freq = 0.0
+            if self._flc_freq  == freq: self._flc_freq  = 0.0
+            self._cross_freq = freq
+        self._rebuild_rows()
+        self.assignmentChanged.emit(self._long_freq, self._cross_freq, self._flc_freq)
+
+    def _assign_flc(self, freq: float) -> None:
+        if self._flc_freq == freq:
+            self._flc_freq = 0.0
+        else:
+            if self._long_freq  == freq: self._long_freq  = 0.0
+            if self._cross_freq == freq: self._cross_freq = 0.0
+            self._flc_freq = freq
+        self._rebuild_rows()
+        self.assignmentChanged.emit(self._long_freq, self._cross_freq, self._flc_freq)
+
+    def _rebuild_instructions(self) -> None:
+        if self._show_cross:
+            has_flc = self._show_flc
+            self._instr_title.setText(
+                "Three-Tap Measurement Process:" if has_flc
+                else "Two-Tap Measurement Process:"
+            )
+            steps = (
+                "1. Longitudinal (L) Tap\n"
+                "Hold plate at 22% from one end along the length, near one long edge "
+                "(not at the width node). Tap center.\n\n"
+                "2. Cross-grain (C) Tap\n"
+                "Rotate 90°. Hold plate at 22% from one end along the width, near one "
+                "short edge (not at the length node). Tap center."
+            )
+            if has_flc:
+                steps += (
+                    "\n\n3. FLC (Diagonal) Tap\n"
+                    "Hold plate at the midpoint of one long edge. Tap near the opposite "
+                    "corner (~22% from both the end and the side). Measures shear stiffness."
+                )
+            self._instr_body.setText(steps)
+        else:
+            self._instr_title.setText("Single-Tap Measurement (fL only):")
+            self._instr_body.setText(
+                "1. Longitudinal (fL) Tap\n"
+                "Hold brace at 22% from one end along the length. Tap center."
+            )
+        self._instr_footer.setText(
+            "The strongest peak is auto-selected. Adjust if needed."
+        )
+
+
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window."""
 
@@ -359,14 +628,6 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.setContentsMargins(6, 4, 6, 4)
         vbox.setSpacing(4)
 
-        # Title
-        title = QtWidgets.QLabel("Analysis Results")
-        bold_font = QtGui.QFont()
-        bold_font.setBold(True)
-        bold_font.setPointSize(13)
-        title.setFont(bold_font)
-        vbox.addWidget(title)
-
         # Guitar type and measurement type — hidden; shown in Settings dialog
         self.guitar_type_combo = QtWidgets.QComboBox()
         self.guitar_type_combo.addItems(["Classical", "Flamenco", "Acoustic"])
@@ -379,13 +640,14 @@ class MainWindow(QtWidgets.QMainWindow):
             "Guitar: FFT peak analysis\nPlate / Brace: two-tap material property analysis"
         )
 
-        # Frequency range label + measurement type badge (read-only)
-        freq_row = QtWidgets.QHBoxLayout()
-        self.freq_range_label = QtWidgets.QLabel(
-            f"Showing {f_range['f_min']} – {f_range['f_max']} Hz"
-        )
-        self.freq_range_label.setFont(small_font)
-        freq_row.addWidget(self.freq_range_label, stretch=1)
+        # Row 1: "Analysis Results" (bold) + measurement type badge
+        title_row = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Analysis Results")
+        bold_font = QtGui.QFont()
+        bold_font.setBold(True)
+        bold_font.setPointSize(13)
+        title.setFont(bold_font)
+        title_row.addWidget(title, stretch=1)
 
         self.measurement_type_badge = QtWidgets.QLabel("Guitar")
         self.measurement_type_badge.setFont(small_font)
@@ -396,16 +658,16 @@ class MainWindow(QtWidgets.QMainWindow):
             "background: rgba(0,100,255,0.15); border-radius: 4px;"
             "padding: 1px 6px;"
         )
-        freq_row.addWidget(self.measurement_type_badge)
-        vbox.addLayout(freq_row)
+        title_row.addWidget(self.measurement_type_badge)
+        vbox.addLayout(title_row)
 
-        vbox.addWidget(_hsep())
-
-        # "Detected Peaks & Modes" header + Select All / Deselect All buttons
-        peaks_header = QtWidgets.QHBoxLayout()
-        self._peaks_header_lbl = QtWidgets.QLabel("Detected Peaks & Modes")
-        self._peaks_header_lbl.setFont(small_font)
-        peaks_header.addWidget(self._peaks_header_lbl, stretch=1)
+        # Row 2: "Showing …" (left) + Select All / Deselect All / Reset buttons (right)
+        freq_row = QtWidgets.QHBoxLayout()
+        self.freq_range_label = QtWidgets.QLabel(
+            f"Showing {f_range['f_min']} – {f_range['f_max']} Hz"
+        )
+        self.freq_range_label.setFont(small_font)
+        freq_row.addWidget(self.freq_range_label, stretch=1)
 
         style = self.style()
         self.select_all_btn = QtWidgets.QToolButton()
@@ -417,7 +679,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.select_all_btn.setFixedSize(22, 22)
         self.select_all_btn.setToolTip("Select all peaks")
         self.select_all_btn.setEnabled(False)
-        peaks_header.addWidget(self.select_all_btn)
+        freq_row.addWidget(self.select_all_btn)
 
         self.deselect_all_btn = QtWidgets.QToolButton()
         self.deselect_all_btn.setIcon(
@@ -428,7 +690,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.deselect_all_btn.setFixedSize(22, 22)
         self.deselect_all_btn.setToolTip("Deselect all peaks")
         self.deselect_all_btn.setEnabled(False)
-        peaks_header.addWidget(self.deselect_all_btn)
+        freq_row.addWidget(self.deselect_all_btn)
 
         self.reset_auto_selection_btn = QtWidgets.QToolButton()
         self.reset_auto_selection_btn.setIcon(qta.icon("fa5s.magic", color="gray"))
@@ -437,51 +699,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_auto_selection_btn.setToolTip("Reset to automatic mode selection")
         self.reset_auto_selection_btn.setEnabled(False)
         self.reset_auto_selection_btn.setVisible(False)
-        peaks_header.addWidget(self.reset_auto_selection_btn)
+        freq_row.addWidget(self.reset_auto_selection_btn)
 
-        vbox.addLayout(peaks_header)
+        vbox.addLayout(freq_row)
 
-        # Peaks table — the main content (takes all available vertical space)
+        vbox.addWidget(_hsep())
+
+        # Peaks table — the main content for guitar mode
         self.peak_widget = PT.PeakListWidget()
         vbox.addWidget(self.peak_widget, stretch=1)
 
-        vbox.addWidget(_hsep())
-
-        # ── Guitar-only section: Ring-Out + Tap-Tone Ratios ──────────────────
-        self._guitar_section = QtWidgets.QWidget()
-        gs_vbox = QtWidgets.QVBoxLayout(self._guitar_section)
-        gs_vbox.setContentsMargins(0, 0, 0, 0)
-        gs_vbox.setSpacing(2)
-
-        def _result_row(label: str, parent: QtWidgets.QVBoxLayout) -> QtWidgets.QLabel:
-            row = QtWidgets.QHBoxLayout()
-            lbl = QtWidgets.QLabel(label)
-            lbl.setFont(small_font)
-            val = QtWidgets.QLabel("—")
-            val.setFont(small_font)
-            val.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-            row.addWidget(lbl)
-            row.addWidget(val)
-            parent.addLayout(row)
-            return val
-
-        ring_out_lbl = QtWidgets.QLabel("Ring-Out Time")
-        ring_out_lbl.setFont(small_font)
-        gs_vbox.addWidget(ring_out_lbl)
-        self.ring_out_value = _result_row("Decay:", gs_vbox)
-
-        gs_vbox.addWidget(_hsep())
-
-        ratios_title = QtWidgets.QLabel("Tap Tone Ratio")
-        ratios_title.setFont(small_font)
-        gs_vbox.addWidget(ratios_title)
-
-        self.ratio_top_helm  = _result_row("Top / Helm:",  gs_vbox)
-        self.ratio_back_helm = _result_row("Back / Helm:", gs_vbox)
-        self.ratio_top_back  = _result_row("Top / Back:",  gs_vbox)
-
-        vbox.addWidget(self._guitar_section)
-        vbox.addWidget(_hsep())
+        # Material peak list — replaces peak_widget for plate/brace mode
+        self._material_peak_widget = MaterialPeakListWidget()
+        self._material_peak_widget.setVisible(False)
+        vbox.addWidget(self._material_peak_widget, stretch=1)
 
         # ── Material Properties section (plate/brace only) ───────────────────
         self._material_section = QtWidgets.QWidget()
@@ -489,12 +720,12 @@ class MainWindow(QtWidgets.QMainWindow):
         ms_vbox.setContentsMargins(0, 0, 0, 0)
         ms_vbox.setSpacing(4)
 
-        mat_title = QtWidgets.QLabel("Material Properties")
+        self._mat_title = QtWidgets.QLabel("Brace Properties")
         _mat_title_font = QtGui.QFont()
         _mat_title_font.setPointSize(small_font.pointSize())
         _mat_title_font.setBold(True)
-        mat_title.setFont(_mat_title_font)
-        ms_vbox.addWidget(mat_title)
+        self._mat_title.setFont(_mat_title_font)
+        ms_vbox.addWidget(self._mat_title)
 
         def _ms_row(label: str, parent: QtWidgets.QVBoxLayout) -> QtWidgets.QLabel:
             row = QtWidgets.QHBoxLayout()
@@ -513,6 +744,33 @@ class MainWindow(QtWidgets.QMainWindow):
         bs_vbox = QtWidgets.QVBoxLayout(self._brace_section)
         bs_vbox.setContentsMargins(0, 0, 0, 0)
         bs_vbox.setSpacing(2)
+
+        # Placeholder shown when no L peak is assigned
+        self._brace_placeholder = QtWidgets.QWidget()
+        _bp_vbox = QtWidgets.QVBoxLayout(self._brace_placeholder)
+        _bp_vbox.setContentsMargins(0, 8, 0, 8)
+        _bp_p1 = QtWidgets.QLabel("Select the fL (L) peak above to calculate properties")
+        _bp_p1.setWordWrap(True)
+        _bp_p1.setStyleSheet("color: palette(dark);")
+        _bp_p1.setFont(small_font)
+        _bp_vbox.addWidget(_bp_p1)
+        _bp_p2 = QtWidgets.QLabel("Tip: The dominant peak is auto-selected after tapping")
+        _bp_p2.setWordWrap(True)
+        _bp_p2.setStyleSheet("color: palette(dark);")
+        _bp_p2.setFont(small_font)
+        _bp_vbox.addWidget(_bp_p2)
+        bs_vbox.addWidget(self._brace_placeholder)
+
+        # Content shown when L peak IS assigned
+        self._brace_content = QtWidgets.QWidget()
+        bc_vbox = QtWidgets.QVBoxLayout(self._brace_content)
+        bc_vbox.setContentsMargins(0, 0, 0, 0)
+        bc_vbox.setSpacing(2)
+        self._brace_content.setVisible(False)
+        bs_vbox.addWidget(self._brace_content)
+
+        # Redirect _ms_row to bc_vbox for brace content
+        bs_vbox = bc_vbox  # remaining rows go into the content widget
 
         self._brace_subtitle = QtWidgets.QLabel("—")
         self._brace_subtitle.setFont(small_font)
@@ -560,6 +818,37 @@ class MainWindow(QtWidgets.QMainWindow):
         ps_vbox = QtWidgets.QVBoxLayout(self._plate_section)
         ps_vbox.setContentsMargins(0, 0, 0, 0)
         ps_vbox.setSpacing(2)
+
+        # Placeholder shown when L or C peak not yet assigned
+        self._plate_placeholder = QtWidgets.QWidget()
+        _pp_vbox = QtWidgets.QVBoxLayout(self._plate_placeholder)
+        _pp_vbox.setContentsMargins(0, 8, 0, 8)
+        self._plate_placeholder_lbl = QtWidgets.QLabel(
+            "Select peaks above to calculate properties"
+        )
+        self._plate_placeholder_lbl.setWordWrap(True)
+        self._plate_placeholder_lbl.setStyleSheet("color: palette(dark);")
+        self._plate_placeholder_lbl.setFont(small_font)
+        _pp_vbox.addWidget(self._plate_placeholder_lbl)
+        _pp_p2 = QtWidgets.QLabel(
+            "Tip: The longitudinal mode is typically the higher frequency peak"
+        )
+        _pp_p2.setWordWrap(True)
+        _pp_p2.setStyleSheet("color: palette(dark);")
+        _pp_p2.setFont(small_font)
+        _pp_vbox.addWidget(_pp_p2)
+        ps_vbox.addWidget(self._plate_placeholder)
+
+        # Content shown when L and C are assigned
+        self._plate_content = QtWidgets.QWidget()
+        pc_vbox = QtWidgets.QVBoxLayout(self._plate_content)
+        pc_vbox.setContentsMargins(0, 0, 0, 0)
+        pc_vbox.setSpacing(2)
+        self._plate_content.setVisible(False)
+        ps_vbox.addWidget(self._plate_content)
+
+        # Redirect ps_vbox for remaining plate content rows
+        ps_vbox = pc_vbox
 
         self._plate_subtitle = QtWidgets.QLabel("—")
         self._plate_subtitle.setFont(small_font)
@@ -647,8 +936,25 @@ class MainWindow(QtWidgets.QMainWindow):
         ps_vbox.addWidget(_spec_frame_p)
 
         self._plate_rad_long, self._plate_rad_cross = _plate_row("Radiation Ratio (R):")
-        self._plate_cross_long = _ms_row("Cross/Long ratio:", ps_vbox)
-        self._plate_long_cross = _ms_row("Long/Cross ratio:", ps_vbox)
+
+        def _ratio_row(label: str, hint: str) -> QtWidgets.QLabel:
+            row = QtWidgets.QHBoxLayout()
+            row.addWidget(QtWidgets.QLabel(label))
+            val = QtWidgets.QLabel("—")
+            val.setFont(small_font)
+            hint_lbl = QtWidgets.QLabel(hint)
+            hint_lbl.setFont(small_font)
+            hint_lbl.setStyleSheet("color: palette(dark);")
+            row.addStretch()
+            row.addWidget(val)
+            row.addWidget(hint_lbl)
+            ps_vbox.addLayout(row)
+            return val
+
+        self._plate_cross_long = _ratio_row("Cross/Long ratio:", "(typical: 0.04–0.08)")
+        self._plate_long_cross = _ratio_row("Long/Cross ratio:", "(typical: 12–25)")
+
+        ps_vbox.addWidget(_hsep())
 
         _overall_row = QtWidgets.QHBoxLayout()
         _overall_lbl = QtWidgets.QLabel("Overall Quality:")
@@ -667,18 +973,107 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_section.setVisible(False)
         vbox.addWidget(self._material_section)
 
+        # ── Footer separator (matches Swift's Divider between scroll area and footer) ──
         vbox.addWidget(_hsep())
 
-        # Export buttons
+        # ── Guitar compact summary (guitar only) — matches Swift guitarAnalysisSummary ──
+        self._guitar_summary = QtWidgets.QFrame()
+        self._guitar_summary.setObjectName("guitar_summary")
+        self._guitar_summary.setStyleSheet(
+            "#guitar_summary { background-color: palette(alternateBase); border-radius: 8px; }"
+        )
+        _gsum_hl = QtWidgets.QHBoxLayout(self._guitar_summary)
+        _gsum_hl.setContentsMargins(8, 6, 8, 6)
+        _gsum_hl.setSpacing(12)
+
+        _tiny_font = QtGui.QFont()
+        _tiny_font.setPointSize(max(small_font.pointSize() - 2, 8))
+        _sum_bold = QtGui.QFont()
+        _sum_bold.setPointSize(small_font.pointSize() + 1)
+        _sum_bold.setBold(True)
+
+        # Ring-out column
+        _ro_col = QtWidgets.QVBoxLayout()
+        _ro_col.setSpacing(2)
+        _ro_cap = QtWidgets.QLabel("Ring-Out")
+        _ro_cap.setFont(_tiny_font)
+        _ro_cap.setStyleSheet("color: palette(dark);")
+        _ro_col.addWidget(_ro_cap)
+        _ro_val_row = QtWidgets.QHBoxLayout()
+        _ro_val_row.setSpacing(4)
+        self._gs_ro_value = QtWidgets.QLabel("Waiting\u2026")
+        self._gs_ro_value.setFont(_sum_bold)
+        _ro_val_row.addWidget(self._gs_ro_value)
+        self._gs_ro_quality = QtWidgets.QLabel("")
+        self._gs_ro_quality.setFont(small_font)
+        _ro_val_row.addWidget(self._gs_ro_quality)
+        _ro_val_row.addStretch()
+        _ro_col.addLayout(_ro_val_row)
+        _ro_sub = QtWidgets.QLabel("\u201315 dB")
+        _ro_sub.setFont(_tiny_font)
+        _ro_sub.setStyleSheet("color: palette(dark);")
+        _ro_col.addWidget(_ro_sub)
+        _gsum_hl.addLayout(_ro_col)
+
+        # Vertical divider
+        _vdiv = QtWidgets.QFrame()
+        _vdiv.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+        _vdiv.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        _gsum_hl.addWidget(_vdiv)
+
+        # Tap ratio column (Top / Air)
+        _ratio_col = QtWidgets.QVBoxLayout()
+        _ratio_col.setSpacing(2)
+        _ratio_cap = QtWidgets.QLabel("Tap Ratio")
+        _ratio_cap.setFont(_tiny_font)
+        _ratio_cap.setStyleSheet("color: palette(dark);")
+        _ratio_col.addWidget(_ratio_cap)
+        _ratio_val_row = QtWidgets.QHBoxLayout()
+        _ratio_val_row.setSpacing(4)
+        self._gs_ratio_value = QtWidgets.QLabel("Need Air & Top")
+        self._gs_ratio_value.setFont(_sum_bold)
+        _ratio_val_row.addWidget(self._gs_ratio_value)
+        self._gs_ratio_quality = QtWidgets.QLabel("")
+        self._gs_ratio_quality.setFont(small_font)
+        _ratio_val_row.addWidget(self._gs_ratio_quality)
+        _ratio_val_row.addStretch()
+        _ratio_col.addLayout(_ratio_val_row)
+        _ratio_sub = QtWidgets.QLabel("Ideal: 1.9\u20132.1")
+        _ratio_sub.setFont(_tiny_font)
+        _ratio_sub.setStyleSheet("color: palette(dark);")
+        _ratio_col.addWidget(_ratio_sub)
+        _gsum_hl.addLayout(_ratio_col)
+
+        vbox.addWidget(self._guitar_summary)
+
+        # ── Footer row: status indicator + export buttons ─────────────────────
+        _footer_row = QtWidgets.QHBoxLayout()
+        _footer_row.setContentsMargins(0, 4, 0, 0)
+        _footer_row.setSpacing(6)
+
+        self._results_status_dot = QtWidgets.QLabel("\u25cf")
+        self._results_status_dot.setFont(small_font)
+        self._results_status_dot.setStyleSheet("color: gray;")
+        _footer_row.addWidget(self._results_status_dot)
+
+        self._results_status_lbl = QtWidgets.QLabel("Stopped")
+        self._results_status_lbl.setFont(small_font)
+        self._results_status_lbl.setStyleSheet("color: gray;")
+        _footer_row.addWidget(self._results_status_lbl)
+
+        _footer_row.addStretch()
+
         self.export_spectrum_btn = QtWidgets.QPushButton("Export Spectrum")
         self.export_spectrum_btn.setEnabled(False)
         self.export_spectrum_btn.setToolTip("Export the current spectrum as a PNG image")
-        vbox.addWidget(self.export_spectrum_btn)
+        _footer_row.addWidget(self.export_spectrum_btn)
 
         self.export_pdf_btn = QtWidgets.QPushButton("Export PDF Report")
         self.export_pdf_btn.setEnabled(False)
         self.export_pdf_btn.setToolTip("Export the current measurement to a PDF report")
-        vbox.addWidget(self.export_pdf_btn)
+        _footer_row.addWidget(self.export_pdf_btn)
+
+        vbox.addLayout(_footer_row)
 
         # Averaging widgets: shown in Settings dialog, not in main layout
         self.num_averages = QtWidgets.QSpinBox()
@@ -1032,6 +1427,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # Peaks table ← canvas
         canvas.peaksChanged.connect(self.peak_widget.update_data)
         canvas.peaksChanged.connect(self._on_peaks_changed_ratios)
+        canvas.peaksChanged.connect(self._material_peak_widget.update_peaks)
+        self._material_peak_widget.assignmentChanged.connect(
+            self._on_material_assignment_changed
+        )
         canvas.peakSelected.connect(self.peak_widget.select_row)
         canvas.peakDeselected.connect(self.peak_widget.clear_selection)
         canvas.averagesChanged.connect(self.set_avg_completed)
@@ -1132,7 +1531,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_tap_buttons()
 
     def set_ring_out(self, time_s: float) -> None:
-        self.ring_out_value.setText(f"{time_s:.2f} s")
+        self._gs_ro_value.setText(f"{time_s:.2f}s")
+        quality, color = self._decay_quality(time_s)
+        self._gs_ro_quality.setText(quality)
+        self._gs_ro_quality.setStyleSheet(f"color: {color};")
 
     def set_calibration_status(self, name: str) -> None:
         if name:
@@ -1222,23 +1624,56 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._is_running:
             self._metrics_status_dot.setStyleSheet("color: green")
             self._metrics_status_lbl.setText("Analyzing")
+            self._results_status_dot.setStyleSheet("color: green;")
+            self._results_status_lbl.setStyleSheet("color: palette(text);")
+            self._results_status_lbl.setText("Analyzing")
         else:
             self._metrics_status_dot.setStyleSheet("color: gray")
             self._metrics_status_lbl.setText("Stopped")
+            self._results_status_dot.setStyleSheet("color: gray;")
+            self._results_status_lbl.setStyleSheet("color: gray;")
+            self._results_status_lbl.setText("Stopped")
 
     def update_tap_tone_ratios(self, mode_freqs: dict[str, float]) -> None:
         helm = mode_freqs.get("Air (Helmholtz)")
         top  = mode_freqs.get("Top")
-        back = mode_freqs.get("Back")
+        if top and helm and helm > 0:
+            ratio = top / helm
+            quality, color = self._tap_ratio_quality(ratio)
+            self._gs_ratio_value.setText(f"{ratio:.2f}:1")
+            self._gs_ratio_quality.setText(quality)
+            self._gs_ratio_quality.setStyleSheet(f"color: {color};")
+        else:
+            self._gs_ratio_value.setText("Need Air & Top")
+            self._gs_ratio_quality.setText("")
 
-        def _fmt(a: float | None, b: float | None) -> str:
-            if a and b and b > 0:
-                return f"{a / b:.3f}"
-            return "—"
+    @staticmethod
+    def _tap_ratio_quality(ratio: float) -> tuple[str, str]:
+        """Return (label, hex-color) for a Top/Air tap-tone ratio. Mirrors Swift."""
+        if ratio < 1.7:
+            return "Low",          "#F44336"
+        if ratio < 1.9:
+            return "Below Target", "#FF9800"
+        if ratio <= 2.1:
+            return "Ideal",        "#4CAF50"
+        if ratio < 2.3:
+            return "Above Target", "#FF9800"
+        return "High",             "#F44336"
 
-        self.ratio_top_helm.setText(_fmt(top, helm))
-        self.ratio_back_helm.setText(_fmt(back, helm))
-        self.ratio_top_back.setText(_fmt(top, back))
+    def _decay_quality(self, time_s: float) -> tuple[str, str]:
+        """Return (label, hex-color) for a ring-out time. Mirrors Swift decayQuality."""
+        gt_text = self.guitar_type_combo.currentText() if hasattr(self, "guitar_type_combo") else ""
+        if "Classical" in gt_text:
+            vs, sh, mo, go = 0.15, 0.35, 0.60, 1.0
+        elif "Flamenco" in gt_text:
+            vs, sh, mo, go = 0.08, 0.20, 0.35, 0.55
+        else:                         # acoustic / default
+            vs, sh, mo, go = 0.10, 0.25, 0.45, 0.70
+        if time_s < vs: return "Very Short", "#9E9E9E"
+        if time_s < sh: return "Short",      "#FF9800"
+        if time_s < mo: return "Moderate",   "#FFC107"
+        if time_s < go: return "Good",       "#4CAF50"
+        return "Excellent",                  "#2196F3"
 
     def set_avg_enable(self, state: bool) -> None:
         self.fft_canvas.set_avg_enable(state)
@@ -1286,6 +1721,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.select_all_btn.setEnabled(False)
             self.deselect_all_btn.setEnabled(False)
             self.reset_auto_selection_btn.setEnabled(False)
+            # Reset guitar summary to waiting state
+            self._gs_ro_value.setText("Waiting\u2026")
+            self._gs_ro_quality.setText("")
+            self._gs_ratio_value.setText("Need Air & Top")
+            self._gs_ratio_quality.setText("")
         self._sb_frozen_wgt.setVisible(checked)
         self._sb_update_frozen_state(checked)
         self._update_tap_buttons()
@@ -1570,8 +2010,83 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_auto_selection_btn.setVisible(mt.is_guitar)
         self.threshold_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
+        self._guitar_summary.setVisible(mt.is_guitar)
         self._material_section.setVisible(not mt.is_guitar and self._is_measurement_complete)
+        # Toggle peak list: guitar → PeakListWidget; plate/brace → MaterialPeakListWidget
+        self.peak_widget.setVisible(mt.is_guitar)
+        self._material_peak_widget.setVisible(not mt.is_guitar)
+        if not mt.is_guitar:
+            show_flc = (not mt.is_brace) and AS.AppSettings.measure_flc()
+            self._material_peak_widget.set_mode(
+                show_cross=not mt.is_brace,
+                show_flc=show_flc,
+            )
+            self._mat_title.setText(
+                "Brace Properties" if mt.is_brace else "Plate Properties"
+            )
         self._update_measurement_badge()
+
+    def _on_material_assignment_changed(
+        self, long_freq: float, cross_freq: float, flc_freq: float
+    ) -> None:
+        """Called when the user reassigns L/C/FLC buttons in the material peak list.
+
+        Updates model.modes (so annotations and _collect_measurement stay correct)
+        and recomputes/displays the material properties.
+        """
+        peak_model = self.peak_widget.model
+        mt = self._current_mt()
+
+        # Rebuild model.modes for plate/brace labels
+        for freq in list(peak_model.modes.keys()):
+            if peak_model.modes.get(freq) in ("Longitudinal", "Cross-grain", "FLC", "Peak"):
+                del peak_model.modes[freq]
+
+        peaks = self.fft_canvas.saved_peaks
+        if peaks.ndim == 2 and peaks.shape[0] > 0:
+            for f in peaks[:, 0]:
+                ff = float(f)
+                if long_freq  > 0 and abs(ff - long_freq)  < 0.5:
+                    peak_model.modes[ff] = "Longitudinal"
+                elif cross_freq > 0 and abs(ff - cross_freq) < 0.5:
+                    peak_model.modes[ff] = "Cross-grain"
+                elif flc_freq   > 0 and abs(ff - flc_freq)  < 0.5:
+                    peak_model.modes[ff] = "FLC"
+                else:
+                    peak_model.modes[ff] = "Peak"
+            peak_model.show_all_annotations()
+
+        # Show/hide placeholder vs content and recalculate
+        dims = self._get_current_dims()
+        if dims and dims.is_valid() and long_freq > 0:
+            try:
+                if mt.is_brace:
+                    self._populate_brace_section(
+                        PA.calculate_brace_properties(dims, long_freq)
+                    )
+                elif cross_freq > 0:
+                    self._populate_plate_section(
+                        PA.calculate_plate_properties(dims, long_freq, cross_freq)
+                    )
+                else:
+                    # L assigned but C not yet — show partial placeholder
+                    self._plate_content.setVisible(False)
+                    self._plate_placeholder.setVisible(True)
+                    self._plate_placeholder_lbl.setText("Select a cross-grain (C) peak")
+            except ValueError:
+                pass
+        else:
+            # No valid assignment — show placeholder
+            if mt.is_brace:
+                self._brace_content.setVisible(False)
+                self._brace_placeholder.setVisible(True)
+            else:
+                self._plate_content.setVisible(False)
+                self._plate_placeholder.setVisible(True)
+                self._plate_placeholder_lbl.setText(
+                    "Select a longitudinal (L) peak"
+                    if long_freq == 0 else "Select a cross-grain (C) peak"
+                )
 
     def _update_measurement_badge(self) -> None:
         """Refresh the badge in the Analysis Results panel to show the current
@@ -1604,9 +2119,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Please enter them in Settings → Measurement Type.",
             )
             return
-        # Assign material mode labels to peaks
+        # Assign material mode labels to peaks; find actual snapped frequencies
         peak_model = self.peak_widget.model
         peaks = self.fft_canvas.saved_peaks
+        actual_long = 0.0
+        actual_cross = 0.0
         if len(peaks) > 0:
             freqs = peaks[:, 0]
             modes: dict[float, str] = {}
@@ -1614,18 +2131,23 @@ class MainWindow(QtWidgets.QMainWindow):
             if f_long > 0:
                 idx = int(np.argmin(np.abs(freqs - f_long)))
                 used.add(idx)
-                modes[float(freqs[idx])] = "Longitudinal"
+                actual_long = float(freqs[idx])
+                modes[actual_long] = "Longitudinal"
             if f_cross > 0 and not mt.is_brace:
                 dists = np.abs(freqs - f_cross).copy()
                 for i in used:
                     dists[i] = np.inf
                 idx = int(np.argmin(dists))
                 used.add(idx)
-                modes[float(freqs[idx])] = "Cross-grain"
+                actual_cross = float(freqs[idx])
+                modes[actual_cross] = "Cross-grain"
             for i, f in enumerate(freqs):
                 if i not in used:
                     modes[float(f)] = "Peak"
             peak_model.modes = modes
+
+        # Update material peak widget with auto-assigned frequencies
+        self._material_peak_widget.set_assignment(actual_long, actual_cross)
 
         try:
             if mt.is_brace:
@@ -1652,6 +2174,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._brace_quality_lbl.setText(props.quality)
         self._brace_quality_lbl.setStyleSheet(f"color: {color};")
         self._brace_rad_ratio.setText(f"{props.radiation_ratio:.1f}")
+        self._brace_placeholder.setVisible(False)
+        self._brace_content.setVisible(True)
         self._brace_section.setVisible(True)
         self._plate_section.setVisible(False)
         self._material_section.setVisible(True)
@@ -1675,15 +2199,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_quality_cross.setStyleSheet(f"color: {cc};")
         self._plate_rad_long.setText(f"{props.radiation_ratio_long:.1f}")
         self._plate_rad_cross.setText(f"{props.radiation_ratio_cross:.1f}")
-        self._plate_cross_long.setText(
-            f"{props.cross_long_ratio:.3f}  (typical: 0.04\u20130.08)"
-        )
-        self._plate_long_cross.setText(
-            f"{props.long_cross_ratio:.1f}  (typical: 12\u201325)"
-        )
+        self._plate_cross_long.setText(f"{props.cross_long_ratio:.3f}")
+        self._plate_long_cross.setText(f"{props.long_cross_ratio:.1f}")
         cov = PA.QUALITY_COLORS.get(props.overall_quality, "#888888")
         self._plate_overall_quality.setText(props.overall_quality)
         self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
+        self._plate_placeholder.setVisible(False)
+        self._plate_content.setVisible(True)
         self._brace_section.setVisible(False)
         self._plate_section.setVisible(True)
         self._material_section.setVisible(True)
@@ -2060,10 +2582,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._ann_mode_idx = target_idx
         self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[target_idx][1]))
 
-        # For plate/brace, compute and display material properties from the loaded peaks
+        # For plate/brace, restore material peak widget and compute properties
         if not _restored_mt.is_guitar:
             _f_long = 0.0
             _f_cross = 0.0
+            _f_flc   = 0.0
             if m.selected_longitudinal_peak_id:
                 _uid = m.selected_longitudinal_peak_id.upper()
                 _p = next((p for p in m.peaks if (p.id or "").upper() == _uid), None)
@@ -2074,6 +2597,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 _p = next((p for p in m.peaks if (p.id or "").upper() == _uid), None)
                 if _p:
                     _f_cross = _p.frequency
+            if m.selected_flc_peak_id:
+                _uid = m.selected_flc_peak_id.upper()
+                _p = next((p for p in m.peaks if (p.id or "").upper() == _uid), None)
+                if _p:
+                    _f_flc = _p.frequency
+
+            # Populate material peak widget with loaded peaks and assignment
+            self._material_peak_widget.update_peaks(peaks_array)
+            self._material_peak_widget.set_assignment(_f_long, _f_cross, _f_flc)
+
             if _f_long > 0:
                 _dims = self._get_current_dims()
                 if _dims and _dims.is_valid():
