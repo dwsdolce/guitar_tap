@@ -158,36 +158,44 @@ class PeaksModel(QtCore.QAbstractTableModel):
             return float(self._data[index.row()][2])
         return 0.0
 
+    # Material (plate/brace) mode label → RGB colour, matching Swift PeakAnnotations.swift
+    _MATERIAL_MODE_COLORS: dict[str, tuple[int, int, int]] = {
+        "Longitudinal": (50,  100, 220),   # blue
+        "Cross-grain":  (220, 130,  0),    # orange
+        "FLC":          (150,  50, 200),   # purple
+        "Peak":         (150, 150, 150),   # secondary grey
+    }
+
     def annotation_html(self, freq: float, mag: float, mode: str) -> str:
         """Build the HTML label for an annotation, matching Swift PeakAnnotationLabel.
 
         Layout (top to bottom):
           • Mode name  — bold, mode colour
-          • Pitch / cents  — purple
+          • Pitch / cents  — purple  (guitar only)
           • Frequency (Hz) — dark
           • Magnitude (dB) — grey
         """
-        guitar_mode = gm.GuitarMode.from_mode_string(mode)
-        r, g, b = guitar_mode.color
-        display = gm.mode_display_name(mode) or ""
-
-        note   = self.pitch.note(freq)
-        cents  = self.pitch.cents(freq)
-
         rows: list[str] = []
-        if display:
+
+        if mode in self._MATERIAL_MODE_COLORS:
+            # Plate / brace: label by phase (no pitch row — not meaningful for material)
+            r, g, b = self._MATERIAL_MODE_COLORS[mode]
+            rows.append(f'<b style="color:rgb({r},{g},{b});">{mode}</b>')
+        else:
+            # Guitar: use GuitarMode classifier for colour and display name
+            guitar_mode = gm.GuitarMode.from_mode_string(mode)
+            r, g, b = guitar_mode.color
+            display = gm.mode_display_name(mode) or ""
+            if display:
+                rows.append(f'<b style="color:rgb({r},{g},{b});">{display}</b>')
+            note  = self.pitch.note(freq)
+            cents = self.pitch.cents(freq)
             rows.append(
-                f'<b style="color:rgb({r},{g},{b});">{display}</b>'
+                f'<span style="color:rgb(120,60,180);">&#9834; {note}&nbsp;&nbsp;{cents:+.0f}&#162;</span>'
             )
-        rows.append(
-            f'<span style="color:rgb(120,60,180);">&#9834; {note}&nbsp;&nbsp;{cents:+.0f}&#162;</span>'
-        )
-        rows.append(
-            f'<span style="color:rgb(50,50,50);">{freq:.1f} Hz</span>'
-        )
-        rows.append(
-            f'<span style="color:rgb(110,110,110);">{mag:.1f} dB</span>'
-        )
+
+        rows.append(f'<span style="color:rgb(50,50,50);">{freq:.1f} Hz</span>')
+        rows.append(f'<span style="color:rgb(110,110,110);">{mag:.1f} dB</span>')
         return '<center>' + '<br/>'.join(rows) + '</center>'
 
     def set_guitar_type(self, guitar_type: str) -> None:

@@ -17,7 +17,6 @@ import measurement as M
 import measurements_dialog as MD
 import save_measurement_dialog as SMD
 import plate_analysis as PA
-import plate_dialog as PD
 import plate_stiffness_preset as PSP
 import guitar_type as GT
 import guitar_modes as GM
@@ -65,7 +64,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_measurement_complete: bool = False
         self._tap_count_captured: int = 0
         self._tap_count_total: int = 1
-        self._plate_dialog: PD.PlateDialog | None = None
         self._help_dialog: HD.HelpDialog | None = None
         self._metrics_dialog: QtWidgets.QDialog | None = None
         self._proc_times: list[float] = []          # rolling 30-frame processing times
@@ -322,12 +320,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hl.addStretch()
 
-        # ── Plate / Brace (hidden until plate/brace mode) ─────────────────
-        self.plate_analysis_btn = QtWidgets.QPushButton("Plate / Brace Analysis…")
-        self.plate_analysis_btn.setVisible(False)
-        self.plate_analysis_btn.setToolTip("Open the plate/brace material analysis dialog")
-        hl.addWidget(self.plate_analysis_btn)
-
         # ── New Tap ───────────────────────────────────────────────────────
         self.new_tap_btn = QtWidgets.QPushButton("New Tap")
         self.new_tap_btn.setIcon(qta.icon("mdi.gesture-tap"))
@@ -411,9 +403,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # "Detected Peaks & Modes" header + Select All / Deselect All buttons
         peaks_header = QtWidgets.QHBoxLayout()
-        peaks_lbl = QtWidgets.QLabel("Detected Peaks & Modes")
-        peaks_lbl.setFont(small_font)
-        peaks_header.addWidget(peaks_lbl, stretch=1)
+        self._peaks_header_lbl = QtWidgets.QLabel("Detected Peaks & Modes")
+        self._peaks_header_lbl.setFont(small_font)
+        peaks_header.addWidget(self._peaks_header_lbl, stretch=1)
 
         style = self.style()
         self.select_all_btn = QtWidgets.QToolButton()
@@ -455,8 +447,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addWidget(_hsep())
 
-        # Ring-Out time
-        def _result_row(label: str) -> QtWidgets.QLabel:
+        # ── Guitar-only section: Ring-Out + Tap-Tone Ratios ──────────────────
+        self._guitar_section = QtWidgets.QWidget()
+        gs_vbox = QtWidgets.QVBoxLayout(self._guitar_section)
+        gs_vbox.setContentsMargins(0, 0, 0, 0)
+        gs_vbox.setSpacing(2)
+
+        def _result_row(label: str, parent: QtWidgets.QVBoxLayout) -> QtWidgets.QLabel:
             row = QtWidgets.QHBoxLayout()
             lbl = QtWidgets.QLabel(label)
             lbl.setFont(small_font)
@@ -465,24 +462,210 @@ class MainWindow(QtWidgets.QMainWindow):
             val.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
             row.addWidget(lbl)
             row.addWidget(val)
-            vbox.addLayout(row)
+            parent.addLayout(row)
             return val
 
         ring_out_lbl = QtWidgets.QLabel("Ring-Out Time")
         ring_out_lbl.setFont(small_font)
-        vbox.addWidget(ring_out_lbl)
-        self.ring_out_value = _result_row("Decay:")
+        gs_vbox.addWidget(ring_out_lbl)
+        self.ring_out_value = _result_row("Decay:", gs_vbox)
 
-        vbox.addWidget(_hsep())
+        gs_vbox.addWidget(_hsep())
 
-        # Tap tone ratios
         ratios_title = QtWidgets.QLabel("Tap Tone Ratio")
         ratios_title.setFont(small_font)
-        vbox.addWidget(ratios_title)
+        gs_vbox.addWidget(ratios_title)
 
-        self.ratio_top_helm  = _result_row("Top / Helm:")
-        self.ratio_back_helm = _result_row("Back / Helm:")
-        self.ratio_top_back  = _result_row("Top / Back:")
+        self.ratio_top_helm  = _result_row("Top / Helm:",  gs_vbox)
+        self.ratio_back_helm = _result_row("Back / Helm:", gs_vbox)
+        self.ratio_top_back  = _result_row("Top / Back:",  gs_vbox)
+
+        vbox.addWidget(self._guitar_section)
+        vbox.addWidget(_hsep())
+
+        # ── Material Properties section (plate/brace only) ───────────────────
+        self._material_section = QtWidgets.QWidget()
+        ms_vbox = QtWidgets.QVBoxLayout(self._material_section)
+        ms_vbox.setContentsMargins(0, 0, 0, 0)
+        ms_vbox.setSpacing(4)
+
+        mat_title = QtWidgets.QLabel("Material Properties")
+        _mat_title_font = QtGui.QFont()
+        _mat_title_font.setPointSize(small_font.pointSize())
+        _mat_title_font.setBold(True)
+        mat_title.setFont(_mat_title_font)
+        ms_vbox.addWidget(mat_title)
+
+        def _ms_row(label: str, parent: QtWidgets.QVBoxLayout) -> QtWidgets.QLabel:
+            row = QtWidgets.QHBoxLayout()
+            lbl = QtWidgets.QLabel(label)
+            lbl.setFont(small_font)
+            val = QtWidgets.QLabel("—")
+            val.setFont(small_font)
+            val.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+            row.addWidget(lbl)
+            row.addWidget(val)
+            parent.addLayout(row)
+            return val
+
+        # ── Brace sub-section ────────────────────────────────────────────────
+        self._brace_section = QtWidgets.QWidget()
+        bs_vbox = QtWidgets.QVBoxLayout(self._brace_section)
+        bs_vbox.setContentsMargins(0, 0, 0, 0)
+        bs_vbox.setSpacing(2)
+
+        self._brace_subtitle = QtWidgets.QLabel("—")
+        self._brace_subtitle.setFont(small_font)
+        self._brace_subtitle.setStyleSheet("color: palette(dark);")
+        bs_vbox.addWidget(self._brace_subtitle)
+        bs_vbox.addWidget(_hsep())
+
+        self._brace_c_long = _ms_row("Speed of Sound:", bs_vbox)
+        self._brace_E_long = _ms_row("Young's Modulus (E):", bs_vbox)
+
+        # Specific modulus box
+        _spec_frame_b = QtWidgets.QFrame()
+        _spec_frame_b.setStyleSheet(
+            "QFrame { background-color: palette(alternateBase); border-radius: 4px; }"
+        )
+        _sfb_vbox = QtWidgets.QVBoxLayout(_spec_frame_b)
+        _sfb_vbox.setContentsMargins(6, 4, 6, 4)
+        _sfb_vbox.setSpacing(2)
+        _sfb_title = QtWidgets.QLabel("Specific Modulus (E/\u03c1)")
+        _sfb_title.setFont(small_font)
+        _sfb_vbox.addWidget(_sfb_title)
+        _sfb_row = QtWidgets.QHBoxLayout()
+        _big_font = QtGui.QFont()
+        _big_font.setPointSize(14)
+        _big_font.setBold(True)
+        self._brace_spec_value = QtWidgets.QLabel("—")
+        self._brace_spec_value.setFont(_big_font)
+        _sfb_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
+        _sfb_unit.setFont(small_font)
+        _sfb_unit.setStyleSheet("color: palette(dark);")
+        _sfb_row.addWidget(self._brace_spec_value)
+        _sfb_row.addWidget(_sfb_unit)
+        _sfb_row.addStretch()
+        _sfb_vbox.addLayout(_sfb_row)
+        self._brace_quality_lbl = QtWidgets.QLabel("—")
+        self._brace_quality_lbl.setFont(small_font)
+        _sfb_vbox.addWidget(self._brace_quality_lbl)
+        bs_vbox.addWidget(_spec_frame_b)
+
+        self._brace_rad_ratio = _ms_row("Radiation Ratio (R):", bs_vbox)
+        ms_vbox.addWidget(self._brace_section)
+
+        # ── Plate sub-section ────────────────────────────────────────────────
+        self._plate_section = QtWidgets.QWidget()
+        ps_vbox = QtWidgets.QVBoxLayout(self._plate_section)
+        ps_vbox.setContentsMargins(0, 0, 0, 0)
+        ps_vbox.setSpacing(2)
+
+        self._plate_subtitle = QtWidgets.QLabel("—")
+        self._plate_subtitle.setFont(small_font)
+        self._plate_subtitle.setStyleSheet("color: palette(dark);")
+        ps_vbox.addWidget(self._plate_subtitle)
+        ps_vbox.addWidget(_hsep())
+
+        def _plate_row(label: str) -> tuple[QtWidgets.QLabel, QtWidgets.QLabel]:
+            row = QtWidgets.QHBoxLayout()
+            lbl = QtWidgets.QLabel(label)
+            lbl.setFont(small_font)
+            val_l = QtWidgets.QLabel("—")
+            val_l.setFont(small_font)
+            sep = QtWidgets.QLabel(" / ")
+            sep.setFont(small_font)
+            val_c = QtWidgets.QLabel("—")
+            val_c.setFont(small_font)
+            row.addWidget(lbl)
+            row.addStretch()
+            row.addWidget(val_l)
+            row.addWidget(sep)
+            row.addWidget(val_c)
+            ps_vbox.addLayout(row)
+            return val_l, val_c
+
+        self._plate_c_long, self._plate_c_cross = _plate_row("Speed of Sound:")
+        self._plate_E_long, self._plate_E_cross = _plate_row("Young's Modulus:")
+
+        # Specific modulus box for plate (two-column)
+        _spec_frame_p = QtWidgets.QFrame()
+        _spec_frame_p.setStyleSheet(
+            "QFrame { background-color: palette(alternateBase); border-radius: 4px; }"
+        )
+        _sfp_vbox = QtWidgets.QVBoxLayout(_spec_frame_p)
+        _sfp_vbox.setContentsMargins(6, 4, 6, 4)
+        _sfp_vbox.setSpacing(2)
+        _sfp_title = QtWidgets.QLabel("Specific Modulus (E/\u03c1)")
+        _sfp_title.setFont(small_font)
+        _sfp_vbox.addWidget(_sfp_title)
+
+        _sfp_cols = QtWidgets.QHBoxLayout()
+
+        # Longitudinal column
+        _sfp_l_vbox = QtWidgets.QVBoxLayout()
+        _sfp_l_cap = QtWidgets.QLabel("Longitudinal:")
+        _sfp_l_cap.setFont(small_font)
+        _sfp_l_cap.setStyleSheet("color: palette(dark);")
+        _sfp_l_vbox.addWidget(_sfp_l_cap)
+        _sfp_l_row = QtWidgets.QHBoxLayout()
+        self._plate_spec_long_value = QtWidgets.QLabel("—")
+        self._plate_spec_long_value.setFont(_big_font)
+        _sfp_l_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
+        _sfp_l_unit.setFont(small_font)
+        _sfp_l_unit.setStyleSheet("color: palette(dark);")
+        _sfp_l_row.addWidget(self._plate_spec_long_value)
+        _sfp_l_row.addWidget(_sfp_l_unit)
+        _sfp_l_row.addStretch()
+        _sfp_l_vbox.addLayout(_sfp_l_row)
+        self._plate_quality_long = QtWidgets.QLabel("—")
+        self._plate_quality_long.setFont(small_font)
+        _sfp_l_vbox.addWidget(self._plate_quality_long)
+        _sfp_cols.addLayout(_sfp_l_vbox)
+
+        # Cross-grain column
+        _sfp_c_vbox = QtWidgets.QVBoxLayout()
+        _sfp_c_cap = QtWidgets.QLabel("Cross-grain:")
+        _sfp_c_cap.setFont(small_font)
+        _sfp_c_cap.setStyleSheet("color: palette(dark);")
+        _sfp_c_vbox.addWidget(_sfp_c_cap)
+        _sfp_c_row = QtWidgets.QHBoxLayout()
+        self._plate_spec_cross_value = QtWidgets.QLabel("—")
+        self._plate_spec_cross_value.setFont(_big_font)
+        _sfp_c_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
+        _sfp_c_unit.setFont(small_font)
+        _sfp_c_unit.setStyleSheet("color: palette(dark);")
+        _sfp_c_row.addWidget(self._plate_spec_cross_value)
+        _sfp_c_row.addWidget(_sfp_c_unit)
+        _sfp_c_vbox.addLayout(_sfp_c_row)
+        self._plate_quality_cross = QtWidgets.QLabel("—")
+        self._plate_quality_cross.setFont(small_font)
+        _sfp_c_vbox.addWidget(self._plate_quality_cross)
+        _sfp_cols.addLayout(_sfp_c_vbox)
+
+        _sfp_vbox.addLayout(_sfp_cols)
+        ps_vbox.addWidget(_spec_frame_p)
+
+        self._plate_rad_long, self._plate_rad_cross = _plate_row("Radiation Ratio (R):")
+        self._plate_cross_long = _ms_row("Cross/Long ratio:", ps_vbox)
+        self._plate_long_cross = _ms_row("Long/Cross ratio:", ps_vbox)
+
+        _overall_row = QtWidgets.QHBoxLayout()
+        _overall_lbl = QtWidgets.QLabel("Overall Quality:")
+        _overall_lbl.setFont(small_font)
+        self._plate_overall_quality = QtWidgets.QLabel("—")
+        self._plate_overall_quality.setFont(small_font)
+        _overall_row.addWidget(_overall_lbl)
+        _overall_row.addStretch()
+        _overall_row.addWidget(self._plate_overall_quality)
+        ps_vbox.addLayout(_overall_row)
+
+        ms_vbox.addWidget(self._plate_section)
+
+        self._brace_section.setVisible(False)
+        self._plate_section.setVisible(False)
+        self._material_section.setVisible(False)
+        vbox.addWidget(self._material_section)
 
         vbox.addWidget(_hsep())
 
@@ -843,7 +1026,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.measurement_type_combo.currentTextChanged.connect(
             self._on_measurement_type_changed
         )
-        self.plate_analysis_btn.clicked.connect(self._on_open_plate_dialog)
         canvas.plateStatusChanged.connect(self._on_plate_status_changed)
         canvas.plateAnalysisComplete.connect(self._on_plate_analysis_complete)
 
@@ -1071,6 +1253,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_measurement_complete = checked
         self.fft_canvas.set_measurement_complete(checked)
         self.peak_widget.data_held(checked)
+        mt = self._current_mt()
+        if not mt.is_guitar:
+            self._material_section.setVisible(checked)
         if checked:
             # Re-apply the current annotation mode (data_held always defaults to Selected)
             current_mode = self._ANN_MODES[self._ann_mode_idx][0]
@@ -1291,6 +1476,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_progress.setVisible(False)
         self._sb_detect_msg.setText("Listening for tap…")
         self._sb_detect_msg.setStyleSheet("")
+        # For plate/brace measurements, automatically arm the capture state machine.
+        mt = self._current_mt()
+        if not mt.is_guitar:
+            self.fft_canvas.start_plate_analysis()
 
     def _on_ring_out_measured(self, time_s: float) -> None:
         self._ring_out_s = time_s
@@ -1378,8 +1567,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_measurement_type_changed(self, _: str) -> None:
         mt = self._current_mt()
         self.fft_canvas.set_measurement_type(mt)
-        self.plate_analysis_btn.setVisible(not mt.is_guitar)
         self.reset_auto_selection_btn.setVisible(mt.is_guitar)
+        self.threshold_slider.setEnabled(mt.is_guitar)
+        self.peak_min_readout.setEnabled(mt.is_guitar)
+        self._material_section.setVisible(not mt.is_guitar and self._is_measurement_complete)
         self._update_measurement_badge()
 
     def _update_measurement_badge(self) -> None:
@@ -1396,41 +1587,124 @@ class MainWindow(QtWidgets.QMainWindow):
             "background: rgba(255,140,0,0.20); border-radius: 4px; padding: 1px 6px;"
         )
 
-    def _on_open_plate_dialog(self) -> None:
-        if self._plate_dialog is None or not self._plate_dialog.isVisible():
-            self._plate_dialog = PD.PlateDialog(self)
-            self._plate_dialog.startAnalysis.connect(
-                self.fft_canvas.start_plate_analysis
-            )
-            self._plate_dialog.resetAnalysis.connect(
-                self.fft_canvas.reset_plate_analysis
-            )
-        self._plate_dialog.show()
-        self._plate_dialog.raise_()
-        self._plate_dialog.activateWindow()
-
     def _on_plate_status_changed(self, status: str) -> None:
-        if self._plate_dialog and self._plate_dialog.isVisible():
-            self._plate_dialog.set_status(status)
+        """Update status bar with plate/brace capture progress."""
+        if status:
+            self._sb_detect_msg.setText(status)
+            self._sb_detect_msg.setStyleSheet("")
 
     def _on_plate_analysis_complete(self, f_long: float, f_cross: float) -> None:
-        if self._plate_dialog is None:
-            return
-        dims = self._plate_dialog.dimensions()
-        if dims is None:
+        """Auto-compute material properties and display in results panel."""
+        mt = self._current_mt()
+        dims = self._get_current_dims()
+        if dims is None or not dims.is_valid():
             QtWidgets.QMessageBox.warning(
-                self,
-                "Missing Dimensions",
-                "Plate dimensions are required to calculate material properties.",
+                self, "Missing Dimensions",
+                "Plate/brace dimensions are required.\n"
+                "Please enter them in Settings → Measurement Type.",
             )
             return
+        # Assign material mode labels to peaks
+        peak_model = self.peak_widget.model
+        peaks = self.fft_canvas.saved_peaks
+        if len(peaks) > 0:
+            freqs = peaks[:, 0]
+            modes: dict[float, str] = {}
+            used: set[int] = set()
+            if f_long > 0:
+                idx = int(np.argmin(np.abs(freqs - f_long)))
+                used.add(idx)
+                modes[float(freqs[idx])] = "Longitudinal"
+            if f_cross > 0 and not mt.is_brace:
+                dists = np.abs(freqs - f_cross).copy()
+                for i in used:
+                    dists[i] = np.inf
+                idx = int(np.argmin(dists))
+                used.add(idx)
+                modes[float(freqs[idx])] = "Cross-grain"
+            for i, f in enumerate(freqs):
+                if i not in used:
+                    modes[float(f)] = "Peak"
+            peak_model.modes = modes
+
         try:
-            props = PA.calculate_properties(dims, f_long, f_cross)
+            if mt.is_brace:
+                self._populate_brace_section(PA.calculate_brace_properties(dims, f_long))
+            else:
+                self._populate_plate_section(
+                    PA.calculate_plate_properties(dims, f_long, f_cross)
+                )
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "Calculation Error", str(exc))
             return
-        self._plate_dialog.show_results(f_long, f_cross, props)
+
         self.set_measurement_complete(True)
+        peak_model.show_all_annotations()
+
+    def _populate_brace_section(self, props: PA.BraceProperties) -> None:
+        """Fill the brace material properties sub-section and make it visible."""
+        self._brace_subtitle.setText(f"Longitudinal (fL): {props.f_long:.1f} Hz")
+        self._brace_c_long.setText(f"{props.c_long_m_s:.0f} m/s")
+        self._brace_E_long.setText(f"{props.E_long_GPa:.2f} GPa")
+        color = PA.QUALITY_COLORS.get(props.quality, "#888888")
+        self._brace_spec_value.setText(f"{props.specific_modulus:.1f}")
+        self._brace_spec_value.setStyleSheet(f"color: {color};")
+        self._brace_quality_lbl.setText(props.quality)
+        self._brace_quality_lbl.setStyleSheet(f"color: {color};")
+        self._brace_rad_ratio.setText(f"{props.radiation_ratio:.1f}")
+        self._brace_section.setVisible(True)
+        self._plate_section.setVisible(False)
+        self._material_section.setVisible(True)
+
+    def _populate_plate_section(self, props: PA.PlateProperties) -> None:
+        """Fill the plate material properties sub-section and make it visible."""
+        self._plate_subtitle.setText(f"fL: {props.f_long:.1f} Hz  fC: {props.f_cross:.1f} Hz")
+        self._plate_c_long.setText(f"{props.c_long_m_s:.0f} m/s")
+        self._plate_c_cross.setText(f"{props.c_cross_m_s:.0f} m/s")
+        self._plate_E_long.setText(f"{props.E_long_GPa:.2f} GPa")
+        self._plate_E_cross.setText(f"{props.E_cross_GPa:.2f} GPa")
+        cl = PA.QUALITY_COLORS.get(props.quality_long, "#888888")
+        cc = PA.QUALITY_COLORS.get(props.quality_cross, "#888888")
+        self._plate_spec_long_value.setText(f"{props.specific_modulus_long:.1f}")
+        self._plate_spec_long_value.setStyleSheet(f"color: {cl};")
+        self._plate_quality_long.setText(props.quality_long)
+        self._plate_quality_long.setStyleSheet(f"color: {cl};")
+        self._plate_spec_cross_value.setText(f"{props.specific_modulus_cross:.1f}")
+        self._plate_spec_cross_value.setStyleSheet(f"color: {cc};")
+        self._plate_quality_cross.setText(props.quality_cross)
+        self._plate_quality_cross.setStyleSheet(f"color: {cc};")
+        self._plate_rad_long.setText(f"{props.radiation_ratio_long:.1f}")
+        self._plate_rad_cross.setText(f"{props.radiation_ratio_cross:.1f}")
+        self._plate_cross_long.setText(
+            f"{props.cross_long_ratio:.3f}  (typical: 0.04\u20130.08)"
+        )
+        self._plate_long_cross.setText(
+            f"{props.long_cross_ratio:.1f}  (typical: 12\u201325)"
+        )
+        cov = PA.QUALITY_COLORS.get(props.overall_quality, "#888888")
+        self._plate_overall_quality.setText(props.overall_quality)
+        self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
+        self._brace_section.setVisible(False)
+        self._plate_section.setVisible(True)
+        self._material_section.setVisible(True)
+
+    def _get_current_dims(self) -> PA.PlateDimensions | None:
+        """Return current plate/brace dimensions from AppSettings."""
+        mt = self._current_mt()
+        if mt.is_brace:
+            return PA.PlateDimensions(
+                length_mm=AS.AppSettings.brace_length(),
+                width_mm=AS.AppSettings.brace_width(),
+                thickness_mm=AS.AppSettings.brace_thickness(),
+                mass_g=AS.AppSettings.brace_mass(),
+            )
+        else:
+            return PA.PlateDimensions(
+                length_mm=AS.AppSettings.plate_length(),
+                width_mm=AS.AppSettings.plate_width(),
+                thickness_mm=AS.AppSettings.plate_thickness(),
+                mass_g=AS.AppSettings.plate_mass(),
+            )
 
     # ================================================================
     # Measurements save / load / export
@@ -1443,14 +1717,23 @@ class MainWindow(QtWidgets.QMainWindow):
     ) -> M.TapToneMeasurement:
         """Collect the current held peaks and spectrum into a TapToneMeasurement."""
         import uuid as _uuid
+        from datetime import datetime, timezone
         canvas = self.fft_canvas
         model  = self.peak_widget.model
+        mt     = self._current_mt()
 
         # Build PeakEntry list from the current peaks table
         peaks: list[M.PeakEntry] = []
         selected_ids: list[str] = []
+        # For guitar: user-assigned mode overrides in Swift format {uuid: mode_string}
+        # For plate/brace: use selectedLongitudinalPeakID etc. instead (set below)
         peak_mode_overrides: dict[str, str] = {}
+        # Material peak ID tracking (plate/brace only)
+        selected_longitudinal_peak_id: str | None = None
+        selected_cross_peak_id: str | None = None
+        selected_flc_peak_id: str | None = None
 
+        ts = datetime.now(timezone.utc).isoformat()
         for row in range(model.rowCount(QtCore.QModelIndex())):
             idx  = model.index(row, 0)
             freq = model.freq_value(idx)
@@ -1459,9 +1742,6 @@ class MainWindow(QtWidgets.QMainWindow):
             show = model.show_value(idx)
             mode = model.mode_value(idx)
             peak_id = str(_uuid.uuid4())
-
-            from datetime import datetime, timezone
-            ts = datetime.now(timezone.utc).isoformat()
 
             bandwidth = freq / max(q, 0.001) if q else 0.0
             entry = M.PeakEntry(
@@ -1478,22 +1758,40 @@ class MainWindow(QtWidgets.QMainWindow):
             if show == "on":
                 selected_ids.append(peak_id)
 
-            # Record manual mode overrides (freq key in model.modes means user set it)
-            if freq in model.modes:
-                peak_mode_overrides[peak_id] = model.modes[freq]
+            if mt.is_guitar:
+                # Guitar: record user mode overrides (freq in model.modes = override set)
+                if freq in model.modes:
+                    peak_mode_overrides[peak_id] = model.modes[freq]
+            else:
+                # Plate/brace: track which peak was selected for each material mode
+                label = model.modes.get(freq, "")
+                if label == "Longitudinal":
+                    selected_longitudinal_peak_id = peak_id
+                elif label == "Cross-grain":
+                    selected_cross_peak_id = peak_id
+                elif label == "FLC":
+                    selected_flc_peak_id = peak_id
 
-        # Annotation offsets keyed by peak id (best-effort: match by frequency)
-        freq_to_id = {p.frequency: p.id for p in peaks}
+        # Annotation offsets — store as [hzOffset, dbOffset] deltas (Swift convention).
+        # hzOffset = label_hz - peak_hz; dbOffset positive = downward in screen = lower dB.
+        # Default label center in data space = (peak_freq, peak_mag + 14.0).
+        _LABEL_OFFSET_DB = 14.0
+        freq_to_peak = {p.frequency: p for p in peaks}
+        freq_to_id   = {p.frequency: p.id for p in peaks}
         annotation_offsets: dict[str, list[float]] = {}
         for ann_dict in canvas.annotations.annotations:
             ann_freq = ann_dict.get("freq")
-            xytext = ann_dict.get("xytext")
+            xytext   = ann_dict.get("xytext")
             if ann_freq is not None and xytext and ann_freq in freq_to_id:
-                annotation_offsets[freq_to_id[ann_freq]] = list(xytext)
+                peak = freq_to_peak[ann_freq]
+                hz_offset = float(xytext[0]) - peak.frequency
+                # dbOffset positive = downward = lower dB; xytext[1] is absolute dB of label center
+                db_offset = (peak.magnitude + _LABEL_OFFSET_DB) - float(xytext[1])
+                annotation_offsets[freq_to_id[ann_freq]] = [hz_offset, db_offset]
 
-        # Spectrum snapshot
+        # Spectrum snapshot — guitar uses spectrumSnapshot; plate/brace use longitudinalSnapshot
         spectrum_snapshot: M.SpectrumSnapshot | None = None
-        if hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
+        if mt.is_guitar and hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
             freqs = canvas.freq.tolist()
             mags  = canvas.saved_mag_y_db.tolist()
             spectrum_snapshot = M.SpectrumSnapshot(
@@ -1506,6 +1804,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 guitar_type=self.guitar_type_combo.currentText(),
                 measurement_type=self.measurement_type_combo.currentText(),
             )
+        # TODO: for plate/brace, save per-phase snapshots (longitudinalSnapshot etc.)
+        # Currently PlateCapture does not expose the raw spectra after capture completes.
 
         mic_name: str | None = None
         try:
@@ -1524,7 +1824,10 @@ class MainWindow(QtWidgets.QMainWindow):
             annotation_offsets=annotation_offsets or None,
             tap_detection_threshold=float(self.tap_threshold_slider.value()),
             number_of_taps=self.tap_num_spin.value(),
-            peak_threshold=float(self.threshold_slider.value()),
+            peak_threshold=float(self.threshold_slider.value()) if mt.is_guitar else None,
+            selected_longitudinal_peak_id=selected_longitudinal_peak_id,
+            selected_cross_peak_id=selected_cross_peak_id,
+            selected_flc_peak_id=selected_flc_peak_id,
             microphone_name=mic_name,
             measurement_type=self.measurement_type_combo.currentText(),
             guitar_type=self.guitar_type_combo.currentText(),
@@ -1602,7 +1905,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if m.guitar_type:
             self.guitar_type_combo.setCurrentText(m.guitar_type)
         if m.measurement_type:
-            self.measurement_type_combo.setCurrentText(m.measurement_type)
+            # Swift may save various string forms; normalise via from_string() then
+            # map to the three combo values ("Guitar", "Plate", "Brace").
+            _mt = MT.MeasurementType.from_string(m.measurement_type)
+            _combo_val = "Guitar" if _mt.is_guitar else _mt.short_name
+            self.measurement_type_combo.setCurrentText(_combo_val)
 
         # Restore peaks (built early so _loaded_measurement_peaks is set before
         # update_axis fires, preventing a stale find_peaks call from the spinner signals)
@@ -1621,10 +1928,13 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peaks_f_max_index = len(peaks_array)
 
         # Restore spectrum snapshot if available.
+        # For guitar: use spectrumSnapshot. For plate/brace: spectrumSnapshot is nil;
+        # use longitudinalSnapshot instead — mirrors Swift: longitudinalSnapshot ?? spectrumSnapshot.
         # Block spinner valueChanged signals while setting values to prevent
         # spurious update_axis → find_peaks calls with stale magnitude data.
-        if m.spectrum_snapshot is not None:
-            snap = m.spectrum_snapshot
+        _snap = m.spectrum_snapshot or m.longitudinal_snapshot
+        if _snap is not None:
+            snap = _snap
             freq_arr = np.array(snap.frequencies, dtype=np.float64)
             mag_arr  = np.array(snap.magnitudes, dtype=np.float64)
             canvas.saved_mag_y_db = mag_arr
@@ -1649,8 +1959,23 @@ class MainWindow(QtWidgets.QMainWindow):
         # Restore mode overrides and show/hide state
         peak_model = self.peak_widget.model
 
-        # Manual mode overrides (keyed by UUID in new format)
-        if m.peak_mode_overrides:
+        _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
+        if not _restored_mt.is_guitar:
+            # Plate / brace: label peaks by selectedLongitudinalPeakID / selectedCrossPeakID / selectedFlcPeakID
+            _id_to_label: dict[str, str] = {}
+            if m.selected_longitudinal_peak_id:
+                _id_to_label[m.selected_longitudinal_peak_id.upper()] = "Longitudinal"
+            if m.selected_cross_peak_id:
+                _id_to_label[m.selected_cross_peak_id.upper()] = "Cross-grain"
+            if m.selected_flc_peak_id:
+                _id_to_label[m.selected_flc_peak_id.upper()] = "FLC"
+            peak_model.modes = {}
+            for p in m.peaks:
+                peak_model.modes[p.frequency] = _id_to_label.get(
+                    (p.id or "").upper(), "Peak"
+                )
+        elif m.peak_mode_overrides:
+            # Guitar: manual mode overrides (keyed by UUID in new format)
             id_to_mode = m.peak_mode_overrides
             peak_model.modes = {}
             for p in m.peaks:
@@ -1693,13 +2018,23 @@ class MainWindow(QtWidgets.QMainWindow):
         for p in m.peaks:
             freq = p.frequency
             mag  = p.magnitude
-            mode_str = (
-                peak_model.modes.get(freq)
-                or p.mode_label
-                or GM.classify_peak(freq, peak_model.guitar_type)
-            )
-            xytext_list = ann_offsets.get(p.id)
-            xytext = tuple(xytext_list) if xytext_list else (freq, mag + 14.0)
+            if _restored_mt.is_guitar:
+                mode_str = (
+                    peak_model.modes.get(freq)
+                    or p.mode_label
+                    or GM.classify_peak(freq, peak_model.guitar_type)
+                )
+            else:
+                # Plate/brace: use the material mode label set above; never fall back to guitar classifier
+                mode_str = peak_model.modes.get(freq, "Peak")
+            # ann_offsets stores [hzOffset, dbOffset] in Swift convention.
+            # hzOffset: Hz delta from peak; dbOffset positive = downward = lower dB.
+            # Convert to absolute label center: (freq + hzOffset, mag + 14.0 - dbOffset).
+            _ann_offset = ann_offsets.get(p.id) or ann_offsets.get(p.id.upper())
+            if _ann_offset:
+                xytext = (freq + _ann_offset[0], mag + 14.0 - _ann_offset[1])
+            else:
+                xytext = (freq, mag + 14.0)
             html = peak_model.annotation_html(freq, mag, mode_str)
             canvas.annotations.annotations.append(
                 {
@@ -1724,6 +2059,35 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self._ann_mode_idx = target_idx
         self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[target_idx][1]))
+
+        # For plate/brace, compute and display material properties from the loaded peaks
+        if not _restored_mt.is_guitar:
+            _f_long = 0.0
+            _f_cross = 0.0
+            if m.selected_longitudinal_peak_id:
+                _uid = m.selected_longitudinal_peak_id.upper()
+                _p = next((p for p in m.peaks if (p.id or "").upper() == _uid), None)
+                if _p:
+                    _f_long = _p.frequency
+            if m.selected_cross_peak_id:
+                _uid = m.selected_cross_peak_id.upper()
+                _p = next((p for p in m.peaks if (p.id or "").upper() == _uid), None)
+                if _p:
+                    _f_cross = _p.frequency
+            if _f_long > 0:
+                _dims = self._get_current_dims()
+                if _dims and _dims.is_valid():
+                    try:
+                        if _restored_mt.is_brace:
+                            self._populate_brace_section(
+                                PA.calculate_brace_properties(_dims, _f_long)
+                            )
+                        elif _f_cross > 0:
+                            self._populate_plate_section(
+                                PA.calculate_plate_properties(_dims, _f_long, _f_cross)
+                            )
+                    except ValueError:
+                        pass
 
         self.set_measurement_complete(True)
 

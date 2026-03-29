@@ -83,6 +83,26 @@ class MeasurementType(Enum):
         return "Guitar" if self.is_guitar else self.short_name
 
     @staticmethod
+    def from_string(s: str) -> "MeasurementType":
+        """Resolve from any string form (Swift raw value, short name, combo text, etc.).
+
+        Handles: "plate", "Plate", "Material (Plate)", "brace", "Brace",
+        "Material (Brace)", "classicalGuitar", "Classical Guitar",
+        "Classical", "flamencoGuitar", "Flamenco Guitar", "acousticGuitar", etc.
+        """
+        lower = s.lower().strip()
+        if "plate" in lower:
+            return MeasurementType.PLATE
+        if "brace" in lower:
+            return MeasurementType.BRACE
+        if "flamenco" in lower:
+            return MeasurementType.FLAMENCO
+        if "acoustic" in lower:
+            return MeasurementType.ACOUSTIC
+        # Default guitar → classical
+        return MeasurementType.CLASSICAL
+
+    @staticmethod
     def from_combo_values(measurement: str, guitar_type: str) -> MeasurementType:
         """Resolve from the two legacy combo-box string values used in guitar_tap.py."""
         if measurement == "Plate":

@@ -1,8 +1,15 @@
 """
-    State machine for two-tap plate / brace analysis.
+    State machine for plate / brace material tap analysis.
 
-    Phase sequence:
+    Mirrors Swift's MaterialTapPhase state machine:
+
+    Brace (1 tap):
+        IDLE → WAITING_L → COMPLETE
+        analysisComplete emits (f_long, 0.0)
+
+    Plate (2 taps):
         IDLE → WAITING_L → WAITING_C → COMPLETE
+        analysisComplete emits (f_long, f_cross)
 
     The caller feeds each detected tap's linear magnitude spectrum via
     on_tap().  HPS is used to extract the dominant fundamental frequency
@@ -21,7 +28,7 @@ import freq_anal as f_a
 
 
 class PlateCapture(QtCore.QObject):
-    """Two-tap plate / brace fundamental-frequency capture via HPS."""
+    """Plate / brace fundamental-frequency capture via HPS."""
 
     stateChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     fLCaptured: QtCore.pyqtSignal = QtCore.pyqtSignal(float)       # Hz
@@ -48,6 +55,7 @@ class PlateCapture(QtCore.QObject):
         self._f_min = f_min
         self._f_max = f_max
         self._state = self.State.IDLE
+        self._is_brace: bool = False
         self._f_long: float = 0.0
         self._f_cross: float = 0.0
 
@@ -55,8 +63,14 @@ class PlateCapture(QtCore.QObject):
     # Public interface
     # ------------------------------------------------------------------
 
-    def start(self) -> None:
-        """Begin L-tap capture."""
+    def start(self, is_brace: bool = False) -> None:
+        """Begin longitudinal tap capture.
+
+        Args:
+            is_brace: True for brace (1 tap: longitudinal only).
+                      False for plate (2 taps: longitudinal + cross-grain).
+        """
+        self._is_brace = is_brace
         self._f_long = 0.0
         self._f_cross = 0.0
         self._state = self.State.WAITING_L
@@ -90,11 +104,17 @@ class PlateCapture(QtCore.QObject):
         if self._state == self.State.WAITING_L:
             self._f_long = freq
             self.fLCaptured.emit(freq)
-            self._state = self.State.WAITING_C
-            self.stateChanged.emit(
-                f"L: {freq:.1f} Hz \u2014 now tap cross-grain (C) direction\u2026"
-            )
-        else:  # WAITING_C
+            if self._is_brace:
+                # Brace: longitudinal only — done
+                self._state = self.State.COMPLETE
+                self.stateChanged.emit(f"L: {freq:.1f} Hz \u2014 complete")
+                self.analysisComplete.emit(self._f_long, 0.0)
+            else:
+                self._state = self.State.WAITING_C
+                self.stateChanged.emit(
+                    f"L: {freq:.1f} Hz \u2014 now tap cross-grain (C) direction\u2026"
+                )
+        else:  # WAITING_C (plate only)
             self._f_cross = freq
             self.fCCaptured.emit(freq)
             self._state = self.State.COMPLETE

@@ -1,16 +1,14 @@
 """
     Plate and brace acoustic material-property calculations.
 
-    Based on Trevor Gore's Contemporary Acoustic Guitar Design and Build
-    methodology (Eq. 4.5-7 and surrounding derivations).
+    Based on the Euler-Bernoulli free-free beam equation (Haines / Coates):
 
-    The longitudinal standing-wave formula for a free-free bar is used
-    to calculate Young's moduli from tap-tone frequencies:
+        E = 48 × π² × ρ × f² × L⁴ / (βL × t)²
 
-        E = 4 · L² · f² · ρ
+    where (βL)² = 22.37 for plates (rounded), 22.37332 for braces (precise),
+    corresponding to the first free-free bending mode.
 
-    where L is the bar length in the tapped direction, f is the first
-    free-free longitudinal resonance frequency, and ρ is the density.
+    Mirrors Swift's MaterialProperties.swift (BraceProperties / PlateProperties).
 """
 
 from __future__ import annotations
@@ -45,6 +43,10 @@ class PlateDimensions:
         vol = self.length_m() * self.width_m() * self.thickness_m()
         return self.mass_kg() / vol if vol > 0 else 0.0
 
+    def density_g_cm3(self) -> float:
+        """Density in g/cm³."""
+        return self.density_kg_m3() / 1000.0
+
     def is_valid(self) -> bool:
         return (
             self.length_mm > 0
@@ -54,96 +56,174 @@ class PlateDimensions:
         )
 
 
-@dataclass
-class MaterialProperties:
-    """Calculated acoustic material properties."""
-
-    density_kg_m3: float         # kg/m³
-    E_long_GPa: float            # Young's modulus along grain (GPa)
-    E_cross_GPa: float           # Young's modulus cross-grain (GPa)
-    c_long_m_s: float            # Speed of sound along grain (m/s)
-    c_cross_m_s: float           # Speed of sound cross-grain (m/s)
-    specific_modulus_m2s2: float # Specific modulus EL/ρ (m²/s² × 10⁶)
-    radiation_ratio: float       # √EL / ρ  (×10⁻³ for display)
-    anisotropy_ratio: float      # EL / EC
-    quality_rating: str          # Excellent / Very Good / Good / Average / Poor
-    target_thickness_mm: float   # Gore target thickness relative to Sitka spruce
+# Quality colours match Swift's qualityColor() function
+QUALITY_COLORS: dict[str, str] = {
+    "Excellent": "#4CAF50",
+    "Very Good": "#2196F3",
+    "Good":      "#FF9800",
+    "Fair":      "#FF5722",
+    "Poor":      "#F44336",
+}
 
 
-# Reference Sitka spruce properties for target thickness
-_REF_E_LONG_PA: float = 10.0e9   # Pa
-_REF_THICKNESS_MM: float = 2.7   # mm
-
-
-def _quality_rating(c_long_m_s: float) -> str:
-    if c_long_m_s >= 5500:
+def wood_quality_long(specific_modulus: float) -> str:
+    """Quality rating for longitudinal specific modulus (GPa/(g/cm³)), spruce thresholds."""
+    if specific_modulus >= 25:
         return "Excellent"
-    if c_long_m_s >= 5000:
+    if specific_modulus >= 22:
         return "Very Good"
-    if c_long_m_s >= 4500:
+    if specific_modulus >= 19:
         return "Good"
-    if c_long_m_s >= 4000:
-        return "Average"
+    if specific_modulus >= 16:
+        return "Fair"
     return "Poor"
 
 
-def calculate_properties(
+def wood_quality_cross(specific_modulus: float) -> str:
+    """Quality rating for cross-grain specific modulus (GPa/(g/cm³)), spruce thresholds."""
+    if specific_modulus >= 1.5:
+        return "Excellent"
+    if specific_modulus >= 1.2:
+        return "Very Good"
+    if specific_modulus >= 0.9:
+        return "Good"
+    if specific_modulus >= 0.6:
+        return "Fair"
+    return "Poor"
+
+
+def _euler_bernoulli_e(rho: float, f: float, L: float, t: float, beta_l_sq: float) -> float:
+    """Young's modulus in Pascals from the free-free beam equation.
+
+    E = 48 × π² × ρ × f² × L⁴ / (βL × t)²
+    """
+    return 48.0 * math.pi**2 * rho * f**2 * L**4 / (beta_l_sq * t) ** 2
+
+
+@dataclass
+class BraceProperties:
+    """Calculated acoustic properties for a brace sample (single longitudinal tap)."""
+
+    f_long: float           # Hz
+    density_kg_m3: float
+    E_long_GPa: float
+    c_long_m_s: float
+    specific_modulus: float # GPa/(g/cm³)  — primary quality metric
+    radiation_ratio: float  # m⁴/(kg·s)   — c_L / ρ
+    quality: str
+
+
+@dataclass
+class PlateProperties:
+    """Calculated acoustic properties for a plate sample (two taps)."""
+
+    f_long: float
+    f_cross: float
+    density_kg_m3: float
+    E_long_GPa: float
+    E_cross_GPa: float
+    c_long_m_s: float
+    c_cross_m_s: float
+    specific_modulus_long: float    # GPa/(g/cm³)
+    specific_modulus_cross: float   # GPa/(g/cm³)
+    radiation_ratio_long: float     # m⁴/(kg·s)
+    radiation_ratio_cross: float    # m⁴/(kg·s)
+    quality_long: str
+    quality_cross: str
+    overall_quality: str
+    cross_long_ratio: float         # E_C / E_L  (typical 0.04–0.08)
+    long_cross_ratio: float         # E_L / E_C  (typical 12–25)
+
+
+def calculate_brace_properties(dims: PlateDimensions, f_long_hz: float) -> BraceProperties:
+    """Calculate acoustic properties for a brace from a single longitudinal tap.
+
+    Uses the precise βL coefficient 22.37332 (vs 22.37 for plates), mirroring Swift.
+    """
+    if not dims.is_valid():
+        raise ValueError("Brace dimensions must all be positive.")
+    if f_long_hz <= 0:
+        raise ValueError("Tap frequency must be positive.")
+
+    rho     = dims.density_kg_m3()
+    rho_g   = dims.density_g_cm3()
+    L       = dims.length_m()
+    t       = dims.thickness_m()
+
+    E_L     = _euler_bernoulli_e(rho, f_long_hz, L, t, 22.37332)
+    E_L_GPa = E_L / 1e9
+    c_L     = math.sqrt(E_L / rho)
+    spec    = E_L_GPa / rho_g
+    rad     = c_L / rho
+
+    return BraceProperties(
+        f_long=f_long_hz,
+        density_kg_m3=rho,
+        E_long_GPa=E_L_GPa,
+        c_long_m_s=c_L,
+        specific_modulus=spec,
+        radiation_ratio=rad,
+        quality=wood_quality_long(spec),
+    )
+
+
+def calculate_plate_properties(
     dims: PlateDimensions,
     f_long_hz: float,
     f_cross_hz: float,
-) -> MaterialProperties:
-    """Calculate acoustic material properties from tap-tone frequencies.
+) -> PlateProperties:
+    """Calculate acoustic properties for a plate from longitudinal and cross-grain taps.
 
-    Args:
-        dims:       Physical dimensions of the specimen.
-        f_long_hz:  First resonance frequency along the long-grain (L) axis (Hz).
-        f_cross_hz: First resonance frequency along the cross-grain (W) axis (Hz).
-
-    Returns:
-        MaterialProperties dataclass.
-
-    Raises:
-        ValueError: if dimensions are invalid or frequencies are non-positive.
+    Uses βL coefficient 22.37 (rounded), mirroring Swift's PlateProperties.
     """
     if not dims.is_valid():
         raise ValueError("Plate dimensions must all be positive.")
     if f_long_hz <= 0 or f_cross_hz <= 0:
         raise ValueError("Tap frequencies must be positive.")
 
-    rho = dims.density_kg_m3()
-    L = dims.length_m()
-    W = dims.width_m()
+    rho     = dims.density_kg_m3()
+    rho_g   = dims.density_g_cm3()
+    L       = dims.length_m()
+    W       = dims.width_m()
+    t       = dims.thickness_m()
 
-    # Young's moduli from longitudinal standing-wave formula: E = 4·L²·f²·ρ
-    E_L = 4.0 * L**2 * f_long_hz**2 * rho   # Pa
-    E_C = 4.0 * W**2 * f_cross_hz**2 * rho  # Pa
+    E_L     = _euler_bernoulli_e(rho, f_long_hz, L, t, 22.37)
+    E_C     = _euler_bernoulli_e(rho, f_cross_hz, W, t, 22.37)
+    E_L_GPa = E_L / 1e9
+    E_C_GPa = E_C / 1e9
+    c_L     = math.sqrt(E_L / rho)
+    c_C     = math.sqrt(E_C / rho)
+    spec_L  = E_L_GPa / rho_g
+    spec_C  = E_C_GPa / rho_g
+    rad_L   = c_L / rho
+    rad_C   = c_C / rho
+    qual_L  = wood_quality_long(spec_L)
+    qual_C  = wood_quality_cross(spec_C)
 
-    # Speeds of sound: c = √(E/ρ)
-    c_L = math.sqrt(E_L / rho)
-    c_C = math.sqrt(E_C / rho)
+    # Overall quality: 70% longitudinal + 30% cross-grain (mirrors Swift)
+    _scores = {"Excellent": 5, "Very Good": 4, "Good": 3, "Fair": 2, "Poor": 1}
+    combined = _scores[qual_L] * 0.7 + _scores[qual_C] * 0.3
+    if   combined >= 4.5: overall = "Excellent"
+    elif combined >= 3.5: overall = "Very Good"
+    elif combined >= 2.5: overall = "Good"
+    elif combined >= 1.5: overall = "Fair"
+    else:                 overall = "Poor"
 
-    # Specific modulus (EL/ρ), expressed in units of 10⁶ m²/s²
-    specific_mod = (E_L / rho) / 1e6
-
-    # Radiation ratio: √EL / ρ  (expressed × 10⁻³ to keep numbers human-scale)
-    rad_ratio = math.sqrt(E_L) / rho / 1e3
-
-    # Anisotropy ratio: EL / EC
-    aniso = E_L / E_C if E_C > 0 else 0.0
-
-    # Gore target thickness to match bending stiffness of reference spruce:
-    #   D = E·t³/12 = const  →  t_target = t_ref·(E_ref/E_actual)^(1/3)
-    target_t = _REF_THICKNESS_MM * (_REF_E_LONG_PA / E_L) ** (1.0 / 3.0)
-
-    return MaterialProperties(
+    return PlateProperties(
+        f_long=f_long_hz,
+        f_cross=f_cross_hz,
         density_kg_m3=rho,
-        E_long_GPa=E_L / 1e9,
-        E_cross_GPa=E_C / 1e9,
+        E_long_GPa=E_L_GPa,
+        E_cross_GPa=E_C_GPa,
         c_long_m_s=c_L,
         c_cross_m_s=c_C,
-        specific_modulus_m2s2=specific_mod,
-        radiation_ratio=rad_ratio,
-        anisotropy_ratio=aniso,
-        quality_rating=_quality_rating(c_L),
-        target_thickness_mm=target_t,
+        specific_modulus_long=spec_L,
+        specific_modulus_cross=spec_C,
+        radiation_ratio_long=rad_L,
+        radiation_ratio_cross=rad_C,
+        quality_long=qual_L,
+        quality_cross=qual_C,
+        overall_quality=overall,
+        cross_long_ratio=E_C / E_L if E_L > 0 else 0.0,
+        long_cross_ratio=E_L / E_C if E_C > 0 else 0.0,
     )

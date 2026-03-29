@@ -929,8 +929,8 @@ class FftCanvas(pg.PlotWidget):
         self._proc_thread.set_measurement_type(measurement_type.is_guitar)
 
     def start_plate_analysis(self) -> None:
-        """Arm the plate capture state machine for the next two taps."""
-        self._plate_capture.start()
+        """Arm the plate capture state machine for the next tap(s)."""
+        self._plate_capture.start(is_brace=self._measurement_type.is_brace)
 
     def reset_plate_analysis(self) -> None:
         """Abort plate capture and return to idle."""

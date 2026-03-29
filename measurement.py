@@ -128,15 +128,15 @@ class PeakEntry:
 
     @staticmethod
     def from_dict(d: dict) -> "PeakEntry":
-        """Accepts both new (frequency/magnitude/quality) and old (freq/mag/q) keys."""
+        """Decode a Swift-format ResonantPeak JSON object."""
         return PeakEntry(
             id=d.get("id", str(uuid.uuid4())),
-            frequency=d.get("frequency", d.get("freq", 0.0)),
-            magnitude=d.get("magnitude", d.get("mag", 0.0)),
-            quality=d.get("quality", d.get("q", 0.0)),
+            frequency=d.get("frequency", 0.0),
+            magnitude=d.get("magnitude", 0.0),
+            quality=d.get("quality", 0.0),
             bandwidth=d.get("bandwidth", 0.0),
             timestamp=d.get("timestamp", _now_iso()),
-            mode_label=d.get("modeLabel", d.get("mode", "")),
+            mode_label=d.get("modeLabel", ""),
             pitch_note=d.get("pitchNote"),
             pitch_cents=d.get("pitchCents"),
             pitch_frequency=d.get("pitchFrequency"),
@@ -161,6 +161,11 @@ class TapToneMeasurement:
 
     spectrum_snapshot: SpectrumSnapshot | None = None
 
+    # Per-phase spectra for plate/brace measurements (nil for guitar)
+    longitudinal_snapshot: SpectrumSnapshot | None = None
+    cross_snapshot: SpectrumSnapshot | None = None
+    flc_snapshot: SpectrumSnapshot | None = None
+
     # Analysis settings at save time
     tap_detection_threshold: float | None = None
     hysteresis_margin: float | None = None
@@ -169,9 +174,14 @@ class TapToneMeasurement:
 
     # Peak selections (all keyed by peak UUID)
     selected_peak_ids: list[str] | None = None       # peaks marked visible
-    peak_mode_overrides: dict[str, str] | None = None  # UUID → mode string
-    annotation_offsets: dict[str, list[float]] | None = None  # UUID → [x, y]
+    peak_mode_overrides: dict[str, str] | None = None  # UUID → mode string (guitar only)
+    annotation_offsets: dict[str, list[float]] | None = None  # UUID → [hzOffset, dbOffset] (Swift convention: positive dbOffset = down in screen = lower dB)
     annotation_visibility_mode: str | None = None
+
+    # Plate/brace phase-selected peak IDs (mirrors Swift selectedLongitudinalPeakID etc.)
+    selected_longitudinal_peak_id: str | None = None
+    selected_cross_peak_id: str | None = None
+    selected_flc_peak_id: str | None = None
 
     # Microphone provenance
     microphone_name: str | None = None
@@ -259,14 +269,32 @@ class TapToneMeasurement:
         if self.selected_peak_ids:
             d["selectedPeakIDs"] = self.selected_peak_ids
         if self.peak_mode_overrides:
-            d["peakModeOverrides"] = self.peak_mode_overrides
+            # Swift format: {uuid: {"type": "assigned", "label": "mode_string"}}
+            d["peakModeOverrides"] = {
+                uid: {"type": "assigned", "label": label}
+                for uid, label in self.peak_mode_overrides.items()
+            }
         if self.annotation_offsets:
-            # Store as {uuid: {"x": ..., "y": ...}} for Swift compatibility
+            # Swift format: {uuid: {"hzOffset": hz_delta, "dbOffset": db_delta}}
+            # dbOffset is in screen-Y direction: positive = downward = lower dB.
             d["peakAnnotationOffsets"] = {
-                k: {"x": v[0], "y": v[1]} for k, v in self.annotation_offsets.items()
+                k: {"hzOffset": v[0], "dbOffset": v[1]}
+                for k, v in self.annotation_offsets.items()
             }
         if self.annotation_visibility_mode:
             d["annotationVisibilityMode"] = self.annotation_visibility_mode
+        if self.selected_longitudinal_peak_id:
+            d["selectedLongitudinalPeakID"] = self.selected_longitudinal_peak_id
+        if self.selected_cross_peak_id:
+            d["selectedCrossPeakID"] = self.selected_cross_peak_id
+        if self.selected_flc_peak_id:
+            d["selectedFlcPeakID"] = self.selected_flc_peak_id
+        if self.longitudinal_snapshot is not None:
+            d["longitudinalSnapshot"] = self.longitudinal_snapshot.to_dict()
+        if self.cross_snapshot is not None:
+            d["crossSnapshot"] = self.cross_snapshot.to_dict()
+        if self.flc_snapshot is not None:
+            d["flcSnapshot"] = self.flc_snapshot.to_dict()
         if self.microphone_name:
             d["microphoneName"] = self.microphone_name
         if self.microphone_uid:
@@ -281,81 +309,40 @@ class TapToneMeasurement:
 
     @staticmethod
     def from_dict(d: dict) -> "TapToneMeasurement":
-        """Decode new format; also accepts old PeakMeasurement per-file format."""
-        peaks_raw = d.get("peaks", [])
-
-        # Detect old format: peaks have 'freq' key instead of 'frequency'
-        if peaks_raw and isinstance(peaks_raw[0], dict) and "freq" in peaks_raw[0] and "id" not in peaks_raw[0]:
-            ts = d.get("timestamp", _now_iso())
-            peaks = [
-                PeakEntry(
-                    id=str(uuid.uuid4()),
-                    frequency=p["freq"],
-                    magnitude=p.get("mag", 0.0),
-                    quality=p.get("q", 0.0),
-                    bandwidth=p["freq"] / max(p.get("q", 1.0), 0.001),
-                    timestamp=ts,
-                    mode_label=p.get("mode", ""),
-                )
-                for p in peaks_raw
-            ]
-        else:
-            peaks = [PeakEntry.from_dict(p) for p in peaks_raw]
+        """Decode Swift-format TapToneMeasurement JSON."""
+        peaks = [PeakEntry.from_dict(p) for p in d.get("peaks", [])]
 
         snap_d = d.get("spectrumSnapshot")
         snapshot = SpectrumSnapshot.from_dict(snap_d) if snap_d else None
 
-        # Annotation offsets — absolute plot coordinates (Hz, dB).
-        # Python native format: {uuid: [abs_hz, abs_dB]}
-        # Swift new format: interleaved list [uuid, {"hzOffset":..., "dbOffset":...}, ...]
-        #   where offsets are deltas from the default label position in data-space units.
-        #   Default label position = (peak_freq, peak_mag + 18.0).
-        #   Absolute = (peak_freq + hzOffset, peak_mag + 18.0 + dbOffset).
-        # Swift legacy format: interleaved list [uuid, {"x":..., "y":...}, ...]
-        #   (old CGPoint encoding — same interpretation as new format, x=hz, y=dB delta).
-        _LABEL_OFFSET_DB = 14.0
-        peak_by_id: dict[str, PeakEntry] = {p.id.upper(): p for p in peaks}
+        long_d  = d.get("longitudinalSnapshot")
+        cross_d = d.get("crossSnapshot")
+        flc_d   = d.get("flcSnapshot")
+        long_snap  = SpectrumSnapshot.from_dict(long_d)  if long_d  else None
+        cross_snap = SpectrumSnapshot.from_dict(cross_d) if cross_d else None
+        flc_snap   = SpectrumSnapshot.from_dict(flc_d)   if flc_d   else None
+
+        # Annotation offsets — {uuid: {"hzOffset": hz_delta, "dbOffset": db_delta}}
+        # hzOffset: Hz delta from peak frequency (positive = right)
+        # dbOffset: screen-Y direction (positive = downward = lower dB)
         ann_raw = d.get("peakAnnotationOffsets")
         ann_offsets: dict[str, list[float]] | None = None
         if ann_raw and isinstance(ann_raw, dict):
-            # Python native: already absolute coordinates
             ann_offsets = {}
             for k, v in ann_raw.items():
                 if isinstance(v, dict):
-                    ann_offsets[k] = [float(v.get("x", 0)), float(v.get("y", 0))]
-                elif isinstance(v, list) and len(v) >= 2:
-                    ann_offsets[k] = [float(v[0]), float(v[1])]
-        elif ann_raw and isinstance(ann_raw, list) and len(ann_raw) >= 2:
-            # Swift interleaved: convert deltas to absolute using peak positions
-            ann_offsets = {}
-            it = iter(ann_raw)
-            for uid, val in zip(it, it):
-                uid_upper = str(uid).upper()
-                peak = peak_by_id.get(uid_upper)
-                if peak is None or not isinstance(val, dict):
-                    continue
-                hz_delta = float(val.get("hzOffset", val.get("x", 0)))
-                db_delta = float(val.get("dbOffset", val.get("y", 0)))
-                # Swift dbOffset is in screen-Y direction (positive = downward = lower dB).
-                # Python data Y is inverted (positive = higher dB), so negate the delta.
-                ann_offsets[uid_upper] = [
-                    peak.frequency + hz_delta,
-                    peak.magnitude + _LABEL_OFFSET_DB - db_delta,
-                ]
+                    ann_offsets[k.upper()] = [
+                        float(v.get("hzOffset", 0)),
+                        float(v.get("dbOffset", 0)),
+                    ]
 
-        # Mode overrides.
-        # Python native format: {uuid: "mode_string"}
-        # Swift format: interleaved flat list [uuid, {"type":"auto"/"assigned","label":...}, ...]
+        # Mode overrides — {uuid: {"type": "assigned", "label": "mode_string"}}
+        # type == "auto" entries have no override and are skipped.
         mode_raw = d.get("peakModeOverrides")
         peak_mode_overrides: dict[str, str] | None = None
-        if isinstance(mode_raw, dict):
-            # Python native: keys are UUIDs, values are mode strings already
-            peak_mode_overrides = mode_raw if mode_raw else None
-        elif isinstance(mode_raw, list) and len(mode_raw) >= 2:
-            # Swift interleaved: [uuid, {type:..., label:...}, ...]
+        if isinstance(mode_raw, dict) and mode_raw:
             overrides: dict[str, str] = {}
-            it = iter(mode_raw)
-            for uid, val in zip(it, it):
+            for uid, val in mode_raw.items():
                 if isinstance(val, dict) and val.get("type") == "assigned":
                     label = val.get("label", "")
                     if label:
@@ -366,10 +353,13 @@ class TapToneMeasurement:
             id=d.get("id", str(uuid.uuid4())),
             timestamp=d.get("timestamp", _now_iso()),
             peaks=peaks,
-            decay_time=d.get("decayTime", d.get("ring_out")),
+            decay_time=d.get("decayTime"),
             tap_location=d.get("tapLocation"),
             notes=d.get("notes"),
             spectrum_snapshot=snapshot,
+            longitudinal_snapshot=long_snap,
+            cross_snapshot=cross_snap,
+            flc_snapshot=flc_snap,
             tap_detection_threshold=d.get("tapDetectionThreshold"),
             hysteresis_margin=d.get("hysteresisMargin"),
             number_of_taps=d.get("numberOfTaps"),
@@ -378,11 +368,14 @@ class TapToneMeasurement:
             peak_mode_overrides=peak_mode_overrides,
             annotation_offsets=ann_offsets,
             annotation_visibility_mode=d.get("annotationVisibilityMode"),
+            selected_longitudinal_peak_id=d.get("selectedLongitudinalPeakID"),
+            selected_cross_peak_id=d.get("selectedCrossPeakID"),
+            selected_flc_peak_id=d.get("selectedFlcPeakID"),
             microphone_name=d.get("microphoneName"),
             microphone_uid=d.get("microphoneUID"),
             calibration_name=d.get("calibrationName"),
-            measurement_type=d.get("measurementType", d.get("guitar_type")),
-            guitar_type=d.get("guitarType", d.get("guitar_type")),
+            measurement_type=d.get("measurementType"),
+            guitar_type=d.get("guitarType"),
         )
 
     @staticmethod
@@ -392,6 +385,9 @@ class TapToneMeasurement:
         tap_location: str | None = None,
         notes: str | None = None,
         spectrum_snapshot: SpectrumSnapshot | None = None,
+        longitudinal_snapshot: SpectrumSnapshot | None = None,
+        cross_snapshot: SpectrumSnapshot | None = None,
+        flc_snapshot: SpectrumSnapshot | None = None,
         selected_peak_ids: list[str] | None = None,
         peak_mode_overrides: dict[str, str] | None = None,
         annotation_offsets: dict[str, list[float]] | None = None,
@@ -399,6 +395,9 @@ class TapToneMeasurement:
         hysteresis_margin: float | None = None,
         number_of_taps: int | None = None,
         peak_threshold: float | None = None,
+        selected_longitudinal_peak_id: str | None = None,
+        selected_cross_peak_id: str | None = None,
+        selected_flc_peak_id: str | None = None,
         microphone_name: str | None = None,
         microphone_uid: str | None = None,
         calibration_name: str | None = None,
@@ -413,6 +412,9 @@ class TapToneMeasurement:
             tap_location=tap_location or None,
             notes=notes or None,
             spectrum_snapshot=spectrum_snapshot,
+            longitudinal_snapshot=longitudinal_snapshot,
+            cross_snapshot=cross_snapshot,
+            flc_snapshot=flc_snapshot,
             selected_peak_ids=selected_peak_ids or None,
             peak_mode_overrides=peak_mode_overrides or None,
             annotation_offsets=annotation_offsets or None,
@@ -420,6 +422,9 @@ class TapToneMeasurement:
             hysteresis_margin=hysteresis_margin,
             number_of_taps=number_of_taps,
             peak_threshold=peak_threshold,
+            selected_longitudinal_peak_id=selected_longitudinal_peak_id,
+            selected_cross_peak_id=selected_cross_peak_id,
+            selected_flc_peak_id=selected_flc_peak_id,
             microphone_name=microphone_name,
             microphone_uid=microphone_uid,
             calibration_name=calibration_name,
