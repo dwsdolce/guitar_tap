@@ -366,6 +366,7 @@ class FftCanvas(pg.PlotWidget):
     peakInfoChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)  # (peak_hz, peak_db)
     levelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)              # level 0-100 (dB+100)
     comparisonChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)         # True=entering, False=leaving
+    freqRangeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)      # (fmin, fmax) — pan/zoom
 
     # Color palette for comparison overlays — mirrors comparisonPalette in TapToneAnalyzer.swift
     _COMPARISON_PALETTE: list[tuple[int, int, int]] = [
@@ -606,6 +607,8 @@ class FftCanvas(pg.PlotWidget):
         self.addItem(self._crosshair_h)
 
         self.scene().sigMouseMoved.connect(self._on_mouse_moved)
+
+        self.getPlotItem().vb.sigXRangeChanged.connect(self._refresh_peaks_for_viewport)
 
         # Guitar type — updated by set_guitar_type_bands(); used for peak deduplication
         self._guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
@@ -1070,6 +1073,7 @@ class FftCanvas(pg.PlotWidget):
             x0, x1 = vb.viewRange()[0]
             shift = (x1 - x0) * 0.10 * (1 if delta > 0 else -1)
             vb.setXRange(x0 + shift, x1 + shift, padding=0)
+            self._refresh_peaks_for_viewport()
             ev.accept()
 
         elif mods & Mod.AltModifier:
@@ -1089,6 +1093,7 @@ class FftCanvas(pg.PlotWidget):
             yh = (y1 - y0) / 2 / factor
             vb.setXRange(xc - xh, xc + xh, padding=0)
             vb.setYRange(yc - yh, yc + yh, padding=0)
+            self._refresh_peaks_for_viewport()
             ev.accept()
 
         else:
@@ -1157,6 +1162,29 @@ class FftCanvas(pg.PlotWidget):
                     self._emit_loaded_peaks_at_threshold()
                 else:
                     self.find_peaks(self.saved_mag_y_db)
+
+    def _refresh_peaks_for_viewport(self, _vb=None, x_range=None) -> None:
+        """Re-emit filtered peaks and update the freq-range label whenever the
+        viewport x-range changes (pan, zoom, or explicit wheel-scroll gestures).
+
+        Connected to ViewBox.sigXRangeChanged and also called directly from
+        wheelEvent after Shift+scroll pan and Ctrl+scroll zoom.
+        """
+        vb = self.getPlotItem().vb
+        x0, x1 = vb.viewRange()[0]
+        fmin = int(round(x0))
+        fmax = int(round(x1))
+        if fmin >= fmax:
+            return
+        self.fmin = fmin
+        self.fmax = fmax
+        self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
+        self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
+        if self._loaded_measurement_peaks is not None:
+            self._emit_loaded_peaks_at_threshold()
+        else:
+            self.find_peaks(self.saved_mag_y_db)
+        self.freqRangeChanged.emit(fmin, fmax)
 
     def set_max_average_count(self, max_average_count: int) -> None:
         """Set the number of averages to take"""

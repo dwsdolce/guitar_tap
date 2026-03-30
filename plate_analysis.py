@@ -58,11 +58,11 @@ class PlateDimensions:
 
 # Quality colours match Swift's qualityColor() function
 QUALITY_COLORS: dict[str, str] = {
-    "Excellent": "#4CAF50",
-    "Very Good": "#2196F3",
-    "Good":      "#FF9800",
-    "Fair":      "#FF5722",
-    "Poor":      "#F44336",
+    "Excellent": "#34C759",   # SwiftUI .green
+    "Very Good": "#00C7BE",   # SwiftUI .mint
+    "Good":      "#007AFF",   # SwiftUI .blue  (system accent)
+    "Fair":      "#FF9500",   # SwiftUI .orange
+    "Poor":      "#FF3B30",   # SwiftUI .red
 }
 
 
@@ -226,4 +226,82 @@ def calculate_plate_properties(
         overall_quality=overall,
         cross_long_ratio=E_C / E_L if E_L > 0 else 0.0,
         long_cross_ratio=E_L / E_C if E_C > 0 else 0.0,
+    )
+
+
+@dataclass
+class GoreThicknessResult:
+    """Result of Gore Eq. 4.5-7 target thickness calculation."""
+
+    thickness_mm: float
+    body_length_mm: float
+    body_width_mm: float
+    fvs: float
+    preset_name: str        # e.g. "Steel String Top"
+    glc_pa: float | None    # shear modulus used (None → assumed 0)
+
+
+def calculate_glc_from_flc(dims: PlateDimensions, f_flc_hz: float) -> float:
+    """Calculate shear modulus G_LC (Pa) from the FLC diagonal-tap frequency.
+
+    Formula: G_LC = (12/π²) × ρ × L² × W² × f_LC² / t²
+    Mirrors Swift MaterialProperties.goreShearModulus.
+    """
+    rho = dims.density_kg_m3()
+    L   = dims.length_m()
+    W   = dims.width_m()
+    t   = dims.thickness_m()
+    if t <= 0 or rho <= 0 or f_flc_hz <= 0:
+        return 0.0
+    return (12.0 / (math.pi ** 2)) * rho * L ** 2 * W ** 2 * f_flc_hz ** 2 / (t * t)
+
+
+def calculate_gore_target_thickness(
+    props: PlateProperties,
+    body_length_mm: float,
+    body_width_mm: float,
+    fvs: float,
+    preset_name: str,
+    glc_pa: float | None = None,
+) -> "GoreThicknessResult | None":
+    """Calculate Gore target thickness (Eq. 4.5-7).
+
+    Mirrors Swift MaterialProperties.goreTargetThickness.
+    Returns None if any required parameter is zero or invalid.
+    """
+    if body_length_mm <= 0 or body_width_mm <= 0 or fvs <= 0:
+        return None
+
+    # Poisson's ratio constants (Gore's recommended averages for softwoods)
+    nu_cl         = 0.05
+    nu_lc_nu_cl   = 0.02          # ν_LC × ν_CL
+
+    a = body_length_mm / 1000.0   # m
+    b = body_width_mm  / 1000.0   # m
+
+    E_L   = props.E_long_GPa  * 1e9   # Pa
+    E_C   = props.E_cross_GPa * 1e9   # Pa
+    rho   = props.density_kg_m3
+    G_LC  = glc_pa if glc_pa is not None else 0.0
+
+    coef2 = math.pi * math.sqrt(12.0 * (1.0 - nu_lc_nu_cl) / 126.0)
+    coef3 = 4.0 * nu_cl / 7.0
+    coef4 = 4.0 * 12.0 * (1.0 - nu_lc_nu_cl) / 42.0
+
+    numerator    = coef2 * fvs * a * a * math.sqrt(rho)
+    ab           = a / b
+    denom_pa     = E_L + ab**4 * E_C + ab**2 * (coef3 * E_L + coef4 * G_LC)
+
+    if denom_pa <= 0:
+        return None
+
+    thickness_mm = (numerator / math.sqrt(denom_pa)) * 1000.0
+
+    return GoreThicknessResult(
+        thickness_mm=thickness_mm,
+        body_length_mm=body_length_mm,
+        body_width_mm=body_width_mm,
+        fvs=fvs,
+        preset_name=preset_name,
+        glc_pa=glc_pa,
     )

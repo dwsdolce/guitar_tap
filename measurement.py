@@ -43,9 +43,23 @@ class SpectrumSnapshot:
     guitar_type: str = "Classical"
     measurement_type: str = "Classical Guitar"
     max_peaks: int = 20
+    # Plate/brace material dimensions — match Swift SpectrumSnapshot CodingKeys
+    plate_length:    float | None = None   # mm
+    plate_width:     float | None = None   # mm
+    plate_thickness: float | None = None   # mm
+    plate_mass:      float | None = None   # g
+    brace_length:    float | None = None   # mm
+    brace_width:     float | None = None   # mm
+    brace_thickness: float | None = None   # mm
+    brace_mass:      float | None = None   # g
+    # Plate stiffness preset — stored so Gore f_vs is correct on load
+    plate_stiffness_preset:  str   | None = None   # e.g. "Steel String Top"
+    custom_plate_stiffness:  float | None = None   # only when preset == "Custom"
+    guitar_body_length:      float | None = None   # mm — Gore body length (a)
+    guitar_body_width:       float | None = None   # mm — Gore lower-bout width (b)
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "frequencies": self.frequencies,
             "magnitudes": self.magnitudes,
             "minFreq": self.min_freq,
@@ -58,6 +72,19 @@ class SpectrumSnapshot:
             "measurementType": self.measurement_type,
             "maxPeaks": self.max_peaks,
         }
+        if self.plate_length    is not None: d["plateLength"]    = self.plate_length
+        if self.plate_width     is not None: d["plateWidth"]     = self.plate_width
+        if self.plate_thickness is not None: d["plateThickness"] = self.plate_thickness
+        if self.plate_mass      is not None: d["plateMass"]      = self.plate_mass
+        if self.brace_length    is not None: d["braceLength"]    = self.brace_length
+        if self.brace_width     is not None: d["braceWidth"]     = self.brace_width
+        if self.brace_thickness is not None: d["braceThickness"] = self.brace_thickness
+        if self.brace_mass              is not None: d["braceMass"]              = self.brace_mass
+        if self.plate_stiffness_preset  is not None: d["plateStiffnessPreset"]  = self.plate_stiffness_preset
+        if self.custom_plate_stiffness  is not None: d["customPlateStiffness"]  = self.custom_plate_stiffness
+        if self.guitar_body_length      is not None: d["guitarBodyLength"]      = self.guitar_body_length
+        if self.guitar_body_width       is not None: d["guitarBodyWidth"]       = self.guitar_body_width
+        return d
 
     @staticmethod
     def from_dict(d: dict) -> "SpectrumSnapshot":
@@ -89,6 +116,18 @@ class SpectrumSnapshot:
             guitar_type=d.get("guitarType", "Classical"),
             measurement_type=d.get("measurementType", "Classical Guitar"),
             max_peaks=d.get("maxPeaks", 20),
+            plate_length=d.get("plateLength"),
+            plate_width=d.get("plateWidth"),
+            plate_thickness=d.get("plateThickness"),
+            plate_mass=d.get("plateMass"),
+            brace_length=d.get("braceLength"),
+            brace_width=d.get("braceWidth"),
+            brace_thickness=d.get("braceThickness"),
+            brace_mass=d.get("braceMass"),
+            plate_stiffness_preset=d.get("plateStiffnessPreset"),
+            custom_plate_stiffness=d.get("customPlateStiffness"),
+            guitar_body_length=d.get("guitarBodyLength"),
+            guitar_body_width=d.get("guitarBodyWidth"),
         )
 
 

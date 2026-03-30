@@ -76,24 +76,21 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # ── scrollable peak rows ────────────────────────────────────────
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        # ── peak rows (no internal scroll — parent scroll area handles it) ──
         self._peak_container = QtWidgets.QWidget()
         self._peak_layout = QtWidgets.QVBoxLayout(self._peak_container)
         self._peak_layout.setContentsMargins(0, 0, 0, 0)
         self._peak_layout.setSpacing(2)
         self._peak_layout.addStretch()
-        scroll.setWidget(self._peak_container)
-        outer.addWidget(scroll, stretch=1)
+        outer.addWidget(self._peak_container)
 
-        # ── instruction text (fixed, below scroll) ──────────────────────
+        # ── separator + instruction section ────────────────────────────────
+        outer.addWidget(_hsep())
+
         instr = QtWidgets.QWidget()
         il = QtWidgets.QVBoxLayout(instr)
-        il.setContentsMargins(0, 6, 0, 0)
+        il.setContentsMargins(0, 4, 0, 0)
         il.setSpacing(4)
-        il.addWidget(_hsep())
 
         _bold9 = QtGui.QFont()
         _bold9.setPointSize(9)
@@ -102,12 +99,12 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._instr_title.setFont(_bold9)
         il.addWidget(self._instr_title)
 
-        _small9 = QtGui.QFont()
-        _small9.setPointSize(9)
-        self._instr_body = QtWidgets.QLabel()
-        self._instr_body.setFont(_small9)
-        self._instr_body.setWordWrap(True)
-        il.addWidget(self._instr_body)
+        # Steps container — rebuilt per mode
+        self._instr_steps_widget = QtWidgets.QWidget()
+        self._instr_steps_layout = QtWidgets.QVBoxLayout(self._instr_steps_widget)
+        self._instr_steps_layout.setContentsMargins(0, 0, 0, 0)
+        self._instr_steps_layout.setSpacing(6)
+        il.addWidget(self._instr_steps_widget)
 
         _italic9 = QtGui.QFont()
         _italic9.setPointSize(9)
@@ -115,7 +112,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._instr_footer = QtWidgets.QLabel()
         self._instr_footer.setFont(_italic9)
         self._instr_footer.setWordWrap(True)
-        self._instr_footer.setStyleSheet("color: palette(dark);")
+        self._instr_footer.setStyleSheet("color: palette(shadow);")
         il.addWidget(self._instr_footer)
 
         outer.addWidget(instr)
@@ -180,18 +177,21 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         hl.setContentsMargins(0, 2, 0, 2)
         hl.setSpacing(8)
 
-        # Star toggle
+        # Star toggle — same style as peak_card_widget
         star = QtWidgets.QToolButton()
-        star.setFixedSize(22, 22)
+        star.setFixedSize(24, 24)
         is_sel = freq in self._selected
-        app_style = QtWidgets.QApplication.style()
-        star.setIcon(app_style.standardIcon(
-            QtWidgets.QStyle.StandardPixmap.SP_DialogApplyButton if is_sel
-            else QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton
-        ))
+        star.setText("★" if is_sel else "☆")
+        star_color = "rgb(30,120,255)" if is_sel else "rgb(160,160,160)"
+        star.setStyleSheet(
+            f"QToolButton {{ border: none; background: transparent; color: {star_color}; }}"
+        )
+        star_fnt = QtGui.QFont()
+        star_fnt.setPointSize(14)
+        star.setFont(star_fnt)
         star.setCheckable(True)
         star.setChecked(is_sel)
-        star.clicked.connect(lambda chk, f=freq: self._toggle_sel(f, chk))
+        star.clicked.connect(lambda _chk, f=freq: self._toggle_sel(f))
         hl.addWidget(star)
 
         # Frequency + magnitude labels
@@ -209,7 +209,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         m_fnt = QtGui.QFont()
         m_fnt.setPointSize(9)
         m_lbl.setFont(m_fnt)
-        m_lbl.setStyleSheet("color: palette(dark);")
+        m_lbl.setStyleSheet("color: palette(shadow);")
         tv.addWidget(m_lbl)
         hl.addWidget(txt, stretch=1)
 
@@ -252,9 +252,9 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         )
         return btn
 
-    def _toggle_sel(self, freq: float, checked: bool) -> None:
-        if checked: self._selected.add(freq)
-        else:       self._selected.discard(freq)
+    def _toggle_sel(self, freq: float) -> None:
+        if freq in self._selected: self._selected.discard(freq)
+        else:                      self._selected.add(freq)
         self._rebuild_rows()
 
     def _assign_long(self, freq: float) -> None:
@@ -287,34 +287,75 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._rebuild_rows()
         self.assignmentChanged.emit(self._long_freq, self._cross_freq, self._flc_freq)
 
+    def _step_row(self, dot_color: str, bold_title: str, body: str) -> QtWidgets.QWidget:
+        """One instruction step: colored circle + bold title + body text."""
+        _sm = QtGui.QFont()
+        _sm.setPointSize(9)
+        _bold = QtGui.QFont()
+        _bold.setPointSize(9)
+        _bold.setBold(True)
+
+        w  = QtWidgets.QWidget()
+        hl = QtWidgets.QHBoxLayout(w)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(6)
+
+        dot = QtWidgets.QLabel()
+        dot.setFixedSize(8, 8)
+        dot.setStyleSheet(
+            f"QLabel {{ background-color: {dot_color}; border-radius: 4px; }}"
+        )
+        hl.addWidget(dot, 0, QtCore.Qt.AlignmentFlag.AlignTop)
+
+        txt_vbox = QtWidgets.QVBoxLayout()
+        txt_vbox.setContentsMargins(0, 0, 0, 0)
+        txt_vbox.setSpacing(2)
+        title_lbl = QtWidgets.QLabel(bold_title)
+        title_lbl.setFont(_bold)
+        txt_vbox.addWidget(title_lbl)
+        body_lbl = QtWidgets.QLabel(body)
+        body_lbl.setFont(_sm)
+        body_lbl.setWordWrap(True)
+        body_lbl.setStyleSheet("color: palette(shadow);")
+        txt_vbox.addWidget(body_lbl)
+        hl.addLayout(txt_vbox, stretch=1)
+        return w
+
     def _rebuild_instructions(self) -> None:
+        # Clear existing step widgets
+        while self._instr_steps_layout.count() > 0:
+            item = self._instr_steps_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
         if self._show_cross:
             has_flc = self._show_flc
             self._instr_title.setText(
                 "Three-Tap Measurement Process:" if has_flc
                 else "Two-Tap Measurement Process:"
             )
-            steps = (
-                "1. Longitudinal (L) Tap\n"
+            self._instr_steps_layout.addWidget(self._step_row(
+                "#1976D2", "1. Longitudinal (L) Tap",
                 "Hold plate at 22% from one end along the length, near one long edge "
-                "(not at the width node). Tap center.\n\n"
-                "2. Cross-grain (C) Tap\n"
+                "(not at the width node). Tap center.",
+            ))
+            self._instr_steps_layout.addWidget(self._step_row(
+                "#E65100", "2. Cross-grain (C) Tap",
                 "Rotate 90°. Hold plate at 22% from one end along the width, near one "
-                "short edge (not at the length node). Tap center."
-            )
+                "short edge (not at the length node). Tap center.",
+            ))
             if has_flc:
-                steps += (
-                    "\n\n3. FLC (Diagonal) Tap\n"
+                self._instr_steps_layout.addWidget(self._step_row(
+                    "#7B1FA2", "3. FLC (Diagonal) Tap",
                     "Hold plate at the midpoint of one long edge. Tap near the opposite "
-                    "corner (~22% from both the end and the side). Measures shear stiffness."
-                )
-            self._instr_body.setText(steps)
+                    "corner (~22% from both the end and the side). Measures shear stiffness.",
+                ))
         else:
             self._instr_title.setText("Single-Tap Measurement (fL only):")
-            self._instr_body.setText(
-                "1. Longitudinal (fL) Tap\n"
-                "Hold brace at 22% from one end along the length. Tap center."
-            )
+            self._instr_steps_layout.addWidget(self._step_row(
+                "#1976D2", "1. Longitudinal (fL) Tap",
+                "Hold brace at 22% from one end along the length. Tap center.",
+            ))
         self._instr_footer.setText(
             "The strongest peak is auto-selected. Adjust if needed."
         )
@@ -710,9 +751,8 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(self.peak_widget, stretch=1)
 
         # Material peak list — replaces peak_widget for plate/brace mode
+        # (added to scroll container below, not directly to vbox)
         self._material_peak_widget = MaterialPeakListWidget()
-        self._material_peak_widget.setVisible(False)
-        vbox.addWidget(self._material_peak_widget, stretch=1)
 
         # ── Material Properties section (plate/brace only) ───────────────────
         self._material_section = QtWidgets.QWidget()
@@ -751,12 +791,12 @@ class MainWindow(QtWidgets.QMainWindow):
         _bp_vbox.setContentsMargins(0, 8, 0, 8)
         _bp_p1 = QtWidgets.QLabel("Select the fL (L) peak above to calculate properties")
         _bp_p1.setWordWrap(True)
-        _bp_p1.setStyleSheet("color: palette(dark);")
+        _bp_p1.setStyleSheet("color: palette(shadow);")
         _bp_p1.setFont(small_font)
         _bp_vbox.addWidget(_bp_p1)
         _bp_p2 = QtWidgets.QLabel("Tip: The dominant peak is auto-selected after tapping")
         _bp_p2.setWordWrap(True)
-        _bp_p2.setStyleSheet("color: palette(dark);")
+        _bp_p2.setStyleSheet("color: palette(shadow);")
         _bp_p2.setFont(small_font)
         _bp_vbox.addWidget(_bp_p2)
         bs_vbox.addWidget(self._brace_placeholder)
@@ -774,7 +814,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._brace_subtitle = QtWidgets.QLabel("—")
         self._brace_subtitle.setFont(small_font)
-        self._brace_subtitle.setStyleSheet("color: palette(dark);")
+        self._brace_subtitle.setStyleSheet("color: palette(shadow);")
         bs_vbox.addWidget(self._brace_subtitle)
         bs_vbox.addWidget(_hsep())
 
@@ -800,7 +840,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._brace_spec_value.setFont(_big_font)
         _sfb_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
         _sfb_unit.setFont(small_font)
-        _sfb_unit.setStyleSheet("color: palette(dark);")
+        _sfb_unit.setStyleSheet("color: palette(shadow);")
         _sfb_row.addWidget(self._brace_spec_value)
         _sfb_row.addWidget(_sfb_unit)
         _sfb_row.addStretch()
@@ -827,14 +867,14 @@ class MainWindow(QtWidgets.QMainWindow):
             "Select peaks above to calculate properties"
         )
         self._plate_placeholder_lbl.setWordWrap(True)
-        self._plate_placeholder_lbl.setStyleSheet("color: palette(dark);")
+        self._plate_placeholder_lbl.setStyleSheet("color: palette(shadow);")
         self._plate_placeholder_lbl.setFont(small_font)
         _pp_vbox.addWidget(self._plate_placeholder_lbl)
         _pp_p2 = QtWidgets.QLabel(
             "Tip: The longitudinal mode is typically the higher frequency peak"
         )
         _pp_p2.setWordWrap(True)
-        _pp_p2.setStyleSheet("color: palette(dark);")
+        _pp_p2.setStyleSheet("color: palette(shadow);")
         _pp_p2.setFont(small_font)
         _pp_vbox.addWidget(_pp_p2)
         ps_vbox.addWidget(self._plate_placeholder)
@@ -850,32 +890,68 @@ class MainWindow(QtWidgets.QMainWindow):
         # Redirect ps_vbox for remaining plate content rows
         ps_vbox = pc_vbox
 
-        self._plate_subtitle = QtWidgets.QLabel("—")
-        self._plate_subtitle.setFont(small_font)
-        self._plate_subtitle.setStyleSheet("color: palette(dark);")
-        ps_vbox.addWidget(self._plate_subtitle)
+        # Frequencies — one per line (fL, fC, optionally fLC)
+        self._plate_fl_lbl = QtWidgets.QLabel("fL (Longitudinal): —")
+        self._plate_fl_lbl.setFont(small_font)
+        self._plate_fl_lbl.setStyleSheet("color: palette(shadow);")
+        ps_vbox.addWidget(self._plate_fl_lbl)
+        self._plate_fc_lbl = QtWidgets.QLabel("fC (Cross-grain): —")
+        self._plate_fc_lbl.setFont(small_font)
+        self._plate_fc_lbl.setStyleSheet("color: palette(shadow);")
+        ps_vbox.addWidget(self._plate_fc_lbl)
+        self._plate_flc_lbl = QtWidgets.QLabel("fLC (Diagonal): —")
+        self._plate_flc_lbl.setFont(small_font)
+        self._plate_flc_lbl.setStyleSheet("color: palette(shadow);")
+        self._plate_flc_lbl.setVisible(False)
+        ps_vbox.addWidget(self._plate_flc_lbl)
+
         ps_vbox.addWidget(_hsep())
 
         def _plate_row(label: str) -> tuple[QtWidgets.QLabel, QtWidgets.QLabel]:
-            row = QtWidgets.QHBoxLayout()
-            lbl = QtWidgets.QLabel(label)
-            lbl.setFont(small_font)
-            val_l = QtWidgets.QLabel("—")
+            """Title on own line; 'L: —' / 'C: —' on line below."""
+            _title_fnt = QtGui.QFont()
+            _title_fnt.setPointSize(small_font.pointSize())
+            _title_fnt.setBold(True)
+            row_w = QtWidgets.QWidget()
+            rv = QtWidgets.QVBoxLayout(row_w)
+            rv.setContentsMargins(0, 0, 0, 0)
+            rv.setSpacing(2)
+            title_lbl = QtWidgets.QLabel(label)
+            title_lbl.setFont(_title_fnt)
+            rv.addWidget(title_lbl)
+            inner = QtWidgets.QHBoxLayout()
+            val_l = QtWidgets.QLabel("L: —")
             val_l.setFont(small_font)
-            sep = QtWidgets.QLabel(" / ")
-            sep.setFont(small_font)
-            val_c = QtWidgets.QLabel("—")
+            val_l.setStyleSheet("color: palette(shadow);")
+            val_c = QtWidgets.QLabel("C: —")
             val_c.setFont(small_font)
-            row.addWidget(lbl)
-            row.addStretch()
-            row.addWidget(val_l)
-            row.addWidget(sep)
-            row.addWidget(val_c)
-            ps_vbox.addLayout(row)
+            val_c.setStyleSheet("color: palette(shadow);")
+            inner.addWidget(val_l)
+            inner.addStretch()
+            inner.addWidget(val_c)
+            rv.addLayout(inner)
+            ps_vbox.addWidget(row_w)
             return val_l, val_c
 
-        self._plate_c_long, self._plate_c_cross = _plate_row("Speed of Sound:")
-        self._plate_E_long, self._plate_E_cross = _plate_row("Young's Modulus:")
+        self._plate_c_long, self._plate_c_cross = _plate_row("Speed of Sound")
+        self._plate_E_long, self._plate_E_cross = _plate_row("Young's Modulus (E)")
+
+        # GLC (Shear) line — shown below Young's Modulus when FLC was measured
+        self._plate_glc_widget = QtWidgets.QWidget()
+        _glc_hl = QtWidgets.QHBoxLayout(self._plate_glc_widget)
+        _glc_hl.setContentsMargins(0, 0, 0, 0)
+        _glc_hl.setSpacing(4)
+        self._plate_glc_lbl = QtWidgets.QLabel("GLC (Shear):")
+        self._plate_glc_lbl.setFont(small_font)
+        self._plate_glc_lbl.setStyleSheet("color: palette(shadow);")
+        self._plate_glc_val = QtWidgets.QLabel("—")
+        self._plate_glc_val.setFont(small_font)
+        self._plate_glc_val.setStyleSheet("color: palette(shadow);")
+        _glc_hl.addWidget(self._plate_glc_lbl)
+        _glc_hl.addStretch()
+        _glc_hl.addWidget(self._plate_glc_val)
+        self._plate_glc_widget.setVisible(False)
+        ps_vbox.addWidget(self._plate_glc_widget)
 
         # Specific modulus box for plate (two-column)
         _spec_frame_p = QtWidgets.QFrame()
@@ -895,14 +971,14 @@ class MainWindow(QtWidgets.QMainWindow):
         _sfp_l_vbox = QtWidgets.QVBoxLayout()
         _sfp_l_cap = QtWidgets.QLabel("Longitudinal:")
         _sfp_l_cap.setFont(small_font)
-        _sfp_l_cap.setStyleSheet("color: palette(dark);")
+        _sfp_l_cap.setStyleSheet("color: palette(shadow);")
         _sfp_l_vbox.addWidget(_sfp_l_cap)
         _sfp_l_row = QtWidgets.QHBoxLayout()
         self._plate_spec_long_value = QtWidgets.QLabel("—")
         self._plate_spec_long_value.setFont(_big_font)
         _sfp_l_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
         _sfp_l_unit.setFont(small_font)
-        _sfp_l_unit.setStyleSheet("color: palette(dark);")
+        _sfp_l_unit.setStyleSheet("color: palette(shadow);")
         _sfp_l_row.addWidget(self._plate_spec_long_value)
         _sfp_l_row.addWidget(_sfp_l_unit)
         _sfp_l_row.addStretch()
@@ -916,14 +992,14 @@ class MainWindow(QtWidgets.QMainWindow):
         _sfp_c_vbox = QtWidgets.QVBoxLayout()
         _sfp_c_cap = QtWidgets.QLabel("Cross-grain:")
         _sfp_c_cap.setFont(small_font)
-        _sfp_c_cap.setStyleSheet("color: palette(dark);")
+        _sfp_c_cap.setStyleSheet("color: palette(shadow);")
         _sfp_c_vbox.addWidget(_sfp_c_cap)
         _sfp_c_row = QtWidgets.QHBoxLayout()
         self._plate_spec_cross_value = QtWidgets.QLabel("—")
         self._plate_spec_cross_value.setFont(_big_font)
         _sfp_c_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
         _sfp_c_unit.setFont(small_font)
-        _sfp_c_unit.setStyleSheet("color: palette(dark);")
+        _sfp_c_unit.setStyleSheet("color: palette(shadow);")
         _sfp_c_row.addWidget(self._plate_spec_cross_value)
         _sfp_c_row.addWidget(_sfp_c_unit)
         _sfp_c_vbox.addLayout(_sfp_c_row)
@@ -944,7 +1020,7 @@ class MainWindow(QtWidgets.QMainWindow):
             val.setFont(small_font)
             hint_lbl = QtWidgets.QLabel(hint)
             hint_lbl.setFont(small_font)
-            hint_lbl.setStyleSheet("color: palette(dark);")
+            hint_lbl.setStyleSheet("color: palette(shadow);")
             row.addStretch()
             row.addWidget(val)
             row.addWidget(hint_lbl)
@@ -959,6 +1035,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _overall_row = QtWidgets.QHBoxLayout()
         _overall_lbl = QtWidgets.QLabel("Overall Quality:")
         _overall_lbl.setFont(small_font)
+        _overall_lbl.setStyleSheet("font-weight: bold;")
         self._plate_overall_quality = QtWidgets.QLabel("—")
         self._plate_overall_quality.setFont(small_font)
         _overall_row.addWidget(_overall_lbl)
@@ -966,12 +1043,97 @@ class MainWindow(QtWidgets.QMainWindow):
         _overall_row.addWidget(self._plate_overall_quality)
         ps_vbox.addLayout(_overall_row)
 
+        # ── Gore Target Thickness box ─────────────────────────────────────
+        self._gore_frame = QtWidgets.QFrame()
+        self._gore_frame.setObjectName("gore_frame")
+        # Swift: Color.accentColor.opacity(0.08); system blue = #007AFF → alpha ~20/255
+        self._gore_frame.setStyleSheet(
+            "#gore_frame { background-color: rgba(0,122,255,20);"
+            " border-radius: 8px; }"
+        )
+        _gf_vbox = QtWidgets.QVBoxLayout(self._gore_frame)
+        _gf_vbox.setContentsMargins(8, 4, 8, 4)
+        _gf_vbox.setSpacing(3)
+
+        _gore_hdr_fnt = QtGui.QFont()
+        _gore_hdr_fnt.setPointSize(small_font.pointSize())
+        _gore_hdr_fnt.setBold(True)
+        _gore_title_lbl = QtWidgets.QLabel("Gore Target Thickness")
+        _gore_title_lbl.setFont(_gore_hdr_fnt)
+        _gf_vbox.addWidget(_gore_title_lbl)
+
+        _gore_val_row = QtWidgets.QHBoxLayout()
+        _gore_val_row.setSpacing(6)
+        self._gore_thickness_value = QtWidgets.QLabel("—")
+        _gv_fnt = QtGui.QFont()
+        _gv_fnt.setPointSize(32)
+        _gv_fnt.setBold(True)
+        self._gore_thickness_value.setFont(_gv_fnt)
+        self._gore_thickness_value.setStyleSheet("color: #007AFF;")
+        _gore_val_row.addWidget(self._gore_thickness_value)
+        _gore_mm_lbl = QtWidgets.QLabel("mm")
+        _gore_mm_fnt = QtGui.QFont()
+        _gore_mm_fnt.setPointSize(small_font.pointSize() + 4)
+        _gore_mm_lbl.setFont(_gore_mm_fnt)
+        _gore_mm_lbl.setStyleSheet("color: palette(shadow);")
+        _gore_val_row.addWidget(_gore_mm_lbl)
+        _gore_val_row.addStretch()
+        _gf_vbox.addLayout(_gore_val_row)
+
+        # GLC known: "Shear Modulus (GLC):"  [spacer]  "X.XXX GPa"
+        _gore_glc_row_w = QtWidgets.QWidget()
+        _gore_glc_hl = QtWidgets.QHBoxLayout(_gore_glc_row_w)
+        _gore_glc_hl.setContentsMargins(0, 0, 0, 0)
+        _gore_glc_title = QtWidgets.QLabel("Shear Modulus (GLC):")
+        _gore_glc_title.setFont(small_font)
+        _gore_glc_title.setStyleSheet("color: palette(shadow);")
+        self._gore_glc_value = QtWidgets.QLabel("—")
+        self._gore_glc_value.setFont(small_font)
+        _gore_glc_hl.addWidget(_gore_glc_title)
+        _gore_glc_hl.addStretch()
+        _gore_glc_hl.addWidget(self._gore_glc_value)
+        _gore_glc_row_w.setVisible(False)
+        _gf_vbox.addWidget(_gore_glc_row_w)
+        self._gore_glc_row_w = _gore_glc_row_w
+
+        # GLC not known: info message
+        self._gore_glc_info = QtWidgets.QLabel()
+        self._gore_glc_info.setFont(small_font)
+        self._gore_glc_info.setStyleSheet("color: palette(shadow);")
+        self._gore_glc_info.setWordWrap(True)
+        _gf_vbox.addWidget(self._gore_glc_info)
+
+        self._gore_params_lbl = QtWidgets.QLabel()
+        _gp_fnt = QtGui.QFont()
+        _gp_fnt.setPointSize(max(small_font.pointSize() - 1, 8))
+        self._gore_params_lbl.setFont(_gp_fnt)
+        self._gore_params_lbl.setStyleSheet("color: palette(shadow);")
+        _gf_vbox.addWidget(self._gore_params_lbl)
+
+        self._gore_frame.setVisible(False)
+        ps_vbox.addWidget(self._gore_frame)
+
         ms_vbox.addWidget(self._plate_section)
 
         self._brace_section.setVisible(False)
         self._plate_section.setVisible(False)
         self._material_section.setVisible(False)
-        vbox.addWidget(self._material_section)
+
+        # ── Wrap _material_peak_widget + _material_section in a scroll area ──
+        _mat_container = QtWidgets.QWidget()
+        _mat_vbox = QtWidgets.QVBoxLayout(_mat_container)
+        _mat_vbox.setContentsMargins(0, 0, 0, 0)
+        _mat_vbox.setSpacing(8)
+        _mat_vbox.addWidget(self._material_peak_widget)
+        _mat_vbox.addWidget(self._material_section)
+        _mat_vbox.addStretch()
+
+        self._material_scroll = QtWidgets.QScrollArea()
+        self._material_scroll.setWidgetResizable(True)
+        self._material_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self._material_scroll.setWidget(_mat_container)
+        self._material_scroll.setVisible(False)
+        vbox.addWidget(self._material_scroll, stretch=1)
 
         # ── Footer separator (matches Swift's Divider between scroll area and footer) ──
         vbox.addWidget(_hsep())
@@ -997,7 +1159,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _ro_col.setSpacing(2)
         _ro_cap = QtWidgets.QLabel("Ring-Out")
         _ro_cap.setFont(_tiny_font)
-        _ro_cap.setStyleSheet("color: palette(dark);")
+        _ro_cap.setStyleSheet("color: palette(shadow);")
         _ro_col.addWidget(_ro_cap)
         _ro_val_row = QtWidgets.QHBoxLayout()
         _ro_val_row.setSpacing(4)
@@ -1011,7 +1173,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _ro_col.addLayout(_ro_val_row)
         _ro_sub = QtWidgets.QLabel("\u201315 dB")
         _ro_sub.setFont(_tiny_font)
-        _ro_sub.setStyleSheet("color: palette(dark);")
+        _ro_sub.setStyleSheet("color: palette(shadow);")
         _ro_col.addWidget(_ro_sub)
         _gsum_hl.addLayout(_ro_col)
 
@@ -1026,7 +1188,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _ratio_col.setSpacing(2)
         _ratio_cap = QtWidgets.QLabel("Tap Ratio")
         _ratio_cap.setFont(_tiny_font)
-        _ratio_cap.setStyleSheet("color: palette(dark);")
+        _ratio_cap.setStyleSheet("color: palette(shadow);")
         _ratio_col.addWidget(_ratio_cap)
         _ratio_val_row = QtWidgets.QHBoxLayout()
         _ratio_val_row.setSpacing(4)
@@ -1040,7 +1202,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _ratio_col.addLayout(_ratio_val_row)
         _ratio_sub = QtWidgets.QLabel("Ideal: 1.9\u20132.1")
         _ratio_sub.setFont(_tiny_font)
-        _ratio_sub.setStyleSheet("color: palette(dark);")
+        _ratio_sub.setStyleSheet("color: palette(shadow);")
         _ratio_col.addWidget(_ratio_sub)
         _gsum_hl.addLayout(_ratio_col)
 
@@ -1398,6 +1560,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Frequency range spinners → canvas + label + persist
         self.min_spin.valueChanged.connect(self._on_fmin_changed)
         self.max_spin.valueChanged.connect(self._on_fmax_changed)
+
+        # Canvas viewport pan/zoom → update spinboxes + persist
+        canvas.freqRangeChanged.connect(self._on_canvas_freq_range_changed)
 
         # Auto dB
         self.auto_db_btn.toggled.connect(canvas.set_auto_scale)
@@ -1767,6 +1932,10 @@ class MainWindow(QtWidgets.QMainWindow):
         AS.AppSettings.set_f_max(value)
         self._update_freq_range_label()
 
+    def _on_canvas_freq_range_changed(self, fmin: int, fmax: int) -> None:
+        """Update the 'Showing X – Y Hz' label when the graph is panned or zoomed."""
+        self.freq_range_label.setText(f"Showing {fmin} – {fmax} Hz")
+
     def _update_freq_range_label(self) -> None:
         self.freq_range_label.setText(
             f"Showing {self.min_spin.value()} – {self.max_spin.value()} Hz"
@@ -2014,7 +2183,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_section.setVisible(not mt.is_guitar and self._is_measurement_complete)
         # Toggle peak list: guitar → PeakListWidget; plate/brace → MaterialPeakListWidget
         self.peak_widget.setVisible(mt.is_guitar)
-        self._material_peak_widget.setVisible(not mt.is_guitar)
+        self._material_scroll.setVisible(not mt.is_guitar)
         if not mt.is_guitar:
             show_flc = (not mt.is_brace) and AS.AppSettings.measure_flc()
             self._material_peak_widget.set_mode(
@@ -2065,8 +2234,12 @@ class MainWindow(QtWidgets.QMainWindow):
                         PA.calculate_brace_properties(dims, long_freq)
                     )
                 elif cross_freq > 0:
+                    _glc = (PA.calculate_glc_from_flc(dims, flc_freq)
+                            if flc_freq > 0 else None)
                     self._populate_plate_section(
-                        PA.calculate_plate_properties(dims, long_freq, cross_freq)
+                        PA.calculate_plate_properties(dims, long_freq, cross_freq),
+                        flc_freq=flc_freq,
+                        glc_pa=_glc if _glc else None,
                     )
                 else:
                     # L assigned but C not yet — show partial placeholder
@@ -2163,6 +2336,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_measurement_complete(True)
         peak_model.show_all_annotations()
 
+
     def _populate_brace_section(self, props: PA.BraceProperties) -> None:
         """Fill the brace material properties sub-section and make it visible."""
         self._brace_subtitle.setText(f"Longitudinal (fL): {props.f_long:.1f} Hz")
@@ -2180,13 +2354,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_section.setVisible(False)
         self._material_section.setVisible(True)
 
-    def _populate_plate_section(self, props: PA.PlateProperties) -> None:
+    def _populate_plate_section(self, props: PA.PlateProperties,
+                                flc_freq: float = 0.0,
+                                glc_pa: float | None = None) -> None:
         """Fill the plate material properties sub-section and make it visible."""
-        self._plate_subtitle.setText(f"fL: {props.f_long:.1f} Hz  fC: {props.f_cross:.1f} Hz")
-        self._plate_c_long.setText(f"{props.c_long_m_s:.0f} m/s")
-        self._plate_c_cross.setText(f"{props.c_cross_m_s:.0f} m/s")
-        self._plate_E_long.setText(f"{props.E_long_GPa:.2f} GPa")
-        self._plate_E_cross.setText(f"{props.E_cross_GPa:.2f} GPa")
+        # Frequencies — one per line
+        self._plate_fl_lbl.setText(f"fL (Longitudinal): {props.f_long:.1f} Hz")
+        self._plate_fc_lbl.setText(f"fC (Cross-grain): {props.f_cross:.1f} Hz")
+        if flc_freq > 0:
+            self._plate_flc_lbl.setText(f"fLC (Diagonal): {flc_freq:.1f} Hz")
+            self._plate_flc_lbl.setVisible(True)
+        else:
+            self._plate_flc_lbl.setVisible(False)
+        # Properties (title + L: val  C: val format)
+        self._plate_c_long.setText(f"L: {props.c_long_m_s:.0f} m/s")
+        self._plate_c_cross.setText(f"C: {props.c_cross_m_s:.0f} m/s")
+        self._plate_E_long.setText(f"L: {props.E_long_GPa:.2f} GPa")
+        self._plate_E_cross.setText(f"C: {props.E_cross_GPa:.2f} GPa")
+        if glc_pa and glc_pa > 0:
+            self._plate_glc_val.setText(f"{glc_pa / 1e9:.3f} GPa")
+            self._plate_glc_widget.setVisible(True)
+        else:
+            self._plate_glc_widget.setVisible(False)
         cl = PA.QUALITY_COLORS.get(props.quality_long, "#888888")
         cc = PA.QUALITY_COLORS.get(props.quality_cross, "#888888")
         self._plate_spec_long_value.setText(f"{props.specific_modulus_long:.1f}")
@@ -2197,13 +2386,53 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_spec_cross_value.setStyleSheet(f"color: {cc};")
         self._plate_quality_cross.setText(props.quality_cross)
         self._plate_quality_cross.setStyleSheet(f"color: {cc};")
-        self._plate_rad_long.setText(f"{props.radiation_ratio_long:.1f}")
-        self._plate_rad_cross.setText(f"{props.radiation_ratio_cross:.1f}")
+        self._plate_rad_long.setText(f"L: {props.radiation_ratio_long:.1f}")
+        self._plate_rad_cross.setText(f"C: {props.radiation_ratio_cross:.1f}")
         self._plate_cross_long.setText(f"{props.cross_long_ratio:.3f}")
         self._plate_long_cross.setText(f"{props.long_cross_ratio:.1f}")
         cov = PA.QUALITY_COLORS.get(props.overall_quality, "#888888")
         self._plate_overall_quality.setText(props.overall_quality)
         self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
+        # Gore Target Thickness
+        try:
+            _preset_str  = AS.AppSettings.plate_stiffness_preset()
+            _preset      = PSP.PlateStiffnessPreset(_preset_str)
+            _fvs         = (AS.AppSettings.custom_plate_stiffness()
+                            if _preset == PSP.PlateStiffnessPreset.CUSTOM
+                            else _preset.value_fvs)
+            _body_l      = AS.AppSettings.guitar_body_length()
+            _body_w      = AS.AppSettings.guitar_body_width()
+            _gore        = PA.calculate_gore_target_thickness(
+                props, _body_l, _body_w, _fvs, _preset.value, glc_pa=glc_pa
+            )
+            if _gore and _gore.thickness_mm > 0:
+                self._gore_thickness_value.setText(f"{_gore.thickness_mm:.2f}")
+                if glc_pa and glc_pa > 0:
+                    self._gore_glc_value.setText(f"{glc_pa / 1e9:.3f} GPa")
+                    self._gore_glc_row_w.setVisible(True)
+                    self._gore_glc_info.setVisible(False)
+                else:
+                    self._gore_glc_row_w.setVisible(False)
+                    self._gore_glc_info.setText(
+                        "\u24d8 GLC assumed 0 \u2014 FLC tap recorded but GLC not computed"
+                        if flc_freq > 0 else
+                        "\u24d8 GLC assumed 0 \u2014 enable FLC tap for a more accurate result"
+                    )
+                    self._gore_glc_info.setVisible(True)
+                _preset_lbl = (
+                    f"f_vs = {int(_fvs)} (custom)"
+                    if _preset == PSP.PlateStiffnessPreset.CUSTOM
+                    else f"f_vs = {int(_fvs)} ({_preset.value})"
+                )
+                self._gore_params_lbl.setText(
+                    f"Body: {_gore.body_length_mm:.0f} \u00d7 {_gore.body_width_mm:.0f} mm"
+                    f"\n{_preset_lbl}"
+                )
+                self._gore_frame.setVisible(True)
+            else:
+                self._gore_frame.setVisible(False)
+        except Exception:
+            self._gore_frame.setVisible(False)
         self._plate_placeholder.setVisible(False)
         self._plate_content.setVisible(True)
         self._brace_section.setVisible(False)
@@ -2313,10 +2542,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spectrum snapshot — guitar uses spectrumSnapshot; plate/brace use longitudinalSnapshot
         spectrum_snapshot: M.SpectrumSnapshot | None = None
-        if mt.is_guitar and hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
+        longitudinal_snapshot: M.SpectrumSnapshot | None = None
+        if hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
             freqs = canvas.freq.tolist()
             mags  = canvas.saved_mag_y_db.tolist()
-            spectrum_snapshot = M.SpectrumSnapshot(
+            _snap_base = dict(
                 frequencies=freqs,
                 magnitudes=mags,
                 min_freq=float(self.min_spin.value()),
@@ -2326,8 +2556,36 @@ class MainWindow(QtWidgets.QMainWindow):
                 guitar_type=self.guitar_type_combo.currentText(),
                 measurement_type=self.measurement_type_combo.currentText(),
             )
-        # TODO: for plate/brace, save per-phase snapshots (longitudinalSnapshot etc.)
-        # Currently PlateCapture does not expose the raw spectra after capture completes.
+            if mt.is_guitar:
+                spectrum_snapshot = M.SpectrumSnapshot(**_snap_base)
+            else:
+                # Plate/brace: embed current dimensions in the longitudinal snapshot
+                # so they are restored when the measurement is loaded back.
+                _dims = self._get_current_dims()
+                if mt.is_brace:
+                    longitudinal_snapshot = M.SpectrumSnapshot(
+                        **_snap_base,
+                        brace_length=_dims.length_mm if _dims else None,
+                        brace_width=_dims.width_mm if _dims else None,
+                        brace_thickness=_dims.thickness_mm if _dims else None,
+                        brace_mass=_dims.mass_g if _dims else None,
+                    )
+                else:
+                    _psp_str = AS.AppSettings.plate_stiffness_preset()
+                    longitudinal_snapshot = M.SpectrumSnapshot(
+                        **_snap_base,
+                        plate_length=_dims.length_mm if _dims else None,
+                        plate_width=_dims.width_mm if _dims else None,
+                        plate_thickness=_dims.thickness_mm if _dims else None,
+                        plate_mass=_dims.mass_g if _dims else None,
+                        plate_stiffness_preset=_psp_str,
+                        custom_plate_stiffness=(
+                            AS.AppSettings.custom_plate_stiffness()
+                            if _psp_str == "Custom" else None
+                        ),
+                        guitar_body_length=AS.AppSettings.guitar_body_length(),
+                        guitar_body_width=AS.AppSettings.guitar_body_width(),
+                    )
 
         mic_name: str | None = None
         try:
@@ -2341,6 +2599,7 @@ class MainWindow(QtWidgets.QMainWindow):
             tap_location=tap_location or None,
             notes=notes or None,
             spectrum_snapshot=spectrum_snapshot,
+            longitudinal_snapshot=longitudinal_snapshot,
             selected_peak_ids=selected_ids or None,
             peak_mode_overrides=peak_mode_overrides or None,
             annotation_offsets=annotation_offsets or None,
@@ -2440,6 +2699,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 [[p.frequency, p.magnitude, p.quality] for p in m.peaks],
                 dtype=np.float64,
             )
+            # Sort by frequency so that range-slicing in _emit_loaded_peaks_at_threshold
+            # and update_mode_colors gives only in-range peaks.
+            peaks_array = peaks_array[np.argsort(peaks_array[:, 0])]
         else:
             peaks_array = np.zeros((0, 3), dtype=np.float64)
 
@@ -2470,8 +2732,9 @@ class MainWindow(QtWidgets.QMainWindow):
             canvas.setYRange(snap.min_db, snap.max_db, padding=0)
             canvas.update_axis(int(snap.min_freq), int(snap.max_freq))
             canvas.set_draw_data(mag_arr, peaks_array)
-
-        canvas.peaksChanged.emit(peaks_array)
+        else:
+            # No snapshot — emit peaks filtered to current range
+            canvas._emit_loaded_peaks_at_threshold()
 
         # Restore ring-out
         self._ring_out_s = m.decay_time
@@ -2482,6 +2745,32 @@ class MainWindow(QtWidgets.QMainWindow):
         peak_model = self.peak_widget.model
 
         _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
+
+        # Restore plate/brace dimensions from the snapshot — mirrors Swift's .onReceive
+        # handlers that write loadedXxx published properties back to TapDisplaySettings.
+        # Updating AppSettings here means the settings panel reflects the loaded dims.
+        if not _restored_mt.is_guitar:
+            _snap_for_dims = m.longitudinal_snapshot or m.spectrum_snapshot
+            if _snap_for_dims is not None:
+                if _restored_mt.is_brace:
+                    if _snap_for_dims.brace_length    is not None: AS.AppSettings.set_brace_length(_snap_for_dims.brace_length)
+                    if _snap_for_dims.brace_width     is not None: AS.AppSettings.set_brace_width(_snap_for_dims.brace_width)
+                    if _snap_for_dims.brace_thickness is not None: AS.AppSettings.set_brace_thickness(_snap_for_dims.brace_thickness)
+                    if _snap_for_dims.brace_mass      is not None: AS.AppSettings.set_brace_mass(_snap_for_dims.brace_mass)
+                else:
+                    if _snap_for_dims.plate_length    is not None: AS.AppSettings.set_plate_length(_snap_for_dims.plate_length)
+                    if _snap_for_dims.plate_width     is not None: AS.AppSettings.set_plate_width(_snap_for_dims.plate_width)
+                    if _snap_for_dims.plate_thickness is not None: AS.AppSettings.set_plate_thickness(_snap_for_dims.plate_thickness)
+                    if _snap_for_dims.plate_mass      is not None: AS.AppSettings.set_plate_mass(_snap_for_dims.plate_mass)
+                    if _snap_for_dims.plate_stiffness_preset is not None:
+                        AS.AppSettings.set_plate_stiffness_preset(_snap_for_dims.plate_stiffness_preset)
+                    if _snap_for_dims.custom_plate_stiffness is not None:
+                        AS.AppSettings.set_custom_plate_stiffness(_snap_for_dims.custom_plate_stiffness)
+                    if _snap_for_dims.guitar_body_length is not None:
+                        AS.AppSettings.set_guitar_body_length(_snap_for_dims.guitar_body_length)
+                    if _snap_for_dims.guitar_body_width is not None:
+                        AS.AppSettings.set_guitar_body_width(_snap_for_dims.guitar_body_width)
+
         if not _restored_mt.is_guitar:
             # Plate / brace: label peaks by selectedLongitudinalPeakID / selectedCrossPeakID / selectedFlcPeakID
             _id_to_label: dict[str, str] = {}
@@ -2604,6 +2893,11 @@ class MainWindow(QtWidgets.QMainWindow):
                     _f_flc = _p.frequency
 
             # Populate material peak widget with loaded peaks and assignment
+            _show_flc = (not _restored_mt.is_brace) and _f_flc > 0
+            self._material_peak_widget.set_mode(
+                show_cross=not _restored_mt.is_brace,
+                show_flc=_show_flc,
+            )
             self._material_peak_widget.update_peaks(peaks_array)
             self._material_peak_widget.set_assignment(_f_long, _f_cross, _f_flc)
 
@@ -2616,8 +2910,12 @@ class MainWindow(QtWidgets.QMainWindow):
                                 PA.calculate_brace_properties(_dims, _f_long)
                             )
                         elif _f_cross > 0:
+                            _glc = (PA.calculate_glc_from_flc(_dims, _f_flc)
+                                    if _f_flc > 0 else None)
                             self._populate_plate_section(
-                                PA.calculate_plate_properties(_dims, _f_long, _f_cross)
+                                PA.calculate_plate_properties(_dims, _f_long, _f_cross),
+                                flc_freq=_f_flc,
+                                glc_pa=_glc if _glc else None,
                             )
                     except ValueError:
                         pass
@@ -2967,10 +3265,11 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_dims_hdr.setFont(hdr_font)
         plate_layout.addWidget(plate_dims_hdr)
 
-        def _dim_spinbox(suffix: str, max_val: float = 2000.0) -> QtWidgets.QDoubleSpinBox:
+        def _dim_spinbox(suffix: str, max_val: float = 2000.0,
+                         decimals: int = 1) -> QtWidgets.QDoubleSpinBox:
             sb = QtWidgets.QDoubleSpinBox()
-            sb.setDecimals(1)
-            sb.setMinimum(0.1)
+            sb.setDecimals(decimals)
+            sb.setMinimum(0.01)
             sb.setMaximum(max_val)
             sb.setSuffix(f" {suffix}")
             return sb
@@ -2987,7 +3286,7 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_length_spin.setValue(AS.AppSettings.plate_length())
         plate_width_spin = _dim_spinbox("mm", 1000.0)
         plate_width_spin.setValue(AS.AppSettings.plate_width())
-        plate_thick_spin = _dim_spinbox("mm", 50.0)
+        plate_thick_spin = _dim_spinbox("mm", 50.0, decimals=2)
         plate_thick_spin.setValue(AS.AppSettings.plate_thickness())
         plate_mass_spin = _dim_spinbox("g", 5000.0)
         plate_mass_spin.setValue(AS.AppSettings.plate_mass())
@@ -3120,7 +3419,7 @@ class MainWindow(QtWidgets.QMainWindow):
         brace_length_spin.setValue(AS.AppSettings.brace_length())
         brace_width_spin = _dim_spinbox("mm", 200.0)
         brace_width_spin.setValue(AS.AppSettings.brace_width())
-        brace_thick_spin = _dim_spinbox("mm", 200.0)
+        brace_thick_spin = _dim_spinbox("mm", 200.0, decimals=2)
         brace_thick_spin.setValue(AS.AppSettings.brace_thickness())
         brace_mass_spin = _dim_spinbox("g", 500.0)
         brace_mass_spin.setValue(AS.AppSettings.brace_mass())
