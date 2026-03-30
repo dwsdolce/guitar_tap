@@ -9,6 +9,7 @@ import sounddevice as sd
 from PyQt6 import QtWidgets, QtGui, QtCore
 
 import fft_canvas as fft_c
+from fft_canvas import DisplayMode
 import fft_toolbar as fft_t
 import peak_card_widget as PT
 import show_devices as SD
@@ -2298,8 +2299,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
 
     def _update_measurement_badge(self) -> None:
-        """Refresh the badge in the Analysis Results panel to show the current
-        measurement type short name (e.g. 'Classical', 'Flamenco', 'Plate')."""
+        """Refresh the badge in the Analysis Results panel.
+
+        Shows 'Comparison' with a purple tint in comparison mode (mirrors
+        analyzer.displayMode == .comparison check in TapAnalysisResultsView.swift),
+        otherwise shows the measurement type short name with blue/orange tint.
+        """
+        if self.fft_canvas.display_mode == DisplayMode.COMPARISON:
+            self.measurement_type_badge.setText("Comparison")
+            self.measurement_type_badge.setStyleSheet(
+                "background: rgba(160,32,240,0.20); border-radius: 4px; padding: 1px 6px;"
+            )
+            return
         mt = MT.MeasurementType.from_combo_values(
             self.measurement_type_combo.currentText(),
             self.guitar_type_combo.currentText(),
@@ -2706,15 +2717,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_widget.setVisible(not is_comparing)
         # Scroll area (plate/brace) also hidden while comparing
         self._material_scroll.setVisible(not is_comparing)
+        # Guitar summary (Ring-Out, Tap Ratio) — mirrors
+        # `measurementType.isGuitar && analyzer.displayMode != .comparison` in Swift
+        self._guitar_summary.setVisible(self._current_mt().is_guitar and not is_comparing)
 
-        # ── Freeze / unfreeze the live spectrum display ───────────────────────
-        # During comparison only the overlay curves matter; the live FFT line
-        # should not keep updating (mirrors Swift: comparison spectra take priority
-        # and the live curve is effectively suppressed).
-        if is_comparing:
-            canvas.is_measurement_complete = True
-        else:
-            canvas.is_measurement_complete = self._is_measurement_complete
+        # ── display_mode is already set by load_comparison / clear_comparison ──
+        # The canvas _on_fft_frame_ready gates on display_mode == COMPARISON to
+        # suppress live updates — no need to touch is_measurement_complete here.
 
         # ── Annotations ───────────────────────────────────────────────────────
         if is_comparing:
@@ -2722,14 +2731,22 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             canvas.annotations.show_all_annotations()
 
-        # ── Save / Export — disabled while comparing ──────────────────────────
+        # ── Badge ──────────────────────────────────────────────────────────────
+        self._update_measurement_badge()
+
+        # ── Save / Export ──────────────────────────────────────────────────────
+        # Export PDF is hidden (not just disabled) during comparison — mirrors
+        # `if let exportPDF = onExportPDFReport, analyzer.displayMode != .comparison`
+        # in TapAnalysisResultsView.swift.
+        # Export Spectrum remains visible and is enabled during comparison.
         if is_comparing:
             self.save_measurement_btn.setEnabled(False)
-            self.export_spectrum_btn.setEnabled(False)
-            self.export_pdf_btn.setEnabled(False)
+            self.export_spectrum_btn.setEnabled(True)
+            self.export_pdf_btn.setVisible(False)
         else:
             self.save_measurement_btn.setEnabled(self._is_measurement_complete)
             self.export_spectrum_btn.setEnabled(self._is_measurement_complete)
+            self.export_pdf_btn.setVisible(True)
             self.export_pdf_btn.setEnabled(self._is_measurement_complete)
 
         # ── Peak-selection buttons ─────────────────────────────────────────────
@@ -2745,9 +2762,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _restore_measurement(self, m: M.TapToneMeasurement) -> None:
         canvas = self.fft_canvas
 
-        # Loading a measurement exits comparison mode —
-        # mirrors comparisonSpectra = [] at the top of loadMeasurement() in Swift.
+        # Loading a measurement exits comparison mode and enters frozen mode —
+        # mirrors comparisonSpectra = [] + displayMode = .frozen in loadMeasurement() in Swift.
         canvas.clear_comparison()
+        canvas.display_mode = DisplayMode.FROZEN
 
         if self._is_measurement_complete:
             self.set_measurement_complete(False)

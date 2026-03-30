@@ -3,6 +3,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum, auto
 from typing import List
 import queue
 import threading
@@ -333,6 +334,18 @@ class _ZoomPanPopup(QtWidgets.QFrame):
         self.show()
 
 
+class DisplayMode(Enum):
+    """Authoritative display mode for the main spectrum view.
+
+    Mirrors AnalysisDisplayMode in TapToneAnalyzer.swift — all UI sections that
+    differ between live, frozen, and comparison modes switch on this property
+    rather than checking _comparison_curves directly.
+    """
+    LIVE       = auto()   # live FFT; tap detection active or waiting
+    FROZEN     = auto()   # single frozen or loaded measurement displayed
+    COMPARISON = auto()   # two or more saved measurements overlaid
+
+
 # pylint: disable=too-many-instance-attributes
 class FftCanvas(pg.PlotWidget):
     """Sample the audio stream and display the FFT
@@ -387,6 +400,7 @@ class FftCanvas(pg.PlotWidget):
         super().__init__()
 
         self.is_measurement_complete: bool = False
+        self.display_mode: DisplayMode = DisplayMode.LIVE
 
         # Configure plot appearance
         self.setBackground("w")
@@ -656,7 +670,7 @@ class FftCanvas(pg.PlotWidget):
         # Comparison overlay state — mirrors comparisonSpectra in TapToneAnalyzer.swift
         self._comparison_curves: list[pg.PlotDataItem] = []
         self.comparison_labels: list[tuple[str, tuple[int, int, int]]] = []
-        self._comparison_legend: pg.LegendItem | None = None
+        self._comparison_legend: QtWidgets.QWidget | None = None
 
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
@@ -788,7 +802,7 @@ class FftCanvas(pg.PlotWidget):
 
         freq_color = "rgb(220,50,50)"   # default red
 
-        if self.is_comparing and self._comparison_curves:
+        if self.is_comparing:
             # Snap to the nearest comparison curve by screen-Y distance (mirrors
             # Swift's nearestSeriesIndex() with curveGravityThreshold = 12 pt).
             best_idx   = getattr(self, "_locked_series_index", 0)
@@ -965,7 +979,7 @@ class FftCanvas(pg.PlotWidget):
             avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
             self.saved_mag_y_db = avg_db
             _, peaks = self.find_peaks(avg_db)
-            if not self.is_comparing:
+            if self.display_mode != DisplayMode.COMPARISON:
                 self.set_draw_data(avg_db, peaks)
             self._tap_spectra.clear()
             self.tapDetected.emit()   # now trigger hold
@@ -1091,9 +1105,27 @@ class FftCanvas(pg.PlotWidget):
         btn.move(self.width() - btn.width() - 4, 4)
         btn.raise_()
 
+    def _reposition_comparison_legend(self) -> None:
+        leg = getattr(self, "_comparison_legend", None)
+        if leg is None or not leg.isVisible():
+            return
+        leg.adjustSize()
+        # Position inside the plot area — 8px below the viewbox top edge, 12px
+        # from the right edge. Mirrors Swift's .padding(.top, 8).padding(.trailing, 12)
+        # applied *inside* the chart overlay, so the legend sits within the axes.
+        vb = self.getPlotItem().vb
+        scene_rect = vb.sceneBoundingRect()
+        vb_top  = int(self.mapFromScene(scene_rect.topLeft()).y())
+        vb_right = int(self.mapFromScene(scene_rect.topRight()).x())
+        x = vb_right - leg.width() - 12
+        y = vb_top + 8
+        leg.move(x, y)
+        leg.raise_()
+
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)
         self._reposition_info_btn()
+        self._reposition_comparison_legend()
 
     def _show_zoom_help(self) -> None:
         btn_br = self._info_btn.mapToGlobal(
@@ -1236,10 +1268,11 @@ class FftCanvas(pg.PlotWidget):
         self.fmax = fmax
         self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
         self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
-        if self._loaded_measurement_peaks is not None:
-            self._emit_loaded_peaks_at_threshold()
-        else:
-            self.find_peaks(self.saved_mag_y_db)
+        if self.display_mode != DisplayMode.COMPARISON:
+            if self._loaded_measurement_peaks is not None:
+                self._emit_loaded_peaks_at_threshold()
+            else:
+                self.find_peaks(self.saved_mag_y_db)
         self.freqRangeChanged.emit(fmin, fmax)
 
     def set_max_average_count(self, max_average_count: int) -> None:
@@ -1261,8 +1294,8 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def is_comparing(self) -> bool:
-        """True when comparison overlay curves are active — mirrors !comparisonSpectra.isEmpty."""
-        return bool(self._comparison_curves)
+        """True when in comparison display mode — mirrors tap.displayMode == .comparison."""
+        return self.display_mode == DisplayMode.COMPARISON
 
     @property
     def comparison_count(self) -> int:
@@ -1310,11 +1343,33 @@ class FftCanvas(pg.PlotWidget):
             self.comparison_labels.append((label, color))
 
         if with_snapshots:
-            # Legend — anchored top-right of the plot area
-            self._comparison_legend = pg.LegendItem(offset=(-10, 10))
-            self._comparison_legend.setParentItem(self.getPlotItem())
-            for curve, (label, _) in zip(self._comparison_curves, self.comparison_labels):
-                self._comparison_legend.addItem(curve, label)
+            # Legend — horizontal overlay, top-right, mirrors materialSpectraLegend in
+            # SpectrumView.swift: HStack of (colored line swatch + label) entries,
+            # .padding(.top, 8) + .padding(.trailing, 12), regularMaterial background.
+            legend = QtWidgets.QWidget(self)
+            legend.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            legend.setStyleSheet(
+                "background: rgba(240,240,240,210); border-radius: 6px;"
+            )
+            row = QtWidgets.QHBoxLayout(legend)
+            row.setContentsMargins(8, 4, 8, 4)
+            row.setSpacing(12)
+            for label, (r, g, b) in self.comparison_labels:
+                swatch = QtWidgets.QLabel()
+                swatch.setFixedSize(16, 2)
+                swatch.setStyleSheet(f"background: rgb({r},{g},{b}); border-radius: 1px;")
+                text = QtWidgets.QLabel(label)
+                css_font = "font-size: 10px;"
+                text.setStyleSheet(f"color: rgb({r},{g},{b}); {css_font} background: transparent;")
+                entry = QtWidgets.QHBoxLayout()
+                entry.setSpacing(4)
+                entry.addWidget(swatch, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+                entry.addWidget(text,   0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+                row.addLayout(entry)
+            legend.adjustSize()
+            legend.show()
+            self._comparison_legend = legend
+            self._reposition_comparison_legend()
 
             # Broadcast the union of all snapshot axis ranges —
             # mirrors the loadedMinFreq / loadedMaxFreq / loadedMinDB / loadedMaxDB
@@ -1332,6 +1387,8 @@ class FftCanvas(pg.PlotWidget):
         self.points.setData(x=[], y=[])
 
         self._locked_series_index = 0
+        if self._comparison_curves:
+            self.display_mode = DisplayMode.COMPARISON
         self._set_comparison_visibility()
         self.comparisonChanged.emit(self.is_comparing)
 
@@ -1339,12 +1396,13 @@ class FftCanvas(pg.PlotWidget):
         """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
         was_comparing = self.is_comparing
         self._locked_series_index = 0
+        self.display_mode = DisplayMode.LIVE
         for curve in self._comparison_curves:
             self.removeItem(curve)
         self._comparison_curves.clear()
         self.comparison_labels.clear()
         if self._comparison_legend is not None:
-            self._comparison_legend.scene().removeItem(self._comparison_legend)
+            self._comparison_legend.deleteLater()
             self._comparison_legend = None
         if was_comparing:
             self._set_comparison_visibility()
@@ -1678,13 +1736,16 @@ class FftCanvas(pg.PlotWidget):
             self._do_capture_tap(mag_y_db, tap_amp)
             self._on_tap_for_plate()
 
-        # Update display — skip entirely during comparison (only overlay curves shown)
-        if not self.is_comparing:
+        # Update display — driven by display_mode (mirrors displayMode checks in Swift)
+        if self.display_mode == DisplayMode.LIVE:
             if self.is_measurement_complete:
                 self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
             else:
                 _, peaks = self.find_peaks(mag_y_db)
                 self.set_draw_data(mag_y_db, peaks)
+        elif self.display_mode == DisplayMode.FROZEN:
+            self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
+        # COMPARISON: skip entirely — only overlay curves are shown
 
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
         self.levelChanged.emit(tap_amp)
