@@ -305,11 +305,6 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self._rebuild_list()
 
     def _rebuild_list(self) -> None:
-        try:
-            self._list.itemChanged.disconnect(self._on_item_check_changed)
-        except (RuntimeError, TypeError):
-            pass
-
         self._list.clear()
 
         has = bool(self._measurements)
@@ -344,28 +339,24 @@ class MeasurementsDialog(QtWidgets.QDialog):
             )
             item.setSizeHint(row.sizeHint())
 
-            if self._compare_mode:
-                item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
-                item.setCheckState(
-                    QtCore.Qt.CheckState.Checked
-                    if selected
-                    else QtCore.Qt.CheckState.Unchecked
-                )
-                if not eligible:
-                    item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
+            if self._compare_mode and not eligible:
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
 
             self._list.addItem(item)
             self._list.setItemWidget(item, row)
 
-            # Full-row click opens details (matches .contentShape(Rectangle()) in Swift)
-            if not self._compare_mode:
+            if self._compare_mode:
+                # Row click toggles selection in _compare_ids then rebuilds.
+                m_captured = m
+                row.clicked.connect(
+                    lambda checked=False, m=m_captured: self._toggle_compare(m)
+                )
+            else:
+                # Full-row click opens details (matches .contentShape(Rectangle()) in Swift)
                 m_captured = m
                 row.clicked.connect(
                     lambda checked=False, m=m_captured: self._open_detail(m)
                 )
-
-        if self._compare_mode:
-            self._list.itemChanged.connect(self._on_item_check_changed)
 
         self._update_compare_btn()
 
@@ -399,16 +390,15 @@ class MeasurementsDialog(QtWidgets.QDialog):
             self._compare_ids.clear()
             self._rebuild_list()
 
-    def _on_item_check_changed(self, item: QtWidgets.QListWidgetItem) -> None:
-        row = self._list.row(item)
-        if 0 <= row < len(self._measurements):
-            m = self._measurements[row]
-            if item.checkState() == QtCore.Qt.CheckState.Checked:
-                self._compare_ids.add(m.id)
-            else:
-                self._compare_ids.discard(m.id)
-            self._update_compare_btn()
-            self._rebuild_list()
+    def _toggle_compare(self, m: "M.TapToneMeasurement") -> None:
+        if m.spectrum_snapshot is None:
+            return
+        if m.id in self._compare_ids:
+            self._compare_ids.discard(m.id)
+        else:
+            self._compare_ids.add(m.id)
+        self._update_compare_btn()
+        self._rebuild_list()
 
     def _open_comparison(self) -> None:
         """Emit comparisonRequested and close — mirrors the loadComparison() call path in Swift.

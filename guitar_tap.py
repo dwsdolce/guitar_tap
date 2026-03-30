@@ -746,6 +746,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addWidget(_hsep())
 
+        # Comparison mode placeholder — shown instead of peak list while comparing.
+        self._comparing_lbl = QtWidgets.QLabel()
+        self._comparing_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._comparing_lbl.setStyleSheet("color: gray; font-size: 13px;")
+        self._comparing_lbl.setVisible(False)
+        vbox.addWidget(self._comparing_lbl, stretch=1)
+
         # Peaks table — the main content for guitar mode
         self.peak_widget = PT.PeakListWidget()
         vbox.addWidget(self.peak_widget, stretch=1)
@@ -1336,6 +1343,29 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cal_status = QtWidgets.QLabel()
         self.cal_status.setVisible(False)
 
+        # Comparison mode row (hidden by default) — replaces tap state during comparison.
+        # Left: "Comparing N measurements"   Right: "Press New Tap to exit comparison"
+        self._sb_compare_wgt = QtWidgets.QWidget()
+        _cmp_hl = QtWidgets.QHBoxLayout(self._sb_compare_wgt)
+        _cmp_hl.setContentsMargins(0, 0, 0, 0)
+        _cmp_hl.setSpacing(6)
+        self._sb_compare_msg = QtWidgets.QLabel("Comparing 0 measurements")
+        self._sb_compare_msg.setFont(small)
+        _cmp_hl.addWidget(self._sb_compare_msg)
+        _cmp_hl.addStretch(1)
+        _cmp_exit = QtWidgets.QLabel("Press New Tap to exit comparison")
+        _cmp_exit.setFont(small)
+        _cmp_exit.setStyleSheet("color: gray;")
+        _cmp_hl.addWidget(_cmp_exit)
+        self._sb_compare_wgt.setVisible(False)
+        hl.addWidget(self._sb_compare_wgt)
+
+        # Normal tap state widgets (hidden while comparing)
+        self._sb_normal_wgt = QtWidgets.QWidget()
+        _norm_hl = QtWidgets.QHBoxLayout(self._sb_normal_wgt)
+        _norm_hl.setContentsMargins(0, 0, 0, 0)
+        _norm_hl.setSpacing(4)
+
         # Tap detection dot
         self._sb_tap_dot = QtWidgets.QLabel("●")
         self._sb_tap_dot.setFont(caption)
@@ -1346,21 +1376,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_tap_msg = QtWidgets.QLabel("Waiting for tap…")
         self._sb_tap_msg.setFont(small)
         self._sb_tap_msg.setStyleSheet("color: gray;")
-        hl.addWidget(self._sb_tap_msg)
+        _norm_hl.addWidget(self._sb_tap_msg)
 
         # Bullet separator
         _b1 = QtWidgets.QLabel("•")
         _b1.setFont(caption)
         _b1.setStyleSheet("color: gray;")
-        hl.addWidget(_b1)
+        _norm_hl.addWidget(_b1)
 
         # Average magnitude
         self._sb_avg_lbl = QtWidgets.QLabel("-100.0 dB")
         self._sb_avg_lbl.setFont(small)
         self._sb_avg_lbl.setStyleSheet("color: gray;")
-        hl.addWidget(self._sb_avg_lbl)
+        _norm_hl.addWidget(self._sb_avg_lbl)
 
-        hl.addStretch(1)
+        _norm_hl.addStretch(1)
 
         # Frozen indicator (hidden by default)
         self._sb_frozen_wgt = QtWidgets.QWidget()
@@ -1380,33 +1410,34 @@ class MainWindow(QtWidgets.QMainWindow):
         _frozen_sep.setStyleSheet("color: gray;")
         frozen_hl.addWidget(_frozen_sep)
         self._sb_frozen_wgt.setVisible(False)
-        hl.addWidget(self._sb_frozen_wgt)
+        _norm_hl.addWidget(self._sb_frozen_wgt)
 
         # Peak info
         self._sb_peak_lbl = QtWidgets.QLabel("")
         self._sb_peak_lbl.setFont(caption)
         self._sb_peak_lbl.setStyleSheet("color: rgb(40,100,210);")
-        hl.addWidget(self._sb_peak_lbl)
+        _norm_hl.addWidget(self._sb_peak_lbl)
 
         # Detection state dot
         self._sb_detect_dot = QtWidgets.QLabel("●")
         self._sb_detect_dot.setFont(caption)
         self._sb_detect_dot.setStyleSheet("color: orange;")
-        hl.addWidget(self._sb_detect_dot)
+        _norm_hl.addWidget(self._sb_detect_dot)
 
         # Status message
         self._sb_detect_msg = QtWidgets.QLabel("Stopped")
         self._sb_detect_msg.setFont(caption)
         self._sb_detect_msg.setStyleSheet("color: orange;")
-        hl.addWidget(self._sb_detect_msg)
+        _norm_hl.addWidget(self._sb_detect_msg)
 
         # Tap count (hidden by default)
         self._sb_tap_count = QtWidgets.QLabel("")
         self._sb_tap_count.setFont(caption)
         self._sb_tap_count.setStyleSheet("color: rgb(40,100,210); font-weight: bold;")
         self._sb_tap_count.setVisible(False)
-        hl.addWidget(self._sb_tap_count)
+        _norm_hl.addWidget(self._sb_tap_count)
 
+        hl.addWidget(self._sb_normal_wgt, stretch=1)
         vl.addLayout(hl)
 
         # Keep status_label as a no-op alias so old call sites don't crash
@@ -1997,9 +2028,14 @@ class MainWindow(QtWidgets.QMainWindow):
         is_plate = not self._current_mt().is_guitar
         is_detecting = self._is_running and not self._is_measurement_complete
 
-        # New Tap is only meaningful when the spectrum is frozen (results held).
-        # On startup the app auto-listens, so New Tap is disabled until a tap is captured.
-        self.new_tap_btn.setEnabled(self._is_running and self._is_measurement_complete)
+        # New Tap: enabled when frozen, OR when comparing (mirrors Swift: .disabled(
+        # tap.comparisonSpectra.isEmpty && (!fft.isRunning || !tap.isReadyForDetection
+        # || tap.isDetecting)) — comparison always unlocks the button so the user can
+        # start a fresh tap while viewing the overlay).
+        is_comparing = self.fft_canvas.is_comparing
+        self.new_tap_btn.setEnabled(
+            self._is_running and (self._is_measurement_complete or is_comparing)
+        )
 
         self.pause_tap_btn.setEnabled(is_detecting and (tap_num > 1 or is_plate))
         self.cancel_tap_btn.setEnabled(
@@ -2652,25 +2688,59 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_comparison_changed(self, is_comparing: bool) -> None:
         """Update UI when comparison overlay state changes.
 
-        Mirrors the isComparing checks scattered across TapToneAnalysisView+SpectrumViews.swift
-        and TapToneAnalysisView+Controls.swift:
-          - Suppress peak annotations while comparing (annotation positions belong to the
-            previous measurement and would render incorrectly over the comparison curves).
-          - Disable peak-selection controls (Select All / Deselect All / Reset) while comparing.
+        Mirrors TapToneAnalysisView+Controls.swift (status bar swap, button states)
+        and TapAnalysisResultsView.swift (Comparing N measurements label).
         """
-        if is_comparing:
-            self.fft_canvas.annotations.hide_annotations()
-        else:
-            self.fft_canvas.annotations.show_all_annotations()
+        canvas = self.fft_canvas
+        n = canvas.comparison_count
 
-        # Disable peak-selection buttons while comparing —
-        # mirrors .disabled(!tap.comparisonSpectra.isEmpty) in TapToneAnalysisView+Controls.swift
+        # ── Status bar: swap normal widgets ↔ comparison info ────────────────
+        self._sb_normal_wgt.setVisible(not is_comparing)
+        self._sb_compare_wgt.setVisible(is_comparing)
+        if is_comparing:
+            self._sb_compare_msg.setText(f"Comparing {n} measurements")
+
+        # ── Analysis Results: show placeholder label ↔ peak list ─────────────
+        self._comparing_lbl.setVisible(is_comparing)
+        self._comparing_lbl.setText(f"Comparing {n} measurements")
+        self.peak_widget.setVisible(not is_comparing)
+        # Scroll area (plate/brace) also hidden while comparing
+        self._material_scroll.setVisible(not is_comparing)
+
+        # ── Freeze / unfreeze the live spectrum display ───────────────────────
+        # During comparison only the overlay curves matter; the live FFT line
+        # should not keep updating (mirrors Swift: comparison spectra take priority
+        # and the live curve is effectively suppressed).
+        if is_comparing:
+            canvas.is_measurement_complete = True
+        else:
+            canvas.is_measurement_complete = self._is_measurement_complete
+
+        # ── Annotations ───────────────────────────────────────────────────────
+        if is_comparing:
+            canvas.annotations.hide_annotations()
+        else:
+            canvas.annotations.show_all_annotations()
+
+        # ── Save / Export — disabled while comparing ──────────────────────────
+        if is_comparing:
+            self.save_measurement_btn.setEnabled(False)
+            self.export_spectrum_btn.setEnabled(False)
+            self.export_pdf_btn.setEnabled(False)
+        else:
+            self.save_measurement_btn.setEnabled(self._is_measurement_complete)
+            self.export_spectrum_btn.setEnabled(self._is_measurement_complete)
+            self.export_pdf_btn.setEnabled(self._is_measurement_complete)
+
+        # ── Peak-selection buttons ─────────────────────────────────────────────
         can_select = self._is_measurement_complete and not is_comparing
         self.select_all_btn.setEnabled(can_select)
         self.deselect_all_btn.setEnabled(can_select)
         self.reset_auto_selection_btn.setEnabled(
             can_select and self.peak_widget.model.user_has_modified_peak_selection
         )
+
+        self._update_tap_buttons()
 
     def _restore_measurement(self, m: M.TapToneMeasurement) -> None:
         canvas = self.fft_canvas

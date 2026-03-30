@@ -424,6 +424,13 @@ class FftCanvas(pg.PlotWidget):
         self.threshold_x: int = self.fft_data.sample_freq // 2
         self.threshold_y: int = self.threshold - 100
 
+        # Enforce pan/zoom bounds matching Swift's SpectrumView+GestureHandlers limits:
+        # frequency 0–5000 Hz (min span 50 Hz), magnitude −120–+20 dB (min span 10 dB).
+        self.getPlotItem().vb.setLimits(
+            xMin=0, xMax=5000, minXRange=50,
+            yMin=-120, yMax=20, minYRange=10,
+        )
+
         self.update_axis(frange["f_min"], frange["f_max"], True)
 
         # Open the audio stream — resolve saved device name to an index
@@ -764,6 +771,9 @@ class FftCanvas(pg.PlotWidget):
     # Hot-plug device detection
     # ------------------------------------------------------------------ #
 
+    # Screen-distance threshold (pixels) for locking crosshair to a comparison curve.
+    _CURVE_GRAVITY_PX: float = 12.0
+
     def _on_mouse_moved(self, scene_pos) -> None:
         """Track the cursor: snaps to FFT curve when results are held, free otherwise."""
         vb = self.getPlotItem().vb
@@ -776,7 +786,52 @@ class FftCanvas(pg.PlotWidget):
         mouse_freq = float(view_pos.x())
         mouse_db   = float(view_pos.y())
 
-        if self.is_measurement_complete and np.any(self.saved_mag_y_db):
+        freq_color = "rgb(220,50,50)"   # default red
+
+        if self.is_comparing and self._comparison_curves:
+            # Snap to the nearest comparison curve by screen-Y distance (mirrors
+            # Swift's nearestSeriesIndex() with curveGravityThreshold = 12 pt).
+            best_idx   = getattr(self, "_locked_series_index", 0)
+            best_px_dy = float("inf")
+
+            for i, curve in enumerate(self._comparison_curves):
+                xdata, ydata = curve.getData()
+                if xdata is None or len(xdata) == 0:
+                    continue
+                bin_idx = int(np.searchsorted(xdata, mouse_freq))
+                bin_idx = max(0, min(bin_idx, len(xdata) - 1))
+                curve_db = float(ydata[bin_idx])
+                # Convert dB difference to screen pixels for apples-to-apples comparison
+                curve_scene = vb.mapViewToScene(
+                    QtCore.QPointF(float(xdata[bin_idx]), curve_db)
+                )
+                px_dy = abs(scene_pos.y() - curve_scene.y())
+                if px_dy < best_px_dy:
+                    best_px_dy = px_dy
+                    best_idx   = i
+
+            # Apply hysteresis: only switch curves when outside gravity threshold
+            locked = getattr(self, "_locked_series_index", 0)
+            if best_px_dy < self._CURVE_GRAVITY_PX or locked >= len(self._comparison_curves):
+                self._locked_series_index = best_idx
+            locked = self._locked_series_index
+
+            # Re-evaluate display values for the locked curve
+            curve = self._comparison_curves[locked]
+            xdata, ydata = curve.getData()
+            if xdata is not None and len(xdata) > 0:
+                bin_idx = int(np.searchsorted(xdata, mouse_freq))
+                bin_idx = max(0, min(bin_idx, len(xdata) - 1))
+                display_freq = float(xdata[bin_idx])
+                display_db   = float(ydata[bin_idx])
+            else:
+                display_freq = mouse_freq
+                display_db   = mouse_db
+
+            r, g, b = self._COMPARISON_PALETTE[locked % len(self._COMPARISON_PALETTE)]
+            freq_color = f"rgb({r},{g},{b})"
+
+        elif self.is_measurement_complete and np.any(self.saved_mag_y_db):
             # Snap to nearest FFT bin on the frozen curve
             idx = int(np.searchsorted(self.freq, mouse_freq))
             idx = max(0, min(idx, len(self.freq) - 1))
@@ -792,7 +847,7 @@ class FftCanvas(pg.PlotWidget):
         freq_str = f"{display_freq/1000:.2f} kHz" if display_freq >= 1000 else f"{display_freq:.1f} Hz"
         html = (
             f'<center>'
-            f'<b style="color:rgb(220,50,50);">{freq_str}</b><br/>'
+            f'<b style="color:{freq_color};">{freq_str}</b><br/>'
             f'<span style="color:rgb(130,130,130);">{display_db:.1f} dB</span>'
             f'</center>'
         )
@@ -910,7 +965,8 @@ class FftCanvas(pg.PlotWidget):
             avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
             self.saved_mag_y_db = avg_db
             _, peaks = self.find_peaks(avg_db)
-            self.set_draw_data(avg_db, peaks)
+            if not self.is_comparing:
+                self.set_draw_data(avg_db, peaks)
             self._tap_spectra.clear()
             self.tapDetected.emit()   # now trigger hold
         else:
@@ -1069,7 +1125,7 @@ class FftCanvas(pg.PlotWidget):
             return
 
         if mods & Mod.ShiftModifier:
-            # Pan X: scroll up / right → higher frequencies
+            # Pan X: shift by 10% of current span (limits enforced by setLimits).
             x0, x1 = vb.viewRange()[0]
             shift = (x1 - x0) * 0.10 * (1 if delta > 0 else -1)
             vb.setXRange(x0 + shift, x1 + shift, padding=0)
@@ -1077,14 +1133,14 @@ class FftCanvas(pg.PlotWidget):
             ev.accept()
 
         elif mods & Mod.AltModifier:
-            # Pan Y: scroll up → up (higher magnitude)
+            # Pan Y: shift by 10% of current span (limits enforced by setLimits).
             y0, y1 = vb.viewRange()[1]
             shift = (y1 - y0) * 0.10 * (1 if delta > 0 else -1)
             vb.setYRange(y0 + shift, y1 + shift, padding=0)
             ev.accept()
 
         elif mods & (Mod.ControlModifier | Mod.MetaModifier):
-            # Zoom both axes around centre
+            # Zoom both axes around centre (limits enforced by setLimits).
             factor = 1.15 ** (delta / 120.0)
             x0, x1 = vb.viewRange()[0]
             y0, y1 = vb.viewRange()[1]
@@ -1208,6 +1264,11 @@ class FftCanvas(pg.PlotWidget):
         """True when comparison overlay curves are active — mirrors !comparisonSpectra.isEmpty."""
         return bool(self._comparison_curves)
 
+    @property
+    def comparison_count(self) -> int:
+        """Number of active comparison overlay curves."""
+        return len(self._comparison_curves)
+
     @staticmethod
     def _comparison_label(m: object) -> str:
         """Short label for the legend — mirrors comparisonLabel(for:) in Swift."""
@@ -1266,12 +1327,18 @@ class FftCanvas(pg.PlotWidget):
             self.update_axis(min_freq, max_freq)
             self.setYRange(min_db, max_db, padding=0)
 
+        # Clear the main spectrum line — only the comparison curves should be visible.
+        self.fft_line.setData([], [])
+        self.points.setData(x=[], y=[])
+
+        self._locked_series_index = 0
         self._set_comparison_visibility()
         self.comparisonChanged.emit(self.is_comparing)
 
     def clear_comparison(self) -> None:
         """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
         was_comparing = self.is_comparing
+        self._locked_series_index = 0
         for curve in self._comparison_curves:
             self.removeItem(curve)
         self._comparison_curves.clear()
@@ -1611,12 +1678,13 @@ class FftCanvas(pg.PlotWidget):
             self._do_capture_tap(mag_y_db, tap_amp)
             self._on_tap_for_plate()
 
-        # Update display
-        if self.is_measurement_complete:
-            self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-        else:
-            _, peaks = self.find_peaks(mag_y_db)
-            self.set_draw_data(mag_y_db, peaks)
+        # Update display — skip entirely during comparison (only overlay curves shown)
+        if not self.is_comparing:
+            if self.is_measurement_complete:
+                self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
+            else:
+                _, peaks = self.find_peaks(mag_y_db)
+                self.set_draw_data(mag_y_db, peaks)
 
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
         self.levelChanged.emit(tap_amp)
