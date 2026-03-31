@@ -15,13 +15,15 @@ import peak_card_widget as PT
 import show_devices as SD
 import app_settings as AS
 import measurement as M
+from models import TapToneMeasurement, ResonantPeak, SpectrumSnapshot
+from models import plate_stiffness_preset as PSP
+from models import guitar_type as GT
+from models import guitar_mode as GM
+from models import measurement_type as MT
+from models import microphone_calibration as _mc_mod
 import measurements_dialog as MD
 import save_measurement_dialog as SMD
 import plate_analysis as PA
-import plate_stiffness_preset as PSP
-import guitar_type as GT
-import guitar_modes as GM
-import measurement_type as MT
 import help_dialog as HD
 import gt_images as gt_i
 import qtawesome as qta
@@ -1766,8 +1768,7 @@ class MainWindow(QtWidgets.QMainWindow):
         device_name = canvas.current_calibration_device() or AS.AppSettings.device_name()
         if device_name:
             self.device_status_lbl.setText(device_name)
-            import mic_calibration as _mc
-            _cal = _mc.CalibrationStorage.calibration_for_device(device_name)
+            _cal = _mc_mod.CalibrationStorage.calibration_for_device(device_name)
             self.set_calibration_status(_cal.name if _cal else "")
 
         self._start_analyzer()
@@ -2682,7 +2683,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self,
         tap_location: str | None = None,
         notes: str | None = None,
-    ) -> M.TapToneMeasurement:
+    ) -> TapToneMeasurement:
         """Collect the current held peaks and spectrum into a TapToneMeasurement."""
         import uuid as _uuid
         from datetime import datetime, timezone
@@ -2690,8 +2691,8 @@ class MainWindow(QtWidgets.QMainWindow):
         model  = self.peak_widget.model
         mt     = self._current_mt()
 
-        # Build PeakEntry list from the current peaks table
-        peaks: list[M.PeakEntry] = []
+        # Build ResonantPeak list from the current peaks table
+        peaks: list[ResonantPeak] = []
         selected_ids: list[str] = []
         # For guitar: user-assigned mode overrides in Swift format {uuid: mode_string}
         # For plate/brace: use selectedLongitudinalPeakID etc. instead (set below)
@@ -2712,7 +2713,7 @@ class MainWindow(QtWidgets.QMainWindow):
             peak_id = str(_uuid.uuid4())
 
             bandwidth = freq / max(q, 0.001) if q else 0.0
-            entry = M.PeakEntry(
+            entry = ResonantPeak(
                 id=peak_id,
                 frequency=freq,
                 magnitude=mag,
@@ -2758,10 +2759,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 annotation_offsets[freq_to_id[ann_freq]] = [hz_offset, db_offset]
 
         # Spectrum snapshot — guitar uses spectrumSnapshot; plate/brace use phase snapshots
-        spectrum_snapshot: M.SpectrumSnapshot | None = None
-        longitudinal_snapshot: M.SpectrumSnapshot | None = None
-        cross_snapshot: M.SpectrumSnapshot | None = None
-        flc_snapshot: M.SpectrumSnapshot | None = None
+        spectrum_snapshot: SpectrumSnapshot | None = None
+        longitudinal_snapshot: SpectrumSnapshot | None = None
+        cross_snapshot: SpectrumSnapshot | None = None
+        flc_snapshot: SpectrumSnapshot | None = None
         if hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
             freqs = canvas.freq.tolist()
             mags  = canvas.saved_mag_y_db.tolist()
@@ -2776,7 +2777,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 measurement_type=self.measurement_type_combo.currentText(),
             )
             if mt.is_guitar:
-                spectrum_snapshot = M.SpectrumSnapshot(**_snap_base)
+                spectrum_snapshot = SpectrumSnapshot(**_snap_base)
             else:
                 # Plate/brace: embed current dimensions in the longitudinal snapshot
                 # so they are restored when the measurement is loaded back.
@@ -2788,7 +2789,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         if _pc.long_mag_db is not None
                         else mags
                     )
-                    longitudinal_snapshot = M.SpectrumSnapshot(
+                    longitudinal_snapshot = SpectrumSnapshot(
                         frequencies=freqs,
                         magnitudes=_l_mags,
                         min_freq=float(self.min_spin.value()),
@@ -2824,7 +2825,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         if _pc.long_mag_db is not None
                         else mags
                     )
-                    longitudinal_snapshot = M.SpectrumSnapshot(
+                    longitudinal_snapshot = SpectrumSnapshot(
                         frequencies=freqs,
                         magnitudes=_l_mags,
                         min_freq=float(self.min_spin.value()),
@@ -2838,7 +2839,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     # Cross-grain snapshot
                     if _pc.cross_mag_db is not None:
                         _c_mags = _pc.cross_mag_db.tolist()
-                        cross_snapshot = M.SpectrumSnapshot(
+                        cross_snapshot = SpectrumSnapshot(
                             frequencies=freqs,
                             magnitudes=_c_mags,
                             min_freq=float(self.min_spin.value()),
@@ -2852,7 +2853,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     # FLC snapshot
                     if _pc.flc_mag_db is not None:
                         _flc_mags = _pc.flc_mag_db.tolist()
-                        flc_snapshot = M.SpectrumSnapshot(
+                        flc_snapshot = SpectrumSnapshot(
                             frequencies=freqs,
                             magnitudes=_flc_mags,
                             min_freq=float(self.min_spin.value()),
@@ -2870,7 +2871,7 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
-        return M.TapToneMeasurement.create(
+        return TapToneMeasurement.create(
             peaks=peaks,
             decay_time=self._ring_out_s,
             tap_location=tap_location or None,
@@ -2991,7 +2992,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._update_tap_buttons()
 
-    def _restore_measurement(self, m: M.TapToneMeasurement) -> None:
+    def _restore_measurement(self, m: TapToneMeasurement) -> None:
         canvas = self.fft_canvas
 
         # Loading a measurement exits comparison mode and enters frozen mode —
@@ -3323,8 +3324,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.fft_canvas.set_device(int(d["index"]))
                     AS.AppSettings.set_device_name(new_name)
                     self.device_status_lbl.setText(new_name)
-                    import mic_calibration as _mc
-                    _cal = _mc.CalibrationStorage.calibration_for_device(new_name)
+                            _cal = _mc_mod.CalibrationStorage.calibration_for_device(new_name)
                     self.set_calibration_status(_cal.name if _cal else "")
                     break
         except Exception:
@@ -3358,12 +3358,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fft_canvas.set_device(fallback_idx)
         AS.AppSettings.set_device_name(fallback_name)
         self.device_status_lbl.setText(fallback_name)
-        import mic_calibration as _mc
-        _cal = _mc.CalibrationStorage.calibration_for_device(fallback_name)
+        _cal = _mc_mod.CalibrationStorage.calibration_for_device(fallback_name)
         self.set_calibration_status(_cal.name if _cal else "")
 
     def import_calibration(self) -> None:
-        import mic_calibration as _mc
         start_dir = AS.AppSettings.calibration_path() or os.path.expanduser("~")
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
@@ -3374,21 +3372,21 @@ class MainWindow(QtWidgets.QMainWindow):
         if not path:
             return
         try:
-            cal = _mc.MicrophoneCalibration.from_path(path)
+            cal = _mc_mod.MicrophoneCalibration.from_path(path)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Calibration Error",
                 f"Could not parse calibration file:\n{path}\n\n{exc}",
             )
             return
-        _mc.CalibrationStorage.save(cal)
+        _mc_mod.CalibrationStorage.save(cal)
         AS.AppSettings.set_calibration_path(os.path.dirname(path))
         dev_name = (
             self.fft_canvas.current_calibration_device()
             or AS.AppSettings.device_name()
         )
         if dev_name:
-            _mc.CalibrationStorage.set_calibration_for_device(dev_name, cal.id)
+            _mc_mod.CalibrationStorage.set_calibration_for_device(dev_name, cal.id)
         self.fft_canvas.load_calibration_from_profile(cal)
         self.set_calibration_status(cal.name)
 
@@ -3403,8 +3401,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 dev_name = str(dev_info["name"])  # type: ignore[index]
                 AS.AppSettings.set_device_name(dev_name)
                 self.device_status_lbl.setText(dev_name)
-                import mic_calibration as _mc
-                _cal = _mc.CalibrationStorage.calibration_for_device(dev_name)
+                    _cal = _mc_mod.CalibrationStorage.calibration_for_device(dev_name)
                 self.set_calibration_status(_cal.name if _cal else "")
 
     # ================================================================
@@ -4228,19 +4225,17 @@ class MainWindow(QtWidgets.QMainWindow):
         aud.addLayout(cal_row)
 
         def _rebuild_cal_combo() -> None:
-            import mic_calibration as _mc
             cal_combo.blockSignals(True)
             cal_combo.clear()
             cal_combo.addItem("None (Uncalibrated)", userData=None)
-            for c in _mc.CalibrationStorage.load_all():
+            for c in _mc_mod.CalibrationStorage.load_all():
                 cal_combo.addItem(c.name, userData=c.id)
             cal_combo.blockSignals(False)
 
         def _update_cal_display() -> None:
-            import mic_calibration as _mc
             _rebuild_cal_combo()
             cur_dev = device_combo.currentText()
-            active = _mc.CalibrationStorage.calibration_for_device(cur_dev)
+            active = _mc_mod.CalibrationStorage.calibration_for_device(cur_dev)
             if active:
                 for i in range(cal_combo.count()):
                     if cal_combo.itemData(i) == active.id:
@@ -4250,20 +4245,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _on_cal_selected(index: int) -> None:
             """Activate the selected calibration for the current device."""
-            import mic_calibration as _mc
             cal_id = cal_combo.itemData(index)
             cur_dev = device_combo.currentText()
             if cal_id:
                 cal = next(
-                    (c for c in _mc.CalibrationStorage.load_all() if c.id == cal_id),
+                    (c for c in _mc_mod.CalibrationStorage.load_all() if c.id == cal_id),
                     None,
                 )
                 if cal:
-                    _mc.CalibrationStorage.set_calibration_for_device(cur_dev, cal.id)
+                    _mc_mod.CalibrationStorage.set_calibration_for_device(cur_dev, cal.id)
                     self.fft_canvas.load_calibration_from_profile(cal)
                     self.set_calibration_status(cal.name)
             else:
-                _mc.CalibrationStorage.set_calibration_for_device(cur_dev, None)
+                _mc_mod.CalibrationStorage.set_calibration_for_device(cur_dev, None)
                 self.fft_canvas.clear_calibration()
                 self.set_calibration_status("")
             _update_cal_meta()
@@ -4272,7 +4266,6 @@ class MainWindow(QtWidgets.QMainWindow):
         _update_cal_display()
 
         def _import_cal() -> None:
-            import mic_calibration as _mc
             start_dir = AS.AppSettings.calibration_path() or os.path.expanduser("~")
             path, _ = QtWidgets.QFileDialog.getOpenFileName(
                 dlg,
@@ -4283,18 +4276,18 @@ class MainWindow(QtWidgets.QMainWindow):
             if not path:
                 return
             try:
-                cal = _mc.MicrophoneCalibration.from_path(path)
+                cal = _mc_mod.MicrophoneCalibration.from_path(path)
             except Exception as exc:
                 QtWidgets.QMessageBox.warning(
                     dlg, "Calibration Error",
                     f"Could not parse calibration file:\n{path}\n\n{exc}",
                 )
                 return
-            _mc.CalibrationStorage.save(cal)
+            _mc_mod.CalibrationStorage.save(cal)
             AS.AppSettings.set_calibration_path(os.path.dirname(path))
             dev_name = device_combo.currentText()
             if dev_name:
-                _mc.CalibrationStorage.set_calibration_for_device(dev_name, cal.id)
+                _mc_mod.CalibrationStorage.set_calibration_for_device(dev_name, cal.id)
             self.fft_canvas.load_calibration_from_profile(cal)
             self.set_calibration_status(cal.name)
             _update_cal_display()
@@ -4336,13 +4329,12 @@ class MainWindow(QtWidgets.QMainWindow):
         aud.addWidget(cal_meta_widget)
 
         def _update_cal_meta() -> None:
-            import mic_calibration as _mc
             cal_id = cal_combo.itemData(cal_combo.currentIndex())
             if not cal_id:
                 cal_meta_widget.setVisible(False)
                 return
             cal = next(
-                (c for c in _mc.CalibrationStorage.load_all() if c.id == cal_id), None
+                (c for c in _mc_mod.CalibrationStorage.load_all() if c.id == cal_id), None
             )
             if cal is None:
                 cal_meta_widget.setVisible(False)
@@ -4367,8 +4359,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         def _delete_all_calibrations() -> None:
-            import mic_calibration as _mc
-            n = len(_mc.CalibrationStorage.load_all())
+            n = len(_mc_mod.CalibrationStorage.load_all())
             if n == 0:
                 return
             box = QtWidgets.QMessageBox(dlg)
@@ -4384,7 +4375,7 @@ class MainWindow(QtWidgets.QMainWindow):
             box.exec()
             if box.clickedButton() != del_btn:
                 return
-            _mc.CalibrationStorage.delete_all()
+            _mc_mod.CalibrationStorage.delete_all()
             self.fft_canvas.clear_calibration()
             self.set_calibration_status("")
             _update_cal_display()

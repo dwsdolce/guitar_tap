@@ -18,13 +18,14 @@ from scipy.signal import get_window
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 import fft_annotations as fft_a
-import freq_anal as f_a
-import guitar_type as gt
-import guitar_modes as gm
-import microphone
-import tap_detector as td
-import plate_capture as pc
-import measurement_type as mt_mod
+import models.realtime_fft_analyzer as f_a
+from models import guitar_type as gt
+from models import guitar_mode as gm
+from models import measurement_type as mt_mod
+from models import microphone_calibration as _mc_mod
+from models.realtime_fft_analyzer import Microphone
+import models.tap_tone_analyzer as td
+import models.tap_tone_analyzer as pc
 import app_settings as _as
 
 
@@ -74,7 +75,7 @@ class FftProcessingThread(QtCore.QThread):
 
     def __init__(
         self,
-        mic: "microphone.Microphone",
+        mic: "Microphone",
         fft_data: "FftData",
         parent: QtCore.QObject | None = None,
     ) -> None:
@@ -474,7 +475,7 @@ class FftCanvas(pg.PlotWidget):
                 pass
 
         self._devicesRefreshed.connect(self._on_devices_refreshed)
-        self.mic: microphone.Microphone = microphone.Microphone(
+        self.mic: Microphone = Microphone(
             self, rate=self.fft_data.sample_freq, chunksize=4096,
             device_index=saved_device_index,
             on_devices_changed=self._devicesRefreshed.emit,  # no-arg, thread-safe
@@ -557,8 +558,7 @@ class FftCanvas(pg.PlotWidget):
 
         # Auto-load the calibration profile stored for this device
         if saved_device_name:
-            import mic_calibration as _mc
-            _cal = _mc.CalibrationStorage.calibration_for_device(saved_device_name)
+            _cal = _mc_mod.CalibrationStorage.calibration_for_device(saved_device_name)
             if _cal is not None:
                 self._calibration_corrections = _cal.interpolate_to_bins(self.freq)
 
@@ -910,19 +910,17 @@ class FftCanvas(pg.PlotWidget):
         Returns True on success; False (and leaves existing calibration intact)
         on parse error.
         """
-        import mic_calibration as mc
         try:
-            cal_data = mc.parse_cal_file(path)
-            self._calibration_corrections = mc.interpolate_to_bins(cal_data, self.freq)
+            cal_data = _mc_mod.parse_cal_file(path)
+            self._calibration_corrections = _mc_mod.interpolate_to_bins(cal_data, self.freq)
             if hasattr(self, "_proc_thread"):
                 self._proc_thread.set_calibration(self._calibration_corrections)
             return True
         except Exception:
             return False
 
-    def load_calibration_from_profile(self, cal: "mic_calibration.MicrophoneCalibration") -> None:
+    def load_calibration_from_profile(self, cal: "_mc_mod.MicrophoneCalibration") -> None:
         """Apply a pre-parsed MicrophoneCalibration profile to the FFT pipeline."""
-        import mic_calibration
         self._calibration_corrections = cal.interpolate_to_bins(self.freq)
         if hasattr(self, "_proc_thread"):
             self._proc_thread.set_calibration(self._calibration_corrections)

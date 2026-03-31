@@ -1,9 +1,9 @@
 """
-    Guitar type definitions with per-type frequency ranges and decay thresholds.
+Guitar type definitions with per-type frequency ranges and decay thresholds.
 
-    Mirrors the Swift GuitarType enum in GuitarType.swift, including
-    description, mode_ranges (tighter per-mode frequency windows used for
-    the in-range badge), and decay_thresholds (ring-out quality levels).
+Mirrors the Swift GuitarType enum in GuitarType.swift, including
+description, mode_ranges (tighter per-mode frequency windows used for
+the in-range badge), and decay_thresholds (ring-out quality levels).
 """
 
 from __future__ import annotations

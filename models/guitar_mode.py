@@ -1,20 +1,20 @@
 """
-    Guitar mode definitions and automatic peak classification.
+Guitar mode definitions and automatic peak classification.
 
-    Mirrors Swift GuitarMode.swift / GuitarType.swift.  A single unified set
-    of frequency bands (GuitarType.mode_ranges) is used for both FFT band
-    display and auto-classification — matching the Swift behaviour after the
-    removal of the separate idealRanges in commit f1b4f04.
+Mirrors Swift GuitarMode.swift / GuitarType.swift.  A single unified set
+of frequency bands (GuitarType.mode_ranges) is used for both FFT band
+display and auto-classification — matching the Swift behaviour after the
+removal of the separate idealRanges in commit f1b4f04.
 
-    GuitarMode mirrors the Swift GuitarMode enum (GuitarMode.swift),
-    providing display_name, normalized, color, abbreviation, description,
-    icon, classify(), and mode_range().
+GuitarMode mirrors the Swift GuitarMode enum (GuitarMode.swift),
+providing display_name, normalized, color, abbreviation, description,
+icon, classify(), and mode_range().
 """
 
 from __future__ import annotations
 from enum import Enum
 
-from guitar_type import GuitarType
+from .guitar_type import GuitarType
 
 
 # ── public helpers ────────────────────────────────────────────────────────────

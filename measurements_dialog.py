@@ -22,9 +22,10 @@ from datetime import datetime
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 import measurement as M
+from models import TapToneMeasurement
+from models import guitar_mode as GM
+from models import guitar_type as GT
 import measurement_detail_dialog as MDD
-import guitar_modes as GM
-import guitar_type as GT
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ def _resolve_guitar_type(s: str | None) -> GT.GuitarType:
     return GT.GuitarType.CLASSICAL
 
 
-def _tap_tone_ratio(m: M.TapToneMeasurement) -> float | None:
+def _tap_tone_ratio(m: TapToneMeasurement) -> float | None:
     if not m.peaks:
         return None
     try:
@@ -79,7 +80,7 @@ class _MeasurementRow(QtWidgets.QWidget):
 
     def __init__(
         self,
-        m: M.TapToneMeasurement,
+        m: TapToneMeasurement,
         compare_mode: bool = False,
         compare_selected: bool = False,
         compare_eligible: bool = True,
@@ -228,7 +229,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self.resize(640, 480)
         self.setMinimumSize(520, 340)
 
-        self._measurements: list[M.TapToneMeasurement] = []
+        self._measurements: list[TapToneMeasurement] = []
         self._compare_mode: bool = False
         self._compare_ids: set[str] = set()
 
@@ -360,7 +361,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         self._update_compare_btn()
 
-    def _selected_measurement(self) -> M.TapToneMeasurement | None:
+    def _selected_measurement(self) -> TapToneMeasurement | None:
         row = self._list.currentRow()
         if 0 <= row < len(self._measurements):
             return self._measurements[row]
@@ -390,7 +391,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             self._compare_ids.clear()
             self._rebuild_list()
 
-    def _toggle_compare(self, m: "M.TapToneMeasurement") -> None:
+    def _toggle_compare(self, m: "TapToneMeasurement") -> None:
         if m.spectrum_snapshot is None:
             return
         if m.id in self._compare_ids:
@@ -422,12 +423,12 @@ class MeasurementsDialog(QtWidgets.QDialog):
         else:
             self.accept()
 
-    def _open_detail(self, m: M.TapToneMeasurement) -> None:
+    def _open_detail(self, m: TapToneMeasurement) -> None:
         dlg = MDD.MeasurementDetailDialog(m, self)
         dlg.measurementSelected.connect(self._load_from_detail)
         dlg.exec()
 
-    def _load_from_detail(self, m: M.TapToneMeasurement) -> None:
+    def _load_from_detail(self, m: TapToneMeasurement) -> None:
         self.measurementSelected.emit(m)
         self.accept()
 
@@ -475,7 +476,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
     # ── Export / delete ───────────────────────────────────────────────────────
 
-    def _export_json(self, m: M.TapToneMeasurement) -> None:
+    def _export_json(self, m: TapToneMeasurement) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Measurement",
@@ -490,7 +491,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         except OSError as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
-    def _export_pdf(self, m: M.TapToneMeasurement) -> None:
+    def _export_pdf(self, m: TapToneMeasurement) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export PDF Report",
@@ -504,7 +505,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
-    def _delete_measurement(self, m: M.TapToneMeasurement) -> None:
+    def _delete_measurement(self, m: TapToneMeasurement) -> None:
         name = m.tap_location or "Measurement"
         box = QtWidgets.QMessageBox(self)
         box.setWindowTitle("Delete Measurement?")

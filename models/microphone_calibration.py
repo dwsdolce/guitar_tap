@@ -1,28 +1,36 @@
 """
-    Microphone calibration support (UMIK-1 / REW .cal format).
+Microphone calibration support — mirrors Swift MicrophoneCalibration.swift.
 
-    The .cal file format used by miniDSP UMIK-1 microphones and REW
-    (Room EQ Wizard) consists of optional header lines (starting with
-    '"' or '*') followed by whitespace-separated (freq_hz, db_correction)
-    pairs, one per line.
+The .cal file format used by miniDSP UMIK-1 microphones and REW
+(Room EQ Wizard) consists of optional header lines (starting with
+'"' or '*') followed by whitespace-separated (freq_hz, db_correction)
+pairs, one per line.
 
-    Example:
-        "UMIK-1 Calibration Data"
-        * Serial Number: 1234567
-        * Sensitivity @ 94dB SPL: -35.00 dBFS
-        20.0    0.12
-        25.0   -0.05
-        ...
-        20000.0  1.43
+Example:
+    "UMIK-1 Calibration Data"
+    * Serial Number: 1234567
+    * Sensitivity @ 94dB SPL: -35.00 dBFS
+    20.0    0.12
+    25.0   -0.05
+    ...
+    20000.0  1.43
 """
 
 import re
+import uuid as _uuid
+import json as _json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
 import numpy as np
 import numpy.typing as npt
 
 
 _SENS_RE = re.compile(r"([-+]?\d+\.?\d*)\s*dB", re.IGNORECASE)
 
+
+# ── CalibrationFileParser (module-level helpers) ──────────────────────────────
+# Mirrors Swift CalibrationFileParser struct.
 
 def parse_cal_metadata(path: str) -> dict:
     """Return metadata from a calibration file without loading correction data.
@@ -126,17 +134,13 @@ def interpolate_to_bins(
     )
 
 
-import uuid as _uuid
-import json as _json
-from dataclasses import dataclass
-from datetime import datetime, timezone
-
+# ── MicrophoneCalibration ─────────────────────────────────────────────────────
 
 @dataclass
 class MicrophoneCalibration:
     """
     A stored microphone calibration profile.
-    Matches Swift MicrophoneCalibration / CalibrationStorage.
+    Mirrors Swift MicrophoneCalibration struct (MicrophoneCalibration.swift).
     """
     id: str                           # UUID string
     name: str                         # display name (filename stem by default)
@@ -149,7 +153,10 @@ class MicrophoneCalibration:
 
     @classmethod
     def from_path(cls, path: str, name: str | None = None) -> "MicrophoneCalibration":
-        """Parse a UMIK-1/REW .cal file and return a named calibration profile."""
+        """Parse a UMIK-1/REW .cal file and return a named calibration profile.
+
+        Mirrors Swift CalibrationFileParser.parse(url:name:).
+        """
         import os
         profile_name = name or os.path.splitext(os.path.basename(path))[0]
 
@@ -212,6 +219,7 @@ class MicrophoneCalibration:
         """Interpolate this profile's corrections onto FFT bin frequencies.
 
         Uses flat extrapolation at the edges (matches Swift behaviour).
+        Mirrors Swift MicrophoneCalibration.corrections(for:).
         """
         if not self.correction_points:
             return np.zeros(len(bin_freqs), dtype=np.float64)
@@ -252,10 +260,12 @@ class MicrophoneCalibration:
         )
 
 
+# ── CalibrationStorage ────────────────────────────────────────────────────────
+
 class CalibrationStorage:
     """
     Persists MicrophoneCalibration profiles in QSettings.
-    Matches Swift CalibrationStorage / UserDefaults-backed persistence.
+    Mirrors Swift CalibrationStorage singleton (MicrophoneCalibration.swift).
 
     Calibrations are stored as a JSON array under "storedCalibrations".
     The active calibration UUID is stored under "activeCalibrationID".
@@ -277,14 +287,20 @@ class CalibrationStorage:
 
     @classmethod
     def save(cls, calibration: MicrophoneCalibration) -> None:
-        """Save or replace a calibration profile (matched by id)."""
+        """Save or replace a calibration profile (matched by id).
+
+        Mirrors Swift CalibrationStorage.save().
+        """
         cals = [c for c in cls.load_all() if c.id != calibration.id]
         cals.append(calibration)
         cls._s().setValue(cls._STORAGE_KEY, _json.dumps([c.to_dict() for c in cals]))
 
     @classmethod
     def load_all(cls) -> list:
-        """Return all stored calibration profiles (empty list on failure)."""
+        """Return all stored calibration profiles (empty list on failure).
+
+        Mirrors Swift CalibrationStorage.loadAll().
+        """
         raw = cls._s().value(cls._STORAGE_KEY, None)
         if not raw:
             return []
@@ -295,7 +311,10 @@ class CalibrationStorage:
 
     @classmethod
     def delete(cls, calibration: MicrophoneCalibration) -> None:
-        """Remove a calibration profile; clears active ID if it was the active one."""
+        """Remove a calibration profile; clears active ID if it was the active one.
+
+        Mirrors Swift CalibrationStorage.delete().
+        """
         cals = [c for c in cls.load_all() if c.id != calibration.id]
         cls._s().setValue(cls._STORAGE_KEY, _json.dumps([c.to_dict() for c in cals]))
         if cls.active_calibration_id() == calibration.id:
@@ -325,6 +344,7 @@ class CalibrationStorage:
 
     @classmethod
     def active_calibration(cls) -> "MicrophoneCalibration | None":
+        """Mirrors Swift CalibrationStorage.calibration(forDeviceUID:)."""
         cal_id = cls.active_calibration_id()
         if not cal_id:
             return None
@@ -336,7 +356,10 @@ class CalibrationStorage:
     def set_calibration_for_device(
         cls, device_name: str, cal_id: "str | None"
     ) -> None:
-        """Associate a calibration UUID with a device name (or clear it)."""
+        """Associate a calibration UUID with a device name (or clear it).
+
+        Mirrors Swift CalibrationStorage.setCalibration(_:forDeviceUID:).
+        """
         mapping = cls._load_device_map()
         if cal_id:
             mapping[device_name] = cal_id
@@ -348,7 +371,10 @@ class CalibrationStorage:
     def calibration_for_device(
         cls, device_name: str
     ) -> "MicrophoneCalibration | None":
-        """Return the calibration associated with *device_name*, or None."""
+        """Return the calibration associated with *device_name*, or None.
+
+        Mirrors Swift CalibrationStorage.calibration(forDeviceUID:).
+        """
         if not device_name:
             return None
         mapping = cls._load_device_map()

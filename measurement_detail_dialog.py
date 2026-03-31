@@ -10,9 +10,10 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 import qtawesome as qta
 
 import measurement as M
-import guitar_modes as GM
-import pitch as P
-import guitar_type as GT
+from models import TapToneMeasurement, ResonantPeak
+from models import guitar_mode as GM
+from models import pitch as P
+from models import guitar_type as GT
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ class _PeakRow(QtWidgets.QFrame):
 
     def __init__(
         self,
-        peak: M.PeakEntry,
+        peak: ResonantPeak,
         mode: GM.GuitarMode,
         effective_label: str,
         is_selected: bool,
@@ -232,7 +233,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
 
     def __init__(
         self,
-        measurement: M.TapToneMeasurement,
+        measurement: TapToneMeasurement,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
