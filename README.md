@@ -15,7 +15,8 @@
  * scipy
  * sounddevice
  * pyqt6
- * matplotlib
+ * pyqtgraph
+ * qtawesome
  * pyobjc (on MAC only)
 
  ## To run this software from source:
@@ -24,11 +25,11 @@
  * Open a cmd window or shell/terminal that can run python
 
  * For Windows and Linux
-  	- pip install numpy scipy scipy-stubs sounddevice pyqt6 matplotlib
+  	- pip install numpy scipy scipy-stubs sounddevice pyqt6 pyqtgraph qtawesome
 	- python guitar_tap.py
 
  * For MAC
- 	- pip install numpy scipy scipy-stubs sounddevice pyqt6 matplotlib
+ 	- pip install numpy scipy scipy-stubs sounddevice pyqt6 pyqtgraph qtawesome
 	- pip install pyobjc
 	- python guitar_tap.py
 
