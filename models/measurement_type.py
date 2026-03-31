@@ -1,5 +1,5 @@
 """
-MeasurementType — mirrors the Swift MeasurementType enum in TapDisplaySettings.swift.
+MeasurementType — mirrors the Swift MeasurementType enum in MeasurementType.swift.
 
 Five measurement types are defined: three guitar types (Classical, Flamenco, Acoustic)
 and two material types (Plate, Brace).  Guitar types map 1-to-1 with GuitarType so
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-import guitar_type as gt
+from . import guitar_type as gt
 
 
 class MeasurementType(Enum):

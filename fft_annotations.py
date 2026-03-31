@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 import pyqtgraph as pg
-import guitar_modes as gm
+from models import guitar_mode as gm
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 

@@ -24,10 +24,10 @@ import numpy.typing as npt
 from PyQt6 import QtCore, QtGui, QtWidgets
 import qtawesome as qta
 
-import guitar_type as gt
-import guitar_modes as gm
+from models import guitar_type as gt
+from models import guitar_mode as gm
 import peaks_model as pm
-import pitch as pitch_c
+from models import pitch as pitch_c
 
 
 def _short_mode(mode: str) -> str:

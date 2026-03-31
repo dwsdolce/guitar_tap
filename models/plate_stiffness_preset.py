@@ -1,17 +1,17 @@
 """
-    Named vibrational stiffness (f_vs) presets for Gore Equation 4.5-7.
+Named vibrational stiffness (f_vs) presets for Gore Equation 4.5-7.
 
-    Mirrors Swift PlateStiffnessPreset enum (PlateStiffnessPreset.swift).
+Mirrors Swift PlateStiffnessPreset enum (PlateStiffnessPreset.swift).
 
-    The Gore target thickness formula requires a vibrational stiffness
-    parameter that varies by instrument type and plate role.  The CUSTOM
-    case defers to a user-supplied value stored in settings.
+The Gore target thickness formula requires a vibrational stiffness
+parameter that varies by instrument type and plate role.  The CUSTOM
+case defers to a user-supplied value stored in settings.
 
-    Reference values (f_vs):
-    - Steel-string top:  75
-    - Steel-string back: 55
-    - Classical top:     60
-    - Classical back:    50
+Reference values (f_vs):
+- Steel-string top:  75
+- Steel-string back: 55
+- Classical top:     60
+- Classical back:    50
 """
 
 from __future__ import annotations
