@@ -357,6 +357,12 @@ class FftCanvas(pg.PlotWidget):
     threshold used to decide if a new fft is displayed. The
     amplitude of the fft is emitted to the signal passed in the class
     constructor
+
+    After refactoring: FftCanvas is now a thin display widget.  All analysis
+    state and logic lives in self.analyzer (TapToneAnalyzer).  FftCanvas owns
+    only pyqtgraph rendering objects, Qt event handlers, and view-level signals.
+    guitar_tap.py continues to call methods on FftCanvas — those are forwarded
+    transparently to self.analyzer.
     """
 
     hold: bool = False
@@ -373,7 +379,6 @@ class FftCanvas(pg.PlotWidget):
     tapCountChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)  # (captured, total)
     devicesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(list)       # new device-name list
     currentDeviceLost: QtCore.pyqtSignal = QtCore.pyqtSignal(str)     # lost device name
-    _devicesRefreshed: QtCore.pyqtSignal = QtCore.pyqtSignal()         # internal: thread → main
     plateStatusChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)    # plate capture status
     plateAnalysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)  # fL, fC, fFLC
     tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)   # True=paused
@@ -399,9 +404,6 @@ class FftCanvas(pg.PlotWidget):
         threshold: int,
     ) -> None:
         super().__init__()
-
-        self.is_measurement_complete: bool = False
-        self.display_mode: DisplayMode = DisplayMode.LIVE
 
         # Configure plot appearance
         self.setBackground("w")
@@ -433,6 +435,7 @@ class FftCanvas(pg.PlotWidget):
 
         self.fft_data: FftData = FftData(sampling_rate, window_length)
 
+        # threshold kept here for backward compat (set_threshold updates both self and analyzer)
         self.threshold: int = threshold
 
         # Set threshold value for drawing threshold line
@@ -446,10 +449,11 @@ class FftCanvas(pg.PlotWidget):
             yMin=-120, yMax=20, minYRange=10,
         )
 
-        self.update_axis(frange["f_min"], frange["f_max"], True)
+        # Set the initial view X range; analyzer.fmin/fmax are set after the
+        # analyzer is constructed below (update_axis requires self.analyzer).
+        self.setXRange(frange["f_min"], frange["f_max"], padding=0)
 
         # Open the audio stream — resolve saved device name to an index
-        import app_settings as _as
         saved_device_index: int | None = None
         saved_device_name: str = ""
         try:
@@ -474,14 +478,62 @@ class FftCanvas(pg.PlotWidget):
             except Exception:
                 pass
 
-        self._devicesRefreshed.connect(self._on_devices_refreshed)
-        self.mic: Microphone = Microphone(
-            self, rate=self.fft_data.sample_freq, chunksize=4096,
-            device_index=saved_device_index,
-            on_devices_changed=self._devicesRefreshed.emit,  # no-arg, thread-safe
-        )
+        # ── TapToneAnalyzer: the model ─────────────────────────────────────
+        # Auto-load calibration profile before constructing the analyzer so we
+        # can pass the corrections array in.
+        _initial_calibration = None
+        if saved_device_name:
+            _cal = _mc_mod.CalibrationStorage.calibration_for_device(saved_device_name)
+            if _cal is not None:
+                # Compute freq axis for interpolation
+                _x = np.arange(0, self.fft_data.h_n_f + 1)
+                _freq_tmp = _x * self.fft_data.sample_freq // self.fft_data.n_f
+                _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
 
-        # Calibration is auto-loaded below, after self.freq is initialised.
+        guitar_type_str = _as.AppSettings.guitar_type()
+        try:
+            _guitar_type = gt.GuitarType(guitar_type_str)
+        except ValueError:
+            _guitar_type = gt.GuitarType.CLASSICAL
+
+        self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(
+            parent_widget=self,
+            fft_data=self.fft_data,
+            saved_device_index=saved_device_index,
+            saved_device_name=saved_device_name,
+            calibration_corrections=_initial_calibration,
+            guitar_type=_guitar_type,
+        )
+        # Set initial display mode (must be done after TapToneAnalyzer is constructed)
+        self.analyzer._display_mode = DisplayMode.LIVE
+        # Set initial threshold and freq range on the analyzer
+        self.analyzer.threshold = threshold
+        self.analyzer.fmin = frange["f_min"]
+        self.analyzer.fmax = frange["f_max"]
+        self.analyzer.n_fmin = (self.fft_data.n_f * frange["f_min"]) // self.fft_data.sample_freq
+        self.analyzer.n_fmax = (self.fft_data.n_f * frange["f_max"]) // self.fft_data.sample_freq
+
+        # Convenience alias kept for code that still reads self.mic
+        self.mic: Microphone = self.analyzer.mic
+        # ── Connect analyzer signals → FftCanvas signals (forwarding) ────
+        # This allows guitar_tap.py to connect to FftCanvas signals as before.
+        self.analyzer.peaksChanged.connect(self.peaksChanged)
+        self.analyzer.framerateUpdate.connect(self.framerateUpdate)
+        self.analyzer.levelChanged.connect(self.levelChanged)
+        self.analyzer.averagesChanged.connect(self.averagesChanged)
+        self.analyzer.newSample.connect(self.newSample)
+        self.analyzer.tapDetectedSignal.connect(self._on_tap_detected_from_analyzer)
+        self.analyzer.tapCountChanged.connect(self.tapCountChanged)
+        self.analyzer.ringOutMeasured.connect(self.ringOutMeasured)
+        self.analyzer.devicesChanged.connect(self.devicesChanged)
+        self.analyzer.currentDeviceLost.connect(self.currentDeviceLost)
+        self.analyzer.plateStatusChanged.connect(self.plateStatusChanged)
+        self.analyzer.plateAnalysisComplete.connect(self.plateAnalysisComplete)
+        self.analyzer.tapDetectionPaused.connect(self.tapDetectionPaused)
+        self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
+        self.analyzer.peakInfoChanged.connect(self.peakInfoChanged)
+        # spectrumUpdated drives the rendering path
+        self.analyzer.spectrumUpdated.connect(self._on_spectrum_updated)
 
         # FFT line
         self.fft_line: pg.PlotDataItem = self.plot(
@@ -547,60 +599,8 @@ class FftCanvas(pg.PlotWidget):
         self._mode_band_items: list = []
         self._mode_bands_visible: bool = True
 
-        x_axis: npt.NDArray[np.int64] = np.arange(0, self.fft_data.h_n_f + 1)
-        self.freq: npt.NDArray[np.int64] = (
-            x_axis * self.fft_data.sample_freq // (self.fft_data.n_f)
-        )
-
-        # Microphone calibration corrections (dB per bin, or None)
-        self._calibration_corrections: npt.NDArray[np.float64] | None = None
-        self._calibration_device_name: str = saved_device_name
-
-        # Auto-load the calibration profile stored for this device
-        if saved_device_name:
-            _cal = _mc_mod.CalibrationStorage.calibration_for_device(saved_device_name)
-            if _cal is not None:
-                self._calibration_corrections = _cal.interpolate_to_bins(self.freq)
-
-        # Auto-scale dB
-        self._auto_scale_db: bool = False
-
-        # Saved waveform data for drawing
-        self.saved_mag_y_db: npt.NDArray[np.float64] = []
-        self.saved_peaks: npt.NDArray[np.float64] = np.zeros((0, 3))  # freq, mag, Q
-        self.b_peaks_freq: npt.NDArray[np.float64] = []
-        # When a measurement is loaded from file these are the authoritative peaks.
-        # set_threshold / update_axis filter this array instead of re-analysing the
-        # spectrum, so peaks can never be permanently lost by sliding the threshold.
-        # Cleared when the display is unfrozen (returning to live capture).
-        self._loaded_measurement_peaks: npt.NDArray[np.float64] | None = None
-        self.selected_peak: float = 0.0
-        self._mode_color_map: dict[float, tuple[int, int, int]] = {}  # freq → RGB
-
-        # Saved peak information
-        self.peaks_f_min_index: int = 0
-        self.peaks_f_max_index: int = 0
-
-        # Saved averaging data
-        self.max_average_count: int = 1
-        self.mag_y_sum: List[float] = []
-        self.num_averages = 0
-
-        # Tap-level accumulator (main thread only)
-        self._tap_num: int = 1           # number of taps to accumulate
-        self._tap_spectra: list[npt.NDArray[np.float64]] = []
-
-        # Plate / brace analysis state machine
-        self._measurement_type: mt_mod.MeasurementType = mt_mod.MeasurementType.CLASSICAL
-        self._plate_capture = pc.PlateCapture(
-            sample_freq=self.fft_data.sample_freq,
-            n_f=self.fft_data.n_f,
-            parent=self,
-        )
-        self._plate_capture.stateChanged.connect(self.plateStatusChanged)
-        self._plate_capture.analysisComplete.connect(self.plateAnalysisComplete)
-        # Snapshot of the most recent linear spectrum for plate HPS
-        self._current_mag_y: npt.NDArray[np.float32] = np.array([])
+        # Mode color map (freq → RGB) — kept on canvas for rendering
+        self._mode_color_map: dict[float, tuple[int, int, int]] = {}
 
         # Scene event filter to detect end of annotation drag
         self._scene_filter = _SceneMouseReleaseFilter(self)
@@ -632,10 +632,10 @@ class FftCanvas(pg.PlotWidget):
         self.getPlotItem().vb.sigXRangeChanged.connect(self._refresh_peaks_for_viewport)
 
         # Guitar type — updated by set_guitar_type_bands(); used for peak deduplication
-        self._guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
+        self._guitar_type: gt.GuitarType = _guitar_type
 
         # Initialise mode bands for the saved guitar type
-        self.set_guitar_type_bands(_as.AppSettings.guitar_type())
+        self.set_guitar_type_bands(guitar_type_str)
 
         # Overlay text shown when analyzer is not running
         self._overlay_label = pg.TextItem(
@@ -669,7 +669,6 @@ class FftCanvas(pg.PlotWidget):
 
         # Comparison overlay state — mirrors comparisonSpectra in TapToneAnalyzer.swift
         self._comparison_curves: list[pg.PlotDataItem] = []
-        self.comparison_labels: list[tuple[str, tuple[int, int, int]]] = []
         self._comparison_legend: QtWidgets.QWidget | None = None
 
         # Start the microphone (always running; processing thread gated by start_analyzer())
@@ -677,9 +676,120 @@ class FftCanvas(pg.PlotWidget):
 
         # Processing thread — created here, started by start_analyzer()
         self._proc_thread = FftProcessingThread(self.mic, self.fft_data, parent=self)
+        # Give the analyzer a reference to the proc thread so it can delegate to it
+        self.analyzer._proc_thread = self._proc_thread
         self._connect_proc_thread_signals()
         # Apply the initial calibration to the thread if one was loaded above
-        self._proc_thread.set_calibration(self._calibration_corrections)
+        self._proc_thread.set_calibration(self.analyzer._calibration_corrections)
+
+    # ------------------------------------------------------------------ #
+    # Backward-compatibility properties — guitar_tap.py reads these directly
+    # ------------------------------------------------------------------ #
+
+    @property
+    def display_mode(self) -> DisplayMode:
+        return self.analyzer.display_mode
+
+    @display_mode.setter
+    def display_mode(self, value: DisplayMode) -> None:
+        self.analyzer.display_mode = value
+
+    @property
+    def is_measurement_complete(self) -> bool:
+        return self.analyzer.is_measurement_complete
+
+    @is_measurement_complete.setter
+    def is_measurement_complete(self, value: bool) -> None:
+        self.analyzer.is_measurement_complete = value
+
+    @property
+    def saved_peaks(self) -> npt.NDArray:
+        return self.analyzer.saved_peaks
+
+    @saved_peaks.setter
+    def saved_peaks(self, value) -> None:
+        self.analyzer.saved_peaks = value
+
+    @property
+    def saved_mag_y_db(self):
+        return self.analyzer.saved_mag_y_db
+
+    @saved_mag_y_db.setter
+    def saved_mag_y_db(self, value) -> None:
+        self.analyzer.saved_mag_y_db = value
+
+    @property
+    def plate_capture(self) -> "pc.PlateCapture":
+        """The plate/brace capture state machine (read-only access for snapshot retrieval)."""
+        return self.analyzer.plate_capture
+
+    @property
+    def fmin(self) -> int:
+        return self.analyzer.fmin
+
+    @fmin.setter
+    def fmin(self, value: int) -> None:
+        self.analyzer.fmin = value
+
+    @property
+    def fmax(self) -> int:
+        return self.analyzer.fmax
+
+    @fmax.setter
+    def fmax(self, value: int) -> None:
+        self.analyzer.fmax = value
+
+    @property
+    def comparison_labels(self):
+        return self.analyzer.comparison_labels
+
+    @comparison_labels.setter
+    def comparison_labels(self, value) -> None:
+        self.analyzer.comparison_labels = value
+
+    @property
+    def freq(self):
+        return self.analyzer.freq
+
+    @freq.setter
+    def freq(self, value) -> None:
+        self.analyzer.freq = value
+
+    @property
+    def _loaded_measurement_peaks(self):
+        return self.analyzer._loaded_measurement_peaks
+
+    @_loaded_measurement_peaks.setter
+    def _loaded_measurement_peaks(self, value) -> None:
+        self.analyzer._loaded_measurement_peaks = value
+
+    @property
+    def b_peaks_freq(self):
+        return self.analyzer.b_peaks_freq
+
+    @b_peaks_freq.setter
+    def b_peaks_freq(self, value) -> None:
+        self.analyzer.b_peaks_freq = value
+
+    @property
+    def peaks_f_min_index(self) -> int:
+        return self.analyzer.peaks_f_min_index
+
+    @peaks_f_min_index.setter
+    def peaks_f_min_index(self, value: int) -> None:
+        self.analyzer.peaks_f_min_index = value
+
+    @property
+    def peaks_f_max_index(self) -> int:
+        return self.analyzer.peaks_f_max_index
+
+    @peaks_f_max_index.setter
+    def peaks_f_max_index(self, value: int) -> None:
+        self.analyzer.peaks_f_max_index = value
+
+    def _emit_loaded_peaks_at_threshold(self) -> None:
+        """Delegate to analyzer — called by guitar_tap.py after loading a measurement."""
+        self.analyzer._emit_loaded_peaks_at_threshold()
 
     # ------------------------------------------------------------------ #
     # Analyzer start / stop
@@ -713,10 +823,11 @@ class FftCanvas(pg.PlotWidget):
             self._proc_thread.wait(500)
             # Recreate thread to reset all state
             self._proc_thread = FftProcessingThread(self.mic, self.fft_data, parent=self)
+            self.analyzer._proc_thread = self._proc_thread
             self._connect_proc_thread_signals()
-            self._proc_thread.set_calibration(self._calibration_corrections)
-            self._proc_thread.set_measurement_type(self._measurement_type.is_guitar)
-        self._tap_spectra.clear()
+            self._proc_thread.set_calibration(self.analyzer._calibration_corrections)
+            self._proc_thread.set_measurement_type(self.analyzer._measurement_type.is_guitar)
+        self.analyzer._tap_spectra.clear()
         self._proc_thread.reset_state()
         self._proc_thread.start()
 
@@ -749,6 +860,7 @@ class FftCanvas(pg.PlotWidget):
         except ValueError:
             return
         self._guitar_type = guitar_type
+        self.analyzer._guitar_type = guitar_type
         for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):
             r, g, b, _ = rgba
             pen = pg.mkPen((r, g, b), width=1, style=QtCore.Qt.PenStyle.DashLine)
@@ -782,7 +894,7 @@ class FftCanvas(pg.PlotWidget):
             item.setVisible(visible)
 
     # ------------------------------------------------------------------ #
-    # Hot-plug device detection
+    # Hot-plug device detection (forwarded from analyzer signals)
     # ------------------------------------------------------------------ #
 
     # Screen-distance threshold (pixels) for locking crosshair to a comparison curve.
@@ -874,157 +986,64 @@ class FftCanvas(pg.PlotWidget):
         self._crosshair_h.setVisible(True)
         self._cursor_label.setVisible(True)
 
-    def _on_devices_refreshed(self) -> None:
-        """Handle a hot-plug event from Microphone (always on main thread).
-
-        PortAudio caches its device list at Pa_Initialize() time, so we must
-        reinitialize it before calling sd.query_devices() to get accurate data.
-        reinitialize_portaudio() stops the stream, reinits PortAudio, and
-        attempts to restart on the same device — all safely on the main thread.
-        """
-        self.mic.reinitialize_portaudio()
-
-        try:
-            names: list[str] = sorted(
-                str(d["name"]) for d in sd.query_devices() if d["max_input_channels"] > 0
-            )
-        except Exception:
-            names = []
-
-        self.devicesChanged.emit(names)
-
-        # Check if the active device has disappeared
-        if (
-            self._calibration_device_name
-            and self._calibration_device_name not in names
-        ):
-            self.currentDeviceLost.emit(self._calibration_device_name)
-
     # ------------------------------------------------------------------ #
-    # Microphone calibration
+    # Microphone calibration (delegates to analyzer)
     # ------------------------------------------------------------------ #
 
     def load_calibration(self, path: str) -> bool:
-        """Load and pre-interpolate a calibration file onto the FFT bin grid.
-
-        Returns True on success; False (and leaves existing calibration intact)
-        on parse error.
-        """
-        try:
-            cal_data = _mc_mod.parse_cal_file(path)
-            self._calibration_corrections = _mc_mod.interpolate_to_bins(cal_data, self.freq)
-            if hasattr(self, "_proc_thread"):
-                self._proc_thread.set_calibration(self._calibration_corrections)
-            return True
-        except Exception:
-            return False
+        """Load and pre-interpolate a calibration file onto the FFT bin grid."""
+        return self.analyzer.load_calibration(path)
 
     def load_calibration_from_profile(self, cal: "_mc_mod.MicrophoneCalibration") -> None:
         """Apply a pre-parsed MicrophoneCalibration profile to the FFT pipeline."""
-        self._calibration_corrections = cal.interpolate_to_bins(self.freq)
-        if hasattr(self, "_proc_thread"):
-            self._proc_thread.set_calibration(self._calibration_corrections)
+        self.analyzer.load_calibration_from_profile(cal)
 
     def clear_calibration(self) -> None:
         """Remove the active calibration (no dB correction applied)."""
-        self._calibration_corrections = None
-        if hasattr(self, "_proc_thread"):
-            self._proc_thread.set_calibration(None)
+        self.analyzer.clear_calibration()
 
     def current_calibration_device(self) -> str:
         """Device name the active calibration is associated with."""
-        return self._calibration_device_name
+        return self.analyzer.current_calibration_device()
 
+    # ------------------------------------------------------------------ #
+    # Tap detector / sequence control (delegates to analyzer)
     # ------------------------------------------------------------------ #
 
     def reset_tap_detector(self) -> None:
         """Public wrapper to reset the tap detector state machine."""
-        self._proc_thread.reset_tap_detector()
+        self.analyzer.reset_tap_detector()
 
     def start_tap_sequence(self) -> None:
         """Begin a fresh tap sequence: clear any accumulated spectra and restart warmup."""
-        self._tap_spectra.clear()
-        self._proc_thread.reset_tap_detector()   # enters WARMUP → prevents false immediate trigger
-        self.tapCountChanged.emit(0, self._tap_num)
+        self.analyzer.start_tap_sequence()
 
     def set_tap_num(self, n: int) -> None:
         """Set how many taps to accumulate before freezing (1 = immediate freeze)."""
-        self._tap_num = max(1, n)
-        self._tap_spectra.clear()
+        self.analyzer.set_tap_num(n)
 
-    def _do_capture_tap(self, mag_y_db: npt.NDArray[np.float64], tap_amp: int) -> None:
-        """Capture one tap spectrum; called from _on_fft_frame_ready() when tap_fired is True."""
-        print(
-            f"TAP_DEBUG [handleTapDetection] ENTERED | "
-            f"tap_amp={tap_amp} is_guitar={self._proc_thread._is_guitar} "
-            f"captured_so_far={len(self._tap_spectra)} numberOfTaps={self._tap_num}"
-        )
-        if not np.any(mag_y_db):
-            print("TAP_DEBUG [handleTapDetection] SKIPPED — mag_y_db is all zeros")
-            return
-        self._tap_spectra.append(mag_y_db.copy())
-        captured = len(self._tap_spectra)
-        print(
-            f"TAP_DEBUG [handleTapDetection] GUITAR TAP STORED | "
-            f"currentTapCount={captured} numberOfTaps={self._tap_num} "
-            f"tapProgress={captured/max(self._tap_num,1):.2f}"
-        )
-        self.tapCountChanged.emit(captured, self._tap_num)
-
-        if captured >= self._tap_num:
-            # Power-average all captured spectra (dB → linear → mean → dB).
-            stacked = np.stack(self._tap_spectra)
-            avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
-            self.saved_mag_y_db = avg_db
-            _, peaks = self.find_peaks(avg_db)
-            if self.display_mode != DisplayMode.COMPARISON:
-                self.set_draw_data(avg_db, peaks)
-            self._tap_spectra.clear()
-            self.tapDetected.emit()   # now trigger hold
-        else:
-            # More taps needed — rearm the detector without holding
-            self._proc_thread.reset_tap_detector()
-
-    def _on_tap_for_plate(self) -> None:
-        """Forward tap events to the plate capture state machine when active."""
-        if self._plate_capture.is_active and len(self._current_mag_y) > 0:
-            self._plate_capture.on_tap(self._current_mag_y, self.saved_mag_y_db)
-
-    def set_measurement_type(self, measurement_type: mt_mod.MeasurementType | str) -> None:
+    def set_measurement_type(self, measurement_type) -> None:
         """Switch between Guitar / Plate / Brace analysis modes."""
-        if isinstance(measurement_type, str):
-            measurement_type = mt_mod.MeasurementType.from_combo_values(
-                measurement_type, ""
-            )
-        self._measurement_type = measurement_type
-        self._proc_thread.set_measurement_type(measurement_type.is_guitar)
-
-    @property
-    def plate_capture(self) -> "pc.PlateCapture":
-        """The plate/brace capture state machine (read-only access for snapshot retrieval)."""
-        return self._plate_capture
+        self.analyzer.set_measurement_type(measurement_type)
 
     def start_plate_analysis(self) -> None:
         """Arm the plate capture state machine for the next tap(s)."""
-        self._plate_capture.start(
-            is_brace=self._measurement_type.is_brace,
-            measure_flc=_as.AppSettings.measure_flc(),
-        )
+        self.analyzer.start_plate_analysis()
 
     def reset_plate_analysis(self) -> None:
         """Abort plate capture and return to idle."""
-        self._plate_capture.reset()
+        self.analyzer.reset_plate_analysis()
 
     def set_auto_scale(self, enabled: bool) -> None:
         """Enable/disable automatic Y-axis scaling to the spectrum floor."""
-        self._auto_scale_db = enabled
+        self.analyzer._auto_scale_db = enabled
         if not enabled:
             self.setYRange(-100, 0, padding=0)
 
     def set_tap_threshold(self, value: int) -> None:
         """Update the tap-detection threshold (0–100 scale)."""
         self._tap_threshold_y = value - 100
-        self._proc_thread.set_tap_threshold(value)
+        self.analyzer.set_tap_threshold(value)
         self.line_tap_threshold.setPos(self._tap_threshold_y)
         self.line_tap_threshold.label.setText(f"Trigger: {self._tap_threshold_y} dB")
         self._update_reset_line()
@@ -1038,40 +1057,31 @@ class FftCanvas(pg.PlotWidget):
     def set_hysteresis_margin(self, value: float) -> None:
         """Update the tap-detection hysteresis margin (in dB, 1.0–10.0)."""
         self._hysteresis_margin = max(1.0, value)
-        self._proc_thread.set_hysteresis_margin(value)
+        self.analyzer.set_hysteresis_margin(value)
         self._update_reset_line()
 
     def pause_tap_detection(self) -> None:
         """Pause the tap detector; spectrum continues to update."""
-        self._proc_thread.pause_tap_detection()
-        self.tapDetectionPaused.emit(True)
+        self.analyzer.pause_tap_detection()
+        # tapDetectionPaused signal is forwarded from analyzer
 
     def resume_tap_detection(self) -> None:
         """Resume a paused tap detector."""
-        self._proc_thread.resume_tap_detection()
-        self.tapDetectionPaused.emit(False)
+        self.analyzer.resume_tap_detection()
+        # tapDetectionPaused signal is forwarded from analyzer
 
     def cancel_tap_sequence(self) -> None:
         """Cancel the in-progress multi-tap sequence and rearm for a fresh tap."""
-        self._tap_spectra.clear()
-        self._proc_thread.cancel_tap_sequence_in_thread()
-        self.tapCountChanged.emit(0, self._tap_num)
+        self.analyzer.cancel_tap_sequence()
 
     def set_device(self, device_index: int) -> None:
         """Switch the audio input to the given sounddevice index and
         auto-load the calibration associated with that device."""
-        self.mic.set_device(device_index)
-        import app_settings as _as
-        try:
-            dev_name = str(sd.query_devices(device_index)["name"])  # type: ignore[index]
-        except Exception:
-            dev_name = ""
-        self._calibration_device_name = dev_name
-        cal_path = _as.AppSettings.calibration_for_device(dev_name)
-        if cal_path:
-            self.load_calibration(cal_path)   # also calls _proc_thread.set_calibration
-        else:
-            self.clear_calibration()          # also calls _proc_thread.set_calibration
+        self.analyzer.set_device(device_index)
+
+    # ------------------------------------------------------------------ #
+    # Peak selection (view-level — updates scatter point)
+    # ------------------------------------------------------------------ #
 
     def select_peak(self, freq: float) -> None:
         """Select the peak (scatter point) with the specified frequency"""
@@ -1079,7 +1089,7 @@ class FftCanvas(pg.PlotWidget):
             row = np.where(self.saved_peaks[:, 0] == freq)
             magdb = self.saved_peaks[row][0][1]
             self.selected_point.setData(x=[freq], y=[magdb])
-            self.selected_peak = freq
+            self.analyzer.selected_peak = freq
 
     def deselect_peak(self, _freq: float) -> None:
         """Deselect the peak (scatter point) with the specified frequency"""
@@ -1087,7 +1097,7 @@ class FftCanvas(pg.PlotWidget):
 
     def clear_selected_peak(self) -> None:
         """Reset the selected peak."""
-        self.selected_peak = -1.0
+        self.analyzer.selected_peak = -1.0
 
     def point_picked(
         self, scatter: pg.ScatterPlotItem, points: list, ev
@@ -1097,7 +1107,7 @@ class FftCanvas(pg.PlotWidget):
             if self.annotations.select_annotation(scatter):
                 return
             index0 = points[0].index()
-            if self.peaks_f_min_index <= index0 < self.peaks_f_max_index:
+            if self.analyzer.peaks_f_min_index <= index0 < self.analyzer.peaks_f_max_index:
                 if np.any(self.saved_peaks):
                     freq = self.saved_peaks[index0][0]
                     self.peakSelected.emit(freq)
@@ -1221,7 +1231,7 @@ class FftCanvas(pg.PlotWidget):
         event.accept()
 
     def _reset_freq_to_saved(self) -> None:
-        mt = self._measurement_type
+        mt = self.analyzer._measurement_type
         self.update_axis(_as.AppSettings.f_min(mt), _as.AppSettings.f_max(mt))
 
     def _reset_mag_to_saved(self) -> None:
@@ -1232,7 +1242,7 @@ class FftCanvas(pg.PlotWidget):
         self._reset_mag_to_saved()
 
     def _reset_freq_to_defaults(self) -> None:
-        mt = self._measurement_type
+        mt = self.analyzer._measurement_type
         self.update_axis(_as.AppSettings.default_f_min(mt), _as.AppSettings.default_f_max(mt))
 
     def _reset_mag_to_defaults(self) -> None:
@@ -1245,15 +1255,15 @@ class FftCanvas(pg.PlotWidget):
     def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
         """Update the x-axis frequency range"""
         if fmin < fmax:
-            self.fmin = fmin
-            self.fmax = fmax
-            self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
-            self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
+            self.analyzer.fmin = fmin
+            self.analyzer.fmax = fmax
+            self.analyzer.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
+            self.analyzer.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
 
             self.setXRange(fmin, fmax, padding=0)
             if not init:
-                if self._loaded_measurement_peaks is not None:
-                    self._emit_loaded_peaks_at_threshold()
+                if self.analyzer._loaded_measurement_peaks is not None:
+                    self.analyzer._emit_loaded_peaks_at_threshold()
                 else:
                     self.find_peaks(self.saved_mag_y_db)
 
@@ -1270,32 +1280,32 @@ class FftCanvas(pg.PlotWidget):
         fmax = int(round(x1))
         if fmin >= fmax:
             return
-        self.fmin = fmin
-        self.fmax = fmax
-        self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
-        self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
+        self.analyzer.fmin = fmin
+        self.analyzer.fmax = fmax
+        self.analyzer.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
+        self.analyzer.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
         if self.display_mode != DisplayMode.COMPARISON:
-            if self._loaded_measurement_peaks is not None:
-                self._emit_loaded_peaks_at_threshold()
+            if self.analyzer._loaded_measurement_peaks is not None:
+                self.analyzer._emit_loaded_peaks_at_threshold()
             else:
                 self.find_peaks(self.saved_mag_y_db)
         self.freqRangeChanged.emit(fmin, fmax)
 
     def set_max_average_count(self, max_average_count: int) -> None:
         """Set the number of averages to take"""
-        self.max_average_count = max_average_count
+        self.analyzer.set_max_average_count(max_average_count)
 
     def reset_averaging(self) -> None:
         """Reset the number of averages taken to zero."""
-        self.num_averages = 0
+        self.analyzer.reset_averaging()
 
     def set_avg_enable(self, avg_enable: bool) -> None:
         """Flag to enable/disable the averaging"""
         self.avg_enable = avg_enable
+        self.analyzer.set_avg_enable(avg_enable)
 
     # ------------------------------------------------------------------ #
-    # Comparison overlay — mirrors loadComparison / clearComparison in
-    # TapToneAnalyzer+MeasurementManagement.swift
+    # Comparison overlay — delegates to analyzer + manages view curves
     # ------------------------------------------------------------------ #
 
     @property
@@ -1324,21 +1334,14 @@ class FftCanvas(pg.PlotWidget):
     def load_comparison(self, measurements: list) -> None:
         """Load guitar measurements as comparison overlays.
 
-        Mirrors loadComparison(measurements:) in TapToneAnalyzer+MeasurementManagement.swift:
-        - Filters to measurements that have a spectrum_snapshot.
-        - Assigns a colour from _COMPARISON_PALETTE (cycles if >5 measurements).
-        - Adds one PlotDataItem curve per measurement, with a legend entry.
-        - Updates the axis ranges to the union of all snapshot display ranges.
+        Delegates analysis to the analyzer, then creates PlotDataItem view curves.
         """
         self.clear_comparison()
 
-        with_snapshots = [m for m in measurements if m.spectrum_snapshot is not None]
-        for idx, m in enumerate(with_snapshots):
-            snap = m.spectrum_snapshot
-            color = self._COMPARISON_PALETTE[idx % len(self._COMPARISON_PALETTE)]
-            freq_arr = np.array(snap.frequencies, dtype=np.float64)
-            mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
-            label = self._comparison_label(m)
+        # Delegate to analyzer — get back the curve data
+        curve_data = self.analyzer.load_comparison(measurements)
+
+        for label, color, freq_arr, mag_arr in curve_data:
             curve = pg.PlotDataItem(
                 freq_arr, mag_arr,
                 pen=pg.mkPen(color, width=1.5),
@@ -1346,12 +1349,9 @@ class FftCanvas(pg.PlotWidget):
             )
             self.addItem(curve)
             self._comparison_curves.append(curve)
-            self.comparison_labels.append((label, color))
 
-        if with_snapshots:
-            # Legend — horizontal overlay, top-right, mirrors materialSpectraLegend in
-            # SpectrumView.swift: HStack of (colored line swatch + label) entries,
-            # .padding(.top, 8) + .padding(.trailing, 12), regularMaterial background.
+        if curve_data:
+            # Legend — horizontal overlay, top-right
             legend = QtWidgets.QWidget(self)
             legend.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             legend.setStyleSheet(
@@ -1360,7 +1360,7 @@ class FftCanvas(pg.PlotWidget):
             row = QtWidgets.QHBoxLayout(legend)
             row.setContentsMargins(8, 4, 8, 4)
             row.setSpacing(12)
-            for label, (r, g, b) in self.comparison_labels:
+            for label, (r, g, b) in self.analyzer.comparison_labels:
                 swatch = QtWidgets.QLabel()
                 swatch.setFixedSize(16, 2)
                 swatch.setStyleSheet(f"background: rgb({r},{g},{b}); border-radius: 1px;")
@@ -1377,42 +1377,42 @@ class FftCanvas(pg.PlotWidget):
             self._comparison_legend = legend
             self._reposition_comparison_legend()
 
-            # Broadcast the union of all snapshot axis ranges —
-            # mirrors the loadedMinFreq / loadedMaxFreq / loadedMinDB / loadedMaxDB
-            # updates in Swift's loadComparison(measurements:).
-            snaps = [m.spectrum_snapshot for m in with_snapshots]
-            min_freq = int(min(s.min_freq for s in snaps))
-            max_freq = int(max(s.max_freq for s in snaps))
-            min_db   = float(min(s.min_db for s in snaps))
-            max_db   = float(max(s.max_db for s in snaps))
-            self.update_axis(min_freq, max_freq)
-            self.setYRange(min_db, max_db, padding=0)
+            # Apply axis ranges from analyzer (already computed in load_comparison)
+            snaps = [m.spectrum_snapshot for m in measurements if m.spectrum_snapshot is not None]
+            if snaps:
+                min_freq = int(min(s.min_freq for s in snaps))
+                max_freq = int(max(s.max_freq for s in snaps))
+                min_db   = float(min(s.min_db for s in snaps))
+                max_db   = float(max(s.max_db for s in snaps))
+                self.setXRange(min_freq, max_freq, padding=0)
+                self.setYRange(min_db, max_db, padding=0)
 
         # Clear the main spectrum line — only the comparison curves should be visible.
         self.fft_line.setData([], [])
         self.points.setData(x=[], y=[])
 
         self._locked_series_index = 0
-        if self._comparison_curves:
-            self.display_mode = DisplayMode.COMPARISON
         self._set_comparison_visibility()
-        self.comparisonChanged.emit(self.is_comparing)
+        # comparisonChanged was already emitted by analyzer.load_comparison
 
     def clear_comparison(self) -> None:
         """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
         was_comparing = self.is_comparing
         self._locked_series_index = 0
-        self.display_mode = DisplayMode.LIVE
         for curve in self._comparison_curves:
             self.removeItem(curve)
         self._comparison_curves.clear()
-        self.comparison_labels.clear()
         if self._comparison_legend is not None:
             self._comparison_legend.deleteLater()
             self._comparison_legend = None
+        self.analyzer.clear_comparison()
         if was_comparing:
             self._set_comparison_visibility()
-            self.comparisonChanged.emit(False)
+            # comparisonChanged emitted by analyzer.clear_comparison
+
+    def _on_comparison_changed_from_analyzer(self, is_comparing: bool) -> None:
+        """Relay analyzer.comparisonChanged → canvas.comparisonChanged."""
+        self.comparisonChanged.emit(is_comparing)
 
     def _set_comparison_visibility(self) -> None:
         """Show/hide peaks and threshold lines based on comparison state.
@@ -1430,16 +1430,24 @@ class FftCanvas(pg.PlotWidget):
 
     def set_measurement_complete(self, is_measurement_complete: bool) -> None:
         """Flag to enable/disable the holding of peaks."""
-        self.is_measurement_complete = is_measurement_complete
+        self.analyzer.set_measurement_complete(is_measurement_complete)
         self._proc_thread.set_measurement_complete(is_measurement_complete)
         if not is_measurement_complete:
             self.selected_point.setData(x=[], y=[])
             self.clear_selected_peak()
-            self._tap_spectra.clear()
-            self._loaded_measurement_peaks = None
-            # Starting a new tap sequence always clears any active comparison overlay —
-            # mirrors self.comparisonSpectra = [] in startTapSequence() in Swift.
-            self.clear_comparison()
+            # clear_comparison was already called by analyzer.set_measurement_complete
+            # but we need to clear the view curves too
+            self._clear_comparison_view()
+
+    def _clear_comparison_view(self) -> None:
+        """Remove comparison view curves (called when returning to live mode)."""
+        self._locked_series_index = 0
+        for curve in self._comparison_curves:
+            self.removeItem(curve)
+        self._comparison_curves.clear()
+        if self._comparison_legend is not None:
+            self._comparison_legend.deleteLater()
+            self._comparison_legend = None
 
     def set_fmin(self, fmin: int) -> None:
         """As it says"""
@@ -1449,45 +1457,12 @@ class FftCanvas(pg.PlotWidget):
         """As it says"""
         self.update_axis(self.fmin, fmax)
 
-    def _emit_loaded_peaks_at_threshold(self) -> None:
-        """Filter the loaded-measurement peaks by the current threshold and
-        fmin/fmax, then emit peaksChanged.  Used instead of re-running the full
-        spectrum analysis when a measurement has been loaded from file — mirrors
-        Swift's recalculateFrozenPeaksIfNeeded fast-path.
-        """
-        assert self._loaded_measurement_peaks is not None
-        threshold_db = self.threshold - 100
-        peaks: npt.NDArray[np.float64] = self._loaded_measurement_peaks[
-            self._loaded_measurement_peaks[:, 1] >= threshold_db
-        ]
-
-        empty: npt.NDArray[np.float64] = np.zeros((0, 3))
-        if peaks.shape[0] == 0:
-            self.saved_peaks = empty
-            self.b_peaks_freq = np.array([], dtype=np.float64)
-            self.peaksChanged.emit(empty)
-            return
-
-        self.saved_peaks = peaks
-        peaks_freq: npt.NDArray[np.float64] = peaks[:, 0]
-
-        b_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
-        if len(b_indices[0]) > 0:
-            self.peaks_f_min_index = int(b_indices[0][0])
-            self.peaks_f_max_index = int(b_indices[0][-1]) + 1
-            self.b_peaks_freq = peaks_freq[self.peaks_f_min_index:self.peaks_f_max_index]
-            self.peaksChanged.emit(peaks[self.peaks_f_min_index:self.peaks_f_max_index])
-        else:
-            self.peaks_f_min_index = 0
-            self.peaks_f_max_index = 0
-            self.b_peaks_freq = np.array([], dtype=np.float64)
-            self.peaksChanged.emit(empty)
-
     def set_threshold(self, threshold: int) -> None:
         """Set the threshold used to limit both the triggering of a sample
         and the threshold on finding peaks. The threshold value is always 0 to 100.
         """
         self.threshold = threshold
+        self.analyzer.threshold = threshold
 
         self.threshold_x = self.fft_data.sample_freq // 2
         self.threshold_y = self.threshold - 100
@@ -1495,156 +1470,18 @@ class FftCanvas(pg.PlotWidget):
         self.line_threshold.setPos(self.threshold_y)
         self.line_threshold.label.setText(f"Peak: {self.threshold_y} dB")
 
-        if self._loaded_measurement_peaks is not None:
-            self._emit_loaded_peaks_at_threshold()
+        if self.analyzer._loaded_measurement_peaks is not None:
+            self.analyzer._emit_loaded_peaks_at_threshold()
         else:
             self.find_peaks(self.saved_mag_y_db)
 
         self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()
-        if np.any(self.b_peaks_freq):
-            if self.selected_peak > 0:
-                peak_index = np.where(self.b_peaks_freq == self.selected_peak)
+        if np.any(self.analyzer.b_peaks_freq):
+            if self.analyzer.selected_peak > 0:
+                peak_index = np.where(self.analyzer.b_peaks_freq == self.analyzer.selected_peak)
                 if len(peak_index[0]):
-                    self.peakSelected.emit(self.selected_peak)
-
-    def _apply_mode_priority(self, peaks: np.ndarray) -> np.ndarray:
-        """Apply mode-priority selection and 2 Hz deduplication.
-
-        Mirrors the updated Swift findPeaks pass-1 algorithm:
-
-        1. Scan modes in ascending frequency order using a lastClaimedFrequency
-           cursor.  Each mode only considers peaks strictly above the previous
-           mode's claimed frequency, preventing two modes from claiming the same
-           physical peak (critical in the Top/Back overlap zone ~190-230 Hz).
-           A per-claim 2 Hz duplicate check also discards a candidate that is
-           within 2 Hz of an already-claimed peak.
-        2. Deduplicate ALL remaining peaks at 2 Hz (descending magnitude) —
-           mirrors Swift's removeDuplicatePeaks, allowing multiple peaks per
-           mode range provided they are >2 Hz apart.
-        3. Restore any guaranteed peaks consumed in step 2 so each mode always
-           has a slot in the output.
-        4. Sort by frequency ascending for consistent table display.
-        """
-        if peaks.shape[0] == 0:
-            return peaks
-
-        freqs = peaks[:, 0]
-        mags  = peaks[:, 1]
-
-        # Pass 1 — sequential scan with lastClaimedFrequency cursor.
-        # Modes are visited in ascending lower-bound order so the cursor advances
-        # monotonically, matching the new Swift findPeaks pass-1 logic.
-        known_modes = sorted(
-            [gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK,
-             gm.GuitarMode.DIPOLE, gm.GuitarMode.RING_MODE, gm.GuitarMode.UPPER_MODES],
-            key=lambda m: m.mode_range(self._guitar_type)[0],
-        )
-        guaranteed: set[int] = set()
-        last_claimed_freq: float = -1.0
-
-        for mode in known_modes:
-            lo, hi = mode.mode_range(self._guitar_type)
-            # Only consider peaks above the last claimed frequency (cursor)
-            candidates = np.where(
-                (freqs >= lo) & (freqs <= hi) & (freqs > last_claimed_freq)
-            )[0]
-            if candidates.size == 0:
-                continue
-            best = int(candidates[np.argmax(mags[candidates])])
-            # Post-claim 2 Hz duplicate check — discard if too close to an
-            # already-claimed peak from an earlier mode
-            if any(abs(freqs[best] - freqs[g]) < 2.0 for g in guaranteed):
-                continue
-            guaranteed.add(best)
-            last_claimed_freq = float(freqs[best])
-
-        # Pass 2 — deduplicate ALL peaks at 2 Hz (descending magnitude).
-        used = np.zeros(len(freqs), dtype=bool)
-        kept: list[int] = []
-        for i in np.argsort(-mags):
-            idx = int(i)
-            if not used[idx]:
-                kept.append(idx)
-                used |= np.abs(freqs - freqs[idx]) < 2.0
-
-        # Pass 3 — restore guaranteed peaks consumed by a stronger neighbour
-        kept_set = set(kept)
-        for g_idx in guaranteed:
-            if g_idx not in kept_set:
-                kept.append(g_idx)
-
-        return peaks[sorted(kept, key=lambda i: freqs[i])]
-
-    def find_peaks(self, mag_y_db):
-        """For the specified magnitude in db:
-        1. detect the peaks that are above the user specified threshold
-        2. interpolate each peak using parabolic interpolation
-        3. If there are peaks above the user specified threshold then
-           from the resulting list of peaks find those that are within the
-           user specified min/max frequency range and emit a signal that
-           the peaks have changed.
-        4. If there are no peaks in the frequency range then emit a signal
-           with an empty list of peaks.
-        5. If there were no peaks within the threshold then emit
-           a peaks changed with the saved set of peaks.
-        """
-        if not np.any(mag_y_db):
-            return False, self.saved_peaks
-
-        ploc = f_a.peak_detection(mag_y_db, self.threshold - 100)
-        iploc, peaks_mag = f_a.peak_interp(mag_y_db, ploc)
-
-        peaks_freq = (iploc * self.fft_data.sample_freq) / float(self.fft_data.n_f)
-
-        if peaks_mag.size > 0:
-            max_peaks_mag = np.max(peaks_mag)
-            q_values = f_a.peak_q_factor(
-                mag_y_db, ploc, iploc, peaks_mag,
-                self.fft_data.sample_freq, self.fft_data.n_f,
-            )
-            peaks = np.column_stack((peaks_freq, peaks_mag, q_values))
-            # Two-pass mode-priority + 2 Hz deduplication (mirrors Swift findPeaks)
-            peaks = self._apply_mode_priority(peaks)
-            if peaks.shape[0] > 0:
-                peaks_freq = peaks[:, 0]
-                max_peaks_mag = np.max(peaks[:, 1])
-            else:
-                peaks_freq = np.array([])
-                max_peaks_mag = -100
-        else:
-            max_peaks_mag = -100
-            peaks = np.zeros((0, 3))
-
-        if max_peaks_mag > (self.threshold - 100):
-            self.saved_mag_y_db = mag_y_db
-            self.saved_peaks = peaks
-            triggered = True
-
-            self.peaks_f_min_index = 0
-            self.peaks_f_max_index = 0
-            b_peaks_f_indices = np.nonzero(
-                (peaks_freq < self.fmax) & (peaks_freq > self.fmin)
-            )
-            if len(b_peaks_f_indices[0]) > 0:
-                self.peaks_f_min_index = b_peaks_f_indices[0][0]
-                self.peaks_f_max_index = b_peaks_f_indices[0][-1] + 1
-
-            if self.peaks_f_max_index > 0:
-                self.b_peaks_freq = peaks_freq[
-                    self.peaks_f_min_index : self.peaks_f_max_index
-                ]
-                peaks_data = peaks[self.peaks_f_min_index : self.peaks_f_max_index]
-                self.peaksChanged.emit(peaks_data)
-            else:
-                self.b_peaks_freq = []
-                self.peaksChanged.emit(np.zeros((0, 3)))
-        else:
-            self.saved_peaks = np.zeros((0, 3))
-            self.peaksChanged.emit(self.saved_peaks)
-            triggered = False
-
-        return triggered, peaks
+                    self.peakSelected.emit(self.analyzer.selected_peak)
 
     def _peak_brushes(self, freqs) -> list:
         """Return a list of QBrush objects, one per peak, coloured by mode."""
@@ -1657,8 +1494,8 @@ class FftCanvas(pg.PlotWidget):
     def update_mode_colors(self, color_map: dict) -> None:
         """Update the per-peak mode colour map and redraw scatter points."""
         self._mode_color_map = color_map
-        if self.saved_peaks.size > 0 and self.peaks_f_max_index > 0:
-            peaks_data = self.saved_peaks[self.peaks_f_min_index:self.peaks_f_max_index]
+        if self.saved_peaks.size > 0 and self.analyzer.peaks_f_max_index > 0:
+            peaks_data = self.saved_peaks[self.analyzer.peaks_f_min_index:self.analyzer.peaks_f_max_index]
             self.points.setData(
                 x=peaks_data[:, 0], y=peaks_data[:, 1],
                 brush=self._peak_brushes(peaks_data[:, 0]),
@@ -1675,7 +1512,7 @@ class FftCanvas(pg.PlotWidget):
             )
         else:
             self.points.setData(x=[], y=[])
-        if self._auto_scale_db and np.any(mag_db):
+        if self.analyzer._auto_scale_db and np.any(mag_db):
             valid = mag_db[(mag_db > -100) & (mag_db < 20)]
             if valid.size:
                 min_mag = float(np.min(valid))
@@ -1690,36 +1527,31 @@ class FftCanvas(pg.PlotWidget):
                 self.setYRange(new_min, new_max, padding=0)
 
     def process_averages(self, mag_y) -> None:
-        """For the specified magnitude find the average with all the saved magnitudes."""
-        if self.num_averages < self.max_average_count:
-            if self.num_averages > 0:
-                mag_y_sum = self.mag_y_sum + mag_y
-            else:
-                mag_y_sum = mag_y
-            num_averages = self.num_averages + 1
+        """For the specified magnitude find the average with all the saved magnitudes.
 
-            avg_mag_y = mag_y_sum / num_averages
+        Delegates to analyzer.process_averages.  When a new averaged sample
+        triggers, the annotations are cleared to reflect the updated peaks
+        (mirrors the original FftCanvas.process_averages annotation clear).
+        """
+        prev_averages = self.analyzer.num_averages
+        self.analyzer.process_averages(mag_y)
+        # If averaging progressed (new sample triggered), clear annotations
+        if self.analyzer.num_averages != prev_averages:
+            self.annotations.clear_annotations()
 
-            avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
+    # ── find_peaks: thin wrapper that delegates to analyzer ───────────────────
 
-            avg_mag_y_db = 20 * np.log10(avg_mag_y)
+    def find_peaks(self, mag_y_db):
+        """Delegate peak finding to the analyzer.
 
-            avg_amplitude = np.max(avg_mag_y_db) + 100
-            if avg_amplitude > self.threshold:
-                triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
-                if triggered:
-                    self.newSample.emit(self.is_measurement_complete)
-                    self.annotations.clear_annotations()
-                    self.set_draw_data(avg_mag_y_db, avg_peaks)
+        Returns (triggered, peaks) for call sites that need the return value.
+        The analyzer emits peaksChanged, which is forwarded to FftCanvas.peaksChanged.
+        """
+        return self.analyzer.find_peaks(mag_y_db)
 
-                    self.mag_y_sum = mag_y_sum
-                    self.num_averages = num_averages
-                    self.averagesChanged.emit(int(self.num_averages))
-
-                    self.saved_mag_y_db = avg_mag_y_db
-                    self.saved_peaks = avg_peaks
-
-        self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
+    # ------------------------------------------------------------------ #
+    # FFT frame handler (called from FftProcessingThread signal)
+    # ------------------------------------------------------------------ #
 
     def _on_fft_frame_ready(
         self,
@@ -1733,28 +1565,36 @@ class FftCanvas(pg.PlotWidget):
     ) -> None:
         """Receive a processed FFT frame from FftProcessingThread (main thread slot).
 
-        Replaces the old update_fft() / QTimer path.  All DSP is already done
-        in the thread; this method updates the display and handles tap capture.
+        Delegates analysis to the TapToneAnalyzer, which emits spectrumUpdated
+        (connected to _on_spectrum_updated) for rendering.
         """
-        self._current_mag_y = mag_y  # snapshot for plate capture HPS
+        self.analyzer.on_fft_frame(
+            mag_y_db, mag_y, tap_fired, tap_amp, fps, sample_dt, processing_dt
+        )
 
-        if tap_fired:
-            self._do_capture_tap(mag_y_db, tap_amp)
-            self._on_tap_for_plate()
+    def _on_spectrum_updated(self, freqs, mag_y_db) -> None:
+        """Receive spectrum data from the analyzer and update the view.
 
-        # Update display — driven by display_mode (mirrors displayMode checks in Swift)
-        if self.display_mode == DisplayMode.LIVE:
-            if self.is_measurement_complete:
-                self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-            else:
-                _, peaks = self.find_peaks(mag_y_db)
-                self.set_draw_data(mag_y_db, peaks)
-        elif self.display_mode == DisplayMode.FROZEN:
-            self.set_draw_data(self.saved_mag_y_db, self.saved_peaks)
-        # COMPARISON: skip entirely — only overlay curves are shown
+        Connected to TapToneAnalyzer.spectrumUpdated.  Replaces the direct
+        set_draw_data calls that were previously in _on_fft_frame_ready.
+        """
+        # Find the in-viewport peaks from the frozen set (they were already
+        # emitted by the analyzer via peaksChanged; we just need the array for drawing)
+        peaks = self.saved_peaks
+        if self.analyzer.peaks_f_max_index > 0:
+            peaks = self.saved_peaks[
+                self.analyzer.peaks_f_min_index:self.analyzer.peaks_f_max_index
+            ]
+        self.set_draw_data(mag_y_db, peaks)
 
-        self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
-        self.levelChanged.emit(tap_amp)
-        peak_idx = int(np.argmax(mag_y_db))
-        if peak_idx < len(self.freq):
-            self.peakInfoChanged.emit(float(self.freq[peak_idx]), float(mag_y_db[peak_idx]))
+    def _on_tap_detected_from_analyzer(self) -> None:
+        """Relay analyzer.tapDetectedSignal → FftCanvas.tapDetected (hold trigger)."""
+        # Also update the view: draw the averaged spectrum
+        if self.display_mode != DisplayMode.COMPARISON:
+            peaks = self.saved_peaks
+            if self.analyzer.peaks_f_max_index > 0:
+                peaks = self.saved_peaks[
+                    self.analyzer.peaks_f_min_index:self.analyzer.peaks_f_max_index
+                ]
+            self.set_draw_data(self.saved_mag_y_db, peaks)
+        self.tapDetected.emit()

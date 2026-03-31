@@ -3324,7 +3324,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.fft_canvas.set_device(int(d["index"]))
                     AS.AppSettings.set_device_name(new_name)
                     self.device_status_lbl.setText(new_name)
-                            _cal = _mc_mod.CalibrationStorage.calibration_for_device(new_name)
+                    _cal = _mc_mod.CalibrationStorage.calibration_for_device(new_name)
                     self.set_calibration_status(_cal.name if _cal else "")
                     break
         except Exception:
@@ -3401,7 +3401,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 dev_name = str(dev_info["name"])  # type: ignore[index]
                 AS.AppSettings.set_device_name(dev_name)
                 self.device_status_lbl.setText(dev_name)
-                    _cal = _mc_mod.CalibrationStorage.calibration_for_device(dev_name)
+                _cal = _mc_mod.CalibrationStorage.calibration_for_device(dev_name)
                 self.set_calibration_status(_cal.name if _cal else "")
 
     # ================================================================

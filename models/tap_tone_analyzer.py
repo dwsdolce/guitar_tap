@@ -15,18 +15,20 @@ The Swift TapToneAnalyzer class is split across nine Swift files:
 
 Python mapping:
 
-  TapToneAnalyzer+TapDetection.swift  →  DecayTracker, TapDetector (this file)
+  TapToneAnalyzer+TapDetection.swift  →  TapDetector (this file)
   TapToneAnalyzer+DecayTracking.swift →  DecayTracker (this file)
   TapToneAnalyzer+SpectrumCapture.swift → PlateCapture (this file)
 
-  The remaining extensions are implemented in fft_canvas.py (FftCanvas), which
-  serves as the Python equivalent of the top-level TapToneAnalyzer coordinator:
-    +Control               → FftCanvas._start_audio / _stop_audio / _on_fft_size_changed
-    +PeakAnalysis          → FftCanvas._find_peaks (calls realtime_fft_analyzer functions)
-    +AnnotationManagement  → fft_annotations.FftAnnotations (used by FftCanvas)
-    +ModeOverrideManagement → peaks_model.PeaksModel.set_mode_override
-    +MeasurementManagement  → FftCanvas._build_measurement, measurement.py persistence
-    +AnalysisHelpers        → FftCanvas query methods, TapToneMeasurement computed props
+  The remaining extensions are now implemented in TapToneAnalyzer (this file):
+    +Control               → TapToneAnalyzer.start_analyzer / stop_analyzer / ...
+    +PeakAnalysis          → TapToneAnalyzer.find_peaks / _apply_mode_priority / ...
+    +AnnotationManagement  → delegated to fft_annotations.FftAnnotations (owned by FftCanvas)
+    +ModeOverrideManagement → peaks_model.PeaksModel.set_mode_override (unchanged)
+    +MeasurementManagement  → TapToneAnalyzer.set_measurement_complete / load_comparison / ...
+    +AnalysisHelpers        → TapToneAnalyzer query methods
+
+  FftCanvas is now a thin display widget that creates a TapToneAnalyzer,
+  connects its signals, and delegates all analysis calls.
 """
 
 from __future__ import annotations
@@ -595,3 +597,786 @@ class PlateCapture(QtCore.QObject):
     def flc_mag_db(self) -> npt.NDArray | None:
         """dB spectrum captured during the FLC diagonal tap phase."""
         return self._flc_mag_db
+
+
+# ── TapToneAnalyzer ────────────────────────────────────────────────────────────
+# Mirrors the top-level Swift TapToneAnalyzer class and its extensions:
+#   TapToneAnalyzer.swift                   — stored properties, init
+#   TapToneAnalyzer+Control.swift           — start/stop/reset
+#   TapToneAnalyzer+PeakAnalysis.swift      — findPeaks, _apply_mode_priority
+#   TapToneAnalyzer+MeasurementManagement.swift — freeze/unfreeze, load_comparison
+#   TapToneAnalyzer+AnalysisHelpers.swift   — dominant_peak, threshold helpers
+
+class TapToneAnalyzer(QtCore.QObject):
+    """Central analysis coordinator — owns all analysis state and business logic.
+
+    Mirrors Swift's TapToneAnalyzer ObservableObject.  FftCanvas (the view)
+    creates one of these, connects its signals to rendering slots, and delegates
+    all analysis method calls to it.
+
+    Emits Qt signals rather than Swift @Published properties so the view layer
+    can respond to state changes without polling.
+    """
+
+    # ── Signals (Python equivalents of Swift @Published properties) ────────
+    # New peak list emitted after every analysis frame and after threshold/range changes.
+    peaksChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(object)          # ndarray (N, 3)
+    # Full spectrum ready for the view to draw.
+    spectrumUpdated: QtCore.pyqtSignal = QtCore.pyqtSignal(object, object)  # (freqs, mags_db)
+    # A single tap has been fully captured (all required taps averaged).
+    tapDetectedSignal: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    # Live tap count update: (captured, total).
+    tapCountChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)
+    # Ring-out time measured by DecayTracker (seconds).
+    ringOutMeasured: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
+    # Input level 0-100 scale (dBFS + 100).
+    levelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    # FFT frame diagnostics: (fps, sample_dt, processing_dt).
+    framerateUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)
+    # Averaging: number of completed averages.
+    averagesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    # Emitted on every live FFT frame (for average-enable logic).
+    newSample: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    # Display mode changed: emits the new DisplayMode enum value.
+    displayModeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(object)
+    # Measurement complete state changed.
+    measurementComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    # Hot-plug: list[str] of current input device names.
+    devicesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(list)
+    # Hot-plug: name of the device that disappeared.
+    currentDeviceLost: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    # Plate/brace phase status text for display.
+    plateStatusChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    # Plate analysis complete: (fL, fC, fFLC) Hz.
+    plateAnalysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)
+    # Tap detection pause state changed.
+    tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    # Emitted when comparison overlay data changes (True=entering, False=leaving).
+    comparisonChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    # Emitted when frequency range changes (fmin, fmax).
+    freqRangeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)
+    # Peak info for status bar: (peak_hz, peak_db).
+    peakInfoChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)
+    # Internal: fired from hotplug monitor thread → main thread (no-arg).
+    _devicesRefreshed: QtCore.pyqtSignal = QtCore.pyqtSignal()
+
+    def __init__(
+        self,
+        parent_widget,
+        fft_data,
+        saved_device_index,
+        saved_device_name: str,
+        calibration_corrections,
+        guitar_type,
+    ) -> None:
+        """
+        Args:
+            parent_widget:         The FftCanvas (QObject parent).
+            fft_data:              FftData instance (sample_freq, n_f, window_fcn, …).
+            saved_device_index:    Resolved input device index, or None for default.
+            saved_device_name:     Human-readable name of that device (may be "").
+            calibration_corrections: ndarray of per-bin dB corrections, or None.
+            guitar_type:           GuitarType enum value for mode classification.
+        """
+        # Lazily import here to avoid a circular import: fft_canvas → models.tap_tone_analyzer
+        # → fft_canvas.  These imports are only needed at runtime, not at module load.
+        import sounddevice as _sd
+        import numpy as _np
+        from models.realtime_fft_analyzer import Microphone as _Mic
+        from models import guitar_type as _gt
+        from models import guitar_mode as _gm
+        from models import measurement_type as _mt_mod
+        from models import microphone_calibration as _mc_mod
+        import app_settings as _as
+
+        super().__init__(parent_widget)
+
+        self._sd = _sd
+        self._np = _np
+        self._gm = _gm
+        self._as = _as
+        self._mc_mod = _mc_mod
+
+        # ── Audio engine (mirrors Swift's analyzer: RealtimeFFTAnalyzer) ──
+        self._devicesRefreshed.connect(self._on_devices_refreshed)
+        self.mic: _Mic = _Mic(
+            parent_widget,
+            rate=fft_data.sample_freq,
+            chunksize=4096,
+            device_index=saved_device_index,
+            on_devices_changed=self._devicesRefreshed.emit,
+        )
+
+        # ── FFT configuration ──────────────────────────────────────────────
+        self.fft_data = fft_data
+        import numpy as np
+        x_axis = np.arange(0, fft_data.h_n_f + 1)
+        self.freq = x_axis * fft_data.sample_freq // fft_data.n_f
+
+        # ── Calibration ────────────────────────────────────────────────────
+        self._calibration_corrections = calibration_corrections
+        self._calibration_device_name: str = saved_device_name
+
+        # ── Guitar/mode classification ─────────────────────────────────────
+        self._guitar_type = guitar_type
+
+        # ── Display mode (mirrors Swift AnalysisDisplayMode) ───────────────
+        # Imported lazily from fft_canvas to avoid circular import at module load.
+        # The DisplayMode enum lives in fft_canvas.py; we import it on first use.
+        self._display_mode = None   # set to DisplayMode.LIVE by FftCanvas after import
+
+        # ── Measurement state ──────────────────────────────────────────────
+        self.is_measurement_complete: bool = False
+
+        # ── Peak analysis state ────────────────────────────────────────────
+        import numpy as np
+        self.threshold: int = 60                          # 0-100 scale
+        self.fmin: int = 0
+        self.fmax: int = 1000
+        self.n_fmin: int = 0
+        self.n_fmax: int = 0
+        self.saved_mag_y_db = np.array([])
+        self.saved_peaks = np.zeros((0, 3))               # (freq, mag, Q)
+        self.b_peaks_freq = np.array([])
+        self.peaks_f_min_index: int = 0
+        self.peaks_f_max_index: int = 0
+        self._loaded_measurement_peaks = None             # ndarray or None
+        self.selected_peak: float = 0.0
+        self._mode_color_map: dict = {}                   # freq → RGB tuple
+
+        # ── Averaging ──────────────────────────────────────────────────────
+        self.avg_enable: bool = False
+        self.max_average_count: int = 1
+        self.mag_y_sum = []
+        self.num_averages: int = 0
+
+        # ── Multi-tap accumulator ─────────────────────────────────────────
+        self._tap_num: int = 1
+        self._tap_spectra: list = []
+
+        # ── Auto-scale ────────────────────────────────────────────────────
+        self._auto_scale_db: bool = False
+
+        # ── Measurement type ──────────────────────────────────────────────
+        self._measurement_type = _mt_mod.MeasurementType.CLASSICAL
+
+        # ── Plate/brace capture ───────────────────────────────────────────
+        self.plate_capture = PlateCapture(
+            sample_freq=fft_data.sample_freq,
+            n_f=fft_data.n_f,
+            parent=self,
+        )
+        self.plate_capture.stateChanged.connect(self.plateStatusChanged)
+        self.plate_capture.analysisComplete.connect(self.plateAnalysisComplete)
+        self._current_mag_y = np.array([])
+
+        # ── Comparison overlay data ───────────────────────────────────────
+        self.comparison_labels: list = []        # list of (label, color) tuples
+        # _comparison_data is for the analyzer's knowledge of what's being compared;
+        # actual PlotDataItem curves live in FftCanvas.
+        self._comparison_data: list = []
+
+        # ── Processing thread (created/managed by FftCanvas) ─────────────
+        # FftCanvas sets self._proc_thread after constructing TapToneAnalyzer.
+        self._proc_thread = None
+
+    # ------------------------------------------------------------------ #
+    # display_mode property — kept in sync with FftCanvas.display_mode
+    # ------------------------------------------------------------------ #
+
+    @property
+    def display_mode(self):
+        return self._display_mode
+
+    @display_mode.setter
+    def display_mode(self, value) -> None:
+        self._display_mode = value
+        self.displayModeChanged.emit(value)
+
+    @property
+    def is_comparing(self) -> bool:
+        """True when in COMPARISON display mode."""
+        from fft_canvas import DisplayMode
+        return self._display_mode == DisplayMode.COMPARISON
+
+    # ------------------------------------------------------------------ #
+    # Hot-plug (mirrors FftCanvas._on_devices_refreshed)
+    # ------------------------------------------------------------------ #
+
+    def _on_devices_refreshed(self) -> None:
+        """Handle a hot-plug event (always on main thread)."""
+        self.mic.reinitialize_portaudio()
+        try:
+            names: list = sorted(
+                str(d["name"]) for d in self._sd.query_devices() if d["max_input_channels"] > 0
+            )
+        except Exception:
+            names = []
+        self.devicesChanged.emit(names)
+        if (
+            self._calibration_device_name
+            and self._calibration_device_name not in names
+        ):
+            self.currentDeviceLost.emit(self._calibration_device_name)
+
+    # ------------------------------------------------------------------ #
+    # Calibration (mirrors TapToneAnalyzer+Control.swift device/cal methods)
+    # ------------------------------------------------------------------ #
+
+    def load_calibration(self, path: str) -> bool:
+        """Load and interpolate a calibration file onto the FFT bin grid."""
+        import models.microphone_calibration as _mc
+        try:
+            cal_data = _mc.parse_cal_file(path)
+            self._calibration_corrections = _mc.interpolate_to_bins(cal_data, self.freq)
+            if self._proc_thread is not None:
+                self._proc_thread.set_calibration(self._calibration_corrections)
+            return True
+        except Exception:
+            return False
+
+    def load_calibration_from_profile(self, cal) -> None:
+        """Apply a pre-parsed MicrophoneCalibration profile to the FFT pipeline."""
+        self._calibration_corrections = cal.interpolate_to_bins(self.freq)
+        if self._proc_thread is not None:
+            self._proc_thread.set_calibration(self._calibration_corrections)
+
+    def clear_calibration(self) -> None:
+        """Remove the active calibration."""
+        self._calibration_corrections = None
+        if self._proc_thread is not None:
+            self._proc_thread.set_calibration(None)
+
+    def current_calibration_device(self) -> str:
+        """Device name the active calibration is associated with."""
+        return self._calibration_device_name
+
+    def set_device(self, device_index: int) -> None:
+        """Switch to a different input device and auto-load its calibration."""
+        import app_settings as _as
+        self.mic.set_device(device_index)
+        try:
+            dev_name = str(self._sd.query_devices(device_index)["name"])
+        except Exception:
+            dev_name = ""
+        self._calibration_device_name = dev_name
+        cal_path = _as.AppSettings.calibration_for_device(dev_name)
+        if cal_path:
+            self.load_calibration(cal_path)
+        else:
+            self.clear_calibration()
+
+    # ------------------------------------------------------------------ #
+    # Tap detector control (delegated to _proc_thread)
+    # ------------------------------------------------------------------ #
+
+    def reset_tap_detector(self) -> None:
+        if self._proc_thread is not None:
+            self._proc_thread.reset_tap_detector()
+
+    def set_tap_threshold(self, value: int) -> None:
+        if self._proc_thread is not None:
+            self._proc_thread.set_tap_threshold(value)
+
+    def set_hysteresis_margin(self, value: float) -> None:
+        if self._proc_thread is not None:
+            self._proc_thread.set_hysteresis_margin(value)
+
+    def pause_tap_detection(self) -> None:
+        if self._proc_thread is not None:
+            self._proc_thread.pause_tap_detection()
+        self.tapDetectionPaused.emit(True)
+
+    def resume_tap_detection(self) -> None:
+        if self._proc_thread is not None:
+            self._proc_thread.resume_tap_detection()
+        self.tapDetectionPaused.emit(False)
+
+    def cancel_tap_sequence(self) -> None:
+        self._tap_spectra.clear()
+        if self._proc_thread is not None:
+            self._proc_thread.cancel_tap_sequence_in_thread()
+        self.tapCountChanged.emit(0, self._tap_num)
+
+    # ------------------------------------------------------------------ #
+    # Tap sequence management
+    # ------------------------------------------------------------------ #
+
+    def start_tap_sequence(self) -> None:
+        """Begin a fresh tap sequence: clear accumulated spectra and restart warmup."""
+        self._tap_spectra.clear()
+        self.reset_tap_detector()
+        self.tapCountChanged.emit(0, self._tap_num)
+
+    def set_tap_num(self, n: int) -> None:
+        """Set how many taps to accumulate before freezing."""
+        self._tap_num = max(1, n)
+        self._tap_spectra.clear()
+
+    # ------------------------------------------------------------------ #
+    # Measurement type
+    # ------------------------------------------------------------------ #
+
+    def set_measurement_type(self, measurement_type) -> None:
+        """Switch between Guitar / Plate / Brace analysis modes."""
+        import models.measurement_type as _mt_mod
+        if isinstance(measurement_type, str):
+            measurement_type = _mt_mod.MeasurementType.from_combo_values(measurement_type, "")
+        self._measurement_type = measurement_type
+        if self._proc_thread is not None:
+            self._proc_thread.set_measurement_type(measurement_type.is_guitar)
+
+    # ------------------------------------------------------------------ #
+    # Measurement complete
+    # ------------------------------------------------------------------ #
+
+    def set_measurement_complete(self, is_complete: bool) -> None:
+        """Freeze/unfreeze the spectrum and reset related state."""
+        self.is_measurement_complete = is_complete
+        if self._proc_thread is not None:
+            self._proc_thread.set_measurement_complete(is_complete)
+        if not is_complete:
+            import numpy as np
+            self._tap_spectra.clear()
+            self._loaded_measurement_peaks = None
+            # Clear comparison overlay when starting a new tap
+            self._clear_comparison_state()
+        self.measurementComplete.emit(is_complete)
+
+    def _clear_comparison_state(self) -> None:
+        """Clear the analyzer's comparison data (view curves cleared by FftCanvas)."""
+        from fft_canvas import DisplayMode
+        self._display_mode = DisplayMode.LIVE
+        self.comparison_labels.clear()
+        self._comparison_data.clear()
+
+    # ------------------------------------------------------------------ #
+    # Peak analysis (mirrors TapToneAnalyzer+PeakAnalysis.swift)
+    # ------------------------------------------------------------------ #
+
+    def set_threshold(self, threshold: int) -> None:
+        """Set the peak-detection threshold (0-100 scale)."""
+        self.threshold = threshold
+        if self._loaded_measurement_peaks is not None:
+            self._emit_loaded_peaks_at_threshold()
+        else:
+            self.find_peaks(self.saved_mag_y_db)
+
+    def set_fmin(self, fmin: int) -> None:
+        self.update_axis(fmin, self.fmax)
+
+    def set_fmax(self, fmax: int) -> None:
+        self.update_axis(self.fmin, fmax)
+
+    def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
+        """Update the frequency analysis range."""
+        if fmin < fmax:
+            self.fmin = fmin
+            self.fmax = fmax
+            self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
+            self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
+            if not init:
+                if self._loaded_measurement_peaks is not None:
+                    self._emit_loaded_peaks_at_threshold()
+                else:
+                    self.find_peaks(self.saved_mag_y_db)
+
+    def set_max_average_count(self, max_average_count: int) -> None:
+        self.max_average_count = max_average_count
+
+    def reset_averaging(self) -> None:
+        self.num_averages = 0
+
+    def set_avg_enable(self, avg_enable: bool) -> None:
+        self.avg_enable = avg_enable
+
+    def set_auto_scale(self, enabled: bool) -> None:
+        self._auto_scale_db = enabled
+
+    def _apply_mode_priority(self, peaks) -> "npt.NDArray":
+        """Apply mode-priority selection and 2 Hz deduplication.
+
+        Exact copy of FftCanvas._apply_mode_priority — all logic preserved.
+        """
+        import numpy as np
+        from models import guitar_mode as gm
+
+        if peaks.shape[0] == 0:
+            return peaks
+
+        freqs = peaks[:, 0]
+        mags  = peaks[:, 1]
+
+        known_modes = sorted(
+            [gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK,
+             gm.GuitarMode.DIPOLE, gm.GuitarMode.RING_MODE, gm.GuitarMode.UPPER_MODES],
+            key=lambda m: m.mode_range(self._guitar_type)[0],
+        )
+        guaranteed: set = set()
+        last_claimed_freq: float = -1.0
+
+        for mode in known_modes:
+            lo, hi = mode.mode_range(self._guitar_type)
+            candidates = np.where(
+                (freqs >= lo) & (freqs <= hi) & (freqs > last_claimed_freq)
+            )[0]
+            if candidates.size == 0:
+                continue
+            best = int(candidates[np.argmax(mags[candidates])])
+            if any(abs(freqs[best] - freqs[g]) < 2.0 for g in guaranteed):
+                continue
+            guaranteed.add(best)
+            last_claimed_freq = float(freqs[best])
+
+        used = np.zeros(len(freqs), dtype=bool)
+        kept: list = []
+        for i in np.argsort(-mags):
+            idx = int(i)
+            if not used[idx]:
+                kept.append(idx)
+                used |= np.abs(freqs - freqs[idx]) < 2.0
+
+        kept_set = set(kept)
+        for g_idx in guaranteed:
+            if g_idx not in kept_set:
+                kept.append(g_idx)
+
+        return peaks[sorted(kept, key=lambda i: freqs[i])]
+
+    def find_peaks(self, mag_y_db) -> "tuple[bool, npt.NDArray]":
+        """Detect, interpolate, and deduplicate peaks above threshold.
+
+        Returns (triggered, peaks_array) where peaks_array has columns (freq, mag, Q).
+        Emits peaksChanged with the in-viewport subset.
+
+        Exact copy of FftCanvas.find_peaks — all logic preserved.
+        """
+        import numpy as np
+        from models import realtime_fft_analyzer as f_a
+
+        if not np.any(mag_y_db):
+            return False, self.saved_peaks
+
+        ploc = f_a.peak_detection(mag_y_db, self.threshold - 100)
+        iploc, peaks_mag = f_a.peak_interp(mag_y_db, ploc)
+
+        peaks_freq = (iploc * self.fft_data.sample_freq) / float(self.fft_data.n_f)
+
+        if peaks_mag.size > 0:
+            max_peaks_mag = np.max(peaks_mag)
+            q_values = f_a.peak_q_factor(
+                mag_y_db, ploc, iploc, peaks_mag,
+                self.fft_data.sample_freq, self.fft_data.n_f,
+            )
+            peaks = np.column_stack((peaks_freq, peaks_mag, q_values))
+            peaks = self._apply_mode_priority(peaks)
+            if peaks.shape[0] > 0:
+                peaks_freq = peaks[:, 0]
+                max_peaks_mag = np.max(peaks[:, 1])
+            else:
+                peaks_freq = np.array([])
+                max_peaks_mag = -100
+        else:
+            max_peaks_mag = -100
+            peaks = np.zeros((0, 3))
+
+        if max_peaks_mag > (self.threshold - 100):
+            self.saved_mag_y_db = mag_y_db
+            self.saved_peaks = peaks
+            triggered = True
+
+            self.peaks_f_min_index = 0
+            self.peaks_f_max_index = 0
+            b_peaks_f_indices = np.nonzero(
+                (peaks_freq < self.fmax) & (peaks_freq > self.fmin)
+            )
+            if len(b_peaks_f_indices[0]) > 0:
+                self.peaks_f_min_index = b_peaks_f_indices[0][0]
+                self.peaks_f_max_index = b_peaks_f_indices[0][-1] + 1
+
+            if self.peaks_f_max_index > 0:
+                self.b_peaks_freq = peaks_freq[
+                    self.peaks_f_min_index : self.peaks_f_max_index
+                ]
+                peaks_data = peaks[self.peaks_f_min_index : self.peaks_f_max_index]
+                self.peaksChanged.emit(peaks_data)
+            else:
+                self.b_peaks_freq = []
+                self.peaksChanged.emit(np.zeros((0, 3)))
+        else:
+            self.saved_peaks = np.zeros((0, 3))
+            self.peaksChanged.emit(self.saved_peaks)
+            triggered = False
+
+        return triggered, peaks
+
+    def _emit_loaded_peaks_at_threshold(self) -> None:
+        """Filter loaded-measurement peaks by threshold/fmin/fmax and emit peaksChanged.
+
+        Exact copy of FftCanvas._emit_loaded_peaks_at_threshold — all logic preserved.
+        """
+        import numpy as np
+
+        assert self._loaded_measurement_peaks is not None
+        threshold_db = self.threshold - 100
+        peaks = self._loaded_measurement_peaks[
+            self._loaded_measurement_peaks[:, 1] >= threshold_db
+        ]
+
+        empty = np.zeros((0, 3))
+        if peaks.shape[0] == 0:
+            self.saved_peaks = empty
+            self.b_peaks_freq = np.array([], dtype=np.float64)
+            self.peaksChanged.emit(empty)
+            return
+
+        self.saved_peaks = peaks
+        peaks_freq = peaks[:, 0]
+
+        b_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
+        if len(b_indices[0]) > 0:
+            self.peaks_f_min_index = int(b_indices[0][0])
+            self.peaks_f_max_index = int(b_indices[0][-1]) + 1
+            self.b_peaks_freq = peaks_freq[self.peaks_f_min_index:self.peaks_f_max_index]
+            self.peaksChanged.emit(peaks[self.peaks_f_min_index:self.peaks_f_max_index])
+        else:
+            self.peaks_f_min_index = 0
+            self.peaks_f_max_index = 0
+            self.b_peaks_freq = np.array([], dtype=np.float64)
+            self.peaksChanged.emit(empty)
+
+    def process_averages(self, mag_y) -> None:
+        """Accumulate and average FFT linear magnitudes.
+
+        Exact copy of FftCanvas.process_averages logic — all logic preserved.
+        Emits newSample, averagesChanged, spectrumUpdated on each triggered frame.
+        """
+        import numpy as np
+
+        if self.num_averages < self.max_average_count:
+            if self.num_averages > 0:
+                mag_y_sum = self.mag_y_sum + mag_y
+            else:
+                mag_y_sum = mag_y
+            num_averages = self.num_averages + 1
+
+            avg_mag_y = mag_y_sum / num_averages
+            avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
+            avg_mag_y_db = 20 * np.log10(avg_mag_y)
+
+            avg_amplitude = np.max(avg_mag_y_db) + 100
+            if avg_amplitude > self.threshold:
+                triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
+                if triggered:
+                    self.newSample.emit(self.is_measurement_complete)
+                    self.mag_y_sum = mag_y_sum
+                    self.num_averages = num_averages
+                    self.averagesChanged.emit(int(self.num_averages))
+                    self.saved_mag_y_db = avg_mag_y_db
+                    self.saved_peaks = avg_peaks
+                    self.spectrumUpdated.emit(self.freq, avg_mag_y_db)
+
+        self.spectrumUpdated.emit(self.freq, self.saved_mag_y_db)
+
+    # ------------------------------------------------------------------ #
+    # Tap capture (mirrors TapToneAnalyzer+TapDetection.swift handleTapDetection)
+    # ------------------------------------------------------------------ #
+
+    def do_capture_tap(self, mag_y_db, tap_amp: int) -> None:
+        """Capture one tap spectrum; accumulate until tap_num reached then freeze."""
+        import numpy as np
+
+        print(
+            f"TAP_DEBUG [handleTapDetection] ENTERED | "
+            f"tap_amp={tap_amp} is_guitar={self._proc_thread._is_guitar if self._proc_thread else '?'} "
+            f"captured_so_far={len(self._tap_spectra)} numberOfTaps={self._tap_num}"
+        )
+        if not np.any(mag_y_db):
+            print("TAP_DEBUG [handleTapDetection] SKIPPED — mag_y_db is all zeros")
+            return
+        self._tap_spectra.append(mag_y_db.copy())
+        captured = len(self._tap_spectra)
+        print(
+            f"TAP_DEBUG [handleTapDetection] GUITAR TAP STORED | "
+            f"currentTapCount={captured} numberOfTaps={self._tap_num} "
+            f"tapProgress={captured/max(self._tap_num,1):.2f}"
+        )
+        self.tapCountChanged.emit(captured, self._tap_num)
+
+        if captured >= self._tap_num:
+            stacked = np.stack(self._tap_spectra)
+            avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
+            self.saved_mag_y_db = avg_db
+            _, peaks = self.find_peaks(avg_db)
+            self._tap_spectra.clear()
+            self.tapDetectedSignal.emit()
+        else:
+            self.reset_tap_detector()
+
+    def on_tap_for_plate(self) -> None:
+        """Forward tap events to the plate capture state machine when active."""
+        if self.plate_capture.is_active and len(self._current_mag_y) > 0:
+            self.plate_capture.on_tap(self._current_mag_y, self.saved_mag_y_db)
+
+    # ------------------------------------------------------------------ #
+    # FFT frame processing (main entry point from FftProcessingThread)
+    # ------------------------------------------------------------------ #
+
+    def on_fft_frame(
+        self,
+        mag_y_db,
+        mag_y,
+        tap_fired: bool,
+        tap_amp: int,
+        fps: float,
+        sample_dt: float,
+        processing_dt: float,
+    ) -> None:
+        """Receive a processed FFT frame (main thread slot).
+
+        Called by FftCanvas._on_fft_frame_ready which connects to
+        FftProcessingThread.fftFrameReady.  Updates analysis state,
+        emits signals for the view to consume.
+        """
+        import numpy as np
+        from fft_canvas import DisplayMode
+
+        self._current_mag_y = mag_y
+
+        if tap_fired:
+            self.do_capture_tap(mag_y_db, tap_amp)
+            self.on_tap_for_plate()
+
+        # Emit spectrum for the view to draw
+        if self._display_mode == DisplayMode.LIVE:
+            if self.is_measurement_complete:
+                self.spectrumUpdated.emit(self.freq, self.saved_mag_y_db)
+            else:
+                _, peaks = self.find_peaks(mag_y_db)
+                self.spectrumUpdated.emit(self.freq, mag_y_db)
+        elif self._display_mode == DisplayMode.FROZEN:
+            self.spectrumUpdated.emit(self.freq, self.saved_mag_y_db)
+        # COMPARISON: skip spectrum update — only overlay curves shown
+
+        self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
+        self.levelChanged.emit(tap_amp)
+        peak_idx = int(np.argmax(mag_y_db))
+        if peak_idx < len(self.freq):
+            self.peakInfoChanged.emit(float(self.freq[peak_idx]), float(mag_y_db[peak_idx]))
+
+    # ------------------------------------------------------------------ #
+    # Selection helpers
+    # ------------------------------------------------------------------ #
+
+    def select_peak(self, freq: float) -> None:
+        """Record the selected peak frequency."""
+        self.selected_peak = freq
+
+    def deselect_peak(self, _freq: float) -> None:
+        """Clear the selected peak."""
+        pass  # selection display handled by FftCanvas
+
+    def clear_selected_peak(self) -> None:
+        """Reset the selected peak."""
+        self.selected_peak = -1.0
+
+    # ------------------------------------------------------------------ #
+    # Comparison overlay management
+    # (mirrors TapToneAnalyzer+MeasurementManagement.swift loadComparison)
+    # ------------------------------------------------------------------ #
+
+    def load_comparison(self, measurements: list) -> list:
+        """Prepare comparison data from measurements.
+
+        Returns list of (label, color, freq_arr, mag_arr) tuples for FftCanvas
+        to create PlotDataItem curves.  Mirrors loadComparison(measurements:) in Swift.
+        """
+        from datetime import datetime
+        import numpy as np
+        from fft_canvas import DisplayMode
+
+        self._comparison_data.clear()
+        self.comparison_labels.clear()
+
+        _PALETTE = [
+            (0,   122, 255),
+            (255, 149,   0),
+            (52,  199,  89),
+            (175,  82, 222),
+            (48,  176, 199),
+        ]
+
+        with_snapshots = [m for m in measurements if m.spectrum_snapshot is not None]
+        result = []
+        for idx, m in enumerate(with_snapshots):
+            snap = m.spectrum_snapshot
+            color = _PALETTE[idx % len(_PALETTE)]
+            freq_arr = np.array(snap.frequencies, dtype=np.float64)
+            mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
+            label = self._comparison_label(m)
+            self.comparison_labels.append((label, color))
+            self._comparison_data.append({
+                "label": label, "color": color,
+                "freqs": freq_arr, "mags": mag_arr,
+            })
+            result.append((label, color, freq_arr, mag_arr))
+
+        if with_snapshots:
+            snaps = [m.spectrum_snapshot for m in with_snapshots]
+            min_freq = int(min(s.min_freq for s in snaps))
+            max_freq = int(max(s.max_freq for s in snaps))
+            min_db   = float(min(s.min_db for s in snaps))
+            max_db   = float(max(s.max_db for s in snaps))
+            self.update_axis(min_freq, max_freq)
+            self._display_mode = DisplayMode.COMPARISON
+            self.comparisonChanged.emit(True)
+
+        return result
+
+    def clear_comparison(self) -> None:
+        """Clear comparison overlay state."""
+        from fft_canvas import DisplayMode
+        was_comparing = self.is_comparing
+        self._display_mode = DisplayMode.LIVE
+        self._comparison_data.clear()
+        self.comparison_labels.clear()
+        if was_comparing:
+            self.comparisonChanged.emit(False)
+
+    @staticmethod
+    def _comparison_label(m) -> str:
+        """Short label for the legend."""
+        from datetime import datetime
+        loc = getattr(m, "tap_location", None)
+        if loc:
+            return loc
+        ts = getattr(m, "timestamp", "")
+        try:
+            dt = datetime.fromisoformat(ts)
+            return dt.strftime("%b %-d %H:%M")
+        except Exception:
+            return ts[:16]
+
+    # ------------------------------------------------------------------ #
+    # Plate analysis (mirrors TapToneAnalyzer+SpectrumCapture.swift)
+    # ------------------------------------------------------------------ #
+
+    def start_plate_analysis(self) -> None:
+        """Arm the plate capture state machine for the next tap(s)."""
+        import app_settings as _as
+        self.plate_capture.start(
+            is_brace=self._measurement_type.is_brace,
+            measure_flc=_as.AppSettings.measure_flc(),
+        )
+
+    def reset_plate_analysis(self) -> None:
+        """Abort plate capture and return to idle."""
+        self.plate_capture.reset()
+
+    # ------------------------------------------------------------------ #
+    # Guitar type bands
+    # ------------------------------------------------------------------ #
+
+    def set_guitar_type(self, guitar_type) -> None:
+        """Update the guitar type used for mode classification."""
+        self._guitar_type = guitar_type
