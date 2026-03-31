@@ -374,7 +374,7 @@ class FftCanvas(pg.PlotWidget):
     currentDeviceLost: QtCore.pyqtSignal = QtCore.pyqtSignal(str)     # lost device name
     _devicesRefreshed: QtCore.pyqtSignal = QtCore.pyqtSignal()         # internal: thread → main
     plateStatusChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)    # plate capture status
-    plateAnalysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)  # fL, fC
+    plateAnalysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)  # fL, fC, fFLC
     tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)   # True=paused
     peakInfoChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)  # (peak_hz, peak_db)
     levelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)              # level 0-100 (dB+100)
@@ -990,7 +990,7 @@ class FftCanvas(pg.PlotWidget):
     def _on_tap_for_plate(self) -> None:
         """Forward tap events to the plate capture state machine when active."""
         if self._plate_capture.is_active and len(self._current_mag_y) > 0:
-            self._plate_capture.on_tap(self._current_mag_y)
+            self._plate_capture.on_tap(self._current_mag_y, self.saved_mag_y_db)
 
     def set_measurement_type(self, measurement_type: mt_mod.MeasurementType | str) -> None:
         """Switch between Guitar / Plate / Brace analysis modes."""
@@ -1001,9 +1001,17 @@ class FftCanvas(pg.PlotWidget):
         self._measurement_type = measurement_type
         self._proc_thread.set_measurement_type(measurement_type.is_guitar)
 
+    @property
+    def plate_capture(self) -> "pc.PlateCapture":
+        """The plate/brace capture state machine (read-only access for snapshot retrieval)."""
+        return self._plate_capture
+
     def start_plate_analysis(self) -> None:
         """Arm the plate capture state machine for the next tap(s)."""
-        self._plate_capture.start(is_brace=self._measurement_type.is_brace)
+        self._plate_capture.start(
+            is_brace=self._measurement_type.is_brace,
+            measure_flc=_as.AppSettings.measure_flc(),
+        )
 
     def reset_plate_analysis(self) -> None:
         """Abort plate capture and return to idle."""

@@ -451,6 +451,10 @@ class MainWindow(QtWidgets.QMainWindow):
         cv.setSpacing(0)
         cv.addWidget(self.fft_canvas, stretch=1)
 
+        # Material instructions panel (below graph, plate/brace only)
+        self._material_instr_panel = self._build_material_instr_panel()
+        cv.addWidget(self._material_instr_panel)
+
         ch.addWidget(canvas_widget, stretch=1)
 
         ch.addWidget(_vsep())
@@ -1438,6 +1442,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_tap_count.setVisible(False)
         _norm_hl.addWidget(self._sb_tap_count)
 
+        # Plate/brace phase step indicator (hidden by default)
+        self._sb_plate_step_lbl = QtWidgets.QLabel("")
+        self._sb_plate_step_lbl.setFont(caption)
+        self._sb_plate_step_lbl.setStyleSheet("color: rgb(40,100,210); font-weight: bold;")
+        self._sb_plate_step_lbl.setVisible(False)
+        _norm_hl.addWidget(self._sb_plate_step_lbl)
+
         hl.addWidget(self._sb_normal_wgt, stretch=1)
         vl.addLayout(hl)
 
@@ -1445,6 +1456,68 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_label = self._sb_detect_msg
 
         return bar
+
+    def _build_material_instr_panel(self) -> QtWidgets.QFrame:
+        """Compact phase-instructions panel shown below the graph for plate/brace modes.
+
+        Mirrors Swift's materialInstructionsView / decayTimeView.
+        Visible only when measurement type is plate/brace; updates as PlateCapture
+        state advances through IDLE → WAITING_L → WAITING_C → WAITING_FLC → COMPLETE.
+        """
+        frame = QtWidgets.QFrame()
+        frame.setObjectName("material_instr_panel")
+        frame.setStyleSheet(
+            "#material_instr_panel { border-top: 1px solid palette(mid); }"
+        )
+        hl = QtWidgets.QHBoxLayout(frame)
+        hl.setContentsMargins(8, 6, 8, 6)
+        hl.setSpacing(8)
+
+        # Phase colour dot
+        self._mip_dot = QtWidgets.QLabel()
+        self._mip_dot.setFixedSize(10, 10)
+        self._mip_dot.setStyleSheet(
+            "QLabel { background-color: gray; border-radius: 5px; }"
+        )
+        hl.addWidget(self._mip_dot, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        # Title + body text (stacked)
+        txt = QtWidgets.QVBoxLayout()
+        txt.setContentsMargins(0, 0, 0, 0)
+        txt.setSpacing(1)
+
+        _bold9 = QtGui.QFont()
+        _bold9.setPointSize(9)
+        _bold9.setBold(True)
+        self._mip_title_lbl = QtWidgets.QLabel("Press New Tap to begin")
+        self._mip_title_lbl.setFont(_bold9)
+        txt.addWidget(self._mip_title_lbl)
+
+        _sm9 = QtGui.QFont()
+        _sm9.setPointSize(9)
+        self._mip_body_lbl = QtWidgets.QLabel(
+            "Press 'New Tap' to start the plate measurement."
+        )
+        self._mip_body_lbl.setFont(_sm9)
+        self._mip_body_lbl.setStyleSheet("color: palette(shadow);")
+        txt.addWidget(self._mip_body_lbl)
+
+        hl.addLayout(txt, stretch=1)
+
+        # Step counter on the right (e.g. "1/3", "2/3", "✓")
+        _bold9r = QtGui.QFont()
+        _bold9r.setPointSize(9)
+        _bold9r.setBold(True)
+        self._mip_step_lbl = QtWidgets.QLabel("")
+        self._mip_step_lbl.setFont(_bold9r)
+        self._mip_step_lbl.setStyleSheet("color: rgb(40,100,210);")
+        self._mip_step_lbl.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+        )
+        hl.addWidget(self._mip_step_lbl)
+
+        frame.setVisible(False)  # Shown when plate/brace type is selected
+        return frame
 
     def _show_metrics(self) -> None:
         """Non-modal dialog showing live FFT diagnostics."""
@@ -2221,6 +2294,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Toggle peak list: guitar → PeakListWidget; plate/brace → MaterialPeakListWidget
         self.peak_widget.setVisible(mt.is_guitar)
         self._material_scroll.setVisible(not mt.is_guitar)
+        self._material_instr_panel.setVisible(not mt.is_guitar)
         if not mt.is_guitar:
             show_flc = (not mt.is_brace) and AS.AppSettings.measure_flc()
             self._material_peak_widget.set_mode(
@@ -2230,6 +2304,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._mat_title.setText(
                 "Brace Properties" if mt.is_brace else "Plate Properties"
             )
+            self._update_plate_phase_ui()   # Reset panel to IDLE state for new type
         self._update_measurement_badge()
 
     def _on_material_assignment_changed(
@@ -2323,12 +2398,94 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _on_plate_status_changed(self, status: str) -> None:
-        """Update status bar with plate/brace capture progress."""
+        """Update instructions panel and status bar for plate/brace capture progress."""
+        self._update_plate_phase_ui(status)
+
+    def _update_plate_phase_ui(self, status: str = "") -> None:
+        """Sync the material instructions panel and status bar to the current PlateCapture state.
+
+        Called on every PlateCapture.stateChanged emission and on measurement type change.
+        """
+        mt = self._current_mt()
+        pc = self.fft_canvas.plate_capture
+        state = pc.state
+        State = type(pc).State
+
+        is_brace = mt.is_brace
+        measure_flc = (not is_brace) and AS.AppSettings.measure_flc()
+        total = 1 if is_brace else (3 if measure_flc else 2)
+
+        # ── Instructions panel ──────────────────────────────────────────
+        if state == State.IDLE:
+            self._mip_dot.setStyleSheet(
+                "QLabel { background-color: gray; border-radius: 5px; }"
+            )
+            self._mip_title_lbl.setText("Press New Tap to begin")
+            self._mip_body_lbl.setText(
+                f"Press \u2018New Tap\u2019 to start the "
+                f"{'one' if is_brace else ('two' if not measure_flc else 'three')}"
+                f"-tap {'brace' if is_brace else 'plate'} measurement."
+            )
+            self._mip_step_lbl.setText("")
+            self._sb_plate_step_lbl.setVisible(False)
+
+        elif state == State.WAITING_L:
+            self._mip_dot.setStyleSheet(
+                "QLabel { background-color: #1976D2; border-radius: 5px; }"
+            )
+            self._mip_title_lbl.setText("Step 1: Longitudinal (L)")
+            self._mip_body_lbl.setText(
+                "Hold brace at 22% from one end along the length. Tap center."
+                if is_brace else
+                "Hold plate at 22% from one end along the length, near one long edge. Tap center."
+            )
+            self._mip_step_lbl.setText(f"1/{total}")
+            self._sb_plate_step_lbl.setText(f"Step\u00a01/{total}")
+            self._sb_plate_step_lbl.setVisible(True)
+
+        elif state == State.WAITING_C:
+            self._mip_dot.setStyleSheet(
+                "QLabel { background-color: #E65100; border-radius: 5px; }"
+            )
+            self._mip_title_lbl.setText("Step 2: Cross-grain (C)")
+            self._mip_body_lbl.setText(
+                "Rotate 90\u00b0. Hold plate at 22% from one end along the width, "
+                "near one short edge. Tap center."
+            )
+            self._mip_step_lbl.setText(f"2/{total}")
+            self._sb_plate_step_lbl.setText(f"Step\u00a02/{total}")
+            self._sb_plate_step_lbl.setVisible(True)
+
+        elif state == State.WAITING_FLC:
+            self._mip_dot.setStyleSheet(
+                "QLabel { background-color: #7B1FA2; border-radius: 5px; }"
+            )
+            self._mip_title_lbl.setText("Step 3: FLC (Diagonal)")
+            self._mip_body_lbl.setText(
+                "Hold plate at the midpoint of one long edge. "
+                "Tap near the opposite corner (~22% from both end and side)."
+            )
+            self._mip_step_lbl.setText(f"3/{total}")
+            self._sb_plate_step_lbl.setText(f"Step\u00a03/{total}")
+            self._sb_plate_step_lbl.setVisible(True)
+
+        else:  # COMPLETE
+            self._mip_dot.setStyleSheet(
+                "QLabel { background-color: #388E3C; border-radius: 5px; }"
+            )
+            self._mip_title_lbl.setText("Measurement Complete")
+            self._mip_body_lbl.setText(
+                "All modes captured. Review the peak selections in the results panel."
+            )
+            self._mip_step_lbl.setText("\u2713")
+            self._sb_plate_step_lbl.setVisible(False)
+
+        # ── Status bar detect message (left side) ───────────────────────
         if status:
             self._sb_detect_msg.setText(status)
             self._sb_detect_msg.setStyleSheet("")
 
-    def _on_plate_analysis_complete(self, f_long: float, f_cross: float) -> None:
+    def _on_plate_analysis_complete(self, f_long: float, f_cross: float, f_flc: float) -> None:
         """Auto-compute material properties and display in results panel."""
         mt = self._current_mt()
         dims = self._get_current_dims()
@@ -2344,6 +2501,7 @@ class MainWindow(QtWidgets.QMainWindow):
         peaks = self.fft_canvas.saved_peaks
         actual_long = 0.0
         actual_cross = 0.0
+        actual_flc = 0.0
         if len(peaks) > 0:
             freqs = peaks[:, 0]
             modes: dict[float, str] = {}
@@ -2361,20 +2519,32 @@ class MainWindow(QtWidgets.QMainWindow):
                 used.add(idx)
                 actual_cross = float(freqs[idx])
                 modes[actual_cross] = "Cross-grain"
+            if f_flc > 0 and not mt.is_brace:
+                dists = np.abs(freqs - f_flc).copy()
+                for i in used:
+                    dists[i] = np.inf
+                idx = int(np.argmin(dists))
+                used.add(idx)
+                actual_flc = float(freqs[idx])
+                modes[actual_flc] = "FLC"
             for i, f in enumerate(freqs):
                 if i not in used:
                     modes[float(f)] = "Peak"
             peak_model.modes = modes
 
         # Update material peak widget with auto-assigned frequencies
-        self._material_peak_widget.set_assignment(actual_long, actual_cross)
+        self._material_peak_widget.set_assignment(actual_long, actual_cross,
+                                                   flc_freq=actual_flc)
 
         try:
             if mt.is_brace:
                 self._populate_brace_section(PA.calculate_brace_properties(dims, f_long))
             else:
+                glc_pa = PA.calculate_glc_from_flc(dims, actual_flc) if actual_flc > 0 else None
                 self._populate_plate_section(
-                    PA.calculate_plate_properties(dims, f_long, f_cross)
+                    PA.calculate_plate_properties(dims, f_long, f_cross),
+                    flc_freq=actual_flc,
+                    glc_pa=glc_pa,
                 )
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "Calculation Error", str(exc))
@@ -2587,9 +2757,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 db_offset = (peak.magnitude + _LABEL_OFFSET_DB) - float(xytext[1])
                 annotation_offsets[freq_to_id[ann_freq]] = [hz_offset, db_offset]
 
-        # Spectrum snapshot — guitar uses spectrumSnapshot; plate/brace use longitudinalSnapshot
+        # Spectrum snapshot — guitar uses spectrumSnapshot; plate/brace use phase snapshots
         spectrum_snapshot: M.SpectrumSnapshot | None = None
         longitudinal_snapshot: M.SpectrumSnapshot | None = None
+        cross_snapshot: M.SpectrumSnapshot | None = None
+        flc_snapshot: M.SpectrumSnapshot | None = None
         if hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
             freqs = canvas.freq.tolist()
             mags  = canvas.saved_mag_y_db.tolist()
@@ -2609,9 +2781,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 # Plate/brace: embed current dimensions in the longitudinal snapshot
                 # so they are restored when the measurement is loaded back.
                 _dims = self._get_current_dims()
+                _pc = canvas.plate_capture
                 if mt.is_brace:
+                    _l_mags = (
+                        _pc.long_mag_db.tolist()
+                        if _pc.long_mag_db is not None
+                        else mags
+                    )
                     longitudinal_snapshot = M.SpectrumSnapshot(
-                        **_snap_base,
+                        frequencies=freqs,
+                        magnitudes=_l_mags,
+                        min_freq=float(self.min_spin.value()),
+                        max_freq=float(self.max_spin.value()),
+                        min_db=float(self.threshold_slider.value()),
+                        max_db=float(np.max(_l_mags)) + 10.0,
+                        guitar_type=self.guitar_type_combo.currentText(),
+                        measurement_type=self.measurement_type_combo.currentText(),
                         brace_length=_dims.length_mm if _dims else None,
                         brace_width=_dims.width_mm if _dims else None,
                         brace_thickness=_dims.thickness_mm if _dims else None,
@@ -2619,8 +2804,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     )
                 else:
                     _psp_str = AS.AppSettings.plate_stiffness_preset()
-                    longitudinal_snapshot = M.SpectrumSnapshot(
-                        **_snap_base,
+                    _plate_dim_kwargs = dict(
                         plate_length=_dims.length_mm if _dims else None,
                         plate_width=_dims.width_mm if _dims else None,
                         plate_thickness=_dims.thickness_mm if _dims else None,
@@ -2633,6 +2817,52 @@ class MainWindow(QtWidgets.QMainWindow):
                         guitar_body_length=AS.AppSettings.guitar_body_length(),
                         guitar_body_width=AS.AppSettings.guitar_body_width(),
                     )
+                    # Longitudinal snapshot uses the mag_db stored per-phase
+                    # (falls back to saved_mag_y_db if per-phase data is missing)
+                    _l_mags = (
+                        _pc.long_mag_db.tolist()
+                        if _pc.long_mag_db is not None
+                        else mags
+                    )
+                    longitudinal_snapshot = M.SpectrumSnapshot(
+                        frequencies=freqs,
+                        magnitudes=_l_mags,
+                        min_freq=float(self.min_spin.value()),
+                        max_freq=float(self.max_spin.value()),
+                        min_db=float(self.threshold_slider.value()),
+                        max_db=float(np.max(_l_mags)) + 10.0,
+                        guitar_type=self.guitar_type_combo.currentText(),
+                        measurement_type=self.measurement_type_combo.currentText(),
+                        **_plate_dim_kwargs,
+                    )
+                    # Cross-grain snapshot
+                    if _pc.cross_mag_db is not None:
+                        _c_mags = _pc.cross_mag_db.tolist()
+                        cross_snapshot = M.SpectrumSnapshot(
+                            frequencies=freqs,
+                            magnitudes=_c_mags,
+                            min_freq=float(self.min_spin.value()),
+                            max_freq=float(self.max_spin.value()),
+                            min_db=float(self.threshold_slider.value()),
+                            max_db=float(np.max(_c_mags)) + 10.0,
+                            guitar_type=self.guitar_type_combo.currentText(),
+                            measurement_type=self.measurement_type_combo.currentText(),
+                            **_plate_dim_kwargs,
+                        )
+                    # FLC snapshot
+                    if _pc.flc_mag_db is not None:
+                        _flc_mags = _pc.flc_mag_db.tolist()
+                        flc_snapshot = M.SpectrumSnapshot(
+                            frequencies=freqs,
+                            magnitudes=_flc_mags,
+                            min_freq=float(self.min_spin.value()),
+                            max_freq=float(self.max_spin.value()),
+                            min_db=float(self.threshold_slider.value()),
+                            max_db=float(np.max(_flc_mags)) + 10.0,
+                            guitar_type=self.guitar_type_combo.currentText(),
+                            measurement_type=self.measurement_type_combo.currentText(),
+                            **_plate_dim_kwargs,
+                        )
 
         mic_name: str | None = None
         try:
@@ -2647,6 +2877,8 @@ class MainWindow(QtWidgets.QMainWindow):
             notes=notes or None,
             spectrum_snapshot=spectrum_snapshot,
             longitudinal_snapshot=longitudinal_snapshot,
+            cross_snapshot=cross_snapshot,
+            flc_snapshot=flc_snapshot,
             selected_peak_ids=selected_ids or None,
             peak_mode_overrides=peak_mode_overrides or None,
             annotation_offsets=annotation_offsets or None,
