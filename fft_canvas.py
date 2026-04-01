@@ -253,6 +253,7 @@ class FftProcessingThread(QtCore.QThread):
         self._tap_detector.resume()
 
     def reset_tap_detector(self) -> None:
+        self._tap_pending = False
         self._tap_detector.reset()
 
     def cancel_tap_sequence_in_thread(self) -> None:
@@ -1018,6 +1019,10 @@ class FftCanvas(pg.PlotWidget):
         """Begin a fresh tap sequence: clear any accumulated spectra and restart warmup."""
         self.analyzer.start_tap_sequence()
 
+    def cancel_tap_sequence(self) -> None:
+        """Cancel the current tap sequence and go directly to IDLE — no warmup delay."""
+        self.analyzer.cancel_tap_sequence()
+
     def set_tap_num(self, n: int) -> None:
         """Set how many taps to accumulate before freezing (1 = immediate freeze)."""
         self.analyzer.set_tap_num(n)
@@ -1438,6 +1443,11 @@ class FftCanvas(pg.PlotWidget):
             # clear_comparison was already called by analyzer.set_measurement_complete
             # but we need to clear the view curves too
             self._clear_comparison_view()
+            # Reset the Y range to the full live view so the ambient noise floor
+            # is visible.  The loaded-measurement range (set by setYRange in
+            # _restore_measurement) is appropriate for frozen display but typically
+            # too narrow to show quiet live audio.
+            self.setYRange(-100, 0, padding=0)
 
     def _clear_comparison_view(self) -> None:
         """Remove comparison view curves (called when returning to live mode)."""

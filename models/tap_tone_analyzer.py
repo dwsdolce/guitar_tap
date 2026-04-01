@@ -889,13 +889,13 @@ class TapToneAnalyzer(QtCore.QObject):
 
     def resume_tap_detection(self) -> None:
         if self._proc_thread is not None:
-            self._proc_thread.resume_tap_detection()
+            self._proc_thread.reset_tap_detector()  # WARMUP — matches Swift resumeTapDetection
         self.tapDetectionPaused.emit(False)
 
     def cancel_tap_sequence(self) -> None:
         self._tap_spectra.clear()
         if self._proc_thread is not None:
-            self._proc_thread.cancel_tap_sequence_in_thread()
+            self._proc_thread.reset_tap_detector()  # WARMUP — matches Swift cancelTapSequence
         self.tapCountChanged.emit(0, self._tap_num)
 
     # ------------------------------------------------------------------ #
@@ -936,11 +936,16 @@ class TapToneAnalyzer(QtCore.QObject):
         if self._proc_thread is not None:
             self._proc_thread.set_measurement_complete(is_complete)
         if not is_complete:
-            import numpy as np
             self._tap_spectra.clear()
             self._loaded_measurement_peaks = None
-            # Clear comparison overlay when starting a new tap
-            self._clear_comparison_state()
+            # Restore freq to native FFT bins — a loaded measurement may have overwritten
+            # self.freq with its saved frequency array (different length from the live FFT).
+            import numpy as np
+            x_axis = np.arange(0, self.fft_data.h_n_f + 1)
+            self.freq = x_axis * self.fft_data.sample_freq // self.fft_data.n_f
+            # Clear comparison overlay — uses clear_comparison() so comparisonChanged(False)
+            # is emitted when needed, allowing the UI to hide the comparison status bar.
+            self.clear_comparison()
         self.measurementComplete.emit(is_complete)
 
     def _clear_comparison_state(self) -> None:
@@ -1211,7 +1216,11 @@ class TapToneAnalyzer(QtCore.QObject):
             self._tap_spectra.clear()
             self.tapDetectedSignal.emit()
         else:
-            self.reset_tap_detector()
+            # Re-arm for the next tap directly at IDLE (no warmup) so that the guitar
+            # ring from the just-captured tap doesn't prevent the next rising edge from
+            # firing.  cancel_tap_sequence_in_thread also clears _tap_pending.
+            if self._proc_thread is not None:
+                self._proc_thread.cancel_tap_sequence_in_thread()
 
     def on_tap_for_plate(self) -> None:
         """Forward tap events to the plate capture state machine when active."""

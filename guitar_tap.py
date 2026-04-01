@@ -2185,12 +2185,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_new_tap(self) -> None:
         """Begin a new tap sequence, clearing any in-progress accumulated spectra."""
+        # Exit comparison mode first — required when _is_measurement_complete is False
+        # (e.g. user entered comparison from live-detecting state) since the
+        # set_measurement_complete(False) path below would be skipped entirely.
+        if self.fft_canvas.is_comparing:
+            self.fft_canvas.clear_comparison()
         if self._is_measurement_complete:
             self.set_measurement_complete(False)
         self._is_paused = False
-        # start_tap_sequence clears accumulated spectra and restarts the warmup,
-        # preventing leftover spectra from a previous partial sequence polluting the next one.
-        self.fft_canvas.start_tap_sequence()
+        # cancel_tap_sequence clears accumulated spectra and restarts warmup,
+        # matching Swift's cancelTapSequence behaviour.
+        self.fft_canvas.cancel_tap_sequence()
         self._tap_count_captured = 0
         self._sb_tap_count.setVisible(False)
         self._sb_progress.setVisible(False)
@@ -2998,10 +3003,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # Loading a measurement exits comparison mode and enters frozen mode —
         # mirrors comparisonSpectra = [] + displayMode = .frozen in loadMeasurement() in Swift.
         canvas.clear_comparison()
-        canvas.display_mode = DisplayMode.FROZEN
-
         if self._is_measurement_complete:
             self.set_measurement_complete(False)
+        # Set FROZEN after the set_measurement_complete(False) call — that call invokes
+        # analyzer.clear_comparison() which sets _display_mode = LIVE; setting FROZEN
+        # here ensures the loaded measurement is displayed correctly.
+        canvas.display_mode = DisplayMode.FROZEN
 
         # Restore display settings
         if m.guitar_type:
