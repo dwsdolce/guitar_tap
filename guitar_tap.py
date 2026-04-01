@@ -377,6 +377,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_measurement_complete: bool = False
         self._tap_count_captured: int = 0
         self._tap_count_total: int = 1
+        # Loaded-settings warning — mirrors Swift showLoadedSettingsWarning
+        self._show_loaded_settings_warning: bool = False
+        self._loaded_tap_threshold: int | None = None   # dB value at load time
+        self._loaded_tap_num: int | None = None         # tap count at load time
         self._help_dialog: HD.HelpDialog | None = None
         self._metrics_dialog: QtWidgets.QDialog | None = None
         self._proc_times: list[float] = []          # rolling 30-frame processing times
@@ -1452,6 +1456,48 @@ class MainWindow(QtWidgets.QMainWindow):
         _norm_hl.addWidget(self._sb_plate_step_lbl)
 
         hl.addWidget(self._sb_normal_wgt, stretch=1)
+
+        # ── Loaded-settings warning banner (hidden by default) ────────────
+        # Mirrors Swift showLoadedSettingsWarning — shown as an extra row
+        # above the normal status row; the normal row stays unchanged.
+        self._sb_warning_wgt = QtWidgets.QWidget()
+        self._sb_warning_wgt.setObjectName("sb_warning_wgt")
+        self._sb_warning_wgt.setStyleSheet(
+            "#sb_warning_wgt { background: rgba(255,165,0,31);"
+            " border-radius: 4px; }"
+        )
+        _warn_hl = QtWidgets.QHBoxLayout(self._sb_warning_wgt)
+        _warn_hl.setContentsMargins(6, 2, 6, 2)
+        _warn_hl.setSpacing(5)
+        self._sb_warning_icon = QtWidgets.QLabel()
+        _warn_pix = qta.icon("fa5s.exclamation-triangle", color="orange").pixmap(14, 14)
+        self._sb_warning_icon.setPixmap(_warn_pix)
+        self._sb_warning_icon.setFixedSize(14, 14)
+        # Opacity effect drives the pulse animation (works on pixmap labels)
+        self._warn_opacity_effect = QtWidgets.QGraphicsOpacityEffect(self._sb_warning_icon)
+        self._warn_opacity_effect.setOpacity(1.0)
+        self._sb_warning_icon.setGraphicsEffect(self._warn_opacity_effect)
+        _warn_hl.addWidget(self._sb_warning_icon)
+        self._sb_warning_msg = QtWidgets.QLabel("")
+        self._sb_warning_msg.setFont(caption)
+        self._sb_warning_msg.setStyleSheet("color: orange; font-weight: bold;")
+        _warn_hl.addWidget(self._sb_warning_msg)
+        _warn_hl.addStretch()
+        self._sb_warning_wgt.setVisible(False)
+        vl.addWidget(self._sb_warning_wgt)
+
+        # Timer for pulsing the warning icon opacity (mirrors Swift warningIconOpacity animation:
+        # easeInOut 0.6 s, repeating, autoreverses, range 0.2–1.0)
+        import math as _math
+        self._warn_pulse_timer = QtCore.QTimer(self)
+        self._warn_pulse_timer.setInterval(50)   # 20 fps
+        self._warn_pulse_t: float = 0.0
+        def _pulse_tick() -> None:
+            self._warn_pulse_t += 0.05 / 0.6     # advance phase; full period = 0.6 s
+            opacity = 0.2 + 0.8 * (0.5 + 0.5 * _math.cos(_math.pi * self._warn_pulse_t))
+            self._warn_opacity_effect.setOpacity(opacity)
+        self._warn_pulse_timer.timeout.connect(_pulse_tick)
+
         vl.addLayout(hl)
 
         # Keep status_label as a no-op alias so old call sites don't crash
@@ -1528,9 +1574,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._metrics_dialog.activateWindow()
             return
 
-        fft_settings = {"sampling_rate": 48000, "window_length": 4 * 16384}
-        sr          = fft_settings["sampling_rate"]
-        wl          = fft_settings["window_length"]
+        wl          = 4 * 16384
+        sr          = self.fft_canvas.fft_data.sample_freq
         spectral_res = sr / wl
         bandwidth    = sr / 2
         sample_len   = wl / sr
@@ -1749,7 +1794,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_pdf_btn.clicked.connect(self._on_export_pdf)
 
         # Tap accumulator
-        self.tap_num_spin.valueChanged.connect(canvas.set_tap_num)
+        self.tap_num_spin.valueChanged.connect(self._on_tap_num_changed)
 
     def _init_state(self, f_range: dict[str, int]) -> None:
         """Restore saved values and initialise display state."""
@@ -1792,9 +1837,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_tap_count(self, captured: int, total: int) -> None:
         self._tap_count_captured = captured
         self._tap_count_total = total
-        show = captured > 0
+        # Only show count/progress while actively detecting — mirrors Swift `isDetecting && currentTapCount > 0`
+        show = captured > 0 and not self._is_measurement_complete
         if show:
-            pct = int(captured * 100 / max(total, 1))
+            pct = int(min(captured, total) * 100 / max(total, 1))  # clamp — mirrors Swift min(1.0, ...)
             self._sb_progress.setValue(pct)
             self._sb_tap_count.setText(f"{captured}/{total}")
         self._sb_progress.setVisible(show)
@@ -1814,11 +1860,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cal_status.setText("Calibration: none")
 
     def _on_level_changed(self, amp: int) -> None:
-        db = amp - 100.0
-        self._sb_avg_lbl.setText(f"{db:.1f} dB")
+        # Plate/brace mode: show RMS input level gated to FFT frame rate —
+        # mirrors Swift fft.displayLevelDB used when !measurementType.isGuitar
+        if self._is_running and not self._current_mt().is_guitar:
+            self._sb_avg_lbl.setText(f"{amp - 100.0:.1f} dB")
 
     def _on_peak_info(self, peak_hz: float, peak_db: float) -> None:
         if self._is_running:
+            # Guitar mode: show FFT peak magnitude — mirrors Swift fft.peakMagnitude
+            # Plate/brace: _sb_avg_lbl is updated in _on_level_changed (displayLevelDB)
+            if self._current_mt().is_guitar:
+                self._sb_avg_lbl.setText(f"{peak_db:.1f} dB")
             self._sb_peak_lbl.setText(f"Peak: {peak_db:.1f} dB @ {peak_hz:.1f} Hz")
 
     def _sb_update_frozen_state(self, frozen: bool) -> None:
@@ -1958,6 +2010,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_measurement_complete(self, checked: bool) -> None:
         self._is_measurement_complete = checked
         self.fft_canvas.set_measurement_complete(checked)
+        if not checked:
+            self.fft_canvas.set_loaded_measurement_name(None)
+        else:
+            # Successful capture — clear loaded-settings warning (matches Swift isMeasurementComplete.didSet)
+            self._clear_loaded_settings_warning()
         self.peak_widget.data_held(checked)
         mt = self._current_mt()
         if not mt.is_guitar:
@@ -2088,10 +2145,28 @@ class MainWindow(QtWidgets.QMainWindow):
         AS.AppSettings.set_threshold(db_val + 100)
         self.peak_min_readout.setText(f"{db_val} dB")
 
+    def _clear_loaded_settings_warning(self) -> None:
+        """Hide the loaded-settings warning banner — mirrors Swift showLoadedSettingsWarning = false."""
+        self._show_loaded_settings_warning = False
+        self._warn_pulse_timer.stop()
+        self._warn_opacity_effect.setOpacity(1.0)
+        self._sb_warning_wgt.setVisible(False)
+
     def _on_tap_threshold_changed(self, db_val: int) -> None:
         self.fft_canvas.set_tap_threshold(db_val + 100)
         AS.AppSettings.set_tap_threshold(db_val + 100)
         self.tap_threshold_readout.setText(f"{db_val} dB")
+        # Clear loaded-settings warning when user manually changes threshold
+        # (mirrors Swift tapDetectionThreshold.didSet)
+        if self._loaded_tap_threshold is not None and db_val != self._loaded_tap_threshold:
+            self._clear_loaded_settings_warning()
+
+    def _on_tap_num_changed(self, n: int) -> None:
+        self.fft_canvas.set_tap_num(n)
+        # Clear loaded-settings warning when user manually changes tap count
+        # (mirrors Swift numberOfTaps.didSet)
+        if self._loaded_tap_num is not None and n != self._loaded_tap_num:
+            self._clear_loaded_settings_warning()
 
     # ================================================================
     # Tap button state
@@ -3248,7 +3323,24 @@ class MainWindow(QtWidgets.QMainWindow):
                     except ValueError:
                         pass
 
+        # Update chart title to show the measurement name — mirrors Swift loadedMeasurementName.
+        canvas.set_loaded_measurement_name(m.tap_location)
+
         self.set_measurement_complete(True)
+
+        # Arm the loaded-settings warning AFTER set_measurement_complete so it isn't
+        # immediately cleared by that call — mirrors Swift showLoadedSettingsWarning = true
+        # being the last statement in loadMeasurement().
+        self._loaded_tap_threshold = self.tap_threshold_slider.value()
+        self._loaded_tap_num = self.tap_num_spin.value()
+        self._show_loaded_settings_warning = True
+        self._sb_warning_msg.setText(
+            f"Settings from loaded measurement \u2014 Threshold: {self._loaded_tap_threshold} dB"
+            f" \u00b7 Taps: {self._loaded_tap_num}"
+        )
+        self._sb_warning_wgt.setVisible(True)
+        self._warn_pulse_t = 0.0
+        self._warn_pulse_timer.start()
 
     def _on_export_spectrum(self) -> None:
         from pyqtgraph.exporters import ImageExporter

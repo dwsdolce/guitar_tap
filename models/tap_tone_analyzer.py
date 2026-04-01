@@ -909,9 +909,28 @@ class TapToneAnalyzer(QtCore.QObject):
         self.tapCountChanged.emit(0, self._tap_num)
 
     def set_tap_num(self, n: int) -> None:
-        """Set how many taps to accumulate before freezing."""
-        self._tap_num = max(1, n)
-        self._tap_spectra.clear()
+        """Set how many taps to accumulate before freezing.
+
+        Mirrors Swift numberOfTaps.didSet: if the user reduces the tap count
+        to at or below what has already been captured mid-sequence, process
+        immediately rather than waiting for more taps.
+        """
+        import numpy as np
+        new_num = max(1, n)
+        captured = len(self._tap_spectra)
+        if captured >= new_num and captured > 0:
+            # Already have enough — process now (mirrors Swift numberOfTaps.didSet)
+            self._tap_num = new_num
+            stacked = np.stack(self._tap_spectra[:new_num])
+            avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
+            self.saved_mag_y_db = avg_db
+            _, _ = self.find_peaks(avg_db)
+            self._tap_spectra.clear()
+            self.tapDetectedSignal.emit()
+        else:
+            self._tap_num = new_num
+            # Don't clear spectra when count is raised mid-sequence — keep what
+            # was already captured (mirrors Swift which never clears capturedTaps here).
 
     # ------------------------------------------------------------------ #
     # Measurement type

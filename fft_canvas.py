@@ -411,7 +411,7 @@ class FftCanvas(pg.PlotWidget):
         self.showGrid(x=True, y=True, alpha=0.15)
         self.setLabel("left", "FFT Magnitude (dB)")
         self.setLabel("bottom", "Frequency (Hz)")
-        self.setTitle("FFT Peaks")
+        self.setTitle("FFT Peaks", color="#333333")
         self.setYRange(-100, 0, padding=0)
 
         # Enable and configure top axis for note labels
@@ -1015,12 +1015,21 @@ class FftCanvas(pg.PlotWidget):
         """Public wrapper to reset the tap detector state machine."""
         self.analyzer.reset_tap_detector()
 
+    def set_loaded_measurement_name(self, name: str | None) -> None:
+        """Update the chart title to reflect the loaded measurement name.
+
+        Mirrors Swift: chartTitle = tap.loadedMeasurementName ?? "New"
+        used as 'FFT Peaks — {chartTitle}'.
+        """
+        suffix = name if (name and name.strip()) else "New"
+        self.setTitle(f"FFT Peaks \u2014 {suffix}", color="#333333")
+
     def start_tap_sequence(self) -> None:
         """Begin a fresh tap sequence: clear any accumulated spectra and restart warmup."""
         self.analyzer.start_tap_sequence()
 
     def cancel_tap_sequence(self) -> None:
-        """Cancel the current tap sequence and go directly to IDLE — no warmup delay."""
+        """Cancel the current tap sequence and restart warmup — matches Swift cancelTapSequence."""
         self.analyzer.cancel_tap_sequence()
 
     def set_tap_num(self, n: int) -> None:
