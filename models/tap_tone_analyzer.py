@@ -855,6 +855,13 @@ class TapToneAnalyzer(QtCore.QObject):
         """Switch to a different input device and auto-load its calibration."""
         import app_settings as _as
         self.mic.set_device(device_index)
+        # Sync fft_data sample rate to the new device's native rate (already
+        # updated in mic.set_device) so the frequency axis stays correct.
+        if self.mic.rate != self.fft_data.sample_freq:
+            import math as _math
+            self.fft_data.sample_freq = self.mic.rate
+            self.fft_data.n_f = int(2 ** _math.ceil(_math.log2(self.fft_data.m_t)))
+            self.fft_data.h_n_f = self.fft_data.n_f // 2
         try:
             dev_name = str(self._sd.query_devices(device_index)["name"])
         except Exception:

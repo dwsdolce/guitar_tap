@@ -130,6 +130,14 @@ class Microphone:
         """
         self._close_stream_only()
         self.device_index = device_index
+        # Use the device's native sample rate so PortAudio doesn't resample.
+        try:
+            info = sd.query_devices(device_index)
+            native = int(info["default_samplerate"])
+            if native > 0:
+                self.rate = native
+        except Exception:
+            pass
         with self._stop_lock:
             self.is_stopped = False
         self.stream = sd.InputStream(

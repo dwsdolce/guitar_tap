@@ -479,6 +479,20 @@ class FftCanvas(pg.PlotWidget):
             except Exception:
                 pass
 
+        # Update fft_data to use the selected device's native sample rate.
+        # This ensures FFT bin spacing matches what PortAudio actually delivers,
+        # regardless of whether the device's native rate matches the default.
+        try:
+            _dev_idx = saved_device_index if saved_device_index is not None else sd.default.device[0]
+            _dev_info = sd.query_devices(_dev_idx)
+            _native_rate = int(_dev_info["default_samplerate"])
+            if _native_rate > 0 and _native_rate != self.fft_data.sample_freq:
+                self.fft_data.sample_freq = _native_rate
+                self.fft_data.n_f = int(2 ** (np.ceil(np.log2(self.fft_data.m_t))))
+                self.fft_data.h_n_f = self.fft_data.n_f // 2
+        except Exception:
+            pass
+
         # ── TapToneAnalyzer: the model ─────────────────────────────────────
         # Auto-load calibration profile before constructing the analyzer so we
         # can pass the corrections array in.
