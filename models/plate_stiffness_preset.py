@@ -25,13 +25,14 @@ class PlateStiffnessPreset(Enum):
     CLASSICAL_BACK    = "Classical Back"
     CUSTOM            = "Custom"
 
-    # ── vibrational stiffness value ───────────────────────────────────────────
+    # MARK: - Vibrational Stiffness Value
 
     @property
-    def value_fvs(self) -> float:
+    def value(self) -> float:
         """The vibrational stiffness value (f_vs) for this preset.
 
-        Returns 0 for CUSTOM; callers should substitute the user-entered value.
+        Returns 0 for CUSTOM; callers should use the user-entered custom value in that case.
+
         Mirrors Swift PlateStiffnessPreset.value.
         """
         return {
@@ -42,7 +43,7 @@ class PlateStiffnessPreset(Enum):
             PlateStiffnessPreset.CUSTOM:             0.0,
         }[self]
 
-    # ── display ───────────────────────────────────────────────────────────────
+    # MARK: - Display
 
     @property
     def short_name(self) -> str:

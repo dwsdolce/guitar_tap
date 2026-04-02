@@ -1,13 +1,30 @@
 """
 Complete measurement record — mirrors Swift TapToneMeasurement.swift.
 
-JSON format:
-  - Single saved_measurements.json in ~/Documents/GuitarTap/
-  - Each measurement identified by UUID, ISO-8601 timestamp
-  - Peaks have UUIDs; mode overrides, selected IDs, annotation offsets
-    are keyed by peak UUID
-  - spectrumSnapshot embeds freq/mag arrays so the file is self-contained
-  - Format is cross-compatible with Swift GuitarTap .guitartap files
+The complete, serialisable record of a single tap-tone analysis session.
+
+A measurement captures everything needed to reproduce the original analysis view:
+- The detected ResonantPeak array and the SpectrumSnapshot (or per-phase snapshots
+  for plate/brace) that back the spectrum chart.
+- Display ranges and analysis settings so the chart re-opens at the correct zoom level.
+- Annotation positions and peak selections so the user's layout is preserved exactly.
+- Per-peak mode overrides for any labels the user customised.
+- Microphone and calibration metadata for provenance.
+
+Persistence Format:
+  Measurements are serialised to JSON in the application's Documents directory.
+  The JSON file is self-contained: all spectrum data needed to recreate the chart is
+  embedded in the spectrumSnapshot (guitar) or per-phase snapshots (plate/brace).
+  The format is cross-compatible with the Swift GuitarTap application.
+
+Measurement Types:
+  | Type    | Fields populated                                                  |
+  |---------|-------------------------------------------------------------------|
+  | Guitar  | spectrum_snapshot, peaks, decay_time                              |
+  | Plate   | longitudinal_snapshot, cross_snapshot, optional flc_snapshot;     |
+  |         | selected_longitudinal_peak_id, selected_cross_peak_id,            |
+  |         | optional selected_flc_peak_id                                     |
+  | Brace   | longitudinal_snapshot, selected_longitudinal_peak_id              |
 """
 
 from __future__ import annotations
@@ -27,66 +44,193 @@ def _now_iso() -> str:
 
 @dataclass
 class TapToneMeasurement:
-    """
-    Complete record of a tap-tone analysis session.
+    """A complete record of a tap-tone measurement session, including spectrum data, peaks,
+    display state, and all analysis settings active at the time of capture.
 
     Mirrors Swift TapToneMeasurement struct (TapToneMeasurement.swift).
-    JSON is cross-compatible with the iOS/macOS app.
+    JSON is cross-compatible with the iOS/macOS Swift GuitarTap app.
+
+    NOTE — Python vs Swift structural differences:
+      - ``id`` and ``timestamp`` are stored as strings in Python; Swift uses UUID and Date.
+      - ``annotation_offsets`` is stored as ``{uuid: [hzOffset, dbOffset]}`` in Python;
+        Swift uses ``[UUID: CGPoint]`` (decoded from named hzOffset/dbOffset fields).
+      - ``peak_mode_overrides`` is stored as ``{uuid: str}`` in Python;
+        Swift uses ``[UUID: UserAssignedMode]``.
+      - ``annotation_visibility_mode`` is stored as a raw string in Python;
+        Swift uses ``AnnotationVisibilityMode`` enum.
+      - ``to_dict()`` / ``from_dict()`` provide JSON serialisation; Swift uses Codable.
+      - ``create()`` is the Python factory equivalent of Swift's ``init(...)`` with defaults.
+      - ``display_name()`` is Python-only (no Swift equivalent).
     """
-    id: str        # UUID string — mirrors Swift TapToneMeasurement.id
-    timestamp: str  # ISO-8601 — mirrors Swift TapToneMeasurement.timestamp
+
+    # MARK: - Identity & Timestamps
+
+    # Stable unique identifier for this measurement.
+    # Stored as a UUID string in Python; Swift uses UUID.
+    # Mirrors Swift TapToneMeasurement.id.
+    id: str
+
+    # Wall-clock time at which the measurement was saved, as an ISO-8601 string.
+    # Swift stores this as Date; Python stores it as an ISO-8601 string.
+    # Mirrors Swift TapToneMeasurement.timestamp.
+    timestamp: str
+
+    # MARK: - Analysis Results
+
+    # All resonant peaks detected during this measurement session.
+    # For guitar measurements these are the peaks from the averaged multi-tap spectrum.
+    # For plate/brace measurements this array combines peaks from all captured phases.
+    # Mirrors Swift TapToneMeasurement.peaks.
     peaks: list[ResonantPeak]
 
+    # Time for the tap transient to decay to the configured threshold, in seconds.
+    # None for plate/brace measurements (decay is not meaningful for material analysis)
+    # or if decay tracking was not active.
+    # Mirrors Swift TapToneMeasurement.decayTime.
     decay_time: float | None = None
+
+    # MARK: - User Metadata
+
+    # Descriptive label for the tap location, e.g. "Bridge", "Soundhole", "Upper Bout".
+    # Mirrors Swift TapToneMeasurement.tapLocation.
     tap_location: str | None = None
+
+    # Free-form notes entered by the user at save time.
+    # Mirrors Swift TapToneMeasurement.notes.
     notes: str | None = None
 
-    # Primary spectrum — mirrors Swift TapToneMeasurement.spectrumSnapshot
+    # MARK: - Guitar Spectrum
+
+    # The averaged frequency spectrum for guitar-mode measurements.
+    # Contains the full chart display settings needed to restore the spectrum plot.
+    # None for plate/brace measurements, which use the per-phase snapshots instead.
+    # Mirrors Swift TapToneMeasurement.spectrumSnapshot.
     spectrum_snapshot: SpectrumSnapshot | None = None
 
-    # Per-phase spectra for plate/brace measurements (nil for guitar)
-    # Mirrors Swift TapToneMeasurement.longitudinalSnapshot / crossSnapshot / flcSnapshot
-    longitudinal_snapshot: SpectrumSnapshot | None = None
-    cross_snapshot: SpectrumSnapshot | None = None
-    flc_snapshot: SpectrumSnapshot | None = None
+    # MARK: - Annotation State
 
-    # Analysis settings at save time
-    tap_detection_threshold: float | None = None
-    hysteresis_margin: float | None = None
-    number_of_taps: int | None = None
-    peak_threshold: float | None = None
+    # Custom data-space offsets for draggable peak annotation labels, keyed by peak UUID string.
+    # Each value is [hzOffset, dbOffset] — equivalent to Swift's CGPoint(x: hzOffset, y: dbOffset).
+    # Allows the user's manual label layout to survive a save/load cycle.
+    # Mirrors Swift TapToneMeasurement.peakAnnotationOffsets ([UUID: CGPoint]).
+    annotation_offsets: dict[str, list[float]] | None = None
 
-    # Peak selections (all keyed by peak UUID)
-    selected_peak_ids: list[str] | None = None       # peaks marked visible
-    # Mirrors Swift TapToneMeasurement.peakModeOverrides ([UUID: UserAssignedMode])
-    peak_mode_overrides: dict[str, str] | None = None  # UUID → mode string
-    # Mirrors Swift TapToneMeasurement.peakAnnotationOffsets ([UUID: CGPoint])
-    annotation_offsets: dict[str, list[float]] | None = None  # UUID → [hzOffset, dbOffset]
+    # UUIDs of peaks the user marked as significant results (deselected peaks are dimmed).
+    # None means all peaks are considered selected (backward-compatible default).
+    # Mirrors Swift TapToneMeasurement.selectedPeakIDs.
+    selected_peak_ids: list[str] | None = None
+
+    # Frequencies (Hz) of the selected peaks, parallel to selected_peak_ids.
+    # Used to re-match selections after findPeaks() re-runs with a new threshold
+    # (which generates new UUIDs). Frequencies are stable across re-analysis; UUIDs are not.
+    # Mirrors Swift TapToneMeasurement.selectedPeakFrequencies.
+    selected_peak_frequencies: list[float] | None = None
+
+    # The annotation visibility mode (show all / show selected / hide all) that was active
+    # when the measurement was saved. Stored as a raw string in Python;
+    # Swift uses AnnotationVisibilityMode enum.
+    # Mirrors Swift TapToneMeasurement.annotationVisibilityMode.
     annotation_visibility_mode: str | None = None
 
-    # Plate/brace phase-selected peak IDs
-    # Mirrors Swift TapToneMeasurement.selectedLongitudinalPeakID etc.
+    # MARK: - Analysis Settings
+
+    # The tap-detection threshold (dB above noise floor) configured at save time.
+    # Mirrors Swift TapToneMeasurement.tapDetectionThreshold.
+    tap_detection_threshold: float | None = None
+
+    # The hysteresis margin (dB) used to prevent re-triggering after a tap, at save time.
+    # Mirrors Swift TapToneMeasurement.hysteresisMargin.
+    hysteresis_margin: float | None = None
+
+    # The number of taps that were averaged to produce the final spectrum.
+    # Mirrors Swift TapToneMeasurement.numberOfTaps.
+    number_of_taps: int | None = None
+
+    # The minimum peak magnitude (dBFS) that the peak-finder accepted, at save time.
+    # Mirrors Swift TapToneMeasurement.peakThreshold.
+    peak_threshold: float | None = None
+
+    # MARK: - Material Measurement Peak Selections
+
+    # UUID of the peak selected as the longitudinal (along-grain) resonance in a plate/brace measurement.
+    # Used to look up the correct peak in peaks when reloading material property calculations.
+    # Mirrors Swift TapToneMeasurement.selectedLongitudinalPeakID.
     selected_longitudinal_peak_id: str | None = None
+
+    # UUID of the peak selected as the cross-grain resonance in a plate measurement.
+    # Mirrors Swift TapToneMeasurement.selectedCrossPeakID.
     selected_cross_peak_id: str | None = None
+
+    # UUID of the peak selected as the FLC (diagonal / shear) resonance.
+    # Only present when the optional third tap was performed and measure_flc was true.
+    # Mirrors Swift TapToneMeasurement.selectedFlcPeakID.
     selected_flc_peak_id: str | None = None
 
-    # Microphone provenance — mirrors Swift TapToneMeasurement.microphoneName etc.
+    # MARK: - Per-Phase Spectra (Plate / Brace)
+
+    # Averaged FFT spectrum from the longitudinal (along-grain) tap orientation.
+    # Populated for plate and brace measurements.  None for guitar measurements.
+    # Mirrors Swift TapToneMeasurement.longitudinalSnapshot.
+    longitudinal_snapshot: SpectrumSnapshot | None = None
+
+    # Averaged FFT spectrum from the cross-grain tap orientation.
+    # Populated for plate measurements only.  None for guitar and brace measurements.
+    # Mirrors Swift TapToneMeasurement.crossSnapshot.
+    cross_snapshot: SpectrumSnapshot | None = None
+
+    # Averaged FFT spectrum from the FLC (45°-diagonal) tap orientation.
+    # Populated only when the optional third tap was performed.
+    # Mirrors Swift TapToneMeasurement.flcSnapshot.
+    flc_snapshot: SpectrumSnapshot | None = None
+
+    # MARK: - Mode Overrides
+
+    # Per-peak user mode label overrides, keyed by peak UUID string.
+    # Stored as {uuid: label_string} in Python; Swift uses [UUID: UserAssignedMode].
+    # None means all peaks use automatic classification on load (backward-compatible default).
+    # Mirrors Swift TapToneMeasurement.peakModeOverrides.
+    peak_mode_overrides: dict[str, str] | None = None
+
+    # MARK: - Microphone Provenance
+
+    # Human-readable name of the microphone (input device) used for this measurement.
+    # Mirrors Swift TapToneMeasurement.microphoneName.
     microphone_name: str | None = None
+
+    # Unique device identifier (UID) of the microphone, used to match a device on reload.
+    # Mirrors Swift TapToneMeasurement.microphoneUID.
     microphone_uid: str | None = None
+
+    # Name of the active calibration profile applied during this measurement, if any.
+    # Mirrors Swift TapToneMeasurement.calibrationName.
     calibration_name: str | None = None
 
-    # Convenience top-level fields (for external consumers)
+    # Convenience top-level fields written to JSON for external consumers.
+    # Mirrors Swift TapToneMeasurement encode(to:) convenience fields.
     measurement_type: str | None = None
     guitar_type: str | None = None
 
-    # ── Computed ─────────────────────────────────────────────────────────────
+    # MARK: - Computed Properties
 
     @property
     def tap_tone_ratio(self) -> float | None:
-        """fTop / fAir ratio.
+        """The Top-to-Air frequency ratio, a key quality indicator for guitar tap-tone analysis.
+
+        Computed as f_Top / f_Air where each frequency is taken from the first peak whose
+        auto-classified mode normalises to ``.top`` or ``.air`` respectively.
+
+        An ideal ratio is approximately **2.0**, meaning the main top-plate resonance sits
+        one octave above the Helmholtz air resonance.  Ratios below ~1.7 or above ~2.4
+        typically indicate the instrument is outside optimal tonal balance.
+
+        Returns ``None`` when either an Air or a Top peak cannot be found in ``peaks``.
 
         Mirrors Swift TapToneMeasurement.tapToneRatio.
-        Returns None if either mode is not found.
+
+        NOTE — Algorithm difference from Swift:
+          Python must pass guitar_type explicitly to GuitarMode.classify_all.
+          Swift calls GuitarMode.classifyAll(peaks) with auto-resolved guitar type.
+          Python falls back to the guitar_type stored on this measurement, or "Classical".
         """
         from . import guitar_mode as gm
         if not self.peaks:
@@ -97,26 +241,31 @@ class TapToneMeasurement:
             idx_map = gm.GuitarMode.classify_all(peaks_fm, gt)
         except Exception:
             return None
-        mode_by_freq = {peaks_fm[i][0]: mode for i, mode in idx_map.items()}
-        air = next(
-            (p.frequency for p in self.peaks
-             if mode_by_freq.get(p.frequency, gm.GuitarMode.UNKNOWN).normalized
-             == gm.GuitarMode.AIR),
+        # Build a lookup from peak index → mode, then find air and top peaks
+        air_freq = next(
+            (self.peaks[i].frequency for i, mode in idx_map.items()
+             if mode.normalized == gm.GuitarMode.AIR),
             None,
         )
-        top = next(
-            (p.frequency for p in self.peaks
-             if mode_by_freq.get(p.frequency, gm.GuitarMode.UNKNOWN).normalized
-             == gm.GuitarMode.TOP),
+        top_freq = next(
+            (self.peaks[i].frequency for i, mode in idx_map.items()
+             if mode.normalized == gm.GuitarMode.TOP),
             None,
         )
-        if air and top and air > 0:
-            return top / air
+        if air_freq and top_freq and air_freq > 0:
+            return top_freq / air_freq
         return None
 
     @property
     def base_filename(self) -> str:
-        """Mirrors Swift TapToneMeasurement.baseFilename."""
+        """Base filename (without extension) derived from the tap location and Unix timestamp.
+
+        Spaces and slashes in ``tap_location`` are replaced with hyphens and the string is
+        lowercased, producing a filesystem-safe component such as ``"bridge-1771351833"``.
+        Falls back to ``"measurement"`` when ``tap_location`` is ``None``.
+
+        Mirrors Swift TapToneMeasurement.baseFilename.
+        """
         loc = (self.tap_location or "measurement").replace(" ", "-").replace("/", "-").lower()
         try:
             ts = int(datetime.fromisoformat(self.timestamp).timestamp())
@@ -125,6 +274,12 @@ class TapToneMeasurement:
         return f"{loc}-{ts}"
 
     def display_name(self) -> str:
+        """Human-readable display name combining tap location and formatted timestamp.
+
+        Example: ``"Bridge — 2026-01-25 14:32"``
+
+        Python-only — no Swift equivalent.
+        """
         try:
             dt = datetime.fromisoformat(self.timestamp)
             time_str = dt.strftime("%Y-%m-%d %H:%M")
@@ -134,9 +289,23 @@ class TapToneMeasurement:
             return f"{self.tap_location} — {time_str}"
         return time_str
 
-    # ── Serialisation ─────────────────────────────────────────────────────
+    def with_(self, tap_location: str | None, notes: str | None) -> "TapToneMeasurement":
+        """Return a copy of the measurement with only ``tap_location`` and ``notes`` replaced.
+
+        All other fields — including ``id`` and ``timestamp`` — are preserved exactly.
+
+        Mirrors Swift TapToneMeasurement.with(tapLocation:notes:).
+        """
+        import dataclasses
+        return dataclasses.replace(self, tap_location=tap_location, notes=notes)
+
+    # MARK: - Serialisation (Python-only)
 
     def to_dict(self) -> dict[str, Any]:
+        """Encode this measurement as a JSON-compatible dict using Swift field names.
+
+        Python-only — Swift uses Codable with a custom encoder.
+        """
         d: dict[str, Any] = {
             "id": self.id,
             "timestamp": self.timestamp,
@@ -150,6 +319,19 @@ class TapToneMeasurement:
             d["notes"] = self.notes
         if self.spectrum_snapshot is not None:
             d["spectrumSnapshot"] = self.spectrum_snapshot.to_dict()
+        if self.annotation_offsets:
+            # Swift format: {uuid: {"hzOffset": hz_delta, "dbOffset": db_delta}}
+            # dbOffset is in screen-Y direction: positive = downward = lower dB.
+            d["peakAnnotationOffsets"] = {
+                k: {"hzOffset": v[0], "dbOffset": v[1]}
+                for k, v in self.annotation_offsets.items()
+            }
+        if self.selected_peak_ids:
+            d["selectedPeakIDs"] = self.selected_peak_ids
+        if self.selected_peak_frequencies:
+            d["selectedPeakFrequencies"] = self.selected_peak_frequencies
+        if self.annotation_visibility_mode:
+            d["annotationVisibilityMode"] = self.annotation_visibility_mode
         if self.tap_detection_threshold is not None:
             d["tapDetectionThreshold"] = self.tap_detection_threshold
         if self.hysteresis_margin is not None:
@@ -158,23 +340,6 @@ class TapToneMeasurement:
             d["numberOfTaps"] = self.number_of_taps
         if self.peak_threshold is not None:
             d["peakThreshold"] = self.peak_threshold
-        if self.selected_peak_ids:
-            d["selectedPeakIDs"] = self.selected_peak_ids
-        if self.peak_mode_overrides:
-            # Swift format: {uuid: {"type": "assigned", "label": "mode_string"}}
-            d["peakModeOverrides"] = {
-                uid: {"type": "assigned", "label": label}
-                for uid, label in self.peak_mode_overrides.items()
-            }
-        if self.annotation_offsets:
-            # Swift format: {uuid: {"hzOffset": hz_delta, "dbOffset": db_delta}}
-            # dbOffset is in screen-Y direction: positive = downward = lower dB.
-            d["peakAnnotationOffsets"] = {
-                k: {"hzOffset": v[0], "dbOffset": v[1]}
-                for k, v in self.annotation_offsets.items()
-            }
-        if self.annotation_visibility_mode:
-            d["annotationVisibilityMode"] = self.annotation_visibility_mode
         if self.selected_longitudinal_peak_id:
             d["selectedLongitudinalPeakID"] = self.selected_longitudinal_peak_id
         if self.selected_cross_peak_id:
@@ -187,6 +352,12 @@ class TapToneMeasurement:
             d["crossSnapshot"] = self.cross_snapshot.to_dict()
         if self.flc_snapshot is not None:
             d["flcSnapshot"] = self.flc_snapshot.to_dict()
+        if self.peak_mode_overrides:
+            # Swift format: {uuid: {"type": "assigned", "label": "mode_string"}}
+            d["peakModeOverrides"] = {
+                uid: {"type": "assigned", "label": label}
+                for uid, label in self.peak_mode_overrides.items()
+            }
         if self.microphone_name:
             d["microphoneName"] = self.microphone_name
         if self.microphone_uid:
@@ -201,7 +372,10 @@ class TapToneMeasurement:
 
     @staticmethod
     def from_dict(d: dict) -> "TapToneMeasurement":
-        """Decode a Swift-format TapToneMeasurement JSON object."""
+        """Decode a Swift-format TapToneMeasurement JSON object.
+
+        Python-only — Swift uses Codable.
+        """
         peaks = [ResonantPeak.from_dict(p) for p in d.get("peaks", [])]
 
         snap_d = d.get("spectrumSnapshot")
@@ -249,20 +423,21 @@ class TapToneMeasurement:
             tap_location=d.get("tapLocation"),
             notes=d.get("notes"),
             spectrum_snapshot=snapshot,
-            longitudinal_snapshot=long_snap,
-            cross_snapshot=cross_snap,
-            flc_snapshot=flc_snap,
+            annotation_offsets=ann_offsets,
+            selected_peak_ids=d.get("selectedPeakIDs"),
+            selected_peak_frequencies=d.get("selectedPeakFrequencies"),
+            annotation_visibility_mode=d.get("annotationVisibilityMode"),
             tap_detection_threshold=d.get("tapDetectionThreshold"),
             hysteresis_margin=d.get("hysteresisMargin"),
             number_of_taps=d.get("numberOfTaps"),
             peak_threshold=d.get("peakThreshold"),
-            selected_peak_ids=d.get("selectedPeakIDs"),
-            peak_mode_overrides=peak_mode_overrides,
-            annotation_offsets=ann_offsets,
-            annotation_visibility_mode=d.get("annotationVisibilityMode"),
             selected_longitudinal_peak_id=d.get("selectedLongitudinalPeakID"),
             selected_cross_peak_id=d.get("selectedCrossPeakID"),
             selected_flc_peak_id=d.get("selectedFlcPeakID"),
+            longitudinal_snapshot=long_snap,
+            cross_snapshot=cross_snap,
+            flc_snapshot=flc_snap,
+            peak_mode_overrides=peak_mode_overrides,
             microphone_name=d.get("microphoneName"),
             microphone_uid=d.get("microphoneUID"),
             calibration_name=d.get("calibrationName"),
@@ -277,12 +452,10 @@ class TapToneMeasurement:
         tap_location: str | None = None,
         notes: str | None = None,
         spectrum_snapshot: SpectrumSnapshot | None = None,
-        longitudinal_snapshot: SpectrumSnapshot | None = None,
-        cross_snapshot: SpectrumSnapshot | None = None,
-        flc_snapshot: SpectrumSnapshot | None = None,
-        selected_peak_ids: list[str] | None = None,
-        peak_mode_overrides: dict[str, str] | None = None,
         annotation_offsets: dict[str, list[float]] | None = None,
+        selected_peak_ids: list[str] | None = None,
+        selected_peak_frequencies: list[float] | None = None,
+        annotation_visibility_mode: str | None = None,
         tap_detection_threshold: float | None = None,
         hysteresis_margin: float | None = None,
         number_of_taps: int | None = None,
@@ -290,13 +463,25 @@ class TapToneMeasurement:
         selected_longitudinal_peak_id: str | None = None,
         selected_cross_peak_id: str | None = None,
         selected_flc_peak_id: str | None = None,
+        longitudinal_snapshot: SpectrumSnapshot | None = None,
+        cross_snapshot: SpectrumSnapshot | None = None,
+        flc_snapshot: SpectrumSnapshot | None = None,
+        peak_mode_overrides: dict[str, str] | None = None,
         microphone_name: str | None = None,
         microphone_uid: str | None = None,
         calibration_name: str | None = None,
         measurement_type: str | None = None,
         guitar_type: str | None = None,
     ) -> "TapToneMeasurement":
-        """Factory method — mirrors Swift TapToneMeasurement.create()."""
+        """Factory method — creates a new measurement with a fresh UUID and current timestamp.
+
+        All parameters except ``peaks`` have sensible defaults of ``None`` so callers only
+        need to supply the fields relevant to their measurement type.
+
+        Mirrors Swift TapToneMeasurement.init(...) with defaults.
+
+        Python-only — Swift uses a struct initialiser with default parameters.
+        """
         return TapToneMeasurement(
             id=str(uuid.uuid4()),
             timestamp=_now_iso(),
@@ -305,12 +490,10 @@ class TapToneMeasurement:
             tap_location=tap_location or None,
             notes=notes or None,
             spectrum_snapshot=spectrum_snapshot,
-            longitudinal_snapshot=longitudinal_snapshot,
-            cross_snapshot=cross_snapshot,
-            flc_snapshot=flc_snapshot,
-            selected_peak_ids=selected_peak_ids or None,
-            peak_mode_overrides=peak_mode_overrides or None,
             annotation_offsets=annotation_offsets or None,
+            selected_peak_ids=selected_peak_ids or None,
+            selected_peak_frequencies=selected_peak_frequencies or None,
+            annotation_visibility_mode=annotation_visibility_mode,
             tap_detection_threshold=tap_detection_threshold,
             hysteresis_margin=hysteresis_margin,
             number_of_taps=number_of_taps,
@@ -318,6 +501,10 @@ class TapToneMeasurement:
             selected_longitudinal_peak_id=selected_longitudinal_peak_id,
             selected_cross_peak_id=selected_cross_peak_id,
             selected_flc_peak_id=selected_flc_peak_id,
+            longitudinal_snapshot=longitudinal_snapshot,
+            cross_snapshot=cross_snapshot,
+            flc_snapshot=flc_snapshot,
+            peak_mode_overrides=peak_mode_overrides or None,
             microphone_name=microphone_name,
             microphone_uid=microphone_uid,
             calibration_name=calibration_name,

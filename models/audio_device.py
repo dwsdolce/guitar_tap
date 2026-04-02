@@ -23,65 +23,104 @@ sample rates) while remaining human-readable.
 
 Equality and hashing are based on ``fingerprint`` only, matching Swift's uid-based
 Equatable/Hashable implementation.
+
+NOTE — Python vs Swift structural differences:
+  Swift has ``id: UUID`` (transient SwiftUI Identifiable UUID) and ``uid: String``
+  (platform-assigned UID: CoreAudio kAudioDevicePropertyDeviceUID on macOS,
+  AVAudioSessionPortDescription.uid on iOS) as separate fields.
+  Python combines both concepts into ``fingerprint`` (a best-effort persistent key).
+
+  Swift also has ``deviceID: AudioDeviceID`` (macOS only) and
+  ``port: AVAudioSessionPortDescription?`` (iOS only).
+  Python has ``index: int`` (PortAudio device index, session-scoped).
+  None of these platform-specific fields have cross-platform equivalents.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class AudioDevice:
-    """Platform-independent representation of an audio input device.
+    """A platform-independent representation of an audio input device.
 
     Mirrors Swift AVAudioDevice (AVAudioDevice.swift).
 
-    Attributes:
-        name:        Human-readable device name (e.g. "MacBook Pro Microphone").
-        index:       PortAudio device index — valid for the current session only;
-                     do not persist this value across restarts.
-        sample_rate: Nominal hardware sample rate reported by PortAudio (Hz).
+    Equality is determined by ``fingerprint`` (the Python equivalent of Swift's
+    ``uid``) so that the same physical device is considered equal across multiple
+    discovery passes or application launches.
+
+    - SeeAlso: RealtimeFFTAnalyzer which populates and manages the list of available devices.
+    - SeeAlso: CalibrationStorage which maps device fingerprints to calibration profiles.
+
+    NOTE — Python-only fields: ``index`` (PortAudio device index, session-scoped).
+    NOTE — Swift-only fields: ``id`` (transient UUID), ``uid`` (platform-assigned UID),
+      ``deviceID`` (macOS CoreAudio AudioDeviceID), ``port`` (iOS port description).
     """
 
+    # MARK: - Stored Properties
+
+    # Human-readable display name of the device (e.g. "MacBook Pro Microphone").
+    # Mirrors Swift AVAudioDevice.name.
     name: str
+
+    # PortAudio device index — valid for the current session only.
+    # Do not persist this value across application restarts; use ``fingerprint`` instead.
+    # Python-only — Swift uses ``deviceID: AudioDeviceID`` (macOS) or
+    # ``port: AVAudioSessionPortDescription?`` (iOS) for platform-level identity.
     index: int
+
+    # The nominal hardware sample rate reported by PortAudio, in Hz (e.g. 48000.0).
+    # Used to inform audio capture configuration and FFT bin spacing.
+    # Mirrors Swift AVAudioDevice.sampleRate.
     sample_rate: float
 
-    # ------------------------------------------------------------------ #
-    # Best-effort persistent fingerprint (mirrors Swift AVAudioDevice.uid)
-    # ------------------------------------------------------------------ #
+    # MARK: - Persistent Fingerprint (mirrors Swift AVAudioDevice.uid)
 
     @property
     def fingerprint(self) -> str:
-        """Stable-ish string that identifies this physical device across sessions.
+        """Best-effort stable string that identifies this physical device across sessions.
 
         Format: ``"<name>:<sample_rate_hz>"``  e.g. ``"USB Audio Device:48000"``
 
-        More discriminating than name alone; used as the persistence key in
-        AppSettings and the calibration-map key in CalibrationStorage.
-        Mirrors the role of ``AVAudioDevice.uid`` in Swift.
+        More discriminating than name alone (useful when two devices share a base name
+        at different sample rates).  Used as the persistence key in AppSettings and
+        the calibration-map key in CalibrationStorage.
+
+        Mirrors the role of ``AVAudioDevice.uid`` in Swift.  Swift obtains a true
+        platform UID (CoreAudio on macOS, AVAudioSession on iOS); Python synthesises
+        this best-effort substitute from PortAudio metadata.
         """
         return f"{self.name}:{int(self.sample_rate)}"
 
-    # ------------------------------------------------------------------ #
-    # Equality and hashing — based on fingerprint only (mirrors Swift uid)
-    # ------------------------------------------------------------------ #
+    # MARK: - Hashable / Equatable
 
     def __eq__(self, other: object) -> bool:
+        """Two devices are equal when their ``fingerprint`` values match.
+
+        Mirrors Swift AVAudioDevice == (lhs:rhs:) which compares ``uid``.
+        """
         if not isinstance(other, AudioDevice):
             return NotImplemented
         return self.fingerprint == other.fingerprint
 
     def __hash__(self) -> int:
+        """Hashes the device using only ``fingerprint``.
+
+        Mirrors Swift AVAudioDevice.hash(into:) which hashes ``uid``.
+        """
         return hash(self.fingerprint)
 
-    # ------------------------------------------------------------------ #
-    # Factory helpers
-    # ------------------------------------------------------------------ #
+    # MARK: - Factory Helpers (Python-only)
 
     @classmethod
     def from_sounddevice_dict(cls, d: dict) -> "AudioDevice":
-        """Construct from a sounddevice device-info dictionary."""
+        """Construct from a sounddevice device-info dictionary.
+
+        Python-only — Swift uses platform-native APIs (CoreAudio on macOS,
+        AVAudioSession on iOS) to enumerate devices.
+        """
         return cls(
             name=str(d["name"]),
             index=int(d["index"]),
@@ -97,6 +136,9 @@ class AudioDevice:
         Returns None if the fingerprint cannot be parsed.
         The index defaults to -1 (unknown) since indices are not persistent;
         callers should resolve a real index via ``resolve()`` before use.
+
+        Python-only — Swift restores devices by matching ``uid`` against the
+        live device list returned by CoreAudio/AVAudioSession.
         """
         if ":" not in fingerprint:
             return None
@@ -112,6 +154,8 @@ class AudioDevice:
         Queries sounddevice if *devices* is not provided.  Returns a new
         AudioDevice with the correct live index, or None if the device is not
         currently available.
+
+        Python-only — Swift resolves devices via CoreAudio/AVAudioSession enumeration.
         """
         import sounddevice as _sd
         try:
@@ -125,9 +169,7 @@ class AudioDevice:
                     return candidate
         return None
 
-    # ------------------------------------------------------------------ #
-    # Convenience
-    # ------------------------------------------------------------------ #
+    # MARK: - Convenience
 
     def __repr__(self) -> str:
         return (

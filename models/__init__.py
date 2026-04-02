@@ -6,9 +6,11 @@ GuitarTap/Models/.  Import directly from the submodules or use the
 convenience re-exports provided here.
 
 Data model modules (safe to import anywhere):
+  audio_device           → AudioDevice
   guitar_type            → GuitarType, ModeRanges, DecayThresholds
   guitar_mode            → GuitarMode, get_bands, in_mode_range, ...
   material_properties    → PlateDimensions, PlateProperties, BraceProperties, GoreThicknessResult
+  material_tap_phase     → MaterialTapPhase
   measurement_type       → MeasurementType
   pitch                  → Pitch
   plate_stiffness_preset → PlateStiffnessPreset
@@ -26,6 +28,7 @@ Analyser modules (NOT imported here — import directly to avoid circular deps):
 from .audio_device import AudioDevice
 from .guitar_type import GuitarType, ModeRanges, DecayThresholds
 from .guitar_mode import GuitarMode, get_bands, in_mode_range, classify_peak, mode_display_name
+from .material_tap_phase import MaterialTapPhase
 from .measurement_type import MeasurementType
 from .pitch import Pitch
 from .plate_stiffness_preset import PlateStiffnessPreset
@@ -39,6 +42,7 @@ __all__ = [
     "AudioDevice",
     "GuitarType", "ModeRanges", "DecayThresholds",
     "GuitarMode", "get_bands", "in_mode_range", "classify_peak", "mode_display_name",
+    "MaterialTapPhase",
     "MeasurementType",
     "Pitch",
     "PlateStiffnessPreset",

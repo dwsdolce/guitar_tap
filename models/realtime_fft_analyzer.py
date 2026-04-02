@@ -37,8 +37,14 @@ Python ↔ Swift correspondence:
     _start_linux_monitor     ↔  (Linux-only; no Swift equivalent)
     get_frames / queue       ↔  rawSampleHandler / inputBuffer
 
-The real-time spectrum accumulation loop (Swift inputBuffer accumulation →
-performFFT continuous path → @Published magnitudes) lives in fft_canvas.py.
+NOTE — Python vs Swift architectural differences:
+  Swift uses AVAudioEngine with a tap on AVAudioInputNode; Python uses PortAudio
+  via sounddevice's InputStream with a per-chunk callback.
+  Swift publishes results as @Published properties on the main thread via
+  DispatchQueue.main.async; Python pushes raw audio chunks into a queue.Queue
+  for consumption by fft_canvas.py's FftProcessingThread.
+  The real-time spectrum accumulation loop (Swift inputBuffer accumulation →
+  performFFT continuous path → @Published magnitudes) lives in fft_canvas.py.
 """
 
 from __future__ import annotations
@@ -77,32 +83,73 @@ if platform.system() == "Darwin":
 
 
 class RealtimeFFTAnalyzer:
-    """Run the audio capture in a thread using the rate and buffer
-    size specified. Closes on exit.
+    """Real-time FFT audio analyser using PortAudio/sounddevice.
 
-    Mirrors Swift RealtimeFFTAnalyzer (class declaration, init/deinit,
-    start/stop from +EngineControl, device management from +DeviceManagement).
+    Captures audio from a selected input device, delivers raw PCM chunks via
+    ``queue`` for downstream FFT processing, and monitors device hot-plug events.
+
+    Mirrors Swift RealtimeFFTAnalyzer (class declaration, init/deinit from
+    RealtimeFFTAnalyzer.swift; start/stop from +EngineControl.swift; device
+    management from +DeviceManagement.swift).
+
+    NOTE — Python vs Swift architectural differences:
+      Swift uses AVAudioEngine with a tap on AVAudioInputNode and publishes
+      results as @Published properties on the main thread.
+      Python uses PortAudio (sounddevice) with a blocking Queue callback model;
+      downstream FFT processing is done by fft_canvas.py's FftProcessingThread.
+
+    Python-only properties:
+      queue              — audio chunk queue; Swift has rawSampleHandler + inputBuffer
+      device_index       — PortAudio device index; Swift has selectedInputDevice (AVAudioDevice)
+      chunksize          — PortAudio block size; Swift uses 1024-sample AVAudioEngine tap
+      stream             — sounddevice.InputStream; Swift has audioEngine + inputNode
+      is_stopped         — stream stop flag; Swift has isRunning (@Published)
+      _stop_lock         — threading.Lock for is_stopped; Swift uses DispatchQueue sync
+      _monitor_stop      — threading.Event to signal monitor thread exit
+      _on_devices_changed — plain callback; Swift uses @Published availableInputDevices
+
+    Swift-only properties (no Python equivalent):
+      audioEngine, inputNode, audioProcessingQueue, bufferAccessQueue
+      magnitudes, frequencies, peakFrequency, peakMagnitude (@Published)
+      inputLevelDB, displayLevelDB, recentPeakLevelDB, recentPeakTime
+      actualSampleRate, hopSizeOverlap, frequencyResolution, bandwidth
+      sampleLengthSeconds, frameRate, processingTimeMs, avgProcessingTimeMs
+      activeCalibration, calibrationCorrections, rawSampleHandler
+      fftSetup, window, fftSize, targetSampleRate, useHardwareSampleRate
+      isRunning, microphonePermissionDenied, routeChangeRestartCount
+      firstBufferReceived, fftCount, engineStartTime
     """
+
+    # MARK: - Initialization
 
     def __init__(self, parent, rate: int = 44100, chunksize: int = 16384,
                  device: "AudioDevice | None" = None,
                  on_devices_changed: Callable[[], None] | None = None):
-        """
+        """Create a new real-time FFT analyser and open the audio stream.
+
+        Mirrors Swift RealtimeFFTAnalyzer.init(fftSize:targetSampleRate:useHardwareSampleRate:).
+        The Swift initialiser creates the AVAudioEngine and registers device listeners;
+        this Python initialiser opens a sounddevice InputStream and starts the hot-plug monitor.
+
         Args:
-            parent:             Parent QObject.
-            rate:               Fallback sample rate (Hz); overridden by device.sample_rate.
-            chunksize:          PortAudio block size in frames.
+            parent:             Parent QObject (used to anchor a MacAccess helper on macOS).
+            rate:               Fallback sample rate in Hz; overridden by device.sample_rate.
+            chunksize:          PortAudio block size in frames (Python-only; Swift uses 1024).
             device:             AudioDevice to open, or None for the system default.
-            on_devices_changed: Callback fired on hot-plug events.
+            on_devices_changed: Callback fired on hot-plug connect/disconnect events.
+                                Mirrors Swift's @Published availableInputDevices update.
         """
         from .audio_device import AudioDevice as _AudioDevice
 
         if platform.system() == "Darwin":
             mac_access.MacAccess(parent)
 
+        # Python-only: PortAudio session state
         self.rate: int = int(device.sample_rate) if device else rate
         self.chunksize: int = chunksize
         self.device_index: int | None = device.index if device else None
+
+        # Open the sounddevice stream; Swift opens AVAudioEngine in start()
         self.stream: sd.InputStream = sd.InputStream(
             device=self.device_index,
             channels=1,
@@ -111,10 +158,13 @@ class RealtimeFFTAnalyzer:
             blocksize=self.chunksize,
             callback=self.new_frame)
 
+        # Python-only: audio chunk delivery via Queue
+        # Swift delivers audio via rawSampleHandler callback + inputBuffer accumulation
         self._stop_lock: threading.Lock = threading.Lock()
         self.is_stopped: bool = False
         self.queue: queue.Queue[npt.NDArray[np.float32]] = queue.Queue()
 
+        # Python-only: hot-plug monitoring threads
         self._on_devices_changed = on_devices_changed
         self._monitor_stop = threading.Event()
         self._monitor_thread: threading.Thread | None = None
@@ -122,11 +172,17 @@ class RealtimeFFTAnalyzer:
 
         atexit.register(self.close)
 
+    # MARK: - Engine Control (mirrors +EngineControl.swift)
+
     # pylint: disable=unused-argument
     def new_frame(self, data: np.ndarray, _frame_count, _time_info, _status) -> tuple[None, int]:
-        """Callback used by sounddevice stream to capture the
-        next buffer. Puts the new chunk into the queue for consumption
-        by FftProcessingThread.
+        """PortAudio stream callback — enqueues the incoming audio chunk.
+
+        Called by PortAudio on every block of ``chunksize`` frames.
+        Enqueues the first channel's samples for FftProcessingThread.
+
+        Python-only — Swift delivers audio via an AVAudioInputNode installTap block
+        that feeds ``processAudioBuffer(_:)`` on ``audioProcessingQueue``.
         """
         with self._stop_lock:
             if self.is_stopped:
@@ -136,7 +192,11 @@ class RealtimeFFTAnalyzer:
         return None
 
     def get_frames(self) -> list[npt.NDArray[np.float32]]:
-        """Non-blocking shim that drains the queue and returns all available frames."""
+        """Non-blocking drain: returns all audio chunks currently in the queue.
+
+        Python-only — Swift exposes audio via ``rawSampleHandler`` and the
+        ``inputBuffer`` accumulation inside ``processAudioBuffer(_:)``.
+        """
         frames: list[npt.NDArray[np.float32]] = []
         try:
             while True:
@@ -146,19 +206,40 @@ class RealtimeFFTAnalyzer:
         return frames
 
     def start(self) -> None:
-        """Start the thread."""
+        """Start the audio stream.
+
+        Mirrors Swift RealtimeFFTAnalyzer.start() (+EngineControl.swift).
+        Swift starts AVAudioEngine and installs the input tap after checking
+        microphone permission; Python starts the PortAudio InputStream directly.
+        """
         self.stream.start()
 
     def stop(self) -> None:
-        """Stop the thread."""
+        """Stop the audio stream.
+
+        Mirrors Swift RealtimeFFTAnalyzer.stop() (+EngineControl.swift).
+        """
         with self._stop_lock:
             self.is_stopped = True
         self.stream.stop()
 
+    def close(self) -> None:
+        """Stop the audio stream and shut down the hot-plug monitor.
+
+        Mirrors Swift RealtimeFFTAnalyzer.deinit.
+        """
+        self._stop_hotplug_monitor()
+        self._close_stream_only()
+
+    # MARK: - Device Management (mirrors +DeviceManagement.swift)
+
     def set_device(self, device: "AudioDevice") -> None:
         """Switch to a different input device without re-checking permissions.
 
-        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:).
+        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:) (+DeviceManagement.swift).
+        Swift restarts AVAudioEngine with the new device set via CoreAudio AUHAL
+        on macOS or AVAudioSession.setPreferredInput on iOS; Python closes and
+        reopens the sounddevice InputStream.
         """
         from .audio_device import AudioDevice as _AudioDevice
         self._close_stream_only()
@@ -177,7 +258,7 @@ class RealtimeFFTAnalyzer:
         self.stream.start()
 
     def reinitialize_portaudio(self) -> None:
-        """Stop stream, reinit PortAudio (refreshes device list), restart stream.
+        """Stop, reinitialize PortAudio (refreshes device list), then restart the stream.
 
         PortAudio caches the device list at Pa_Initialize() time.  Calling
         sd._terminate() + sd._initialize() forces a fresh enumeration so that
@@ -186,6 +267,9 @@ class RealtimeFFTAnalyzer:
         If the current device is no longer available after reinit (it was
         unplugged), the stream is left closed; the caller is responsible for
         selecting a replacement via set_device().
+
+        Python-only — Swift reloads the device list via loadAvailableInputDevices()
+        which calls CoreAudio/AVAudioSession APIs directly.
         """
         self._close_stream_only()
         try:
@@ -210,17 +294,10 @@ class RealtimeFFTAnalyzer:
             # set_device() is called with a working device index.
             pass
 
-    def close(self) -> None:
-        """close the thread"""
-        self._stop_hotplug_monitor()
-        self._close_stream_only()
-
-    # ------------------------------------------------------------------ #
-    # Internal helpers
-    # ------------------------------------------------------------------ #
+    # MARK: - Internal Helpers
 
     def _close_stream_only(self) -> None:
-        """Stop and close the audio stream without touching the hotplug monitor."""
+        """Stop and close the audio stream without touching the hot-plug monitor."""
         with self._stop_lock:
             self.is_stopped = True
         try:
@@ -232,10 +309,12 @@ class RealtimeFFTAnalyzer:
         except Exception:
             pass
 
-    # ------------------------------------------------------------------ #
-    # Hot-plug monitoring — platform-specific implementations
-    # Mirrors Swift RealtimeFFTAnalyzer+DeviceManagement.swift
-    # ------------------------------------------------------------------ #
+    # MARK: - Hot-plug Monitoring (mirrors +DeviceManagement.swift)
+    #
+    # Swift registers:
+    #   macOS — AudioObjectAddPropertyListenerBlock on kAudioHardwarePropertyDevices
+    #   iOS   — AVAudioSession.routeChangeNotification observer
+    # Python registers the OS-appropriate listener on a background thread.
 
     def _notify_devices_changed(self) -> None:
         """Signal the caller that the device list has changed.
@@ -243,6 +322,9 @@ class RealtimeFFTAnalyzer:
         Always invoked from a daemon thread so the OS callback returns fast.
         A brief sleep lets the OS finish its own device enumeration before
         the caller reinitializes PortAudio.
+
+        Mirrors the body of Swift's hardwareListenerBlock / handleRouteChange
+        which calls loadAvailableInputDevices() on the main thread.
         """
         if self._on_devices_changed is None:
             return
@@ -250,6 +332,11 @@ class RealtimeFFTAnalyzer:
         self._on_devices_changed()
 
     def _start_hotplug_monitor(self) -> None:
+        """Start the platform-appropriate hot-plug monitor.
+
+        Mirrors Swift registerMacOSHardwareListener() and the iOS
+        routeChangeNotification observer setup in init.
+        """
         if self._on_devices_changed is None:
             return
         p = platform.system()
@@ -261,6 +348,11 @@ class RealtimeFFTAnalyzer:
             self._start_linux_monitor()
 
     def _stop_hotplug_monitor(self) -> None:
+        """Stop the platform-appropriate hot-plug monitor.
+
+        Mirrors Swift unregisterMacOSHardwareListener() and the iOS
+        NotificationCenter.removeObserver call in deinit.
+        """
         self._monitor_stop.set()
         p = platform.system()
         if p == "Darwin":
@@ -270,10 +362,16 @@ class RealtimeFFTAnalyzer:
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=2.0)
 
-    # -- macOS: CoreAudio AudioObjectAddPropertyListener ------------------- #
-    # Mirrors Swift registerMacOSHardwareListener()
+    # -- macOS: CoreAudio AudioObjectAddPropertyListener -------------------
+    # Mirrors Swift registerMacOSHardwareListener() in +DeviceManagement.swift.
 
     def _start_coreaudio_monitor(self) -> None:
+        """Register a CoreAudio property listener for device connect/disconnect.
+
+        Watches kAudioHardwarePropertyDevices (0x64657623) on kAudioObjectSystemObject (1).
+        Mirrors Swift's AudioObjectAddPropertyListenerBlock on
+        kAudioObjectPropertyAddress(selector: .hardwarePropertyDevices).
+        """
         import ctypes
         import ctypes.util
 
@@ -315,6 +413,10 @@ class RealtimeFFTAnalyzer:
         )
 
     def _stop_coreaudio_monitor(self) -> None:
+        """Unregister the CoreAudio property listener.
+
+        Mirrors Swift unregisterMacOSHardwareListener().
+        """
         try:
             import ctypes
             self._ca.AudioObjectRemovePropertyListener(
@@ -323,9 +425,15 @@ class RealtimeFFTAnalyzer:
         except Exception:
             pass
 
-    # -- Windows: CM_Register_Notification (cfgmgr32, Windows 8+) --------- #
+    # -- Windows: CM_Register_Notification (cfgmgr32, Windows 8+) ---------
 
     def _start_windows_monitor(self) -> None:
+        """Register a Windows device-interface arrival/removal notification.
+
+        Python-only — Swift targets macOS/iOS only.
+        Uses CM_Register_Notification (cfgmgr32) to watch all device-interface
+        events (CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE = 1).
+        """
         import ctypes
 
         cfgmgr = ctypes.WinDLL("cfgmgr32")  # type: ignore[attr-defined]
@@ -375,14 +483,24 @@ class RealtimeFFTAnalyzer:
         )
 
     def _stop_windows_monitor(self) -> None:
+        """Unregister the Windows CM_Register_Notification handle.
+
+        Python-only.
+        """
         try:
             self._win_cfgmgr.CM_Unregister_Notification(self._win_hnotify)
         except Exception:
             pass
 
-    # -- Linux: udev via pyudev -------------------------------------------- #
+    # -- Linux: udev via pyudev --------------------------------------------
+    # Python-only — Swift targets macOS/iOS only.
 
     def _start_linux_monitor(self) -> None:
+        """Monitor Linux udev 'sound' subsystem events for device changes.
+
+        Requires the optional ``pyudev`` package; silently disabled if absent.
+        Python-only — Swift targets macOS/iOS only.
+        """
         try:
             import pyudev  # optional dependency
         except ImportError:

@@ -2698,7 +2698,7 @@ class MainWindow(QtWidgets.QMainWindow):
             _preset      = PSP.PlateStiffnessPreset(_preset_str)
             _fvs         = (AS.AppSettings.custom_plate_stiffness()
                             if _preset == PSP.PlateStiffnessPreset.CUSTOM
-                            else _preset.value_fvs)
+                            else _preset.value)
             _body_l      = AS.AppSettings.guitar_body_length()
             _body_w      = AS.AppSettings.guitar_body_width()
             _gore        = PA.calculate_gore_target_thickness(

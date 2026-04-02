@@ -1,9 +1,13 @@
 """
-MeasurementType — mirrors the Swift MeasurementType enum in MeasurementType.swift.
+The kind of tap tone measurement being performed.
 
-Five measurement types are defined: three guitar types (Classical, Flamenco, Acoustic)
-and two material types (Plate, Brace).  Guitar types map 1-to-1 with GuitarType so
-the two enums can be converted to each other.
+Mirrors Swift MeasurementType enum (MeasurementType.swift).
+
+Guitar types (CLASSICAL, FLAMENCO, ACOUSTIC) use guitar-body mode classification
+(air, top, back, dipole, ring).  Material types (PLATE, BRACE) use a multi-tap
+capture sequence and compute Young's modulus.
+
+See Also: GuitarType for the guitar-specific subtype with frequency range definitions.
 """
 
 from __future__ import annotations
@@ -20,11 +24,14 @@ class MeasurementType(Enum):
     PLATE     = "Material (Plate)"
     BRACE     = "Material (Brace)"
 
-    # ── display ──────────────────────────────────────────────────────────────
+    # MARK: - Display
 
     @property
     def short_name(self) -> str:
-        """Short label used in badges and compact UI."""
+        """Short name for display in compact UI contexts.
+
+        Mirrors Swift MeasurementType.shortName.
+        """
         return {
             MeasurementType.CLASSICAL: "Classical",
             MeasurementType.FLAMENCO:  "Flamenco",
@@ -35,18 +42,26 @@ class MeasurementType(Enum):
 
     @property
     def description(self) -> str:
+        """Human-readable description of the measurement type.
+
+        Mirrors Swift MeasurementType.description.
+        """
         return {
             MeasurementType.CLASSICAL: "Nylon string, fan-braced, deep body",
             MeasurementType.FLAMENCO:  "Nylon string, light bracing, shallow body",
             MeasurementType.ACOUSTIC:  "Steel string, X-braced (Dreadnought, OM, etc.)",
             MeasurementType.PLATE:     "Rectangular wood plate for calculating stiffness and sound radiation",
-            MeasurementType.BRACE:     "Brace strip — longitudinal stiffness (fL only)",
+            MeasurementType.BRACE:     "Brace strip — measures longitudinal stiffness (fL only)",
         }[self]
 
-    # ── classification ────────────────────────────────────────────────────────
+    # MARK: - Classification
 
     @property
     def is_guitar(self) -> bool:
+        """Whether this is a guitar measurement (as opposed to a plate or brace material measurement).
+
+        Mirrors Swift MeasurementType.isGuitar.
+        """
         return self in (
             MeasurementType.CLASSICAL,
             MeasurementType.FLAMENCO,
@@ -54,14 +69,29 @@ class MeasurementType(Enum):
         )
 
     @property
+    def is_plate(self) -> bool:
+        """Whether this is a plate measurement (two or three taps for full plate analysis).
+
+        Mirrors Swift — derived from `!isGuitar && !isBrace`.
+        """
+        return self is MeasurementType.PLATE
+
+    @property
     def is_brace(self) -> bool:
+        """Whether this is a brace measurement (single longitudinal tap only).
+
+        Mirrors Swift MeasurementType.isBrace.
+        """
         return self is MeasurementType.BRACE
 
-    # ── conversion ────────────────────────────────────────────────────────────
+    # MARK: - Conversion
 
     @property
     def guitar_type(self) -> gt.GuitarType | None:
-        """Return the corresponding GuitarType, or None for plate/brace."""
+        """The corresponding GuitarType, or None for plate/brace measurements.
+
+        Mirrors Swift MeasurementType.guitarType.
+        """
         return {
             MeasurementType.CLASSICAL: gt.GuitarType.CLASSICAL,
             MeasurementType.FLAMENCO:  gt.GuitarType.FLAMENCO,
@@ -70,6 +100,10 @@ class MeasurementType(Enum):
 
     @staticmethod
     def from_guitar_type(guitar_type: gt.GuitarType) -> MeasurementType:
+        """Creates a MeasurementType from a GuitarType.
+
+        Mirrors Swift MeasurementType.from(_:GuitarType).
+        """
         return {
             gt.GuitarType.CLASSICAL: MeasurementType.CLASSICAL,
             gt.GuitarType.FLAMENCO:  MeasurementType.FLAMENCO,
