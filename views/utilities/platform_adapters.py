@@ -2,8 +2,8 @@
 Platform-specific access helpers.
 
 macOS: wraps AVFoundation mic permission checks and system-settings deep links.
-Windows: NamedMutex single-instance guard (import directly from
-    views.utilities.named_mutex when needed).
+Windows: NamedMutex single-instance guard lives in named_mutex.py at the
+    project root (entry-point concern, imported only from guitar_tap.py).
 
 Mirrors Swift's PlatformAdapters.swift.
 """

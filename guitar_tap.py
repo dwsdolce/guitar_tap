@@ -13,7 +13,7 @@ from PyQt6 import QtWidgets, QtGui
 from views.tap_tone_analysis_view import MainWindow, basedir
 
 if os.name == "nt":
-    import views.utilities.named_mutex as NM
+    import named_mutex as NM
     from ctypes import windll
     MY_APP_ID = "dolcesfogato.guitar-tap.guitar-tap.0.5"
     windll.shell32.SetCurrentProcessExplicitAppUserModelID(MY_APP_ID)

@@ -21,7 +21,7 @@ __all__ = [
     "saved_db_range",
 ]
 
-# NamedMutex is Windows-only; import it directly when needed:
-#   from views.utilities.named_mutex import NamedMutex
+# NamedMutex is Windows-only; it lives at the project root (named_mutex.py)
+#   and is imported only from guitar_tap.py.
 # MacAccess is macOS-only; import it directly when needed:
 #   from views.utilities.platform_adapters import MacAccess

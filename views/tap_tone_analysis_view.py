@@ -28,7 +28,7 @@ from models import measurement_type as MT
 from models import microphone_calibration as _mc_mod
 import views.measurements.measurements_list_view as MD
 import views.save_measurement_sheet as SMD
-import views.measurements.plate_analysis as PA
+import models.material_properties as PA
 import views.help_view as HD
 import views.utilities.gt_images as gt_i
 import qtawesome as qta

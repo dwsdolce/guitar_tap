@@ -8,6 +8,7 @@ convenience re-exports provided here.
 Data model modules (safe to import anywhere):
   guitar_type            → GuitarType, ModeRanges, DecayThresholds
   guitar_mode            → GuitarMode, get_bands, in_mode_range, ...
+  material_properties    → PlateDimensions, PlateProperties, BraceProperties, GoreThicknessResult
   measurement_type       → MeasurementType
   pitch                  → Pitch
   plate_stiffness_preset → PlateStiffnessPreset

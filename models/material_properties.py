@@ -1,14 +1,15 @@
 """
-    Plate and brace acoustic material-property calculations.
+Plate and brace acoustic material-property calculations.
 
-    Based on the Euler-Bernoulli free-free beam equation (Haines / Coates):
+Based on the Euler-Bernoulli free-free beam equation (Haines / Coates):
 
-        E = 48 × π² × ρ × f² × L⁴ / (βL × t)²
+    E = 48 × π² × ρ × f² × L⁴ / (βL × t)²
 
-    where (βL)² = 22.37 for plates (rounded), 22.37332 for braces (precise),
-    corresponding to the first free-free bending mode.
+where (βL)² = 22.37 for plates (rounded), 22.37332 for braces (precise),
+corresponding to the first free-free bending mode.
 
-    Mirrors Swift's MaterialProperties.swift (BraceProperties / PlateProperties).
+Mirrors Swift's MaterialProperties.swift (MaterialDimensions, PlateProperties,
+BraceProperties, WoodQuality).
 """
 
 from __future__ import annotations
