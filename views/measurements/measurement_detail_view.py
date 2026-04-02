@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from PyQt6 import QtCore, QtGui, QtWidgets
 import qtawesome as qta
 
-import measurement as M
+from views import tap_analysis_results_view as M
 from models import TapToneMeasurement, ResonantPeak
 from models import guitar_mode as GM
 from models import pitch as P

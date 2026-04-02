@@ -23,7 +23,7 @@ class TapToneAnalyzerModeOverrideManagementMixin:
 
     def start_plate_analysis(self) -> None:
         """Arm the plate capture state machine for the next tap(s)."""
-        import app_settings as _as
+        import views.utilities.tap_settings_view as _as
         self.plate_capture.start(
             is_brace=self._measurement_type.is_brace,
             measure_flc=_as.AppSettings.measure_flc(),

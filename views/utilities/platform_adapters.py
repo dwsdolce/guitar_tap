@@ -1,6 +1,11 @@
 """
-    Check if we are authorized for the microphone and request it if not.
-    This requires the application to be correctly signed.
+Platform-specific access helpers.
+
+macOS: wraps AVFoundation mic permission checks and system-settings deep links.
+Windows: NamedMutex single-instance guard (import directly from
+    views.utilities.named_mutex when needed).
+
+Mirrors Swift's PlatformAdapters.swift.
 """
 
 import subprocess

@@ -17,7 +17,7 @@ import numpy.typing as npt
 from scipy.signal import get_window
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-import fft_annotations as fft_a
+from views import peak_annotations as fft_a
 import models.realtime_fft_analyzer as f_a
 from models import guitar_type as gt
 from models import guitar_mode as gm
@@ -26,7 +26,7 @@ from models import microphone_calibration as _mc_mod
 from models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 import models.tap_tone_analyzer as td
 import models.tap_tone_analyzer as pc
-import app_settings as _as
+import views.utilities.tap_settings_view as _as
 
 
 @dataclass
@@ -93,7 +93,7 @@ class FftProcessingThread(QtCore.QThread):
         self._samples_since_last_fft: int = 0
 
         # Tap / decay state
-        import app_settings as _as
+        import views.utilities.tap_settings_view as _as
         self._tap_detector = td.TapDetector(
             tap_threshold=_as.AppSettings.tap_threshold(),
             hysteresis_margin=_as.AppSettings.hysteresis_margin(),

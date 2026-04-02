@@ -73,7 +73,7 @@ import numpy as np
 import numpy.typing as npt
 
 if platform.system() == "Darwin":
-    import mac_access
+    from views.utilities import platform_adapters as mac_access
 
 
 class RealtimeFFTAnalyzer:

@@ -376,7 +376,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         handleTapDetection dispatch logic.
         """
         import numpy as np
-        from fft_canvas import DisplayMode
+        from views.fft_canvas import DisplayMode
 
         self._current_mag_y = mag_y
 

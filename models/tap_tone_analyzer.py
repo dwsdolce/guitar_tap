@@ -158,7 +158,7 @@ class TapToneAnalyzer(
         from models import guitar_mode as _gm
         from models import measurement_type as _mt_mod
         from models import microphone_calibration as _mc_mod
-        import app_settings as _as
+        import views.utilities.tap_settings_view as _as
 
         super().__init__(parent_widget)
 
@@ -266,5 +266,5 @@ class TapToneAnalyzer(
     @property
     def is_comparing(self) -> bool:
         """True when in COMPARISON display mode."""
-        from fft_canvas import DisplayMode
+        from views.fft_canvas import DisplayMode
         return self._display_mode == DisplayMode.COMPARISON

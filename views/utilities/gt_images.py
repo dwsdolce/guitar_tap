@@ -6,7 +6,8 @@ import os
 
 from PyQt6 import QtGui
 
-basedir = os.path.dirname(__file__)
+# icons/ lives at the project root (two levels above this file's location)
+basedir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 
 class GtImages:

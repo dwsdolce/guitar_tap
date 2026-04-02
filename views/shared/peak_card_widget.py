@@ -1,5 +1,5 @@
 """
-Card-based peak list — replaces the QTableView-based PeakTable.
+Card-based peak list.
 
 Each detected peak is displayed as a card with:
   • Star toggle     — show/hide the annotation on the FFT plot
@@ -9,8 +9,6 @@ Each detected peak is displayed as a card with:
   • Pitch / cents   — purple, below frequency
   • Q / BW          — small grey text
   • Magnitude       — right-aligned, colour-coded (green/blue/orange/red)
-
-Public interface is a drop-in replacement for peaks_table.PeakTable.
 """
 
 from __future__ import annotations
@@ -26,7 +24,7 @@ import qtawesome as qta
 
 from models import guitar_type as gt
 from models import guitar_mode as gm
-import peaks_model as pm
+from views.shared import peaks_model as pm
 from models import pitch as pitch_c
 
 
@@ -402,10 +400,7 @@ class _CardContainer(QtWidgets.QWidget):
 # ── list widget (public API) ──────────────────────────────────────────────────
 
 class PeakListWidget(QtWidgets.QWidget):
-    """Card-list replacement for peaks_table.PeakTable.
-
-    Exposes the same public interface so callers need minimal changes.
-    """
+    """Card-based peak list widget."""
 
     clearPeaks    = QtCore.pyqtSignal()
     peakSelected  = QtCore.pyqtSignal(float)
@@ -601,7 +596,7 @@ class PeakListWidget(QtWidgets.QWidget):
         self.selected_freq_index = int(idx) if idx >= 0 else -1
         self.peakSelected.emit(freq)
 
-    # ── public API (matches peaks_table.PeakTable) ────────────────────────────
+    # ── public API ────────────────────────────────────────────────────────────
 
     def update_data(self, data: npt.NDArray) -> bool:
         self.model.update_data(data)

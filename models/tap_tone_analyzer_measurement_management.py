@@ -34,7 +34,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     def _clear_comparison_state(self) -> None:
         """Clear the analyzer's comparison data (view curves cleared by FftCanvas)."""
-        from fft_canvas import DisplayMode
+        from views.fft_canvas import DisplayMode
         self._display_mode = DisplayMode.LIVE
         self.comparison_labels.clear()
         self._comparison_data.clear()
@@ -47,7 +47,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         """
         from datetime import datetime
         import numpy as np
-        from fft_canvas import DisplayMode
+        from views.fft_canvas import DisplayMode
 
         self._comparison_data.clear()
         self.comparison_labels.clear()
@@ -87,7 +87,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     def clear_comparison(self) -> None:
         """Clear comparison overlay state."""
-        from fft_canvas import DisplayMode
+        from views.fft_canvas import DisplayMode
         was_comparing = self.is_comparing
         self._display_mode = DisplayMode.LIVE
         self._comparison_data.clear()

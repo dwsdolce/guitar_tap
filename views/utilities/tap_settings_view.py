@@ -14,7 +14,7 @@ def _meas_key(meas_type) -> str:
     Importing here avoids a circular dependency at module load time.
     """
     try:
-        from measurement_type import MeasurementType  # noqa: PLC0415
+        from models.measurement_type import MeasurementType  # noqa: PLC0415
         if isinstance(meas_type, MeasurementType):
             return meas_type.storage_key
     except ImportError:
