@@ -12,7 +12,6 @@ import fft_canvas as fft_c
 from fft_canvas import DisplayMode
 import fft_toolbar as fft_t
 import peak_card_widget as PT
-import show_devices as SD
 import app_settings as AS
 import measurement as M
 from models import TapToneMeasurement, ResonantPeak, SpectrumSnapshot
@@ -2946,9 +2945,14 @@ class MainWindow(QtWidgets.QMainWindow):
                             **_plate_dim_kwargs,
                         )
 
-        mic_name: str | None = None
+        # Capture the current audio device identity for later restoration.
+        mic_name: str | None = getattr(canvas.analyzer, "_calibration_device_name", None) or None
+        mic_uid: str | None = None
         try:
-            mic_name = canvas.mic.device_name
+            from models.audio_device import AudioDevice as _AD
+            _rate = canvas.mic.rate if canvas.mic else None
+            if mic_name and _rate:
+                mic_uid = _AD(name=mic_name, index=-1, sample_rate=float(_rate)).fingerprint
         except Exception:
             pass
 
@@ -2971,6 +2975,7 @@ class MainWindow(QtWidgets.QMainWindow):
             selected_cross_peak_id=selected_cross_peak_id,
             selected_flc_peak_id=selected_flc_peak_id,
             microphone_name=mic_name,
+            microphone_uid=mic_uid,
             measurement_type=self.measurement_type_combo.currentText(),
             guitar_type=self.guitar_type_combo.currentText(),
         )
@@ -3327,6 +3332,41 @@ class MainWindow(QtWidgets.QMainWindow):
         # Update chart title to show the measurement name — mirrors Swift loadedMeasurementName.
         canvas.set_loaded_measurement_name(m.tap_location)
 
+        # Auto-select the recorded microphone if it is available — mirrors Swift
+        # loadMeasurement(_:) device-restore block in TapToneAnalyzer+MeasurementManagement.swift.
+        # Matching uses AudioDevice.fingerprint (name:sample_rate) with a name-only fallback,
+        # equivalent to Swift's uid-based lookup via AVAudioDevice.uid.
+        mic_name = m.microphone_name
+        if mic_name:
+            import sounddevice as _sd_local
+            from models.audio_device import AudioDevice as _AudioDevice
+            try:
+                _all = [
+                    _AudioDevice.from_sounddevice_dict(d)
+                    for d in _sd_local.query_devices()
+                    if d["max_input_channels"] > 0
+                ]
+            except Exception:
+                _all = []
+            # Fingerprint match first; fall back to name-only (measurements saved without fingerprint).
+            match = next((d for d in _all if d.fingerprint == (m.microphone_uid or "")), None)
+            if match is None:
+                match = next((d for d in _all if d.name == mic_name), None)
+            if match is not None:
+                if canvas.analyzer._calibration_device_name != match.name:
+                    canvas.set_device(match)
+                    AS.AppSettings.set_audio_device(match)
+                    self.device_status_lbl.setText(match.name)
+            else:
+                from PyQt6 import QtWidgets
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Microphone Not Connected",
+                    f"This measurement was recorded with '{mic_name}', which is not "
+                    f"currently connected. Attach it and select it in the microphone "
+                    f"settings for accurate analysis.",
+                )
+
         self.set_measurement_complete(True)
 
         # Arm the loaded-settings warning AFTER set_measurement_complete so it isn't
@@ -3409,6 +3449,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_devices_changed(self, device_names: list[str]) -> None:
         """A device was added or removed. Auto-select any newly arrived device."""
+        from models.audio_device import AudioDevice as _AudioDevice
         new_names = set(device_names)
         added = new_names - self._known_input_device_names
         self._known_input_device_names = new_names
@@ -3416,15 +3457,18 @@ class MainWindow(QtWidgets.QMainWindow):
         if not added:
             return
 
-        # Find the index of the first newly arrived device and select it
+        # Find the AudioDevice for the first newly arrived device and select it.
         new_name = next(iter(added))
         try:
             for d in sd.query_devices():
                 if str(d["name"]) == new_name and d["max_input_channels"] > 0:
-                    self.fft_canvas.set_device(int(d["index"]))
-                    AS.AppSettings.set_device_name(new_name)
-                    self.device_status_lbl.setText(new_name)
-                    _cal = _mc_mod.CalibrationStorage.calibration_for_device(new_name)
+                    audio_dev = _AudioDevice.from_sounddevice_dict(d)
+                    self.fft_canvas.set_device(audio_dev)
+                    AS.AppSettings.set_audio_device(audio_dev)
+                    self.device_status_lbl.setText(audio_dev.name)
+                    _cal = _mc_mod.CalibrationStorage.calibration_for_device(audio_dev.fingerprint)
+                    if _cal is None:
+                        _cal = _mc_mod.CalibrationStorage.calibration_for_device(audio_dev.name)
                     self.set_calibration_status(_cal.name if _cal else "")
                     break
         except Exception:
@@ -3432,33 +3476,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_device_lost(self, device_name: str) -> None:
         """Active device disconnected — fall back to system default input."""
+        from models.audio_device import AudioDevice as _AudioDevice
+        fallback_dev: _AudioDevice | None = None
         try:
             default_idx = int(sd.default.device[0])
             default_info = sd.query_devices(default_idx)
             if default_info["max_input_channels"] > 0:
-                fallback_idx = default_idx
-                fallback_name = str(default_info["name"])
-            else:
-                raise ValueError("default device has no input channels")
+                fallback_dev = _AudioDevice.from_sounddevice_dict(default_info)
         except Exception:
+            pass
+        if fallback_dev is None:
             # No system default — take first available input
             try:
-                available = [
-                    (int(d["index"]), str(d["name"]))
-                    for d in sd.query_devices()
-                    if d["max_input_channels"] > 0
-                ]
+                for d in sd.query_devices():
+                    if d["max_input_channels"] > 0:
+                        fallback_dev = _AudioDevice.from_sounddevice_dict(d)
+                        break
             except Exception:
-                available = []
-            if not available:
-                self.device_status_lbl.setText("⚠ No audio input device available")
-                return
-            fallback_idx, fallback_name = available[0]
+                pass
+        if fallback_dev is None:
+            self.device_status_lbl.setText("⚠ No audio input device available")
+            return
 
-        self.fft_canvas.set_device(fallback_idx)
-        AS.AppSettings.set_device_name(fallback_name)
-        self.device_status_lbl.setText(fallback_name)
-        _cal = _mc_mod.CalibrationStorage.calibration_for_device(fallback_name)
+        self.fft_canvas.set_device(fallback_dev)
+        AS.AppSettings.set_audio_device(fallback_dev)
+        self.device_status_lbl.setText(fallback_dev.name)
+        _cal = _mc_mod.CalibrationStorage.calibration_for_device(fallback_dev.fingerprint)
+        if _cal is None:
+            _cal = _mc_mod.CalibrationStorage.calibration_for_device(fallback_dev.name)
         self.set_calibration_status(_cal.name if _cal else "")
 
     def import_calibration(self) -> None:
@@ -3489,20 +3534,6 @@ class MainWindow(QtWidgets.QMainWindow):
             _mc_mod.CalibrationStorage.set_calibration_for_device(dev_name, cal.id)
         self.fft_canvas.load_calibration_from_profile(cal)
         self.set_calibration_status(cal.name)
-
-    def show_device_dialog(self) -> None:
-        current_index = self.fft_canvas.mic.device_index or -1
-        dlg = SD.ShowInputDevices(current_device_index=current_index)
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            chosen = dlg.selected_device_index()
-            if chosen >= 0 and chosen != current_index:
-                self.fft_canvas.set_device(chosen)
-                dev_info = sd.query_devices(chosen)
-                dev_name = str(dev_info["name"])  # type: ignore[index]
-                AS.AppSettings.set_device_name(dev_name)
-                self.device_status_lbl.setText(dev_name)
-                _cal = _mc_mod.CalibrationStorage.calibration_for_device(dev_name)
-                self.set_calibration_status(_cal.name if _cal else "")
 
     # ================================================================
     # Settings dialog
@@ -4226,21 +4257,24 @@ class MainWindow(QtWidgets.QMainWindow):
         dev_row.addWidget(device_combo)
         aud.addLayout(dev_row)
 
-        input_devices: list[tuple[int, str, float]] = []
+        from models.audio_device import AudioDevice as _AudioDevice
+        input_devices: list[_AudioDevice] = []
         try:
             default_input = sd.query_devices(kind="input")
-            default_input_name: str = str(default_input["name"]) if default_input else ""
-            for i, dev in enumerate(sd.query_devices()):
+            for dev in sd.query_devices():
                 if dev["max_input_channels"] > 0:
-                    input_devices.append((i, str(dev["name"]), float(dev["default_samplerate"])))
+                    input_devices.append(_AudioDevice.from_sounddevice_dict(dev))
         except Exception:
-            default_input_name = ""
+            pass
 
-        saved_dev_name = AS.AppSettings.device_name()
+        saved_fp = AS.AppSettings.audio_device_fingerprint()
+        saved_name = AS.AppSettings.device_name()
         current_dev_idx = -1
-        for list_idx, (_, dev_name, _) in enumerate(input_devices):
-            device_combo.addItem(dev_name)
-            if dev_name == saved_dev_name:
+        for list_idx, audio_dev in enumerate(input_devices):
+            device_combo.addItem(audio_dev.name)
+            if audio_dev.fingerprint == saved_fp or (
+                current_dev_idx < 0 and audio_dev.name == saved_name
+            ):
                 current_dev_idx = list_idx
         if current_dev_idx >= 0:
             device_combo.setCurrentIndex(current_dev_idx)
@@ -4257,7 +4291,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _update_sr_lbl(combo_idx: int) -> None:
             if 0 <= combo_idx < len(input_devices):
-                sr_val.setText(f"{input_devices[combo_idx][2] / 1000:.0f} kHz")
+                sr_val.setText(f"{input_devices[combo_idx].sample_rate / 1000:.0f} kHz")
             else:
                 sr_val.setText("")
 
@@ -4266,12 +4300,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _on_device_selected(combo_idx: int) -> None:
             if 0 <= combo_idx < len(input_devices):
-                dev_idx, dev_name, _ = input_devices[combo_idx]
-                if dev_name != AS.AppSettings.device_name():
-                    self.fft_canvas.set_device(dev_idx)
-                    AS.AppSettings.set_device_name(dev_name)
-                    self.device_status_lbl.setText(dev_name)
-                    _update_cal_display()  # _on_cal_selected will update status via combo signal
+                audio_dev = input_devices[combo_idx]
+                if audio_dev.fingerprint != AS.AppSettings.audio_device_fingerprint():
+                    self.fft_canvas.set_device(audio_dev)
+                    AS.AppSettings.set_audio_device(audio_dev)
+                    self.device_status_lbl.setText(audio_dev.name)
+                    _update_cal_display()
 
         device_combo.currentIndexChanged.connect(_on_device_selected)
 
@@ -4279,21 +4313,24 @@ class MainWindow(QtWidgets.QMainWindow):
             """Refresh the device combo when sounddevice reports a change."""
             nonlocal input_devices
             try:
-                new_devices: list[tuple[int, str, float]] = [
-                    (int(dev["index"]), str(dev["name"]), float(dev["default_samplerate"]))
+                new_devices: list[_AudioDevice] = [
+                    _AudioDevice.from_sounddevice_dict(dev)
                     for dev in sd.query_devices()
                     if dev["max_input_channels"] > 0
                 ]
             except Exception:
                 return
             input_devices = new_devices
-            saved = AS.AppSettings.device_name()
+            saved_fp = AS.AppSettings.audio_device_fingerprint()
+            saved_name = AS.AppSettings.device_name()
             device_combo.blockSignals(True)
             device_combo.clear()
             restore_idx = -1
-            for list_idx, (_, dev_name, _) in enumerate(input_devices):
-                device_combo.addItem(dev_name)
-                if dev_name == saved:
+            for list_idx, audio_dev in enumerate(input_devices):
+                device_combo.addItem(audio_dev.name)
+                if audio_dev.fingerprint == saved_fp or (
+                    restore_idx < 0 and audio_dev.name == saved_name
+                ):
                     restore_idx = list_idx
             device_combo.blockSignals(False)
             if restore_idx >= 0:

@@ -133,11 +133,35 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def device_name(cls) -> str:
+        """Return the saved device name (legacy key — still used by calibration lookups)."""
         return str(cls._get("audio/device_name", ""))
 
     @classmethod
     def set_device_name(cls, name: str) -> None:
+        """Persist the device name (legacy key)."""
         cls._set("audio/device_name", name)
+
+    @classmethod
+    def audio_device_fingerprint(cls) -> str:
+        """Return the saved AudioDevice fingerprint (name:sample_rate), or "".
+
+        Mirrors Swift UserDefaults key ``selectedInputDeviceUID``.
+        Falls back to the legacy device_name key so upgrades are seamless.
+        """
+        fp = str(cls._get("audio/device_fingerprint", ""))
+        if not fp:
+            fp = cls.device_name()
+        return fp
+
+    @classmethod
+    def set_audio_device(cls, device) -> None:
+        """Persist an AudioDevice for the next launch.
+
+        Stores both the fingerprint (primary) and the plain name (legacy fallback).
+        Mirrors Swift UserDefaults.standard.set(deviceUID, forKey: selectedInputDeviceUID).
+        """
+        cls._set("audio/device_fingerprint", device.fingerprint)
+        cls._set("audio/device_name", device.name)  # keep legacy key in sync
 
     # ------------------------------------------------------------------ #
     # Guitar type

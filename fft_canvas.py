@@ -23,7 +23,7 @@ from models import guitar_type as gt
 from models import guitar_mode as gm
 from models import measurement_type as mt_mod
 from models import microphone_calibration as _mc_mod
-from models.realtime_fft_analyzer import Microphone
+from models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 import models.tap_tone_analyzer as td
 import models.tap_tone_analyzer as pc
 import app_settings as _as
@@ -454,53 +454,62 @@ class FftCanvas(pg.PlotWidget):
         # analyzer is constructed below (update_axis requires self.analyzer).
         self.setXRange(frange["f_min"], frange["f_max"], padding=0)
 
-        # Open the audio stream — resolve saved device name to an index
-        saved_device_index: int | None = None
-        saved_device_name: str = ""
+        # Resolve the saved AudioDevice (fingerprint → live index).
+        # Mirrors Swift RealtimeFFTAnalyzer selectedInputDevice restore logic.
+        from models.audio_device import AudioDevice as _AudioDevice
+        _saved_audio_device: _AudioDevice | None = None
         try:
-            saved_name = _as.AppSettings.device_name()
-            if saved_name:
-                for dev in sd.query_devices():
-                    if dev["name"] == saved_name and dev["max_input_channels"] > 0:
-                        saved_device_index = dev["index"]
-                        saved_device_name = saved_name
-                        break
+            _all_devs = list(sd.query_devices())
+            _saved_fp = _as.AppSettings.audio_device_fingerprint()
+            if _saved_fp:
+                # Try fingerprint match first (name:sample_rate), then name-only fallback.
+                _proto = _AudioDevice.from_fingerprint(_saved_fp)
+                if _proto is not None:
+                    _saved_audio_device = _proto.resolve(_all_devs)
+                if _saved_audio_device is None:
+                    # Name-only fallback for settings saved before fingerprints.
+                    _saved_name = _as.AppSettings.device_name()
+                    for _d in _all_devs:
+                        if str(_d["name"]) == _saved_name and _d["max_input_channels"] > 0:
+                            _saved_audio_device = _AudioDevice.from_sounddevice_dict(_d)
+                            break
         except Exception:
             pass
 
-        # If the saved device wasn't found, resolve the actual default input device
-        # so that AppSettings and _calibration_device_name reflect reality.
-        if not saved_device_name:
+        # If the saved device wasn't found, fall back to the system default input
+        # and persist it so AppSettings reflects reality.
+        if _saved_audio_device is None:
             try:
-                default_info = sd.query_devices(kind="input")
-                if default_info is not None:
-                    saved_device_name = str(default_info["name"])
-                    _as.AppSettings.set_device_name(saved_device_name)
+                _def_info = sd.query_devices(kind="input")
+                if _def_info is not None:
+                    _saved_audio_device = _AudioDevice.from_sounddevice_dict(_def_info)
+                    _as.AppSettings.set_audio_device(_saved_audio_device)
             except Exception:
                 pass
 
         # Update fft_data to use the selected device's native sample rate.
-        # This ensures FFT bin spacing matches what PortAudio actually delivers,
-        # regardless of whether the device's native rate matches the default.
-        try:
-            _dev_idx = saved_device_index if saved_device_index is not None else sd.default.device[0]
-            _dev_info = sd.query_devices(_dev_idx)
-            _native_rate = int(_dev_info["default_samplerate"])
+        # AudioDevice already carries sample_rate so no extra OS query is needed.
+        if _saved_audio_device is not None:
+            _native_rate = int(_saved_audio_device.sample_rate)
             if _native_rate > 0 and _native_rate != self.fft_data.sample_freq:
                 self.fft_data.sample_freq = _native_rate
                 self.fft_data.n_f = int(2 ** (np.ceil(np.log2(self.fft_data.m_t))))
                 self.fft_data.h_n_f = self.fft_data.n_f // 2
-        except Exception:
-            pass
 
         # ── TapToneAnalyzer: the model ─────────────────────────────────────
         # Auto-load calibration profile before constructing the analyzer so we
-        # can pass the corrections array in.
+        # can pass the corrections array in.  Try fingerprint key first, then
+        # name-only fallback for profiles saved before fingerprints.
         _initial_calibration = None
-        if saved_device_name:
-            _cal = _mc_mod.CalibrationStorage.calibration_for_device(saved_device_name)
+        if _saved_audio_device is not None:
+            _cal = _mc_mod.CalibrationStorage.calibration_for_device(
+                _saved_audio_device.fingerprint
+            )
+            if _cal is None:
+                _cal = _mc_mod.CalibrationStorage.calibration_for_device(
+                    _saved_audio_device.name
+                )
             if _cal is not None:
-                # Compute freq axis for interpolation
                 _x = np.arange(0, self.fft_data.h_n_f + 1)
                 _freq_tmp = _x * self.fft_data.sample_freq // self.fft_data.n_f
                 _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
@@ -514,8 +523,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(
             parent_widget=self,
             fft_data=self.fft_data,
-            saved_device_index=saved_device_index,
-            saved_device_name=saved_device_name,
+            audio_device=_saved_audio_device,
             calibration_corrections=_initial_calibration,
             guitar_type=_guitar_type,
         )
@@ -1102,10 +1110,13 @@ class FftCanvas(pg.PlotWidget):
         """Cancel the in-progress multi-tap sequence and rearm for a fresh tap."""
         self.analyzer.cancel_tap_sequence()
 
-    def set_device(self, device_index: int) -> None:
-        """Switch the audio input to the given sounddevice index and
-        auto-load the calibration associated with that device."""
-        self.analyzer.set_device(device_index)
+    def set_device(self, device) -> None:
+        """Switch the audio input to the given AudioDevice and
+        auto-load the calibration associated with that device.
+
+        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:).
+        """
+        self.analyzer.set_device(device)
 
     # ------------------------------------------------------------------ #
     # Peak selection (view-level — updates scatter point)

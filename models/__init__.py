@@ -22,6 +22,7 @@ Analyser modules (NOT imported here — import directly to avoid circular deps):
   tap_tone_analyzer      → TapToneAnalyzer, TapDetector, DecayTracker, PlateCapture, ...
 """
 
+from .audio_device import AudioDevice
 from .guitar_type import GuitarType, ModeRanges, DecayThresholds
 from .guitar_mode import GuitarMode, get_bands, in_mode_range, classify_peak, mode_display_name
 from .measurement_type import MeasurementType
@@ -34,6 +35,7 @@ from .tap_tone_measurement import TapToneMeasurement
 from .user_assigned_mode import UserAssignedMode
 
 __all__ = [
+    "AudioDevice",
     "GuitarType", "ModeRanges", "DecayThresholds",
     "GuitarMode", "get_bands", "in_mode_range", "classify_peak", "mode_display_name",
     "MeasurementType",
