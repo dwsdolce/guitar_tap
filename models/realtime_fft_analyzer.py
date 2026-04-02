@@ -432,20 +432,27 @@ def dft_anal(
 
 
 def peak_detection(
-    magnitude: npt.NDArray[np.float32], threshold: int
+    magnitude: npt.NDArray[np.float32], threshold: int, window_size: int = 5
 ) -> npt.NDArray[np.signedinteger]:
     """Detect spectral peak locations.
 
-    magnitude: magnitude spectrum, t: threshold.
-    Returns ploc: peak locations.
+    magnitude:   magnitude spectrum (dB).
+    threshold:   minimum magnitude to qualify as a peak.
+    window_size: half-width of the local-maximum window (bins on each side).
+                 Default 5 mirrors Swift's ``windowSize = 5`` in findPeaks.
+
+    Returns ploc: peak locations (bin indices).
 
     Mirrors Swift findPeaks — threshold + local-maximum filter.
+    The Swift implementation checks ±5 bins (windowSize = 5); the original
+    Python implementation only checked ±1 bin, which is why it found far more
+    peaks than Swift.  The default window_size=5 now matches Swift exactly.
     """
-    thresh_values = np.where(np.greater(magnitude[1:-1], threshold), magnitude[1:-1], 0)
-    next_minor = np.where(magnitude[1:-1] > magnitude[2:], magnitude[1:-1], 0)
-    prev_minor = np.where(magnitude[1:-1] > magnitude[:-2], magnitude[1:-1], 0)
-    ploc = thresh_values * next_minor * prev_minor
-    ploc = ploc.nonzero()[0] + 1
+    from scipy.signal import argrelmax
+    # Find all local maxima over the ±window_size neighbourhood
+    (local_max_indices,) = argrelmax(magnitude, order=window_size)
+    # Keep only those above the threshold
+    ploc = local_max_indices[magnitude[local_max_indices] > threshold]
     return ploc
 
 

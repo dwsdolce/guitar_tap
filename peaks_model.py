@@ -77,6 +77,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
         self.user_has_modified_peak_selection: bool = False
         self._programmatic_update: bool = False
+        # Current annotation visibility mode — kept in sync by guitar_tap.py
+        # so that live-path annotation emission respects the user's choice.
+        # Values: "Selected", "None", "All"  (mirrors Swift annotationVisibilityMode)
+        self.annotation_mode: str = "Selected"
         self._auto_mode_map: dict[float, gm.GuitarMode] = {}  # freq → mode, from classify_all
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
@@ -297,20 +301,39 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._emit_mode_colors()
         self.layoutChanged.emit()
 
-        # Carry-forward: rebuild self.show against the new peak set, explicitly
-        # preserving entries whose frequency has no match in the new data (i.e.
-        # peak dropped below threshold).  This mirrors Swift Fix 2 — the carry-
-        # forward loop that keeps a frequency in carriedFreqs unchanged when no
-        # matching peak is found, so the selection is restored when the threshold
-        # is later lowered again.
+        if self.disable_editing:
+            # Live (pre-tap) mode: auto-select every found peak, mirroring Swift's
+            #   selectedPeakIDs = Set(peaks.map { $0.id })
+            # which runs on every FFT frame so that annotation-visibility mode
+            # "Selected" shows all identified peaks during live preview.
+            new_show: dict[float, str] = {}
+            if data.shape[0] > 0:
+                for freq in data[:, 0]:
+                    new_show[float(freq)] = "on"
+            self.show = new_show
+
+            # Emit annotations only when the current visibility mode calls for it.
+            # "None"     → hide everything (don't emit annotationUpdate)
+            # "Selected" → show selected (all) peaks
+            # "All"      → same as Selected in live mode (all peaks are selected)
+            self.clearAnnotations.emit()
+            if self.annotation_mode != "None":
+                for row in range(self._data.shape[0]):
+                    idx = self.index(row, 0)
+                    freq = self.freq_value(idx)
+                    mag  = self.magnitude_value(idx)
+                    mode = self.mode_value(idx)
+                    self.annotationUpdate.emit(freq, mag, self.annotation_html(freq, mag, mode), mode)
+            return
+
+        # Frozen path: carry-forward existing selections, preserving entries
+        # whose frequency has no match in the new data (peak dropped below
+        # threshold) so the selection is restored when the threshold is lowered.
+        # Mirrors Swift Fix 2 — the carry-forward loop in applyFrozenPeakState.
         new_freqs = set(data[:, 0]) if data.shape[0] > 0 else set()  # col 0 = frequency
         carried: dict[float, str] = {}
         for freq, val in self.show.items():
-            if freq in new_freqs:
-                carried[freq] = val   # peak still present — carry forward as-is
-            else:
-                carried[freq] = val   # peak below threshold — preserve so it can
-                                      # be re-selected when threshold is lowered
+            carried[freq] = val   # preserve regardless — present or below threshold
         self.show = carried
 
         # Reconcile annotations: clear everything, then re-create only for peaks

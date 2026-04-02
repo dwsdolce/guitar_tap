@@ -2128,6 +2128,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_annotation_mode(self, mode: str) -> None:
         model = self.peak_widget.model
         canvas = self.fft_canvas
+        model.annotation_mode = mode  # keep PeaksModel in sync for live-path gating
         if mode == "All":
             model.show_all_annotations()
         elif mode == "Selected":
