@@ -10,7 +10,6 @@ from PyQt6 import QtWidgets, QtGui, QtCore
 
 import fft_canvas as fft_c
 from fft_canvas import DisplayMode
-import fft_toolbar as fft_t
 import peak_card_widget as PT
 import app_settings as AS
 import measurement as M
