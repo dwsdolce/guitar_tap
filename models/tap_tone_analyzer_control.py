@@ -178,10 +178,7 @@ class TapToneAnalyzerControlMixin:
     def set_threshold(self, threshold: int) -> None:
         """Set the peak-detection threshold (0-100 scale)."""
         self.threshold = threshold
-        if self._loaded_measurement_peaks is not None:
-            self._emit_loaded_peaks_at_threshold()
-        else:
-            self.find_peaks(self.saved_mag_y_db)
+        self._recalculate_peaks()
 
     def set_fmin(self, fmin: int) -> None:
         self.update_axis(fmin, self.fmax)
@@ -197,10 +194,7 @@ class TapToneAnalyzerControlMixin:
             self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
             self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
         if not init:
-            if self._loaded_measurement_peaks is not None:
-                self._emit_loaded_peaks_at_threshold()
-            else:
-                self.find_peaks(self.saved_mag_y_db)
+            self._recalculate_peaks()
 
     def set_max_average_count(self, max_average_count: int) -> None:
         self.max_average_count = max_average_count

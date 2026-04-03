@@ -3117,9 +3117,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         canvas.saved_peaks = peaks_array
         canvas._loaded_measurement_peaks = peaks_array  # authoritative; used by threshold/range sliders
-        canvas.b_peaks_freq = peaks_array[:, 0] if len(peaks_array) > 0 else []
-        canvas.peaks_f_min_index = 0
-        canvas.peaks_f_max_index = len(peaks_array)
 
         peak_model = self.peak_widget.model
 

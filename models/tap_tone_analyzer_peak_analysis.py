@@ -220,23 +220,14 @@ class TapToneAnalyzerPeakAnalysisMixin:
             self.saved_peaks = peaks
             triggered = True
 
-            self.peaks_f_min_index = 0
-            self.peaks_f_max_index = 0
             b_peaks_f_indices = np.nonzero(
                 (peaks_freq < self.fmax) & (peaks_freq > self.fmin)
             )
             if len(b_peaks_f_indices[0]) > 0:
-                self.peaks_f_min_index = b_peaks_f_indices[0][0]
-                self.peaks_f_max_index = b_peaks_f_indices[0][-1] + 1
-
-            if self.peaks_f_max_index > 0:
-                self.b_peaks_freq = peaks_freq[
-                    self.peaks_f_min_index : self.peaks_f_max_index
-                ]
-                peaks_data = peaks[self.peaks_f_min_index : self.peaks_f_max_index]
-                self.peaksChanged.emit(peaks_data)
+                f_min_idx = b_peaks_f_indices[0][0]
+                f_max_idx = b_peaks_f_indices[0][-1] + 1
+                self.peaksChanged.emit(peaks[f_min_idx:f_max_idx])
             else:
-                self.b_peaks_freq = []
                 self.peaksChanged.emit(np.zeros((0, 3)))
         else:
             self.saved_peaks = np.zeros((0, 3))

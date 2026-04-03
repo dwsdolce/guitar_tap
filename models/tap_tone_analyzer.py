@@ -232,12 +232,8 @@ class TapToneAnalyzer(
         self.n_fmax: int = 0
         self.saved_mag_y_db = np.array([])
         self.saved_peaks = np.zeros((0, 3))               # (freq, mag, Q)
-        self.b_peaks_freq = np.array([])
-        self.peaks_f_min_index: int = 0
-        self.peaks_f_max_index: int = 0
         self._loaded_measurement_peaks = None             # ndarray or None
         self.selected_peak: float = 0.0
-        self._mode_color_map: dict = {}                   # freq → RGB tuple
 
         # ── Averaging ──────────────────────────────────────────────────────
         self.avg_enable: bool = False

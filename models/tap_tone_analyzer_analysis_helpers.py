@@ -14,6 +14,18 @@ class TapToneAnalyzerAnalysisHelpersMixin:
     Mirrors Swift TapToneAnalyzer+AnalysisHelpers.swift.
     """
 
+    def _recalculate_peaks(self) -> None:
+        """Refresh peak display after threshold or frequency-axis change.
+
+        Single unified path for both live and frozen/loaded measurements —
+        mirrors Swift recalculateFrozenPeaksIfNeeded which handles both cases
+        in one method rather than at every call site.
+        """
+        if self._loaded_measurement_peaks is not None:
+            self._emit_loaded_peaks_at_threshold()
+        else:
+            self.find_peaks(self.saved_mag_y_db)
+
     def _emit_loaded_peaks_at_threshold(self) -> None:
         """Filter loaded-measurement peaks by threshold/fmin/fmax and emit peaksChanged.
 
@@ -31,7 +43,6 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         empty = np.zeros((0, 3))
         if peaks.shape[0] == 0:
             self.saved_peaks = empty
-            self.b_peaks_freq = np.array([], dtype=np.float64)
             self.peaksChanged.emit(empty)
             return
 
@@ -40,14 +51,10 @@ class TapToneAnalyzerAnalysisHelpersMixin:
 
         b_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
         if len(b_indices[0]) > 0:
-            self.peaks_f_min_index = int(b_indices[0][0])
-            self.peaks_f_max_index = int(b_indices[0][-1]) + 1
-            self.b_peaks_freq = peaks_freq[self.peaks_f_min_index:self.peaks_f_max_index]
-            self.peaksChanged.emit(peaks[self.peaks_f_min_index:self.peaks_f_max_index])
+            f_min_idx = int(b_indices[0][0])
+            f_max_idx = int(b_indices[0][-1]) + 1
+            self.peaksChanged.emit(peaks[f_min_idx:f_max_idx])
         else:
-            self.peaks_f_min_index = 0
-            self.peaks_f_max_index = 0
-            self.b_peaks_freq = np.array([], dtype=np.float64)
             self.peaksChanged.emit(empty)
 
     def process_averages(self, mag_y) -> None:

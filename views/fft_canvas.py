@@ -199,16 +199,12 @@ class FftCanvas(pg.PlotWidget):
         # Disable pyqtgraph's built-in right-click menu; we provide our own.
         self.getPlotItem().setMenuEnabled(False)
 
-        self.avg_enable: bool = False
-
         self.fft_data: FftParameters = FftParameters(sampling_rate, fft_size)
 
-        # threshold kept here for backward compat (set_threshold updates both self and analyzer)
-        self.threshold: int = threshold
-
-        # Set threshold value for drawing threshold line
+        # threshold_y is the rendering value for the peak threshold line (dB relative to 0).
+        # Derived from threshold on construction; kept in sync by set_threshold.
         self.threshold_x: int = self.fft_data.sample_freq // 2
-        self.threshold_y: int = self.threshold - 100
+        self.threshold_y: int = threshold - 100
 
         # Enforce pan/zoom bounds matching Swift's SpectrumView+GestureHandlers limits:
         # frequency 0–5000 Hz (min span 50 Hz), magnitude −120–+20 dB (min span 10 dB).
@@ -324,6 +320,9 @@ class FftCanvas(pg.PlotWidget):
         # both the scatter plot and the results panel.
         self.analyzer.spectrumUpdated.connect(self._on_spectrum_updated)
         self.analyzer.peaksChanged.connect(self._on_peaks_changed_scatter)
+        # Clear annotations reactively when a new averaged sample is accepted —
+        # mirrors Swift's onChange(of: tap.numAverages) rather than inline polling.
+        self.analyzer.averagesChanged.connect(self._on_averages_changed)
 
         # FFT line
         self.fft_line: pg.PlotDataItem = self.plot(
@@ -421,9 +420,6 @@ class FftCanvas(pg.PlotWidget):
 
         self.getPlotItem().vb.sigXRangeChanged.connect(self._refresh_peaks_for_viewport)
 
-        # Guitar type — updated by set_guitar_type_bands(); used for peak deduplication
-        self._guitar_type: gt.GuitarType = _guitar_type
-
         # Initialise mode bands for the saved guitar type
         self.set_guitar_type_bands(guitar_type_str)
 
@@ -460,6 +456,11 @@ class FftCanvas(pg.PlotWidget):
         # Comparison overlay state — mirrors comparisonSpectra in TapToneAnalyzer.swift
         self._comparison_curves: list[pg.PlotDataItem] = []
         self._comparison_legend: QtWidgets.QWidget | None = None
+
+        # Last viewport-filtered peaks received via peaksChanged signal.
+        # Tracks the emitted slice so point_picked and update_mode_colors
+        # don't need to re-derive it from saved_peaks + index fields.
+        self._current_peaks: np.ndarray = np.zeros((0, 3))
 
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
@@ -553,30 +554,6 @@ class FftCanvas(pg.PlotWidget):
     def _loaded_measurement_peaks(self, value) -> None:
         self.analyzer._loaded_measurement_peaks = value
 
-    @property
-    def b_peaks_freq(self):
-        return self.analyzer.b_peaks_freq
-
-    @b_peaks_freq.setter
-    def b_peaks_freq(self, value) -> None:
-        self.analyzer.b_peaks_freq = value
-
-    @property
-    def peaks_f_min_index(self) -> int:
-        return self.analyzer.peaks_f_min_index
-
-    @peaks_f_min_index.setter
-    def peaks_f_min_index(self, value: int) -> None:
-        self.analyzer.peaks_f_min_index = value
-
-    @property
-    def peaks_f_max_index(self) -> int:
-        return self.analyzer.peaks_f_max_index
-
-    @peaks_f_max_index.setter
-    def peaks_f_max_index(self, value: int) -> None:
-        self.analyzer.peaks_f_max_index = value
-
     def _emit_loaded_peaks_at_threshold(self) -> None:
         """Delegate to analyzer — called by guitar_tap.py after loading a measurement."""
         self.analyzer._emit_loaded_peaks_at_threshold()
@@ -646,7 +623,6 @@ class FftCanvas(pg.PlotWidget):
             guitar_type = gt.GuitarType(guitar_type_str)
         except ValueError:
             return
-        self._guitar_type = guitar_type
         self.analyzer._guitar_type = guitar_type
         for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):
             r, g, b, _ = rgba
@@ -910,10 +886,9 @@ class FftCanvas(pg.PlotWidget):
             if self.annotations.select_annotation(scatter):
                 return
             index0 = points[0].index()
-            if self.analyzer.peaks_f_min_index <= index0 < self.analyzer.peaks_f_max_index:
-                if np.any(self.saved_peaks):
-                    freq = self.saved_peaks[index0][0]
-                    self.peakSelected.emit(freq)
+            if self._current_peaks.size > 0 and index0 < len(self._current_peaks):
+                freq = float(self._current_peaks[index0][0])
+                self.peakSelected.emit(freq)
 
     # ── info button & zoom/pan help ───────────────────────────────────────────
 
@@ -1065,10 +1040,7 @@ class FftCanvas(pg.PlotWidget):
 
             self.setXRange(fmin, fmax, padding=0)
             if not init:
-                if self.analyzer._loaded_measurement_peaks is not None:
-                    self.analyzer._emit_loaded_peaks_at_threshold()
-                else:
-                    self.find_peaks(self.saved_mag_y_db)
+                self.analyzer._recalculate_peaks()
 
     def _refresh_peaks_for_viewport(self, _vb=None, x_range=None) -> None:
         """Re-emit filtered peaks and update the freq-range label whenever the
@@ -1088,10 +1060,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
         self.analyzer.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
-            if self.analyzer._loaded_measurement_peaks is not None:
-                self.analyzer._emit_loaded_peaks_at_threshold()
-            else:
-                self.find_peaks(self.saved_mag_y_db)
+            self.analyzer._recalculate_peaks()
         self.freqRangeChanged.emit(fmin, fmax)
 
     def set_max_average_count(self, max_average_count: int) -> None:
@@ -1104,7 +1073,6 @@ class FftCanvas(pg.PlotWidget):
 
     def set_avg_enable(self, avg_enable: bool) -> None:
         """Flag to enable/disable the averaging"""
-        self.avg_enable = avg_enable
         self.analyzer.set_avg_enable(avg_enable)
 
     # ------------------------------------------------------------------ #
@@ -1180,27 +1148,17 @@ class FftCanvas(pg.PlotWidget):
             self._comparison_legend = legend
             self._reposition_comparison_legend()
 
-            # Apply axis ranges from analyzer (already computed in load_comparison)
-            snaps = [m.spectrum_snapshot for m in measurements if m.spectrum_snapshot is not None]
-            if snaps:
-                min_freq = int(min(s.min_freq for s in snaps))
-                max_freq = int(max(s.max_freq for s in snaps))
-                min_db   = float(min(s.min_db for s in snaps))
-                max_db   = float(max(s.max_db for s in snaps))
-                self.setXRange(min_freq, max_freq, padding=0)
-                self.setYRange(min_db, max_db, padding=0)
-
         # Clear the main spectrum line — only the comparison curves should be visible.
         self.fft_line.setData([], [])
         self.points.setData(x=[], y=[])
 
         self._locked_series_index = 0
-        self._set_comparison_visibility()
-        # comparisonChanged was already emitted by analyzer.load_comparison
+        # comparisonChanged (and therefore _on_comparison_changed_from_analyzer)
+        # was already emitted by analyzer.load_comparison — visibility and axis
+        # ranges are applied there.
 
     def clear_comparison(self) -> None:
         """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
-        was_comparing = self.is_comparing
         self._locked_series_index = 0
         for curve in self._comparison_curves:
             self.removeItem(curve)
@@ -1209,27 +1167,39 @@ class FftCanvas(pg.PlotWidget):
             self._comparison_legend.deleteLater()
             self._comparison_legend = None
         self.analyzer.clear_comparison()
-        if was_comparing:
-            self._set_comparison_visibility()
-            # comparisonChanged emitted by analyzer.clear_comparison
+        # comparisonChanged (and _on_comparison_changed_from_analyzer) is emitted
+        # by analyzer.clear_comparison — visibility is applied there.
 
     def _on_comparison_changed_from_analyzer(self, is_comparing: bool) -> None:
-        """Relay analyzer.comparisonChanged → canvas.comparisonChanged."""
-        self.comparisonChanged.emit(is_comparing)
+        """React to comparison mode entering or leaving.
 
-    def _set_comparison_visibility(self) -> None:
-        """Show/hide peaks and threshold lines based on comparison state.
+        Applies visibility of peaks and threshold lines (mirrors the isComparing
+        checks in TapToneAnalysisView+SpectrumViews.swift), and applies the
+        axis ranges from the comparison data when entering comparison mode.
 
-        Mirrors the isComparing checks in TapToneAnalysisView+SpectrumViews.swift:
-            peaks: isComparing ? nil : tap.currentPeaks
-            thresholdLines: isComparing ? [] : thresholds
+        Also relays the signal outward so external observers can react.
         """
-        showing = not self.is_comparing
+        showing = not is_comparing
         self.points.setVisible(showing)
         self.selected_point.setVisible(showing)
         self.line_threshold.setVisible(showing)
         self.line_tap_threshold.setVisible(showing)
         self.line_reset_threshold.setVisible(showing)
+
+        if is_comparing and self.analyzer._comparison_data:
+            # Apply axis ranges derived from the comparison snapshots.
+            all_freqs = [d["freqs"] for d in self.analyzer._comparison_data if len(d["freqs"]) > 0]
+            all_mags  = [d["mags"]  for d in self.analyzer._comparison_data if len(d["mags"])  > 0]
+            if all_freqs and all_mags:
+                import numpy as _np
+                min_freq = int(min(_np.min(f) for f in all_freqs))
+                max_freq = int(max(_np.max(f) for f in all_freqs))
+                min_db   = float(min(_np.min(m) for m in all_mags))
+                max_db   = float(max(_np.max(m) for m in all_mags))
+                self.setXRange(min_freq, max_freq, padding=0)
+                self.setYRange(min_db, max_db, padding=0)
+
+        self.comparisonChanged.emit(is_comparing)
 
     def set_measurement_complete(self, is_measurement_complete: bool) -> None:
         """Flag to enable/disable the holding of peaks."""
@@ -1269,27 +1239,21 @@ class FftCanvas(pg.PlotWidget):
         """Set the threshold used to limit both the triggering of a sample
         and the threshold on finding peaks. The threshold value is always 0 to 100.
         """
-        self.threshold = threshold
         self.analyzer.threshold = threshold
 
         self.threshold_x = self.fft_data.sample_freq // 2
-        self.threshold_y = self.threshold - 100
+        self.threshold_y = threshold - 100
 
         self.line_threshold.setPos(self.threshold_y)
         self.line_threshold.label.setText(f"Peak: {self.threshold_y} dB")
 
-        if self.analyzer._loaded_measurement_peaks is not None:
-            self.analyzer._emit_loaded_peaks_at_threshold()
-        else:
-            self.find_peaks(self.saved_mag_y_db)
+        self.analyzer._recalculate_peaks()
 
         self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()
-        if np.any(self.analyzer.b_peaks_freq):
-            if self.analyzer.selected_peak > 0:
-                peak_index = np.where(self.analyzer.b_peaks_freq == self.analyzer.selected_peak)
-                if len(peak_index[0]):
-                    self.peakSelected.emit(self.analyzer.selected_peak)
+        if self._current_peaks.size > 0 and self.analyzer.selected_peak > 0:
+            if self.analyzer.selected_peak in self._current_peaks[:, 0]:
+                self.peakSelected.emit(self.analyzer.selected_peak)
 
     def _peak_brushes(self, freqs) -> list:
         """Return a list of QBrush objects, one per peak, coloured by mode."""
@@ -1302,11 +1266,10 @@ class FftCanvas(pg.PlotWidget):
     def update_mode_colors(self, color_map: dict) -> None:
         """Update the per-peak mode colour map and redraw scatter points."""
         self._mode_color_map = color_map
-        if self.saved_peaks.size > 0 and self.analyzer.peaks_f_max_index > 0:
-            peaks_data = self.saved_peaks[self.analyzer.peaks_f_min_index:self.analyzer.peaks_f_max_index]
+        if self._current_peaks.size > 0:
             self.points.setData(
-                x=peaks_data[:, 0], y=peaks_data[:, 1],
-                brush=self._peak_brushes(peaks_data[:, 0]),
+                x=self._current_peaks[:, 0], y=self._current_peaks[:, 1],
+                brush=self._peak_brushes(self._current_peaks[:, 0]),
             )
 
     def _on_peaks_changed_scatter(self, peaks) -> None:
@@ -1319,11 +1282,13 @@ class FftCanvas(pg.PlotWidget):
         on every render rather than keeping a separate scatter-plot state.
         """
         if hasattr(peaks, "size") and peaks.size > 0:
+            self._current_peaks = peaks
             self.points.setData(
                 x=peaks[:, 0], y=peaks[:, 1],
                 brush=self._peak_brushes(peaks[:, 0]),
             )
         else:
+            self._current_peaks = np.zeros((0, 3))
             self.points.setData(x=[], y=[])
 
     def set_draw_data(self, mag_db) -> None:
@@ -1352,15 +1317,10 @@ class FftCanvas(pg.PlotWidget):
     def process_averages(self, mag_y) -> None:
         """For the specified magnitude find the average with all the saved magnitudes.
 
-        Delegates to analyzer.process_averages.  When a new averaged sample
-        triggers, the annotations are cleared to reflect the updated peaks
-        (mirrors the original FftCanvas.process_averages annotation clear).
+        Delegates to analyzer.process_averages.  Annotation clearing is handled
+        reactively via _on_averages_changed, connected to analyzer.averagesChanged.
         """
-        prev_averages = self.analyzer.num_averages
         self.analyzer.process_averages(mag_y)
-        # If averaging progressed (new sample triggered), clear annotations
-        if self.analyzer.num_averages != prev_averages:
-            self.annotations.clear_annotations()
 
     # ── find_peaks: thin wrapper that delegates to analyzer ───────────────────
 
@@ -1403,6 +1363,14 @@ class FftCanvas(pg.PlotWidget):
         via the peaksChanged signal.
         """
         self.set_draw_data(mag_y_db)
+
+    def _on_averages_changed(self, _count: int) -> None:
+        """Clear annotations when a new averaged sample is accepted.
+
+        Connected to analyzer.averagesChanged — mirrors Swift's onChange(of: tap.numAverages).
+        Replaces the inline prev_averages != num_averages polling that was in process_averages.
+        """
+        self.annotations.clear_annotations()
 
     def _on_tap_detected_from_analyzer(self) -> None:
         """Relay analyzer.tapDetectedSignal → FftCanvas.tapDetected (hold trigger)."""
