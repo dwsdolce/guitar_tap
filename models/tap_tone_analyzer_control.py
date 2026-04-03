@@ -74,15 +74,12 @@ class TapToneAnalyzerControlMixin:
         Args:
             device: AudioDevice to switch to.
         """
-        import math as _math
         from models.microphone_calibration import CalibrationStorage as _CS
         self.mic.set_device(device)
         # Sync fft_data sample rate to the new device's native rate so the
         # frequency axis stays correct.
         if self.mic.rate != self.fft_data.sample_freq:
             self.fft_data.sample_freq = self.mic.rate
-            self.fft_data.n_f = int(2 ** _math.ceil(_math.log2(self.fft_data.m_t)))
-            self.fft_data.h_n_f = self.fft_data.n_f // 2
         self._calibration_device_name = device.name
         # Auto-load the device-specific calibration (mirrors selectedInputDevice.didSet).
         # Try fingerprint key first, then fall back to name-only key for measurements

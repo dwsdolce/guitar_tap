@@ -28,6 +28,8 @@ import time as _time
 
 from PyQt6 import QtCore
 
+from .analysis_display_mode import AnalysisDisplayMode
+
 
 # ── TapDetector ───────────────────────────────────────────────────────────────
 
@@ -376,7 +378,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         handleTapDetection dispatch logic.
         """
         import numpy as np
-        from views.fft_canvas import DisplayMode
 
         self._current_mag_y = mag_y
 
@@ -385,13 +386,13 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self.on_tap_for_plate()
 
         # Emit spectrum for the view to draw
-        if self._display_mode == DisplayMode.LIVE:
+        if self._display_mode == AnalysisDisplayMode.LIVE:
             if self.is_measurement_complete:
                 self.spectrumUpdated.emit(self.freq, self.saved_mag_y_db)
             else:
                 _, peaks = self.find_peaks(mag_y_db)
                 self.spectrumUpdated.emit(self.freq, mag_y_db)
-        elif self._display_mode == DisplayMode.FROZEN:
+        elif self._display_mode == AnalysisDisplayMode.FROZEN:
             self.spectrumUpdated.emit(self.freq, self.saved_mag_y_db)
         # COMPARISON: skip spectrum update — only overlay curves shown
 

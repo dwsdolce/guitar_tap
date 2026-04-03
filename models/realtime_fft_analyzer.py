@@ -108,6 +108,12 @@ class RealtimeFFTAnalyzer:
       _monitor_stop      — threading.Event to signal monitor thread exit
       _on_devices_changed — plain callback; Swift uses @Published availableInputDevices
 
+    Python FFT configuration properties (mirrors Swift RealtimeFFTAnalyzer):
+      fft_size    ↔  Swift fftSize      — FFT window size (power of 2)
+      window_fcn  ↔  Swift window       — pre-computed window function array (length fft_size)
+      m_t         ↔  (same as fft_size) — ring-buffer length; equals fft_size, matching Swift
+      h_fft_size  —  Python-only fft_size // 2 convenience field
+
     Swift-only properties (no Python equivalent):
       audioEngine, inputNode, audioProcessingQueue, bufferAccessQueue
       magnitudes, frequencies, peakFrequency, peakMagnitude (@Published)
@@ -115,7 +121,7 @@ class RealtimeFFTAnalyzer:
       actualSampleRate, hopSizeOverlap, frequencyResolution, bandwidth
       sampleLengthSeconds, frameRate, processingTimeMs, avgProcessingTimeMs
       activeCalibration, calibrationCorrections, rawSampleHandler
-      fftSetup, window, fftSize, targetSampleRate, useHardwareSampleRate
+      fftSetup, targetSampleRate, useHardwareSampleRate
       isRunning, microphonePermissionDenied, routeChangeRestartCount
       firstBufferReceived, fftCount, engineStartTime
     """
@@ -124,7 +130,8 @@ class RealtimeFFTAnalyzer:
 
     def __init__(self, parent, rate: int = 44100, chunksize: int = 16384,
                  device: "AudioDevice | None" = None,
-                 on_devices_changed: Callable[[], None] | None = None):
+                 on_devices_changed: Callable[[], None] | None = None,
+                 fft_size: int = 16384):
         """Create a new real-time FFT analyser and open the audio stream.
 
         Mirrors Swift RealtimeFFTAnalyzer.init(fftSize:targetSampleRate:useHardwareSampleRate:).
@@ -138,8 +145,11 @@ class RealtimeFFTAnalyzer:
             device:             AudioDevice to open, or None for the system default.
             on_devices_changed: Callback fired on hot-plug connect/disconnect events.
                                 Mirrors Swift's @Published availableInputDevices update.
+            fft_size:           FFT window size (power of 2).
+                                Mirrors Swift RealtimeFFTAnalyzer.fftSize.
         """
         from .audio_device import AudioDevice as _AudioDevice
+        from scipy.signal import get_window as _get_window
 
         if platform.system() == "Darwin":
             mac_access.MacAccess(parent)
@@ -148,6 +158,26 @@ class RealtimeFFTAnalyzer:
         self.rate: int = int(device.sample_rate) if device else rate
         self.chunksize: int = chunksize
         self.device_index: int | None = device.index if device else None
+
+        # MARK: - FFT Configuration (mirrors Swift RealtimeFFTAnalyzer)
+
+        # FFT window size — must be a power of 2.
+        # Mirrors Swift RealtimeFFTAnalyzer.fftSize.
+        self.fft_size: int = fft_size
+
+        # Ring-buffer length in samples — identical to fft_size, matching Swift's
+        # inputBuffer which accumulates exactly fftSize samples before each FFT.
+        self.m_t: int = fft_size
+
+        # Half FFT size — number of positive-frequency bins (DC to Nyquist inclusive).
+        self.h_fft_size: int = fft_size // 2
+
+        # Window function applied to the ring buffer before the FFT.
+        # Using a rectangular (boxcar) window of fft_size samples — matching Swift's
+        # performFFT which applies a rectangular window of exactly fftSize samples
+        # with no zero-padding.
+        # See realtime_fft_analyzer_fft_processing.py for why rectangular is preferred.
+        self.window_fcn = _get_window("boxcar", fft_size)
 
         # Open the sounddevice stream; Swift opens AVAudioEngine in start()
         self.stream: sd.InputStream = sd.InputStream(

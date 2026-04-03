@@ -7,6 +7,8 @@ Mirrors Swift TapToneAnalyzer+MeasurementManagement.swift.
 
 from __future__ import annotations
 
+from .analysis_display_mode import AnalysisDisplayMode
+
 
 class TapToneAnalyzerMeasurementManagementMixin:
     """Measurement state and comparison overlay management for TapToneAnalyzer.
@@ -34,8 +36,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     def _clear_comparison_state(self) -> None:
         """Clear the analyzer's comparison data (view curves cleared by FftCanvas)."""
-        from views.fft_canvas import DisplayMode
-        self._display_mode = DisplayMode.LIVE
+        self._display_mode = AnalysisDisplayMode.LIVE
         self.comparison_labels.clear()
         self._comparison_data.clear()
 
@@ -47,7 +48,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
         """
         from datetime import datetime
         import numpy as np
-        from views.fft_canvas import DisplayMode
 
         self._comparison_data.clear()
         self.comparison_labels.clear()
@@ -80,16 +80,15 @@ class TapToneAnalyzerMeasurementManagementMixin:
             min_freq = int(min(s.min_freq for s in snaps))
             max_freq = int(max(s.max_freq for s in snaps))
             self.update_axis(min_freq, max_freq)
-            self._display_mode = DisplayMode.COMPARISON
+            self._display_mode = AnalysisDisplayMode.COMPARISON
             self.comparisonChanged.emit(True)
 
         return result
 
     def clear_comparison(self) -> None:
         """Clear comparison overlay state."""
-        from views.fft_canvas import DisplayMode
         was_comparing = self.is_comparing
-        self._display_mode = DisplayMode.LIVE
+        self._display_mode = AnalysisDisplayMode.LIVE
         self._comparison_data.clear()
         self.comparison_labels.clear()
         if was_comparing:

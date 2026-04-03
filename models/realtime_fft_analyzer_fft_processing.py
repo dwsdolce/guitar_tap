@@ -31,12 +31,15 @@ and call `f_a.dft_anal(...)` continue to work unchanged.
 NOTE — Python vs Swift implementation differences:
   Swift uses vDSP_DFT_zrop (Accelerate framework) via deinterleaved split-complex format;
   Python uses scipy.fft.fft on a zero-phase-shifted buffer (fftbuffer rotation trick).
-  Both implementations apply the same window choice:
-    - Rectangular (all ones) for the live display path (performFFT / the rect-window
-      branch of dft_anal) to favour flat amplitude response over sidelobe suppression.
-    - Hann window for the gated tap-capture path (computeGatedFFT / the Hann-window
-      branch of dft_anal) to suppress spectral sidelobes by ~31 dB for accurate
-      frequency and Q measurements used in material property calculations.
+  Both implementations apply the same window choice and the same window size (fft_size /
+  fftSize), so neither implementation uses zero-padding in the continuous path:
+    - Rectangular (all ones) window of fftSize samples for the live display path
+      (performFFT / dft_anal with boxcar window) — flat amplitude response preferred
+      over sidelobe suppression since the result is only used visually.
+    - Hann window for the gated tap-capture path (computeGatedFFT / dft_anal with Hann
+      window) — suppresses sidelobes by ~31 dB for accurate frequency and Q readings
+      used in material property calculations.  This path zero-pads to the next
+      power-of-two, capped at 32768 samples, for finer frequency resolution.
   Swift normalises with scale = 1/fftSize before calling vDSP_zvabs;
   Python normalises implicitly via window_function / sum(window_function) in dft_anal.
 """

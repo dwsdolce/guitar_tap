@@ -16,7 +16,7 @@ import sounddevice as sd
 from PyQt6 import QtWidgets, QtGui, QtCore
 
 import views.fft_canvas as fft_c
-from views.fft_canvas import DisplayMode
+from models.analysis_display_mode import AnalysisDisplayMode
 import views.shared.peak_card_widget as PT
 import views.utilities.tap_settings_view as AS
 import views.tap_analysis_results_view as M
@@ -417,7 +417,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.threshold: int = AS.AppSettings.threshold()
         fft_settings: dict[str, int] = {
             "sampling_rate": 48000,
-            "window_length": 4 * 16384,
+            "fft_size": 4 * 16384,
         }
         f_range: dict[str, int] = {
             "f_min": AS.AppSettings.f_min(),
@@ -426,7 +426,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Build FftCanvas first — everything else references it
         self.fft_canvas = fft_c.FftCanvas(
-            fft_settings["window_length"],
+            fft_settings["fft_size"],
             fft_settings["sampling_rate"],
             f_range,
             self.threshold,
@@ -2462,7 +2462,7 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer.displayMode == .comparison check in TapAnalysisResultsView.swift),
         otherwise shows the measurement type short name with blue/orange tint.
         """
-        if self.fft_canvas.display_mode == DisplayMode.COMPARISON:
+        if self.fft_canvas.display_mode == AnalysisDisplayMode.COMPARISON:
             self.measurement_type_badge.setText("Comparison")
             self.measurement_type_badge.setStyleSheet(
                 "background: rgba(160,32,240,0.20); border-radius: 4px; padding: 1px 6px;"
@@ -3090,7 +3090,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Set FROZEN after the set_measurement_complete(False) call — that call invokes
         # analyzer.clear_comparison() which sets _display_mode = LIVE; setting FROZEN
         # here ensures the loaded measurement is displayed correctly.
-        canvas.display_mode = DisplayMode.FROZEN
+        canvas.display_mode = AnalysisDisplayMode.FROZEN
 
         # Restore display settings
         if m.guitar_type:
@@ -3121,6 +3121,34 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peaks_f_min_index = 0
         canvas.peaks_f_max_index = len(peaks_array)
 
+        # Pre-populate peak_model.show and switch to frozen mode BEFORE calling
+        # update_axis, which fires peaksChanged → peaks_model.update_data.
+        # If disable_editing is True when update_data runs, it auto-selects ALL peaks
+        # (live mode behaviour), overwriting the show dict with every peak set to "on".
+        # By setting disable_editing = False (via data_held) and populating show first,
+        # update_data takes the frozen path and carries forward the correct selection.
+        # Mirrors Swift where SpectrumView reactively filters currentPeaks at render time
+        # using selectedPeakIDs, so the ordering problem cannot arise.
+        peak_model = self.peak_widget.model
+
+        _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
+
+        # Show/hide selection — mirrors Swift: selectedPeakIDs ?? all peaks.
+        # Must be set before update_axis fires peaksChanged (see comment above).
+        selected_ids = set(
+            m.selected_peak_ids if m.selected_peak_ids is not None
+            else [p.id for p in m.peaks]
+        )
+        peak_model.show = {}
+        for p in m.peaks:
+            if p.id in selected_ids:
+                peak_model.show[p.frequency] = "on"
+
+        # Switch the model to frozen mode so update_data carries forward show instead of
+        # auto-selecting all peaks.  set_measurement_complete(True) at the end of this
+        # method calls data_held(True) again, which is harmless.
+        self.peak_widget.data_held(True)
+
         # Restore spectrum snapshot if available.
         # For guitar: use spectrumSnapshot. For plate/brace: spectrumSnapshot is nil;
         # use longitudinalSnapshot instead — mirrors Swift: longitudinalSnapshot ?? spectrumSnapshot.
@@ -3139,9 +3167,12 @@ class MainWindow(QtWidgets.QMainWindow):
             with QtCore.QSignalBlocker(self.max_spin):
                 self.max_spin.setValue(int(snap.max_freq))
             # Restore dB axis range from snapshot, then update the frequency axis.
+            # update_axis calls _emit_loaded_peaks_at_threshold which emits peaksChanged
+            # with the correctly filtered peaks — _on_peaks_changed_scatter updates the
+            # scatter plot automatically, so set_draw_data only needs the spectrum line.
             canvas.setYRange(snap.min_db, snap.max_db, padding=0)
             canvas.update_axis(int(snap.min_freq), int(snap.max_freq))
-            canvas.set_draw_data(mag_arr, peaks_array)
+            canvas.set_draw_data(mag_arr)
         else:
             # No snapshot — emit peaks filtered to current range
             canvas._emit_loaded_peaks_at_threshold()
@@ -3150,11 +3181,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._ring_out_s = m.decay_time
         if m.decay_time is not None:
             self.set_ring_out(m.decay_time)
-
-        # Restore mode overrides and show/hide state
-        peak_model = self.peak_widget.model
-
-        _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
 
         # Restore plate/brace dimensions from the snapshot — mirrors Swift's .onReceive
         # handlers that write loadedXxx published properties back to TapDisplaySettings.
@@ -3204,16 +3230,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     peak_model.modes[p.frequency] = id_to_mode[p.id]
         else:
             peak_model.modes = {}
-
-        # Show/hide selection — mirrors Swift: selectedPeakIDs ?? all peaks
-        selected_ids = set(
-            m.selected_peak_ids if m.selected_peak_ids is not None
-            else [p.id for p in m.peaks]
-        )
-        peak_model.show = {}
-        for p in m.peaks:
-            if p.id in selected_ids:
-                peak_model.show[p.frequency] = "on"
 
         # Mark as user-modified so threshold changes carry selections forward by
         # frequency proximity — mirrors Swift: userHasModifiedPeakSelection = true

@@ -1,20 +1,14 @@
 """ Samples audio signal and finds the peaks of the guitar tap resonances
 """
 
-from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum, auto
 from typing import List
-import queue
-import threading
-import time
 import platform
 
 import pyqtgraph as pg
 import numpy as np
 import sounddevice as sd
 import numpy.typing as npt
-from scipy.signal import get_window
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from views import peak_annotations as fft_a
@@ -24,23 +18,12 @@ from models import guitar_mode as gm
 from models import measurement_type as mt_mod
 from models import microphone_calibration as _mc_mod
 from models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+from models.analysis_display_mode import AnalysisDisplayMode
+from models.fft_parameters import FftParameters
+from models.fft_processing_thread import FftProcessingThread
 import models.tap_tone_analyzer as td
 import models.tap_tone_analyzer as pc
 import views.utilities.tap_settings_view as _as
-
-
-@dataclass
-class FftData:
-    """Data used to drive the FFT calculations"""
-
-    def __init__(self, sample_freq: int = 44100, m_t: int = 15001) -> None:
-        self.sample_freq = sample_freq
-        self.m_t = m_t
-
-        # self.window_fcn = get_window('blackman', self.m_t)
-        self.window_fcn = get_window("boxcar", self.m_t)
-        self.n_f: int = int(2 ** (np.ceil(np.log2(self.m_t))))
-        self.h_n_f: int = self.n_f // 2
 
 
 class _SceneMouseReleaseFilter(QtCore.QObject):
@@ -54,212 +37,8 @@ class _SceneMouseReleaseFilter(QtCore.QObject):
         return False
 
 
-class FftProcessingThread(QtCore.QThread):
-    """Audio processing thread — all DSP runs here, off the main/GUI thread.
-
-    Drains mic.queue chunk-by-chunk, maintains the ring buffer, runs the
-    tap detector and decay tracker, computes the FFT, and emits results to
-    the main thread via Qt signals.
-    """
-
-    # (mag_y_db, mag_y, tap_fired, tap_amp, fps, sample_dt, processing_dt)
-    fftFrameReady: QtCore.pyqtSignal = QtCore.pyqtSignal(
-        np.ndarray, np.ndarray, bool, int, float, float, float
-    )
-    # per-chunk RMS (plate/brace) or per-FFT peak (guitar), 0-100 scale
-    rmsLevelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
-    # ring-out time in seconds, relayed from DecayTracker
-    ringOutMeasured: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
-    # (captured, total) — not emitted here; kept in FftCanvas._do_capture_tap
-    tapCountChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)
-
-    def __init__(
-        self,
-        mic: "Microphone",
-        fft_data: "FftData",
-        parent: QtCore.QObject | None = None,
-    ) -> None:
-        super().__init__(parent)
-
-        self._mic = mic
-        self._fft_data = fft_data
-        self._stop_event = threading.Event()
-
-        # Ring buffer state
-        self._audio_ring: npt.NDArray[np.float32] = np.zeros(
-            fft_data.m_t, dtype=np.float32
-        )
-        self._ring_fill: int = 0
-        self._samples_since_last_fft: int = 0
-
-        # Tap / decay state
-        import views.utilities.tap_settings_view as _as
-        self._tap_detector = td.TapDetector(
-            tap_threshold=_as.AppSettings.tap_threshold(),
-            hysteresis_margin=_as.AppSettings.hysteresis_margin(),
-            mode=td.TapDetector.MODE_GUITAR,
-            parent=self,
-        )
-        self._decay_tracker = td.DecayTracker(parent=self)
-
-        # tapDetected fires from within run() (background thread) — use
-        # DirectConnection so _tap_pending is set synchronously in the same thread.
-        self._tap_detector.tapDetected.connect(
-            self._on_tap_detected, QtCore.Qt.ConnectionType.DirectConnection
-        )
-        # ringOutMeasured fires from the background thread; relay via QueuedConnection.
-        self._decay_tracker.ringOutMeasured.connect(
-            self.ringOutMeasured, QtCore.Qt.ConnectionType.QueuedConnection
-        )
-
-        self._tap_pending: bool = False
-        self._last_detector_amp: int = 0
-
-        # Settings protected by a lock (written from main thread, read from run())
-        self._settings_lock = threading.Lock()
-        self._is_measurement_complete: bool = False
-        self._is_guitar: bool = True
-        self._calibration: npt.NDArray | None = None
-
-    # ------------------------------------------------------------------ #
-    # Internal slot — called from run() via DirectConnection
-    # ------------------------------------------------------------------ #
-
-    def _on_tap_detected(self) -> None:
-        self._tap_pending = True
-        self._decay_tracker.start(self._last_detector_amp)
-
-    # ------------------------------------------------------------------ #
-    # QThread.run() — the processing loop
-    # ------------------------------------------------------------------ #
-
-    def run(self) -> None:
-        lastupdate = time.time()
-        while not self._stop_event.is_set():
-            try:
-                chunk = self._mic.queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-
-            # Snapshot mutable settings
-            with self._settings_lock:
-                is_frozen = self._is_measurement_complete
-                is_guitar = self._is_guitar
-                calibration = self._calibration
-
-            enter_now = time.time()
-            n = len(chunk)
-            self._audio_ring = np.concatenate(
-                [self._audio_ring[n:], chunk[:n].astype(np.float32)]
-            )
-            self._ring_fill = min(self._ring_fill + n, self._fft_data.m_t)
-            self._samples_since_last_fft += n
-
-            # Per-chunk RMS level
-            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-            level_db = 20.0 * np.log10(max(rms, 1e-10))
-            rms_amp = int(level_db + 100.0)
-
-            if not is_guitar:
-                self._last_detector_amp = rms_amp
-                self.rmsLevelChanged.emit(rms_amp)
-                if not is_frozen:
-                    self._tap_detector.update(rms_amp)
-                self._decay_tracker.update(rms_amp)
-
-            if self._samples_since_last_fft < self._fft_data.m_t:
-                continue
-            self._samples_since_last_fft -= self._fft_data.m_t
-
-            sample_dt = enter_now - lastupdate
-            lastupdate = enter_now
-
-            mag_y_db, mag_y = f_a.dft_anal(
-                self._audio_ring, self._fft_data.window_fcn, self._fft_data.n_f
-            )
-            if calibration is not None:
-                mag_y_db = mag_y_db + calibration
-
-            if is_guitar:
-                fft_peak_amp = int(np.max(mag_y_db) + 100.0)
-                self._last_detector_amp = fft_peak_amp
-                self.rmsLevelChanged.emit(fft_peak_amp)
-                if not is_frozen:
-                    self._tap_detector.update(fft_peak_amp)
-                self._decay_tracker.update(fft_peak_amp)
-
-            tap_fired = self._tap_pending and not is_frozen
-            if self._tap_pending and is_frozen:
-                print(
-                    f"TAP_DEBUG [run] tap_pending=True but is_measurement_complete=True → tap suppressed"
-                )
-            if tap_fired:
-                print(
-                    f"TAP_DEBUG [run] tap_fired=True → forwarding to _do_capture_tap"
-                )
-                self._tap_pending = False
-
-            exit_now = time.time()
-            processing_dt = exit_now - enter_now
-            fps = 1.0 / max(sample_dt, 1e-12)
-
-            self.fftFrameReady.emit(
-                mag_y_db, mag_y, tap_fired, self._last_detector_amp,
-                fps, sample_dt, processing_dt,
-            )
-
-    # ------------------------------------------------------------------ #
-    # Public API — safe to call from main thread
-    # ------------------------------------------------------------------ #
-
-    def stop(self) -> None:
-        """Signal the run() loop to exit."""
-        self._stop_event.set()
-
-    def reset_state(self) -> None:
-        """Reset ring buffer and tap detector; call before start()."""
-        self._audio_ring = np.zeros(self._fft_data.m_t, dtype=np.float32)
-        self._ring_fill = 0
-        self._samples_since_last_fft = 0
-        self._tap_pending = False
-        self._last_detector_amp = 0
-        self._stop_event.clear()
-        self._tap_detector.reset()
-
-    def set_measurement_complete(self, value: bool) -> None:
-        with self._settings_lock:
-            self._is_measurement_complete = value
-
-    def set_measurement_type(self, is_guitar: bool) -> None:
-        with self._settings_lock:
-            self._is_guitar = is_guitar
-        mode = td.TapDetector.MODE_GUITAR if is_guitar else td.TapDetector.MODE_PLATE_BRACE
-        self._tap_detector.set_mode(mode)
-
-    def set_calibration(self, arr: npt.NDArray | None) -> None:
-        with self._settings_lock:
-            self._calibration = arr
-
-    def set_tap_threshold(self, value: int) -> None:
-        self._tap_detector.set_tap_threshold(value)
-
-    def set_hysteresis_margin(self, value: float) -> None:
-        self._tap_detector.set_hysteresis_margin(value)
-
-    def pause_tap_detection(self) -> None:
-        self._tap_detector.pause()
-
-    def resume_tap_detection(self) -> None:
-        self._tap_detector.resume()
-
-    def reset_tap_detector(self) -> None:
-        self._tap_pending = False
-        self._tap_detector.reset()
-
-    def cancel_tap_sequence_in_thread(self) -> None:
-        self._tap_pending = False
-        self._tap_detector.cancel()
-
+# FftProcessingThread — moved to models/fft_processing_thread.py.
+# Imported above from models.fft_processing_thread.
 
 # ── Zoom & Pan help popup ─────────────────────────────────────────────────────
 
@@ -336,18 +115,6 @@ class _ZoomPanPopup(QtWidgets.QFrame):
         self.show()
 
 
-class DisplayMode(Enum):
-    """Authoritative display mode for the main spectrum view.
-
-    Mirrors AnalysisDisplayMode in TapToneAnalyzer.swift — all UI sections that
-    differ between live, frozen, and comparison modes switch on this property
-    rather than checking _comparison_curves directly.
-    """
-    LIVE       = auto()   # live FFT; tap detection active or waiting
-    FROZEN     = auto()   # single frozen or loaded measurement displayed
-    COMPARISON = auto()   # two or more saved measurements overlaid
-
-
 # pylint: disable=too-many-instance-attributes
 class FftCanvas(pg.PlotWidget):
     """Sample the audio stream and display the FFT
@@ -399,7 +166,7 @@ class FftCanvas(pg.PlotWidget):
 
     def __init__(
         self,
-        window_length: int,
+        fft_size: int,
         sampling_rate: int,
         frange: dict[str, int],
         threshold: int,
@@ -434,7 +201,7 @@ class FftCanvas(pg.PlotWidget):
 
         self.avg_enable: bool = False
 
-        self.fft_data: FftData = FftData(sampling_rate, window_length)
+        self.fft_data: FftParameters = FftParameters(sampling_rate, fft_size)
 
         # threshold kept here for backward compat (set_threshold updates both self and analyzer)
         self.threshold: int = threshold
@@ -493,8 +260,6 @@ class FftCanvas(pg.PlotWidget):
             _native_rate = int(_saved_audio_device.sample_rate)
             if _native_rate > 0 and _native_rate != self.fft_data.sample_freq:
                 self.fft_data.sample_freq = _native_rate
-                self.fft_data.n_f = int(2 ** (np.ceil(np.log2(self.fft_data.m_t))))
-                self.fft_data.h_n_f = self.fft_data.n_f // 2
 
         # ── TapToneAnalyzer: the model ─────────────────────────────────────
         # Auto-load calibration profile before constructing the analyzer so we
@@ -522,13 +287,12 @@ class FftCanvas(pg.PlotWidget):
 
         self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(
             parent_widget=self,
-            fft_data=self.fft_data,
+            fft_params=self.fft_data,
             audio_device=_saved_audio_device,
             calibration_corrections=_initial_calibration,
             guitar_type=_guitar_type,
         )
-        # Set initial display mode (must be done after TapToneAnalyzer is constructed)
-        self.analyzer._display_mode = DisplayMode.LIVE
+        # Display mode is initialised to AnalysisDisplayMode.LIVE in TapToneAnalyzer.__init__.
         # Set initial threshold and freq range on the analyzer
         self.analyzer.threshold = threshold
         self.analyzer.fmin = frange["f_min"]
@@ -555,8 +319,11 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.tapDetectionPaused.connect(self.tapDetectionPaused)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
         self.analyzer.peakInfoChanged.connect(self.peakInfoChanged)
-        # spectrumUpdated drives the rendering path
+        # spectrumUpdated drives the spectrum line rendering path.
+        # peaksChanged drives the scatter plot — single authoritative source for
+        # both the scatter plot and the results panel.
         self.analyzer.spectrumUpdated.connect(self._on_spectrum_updated)
+        self.analyzer.peaksChanged.connect(self._on_peaks_changed_scatter)
 
         # FFT line
         self.fft_line: pg.PlotDataItem = self.plot(
@@ -697,12 +464,12 @@ class FftCanvas(pg.PlotWidget):
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
 
-        # Processing thread — created here, started by start_analyzer()
-        self._proc_thread = FftProcessingThread(self.mic, self.fft_data, parent=self)
-        # Give the analyzer a reference to the proc thread so it can delegate to it
-        self.analyzer._proc_thread = self._proc_thread
+        # Processing thread — created by TapToneAnalyzer (which owns the thread).
+        # FftCanvas holds a convenience reference so it can connect signals and call
+        # start()/stop() without going through self.analyzer every time.
+        self._proc_thread: FftProcessingThread = self.analyzer._proc_thread
         self._connect_proc_thread_signals()
-        # Apply the initial calibration to the thread if one was loaded above
+        # Apply the initial calibration to the thread if one was loaded above.
         self._proc_thread.set_calibration(self.analyzer._calibration_corrections)
 
     # ------------------------------------------------------------------ #
@@ -710,11 +477,11 @@ class FftCanvas(pg.PlotWidget):
     # ------------------------------------------------------------------ #
 
     @property
-    def display_mode(self) -> DisplayMode:
+    def display_mode(self) -> AnalysisDisplayMode:
         return self.analyzer.display_mode
 
     @display_mode.setter
-    def display_mode(self, value: DisplayMode) -> None:
+    def display_mode(self, value: AnalysisDisplayMode) -> None:
         self.analyzer.display_mode = value
 
     @property
@@ -844,12 +611,9 @@ class FftCanvas(pg.PlotWidget):
         if self._proc_thread.isRunning():
             self._proc_thread.stop()
             self._proc_thread.wait(500)
-            # Recreate thread to reset all state
-            self._proc_thread = FftProcessingThread(self.mic, self.fft_data, parent=self)
-            self.analyzer._proc_thread = self._proc_thread
+            # Recreate thread on the analyzer (which owns it) to reset all state.
+            self._proc_thread = self.analyzer.recreate_proc_thread()
             self._connect_proc_thread_signals()
-            self._proc_thread.set_calibration(self.analyzer._calibration_corrections)
-            self._proc_thread.set_measurement_type(self.analyzer._measurement_type.is_guitar)
         self.analyzer._tap_spectra.clear()
         self._proc_thread.reset_state()
         self._proc_thread.start()
@@ -1323,7 +1087,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.fmax = fmax
         self.analyzer.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
         self.analyzer.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
-        if self.display_mode != DisplayMode.COMPARISON:
+        if self.display_mode != AnalysisDisplayMode.COMPARISON:
             if self.analyzer._loaded_measurement_peaks is not None:
                 self.analyzer._emit_loaded_peaks_at_threshold()
             else:
@@ -1350,7 +1114,7 @@ class FftCanvas(pg.PlotWidget):
     @property
     def is_comparing(self) -> bool:
         """True when in comparison display mode — mirrors tap.displayMode == .comparison."""
-        return self.display_mode == DisplayMode.COMPARISON
+        return self.display_mode == AnalysisDisplayMode.COMPARISON
 
     @property
     def comparison_count(self) -> int:
@@ -1545,10 +1309,15 @@ class FftCanvas(pg.PlotWidget):
                 brush=self._peak_brushes(peaks_data[:, 0]),
             )
 
-    def set_draw_data(self, mag_db, peaks) -> None:
-        """Set the data for each of the plot objects used in update_fft"""
-        if np.any(mag_db):
-            self.fft_line.setData(self.freq, mag_db)
+    def _on_peaks_changed_scatter(self, peaks) -> None:
+        """Update the scatter plot whenever the analyzer emits peaksChanged.
+
+        This is the single authoritative path for updating peak scatter points.
+        Connected to analyzer.peaksChanged so both the scatter plot and the
+        results panel (also connected to peaksChanged) are always in sync —
+        mirrors how Swift's SpectrumView reactively re-filters currentPeaks
+        on every render rather than keeping a separate scatter-plot state.
+        """
         if hasattr(peaks, "size") and peaks.size > 0:
             self.points.setData(
                 x=peaks[:, 0], y=peaks[:, 1],
@@ -1556,6 +1325,16 @@ class FftCanvas(pg.PlotWidget):
             )
         else:
             self.points.setData(x=[], y=[])
+
+    def set_draw_data(self, mag_db) -> None:
+        """Update the spectrum line and auto-scale the Y axis if enabled.
+
+        The scatter plot is driven separately via _on_peaks_changed_scatter,
+        which is connected to analyzer.peaksChanged.  Callers only need to
+        provide the magnitude data; peaks are handled automatically.
+        """
+        if np.any(mag_db):
+            self.fft_line.setData(self.freq, mag_db)
         if self.analyzer._auto_scale_db and np.any(mag_db):
             valid = mag_db[(mag_db > -100) & (mag_db < 20)]
             if valid.size:
@@ -1619,26 +1398,17 @@ class FftCanvas(pg.PlotWidget):
     def _on_spectrum_updated(self, freqs, mag_y_db) -> None:
         """Receive spectrum data from the analyzer and update the view.
 
-        Connected to TapToneAnalyzer.spectrumUpdated.  Replaces the direct
-        set_draw_data calls that were previously in _on_fft_frame_ready.
+        Connected to TapToneAnalyzer.spectrumUpdated.  Updates the spectrum
+        line only; the scatter plot is driven by _on_peaks_changed_scatter
+        via the peaksChanged signal.
         """
-        # Find the in-viewport peaks from the frozen set (they were already
-        # emitted by the analyzer via peaksChanged; we just need the array for drawing)
-        peaks = self.saved_peaks
-        if self.analyzer.peaks_f_max_index > 0:
-            peaks = self.saved_peaks[
-                self.analyzer.peaks_f_min_index:self.analyzer.peaks_f_max_index
-            ]
-        self.set_draw_data(mag_y_db, peaks)
+        self.set_draw_data(mag_y_db)
 
     def _on_tap_detected_from_analyzer(self) -> None:
         """Relay analyzer.tapDetectedSignal → FftCanvas.tapDetected (hold trigger)."""
-        # Also update the view: draw the averaged spectrum
-        if self.display_mode != DisplayMode.COMPARISON:
-            peaks = self.saved_peaks
-            if self.analyzer.peaks_f_max_index > 0:
-                peaks = self.saved_peaks[
-                    self.analyzer.peaks_f_min_index:self.analyzer.peaks_f_max_index
-                ]
-            self.set_draw_data(self.saved_mag_y_db, peaks)
+        # Update the spectrum line with the averaged result.
+        # The scatter plot is updated automatically via peaksChanged →
+        # _on_peaks_changed_scatter, which fires during tap capture.
+        if self.display_mode != AnalysisDisplayMode.COMPARISON:
+            self.set_draw_data(self.saved_mag_y_db)
         self.tapDetected.emit()

@@ -34,11 +34,20 @@ This Python package mirrors that structure using separate modules:
   tap_tone_analyzer_mode_override_management.py → TapToneAnalyzerModeOverrideManagementMixin
       mirrors Swift TapToneAnalyzer+ModeOverrideManagement.swift
 
+  analysis_display_mode.py                → AnalysisDisplayMode
+      mirrors Swift AnalysisDisplayMode enum defined at file scope in TapToneAnalyzer.swift.
+      Lives in its own file so mixin modules can import it without circular deps.
+
+  fft_parameters.py                       → FftParameters
+  fft_processing_thread.py                → FftProcessingThread
+      Python-only — no Swift counterparts.  Swift stores equivalent values
+      directly on TapToneAnalyzer and uses AVAudioEngine taps instead of a thread.
+
 This file (tap_tone_analyzer.py) contains:
   - The TapToneAnalyzer class declaration, stored properties, and __init__
     (mirrors the top of Swift TapToneAnalyzer.swift)
-  - Re-exports of DecayTracker, TapDetector, PlateCapture for backward
-    compatibility with existing import sites.
+  - Re-exports of DecayTracker, TapDetector, PlateCapture, AnalysisDisplayMode
+    for import convenience.
 """
 
 from __future__ import annotations
@@ -61,6 +70,20 @@ from .tap_tone_analyzer_tap_detection import TapToneAnalyzerTapDetectionHandlerM
 from .tap_tone_analyzer_annotation_management import TapToneAnalyzerAnnotationManagementMixin
 from .tap_tone_analyzer_measurement_management import TapToneAnalyzerMeasurementManagementMixin
 from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverrideManagementMixin
+
+# ── AnalysisDisplayMode ───────────────────────────────────────────────────────
+# Mirrors Swift AnalysisDisplayMode enum defined in TapToneAnalyzer.swift.
+# Lives in analysis_display_mode.py so the mixin files can import it without
+# creating a circular dependency (they are imported by this file).
+
+from .analysis_display_mode import AnalysisDisplayMode
+
+# ── Python-only implementation types ─────────────────────────────────────────
+# FftParameters and FftProcessingThread have no Swift counterparts; Swift stores
+# equivalent values directly on TapToneAnalyzer / uses AVAudioEngine taps.
+
+from .fft_parameters import FftParameters
+from .fft_processing_thread import FftProcessingThread
 
 # ── PyQt6 ─────────────────────────────────────────────────────────────────────
 
@@ -137,21 +160,19 @@ class TapToneAnalyzer(
     def __init__(
         self,
         parent_widget,
-        fft_data,
+        fft_params: "FftParameters",
         audio_device,
         calibration_corrections,
         guitar_type,
     ) -> None:
         """
         Args:
-            parent_widget:         The FftCanvas (QObject parent).
-            fft_data:              FftData instance (sample_freq, n_f, window_fcn, …).
-            audio_device:          AudioDevice to open, or None for the system default.
+            parent_widget:           The FftCanvas (QObject parent).
+            fft_params:              FftParameters instance (sample_freq, n_f, window_fcn, …).
+            audio_device:            AudioDevice to open, or None for the system default.
             calibration_corrections: ndarray of per-bin dB corrections, or None.
-            guitar_type:           GuitarType enum value for mode classification.
+            guitar_type:             GuitarType enum value for mode classification.
         """
-        # Lazily import here to avoid a circular import: fft_canvas → models.tap_tone_analyzer
-        # → fft_canvas.  These imports are only needed at runtime, not at module load.
         import sounddevice as _sd
         import numpy as _np
         from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
@@ -169,20 +190,24 @@ class TapToneAnalyzer(
         self._mc_mod = _mc_mod
 
         # ── Audio engine (mirrors Swift's analyzer: RealtimeFFTAnalyzer) ──
+        # FFT configuration (fft_size, window_fcn) lives on the mic object,
+        # matching Swift where RealtimeFFTAnalyzer owns fftSize, window, etc.
         self._devicesRefreshed.connect(self._on_devices_refreshed)
         self.mic: _Mic = _Mic(
             parent_widget,
-            rate=fft_data.sample_freq,
+            rate=fft_params.sample_freq,
             chunksize=4096,
             device=audio_device,
             on_devices_changed=self._devicesRefreshed.emit,
+            fft_size=fft_params.n_f,
         )
 
         # ── FFT configuration ──────────────────────────────────────────────
-        self.fft_data = fft_data
+        # Stored as fft_data for backward compatibility with existing call sites.
+        self.fft_data = fft_params
         import numpy as np
-        x_axis = np.arange(0, fft_data.h_n_f + 1)
-        self.freq = x_axis * fft_data.sample_freq // fft_data.n_f
+        x_axis = np.arange(0, fft_params.h_n_f + 1)
+        self.freq = x_axis * fft_params.sample_freq // fft_params.n_f
 
         # ── Calibration ────────────────────────────────────────────────────
         self._calibration_corrections = calibration_corrections
@@ -192,9 +217,9 @@ class TapToneAnalyzer(
         self._guitar_type = guitar_type
 
         # ── Display mode (mirrors Swift AnalysisDisplayMode) ───────────────
-        # Imported lazily from fft_canvas to avoid circular import at module load.
-        # The DisplayMode enum lives in fft_canvas.py; we import it on first use.
-        self._display_mode = None   # set to DisplayMode.LIVE by FftCanvas after import
+        # AnalysisDisplayMode lives in models/analysis_display_mode.py — no circular import.
+        # Mirrors Swift TapToneAnalyzer @Published var displayMode: AnalysisDisplayMode = .live
+        self._display_mode: AnalysisDisplayMode = AnalysisDisplayMode.LIVE
 
         # ── Measurement state ──────────────────────────────────────────────
         self.is_measurement_complete: bool = False
@@ -232,8 +257,8 @@ class TapToneAnalyzer(
 
         # ── Plate/brace capture ───────────────────────────────────────────
         self.plate_capture = PlateCapture(
-            sample_freq=fft_data.sample_freq,
-            n_f=fft_data.n_f,
+            sample_freq=fft_params.sample_freq,
+            n_f=fft_params.n_f,
             parent=self,
         )
         self.plate_capture.stateChanged.connect(self.plateStatusChanged)
@@ -246,9 +271,14 @@ class TapToneAnalyzer(
         # actual PlotDataItem curves live in FftCanvas.
         self._comparison_data: list = []
 
-        # ── Processing thread (created/managed by FftCanvas) ─────────────
-        # FftCanvas sets self._proc_thread after constructing TapToneAnalyzer.
-        self._proc_thread = None
+        # ── Processing thread ─────────────────────────────────────────────
+        # TapToneAnalyzer owns and creates its processing thread — mirrors Swift's
+        # architecture where TapToneAnalyzer owns its entire audio processing pipeline.
+        # FftCanvas starts the thread via start_analyzer() and stops it via stop_analyzer().
+        self._proc_thread: FftProcessingThread = FftProcessingThread(
+            mic=self.mic,
+            parent=self,
+        )
 
     # ------------------------------------------------------------------ #
     # display_mode property — kept in sync with FftCanvas.display_mode
@@ -265,6 +295,32 @@ class TapToneAnalyzer(
 
     @property
     def is_comparing(self) -> bool:
-        """True when in COMPARISON display mode."""
-        from views.fft_canvas import DisplayMode
-        return self._display_mode == DisplayMode.COMPARISON
+        """True when in COMPARISON display mode.
+
+        Mirrors Swift TapToneAnalyzer computed property that checks displayMode == .comparison.
+        """
+        return self._display_mode == AnalysisDisplayMode.COMPARISON
+
+    # ------------------------------------------------------------------ #
+    # Processing thread management
+    # ------------------------------------------------------------------ #
+
+    def recreate_proc_thread(self) -> "FftProcessingThread":
+        """Destroy the current processing thread and create a fresh one.
+
+        Applies the current calibration and measurement type to the new thread.
+        FftCanvas calls this when it needs to reset all processing state
+        (e.g. after the analyzer was already running and the user presses Start
+        again).
+
+        Returns the new FftProcessingThread so FftCanvas can reconnect signals.
+
+        Python-only — Swift achieves equivalent reset via AVAudioEngine stop/start.
+        """
+        self._proc_thread = FftProcessingThread(
+            mic=self.mic,
+            parent=self,
+        )
+        self._proc_thread.set_calibration(self._calibration_corrections)
+        self._proc_thread.set_measurement_type(self._measurement_type.is_guitar)
+        return self._proc_thread
