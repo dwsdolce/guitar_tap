@@ -3268,14 +3268,19 @@ class MainWindow(QtWidgets.QMainWindow):
                     AS.AppSettings.set_audio_device(match)
                     self.device_status_lbl.setText(match.name)
             else:
-                from PyQt6 import QtWidgets
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    "Microphone Not Connected",
+                warning = (
                     f"This measurement was recorded with '{mic_name}', which is not "
                     f"currently connected. Attach it and select it in the microphone "
-                    f"settings for accurate analysis.",
+                    f"settings for accurate analysis."
                 )
+                if getattr(self, "_suppress_mic_warning", False):
+                    # Caller (e.g. _on_import) will fold the warning into its own dialog.
+                    self._pending_mic_warning = warning
+                else:
+                    from PyQt6 import QtWidgets
+                    QtWidgets.QMessageBox.warning(
+                        self, "Microphone Not Connected", warning
+                    )
 
         self.set_measurement_complete(True)
 

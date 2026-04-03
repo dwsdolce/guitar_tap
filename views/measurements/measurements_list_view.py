@@ -310,7 +310,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         elif action == export_pdf_act:
             self._export_pdf(m)
         elif action == delete_act:
-            self._delete_measurement(m)
+            self._delete_measurement(row, m)
 
     # ── Export / delete ───────────────────────────────────────────────────────
 
@@ -352,7 +352,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
                 except OSError:
                     pass
 
-    def _delete_measurement(self, m: TapToneMeasurement) -> None:
+    def _delete_measurement(self, index: int, m: TapToneMeasurement) -> None:
         name = m.tap_location or "Measurement"
         box = QtWidgets.QMessageBox(self)
         box.setWindowTitle("Delete Measurement?")
@@ -362,12 +362,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
         box.exec()
         if box.clickedButton() != delete_btn:
             return
-        # Remove only the first occurrence matching this id. Using index rather than a
-        # list comprehension ensures that if the same file was imported twice (producing
-        # two entries with identical ids) only the intended entry is deleted.
-        idx = next((i for i, x in enumerate(self._measurements) if x.id == m.id), None)
-        if idx is not None:
-            self._analyzer.delete_measurement(idx)
+        # Use the positional index captured at render time rather than searching by id.
+        # This mirrors Swift's deleteMeasurement(at:) approach: duplicate imports share
+        # the same id, so only the specific entry at `index` should be removed.
+        self._analyzer.delete_measurement(index)
         self._compare_ids.discard(m.id)
 
     def _on_delete_all(self) -> None:
@@ -405,23 +403,27 @@ class MeasurementsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Import Error", str(exc))
             return
 
-        existing_ids = {m.id for m in self._measurements}
-        new_items = [m for m in imported if m.id not in existing_ids]
-        for item in new_items:
+        for item in imported:
             self._analyzer.save_measurement(item)
 
-        skipped = len(imported) - len(new_items)
-
-        if len(new_items) == 1:
-            # Auto-load single imported measurement (matches Swift importFromFile behaviour)
-            self.measurementSelected.emit(new_items[0])
+        if len(imported) == 1:
+            # Auto-load single imported measurement (matches Swift importFromFile behaviour).
+            # Suppress the standalone microphone warning so we can fold it into the success
+            # message below — mirrors Swift's "Fold any microphone warning into the success
+            # message so only one alert fires" comment in importFromFile(url:).
+            main_view = self.parent()
+            if main_view is not None:
+                main_view._suppress_mic_warning = True
+                main_view._pending_mic_warning = None
+            self.measurementSelected.emit(imported[0])
+            if main_view is not None:
+                main_view._suppress_mic_warning = False
             msg = "Successfully imported and loaded 1 measurement."
-            if skipped:
-                msg += f"\n{skipped} duplicate(s) skipped."
+            # Fold microphone warning into the success message (mirrors Swift).
+            if main_view is not None and main_view._pending_mic_warning:
+                msg += f"\n\n⚠️ {main_view._pending_mic_warning}"
+                main_view._pending_mic_warning = None
             QtWidgets.QMessageBox.information(self, "Import Successful", msg)
-            self.accept()
         else:
-            msg = f"Successfully imported {len(new_items)} measurements."
-            if skipped:
-                msg += f"\n{skipped} duplicate(s) skipped."
+            msg = f"Successfully imported {len(imported)} measurements."
             QtWidgets.QMessageBox.information(self, "Import Successful", msg)

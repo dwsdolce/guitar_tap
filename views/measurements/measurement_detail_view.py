@@ -440,7 +440,6 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             text = M.export_measurement_json(self._m)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
-            QtWidgets.QMessageBox.information(self, "Exported", f"Saved to:\n{path}")
         except OSError as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export:\n{exc}"
@@ -458,7 +457,6 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             return
         try:
             M.export_pdf(self._m, None, path)
-            QtWidgets.QMessageBox.information(self, "Exported", f"Saved to:\n{path}")
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export PDF:\n{exc}"
