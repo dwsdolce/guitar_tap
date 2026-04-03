@@ -31,6 +31,7 @@ import views.save_measurement_sheet as SMD
 import models.material_properties as PA
 import views.help_view as HD
 import views.utilities.gt_images as gt_i
+import views.fft_analysis_metrics_view as FMV
 import qtawesome as qta
 
 # Project root is one directory above views/
@@ -382,8 +383,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loaded_tap_threshold: int | None = None   # dB value at load time
         self._loaded_tap_num: int | None = None         # tap count at load time
         self._help_dialog: HD.HelpDialog | None = None
-        self._metrics_dialog: QtWidgets.QDialog | None = None
-        self._proc_times: list[float] = []          # rolling 30-frame processing times
+        self._metrics_dialog: FMV.FFTAnalysisMetricsView | None = None
         self.avg_enable_saved: bool = False
 
         with open(os.path.join(basedir, "./version"), "r", encoding="UTF-8") as fh:
@@ -1568,128 +1568,19 @@ class MainWindow(QtWidgets.QMainWindow):
         return frame
 
     def _show_metrics(self) -> None:
-        """Non-modal dialog showing live FFT diagnostics."""
+        """Non-modal dialog showing live FFT diagnostics.
+
+        Mirrors Swift ``TapToneAnalysisView`` Metrics toolbar button action —
+        presents ``FFTAnalysisMetricsView`` as a non-modal sheet.
+        """
         if self._metrics_dialog and self._metrics_dialog.isVisible():
             self._metrics_dialog.raise_()
             self._metrics_dialog.activateWindow()
             return
 
-        wl          = 4 * 16384
-        sr          = self.fft_canvas.fft_data.sample_freq
-        spectral_res = sr / wl
-        bandwidth    = sr / 2
-        sample_len   = wl / sr
-        bin_count    = wl // 2 + 1
-
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("FFT Metrics")
-        dlg.setMinimumWidth(380)
-        dlg.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
-        dlg.destroyed.connect(lambda: setattr(self, "_metrics_dialog", None))
-        self._metrics_dialog = dlg
-
-        sub_font = QtGui.QFont(dlg.font())
-        sub_font.setPointSize(max(8, sub_font.pointSize() - 2))
-        mono_font = QtGui.QFont(dlg.font())
-        mono_font.setFamily("Courier New")
-        mono_font.setStyleHint(QtGui.QFont.StyleHint.Monospace)
-
-        def _fmt_freq(hz: float) -> str:
-            return f"{hz/1000:.2f} kHz" if hz >= 1000 else f"{hz:.1f} Hz"
-
-        def _divider() -> QtWidgets.QFrame:
-            f = QtWidgets.QFrame()
-            f.setFrameShape(QtWidgets.QFrame.Shape.HLine)
-            f.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-            return f
-
-        def _metric_row(
-            label: str, subtitle: str, value: str = "—", color: str = ""
-        ) -> tuple[QtWidgets.QHBoxLayout, QtWidgets.QLabel]:
-            """Replicates Swift MetricRow: label+subtitle left, monospaced value right."""
-            row = QtWidgets.QHBoxLayout()
-            row.setContentsMargins(0, 2, 0, 2)
-            lv = QtWidgets.QVBoxLayout()
-            lv.setContentsMargins(0, 0, 0, 0)
-            lv.setSpacing(1)
-            lv.addWidget(QtWidgets.QLabel(label))
-            sub = QtWidgets.QLabel(subtitle)
-            sub.setFont(sub_font)
-            sub.setStyleSheet("color: gray")
-            lv.addWidget(sub)
-            row.addLayout(lv)
-            row.addStretch()
-            val = QtWidgets.QLabel(value)
-            val.setFont(mono_font)
-            val.setStyleSheet(f"font-weight: bold; color: {color}" if color else "font-weight: bold")
-            row.addWidget(val)
-            return row, val
-
-        def _group(title: str, rows_and_dividers: list) -> QtWidgets.QGroupBox:
-            grp = QtWidgets.QGroupBox(title)
-            vl = QtWidgets.QVBoxLayout(grp)
-            vl.setContentsMargins(8, 8, 8, 8)
-            vl.setSpacing(4)
-            for item in rows_and_dividers:
-                if isinstance(item, QtWidgets.QFrame):
-                    vl.addWidget(item)
-                else:
-                    vl.addLayout(item)
-            return grp
-
-        outer = QtWidgets.QVBoxLayout(dlg)
-        outer.setContentsMargins(12, 12, 12, 12)
-        outer.setSpacing(12)
-
-        # ── Analysis Configuration ────────────────────────────────────────
-        r1, _  = _metric_row("Frequency Resolution", "Hz per bin", _fmt_freq(spectral_res))
-        r2, _  = _metric_row("Bin Count", "FFT output bins (guitar mode only)", f"{bin_count:,}")
-        r3, _  = _metric_row("Sample Rate", "Hardware capture rate", f"{sr:,.0f} Hz")
-        r4, _  = _metric_row("Bandwidth", "0 Hz to Nyquist", _fmt_freq(bandwidth))
-        r5, _  = _metric_row("Sample Length", "Time window duration", f"{sample_len:.2f} s")
-        r6, self._metrics_framerate_lbl = _metric_row("Frame Rate", "FFT calculations/sec")
-        outer.addWidget(_group("Analysis Configuration", [
-            r1, _divider(), r2, _divider(), r3, _divider(), r4, _divider(), r5, _divider(), r6,
-        ]))
-
-        # ── Performance ───────────────────────────────────────────────────
-        r7,  self._metrics_proctime_lbl     = _metric_row("Processing Time",    "Last frame")
-        r8,  self._metrics_avg_proctime_lbl = _metric_row("Average Processing", "30-frame average")
-        r9,  self._metrics_cpu_lbl          = _metric_row("CPU Usage",          "Of available frame time")
-        outer.addWidget(_group("Performance", [
-            r7, _divider(), r8, _divider(), r9,
-        ]))
-
-        # ── Peak Detection ────────────────────────────────────────────────
-        r10, self._metrics_peak_freq_lbl = _metric_row("Peak Frequency", "Dominant frequency")
-        r11, self._metrics_peak_mag_lbl  = _metric_row("Peak Magnitude", "Signal strength")
-        outer.addWidget(_group("Peak Detection", [
-            r10, _divider(), r11,
-        ]))
-
-        # ── Status (small, caption style, matches Swift HStack) ───────────
-        status_row = QtWidgets.QHBoxLayout()
-        self._metrics_status_dot = QtWidgets.QLabel("●")
-        self._metrics_status_dot.setFont(sub_font)
-        status_row.addWidget(self._metrics_status_dot)
-        self._metrics_status_lbl = QtWidgets.QLabel()
-        self._metrics_status_lbl.setFont(sub_font)
-        self._metrics_status_lbl.setStyleSheet("color: gray")
-        status_row.addWidget(self._metrics_status_lbl)
-        status_row.addStretch()
-        if self._is_running:
-            self._metrics_status_dot.setStyleSheet("color: green")
-            self._metrics_status_lbl.setText("Analyzing")
-        else:
-            self._metrics_status_dot.setStyleSheet("color: gray")
-            self._metrics_status_lbl.setText("Stopped")
-        outer.addLayout(status_row)
-
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(dlg.accept)
-        outer.addWidget(close_btn)
-
-        dlg.show()
+        self._metrics_dialog = FMV.FFTAnalysisMetricsView(self.fft_canvas, parent=self)
+        self._metrics_dialog.destroyed.connect(lambda: setattr(self, "_metrics_dialog", None))
+        self._metrics_dialog.show()
 
     # ================================================================
     # Signal connections
@@ -1892,67 +1783,27 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_framerate_update(
         self, framerate: float, _sampletime: float, processingtime: float
     ) -> None:
-        # Maintain rolling 30-frame average of processing time
-        self._proc_times.append(processingtime)
-        if len(self._proc_times) > 30:
-            self._proc_times.pop(0)
+        """Handle a frame-rate update from the FFT processing thread.
 
-        if not (self._metrics_dialog and self._metrics_dialog.isVisible()):
-            return
+        Mirrors Swift's @ObservedObject auto-refresh of FFTAnalysisMetricsView —
+        forwards live metrics to the dialog when it is open, and updates the
+        results-panel status indicator regardless.
+        """
+        # Forward to FFTAnalysisMetricsView (mirrors SwiftUI @ObservedObject re-render)
+        if self._metrics_dialog and self._metrics_dialog.isVisible():
+            self._metrics_dialog.update_metrics(
+                framerate=framerate,
+                processing_time=processingtime,
+                is_running=self._is_running,
+                peaks=self.fft_canvas.saved_peaks,
+            )
 
-        proc_ms = processingtime * 1000
-        avg_ms  = (sum(self._proc_times) / len(self._proc_times)) * 1000
-        cpu_pct = (avg_ms / (1000 / framerate)) * 100 if framerate > 0 else 0
-
-        self._metrics_framerate_lbl.setText(f"{framerate:.1f} Hz")
-        self._metrics_proctime_lbl.setText(f"{proc_ms:.3f} ms")
-        self._metrics_avg_proctime_lbl.setText(f"{avg_ms:.3f} ms")
-
-        if cpu_pct < 50:
-            cpu_color = "green"
-        elif cpu_pct < 80:
-            cpu_color = "orange"
-        elif cpu_pct < 95:
-            cpu_color = "darkorange"
-        else:
-            cpu_color = "red"
-        self._metrics_cpu_lbl.setText(f"{cpu_pct:.1f}%")
-        self._metrics_cpu_lbl.setStyleSheet(f"color: {cpu_color}")
-
-        # Color-code processing time using same thresholds as CPU
-        frame_ms = (1000 / framerate) if framerate > 0 else 100
-        proc_pct = (proc_ms / frame_ms) * 100
-        if proc_pct < 50:
-            proc_color = "green"
-        elif proc_pct < 80:
-            proc_color = "orange"
-        elif proc_pct < 95:
-            proc_color = "darkorange"
-        else:
-            proc_color = "red"
-        self._metrics_proctime_lbl.setStyleSheet(f"color: {proc_color}")
-        self._metrics_avg_proctime_lbl.setStyleSheet(f"color: {cpu_color}")
-
-        # Peak detection — dominant peak by magnitude
-        peaks = self.fft_canvas.saved_peaks
-        if peaks.ndim == 2 and peaks.shape[0] > 0:
-            best = int(np.argmax(peaks[:, 1]))
-            self._metrics_peak_freq_lbl.setText(f"{peaks[best, 0]:.1f} Hz")
-            self._metrics_peak_mag_lbl.setText(f"{peaks[best, 1]:.1f} dB")
-        else:
-            self._metrics_peak_freq_lbl.setText("—")
-            self._metrics_peak_mag_lbl.setText("—")
-
-        # Status
+        # Update the results-panel running / stopped status indicator
         if self._is_running:
-            self._metrics_status_dot.setStyleSheet("color: green")
-            self._metrics_status_lbl.setText("Analyzing")
             self._results_status_dot.setStyleSheet("color: green;")
             self._results_status_lbl.setStyleSheet("color: palette(text);")
             self._results_status_lbl.setText("Analyzing")
         else:
-            self._metrics_status_dot.setStyleSheet("color: gray")
-            self._metrics_status_lbl.setText("Stopped")
             self._results_status_dot.setStyleSheet("color: gray;")
             self._results_status_lbl.setStyleSheet("color: gray;")
             self._results_status_lbl.setText("Stopped")
