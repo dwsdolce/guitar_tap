@@ -3121,33 +3121,23 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peaks_f_min_index = 0
         canvas.peaks_f_max_index = len(peaks_array)
 
-        # Pre-populate peak_model.show and switch to frozen mode BEFORE calling
-        # update_axis, which fires peaksChanged → peaks_model.update_data.
-        # If disable_editing is True when update_data runs, it auto-selects ALL peaks
-        # (live mode behaviour), overwriting the show dict with every peak set to "on".
-        # By setting disable_editing = False (via data_held) and populating show first,
-        # update_data takes the frozen path and carries forward the correct selection.
-        # Mirrors Swift where SpectrumView reactively filters currentPeaks at render time
-        # using selectedPeakIDs, so the ordering problem cannot arise.
         peak_model = self.peak_widget.model
 
         _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
 
-        # Show/hide selection — mirrors Swift: selectedPeakIDs ?? all peaks.
-        # Must be set before update_axis fires peaksChanged (see comment above).
+        # Restore selection state — mirrors Swift: selectedPeakIDs ?? all peaks.
+        # Set selected_frequencies and is_live directly on the model so that
+        # update_data (which fires later via update_axis → peaksChanged) reads the
+        # correct state at query time rather than overwriting it.  This is the
+        # reactive pattern: authoritative state lives here; update_data only notifies.
         selected_ids = set(
             m.selected_peak_ids if m.selected_peak_ids is not None
             else [p.id for p in m.peaks]
         )
-        peak_model.show = {}
-        for p in m.peaks:
-            if p.id in selected_ids:
-                peak_model.show[p.frequency] = "on"
-
-        # Switch the model to frozen mode so update_data carries forward show instead of
-        # auto-selecting all peaks.  set_measurement_complete(True) at the end of this
-        # method calls data_held(True) again, which is harmless.
-        self.peak_widget.data_held(True)
+        peak_model.selected_frequencies = {
+            p.frequency for p in m.peaks if p.id in selected_ids
+        }
+        peak_model.is_live = False
 
         # Restore spectrum snapshot if available.
         # For guitar: use spectrumSnapshot. For plate/brace: spectrumSnapshot is nil;

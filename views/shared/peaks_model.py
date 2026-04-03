@@ -71,8 +71,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.modes_width: int = len(max(self.mode_strings, key=len))
         self.modes_column: int = ColumnIndex.Modes.value
         self.modes: dict[float, str] = {}
-        self.disable_editing: bool = True
-        self.show: dict[float, str] = {}
+        self.is_live: bool = True
+        self.selected_frequencies: set[float] = set()
         self.show_column: int = ColumnIndex.Show.value
         self.guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
         self.user_has_modified_peak_selection: bool = False
@@ -124,21 +124,27 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     def set_show_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the show."""
-        self.show[self.freq_value(index)] = value
+        freq = self.freq_value(index)
+        if value == "on":
+            self.selected_frequencies.add(freq)
+        else:
+            self.selected_frequencies.discard(freq)
 
     def show_value_bool(self, index: QtCore.QModelIndex) -> bool:
-        """Return the show value as a boolean."""
-        return bool(self.show_value(index) == "on")
-        # if self.show_value(index) == "on":
-        #    return True
-        # else:
-        #    return False
+        """Return whether this peak is shown/selected.
+
+        Computed at query time — mirrors Swift SpectrumView filtering
+        currentPeaks using selectedPeakIDs at render time.
+        In live mode every peak is shown; in frozen mode only explicitly
+        selected frequencies are shown.
+        """
+        if self.is_live:
+            return True
+        return float(self.freq_value(index)) in self.selected_frequencies
 
     def show_value(self, index: QtCore.QModelIndex) -> str:
-        """Return the show for the row"""
-        if self.freq_value(index) in self.show:
-            return self.show[self.freq_value(index)]
-        return "off"
+        """Return the show for the row as "on" or "off"."""
+        return "on" if self.show_value_bool(index) else "off"
 
     def freq_index(self, freq: float) -> QtCore.QModelIndex:
         """From a frequency return the index in the data array."""
@@ -292,59 +298,37 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 return QtCore.QVariant()
 
     def update_data(self, data: np.ndarray) -> None:
-        """Update the data model from outside the object and
-        then update the table.
+        """Update the data model from outside the object and then update the table.
+
+        Pure notifier — never touches selection state (selected_frequencies or
+        is_live).  The caller owns selection state; this method only stores the
+        new peak array, recomputes derived mode data, and refreshes annotations.
+
+        Mirrors Swift's reactive approach: SpectrumView re-evaluates
+        selectedPeakIDs filtering at render time whenever currentPeaks changes,
+        so no ordering constraint exists between selection-state mutations and
+        data updates.
         """
         self.layoutAboutToBeChanged.emit()
         self._data = data
-        self._recompute_auto_modes()   # mirrors Swift identifiedModes update
+        self._recompute_auto_modes()
         self._emit_mode_colors()
         self.layoutChanged.emit()
 
-        if self.disable_editing:
-            # Live (pre-tap) mode: auto-select every found peak, mirroring Swift's
-            #   selectedPeakIDs = Set(peaks.map { $0.id })
-            # which runs on every FFT frame so that annotation-visibility mode
-            # "Selected" shows all identified peaks during live preview.
-            new_show: dict[float, str] = {}
-            if data.shape[0] > 0:
-                for freq in data[:, 0]:
-                    new_show[float(freq)] = "on"
-            self.show = new_show
-
-            # Emit annotations only when the current visibility mode calls for it.
-            # "None"     → hide everything (don't emit annotationUpdate)
-            # "Selected" → show selected (all) peaks
-            # "All"      → same as Selected in live mode (all peaks are selected)
-            self.clearAnnotations.emit()
-            if self.annotation_mode != "None":
-                for row in range(self._data.shape[0]):
-                    idx = self.index(row, 0)
-                    freq = self.freq_value(idx)
-                    mag  = self.magnitude_value(idx)
-                    mode = self.mode_value(idx)
-                    self.annotationUpdate.emit(freq, mag, self.annotation_html(freq, mag, mode), mode)
+        # Refresh annotations based on current is_live / selected_frequencies state.
+        # "None"     → hide everything
+        # "Selected" → show peaks whose show_value_bool is True
+        # "All"      → show every peak regardless of selection
+        self.clearAnnotations.emit()
+        if self.annotation_mode == "None":
             return
 
-        # Frozen path: carry-forward existing selections, preserving entries
-        # whose frequency has no match in the new data (peak dropped below
-        # threshold) so the selection is restored when the threshold is lowered.
-        # Mirrors Swift Fix 2 — the carry-forward loop in applyFrozenPeakState.
-        new_freqs = set(data[:, 0]) if data.shape[0] > 0 else set()  # col 0 = frequency
-        carried: dict[float, str] = {}
-        for freq, val in self.show.items():
-            carried[freq] = val   # preserve regardless — present or below threshold
-        self.show = carried
-
-        # Reconcile annotations: clear everything, then re-create only for peaks
-        # that are currently in _data and have show == "on".
-        self.clearAnnotations.emit()
         for row in range(self._data.shape[0]):
             idx = self.index(row, 0)
-            if self.show_value_bool(idx):
-                freq = self.freq_value(idx)
-                mag  = self.magnitude_value(idx)
-                mode = self.mode_value(idx)
+            freq = self.freq_value(idx)
+            mag  = self.magnitude_value(idx)
+            mode = self.mode_value(idx)
+            if self.annotation_mode == "All" or self.show_value_bool(idx):
                 self.annotationUpdate.emit(freq, mag, self.annotation_html(freq, mag, mode), mode)
 
     def clear_annotations(self) -> None:
@@ -352,11 +336,11 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.clearAnnotations.emit()
 
     def show_annotations(self) -> None:
-        """Show annotations for peaks that have the show flag set."""
-        for freq in self.show:
-            index = self.freq_index(freq)
-            if index >= 0 and self.show_value_bool(self.index(index, 0)):
-                self.showAnnotation.emit(freq)
+        """Show annotations for peaks that are currently selected."""
+        for row in range(self._data.shape[0]):
+            idx = self.index(row, 0)
+            if self.show_value_bool(idx):
+                self.showAnnotation.emit(self.freq_value(idx))
 
     def select_all_peaks(self) -> None:
         """Set the show/selected flag on every peak and show its annotation."""
@@ -468,11 +452,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlag:
         """
         Set the flag for editing the Modes column or selecting the columns.
-        If the disable_editing flag is set from the data_held then
-        all selection and editing is disabled.
+        Editing is disabled in live mode (is_live=True) — the table becomes
+        interactive only once a measurement is frozen (is_live=False).
         """
-        # print(f"PeaksModel: flags: disable_editing: {self.disable_editing}")
-        if self.disable_editing:
+        if self.is_live:
             # flag = QtCore.Qt.ItemFlag.ItemIsEnabled | QtCore.Qt.ItemFlag.ItemIsSelectable
             flag = QtCore.Qt.ItemFlag.NoItemFlags
         else:
@@ -496,19 +479,18 @@ class PeaksModel(QtCore.QAbstractTableModel):
         return flag
 
     def data_held(self, held: bool) -> None:
+        """Transition between live mode (held=False) and frozen mode (held=True).
+
+        In live mode (is_live=True) the table is read-only and show_value_bool
+        returns True for every peak.  In frozen mode (is_live=False) the table
+        is interactive and show_value_bool consults selected_frequencies.
         """
-        This is used to indicate the change of the data being held. If it is not held
-        then the table cannot be edited.
-        """
-        # print(f"PeaksModel: data_held: {held}")
         self.layoutAboutToBeChanged.emit()
+        self.is_live = not held
         if held:
-            self.disable_editing = False
             self.show_annotations()
         else:
-            self.disable_editing = True
             self.hideAnnotations.emit()
-            # self.clear_annotations()
         self.layoutChanged.emit()
 
     def auto_select_peaks_by_mode(self, guitar_type: gt.GuitarType) -> None:
@@ -523,7 +505,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         The claiming/overlap logic is entirely delegated to classifyAll —
         this method just picks the best representative of each assigned mode.
         """
-        self.show = {}
+        self.selected_frequencies = set()
         self._programmatic_update = True
         self._set_user_modified(False)
         self.clearAnnotations.emit()
@@ -566,5 +548,5 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if not held:
             self.clear_annotations()
             self.modes = {}
-            self.show = {}
+            self.selected_frequencies = set()
             self._auto_mode_map = {}
