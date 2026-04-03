@@ -42,7 +42,8 @@ class SpectrumSnapshot:
       - ``guitar_type`` and ``measurement_type`` are stored as raw strings in Python;
         Swift stores them as ``GuitarType`` and ``MeasurementType`` enum values.
       - ``to_dict()`` / ``from_dict()`` provide JSON serialisation; Swift uses ``Codable``.
-      - ``to_dict()`` writes plain float arrays (not Base64); ``from_dict()`` decodes both
+      - ``to_dict()`` writes Base64 binary blobs (``frequenciesData`` / ``magnitudesData``),
+        matching Swift's compact binary format exactly.  ``from_dict()`` decodes both
         the compact Base64 binary format and the legacy plain float-array format.
     """
 
@@ -180,17 +181,30 @@ class SpectrumSnapshot:
 
     # MARK: - Serialisation (Python-only)
 
+    @staticmethod
+    def _floats_to_base64(floats: list[float]) -> str:
+        """Pack floats as little-endian IEEE-754 float32 bytes and Base64-encode them.
+
+        Mirrors Swift SpectrumSnapshot.floatsToBase64(_:).
+        """
+        import base64, struct
+        data = struct.pack(f"<{len(floats)}f", *floats)
+        return base64.b64encode(data).decode("ascii")
+
     def to_dict(self) -> dict:
         """Encode this snapshot as a JSON-compatible dict using Swift field names.
 
-        Writes plain float arrays for ``frequencies`` and ``magnitudes`` (not Base64).
-        Swift reads these via the legacy ``frequencies``/``magnitudes`` fallback path.
+        Writes ``frequenciesData`` and ``magnitudesData`` as Base64-encoded
+        little-endian IEEE-754 float32 blobs, matching Swift's compact binary
+        format exactly.  Swift decodes these via the new-format path; the legacy
+        plain-array keys (``frequencies`` / ``magnitudes``) are not written.
 
-        Python-only — Swift uses Codable with a custom encoder (Base64 binary blobs).
+        Mirrors Swift SpectrumSnapshot.encode(to:).
+        Python-only — Swift uses Codable with a custom encoder.
         """
         d: dict = {
-            "frequencies": self.frequencies,
-            "magnitudes": self.magnitudes,
+            "frequenciesData": self._floats_to_base64(self.frequencies),
+            "magnitudesData":  self._floats_to_base64(self.magnitudes),
             "minFreq": self.min_freq,
             "maxFreq": self.max_freq,
             "minDB": self.min_db,

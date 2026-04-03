@@ -4,13 +4,13 @@ saved TapToneMeasurement.
 
 Mirrors Swift EditMeasurementView.swift.
 
-Pre-populates the fields from the measurement passed in and calls
-``analyzer.update_measurement(at, tap_location, notes)`` on Save. The index
-into ``savedMeasurements`` is used rather than id matching so that duplicate
-imports (which share the same id) are treated independently.
+Pre-populates the fields from the measurement passed in. Returns the edited
+values via ``edited_values()`` after the dialog is accepted. The caller
+(MeasurementsDialog._open_edit) is responsible for updating the in-memory
+list and persisting to disk, matching how the dialog manages its own
+measurement list.
 
-- SeeAlso: ``MeasurementsDialog``, ``MeasurementDetailDialog``,
-  ``TapToneAnalyzer.update_measurement``
+- SeeAlso: ``MeasurementsDialog``, ``MeasurementDetailDialog``
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from PyQt6.QtCore import Qt
 
 if TYPE_CHECKING:
     from models import TapToneMeasurement
-    from models.tap_tone_analyzer import TapToneAnalyzer
 
 
 class EditMeasurementView(QtWidgets.QDialog):
@@ -30,23 +29,19 @@ class EditMeasurementView(QtWidgets.QDialog):
 
     Mirrors Swift ``EditMeasurementView``.
 
-    Pre-populates fields from ``measurement`` and calls
-    ``analyzer.update_measurement(at, tap_location, notes)`` on Save.
-    The ``index`` into the saved measurements list is used rather than id
-    matching so that duplicate imports are treated independently.
+    Pre-populates fields from ``measurement``. Call ``edited_values()`` after
+    ``exec()`` returns ``Accepted`` to retrieve the new tap_location and notes.
     """
 
     def __init__(
         self,
         index: int,
         measurement: "TapToneMeasurement",
-        analyzer: "TapToneAnalyzer",
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._index = index
         self._measurement = measurement
-        self._analyzer = analyzer
 
         self.setWindowTitle("Edit Measurement")
         self.setMinimumWidth(450)
@@ -129,23 +124,21 @@ class EditMeasurementView(QtWidgets.QDialog):
 
         save_btn = QtWidgets.QPushButton("Save")
         save_btn.setDefault(True)
-        save_btn.clicked.connect(self._save)
+        save_btn.clicked.connect(self.accept)
         btn_row.addWidget(save_btn)
 
         outer.addLayout(btn_row)
 
-    # MARK: - Actions
+    # MARK: - Result
 
-    def _save(self) -> None:
-        """Persist the edited fields and dismiss.
+    def edited_values(self) -> tuple[str | None, str | None]:
+        """Return (tap_location, notes) as entered by the user.
 
-        Mirrors Swift save() → analyzer.updateMeasurement(at:tapLocation:notes:) → dismiss().
+        Mirrors Swift save() reading self.tapLocation / self.notes before
+        calling analyzer.updateMeasurement(at:tapLocation:notes:).
+        Empty strings are normalised to None (mirrors Swift's
+        ``tapLocation.isEmpty ? nil : tapLocation``).
         """
         tap_location = self._tap_location_edit.text().strip() or None
         notes = self._notes_edit.toPlainText().strip() or None
-        self._analyzer.update_measurement(
-            at=self._index,
-            tap_location=tap_location,
-            notes=notes,
-        )
-        self.accept()
+        return tap_location, notes

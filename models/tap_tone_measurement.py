@@ -235,21 +235,20 @@ class TapToneMeasurement:
         from . import guitar_mode as gm
         if not self.peaks:
             return None
-        peaks_fm = [(p.frequency, p.magnitude) for p in self.peaks]
         gt = self.guitar_type or "Classical"
         try:
-            idx_map = gm.GuitarMode.classify_all(peaks_fm, gt)
+            id_map = gm.GuitarMode.classify_all(self.peaks, gt)
         except Exception:
             return None
-        # Build a lookup from peak index → mode, then find air and top peaks
+        # id_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode]
         air_freq = next(
-            (self.peaks[i].frequency for i, mode in idx_map.items()
-             if mode.normalized == gm.GuitarMode.AIR),
+            (p.frequency for p in self.peaks
+             if id_map.get(p.id, gm.GuitarMode.UNKNOWN).normalized == gm.GuitarMode.AIR),
             None,
         )
         top_freq = next(
-            (self.peaks[i].frequency for i, mode in idx_map.items()
-             if mode.normalized == gm.GuitarMode.TOP),
+            (p.frequency for p in self.peaks
+             if id_map.get(p.id, gm.GuitarMode.UNKNOWN).normalized == gm.GuitarMode.TOP),
             None,
         )
         if air_freq and top_freq and air_freq > 0:
@@ -304,13 +303,17 @@ class TapToneMeasurement:
     def to_dict(self) -> dict[str, Any]:
         """Encode this measurement as a JSON-compatible dict using Swift field names.
 
+        Keys are written in the same order as Swift's custom encode(to:) so that
+        files produced by Python and Swift are directly comparable line-by-line.
+
+        Mirrors Swift TapToneMeasurement.encode(to:).
         Python-only — Swift uses Codable with a custom encoder.
         """
-        d: dict[str, Any] = {
-            "id": self.id,
-            "timestamp": self.timestamp,
-            "peaks": [p.to_dict() for p in self.peaks],
-        }
+        d: dict[str, Any] = {}
+
+        # Standard stored properties — mirrors Swift encoding order exactly.
+        d["id"] = self.id
+        d["timestamp"] = self.timestamp
         if self.decay_time is not None:
             d["decayTime"] = self.decay_time
         if self.tap_location:
@@ -319,19 +322,17 @@ class TapToneMeasurement:
             d["notes"] = self.notes
         if self.spectrum_snapshot is not None:
             d["spectrumSnapshot"] = self.spectrum_snapshot.to_dict()
+        # Always written — mirrors Swift encodeIfPresent(namedOffsets, forKey: .peakAnnotationOffsets).
+        # Swift encodes [UUID: PeakAnnotationOffset] as a flat array of alternating UUID-string /
+        # offset-object pairs (because UUID is not a JSON string key).  Empty dict → empty array [].
         if self.annotation_offsets:
-            # Swift format: {uuid: {"hzOffset": hz_delta, "dbOffset": db_delta}}
-            # dbOffset is in screen-Y direction: positive = downward = lower dB.
-            d["peakAnnotationOffsets"] = {
-                k: {"hzOffset": v[0], "dbOffset": v[1]}
-                for k, v in self.annotation_offsets.items()
-            }
-        if self.selected_peak_ids:
-            d["selectedPeakIDs"] = self.selected_peak_ids
-        if self.selected_peak_frequencies:
-            d["selectedPeakFrequencies"] = self.selected_peak_frequencies
-        if self.annotation_visibility_mode:
-            d["annotationVisibilityMode"] = self.annotation_visibility_mode
+            offsets_array = []
+            for k, v in self.annotation_offsets.items():
+                offsets_array.append(k)
+                offsets_array.append({"dbOffset": v[1], "hzOffset": v[0]})
+            d["peakAnnotationOffsets"] = offsets_array
+        else:
+            d["peakAnnotationOffsets"] = []
         if self.tap_detection_threshold is not None:
             d["tapDetectionThreshold"] = self.tap_detection_threshold
         if self.hysteresis_margin is not None:
@@ -352,6 +353,12 @@ class TapToneMeasurement:
             d["crossSnapshot"] = self.cross_snapshot.to_dict()
         if self.flc_snapshot is not None:
             d["flcSnapshot"] = self.flc_snapshot.to_dict()
+        if self.selected_peak_ids:
+            d["selectedPeakIDs"] = self.selected_peak_ids
+        if self.selected_peak_frequencies:
+            d["selectedPeakFrequencies"] = self.selected_peak_frequencies
+        if self.annotation_visibility_mode:
+            d["annotationVisibilityMode"] = self.annotation_visibility_mode
         if self.peak_mode_overrides:
             # Swift format: {uuid: {"type": "assigned", "label": "mode_string"}}
             d["peakModeOverrides"] = {
@@ -364,10 +371,20 @@ class TapToneMeasurement:
             d["microphoneUID"] = self.microphone_uid
         if self.calibration_name:
             d["calibrationName"] = self.calibration_name
+
+        # Convenience top-level fields for external consumers — mirrors Swift
+        # encode(to:) which resolves these from the snapshot.
         if self.measurement_type:
             d["measurementType"] = self.measurement_type
         if self.guitar_type:
             d["guitarType"] = self.guitar_type
+
+        # Peaks written last, with modeLabel injected per entry — mirrors Swift
+        # encode(to:) PeakExportCodingKeys loop.  Note: export_measurement_json()
+        # overwrites modeLabel with the resolved classification; to_dict() emits
+        # whatever is already stored in peak.mode_label.
+        d["peaks"] = [p.to_dict() for p in self.peaks]
+
         return d
 
     @staticmethod
@@ -388,12 +405,25 @@ class TapToneMeasurement:
         cross_snap = SpectrumSnapshot.from_dict(cross_d) if cross_d else None
         flc_snap   = SpectrumSnapshot.from_dict(flc_d)   if flc_d   else None
 
-        # Annotation offsets — {uuid: {"hzOffset": hz_delta, "dbOffset": db_delta}}
+        # Annotation offsets — two formats accepted:
+        #   Array (Swift/new Python): [uuid_str, {"hzOffset": x, "dbOffset": y}, ...]
+        #   Dict  (legacy Python):   {uuid_str: {"hzOffset": x, "dbOffset": y}, ...}
         # hzOffset: Hz delta from peak frequency (positive = right)
         # dbOffset: screen-Y direction (positive = downward = lower dB)
         ann_raw = d.get("peakAnnotationOffsets")
         ann_offsets: dict[str, list[float]] | None = None
-        if ann_raw and isinstance(ann_raw, dict):
+        if ann_raw and isinstance(ann_raw, list):
+            # Swift flat-array format: alternating uuid / offset-object pairs.
+            ann_offsets = {}
+            it = iter(ann_raw)
+            for k in it:
+                v = next(it, None)
+                if isinstance(k, str) and isinstance(v, dict):
+                    ann_offsets[k.upper()] = [
+                        float(v.get("hzOffset", 0)),
+                        float(v.get("dbOffset", 0)),
+                    ]
+        elif ann_raw and isinstance(ann_raw, dict):
             ann_offsets = {}
             for k, v in ann_raw.items():
                 if isinstance(v, dict):

@@ -20,6 +20,7 @@ from models.analysis_display_mode import AnalysisDisplayMode
 import views.shared.peak_card_widget as PT
 import views.utilities.tap_settings_view as AS
 import views.tap_analysis_results_view as M
+from views.exportable_spectrum_chart import make_exportable_spectrum_view
 from models import TapToneMeasurement, ResonantPeak, SpectrumSnapshot
 from models import plate_stiffness_preset as PSP
 from models import guitar_type as GT
@@ -32,6 +33,7 @@ import models.material_properties as PA
 import views.help_view as HD
 import views.utilities.gt_images as gt_i
 import views.fft_analysis_metrics_view as FMV
+from views.shared.loading_overlay import LoadingOverlay
 import qtawesome as qta
 
 # Project root is one directory above views/
@@ -385,6 +387,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._help_dialog: HD.HelpDialog | None = None
         self._metrics_dialog: FMV.FFTAnalysisMetricsView | None = None
         self.avg_enable_saved: bool = False
+        self._loaded_resonant_peaks: list = []  # ResonantPeak objects from last loaded measurement
+        self._loaded_measurement = None          # full TapToneMeasurement, used for export filtering
 
         with open(os.path.join(basedir, "./version"), "r", encoding="UTF-8") as fh:
             version = fh.read().rstrip()
@@ -475,6 +479,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # Wire everything up
         self._connect_signals()
         self._init_state(f_range)
+
+        # Loading overlay — covers the central widget during slow export operations.
+        # Mirrors Swift LoadingOverlay placed via .overlay on the root content view.
+        self._loading_overlay = LoadingOverlay(main_widget)
 
     # ================================================================
     # Layout builders
@@ -2194,7 +2202,7 @@ class MainWindow(QtWidgets.QMainWindow):
         except ValueError:
             return
         peaks_data = [(float(row[0]), float(row[1])) for row in peaks]
-        idx_map = GM.GuitarMode.classify_all(peaks_data, guitar_type)
+        idx_map = GM.GuitarMode._classify_all_tuples(peaks_data, guitar_type)
         mode_freqs: dict[str, float] = {}
         for i, mode in idx_map.items():
             if mode is not GM.GuitarMode.UNKNOWN:
@@ -2698,13 +2706,22 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
             freqs = canvas.freq.tolist()
             mags  = canvas.saved_mag_y_db.tolist()
+            # Read the actual Y axis range from the ViewBox so the snapshot stores
+            # the chart's visible range, not the detection threshold.
+            try:
+                _, _y_range = canvas.getPlotItem().getViewBox().viewRange()
+                _snap_min_db = float(_y_range[0])
+                _snap_max_db = float(_y_range[1])
+            except Exception:
+                _snap_min_db = float(self.threshold_slider.value())
+                _snap_max_db = float(np.max(canvas.saved_mag_y_db)) + 10.0
             _snap_base = dict(
                 frequencies=freqs,
                 magnitudes=mags,
                 min_freq=float(self.min_spin.value()),
                 max_freq=float(self.max_spin.value()),
-                min_db=float(self.threshold_slider.value()),
-                max_db=float(np.max(canvas.saved_mag_y_db)) + 10.0,
+                min_db=_snap_min_db,
+                max_db=_snap_max_db,
                 guitar_type=self.guitar_type_combo.currentText(),
                 measurement_type=self.measurement_type_combo.currentText(),
             )
@@ -2726,8 +2743,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         magnitudes=_l_mags,
                         min_freq=float(self.min_spin.value()),
                         max_freq=float(self.max_spin.value()),
-                        min_db=float(self.threshold_slider.value()),
-                        max_db=float(np.max(_l_mags)) + 10.0,
+                        min_db=_snap_min_db,
+                        max_db=_snap_max_db,
                         guitar_type=self.guitar_type_combo.currentText(),
                         measurement_type=self.measurement_type_combo.currentText(),
                         brace_length=_dims.length_mm if _dims else None,
@@ -2762,8 +2779,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         magnitudes=_l_mags,
                         min_freq=float(self.min_spin.value()),
                         max_freq=float(self.max_spin.value()),
-                        min_db=float(self.threshold_slider.value()),
-                        max_db=float(np.max(_l_mags)) + 10.0,
+                        min_db=_snap_min_db,
+                        max_db=_snap_max_db,
                         guitar_type=self.guitar_type_combo.currentText(),
                         measurement_type=self.measurement_type_combo.currentText(),
                         **_plate_dim_kwargs,
@@ -2776,8 +2793,8 @@ class MainWindow(QtWidgets.QMainWindow):
                             magnitudes=_c_mags,
                             min_freq=float(self.min_spin.value()),
                             max_freq=float(self.max_spin.value()),
-                            min_db=float(self.threshold_slider.value()),
-                            max_db=float(np.max(_c_mags)) + 10.0,
+                            min_db=_snap_min_db,
+                            max_db=_snap_max_db,
                             guitar_type=self.guitar_type_combo.currentText(),
                             measurement_type=self.measurement_type_combo.currentText(),
                             **_plate_dim_kwargs,
@@ -2790,8 +2807,8 @@ class MainWindow(QtWidgets.QMainWindow):
                             magnitudes=_flc_mags,
                             min_freq=float(self.min_spin.value()),
                             max_freq=float(self.max_spin.value()),
-                            min_db=float(self.threshold_slider.value()),
-                            max_db=float(np.max(_flc_mags)) + 10.0,
+                            min_db=_snap_min_db,
+                            max_db=_snap_max_db,
                             guitar_type=self.guitar_type_combo.currentText(),
                             measurement_type=self.measurement_type_combo.currentText(),
                             **_plate_dim_kwargs,
@@ -2843,10 +2860,8 @@ class MainWindow(QtWidgets.QMainWindow):
             notes=dlg.notes,
         )
 
-        measurements = M.load_all_measurements()
-        measurements.append(m)
         try:
-            M.save_all_measurements(measurements)
+            self.fft_canvas.analyzer.save_measurement(m)
         except OSError as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Save Error", f"Could not save measurement:\n{exc}"
@@ -2968,6 +2983,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         canvas.saved_peaks = peaks_array
         canvas._loaded_measurement_peaks = peaks_array  # authoritative; used by threshold/range sliders
+        self._loaded_resonant_peaks = list(m.peaks) if m.peaks else []  # full objects, used by export
+        self._loaded_measurement = m  # full measurement, used by export for visibility filtering
 
         peak_model = self.peak_widget.model
 
@@ -3239,31 +3256,146 @@ class MainWindow(QtWidgets.QMainWindow):
         self._warn_pulse_timer.start()
 
     def _on_export_spectrum(self) -> None:
-        from pyqtgraph.exporters import ImageExporter
+        import time as _time
+
+        # Build a suggested filename that mirrors Swift's base_filename pattern
+        # (e.g. "spectrum-1775190435.png").
+        suggested_name = f"spectrum-{int(_time.time())}.png"
+        suggested_path = os.path.join(
+            os.path.expanduser("~/Documents/GuitarTap"), suggested_name
+        )
+
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Spectrum",
-            os.path.expanduser("~/Documents/GuitarTap"),
+            suggested_path,
             "PNG images (*.png)",
         )
         if not path:
             return
         if not path.endswith(".png"):
             path += ".png"
+
+        self._loading_overlay.show_message("Exporting spectrum…")
         try:
-            exporter = ImageExporter(self.fft_canvas.getPlotItem())
-            exporter.export(path)
+            canvas = self.fft_canvas
+            freqs = canvas.freq.tolist() if hasattr(canvas.freq, "tolist") else list(canvas.freq)
+            mags  = (canvas.saved_mag_y_db.tolist()
+                     if hasattr(canvas.saved_mag_y_db, "tolist")
+                     else list(canvas.saved_mag_y_db))
+
+            mt = self._current_mt()
+            is_guitar = mt.is_guitar
+
+            from datetime import datetime, timezone
+            date_label = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+            peaks_list: list = []
+            # Selection/visibility parameters from the loaded measurement (if any).
+            _sel_long_id = None
+            _sel_cross_id = None
+            _sel_flc_id = None
+            _mode_overrides: dict = {}
+            _annotation_offsets: dict = {}
+            try:
+                # Prefer the stored ResonantPeak objects (have full pitch data).
+                # Apply annotationVisibilityMode / selectedPeakIDs filtering
+                # exactly as render_spectrum_image_for_pdf does.
+                if self._loaded_resonant_peaks and self._loaded_measurement is not None:
+                    m_exp = self._loaded_measurement
+                    all_peaks = self._loaded_resonant_peaks
+                    visibility_mode = (m_exp.annotation_visibility_mode or "all").lower()
+                    selected_ids = set(
+                        m_exp.selected_peak_ids or [p.id for p in all_peaks]
+                    )
+                    if visibility_mode == "selected":
+                        peaks_list = [p for p in all_peaks if p.id in selected_ids]
+                    elif visibility_mode == "none":
+                        peaks_list = []
+                    else:
+                        peaks_list = list(all_peaks)
+                    _sel_long_id = m_exp.selected_longitudinal_peak_id
+                    _sel_cross_id = m_exp.selected_cross_peak_id
+                    _sel_flc_id = m_exp.selected_flc_peak_id
+                    _mode_overrides = m_exp.peak_mode_overrides or {}
+                    _annotation_offsets = m_exp.annotation_offsets or {}
+                elif self._loaded_resonant_peaks:
+                    peaks_list = list(self._loaded_resonant_peaks)
+                else:
+                    model = self.peak_widget.model
+                    for row in range(model.rowCount(QtCore.QModelIndex())):
+                        idx = model.index(row, 0)
+                        freq = model.freq_value(idx)
+                        mag  = model.magnitude_value(idx)
+                        mode = model.mode_value(idx) if hasattr(model, "mode_value") else ""
+                        peaks_list.append(type("_P", (), {
+                            "frequency": freq,
+                            "magnitude": mag,
+                            "id": str(row),
+                            "mode_label": mode,
+                            "pitch_note": None,
+                            "pitch_cents": None,
+                        })())
+            except Exception:
+                pass
+
+            gt_str = self.guitar_type_combo.currentText() if hasattr(self, "guitar_type_combo") else None
+
+            # Mirror Swift: chart title is "FFT Peaks — {tapLocation}" when a measurement is loaded
+            try:
+                raw_title = canvas.getPlotItem().titleLabel.text or ""
+                chart_title = raw_title.strip() if raw_title.strip() else "FFT Peaks"
+            except Exception:
+                chart_title = "FFT Peaks"
+
+            # Read the actual Y axis range from the ViewBox — mirrors Swift's
+            # minDB/maxDB which come from the chart's current axis domain.
+            try:
+                _, y_range = canvas.getPlotItem().getViewBox().viewRange()
+                export_min_db = float(y_range[0])
+                export_max_db = float(y_range[1])
+            except Exception:
+                export_min_db = float(self.threshold_slider.value())
+                export_max_db = float(max(mags)) + 10.0 if mags else 0.0
+
+            # Mirrors Swift TapToneAnalysisView+Export.createExportableSpectrumView()
+            # calling makeExportableSpectrumView(...) directly.
+            make_exportable_spectrum_view(
+                frequencies=freqs,
+                magnitudes=mags,
+                min_freq=float(self.min_spin.value()),
+                max_freq=float(self.max_spin.value()),
+                min_db=export_min_db,
+                max_db=export_max_db,
+                peaks=peaks_list,
+                annotation_offsets=_annotation_offsets,
+                measurement_type_str=None if is_guitar else "plate",
+                selected_longitudinal_peak_id=_sel_long_id,
+                selected_cross_peak_id=_sel_cross_id,
+                selected_flc_peak_id=_sel_flc_id,
+                mode_overrides=_mode_overrides,
+                guitar_type_str=gt_str,
+                date_label=date_label,
+                chart_title=chart_title,
+                output_path=path,
+            )
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Failed", str(exc))
+        finally:
+            self._loading_overlay.hide()
 
     def _on_export_pdf(self) -> None:
-        import tempfile
-        from pyqtgraph.exporters import ImageExporter
+        import time as _time
+
+        suggested_name = f"report-{int(_time.time())}.pdf"
+        suggested_path = os.path.join(
+            os.path.expanduser("~/Documents/GuitarTap"), suggested_name
+        )
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export PDF Report",
-            os.path.expanduser("~/Documents/GuitarTap"),
+            suggested_path,
             "PDF files (*.pdf)",
         )
         if not path:
@@ -3271,17 +3403,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if not path.endswith(".pdf"):
             path += ".pdf"
 
-        png_path: str | None = None
-        try:
-            exporter = ImageExporter(self.fft_canvas.getPlotItem())
-            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-            tmp.close()
-            png_path = tmp.name
-            exporter.export(png_path)
-        except Exception:
-            png_path = None
-
+        self._loading_overlay.show_message("Generating PDF report…")
         m = self._collect_measurement()
+        # Render the composite spectrum image for embedding in the PDF — uses
+        # the same renderer as Export Spectrum so both outputs are consistent.
+        png_path: str | None = M.render_spectrum_image_for_pdf(m)
         try:
             M.export_pdf(m, png_path, path)
             QtWidgets.QMessageBox.information(
@@ -3292,6 +3418,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self, "Export Error", f"Could not export PDF:\n{exc}"
             )
         finally:
+            self._loading_overlay.hide()
             if png_path and os.path.exists(png_path):
                 try:
                     os.remove(png_path)

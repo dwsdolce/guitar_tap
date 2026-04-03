@@ -337,13 +337,11 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             peaks_vbox.addWidget(QtWidgets.QLabel("No peaks detected"))
         else:
             gt = _resolve_guitar_type(m.guitar_type)
-            # Classify all peaks with context-aware mode map
-            peak_freqs = [(p.frequency, p.magnitude) for p in sorted_peaks]
-            idx_map = GM.GuitarMode.classify_all(peak_freqs, gt)
-            mode_by_idx = {i: mode for i, mode in idx_map.items()}
+            # Classify all peaks with context-aware mode map — id_map mirrors Swift [UUID: GuitarMode]
+            id_map = GM.GuitarMode.classify_all(sorted_peaks, gt)
 
             for i, peak in enumerate(sorted_peaks):
-                mode = mode_by_idx.get(i, GM.GuitarMode.UNKNOWN)
+                mode = id_map.get(peak.id, GM.GuitarMode.UNKNOWN)
                 # Effective label: mode override > stored mode_label > auto mode
                 override = (
                     m.peak_mode_overrides.get(peak.id)
@@ -395,18 +393,16 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             return None
         try:
             gt = _resolve_guitar_type(m.guitar_type)
-            peak_freqs = [(p.frequency, p.magnitude) for p in m.peaks]
-            idx_map = GM.GuitarMode.classify_all(peak_freqs, gt)
-            peaks_list = m.peaks
+            id_map = GM.GuitarMode.classify_all(m.peaks, gt)
 
             air_freq = next(
-                (peaks_list[i].frequency for i, mode in idx_map.items()
-                 if mode.normalized == GM.GuitarMode.AIR),
+                (p.frequency for p in m.peaks
+                 if id_map.get(p.id, GM.GuitarMode.UNKNOWN).normalized == GM.GuitarMode.AIR),
                 None,
             )
             top_freq = next(
-                (peaks_list[i].frequency for i, mode in idx_map.items()
-                 if mode.normalized == GM.GuitarMode.TOP),
+                (p.frequency for p in m.peaks
+                 if id_map.get(p.id, GM.GuitarMode.UNKNOWN).normalized == GM.GuitarMode.TOP),
                 None,
             )
             if air_freq and top_freq and air_freq > 0:

@@ -124,6 +124,12 @@ class ResonantPeak:
     def to_dict(self) -> dict:
         """Encode this peak as a JSON-compatible dict using Swift field names.
 
+        Keys are written in the same order as Swift's PeakExportCodingKeys loop
+        inside TapToneMeasurement.encode(to:):
+          id, frequency, magnitude, quality, bandwidth, timestamp,
+          pitchNote (if present), pitchCents (if present),
+          pitchFrequency (if present), modeLabel
+
         Python-only — Swift uses Codable.
         """
         d: dict = {
@@ -133,7 +139,6 @@ class ResonantPeak:
             "quality": self.quality,
             "bandwidth": self.bandwidth,
             "timestamp": self.timestamp,
-            "modeLabel": self.mode_label,
         }
         if self.pitch_note is not None:
             d["pitchNote"] = self.pitch_note
@@ -141,6 +146,7 @@ class ResonantPeak:
             d["pitchCents"] = self.pitch_cents
         if self.pitch_frequency is not None:
             d["pitchFrequency"] = self.pitch_frequency
+        d["modeLabel"] = self.mode_label
         return d
 
     @staticmethod

@@ -109,7 +109,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             return
         peaks = [(float(self._data[i, 0]), float(self._data[i, 1]))
                  for i in range(self._data.shape[0])]
-        idx_map = gm.GuitarMode.classify_all(peaks, self.guitar_type)
+        idx_map = gm.GuitarMode._classify_all_tuples(peaks, self.guitar_type)
         self._auto_mode_map = {peaks[i][0]: mode for i, mode in idx_map.items()}
 
     def mode_value(self, index: QtCore.QModelIndex) -> str:

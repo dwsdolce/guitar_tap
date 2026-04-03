@@ -3,13 +3,11 @@ Display-only settings constants and thin wrappers.
 
 Mirrors Swift's TapDisplaySettings.swift — static constants and UserDefaults
 keys that control purely visual behaviour (axis defaults, unknown-mode
-visibility, compact peak list).
+visibility, max-peaks / capture-all-peaks toggle).
 
 The full settings store is AppSettings (tap_settings_view.py).  This module
 extracts the display-facing subset so views can import a single, focused
 namespace without pulling in the entire settings object.
-
-⚠ PARTIAL — missing compactPeakList flag (not yet implemented in Python).
 """
 
 from __future__ import annotations

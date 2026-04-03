@@ -109,7 +109,7 @@ views/
 | `tap_settings_view_actions.py` | `TapSettingsView+Actions.swift` | `app_settings.py` action handlers | Apply/reset callbacks |
 | `tap_settings_view_layout_helpers.py` | `TapSettingsView+LayoutHelpers.swift` | `app_settings.py` layout helpers | Row/section builder helpers |
 | `tap_settings_view_sections.py` | `TapSettingsView+Sections.swift` | `app_settings.py` section builders | Individual settings sections |
-| `tap_display_settings.py` | `TapDisplaySettings.swift` | `app_settings.py` display constants | ⚠ **PARTIAL** — missing `showUnknownModes`, `compactPeakList` flags |
+| `tap_display_settings.py` | `TapDisplaySettings.swift` | `app_settings.py` display constants | `showUnknownModes` implemented; `captureAllPeaks` (max-peaks = 0 toggle) implemented |
 | `exportable_spectrum_chart.py` | `ExportableSpectrumChart.swift` | — | ⚠ **GAP** — no off-screen renderer for PDF/image export |
 | `pdf_report_generator.py` | `PDFReportGenerator.swift` | `guitar_tap.py` PDF section | ⚠ **PARTIAL** — basic export only; no spectrum image embed |
 | `measurement_file_exporter.py` | `MeasurementFileExporter.swift` | `guitar_tap.py` file I/O | JSON/CSV read-write |
@@ -128,11 +128,8 @@ views/
 | 3 | `views/shared/compact_fft_metrics_overlay.py` | Low | `CompactFFTMetricsOverlay.swift` | Small FPS/dt overlay composited on top of spectrum canvas |
 | 4 | `views/utilities/exportable_spectrum_chart.py` | Medium | `ExportableSpectrumChart.swift` | Off-screen renderer needed for embedding spectrum image in PDF reports |
 | 5 | `views/measurements/export_view.py` (partial) | Low | `ExportView.swift` | Python has file-save dialogs; Swift has an in-app preview + share sheet |
-| 6 | `views/utilities/tap_display_settings.py` (partial) | Low | `TapDisplaySettings.swift` | Missing `showUnknownModes` and `compactPeakList` display flags |
-| 7 | `views/utilities/pdf_report_generator.py` (partial) | Medium | `PDFReportGenerator.swift` | Python generates basic text PDF; Swift embeds spectrum chart image |
-| 8 | Cursor snap-to-waveform | Low | `SpectrumView+SnapInterpolation.swift` | Logic exists in `fft_canvas.py` but is incomplete vs Swift |
-| 9 | Search/filter bar in measurements list | Low | `MeasurementsListView.swift` | Python `measurements_dialog.py` has no search field |
-| 10 | Gore thickness display in settings | Low | `TapSettingsView+Sections.swift` | Not rendered in Python settings sections |
+| 6 | `views/utilities/pdf_report_generator.py` (partial) | Medium | `PDFReportGenerator.swift` | Python generates basic text PDF; Swift embeds spectrum chart image |
+| 7 | Cursor snap-to-waveform | Low | `SpectrumView+SnapInterpolation.swift` | Logic exists in `fft_canvas.py` but is incomplete vs Swift |
 
 ---
 

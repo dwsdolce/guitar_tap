@@ -41,16 +41,15 @@ def tap_tone_ratio(m: TapToneMeasurement) -> float | None:
         return None
     try:
         gt = _resolve_guitar_type(m.guitar_type)
-        pairs = [(p.frequency, p.magnitude) for p in m.peaks]
-        idx_map = GM.GuitarMode.classify_all(pairs, gt)
+        id_map = GM.GuitarMode.classify_all(m.peaks, gt)
         air = next(
-            (m.peaks[i].frequency for i, mode in idx_map.items()
-             if mode.normalized == GM.GuitarMode.AIR),
+            (p.frequency for p in m.peaks
+             if id_map.get(p.id, GM.GuitarMode.UNKNOWN).normalized == GM.GuitarMode.AIR),
             None,
         )
         top = next(
-            (m.peaks[i].frequency for i, mode in idx_map.items()
-             if mode.normalized == GM.GuitarMode.TOP),
+            (p.frequency for p in m.peaks
+             if id_map.get(p.id, GM.GuitarMode.UNKNOWN).normalized == GM.GuitarMode.TOP),
             None,
         )
         if air and top and air > 0:

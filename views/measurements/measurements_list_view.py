@@ -34,6 +34,11 @@ class MeasurementsDialog(QtWidgets.QDialog):
     Saved measurements list dialog matching MeasurementsListView.swift (macOS).
 
     Emits measurementSelected(TapToneMeasurement) when a measurement is loaded.
+
+    The ``analyzer`` is the single source of truth for the measurement list,
+    mirroring the Swift sheet's access to the shared TapToneAnalyzer
+    @EnvironmentObject.  All mutations go through analyzer methods so that
+    ``savedMeasurementsChanged`` is emitted and any other observers are notified.
     """
 
     measurementSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(object)
@@ -46,12 +51,14 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self.resize(640, 480)
         self.setMinimumSize(520, 340)
 
-        self._measurements: list[TapToneMeasurement] = []
         self._compare_mode: bool = False
         self._compare_ids: set[str] = set()
 
         self._build_ui()
-        self._refresh()
+        self._rebuild_list()
+
+        # Stay in sync if another part of the UI mutates the list while open.
+        self._analyzer.savedMeasurementsChanged.connect(self._rebuild_list)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -118,9 +125,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
     # ── Data ─────────────────────────────────────────────────────────────────
 
-    def _refresh(self) -> None:
-        self._measurements = M.load_all_measurements()
-        self._rebuild_list()
+    @property
+    def _measurements(self) -> "list[TapToneMeasurement]":
+        """Live view of the analyzer's measurement list — the single source of truth."""
+        return self._analyzer.savedMeasurements
 
     def _rebuild_list(self) -> None:
         self._list.clear()
@@ -249,15 +257,16 @@ class MeasurementsDialog(QtWidgets.QDialog):
         """Open EditMeasurementView for the measurement at the given index.
 
         Mirrors Swift .sheet { EditMeasurementView(index:measurement:analyzer:) }.
-        After the dialog saves, refreshes the list to reflect the updated fields.
+        Delegates persistence to analyzer.update_measurement() so that
+        savedMeasurementsChanged is emitted and all observers are notified.
         """
-        dlg = EMV.EditMeasurementView(index, m, self._analyzer, self)
+        dlg = EMV.EditMeasurementView(index, m, self)
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self._refresh()
+            tap_location, notes = dlg.edited_values()
+            self._analyzer.update_measurement(index, tap_location, notes)
 
     def _load_from_detail(self, m: TapToneMeasurement) -> None:
         self.measurementSelected.emit(m)
-        self.accept()
 
     # ── Context menu ─────────────────────────────────────────────────────────
 
@@ -286,7 +295,6 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         if action == load_act:
             self.measurementSelected.emit(m)
-            self.accept()
         elif action == details_act:
             self._open_detail(m)
         elif action == edit_act:
@@ -310,8 +318,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Measurement",
-            os.path.join(os.path.expanduser("~"), "Documents", m.base_filename + ".json"),
-            "JSON files (*.json *.guitartap);;All files (*)",
+            os.path.join(os.path.expanduser("~"), "Documents", m.base_filename + ".guitartap"),
+            "GuitarTap files (*.guitartap);;JSON files (*.json);;All files (*)",
         )
         if not path:
             return
@@ -330,10 +338,19 @@ class MeasurementsDialog(QtWidgets.QDialog):
         )
         if not path:
             return
+        # Render spectrum image from the saved snapshot (mirrors Swift
+        # PDFReportGenerator.renderSpectrumImage(for:) called from ExportView).
+        png_path = M.render_spectrum_image_for_pdf(m)
         try:
-            M.export_pdf(m, None, path)
+            M.export_pdf(m, png_path, path)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
+        finally:
+            if png_path and os.path.exists(png_path):
+                try:
+                    os.remove(png_path)
+                except OSError:
+                    pass
 
     def _delete_measurement(self, m: TapToneMeasurement) -> None:
         name = m.tap_location or "Measurement"
@@ -350,10 +367,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
         # two entries with identical ids) only the intended entry is deleted.
         idx = next((i for i, x in enumerate(self._measurements) if x.id == m.id), None)
         if idx is not None:
-            self._measurements.pop(idx)
-        M.save_all_measurements(self._measurements)
+            self._analyzer.delete_measurement(idx)
         self._compare_ids.discard(m.id)
-        self._rebuild_list()
 
     def _on_delete_all(self) -> None:
         if not self._measurements:
@@ -370,10 +385,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
         box.exec()
         if box.clickedButton() != delete_btn:
             return
-        self._measurements = []
-        M.save_all_measurements([])
         self._compare_ids.clear()
-        self._rebuild_list()
+        self._analyzer.delete_all_measurements()
 
     def _on_import(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -394,9 +407,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         existing_ids = {m.id for m in self._measurements}
         new_items = [m for m in imported if m.id not in existing_ids]
-        self._measurements.extend(new_items)
-        M.save_all_measurements(self._measurements)
-        self._rebuild_list()
+        for item in new_items:
+            self._analyzer.save_measurement(item)
 
         skipped = len(imported) - len(new_items)
 

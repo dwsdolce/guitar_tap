@@ -150,6 +150,8 @@ class TapToneAnalyzer(
     tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
     # Emitted when comparison overlay data changes (True=entering, False=leaving).
     comparisonChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    # Emitted when savedMeasurements list changes (mirrors Swift @Published var savedMeasurements).
+    savedMeasurementsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     # Emitted when frequency range changes (fmin, fmax).
     freqRangeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)
     # Peak info for status bar: (peak_hz, peak_db).
@@ -223,6 +225,13 @@ class TapToneAnalyzer(
 
         # ── Measurement state ──────────────────────────────────────────────
         self.is_measurement_complete: bool = False
+
+        # Saved measurement list — mirrors Swift @Published var savedMeasurements: [TapToneMeasurement].
+        # Loaded once at startup and kept in sync; all mutations go through the
+        # mixin methods (save_measurement, update_measurement, delete_measurement,
+        # delete_all_measurements) which persist and emit savedMeasurementsChanged.
+        from views.tap_analysis_results_view import load_all_measurements as _load
+        self.savedMeasurements: list = _load()
 
         # ── Peak analysis state ────────────────────────────────────────────
         self.threshold: int = 60                          # 0-100 scale

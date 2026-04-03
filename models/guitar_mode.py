@@ -185,10 +185,17 @@ class GuitarMode(Enum):
     @classmethod
     def classify_all(
         cls,
-        peaks: list[tuple[float, float]],
+        peaks: list,
         guitar_type: GuitarType,
-    ) -> dict[int, GuitarMode]:
-        """Classify a set of peaks into guitar modes using a context-aware claiming algorithm.
+    ) -> dict:
+        """Classify a set of ResonantPeak objects into guitar modes using a context-aware claiming algorithm.
+
+        Mirrors Swift ``GuitarMode.classifyAll(_:guitarType:)`` exactly:
+        - Accepts objects with ``.id``, ``.frequency``, and ``.magnitude`` attributes
+          (i.e. ``ResonantPeak`` instances).
+        - Returns ``{peak.id: GuitarMode}`` keyed by the peak's UUID — the same key
+          type that Swift uses so call sites can look up a mode by peak ID directly
+          without any index-to-id translation layer.
 
         Unlike classify(), which maps each frequency independently, this method processes
         all peaks together so that overlapping mode ranges (e.g. the Top/Back overlap
@@ -207,17 +214,64 @@ class GuitarMode(Enum):
            lookup.  Peaks outside all mode ranges resolve to UNKNOWN.
 
         NOTE — Algorithm divergence from Swift:
-          Swift classifyAll uses only a Set of claimed UUIDs (step 2 above, no cursor or
-          2 Hz check).  The Python implementation adds a ``last_claimed_freq`` cursor and
-          a 2 Hz duplicate guard, making it slightly more restrictive in overlap zones.
+          Swift classifyAll uses only a Set of claimed UUIDs (no cursor or 2 Hz check).
+          The Python implementation adds a ``last_claimed_freq`` cursor and a 2 Hz
+          duplicate guard, making it slightly more restrictive in overlap zones.
           Both implementations agree on the common case.
 
         - Parameters:
-          - peaks: List of (frequency_hz, magnitude_db) tuples to classify.
+          - peaks: List of objects with ``.id``, ``.frequency``, and ``.magnitude``.
           - guitar_type: The guitar type whose mode-range bands are used.
-        - Returns: A dict mapping each peak's list index to its GuitarMode.
+        - Returns: A dict mapping each peak's ``.id`` to its GuitarMode.
+          Mirrors Swift ``[UUID: GuitarMode]``.
+        """
+        ordered_modes = sorted(
+            [cls.AIR, cls.TOP, cls.BACK, cls.DIPOLE, cls.RING_MODE, cls.UPPER_MODES],
+            key=lambda m: m.mode_range(guitar_type)[0],
+        )
+        result: dict = {}
+        claimed_ids: set = set()
+        last_claimed_freq: float = -1.0
+        claimed_freqs: list[float] = []
 
-        Mirrors Swift GuitarMode.classifyAll(_:guitarType:).
+        for mode in ordered_modes:
+            lo, hi = mode.mode_range(guitar_type)
+            candidates = [
+                (p.id, p.magnitude) for p in peaks
+                if lo <= p.frequency <= hi
+                and p.id not in claimed_ids
+                and p.frequency > last_claimed_freq
+            ]
+            if not candidates:
+                continue
+            best_id = max(candidates, key=lambda x: x[1])[0]
+            best_peak = next(p for p in peaks if p.id == best_id)
+            best_freq = best_peak.frequency
+            # Post-claim 2 Hz duplicate check
+            if any(abs(best_freq - f) < 2.0 for f in claimed_freqs):
+                continue
+            result[best_id] = mode
+            claimed_ids.add(best_id)
+            last_claimed_freq = best_freq
+            claimed_freqs.append(best_freq)
+
+        for peak in peaks:
+            if peak.id not in result:
+                result[peak.id] = cls.classify(peak.frequency, guitar_type)
+
+        return result
+
+    @classmethod
+    def _classify_all_tuples(
+        cls,
+        peaks: list[tuple[float, float]],
+        guitar_type: GuitarType,
+    ) -> dict[int, "GuitarMode"]:
+        """Classify (frequency, magnitude) tuples, returning {index: GuitarMode}.
+
+        Internal helper for call sites that have no peak UUIDs (e.g. live numpy data
+        in PeaksModel).  All code that works with ResonantPeak objects should use
+        classify_all() instead so that the return type matches Swift's [UUID: GuitarMode].
         """
         ordered_modes = sorted(
             [cls.AIR, cls.TOP, cls.BACK, cls.DIPOLE, cls.RING_MODE, cls.UPPER_MODES],
@@ -238,7 +292,6 @@ class GuitarMode(Enum):
                 continue
             best_i = max(candidates, key=lambda x: x[1])[0]
             best_freq = peaks[best_i][0]
-            # Post-claim 2 Hz duplicate check
             if any(abs(best_freq - f) < 2.0 for f in claimed_freqs):
                 continue
             result[best_i] = mode

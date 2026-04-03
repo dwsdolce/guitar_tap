@@ -16,6 +16,28 @@ class TapToneAnalyzerMeasurementManagementMixin:
     Mirrors Swift TapToneAnalyzer+MeasurementManagement.swift.
     """
 
+    # ── Persistence helper ────────────────────────────────────────────────────
+
+    def _persist_measurements(self) -> None:
+        """Write savedMeasurements to disk and emit savedMeasurementsChanged.
+
+        Python-only helper — Swift achieves the same effect via the
+        @Published property observer + explicit save(context:) call.
+        """
+        from views import tap_analysis_results_view as M
+        M.save_all_measurements(self.savedMeasurements)
+        self.savedMeasurementsChanged.emit()
+
+    # ── Mutation methods (mirror Swift TapToneAnalyzer+MeasurementManagement) ─
+
+    def save_measurement(self, measurement) -> None:
+        """Append a new measurement, persist to disk, and notify observers.
+
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(_:)``.
+        """
+        self.savedMeasurements.append(measurement)
+        self._persist_measurements()
+
     def update_measurement(
         self,
         at: int,
@@ -34,14 +56,31 @@ class TapToneAnalyzerMeasurementManagementMixin:
             tap_location: New location label, or ``None`` to clear it.
             notes:        New free-form notes, or ``None`` to clear them.
         """
-        from views import tap_analysis_results_view as M
         if not (0 <= at < len(self.savedMeasurements)):
             return
         self.savedMeasurements[at] = self.savedMeasurements[at].with_(
             tap_location=tap_location,
             notes=notes,
         )
-        M.save_all_measurements(self.savedMeasurements)
+        self._persist_measurements()
+
+    def delete_measurement(self, at: int) -> None:
+        """Delete the measurement at the given index, persist, and notify.
+
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.deleteMeasurement(at:)``.
+        """
+        if not (0 <= at < len(self.savedMeasurements)):
+            return
+        self.savedMeasurements.pop(at)
+        self._persist_measurements()
+
+    def delete_all_measurements(self) -> None:
+        """Clear all saved measurements, persist, and notify.
+
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.deleteAllMeasurements()``.
+        """
+        self.savedMeasurements.clear()
+        self._persist_measurements()
 
     def set_measurement_complete(self, is_complete: bool) -> None:
         """Freeze/unfreeze the spectrum and reset related state."""

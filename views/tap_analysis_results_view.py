@@ -35,7 +35,11 @@ __all__ = [
     "import_measurements_from_json",
     "export_pdf",
     "measurements_file",
+    "render_spectrum_image_for_pdf",
 ]
+
+# Image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
+from views.exportable_spectrum_chart import make_exportable_spectrum_view  # noqa: E402
 
 
 # ── Persistence paths ─────────────────────────────────────────────────────────
@@ -48,6 +52,93 @@ _OLD_DIR = os.path.join(_DATA_DIR, "measurements")
 def measurements_file() -> str:
     os.makedirs(_DATA_DIR, exist_ok=True)
     return _MEASUREMENTS_FILE
+
+
+# ── Spectrum image rendering ───────────────────────────────────────────────────
+
+def render_spectrum_image_for_pdf(m: TapToneMeasurement) -> str | None:
+    """Render the composite spectrum PNG for a measurement and return the temp file path.
+
+    Mirrors ``PDFReportGenerator.renderSpectrumImage(for:)`` in PDFReportGenerator.swift,
+    which calls ``makeExportableSpectrumView(...)`` directly to produce the PNG.
+
+    Returns the path to a temporary PNG file, or None if the measurement has no
+    spectrum snapshot.  The caller is responsible for deleting the temp file.
+    """
+    import tempfile
+
+    primary_snapshot = m.spectrum_snapshot or m.longitudinal_snapshot
+    if primary_snapshot is None:
+        return None
+
+    snap = primary_snapshot
+
+    # Build material spectra list — mirrors Swift's materialSpectra construction.
+    material_spectra = []
+    if m.longitudinal_snapshot:
+        ls = m.longitudinal_snapshot
+        material_spectra.append({
+            "frequencies": ls.frequencies,
+            "magnitudes": ls.magnitudes,
+            "color": "blue",
+            "label": "Longitudinal",
+        })
+    if m.cross_snapshot:
+        cs = m.cross_snapshot
+        material_spectra.append({
+            "frequencies": cs.frequencies,
+            "magnitudes": cs.magnitudes,
+            "color": "orange",
+            "label": "Cross-grain",
+        })
+    if m.flc_snapshot:
+        fs = m.flc_snapshot
+        material_spectra.append({
+            "frequencies": fs.frequencies,
+            "magnitudes": fs.magnitudes,
+            "color": "purple",
+            "label": "FLC",
+        })
+
+    # Mirror TapToneAnalyzer.visiblePeaks: filter by annotationVisibilityMode and selectedPeakIDs.
+    all_peaks = m.peaks or []
+    visibility_mode = (m.annotation_visibility_mode or "all").lower()
+    selected_ids = set(m.selected_peak_ids or [p.id for p in all_peaks])
+    if visibility_mode == "selected":
+        visible_peaks = [p for p in all_peaks if p.id in selected_ids]
+    elif visibility_mode == "none":
+        visible_peaks = []
+    else:
+        visible_peaks = all_peaks
+
+    measurement_type_str = snap.measurement_type or None
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.close()
+
+    # Mirrors Swift: makeExportableSpectrumView called directly from renderSpectrumImage(for:).
+    make_exportable_spectrum_view(
+        frequencies=list(snap.frequencies),
+        magnitudes=list(snap.magnitudes),
+        min_freq=float(snap.min_freq),
+        max_freq=float(snap.max_freq),
+        min_db=float(snap.min_db),
+        max_db=float(snap.max_db),
+        peaks=visible_peaks,
+        annotation_offsets=m.annotation_offsets or {},
+        show_unknown_modes=snap.show_unknown_modes,
+        measurement_type_str=measurement_type_str,
+        selected_longitudinal_peak_id=m.selected_longitudinal_peak_id,
+        selected_cross_peak_id=m.selected_cross_peak_id,
+        selected_flc_peak_id=m.selected_flc_peak_id,
+        mode_overrides=m.peak_mode_overrides or {},
+        material_spectra=material_spectra if material_spectra else None,
+        date_label=str(m.timestamp) if m.timestamp else "",
+        chart_title=f"FFT Peaks — {m.tap_location or 'New'}",
+        guitar_type_str=snap.guitar_type,
+        output_path=tmp.name,
+    )
+    return tmp.name
 
 
 # ── Persistence API ───────────────────────────────────────────────────────────
@@ -88,15 +179,73 @@ def save_all_measurements(measurements: list[TapToneMeasurement]) -> None:
         data = [m.to_dict() for m in measurements]
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
         os.replace(tmp, path)
     except OSError as exc:
         print(f"Failed to save measurements: {exc}")
 
 
 def export_measurement_json(m: TapToneMeasurement) -> str:
-    """Return pretty-printed JSON for a single measurement."""
-    return json.dumps(m.to_dict(), indent=2, ensure_ascii=False)
+    """Return pretty-printed JSON for a single measurement.
+
+    Mirrors Swift TapToneMeasurement.encode(to:) by injecting a resolved
+    ``modeLabel`` into each peak entry.  For guitar measurements the label is
+    determined by GuitarMode.classify_all (with any user override applied);
+    for plate/brace it is the role name (Longitudinal, Cross-grain, FLC, Peak).
+    """
+    d = m.to_dict()
+
+    # Resolve measurement type and guitar type from the snapshot — mirrors Swift:
+    #   let resolvedMeasurementType = spectrumSnapshot?.measurementType
+    #                               ?? longitudinalSnapshot?.measurementType
+    snap = m.spectrum_snapshot or m.longitudinal_snapshot
+    resolved_mt = (snap.measurement_type if snap else None) or m.measurement_type
+    resolved_gt = (snap.guitar_type if snap else None) or m.guitar_type
+
+    is_guitar = True
+    if resolved_mt:
+        try:
+            from models import measurement_type as _mt_mod
+            mt_obj = _mt_mod.MeasurementType(resolved_mt)
+            is_guitar = mt_obj.is_guitar
+        except Exception:
+            pass
+
+    # Build the mode-label map for peaks — mirrors Swift PeakExportCodingKeys loop.
+    if is_guitar and m.peaks:
+        try:
+            from models.guitar_mode import GuitarMode
+            from models.guitar_type import GuitarType
+            gt_enum = GuitarType(resolved_gt) if resolved_gt else GuitarType.CLASSICAL
+            mode_map = GuitarMode.classify_all(m.peaks, gt_enum)
+        except Exception:
+            mode_map = {}
+
+        overrides = m.peak_mode_overrides or {}
+        for i, peak_d in enumerate(d["peaks"]):
+            peak = m.peaks[i]
+            override = overrides.get(peak.id)
+            if override:
+                label = override
+            else:
+                mode = mode_map.get(peak.id)
+                label = mode.display_name if mode else "Unknown"
+            peak_d["modeLabel"] = label
+    else:
+        # Plate / brace: label by which selected-peak-id matches.
+        for i, peak_d in enumerate(d["peaks"]):
+            peak = m.peaks[i]
+            if peak.id == m.selected_longitudinal_peak_id:
+                label = "Longitudinal"
+            elif peak.id == m.selected_cross_peak_id:
+                label = "Cross-grain"
+            elif peak.id == m.selected_flc_peak_id:
+                label = "FLC"
+            else:
+                label = "Peak"
+            peak_d["modeLabel"] = label
+
+    return json.dumps(d, indent=2, ensure_ascii=False, sort_keys=True)
 
 
 def import_measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]:
