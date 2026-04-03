@@ -2719,22 +2719,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 elif label == "FLC":
                     selected_flc_peak_id = peak_id
 
-        # Annotation offsets — store as [hzOffset, dbOffset] deltas (Swift convention).
-        # hzOffset = label_hz - peak_hz; dbOffset positive = downward in screen = lower dB.
-        # Default label center in data space = (peak_freq, peak_mag + 14.0).
-        _LABEL_OFFSET_DB = 14.0
-        freq_to_peak = {p.frequency: p for p in peaks}
-        freq_to_id   = {p.frequency: p.id for p in peaks}
+        # Annotation positions — store as absolute data-space [absFreqHz, absDB].
+        # xytext from the live canvas is already the absolute (freq, dB) label-center position.
+        # Mirrors Swift peakAnnotationOffsets: [UUID: CGPoint] where x=absFreqHz, y=absDB.
+        freq_to_id = {p.frequency: p.id for p in peaks}
         annotation_offsets: dict[str, list[float]] = {}
         for ann_dict in canvas.annotations.annotations:
             ann_freq = ann_dict.get("freq")
             xytext   = ann_dict.get("xytext")
             if ann_freq is not None and xytext and ann_freq in freq_to_id:
-                peak = freq_to_peak[ann_freq]
-                hz_offset = float(xytext[0]) - peak.frequency
-                # dbOffset positive = downward = lower dB; xytext[1] is absolute dB of label center
-                db_offset = (peak.magnitude + _LABEL_OFFSET_DB) - float(xytext[1])
-                annotation_offsets[freq_to_id[ann_freq]] = [hz_offset, db_offset]
+                annotation_offsets[freq_to_id[ann_freq]] = [float(xytext[0]), float(xytext[1])]
 
         # Spectrum snapshot — guitar uses spectrumSnapshot; plate/brace use phase snapshots
         spectrum_snapshot: SpectrumSnapshot | None = None
@@ -2753,6 +2747,11 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception:
                 _snap_min_db = float(self.threshold_slider.value())
                 _snap_max_db = float(np.max(canvas.saved_mag_y_db)) + 10.0
+            # Axis range: always use the visible chart range (spinner values and
+            # ViewBox Y range), not application preference defaults.  This mirrors
+            # the Swift fix where saveMeasurement() receives the view's @State
+            # minFreq/maxFreq/minDB/maxDB rather than TapDisplaySettings defaults,
+            # ensuring that a saved measurement re-imports with an identical display.
             _snap_base = dict(
                 frequencies=freqs,
                 magnitudes=mags,
@@ -3181,7 +3180,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tap_num_spin.setValue(m.number_of_taps)
 
         # Restore annotations
+        # Also populate analyzer.peak_annotation_offsets from the measurement's saved offsets
+        # so that the export path can always read from a single live source — mirrors Swift
+        # loadMeasurement() which calls peakAnnotationOffsets = measurement.peakAnnotationOffsets.
         canvas.annotations.clear_annotations()
+        canvas.analyzer.peak_annotation_offsets.clear()
         ann_offsets = m.annotation_offsets or {}
         for p in m.peaks:
             freq = p.frequency
@@ -3195,12 +3198,15 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 # Plate/brace: use the material mode label set above; never fall back to guitar classifier
                 mode_str = peak_model.modes.get(freq, "Peak")
-            # ann_offsets stores [hzOffset, dbOffset] in Swift convention.
-            # hzOffset: Hz delta from peak; dbOffset positive = downward = lower dB.
-            # Convert to absolute label center: (freq + hzOffset, mag + 14.0 - dbOffset).
-            _ann_offset = ann_offsets.get(p.id) or ann_offsets.get(p.id.upper())
+            # ann_offsets stores [absFreqHz, absDB] — absolute data-space label-center position.
+            # Mirrors Swift peakAnnotationOffsets where CGPoint(x: absFreqHz, y: absDB).
+            # No conversion needed: use directly as xytext and populate peak_annotation_offsets.
+            _ann_offset = ann_offsets.get(p.id) or ann_offsets.get(p.id.upper() if p.id else "")
             if _ann_offset:
-                xytext = (freq + _ann_offset[0], mag + 14.0 - _ann_offset[1])
+                xytext = (float(_ann_offset[0]), float(_ann_offset[1]))
+                # Mirror Swift: populate analyzer.peak_annotation_offsets so the export
+                # and any subsequent pan/zoom rebuild can always read from this single source.
+                canvas.analyzer.peak_annotation_offsets[freq] = xytext
             else:
                 xytext = (freq, mag + 14.0)
             html = peak_model.annotation_html(freq, mag, mode_str)
@@ -3377,7 +3383,7 @@ class MainWindow(QtWidgets.QMainWindow):
             _sel_cross_id = None
             _sel_flc_id = None
             _mode_overrides: dict = {}
-            _annotation_offsets: dict = {}
+            _annotation_positions: dict = {}
             try:
                 # Prefer the stored ResonantPeak objects (have full pitch data).
                 # Apply annotationVisibilityMode / selectedPeakIDs filtering
@@ -3399,7 +3405,21 @@ class MainWindow(QtWidgets.QMainWindow):
                     _sel_cross_id = m_exp.selected_cross_peak_id
                     _sel_flc_id = m_exp.selected_flc_peak_id
                     _mode_overrides = m_exp.peak_mode_overrides or {}
-                    _annotation_offsets = m_exp.annotation_offsets or {}
+                    # Always read annotation positions from the live analyzer state —
+                    # mirrors Swift createExportableSpectrumView() which always passes
+                    # tap.peakAnnotationOffsets (populated by loadMeasurement or by dragging).
+                    # _restore_measurement populates peak_annotation_offsets from the
+                    # measurement's saved offsets, so this is the single source of truth.
+                    # Pass as absolute data-space positions (annotation_positions) so the
+                    # export renderer can place cards precisely without a baseline-mismatch
+                    # between the live canvas default (14 dB above peak) and the export
+                    # chart default (ANNOT_OFFS_Y px above peak).
+                    _freq_to_id = {p.frequency: p.id for p in all_peaks}
+                    _annotation_positions: dict = {}
+                    for _freq, (_lx, _ly) in canvas.analyzer.peak_annotation_offsets.items():
+                        _pid = _freq_to_id.get(_freq)
+                        if _pid:
+                            _annotation_positions[_pid] = [float(_lx), float(_ly)]
                 elif self._loaded_resonant_peaks:
                     peaks_list = list(self._loaded_resonant_peaks)
                 else:
@@ -3471,7 +3491,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 min_db=export_min_db,
                 max_db=export_max_db,
                 peaks=peaks_list,
-                annotation_offsets=_annotation_offsets,
+                annotation_positions=_annotation_positions,
                 measurement_type_str=mt.value if not is_guitar else None,
                 selected_longitudinal_peak_id=_sel_long_id,
                 selected_cross_peak_id=_sel_cross_id,
@@ -4782,9 +4802,11 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_f_min(self.min_spin.value(), mt_val)
             AS.AppSettings.set_f_max(self.max_spin.value(), mt_val)
 
-            # Display magnitude range
+            # Display magnitude range — persist and immediately apply to canvas,
+            # mirroring Swift's @State minDB/maxDB binding which updates SpectrumView reactively.
             AS.AppSettings.set_db_min(db_min_spin.value())
             AS.AppSettings.set_db_max(db_max_spin.value())
+            self.fft_canvas.setYRange(db_min_spin.value(), db_max_spin.value(), padding=0)
 
             # Analysis frequency range
             AS.AppSettings.set_analysis_f_min(an_f_min_spin.value())

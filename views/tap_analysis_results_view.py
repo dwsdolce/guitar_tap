@@ -136,7 +136,7 @@ def render_spectrum_image_for_pdf(m: TapToneMeasurement) -> str | None:
         min_db=float(snap.min_db),
         max_db=float(snap.max_db),
         peaks=visible_peaks,
-        annotation_offsets=m.annotation_offsets or {},
+        annotation_positions=m.annotation_offsets or {},
         show_unknown_modes=snap.show_unknown_modes,
         measurement_type_str=measurement_type_str,
         selected_longitudinal_peak_id=m.selected_longitudinal_peak_id,

@@ -95,7 +95,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # self.freq with its saved frequency array (different length from the live FFT).
             import numpy as np
             x_axis = np.arange(0, self.fft_data.h_n_f + 1)
-            self.freq = x_axis * self.fft_data.sample_freq // self.fft_data.n_f
+            self.freq = x_axis * self.fft_data.sample_freq / self.fft_data.n_f
             # Clear comparison overlay — uses clear_comparison() so comparisonChanged(False)
             # is emitted when needed, allowing the UI to hide the comparison status bar.
             self.clear_comparison()

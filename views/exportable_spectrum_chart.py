@@ -20,7 +20,7 @@ recognizers.
 1. **Spectrum line** — primary (red) or per-phase colored series
 2. **Mode boundaries** — dashed vertical InfiniteLine items in mode colors
 3. **Peak annotations** — cards + dashed connection lines drawn with QPainter,
-   positions offset by annotation_offsets (replacing ConnectionLineShape)
+   positions from annotation_positions in absolute data-space (replacing ConnectionLineShape)
 
 ## Peak Coloring
 
@@ -98,11 +98,10 @@ class ExportableSpectrumChart:
         is_logarithmic: bool = False,           # When True, the frequency axis uses a logarithmic scale.
         peaks: list | None = None,              # Peaks to annotate. Pass None to suppress all peak annotations.
         show_mode_boundaries: bool = True,      # Whether to draw guitar mode boundary lines.
-        # Mirrors Swift annotationOffsets: [UUID: CGPoint] where x=Hz delta, y=dB delta (data-space).
-        # Swift DraggablePeakAnnotation.onEnded converts total pixels back to data-space on commit;
-        # DraggablePeakAnnotation.finalPosition and ExportableSpectrumChart.chartOverlay both
-        # convert back to pixels at render time via (delta/range)*plotSize — same as render() below.
-        annotation_offsets: dict | None = None, # Per-peak label drag offsets ({uuid: [hz_delta, db_delta]}).
+        # Absolute label-center positions in data-space ({uuid: [abs_freq_hz, abs_db]}).
+        # Mirrors Swift annotationOffsets: [UUID: CGPoint] where x=absFreqHz, y=absDB.
+        # When absent for a peak, the default (ANNOT_OFFS_Y px above peak) is used.
+        annotation_positions: dict | None = None,
         show_unknown_modes: bool | None = None, # Override for TapDisplaySettings.showUnknownModes. None = use default.
         measurement_type_str: str | None = None,              # Measurement type string: controls colour coding and boundary visibility.
         selected_longitudinal_peak_id: str | None = None,     # ID of the peak selected as the longitudinal (L) mode.
@@ -123,7 +122,7 @@ class ExportableSpectrumChart:
         self.is_logarithmic = is_logarithmic
         self.peaks = peaks or []
         self.show_mode_boundaries = show_mode_boundaries
-        self.annotation_offsets = annotation_offsets or {}
+        self.annotation_positions = annotation_positions or {}
         self.show_unknown_modes = show_unknown_modes
         self.measurement_type_str = measurement_type_str
         self.selected_longitudinal_peak_id = selected_longitudinal_peak_id
@@ -282,6 +281,37 @@ class ExportableSpectrumChart:
             (f, m) for f, m in zip(frequencies, magnitudes)
             if self.min_freq <= f <= self.max_freq
         ]
+
+    def annotation_position(
+        self,
+        peak,
+        peak_position: tuple[float, float],
+        freq_to_x,
+        db_to_y,
+        default_offset_y: int,
+    ) -> tuple[float, float]:
+        """Compute annotation center in pixel-space for *peak*.
+
+        Mirrors ``private func annotationPosition(for:peakPosition:frame:)``
+        in ExportableSpectrumChart.swift.
+
+        Returns the pixel coordinate for the annotation card center.
+        When ``annotation_positions`` has no entry for the peak, the default
+        position (``default_offset_y`` px above the peak marker) is returned.
+
+        Args:
+            peak:             ResonantPeak whose position is being resolved.
+            peak_position:    (px, py) pixel coords of the peak dot.
+            freq_to_x:        Callable mapping a frequency (Hz) to a pixel x.
+            db_to_y:          Callable mapping a magnitude (dB) to a pixel y.
+            default_offset_y: Pixels above the peak dot for the default position.
+        """
+        peak_id = getattr(peak, "id", None)
+        abs_pos = self.annotation_positions.get(peak_id)
+        if abs_pos is not None:
+            return (freq_to_x(float(abs_pos[0])), db_to_y(float(abs_pos[1])))
+        px, py = peak_position
+        return (px, py - default_offset_y)
 
     def render(self) -> "QImage":
         """Mirrors ``var body: some View`` — renders the chart to a QImage.
@@ -535,19 +565,14 @@ class ExportableSpectrumChart:
 
             ANNOT_H = ANNOT_H_PITCH if has_pitch else ANNOT_H_NOPITCH
 
-            # Apply annotation offset — mirrors Swift:
-            #   let offset = annotationOffsets[peak.id] ?? .zero
-            #   let annotationX = peakPosition.x + offset.x
-            #   let annotationY = peakPosition.y - 70 + offset.y
-            # Offsets are stored in data-space ([hz_delta, db_delta]); convert to pixels.
-            raw_offset = self.annotation_offsets.get(getattr(peak, "id", None)) or [0.0, 0.0]
-            freq_range = max(self.max_freq - self.min_freq, 1e-6)
-            db_range   = max(self.max_db   - self.min_db,   1e-6)
-            offset_px_x = int((raw_offset[0] / freq_range) * PLOT_W)
-            offset_px_y = int((raw_offset[1] / db_range)   * PLOT_H)
-
-            card_x = (px + offset_px_x) - ANNOT_W // 2
-            card_y = (py - ANNOT_OFFS_Y - ANNOT_H) + offset_px_y
+            # Position the annotation card — mirrors annotationPosition(for:peakPosition:frame:).
+            # default_offset_y places the card center at ANNOT_OFFS_Y + ANNOT_H//2 above the peak,
+            # which is equivalent to the card top edge being ANNOT_OFFS_Y + ANNOT_H above the peak.
+            ann_cx, ann_cy = self.annotation_position(
+                peak, (px, py), _freq_to_x, _db_to_y, ANNOT_OFFS_Y + ANNOT_H // 2
+            )
+            card_x = int(ann_cx) - ANNOT_W // 2
+            card_y = int(ann_cy) - ANNOT_H // 2
             # Clamp inside plot area — mirrors Swift .position(x: annotationX, y: annotationY)
             card_x = max(AXIS_LEFT, min(card_x, CHART_W - AXIS_RIGHT - ANNOT_W))
             card_y = max(AXIS_TOP,  min(card_y, CHART_H - AXIS_BOTTOM - ANNOT_H))
@@ -626,7 +651,7 @@ def make_exportable_spectrum_view(
     min_db: float,
     max_db: float,
     peaks: list,
-    annotation_offsets: dict | None = None,
+    annotation_positions: dict | None = None,
     show_unknown_modes: bool | None = None,
     measurement_type_str: str | None = None,
     selected_longitudinal_peak_id: str | None = None,
@@ -665,7 +690,7 @@ def make_exportable_spectrum_view(
     :param min_db: Minimum displayed magnitude (dBFS).
     :param max_db: Maximum displayed magnitude (dBFS).
     :param peaks: Detected resonant peaks to annotate.
-    :param annotation_offsets: Per-peak label drag offsets, keyed by peak id.
+    :param annotation_positions: Per-peak absolute label-center positions in data-space ({uuid: [abs_freq_hz, abs_db]}), keyed by peak id.
     :param show_unknown_modes: Whether to show peaks classified as unknown guitar modes.
     :param measurement_type_str: Guitar, plate, or brace — controls colour coding and boundary visibility.
     :param selected_longitudinal_peak_id: ID of the selected longitudinal (L) peak (plate/brace).
@@ -721,7 +746,7 @@ def make_exportable_spectrum_view(
         max_db=max_db,
         peaks=peaks,
         show_mode_boundaries=True,
-        annotation_offsets=annotation_offsets,
+        annotation_positions=annotation_positions,
         show_unknown_modes=show_unknown_modes,
         measurement_type_str=measurement_type_str,
         selected_longitudinal_peak_id=selected_longitudinal_peak_id,

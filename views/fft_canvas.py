@@ -179,7 +179,10 @@ class FftCanvas(pg.PlotWidget):
         self.setLabel("left", "FFT Magnitude (dB)")
         self.setLabel("bottom", "Frequency (Hz)")
         self.setTitle("FFT Peaks", color="#333333")
-        self.setYRange(-100, 0, padding=0)
+        # Restore persisted dB range — mirrors Swift's @State minDB/maxDB initialized
+        # from TapDisplaySettings.minMagnitude / TapDisplaySettings.maxMagnitude.
+        import views.utilities.tap_settings_view as _as_init
+        self.setYRange(_as_init.AppSettings.db_min(), _as_init.AppSettings.db_max(), padding=0)
 
         # Enable and configure top axis for note labels
         plot_item = self.getPlotItem()
@@ -549,6 +552,21 @@ class FftCanvas(pg.PlotWidget):
     @freq.setter
     def freq(self, value) -> None:
         self.analyzer.freq = value
+
+    @property
+    def display_spectrum(self) -> tuple:
+        """Return (freqs, mag_db) as a matched pair from a single atomic read.
+
+        Mirrors Swift ``displaySpectrum`` in TapToneAnalysisView+SpectrumViews.swift.
+        Reading ``is_measurement_complete`` once here ensures both arrays always
+        come from the same source (frozen or live) and therefore always have
+        matching lengths.  Callers that read the flag separately for freq and
+        mag_db risk receiving mismatched arrays when the flag changes between
+        the two reads.
+        """
+        if self.analyzer.is_measurement_complete:
+            return (self.analyzer.freq, self.analyzer.saved_mag_y_db)
+        return (self.analyzer.freq, None)
 
     @property
     def _loaded_measurement_peaks(self):
@@ -1018,27 +1036,67 @@ class FftCanvas(pg.PlotWidget):
         menu.exec(event.globalPos())
         event.accept()
 
+    # ── Axis Reset Helpers ────────────────────────────────────────────────────
+    #
+    # Each helper computes the target axis values then delivers them via
+    # _apply_axis_range so all four bounds are applied in one call.
+    # Mirrors Swift SpectrumView+GestureHandlers.swift resetBothAxesToDefaults
+    # et al., which call onAxisRangeReset(minFreq, maxFreq, minDB, maxDB).
+
+    def _apply_axis_range(
+        self, fmin: float, fmax: float, db_min: float, db_max: float
+    ) -> None:
+        """Apply all four axis bounds atomically.
+
+        Mirrors Swift ``TapToneAnalysisView.applyAxisRange(minFreq:maxFreq:minDB:maxDB:)``.
+        All reset helpers delegate here so there is a single application point,
+        matching the Swift pattern where ``onAxisRangeReset`` is the sole path
+        through which axis resets reach the chart.
+        """
+        self.update_axis(fmin, fmax)
+        self.setYRange(db_min, db_max, padding=0)
+
     def _reset_freq_to_saved(self) -> None:
         mt = self.analyzer._measurement_type
-        self.update_axis(_as.AppSettings.f_min(mt), _as.AppSettings.f_max(mt))
+        _, (db_min, db_max) = self.getPlotItem().vb.viewRange()
+        self._apply_axis_range(
+            _as.AppSettings.f_min(mt), _as.AppSettings.f_max(mt), db_min, db_max,
+        )
 
     def _reset_mag_to_saved(self) -> None:
-        self.setYRange(_as.AppSettings.db_min(), _as.AppSettings.db_max(), padding=0)
+        (fmin, fmax), _ = self.getPlotItem().vb.viewRange()
+        self._apply_axis_range(
+            fmin, fmax, _as.AppSettings.db_min(), _as.AppSettings.db_max(),
+        )
 
     def _reset_both_to_saved(self) -> None:
-        self._reset_freq_to_saved()
-        self._reset_mag_to_saved()
+        mt = self.analyzer._measurement_type
+        self._apply_axis_range(
+            _as.AppSettings.f_min(mt), _as.AppSettings.f_max(mt),
+            _as.AppSettings.db_min(), _as.AppSettings.db_max(),
+        )
 
     def _reset_freq_to_defaults(self) -> None:
         mt = self.analyzer._measurement_type
-        self.update_axis(_as.AppSettings.default_f_min(mt), _as.AppSettings.default_f_max(mt))
+        _, (db_min, db_max) = self.getPlotItem().vb.viewRange()
+        self._apply_axis_range(
+            _as.AppSettings.default_f_min(mt), _as.AppSettings.default_f_max(mt),
+            db_min, db_max,
+        )
 
     def _reset_mag_to_defaults(self) -> None:
-        self.setYRange(_as.AppSettings.default_db_min(), _as.AppSettings.default_db_max(), padding=0)
+        (fmin, fmax), _ = self.getPlotItem().vb.viewRange()
+        self._apply_axis_range(
+            fmin, fmax,
+            _as.AppSettings.default_db_min(), _as.AppSettings.default_db_max(),
+        )
 
     def _reset_both_to_defaults(self) -> None:
-        self._reset_freq_to_defaults()
-        self._reset_mag_to_defaults()
+        mt = self.analyzer._measurement_type
+        self._apply_axis_range(
+            _as.AppSettings.default_f_min(mt), _as.AppSettings.default_f_max(mt),
+            _as.AppSettings.default_db_min(), _as.AppSettings.default_db_max(),
+        )
 
     def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
         """Update the x-axis frequency range"""
@@ -1365,15 +1423,23 @@ class FftCanvas(pg.PlotWidget):
             self._current_peaks = np.zeros((0, 3))
             self.points.setData(x=[], y=[])
 
-    def set_draw_data(self, mag_db) -> None:
+    def set_draw_data(self, mag_db, freqs=None) -> None:
         """Update the spectrum line and auto-scale the Y axis if enabled.
 
         The scatter plot is driven separately via _on_peaks_changed_scatter,
-        which is connected to analyzer.peaksChanged.  Callers only need to
-        provide the magnitude data; peaks are handled automatically.
+        which is connected to analyzer.peaksChanged.
+
+        Args:
+            mag_db: Magnitude data (dB) to render.
+            freqs:  Frequency axis array matched to *mag_db*.  When supplied,
+                    ``freqs`` and ``mag_db`` are guaranteed to come from the
+                    same atomic snapshot (frozen or live), preventing mismatched
+                    array lengths during mode transitions.  Falls back to
+                    ``self.freq`` for legacy callers.
         """
+        freq_axis = freqs if freqs is not None else self.freq
         if np.any(mag_db):
-            self.fft_line.setData(self.freq, mag_db)
+            self.fft_line.setData(freq_axis, mag_db)
         if self.analyzer._auto_scale_db and np.any(mag_db):
             valid = mag_db[(mag_db > -100) & (mag_db < 20)]
             if valid.size:
@@ -1435,8 +1501,13 @@ class FftCanvas(pg.PlotWidget):
         Connected to TapToneAnalyzer.spectrumUpdated.  Updates the spectrum
         line only; the scatter plot is driven by _on_peaks_changed_scatter
         via the peaksChanged signal.
+
+        ``freqs`` and ``mag_y_db`` are always emitted together as a matched
+        pair (see TapToneAnalyzer.spectrumUpdated emit sites), so passing
+        ``freqs`` through to set_draw_data ensures the two arrays are always
+        consistent — mirroring the Swift displaySpectrum atomic-read pattern.
         """
-        self.set_draw_data(mag_y_db)
+        self.set_draw_data(mag_y_db, freqs=freqs)
 
     def _on_averages_changed(self, _count: int) -> None:
         """Clear annotations when a new averaged sample is accepted.
@@ -1451,6 +1522,10 @@ class FftCanvas(pg.PlotWidget):
         # Update the spectrum line with the averaged result.
         # The scatter plot is updated automatically via peaksChanged →
         # _on_peaks_changed_scatter, which fires during tap capture.
+        # Use display_spectrum to read freq and mag_db atomically — mirrors
+        # the Swift displaySpectrum pattern so both arrays always match.
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
-            self.set_draw_data(self.saved_mag_y_db)
+            freqs, mag_db = self.display_spectrum
+            if mag_db is not None:
+                self.set_draw_data(mag_db, freqs=freqs)
         self.tapDetected.emit()

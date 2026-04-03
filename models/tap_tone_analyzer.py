@@ -214,7 +214,7 @@ class TapToneAnalyzer(
         self.fft_data = fft_params
         import numpy as np
         x_axis = np.arange(0, fft_params.h_n_f + 1)
-        self.freq = x_axis * fft_params.sample_freq // fft_params.n_f
+        self.freq = x_axis * fft_params.sample_freq / fft_params.n_f
 
         # ── Calibration ────────────────────────────────────────────────────
         self._calibration_corrections = calibration_corrections

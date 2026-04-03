@@ -52,8 +52,8 @@ class TapToneMeasurement:
 
     NOTE — Python vs Swift structural differences:
       - ``id`` and ``timestamp`` are stored as strings in Python; Swift uses UUID and Date.
-      - ``annotation_offsets`` is stored as ``{uuid: [hzOffset, dbOffset]}`` in Python;
-        Swift uses ``[UUID: CGPoint]`` (decoded from named hzOffset/dbOffset fields).
+      - ``annotation_offsets`` is stored as ``{uuid: [absFreqHz, absDB]}`` in Python;
+        Swift uses ``[UUID: CGPoint]`` (x=absFreqHz, y=absDB, decoded from named absFreqHz/absDB fields).
       - ``peak_mode_overrides`` is stored as ``{uuid: str}`` in Python;
         Swift uses ``[UUID: UserAssignedMode]``.
       - ``annotation_visibility_mode`` is stored as a raw string in Python;
@@ -109,8 +109,9 @@ class TapToneMeasurement:
 
     # MARK: - Annotation State
 
-    # Custom data-space offsets for draggable peak annotation labels, keyed by peak UUID string.
-    # Each value is [hzOffset, dbOffset] — equivalent to Swift's CGPoint(x: hzOffset, y: dbOffset).
+    # Absolute data-space positions for draggable peak annotation labels, keyed by peak UUID string.
+    # Each value is [absFreqHz, absDB] — the label-center position in data-space coordinates.
+    # Equivalent to Swift's CGPoint(x: absFreqHz, y: absDB) stored in peakAnnotationOffsets.
     # Allows the user's manual label layout to survive a save/load cycle.
     # Mirrors Swift TapToneMeasurement.peakAnnotationOffsets ([UUID: CGPoint]).
     annotation_offsets: dict[str, list[float]] | None = None
@@ -325,11 +326,12 @@ class TapToneMeasurement:
         # Always written — mirrors Swift encodeIfPresent(namedOffsets, forKey: .peakAnnotationOffsets).
         # Swift encodes [UUID: PeakAnnotationOffset] as a flat array of alternating UUID-string /
         # offset-object pairs (because UUID is not a JSON string key).  Empty dict → empty array [].
+        # Values are absolute data-space label-center positions: absFreqHz, absDB.
         if self.annotation_offsets:
             offsets_array = []
             for k, v in self.annotation_offsets.items():
                 offsets_array.append(k)
-                offsets_array.append({"dbOffset": v[1], "hzOffset": v[0]})
+                offsets_array.append({"absFreqHz": v[0], "absDB": v[1]})
             d["peakAnnotationOffsets"] = offsets_array
         else:
             d["peakAnnotationOffsets"] = []
@@ -405,11 +407,10 @@ class TapToneMeasurement:
         cross_snap = SpectrumSnapshot.from_dict(cross_d) if cross_d else None
         flc_snap   = SpectrumSnapshot.from_dict(flc_d)   if flc_d   else None
 
-        # Annotation offsets — two formats accepted:
-        #   Array (Swift/new Python): [uuid_str, {"hzOffset": x, "dbOffset": y}, ...]
-        #   Dict  (legacy Python):   {uuid_str: {"hzOffset": x, "dbOffset": y}, ...}
-        # hzOffset: Hz delta from peak frequency (positive = right)
-        # dbOffset: screen-Y direction (positive = downward = lower dB)
+        # Annotation positions — absolute data-space label-center positions (absFreqHz, absDB).
+        # Swift encodes as a flat array: [uuid_str, {"absFreqHz": x, "absDB": y}, ...]
+        # Legacy files may have {"hzOffset": x, "dbOffset": y} (old delta format) — those
+        # are dropped (labels fall back to default positions) since the values are incompatible.
         ann_raw = d.get("peakAnnotationOffsets")
         ann_offsets: dict[str, list[float]] | None = None
         if ann_raw and isinstance(ann_raw, list):
@@ -419,18 +420,22 @@ class TapToneMeasurement:
             for k in it:
                 v = next(it, None)
                 if isinstance(k, str) and isinstance(v, dict):
-                    ann_offsets[k.upper()] = [
-                        float(v.get("hzOffset", 0)),
-                        float(v.get("dbOffset", 0)),
-                    ]
+                    if "absFreqHz" in v and "absDB" in v:
+                        ann_offsets[k.upper()] = [
+                            float(v["absFreqHz"]),
+                            float(v["absDB"]),
+                        ]
+                    # Old hzOffset/dbOffset entries are silently dropped.
+            ann_offsets = ann_offsets or None
         elif ann_raw and isinstance(ann_raw, dict):
             ann_offsets = {}
             for k, v in ann_raw.items():
-                if isinstance(v, dict):
+                if isinstance(v, dict) and "absFreqHz" in v and "absDB" in v:
                     ann_offsets[k.upper()] = [
-                        float(v.get("hzOffset", 0)),
-                        float(v.get("dbOffset", 0)),
+                        float(v["absFreqHz"]),
+                        float(v["absDB"]),
                     ]
+            ann_offsets = ann_offsets or None
 
         # Mode overrides — {uuid: {"type": "assigned", "label": "mode_string"}}
         # type == "auto" entries have no override and are skipped.
