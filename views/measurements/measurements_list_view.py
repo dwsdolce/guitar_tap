@@ -23,6 +23,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from views import tap_analysis_results_view as M
 from models import TapToneMeasurement
 from views.measurements import measurement_detail_view as MDD
+from views.measurements import edit_measurement_view as EMV
 from views.measurements.measurement_row_view import MeasurementRowView
 
 
@@ -38,8 +39,9 @@ class MeasurementsDialog(QtWidgets.QDialog):
     measurementSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(object)
     comparisonRequested: QtCore.pyqtSignal = QtCore.pyqtSignal(object)  # list[TapToneMeasurement]
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, analyzer, parent=None) -> None:
         super().__init__(parent)
+        self._analyzer = analyzer
         self.setWindowTitle("Saved Measurements")
         self.resize(640, 480)
         self.setMinimumSize(520, 340)
@@ -243,6 +245,16 @@ class MeasurementsDialog(QtWidgets.QDialog):
         dlg.measurementSelected.connect(self._load_from_detail)
         dlg.exec()
 
+    def _open_edit(self, index: int, m: TapToneMeasurement) -> None:
+        """Open EditMeasurementView for the measurement at the given index.
+
+        Mirrors Swift .sheet { EditMeasurementView(index:measurement:analyzer:) }.
+        After the dialog saves, refreshes the list to reflect the updated fields.
+        """
+        dlg = EMV.EditMeasurementView(index, m, self._analyzer, self)
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self._refresh()
+
     def _load_from_detail(self, m: TapToneMeasurement) -> None:
         self.measurementSelected.emit(m)
         self.accept()
@@ -263,6 +275,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         load_act        = menu.addAction("Load into View")
         menu.addSeparator()
         details_act     = menu.addAction("View Details")
+        edit_act        = menu.addAction("Edit…")
         export_act      = menu.addAction("Export Measurement…")
         export_spec_act = menu.addAction("Export Spectrum…")
         export_pdf_act  = menu.addAction("Export PDF Report…")
@@ -276,6 +289,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
             self.accept()
         elif action == details_act:
             self._open_detail(m)
+        elif action == edit_act:
+            self._open_edit(row, m)
         elif action == export_act:
             self._export_json(m)
         elif action == export_spec_act:

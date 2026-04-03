@@ -16,6 +16,33 @@ class TapToneAnalyzerMeasurementManagementMixin:
     Mirrors Swift TapToneAnalyzer+MeasurementManagement.swift.
     """
 
+    def update_measurement(
+        self,
+        at: int,
+        tap_location: "str | None",
+        notes: "str | None",
+    ) -> None:
+        """Update the tapLocation and notes of a saved measurement by index.
+
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.updateMeasurement(at:tapLocation:notes:)``.
+
+        The index into ``savedMeasurements`` is used rather than id matching so
+        that duplicate imports (which share the same id) are treated independently.
+
+        Args:
+            at:           Position in ``savedMeasurements`` to update.
+            tap_location: New location label, or ``None`` to clear it.
+            notes:        New free-form notes, or ``None`` to clear them.
+        """
+        from views import tap_analysis_results_view as M
+        if not (0 <= at < len(self.savedMeasurements)):
+            return
+        self.savedMeasurements[at] = self.savedMeasurements[at].with_(
+            tap_location=tap_location,
+            notes=notes,
+        )
+        M.save_all_measurements(self.savedMeasurements)
+
     def set_measurement_complete(self, is_complete: bool) -> None:
         """Freeze/unfreeze the spectrum and reset related state."""
         self.is_measurement_complete = is_complete

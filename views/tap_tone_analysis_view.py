@@ -2853,7 +2853,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
     def _on_open_measurements(self) -> None:
-        dlg = MD.MeasurementsDialog(self)
+        dlg = MD.MeasurementsDialog(self.fft_canvas.analyzer, self)
         dlg.measurementSelected.connect(self._restore_measurement)
         dlg.comparisonRequested.connect(self._on_comparison_requested)
         dlg.exec()
