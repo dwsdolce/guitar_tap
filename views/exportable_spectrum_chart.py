@@ -98,7 +98,11 @@ class ExportableSpectrumChart:
         is_logarithmic: bool = False,           # When True, the frequency axis uses a logarithmic scale.
         peaks: list | None = None,              # Peaks to annotate. Pass None to suppress all peak annotations.
         show_mode_boundaries: bool = True,      # Whether to draw guitar mode boundary lines.
-        annotation_offsets: dict | None = None, # Per-peak label drag offsets ({uuid: [hzOffset, dbOffset]}).
+        # Mirrors Swift annotationOffsets: [UUID: CGPoint] where x=Hz delta, y=dB delta (data-space).
+        # Swift DraggablePeakAnnotation.onEnded converts total pixels back to data-space on commit;
+        # DraggablePeakAnnotation.finalPosition and ExportableSpectrumChart.chartOverlay both
+        # convert back to pixels at render time via (delta/range)*plotSize — same as render() below.
+        annotation_offsets: dict | None = None, # Per-peak label drag offsets ({uuid: [hz_delta, db_delta]}).
         show_unknown_modes: bool | None = None, # Override for TapDisplaySettings.showUnknownModes. None = use default.
         measurement_type_str: str | None = None,              # Measurement type string: controls colour coding and boundary visibility.
         selected_longitudinal_peak_id: str | None = None,     # ID of the peak selected as the longitudinal (L) mode.
@@ -521,8 +525,19 @@ class ExportableSpectrumChart:
 
             ANNOT_H = ANNOT_H_PITCH if has_pitch else ANNOT_H_NOPITCH
 
-            card_x = px - ANNOT_W // 2
-            card_y = py - ANNOT_OFFS_Y - ANNOT_H
+            # Apply annotation offset — mirrors Swift:
+            #   let offset = annotationOffsets[peak.id] ?? .zero
+            #   let annotationX = peakPosition.x + offset.x
+            #   let annotationY = peakPosition.y - 70 + offset.y
+            # Offsets are stored in data-space ([hz_delta, db_delta]); convert to pixels.
+            raw_offset = self.annotation_offsets.get(getattr(peak, "id", None)) or [0.0, 0.0]
+            freq_range = max(self.max_freq - self.min_freq, 1e-6)
+            db_range   = max(self.max_db   - self.min_db,   1e-6)
+            offset_px_x = int((raw_offset[0] / freq_range) * PLOT_W)
+            offset_px_y = int((raw_offset[1] / db_range)   * PLOT_H)
+
+            card_x = (px + offset_px_x) - ANNOT_W // 2
+            card_y = (py - ANNOT_OFFS_Y - ANNOT_H) + offset_px_y
             # Clamp inside plot area — mirrors Swift .position(x: annotationX, y: annotationY)
             card_x = max(AXIS_LEFT, min(card_x, CHART_W - AXIS_RIGHT - ANNOT_W))
             card_y = max(AXIS_TOP,  min(card_y, CHART_H - AXIS_BOTTOM - ANNOT_H))
