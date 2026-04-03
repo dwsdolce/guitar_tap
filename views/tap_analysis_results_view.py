@@ -35,11 +35,11 @@ __all__ = [
     "import_measurements_from_json",
     "export_pdf",
     "measurements_file",
-    "render_spectrum_image_for_pdf",
+    "render_spectrum_image_for_measurement",
 ]
 
-# Image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
-from views.exportable_spectrum_chart import make_exportable_spectrum_view  # noqa: E402
+# Spectrum image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
+from views.exportable_spectrum_chart import render_spectrum_image_for_measurement  # noqa: E402
 
 
 # ── Persistence paths ─────────────────────────────────────────────────────────
@@ -63,93 +63,6 @@ def measurements_file() -> str:
     data_dir = _app_data_dir()
     os.makedirs(data_dir, exist_ok=True)
     return os.path.join(data_dir, "saved_measurements.json")
-
-
-# ── Spectrum image rendering ───────────────────────────────────────────────────
-
-def render_spectrum_image_for_pdf(m: TapToneMeasurement) -> str | None:
-    """Render the composite spectrum PNG for a measurement and return the temp file path.
-
-    Mirrors ``PDFReportGenerator.renderSpectrumImage(for:)`` in PDFReportGenerator.swift,
-    which calls ``makeExportableSpectrumView(...)`` directly to produce the PNG.
-
-    Returns the path to a temporary PNG file, or None if the measurement has no
-    spectrum snapshot.  The caller is responsible for deleting the temp file.
-    """
-    import tempfile
-
-    primary_snapshot = m.spectrum_snapshot or m.longitudinal_snapshot
-    if primary_snapshot is None:
-        return None
-
-    snap = primary_snapshot
-
-    # Build material spectra list — mirrors Swift's materialSpectra construction.
-    material_spectra = []
-    if m.longitudinal_snapshot:
-        ls = m.longitudinal_snapshot
-        material_spectra.append({
-            "frequencies": ls.frequencies,
-            "magnitudes": ls.magnitudes,
-            "color": "blue",
-            "label": "Longitudinal (L)",
-        })
-    if m.cross_snapshot:
-        cs = m.cross_snapshot
-        material_spectra.append({
-            "frequencies": cs.frequencies,
-            "magnitudes": cs.magnitudes,
-            "color": "orange",
-            "label": "Cross-grain (C)",
-        })
-    if m.flc_snapshot:
-        fs = m.flc_snapshot
-        material_spectra.append({
-            "frequencies": fs.frequencies,
-            "magnitudes": fs.magnitudes,
-            "color": "purple",
-            "label": "FLC",
-        })
-
-    # Mirror TapToneAnalyzer.visiblePeaks: filter by annotationVisibilityMode and selectedPeakIDs.
-    all_peaks = m.peaks or []
-    visibility_mode = (m.annotation_visibility_mode or "all").lower()
-    selected_ids = set(m.selected_peak_ids or [p.id for p in all_peaks])
-    if visibility_mode == "selected":
-        visible_peaks = [p for p in all_peaks if p.id in selected_ids]
-    elif visibility_mode == "none":
-        visible_peaks = []
-    else:
-        visible_peaks = all_peaks
-
-    measurement_type_str = snap.measurement_type or None
-
-    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-    tmp.close()
-
-    # Mirrors Swift: makeExportableSpectrumView called directly from renderSpectrumImage(for:).
-    make_exportable_spectrum_view(
-        frequencies=list(snap.frequencies),
-        magnitudes=list(snap.magnitudes),
-        min_freq=float(snap.min_freq),
-        max_freq=float(snap.max_freq),
-        min_db=float(snap.min_db),
-        max_db=float(snap.max_db),
-        peaks=visible_peaks,
-        annotation_positions=m.annotation_offsets or {},
-        show_unknown_modes=snap.show_unknown_modes,
-        measurement_type_str=measurement_type_str,
-        selected_longitudinal_peak_id=m.selected_longitudinal_peak_id,
-        selected_cross_peak_id=m.selected_cross_peak_id,
-        selected_flc_peak_id=m.selected_flc_peak_id,
-        mode_overrides=m.peak_mode_overrides or {},
-        material_spectra=material_spectra if material_spectra else None,
-        date_label=str(m.timestamp) if m.timestamp else "",
-        chart_title=f"FFT Peaks — {m.tap_location or 'New'}",
-        guitar_type_str=snap.guitar_type,
-        output_path=tmp.name,
-    )
-    return tmp.name
 
 
 # ── Persistence API ───────────────────────────────────────────────────────────
@@ -258,7 +171,7 @@ def import_measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]
 
 
 def export_pdf(
-    m: TapToneMeasurement, spectrum_png_path: str | None, output_path: str
+    m: TapToneMeasurement, spectrum_image_data: bytes | None, output_path: str
 ) -> None:
     """Export measurement to PDF using reportlab."""
     from reportlab.lib.pagesizes import A4
@@ -310,8 +223,9 @@ def export_pdf(
     story.append(meta_table)
     story.append(Spacer(1, 0.5 * cm))
 
-    if spectrum_png_path and os.path.isfile(spectrum_png_path):
-        img = Image(spectrum_png_path, width=16 * cm, height=8 * cm)
+    if spectrum_image_data:
+        import io
+        img = Image(io.BytesIO(spectrum_image_data), width=16 * cm, height=8 * cm)
         story.append(img)
         story.append(Spacer(1, 0.5 * cm))
 

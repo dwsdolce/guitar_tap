@@ -663,13 +663,12 @@ def make_exportable_spectrum_view(
     date_label: str = "",
     chart_title: str = "FFT Peaks",
     guitar_type_str: str | None = None,
-    output_path: str,
-) -> None:
+) -> bytes:
     """Python port of ``func makeExportableSpectrumView(...)`` in ExportableSpectrumChart.swift.
 
     Builds the full spectrum export composite image — chart, header, peak
-    summary, and mode legend — from explicit data parameters, and saves it
-    as a PNG at ``output_path``.
+    summary, and mode legend — from explicit data parameters, and returns
+    the PNG-encoded image as bytes.
 
     Used by both the live export path (``tap_tone_analysis_view.py``) and the
     measurement export path (``tap_analysis_results_view.py``) so that
@@ -987,6 +986,90 @@ def make_exportable_spectrum_view(
             x_leg += 180 * SCALE
 
     painter.end()
-    canvas.save(output_path, "PNG")
+
+    # Save to in-memory buffer — mirrors Swift ImageRenderer returning Data
+    # rather than writing to disk.
+    from PyQt6.QtCore import QBuffer, QByteArray, QIODevice
+    buf = QByteArray()
+    qbuf = QBuffer(buf)
+    qbuf.open(QIODevice.OpenModeFlag.WriteOnly)
+    canvas.save(qbuf, "PNG")
+    qbuf.close()
+    return bytes(buf)
 
 
+# ── Render Spectrum Image for Measurement ─────────────────────────────────────
+
+def render_spectrum_image_for_measurement(m) -> "bytes | None":
+    """Render the composite spectrum PNG for a measurement and return the PNG bytes.
+
+    Mirrors ``renderSpectrumImageForMeasurement(_:)`` in ExportableSpectrumChart.swift,
+    which returns ``Data?`` (PNG-encoded image bytes).
+
+    Returns PNG bytes, or None if the measurement has no spectrum snapshot.
+    """
+    primary_snapshot = m.spectrum_snapshot or m.longitudinal_snapshot
+    if primary_snapshot is None:
+        return None
+
+    snap = primary_snapshot
+
+    # Build material spectra list — mirrors Swift's materialSpectra construction.
+    material_spectra = []
+    if m.longitudinal_snapshot:
+        ls = m.longitudinal_snapshot
+        material_spectra.append({
+            "frequencies": ls.frequencies,
+            "magnitudes": ls.magnitudes,
+            "color": "blue",
+            "label": "Longitudinal (L)",
+        })
+    if m.cross_snapshot:
+        cs = m.cross_snapshot
+        material_spectra.append({
+            "frequencies": cs.frequencies,
+            "magnitudes": cs.magnitudes,
+            "color": "orange",
+            "label": "Cross-grain (C)",
+        })
+    if m.flc_snapshot:
+        fs = m.flc_snapshot
+        material_spectra.append({
+            "frequencies": fs.frequencies,
+            "magnitudes": fs.magnitudes,
+            "color": "purple",
+            "label": "FLC",
+        })
+
+    # Mirror TapToneAnalyzer.visiblePeaks: filter by annotationVisibilityMode and selectedPeakIDs.
+    all_peaks = m.peaks or []
+    visibility_mode = (m.annotation_visibility_mode or "all").lower()
+    selected_ids = set(m.selected_peak_ids or [p.id for p in all_peaks])
+    if visibility_mode == "selected":
+        visible_peaks = [p for p in all_peaks if p.id in selected_ids]
+    elif visibility_mode == "none":
+        visible_peaks = []
+    else:
+        visible_peaks = all_peaks
+
+    # Mirrors Swift: makeExportableSpectrumView called directly from renderSpectrumImageForMeasurement.
+    return make_exportable_spectrum_view(
+        frequencies=list(snap.frequencies),
+        magnitudes=list(snap.magnitudes),
+        min_freq=float(snap.min_freq),
+        max_freq=float(snap.max_freq),
+        min_db=float(snap.min_db),
+        max_db=float(snap.max_db),
+        peaks=visible_peaks,
+        annotation_positions=m.annotation_offsets or {},
+        show_unknown_modes=snap.show_unknown_modes,
+        measurement_type_str=snap.measurement_type or None,
+        selected_longitudinal_peak_id=m.selected_longitudinal_peak_id,
+        selected_cross_peak_id=m.selected_cross_peak_id,
+        selected_flc_peak_id=m.selected_flc_peak_id,
+        mode_overrides=m.peak_mode_overrides or {},
+        material_spectra=material_spectra if material_spectra else None,
+        date_label=str(m.timestamp) if m.timestamp else "",
+        chart_title=f"FFT Peaks — {m.tap_location or 'New'}",
+        guitar_type_str=snap.guitar_type,
+    )

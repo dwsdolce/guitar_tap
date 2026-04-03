@@ -3387,7 +3387,7 @@ class MainWindow(QtWidgets.QMainWindow):
             try:
                 # Prefer the stored ResonantPeak objects (have full pitch data).
                 # Apply annotationVisibilityMode / selectedPeakIDs filtering
-                # exactly as render_spectrum_image_for_pdf does.
+                # exactly as render_spectrum_image_for_measurement does.
                 if self._loaded_resonant_peaks and self._loaded_measurement is not None:
                     m_exp = self._loaded_measurement
                     all_peaks = self._loaded_resonant_peaks
@@ -3483,7 +3483,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Mirrors Swift TapToneAnalysisView+Export.createExportableSpectrumView()
             # calling makeExportableSpectrumView(...) directly.
-            make_exportable_spectrum_view(
+            png_bytes = make_exportable_spectrum_view(
                 frequencies=freqs,
                 magnitudes=mags,
                 min_freq=float(self.min_spin.value()),
@@ -3501,8 +3501,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 guitar_type_str=gt_str,
                 date_label=date_label,
                 chart_title=chart_title,
-                output_path=path,
             )
+            with open(path, "wb") as f:
+                f.write(png_bytes)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Failed", str(exc))
         finally:
@@ -3531,9 +3532,9 @@ class MainWindow(QtWidgets.QMainWindow):
         m = self._collect_measurement()
         # Render the composite spectrum image for embedding in the PDF — uses
         # the same renderer as Export Spectrum so both outputs are consistent.
-        png_path: str | None = M.render_spectrum_image_for_pdf(m)
+        png_data: bytes | None = M.render_spectrum_image_for_measurement(m)
         try:
-            M.export_pdf(m, png_path, path)
+            M.export_pdf(m, png_data, path)
             QtWidgets.QMessageBox.information(
                 self, "PDF Exported", f"Report saved to:\n{path}"
             )
@@ -3543,11 +3544,6 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         finally:
             self._loading_overlay.hide()
-            if png_path and os.path.exists(png_path):
-                try:
-                    os.remove(png_path)
-                except OSError:
-                    pass
 
     # ================================================================
     # Device management

@@ -302,11 +302,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         elif action == export_act:
             self._export_json(m)
         elif action == export_spec_act:
-            QtWidgets.QMessageBox.information(
-                self,
-                "Export Spectrum",
-                "Spectrum image export is not yet implemented.",
-            )
+            self._export_spectrum(m)
         elif action == export_pdf_act:
             self._export_pdf(m)
         elif action == delete_act:
@@ -329,6 +325,32 @@ class MeasurementsDialog(QtWidgets.QDialog):
         except OSError as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
+    def _export_spectrum(self, m: TapToneMeasurement) -> None:
+        """Export the spectrum PNG for *m* — mirrors Swift exportSpectrumMeasurement(_:).
+
+        Calls render_spectrum_image_for_measurement (which uses the same renderer as the
+        main Export Spectrum button) then writes the result to a user-chosen path.
+        """
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Spectrum",
+            os.path.join(os.path.expanduser("~/Documents/GuitarTap"), m.base_filename + ".png"),
+            "PNG images (*.png)",
+        )
+        if not path:
+            return
+        if not path.endswith(".png"):
+            path += ".png"
+        png_data = M.render_spectrum_image_for_measurement(m)
+        if png_data is None:
+            QtWidgets.QMessageBox.warning(self, "Export Error", "This measurement has no spectrum snapshot.")
+            return
+        try:
+            with open(path, "wb") as f:
+                f.write(png_data)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
+
     def _export_pdf(self, m: TapToneMeasurement) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
@@ -339,18 +361,12 @@ class MeasurementsDialog(QtWidgets.QDialog):
         if not path:
             return
         # Render spectrum image from the saved snapshot (mirrors Swift
-        # PDFReportGenerator.renderSpectrumImage(for:) called from ExportView).
-        png_path = M.render_spectrum_image_for_pdf(m)
+        # renderSpectrumImageForMeasurement called from exportPDFReport).
+        png_data = M.render_spectrum_image_for_measurement(m)
         try:
-            M.export_pdf(m, png_path, path)
+            M.export_pdf(m, png_data, path)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
-        finally:
-            if png_path and os.path.exists(png_path):
-                try:
-                    os.remove(png_path)
-                except OSError:
-                    pass
 
     def _delete_measurement(self, index: int, m: TapToneMeasurement) -> None:
         name = m.tap_location or "Measurement"
