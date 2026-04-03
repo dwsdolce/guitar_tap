@@ -125,10 +125,13 @@ class FftAnnotations(QtCore.QObject):
     # Vertical offset (in dB) from peak to default label position.
     _LABEL_OFFSET_DB: float = 14.0
 
-    def __init__(self, plot_widget: pg.PlotWidget):
+    def __init__(self, plot_widget: pg.PlotWidget, analyzer=None):
         super().__init__()
         self.plot_item = plot_widget.getPlotItem()
         self.annotations: list[_AnnDict] = []
+        # Reference to the TapToneAnalyzer — used to persist dragged annotation
+        # offsets across pan/zoom rebuilds (mirrors Swift peakAnnotationOffsets).
+        self._analyzer = analyzer
         # Intercept QContextMenuEvent at the widget level so we can show our own
         # annotation menu before QGraphicsView::contextMenuEvent delivers to the
         # scene (where it would reach the ViewBox instead of our annotation items).
@@ -247,7 +250,14 @@ class FftAnnotations(QtCore.QObject):
                              style=QtCore.Qt.PenStyle.DashLine)
                 )
         else:
-            xy_text = (freq, mag + self._LABEL_OFFSET_DB)
+            # Restore saved offset from the analyzer if the user previously dragged
+            # this annotation (mirrors Swift peakAnnotationOffsets lookup).
+            saved = (
+                self._analyzer.peak_annotation_offsets.get(freq)
+                if self._analyzer is not None
+                else None
+            )
+            xy_text = saved if saved is not None else (freq, mag + self._LABEL_OFFSET_DB)
             ann, arrow_line = self.create_annotation(
                 freq, mag, html, mode_str, xy_text
             )
@@ -339,12 +349,20 @@ class FftAnnotations(QtCore.QObject):
     # ── drag completion ───────────────────────────────────────────────────────
 
     def annotation_moved(self, _event: object = None) -> None:
-        """Persist updated xytext for all annotations after a drag completes."""
+        """Persist updated xytext for all annotations after a drag completes.
+
+        Also writes back to the analyzer's peak_annotation_offsets so that
+        positions survive pan/zoom annotation rebuilds (mirrors Swift
+        ``updateAnnotationOffset(for:offset:)`` called from the drag gesture).
+        """
         for ann_dict in self.annotations:
             ann = ann_dict["annotation"]
             if ann is not None:
                 pos = ann.pos()
-                ann_dict["xytext"] = (pos.x(), pos.y())
+                x, y = pos.x(), pos.y()
+                ann_dict["xytext"] = (x, y)
+                if self._analyzer is not None:
+                    self._analyzer.update_annotation_offset(ann_dict["freq"], x, y)
         self.restoreFocus.emit()
 
     # ── label reset ───────────────────────────────────────────────────────────
@@ -363,10 +381,17 @@ class FftAnnotations(QtCore.QObject):
         return False
 
     def reset_all_positions(self) -> None:
-        """Reset every visible annotation label to its default (auto-placed) position."""
+        """Reset every visible annotation label to its default (auto-placed) position.
+
+        Also clears the analyzer's saved offsets so the reset positions persist
+        across subsequent pan/zoom rebuilds.
+        """
         for ann_dict in self.annotations:
             ann = ann_dict["annotation"]
             if ann is not None and ann._default_pos is not None:
                 ann.setPos(ann._default_pos)
                 ann._update_arrow()
+                ann_dict["xytext"] = (ann._default_pos.x(), ann._default_pos.y())
+        if self._analyzer is not None:
+            self._analyzer.clear_annotation_offsets()
         self.restoreFocus.emit()

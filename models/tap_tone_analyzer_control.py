@@ -129,8 +129,13 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
 
     def start_tap_sequence(self) -> None:
-        """Begin a fresh tap sequence: clear accumulated spectra and restart warmup."""
+        """Begin a fresh tap sequence: clear accumulated spectra and restart warmup.
+
+        Also clears saved annotation offsets so dragged positions reset for the
+        new measurement — mirrors Swift ``peakAnnotationOffsets = [:]`` in startTapSequence.
+        """
         self._tap_spectra.clear()
+        self.clear_annotation_offsets()
         self.reset_tap_detector()
         self.tapCountChanged.emit(0, self._tap_num)
 

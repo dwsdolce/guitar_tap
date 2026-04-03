@@ -90,6 +90,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         if not is_complete:
             self._tap_spectra.clear()
             self._loaded_measurement_peaks = None
+            self.clear_annotation_offsets()
             # Restore freq to native FFT bins — a loaded measurement may have overwritten
             # self.freq with its saved frequency array (different length from the live FFT).
             import numpy as np
@@ -98,6 +99,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # Clear comparison overlay — uses clear_comparison() so comparisonChanged(False)
             # is emitted when needed, allowing the UI to hide the comparison status bar.
             self.clear_comparison()
+            # Clear per-phase material spectra — mirrors Swift loadMeasurement clearing
+            # longitudinalSpectrum/crossSpectrum/flcSpectrum when returning to live mode.
+            self.set_material_spectra([])
         self.measurementComplete.emit(is_complete)
 
     def _clear_comparison_state(self) -> None:
@@ -170,6 +174,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
         ts = getattr(m, "timestamp", "")
         try:
             dt = datetime.fromisoformat(ts)
-            return dt.strftime("%b %-d %H:%M")
+            return f"{dt.strftime('%b')} {dt.day} {dt.strftime('%H:%M')}"
         except Exception:
             return ts[:16]

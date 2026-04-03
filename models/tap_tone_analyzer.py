@@ -150,6 +150,11 @@ class TapToneAnalyzer(
     tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
     # Emitted when comparison overlay data changes (True=entering, False=leaving).
     comparisonChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    # Emitted when per-phase material spectra change for plate/brace measurements.
+    # Payload: list of (label, (r,g,b), freqs, mags) tuples — empty list clears the overlay.
+    # Mirrors Swift @Published var longitudinalSpectrum / crossSpectrum / flcSpectrum
+    # which TapToneAnalysisView+SpectrumViews observes to build materialSpectra.
+    materialSpectraChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(list)
     # Emitted when savedMeasurements list changes (mirrors Swift @Published var savedMeasurements).
     savedMeasurementsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     # Emitted when frequency range changes (fmin, fmax).
@@ -270,6 +275,16 @@ class TapToneAnalyzer(
         self.plate_capture.analysisComplete.connect(self.plateAnalysisComplete)
         self._current_mag_y = np.array([])
 
+        # ── Per-phase material spectra (mirrors Swift longitudinalSpectrum / crossSpectrum / flcSpectrum)
+        # Owned by the analyzer so that FftCanvas can react reactively via materialSpectraChanged.
+        # Each entry is (label, (r,g,b), freqs_list, mags_list).  Empty list = no overlay.
+        self._material_spectra: list = []
+
+        # ── Annotation offsets (mirrors Swift peakAnnotationOffsets: [UUID: CGPoint]) ──
+        # Keyed by peak frequency (float) → (x_offset, y_offset) in data-space coordinates.
+        # Stored on the analyzer so dragged positions survive pan/zoom annotation rebuilds.
+        self.peak_annotation_offsets: dict[float, tuple[float, float]] = {}
+
         # ── Comparison overlay data ───────────────────────────────────────
         self.comparison_labels: list = []        # list of (label, color) tuples
         # _comparison_data is for the analyzer's knowledge of what's being compared;
@@ -305,6 +320,21 @@ class TapToneAnalyzer(
         Mirrors Swift TapToneAnalyzer computed property that checks displayMode == .comparison.
         """
         return self._display_mode == AnalysisDisplayMode.COMPARISON
+
+    def set_material_spectra(self, spectra: list) -> None:
+        """Set per-phase plate/brace spectra and notify observers.
+
+        Mirrors Swift: setting longitudinalSpectrum / crossSpectrum / flcSpectrum
+        @Published properties on TapToneAnalyzer, which causes TapToneAnalysisView
+        to rebuild its materialSpectra computed property and pass it to SpectrumView.
+
+        Parameters
+        ----------
+        spectra:
+            List of (label, (r,g,b), freqs, mags) tuples.  Pass [] to clear.
+        """
+        self._material_spectra = spectra
+        self.materialSpectraChanged.emit(spectra)
 
     # ------------------------------------------------------------------ #
     # Processing thread management

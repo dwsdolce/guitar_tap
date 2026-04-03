@@ -3033,13 +3033,31 @@ class MainWindow(QtWidgets.QMainWindow):
         # update_data (which fires later via update_axis → peaksChanged) reads the
         # correct state at query time rather than overwriting it.  This is the
         # reactive pattern: authoritative state lives here; update_data only notifies.
-        selected_ids = set(
-            m.selected_peak_ids if m.selected_peak_ids is not None
-            else [p.id for p in m.peaks]
-        )
-        peak_model.selected_frequencies = {
-            p.frequency for p in m.peaks if p.id in selected_ids
-        }
+        if not _restored_mt.is_guitar:
+            # Plate / brace: the three per-phase IDs (selected_longitudinal_peak_id,
+            # selected_cross_peak_id, selected_flc_peak_id) identify the L/C/FLC peaks.
+            # selected_peak_ids is unused for plate/brace — falling back to it would
+            # select all peaks, showing 15+ rows instead of the correct 2-3.
+            _plate_selected_ids: set[str] = set()
+            for _pid in (
+                m.selected_longitudinal_peak_id,
+                m.selected_cross_peak_id,
+                m.selected_flc_peak_id,
+            ):
+                if _pid:
+                    _plate_selected_ids.add(_pid.upper())
+            peak_model.selected_frequencies = {
+                p.frequency for p in m.peaks
+                if (p.id or "").upper() in _plate_selected_ids
+            }
+        else:
+            selected_ids = set(
+                m.selected_peak_ids if m.selected_peak_ids is not None
+                else [p.id for p in m.peaks]
+            )
+            peak_model.selected_frequencies = {
+                p.frequency for p in m.peaks if p.id in selected_ids
+            }
         peak_model.is_live = False
 
         # Restore spectrum snapshot if available.
@@ -3066,6 +3084,26 @@ class MainWindow(QtWidgets.QMainWindow):
             canvas.setYRange(snap.min_db, snap.max_db, padding=0)
             canvas.update_axis(int(snap.min_freq), int(snap.max_freq))
             canvas.set_draw_data(mag_arr)
+
+            # For plate/brace measurements set per-phase spectra on the analyzer — mirrors
+            # Swift loadMeasurement restoring longitudinalSpectrum/crossSpectrum/flcSpectrum
+            # as @Published properties so the view reactively rebuilds materialSpectra.
+            # The analyzer emits materialSpectraChanged → FftCanvas.load_material_spectra().
+            if not _restored_mt.is_guitar:
+                _phase_spectra: list = []
+                if m.longitudinal_snapshot is not None:
+                    ls = m.longitudinal_snapshot
+                    _phase_spectra.append(("Longitudinal (L)", (0, 122, 255),
+                                           list(ls.frequencies), list(ls.magnitudes)))
+                if _restored_mt.is_plate and m.cross_snapshot is not None:
+                    cs = m.cross_snapshot
+                    _phase_spectra.append(("Cross-grain (C)", (255, 149, 0),
+                                           list(cs.frequencies), list(cs.magnitudes)))
+                if _restored_mt.is_plate and m.flc_snapshot is not None:
+                    fs = m.flc_snapshot
+                    _phase_spectra.append(("FLC", (175, 82, 222),
+                                           list(fs.frequencies), list(fs.magnitudes)))
+                canvas.analyzer.set_material_spectra(_phase_spectra)
         else:
             # No snapshot — emit peaks filtered to current range
             canvas._emit_loaded_peaks_at_threshold()
@@ -3331,7 +3369,7 @@ class MainWindow(QtWidgets.QMainWindow):
             is_guitar = mt.is_guitar
 
             from datetime import datetime, timezone
-            date_label = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+            date_label = datetime.now(timezone.utc).isoformat()
 
             peaks_list: list = []
             # Selection/visibility parameters from the loaded measurement (if any).

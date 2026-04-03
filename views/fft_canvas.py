@@ -288,6 +288,9 @@ class FftCanvas(pg.PlotWidget):
             calibration_corrections=_initial_calibration,
             guitar_type=_guitar_type,
         )
+        # Wire the analyzer into FftAnnotations so dragged positions are persisted
+        # in the model and survive pan/zoom annotation rebuilds.
+        self.annotations._analyzer = self.analyzer
         # Display mode is initialised to AnalysisDisplayMode.LIVE in TapToneAnalyzer.__init__.
         # Set initial threshold and freq range on the analyzer
         self.analyzer.threshold = threshold
@@ -314,6 +317,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.plateAnalysisComplete.connect(self.plateAnalysisComplete)
         self.analyzer.tapDetectionPaused.connect(self.tapDetectionPaused)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
+        self.analyzer.materialSpectraChanged.connect(self.load_material_spectra)
         self.analyzer.peakInfoChanged.connect(self.peakInfoChanged)
         # spectrumUpdated drives the spectrum line rendering path.
         # peaksChanged drives the scatter plot — single authoritative source for
@@ -1104,7 +1108,7 @@ class FftCanvas(pg.PlotWidget):
         ts = getattr(m, "timestamp", "")
         try:
             dt = datetime.fromisoformat(ts)
-            return dt.strftime("%b %-d %H:%M")
+            return f"{dt.strftime('%b')} {dt.day} {dt.strftime('%H:%M')}"
         except Exception:
             return ts[:16]
 
@@ -1233,6 +1237,69 @@ class FftCanvas(pg.PlotWidget):
         if self._comparison_legend is not None:
             self._comparison_legend.deleteLater()
             self._comparison_legend = None
+
+    def load_material_spectra(
+        self,
+        spectra: "list[tuple[str, tuple[int,int,int], list, list]]",
+    ) -> None:
+        """Display per-phase plate/brace spectra as overlaid colored curves.
+
+        Mirrors Swift's materialSpectra computed property in
+        TapToneAnalysisView+SpectrumViews.swift, which builds the L/C/FLC overlay
+        from tap.longitudinalSpectrum / crossSpectrum / flcSpectrum.
+
+        Each entry in `spectra` is (label, (r,g,b), freq_list, mag_list).
+        Reuses the _comparison_curves / legend infrastructure so the display is
+        identical to the comparison overlay but driven by phase snapshots.
+        """
+        import numpy as np
+
+        # Clear any existing curves/legend first.
+        self._clear_comparison_view()
+
+        if not spectra:
+            return
+
+        for label, (r, g, b), freq_list, mag_list in spectra:
+            freq_arr = np.array(freq_list, dtype=np.float64)
+            mag_arr  = np.array(mag_list,  dtype=np.float64)
+            curve = pg.PlotDataItem(
+                freq_arr, mag_arr,
+                pen=pg.mkPen((r, g, b), width=2),
+                name=label,
+            )
+            self.addItem(curve)
+            self._comparison_curves.append(curve)
+
+        # Build legend — mirrors load_comparison legend layout.
+        legend = QtWidgets.QWidget(self)
+        legend.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        legend.setStyleSheet(
+            "background: rgba(240,240,240,210); border-radius: 6px;"
+        )
+        row = QtWidgets.QHBoxLayout(legend)
+        row.setContentsMargins(8, 4, 8, 4)
+        row.setSpacing(12)
+        for label, (r, g, b), _f, _m in spectra:
+            swatch = QtWidgets.QLabel()
+            swatch.setFixedSize(16, 2)
+            swatch.setStyleSheet(f"background: rgb({r},{g},{b}); border-radius: 1px;")
+            text = QtWidgets.QLabel(label)
+            text.setStyleSheet(
+                f"color: rgb({r},{g},{b}); font-size: 10px; background: transparent;"
+            )
+            entry = QtWidgets.QHBoxLayout()
+            entry.setSpacing(4)
+            entry.addWidget(swatch, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+            entry.addWidget(text,   0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+            row.addLayout(entry)
+        legend.adjustSize()
+        legend.show()
+        self._comparison_legend = legend
+        self._reposition_comparison_legend()
+
+        # Hide the single-line spectrum — only the phase curves should be visible.
+        self.fft_line.setData([], [])
 
     def set_fmin(self, fmin: int) -> None:
         """As it says"""

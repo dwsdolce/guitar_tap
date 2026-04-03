@@ -747,6 +747,35 @@ def make_exportable_spectrum_view(
     def _fmt_freq(f: float) -> str:
         return f"{f / 1000:.1f}k Hz" if f >= 1000 else f"{f:.0f} Hz"
 
+    def _format_date_label(raw: str) -> str:
+        """Format a date string to match Swift Date().formatted() output.
+
+        Swift Date().formatted() produces the locale default medium date + short time,
+        e.g. "4/3/2026, 2:30 PM".  Accepts an ISO-8601 timestamp string or any
+        string already formatted by the caller; falls back to the raw string.
+
+        Uses portable strftime codes (no %-d / %#d platform differences).
+        """
+        from datetime import datetime
+        for fmt in (
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%d %H:%M:%S.%f%z",
+            "%Y-%m-%d %H:%M:%S%z",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M",
+        ):
+            try:
+                dt = datetime.strptime(raw, fmt)
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone()           # convert to local time
+                hour = int(dt.strftime("%I"))      # strip leading zero portably
+                ampm = dt.strftime("%p")
+                return f"{dt.month}/{dt.day}/{dt.year}, {hour}:{dt.minute:02d} {ampm}"
+            except ValueError:
+                continue
+        return raw                                 # already formatted or unrecognised
+
     # ── Header — mirrors makeExportableSpectrumView VStack(alignment:.leading) header block ──
     title_font = QtGui.QFont()
     title_font.setPixelSize(20 * SCALE)  # mirrors .font(.title).fontWeight(.bold)
@@ -770,7 +799,7 @@ def make_exportable_spectrum_view(
         painter.drawText(
             PADDING, y, TOTAL_W // 2, 28 * SCALE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
-            f"Date: {date_label}",
+            f"Date: {_format_date_label(date_label)}",
         )
     painter.drawText(
         PADDING, y, TOTAL_W - PADDING * 2, 28 * SCALE,
@@ -780,8 +809,15 @@ def make_exportable_spectrum_view(
     )
     y += 28 * SCALE
 
-    # Swift: if !peaks.isEmpty { Text("Detected Peaks: \(peaks.count)") }
-    if peaks:
+    # Swift: if !materialSpectra.isEmpty { Text("Comparing N measurements") }
+    #        else if !peaks.isEmpty { Text("Detected Peaks: N") }
+    if material_spectra:
+        painter.drawText(
+            PADDING, y, TOTAL_W - PADDING * 2, 24 * SCALE,
+            QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
+            f"Comparing {len(material_spectra)} measurements",
+        )
+    elif peaks:
         painter.drawText(
             PADDING, y, TOTAL_W - PADDING * 2, 24 * SCALE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
