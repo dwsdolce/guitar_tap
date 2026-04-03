@@ -7,15 +7,15 @@ Data model classes live in the models/ package:
   models.tap_tone_measurement → TapToneMeasurement
 
 JSON format:
-  - Single saved_measurements.json in ~/Documents/GuitarTap/
+  - Single saved_measurements.json in the platform Application Support dir:
+      macOS:   ~/Library/Application Support/GuitarTap/
+      Windows: %APPDATA%\\GuitarTap\\
+      Linux:   ~/.local/share/GuitarTap/
   - Each measurement identified by UUID, ISO-8601 timestamp
   - Peaks have UUIDs; mode overrides, selected IDs, annotation offsets
     are keyed by peak UUID
   - spectrumSnapshot embeds freq/mag arrays so the file is self-contained
   - Format is cross-compatible with Swift GuitarTap .guitartap files
-
-Old per-file format (~/Documents/GuitarTap/measurements/*.json) is
-automatically migrated on first run.
 """
 
 from __future__ import annotations
@@ -44,14 +44,25 @@ from views.exportable_spectrum_chart import make_exportable_spectrum_view  # noq
 
 # ── Persistence paths ─────────────────────────────────────────────────────────
 
-_DATA_DIR = os.path.expanduser("~/Documents/GuitarTap")
-_MEASUREMENTS_FILE = os.path.join(_DATA_DIR, "saved_measurements.json")
-_OLD_DIR = os.path.join(_DATA_DIR, "measurements")
+def _app_data_dir() -> str:
+    """Return the platform-appropriate Application Support directory.
+
+    Uses QStandardPaths.AppDataLocation which resolves to:
+      macOS:   ~/Library/Application Support/GuitarTap
+      Windows: %APPDATA%\\GuitarTap
+      Linux:   ~/.local/share/GuitarTap
+    """
+    from PyQt6.QtCore import QStandardPaths
+    path = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.AppDataLocation
+    )
+    return path
 
 
 def measurements_file() -> str:
-    os.makedirs(_DATA_DIR, exist_ok=True)
-    return _MEASUREMENTS_FILE
+    data_dir = _app_data_dir()
+    os.makedirs(data_dir, exist_ok=True)
+    return os.path.join(data_dir, "saved_measurements.json")
 
 
 # ── Spectrum image rendering ───────────────────────────────────────────────────
@@ -144,23 +155,10 @@ def render_spectrum_image_for_pdf(m: TapToneMeasurement) -> str | None:
 # ── Persistence API ───────────────────────────────────────────────────────────
 
 def load_all_measurements() -> list[TapToneMeasurement]:
-    """
-    Load all measurements from saved_measurements.json.
-    On first run, migrates old per-file measurements from the legacy directory.
-    """
+    """Load all measurements from saved_measurements.json."""
     path = measurements_file()
-
-    # First-run migration
-    if not os.path.exists(path) and os.path.isdir(_OLD_DIR):
-        migrated = _migrate_old_measurements()
-        if migrated:
-            save_all_measurements(migrated)
-            return migrated
-        return []
-
     if not os.path.exists(path):
         return []
-
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -348,21 +346,3 @@ def export_pdf(
     doc.build(story)
 
 
-def _migrate_old_measurements() -> list[TapToneMeasurement]:
-    """Read old per-file JSON measurements from the legacy directory."""
-    result = []
-    try:
-        names = sorted(os.listdir(_OLD_DIR))
-    except OSError:
-        return result
-    for name in names:
-        if not name.endswith(".json"):
-            continue
-        path = os.path.join(_OLD_DIR, name)
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                d = json.load(f)
-            result.append(TapToneMeasurement.from_dict(d))
-        except Exception as exc:
-            print(f"Migration: skipping {name}: {exc}")
-    return result
