@@ -330,28 +330,37 @@ class ExportableSpectrumChart:
         pi_setup.getAxis("bottom").setPen(pg.mkPen((180, 180, 180), width=1))
         pi_setup.getAxis("left").setPen(pg.mkPen((180, 180, 180), width=1))
 
+        # Grid lines — mirrors the live canvas: self.showGrid(x=True, y=True, alpha=0.15).
+        plot.showGrid(x=True, y=True, alpha=0.15)
+
         if self.material_spectra:
-            # Mirrors: ForEach(materialSpectra) { LineMark.foregroundStyle(by:) }
-            palette = [
-                pg.mkPen((210,  50,  50), width=2),
-                pg.mkPen((  0, 100, 200), width=2),
-                pg.mkPen(( 40, 160,  40), width=2),
-                pg.mkPen((220, 120,  40), width=2),
-                pg.mkPen((130,  60, 200), width=2),
-            ]
-            for i, series in enumerate(self.material_spectra):
+            # Mirrors: ForEach(materialSpectra) { LineMark.foregroundStyle(by: .value("Series", series.label)) }
+            # Each series carries its own color — use it directly rather than a positional palette.
+            # Color strings "blue"/"orange"/"purple" match Swift's .blue/.orange/.purple system colors.
+            _COLOR_MAP = {
+                "blue":   (  0, 122, 255),   # Swift .blue  (iOS/macOS system blue)
+                "orange": (255, 149,   0),   # Swift .orange
+                "purple": (175,  82, 222),   # Swift .purple
+                "red":    (255,  59,  48),   # Swift .red
+                "green":  ( 52, 199,  89),   # Swift .green
+            }
+            for series in self.material_spectra:
                 sf = series.get("frequencies", [])
                 sm = series.get("magnitudes", [])
                 if sf and sm:
                     sc = [max(self.min_db, min(self.max_db, v)) for v in sm]
-                    plot.plot(sf, sc, pen=palette[i % len(palette)])
+                    color_key = series.get("color", "blue")
+                    rgb = _COLOR_MAP.get(color_key, (0, 122, 255))
+                    plot.plot(sf, sc, pen=pg.mkPen(rgb, width=2))
         else:
             # Mirrors: LineMark(...).foregroundStyle(.red)
             clamped = [max(self.min_db, min(self.max_db, v)) for v in self.magnitudes]
             plot.plot(self.frequencies, clamped, pen=pg.mkPen((210, 50, 50), width=2))
 
         # Mirrors: if showModeBoundaries { ForEach(visibleModeBoundaries) { RuleMark } }
-        if self.show_mode_boundaries and not self.material_spectra:
+        # visibleModeBoundaries already returns [] when not is_guitar, but also gate here
+        # to match Swift's guard measurementType.isGuitar else { return [] }.
+        if self.show_mode_boundaries and self.is_guitar and not self.material_spectra:
             for freq_b, mode_b in self.visible_mode_boundaries:
                 r, g, b = mode_b.color
                 pen_b = pg.mkPen(
@@ -481,7 +490,8 @@ class ExportableSpectrumChart:
         # ── Mode boundary labels — mirrors RuleMark .annotation(position:.top) ──────────────────
         # Swift draws Text(mode.abbreviation) chips at the top of each boundary line.
         # We paint them directly onto the chart image at the correct x position, just below AXIS_TOP.
-        if self.show_mode_boundaries and not self.material_spectra:
+        # Guitar-only — mirrors Swift's guard measurementType.isGuitar else { return [] }.
+        if self.show_mode_boundaries and self.is_guitar and not self.material_spectra:
             abbrev_font = QtGui.QFont()
             abbrev_font.setPixelSize(14 * SCALE)   # mirrors .font(.system(size: 14, weight: .semibold))
             abbrev_font.setBold(True)
@@ -877,13 +887,18 @@ def make_exportable_spectrum_view(
                          QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
                          "Measurements:")
         x_leg = PADDING + 124 * SCALE
-        palette_rgb = [
-            (210, 50, 50), (0, 100, 200), (40, 160, 40), (220, 120, 40), (130, 60, 200),
-        ]
+        _LEG_COLOR_MAP = {
+            "blue":   (  0, 122, 255),
+            "orange": (255, 149,   0),
+            "purple": (175,  82, 222),
+            "red":    (255,  59,  48),
+            "green":  ( 52, 199,  89),
+        }
         painter.setFont(label_font)
-        for i, series in enumerate(material_spectra[:5]):
-            r, g, b = palette_rgb[i % len(palette_rgb)]
-            lbl = series.get("label", f"M{i + 1}")
+        for series in material_spectra[:5]:
+            color_key = series.get("color", "blue")
+            r, g, b = _LEG_COLOR_MAP.get(color_key, (0, 122, 255))
+            lbl = series.get("label", "?")
             painter.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.drawRoundedRect(x_leg, y + ROW_H // 2 - 3 * SCALE, 28 * SCALE, 6 * SCALE, 3 * SCALE, 3 * SCALE)
@@ -891,8 +906,10 @@ def make_exportable_spectrum_view(
             painter.drawText(x_leg + 32 * SCALE, y, 160 * SCALE, ROW_H,
                              QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter, lbl)
             x_leg += 200 * SCALE
-    else:
+    elif chart.is_guitar:
         # Swift: HStack { Text("Guitar Modes:") ForEach([.air,.top,.back,.dipole,.ringMode]) { Circle + label } }
+        # Guitar-mode only — mirrors Swift's else branch gated implicitly by measurementType.isGuitar
+        # (for plate/brace, materialSpectra is always populated so this branch is never reached in Swift).
         painter.drawText(PADDING, y, 120 * SCALE, ROW_H,
                          QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
                          "Guitar Modes:")

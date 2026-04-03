@@ -219,16 +219,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
             self.saved_mag_y_db = mag_y_db
             self.saved_peaks = peaks
             triggered = True
-
-            b_peaks_f_indices = np.nonzero(
-                (peaks_freq < self.fmax) & (peaks_freq > self.fmin)
-            )
-            if len(b_peaks_f_indices[0]) > 0:
-                f_min_idx = b_peaks_f_indices[0][0]
-                f_max_idx = b_peaks_f_indices[0][-1] + 1
-                self.peaksChanged.emit(peaks[f_min_idx:f_max_idx])
-            else:
-                self.peaksChanged.emit(np.zeros((0, 3)))
+            # Emit all peaks — mirrors Swift currentPeaks which holds all detected peaks.
+            # Viewport filtering (fmin/fmax) is applied by the results panel at display
+            # time, matching Swift's sortedPeaksWithModes filter in TapAnalysisResultsView.
+            self.peaksChanged.emit(peaks)
         else:
             self.saved_peaks = np.zeros((0, 3))
             self.peaksChanged.emit(self.saved_peaks)

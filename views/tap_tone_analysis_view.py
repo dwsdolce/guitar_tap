@@ -1641,7 +1641,11 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.plateAnalysisComplete.connect(self._on_plate_analysis_complete)
 
         # Peaks table ← canvas
-        canvas.peaksChanged.connect(self.peak_widget.update_data)
+        # peaksChanged carries ALL peaks (mirrors Swift currentPeaks).
+        # _on_peaks_changed_results applies the viewport filter (fmin/fmax) before
+        # forwarding to the widget — matching Swift sortedPeaksWithModes in TapAnalysisResultsView.
+        self._current_peaks_all = None  # cache of last all-peaks array
+        canvas.peaksChanged.connect(self._on_peaks_changed_results)
         canvas.peaksChanged.connect(self._on_peaks_changed_ratios)
         canvas.peaksChanged.connect(self._material_peak_widget.update_peaks)
         self._material_peak_widget.assignmentChanged.connect(
@@ -1954,9 +1958,35 @@ class MainWindow(QtWidgets.QMainWindow):
         AS.AppSettings.set_f_max(value)
         self._update_freq_range_label()
 
+    def _on_peaks_changed_results(self, peaks: object) -> None:
+        """Filter all peaks to the current viewport and forward to the results panel.
+
+        Mirrors Swift TapAnalysisResultsView.sortedPeaksWithModes which filters
+        analyzer.currentPeaks by minFreq/maxFreq at display time.
+        """
+        import numpy as np
+        self._current_peaks_all = peaks if isinstance(peaks, np.ndarray) else None
+        self._refresh_results_peaks()
+
+    def _refresh_results_peaks(self) -> None:
+        """Re-apply the viewport filter to cached all-peaks and update the widget."""
+        import numpy as np
+        peaks = self._current_peaks_all
+        if peaks is None or not isinstance(peaks, np.ndarray) or peaks.ndim != 2:
+            self.peak_widget.update_data(np.zeros((0, 3)))
+            return
+        if peaks.shape[0] == 0:
+            self.peak_widget.update_data(peaks)
+            return
+        fmin = self.fft_canvas.analyzer.fmin
+        fmax = self.fft_canvas.analyzer.fmax
+        mask = (peaks[:, 0] > fmin) & (peaks[:, 0] < fmax)
+        self.peak_widget.update_data(peaks[mask])
+
     def _on_canvas_freq_range_changed(self, fmin: int, fmax: int) -> None:
-        """Update the 'Showing X – Y Hz' label when the graph is panned or zoomed."""
+        """Update freq label and re-filter the results panel when viewport changes."""
         self.freq_range_label.setText(f"Showing {fmin} – {fmax} Hz")
+        self._refresh_results_peaks()
 
     def _update_freq_range_label(self) -> None:
         self.freq_range_label.setText(
@@ -2196,6 +2226,13 @@ class MainWindow(QtWidgets.QMainWindow):
         import numpy as np
         if not isinstance(peaks, np.ndarray) or peaks.ndim != 2 or peaks.shape[0] == 0:
             return
+        # Apply viewport filter — mirrors Swift where ratios use sortedPeaksWithModes
+        # (which filters analyzer.currentPeaks by minFreq/maxFreq).
+        fmin = self.fft_canvas.analyzer.fmin
+        fmax = self.fft_canvas.analyzer.fmax
+        peaks = peaks[(peaks[:, 0] > fmin) & (peaks[:, 0] < fmax)]
+        if peaks.shape[0] == 0:
+            return
         guitar_type_str = self.guitar_type_combo.currentText()
         try:
             guitar_type = GT.GuitarType(guitar_type_str)
@@ -2230,6 +2267,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_auto_selection_btn.setVisible(mt.is_guitar)
         self.threshold_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
+        self.peak_widget.set_is_guitar(mt.is_guitar)
         self._guitar_summary.setVisible(mt.is_guitar)
         self._material_section.setVisible(not mt.is_guitar and self._is_measurement_complete)
         # Toggle peak list: guitar → PeakListWidget; plate/brace → MaterialPeakListWidget
@@ -3358,6 +3396,28 @@ class MainWindow(QtWidgets.QMainWindow):
                 export_min_db = float(self.threshold_slider.value())
                 export_max_db = float(max(mags)) + 10.0 if mags else 0.0
 
+            # Build material_spectra from the loaded measurement's per-phase snapshots —
+            # mirrors Swift's materialSpectra computed property in TapToneAnalysisView+SpectrumViews:
+            # longitudinalSpectrum → "Longitudinal (L)", crossSpectrum → "Cross-grain (C)", flcSpectrum → "FLC".
+            _material_spectra = None
+            if not is_guitar and self._loaded_measurement is not None:
+                m_exp = self._loaded_measurement
+                _ms: list = []
+                if m_exp.longitudinal_snapshot is not None:
+                    ls = m_exp.longitudinal_snapshot
+                    _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
+                                "color": "blue", "label": "Longitudinal (L)"})
+                if m_exp.cross_snapshot is not None:
+                    cs = m_exp.cross_snapshot
+                    _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
+                                "color": "orange", "label": "Cross-grain (C)"})
+                if m_exp.flc_snapshot is not None:
+                    fs = m_exp.flc_snapshot
+                    _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
+                                "color": "purple", "label": "FLC"})
+                if _ms:
+                    _material_spectra = _ms
+
             # Mirrors Swift TapToneAnalysisView+Export.createExportableSpectrumView()
             # calling makeExportableSpectrumView(...) directly.
             make_exportable_spectrum_view(
@@ -3369,11 +3429,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 max_db=export_max_db,
                 peaks=peaks_list,
                 annotation_offsets=_annotation_offsets,
-                measurement_type_str=None if is_guitar else "plate",
+                measurement_type_str=mt.value if not is_guitar else None,
                 selected_longitudinal_peak_id=_sel_long_id,
                 selected_cross_peak_id=_sel_cross_id,
                 selected_flc_peak_id=_sel_flc_id,
                 mode_overrides=_mode_overrides,
+                material_spectra=_material_spectra,
                 guitar_type_str=gt_str,
                 date_label=date_label,
                 chart_title=chart_title,

@@ -27,10 +27,11 @@ class TapToneAnalyzerAnalysisHelpersMixin:
             self.find_peaks(self.saved_mag_y_db)
 
     def _emit_loaded_peaks_at_threshold(self) -> None:
-        """Filter loaded-measurement peaks by threshold/fmin/fmax and emit peaksChanged.
+        """Filter loaded-measurement peaks by threshold and emit peaksChanged.
 
         Mirrors Swift recalculateFrozenPeaksIfNeeded — applied when threshold or
         frequency range changes while a measurement is frozen/loaded.
+        Viewport filtering (fmin/fmax) is applied by the results panel at display time.
         """
         import numpy as np
 
@@ -47,15 +48,8 @@ class TapToneAnalyzerAnalysisHelpersMixin:
             return
 
         self.saved_peaks = peaks
-        peaks_freq = peaks[:, 0]
-
-        b_indices = np.nonzero((peaks_freq < self.fmax) & (peaks_freq > self.fmin))
-        if len(b_indices[0]) > 0:
-            f_min_idx = int(b_indices[0][0])
-            f_max_idx = int(b_indices[0][-1]) + 1
-            self.peaksChanged.emit(peaks[f_min_idx:f_max_idx])
-        else:
-            self.peaksChanged.emit(empty)
+        # Emit all threshold-passing peaks — viewport filtering applied by results panel.
+        self.peaksChanged.emit(peaks)
 
     def process_averages(self, mag_y) -> None:
         """Accumulate and average FFT linear magnitudes.

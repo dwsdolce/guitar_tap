@@ -81,7 +81,7 @@ def render_spectrum_image_for_pdf(m: TapToneMeasurement) -> str | None:
             "frequencies": ls.frequencies,
             "magnitudes": ls.magnitudes,
             "color": "blue",
-            "label": "Longitudinal",
+            "label": "Longitudinal (L)",
         })
     if m.cross_snapshot:
         cs = m.cross_snapshot
@@ -89,7 +89,7 @@ def render_spectrum_image_for_pdf(m: TapToneMeasurement) -> str | None:
             "frequencies": cs.frequencies,
             "magnitudes": cs.magnitudes,
             "color": "orange",
-            "label": "Cross-grain",
+            "label": "Cross-grain (C)",
         })
     if m.flc_snapshot:
         fs = m.flc_snapshot

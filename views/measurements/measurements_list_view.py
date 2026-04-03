@@ -318,7 +318,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Measurement",
-            os.path.join(os.path.expanduser("~"), "Documents", m.base_filename + ".guitartap"),
+            os.path.join(os.path.expanduser("~/Documents/GuitarTap"), m.base_filename + ".guitartap"),
             "GuitarTap files (*.guitartap);;JSON files (*.json);;All files (*)",
         )
         if not path:
@@ -333,7 +333,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export PDF Report",
-            os.path.join(os.path.expanduser("~"), "Documents", m.base_filename + ".pdf"),
+            os.path.join(os.path.expanduser("~/Documents/GuitarTap"), m.base_filename + ".pdf"),
             "PDF files (*.pdf)",
         )
         if not path:
@@ -392,7 +392,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Import Measurement",
-            os.path.expanduser("~"),
+            os.path.expanduser("~/Documents/GuitarTap"),
             "Measurement files (*.json *.guitartap);;All files (*)",
         )
         if not path:

@@ -801,6 +801,12 @@ class FftCanvas(pg.PlotWidget):
     def set_measurement_type(self, measurement_type) -> None:
         """Switch between Guitar / Plate / Brace analysis modes."""
         self.analyzer.set_measurement_type(measurement_type)
+        is_guitar = measurement_type.is_guitar
+        # Mode bands and peak threshold line are guitar-only — mirrors Swift's
+        # showModeBoundaries && measurementType.isGuitar and isGuitar threshold line guard.
+        for item in self._mode_band_items:
+            item.setVisible(is_guitar and self._mode_bands_visible)
+        self.line_threshold.setVisible(is_guitar and not self.is_comparing)
 
     def start_plate_analysis(self) -> None:
         """Arm the plate capture state machine for the next tap(s)."""
@@ -1182,7 +1188,8 @@ class FftCanvas(pg.PlotWidget):
         showing = not is_comparing
         self.points.setVisible(showing)
         self.selected_point.setVisible(showing)
-        self.line_threshold.setVisible(showing)
+        # Peak threshold line is guitar-only; hide during comparison regardless.
+        self.line_threshold.setVisible(showing and self.analyzer._measurement_type.is_guitar)
         self.line_tap_threshold.setVisible(showing)
         self.line_reset_threshold.setVisible(showing)
 

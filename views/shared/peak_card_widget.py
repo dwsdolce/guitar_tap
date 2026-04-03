@@ -79,6 +79,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         show: str,
         is_held: bool,
         pitch_obj: pitch_c.Pitch,
+        show_pitch: bool = True,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -90,6 +91,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._show = show
         self._is_held = is_held
         self._pitch = pitch_obj
+        self._show_pitch = show_pitch
         self._is_selected = False
         self._is_manual = False
 
@@ -157,18 +159,20 @@ class PeakCardWidget(QtWidgets.QFrame):
         r1.addWidget(self._freq_lbl)
         info.addLayout(r1)
 
-        # Row 2 — pitch + cents
-        r2 = QtWidgets.QHBoxLayout()
-        r2.setSpacing(3)
-        note_icon = QtWidgets.QLabel("♪")
-        note_icon.setFont(_font(9))
-        note_icon.setStyleSheet("color: rgb(130,60,200);")
-        r2.addWidget(note_icon)
-        self._pitch_lbl = QtWidgets.QLabel()
-        self._pitch_lbl.setFont(_font(9, bold=True))
-        self._pitch_lbl.setStyleSheet("color: rgb(130,60,200);")
-        r2.addWidget(self._pitch_lbl, 1)
-        info.addLayout(r2)
+        # Row 2 — pitch + cents (guitar mode only — mirrors Swift measurementType.isGuitar guard)
+        self._pitch_lbl = None
+        if self._show_pitch:
+            r2 = QtWidgets.QHBoxLayout()
+            r2.setSpacing(3)
+            note_icon = QtWidgets.QLabel("♪")
+            note_icon.setFont(_font(9))
+            note_icon.setStyleSheet("color: rgb(130,60,200);")
+            r2.addWidget(note_icon)
+            self._pitch_lbl = QtWidgets.QLabel()
+            self._pitch_lbl.setFont(_font(9, bold=True))
+            self._pitch_lbl.setStyleSheet("color: rgb(130,60,200);")
+            r2.addWidget(self._pitch_lbl, 1)
+            info.addLayout(r2)
 
         # Row 3 — Q/BW (left) + magnitude (right)
         r3 = QtWidgets.QHBoxLayout()
@@ -255,6 +259,8 @@ class PeakCardWidget(QtWidgets.QFrame):
             self._badge.setVisible(False)
 
     def _refresh_pitch(self) -> None:
+        if self._pitch_lbl is None:
+            return
         note = self._pitch.note(self._freq)
         cents = self._pitch.cents(self._freq)
         self._pitch_lbl.setText(f"{note}  {cents:+.0f}¢")
@@ -411,6 +417,9 @@ class PeakListWidget(QtWidgets.QWidget):
 
         self.selected_freq: float = 0.0
         self.selected_freq_index: int = -1
+        # Mirrors Swift measurementType.isGuitar — controls pitch row visibility in cards.
+        self._is_guitar: bool = True
+        self._last_data: "npt.NDArray | None" = None
 
         data: npt.NDArray = np.vstack(([], [])).T
         self.model = pm.PeaksModel(data)
@@ -490,6 +499,7 @@ class PeakListWidget(QtWidgets.QWidget):
                 show=show,
                 is_held=self._is_held,
                 pitch_obj=self._pitch,
+                show_pitch=self._is_guitar,
                 parent=self._container,
             )
             card._is_manual = is_manual
@@ -598,7 +608,20 @@ class PeakListWidget(QtWidgets.QWidget):
 
     # ── public API ────────────────────────────────────────────────────────────
 
+    def set_is_guitar(self, is_guitar: bool) -> None:
+        """Set whether this widget is displaying guitar peaks (shows pitch) or not.
+
+        Mirrors Swift measurementType.isGuitar guard on pitch display in PeakAnnotationLabel.
+        Rebuilds cards immediately so the change takes effect without waiting for new data.
+        """
+        if self._is_guitar == is_guitar:
+            return
+        self._is_guitar = is_guitar
+        if self._last_data is not None:
+            self._rebuild_cards(self._last_data)
+
     def update_data(self, data: npt.NDArray) -> bool:
+        self._last_data = data
         self.model.update_data(data)
         self._rebuild_cards(data)
         if self.selected_freq > 0:
@@ -607,7 +630,7 @@ class PeakListWidget(QtWidgets.QWidget):
 
     def save_peaks(self) -> None:
         if not self._saved_path:
-            self._saved_path = os.getenv("HOME", "")
+            self._saved_path = os.path.expanduser("~/Documents/GuitarTap")
         filename, sel_filter = QtWidgets.QFileDialog.getSaveFileName(
             self,
             caption="Save Peaks to CSV",
