@@ -36,10 +36,47 @@ __all__ = [
     "export_pdf",
     "measurements_file",
     "render_spectrum_image_for_measurement",
+    "default_export_dir",
+    "last_export_dir",
+    "update_export_dir",
 ]
 
 # Spectrum image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
 from views.exportable_spectrum_chart import render_spectrum_image_for_measurement  # noqa: E402
+
+
+# ── Export directory tracking ─────────────────────────────────────────────────
+# Mirrors MeasurementFileExporter.lastUsedDirectory in Swift: remembers the
+# last directory the user saved to or opened from, persisted across launches
+# via QSettings (mirrors UserDefaults bookmark storage in Swift).
+
+_EXPORT_DIR_KEY = "GuitarTap/lastUsedExportDirectory"
+
+
+def default_export_dir() -> str:
+    """Return ~/Documents/GuitarTap, creating it if needed."""
+    path = os.path.join(os.path.expanduser("~"), "Documents", "GuitarTap")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def last_export_dir() -> str:
+    """Return the last directory used for export/import, or the default.
+
+    Persisted across launches via QSettings — mirrors Swift's UserDefaults
+    bookmark storage in MeasurementFileExporter.
+    """
+    from PyQt6.QtCore import QSettings
+    stored = QSettings().value(_EXPORT_DIR_KEY)
+    if stored and os.path.isdir(stored):
+        return stored
+    return default_export_dir()
+
+
+def update_export_dir(chosen_path: str) -> None:
+    """Persist the directory of *chosen_path* as the new last-used export dir."""
+    from PyQt6.QtCore import QSettings
+    QSettings().setValue(_EXPORT_DIR_KEY, os.path.dirname(chosen_path))
 
 
 # ── Persistence paths ─────────────────────────────────────────────────────────

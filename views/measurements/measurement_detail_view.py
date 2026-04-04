@@ -431,11 +431,12 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Measurement",
-            os.path.join(os.path.expanduser("~/Documents/GuitarTap"), default_name),
+            os.path.join(M.last_export_dir(), default_name),
             "JSON files (*.json *.guitartap);;All files (*)",
         )
         if not path:
             return
+        M.update_export_dir(path)
         try:
             text = M.export_measurement_json(self._m)
             with open(path, "w", encoding="utf-8") as f:
@@ -450,11 +451,12 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export PDF Report",
-            os.path.join(os.path.expanduser("~/Documents/GuitarTap"), default_name),
+            os.path.join(M.last_export_dir(), default_name),
             "PDF files (*.pdf)",
         )
         if not path:
             return
+        M.update_export_dir(path)
         try:
             M.export_pdf(self._m, None, path)
         except Exception as exc:

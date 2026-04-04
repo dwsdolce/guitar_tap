@@ -314,11 +314,12 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Measurement",
-            os.path.join(os.path.expanduser("~/Documents/GuitarTap"), m.base_filename + ".guitartap"),
+            os.path.join(M.last_export_dir(), m.base_filename + ".guitartap"),
             "GuitarTap files (*.guitartap);;JSON files (*.json);;All files (*)",
         )
         if not path:
             return
+        M.update_export_dir(path)
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(M.export_measurement_json(m))
@@ -334,13 +335,14 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Spectrum",
-            os.path.join(os.path.expanduser("~/Documents/GuitarTap"), m.base_filename + ".png"),
+            os.path.join(M.last_export_dir(), m.base_filename + ".png"),
             "PNG images (*.png)",
         )
         if not path:
             return
         if not path.endswith(".png"):
             path += ".png"
+        M.update_export_dir(path)
         png_data = M.render_spectrum_image_for_measurement(m)
         if png_data is None:
             QtWidgets.QMessageBox.warning(self, "Export Error", "This measurement has no spectrum snapshot.")
@@ -355,11 +357,12 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export PDF Report",
-            os.path.join(os.path.expanduser("~/Documents/GuitarTap"), m.base_filename + ".pdf"),
+            os.path.join(M.last_export_dir(), m.base_filename + ".pdf"),
             "PDF files (*.pdf)",
         )
         if not path:
             return
+        M.update_export_dir(path)
         # Render spectrum image from the saved snapshot (mirrors Swift
         # renderSpectrumImageForMeasurement called from exportPDFReport).
         png_data = M.render_spectrum_image_for_measurement(m)
@@ -406,11 +409,12 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Import Measurement",
-            os.path.expanduser("~/Documents/GuitarTap"),
+            M.last_export_dir(),
             "Measurement files (*.json *.guitartap);;All files (*)",
         )
         if not path:
             return
+        M.update_export_dir(path)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 raw = f.read()

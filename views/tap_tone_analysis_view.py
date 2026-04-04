@@ -19,6 +19,7 @@ import views.fft_canvas as fft_c
 from models.analysis_display_mode import AnalysisDisplayMode
 import views.shared.peak_card_widget as PT
 import views.utilities.tap_settings_view as AS
+import views.utilities.tap_display_settings as TDS
 import views.tap_analysis_results_view as M
 from views.exportable_spectrum_chart import make_exportable_spectrum_view
 from models import TapToneMeasurement, ResonantPeak, SpectrumSnapshot
@@ -522,10 +523,16 @@ class MainWindow(QtWidgets.QMainWindow):
             QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon
         )
         self.annotations_btn.setStyleSheet("border: none")
-        self.annotations_btn.setToolTip(
-            "Annotation visibility: Selected\nClick to cycle: Selected → None → All"
+        _saved_mode = TDS.annotation_visibility_mode()
+        _saved_idx = next(
+            (i for i, (name, _) in enumerate(self._ANN_MODES) if name == _saved_mode), 0
         )
-        self._ann_mode_idx: int = 0
+        self._ann_mode_idx: int = _saved_idx
+        self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[_saved_idx][1]))
+        self.annotations_btn.setToolTip(
+            f"Annotation visibility: {_saved_mode}\n"
+            "Click to cycle: Selected → None → All"
+        )
         hl.addWidget(self.annotations_btn)
 
         hl.addSpacing(4)
@@ -2012,6 +2019,7 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Annotation visibility: {next_mode}\n"
             "Click to cycle: Selected → None → All"
         )
+        TDS.set_annotation_visibility_mode(next_mode)
         self._apply_annotation_mode(next_mode)
 
     def _apply_annotation_mode(self, mode: str) -> None:
@@ -3348,9 +3356,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Build a suggested filename that mirrors Swift's base_filename pattern
         # (e.g. "spectrum-1775190435.png").
         suggested_name = f"spectrum-{int(_time.time())}.png"
-        suggested_path = os.path.join(
-            os.path.expanduser("~/Documents/GuitarTap"), suggested_name
-        )
+        suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
@@ -3362,6 +3368,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if not path.endswith(".png"):
             path += ".png"
+        M.update_export_dir(path)
 
         self._loading_overlay.show_message("Exporting spectrum…")
         try:
@@ -3513,9 +3520,7 @@ class MainWindow(QtWidgets.QMainWindow):
         import time as _time
 
         suggested_name = f"report-{int(_time.time())}.pdf"
-        suggested_path = os.path.join(
-            os.path.expanduser("~/Documents/GuitarTap"), suggested_name
-        )
+        suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
@@ -3527,6 +3532,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if not path.endswith(".pdf"):
             path += ".pdf"
+        M.update_export_dir(path)
 
         self._loading_overlay.show_message("Generating PDF report…")
         m = self._collect_measurement()

@@ -440,3 +440,15 @@ class AppSettings:
     @classmethod
     def set_window_geometry(cls, geom: QtCore.QByteArray) -> None:
         cls._set("window/geometry", geom)
+
+    # ------------------------------------------------------------------ #
+    # Annotation visibility mode
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def annotation_visibility_mode(cls) -> str:
+        """Return the saved annotation visibility mode name ("Selected", "None", or "All")."""
+        return str(cls._get("annotationVisibilityMode", "Selected"))
+
+    @classmethod
+    def set_annotation_visibility_mode(cls, mode: str) -> None:
+        cls._set("annotationVisibilityMode", mode)

@@ -68,3 +68,19 @@ def saved_freq_range(meas_type: "str | object" = "") -> tuple[int, int]:
 def saved_db_range() -> tuple[float, float]:
     """Return (db_min, db_max) from persistent settings."""
     return AppSettings.db_min(), AppSettings.db_max()
+
+
+def annotation_visibility_mode() -> str:
+    """Return the saved annotation visibility mode name ("Selected", "None", or "All").
+
+    Mirrors Swift's TapDisplaySettings.annotationVisibilityMode.
+    """
+    return AppSettings.annotation_visibility_mode()
+
+
+def set_annotation_visibility_mode(mode: str) -> None:
+    """Persist the annotation visibility mode name.
+
+    Mirrors Swift's TapDisplaySettings.annotationVisibilityMode setter.
+    """
+    AppSettings.set_annotation_visibility_mode(mode)
