@@ -164,6 +164,30 @@ class AppSettings:
         cls._set("audio/device_name", device.name)  # keep legacy key in sync
 
     # ------------------------------------------------------------------ #
+    # Measurement type  (mirrors Swift TapDisplaySettings.measurementType)
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def measurement_type(cls) -> "MeasurementType":
+        """Return the saved MeasurementType, defaulting to ACOUSTIC.
+
+        Stores the enum raw value ("Classical Guitar", etc.) matching Swift's
+        TapDisplaySettings.measurementType which stores newValue.rawValue.
+        """
+        from models.measurement_type import MeasurementType  # noqa: PLC0415
+        raw = cls._get("analysis/measurement_type", None)
+        if raw:
+            try:
+                return MeasurementType(raw)
+            except ValueError:
+                pass
+        return MeasurementType.ACOUSTIC
+
+    @classmethod
+    def set_measurement_type(cls, mt: "MeasurementType") -> None:
+        """Persist a MeasurementType by its raw value, matching Swift."""
+        cls._set("analysis/measurement_type", mt.value)
+
+    # ------------------------------------------------------------------ #
     # Guitar type
     # ------------------------------------------------------------------ #
     @classmethod

@@ -1710,8 +1710,14 @@ class MainWindow(QtWidgets.QMainWindow):
         """Restore saved values and initialise display state."""
         canvas = self.fft_canvas
 
+        saved_mt = AS.AppSettings.measurement_type()
+        if saved_mt.is_guitar:
+            self.measurement_type_combo.setCurrentText("Guitar")
+            self.guitar_type_combo.setCurrentText(saved_mt.short_name)
+        else:
+            self.measurement_type_combo.setCurrentText(saved_mt.short_name)
+
         saved_gt = AS.AppSettings.guitar_type()
-        self.guitar_type_combo.setCurrentText(saved_gt)
         self.peak_widget.model.set_guitar_type(saved_gt)
         canvas.set_guitar_type_bands(saved_gt)
         self._update_measurement_badge()
@@ -2271,6 +2277,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_measurement_type_changed(self, _: str) -> None:
         mt = self._current_mt()
+        AS.AppSettings.set_measurement_type(mt)
         self.fft_canvas.set_measurement_type(mt)
         self.reset_auto_selection_btn.setVisible(mt.is_guitar)
         self.threshold_slider.setEnabled(mt.is_guitar)
