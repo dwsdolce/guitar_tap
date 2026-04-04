@@ -1899,10 +1899,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if not mt.is_guitar:
             self._material_section.setVisible(checked)
         if checked:
-            # Re-apply the current annotation mode (data_held always defaults to Selected)
-            current_mode = self._ANN_MODES[self._ann_mode_idx][0]
-            if current_mode != "Selected":
-                self._apply_annotation_mode(current_mode)
             # Disable auto-scale when spectrum is frozen (matches Swift behaviour)
             if self.auto_db_btn.isChecked():
                 self.auto_db_btn.setChecked(False)
@@ -2032,16 +2028,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_annotation_mode(next_mode)
 
     def _apply_annotation_mode(self, mode: str) -> None:
-        model = self.peak_widget.model
-        canvas = self.fft_canvas
-        model.annotation_mode = mode  # keep PeaksModel in sync for live-path gating
-        if mode == "All":
-            model.show_all_annotations()
-        elif mode == "Selected":
-            canvas.annotations.hide_annotations()
-            model.show_annotations()
-        else:  # "None"
-            canvas.annotations.hide_annotations()
+        """Set the annotation visibility mode.
+
+        Setting annotation_mode on the model is reactive: its property setter
+        calls update_data() which re-emits exactly the right annotation signals
+        for the current peaks and mode — mirroring Swift where changing
+        annotationVisibilityMode (a @Published property) automatically
+        re-evaluates the visiblePeaks computed property.
+        """
+        self.peak_widget.model.annotation_mode = mode
 
     # ================================================================
     # Threshold / hysteresis
@@ -2332,7 +2327,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     peak_model.modes[ff] = "FLC"
                 else:
                     peak_model.modes[ff] = "Peak"
-            peak_model.show_all_annotations()
+            peak_model.refresh_annotations()
 
         # Show/hide placeholder vs content and recalculate
         dims = self._get_current_dims()
@@ -2548,7 +2543,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         self.set_measurement_complete(True)
-        peak_model.show_all_annotations()
 
 
     def _populate_brace_section(self, props: PA.BraceProperties) -> None:
@@ -2970,7 +2964,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if is_comparing:
             canvas.annotations.hide_annotations()
         else:
-            canvas.annotations.show_all_annotations()
+            self.peak_widget.model.refresh_annotations()
 
         # ── Badge ──────────────────────────────────────────────────────────────
         self._update_measurement_badge()

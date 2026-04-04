@@ -77,11 +77,35 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
         self.user_has_modified_peak_selection: bool = False
         self._programmatic_update: bool = False
-        # Current annotation visibility mode — kept in sync by guitar_tap.py
-        # so that live-path annotation emission respects the user's choice.
+        # Current annotation visibility mode.
         # Values: "Selected", "None", "All"  (mirrors Swift annotationVisibilityMode)
-        self.annotation_mode: str = "Selected"
+        # Use set_annotation_mode() to change — it re-runs update_data() reactively.
+        self._annotation_mode: str = "Selected"
         self._auto_mode_map: dict[float, gm.GuitarMode] = {}  # freq → mode, from classify_all
+
+    # MARK: - Annotation mode (reactive, mirrors Swift @Published annotationVisibilityMode)
+
+    @property
+    def annotation_mode(self) -> str:
+        """Current annotation visibility mode: "Selected", "None", or "All"."""
+        return self._annotation_mode
+
+    @annotation_mode.setter
+    def annotation_mode(self, mode: str) -> None:
+        """Set the annotation visibility mode and re-apply it to the current peaks.
+
+        Mirrors Swift's behaviour where changing annotationVisibilityMode on
+        TapToneAnalyzer automatically re-evaluates visiblePeaks (a computed
+        property), causing the chart to re-render with the correct subset.
+        Here we re-run update_data() so the single annotation-emission path
+        in update_data() applies the new mode to whatever peaks are currently
+        loaded — no separate imperative show/hide calls needed.
+        """
+        if self._annotation_mode == mode:
+            return
+        self._annotation_mode = mode
+        if self._data is not None and self._data.shape[0] > 0:
+            self.update_data(self._data)
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the mode."""
@@ -331,6 +355,27 @@ class PeaksModel(QtCore.QAbstractTableModel):
             if self.annotation_mode == "All" or self.show_value_bool(idx):
                 self.annotationUpdate.emit(freq, mag, self.annotation_html(freq, mag, mode), mode)
 
+    def refresh_annotations(self) -> None:
+        """Re-emit annotation signals for the current peaks and annotation_mode.
+
+        Call this after mutating mode labels (model.modes) without changing
+        the underlying peak data, so the canvas re-renders annotations with
+        updated text.  Mirrors Swift where mutating peakModeOverrides (@Published)
+        invalidates visiblePeaks and causes the chart to re-render.
+        """
+        if self._data is None or self._data.shape[0] == 0:
+            return
+        self.clearAnnotations.emit()
+        if self._annotation_mode == "None":
+            return
+        for row in range(self._data.shape[0]):
+            idx = self.index(row, 0)
+            freq = self.freq_value(idx)
+            mag  = self.magnitude_value(idx)
+            mode = self.mode_value(idx)
+            if self._annotation_mode == "All" or self.show_value_bool(idx):
+                self.annotationUpdate.emit(freq, mag, self.annotation_html(freq, mag, mode), mode)
+
     def clear_annotations(self) -> None:
         """Clear all annotations."""
         self.clearAnnotations.emit()
@@ -488,7 +533,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
         self.is_live = not held
         if held:
-            self.show_annotations()
+            self.refresh_annotations()
         else:
             self.hideAnnotations.emit()
         self.layoutChanged.emit()
