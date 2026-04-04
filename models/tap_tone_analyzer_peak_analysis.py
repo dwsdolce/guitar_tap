@@ -26,8 +26,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         Mirrors Swift findPeaks Step 3:
           1. All guaranteed-slot peaks (one per known mode, already deduplicated
              by the sequential Pass 1 scan in find_peaks) come first.
-          2. Remaining unknown/inter-mode peaks are appended, sorted by magnitude
-             descending, with 2 Hz deduplication against the guaranteed set.
+          2. Remaining unknown/inter-mode peaks fill remaining slots up to
+             self.max_peaks (0 = unlimited), sorted by magnitude descending,
+             with 2 Hz deduplication against the guaranteed set.
 
         Parameters
         ----------
@@ -61,15 +62,21 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         # Fill remaining slots from unknown peaks by magnitude (descending),
         # skipping any that are within 2 Hz of an already-included peak.
+        # Mirrors Swift: maxPeaks == 0 means "capture all peaks".
         if unknown_peaks.shape[0] > 0:
+            remaining_slots = (self.max_peaks - len(final_rows)) if self.max_peaks > 0 else None
             order = np.argsort(-unknown_peaks[:, 1])
             for idx in order:
+                if remaining_slots is not None and remaining_slots <= 0:
+                    break
                 row = unknown_peaks[idx]
                 freq = float(row[0])
                 if any(abs(freq - f) < 2.0 for f in claimed_freqs):
                     continue
                 final_rows.append(row)
                 claimed_freqs.append(freq)
+                if remaining_slots is not None:
+                    remaining_slots -= 1
 
         if not final_rows:
             return np.zeros((0, 3))
@@ -85,18 +92,18 @@ class TapToneAnalyzerPeakAnalysisMixin:
         the same two-pass strategy:
 
         Pass 1 — Known-mode ranges (sequential, low→high):
-            Scans each mode's band with a ``last_claimed_freq`` cursor so that
-            overlapping ranges (e.g. Top/Back) cannot claim the same physical
-            peak.  The strongest qualifying local maximum in each range is
-            stored as that mode's guaranteed peak.
+            Scans each mode's band, clamped to [min_frequency, max_frequency],
+            with a ``last_claimed_freq`` cursor preventing the same physical peak
+            from being claimed by two overlapping mode ranges.
 
         Pass 2 — Unknown/inter-mode peaks:
-            Scans the full frequency window for local maxima that fall outside
-            every known-mode range.
+            Scans the full [min_frequency, max_frequency] analysis window for
+            local maxima that fall outside every known-mode range.
 
         Assembly (``_apply_mode_priority``):
             Guaranteed peaks occupy fixed slots; remaining slots are filled from
-            Pass-2 peaks by magnitude with 2 Hz deduplication.
+            Pass-2 peaks by magnitude with 2 Hz deduplication, up to max_peaks
+            total (0 = unlimited).
 
         Returns (triggered, peaks_array) where peaks_array columns are
         (freq_hz, mag_db, Q).  Emits peaksChanged with the in-viewport subset.
@@ -110,6 +117,14 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         threshold_db = self.threshold - 100
         hz_per_bin = self.fft_data.sample_freq / float(self.fft_data.n_f)
+        n_bins = len(mag_y_db)
+
+        # Analysis window — mirrors Swift loFreq/hiFreq = minHz ?? minFrequency,
+        # maxHz ?? maxFrequency, clamped to valid bin indices.
+        lo_freq = self.min_frequency
+        hi_freq = self.max_frequency
+        start_bin = max(1, int(lo_freq / hz_per_bin))
+        end_bin   = min(n_bins - 2, int(hi_freq / hz_per_bin))
 
         known_modes = sorted(
             [gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK,
@@ -121,13 +136,17 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # Each mode's scan begins just above the previous claimed peak frequency
         # (last_claimed_freq cursor), preventing the same physical peak from
         # being claimed by two overlapping mode ranges.
+        # Ranges are clamped to the analysis window [start_bin, end_bin].
         strongest_per_mode: dict = {}   # GuitarMode → (ploc_bin, iploc, ipmag)
         last_claimed_freq: float = -1.0
 
         for mode in known_modes:
             lo, hi = mode.mode_range(self._guitar_type)
-            bin_lo = max(1, int(lo / hz_per_bin))
-            bin_hi = min(len(mag_y_db) - 2, int(hi / hz_per_bin))
+            # Clamp mode range to the analysis window, mirrors Swift:
+            #   modeStartIdx = max(frequencies.firstIndex(where: $0 >= modeRange.lowerBound), startIdx)
+            #   modeEndIdx   = min(frequencies.firstIndex(where: $0 > modeRange.upperBound),  endIdx)
+            bin_lo = max(start_bin, int(lo / hz_per_bin))
+            bin_hi = min(end_bin,   int(hi / hz_per_bin))
             if bin_lo >= bin_hi:
                 continue
 
@@ -180,10 +199,14 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 guaranteed_rows.append([freq, mag, q])
         guaranteed_arr = np.array(guaranteed_rows) if guaranteed_rows else np.zeros((0, 3))
 
-        # --- Pass 2: unknown/inter-mode peaks (outside all known ranges) ------
-        all_ploc = f_a.peak_detection(mag_y_db, threshold_db)
+        # --- Pass 2: unknown/inter-mode peaks within the analysis window ------
+        # Mirrors Swift: outer scan from startIdx+windowSize to endIdx-windowSize,
+        # skipping bins that fall inside a known-mode range.
+        window_bins = mag_y_db[start_bin : end_bin + 1]
+        all_ploc_sub = f_a.peak_detection(window_bins, threshold_db)
         unknown_rows: list = []
-        if all_ploc.size > 0:
+        if all_ploc_sub.size > 0:
+            all_ploc = all_ploc_sub + start_bin
             all_iploc, all_ipmag = f_a.peak_interp(mag_y_db, all_ploc)
             all_freqs = all_iploc * hz_per_bin
             in_known = np.zeros(len(all_ploc), dtype=bool)
@@ -209,10 +232,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
         peaks = self._apply_mode_priority(guaranteed_arr, unknown_arr)
 
         if peaks.shape[0] > 0:
-            peaks_freq = peaks[:, 0]
             max_peaks_mag = float(np.max(peaks[:, 1]))
         else:
-            peaks_freq = np.array([])
             max_peaks_mag = -100.0
 
         if max_peaks_mag > (self.threshold - 100):

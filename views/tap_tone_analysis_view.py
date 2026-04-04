@@ -4692,7 +4692,6 @@ class MainWindow(QtWidgets.QMainWindow):
             pct = steps * 5
             hop_readout.setText(f"{pct}%")
             hop_context_lbl.setText(_hop_context(pct))
-            AS.AppSettings.set_hop_size_overlap(float(pct))
 
         hop_slider.valueChanged.connect(_on_hop_changed)
         _on_hop_changed(hop_slider.value())
@@ -4817,6 +4816,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # Analysis frequency range
             AS.AppSettings.set_analysis_f_min(an_f_min_spin.value())
             AS.AppSettings.set_analysis_f_max(an_f_max_spin.value())
+            # Apply immediately to analyzer, mirroring Swift's @Published didSet on
+            # minFrequency / maxFrequency which makes the new window active at once.
+            self.fft_canvas.analyzer.min_frequency = float(an_f_min_spin.value())
+            self.fft_canvas.analyzer.max_frequency = float(an_f_max_spin.value())
 
             # Show Unknown Modes
             AS.AppSettings.set_show_unknown_modes(show_unknown_cb.isChecked())
@@ -4830,12 +4833,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.threshold_slider.setValue(slider_val)
 
             # Max peaks
-            AS.AppSettings.set_max_peaks(0 if mp_all_cb.isChecked() else mp_spin.value())
+            new_max_peaks = 0 if mp_all_cb.isChecked() else mp_spin.value()
+            AS.AppSettings.set_max_peaks(new_max_peaks)
+            # Apply immediately to analyzer, mirroring Swift's @Published didSet on maxPeaks.
+            self.fft_canvas.analyzer.max_peaks = new_max_peaks
+
+            # Recalculate peaks with the new analysis window and max_peaks, mirroring
+            # Swift's recalculateFrozenPeaksIfNeeded() calls in applySettings().
+            self.fft_canvas.analyzer._recalculate_peaks()
 
             # Hysteresis margin
             hyst_db = hyst_slider.value() * 0.5
             self.fft_canvas.set_hysteresis_margin(hyst_db)
             AS.AppSettings.set_hysteresis_margin(hyst_db)
+
+            # Hop size overlap (mirrors Swift: TapDisplaySettings.hopSizeOverlap = fftAnalyzer.hopSizeOverlap)
+            AS.AppSettings.set_hop_size_overlap(float(hop_slider.value() * 5))
 
             # Plate / brace / gore / f_vs dimensions
             AS.AppSettings.set_plate_length(plate_length_spin.value())

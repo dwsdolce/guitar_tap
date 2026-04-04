@@ -244,6 +244,13 @@ class TapToneAnalyzer(
         self.fmax: int = 1000
         self.n_fmin: int = 0
         self.n_fmax: int = 0
+        # Analysis frequency window and peak count limit — mirrors Swift
+        # @Published var minFrequency = TapDisplaySettings.analysisMinFrequency
+        # @Published var maxFrequency = TapDisplaySettings.analysisMaxFrequency
+        # @Published var maxPeaks     = TapDisplaySettings.maxPeaks
+        self.min_frequency: float = float(_as.AppSettings.analysis_f_min())
+        self.max_frequency: float = float(_as.AppSettings.analysis_f_max())
+        self.max_peaks: int = _as.AppSettings.max_peaks()
         self.saved_mag_y_db = np.array([])
         self.saved_peaks = np.zeros((0, 3))               # (freq, mag, Q)
         self._loaded_measurement_peaks = None             # ndarray or None
