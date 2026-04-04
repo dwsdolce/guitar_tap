@@ -28,12 +28,6 @@ Key Derived Properties:
   Specific modulus | E / ρ (GPa/(g/cm³)) | Primary quality indicator; higher = lighter, stiffer wood
   Speed of sound   | √(E/ρ) (m/s)        | Governs how quickly vibrations travel through the plate
   Radiation ratio  | c_L / ρ             | Efficiency of acoustic power radiation
-
-NOTE — Structural divergence from Swift:
-  Swift's PlateProperties and BraceProperties store raw inputs (dimensions + frequencies)
-  and expose results as computed properties.  Python stores pre-computed results in
-  dataclass fields (calculated by calculate_plate_properties() and
-  calculate_brace_properties() standalone functions).  Both produce identical numeric results.
 """
 
 from __future__ import annotations
@@ -41,6 +35,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 
 
 # MARK: - MaterialDimensions
@@ -166,6 +161,25 @@ class WoodQuality(Enum):
             WoodQuality.POOR:      1.0,
         }[self]
 
+    # MARK: - Color
+
+    @property
+    def color(self) -> str:
+        """Hex display colour for quality labels and PDF report cells.
+
+        Single source of truth — mirrors Swift WoodQuality.color.
+        Hex values are the closest system-colour equivalents for:
+          .green (#34C759), .mint (#00C7BE), .blue (#007AFF),
+          .orange (#FF9500), .red (#FF3B30).
+        """
+        return {
+            WoodQuality.EXCELLENT: "#34C759",   # SwiftUI .green
+            WoodQuality.VERY_GOOD: "#00C7BE",   # SwiftUI .mint
+            WoodQuality.GOOD:      "#007AFF",   # SwiftUI .blue
+            WoodQuality.FAIR:      "#FF9500",   # SwiftUI .orange
+            WoodQuality.POOR:      "#FF3B30",   # SwiftUI .red
+        }[self]
+
     # MARK: - Supporting Enums
 
     class Direction(Enum):
@@ -259,31 +273,17 @@ class WoodQuality(Enum):
         return WoodQuality.POOR
 
 
-# Quality colour hex codes — Python-only (view concern; no Swift equivalent).
-# Used by the Python UI to tint result labels with the same colours as SwiftUI.
-QUALITY_COLORS: dict[str, str] = {
-    "Excellent": "#34C759",   # SwiftUI .green
-    "Very Good": "#00C7BE",   # SwiftUI .mint
-    "Good":      "#007AFF",   # SwiftUI .blue  (system accent)
-    "Fair":      "#FF9500",   # SwiftUI .orange
-    "Poor":      "#FF3B30",   # SwiftUI .red
-}
-
-
 # MARK: - PlateProperties
 
-@dataclass
 class PlateProperties:
     """Acoustic properties of a rectangular plate sample calculated from two or three tap-test
     fundamental frequencies.
 
-    Two tap orientations are required for a full plate analysis (longitudinal and cross-grain);
-    a third optional diagonal tap yields the shear modulus.
+    Stores raw inputs (dimensions + frequencies) and exposes all acoustic results as computed
+    properties — exactly mirroring Swift's PlateProperties struct in MaterialProperties.swift.
 
-    NOTE — Structural divergence from Swift:
-      Swift's PlateProperties stores raw inputs (dimensions + frequencies) and exposes results
-      as computed ``var`` properties.  This Python version stores pre-computed results; the
-      calculation is performed by calculate_plate_properties().  Both produce identical values.
+    Two tap orientations are required for a full plate analysis (longitudinal and cross-grain);
+    a third optional diagonal tap (f_flc) yields the shear modulus.
 
     See Also: BraceProperties for single-tap longitudinal-only analysis.
     See Also: WoodQuality for quality assessment thresholds.
@@ -291,72 +291,381 @@ class PlateProperties:
     Mirrors Swift PlateProperties struct (MaterialProperties.swift).
     """
 
-    f_long: float               # Fundamental bending frequency, longitudinal tap (Hz).
-    f_cross: float              # Fundamental bending frequency, cross-grain tap (Hz).
-    density_kg_m3: float        # Density of the sample (kg/m³).
-    E_long_GPa: float           # Young's modulus along the grain (GPa).
-    E_cross_GPa: float          # Young's modulus across the grain (GPa).
-    c_long_m_s: float           # Speed of sound along the grain (m/s).
-    c_cross_m_s: float          # Speed of sound across the grain (m/s).
-    specific_modulus_long: float    # Specific modulus along the grain (GPa/(g/cm³)).
-    specific_modulus_cross: float   # Specific modulus across the grain (GPa/(g/cm³)).
-    radiation_ratio_long: float     # Sound radiation ratio along the grain (m⁴/(kg·s)).
-    radiation_ratio_cross: float    # Sound radiation ratio across the grain (m⁴/(kg·s)).
-    quality_long: str               # WoodQuality raw value for the longitudinal direction.
-    quality_cross: str              # WoodQuality raw value for the cross-grain direction.
-    overall_quality: str            # Weighted (70% long + 30% cross) overall quality.
-    cross_long_ratio: float         # E_C / E_L (typical 0.04–0.08).
-    long_cross_ratio: float         # E_L / E_C (typical 12–25).
+    def __init__(
+        self,
+        dimensions: "MaterialDimensions",
+        f_long: float,
+        f_cross: float,
+        f_flc: Optional[float] = None,
+    ) -> None:
+        """Create a PlateProperties record from dimensions and measured fundamental frequencies.
+
+        Mirrors Swift PlateProperties.init(dimensions:fundamentalFrequencyLong:fundamentalFrequencyCross:fundamentalFrequencyFlc:).
+
+        - Parameters:
+          - dimensions: Physical dimensions and mass of the plate.
+          - f_long: Along-grain fundamental frequency in Hz. Mirrors Swift fundamentalFrequencyLong.
+          - f_cross: Cross-grain fundamental frequency in Hz. Mirrors Swift fundamentalFrequencyCross.
+          - f_flc: Optional FLC diagonal frequency in Hz. Mirrors Swift fundamentalFrequencyFlc.
+        """
+        self.dimensions = dimensions    # Mirrors Swift let dimensions: MaterialDimensions
+        self.f_long = f_long            # Mirrors Swift let fundamentalFrequencyLong: Float
+        self.f_cross = f_cross          # Mirrors Swift let fundamentalFrequencyCross: Float
+        self.f_flc = f_flc              # Mirrors Swift let fundamentalFrequencyFlc: Float?
+
+    # MARK: - Beam-Formula Young's Moduli
+
+    @property
+    def youngsModulusLong(self) -> float:
+        """Young's modulus along the grain (E_L) in Pascals, from the free-free beam formula.
+
+        Formula: E = 48 × π² × ρ × fL² × L⁴ / (22.37 × t)²
+
+        Mirrors Swift PlateProperties.youngsModulusLong.
+        """
+        t = self.dimensions.thickness()
+        if t <= 0 or self.dimensions.density() <= 0:
+            return 0.0
+        return _euler_bernoulli_e(self.dimensions.density(), self.f_long, self.dimensions.length(), t, 22.37)
+
+    @property
+    def youngsModulusCross(self) -> float:
+        """Young's modulus across the grain (E_C) in Pascals, from the free-free beam formula.
+
+        Formula: E = 48 × π² × ρ × fC² × W⁴ / (22.37 × t)²
+
+        Mirrors Swift PlateProperties.youngsModulusCross.
+        """
+        t = self.dimensions.thickness()
+        if t <= 0 or self.dimensions.density() <= 0:
+            return 0.0
+        return _euler_bernoulli_e(self.dimensions.density(), self.f_cross, self.dimensions.width(), t, 22.37)
+
+    # MARK: - Convenience Unit Conversions
+
+    @property
+    def youngsModulusLongGPa(self) -> float:
+        """Young's modulus along the grain in GPa. Mirrors Swift PlateProperties.youngsModulusLongGPa."""
+        return self.youngsModulusLong / 1e9
+
+    @property
+    def youngsModulusCrossGPa(self) -> float:
+        """Young's modulus across the grain in GPa. Mirrors Swift PlateProperties.youngsModulusCrossGPa."""
+        return self.youngsModulusCross / 1e9
+
+    # MARK: - Speed of Sound
+
+    @property
+    def c_long_m_s(self) -> float:
+        """Speed of sound along the grain in m/s.
+
+        Formula: c = √(E_L / ρ). Mirrors Swift PlateProperties.speedOfSoundLong.
+        """
+        rho = self.dimensions.density()
+        if rho <= 0:
+            return 0.0
+        return math.sqrt(self.youngsModulusLong / rho)
+
+    @property
+    def c_cross_m_s(self) -> float:
+        """Speed of sound across the grain in m/s.
+
+        Formula: c = √(E_C / ρ). Mirrors Swift PlateProperties.speedOfSoundCross.
+        """
+        rho = self.dimensions.density()
+        if rho <= 0:
+            return 0.0
+        return math.sqrt(self.youngsModulusCross / rho)
+
+    # MARK: - Density
+
+    @property
+    def density_kg_m3(self) -> float:
+        """Density of the sample in kg/m³. Mirrors Swift MaterialDimensions.density."""
+        return self.dimensions.density()
+
+    # MARK: - Specific Modulus
+
+    @property
+    def specific_modulus_long(self) -> float:
+        """Specific modulus along the grain in GPa/(g/cm³).
+
+        Mirrors Swift PlateProperties.specificModulusLong.
+        """
+        rho_g = self.dimensions.density_g_per_cm3()
+        if rho_g <= 0:
+            return 0.0
+        return self.youngsModulusLongGPa / rho_g
+
+    @property
+    def specific_modulus_cross(self) -> float:
+        """Specific modulus across the grain in GPa/(g/cm³).
+
+        Mirrors Swift PlateProperties.specificModulusCross.
+        """
+        rho_g = self.dimensions.density_g_per_cm3()
+        if rho_g <= 0:
+            return 0.0
+        return self.youngsModulusCrossGPa / rho_g
+
+    # MARK: - Radiation Ratio
+
+    @property
+    def radiation_ratio_long(self) -> float:
+        """Sound radiation ratio along the grain: c_L / ρ (m⁴/(kg·s)).
+
+        Mirrors Swift PlateProperties.radiationRatioLong.
+        """
+        rho = self.dimensions.density()
+        if rho <= 0:
+            return 0.0
+        return self.c_long_m_s / rho
+
+    @property
+    def radiation_ratio_cross(self) -> float:
+        """Sound radiation ratio across the grain: c_C / ρ (m⁴/(kg·s)).
+
+        Mirrors Swift PlateProperties.radiationRatioCross.
+        """
+        rho = self.dimensions.density()
+        if rho <= 0:
+            return 0.0
+        return self.c_cross_m_s / rho
+
+    # MARK: - Anisotropy Ratios
+
+    @property
+    def cross_long_ratio(self) -> float:
+        """E_C / E_L (typical 0.04–0.08). Mirrors Swift PlateProperties.crossLongRatio."""
+        e_l = self.youngsModulusLong
+        return self.youngsModulusCross / e_l if e_l > 0 else 0.0
+
+    @property
+    def long_cross_ratio(self) -> float:
+        """E_L / E_C (typical 12–25). Mirrors Swift PlateProperties.longCrossRatio."""
+        e_c = self.youngsModulusCross
+        return self.youngsModulusLong / e_c if e_c > 0 else 0.0
+
+    # MARK: - Quality Assessment
+
+    @property
+    def quality_long(self) -> str:
+        """WoodQuality raw value for the longitudinal direction (spruce thresholds).
+
+        Mirrors Swift PlateProperties.spruceQualityLong.rawValue.
+        """
+        return WoodQuality.evaluate(
+            self.specific_modulus_long,
+            WoodQuality.Direction.LONGITUDINAL,
+            WoodQuality.WoodType.SPRUCE,
+        ).value
+
+    @property
+    def quality_cross(self) -> str:
+        """WoodQuality raw value for the cross-grain direction (spruce thresholds).
+
+        Mirrors Swift PlateProperties.spruceQualityCross.rawValue.
+        """
+        return WoodQuality.evaluate(
+            self.specific_modulus_cross,
+            WoodQuality.Direction.CROSS,
+            WoodQuality.WoodType.SPRUCE,
+        ).value
+
+    @property
+    def overall_quality(self) -> str:
+        """Weighted (70% long + 30% cross) overall quality rating.
+
+        Mirrors Swift PlateProperties.overallQuality.rawValue.
+        """
+        long_score  = WoodQuality.evaluate(
+            self.specific_modulus_long,
+            WoodQuality.Direction.LONGITUDINAL,
+            WoodQuality.WoodType.SPRUCE,
+        ).numeric_score * 0.7
+        cross_score = WoodQuality.evaluate(
+            self.specific_modulus_cross,
+            WoodQuality.Direction.CROSS,
+            WoodQuality.WoodType.SPRUCE,
+        ).numeric_score * 0.3
+        combined = long_score + cross_score
+        if   combined >= 4.5: return WoodQuality.EXCELLENT.value
+        elif combined >= 3.5: return WoodQuality.VERY_GOOD.value
+        elif combined >= 2.5: return WoodQuality.GOOD.value
+        elif combined >= 1.5: return WoodQuality.FAIR.value
+        else:                 return WoodQuality.POOR.value
+
+    # MARK: - Gore Plate Coefficients
+
+    _vcl: float = 0.05          # Poisson's ratio ν_CL. Mirrors Swift PlateProperties.vcl.
+    _vlc_vcl: float = 0.02      # Product ν_LC × ν_CL. Mirrors Swift PlateProperties.vlcVcl.
+
+    @property
+    def _gore_coef1(self) -> float:
+        """Gore coefficient 1. Mirrors Swift PlateProperties.goreCoef1."""
+        term = (math.pi / 2.0) ** 2 * (1.5 ** 4)
+        return (1.0 / term) * 12.0 * (1.0 - PlateProperties._vlc_vcl)
+
+    @property
+    def _gore_coef2(self) -> float:
+        """Gore coefficient 2. Mirrors Swift PlateProperties.goreCoef2."""
+        return math.pi * math.sqrt(12.0 * (1.0 - PlateProperties._vlc_vcl) / 126.0)
+
+    @property
+    def _gore_coef3(self) -> float:
+        """Gore coefficient 3. Mirrors Swift PlateProperties.goreCoef3."""
+        return 4.0 * PlateProperties._vcl / 7.0
+
+    @property
+    def _gore_coef4(self) -> float:
+        """Gore coefficient 4. Mirrors Swift PlateProperties.goreCoef4."""
+        return 4.0 * 12.0 * (1.0 - PlateProperties._vlc_vcl) / 42.0
+
+    # MARK: - Gore Young's Moduli
+
+    @property
+    def gore_E_long_pa(self) -> float:
+        """Young's modulus along the grain using Gore's plate formula, in Pascals.
+
+        Mirrors Swift PlateProperties.goreYoungsModulusLong.
+        """
+        t = self.dimensions.thickness()
+        rho = self.dimensions.density()
+        if t <= 0 or rho <= 0:
+            return 0.0
+        L = self.dimensions.length()
+        return self._gore_coef1 * rho * L**4 * self.f_long**2 / (t * t)
+
+    @property
+    def gore_E_cross_pa(self) -> float:
+        """Young's modulus across the grain using Gore's plate formula, in Pascals.
+
+        Mirrors Swift PlateProperties.goreYoungsModulusCross.
+        """
+        t = self.dimensions.thickness()
+        rho = self.dimensions.density()
+        if t <= 0 or rho <= 0:
+            return 0.0
+        W = self.dimensions.width()
+        return self._gore_coef1 * rho * W**4 * self.f_cross**2 / (t * t)
+
+    @property
+    def gore_shear_modulus(self) -> Optional[float]:
+        """Shear modulus G_LC using Gore's formula, in Pascals.
+
+        Returns None when the optional FLC tap was not performed (f_flc is None).
+
+        Mirrors Swift PlateProperties.goreShearModulus.
+        """
+        if self.f_flc is None or self.f_flc <= 0:
+            return None
+        t = self.dimensions.thickness()
+        rho = self.dimensions.density()
+        if t <= 0 or rho <= 0:
+            return None
+        L = self.dimensions.length()
+        W = self.dimensions.width()
+        coef = 12.0 / (math.pi ** 2)
+        return coef * rho * L**2 * W**2 * self.f_flc**2 / (t * t)
 
 
 # MARK: - BraceProperties
 
-@dataclass
 class BraceProperties:
     """Acoustic properties of a rectangular brace strip calculated from a single longitudinal tap.
 
-    Braces are analysed using only the along-grain (longitudinal) fundamental frequency
-    because only the along-grain stiffness and speed of sound matter for their structural
-    and acoustic function in the instrument.
+    Stores raw inputs (dimensions + f_long) and exposes all acoustic results as computed
+    properties — exactly mirroring Swift's BraceProperties struct in MaterialProperties.swift.
 
     The formula used is the same Euler–Bernoulli free-free beam equation as for plates,
     but with the coefficient 22.37332 (more precise) rather than 22.37.
-
-    NOTE — Structural divergence from Swift:
-      Swift's BraceProperties stores raw inputs and exposes results as computed vars.
-      Python stores pre-computed results; calculation is performed by
-      calculate_brace_properties().
 
     See Also: PlateProperties for the full two-/three-tap plate analysis.
 
     Mirrors Swift BraceProperties struct (MaterialProperties.swift).
     """
 
-    f_long: float           # Fundamental bending frequency, longitudinal tap (Hz).
-    density_kg_m3: float    # Density of the sample (kg/m³).
-    E_long_GPa: float       # Young's modulus along the grain (GPa).
-    c_long_m_s: float       # Speed of sound along the grain (m/s).
-    specific_modulus: float # Specific modulus along the grain (GPa/(g/cm³)) — primary quality metric.
-    radiation_ratio: float  # Sound radiation ratio: c_L / ρ (m⁴/(kg·s)).
-    quality: str            # WoodQuality raw value for the longitudinal direction.
+    def __init__(self, dimensions: "MaterialDimensions", f_long: float) -> None:
+        """Create a BraceProperties record from dimensions and the longitudinal tap frequency.
 
+        Mirrors Swift BraceProperties.init(dimensions:fundamentalFrequencyLong:).
 
-# MARK: - GoreThicknessResult
+        - Parameters:
+          - dimensions: Physical dimensions and mass of the brace.
+          - f_long: Along-grain fundamental frequency in Hz. Mirrors Swift fundamentalFrequencyLong.
+        """
+        self.dimensions = dimensions    # Mirrors Swift let dimensions: MaterialDimensions
+        self.f_long = f_long            # Mirrors Swift let fundamentalFrequencyLong: Float
 
-@dataclass
-class GoreThicknessResult:
-    """Result of Gore Eq. 4.5-7 target thickness calculation.
+    # MARK: - Calculated Properties
 
-    Mirrors Swift PlateProperties.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:)
-    return value (expressed as a standalone result object in Python).
-    """
+    @property
+    def youngsModulusLong(self) -> float:
+        """Young's modulus along the grain (E_L) in Pascals.
 
-    thickness_mm: float     # Calculated target plate thickness (mm).
-    body_length_mm: float   # Guitar body length used in the calculation (mm).
-    body_width_mm: float    # Guitar lower-bout width used in the calculation (mm).
-    fvs: float              # Vibrational stiffness target (f_vs) used.
-    preset_name: str        # e.g. "Steel String Top"
-    glc_pa: float | None    # Shear modulus G_LC used (None → treated as 0).
+        Formula: E = 48 × π² × ρ × fL² × L⁴ / (22.37332 × t)²
+
+        Uses the more precise βL coefficient 22.37332. Mirrors Swift BraceProperties.youngsModulusLong.
+        """
+        t = self.dimensions.thickness()
+        if t <= 0 or self.dimensions.density() <= 0:
+            return 0.0
+        return _euler_bernoulli_e(self.dimensions.density(), self.f_long, self.dimensions.length(), t, 22.37332)
+
+    @property
+    def youngsModulusLongGPa(self) -> float:
+        """Young's modulus along the grain in GPa. Mirrors Swift BraceProperties.youngsModulusLongGPa."""
+        return self.youngsModulusLong / 1e9
+
+    @property
+    def c_long_m_s(self) -> float:
+        """Speed of sound along the grain in m/s.
+
+        Formula: c = √(E_L / ρ). Mirrors Swift BraceProperties.speedOfSoundLong.
+        """
+        rho = self.dimensions.density()
+        if rho <= 0:
+            return 0.0
+        return math.sqrt(self.youngsModulusLong / rho)
+
+    @property
+    def density_kg_m3(self) -> float:
+        """Density of the sample in kg/m³. Mirrors Swift MaterialDimensions.density."""
+        return self.dimensions.density()
+
+    @property
+    def specific_modulus(self) -> float:
+        """Specific modulus along the grain in GPa/(g/cm³) — primary quality metric.
+
+        Mirrors Swift BraceProperties.specificModulusLong.
+        """
+        rho_g = self.dimensions.density_g_per_cm3()
+        if rho_g <= 0:
+            return 0.0
+        return self.youngsModulusLongGPa / rho_g
+
+    @property
+    def radiation_ratio(self) -> float:
+        """Sound radiation ratio: c_L / ρ (m⁴/(kg·s)).
+
+        Mirrors Swift BraceProperties.radiationRatioLong.
+        """
+        rho = self.dimensions.density()
+        if rho <= 0:
+            return 0.0
+        return self.c_long_m_s / rho
+
+    @property
+    def quality(self) -> str:
+        """WoodQuality raw value for the longitudinal direction (spruce thresholds).
+
+        Mirrors Swift BraceProperties.spruceQuality.rawValue.
+        """
+        return WoodQuality.evaluate(
+            self.specific_modulus,
+            WoodQuality.Direction.LONGITUDINAL,
+            WoodQuality.WoodType.SPRUCE,
+        ).value
 
 
 # MARK: - TonewoodReference
@@ -414,171 +723,53 @@ def _euler_bernoulli_e(rho: float, f: float, L: float, t: float, beta_l_sq: floa
     return 48.0 * math.pi**2 * rho * f**2 * L**4 / (beta_l_sq * t) ** 2
 
 
-# MARK: - Legacy Quality Helpers (Python-only, kept for backward compatibility)
-# These standalone functions predate WoodQuality.evaluate() and are retained for
-# callers that have not yet migrated.
-
-def wood_quality_long(specific_modulus: float) -> str:
-    """Quality rating string for longitudinal specific modulus (GPa/(g/cm³)), spruce thresholds.
-
-    Deprecated: use WoodQuality.evaluate(specific_modulus, WoodQuality.Direction.LONGITUDINAL,
-    WoodQuality.WoodType.SPRUCE).value instead.
-    """
-    if specific_modulus >= 25:
-        return "Excellent"
-    if specific_modulus >= 22:
-        return "Very Good"
-    if specific_modulus >= 19:
-        return "Good"
-    if specific_modulus >= 16:
-        return "Fair"
-    return "Poor"
-
-
-def wood_quality_cross(specific_modulus: float) -> str:
-    """Quality rating string for cross-grain specific modulus (GPa/(g/cm³)), spruce thresholds.
-
-    Deprecated: use WoodQuality.evaluate(specific_modulus, WoodQuality.Direction.CROSS,
-    WoodQuality.WoodType.SPRUCE).value instead.
-    """
-    if specific_modulus >= 1.5:
-        return "Excellent"
-    if specific_modulus >= 1.2:
-        return "Very Good"
-    if specific_modulus >= 0.9:
-        return "Good"
-    if specific_modulus >= 0.6:
-        return "Fair"
-    return "Poor"
-
-
 # MARK: - Calculation Functions
 
 def calculate_brace_properties(dims: MaterialDimensions, f_long_hz: float) -> BraceProperties:
-    """Calculate acoustic properties for a brace from a single longitudinal tap.
+    """Create a BraceProperties from dimensions and a single longitudinal tap frequency.
 
-    Uses the precise βL coefficient 22.37332 (vs 22.37 for plates), mirroring Swift
-    BraceProperties.youngsModulusLong.
+    Thin constructor — validation only.  All acoustic results are computed lazily by
+    BraceProperties as @property accessors, mirroring Swift BraceProperties.
 
     - Parameters:
       - dims: Physical dimensions and mass of the brace sample.
       - f_long_hz: Along-grain fundamental frequency in Hz.
-    - Returns: Calculated BraceProperties.
+    - Returns: BraceProperties instance.
 
-    Mirrors Swift BraceProperties computed properties via calculate_brace_properties().
+    Mirrors Swift BraceProperties.init(dimensions:fundamentalFrequencyLong:).
     """
     if not dims.is_valid():
         raise ValueError("Brace dimensions must all be positive.")
     if f_long_hz <= 0:
         raise ValueError("Tap frequency must be positive.")
-
-    rho     = dims.density()
-    rho_g   = dims.density_g_per_cm3()
-    L       = dims.length()
-    t       = dims.thickness()
-
-    E_L     = _euler_bernoulli_e(rho, f_long_hz, L, t, 22.37332)
-    E_L_GPa = E_L / 1e9
-    c_L     = math.sqrt(E_L / rho)
-    spec    = E_L_GPa / rho_g
-    rad     = c_L / rho
-
-    return BraceProperties(
-        f_long=f_long_hz,
-        density_kg_m3=rho,
-        E_long_GPa=E_L_GPa,
-        c_long_m_s=c_L,
-        specific_modulus=spec,
-        radiation_ratio=rad,
-        quality=wood_quality_long(spec),
-    )
+    return BraceProperties(dimensions=dims, f_long=f_long_hz)
 
 
 def calculate_plate_properties(
     dims: MaterialDimensions,
     f_long_hz: float,
     f_cross_hz: float,
+    f_flc_hz: Optional[float] = None,
 ) -> PlateProperties:
-    """Calculate acoustic properties for a plate from longitudinal and cross-grain taps.
+    """Create a PlateProperties from dimensions and tap frequencies.
 
-    Uses βL coefficient 22.37 (rounded), mirroring Swift PlateProperties.youngsModulusLong/Cross.
+    Thin constructor — validation only.  All acoustic results are computed lazily by
+    PlateProperties as @property accessors, mirroring Swift PlateProperties.
 
     - Parameters:
       - dims: Physical dimensions and mass of the plate sample.
       - f_long_hz: Along-grain fundamental frequency in Hz.
       - f_cross_hz: Cross-grain fundamental frequency in Hz.
-    - Returns: Calculated PlateProperties.
+      - f_flc_hz: Optional FLC diagonal frequency in Hz.
+    - Returns: PlateProperties instance.
 
-    Mirrors Swift PlateProperties computed properties via calculate_plate_properties().
+    Mirrors Swift PlateProperties.init(dimensions:fundamentalFrequencyLong:fundamentalFrequencyCross:fundamentalFrequencyFlc:).
     """
     if not dims.is_valid():
         raise ValueError("Plate dimensions must all be positive.")
     if f_long_hz <= 0 or f_cross_hz <= 0:
         raise ValueError("Tap frequencies must be positive.")
-
-    rho     = dims.density()
-    rho_g   = dims.density_g_per_cm3()
-    L       = dims.length()
-    W       = dims.width()
-    t       = dims.thickness()
-
-    E_L     = _euler_bernoulli_e(rho, f_long_hz, L, t, 22.37)
-    E_C     = _euler_bernoulli_e(rho, f_cross_hz, W, t, 22.37)
-    E_L_GPa = E_L / 1e9
-    E_C_GPa = E_C / 1e9
-    c_L     = math.sqrt(E_L / rho)
-    c_C     = math.sqrt(E_C / rho)
-    spec_L  = E_L_GPa / rho_g
-    spec_C  = E_C_GPa / rho_g
-    rad_L   = c_L / rho
-    rad_C   = c_C / rho
-    qual_L  = wood_quality_long(spec_L)
-    qual_C  = wood_quality_cross(spec_C)
-
-    # Overall quality: 70% longitudinal + 30% cross-grain (mirrors Swift PlateProperties.overallQuality).
-    # Longitudinal is weighted more heavily as it dominates top-plate stiffness.
-    _scores = {"Excellent": 5, "Very Good": 4, "Good": 3, "Fair": 2, "Poor": 1}
-    combined = _scores[qual_L] * 0.7 + _scores[qual_C] * 0.3
-    if   combined >= 4.5: overall = "Excellent"
-    elif combined >= 3.5: overall = "Very Good"
-    elif combined >= 2.5: overall = "Good"
-    elif combined >= 1.5: overall = "Fair"
-    else:                 overall = "Poor"
-
-    return PlateProperties(
-        f_long=f_long_hz,
-        f_cross=f_cross_hz,
-        density_kg_m3=rho,
-        E_long_GPa=E_L_GPa,
-        E_cross_GPa=E_C_GPa,
-        c_long_m_s=c_L,
-        c_cross_m_s=c_C,
-        specific_modulus_long=spec_L,
-        specific_modulus_cross=spec_C,
-        radiation_ratio_long=rad_L,
-        radiation_ratio_cross=rad_C,
-        quality_long=qual_L,
-        quality_cross=qual_C,
-        overall_quality=overall,
-        cross_long_ratio=E_C / E_L if E_L > 0 else 0.0,
-        long_cross_ratio=E_L / E_C if E_C > 0 else 0.0,
-    )
-
-
-def calculate_glc_from_flc(dims: MaterialDimensions, f_flc_hz: float) -> float:
-    """Calculate shear modulus G_LC (Pa) from the FLC diagonal-tap frequency.
-
-    Formula: G_LC = (12/π²) × ρ × L² × W² × f_LC² / t²
-
-    Mirrors Swift PlateProperties.goreShearModulus (computed property).
-    """
-    rho = dims.density()
-    L   = dims.length()
-    W   = dims.width()
-    t   = dims.thickness()
-    if t <= 0 or rho <= 0 or f_flc_hz <= 0:
-        return 0.0
-    return (12.0 / (math.pi ** 2)) * rho * L ** 2 * W ** 2 * f_flc_hz ** 2 / (t * t)
+    return PlateProperties(dimensions=dims, f_long=f_long_hz, f_cross=f_cross_hz, f_flc=f_flc_hz)
 
 
 def calculate_gore_target_thickness(
@@ -586,63 +777,58 @@ def calculate_gore_target_thickness(
     body_length_mm: float,
     body_width_mm: float,
     fvs: float,
-    preset_name: str,
-    glc_pa: float | None = None,
-) -> "GoreThicknessResult | None":
-    """Calculate Gore target thickness (Eq. 4.5-7).
+) -> float | None:
+    """Calculate Gore target thickness (Eq. 4.5-7) in mm, or None if inputs are invalid.
 
-    Uses the Gore plate moduli (E_L, E_C, G_LC) together with the guitar body geometry
-    and a target vibrational stiffness (f_vs) to calculate the optimal plate thickness.
-    When G_LC is None it is treated as 0, which typically causes a slight over-estimate
-    of the target thickness (about 5–7%).
+    Mirrors Swift PlateProperties.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:)
+    exactly — same signature shape, same return type (Float? → float | None), same algorithm.
+
+    G_LC is read exclusively from props.gore_shear_modulus (derived from the FLC tap);
+    falls back to 0 when the tap was not performed — mirrors Swift's `(goreShearModulus ?? 0)`.
 
     Numerator:   Coef₂ × f_vs × a² × √ρ
-    Denominator: √(E_L + (a/b)⁴·E_C + (a/b)²·(Coef₃·E_L + Coef₄·G_LC))
+    Denominator: √(E_L_GPa + (a/b)⁴·E_C_GPa + (a/b)²·(Coef₃·E_L_GPa + Coef₄·G_LC_GPa)) × √1e9
 
     - Parameters:
-      - props: Calculated plate properties (Young's moduli and density required).
+      - props: Plate properties (Gore plate moduli and density are used).
       - body_length_mm: Guitar body length (neck joint to tail block) in mm.
       - body_width_mm: Guitar lower-bout width in mm.
       - fvs: Target vibrational stiffness (f_vs).
-      - preset_name: Human-readable preset label stored in the result.
-      - glc_pa: Shear modulus G_LC in Pa, or None to treat it as 0.
-    - Returns: GoreThicknessResult, or None if any required parameter is zero or invalid.
-
-    Mirrors Swift PlateProperties.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:).
+    - Returns: Target plate thickness in mm, or None if any input is zero or invalid.
     """
     if body_length_mm <= 0 or body_width_mm <= 0 or fvs <= 0:
         return None
-
-    # Poisson's ratio constants (Gore's recommended averages for softwoods)
-    nu_cl         = 0.05
-    nu_lc_nu_cl   = 0.02          # ν_LC × ν_CL
-
-    a = body_length_mm / 1000.0   # m
-    b = body_width_mm  / 1000.0   # m
-
-    E_L   = props.E_long_GPa  * 1e9   # Pa
-    E_C   = props.E_cross_GPa * 1e9   # Pa
-    rho   = props.density_kg_m3
-    G_LC  = glc_pa if glc_pa is not None else 0.0
-
-    coef2 = math.pi * math.sqrt(12.0 * (1.0 - nu_lc_nu_cl) / 126.0)
-    coef3 = 4.0 * nu_cl / 7.0
-    coef4 = 4.0 * 12.0 * (1.0 - nu_lc_nu_cl) / 42.0
-
-    numerator    = coef2 * fvs * a * a * math.sqrt(rho)
-    ab           = a / b
-    denom_pa     = E_L + ab**4 * E_C + ab**2 * (coef3 * E_L + coef4 * G_LC)
-
-    if denom_pa <= 0:
+    if props.density_kg_m3 <= 0:
         return None
 
-    thickness_mm = (numerator / math.sqrt(denom_pa)) * 1000.0
+    a   = body_length_mm / 1000.0   # Guitar body length in metres
+    b   = body_width_mm  / 1000.0   # Lower bout width in metres
+    rho = props.density_kg_m3
 
-    return GoreThicknessResult(
-        thickness_mm=thickness_mm,
-        body_length_mm=body_length_mm,
-        body_width_mm=body_width_mm,
-        fvs=fvs,
-        preset_name=preset_name,
-        glc_pa=glc_pa,
+    # Convert moduli to GPa for the denominator calculation; result is in Pa via ×10⁹.
+    # Mirrors Swift lines 464-467.
+    el_gpa  = props.gore_E_long_pa  / 1.0e9
+    ec_gpa  = props.gore_E_cross_pa / 1.0e9
+    glc_gpa = (props.gore_shear_modulus or 0.0) / 1.0e9
+
+    # Numerator: scale target stiffness by body area and root-density.
+    # Mirrors Swift line 470.
+    numerator = props._gore_coef2 * fvs * a * a * math.sqrt(rho)
+
+    # Denominator: anisotropic stiffness sum scaled by body aspect ratio.
+    # Mirrors Swift lines 473-478.
+    a_over_b  = a / b
+    a_over_b2 = a_over_b  * a_over_b
+    a_over_b4 = a_over_b2 * a_over_b2
+    denominator_gpa = (
+        el_gpa
+        + a_over_b4 * ec_gpa
+        + a_over_b2 * (props._gore_coef3 * el_gpa + props._gore_coef4 * glc_gpa)
     )
+    if denominator_gpa <= 0:
+        return None
+
+    # Convert denominator GPa → Pa, then compute thickness in mm.
+    # Mirrors Swift lines 482-483.
+    denominator_pa = denominator_gpa * 1.0e9
+    return numerator / math.sqrt(denominator_pa) * 1000.0

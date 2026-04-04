@@ -367,7 +367,9 @@ class MeasurementsDialog(QtWidgets.QDialog):
         # renderSpectrumImageForMeasurement called from exportPDFReport).
         png_data = M.render_spectrum_image_for_measurement(m)
         try:
-            M.export_pdf(m, png_data, path)
+            # Mirrors Swift: PDFReportData.from(measurement:) → PDFReportGenerator.generate(data:)
+            report_data = M.pdf_report_data_from_measurement(m, png_data)
+            M.export_pdf(report_data, path)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 

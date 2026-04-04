@@ -234,21 +234,35 @@ class TapToneMeasurement:
           Python falls back to the guitar_type stored on this measurement, or "Classical".
         """
         from . import guitar_mode as gm
+        from . import guitar_type as gt_module
         if not self.peaks:
             return None
-        gt = self.guitar_type or "Classical"
+        gt_str = self.guitar_type or "Classical"
         try:
-            id_map = gm.GuitarMode.classify_all(self.peaks, gt)
+            gt = gt_module.GuitarType(gt_str)
+        except Exception:
+            gt = gt_module.GuitarType.CLASSICAL
+        # Mirrors Swift calculateTapToneRatio() which reads from identifiedModes —
+        # identifiedModes is built from currentPeaks (the selected peaks only).
+        # Run classify_all on selected peaks only; fall back to all peaks when
+        # no selection is recorded (e.g. legacy measurements without selectedPeakIDs).
+        selected_ids: set[str] = set(self.selected_peak_ids or [])
+        peaks_for_ratio = (
+            [p for p in self.peaks if p.id in selected_ids]
+            if selected_ids else self.peaks
+        )
+        try:
+            id_map = gm.GuitarMode.classify_all(peaks_for_ratio, gt)
         except Exception:
             return None
         # id_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode]
         air_freq = next(
-            (p.frequency for p in self.peaks
+            (p.frequency for p in peaks_for_ratio
              if id_map.get(p.id, gm.GuitarMode.UNKNOWN).normalized == gm.GuitarMode.AIR),
             None,
         )
         top_freq = next(
-            (p.frequency for p in self.peaks
+            (p.frequency for p in peaks_for_ratio
              if id_map.get(p.id, gm.GuitarMode.UNKNOWN).normalized == gm.GuitarMode.TOP),
             None,
         )

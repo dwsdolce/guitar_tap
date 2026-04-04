@@ -206,18 +206,12 @@ class GuitarMode(Enum):
         1. Sorts the canonical modes (Air, Top, Back, Dipole, Ring, Upper) by ascending
            lower-bound of their frequency range for the given guitar type.
         2. For each mode in that order, picks the highest-magnitude unclaimed peak whose
-           frequency lies within the mode's range (and strictly above the last claimed
-           frequency), then marks that peak as claimed.
-        3. A per-claim 2 Hz duplicate check discards a candidate within 2 Hz of an
-           already-claimed peak from an earlier mode.
-        4. Any remaining unclaimed peaks are classified via the per-frequency classify()
+           frequency lies within the mode's range, then marks that peak as claimed.
+        3. Any remaining unclaimed peaks are classified via the per-frequency classify()
            lookup.  Peaks outside all mode ranges resolve to UNKNOWN.
 
-        NOTE — Algorithm divergence from Swift:
-          Swift classifyAll uses only a Set of claimed UUIDs (no cursor or 2 Hz check).
-          The Python implementation adds a ``last_claimed_freq`` cursor and a 2 Hz
-          duplicate guard, making it slightly more restrictive in overlap zones.
-          Both implementations agree on the common case.
+        Mirrors Swift ``GuitarMode.classifyAll(_:guitarType:)`` exactly:
+        Swift uses only a Set of claimed UUIDs — no frequency cursor or 2 Hz guard.
 
         - Parameters:
           - peaks: List of objects with ``.id``, ``.frequency``, and ``.magnitude``.
@@ -231,8 +225,6 @@ class GuitarMode(Enum):
         )
         result: dict = {}
         claimed_ids: set = set()
-        last_claimed_freq: float = -1.0
-        claimed_freqs: list[float] = []
 
         for mode in ordered_modes:
             lo, hi = mode.mode_range(guitar_type)
@@ -240,20 +232,12 @@ class GuitarMode(Enum):
                 (p.id, p.magnitude) for p in peaks
                 if lo <= p.frequency <= hi
                 and p.id not in claimed_ids
-                and p.frequency > last_claimed_freq
             ]
             if not candidates:
                 continue
             best_id = max(candidates, key=lambda x: x[1])[0]
-            best_peak = next(p for p in peaks if p.id == best_id)
-            best_freq = best_peak.frequency
-            # Post-claim 2 Hz duplicate check
-            if any(abs(best_freq - f) < 2.0 for f in claimed_freqs):
-                continue
             result[best_id] = mode
             claimed_ids.add(best_id)
-            last_claimed_freq = best_freq
-            claimed_freqs.append(best_freq)
 
         for peak in peaks:
             if peak.id not in result:
@@ -279,25 +263,18 @@ class GuitarMode(Enum):
         )
         result: dict[int, GuitarMode] = {}
         claimed: set[int] = set()
-        last_claimed_freq: float = -1.0
-        claimed_freqs: list[float] = []
 
         for mode in ordered_modes:
             lo, hi = mode.mode_range(guitar_type)
             candidates = [
                 (i, mag) for i, (freq, mag) in enumerate(peaks)
-                if lo <= freq <= hi and i not in claimed and freq > last_claimed_freq
+                if lo <= freq <= hi and i not in claimed
             ]
             if not candidates:
                 continue
             best_i = max(candidates, key=lambda x: x[1])[0]
-            best_freq = peaks[best_i][0]
-            if any(abs(best_freq - f) < 2.0 for f in claimed_freqs):
-                continue
             result[best_i] = mode
             claimed.add(best_i)
-            last_claimed_freq = best_freq
-            claimed_freqs.append(best_freq)
 
         for i, (freq, _) in enumerate(peaks):
             if i not in result:

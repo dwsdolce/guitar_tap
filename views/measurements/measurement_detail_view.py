@@ -458,7 +458,9 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             return
         M.update_export_dir(path)
         try:
-            M.export_pdf(self._m, None, path)
+            # Mirrors Swift: PDFReportData.from(measurement:) → PDFReportGenerator.generate(data:)
+            report_data = M.pdf_report_data_from_measurement(self._m)
+            M.export_pdf(report_data, path)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export PDF:\n{exc}"

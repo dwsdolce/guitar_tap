@@ -11,7 +11,7 @@ Data model modules (safe to import anywhere):
   fft_parameters         → FftParameters
   guitar_type            → GuitarType, ModeRanges, DecayThresholds
   guitar_mode            → GuitarMode, get_bands, in_mode_range, ...
-  material_properties    → PlateDimensions, PlateProperties, BraceProperties, GoreThicknessResult
+  material_properties    → PlateDimensions, PlateProperties, BraceProperties
   material_tap_phase     → MaterialTapPhase
   measurement_type       → MeasurementType
   pitch                  → Pitch

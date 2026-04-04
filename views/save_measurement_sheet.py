@@ -53,3 +53,11 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
     @property
     def notes(self) -> str:
         return self._notes_edit.toPlainText().strip()
+
+    def set_tap_location(self, value: str) -> None:
+        """Pre-populate the tap location field. Mirrors Swift @Binding pre-fill."""
+        self._location_edit.setText(value)
+
+    def set_notes(self, value: str) -> None:
+        """Pre-populate the notes field. Mirrors Swift @Binding pre-fill."""
+        self._notes_edit.setPlainText(value)

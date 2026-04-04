@@ -15,6 +15,8 @@ from views.tap_analysis_results_view import (
     export_measurement_json,
     import_measurements_from_json,
     export_pdf,
+    pdf_report_data_from_measurement,
+    PDFReportData,
 )
 
 __all__ = [
@@ -24,4 +26,6 @@ __all__ = [
     "export_measurement_json",
     "import_measurements_from_json",
     "export_pdf",
+    "pdf_report_data_from_measurement",
+    "PDFReportData",
 ]

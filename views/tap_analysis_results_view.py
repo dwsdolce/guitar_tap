@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass, field
 from typing import Any
 
 from models.tap_tone_measurement import TapToneMeasurement
@@ -34,6 +35,8 @@ __all__ = [
     "export_measurement_json",
     "import_measurements_from_json",
     "export_pdf",
+    "pdf_report_data_from_measurement",
+    "PDFReportData",
     "measurements_file",
     "render_spectrum_image_for_measurement",
     "default_export_dir",
@@ -207,16 +210,238 @@ def import_measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]
     return [TapToneMeasurement.from_dict(raw)]
 
 
-def export_pdf(
-    m: TapToneMeasurement, spectrum_image_data: bytes | None, output_path: str
-) -> None:
-    """Export a tap-tone analysis report to PDF using reportlab.
+# ── PDF Report Data ───────────────────────────────────────────────────────────
 
-    Mirrors the layout of Swift PDFReportGenerator / PDFReportContentView:
+@dataclass
+class PDFReportData:
+    """All data required to render a PDF tap tone analysis report.
+
+    Mirrors Swift's ``PDFReportData`` struct in PDFReportGenerator.swift.
+
+    This is a pure value type that carries pre-computed, display-ready data.
+    Create it from a saved measurement with ``pdf_report_data_from_measurement()``,
+    or construct it directly for custom reports (e.g., from live analyzer state).
+
+    The factory re-derives ``PlateProperties`` / ``BraceProperties`` from the
+    measurement's stored peak IDs and snapshot dimensions so that computed
+    values match the live analysis view.  Peaks are filtered to those within
+    the saved display frequency range.
+    """
+    # Measurement metadata
+    timestamp: str
+    tap_location: str | None
+    notes: str | None
+    measurement_type_str: str          # display string (e.g. "Classical Guitar")
+    guitar_type_str: str               # raw value (e.g. "Classical")
+    microphone_name: str | None
+    calibration_name: str | None
+
+    # Display frequency range
+    min_freq: float
+    max_freq: float
+
+    # Peaks (already filtered to display range; ``visible_peaks`` are the selected subset)
+    peaks: list                        # list[ResonantPeak], range-filtered
+    selected_peak_ids: set             # set[str]
+    peak_modes: dict                   # dict[str, GuitarMode] — classify_all result
+    peak_mode_overrides: dict          # dict[str, str] — user overrides
+
+    # Per-measurement-type IDs
+    selected_longitudinal_peak_id: str | None
+    selected_cross_peak_id: str | None
+    selected_flc_peak_id: str | None
+
+    # Analysis results
+    decay_time: float | None
+    tap_tone_ratio: float | None
+
+    # Material properties (None for guitar measurements)
+    # G_LC shear modulus is read from plate_properties.gore_shear_modulus (derived from f_flc).
+    plate_properties: Any | None       # PlateProperties | None
+    brace_properties: Any | None       # BraceProperties | None
+
+    # Gore thicknessing inputs (plate only).
+    # The gore target thickness is computed live in export_pdf from these inputs +
+    # plate_properties.gore_shear_modulus — mirrors Swift's PDFReportContentView
+    # calling props.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:).
+    guitar_body_length: float
+    guitar_body_width: float
+    plate_stiffness: float
+    plate_stiffness_preset_str: str
+
+    # PNG-encoded spectrum chart image, or None if none was captured.
+    spectrum_image_data: bytes | None
+
+
+def pdf_report_data_from_measurement(
+    measurement: TapToneMeasurement,
+    spectrum_image_data: bytes | None = None,
+) -> PDFReportData:
+    """Build a ``PDFReportData`` from a persisted ``TapToneMeasurement``.
+
+    Mirrors Swift's ``PDFReportData.from(measurement:spectrumImageData:)`` in
+    PDFReportGenerator.swift.
+
+    The factory re-derives ``PlateProperties`` / ``BraceProperties`` from the
+    measurement's stored peak IDs and snapshot dimensions so that computed
+    values match the live analysis view.  Peaks are filtered to those within
+    the saved display frequency range.
+    """
+    from models import measurement_type as MT
+    from models import guitar_mode as GM
+    from models import guitar_type as GT_module
+    from models import plate_stiffness_preset as PSP
+    from models.material_properties import (
+        MaterialDimensions,
+        calculate_plate_properties,
+        calculate_brace_properties,
+    )
+
+    m = measurement
+
+    # ── Derive measurement type and guitar type ───────────────────────────
+    any_snap = m.spectrum_snapshot or m.longitudinal_snapshot or m.cross_snapshot
+    mt_str = m.measurement_type or (any_snap.measurement_type if any_snap else "Classical")
+    try:
+        mt = MT.MeasurementType(mt_str)
+    except ValueError:
+        mt = MT.MeasurementType.CLASSICAL
+
+    gt_str = m.guitar_type or (any_snap.guitar_type if any_snap else "Classical")
+    try:
+        gt = GT_module.GuitarType(gt_str)
+    except Exception:
+        gt = GT_module.GuitarType.CLASSICAL
+
+    # ── Display frequency range ───────────────────────────────────────────
+    display_snap = m.spectrum_snapshot or any_snap
+    min_freq = display_snap.min_freq if display_snap else 50.0
+    max_freq = display_snap.max_freq if display_snap else 1000.0
+
+    # ── Filter peaks to display range ─────────────────────────────────────
+    range_peaks = [p for p in m.peaks if min_freq <= p.frequency <= max_freq]
+    selected_ids = set(m.selected_peak_ids or [p.id for p in range_peaks])
+
+    # ── Mode classification ───────────────────────────────────────────────
+    visible_peaks = sorted(
+        [p for p in range_peaks if p.id in selected_ids],
+        key=lambda p: p.frequency,
+    )
+    peak_modes: dict = {}
+    try:
+        peak_modes = GM.GuitarMode.classify_all(visible_peaks, gt)
+    except Exception:
+        pass
+
+    # ── Derive material properties ────────────────────────────────────────
+    plate_props = None
+    brace_props = None
+    snap_for_dims = m.longitudinal_snapshot or any_snap
+
+    if mt == MT.MeasurementType.PLATE:
+        long_peak  = next((p for p in m.peaks if p.id == m.selected_longitudinal_peak_id), None)
+        cross_peak = next((p for p in m.peaks if p.id == m.selected_cross_peak_id), None)
+        flc_peak   = next((p for p in m.peaks if p.id == m.selected_flc_peak_id), None) if m.selected_flc_peak_id else None
+        if long_peak and cross_peak and snap_for_dims:
+            dims = MaterialDimensions(
+                length_mm    = snap_for_dims.plate_length    or 0,
+                width_mm     = snap_for_dims.plate_width     or 0,
+                thickness_mm = snap_for_dims.plate_thickness or 0,
+                mass_g       = snap_for_dims.plate_mass      or 0,
+            )
+            if dims.is_valid():
+                try:
+                    plate_props = calculate_plate_properties(
+                        dims, long_peak.frequency, cross_peak.frequency,
+                        f_flc_hz=flc_peak.frequency if flc_peak else None,
+                    )
+                except Exception:
+                    pass
+
+    elif mt == MT.MeasurementType.BRACE:
+        long_peak = next((p for p in m.peaks if p.id == m.selected_longitudinal_peak_id), None)
+        if long_peak and snap_for_dims:
+            dims = MaterialDimensions(
+                length_mm    = snap_for_dims.brace_length    or 0,
+                width_mm     = snap_for_dims.brace_width     or 0,
+                thickness_mm = snap_for_dims.brace_thickness or 0,
+                mass_g       = snap_for_dims.brace_mass      or 0,
+            )
+            if dims.is_valid():
+                try:
+                    brace_props = calculate_brace_properties(dims, long_peak.frequency)
+                except Exception:
+                    pass
+
+    # ── Gore settings (plate only) ────────────────────────────────────────
+    snap_for_gore = m.longitudinal_snapshot or any_snap
+    guitar_body_length = (
+        snap_for_gore.guitar_body_length
+        if snap_for_gore and snap_for_gore.guitar_body_length else None
+    ) or 490.0
+    guitar_body_width = (
+        snap_for_gore.guitar_body_width
+        if snap_for_gore and snap_for_gore.guitar_body_width else None
+    ) or 390.0
+    _preset_str = (
+        snap_for_gore.plate_stiffness_preset
+        if snap_for_gore and snap_for_gore.plate_stiffness_preset else None
+    ) or "Steel String Top"
+    try:
+        _preset = PSP.PlateStiffnessPreset(_preset_str)
+    except ValueError:
+        _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
+    if _preset == PSP.PlateStiffnessPreset.CUSTOM:
+        plate_stiffness = (
+            snap_for_gore.custom_plate_stiffness
+            if snap_for_gore and snap_for_gore.custom_plate_stiffness else None
+        ) or 75.0
+    else:
+        plate_stiffness = _preset.value
+
+    return PDFReportData(
+        timestamp=m.timestamp,
+        tap_location=m.tap_location,
+        notes=m.notes,
+        measurement_type_str=mt_str,
+        guitar_type_str=gt_str,
+        microphone_name=m.microphone_name,
+        calibration_name=m.calibration_name,
+        min_freq=min_freq,
+        max_freq=max_freq,
+        peaks=range_peaks,
+        selected_peak_ids=selected_ids,
+        peak_modes=peak_modes,
+        peak_mode_overrides=m.peak_mode_overrides or {},
+        selected_longitudinal_peak_id=m.selected_longitudinal_peak_id,
+        selected_cross_peak_id=m.selected_cross_peak_id,
+        selected_flc_peak_id=m.selected_flc_peak_id,
+        decay_time=m.decay_time,
+        tap_tone_ratio=m.tap_tone_ratio,
+        plate_properties=plate_props,
+        brace_properties=brace_props,
+        guitar_body_length=guitar_body_length,
+        guitar_body_width=guitar_body_width,
+        plate_stiffness=plate_stiffness,
+        plate_stiffness_preset_str=_preset_str,
+        spectrum_image_data=spectrum_image_data,
+    )
+
+
+def export_pdf(data: PDFReportData, output_path: str) -> None:
+    """Render a tap-tone analysis report to PDF using reportlab.
+
+    Mirrors Swift's ``PDFReportGenerator.generate(data:)`` in PDFReportGenerator.swift.
+
+    Accepts a ``PDFReportData`` value (created by ``pdf_report_data_from_measurement()``
+    or constructed directly from live analyzer state) and writes a PDF to
+    ``output_path``.
+
+    Layout (mirrors Swift PDFReportContentView):
 
       Header  — "GuitarTap" title + blue accent bar + timestamp (right-aligned)
       Metadata — Location, Type, Notes, Frequency Range, Microphone rows
-      Spectrum image (if supplied, full content width)
+      Spectrum image (if present, full content width)
       Grey divider line
       Detected Peaks table (Frequency / Magnitude / Note / Mode  or  Q / Role)
       Tap Instructions (plate/brace only)
@@ -256,15 +481,66 @@ def export_pdf(
     from models import guitar_mode as GM
     from models import guitar_type as GT_module
     from models import plate_stiffness_preset as PSP
-    from models.material_properties import (
-        MaterialDimensions,
-        PlateProperties,
-        BraceProperties,
-        calculate_plate_properties,
-        calculate_brace_properties,
-        calculate_glc_from_flc,
-        calculate_gore_target_thickness,
-        QUALITY_COLORS,
+    from models.material_properties import calculate_gore_target_thickness
+
+    # ── Unpack PDFReportData into local names used by the story builder ───
+    mt_str           = data.measurement_type_str
+    gt_str           = data.guitar_type_str
+    min_freq         = data.min_freq
+    max_freq         = data.max_freq
+    range_peaks      = data.peaks
+    selected_ids     = data.selected_peak_ids
+    peak_modes       = data.peak_modes
+    peak_mode_overrides = data.peak_mode_overrides
+    plate_props      = data.plate_properties
+    brace_props      = data.brace_properties
+    # G_LC is read from the plate's own gore_shear_modulus (mirrors Swift props.goreShearModulus).
+    glc_pa           = plate_props.gore_shear_modulus if plate_props is not None else None
+    guitar_body_length = data.guitar_body_length
+    guitar_body_width  = data.guitar_body_width
+    plate_stiffness  = data.plate_stiffness
+    _preset_str      = data.plate_stiffness_preset_str
+    spectrum_image_data = data.spectrum_image_data
+    # Compute gore target thickness live — mirrors Swift PDFReportContentView calling
+    # props.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:).
+    gore_thickness_mm: float | None = None
+    if plate_props is not None:
+        try:
+            gore_thickness_mm = calculate_gore_target_thickness(
+                plate_props, guitar_body_length, guitar_body_width, plate_stiffness,
+            )
+        except Exception:
+            gore_thickness_mm = None
+
+    try:
+        mt = MT.MeasurementType(mt_str)
+    except ValueError:
+        mt = MT.MeasurementType.CLASSICAL
+
+    try:
+        gt = GT_module.GuitarType(gt_str)
+    except Exception:
+        gt = GT_module.GuitarType.CLASSICAL
+
+    try:
+        _preset = PSP.PlateStiffnessPreset(_preset_str)
+    except ValueError:
+        _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
+
+    # Timestamp
+    try:
+        ts = _dt.fromisoformat(data.timestamp)
+    except Exception:
+        ts = _dt.now(_tz.utc)
+    date_str = f"{ts.strftime('%B')} {ts.day}, {ts.year}"
+    _hour = ts.hour % 12 or 12
+    _ampm = "AM" if ts.hour < 12 else "PM"
+    time_str = f"{_hour}:{ts.strftime('%M')} {_ampm}"
+
+    # Visible (selected) peaks, sorted by frequency
+    visible_peaks = sorted(
+        [p for p in range_peaks if p.id in selected_ids],
+        key=lambda p: p.frequency,
     )
 
     # ── Geometry (mirrors Swift) ──────────────────────────────────────────
@@ -301,143 +577,6 @@ def export_pdf(
     S_FOOTER   = _style("footer",   fontSize=9,  fontName="Helvetica",       textColor=SECONDARY,  leading=11)
     S_BIG_VAL  = _style("bigval",   fontSize=18, fontName="Helvetica-Bold",  textColor=colors.black, leading=22)
     S_SPEC_HDR = _style("spec_hdr", fontSize=12, fontName="Helvetica-Bold",  textColor=SECONDARY,  leading=14)
-
-    # ── Derive measurement type and snapshots ─────────────────────────────
-    any_snap = m.spectrum_snapshot or m.longitudinal_snapshot or m.cross_snapshot
-    mt_str = m.measurement_type or (any_snap.measurement_type if any_snap else "Classical")
-    try:
-        mt = MT.MeasurementType(mt_str)
-    except ValueError:
-        mt = MT.MeasurementType.CLASSICAL
-
-    gt_str = m.guitar_type or (any_snap.guitar_type if any_snap else "Classical")
-    try:
-        gt = GT_module.GuitarType(gt_str)
-    except Exception:
-        gt = GT_module.GuitarType.CLASSICAL
-
-    # Display snapshot for freq range
-    display_snap = m.spectrum_snapshot or any_snap
-    min_freq = display_snap.min_freq if display_snap else 50
-    max_freq = display_snap.max_freq if display_snap else 1000
-
-    # Timestamp
-    try:
-        ts = _dt.fromisoformat(m.timestamp)
-    except Exception:
-        ts = _dt.now(_tz.utc)
-    date_str = f"{ts.strftime('%B')} {ts.day}, {ts.year}"
-    _hour = ts.hour % 12 or 12
-    _ampm = "AM" if ts.hour < 12 else "PM"
-    time_str = f"{_hour}:{ts.strftime('%M')} {_ampm}"
-
-    # Peaks: filter to display range, sort by frequency, apply selection filter
-    range_peaks = [p for p in m.peaks if min_freq <= p.frequency <= max_freq]
-    selected_ids = set(m.selected_peak_ids or [p.id for p in range_peaks])
-    visible_peaks = sorted(
-        [p for p in range_peaks if p.id in selected_ids],
-        key=lambda p: p.frequency,
-    )
-
-    # Mode classification for peaks
-    peak_modes: dict[str, GM.GuitarMode] = {}
-    try:
-        peak_modes = GM.GuitarMode.classify_all(visible_peaks, gt_str)
-    except Exception:
-        pass
-
-    # Mode overrides
-    peak_mode_overrides: dict[str, str] = m.peak_mode_overrides or {}
-
-    # ── Derive material properties ────────────────────────────────────────
-    plate_props: PlateProperties | None = None
-    brace_props: BraceProperties | None = None
-
-    if mt == MT.MeasurementType.PLATE:
-        long_id   = m.selected_longitudinal_peak_id
-        cross_id  = m.selected_cross_peak_id
-        flc_id    = m.selected_flc_peak_id
-        long_peak  = next((p for p in m.peaks if p.id == long_id),  None)
-        cross_peak = next((p for p in m.peaks if p.id == cross_id), None)
-        flc_peak   = next((p for p in m.peaks if p.id == flc_id),   None)
-        snap_for_dims = m.longitudinal_snapshot or any_snap
-        if long_peak and cross_peak and snap_for_dims:
-            dims = MaterialDimensions(
-                length_mm  = snap_for_dims.plate_length   or 0,
-                width_mm   = snap_for_dims.plate_width    or 0,
-                thickness_mm = snap_for_dims.plate_thickness or 0,
-                mass_g     = snap_for_dims.plate_mass     or 0,
-            )
-            if dims.is_valid():
-                try:
-                    plate_props = calculate_plate_properties(
-                        dims, long_peak.frequency, cross_peak.frequency
-                    )
-                except Exception:
-                    pass
-
-    elif mt == MT.MeasurementType.BRACE:
-        long_id   = m.selected_longitudinal_peak_id
-        long_peak = next((p for p in m.peaks if p.id == long_id), None)
-        snap_for_dims = m.longitudinal_snapshot or any_snap
-        if long_peak and snap_for_dims:
-            dims = MaterialDimensions(
-                length_mm    = snap_for_dims.brace_length    or 0,
-                width_mm     = snap_for_dims.brace_width     or 0,
-                thickness_mm = snap_for_dims.brace_thickness or 0,
-                mass_g       = snap_for_dims.brace_mass      or 0,
-            )
-            if dims.is_valid():
-                try:
-                    brace_props = calculate_brace_properties(dims, long_peak.frequency)
-                except Exception:
-                    pass
-
-    # Gore settings (plate only) — read from snapshot if present, else AppSettings
-    snap_for_gore = m.longitudinal_snapshot or any_snap
-    guitar_body_length = (snap_for_gore.guitar_body_length if snap_for_gore and snap_for_gore.guitar_body_length else None) or 490.0
-    guitar_body_width  = (snap_for_gore.guitar_body_width  if snap_for_gore and snap_for_gore.guitar_body_width  else None) or 390.0
-    _preset_str = (snap_for_gore.plate_stiffness_preset if snap_for_gore and snap_for_gore.plate_stiffness_preset else None) or "Steel String Top"
-    try:
-        _preset = PSP.PlateStiffnessPreset(_preset_str)
-    except ValueError:
-        _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
-    if _preset == PSP.PlateStiffnessPreset.CUSTOM:
-        plate_stiffness = (snap_for_gore.custom_plate_stiffness if snap_for_gore and snap_for_gore.custom_plate_stiffness else None) or 75.0
-    else:
-        plate_stiffness = _preset.value
-
-    # G_LC shear modulus (from FLC tap, if available)
-    glc_pa: float | None = None
-    if mt == MT.MeasurementType.PLATE and plate_props is not None:
-        flc_id  = m.selected_flc_peak_id
-        flc_peak = next((p for p in m.peaks if p.id == flc_id), None) if flc_id else None
-        snap_for_dims2 = m.longitudinal_snapshot or any_snap
-        if flc_peak and snap_for_dims2:
-            dims2 = MaterialDimensions(
-                length_mm    = snap_for_dims2.plate_length    or 0,
-                width_mm     = snap_for_dims2.plate_width     or 0,
-                thickness_mm = snap_for_dims2.plate_thickness or 0,
-                mass_g       = snap_for_dims2.plate_mass      or 0,
-            )
-            if dims2.is_valid():
-                try:
-                    glc_pa = calculate_glc_from_flc(dims2, flc_peak.frequency)
-                    if glc_pa == 0.0:
-                        glc_pa = None
-                except Exception:
-                    glc_pa = None
-
-    # Gore target thickness
-    gore_result = None
-    if plate_props is not None:
-        try:
-            gore_result = calculate_gore_target_thickness(
-                plate_props, guitar_body_length, guitar_body_width,
-                plate_stiffness, _preset_str, glc_pa,
-            )
-        except Exception:
-            gore_result = None
 
     # ── Quality helpers (mirrors Swift extensions) ────────────────────────
     def _quality_color(label: str) -> colors.Color:
@@ -607,23 +746,23 @@ def export_pdf(
     story.append(Spacer(1, 12))
 
     # --- METADATA ---------------------------------------------------------
-    if m.tap_location:
-        story.append(_TwoColRow("Location", m.tap_location, CONTENT_W))
+    if data.tap_location:
+        story.append(_TwoColRow("Location", data.tap_location, CONTENT_W))
         story.append(Spacer(1, 4))
     story.append(_TwoColRow("Type", mt_str, CONTENT_W))
     story.append(Spacer(1, 4))
-    if m.notes:
-        story.append(_TwoColRow("Notes", m.notes, CONTENT_W))
+    if data.notes:
+        story.append(_TwoColRow("Notes", data.notes, CONTENT_W))
         story.append(Spacer(1, 4))
     story.append(_TwoColRow(
         "Frequency Range",
         f"{min_freq:.0f} Hz \u2013 {max_freq:.0f} Hz",
         CONTENT_W,
     ))
-    if m.microphone_name:
-        cal_suffix = f" \u00b7 calibrated ({m.calibration_name})" if m.calibration_name else " \u00b7 uncalibrated"
+    if data.microphone_name:
+        cal_suffix = f" \u00b7 calibrated ({data.calibration_name})" if data.calibration_name else " \u00b7 uncalibrated"
         story.append(Spacer(1, 4))
-        story.append(_TwoColRow("Microphone", m.microphone_name + cal_suffix, CONTENT_W))
+        story.append(_TwoColRow("Microphone", data.microphone_name + cal_suffix, CONTENT_W))
 
     story.append(Spacer(1, 14))
 
@@ -633,7 +772,7 @@ def export_pdf(
         pil_img = PILImage.open(_io.BytesIO(spectrum_image_data))
         img_w_px, img_h_px = pil_img.size
         aspect = img_h_px / img_w_px if img_w_px > 0 else 0.5
-        img_h_pt = min(CONTENT_W * aspect, 220)  # cap at 220 pt — mirrors Swift max 220
+        img_h_pt = CONTENT_W * aspect  # natural height — mirrors Swift .aspectRatio(.fit)
         story.append(Paragraph("Frequency Spectrum", S_SPEC_HDR))
         story.append(Spacer(1, 6))
         story.append(Image(
@@ -675,16 +814,15 @@ def export_pdf(
 
         def _role_label(peak) -> str:
             if mt == MT.MeasurementType.PLATE:
-                if peak.id == m.selected_longitudinal_peak_id:
+                if peak.id == data.selected_longitudinal_peak_id:
                     return "Longitudinal (L)"
-                if peak.id == m.selected_cross_peak_id:
+                if peak.id == data.selected_cross_peak_id:
                     return "Cross-grain (C)"
-                flc_snap2 = m.flc_snapshot
-                if peak.id == m.selected_flc_peak_id:
+                if peak.id == data.selected_flc_peak_id:
                     return "FLC (Diagonal)"
                 return "\u2013"
             elif mt == MT.MeasurementType.BRACE:
-                if peak.id == m.selected_longitudinal_peak_id:
+                if peak.id == data.selected_longitudinal_peak_id:
                     return "fL (Longitudinal)"
                 return "\u2013"
             return ""
@@ -731,7 +869,7 @@ def export_pdf(
 
     # --- TAP INSTRUCTIONS (plate / brace only) ---------------------------
     if mt == MT.MeasurementType.PLATE:
-        has_flc = bool(m.selected_flc_peak_id)
+        has_flc = bool(data.selected_flc_peak_id)
         tap_title = "Three-Tap Measurement Process:" if has_flc else "Two-Tap Measurement Process:"
         story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
         story.append(Spacer(1, 6))
@@ -781,15 +919,15 @@ def export_pdf(
         boxes: list[Flowable] = []
         box_w = (CONTENT_W - 16) / 2   # two boxes side-by-side with 16 pt gap
 
-        if m.decay_time is not None:
+        if data.decay_time is not None:
             try:
-                decay_label = gt.decay_quality_label(m.decay_time)
+                decay_label = gt.decay_quality_label(data.decay_time)
             except Exception:
                 decay_label = ""
             dc = _quality_color(decay_label)
             boxes.append(_AnalysisBox(
                 title="Ring-Out Time",
-                value=f"{m.decay_time:.2f} s",
+                value=f"{data.decay_time:.2f} s",
                 subtitle="Time to decay 15 dB",
                 detail=decay_label,
                 detail_subtitle="Sustain quality",
@@ -797,7 +935,7 @@ def export_pdf(
                 width=box_w,
             ))
 
-        ratio = m.tap_tone_ratio
+        ratio = data.tap_tone_ratio
         if ratio is not None:
             ratio_label, ratio_color = _ratio_quality(ratio)
             boxes.append(_AnalysisBox(
@@ -832,15 +970,16 @@ def export_pdf(
         story.append(Paragraph("Plate Properties", S_SECTION))
         story.append(Spacer(1, 10))
 
-        # Sample Dimensions sub-table
-        snap_d = m.longitudinal_snapshot or any_snap
-        if snap_d:
+        # Sample Dimensions sub-table — reads from plate_props.dimensions
+        # (mirrors Swift PDFReportContentView reading plateProperties.dimensions.*)
+        dims = plate_props.dimensions
+        if dims:
             dims_rows = [[
-                Paragraph(f"<b>Length:</b> {snap_d.plate_length:.1f} mm" if snap_d.plate_length else "", S_BODY),
-                Paragraph(f"<b>Width:</b> {snap_d.plate_width:.1f} mm" if snap_d.plate_width else "", S_BODY),
-                Paragraph(f"<b>Thickness:</b> {snap_d.plate_thickness:.2f} mm" if snap_d.plate_thickness else "", S_BODY),
+                Paragraph(f"<b>Length:</b> {dims.length_mm:.1f} mm" if dims.length_mm else "", S_BODY),
+                Paragraph(f"<b>Width:</b> {dims.width_mm:.1f} mm" if dims.width_mm else "", S_BODY),
+                Paragraph(f"<b>Thickness:</b> {dims.thickness_mm:.2f} mm" if dims.thickness_mm else "", S_BODY),
             ], [
-                Paragraph(f"<b>Mass:</b> {snap_d.plate_mass:.1f} g" if snap_d.plate_mass else "", S_BODY),
+                Paragraph(f"<b>Mass:</b> {dims.mass_g:.1f} g" if dims.mass_g else "", S_BODY),
                 Paragraph(f"<b>Density:</b> {plate_props.density_kg_m3/1000:.3f} g/cm\u00b3", S_BODY),
                 Paragraph("", S_BODY),
             ]]
@@ -857,16 +996,15 @@ def export_pdf(
             story.append(dims_tbl)
             story.append(Spacer(1, 6))
 
-        # fL / fC / fLC frequencies row
+        # fL / fC / fLC frequencies row — mirrors Swift reading props.fundamentalFrequency*
         freq_cells = [
             Paragraph(f"<b>fL:</b> {plate_props.f_long:.1f} Hz", S_BODY),
             Paragraph(f"<b>fC:</b> {plate_props.f_cross:.1f} Hz", S_BODY),
+            Paragraph(
+                f"<b>fLC:</b> {plate_props.f_flc:.1f} Hz" if plate_props.f_flc else "",
+                S_BODY,
+            ),
         ]
-        if m.selected_flc_peak_id:
-            flc_pk = next((p for p in m.peaks if p.id == m.selected_flc_peak_id), None)
-            freq_cells.append(Paragraph(f"<b>fLC:</b> {flc_pk.frequency:.1f} Hz" if flc_pk else "", S_BODY))
-        else:
-            freq_cells.append(Paragraph("", S_BODY))
         freq_tbl = Table([freq_cells], colWidths=[CONTENT_W/3]*3)
         freq_tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.06)),
@@ -897,9 +1035,9 @@ def export_pdf(
             Spacer(1, 6),
             _pprow("Speed of Sound (C)", f"{plate_props.c_cross_m_s:.0f} m/s"),
             Spacer(1, 6),
-            _pprow("Young\u2019s Modulus (L)", f"{plate_props.E_long_GPa:.2f} GPa"),
+            _pprow("Young\u2019s Modulus (L)", f"{plate_props.youngsModulusLongGPa:.2f} GPa"),
             Spacer(1, 6),
-            _pprow("Young\u2019s Modulus (C)", f"{plate_props.E_cross_GPa:.2f} GPa"),
+            _pprow("Young\u2019s Modulus (C)", f"{plate_props.youngsModulusCrossGPa:.2f} GPa"),
         ]
         right_col = [
             _qrow("Specific Modulus (L)", plate_props.specific_modulus_long, plate_props.quality_long),
@@ -970,7 +1108,7 @@ def export_pdf(
         story.append(oq_tbl)
 
         # Gore Target Thickness box (blue background)
-        if gore_result is not None:
+        if gore_thickness_mm is not None:
             story.append(Spacer(1, 8))
             if _preset == PSP.PlateStiffnessPreset.CUSTOM:
                 preset_label = f"f_vs = {int(plate_stiffness)} (custom)"
@@ -988,7 +1126,7 @@ def export_pdf(
                 Paragraph("Gore Target Thickness", S_SMALL),
                 Spacer(1, 4),
                 Paragraph(
-                    f"<b><font size='16' color='#2659C0'>{gore_result.thickness_mm:.2f} mm</font></b>",
+                    f"<b><font size='16' color='#2659C0'>{gore_thickness_mm:.2f} mm</font></b>",
                     S_BODY,
                 ),
                 Paragraph(body_label, S_SMALL),
@@ -1009,14 +1147,16 @@ def export_pdf(
         story.append(Paragraph("Brace Properties", S_SECTION))
         story.append(Spacer(1, 10))
 
-        snap_d = m.longitudinal_snapshot or any_snap
-        if snap_d:
+        # Sample Dimensions sub-table — reads from brace_props.dimensions
+        # (mirrors Swift PDFReportContentView reading braceProperties.dimensions.*)
+        dims = brace_props.dimensions
+        if dims:
             dims_rows = [[
-                Paragraph(f"<b>Length:</b> {snap_d.brace_length:.1f} mm" if snap_d.brace_length else "", S_BODY),
-                Paragraph(f"<b>Width:</b> {snap_d.brace_width:.1f} mm" if snap_d.brace_width else "", S_BODY),
-                Paragraph(f"<b>Thickness:</b> {snap_d.brace_thickness:.2f} mm" if snap_d.brace_thickness else "", S_BODY),
+                Paragraph(f"<b>Length:</b> {dims.length_mm:.1f} mm" if dims.length_mm else "", S_BODY),
+                Paragraph(f"<b>Width:</b> {dims.width_mm:.1f} mm" if dims.width_mm else "", S_BODY),
+                Paragraph(f"<b>Thickness:</b> {dims.thickness_mm:.2f} mm" if dims.thickness_mm else "", S_BODY),
             ], [
-                Paragraph(f"<b>Mass:</b> {snap_d.brace_mass:.1f} g" if snap_d.brace_mass else "", S_BODY),
+                Paragraph(f"<b>Mass:</b> {dims.mass_g:.1f} g" if dims.mass_g else "", S_BODY),
                 Paragraph(f"<b>Density:</b> {brace_props.density_kg_m3/1000:.3f} g/cm\u00b3", S_BODY),
                 Paragraph("", S_BODY),
             ]]
@@ -1064,7 +1204,7 @@ def export_pdf(
         left_col = [
             _pprow("Speed of Sound", f"{brace_props.c_long_m_s:.0f} m/s"),
             Spacer(1, 6),
-            _pprow("Young\u2019s Modulus (E)", f"{brace_props.E_long_GPa:.2f} GPa"),
+            _pprow("Young\u2019s Modulus (E)", f"{brace_props.youngsModulusLongGPa:.2f} GPa"),
         ]
         right_col = [
             _qrow("Specific Modulus", brace_props.specific_modulus, brace_props.quality),

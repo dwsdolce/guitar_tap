@@ -390,6 +390,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.avg_enable_saved: bool = False
         self._loaded_resonant_peaks: list = []  # ResonantPeak objects from last loaded measurement
         self._loaded_measurement = None          # full TapToneMeasurement, used for export filtering
+        # Mirrors Swift's @State var tapLocation/notes on TapToneAnalysisView.
+        # Live text the user types before saving; cleared after save; read by export PDF.
+        self._tap_location: str = ""
+        self._notes: str = ""
 
         from _version import __version_string__
         self.setWindowTitle(f"Guitar Tap {__version_string__}")
@@ -2337,12 +2341,11 @@ class MainWindow(QtWidgets.QMainWindow):
                         PA.calculate_brace_properties(dims, long_freq)
                     )
                 elif cross_freq > 0:
-                    _glc = (PA.calculate_glc_from_flc(dims, flc_freq)
-                            if flc_freq > 0 else None)
                     self._populate_plate_section(
-                        PA.calculate_plate_properties(dims, long_freq, cross_freq),
-                        flc_freq=flc_freq,
-                        glc_pa=_glc if _glc else None,
+                        PA.calculate_plate_properties(
+                            dims, long_freq, cross_freq,
+                            f_flc_hz=flc_freq if flc_freq > 0 else None,
+                        ),
                     )
                 else:
                     # L assigned but C not yet — show partial placeholder
@@ -2531,11 +2534,11 @@ class MainWindow(QtWidgets.QMainWindow):
             if mt.is_brace:
                 self._populate_brace_section(PA.calculate_brace_properties(dims, f_long))
             else:
-                glc_pa = PA.calculate_glc_from_flc(dims, actual_flc) if actual_flc > 0 else None
                 self._populate_plate_section(
-                    PA.calculate_plate_properties(dims, f_long, f_cross),
-                    flc_freq=actual_flc,
-                    glc_pa=glc_pa,
+                    PA.calculate_plate_properties(
+                        dims, f_long, f_cross,
+                        f_flc_hz=actual_flc if actual_flc > 0 else None,
+                    ),
                 )
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "Calculation Error", str(exc))
@@ -2548,8 +2551,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """Fill the brace material properties sub-section and make it visible."""
         self._brace_subtitle.setText(f"Longitudinal (fL): {props.f_long:.1f} Hz")
         self._brace_c_long.setText(f"{props.c_long_m_s:.0f} m/s")
-        self._brace_E_long.setText(f"{props.E_long_GPa:.2f} GPa")
-        color = PA.QUALITY_COLORS.get(props.quality, "#888888")
+        self._brace_E_long.setText(f"{props.youngsModulusLongGPa:.2f} GPa")
+        color = PA.WoodQuality(props.quality).color
         self._brace_spec_value.setText(f"{props.specific_modulus:.1f}")
         self._brace_spec_value.setStyleSheet(f"color: {color};")
         self._brace_quality_lbl.setText(props.quality)
@@ -2561,30 +2564,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_section.setVisible(False)
         self._material_section.setVisible(True)
 
-    def _populate_plate_section(self, props: PA.PlateProperties,
-                                flc_freq: float = 0.0,
-                                glc_pa: float | None = None) -> None:
-        """Fill the plate material properties sub-section and make it visible."""
-        # Frequencies — one per line
+    def _populate_plate_section(self, props: PA.PlateProperties) -> None:
+        """Fill the plate material properties sub-section and make it visible.
+
+        All frequencies and G_LC are read from props directly — mirrors Swift where
+        PlateProperties carries f_flc and exposes goreShearModulus as a computed property.
+        """
+        # Frequencies — one per line (mirrors Swift reading props.fundamentalFrequency*)
         self._plate_fl_lbl.setText(f"fL (Longitudinal): {props.f_long:.1f} Hz")
         self._plate_fc_lbl.setText(f"fC (Cross-grain): {props.f_cross:.1f} Hz")
-        if flc_freq > 0:
-            self._plate_flc_lbl.setText(f"fLC (Diagonal): {flc_freq:.1f} Hz")
+        if props.f_flc is not None and props.f_flc > 0:
+            self._plate_flc_lbl.setText(f"fLC (Diagonal): {props.f_flc:.1f} Hz")
             self._plate_flc_lbl.setVisible(True)
         else:
             self._plate_flc_lbl.setVisible(False)
         # Properties (title + L: val  C: val format)
         self._plate_c_long.setText(f"L: {props.c_long_m_s:.0f} m/s")
         self._plate_c_cross.setText(f"C: {props.c_cross_m_s:.0f} m/s")
-        self._plate_E_long.setText(f"L: {props.E_long_GPa:.2f} GPa")
-        self._plate_E_cross.setText(f"C: {props.E_cross_GPa:.2f} GPa")
-        if glc_pa and glc_pa > 0:
+        self._plate_E_long.setText(f"L: {props.youngsModulusLongGPa:.2f} GPa")
+        self._plate_E_cross.setText(f"C: {props.youngsModulusCrossGPa:.2f} GPa")
+        # G_LC from props.gore_shear_modulus (mirrors Swift props.goreShearModulus)
+        glc_pa = props.gore_shear_modulus
+        if glc_pa is not None and glc_pa > 0:
             self._plate_glc_val.setText(f"{glc_pa / 1e9:.3f} GPa")
             self._plate_glc_widget.setVisible(True)
         else:
             self._plate_glc_widget.setVisible(False)
-        cl = PA.QUALITY_COLORS.get(props.quality_long, "#888888")
-        cc = PA.QUALITY_COLORS.get(props.quality_cross, "#888888")
+        cl = PA.WoodQuality(props.quality_long).color
+        cc = PA.WoodQuality(props.quality_cross).color
         self._plate_spec_long_value.setText(f"{props.specific_modulus_long:.1f}")
         self._plate_spec_long_value.setStyleSheet(f"color: {cl};")
         self._plate_quality_long.setText(props.quality_long)
@@ -2597,7 +2604,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_rad_cross.setText(f"C: {props.radiation_ratio_cross:.1f}")
         self._plate_cross_long.setText(f"{props.cross_long_ratio:.3f}")
         self._plate_long_cross.setText(f"{props.long_cross_ratio:.1f}")
-        cov = PA.QUALITY_COLORS.get(props.overall_quality, "#888888")
+        cov = PA.WoodQuality(props.overall_quality).color
         self._plate_overall_quality.setText(props.overall_quality)
         self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
         # Gore Target Thickness
@@ -2609,20 +2616,19 @@ class MainWindow(QtWidgets.QMainWindow):
                             else _preset.value)
             _body_l      = AS.AppSettings.guitar_body_length()
             _body_w      = AS.AppSettings.guitar_body_width()
-            _gore        = PA.calculate_gore_target_thickness(
-                props, _body_l, _body_w, _fvs, _preset.value, glc_pa=glc_pa
+            # Mirrors Swift: props.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:)
+            _thickness_mm = PA.calculate_gore_target_thickness(
+                props, _body_l, _body_w, _fvs
             )
-            if _gore and _gore.thickness_mm > 0:
-                self._gore_thickness_value.setText(f"{_gore.thickness_mm:.2f}")
-                if glc_pa and glc_pa > 0:
+            if _thickness_mm is not None and _thickness_mm > 0:
+                self._gore_thickness_value.setText(f"{_thickness_mm:.2f}")
+                if glc_pa is not None and glc_pa > 0:
                     self._gore_glc_value.setText(f"{glc_pa / 1e9:.3f} GPa")
                     self._gore_glc_row_w.setVisible(True)
                     self._gore_glc_info.setVisible(False)
                 else:
                     self._gore_glc_row_w.setVisible(False)
                     self._gore_glc_info.setText(
-                        "\u24d8 GLC assumed 0 \u2014 FLC tap recorded but GLC not computed"
-                        if flc_freq > 0 else
                         "\u24d8 GLC assumed 0 \u2014 enable FLC tap for a more accurate result"
                     )
                     self._gore_glc_info.setVisible(True)
@@ -2632,7 +2638,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     else f"f_vs = {int(_fvs)} ({_preset.value})"
                 )
                 self._gore_params_lbl.setText(
-                    f"Body: {_gore.body_length_mm:.0f} \u00d7 {_gore.body_width_mm:.0f} mm"
+                    f"Body: {_body_l:.0f} \u00d7 {_body_w:.0f} mm"
                     f"\n{_preset_lbl}"
                 )
                 self._gore_frame.setVisible(True)
@@ -2692,6 +2698,8 @@ class MainWindow(QtWidgets.QMainWindow):
         selected_flc_peak_id: str | None = None
 
         ts = datetime.now(timezone.utc).isoformat()
+        from models.pitch import Pitch as _Pitch
+        _pitch_calc = _Pitch(a4=440)
         for row in range(model.rowCount(QtCore.QModelIndex())):
             idx  = model.index(row, 0)
             freq = model.freq_value(idx)
@@ -2710,6 +2718,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 bandwidth=bandwidth,
                 timestamp=ts,
                 mode_label=mode,
+                pitch_note=_pitch_calc.note(freq),
+                pitch_cents=_pitch_calc.cents(freq),
+                pitch_frequency=_pitch_calc.freq0(freq),
             )
             peaks.append(entry)
 
@@ -2771,7 +2782,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 min_db=_snap_min_db,
                 max_db=_snap_max_db,
                 guitar_type=self.guitar_type_combo.currentText(),
-                measurement_type=self.measurement_type_combo.currentText(),
+                measurement_type=mt.value,
             )
             if mt.is_guitar:
                 spectrum_snapshot = SpectrumSnapshot(**_snap_base)
@@ -2794,7 +2805,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         min_db=_snap_min_db,
                         max_db=_snap_max_db,
                         guitar_type=self.guitar_type_combo.currentText(),
-                        measurement_type=self.measurement_type_combo.currentText(),
+                        measurement_type=mt.value,
                         brace_length=_dims.length_mm if _dims else None,
                         brace_width=_dims.width_mm if _dims else None,
                         brace_thickness=_dims.thickness_mm if _dims else None,
@@ -2830,7 +2841,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         min_db=_snap_min_db,
                         max_db=_snap_max_db,
                         guitar_type=self.guitar_type_combo.currentText(),
-                        measurement_type=self.measurement_type_combo.currentText(),
+                        measurement_type=mt.value,
                         **_plate_dim_kwargs,
                     )
                     # Cross-grain snapshot
@@ -2844,7 +2855,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             min_db=_snap_min_db,
                             max_db=_snap_max_db,
                             guitar_type=self.guitar_type_combo.currentText(),
-                            measurement_type=self.measurement_type_combo.currentText(),
+                            measurement_type=mt.value,
                             **_plate_dim_kwargs,
                         )
                     # FLC snapshot
@@ -2858,7 +2869,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             min_db=_snap_min_db,
                             max_db=_snap_max_db,
                             guitar_type=self.guitar_type_combo.currentText(),
-                            measurement_type=self.measurement_type_combo.currentText(),
+                            measurement_type=mt.value,
                             **_plate_dim_kwargs,
                         )
 
@@ -2893,20 +2904,38 @@ class MainWindow(QtWidgets.QMainWindow):
             selected_flc_peak_id=selected_flc_peak_id,
             microphone_name=mic_name,
             microphone_uid=mic_uid,
-            measurement_type=self.measurement_type_combo.currentText(),
+            measurement_type=mt.value,
             guitar_type=self.guitar_type_combo.currentText(),
+            annotation_visibility_mode=self._ANN_MODES[self._ann_mode_idx][0].lower(),
         )
 
     def _on_save_measurement(self) -> None:
-        """Show save dialog then persist the measurement."""
+        """Show save dialog then persist the measurement.
+
+        Mirrors Swift: the Save sheet receives tapLocation/notes as @Binding so it
+        edits the view's live state directly.  Here we pre-populate the dialog from
+        self._tap_location / self._notes and write back on accept, then clear them —
+        exactly as Swift clears tapLocation = "" / notes = "" after saveMeasurement().
+        """
         dlg = SMD.SaveMeasurementDialog(self)
+        # Pre-populate from live state (mirrors Swift @Binding to the view's @State vars)
+        dlg.set_tap_location(self._tap_location)
+        dlg.set_notes(self._notes)
         if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
+        # Write back into live state before collecting (mirrors Swift binding update)
+        self._tap_location = dlg.tap_location
+        self._notes = dlg.notes
+
         m = self._collect_measurement(
-            tap_location=dlg.tap_location,
-            notes=dlg.notes,
+            tap_location=self._tap_location,
+            notes=self._notes,
         )
+
+        # Clear after saving — mirrors Swift: tapLocation = ""; notes = ""
+        self._tap_location = ""
+        self._notes = ""
 
         try:
             self.fft_canvas.analyzer.save_measurement(m)
@@ -3284,18 +3313,21 @@ class MainWindow(QtWidgets.QMainWindow):
                                 PA.calculate_brace_properties(_dims, _f_long)
                             )
                         elif _f_cross > 0:
-                            _glc = (PA.calculate_glc_from_flc(_dims, _f_flc)
-                                    if _f_flc > 0 else None)
                             self._populate_plate_section(
-                                PA.calculate_plate_properties(_dims, _f_long, _f_cross),
-                                flc_freq=_f_flc,
-                                glc_pa=_glc if _glc else None,
+                                PA.calculate_plate_properties(
+                                    _dims, _f_long, _f_cross,
+                                    f_flc_hz=_f_flc if _f_flc > 0 else None,
+                                ),
                             )
                     except ValueError:
                         pass
 
         # Update chart title to show the measurement name — mirrors Swift loadedMeasurementName.
         canvas.set_loaded_measurement_name(m.tap_location)
+        # Clear live tap_location/notes — mirrors Swift where tapLocation is "" when a
+        # measurement is loaded (the chart title comes from loadedMeasurementName instead).
+        self._tap_location = ""
+        self._notes = ""
 
         # Auto-select the recorded microphone if it is available — mirrors Swift
         # loadMeasurement(_:) device-restore block in TapToneAnalyzer+MeasurementManagement.swift.
@@ -3538,12 +3570,29 @@ class MainWindow(QtWidgets.QMainWindow):
         M.update_export_dir(path)
 
         self._loading_overlay.show_message("Generating PDF report…")
-        m = self._collect_measurement()
+        # Always collect from live UI state — mirrors Swift exportPDFReport() which
+        # reads tap.currentPeaks / tap.selectedPeakIDs / tap.calculateTapToneRatio()
+        # directly from the live analyzer, never from a stored TapToneMeasurement.
+        # When a measurement was loaded, _restore_measurement() already pushed all its
+        # data into the live canvas/peak-table state, so _collect_measurement() reads
+        # the correct peaks, selections, and tap_location from there.
+        # tapLocation: mirrors Swift `tapLocation.isEmpty ? nil : tapLocation` —
+        # _tap_location is "" after a load (chart title comes from loadedMeasurementName)
+        # and non-empty only if the user typed a location before saving a fresh tap.
+        loc = self._tap_location if self._tap_location else None
+        # For a loaded measurement, use its tap_location directly since _tap_location
+        # is cleared on load — mirrors Swift where tapLocation is "" and the subtitle
+        # falls back to tap.loadedMeasurementName.
+        if loc is None and self._loaded_measurement is not None:
+            loc = self._loaded_measurement.tap_location or None
+        m = self._collect_measurement(tap_location=loc, notes=self._notes or None)
         # Render the composite spectrum image for embedding in the PDF — uses
         # the same renderer as Export Spectrum so both outputs are consistent.
         png_data: bytes | None = M.render_spectrum_image_for_measurement(m)
         try:
-            M.export_pdf(m, png_data, path)
+            # Mirrors Swift: PDFReportData.from(measurement:) → PDFReportGenerator.generate(data:)
+            report_data = M.pdf_report_data_from_measurement(m, png_data)
+            M.export_pdf(report_data, path)
             # Success is silent on macOS — mirrors Swift MeasurementFileExporter
             # which only logs to console and shows no confirmation alert.
         except Exception as exc:
