@@ -1725,6 +1725,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.set_measurement_complete(False)
 
+        # Seed the model's annotation_mode so the live FFT path respects the saved setting
+        self._apply_annotation_mode(self._ANN_MODES[self._ann_mode_idx][0])
+
         # Restore calibration status label and device name in status bar
         device_name = canvas.current_calibration_device() or AS.AppSettings.device_name()
         if device_name:
