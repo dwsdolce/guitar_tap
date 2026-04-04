@@ -391,9 +391,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loaded_resonant_peaks: list = []  # ResonantPeak objects from last loaded measurement
         self._loaded_measurement = None          # full TapToneMeasurement, used for export filtering
 
-        with open(os.path.join(basedir, "./version"), "r", encoding="UTF-8") as fh:
-            version = fh.read().rstrip()
-        self.setWindowTitle(f"Guitar Tap {version}")
+        from _version import __version_string__
+        self.setWindowTitle(f"Guitar Tap {__version_string__}")
 
         # Menu bar — Help menu
         help_menu = self.menuBar().addMenu("Help")
@@ -3545,9 +3544,8 @@ class MainWindow(QtWidgets.QMainWindow):
         png_data: bytes | None = M.render_spectrum_image_for_measurement(m)
         try:
             M.export_pdf(m, png_data, path)
-            QtWidgets.QMessageBox.information(
-                self, "PDF Exported", f"Report saved to:\n{path}"
-            )
+            # Success is silent on macOS — mirrors Swift MeasurementFileExporter
+            # which only logs to console and shows no confirmation alert.
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export PDF:\n{exc}"
@@ -4712,15 +4710,10 @@ class MainWindow(QtWidgets.QMainWindow):
         ab = QtWidgets.QVBoxLayout(about_group)
         ab.addWidget(_group_header("mdi.information", "About & Help"))
 
-        try:
-            with open(os.path.join(basedir, "version"), "r", encoding="UTF-8") as fh:
-                ver = fh.read().strip()
-        except OSError:
-            ver = "—"
-
+        from _version import __version_string__
         ver_row = QtWidgets.QHBoxLayout()
         ver_lbl = QtWidgets.QLabel("Version")
-        ver_val = QtWidgets.QLabel(ver)
+        ver_val = QtWidgets.QLabel(__version_string__)
         ver_val.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )

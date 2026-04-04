@@ -23,6 +23,17 @@ rmdir /s /q dist
 rmdir /s /q build
 
 REM ===============================================
+REM Generate version_build from git commit count
+REM ===============================================
+for /f %%b in ('git rev-list --count HEAD') do set VERSION_BUILD=%%b
+if errorlevel 1 (
+    echo Generating version_build failed
+    exit /b 1
+)
+echo %VERSION_BUILD%> version_build
+echo gen_version_build: version_build = %VERSION_BUILD%
+
+REM ===============================================
 REM Run pyinstaller
 REM ===============================================
 REM Get the product version

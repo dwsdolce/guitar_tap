@@ -24,6 +24,15 @@ rm -rf dist
 rm -rf build
 
 #===============================================
+# Generate version_build from git commit count
+#===============================================
+./gen_version_build.sh
+if [ $? -ne 0 ]; then
+    echo "Generating version_build failed"
+    exit 1
+fi
+
+#===============================================
 # Run pyinstaller
 #===============================================
 # Get the product version
