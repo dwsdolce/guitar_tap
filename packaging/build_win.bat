@@ -1,5 +1,8 @@
 
 @echo off
+REM Run from the project root regardless of where this script is invoked from.
+cd /d "%~dp0\.."
+
 REM ===============================================
 REM  Setup the correct python environment
 REM ===============================================
@@ -30,16 +33,16 @@ if errorlevel 1 (
     echo Generating version_build failed
     exit /b 1
 )
-echo %VERSION_BUILD%> version_build
+echo %VERSION_BUILD%> src\guitar_tap\version_build
 echo gen_version_build: version_build = %VERSION_BUILD%
 
 REM ===============================================
 REM Run pyinstaller
 REM ===============================================
 REM Get the product version
-set /p version=<version
+set /p version=<src\guitar_tap\version
 echo Creating installer for version %version%
-pyinstaller -y guitar-tap.spec
+pyinstaller -y packaging\guitar-tap.spec
 if errorlevel 1 (
     echo Running pyinstaller failed
     exit /b 1
@@ -48,7 +51,7 @@ if errorlevel 1 (
 REM ===============================================
 REM Prepare installer path
 REM ===============================================
-set "installer_file=%cd%\guitar-tap.iss"
+set "installer_file=%cd%\packaging\guitar-tap.iss"
 set "ISCC_PATH=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
 REM ===============================================

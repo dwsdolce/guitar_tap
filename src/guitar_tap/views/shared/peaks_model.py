@@ -3,7 +3,6 @@
 """
 
 from enum import Enum
-import os
 
 import numpy as np
 import numpy.typing as npt
@@ -12,8 +11,6 @@ from PyQt6 import QtCore
 from models import pitch as pitch_c
 from models import guitar_type as gt
 from models import guitar_mode as gm
-
-basedir = os.path.dirname(__file__)
 
 
 class ColumnIndex(Enum):

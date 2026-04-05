@@ -8,6 +8,11 @@ This file only contains the launcher code.
 import sys
 import os
 
+# Ensure models/ and views/ are importable as top-level packages when running
+# as `python -m guitar_tap`. __file__ is src/guitar_tap/__main__.py so
+# os.path.dirname(__file__) is src/guitar_tap/.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from PyQt6 import QtWidgets, QtGui
 
 from views.tap_tone_analysis_view import MainWindow, basedir

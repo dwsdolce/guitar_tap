@@ -1,10 +1,13 @@
 #!/bin/zsh
 
+# Run from the project root regardless of where this script is invoked from.
+cd "$(dirname "$0")/.."
+
 # There are two fors for this command:
 #   build_mac help
 # and
 #   build_mac arm|intel dmg|pkg
-#  
+#
 # The script reinvokes if the current architecture is not the desired one.
 #
 if [[ $# == 1 ]]
@@ -46,7 +49,7 @@ fi
 current_arch=`arch`
 if [[ $current_arch != $desired_arch ]]
 then
-    env /usr/bin/arch -$desired_arch_option /bin/zsh ./build_mac $desired $format
+    env /usr/bin/arch -$desired_arch_option /bin/zsh ./packaging/build_mac $desired $format
     exit $?
 fi
 
@@ -74,7 +77,7 @@ rm -rf build
 #===============================================
 # Generate version_build from git commit count
 #===============================================
-./gen_version_build.sh
+./packaging/gen_version_build.sh
 if [ $? -ne 0 ]; then
     echo "Generating version_build failed"
     exit 1
@@ -84,9 +87,9 @@ fi
 # Run pyinstaller
 #===============================================
 # Get the product version
-VERSION="`cat version`"
+VERSION="`cat src/guitar_tap/version`"
 echo "Creating installer for version ${VERSION}"
-pyinstaller -y guitar-tap.spec
+pyinstaller -y packaging/guitar-tap.spec
 if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"
     exit 1
@@ -106,7 +109,7 @@ if [[ $format == "dmg" ]]
 then
     create-dmg \
         --volname "Guitar Tap $VERSION Install" \
-        --background "icons/guitar-tap-dmg.png" \
+        --background "src/guitar_tap/icons/guitar-tap-dmg.png" \
         --window-pos 1 1 \
         --icon "Guitar Tap.app" 190 350 \
         --window-size 640 535 \
@@ -116,7 +119,7 @@ then
         --app-drop-link 450 360 \
         --format ULFO \
         --hdiutil-verbose \
-        --volicon "icons/guitar-tap.icns" \
+        --volicon "src/guitar_tap/icons/guitar-tap.icns" \
         $installer_name \
         "dist/"
 else
@@ -124,12 +127,12 @@ else
     rm -rf packages
     mkdir packages
     pkgbuild --root ./dist \
-        --component-plist guitar-tap.plist \
+        --component-plist packaging/guitar-tap.plist \
         --identifier "com.dolcesfogato.guitar-tap" \
         --version "${VERSION}" \
         --install-location "/Applications" \
         packages/GuitarTap.pkg
-    productbuild --distribution ./guitar-tap.${desired}.dist  \
+    productbuild --distribution ./packaging/guitar-tap.${desired}.dist  \
         --package-path ./packages \
         --sign "Developer ID Installer: David Smith (43QHHT3XK2)" \
         $installer_name

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guitar-tap"
+version = "0.11"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src/guitar_tap"]
+
+[tool.coverage.run]
+source = ["src/guitar_tap/models"]
+omit = ["tests/*", ".venv/*"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+exclude = ["tests/", ".venv/", "build/", "dist/"]

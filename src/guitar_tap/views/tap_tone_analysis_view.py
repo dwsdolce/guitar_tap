@@ -37,8 +37,8 @@ import views.fft_analysis_metrics_view as FMV
 from views.shared.loading_overlay import LoadingOverlay
 import qtawesome as qta
 
-# Project root is one directory above views/
-basedir = os.path.dirname(os.path.dirname(__file__))
+# Package root: src/guitar_tap/views/ → src/guitar_tap/
+basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 

@@ -1,0 +1,13 @@
+# Core application dependencies (all platforms)
+PyQt6==6.10.2
+PyQt6-Qt6==6.10.2
+PyQt6_sip==13.11.0
+numpy==2.4.2
+scipy==1.17.1
+sounddevice==0.5.5
+pyqtgraph==0.14.0
+QtAwesome==1.4.1
+reportlab==4.4.10
+
+# macOS only — install with: pip install -r requirements-macos.txt
+# pyobjc

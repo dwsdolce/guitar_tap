@@ -1,6 +1,9 @@
 #!/bin/bash
 #
 
+# Run from the project root regardless of where this script is invoked from.
+cd "$(dirname "$0")/.."
+
 #===============================================
 # Setup the correct python environment
 #===============================================
@@ -18,7 +21,7 @@ rm -rf build
 #===============================================
 # Generate version_build from git commit count
 #===============================================
-./gen_version_build.sh
+./packaging/gen_version_build.sh
 if [ $? -ne 0 ]; then
     echo "Generating version_build failed"
     exit 1
@@ -28,9 +31,9 @@ fi
 # Run pyinstaller
 #===============================================
 # Get the product version
-version="`cat version`"
+version="`cat src/guitar_tap/version`"
 echo "Creating installer for version ${version}"
-pyinstaller -y guitar-tap.spec
+pyinstaller -y packaging/guitar-tap.spec
 if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"
     exit 1

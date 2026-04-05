@@ -1,0 +1,13 @@
+# Development and testing dependencies
+# pip install -r requirements.txt -r requirements-dev.txt
+pytest==9.0.2
+pytest-cov==7.1.0
+mypy==1.19.1
+ruff==0.15.6
+setuptools==82.0.1
+# packaging/generate_guide.py — HTML/PDF Quick-Start Guide generator
+# Also requires a native Pango library (not a Python package):
+#   macOS:   brew install pango
+#   Linux:   sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0
+#   Windows: install GTK runtime — see packaging/generate_guide.py docstring
+weasyprint
