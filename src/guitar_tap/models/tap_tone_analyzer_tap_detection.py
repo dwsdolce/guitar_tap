@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import time as _time
 
-from PyQt6 import QtCore
+from PySide6 import QtCore
 
 from .analysis_display_mode import AnalysisDisplayMode
 
@@ -59,7 +59,7 @@ class TapDetector(QtCore.QObject):
     MODE_GUITAR: str = "guitar"
     MODE_PLATE_BRACE: str = "plate_brace"
 
-    tapDetected: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    tapDetected: QtCore.Signal = QtCore.Signal()
 
     _WARMUP = "WARMUP"
     _IDLE = "IDLE"

@@ -85,9 +85,9 @@ from .analysis_display_mode import AnalysisDisplayMode
 from .fft_parameters import FftParameters
 from .fft_processing_thread import FftProcessingThread
 
-# ── PyQt6 ─────────────────────────────────────────────────────────────────────
+# ── PySide6 ─────────────────────────────────────────────────────────────────────
 
-from PyQt6 import QtCore
+from PySide6 import QtCore
 
 
 # ── TapToneAnalyzer ───────────────────────────────────────────────────────────
@@ -117,52 +117,52 @@ class TapToneAnalyzer(
 
     # ── Signals (Python equivalents of Swift @Published properties) ────────
     # New peak list emitted after every analysis frame and after threshold/range changes.
-    peaksChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(object)          # ndarray (N, 3)
+    peaksChanged: QtCore.Signal = QtCore.Signal(object)          # ndarray (N, 3)
     # Full spectrum ready for the view to draw.
-    spectrumUpdated: QtCore.pyqtSignal = QtCore.pyqtSignal(object, object)  # (freqs, mags_db)
+    spectrumUpdated: QtCore.Signal = QtCore.Signal(object, object)  # (freqs, mags_db)
     # A single tap has been fully captured (all required taps averaged).
-    tapDetectedSignal: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    tapDetectedSignal: QtCore.Signal = QtCore.Signal()
     # Live tap count update: (captured, total).
-    tapCountChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)
+    tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)
     # Ring-out time measured by DecayTracker (seconds).
-    ringOutMeasured: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
+    ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
     # Input level 0-100 scale (dBFS + 100).
-    levelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    levelChanged: QtCore.Signal = QtCore.Signal(int)
     # FFT frame diagnostics: (fps, sample_dt, processing_dt).
-    framerateUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)
+    framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
     # Averaging: number of completed averages.
-    averagesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    averagesChanged: QtCore.Signal = QtCore.Signal(int)
     # Emitted on every live FFT frame (for average-enable logic).
-    newSample: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    newSample: QtCore.Signal = QtCore.Signal(bool)
     # Display mode changed: emits the new DisplayMode enum value.
-    displayModeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(object)
+    displayModeChanged: QtCore.Signal = QtCore.Signal(object)
     # Measurement complete state changed.
-    measurementComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    measurementComplete: QtCore.Signal = QtCore.Signal(bool)
     # Hot-plug: list[str] of current input device names.
-    devicesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(list)
+    devicesChanged: QtCore.Signal = QtCore.Signal(list)
     # Hot-plug: name of the device that disappeared.
-    currentDeviceLost: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    currentDeviceLost: QtCore.Signal = QtCore.Signal(str)
     # Plate/brace phase status text for display.
-    plateStatusChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    plateStatusChanged: QtCore.Signal = QtCore.Signal(str)
     # Plate analysis complete: (fL, fC, fFLC) Hz.
-    plateAnalysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)
+    plateAnalysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)
     # Tap detection pause state changed.
-    tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)
     # Emitted when comparison overlay data changes (True=entering, False=leaving).
-    comparisonChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
+    comparisonChanged: QtCore.Signal = QtCore.Signal(bool)
     # Emitted when per-phase material spectra change for plate/brace measurements.
     # Payload: list of (label, (r,g,b), freqs, mags) tuples — empty list clears the overlay.
     # Mirrors Swift @Published var longitudinalSpectrum / crossSpectrum / flcSpectrum
     # which TapToneAnalysisView+SpectrumViews observes to build materialSpectra.
-    materialSpectraChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(list)
+    materialSpectraChanged: QtCore.Signal = QtCore.Signal(list)
     # Emitted when savedMeasurements list changes (mirrors Swift @Published var savedMeasurements).
-    savedMeasurementsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    savedMeasurementsChanged: QtCore.Signal = QtCore.Signal()
     # Emitted when frequency range changes (fmin, fmax).
-    freqRangeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)
+    freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)
     # Peak info for status bar: (peak_hz, peak_db).
-    peakInfoChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)
+    peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)
     # Internal: fired from hotplug monitor thread → main thread (no-arg).
-    _devicesRefreshed: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    _devicesRefreshed: QtCore.Signal = QtCore.Signal()
 
     def __init__(
         self,

@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from PyQt6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 _APP: QtWidgets.QApplication | None = None
 
@@ -52,9 +52,9 @@ class _StubAnalyzer(
 ):
     """Minimal stub that provides just the state the mixin methods touch."""
 
-    comparisonChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
-    savedMeasurementsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
-    freqRangeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)
+    comparisonChanged: QtCore.Signal = QtCore.Signal(bool)
+    savedMeasurementsChanged: QtCore.Signal = QtCore.Signal()
+    freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)
 
     def __init__(self) -> None:
         _get_app()

@@ -6,7 +6,7 @@ from enum import Enum
 
 import numpy as np
 import numpy.typing as npt
-from PyQt6 import QtCore
+from PySide6 import QtCore
 
 from models import pitch as pitch_c
 from models import guitar_type as gt
@@ -33,13 +33,13 @@ class PeaksModel(QtCore.QAbstractTableModel):
     accessing the underlying data model.
     """
 
-    annotationUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, str, str)  # (freq, mag, html, mode_str)
-    clearAnnotations: QtCore.pyqtSignal = QtCore.pyqtSignal()
-    hideAnnotations: QtCore.pyqtSignal = QtCore.pyqtSignal()
-    hideAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
-    showAnnotation: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
-    userModifiedSelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
-    modeColorsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(object)  # dict[float, tuple[int,int,int]]
+    annotationUpdate: QtCore.Signal = QtCore.Signal(float, float, str, str)  # (freq, mag, html, mode_str)
+    clearAnnotations: QtCore.Signal = QtCore.Signal()
+    hideAnnotations: QtCore.Signal = QtCore.Signal()
+    hideAnnotation: QtCore.Signal = QtCore.Signal(float)
+    showAnnotation: QtCore.Signal = QtCore.Signal(float)
+    userModifiedSelectionChanged: QtCore.Signal = QtCore.Signal(bool)
+    modeColorsChanged: QtCore.Signal = QtCore.Signal(object)  # dict[float, tuple[int,int,int]]
 
     mode_strings: list[str] = [
         "",

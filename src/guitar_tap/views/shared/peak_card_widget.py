@@ -19,7 +19,7 @@ import os
 import numpy as np
 import numpy.typing as npt
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 import qtawesome as qta
 
 from models import guitar_type as gt
@@ -64,10 +64,10 @@ def _mode_color(mode_str: str) -> QtGui.QColor:
 class PeakCardWidget(QtWidgets.QFrame):
     """One card representing one resonant peak."""
 
-    showChanged = QtCore.pyqtSignal(float, str)   # (freq, "on"/"off")
-    modeChanged = QtCore.pyqtSignal(float, str)   # (freq, mode_string)
-    modeReset  = QtCore.pyqtSignal(float)          # (freq) — reverted to auto
-    cardClicked = QtCore.pyqtSignal(float)         # (freq)
+    showChanged = QtCore.Signal(float, str)   # (freq, "on"/"off")
+    modeChanged = QtCore.Signal(float, str)   # (freq, mode_string)
+    modeReset  = QtCore.Signal(float)          # (freq) — reverted to auto
+    cardClicked = QtCore.Signal(float)         # (freq)
 
     def __init__(
         self,
@@ -393,7 +393,7 @@ class PeakCardWidget(QtWidgets.QFrame):
 # ── container widget that emits clearPeaks on background clicks ───────────────
 
 class _CardContainer(QtWidgets.QWidget):
-    clearPeaks = QtCore.pyqtSignal()
+    clearPeaks = QtCore.Signal()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         # Only fire if the click landed on the container itself (not on a child)
@@ -408,9 +408,9 @@ class _CardContainer(QtWidgets.QWidget):
 class PeakListWidget(QtWidgets.QWidget):
     """Card-based peak list widget."""
 
-    clearPeaks    = QtCore.pyqtSignal()
-    peakSelected  = QtCore.pyqtSignal(float)
-    peakDeselected = QtCore.pyqtSignal(float)
+    clearPeaks    = QtCore.Signal()
+    peakSelected  = QtCore.Signal(float)
+    peakDeselected = QtCore.Signal(float)
 
     def __init__(self) -> None:
         super().__init__()

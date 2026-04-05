@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time as _time
 
-from PyQt6 import QtCore
+from PySide6 import QtCore
 
 
 class DecayTracker(QtCore.QObject):
@@ -24,7 +24,7 @@ class DecayTracker(QtCore.QObject):
     Mirrors Swift TapToneAnalyzer+DecayTracking.swift decay tracking logic.
     """
 
-    ringOutMeasured: QtCore.pyqtSignal = QtCore.pyqtSignal(float)  # seconds
+    ringOutMeasured: QtCore.Signal = QtCore.Signal(float)  # seconds
 
     def __init__(
         self,

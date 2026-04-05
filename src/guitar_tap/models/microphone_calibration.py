@@ -436,7 +436,7 @@ class CalibrationStorage:
 
     @classmethod
     def _s(cls):
-        from PyQt6 import QtCore
+        from PySide6 import QtCore
         return QtCore.QSettings(cls._ORG, cls._APP)
 
     # MARK: - CRUD

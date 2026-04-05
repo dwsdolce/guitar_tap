@@ -13,7 +13,7 @@ import os
 
 import numpy as np
 import sounddevice as sd
-from PyQt6 import QtWidgets, QtGui, QtCore
+from PySide6 import QtWidgets, QtGui, QtCore
 
 import views.fft_canvas as fft_c
 from models.analysis_display_mode import AnalysisDisplayMode
@@ -67,7 +67,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
     """
 
     # Emits (long_freq, cross_freq, flc_freq); 0.0 = not assigned.
-    assignmentChanged = QtCore.pyqtSignal(float, float, float)
+    assignmentChanged = QtCore.Signal(float, float, float)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -3364,7 +3364,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     # Caller (e.g. _on_import) will fold the warning into its own dialog.
                     self._pending_mic_warning = warning
                 else:
-                    from PyQt6 import QtWidgets
+                    from PySide6 import QtWidgets
                     QtWidgets.QMessageBox.warning(
                         self, "Microphone Not Connected", warning
                     )

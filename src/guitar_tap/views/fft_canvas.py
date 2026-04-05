@@ -9,7 +9,7 @@ import pyqtgraph as pg
 import numpy as np
 import sounddevice as sd
 import numpy.typing as npt
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from views import peak_annotations as fft_a
 import models.realtime_fft_analyzer as f_a
@@ -29,7 +29,7 @@ import views.utilities.tap_settings_view as _as
 class _SceneMouseReleaseFilter(QtCore.QObject):
     """Event filter that emits a signal on QGraphicsScene mouse release."""
 
-    released = QtCore.pyqtSignal(object)
+    released = QtCore.Signal(object)
 
     def eventFilter(self, obj, event) -> bool:
         if event.type() == QtCore.QEvent.Type.GraphicsSceneMouseRelease:
@@ -135,25 +135,25 @@ class FftCanvas(pg.PlotWidget):
 
     hold: bool = False
 
-    peakDeselected: QtCore.pyqtSignal = QtCore.pyqtSignal()
-    peakSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
-    peaksChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(np.ndarray)
-    ampChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
-    averagesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
-    framerateUpdate: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)
-    newSample: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)
-    tapDetected: QtCore.pyqtSignal = QtCore.pyqtSignal()
-    ringOutMeasured: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
-    tapCountChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)  # (captured, total)
-    devicesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(list)       # new device-name list
-    currentDeviceLost: QtCore.pyqtSignal = QtCore.pyqtSignal(str)     # lost device name
-    plateStatusChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)    # plate capture status
-    plateAnalysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)  # fL, fC, fFLC
-    tapDetectionPaused: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)   # True=paused
-    peakInfoChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float)  # (peak_hz, peak_db)
-    levelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)              # level 0-100 (dB+100)
-    comparisonChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)         # True=entering, False=leaving
-    freqRangeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)      # (fmin, fmax) — pan/zoom
+    peakDeselected: QtCore.Signal = QtCore.Signal()
+    peakSelected: QtCore.Signal = QtCore.Signal(float)
+    peaksChanged: QtCore.Signal = QtCore.Signal(np.ndarray)
+    ampChanged: QtCore.Signal = QtCore.Signal(int)
+    averagesChanged: QtCore.Signal = QtCore.Signal(int)
+    framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
+    newSample: QtCore.Signal = QtCore.Signal(bool)
+    tapDetected: QtCore.Signal = QtCore.Signal()
+    ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
+    tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)  # (captured, total)
+    devicesChanged: QtCore.Signal = QtCore.Signal(list)       # new device-name list
+    currentDeviceLost: QtCore.Signal = QtCore.Signal(str)     # lost device name
+    plateStatusChanged: QtCore.Signal = QtCore.Signal(str)    # plate capture status
+    plateAnalysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)  # fL, fC, fFLC
+    tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)   # True=paused
+    peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
+    levelChanged: QtCore.Signal = QtCore.Signal(int)              # level 0-100 (dB+100)
+    comparisonChanged: QtCore.Signal = QtCore.Signal(bool)         # True=entering, False=leaving
+    freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)      # (fmin, fmax) — pan/zoom
 
     # Color palette for comparison overlays — mirrors comparisonPalette in TapToneAnalyzer.swift
     _COMPARISON_PALETTE: list[tuple[int, int, int]] = [

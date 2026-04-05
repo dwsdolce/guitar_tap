@@ -17,7 +17,7 @@ from typing import Any
 import pyqtgraph as pg
 from models import guitar_mode as gm
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 # Type alias for the annotation dict stored in FftAnnotations.annotations
 _AnnDict = dict[str, Any]
@@ -120,7 +120,7 @@ class FftAnnotations(QtCore.QObject):
         arrow_line (PlotDataItem | None)
     """
 
-    restoreFocus: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    restoreFocus: QtCore.Signal = QtCore.Signal()
 
     # Vertical offset (in dB) from peak to default label position.
     _LABEL_OFFSET_DB: float = 14.0

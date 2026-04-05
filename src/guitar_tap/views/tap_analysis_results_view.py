@@ -69,7 +69,7 @@ def last_export_dir() -> str:
     Persisted across launches via QSettings — mirrors Swift's UserDefaults
     bookmark storage in MeasurementFileExporter.
     """
-    from PyQt6.QtCore import QSettings
+    from PySide6.QtCore import QSettings
     stored = QSettings().value(_EXPORT_DIR_KEY)
     if stored and os.path.isdir(stored):
         return stored
@@ -78,7 +78,7 @@ def last_export_dir() -> str:
 
 def update_export_dir(chosen_path: str) -> None:
     """Persist the directory of *chosen_path* as the new last-used export dir."""
-    from PyQt6.QtCore import QSettings
+    from PySide6.QtCore import QSettings
     QSettings().setValue(_EXPORT_DIR_KEY, os.path.dirname(chosen_path))
 
 
@@ -92,7 +92,7 @@ def _app_data_dir() -> str:
       Windows: %APPDATA%\\GuitarTap
       Linux:   ~/.local/share/GuitarTap
     """
-    from PyQt6.QtCore import QStandardPaths
+    from PySide6.QtCore import QStandardPaths
     path = QStandardPaths.writableLocation(
         QStandardPaths.StandardLocation.AppDataLocation
     )

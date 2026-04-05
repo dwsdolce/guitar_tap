@@ -3,7 +3,7 @@ Port of TapDetectionTests.swift — hysteresis, warmup, cooldown, EMA.
 
 Mirrors Swift test plan coverage T1–T8.
 
-The Python TapDetector uses PyQt6.QtCore.QObject and pyqtSignal, so a
+The Python TapDetector uses PySide6.QtCore.QObject and Signal, so a
 QCoreApplication is required.  The fixture below ensures one exists for
 the duration of the test session.
 
@@ -21,7 +21,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Must create QCoreApplication before importing TapDetector
-from PyQt6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 _APP: QtWidgets.QApplication | None = None
 

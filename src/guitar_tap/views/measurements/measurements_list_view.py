@@ -18,7 +18,7 @@ Right-click    → context menu: Load into View | View Details | Export Measurem
 
 import os
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from views import tap_analysis_results_view as M
 from models import TapToneMeasurement
@@ -41,8 +41,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
     ``savedMeasurementsChanged`` is emitted and any other observers are notified.
     """
 
-    measurementSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(object)
-    comparisonRequested: QtCore.pyqtSignal = QtCore.pyqtSignal(object)  # list[TapToneMeasurement]
+    measurementSelected: QtCore.Signal = QtCore.Signal(object)
+    comparisonRequested: QtCore.Signal = QtCore.Signal(object)  # list[TapToneMeasurement]
 
     def __init__(self, analyzer, parent=None) -> None:
         super().__init__(parent)

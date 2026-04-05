@@ -29,7 +29,7 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 import numpy as np
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 if TYPE_CHECKING:
     from views.fft_canvas import FftCanvas

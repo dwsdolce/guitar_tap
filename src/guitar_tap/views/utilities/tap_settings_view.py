@@ -3,7 +3,7 @@
 """
 
 from __future__ import annotations
-from PyQt6 import QtCore
+from PySide6 import QtCore
 
 
 def _meas_key(meas_type) -> str:

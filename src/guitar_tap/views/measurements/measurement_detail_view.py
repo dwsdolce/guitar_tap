@@ -6,7 +6,7 @@ Matches MeasurementDetailView.swift / CombinedPeakModeRowView.swift.
 import os
 from datetime import datetime, timezone
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 import qtawesome as qta
 
 from views import tap_analysis_results_view as M
@@ -229,7 +229,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
     Emits measurementSelected(m) when the user confirms Load.
     """
 
-    measurementSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(object)
+    measurementSelected: QtCore.Signal = QtCore.Signal(object)
 
     def __init__(
         self,

@@ -3,7 +3,7 @@ Modal dialog for entering tap location and notes before saving a measurement.
 Matches SaveMeasurementSheet.swift.
 """
 
-from PyQt6 import QtWidgets
+from PySide6 import QtWidgets
 
 
 class SaveMeasurementDialog(QtWidgets.QDialog):

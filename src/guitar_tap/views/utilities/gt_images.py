@@ -4,7 +4,7 @@
 
 import os
 
-from PyQt6 import QtGui
+from PySide6 import QtGui
 
 # Package root: src/guitar_tap/views/utilities/ → src/guitar_tap/views/ → src/guitar_tap/
 basedir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

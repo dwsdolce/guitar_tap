@@ -10,7 +10,7 @@ can import them without importing the entire MainWindow module.
 
 from __future__ import annotations
 
-from PyQt6 import QtWidgets
+from PySide6 import QtWidgets
 
 
 def vsep() -> QtWidgets.QFrame:

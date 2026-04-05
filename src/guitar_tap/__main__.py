@@ -13,7 +13,7 @@ import os
 # os.path.dirname(__file__) is src/guitar_tap/.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PyQt6 import QtWidgets, QtGui
+from PySide6 import QtWidgets, QtGui
 
 from views.tap_tone_analysis_view import MainWindow, basedir
 

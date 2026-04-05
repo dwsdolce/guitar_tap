@@ -28,7 +28,7 @@ import time
 
 import numpy as np
 import numpy.typing as npt
-from PyQt6 import QtCore
+from PySide6 import QtCore
 
 import models.realtime_fft_analyzer as _rfa
 from models.tap_tone_analyzer_tap_detection import TapDetector
@@ -56,21 +56,21 @@ class FftProcessingThread(QtCore.QThread):
 
     # (mag_y_db, mag_y, tap_fired, tap_amp, fps, sample_dt, processing_dt)
     # Mirrors Swift TapToneAnalyzer fftFrameReady notification.
-    fftFrameReady: QtCore.pyqtSignal = QtCore.pyqtSignal(
+    fftFrameReady: QtCore.Signal = QtCore.Signal(
         np.ndarray, np.ndarray, bool, int, float, float, float
     )
 
     # Per-chunk RMS level (plate/brace) or per-FFT peak level (guitar), 0-100 scale.
     # Mirrors Swift TapToneAnalyzer @Published inputLevelDB.
-    rmsLevelChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    rmsLevelChanged: QtCore.Signal = QtCore.Signal(int)
 
     # Ring-out time in seconds, relayed from DecayTracker.
     # Mirrors Swift TapToneAnalyzer+DecayTracking ringOutTime.
-    ringOutMeasured: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
+    ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
 
     # (captured, total) tap count — emitted by TapToneAnalyzer, not here.
     # Declared for symmetry; not emitted from this thread.
-    tapCountChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, int)
+    tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)
 
     # MARK: - Initialization
 

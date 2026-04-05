@@ -29,7 +29,7 @@ recognizers.
 
 ## Connection Lines
 
-Because ConnectionLineShape (a Shape-conforming type) has no direct PyQt6
+Because ConnectionLineShape (a Shape-conforming type) has no direct PySide6
 equivalent inside a composited image, connection lines are drawn with
 QPainter.drawLine() directly onto the captured chart QImage, which renders
 correctly in all contexts.
@@ -231,7 +231,7 @@ class ExportableSpectrumChart:
 
     def peak_color(self, peak, idx: int):
         """Mirrors ``private func peakColor(for peak: ResonantPeak) -> Color``."""
-        from PyQt6 import QtGui
+        from PySide6 import QtGui
         if self.is_guitar:
             # _mode_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode].
             mode = self._mode_map.get(getattr(peak, "id", None))
@@ -322,7 +322,7 @@ class ExportableSpectrumChart:
         """
         import pyqtgraph as pg
         from pyqtgraph.exporters import ImageExporter
-        from PyQt6 import QtCore, QtGui, QtWidgets
+        from PySide6 import QtCore, QtGui, QtWidgets
 
         if QtWidgets.QApplication.instance() is None:
             QtWidgets.QApplication([])
@@ -703,7 +703,7 @@ def make_exportable_spectrum_view(
     :param guitar_type_str: Guitar body type string used for mode classification.
     :param output_path: File path where the PNG will be written.
     """
-    from PyQt6 import QtCore, QtGui, QtWidgets
+    from PySide6 import QtCore, QtGui, QtWidgets
 
     if QtWidgets.QApplication.instance() is None:
         QtWidgets.QApplication([])
@@ -989,7 +989,7 @@ def make_exportable_spectrum_view(
 
     # Save to in-memory buffer — mirrors Swift ImageRenderer returning Data
     # rather than writing to disk.
-    from PyQt6.QtCore import QBuffer, QByteArray, QIODevice
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice
     buf = QByteArray()
     qbuf = QBuffer(buf)
     qbuf.open(QIODevice.OpenModeFlag.WriteOnly)

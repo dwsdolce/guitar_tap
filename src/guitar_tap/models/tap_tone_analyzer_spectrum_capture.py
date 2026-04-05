@@ -27,7 +27,7 @@ from __future__ import annotations
 from enum import Enum, auto
 
 import numpy.typing as npt
-from PyQt6 import QtCore
+from PySide6 import QtCore
 
 from . import realtime_fft_analyzer as _rfa
 
@@ -38,11 +38,11 @@ class PlateCapture(QtCore.QObject):
     Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
     """
 
-    stateChanged:     QtCore.pyqtSignal = QtCore.pyqtSignal(str)
-    fLCaptured:       QtCore.pyqtSignal = QtCore.pyqtSignal(float)       # Hz
-    fCCaptured:       QtCore.pyqtSignal = QtCore.pyqtSignal(float)       # Hz
-    fFLCCaptured:     QtCore.pyqtSignal = QtCore.pyqtSignal(float)       # Hz
-    analysisComplete: QtCore.pyqtSignal = QtCore.pyqtSignal(float, float, float)  # fL, fC, fFLC
+    stateChanged:     QtCore.Signal = QtCore.Signal(str)
+    fLCaptured:       QtCore.Signal = QtCore.Signal(float)       # Hz
+    fCCaptured:       QtCore.Signal = QtCore.Signal(float)       # Hz
+    fFLCCaptured:     QtCore.Signal = QtCore.Signal(float)       # Hz
+    analysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)  # fL, fC, fFLC
 
     class State(Enum):
         IDLE        = auto()

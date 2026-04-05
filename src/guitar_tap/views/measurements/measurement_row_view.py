@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from models import TapToneMeasurement
 from models import guitar_mode as GM
@@ -68,7 +68,7 @@ class MeasurementRowView(QtWidgets.QWidget):
     Emits clicked() when the left mouse button is released inside the widget.
     """
 
-    clicked: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    clicked: QtCore.Signal = QtCore.Signal()
 
     def __init__(
         self,

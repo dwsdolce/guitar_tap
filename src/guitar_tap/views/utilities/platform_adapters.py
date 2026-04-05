@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 import AVFoundation
-from PyQt6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 _PRIV_URL = (
     "x-apple.systempreferences:"
