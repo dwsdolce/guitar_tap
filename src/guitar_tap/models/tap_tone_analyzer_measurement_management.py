@@ -152,6 +152,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.update_axis(min_freq, max_freq)
             self._display_mode = AnalysisDisplayMode.COMPARISON
             self.comparisonChanged.emit(True)
+        else:
+            # No snapshots → revert to live mode, mirroring Swift loadComparison behaviour
+            # when the filtered list is empty (loadComparison([]) or all without snapshots).
+            was_comparing = self._display_mode == AnalysisDisplayMode.COMPARISON
+            self._display_mode = AnalysisDisplayMode.LIVE
+            if was_comparing:
+                self.comparisonChanged.emit(False)
 
         return result
 
