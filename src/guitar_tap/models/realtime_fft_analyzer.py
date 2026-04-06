@@ -88,6 +88,8 @@ import numpy as np
 import numpy.typing as npt
 from PySide6 import QtCore
 
+from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
+
 if platform.system() == "Darwin":
     from views.utilities import platform_adapters as mac_access
 
@@ -451,7 +453,7 @@ class _FftProcessingThread(QtCore.QThread):
             return self._recent_peak_db
 
 
-class RealtimeFFTAnalyzer:
+class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
     """Real-time FFT audio analyser using PortAudio/sounddevice.
 
     Captures audio from a selected input device, delivers raw PCM chunks via
@@ -502,6 +504,7 @@ class RealtimeFFTAnalyzer:
     def __init__(self, parent, rate: int = 44100, chunksize: int = 16384,
                  device: "AudioDevice | None" = None,
                  on_devices_changed: Callable[[], None] | None = None,
+                 on_calibration_changed: "Callable[[object | None], None] | None" = None,
                  fft_size: int = 16384):
         """Create a new real-time FFT analyser and open the audio stream.
 
@@ -510,14 +513,20 @@ class RealtimeFFTAnalyzer:
         this Python initialiser opens a sounddevice InputStream and starts the hot-plug monitor.
 
         Args:
-            parent:             Parent QObject (used to anchor a MacAccess helper on macOS).
-            rate:               Fallback sample rate in Hz; overridden by device.sample_rate.
-            chunksize:          PortAudio block size in frames (Python-only; Swift uses 1024).
-            device:             AudioDevice to open, or None for the system default.
-            on_devices_changed: Callback fired on hot-plug connect/disconnect events.
-                                Mirrors Swift's @Published availableInputDevices update.
-            fft_size:           FFT window size (power of 2).
-                                Mirrors Swift RealtimeFFTAnalyzer.fftSize.
+            parent:                  Parent QObject (used to anchor a MacAccess helper on macOS).
+            rate:                    Fallback sample rate in Hz; overridden by device.sample_rate.
+            chunksize:               PortAudio block size in frames (Python-only; Swift uses 1024).
+            device:                  AudioDevice to open, or None for the system default.
+            on_devices_changed:      Callback fired on hot-plug connect/disconnect events.
+                                     Mirrors Swift's @Published availableInputDevices update.
+            on_calibration_changed:  Callback fired by set_device() after auto-loading the
+                                     device-specific calibration.  Receives the loaded
+                                     MicrophoneCalibration profile, or None if no calibration
+                                     exists for the new device.
+                                     Mirrors Swift selectedInputDevice.didSet calling
+                                     setCalibrationWithoutSavingDeviceMapping(_:).
+            fft_size:                FFT window size (power of 2).
+                                     Mirrors Swift RealtimeFFTAnalyzer.fftSize.
         """
         from .audio_device import AudioDevice as _AudioDevice
         from scipy.signal import get_window as _get_window
@@ -565,11 +574,34 @@ class RealtimeFFTAnalyzer:
         self.is_stopped: bool = False
         self.queue: queue.Queue[npt.NDArray[np.float32]] = queue.Queue()
 
+        # MARK: - Device Lists (mirrors Swift RealtimeFFTAnalyzer @Published properties)
+
+        # Live list of available input devices.
+        # Mirrors Swift RealtimeFFTAnalyzer.availableInputDevices (@Published).
+        # Populated by load_available_input_devices() (see
+        # realtime_fft_analyzer_device_management.py — Recommendation 2 to implement).
+        # Currently empty at construction; the view layer populates it via
+        # sd.query_devices() until Recommendation 2 is implemented.
+        self.available_input_devices: list = []
+
+        # The currently selected input device.
+        # Mirrors Swift RealtimeFFTAnalyzer.selectedInputDevice (@Published).
+        # Set by set_device() / auto-selection logic in load_available_input_devices()
+        # once Recommendation 2 is implemented.
+        # Currently None; set externally by TapToneAnalyzerControlMixin.set_device().
+        self.selected_input_device: "AudioDevice | None" = device
+
         # Python-only: hot-plug monitoring threads
         self._on_devices_changed = on_devices_changed
         self._monitor_stop = threading.Event()
         self._monitor_thread: threading.Thread | None = None
         self._start_hotplug_monitor()
+
+        # Calibration-change callback.
+        # Called by set_device() after looking up and loading the device-specific
+        # calibration from CalibrationStorage.
+        # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
+        self._on_calibration_changed: "Callable[[object | None], None] | None" = on_calibration_changed
 
         # Python-only: off-main-thread DSP worker.
         # Mirrors Swift's AVAudioEngine audio processing queue that delivers
@@ -640,294 +672,10 @@ class RealtimeFFTAnalyzer:
         self._stop_hotplug_monitor()
         self._close_stream_only()
 
-    # MARK: - Device Management (mirrors +DeviceManagement.swift)
-
-    def set_device(self, device: "AudioDevice") -> None:
-        """Switch to a different input device without re-checking permissions.
-
-        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:) (+DeviceManagement.swift).
-        Swift restarts AVAudioEngine with the new device set via CoreAudio AUHAL
-        on macOS or AVAudioSession.setPreferredInput on iOS; Python closes and
-        reopens the sounddevice InputStream.
-        """
-        from .audio_device import AudioDevice as _AudioDevice
-        self._close_stream_only()
-        self.device_index = device.index
-        self.rate = int(device.sample_rate)
-        with self._stop_lock:
-            self.is_stopped = False
-        self.stream = sd.InputStream(
-            device=self.device_index,
-            channels=1,
-            samplerate=self.rate,
-            dtype=np.float32,
-            blocksize=self.chunksize,
-            callback=self.new_frame,
-        )
-        self.stream.start()
-
-    def reinitialize_portaudio(self) -> None:
-        """Stop, reinitialize PortAudio (refreshes device list), then restart the stream.
-
-        PortAudio caches the device list at Pa_Initialize() time.  Calling
-        sd._terminate() + sd._initialize() forces a fresh enumeration so that
-        sd.query_devices() reflects the current OS device list.
-
-        If the current device is no longer available after reinit (it was
-        unplugged), the stream is left closed; the caller is responsible for
-        selecting a replacement via set_device().
-
-        Python-only — Swift reloads the device list via loadAvailableInputDevices()
-        which calls CoreAudio/AVAudioSession APIs directly.
-        """
-        self._close_stream_only()
-        try:
-            sd._terminate()
-            sd._initialize()
-        except Exception:
-            pass
-        try:
-            with self._stop_lock:
-                self.is_stopped = False
-            self.stream = sd.InputStream(
-                device=self.device_index,
-                channels=1,
-                samplerate=self.rate,
-                dtype=np.float32,
-                blocksize=self.chunksize,
-                callback=self.new_frame,
-            )
-            self.stream.start()
-        except Exception:
-            # Device no longer available — stream stays closed until
-            # set_device() is called with a working device index.
-            pass
-
-    # MARK: - Internal Helpers
-
-    def _close_stream_only(self) -> None:
-        """Stop and close the audio stream without touching the hot-plug monitor."""
-        with self._stop_lock:
-            self.is_stopped = True
-        try:
-            self.stream.stop()
-        except Exception:
-            pass
-        try:
-            self.stream.close()
-        except Exception:
-            pass
-
-    # MARK: - Hot-plug Monitoring (mirrors +DeviceManagement.swift)
-    #
-    # Swift registers:
-    #   macOS — AudioObjectAddPropertyListenerBlock on kAudioHardwarePropertyDevices
-    #   iOS   — AVAudioSession.routeChangeNotification observer
-    # Python registers the OS-appropriate listener on a background thread.
-
-    def _notify_devices_changed(self) -> None:
-        """Signal the caller that the device list has changed.
-
-        Always invoked from a daemon thread so the OS callback returns fast.
-        A brief sleep lets the OS finish its own device enumeration before
-        the caller reinitializes PortAudio.
-
-        Mirrors the body of Swift's hardwareListenerBlock / handleRouteChange
-        which calls loadAvailableInputDevices() on the main thread.
-        """
-        if self._on_devices_changed is None:
-            return
-        time.sleep(0.5)
-        self._on_devices_changed()
-
-    def _start_hotplug_monitor(self) -> None:
-        """Start the platform-appropriate hot-plug monitor.
-
-        Mirrors Swift registerMacOSHardwareListener() and the iOS
-        routeChangeNotification observer setup in init.
-        """
-        if self._on_devices_changed is None:
-            return
-        p = platform.system()
-        if p == "Darwin":
-            self._start_coreaudio_monitor()
-        elif p == "Windows":
-            self._start_windows_monitor()
-        elif p == "Linux":
-            self._start_linux_monitor()
-
-    def _stop_hotplug_monitor(self) -> None:
-        """Stop the platform-appropriate hot-plug monitor.
-
-        Mirrors Swift unregisterMacOSHardwareListener() and the iOS
-        NotificationCenter.removeObserver call in deinit.
-        """
-        self._monitor_stop.set()
-        p = platform.system()
-        if p == "Darwin":
-            self._stop_coreaudio_monitor()
-        elif p == "Windows":
-            self._stop_windows_monitor()
-        if self._monitor_thread and self._monitor_thread.is_alive():
-            self._monitor_thread.join(timeout=2.0)
-
-    # -- macOS: CoreAudio AudioObjectAddPropertyListener -------------------
-    # Mirrors Swift registerMacOSHardwareListener() in +DeviceManagement.swift.
-
-    def _start_coreaudio_monitor(self) -> None:
-        """Register a CoreAudio property listener for device connect/disconnect.
-
-        Watches kAudioHardwarePropertyDevices (0x64657623) on kAudioObjectSystemObject (1).
-        Mirrors Swift's AudioObjectAddPropertyListenerBlock on
-        kAudioObjectPropertyAddress(selector: .hardwarePropertyDevices).
-        """
-        import ctypes
-        import ctypes.util
-
-        _ca = ctypes.CDLL(ctypes.util.find_library("CoreAudio"))
-
-        class _PropAddr(ctypes.Structure):
-            _fields_ = [
-                ("mSelector", ctypes.c_uint32),
-                ("mScope",    ctypes.c_uint32),
-                ("mElement",  ctypes.c_uint32),
-            ]
-
-        # kAudioObjectSystemObject          = 1
-        # kAudioHardwarePropertyDevices     = 'dev#' = 0x64657623
-        # kAudioObjectPropertyScopeGlobal   = 'glob' = 0x676C6F62
-        # kAudioObjectPropertyElementMain   = 0
-        prop = _PropAddr(0x64657623, 0x676C6F62, 0)
-
-        CB_TYPE = ctypes.CFUNCTYPE(
-            ctypes.c_int32,
-            ctypes.c_uint32,
-            ctypes.c_uint32,
-            ctypes.POINTER(_PropAddr),
-            ctypes.c_void_p,
-        )
-
-        def _listener(obj, n, addrs, data):
-            # Return immediately; do the real work on a daemon thread
-            threading.Thread(
-                target=self._notify_devices_changed, daemon=True
-            ).start()
-            return 0
-
-        self._ca_cb = CB_TYPE(_listener)   # keep reference — ctypes won't
-        self._ca = _ca
-        self._ca_prop = prop
-        _ca.AudioObjectAddPropertyListener(
-            1, ctypes.byref(prop), self._ca_cb, None
-        )
-
-    def _stop_coreaudio_monitor(self) -> None:
-        """Unregister the CoreAudio property listener.
-
-        Mirrors Swift unregisterMacOSHardwareListener().
-        """
-        try:
-            import ctypes
-            self._ca.AudioObjectRemovePropertyListener(
-                1, ctypes.byref(self._ca_prop), self._ca_cb, None
-            )
-        except Exception:
-            pass
-
-    # -- Windows: CM_Register_Notification (cfgmgr32, Windows 8+) ---------
-
-    def _start_windows_monitor(self) -> None:
-        """Register a Windows device-interface arrival/removal notification.
-
-        Python-only — Swift targets macOS/iOS only.
-        Uses CM_Register_Notification (cfgmgr32) to watch all device-interface
-        events (CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE = 1).
-        """
-        import ctypes
-
-        cfgmgr = ctypes.WinDLL("cfgmgr32")  # type: ignore[attr-defined]
-
-        # CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE = 1
-        # Filter on all device-interface arrivals/removals (no GUID restriction).
-        class _CMNotifyFilter(ctypes.Structure):
-            class _U(ctypes.Union):
-                class _DevIface(ctypes.Structure):
-                    _fields_ = [("ClassGuid", ctypes.c_byte * 16)]
-                _fields_ = [("DeviceInterface", _DevIface)]
-            _fields_ = [
-                ("cbSize",     ctypes.c_ulong),
-                ("Flags",      ctypes.c_ulong),
-                ("FilterType", ctypes.c_ulong),
-                ("Reserved",   ctypes.c_ulong),
-                ("u",          _U),
-            ]
-
-        CB_TYPE = ctypes.CFUNCTYPE(
-            ctypes.c_ulong,    # DWORD return
-            ctypes.c_void_p,   # HCMNOTIFICATION
-            ctypes.c_void_p,   # Context
-            ctypes.c_ulong,    # CM_NOTIFY_ACTION (0=arrival, 1=removal)
-            ctypes.c_void_p,   # PCM_NOTIFY_EVENT_DATA
-            ctypes.c_ulong,    # EventDataSize
-        )
-
-        def _cb(hnotify, context, action, event_data, data_size):
-            threading.Thread(
-                target=self._notify_devices_changed, daemon=True
-            ).start()
-            return 0
-
-        filt = _CMNotifyFilter()
-        filt.cbSize = ctypes.sizeof(_CMNotifyFilter)
-        filt.FilterType = 1
-
-        self._win_cb = CB_TYPE(_cb)    # keep reference
-        self._win_hnotify = ctypes.c_void_p()
-        self._win_cfgmgr = cfgmgr
-        cfgmgr.CM_Register_Notification(
-            ctypes.byref(filt),
-            None,
-            self._win_cb,
-            ctypes.byref(self._win_hnotify),
-        )
-
-    def _stop_windows_monitor(self) -> None:
-        """Unregister the Windows CM_Register_Notification handle.
-
-        Python-only.
-        """
-        try:
-            self._win_cfgmgr.CM_Unregister_Notification(self._win_hnotify)
-        except Exception:
-            pass
-
-    # -- Linux: udev via pyudev --------------------------------------------
-    # Python-only — Swift targets macOS/iOS only.
-
-    def _start_linux_monitor(self) -> None:
-        """Monitor Linux udev 'sound' subsystem events for device changes.
-
-        Requires the optional ``pyudev`` package; silently disabled if absent.
-        Python-only — Swift targets macOS/iOS only.
-        """
-        try:
-            import pyudev  # optional dependency
-        except ImportError:
-            return  # hot-plug detection unavailable without pyudev
-
-        context = pyudev.Context()
-        monitor = pyudev.Monitor.from_netlink(context)
-        monitor.filter_by(subsystem="sound")
-
-        def _run() -> None:
-            monitor.start()
-            while not self._monitor_stop.is_set():
-                device = monitor.poll(timeout=1.0)
-                if device is not None and device.action in ("add", "remove"):
-                    self._notify_devices_changed()
-
-        self._monitor_thread = threading.Thread(target=_run, daemon=True)
-        self._monitor_thread.start()
+    # MARK: - Device Management
+    # All device management methods live in realtime_fft_analyzer_device_management.py
+    # via RealtimeFFTAnalyzerDeviceManagementMixin, mirroring Swift's
+    # RealtimeFFTAnalyzer+DeviceManagement.swift extension.
 
 
 # ── Backward-compatibility alias ─────────────────────────────────────────────

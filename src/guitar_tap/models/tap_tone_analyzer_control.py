@@ -69,26 +69,33 @@ class TapToneAnalyzerControlMixin:
         return self._calibration_device_name
 
     def set_device(self, device) -> None:
-        """Switch to a different input device and auto-load its calibration.
+        """Switch to a different input device.
 
-        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:) + selectedInputDevice.didSet.
+        Delegates to RealtimeFFTAnalyzer.set_device(), which owns the stream
+        restart and calibration auto-load (via _on_mic_calibration_changed).
+        This method only syncs the Python-layer fft_data sample rate after the
+        switch, which has no Swift equivalent (Swift derives sample rate from
+        the running AVAudioEngine directly).
 
-        Args:
-            device: AudioDevice to switch to.
+        Mirrors Swift TapToneAnalyzer+Control.swift: setInputDevice is called
+        on fftAnalyzer, then selectedInputDevice.didSet applies calibration —
+        both now happen inside RealtimeFFTAnalyzer.set_device().
         """
-        from models.microphone_calibration import CalibrationStorage as _CS
+        self._calibration_device_name = device.name
         self.mic.set_device(device)
         # Sync fft_data sample rate to the new device's native rate so the
-        # frequency axis stays correct.
+        # frequency axis stays correct.  Python-only — Swift reads actualSampleRate
+        # from the running AVAudioEngine.
         if self.mic.rate != self.fft_data.sample_freq:
             self.fft_data.sample_freq = self.mic.rate
-        self._calibration_device_name = device.name
-        # Auto-load the device-specific calibration (mirrors selectedInputDevice.didSet).
-        # Try fingerprint key first, then fall back to name-only key for measurements
-        # saved before fingerprints were introduced.
-        cal = _CS.calibration_for_device(device.fingerprint)
-        if cal is None:
-            cal = _CS.calibration_for_device(device.name)
+
+    def _on_mic_calibration_changed(self, cal) -> None:
+        """Apply the calibration profile emitted by RealtimeFFTAnalyzer.set_device().
+
+        Mirrors Swift setCalibrationWithoutSavingDeviceMapping(_:) called from
+        selectedInputDevice.didSet.  Receives a MicrophoneCalibration profile
+        (or None) and applies or clears it on the FFT pipeline.
+        """
         if cal is not None:
             self.load_calibration_from_profile(cal)
         else:
