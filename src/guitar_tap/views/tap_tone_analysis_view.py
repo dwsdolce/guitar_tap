@@ -19,7 +19,7 @@ import views.fft_canvas as fft_c
 from models.analysis_display_mode import AnalysisDisplayMode
 import views.shared.peak_card_widget as PT
 import views.utilities.tap_settings_view as AS
-import views.utilities.tap_display_settings as TDS
+from models.tap_display_settings import TapDisplaySettings as TDS
 import views.tap_analysis_results_view as M
 from views.exportable_spectrum_chart import make_exportable_spectrum_view
 from models import TapToneMeasurement, ResonantPeak, SpectrumSnapshot

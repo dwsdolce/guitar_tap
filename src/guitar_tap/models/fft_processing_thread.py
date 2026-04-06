@@ -102,10 +102,10 @@ class FftProcessingThread(QtCore.QThread):
 
         # MARK: - Tap / Decay State
 
-        import views.utilities.tap_settings_view as _as
+        from models.tap_display_settings import TapDisplaySettings as _tds
         self._tap_detector = TapDetector(
-            tap_threshold=_as.AppSettings.tap_threshold(),
-            hysteresis_margin=_as.AppSettings.hysteresis_margin(),
+            tap_threshold=_tds.tap_detection_threshold(),
+            hysteresis_margin=_tds.hysteresis_margin(),
             mode=TapDetector.MODE_GUITAR,
             parent=self,
         )

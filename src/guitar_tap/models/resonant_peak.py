@@ -13,7 +13,7 @@ points surrounding the peak centre.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 
@@ -40,10 +40,6 @@ class ResonantPeak:
 
     # MARK: - Stored Properties
 
-    # Stable unique identifier — mirrors Swift ResonantPeak.id (UUID).
-    # Stored as a string (UUID string) in Python; Swift uses UUID directly.
-    id: str
-
     # Centre frequency of this resonance, in Hz.
     #
     # Determined by parabolic interpolation through the peak bin and its two neighbours,
@@ -67,18 +63,24 @@ class ResonantPeak:
     # thud rather than a true structural resonance, and are filtered out during
     # gated-FFT analysis.
     # Mirrors Swift ResonantPeak.quality.
-    quality: float
+    quality: float = 0.0
 
     # Bandwidth of this resonance at its -3 dB points, in Hz.
     #
     # Relates to quality by bandwidth = frequency / quality.
     # Mirrors Swift ResonantPeak.bandwidth.
-    bandwidth: float
+    bandwidth: float = 0.0
+
+    # Stable unique identifier — mirrors Swift ResonantPeak.id (UUID).
+    # Auto-assigned on construction (matching Swift's init which calls UUID()).
+    # Stored as a string (UUID string) in Python; Swift uses UUID directly.
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     # Wall-clock time at which this peak was detected, as an ISO-8601 string.
+    # Auto-assigned on construction (matching Swift's init which calls Date()).
     # Swift stores this as Date; Python stores it as an ISO-8601 string.
     # Mirrors Swift ResonantPeak.timestamp.
-    timestamp: str
+    timestamp: str = field(default_factory=_now_iso)
 
     # MARK: - Pitch Information
 

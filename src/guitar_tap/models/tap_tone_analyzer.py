@@ -186,14 +186,14 @@ class TapToneAnalyzer(
         from models import guitar_mode as _gm
         from models import measurement_type as _mt_mod
         from models import microphone_calibration as _mc_mod
-        import views.utilities.tap_settings_view as _as
+        from models.tap_display_settings import TapDisplaySettings as _tds
 
         super().__init__(parent_widget)
 
         self._sd = _sd
         self._np = _np
         self._gm = _gm
-        self._as = _as
+        self._tds = _tds
         self._mc_mod = _mc_mod
 
         # ── Audio engine (mirrors Swift's analyzer: RealtimeFFTAnalyzer) ──
@@ -248,9 +248,9 @@ class TapToneAnalyzer(
         # @Published var minFrequency = TapDisplaySettings.analysisMinFrequency
         # @Published var maxFrequency = TapDisplaySettings.analysisMaxFrequency
         # @Published var maxPeaks     = TapDisplaySettings.maxPeaks
-        self.min_frequency: float = float(_as.AppSettings.analysis_f_min())
-        self.max_frequency: float = float(_as.AppSettings.analysis_f_max())
-        self.max_peaks: int = _as.AppSettings.max_peaks()
+        self.min_frequency: float = float(_tds.analysis_f_min())
+        self.max_frequency: float = float(_tds.analysis_f_max())
+        self.max_peaks: int = _tds.max_peaks()
         self.saved_mag_y_db = np.array([])
         self.saved_peaks = np.zeros((0, 3))               # (freq, mag, Q)
         self._loaded_measurement_peaks = None             # ndarray or None
