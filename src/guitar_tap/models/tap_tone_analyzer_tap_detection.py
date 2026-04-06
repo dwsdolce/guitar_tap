@@ -326,26 +326,29 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         TAP_DEBUG("handleTapDetection",
             f"ENTERED | "
             f"tap_amp={tap_amp} is_guitar={self._proc_thread._is_guitar if self._proc_thread else '?'} "
-            f"captured_so_far={len(self._tap_spectra)} numberOfTaps={self._tap_num}"
+            f"captured_so_far={len(self.captured_taps)} numberOfTaps={self.number_of_taps}"
         )
         if not np.any(mag_y_db):
             TAP_DEBUG("handleTapDetection", "SKIPPED — mag_y_db is all zeros")
             return
-        self._tap_spectra.append(mag_y_db.copy())
-        captured = len(self._tap_spectra)
+        self.captured_taps.append(mag_y_db.copy())
+        captured = len(self.captured_taps)
         TAP_DEBUG("handleTapDetection",
             f"GUITAR TAP STORED | "
-            f"currentTapCount={captured} numberOfTaps={self._tap_num} "
-            f"tapProgress={captured/max(self._tap_num,1):.2f}"
+            f"currentTapCount={captured} numberOfTaps={self.number_of_taps} "
+            f"tapProgress={captured/max(self.number_of_taps,1):.2f}"
         )
-        self.tapCountChanged.emit(captured, self._tap_num)
+        self.tapCountChanged.emit(captured, self.number_of_taps)
 
-        if captured >= self._tap_num:
-            stacked = np.stack(self._tap_spectra)
+        if captured >= self.number_of_taps:
+            stacked = np.stack(self.captured_taps)
             avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
-            self.saved_mag_y_db = avg_db
+            self.frozen_magnitudes = avg_db
+            # Keep frozen_frequencies in sync with frozen_magnitudes — mirrors Swift
+            # setFrozenSpectrum(frequencies:magnitudes:) which sets both atomically.
+            self.frozen_frequencies = self.freq
             _, peaks = self.find_peaks(avg_db)
-            self._tap_spectra.clear()
+            self.captured_taps.clear()
             self.tapDetectedSignal.emit()
         else:
             # Re-arm for the next tap directly at IDLE (no warmup) so that the guitar
@@ -357,7 +360,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     def on_tap_for_plate(self) -> None:
         """Forward tap events to the plate capture state machine when active."""
         if self.plate_capture.is_active and len(self._current_mag_y) > 0:
-            self.plate_capture.on_tap(self._current_mag_y, self.saved_mag_y_db)
+            self.plate_capture.on_tap(self._current_mag_y, self.frozen_magnitudes)
 
     def on_fft_frame(
         self,
@@ -387,17 +390,18 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self.on_tap_for_plate()
 
         # Emit spectrum for the view to draw.
-        # Use _saved_freq (not self.freq) when emitting saved_mag_y_db: a measurement
-        # loaded from Swift's gated FFT has 16 384 bins while the live self.freq has
-        # 32 769 bins.  _saved_freq is always kept in sync with saved_mag_y_db.
+        # Use frozen_frequencies (not self.freq) when emitting frozen_magnitudes: a
+        # measurement loaded from Swift's gated FFT has 16 384 bins while the live
+        # self.freq has 32 769 bins.  frozen_frequencies is always kept in sync with
+        # frozen_magnitudes.
         if self._display_mode == AnalysisDisplayMode.LIVE:
             if self.is_measurement_complete:
-                self.spectrumUpdated.emit(self._saved_freq, self.saved_mag_y_db)
+                self.spectrumUpdated.emit(self.frozen_frequencies, self.frozen_magnitudes)
             else:
                 _, peaks = self.find_peaks(mag_y_db)
                 self.spectrumUpdated.emit(self.freq, mag_y_db)
         elif self._display_mode == AnalysisDisplayMode.FROZEN:
-            self.spectrumUpdated.emit(self._saved_freq, self.saved_mag_y_db)
+            self.spectrumUpdated.emit(self.frozen_frequencies, self.frozen_magnitudes)
         # COMPARISON: skip spectrum update — only overlay curves shown
 
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))

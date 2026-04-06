@@ -216,7 +216,7 @@ class FftCanvas(pg.PlotWidget):
             yMin=-120, yMax=20, minYRange=10,
         )
 
-        # Set the initial view X range; analyzer.fmin/fmax are set after the
+        # Set the initial view X range; analyzer.min_frequency/max_frequency are set after the
         # analyzer is constructed below (update_axis requires self.analyzer).
         self.setXRange(frange["f_min"], frange["f_max"], padding=0)
 
@@ -295,12 +295,12 @@ class FftCanvas(pg.PlotWidget):
         # in the model and survive pan/zoom annotation rebuilds.
         self.annotations._analyzer = self.analyzer
         # Display mode is initialised to AnalysisDisplayMode.LIVE in TapToneAnalyzer.__init__.
-        # Set initial threshold and freq range on the analyzer
-        self.analyzer.threshold = threshold
-        self.analyzer.fmin = frange["f_min"]
-        self.analyzer.fmax = frange["f_max"]
-        self.analyzer.n_fmin = (self.fft_data.n_f * frange["f_min"]) // self.fft_data.sample_freq
-        self.analyzer.n_fmax = (self.fft_data.n_f * frange["f_max"]) // self.fft_data.sample_freq
+        # Set initial threshold and freq range on the analyzer.
+        # peak_threshold is stored as dBFS; threshold input is 0-100 scale.
+        self.analyzer.peak_threshold = float(threshold - 100)
+        self.analyzer.min_frequency = float(frange["f_min"])
+        self.analyzer.max_frequency = float(frange["f_max"])
+        # n_fmin / n_fmax are now computed properties — no assignment needed.
 
         # Convenience alias kept for code that still reads self.mic
         self.mic: Microphone = self.analyzer.mic
@@ -502,19 +502,19 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def saved_peaks(self) -> npt.NDArray:
-        return self.analyzer.saved_peaks
+        return self.analyzer.current_peaks
 
     @saved_peaks.setter
     def saved_peaks(self, value) -> None:
-        self.analyzer.saved_peaks = value
+        self.analyzer.current_peaks = value
 
     @property
     def saved_mag_y_db(self):
-        return self.analyzer.saved_mag_y_db
+        return self.analyzer.frozen_magnitudes
 
     @saved_mag_y_db.setter
     def saved_mag_y_db(self, value) -> None:
-        self.analyzer.saved_mag_y_db = value
+        self.analyzer.frozen_magnitudes = value
 
     @property
     def plate_capture(self) -> "pc.PlateCapture":
@@ -523,19 +523,19 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def fmin(self) -> int:
-        return self.analyzer.fmin
+        return int(self.analyzer.min_frequency)
 
     @fmin.setter
     def fmin(self, value: int) -> None:
-        self.analyzer.fmin = value
+        self.analyzer.min_frequency = float(value)
 
     @property
     def fmax(self) -> int:
-        return self.analyzer.fmax
+        return int(self.analyzer.max_frequency)
 
     @fmax.setter
     def fmax(self, value: int) -> None:
-        self.analyzer.fmax = value
+        self.analyzer.max_frequency = float(value)
 
     @property
     def comparison_labels(self):
@@ -565,16 +565,16 @@ class FftCanvas(pg.PlotWidget):
         the two reads.
         """
         if self.analyzer.is_measurement_complete:
-            return (self.analyzer._saved_freq, self.analyzer.saved_mag_y_db)
+            return (self.analyzer.frozen_frequencies, self.analyzer.frozen_magnitudes)
         return (self.analyzer.freq, None)
 
     @property
     def _loaded_measurement_peaks(self):
-        return self.analyzer._loaded_measurement_peaks
+        return self.analyzer.loaded_measurement_peaks
 
     @_loaded_measurement_peaks.setter
     def _loaded_measurement_peaks(self, value) -> None:
-        self.analyzer._loaded_measurement_peaks = value
+        self.analyzer.loaded_measurement_peaks = value
 
     def _emit_loaded_peaks_at_threshold(self) -> None:
         """Delegate to analyzer — called by guitar_tap.py after loading a measurement."""
@@ -613,7 +613,7 @@ class FftCanvas(pg.PlotWidget):
             # Recreate thread on the analyzer (which owns it) to reset all state.
             self._proc_thread = self.analyzer.recreate_proc_thread()
             self._connect_proc_thread_signals()
-        self.analyzer._tap_spectra.clear()
+        self.analyzer.captured_taps.clear()
         self._proc_thread.reset_state()
         self._proc_thread.start()
 
@@ -744,13 +744,13 @@ class FftCanvas(pg.PlotWidget):
 
         elif self.is_measurement_complete and np.any(self.saved_mag_y_db):
             # Snap to nearest FFT bin on the frozen curve.
-            # Use _saved_freq (not self.freq): a Swift-saved plate measurement has
-            # 16 384 bins while the live self.freq has 32 769.  Indexing saved_mag_y_db
+            # Use frozen_frequencies (not self.freq): a Swift-saved plate measurement has
+            # 16 384 bins while the live self.freq has 32 769.  Indexing frozen_magnitudes
             # with an index derived from self.freq would go out of bounds.
-            saved_freq = self.analyzer._saved_freq
-            idx = int(np.searchsorted(saved_freq, mouse_freq))
-            idx = max(0, min(idx, len(saved_freq) - 1))
-            display_freq = float(saved_freq[idx])
+            frozen_freq = self.analyzer.frozen_frequencies
+            idx = int(np.searchsorted(frozen_freq, mouse_freq))
+            idx = max(0, min(idx, len(frozen_freq) - 1))
+            display_freq = float(frozen_freq[idx])
             display_db   = float(self.saved_mag_y_db[idx])
         else:
             # Free mouse tracking — no curve snap
@@ -1105,10 +1105,9 @@ class FftCanvas(pg.PlotWidget):
     def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
         """Update the x-axis frequency range"""
         if fmin < fmax:
-            self.analyzer.fmin = fmin
-            self.analyzer.fmax = fmax
-            self.analyzer.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
-            self.analyzer.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
+            self.analyzer.min_frequency = float(fmin)
+            self.analyzer.max_frequency = float(fmax)
+            # n_fmin / n_fmax are computed properties — no assignment needed.
 
             self.setXRange(fmin, fmax, padding=0)
             if not init:
@@ -1127,10 +1126,9 @@ class FftCanvas(pg.PlotWidget):
         fmax = int(round(x1))
         if fmin >= fmax:
             return
-        self.analyzer.fmin = fmin
-        self.analyzer.fmax = fmax
-        self.analyzer.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
-        self.analyzer.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
+        self.analyzer.min_frequency = float(fmin)
+        self.analyzer.max_frequency = float(fmax)
+        # n_fmin / n_fmax are computed properties — no assignment needed.
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
             self.analyzer._recalculate_peaks()
         self.freqRangeChanged.emit(fmin, fmax)
@@ -1375,7 +1373,7 @@ class FftCanvas(pg.PlotWidget):
         """Set the threshold used to limit both the triggering of a sample
         and the threshold on finding peaks. The threshold value is always 0 to 100.
         """
-        self.analyzer.threshold = threshold
+        self.analyzer.peak_threshold = float(threshold - 100)
 
         self.threshold_x = self.fft_data.sample_freq // 2
         self.threshold_y = threshold - 100

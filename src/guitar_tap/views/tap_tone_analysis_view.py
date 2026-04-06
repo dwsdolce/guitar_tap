@@ -1993,8 +1993,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if peaks.shape[0] == 0:
             self.peak_widget.update_data(peaks)
             return
-        fmin = self.fft_canvas.analyzer.fmin
-        fmax = self.fft_canvas.analyzer.fmax
+        fmin = self.fft_canvas.fmin
+        fmax = self.fft_canvas.fmax
         mask = (peaks[:, 0] > fmin) & (peaks[:, 0] < fmax)
         self.peak_widget.update_data(peaks[mask])
 
@@ -2243,8 +2243,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         # Apply viewport filter — mirrors Swift where ratios use sortedPeaksWithModes
         # (which filters analyzer.currentPeaks by minFreq/maxFreq).
-        fmin = self.fft_canvas.analyzer.fmin
-        fmax = self.fft_canvas.analyzer.fmax
+        fmin = self.fft_canvas.fmin
+        fmax = self.fft_canvas.fmax
         peaks = peaks[(peaks[:, 0] > fmin) & (peaks[:, 0] < fmax)]
         if peaks.shape[0] == 0:
             return
@@ -2758,7 +2758,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cross_snapshot: SpectrumSnapshot | None = None
         flc_snapshot: SpectrumSnapshot | None = None
         if hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
-            freqs = canvas.analyzer._saved_freq.tolist()
+            freqs = canvas.analyzer.frozen_frequencies.tolist()
             mags  = canvas.saved_mag_y_db.tolist()
             # Read the actual Y axis range from the ViewBox so the snapshot stores
             # the chart's visible range, not the detection threshold.
@@ -3116,7 +3116,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # the live Python FFT produces 32 769 bins (fft_size/2 + 1 = 65 536/2 + 1).
             # Overwriting canvas.freq caused shape-mismatch crashes when a queued FFT
             # frame fired with the live mag_y_db (32 769 bins) against the stale axis.
-            canvas.analyzer._saved_freq = freq_arr
+            canvas.analyzer.frozen_frequencies = freq_arr
             with QtCore.QSignalBlocker(self.min_spin):
                 self.min_spin.setValue(int(snap.min_freq))
             with QtCore.QSignalBlocker(self.max_spin):
@@ -3413,7 +3413,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loading_overlay.show_message("Exporting spectrum…")
         try:
             canvas = self.fft_canvas
-            saved_freq = canvas.analyzer._saved_freq
+            saved_freq = canvas.analyzer.frozen_frequencies
             freqs = saved_freq.tolist() if hasattr(saved_freq, "tolist") else list(saved_freq)
             mags  = (canvas.saved_mag_y_db.tolist()
                      if hasattr(canvas.saved_mag_y_db, "tolist")

@@ -90,15 +90,15 @@ class TapToneAnalyzerMeasurementManagementMixin:
         if self._proc_thread is not None:
             self._proc_thread.set_measurement_complete(is_complete)
         if not is_complete:
-            self._tap_spectra.clear()
-            self._loaded_measurement_peaks = None
+            self.captured_taps.clear()
+            self.loaded_measurement_peaks = None
             self.clear_annotation_offsets()
             # Clear the frozen spectrum — mirrors Swift setFrozenSpectrum(frequencies: [], magnitudes: [])
             # in reset() and cancelTapSequence().  Both arrays are reset to empty so they
-            # remain matched; _saved_freq will be populated again when the next tap fires or
-            # a measurement is loaded.
-            self.saved_mag_y_db = np.array([])
-            self._saved_freq = np.array([])
+            # remain matched; frozen_frequencies will be populated again when the next tap
+            # fires or a measurement is loaded.
+            self.frozen_magnitudes = np.array([])
+            self.frozen_frequencies = np.array([])
             # Clear comparison overlay — uses clear_comparison() so comparisonChanged(False)
             # is emitted when needed, allowing the UI to hide the comparison status bar.
             self.clear_comparison()

@@ -113,9 +113,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         from models import guitar_mode as gm
 
         if not np.any(mag_y_db):
-            return False, self.saved_peaks
+            return False, self.current_peaks
 
-        threshold_db = self.threshold - 100
+        threshold_db = self.peak_threshold
         hz_per_bin = self.fft_data.sample_freq / float(self.fft_data.n_f)
         n_bins = len(mag_y_db)
 
@@ -236,17 +236,17 @@ class TapToneAnalyzerPeakAnalysisMixin:
         else:
             max_peaks_mag = -100.0
 
-        if max_peaks_mag > (self.threshold - 100):
-            self.saved_mag_y_db = mag_y_db
-            self.saved_peaks = peaks
+        if max_peaks_mag > self.peak_threshold:
+            self.frozen_magnitudes = mag_y_db
+            self.current_peaks = peaks
             triggered = True
             # Emit all peaks — mirrors Swift currentPeaks which holds all detected peaks.
             # Viewport filtering (fmin/fmax) is applied by the results panel at display
             # time, matching Swift's sortedPeaksWithModes filter in TapAnalysisResultsView.
             self.peaksChanged.emit(peaks)
         else:
-            self.saved_peaks = np.zeros((0, 3))
-            self.peaksChanged.emit(self.saved_peaks)
+            self.current_peaks = np.zeros((0, 3))
+            self.peaksChanged.emit(self.current_peaks)
             triggered = False
 
         return triggered, peaks

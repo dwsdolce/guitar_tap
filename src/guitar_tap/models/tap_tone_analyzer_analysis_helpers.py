@@ -21,10 +21,10 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         mirrors Swift recalculateFrozenPeaksIfNeeded which handles both cases
         in one method rather than at every call site.
         """
-        if self._loaded_measurement_peaks is not None:
+        if self.loaded_measurement_peaks is not None:
             self._emit_loaded_peaks_at_threshold()
         else:
-            self.find_peaks(self.saved_mag_y_db)
+            self.find_peaks(self.frozen_magnitudes)
 
     def _emit_loaded_peaks_at_threshold(self) -> None:
         """Filter loaded-measurement peaks by threshold and emit peaksChanged.
@@ -35,19 +35,19 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         """
         import numpy as np
 
-        assert self._loaded_measurement_peaks is not None
-        threshold_db = self.threshold - 100
-        peaks = self._loaded_measurement_peaks[
-            self._loaded_measurement_peaks[:, 1] >= threshold_db
+        assert self.loaded_measurement_peaks is not None
+        threshold_db = self.peak_threshold
+        peaks = self.loaded_measurement_peaks[
+            self.loaded_measurement_peaks[:, 1] >= threshold_db
         ]
 
         empty = np.zeros((0, 3))
         if peaks.shape[0] == 0:
-            self.saved_peaks = empty
+            self.current_peaks = empty
             self.peaksChanged.emit(empty)
             return
 
-        self.saved_peaks = peaks
+        self.current_peaks = peaks
         # Emit all threshold-passing peaks — viewport filtering applied by results panel.
         self.peaksChanged.emit(peaks)
 
@@ -71,15 +71,15 @@ class TapToneAnalyzerAnalysisHelpersMixin:
             avg_mag_y_db = 20 * np.log10(avg_mag_y)
 
             avg_amplitude = np.max(avg_mag_y_db) + 100
-            if avg_amplitude > self.threshold:
+            if avg_amplitude > (self.peak_threshold + 100):
                 triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
                 if triggered:
                     self.newSample.emit(self.is_measurement_complete)
                     self.mag_y_sum = mag_y_sum
                     self.num_averages = num_averages
                     self.averagesChanged.emit(int(self.num_averages))
-                    self.saved_mag_y_db = avg_mag_y_db
-                    self.saved_peaks = avg_peaks
+                    self.frozen_magnitudes = avg_mag_y_db
+                    self.current_peaks = avg_peaks
                     self.spectrumUpdated.emit(self.freq, avg_mag_y_db)
 
-        self.spectrumUpdated.emit(self.freq, self.saved_mag_y_db)
+        self.spectrumUpdated.emit(self.freq, self.frozen_magnitudes)

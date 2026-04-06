@@ -324,23 +324,20 @@ class TapToneAnalyzer(
         self.savedMeasurements = self.saved_measurements
 
         # ── Peak analysis state ────────────────────────────────────────────
-        self.threshold: int = 60                          # 0-100 scale (legacy)
-        self.fmin: int = 0
-        self.fmax: int = 1000
-        self.n_fmin: int = 0
-        self.n_fmax: int = 0
-        self.saved_mag_y_db = np.array([])
-        self.saved_peaks = np.zeros((0, 3))               # (freq, mag, Q)
-        self._loaded_measurement_peaks = None             # ndarray or None
+        # frozen_magnitudes: mirrors Swift frozenMagnitudes: [Float] = []
+        # Stored as ndarray for efficient numpy operations; presented as list via Published.
+        self.frozen_magnitudes = np.array([])
+        # current_peaks: mirrors Swift currentPeaks: [ResonantPeak] = []
+        self.current_peaks = []
+        # loaded_measurement_peaks: mirrors Swift loadedMeasurementPeaks: [ResonantPeak]? = nil
+        self.loaded_measurement_peaks: "list | None" = None
         self.selected_peak: float = 0.0
-        # Frequency axis that matches saved_mag_y_db.
-        # Mirrors Swift frozenFrequencies: [Float] = [] on TapToneAnalyzer.
-        # A loaded measurement captured by Swift's gated FFT (32 768-sample window
-        # → 16 384 bins) has a different length than the live self.freq (32 769 bins
-        # for fft_size=65 536).  Storing the loaded axis here keeps self.freq intact
-        # (always the live FFT axis) and prevents shape-mismatch crashes when a
-        # queued FFT frame fires while a loaded measurement is displayed.
-        self._saved_freq = np.array([])
+        # frozen_frequencies: mirrors Swift frozenFrequencies: [Float] = []
+        # Always kept in sync with frozen_magnitudes.  A measurement loaded from
+        # Swift's gated FFT (16 384 bins) has a different length than the live
+        # self.freq (32 769 bins for fft_size=65 536); storing the frozen axis
+        # here prevents shape-mismatch crashes.
+        self.frozen_frequencies = np.array([])
 
         # ── Averaging ──────────────────────────────────────────────────────
         self.avg_enable: bool = False
@@ -349,8 +346,10 @@ class TapToneAnalyzer(
         self.num_averages: int = 0
 
         # ── Multi-tap accumulator ─────────────────────────────────────────
-        self._tap_num: int = 1
-        self._tap_spectra: list = []
+        # number_of_taps: mirrors Swift numberOfTaps: Int
+        self.number_of_taps: int = 1
+        # captured_taps: mirrors Swift capturedTaps
+        self.captured_taps: list = []
 
         # ── Auto-scale ────────────────────────────────────────────────────
         self._auto_scale_db: bool = False
@@ -374,9 +373,10 @@ class TapToneAnalyzer(
         self._material_spectra: list = []
 
         # ── Annotation offsets (mirrors Swift peakAnnotationOffsets: [UUID: CGPoint]) ──
-        # Keyed by peak frequency (float) → (x_offset, y_offset) in data-space coordinates.
+        # Keyed by peak UUID string → (x_offset, y_offset) in data-space coordinates.
         # Stored on the analyzer so dragged positions survive pan/zoom annotation rebuilds.
-        self.peak_annotation_offsets: dict[float, tuple[float, float]] = {}
+        # peak_annotation_offsets is declared as a Published class-level descriptor above;
+        # no instance assignment needed here — the class default ({}) is correct.
 
         # ── Comparison overlay data ───────────────────────────────────────
         self.comparison_labels: list = []        # list of (label, color) tuples
@@ -413,6 +413,24 @@ class TapToneAnalyzer(
         Mirrors Swift TapToneAnalyzer computed property that checks displayMode == .comparison.
         """
         return self._display_mode == AnalysisDisplayMode.COMPARISON
+
+    @property
+    def n_fmin(self) -> int:
+        """Bin index corresponding to min_frequency.
+
+        Computed from min_frequency, mirrors Swift's bin-index helpers
+        derived from minFrequency inside findPeaks.
+        """
+        return int(self.fft_data.n_f * self.min_frequency) // self.fft_data.sample_freq
+
+    @property
+    def n_fmax(self) -> int:
+        """Bin index corresponding to max_frequency.
+
+        Computed from max_frequency, mirrors Swift's bin-index helpers
+        derived from maxFrequency inside findPeaks.
+        """
+        return int(self.fft_data.n_f * self.max_frequency) // self.fft_data.sample_freq
 
     def set_material_spectra(self, spectra: list) -> None:
         """Set per-phase plate/brace spectra and notify observers.

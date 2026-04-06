@@ -119,10 +119,10 @@ class TapToneAnalyzerControlMixin:
         self.tapDetectionPaused.emit(False)
 
     def cancel_tap_sequence(self) -> None:
-        self._tap_spectra.clear()
+        self.captured_taps.clear()
         if self._proc_thread is not None:
             self._proc_thread.reset_tap_detector()  # WARMUP — matches Swift cancelTapSequence
-        self.tapCountChanged.emit(0, self._tap_num)
+        self.tapCountChanged.emit(0, self.number_of_taps)
 
     # ------------------------------------------------------------------ #
     # Tap sequence management
@@ -134,10 +134,10 @@ class TapToneAnalyzerControlMixin:
         Also clears saved annotation offsets so dragged positions reset for the
         new measurement — mirrors Swift ``peakAnnotationOffsets = [:]`` in startTapSequence.
         """
-        self._tap_spectra.clear()
+        self.captured_taps.clear()
         self.clear_annotation_offsets()
         self.reset_tap_detector()
-        self.tapCountChanged.emit(0, self._tap_num)
+        self.tapCountChanged.emit(0, self.number_of_taps)
 
     def set_tap_num(self, n: int) -> None:
         """Set how many taps to accumulate before freezing.
@@ -148,18 +148,19 @@ class TapToneAnalyzerControlMixin:
         """
         import numpy as np
         new_num = max(1, n)
-        captured = len(self._tap_spectra)
+        captured = len(self.captured_taps)
         if captured >= new_num and captured > 0:
             # Already have enough — process now (mirrors Swift numberOfTaps.didSet)
-            self._tap_num = new_num
-            stacked = np.stack(self._tap_spectra[:new_num])
+            self.number_of_taps = new_num
+            stacked = np.stack(self.captured_taps[:new_num])
             avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
-            self.saved_mag_y_db = avg_db
+            self.frozen_magnitudes = avg_db
+            self.frozen_frequencies = self.freq
             _, _ = self.find_peaks(avg_db)
-            self._tap_spectra.clear()
+            self.captured_taps.clear()
             self.tapDetectedSignal.emit()
         else:
-            self._tap_num = new_num
+            self.number_of_taps = new_num
             # Don't clear spectra when count is raised mid-sequence — keep what
             # was already captured (mirrors Swift which never clears capturedTaps here).
 
@@ -181,23 +182,22 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
 
     def set_threshold(self, threshold: int) -> None:
-        """Set the peak-detection threshold (0-100 scale)."""
-        self.threshold = threshold
+        """Set the peak-detection threshold (0-100 scale, stored as dBFS)."""
+        self.peak_threshold = float(threshold - 100)
         self._recalculate_peaks()
 
     def set_fmin(self, fmin: int) -> None:
-        self.update_axis(fmin, self.fmax)
+        self.update_axis(fmin, int(self.max_frequency))
 
     def set_fmax(self, fmax: int) -> None:
-        self.update_axis(self.fmin, fmax)
+        self.update_axis(int(self.min_frequency), fmax)
 
     def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
         """Update the frequency analysis range."""
         if fmin < fmax:
-            self.fmin = fmin
-            self.fmax = fmax
-            self.n_fmin = (self.fft_data.n_f * fmin) // self.fft_data.sample_freq
-            self.n_fmax = (self.fft_data.n_f * fmax) // self.fft_data.sample_freq
+            self.min_frequency = float(fmin)
+            self.max_frequency = float(fmax)
+            # n_fmin / n_fmax are now computed properties — no assignment needed.
         if not init:
             self._recalculate_peaks()
 
