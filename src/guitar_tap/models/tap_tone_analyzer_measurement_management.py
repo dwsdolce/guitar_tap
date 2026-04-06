@@ -87,8 +87,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
     def set_measurement_complete(self, is_complete: bool) -> None:
         """Freeze/unfreeze the spectrum and reset related state."""
         self.is_measurement_complete = is_complete
-        if self._proc_thread is not None:
-            self._proc_thread.set_measurement_complete(is_complete)
         if not is_complete:
             self.captured_taps.clear()
             self.loaded_measurement_peaks = None

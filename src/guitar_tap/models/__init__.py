@@ -29,9 +29,8 @@ Data model modules (safe to import anywhere):
   user_assigned_mode     → UserAssignedMode
 
 Analyser modules (NOT imported here — import directly to avoid circular deps):
-  fft_processing_thread  → FftProcessingThread
   realtime_fft_analyzer  → RealtimeFFTAnalyzer (Microphone alias), dft_anal, ...
-  tap_tone_analyzer      → TapToneAnalyzer, TapDetector, DecayTracker, PlateCapture, ...
+  tap_tone_analyzer      → TapToneAnalyzer, PlateCapture, AnalysisDisplayMode, ...
 """
 
 # ── Reactive pattern — re-export from swiftui_compat ─────────────────────────

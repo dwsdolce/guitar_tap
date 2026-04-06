@@ -1,14 +1,12 @@
 """
 Port of TapDetectionTests.swift — hysteresis, warmup, cooldown, EMA.
 
-Mirrors Swift test plan coverage T1–T8.
+Mirrors Swift TapDetectionTests test suite (T1–T9).
 
-The Python TapDetector uses PySide6.QtCore.QObject and Signal, so a
-QCoreApplication is required.  The fixture below ensures one exists for
-the duration of the test session.
-
-NOTE: TapDetector.reset() calls traceback.print_stack() (debug logging).
-      This produces harmless output during tests — it does not affect behaviour.
+Strategy: detectTap() is a method on TapToneAnalyzer.  We manipulate its
+internal guard state (analyzer_start_time, is_above_threshold, last_tap_time)
+directly so the method exercises pure logic without a real audio engine.
+TapToneAnalyzer() is now constructible without audio hardware (Part 5).
 """
 
 from __future__ import annotations
@@ -20,7 +18,6 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-# Must create QCoreApplication before importing TapDetector
 from PySide6 import QtCore, QtWidgets
 
 _APP: QtWidgets.QApplication | None = None
@@ -38,99 +35,115 @@ def qt_app():
     return _get_app()
 
 
-from guitar_tap.models.tap_tone_analyzer_tap_detection import TapDetector
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.measurement_type import MeasurementType
 
 
 # ---------------------------------------------------------------------------
-# Helper: build TapDetector and collect tap events
+# Synthetic spectrum — sufficient for the detection path
 # ---------------------------------------------------------------------------
 
-def _make_detector(
-    threshold: int = 60,
-    hysteresis: float = 3.0,
-    warmup_s: float = 0.0,   # 0 for most tests — skips warmup
-    cooldown_s: float = 0.0,
-    mode: str = TapDetector.MODE_GUITAR,
-) -> tuple["TapDetector", list]:
+_FAKE_MAGS: list[float] = [-80.0] * 64
+_FAKE_FREQS: list[float] = [float(i) * 375 for i in range(64)]
+
+
+# ---------------------------------------------------------------------------
+# Helper: build a non-running TapToneAnalyzer in guitar mode
+# with its warm-up period satisfied so detect_tap can fire.
+# Mirrors Swift makeSUT().
+# ---------------------------------------------------------------------------
+
+def _make_sut(
+    threshold: float = -40.0,
+    hysteresis: float = 5.0,
+    number_of_taps: int = 1,
+) -> TapToneAnalyzer:
     _get_app()
-    det = TapDetector(
-        tap_threshold=threshold,
-        hysteresis_margin=hysteresis,
-        warmup_s=warmup_s,
-        cooldown_s=cooldown_s,
-        mode=mode,
-    )
-    taps: list[int] = []
-    det.tapDetected.connect(lambda: taps.append(1))
-    # Jump straight to IDLE (warmup already 0, but we need to process one frame
-    # at below-threshold to confirm the WARMUP→IDLE transition happens)
-    det.update(0)   # below threshold, causes warmup exit → IDLE (warmup_s=0)
-    taps.clear()    # discard any phantom events from initial update
-    return det, taps
+    sut = TapToneAnalyzer()
+    sut.tap_detection_threshold = threshold
+    sut.hysteresis_margin = hysteresis
+    sut.number_of_taps = number_of_taps
+    # Defeat the warmup guard by setting the start time 2 s in the past.
+    # Mirrors Swift: sut.analyzerStartTime = Date(timeIntervalSinceNow: -2)
+    import time as _t
+    sut.analyzer_start_time = _t.monotonic() - 2.0
+    # Defeat the post-warmup sync frame.
+    sut.just_exited_warmup = False
+    # Guitar mode (absolute threshold) — ensure measurement_type is acoustic.
+    TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+    return sut
 
 
 # ---------------------------------------------------------------------------
-# T1: Rising edge fires tap
+# T1: Signal crossing rising threshold fires tap
 # ---------------------------------------------------------------------------
 
 class TestRisingEdge:
     """Mirrors Swift TapDetectionTests T1/T1b."""
 
-    def test_T1_rising_edge_fires_tap(self):
-        """T1: A level above the threshold triggers exactly one tap."""
-        det, taps = _make_detector(threshold=60)
-        # Level 65 = -35 dBFS; threshold=60 → -40 dBFS → above threshold
-        det.update(65)
-        assert len(taps) == 1, f"Expected 1 tap; got {len(taps)}"
+    def test_T1_above_threshold_sets_tap_detected(self):
+        """T1: Rising edge above threshold sets tap_detected = True."""
+        sut = _make_sut(threshold=-40)
+        sut.is_detecting = True
+        sut.is_above_threshold = False
 
-    def test_T1b_only_fires_once_per_rising_edge(self):
-        """T1b: Multiple updates while above threshold only fire one tap."""
-        det, taps = _make_detector(threshold=60)
-        for _ in range(5):
-            det.update(70)
-        assert len(taps) == 1, f"Should fire exactly once per rising edge; got {len(taps)}"
+        sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+
+        assert sut.tap_detected is True, "tap_detected should be True after crossing rising threshold"
+
+    def test_T1b_last_tap_time_set_on_detection(self):
+        """T1b: last_tap_time is set when a tap is detected."""
+        import time as _t
+        sut = _make_sut(threshold=-40)
+        sut.is_detecting = True
+        sut.is_above_threshold = False
+
+        before = _t.monotonic()
+        sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        after = _t.monotonic()
+
+        assert sut.last_tap_time is not None, "last_tap_time should be set on detection"
+        assert before <= sut.last_tap_time <= after
 
 
 # ---------------------------------------------------------------------------
-# T2: Below threshold
+# T2: Signal below threshold leaves tap_detected = False
 # ---------------------------------------------------------------------------
 
 class TestBelowThreshold:
     """Mirrors Swift TapDetectionTests T2."""
 
-    def test_T2_below_threshold_never_fires(self):
-        """T2: A level below threshold never triggers a tap."""
-        det, taps = _make_detector(threshold=60)
-        for _ in range(10):
-            det.update(50)   # 50 < 60 threshold
-        assert len(taps) == 0, f"Below threshold should never fire; got {len(taps)}"
+    def test_T2_below_threshold_does_not_detect(self):
+        """T2: A level below threshold leaves tap_detected = False."""
+        sut = _make_sut(threshold=-40)
+        sut.is_detecting = True
+        sut.is_above_threshold = False
+
+        sut.detect_tap(peak_magnitude=-50, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+
+        assert sut.tap_detected is False, "Signal below threshold must not trigger detection"
 
 
 # ---------------------------------------------------------------------------
-# T3: Warmup suppression
+# T3: Warm-up suppression
 # ---------------------------------------------------------------------------
 
 class TestWarmup:
     """Mirrors Swift TapDetectionTests T3."""
 
-    def test_T3_warmup_suppresses_tap(self):
-        """T3: A tap during warmup period should be suppressed."""
-        _get_app()
-        det = TapDetector(
-            tap_threshold=60,
-            warmup_s=5.0,   # long warmup
-            cooldown_s=0.0,
-        )
-        taps: list[int] = []
-        det.tapDetected.connect(lambda: taps.append(1))
+    def test_T3_during_warmup_suppresses_detection(self):
+        """T3: Calls during warm-up period suppress detection entirely."""
+        import time as _t
+        sut = _make_sut()
+        sut.is_detecting = True
+        sut.is_above_threshold = False
+        # Set start time to 'now' so warmup is still active.
+        sut.analyzer_start_time = _t.monotonic()
 
-        # Fire multiple high-level updates during warmup
-        for _ in range(5):
-            det.update(80)
+        sut.detect_tap(peak_magnitude=-20, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert len(taps) == 0, (
-            f"No tap should fire during warmup; got {len(taps)}"
-        )
+        assert sut.tap_detected is False, "Should not detect during warm-up"
 
 
 # ---------------------------------------------------------------------------
@@ -140,35 +153,18 @@ class TestWarmup:
 class TestCooldown:
     """Mirrors Swift TapDetectionTests T4."""
 
-    def test_T4_second_tap_suppressed_during_cooldown(self):
-        """T4: A second tap fired immediately after the first is in cooldown → suppressed."""
-        _get_app()
-        det = TapDetector(
-            tap_threshold=60,
-            hysteresis_margin=3.0,
-            warmup_s=0.0,
-            cooldown_s=5.0,   # long cooldown
-        )
-        taps: list[int] = []
-        det.tapDetected.connect(lambda: taps.append(1))
+    def test_T4_during_cooldown_suppresses_detection(self):
+        """T4: A second detect_tap call within tap_cooldown is rejected."""
+        import time as _t
+        sut = _make_sut(threshold=-40)
+        sut.is_detecting = True
+        sut.is_above_threshold = False
+        # Simulate that a tap was just recorded 0.1 s ago.
+        sut.last_tap_time = _t.monotonic() - 0.1
 
-        # Initial warmup frame
-        det.update(0)
-        taps.clear()
+        sut.detect_tap(peak_magnitude=-30, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        # First rising edge — should fire
-        det.update(70)
-        assert len(taps) == 1, "First tap should fire"
-
-        # Drop below falling threshold to re-arm
-        for _ in range(3):
-            det.update(40)
-
-        # Second rising edge — still in cooldown window → should NOT fire
-        det.update(70)
-        assert len(taps) == 1, (
-            f"Second tap during cooldown should be suppressed; got {len(taps)}"
-        )
+        assert sut.tap_detected is False, "Should not fire while in cooldown window"
 
 
 # ---------------------------------------------------------------------------
@@ -178,38 +174,41 @@ class TestCooldown:
 class TestHysteresis:
     """Mirrors Swift TapDetectionTests T5/T5b."""
 
-    def test_T5_does_not_re_arm_until_below_falling_threshold(self):
-        """T5: After a tap, level must drop below the falling threshold before re-arming."""
-        det, taps = _make_detector(threshold=60, hysteresis=10.0)
+    def test_T5_hysteresis_prevents_bouncing_on_falling_edge(self):
+        """T5: Signal between falling and rising threshold keeps is_above_threshold True."""
+        import time as _t
+        sut = _make_sut(threshold=-40, hysteresis=5)
+        sut.is_detecting = True
 
-        # First tap
-        det.update(70)
-        assert len(taps) == 1
+        # First call: rising edge fires the tap
+        sut.is_above_threshold = False
+        sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        # tap_detected == True, is_above_threshold == True
 
-        # Drop to level still above falling threshold (falling = 60-10 = 50 → amplitude 50)
-        # Level 55 > 50 → still TRIGGERED
-        det.update(55)
-        det.update(70)   # try another rising edge — should NOT fire (still triggered)
-        assert len(taps) == 1, (
-            f"Should not re-arm above falling threshold; got {len(taps)}"
-        )
+        # Advance last_tap_time past cooldown so next call isn't blocked
+        sut.last_tap_time = _t.monotonic() - 1.0
 
-    def test_T5b_re_arms_after_falling_below_threshold(self):
-        """T5b: Once the level drops below the falling threshold, the detector re-arms."""
-        det, taps = _make_detector(threshold=60, hysteresis=10.0)
+        # Second call: signal at -43 dB — between falling_threshold (-45) and
+        # rising_threshold (-40). Should stay "above" and not fire a new tap.
+        sut.tap_detected = False
+        sut.detect_tap(peak_magnitude=-43, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        # First tap
-        det.update(70)
-        assert len(taps) == 1
+        assert sut.is_above_threshold is True, \
+            "Signal above falling_threshold should keep is_above_threshold = True"
+        assert sut.tap_detected is False, \
+            "No new tap should fire when still above falling threshold"
 
-        # Drop well below falling threshold (40 < 50) — now IDLE
-        det.update(40)
+    def test_T5b_signal_below_falling_threshold_resets_above_threshold(self):
+        """T5b: Once signal drops below falling_threshold, is_above_threshold becomes False."""
+        sut = _make_sut(threshold=-40, hysteresis=5)
+        sut.is_detecting = True
+        sut.is_above_threshold = True   # currently above
 
-        # Second rising edge should fire
-        det.update(70)
-        assert len(taps) == 2, (
-            f"Should re-arm after dropping below falling threshold; got {len(taps)}"
-        )
+        # Signal drops below falling_threshold (-45)
+        sut.detect_tap(peak_magnitude=-50, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+
+        assert sut.is_above_threshold is False, \
+            "Signal below falling_threshold should set is_above_threshold = False"
 
 
 # ---------------------------------------------------------------------------
@@ -219,63 +218,55 @@ class TestHysteresis:
 class TestPostWarmupSync:
     """Mirrors Swift TapDetectionTests T8."""
 
-    def test_T8_signal_already_above_threshold_on_warmup_exit_goes_to_triggered(self):
-        """T8: If signal is high when warmup ends, state goes to TRIGGERED (no false tap)."""
-        _get_app()
-        det = TapDetector(
-            tap_threshold=60,
-            warmup_s=0.001,   # tiny but nonzero warmup
-            cooldown_s=0.0,
-        )
-        taps: list[int] = []
-        det.tapDetected.connect(lambda: taps.append(1))
+    def test_T8_just_exited_warmup_syncs_then_skips(self):
+        """T8: First frame after warmup syncs is_above_threshold but does not fire tap."""
+        sut = _make_sut(threshold=-40)
+        sut.is_detecting = True
+        sut.just_exited_warmup = True
+        # analyzer_start_time is 2 s ago → warmup check passes
 
-        # Feed a high-level sample during the tiny warmup
-        det.update(80)
+        sut.detect_tap(peak_magnitude=-30, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        # Wait for warmup to expire
-        time.sleep(0.02)
-
-        # Feed one more high sample — this should trigger WARMUP→TRIGGERED (no emission)
-        det.update(80)
-
-        # No tap should have been emitted (signal was already above when warmup exited)
-        assert len(taps) == 0, (
-            f"Signal already above threshold on warmup exit should not fire; got {len(taps)}"
-        )
+        # tap_detected must NOT fire on the sync frame
+        assert sut.tap_detected is False, \
+            "First frame after warmup should sync state but not fire a tap"
+        # just_exited_warmup should be cleared
+        assert sut.just_exited_warmup is False, \
+            "just_exited_warmup flag should be cleared after sync frame"
 
 
 # ---------------------------------------------------------------------------
-# T6: Plate mode (relative threshold)
+# T6: Plate mode uses relative noise-floor detection
 # ---------------------------------------------------------------------------
 
 class TestPlateMode:
     """Mirrors Swift TapDetectionTests T6."""
 
-    def test_T6_plate_mode_adapts_to_noise_floor(self):
-        """T6: In plate/brace mode, a loud spike above the noise floor fires a tap."""
-        _get_app()
-        det = TapDetector(
-            tap_threshold=60,
-            hysteresis_margin=3.0,
-            warmup_s=0.0,
-            cooldown_s=0.0,
-            mode=TapDetector.MODE_PLATE_BRACE,
-        )
-        taps: list[int] = []
-        det.tapDetected.connect(lambda: taps.append(1))
+    def test_T6_plate_mode_uses_relative_noise_floor(self):
+        """T6: Plate mode uses noise_floor + headroom, not absolute tap_detection_threshold."""
+        import time as _t
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        try:
+            sut = TapToneAnalyzer()
+            sut.tap_detection_threshold = -40.0
+            sut.hysteresis_margin = 5.0
+            sut.number_of_taps = 1
+            sut.analyzer_start_time = _t.monotonic() - 2.0
+            sut.just_exited_warmup = False
+            sut.is_detecting = True
+            sut.is_above_threshold = False
 
-        # Feed many quiet frames to let the EMA settle well below the threshold
-        for _ in range(50):
-            det.update(20)   # very quiet
-        taps.clear()
+            # Set a controlled noise floor estimate.
+            # headroom = max(-40 - (-70), 10) = 30 dB
+            # effective_rising_threshold = -70 + 30 = -40 dB
+            # So a signal at -35 dB should fire.
+            sut.noise_floor_estimate = -70.0
+            sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        # Now send a loud tap well above the adaptive threshold
-        det.update(80)
-
-        assert len(taps) == 1, (
-            f"Plate mode should detect a large spike above the noise floor; got {len(taps)}"
-        )
+            assert sut.tap_detected is True, \
+                "Plate mode: signal above noise floor + headroom should fire"
+        finally:
+            TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
 
 
 # ---------------------------------------------------------------------------
@@ -285,28 +276,32 @@ class TestPlateMode:
 class TestEMAConvergence:
     """Mirrors Swift TapDetectionTests T7."""
 
-    def test_T7_ema_converges_toward_input_level(self):
-        """T7: After many frames at a constant level, the EMA noise floor converges."""
-        _get_app()
-        det = TapDetector(
-            tap_threshold=80,
-            warmup_s=0.0,
-            cooldown_s=0.0,
-            mode=TapDetector.MODE_PLATE_BRACE,
-        )
-        # Initial warmup frame
-        det.update(0)
+    def test_T7_noise_floor_ema_converges_with_repeated_below_threshold_frames(self):
+        """T7: After many frames at a constant level, the EMA converges."""
+        import time as _t
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        try:
+            sut = TapToneAnalyzer()
+            sut.tap_detection_threshold = -40.0
+            sut.hysteresis_margin = 5.0
+            sut.analyzer_start_time = _t.monotonic() - 2.0
+            sut.just_exited_warmup = False
+            sut.is_above_threshold = False   # stays below threshold
 
-        constant_level = 30   # 30 → -70 dBFS
-        constant_level_db = constant_level - 100.0
+            start_estimate = sut.noise_floor_estimate   # initial value (-60)
+            target = -55.0  # ambient level to feed
 
-        # Feed 200 frames at the constant level
-        for _ in range(200):
-            det._compute_thresholds(float(constant_level_db))
+            # Feed 50 frames at -55 dB (below threshold → EMA updates)
+            for _ in range(50):
+                sut.detect_tap(peak_magnitude=target, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        # After 200 frames with α=0.05, EMA should be within 1 dB of the constant level
-        # (convergence: after n frames, error = (1-α)^n × initial_offset)
-        assert abs(det._noise_floor_db - constant_level_db) < 2.0, (
-            f"EMA noise floor should converge to {constant_level_db:.1f} dB; "
-            f"got {det._noise_floor_db:.1f} dB"
-        )
+            # EMA with α=0.05, 50 steps from -60 toward -55:
+            # After 50 steps: estimate ≈ -57.4; should be > -58
+            assert sut.noise_floor_estimate > start_estimate, \
+                "Noise floor should move toward ambient level after repeated frames"
+            assert sut.noise_floor_estimate > -58.0, (
+                f"Noise floor after 50 frames at -55 dB should be close to -55 "
+                f"(got {sut.noise_floor_estimate:.2f})"
+            )
+        finally:
+            TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)

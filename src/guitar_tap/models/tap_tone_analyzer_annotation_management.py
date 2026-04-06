@@ -3,9 +3,12 @@ TapToneAnalyzer+AnnotationManagement — peak selection and annotation offset tr
 
 Mirrors Swift TapToneAnalyzer+AnnotationManagement.swift.
 
-Annotation offsets are stored on the analyzer (keyed by peak frequency) so that
+Annotation offsets are stored on the analyzer keyed by peak UUID string so that
 dragged positions survive pan/zoom annotation rebuilds.  This mirrors Swift's
 ``peakAnnotationOffsets: [UUID: CGPoint]`` @Published property.
+
+Key change from earlier revision: the dictionary is keyed by ``ResonantPeak.id``
+(a UUID string), not by frequency.  Mirrors Swift [UUID: CGPoint].
 """
 
 from __future__ import annotations
@@ -15,43 +18,196 @@ class TapToneAnalyzerAnnotationManagementMixin:
     """Peak selection and annotation offset helpers for TapToneAnalyzer.
 
     Mirrors Swift TapToneAnalyzer+AnnotationManagement.swift.
+
+    Stored properties initialised in TapToneAnalyzer.__init__:
+        self.peak_annotation_offsets: dict[str, tuple[float, float]]
+            UUID-string → (x, y) in data-space coordinates.
+        self.user_selected_longitudinal_peak_id: str | None
+        self.user_selected_cross_peak_id: str | None
+        self.user_selected_flc_peak_id: str | None
+        self.selected_longitudinal_peak: ResonantPeak | None
+        self.selected_cross_peak: ResonantPeak | None
+        self.selected_flc_peak: ResonantPeak | None
+        self.auto_selected_longitudinal_peak_id: str | None
+        self.auto_selected_cross_peak_id: str | None
+        self.auto_selected_flc_peak_id: str | None
     """
 
-    def select_peak(self, freq: float) -> None:
-        """Record the selected peak frequency."""
-        self.selected_peak = freq
-
-    def deselect_peak(self, _freq: float) -> None:
-        """Clear the selected peak."""
-        pass  # selection display handled by FftCanvas
-
-    def clear_selected_peak(self) -> None:
-        """Reset the selected peak."""
-        self.selected_peak = -1.0
-
-    # ── Annotation offset persistence ─────────────────────────────────────────
-    # Mirrors Swift updateAnnotationOffset(for:offset:) and the clearing done
-    # in startTapSequence / loadMeasurement / set_measurement_complete.
+    # ------------------------------------------------------------------ #
+    # Annotation Offset Management
+    # Mirrors Swift TapToneAnalyzer+AnnotationManagement.swift
+    # ------------------------------------------------------------------ #
 
     def update_annotation_offset(
-        self, freq: float, x: float, y: float
+        self, peak_id: str, offset: tuple[float, float]
     ) -> None:
-        """Store the dragged position for the annotation at *freq*.
+        """Store the dragged label position for the peak identified by *peak_id*.
 
-        Mirrors Swift ``TapToneAnalyzer.updateAnnotationOffset(for:offset:)``.
+        Mirrors Swift ``updateAnnotationOffset(for peakID: UUID, offset: CGPoint)``.
 
         Args:
-            freq: Peak frequency (Hz) — used as the key.
-            x:    Label x-position in data-space coordinates.
-            y:    Label y-position in data-space coordinates.
+            peak_id: ``ResonantPeak.id`` (UUID string) — the dictionary key.
+            offset:  (x, y) position in data-space: x = Hz, y = dB.
+                     (0.0, 0.0) represents «no saved position»; the default
+                     anchor (70 pt above the peak) is used at render time.
         """
-        self.peak_annotation_offsets[freq] = (x, y)
+        self.peak_annotation_offsets[peak_id] = offset
 
-    def clear_annotation_offsets(self) -> None:
-        """Remove all saved annotation offsets.
+    def get_annotation_offset(self, peak_id: str) -> tuple[float, float]:
+        """Return the stored label position for *peak_id*, or (0.0, 0.0) if none.
 
-        Called when the analyzer resets (new tap sequence, measurement cleared)
-        so annotations start fresh at their default positions.
+        Mirrors Swift ``getAnnotationOffset(for peakID: UUID) -> CGPoint``.
+
+        Args:
+            peak_id: ``ResonantPeak.id`` (UUID string).
+
+        Returns:
+            (x, y) data-space offset, or (0.0, 0.0) when the label has
+            never been dragged or its offset was cleared.
+        """
+        return self.peak_annotation_offsets.get(peak_id, (0.0, 0.0))
+
+    def reset_annotation_offset(self, peak_id: str) -> None:
+        """Remove the stored offset for a single peak, returning it to its default position.
+
+        Mirrors Swift ``resetAnnotationOffset(for peakID: UUID)``.
+
+        Args:
+            peak_id: ``ResonantPeak.id`` (UUID string).
+        """
+        self.peak_annotation_offsets.pop(peak_id, None)
+
+    def reset_all_annotation_offsets(self) -> None:
+        """Clear all stored annotation offsets, resetting every callout to its default anchor.
+
+        Mirrors Swift ``resetAllAnnotationOffsets()``.
+        Called when the analyzer resets (new tap sequence, measurement cleared).
         Mirrors Swift ``peakAnnotationOffsets = [:]`` in ``startTapSequence()``.
         """
         self.peak_annotation_offsets.clear()
+
+    # Keep legacy alias so existing call sites still work.
+    def clear_annotation_offsets(self) -> None:
+        """Alias for reset_all_annotation_offsets() — retained for compatibility."""
+        self.reset_all_annotation_offsets()
+
+    def apply_annotation_offsets(
+        self, offsets: dict[str, tuple[float, float]]
+    ) -> None:
+        """Replace the entire annotation-offset dictionary with *offsets*.
+
+        Called when loading a saved ``TapToneMeasurement`` to restore the
+        user's previously arranged callout positions.
+
+        Mirrors Swift ``applyAnnotationOffsets(_ offsets: [UUID: CGPoint])``.
+
+        Args:
+            offsets: Mapping of UUID strings to (x, y) data-space positions.
+        """
+        self.peak_annotation_offsets = dict(offsets)
+
+    # ------------------------------------------------------------------ #
+    # Plate Peak Selection
+    # Mirrors Swift selectLongitudinalPeak / selectCrossPeak / selectFlcPeak
+    # ------------------------------------------------------------------ #
+
+    @property
+    def effective_longitudinal_peak_id(self) -> str | None:
+        """The effective longitudinal peak UUID: user override or auto-selected.
+
+        Mirrors Swift ``effectiveLongitudinalPeakID``.
+        """
+        return (
+            self.user_selected_longitudinal_peak_id
+            or self.auto_selected_longitudinal_peak_id
+        )
+
+    @property
+    def effective_cross_peak_id(self) -> str | None:
+        """The effective cross-grain peak UUID: user override or auto-selected.
+
+        Mirrors Swift ``effectiveCrossPeakID``.
+        """
+        return (
+            self.user_selected_cross_peak_id
+            or self.auto_selected_cross_peak_id
+        )
+
+    @property
+    def effective_flc_peak_id(self) -> str | None:
+        """The effective FLC peak UUID: user override or auto-selected.
+
+        Mirrors Swift ``effectiveFlcPeakID``.
+        """
+        return (
+            self.user_selected_flc_peak_id
+            or self.auto_selected_flc_peak_id
+        )
+
+    def select_longitudinal_peak(self, peak_id: str) -> None:
+        """Toggle *peak_id* as the user-selected longitudinal peak.
+
+        Tapping an already-selected longitudinal peak deselects it. Selecting a
+        new peak clears any conflicting cross or FLC user-selection for the same
+        peak ID, enforcing mutual exclusion across tap-type assignments.
+
+        Mirrors Swift ``selectLongitudinalPeak(_ peakID: UUID)``.
+
+        Args:
+            peak_id: ``ResonantPeak.id`` (UUID string).
+        """
+        if self.effective_longitudinal_peak_id == peak_id:
+            self.user_selected_longitudinal_peak_id = None
+            self.selected_longitudinal_peak = None
+        else:
+            self.user_selected_longitudinal_peak_id = peak_id
+            if self.effective_cross_peak_id == peak_id:
+                self.user_selected_cross_peak_id = None
+                self.selected_cross_peak = None
+            if self.effective_flc_peak_id == peak_id:
+                self.user_selected_flc_peak_id = None
+                self.selected_flc_peak = None
+
+    def select_cross_peak(self, peak_id: str) -> None:
+        """Toggle *peak_id* as the user-selected cross-grain peak.
+
+        Mirrors the mutual-exclusion logic of ``select_longitudinal_peak``.
+
+        Mirrors Swift ``selectCrossPeak(_ peakID: UUID)``.
+
+        Args:
+            peak_id: ``ResonantPeak.id`` (UUID string).
+        """
+        if self.effective_cross_peak_id == peak_id:
+            self.user_selected_cross_peak_id = None
+            self.selected_cross_peak = None
+        else:
+            self.user_selected_cross_peak_id = peak_id
+            if self.effective_longitudinal_peak_id == peak_id:
+                self.user_selected_longitudinal_peak_id = None
+                self.selected_longitudinal_peak = None
+            if self.effective_flc_peak_id == peak_id:
+                self.user_selected_flc_peak_id = None
+                self.selected_flc_peak = None
+
+    def select_flc_peak(self, peak_id: str) -> None:
+        """Toggle *peak_id* as the user-selected FLC peak.
+
+        Mirrors the mutual-exclusion logic of ``select_longitudinal_peak``.
+
+        Mirrors Swift ``selectFlcPeak(_ peakID: UUID)``.
+
+        Args:
+            peak_id: ``ResonantPeak.id`` (UUID string).
+        """
+        if self.effective_flc_peak_id == peak_id:
+            self.user_selected_flc_peak_id = None
+            self.selected_flc_peak = None
+        else:
+            self.user_selected_flc_peak_id = peak_id
+            if self.effective_longitudinal_peak_id == peak_id:
+                self.user_selected_longitudinal_peak_id = None
+                self.selected_longitudinal_peak = None
+            if self.effective_cross_peak_id == peak_id:
+                self.user_selected_cross_peak_id = None
+                self.selected_cross_peak = None

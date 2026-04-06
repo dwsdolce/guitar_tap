@@ -4,10 +4,10 @@ Tap-tone analysis coordinator — mirrors Swift TapToneAnalyzer.swift.
 The Swift TapToneAnalyzer class is split across nine Swift extension files.
 This Python package mirrors that structure using separate modules:
 
-  tap_tone_analyzer_decay_tracking.py      → DecayTracker
+  tap_tone_analyzer_decay_tracking.py      → TapToneAnalyzerDecayTrackingMixin
       mirrors Swift TapToneAnalyzer+DecayTracking.swift
 
-  tap_tone_analyzer_tap_detection.py       → TapDetector
+  tap_tone_analyzer_tap_detection.py       → TapToneAnalyzerTapDetectionHandlerMixin
       mirrors Swift TapToneAnalyzer+TapDetection.swift
 
   tap_tone_analyzer_spectrum_capture.py    → PlateCapture
@@ -21,9 +21,6 @@ This Python package mirrors that structure using separate modules:
 
   tap_tone_analyzer_analysis_helpers.py    → TapToneAnalyzerAnalysisHelpersMixin
       mirrors Swift TapToneAnalyzer+AnalysisHelpers.swift
-
-  tap_tone_analyzer_tap_detection_handler.py → TapToneAnalyzerTapDetectionHandlerMixin
-      mirrors the analyzer-side of Swift TapToneAnalyzer+TapDetection.swift
 
   tap_tone_analyzer_annotation_management.py → TapToneAnalyzerAnnotationManagementMixin
       mirrors Swift TapToneAnalyzer+AnnotationManagement.swift
@@ -39,26 +36,18 @@ This Python package mirrors that structure using separate modules:
       Lives in its own file so mixin modules can import it without circular deps.
 
   fft_parameters.py                       → FftParameters
-  fft_processing_thread.py                → FftProcessingThread
-      Python-only — no Swift counterparts.  Swift stores equivalent values
-      directly on TapToneAnalyzer and uses AVAudioEngine taps instead of a thread.
+      Python-only — no Swift counterpart.  Swift stores equivalent values
+      directly on TapToneAnalyzer / RealtimeFFTAnalyzer.
 
 This file (tap_tone_analyzer.py) contains:
   - The TapToneAnalyzer class declaration, stored properties, and __init__
     (mirrors the top of Swift TapToneAnalyzer.swift)
-  - Re-exports of DecayTracker, TapDetector, PlateCapture, AnalysisDisplayMode
-    for import convenience.
+  - Re-export of PlateCapture and AnalysisDisplayMode for import convenience.
 """
 
 from __future__ import annotations
 
-# ── Re-exports (backward compatibility) ──────────────────────────────────────
-# Existing code that does:
-#   from models.tap_tone_analyzer import DecayTracker, TapDetector, PlateCapture
-# continues to work unchanged.
-
-from .tap_tone_analyzer_decay_tracking import DecayTracker
-from .tap_tone_analyzer_tap_detection import TapDetector
+# ── Re-exports ────────────────────────────────────────────────────────────────
 from .tap_tone_analyzer_spectrum_capture import PlateCapture
 
 # ── TapToneAnalyzer mixin imports ─────────────────────────────────────────────
@@ -67,6 +56,7 @@ from .tap_tone_analyzer_control import TapToneAnalyzerControlMixin
 from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
 from .tap_tone_analyzer_analysis_helpers import TapToneAnalyzerAnalysisHelpersMixin
 from .tap_tone_analyzer_tap_detection import TapToneAnalyzerTapDetectionHandlerMixin
+from .tap_tone_analyzer_decay_tracking import TapToneAnalyzerDecayTrackingMixin
 from .tap_tone_analyzer_annotation_management import TapToneAnalyzerAnnotationManagementMixin
 from .tap_tone_analyzer_measurement_management import TapToneAnalyzerMeasurementManagementMixin
 from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverrideManagementMixin
@@ -79,11 +69,12 @@ from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverr
 from .analysis_display_mode import AnalysisDisplayMode
 
 # ── Python-only implementation types ─────────────────────────────────────────
-# FftParameters and FftProcessingThread have no Swift counterparts; Swift stores
-# equivalent values directly on TapToneAnalyzer / uses AVAudioEngine taps.
+# FftParameters has no Swift counterpart; Swift stores equivalent values
+# directly on TapToneAnalyzer / RealtimeFFTAnalyzer.
+# _FftProcessingThread is a private implementation detail of RealtimeFFTAnalyzer
+# (owned via mic.proc_thread); it is not imported here.
 
 from .fft_parameters import FftParameters
-from .fft_processing_thread import FftProcessingThread
 
 # ── PySide6 ─────────────────────────────────────────────────────────────────────
 
@@ -108,6 +99,7 @@ class TapToneAnalyzer(
     TapToneAnalyzerPeakAnalysisMixin,
     TapToneAnalyzerAnalysisHelpersMixin,
     TapToneAnalyzerTapDetectionHandlerMixin,
+    TapToneAnalyzerDecayTrackingMixin,
     TapToneAnalyzerAnnotationManagementMixin,
     TapToneAnalyzerMeasurementManagementMixin,
     TapToneAnalyzerModeOverrideManagementMixin,
@@ -228,78 +220,59 @@ class TapToneAnalyzer(
     # Internal: fired from hotplug monitor thread → main thread (no-arg).
     _devicesRefreshed: QtCore.Signal = QtCore.Signal()
 
-    def __init__(
-        self,
-        parent_widget,
-        fft_params: "FftParameters",
-        audio_device,
-        calibration_corrections,
-        guitar_type,
-    ) -> None:
-        """
+    def __init__(self, fft_analyzer=None) -> None:
+        """Create a TapToneAnalyzer with all state at sensible defaults.
+
+        Mirrors Swift ``TapToneAnalyzer(fftAnalyzer: RealtimeFFTAnalyzer)``.
+
+        No audio hardware is required.  Tests can construct a bare instance and
+        exercise all analysis methods directly.  Audio-hardware setup is deferred
+        to ``start()``, which the view layer calls after construction.
+
         Args:
-            parent_widget:           The FftCanvas (QObject parent).
-            fft_params:              FftParameters instance (sample_freq, n_f, window_fcn, …).
-            audio_device:            AudioDevice to open, or None for the system default.
-            calibration_corrections: ndarray of per-bin dB corrections, or None.
-            guitar_type:             GuitarType enum value for mode classification.
+            fft_analyzer: Optional RealtimeFFTAnalyzer.  None-safe — tests never
+                          pass one.  When provided (production path) the mic is
+                          wired up inside ``start()`` rather than here.
         """
-        import sounddevice as _sd
-        import numpy as _np
-        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
+        import numpy as np
         from models import guitar_mode as _gm
         from models import measurement_type as _mt_mod
-        from models import microphone_calibration as _mc_mod
         from models.tap_display_settings import TapDisplaySettings as _tds
+        from models.material_tap_phase import MaterialTapPhase as _MTP
 
         # Initialise both bases explicitly.
         # Qt's metaclass does not participate in Python's cooperative super()
         # chain, so both must be called directly.
-        QtCore.QObject.__init__(self, parent_widget)
+        QtCore.QObject.__init__(self, None)
         ObservableObject.__init__(self)
 
-        self._sd = _sd
-        self._np = _np
+        self._np = np
         self._gm = _gm
         self._tds = _tds
-        self._mc_mod = _mc_mod
 
-        # ── Audio engine (mirrors Swift's analyzer: RealtimeFFTAnalyzer) ──
-        # FFT configuration (fft_size, window_fcn) lives on the mic object,
-        # matching Swift where RealtimeFFTAnalyzer owns fftSize, window, etc.
-        self._devicesRefreshed.connect(self._on_devices_refreshed)
-        self.mic: _Mic = _Mic(
-            parent_widget,
-            rate=fft_params.sample_freq,
-            chunksize=4096,
-            device=audio_device,
-            on_devices_changed=self._devicesRefreshed.emit,
-            fft_size=fft_params.n_f,
-        )
+        # ── fft_analyzer reference (mirrors Swift's fftAnalyzer property) ──
+        # None when constructed without audio hardware (tests, import-time).
+        # Populated by start() in the production path.
+        self.mic = fft_analyzer  # type: ignore[assignment]
 
         # ── FFT configuration ──────────────────────────────────────────────
-        # Stored as fft_data for backward compatibility with existing call sites.
-        self.fft_data = fft_params
-        import numpy as np
-        x_axis = np.arange(0, fft_params.h_n_f + 1)
-        self.freq = x_axis * fft_params.sample_freq / fft_params.n_f
+        # fft_data and freq are populated by start(); None-safe guarded by
+        # the n_fmin / n_fmax computed properties below.
+        self.fft_data = None
+        self.freq = np.array([])
 
         # ── Calibration ────────────────────────────────────────────────────
-        self._calibration_corrections = calibration_corrections
-        self._calibration_device_name: str = audio_device.name if audio_device else ""
+        self._calibration_corrections = None
+        self._calibration_device_name: str = ""
 
         # ── Guitar/mode classification ─────────────────────────────────────
-        self._guitar_type = guitar_type
+        self._guitar_type = None
 
         # ── Display mode (mirrors Swift AnalysisDisplayMode) ───────────────
-        # AnalysisDisplayMode lives in models/analysis_display_mode.py — no circular import.
-        # Mirrors Swift TapToneAnalyzer @Published var displayMode: AnalysisDisplayMode = .live
         self._display_mode: AnalysisDisplayMode = AnalysisDisplayMode.LIVE
 
         # ── @Published property initialisation from persisted settings ───────
-        # These assignments go through the Published descriptor, setting the
-        # per-instance storage key and firing _notify_change on the
-        # ObservableObject base.  Mirrors Swift's property initialiser syntax:
+        # Mirrors Swift's property initialisers:
         #   @Published var minFrequency: Float = TapDisplaySettings.analysisMinFrequency
         self.min_frequency = float(_tds.analysis_f_min())
         self.max_frequency = float(_tds.analysis_f_max())
@@ -310,33 +283,15 @@ class TapToneAnalyzer(
         self.annotation_visibility_mode = _tds.annotation_visibility_mode()
 
         # ── Measurement state ──────────────────────────────────────────────
-        # is_measurement_complete is a @Published property (class-level default False).
-        # No re-assignment needed here — the class default is correct.
-
-        # Saved measurement list — mirrors Swift @Published var savedMeasurements: [TapToneMeasurement].
-        # Loaded once at startup and kept in sync; all mutations go through the
-        # mixin methods (save_measurement, update_measurement, delete_measurement,
-        # delete_all_measurements) which persist and emit savedMeasurementsChanged.
-        from views.tap_analysis_results_view import load_all_measurements as _load
-        self.saved_measurements = _load()
-        # Legacy alias kept for any remaining view code that reads savedMeasurements.
-        # Will be removed once the view layer is migrated.
-        self.savedMeasurements = self.saved_measurements
+        # saved_measurements loaded lazily by start() to avoid importing views here.
+        self.saved_measurements = []
+        self.savedMeasurements = self.saved_measurements  # legacy alias
 
         # ── Peak analysis state ────────────────────────────────────────────
-        # frozen_magnitudes: mirrors Swift frozenMagnitudes: [Float] = []
-        # Stored as ndarray for efficient numpy operations; presented as list via Published.
         self.frozen_magnitudes = np.array([])
-        # current_peaks: mirrors Swift currentPeaks: [ResonantPeak] = []
-        self.current_peaks = []
-        # loaded_measurement_peaks: mirrors Swift loadedMeasurementPeaks: [ResonantPeak]? = nil
+        self.current_peaks: list = []
         self.loaded_measurement_peaks: "list | None" = None
         self.selected_peak: float = 0.0
-        # frozen_frequencies: mirrors Swift frozenFrequencies: [Float] = []
-        # Always kept in sync with frozen_magnitudes.  A measurement loaded from
-        # Swift's gated FFT (16 384 bins) has a different length than the live
-        # self.freq (32 769 bins for fft_size=65 536); storing the frozen axis
-        # here prevents shape-mismatch crashes.
         self.frozen_frequencies = np.array([])
 
         # ── Averaging ──────────────────────────────────────────────────────
@@ -346,9 +301,7 @@ class TapToneAnalyzer(
         self.num_averages: int = 0
 
         # ── Multi-tap accumulator ─────────────────────────────────────────
-        # number_of_taps: mirrors Swift numberOfTaps: Int
         self.number_of_taps: int = 1
-        # captured_taps: mirrors Swift capturedTaps
         self.captured_taps: list = []
 
         # ── Auto-scale ────────────────────────────────────────────────────
@@ -358,6 +311,112 @@ class TapToneAnalyzer(
         self._measurement_type = _mt_mod.MeasurementType.CLASSICAL
 
         # ── Plate/brace capture ───────────────────────────────────────────
+        # Populated by start(); None-safe until then.
+        self.plate_capture = None
+        self._current_mag_y = np.array([])
+
+        # ── Per-phase material spectra ────────────────────────────────────
+        self._material_spectra: list = []
+
+        # ── Comparison overlay data ───────────────────────────────────────
+        self.comparison_labels: list = []
+        self._comparison_data: list = []
+
+        # ── Plate/brace phase state ───────────────────────────────────────
+        self.material_tap_phase: "_MTP" = _MTP.NOT_STARTED
+        self.longitudinal_spectrum = None
+        self.cross_spectrum = None
+        self.flc_spectrum = None
+        self.longitudinal_peaks: list = []
+        self.cross_peaks: list = []
+        self.flc_peaks: list = []
+        self.auto_selected_longitudinal_peak_id = None
+        self.auto_selected_cross_peak_id = None
+        self.auto_selected_flc_peak_id = None
+        self.selected_longitudinal_peak = None
+        self.selected_cross_peak = None
+        self.selected_flc_peak = None
+        self.user_selected_longitudinal_peak_id = None
+        self.user_selected_cross_peak_id = None
+        self.user_selected_flc_peak_id = None
+
+        # ── Tap detection state (mirrors Swift TapToneAnalyzer stored properties)
+        self.is_above_threshold: bool = False
+        self.just_exited_warmup: bool = False
+        self.analyzer_start_time: "float | None" = None
+        self.last_tap_time: "float | None" = None
+        self.noise_floor_estimate: float = -60.0
+        self.noise_floor_alpha: float = 0.05
+        self.warmup_period: float = 0.5
+        self.tap_cooldown: float = 0.5
+        self.tap_peak_level: float = -100.0
+
+        # ── Decay tracking state (mirrors Swift TapToneAnalyzer stored properties)
+        self.peak_magnitude_history: list = []
+        self.is_tracking_decay: bool = False
+        self._decay_tracking_timer = None
+
+    def start(
+        self,
+        parent_widget,
+        fft_params: "FftParameters",
+        audio_device,
+        calibration_corrections,
+        guitar_type,
+    ) -> None:
+        """Wire up audio hardware and load persisted state.
+
+        Called by the view layer (FftCanvas) after construction.  Tests never
+        call this — they work with the bare defaults set by ``__init__``.
+
+        This is the Python equivalent of Swift's audio-engine setup that lives
+        in ``RealtimeFFTAnalyzer`` and is called from the view layer.
+
+        Args:
+            parent_widget:           The FftCanvas (QObject parent).
+            fft_params:              FftParameters instance.
+            audio_device:            AudioDevice to open, or None for the default.
+            calibration_corrections: ndarray of per-bin dB corrections, or None.
+            guitar_type:             GuitarType enum value for mode classification.
+        """
+        import sounddevice as _sd
+        import numpy as np
+        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
+        from models import microphone_calibration as _mc_mod
+
+        self._sd = _sd
+        self._mc_mod = _mc_mod
+
+        # Re-parent this QObject to the view widget now that we have it.
+        self.setParent(parent_widget)
+
+        # Wire the hotplug signal now that the Qt object hierarchy is valid.
+        self._devicesRefreshed.connect(self._on_devices_refreshed)
+
+        # ── Audio engine ──────────────────────────────────────────────────
+        self.mic = _Mic(
+            parent_widget,
+            rate=fft_params.sample_freq,
+            chunksize=4096,
+            device=audio_device,
+            on_devices_changed=self._devicesRefreshed.emit,
+            fft_size=fft_params.n_f,
+        )
+        self.mic.proc_thread.setParent(self)
+
+        # ── FFT configuration ─────────────────────────────────────────────
+        self.fft_data = fft_params
+        x_axis = np.arange(0, fft_params.h_n_f + 1)
+        self.freq = x_axis * fft_params.sample_freq / fft_params.n_f
+
+        # ── Calibration ───────────────────────────────────────────────────
+        self._calibration_corrections = calibration_corrections
+        self._calibration_device_name = audio_device.name if audio_device else ""
+
+        # ── Guitar/mode classification ────────────────────────────────────
+        self._guitar_type = guitar_type
+
+        # ── Plate/brace capture ───────────────────────────────────────────
         self.plate_capture = PlateCapture(
             sample_freq=fft_params.sample_freq,
             n_f=fft_params.n_f,
@@ -365,33 +424,11 @@ class TapToneAnalyzer(
         )
         self.plate_capture.stateChanged.connect(self.plateStatusChanged)
         self.plate_capture.analysisComplete.connect(self.plateAnalysisComplete)
-        self._current_mag_y = np.array([])
 
-        # ── Per-phase material spectra (mirrors Swift longitudinalSpectrum / crossSpectrum / flcSpectrum)
-        # Owned by the analyzer so that FftCanvas can react reactively via materialSpectraChanged.
-        # Each entry is (label, (r,g,b), freqs_list, mags_list).  Empty list = no overlay.
-        self._material_spectra: list = []
-
-        # ── Annotation offsets (mirrors Swift peakAnnotationOffsets: [UUID: CGPoint]) ──
-        # Keyed by peak UUID string → (x_offset, y_offset) in data-space coordinates.
-        # Stored on the analyzer so dragged positions survive pan/zoom annotation rebuilds.
-        # peak_annotation_offsets is declared as a Published class-level descriptor above;
-        # no instance assignment needed here — the class default ({}) is correct.
-
-        # ── Comparison overlay data ───────────────────────────────────────
-        self.comparison_labels: list = []        # list of (label, color) tuples
-        # _comparison_data is for the analyzer's knowledge of what's being compared;
-        # actual PlotDataItem curves live in FftCanvas.
-        self._comparison_data: list = []
-
-        # ── Processing thread ─────────────────────────────────────────────
-        # TapToneAnalyzer owns and creates its processing thread — mirrors Swift's
-        # architecture where TapToneAnalyzer owns its entire audio processing pipeline.
-        # FftCanvas starts the thread via start_analyzer() and stops it via stop_analyzer().
-        self._proc_thread: FftProcessingThread = FftProcessingThread(
-            mic=self.mic,
-            parent=self,
-        )
+        # ── Saved measurements (view-layer import deferred until here) ────
+        from views.tap_analysis_results_view import load_all_measurements as _load
+        self.saved_measurements = _load()
+        self.savedMeasurements = self.saved_measurements
 
     # ------------------------------------------------------------------ #
     # display_mode property — kept in sync with FftCanvas.display_mode
@@ -420,7 +457,10 @@ class TapToneAnalyzer(
 
         Computed from min_frequency, mirrors Swift's bin-index helpers
         derived from minFrequency inside findPeaks.
+        Returns 0 when fft_data is not yet set (before start()).
         """
+        if self.fft_data is None:
+            return 0
         return int(self.fft_data.n_f * self.min_frequency) // self.fft_data.sample_freq
 
     @property
@@ -429,7 +469,10 @@ class TapToneAnalyzer(
 
         Computed from max_frequency, mirrors Swift's bin-index helpers
         derived from maxFrequency inside findPeaks.
+        Returns 0 when fft_data is not yet set (before start()).
         """
+        if self.fft_data is None:
+            return 0
         return int(self.fft_data.n_f * self.max_frequency) // self.fft_data.sample_freq
 
     def set_material_spectra(self, spectra: list) -> None:
@@ -451,22 +494,20 @@ class TapToneAnalyzer(
     # Processing thread management
     # ------------------------------------------------------------------ #
 
-    def recreate_proc_thread(self) -> "FftProcessingThread":
+    def recreate_proc_thread(self):
         """Destroy the current processing thread and create a fresh one.
 
-        Applies the current calibration and measurement type to the new thread.
+        Applies the current calibration to the new thread.
         FftCanvas calls this when it needs to reset all processing state
         (e.g. after the analyzer was already running and the user presses Start
         again).
 
-        Returns the new FftProcessingThread so FftCanvas can reconnect signals.
+        Returns the new proc_thread (_FftProcessingThread) so FftCanvas can
+        reconnect signals.
 
         Python-only — Swift achieves equivalent reset via AVAudioEngine stop/start.
         """
-        self._proc_thread = FftProcessingThread(
-            mic=self.mic,
-            parent=self,
-        )
-        self._proc_thread.set_calibration(self._calibration_corrections)
-        self._proc_thread.set_measurement_type(self._measurement_type.is_guitar)
-        return self._proc_thread
+        from .realtime_fft_analyzer import _FftProcessingThread as _FPT
+        self.mic.proc_thread = _FPT(mic=self.mic, parent=self)
+        self.mic.proc_thread.set_calibration(self._calibration_corrections)
+        return self.mic.proc_thread

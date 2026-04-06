@@ -20,7 +20,6 @@ from models import microphone_calibration as _mc_mod
 from models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 from models.analysis_display_mode import AnalysisDisplayMode
 from models.fft_parameters import FftParameters
-from models.fft_processing_thread import FftProcessingThread
 import models.tap_tone_analyzer as td
 import models.tap_tone_analyzer as pc
 import views.utilities.tap_settings_view as _as
@@ -36,9 +35,6 @@ class _SceneMouseReleaseFilter(QtCore.QObject):
             self.released.emit(event)
         return False
 
-
-# FftProcessingThread — moved to models/fft_processing_thread.py.
-# Imported above from models.fft_processing_thread.
 
 # ── Zoom & Pan help popup ─────────────────────────────────────────────────────
 
@@ -284,7 +280,8 @@ class FftCanvas(pg.PlotWidget):
         except ValueError:
             _guitar_type = gt.GuitarType.CLASSICAL
 
-        self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(
+        self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer()
+        self.analyzer.start(
             parent_widget=self,
             fft_params=self.fft_data,
             audio_device=_saved_audio_device,
@@ -472,13 +469,11 @@ class FftCanvas(pg.PlotWidget):
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
 
-        # Processing thread — created by TapToneAnalyzer (which owns the thread).
-        # FftCanvas holds a convenience reference so it can connect signals and call
-        # start()/stop() without going through self.analyzer every time.
-        self._proc_thread: FftProcessingThread = self.analyzer._proc_thread
+        # Connect processing thread signals.  The thread is owned by the mic
+        # (RealtimeFFTAnalyzer) and accessed via self.analyzer.mic.proc_thread.
         self._connect_proc_thread_signals()
         # Apply the initial calibration to the thread if one was loaded above.
-        self._proc_thread.set_calibration(self.analyzer._calibration_corrections)
+        self.analyzer.mic.proc_thread.set_calibration(self.analyzer._calibration_corrections)
 
     # ------------------------------------------------------------------ #
     # Backward-compatibility properties — guitar_tap.py reads these directly
@@ -593,11 +588,10 @@ class FftCanvas(pg.PlotWidget):
         self._overlay_label.setPos(cx, cy)
 
     def _connect_proc_thread_signals(self) -> None:
-        """Connect FftProcessingThread signals to FftCanvas slots."""
-        self._proc_thread.fftFrameReady.connect(self._on_fft_frame_ready)
-        self._proc_thread.rmsLevelChanged.connect(self.ampChanged)
-        self._proc_thread.ringOutMeasured.connect(self.ringOutMeasured)
-        self._proc_thread.finished.connect(self._on_proc_thread_finished)
+        """Connect proc_thread signals to FftCanvas slots."""
+        self.analyzer.mic.proc_thread.fftFrameReady.connect(self._on_fft_frame_ready)
+        self.analyzer.mic.proc_thread.rmsLevelChanged.connect(self.ampChanged)
+        self.analyzer.mic.proc_thread.finished.connect(self._on_proc_thread_finished)
 
     def _on_proc_thread_finished(self) -> None:
         """Called when the processing thread exits (after stop_analyzer)."""
@@ -607,19 +601,19 @@ class FftCanvas(pg.PlotWidget):
         """Start the processing thread and hide the idle overlay."""
         self._overlay_label.setVisible(False)
         self.set_measurement_complete(False)
-        if self._proc_thread.isRunning():
-            self._proc_thread.stop()
-            self._proc_thread.wait(500)
-            # Recreate thread on the analyzer (which owns it) to reset all state.
-            self._proc_thread = self.analyzer.recreate_proc_thread()
+        if self.analyzer.mic.proc_thread.isRunning():
+            self.analyzer.mic.proc_thread.stop()
+            self.analyzer.mic.proc_thread.wait(500)
+            # Recreate thread on the mic (RealtimeFFTAnalyzer owns it) to reset all state.
+            self.analyzer.recreate_proc_thread()
             self._connect_proc_thread_signals()
         self.analyzer.captured_taps.clear()
-        self._proc_thread.reset_state()
-        self._proc_thread.start()
+        self.analyzer.mic.proc_thread.reset_state()
+        self.analyzer.mic.proc_thread.start()
 
     def stop_analyzer(self) -> None:
         """Stop the processing thread and show the idle overlay."""
-        self._proc_thread.stop()
+        self.analyzer.mic.proc_thread.stop()
         self._center_overlay()
         self._overlay_label.setText("Stopped")
         self._overlay_label.setVisible(True)
@@ -631,8 +625,8 @@ class FftCanvas(pg.PlotWidget):
         window's closeEvent) to prevent Qt from aborting on QThread::~QThread()
         while the thread is still running.
         """
-        self._proc_thread.stop()
-        self._proc_thread.wait(2000)
+        self.analyzer.mic.proc_thread.stop()
+        self.analyzer.mic.proc_thread.wait(2000)
 
     # ------------------------------------------------------------------ #
     # Guitar mode band overlays
@@ -1275,7 +1269,6 @@ class FftCanvas(pg.PlotWidget):
     def set_measurement_complete(self, is_measurement_complete: bool) -> None:
         """Flag to enable/disable the holding of peaks."""
         self.analyzer.set_measurement_complete(is_measurement_complete)
-        self._proc_thread.set_measurement_complete(is_measurement_complete)
         if not is_measurement_complete:
             self.selected_point.setData(x=[], y=[])
             self.clear_selected_peak()
@@ -1475,26 +1468,26 @@ class FftCanvas(pg.PlotWidget):
         return self.analyzer.find_peaks(mag_y_db)
 
     # ------------------------------------------------------------------ #
-    # FFT frame handler (called from FftProcessingThread signal)
+    # FFT frame handler (called from proc_thread signal)
     # ------------------------------------------------------------------ #
 
     def _on_fft_frame_ready(
         self,
         mag_y_db: npt.NDArray[np.float64],
         mag_y: npt.NDArray[np.float32],
-        tap_fired: bool,
-        tap_amp: int,
+        fft_peak_amp: int,
+        rms_amp: int,
         fps: float,
         sample_dt: float,
         processing_dt: float,
     ) -> None:
-        """Receive a processed FFT frame from FftProcessingThread (main thread slot).
+        """Receive a processed FFT frame from proc_thread (main thread slot).
 
-        Delegates analysis to the TapToneAnalyzer, which emits spectrumUpdated
-        (connected to _on_spectrum_updated) for rendering.
+        Delegates analysis to the TapToneAnalyzer, which calls detect_tap() and
+        emits spectrumUpdated (connected to _on_spectrum_updated) for rendering.
         """
         self.analyzer.on_fft_frame(
-            mag_y_db, mag_y, tap_fired, tap_amp, fps, sample_dt, processing_dt
+            mag_y_db, mag_y, fft_peak_amp, rms_amp, fps, sample_dt, processing_dt
         )
 
     def _on_spectrum_updated(self, freqs, mag_y_db) -> None:

@@ -14,9 +14,6 @@ objects exist.  It is passed to TapToneAnalyzer.__init__, which forwards
 fft_size to RealtimeFFTAnalyzer — the object that then owns those values at
 runtime, matching Swift's architecture.
 
-FftProcessingThread no longer takes FftParameters; it reads fft_size, window_fcn,
-and m_t directly from the RealtimeFFTAnalyzer (mic) it already holds.
-
 Previously lived in views/fft_canvas.py as ``FftData``.  Moved here so
 business-layer configuration lives in the model layer, not the view layer.
 """

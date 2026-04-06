@@ -323,14 +323,11 @@ class TestFixtureLoading:
 
     def test_fixture_loads_and_decodes(self):
         fixture_name = "contreras-classical-1774731564.guitartap"
-        # Look in a few plausible locations relative to the project
-        here = os.path.dirname(__file__)
-        candidates = [
-            os.path.join(here, "..", "tests", "fixtures", fixture_name),
-            os.path.join(here, "fixtures", fixture_name),
-            os.path.join(here, "..", "fixtures", fixture_name),
-        ]
-        fixture_path = next((p for p in candidates if os.path.exists(p)), None)
+        # Mirror Swift: look next to the test file (same directory as __file__),
+        # mirroring `URL(fileURLWithPath: #file).deletingLastPathComponent()`.
+        here = os.path.dirname(os.path.abspath(__file__))
+        fixture_path_candidate = os.path.join(here, fixture_name)
+        fixture_path = fixture_path_candidate if os.path.exists(fixture_path_candidate) else None
 
         if fixture_path is None:
             pytest.skip(f"Fixture '{fixture_name}' not found; skipping fixture test")

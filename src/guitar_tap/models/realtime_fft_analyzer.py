@@ -13,12 +13,17 @@ This Python package mirrors that structure using two modules:
 
   realtime_fft_analyzer.py               → RealtimeFFTAnalyzer class
       mirrors RealtimeFFTAnalyzer.swift + +EngineControl.swift + +DeviceManagement.swift
+      Also contains _FftProcessingThread, a Python-only private class that handles
+      off-main-thread DSP.  Swift uses AVAudioEngine taps on the main audio graph
+      instead; this class has no Swift counterpart and is an implementation detail
+      of RealtimeFFTAnalyzer, not a separate model entity.
 
   realtime_fft_analyzer_fft_processing.py → module-level FFT functions
       mirrors RealtimeFFTAnalyzer+FFTProcessing.swift
 
 This file (realtime_fft_analyzer.py) contains:
   - The RealtimeFFTAnalyzer class (audio capture, device management, start/stop)
+  - _FftProcessingThread (Python-only private inner class — off-main-thread DSP loop)
   - Re-export of all FFT functions from realtime_fft_analyzer_fft_processing for
     backward compatibility (callers that do `import models.realtime_fft_analyzer as f_a`
     and call `f_a.dft_anal(...)` continue to work unchanged)
@@ -36,15 +41,19 @@ Python ↔ Swift correspondence:
     _start_windows_monitor   ↔  CM_Register_Notification
     _start_linux_monitor     ↔  (Linux-only; no Swift equivalent)
     get_frames / queue       ↔  rawSampleHandler / inputBuffer
+    proc_thread              ↔  (no direct equivalent — Swift AVAudioEngine taps
+                                 deliver audio on a dedicated audio thread; Python
+                                 uses an explicit QThread for the same purpose)
 
 NOTE — Python vs Swift architectural differences:
   Swift uses AVAudioEngine with a tap on AVAudioInputNode; Python uses PortAudio
   via sounddevice's InputStream with a per-chunk callback.
   Swift publishes results as @Published properties on the main thread via
   DispatchQueue.main.async; Python pushes raw audio chunks into a queue.Queue
-  for consumption by fft_canvas.py's FftProcessingThread.
+  for consumption by _FftProcessingThread (owned by RealtimeFFTAnalyzer).
   The real-time spectrum accumulation loop (Swift inputBuffer accumulation →
-  performFFT continuous path → @Published magnitudes) lives in fft_canvas.py.
+  performFFT continuous path → @Published magnitudes) is implemented in
+  _FftProcessingThread, which is created and owned by RealtimeFFTAnalyzer.
 """
 
 from __future__ import annotations
@@ -77,9 +86,212 @@ from typing import Callable
 import sounddevice as sd
 import numpy as np
 import numpy.typing as npt
+from PySide6 import QtCore
 
 if platform.system() == "Darwin":
     from views.utilities import platform_adapters as mac_access
+
+
+# ── _FftProcessingThread ──────────────────────────────────────────────────────
+# Python-only private class — no Swift counterpart.
+#
+# Swift uses AVAudioEngine taps which deliver audio on the audio processing
+# queue (not the main thread) and publish results via @Published on the main
+# thread.  Python uses PortAudio callbacks which must return immediately, so
+# the actual DSP work is deferred to this QThread.
+#
+# This class is an implementation detail of RealtimeFFTAnalyzer and is created
+# and owned by it (self.proc_thread).  It is not a separate model entity and
+# has no corresponding file in the Swift source.
+
+class _FftProcessingThread(QtCore.QThread):
+    """Audio processing thread — all DSP runs here, off the main/GUI thread.
+
+    Drains mic.queue chunk-by-chunk, maintains the ring buffer, computes the
+    FFT and per-chunk RMS level, and emits results to the main thread via Qt
+    signals.  Tap detection and decay tracking are NOT performed here.
+
+    Mirrors the audio delivery pipeline in Swift's RealtimeFFTAnalyzer:
+    - Ring buffer         ↔ Swift's inputBuffer accumulation in processAudioBuffer(_:)
+    - dft_anal call       ↔ Swift performFFT(on:) via AVAudioEngine FFT node
+    - fftFrameReady       ↔ Swift @Published magnitudes / inputLevelDB publishers
+    - recent_peak_level_db ↔ Swift recentPeakLevelDB rolling-max property
+
+    Python-only: Swift uses AVAudioEngine taps on the main audio graph rather
+    than a separate QThread.
+    """
+
+    # MARK: - Signals
+
+    # (mag_y_db, mag_y, fft_peak_amp, rms_amp, fps, sample_dt, processing_dt)
+    # fft_peak_amp: FFT peak level on 0-100 scale (dBFS + 100), used by guitar mode.
+    # rms_amp:      Per-chunk RMS level on 0-100 scale (dBFS + 100), used by plate/brace.
+    # Mirrors Swift RealtimeFFTAnalyzer @Published magnitudes and inputLevelDB.
+    fftFrameReady: QtCore.Signal = QtCore.Signal(
+        np.ndarray, np.ndarray, int, int, float, float, float
+    )
+
+    # Per-chunk RMS level (0-100 scale) emitted every audio chunk (not just per-FFT).
+    # Mirrors Swift RealtimeFFTAnalyzer @Published inputLevelDB.
+    rmsLevelChanged: QtCore.Signal = QtCore.Signal(int)
+
+    # MARK: - Initialization
+
+    def __init__(
+        self,
+        mic: "RealtimeFFTAnalyzer",
+        parent: QtCore.QObject | None = None,
+    ) -> None:
+        """
+        Args:
+            mic:    RealtimeFFTAnalyzer — supplies audio via mic.queue and owns
+                    FFT configuration (mic.fft_size, mic.window_fcn, mic.m_t).
+            parent: Qt parent object (TapToneAnalyzer).
+        """
+        super().__init__(parent)
+
+        self._mic = mic
+        self._stop_event = threading.Event()
+
+        # MARK: - Ring Buffer State
+
+        # Circular ring buffer holding the most recent m_t audio samples.
+        # Mirrors Swift's inputBuffer accumulation in processAudioBuffer(_:).
+        self._audio_ring: npt.NDArray[np.float32] = np.zeros(
+            mic.m_t, dtype=np.float32
+        )
+        self._ring_fill: int = 0
+        self._samples_since_last_fft: int = 0
+
+        # MARK: - Thread-Safe Settings
+
+        # Settings protected by a lock (written from main thread, read from run()).
+        self._settings_lock = threading.Lock()
+        self._calibration: npt.NDArray | None = None
+
+        # MARK: - Recent Peak Level (mirrors Swift RealtimeFFTAnalyzer.recentPeakLevelDB)
+
+        # Rolling maximum RMS level over the last 0.5 s, protected by a dedicated lock.
+        # Mirrors Swift recentPeakLevelDB which holds the max level over the last 0.5 s
+        # so that tapPeakLevel captures the actual tap peak even when FFT detection is delayed.
+        self._recent_peak_lock = threading.Lock()
+        self._recent_peak_db: float = -100.0       # current rolling max (dBFS)
+        self._recent_peak_window: float = 0.5      # rolling window in seconds
+        self._recent_peak_history: list = []       # [(timestamp, level_db), ...]
+
+    # MARK: - QThread.run() — the processing loop
+
+    def run(self) -> None:
+        """Main processing loop — runs on the background thread.
+
+        Drains mic.queue, maintains the ring buffer, computes per-chunk RMS
+        level, and emits fftFrameReady for each FFT frame.
+
+        Mirrors Swift's AVAudioEngine input tap callback + processAudioBuffer(_:)
+        accumulation logic.  Tap detection is performed on the main thread
+        inside TapToneAnalyzer.on_fft_frame().
+        """
+        lastupdate = time.time()
+        while not self._stop_event.is_set():
+            try:
+                chunk = self._mic.queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            # Snapshot calibration under lock — avoid holding during DSP.
+            with self._settings_lock:
+                calibration = self._calibration
+
+            enter_now = time.time()
+            n = len(chunk)
+
+            # Update ring buffer — shift old samples out, append new samples.
+            # Mirrors Swift inputBuffer accumulation in processAudioBuffer(_:).
+            self._audio_ring = np.concatenate(
+                [self._audio_ring[n:], chunk[:n].astype(np.float32)]
+            )
+            self._ring_fill = min(self._ring_fill + n, self._mic.m_t)
+            self._samples_since_last_fft += n
+
+            # Per-chunk RMS level — used for plate/brace tap detection and decay.
+            # Mirrors Swift RealtimeFFTAnalyzer inputLevelDB computation.
+            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+            level_db = 20.0 * np.log10(max(rms, 1e-10))
+            rms_amp = int(level_db + 100.0)
+            self.rmsLevelChanged.emit(rms_amp)
+
+            # Update rolling recent-peak history (mirrors Swift recentPeakLevelDB).
+            # Trim entries older than the window, then update the rolling max.
+            with self._recent_peak_lock:
+                cutoff = enter_now - self._recent_peak_window
+                self._recent_peak_history = [
+                    (t, v) for t, v in self._recent_peak_history if t > cutoff
+                ]
+                self._recent_peak_history.append((enter_now, level_db))
+                self._recent_peak_db = max(
+                    (v for _, v in self._recent_peak_history), default=-100.0
+                )
+
+            # Only compute a new FFT once m_t new samples have accumulated.
+            if self._samples_since_last_fft < self._mic.m_t:
+                continue
+            self._samples_since_last_fft -= self._mic.m_t
+
+            sample_dt = enter_now - lastupdate
+            lastupdate = enter_now
+
+            # FFT — mirrors Swift RealtimeFFTAnalyzer performFFT(on:).
+            mag_y_db, mag_y = dft_anal(
+                self._audio_ring, self._mic.window_fcn, self._mic.fft_size
+            )
+            if calibration is not None:
+                mag_y_db = mag_y_db + calibration
+
+            # FFT peak level (guitar mode) — 0-100 scale.
+            fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+
+            exit_now = time.time()
+            processing_dt = exit_now - enter_now
+            fps = 1.0 / max(sample_dt, 1e-12)
+
+            self.fftFrameReady.emit(
+                mag_y_db, mag_y, fft_peak_amp, rms_amp,
+                fps, sample_dt, processing_dt,
+            )
+
+    # MARK: - Public API (safe to call from main thread)
+
+    def stop(self) -> None:
+        """Signal the run() loop to exit."""
+        self._stop_event.set()
+
+    def reset_state(self) -> None:
+        """Reset ring buffer state; call before start()."""
+        self._audio_ring = np.zeros(self._mic.m_t, dtype=np.float32)
+        self._ring_fill = 0
+        self._samples_since_last_fft = 0
+        self._stop_event.clear()
+        with self._recent_peak_lock:
+            self._recent_peak_db = -100.0
+            self._recent_peak_history = []
+
+    def set_calibration(self, arr: npt.NDArray | None) -> None:
+        """Update the per-bin dB calibration correction array."""
+        with self._settings_lock:
+            self._calibration = arr
+
+    @property
+    def recent_peak_level_db(self) -> float:
+        """Rolling maximum RMS level over the last 0.5 s, in dBFS.
+
+        Thread-safe: safe to read from the main thread while run() updates it
+        on the background thread.
+
+        Mirrors Swift RealtimeFFTAnalyzer.recentPeakLevelDB used by
+        detectTap() to set tapPeakLevel at the moment of a confirmed tap.
+        """
+        with self._recent_peak_lock:
+            return self._recent_peak_db
 
 
 class RealtimeFFTAnalyzer:
@@ -96,7 +308,7 @@ class RealtimeFFTAnalyzer:
       Swift uses AVAudioEngine with a tap on AVAudioInputNode and publishes
       results as @Published properties on the main thread.
       Python uses PortAudio (sounddevice) with a blocking Queue callback model;
-      downstream FFT processing is done by fft_canvas.py's FftProcessingThread.
+      downstream FFT processing is done by _FftProcessingThread (owned by this class).
 
     Python-only properties:
       queue              — audio chunk queue; Swift has rawSampleHandler + inputBuffer
@@ -107,6 +319,8 @@ class RealtimeFFTAnalyzer:
       _stop_lock         — threading.Lock for is_stopped; Swift uses DispatchQueue sync
       _monitor_stop      — threading.Event to signal monitor thread exit
       _on_devices_changed — plain callback; Swift uses @Published availableInputDevices
+      proc_thread        — _FftProcessingThread instance owned by this analyzer;
+                           Swift equivalent is the AVAudioEngine audio processing queue
 
     Python FFT configuration properties (mirrors Swift RealtimeFFTAnalyzer):
       fft_size    ↔  Swift fftSize      — FFT window size (power of 2)
@@ -200,6 +414,14 @@ class RealtimeFFTAnalyzer:
         self._monitor_thread: threading.Thread | None = None
         self._start_hotplug_monitor()
 
+        # Python-only: off-main-thread DSP worker.
+        # Mirrors Swift's AVAudioEngine audio processing queue that delivers
+        # performFFT results on a background thread before publishing @Published
+        # properties on the main thread.  Created here so that TapToneAnalyzer
+        # (which owns the analyzer) can access proc_thread immediately after init.
+        # The parent QObject is set by TapToneAnalyzer after construction.
+        self.proc_thread: _FftProcessingThread = _FftProcessingThread(mic=self)
+
         atexit.register(self.close)
 
     # MARK: - Engine Control (mirrors +EngineControl.swift)
@@ -209,7 +431,7 @@ class RealtimeFFTAnalyzer:
         """PortAudio stream callback — enqueues the incoming audio chunk.
 
         Called by PortAudio on every block of ``chunksize`` frames.
-        Enqueues the first channel's samples for FftProcessingThread.
+        Enqueues the first channel's samples for _FftProcessingThread (self.proc_thread).
 
         Python-only — Swift delivers audio via an AVAudioInputNode installTap block
         that feeds ``processAudioBuffer(_:)`` on ``audioProcessingQueue``.
