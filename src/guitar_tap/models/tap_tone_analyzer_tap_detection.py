@@ -396,8 +396,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         Mirrors Swift handlePlateTapDetection(magnitudes:frequencies:time:).
         Switches over materialTapPhase directly (mirroring Swift's
-        `let phase = materialTapPhase` switch) and delegates to
-        plate_capture.on_tap() for active capture phases.
+        `let phase = materialTapPhase` switch) and calls start_gated_capture()
+        to trigger raw-PCM gated FFT capture for active capture phases.
 
         is_detecting is already False (set by _handle_tap_detection caller).
         """
@@ -417,12 +417,11 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             _MTP.CAPTURING_FLC,
             _MTP.WAITING_FOR_FLC_TAP,
         ):
-            TAP_DEBUG("handlePlateTapDetection", f"Starting capture for phase={phase}")
-            # Pass both linear (for HPS) and dB (for snapshot persistence) spectra.
-            # This mirrors Swift startGatedCapture(phase:) which captures a fresh
-            # short-window FFT; Python uses the continuous FFT frames instead.
-            if self.plate_capture is not None:
-                self.plate_capture.on_tap(self._current_mag_y, mag_y_db)
+            TAP_DEBUG("handlePlateTapDetection", f"Starting gated capture for phase={phase}")
+            # Mirrors Swift startGatedCapture(phase:): seeds the pre-roll PCM buffer
+            # into the gated accumulator and collects raw samples until the window fills,
+            # then calls finishGatedFFTCapture via the gatedCaptureComplete signal.
+            self.start_gated_capture(phase)
         else:
             TAP_DEBUG("handlePlateTapDetection",
                 f"UNEXPECTED TAP | phase={phase} — tap ignored"

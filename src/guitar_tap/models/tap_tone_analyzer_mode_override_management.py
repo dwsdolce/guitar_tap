@@ -81,13 +81,14 @@ class TapToneAnalyzerModeOverrideManagementMixin:
     # ------------------------------------------------------------------ #
 
     def start_plate_analysis(self) -> None:
-        """Arm the plate capture state machine for the next tap(s)."""
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-        self.plate_capture.start(
-            is_brace=self._measurement_type.is_brace,
-            measure_flc=_tds.measure_flc(),
-        )
+        """Start a new plate/brace tap sequence via the gated-FFT pipeline.
+
+        The gated pipeline arms itself via start_tap_sequence(), which transitions
+        material_tap_phase to CAPTURING_LONGITUDINAL automatically.
+        Mirrors Swift's equivalent call that triggers the first capture phase.
+        """
+        self.start_tap_sequence()
 
     def reset_plate_analysis(self) -> None:
-        """Abort plate capture and return to idle."""
-        self.plate_capture.reset()
+        """Abort the current plate/brace tap sequence and return to idle."""
+        self.cancel_tap_sequence()

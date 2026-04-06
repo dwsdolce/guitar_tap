@@ -400,10 +400,6 @@ class TapToneAnalyzerControlMixin:
 
         Mirrors Swift private func resetMaterialPhaseState(to phase: MaterialTapPhase).
         """
-        from models.material_tap_phase import MaterialTapPhase as _MTP
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
-
         self.material_tap_phase = to
 
         # Clear all per-phase spectra and peak selections.
@@ -423,15 +419,10 @@ class TapToneAnalyzerControlMixin:
         self.user_selected_cross_peak_id = None
         self.user_selected_flc_peak_id = None
 
-        # Reset the plate_capture state machine to match the new phase.
-        # CAPTURING_LONGITUDINAL → plate_capture.start(); NOT_STARTED → plate_capture.reset().
-        meas_type = _tds.measurement_type()
-        if to == _MTP.CAPTURING_LONGITUDINAL:
-            is_brace = (meas_type == _MT.BRACE)
-            measure_flc = (not is_brace) and _tds.measure_flc()
-            self.plate_capture.start(is_brace=is_brace, measure_flc=measure_flc)
-        else:
-            self.plate_capture.reset()
+        # Cancel any in-flight gated capture when resetting phase state.
+        # Mirrors Swift which simply clears gatedCaptureActive in resetMaterialPhaseState.
+        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+            self.mic.proc_thread.cancel_gated_capture()
 
     def _reset_decay_tracking(self) -> None:
         """Stop any active decay tracking and clear the associated timer.

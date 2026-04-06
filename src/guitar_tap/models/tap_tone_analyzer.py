@@ -10,7 +10,7 @@ This Python package mirrors that structure using separate modules:
   tap_tone_analyzer_tap_detection.py       → TapToneAnalyzerTapDetectionHandlerMixin
       mirrors Swift TapToneAnalyzer+TapDetection.swift
 
-  tap_tone_analyzer_spectrum_capture.py    → PlateCapture
+  tap_tone_analyzer_spectrum_capture.py    → TapToneAnalyzerSpectrumCaptureMixin
       mirrors Swift TapToneAnalyzer+SpectrumCapture.swift
 
   tap_tone_analyzer_control.py             → TapToneAnalyzerControlMixin
@@ -42,13 +42,10 @@ This Python package mirrors that structure using separate modules:
 This file (tap_tone_analyzer.py) contains:
   - The TapToneAnalyzer class declaration, stored properties, and __init__
     (mirrors the top of Swift TapToneAnalyzer.swift)
-  - Re-export of PlateCapture and AnalysisDisplayMode for import convenience.
+  - Re-export of AnalysisDisplayMode for import convenience.
 """
 
 from __future__ import annotations
-
-# ── Re-exports ────────────────────────────────────────────────────────────────
-from .tap_tone_analyzer_spectrum_capture import PlateCapture
 
 # ── TapToneAnalyzer mixin imports ─────────────────────────────────────────────
 
@@ -60,6 +57,7 @@ from .tap_tone_analyzer_decay_tracking import TapToneAnalyzerDecayTrackingMixin
 from .tap_tone_analyzer_annotation_management import TapToneAnalyzerAnnotationManagementMixin
 from .tap_tone_analyzer_measurement_management import TapToneAnalyzerMeasurementManagementMixin
 from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverrideManagementMixin
+from .tap_tone_analyzer_spectrum_capture import TapToneAnalyzerSpectrumCaptureMixin
 
 # ── AnalysisDisplayMode ───────────────────────────────────────────────────────
 # Mirrors Swift AnalysisDisplayMode enum defined in TapToneAnalyzer.swift.
@@ -103,6 +101,7 @@ class TapToneAnalyzer(
     TapToneAnalyzerAnnotationManagementMixin,
     TapToneAnalyzerMeasurementManagementMixin,
     TapToneAnalyzerModeOverrideManagementMixin,
+    TapToneAnalyzerSpectrumCaptureMixin,
     ObservableObject,
     QtCore.QObject,
 ):
@@ -310,9 +309,6 @@ class TapToneAnalyzer(
         # ── Measurement type ──────────────────────────────────────────────
         self._measurement_type = _mt_mod.MeasurementType.CLASSICAL
 
-        # ── Plate/brace capture ───────────────────────────────────────────
-        # Populated by start(); None-safe until then.
-        self.plate_capture = None
         self._current_mag_y = np.array([])
 
         # ── Per-phase material spectra ────────────────────────────────────
@@ -416,14 +412,11 @@ class TapToneAnalyzer(
         # ── Guitar/mode classification ────────────────────────────────────
         self._guitar_type = guitar_type
 
-        # ── Plate/brace capture ───────────────────────────────────────────
-        self.plate_capture = PlateCapture(
-            sample_freq=fft_params.sample_freq,
-            n_f=fft_params.n_f,
-            parent=self,
-        )
-        self.plate_capture.stateChanged.connect(self.plateStatusChanged)
-        self.plate_capture.analysisComplete.connect(self.plateAnalysisComplete)
+        # ── Gated-FFT capture signal ───────────────────────────────────────
+        # Wire the processing thread's gatedCaptureComplete signal to the
+        # finishGatedFFTCapture handler (from TapToneAnalyzerSpectrumCaptureMixin).
+        # Mirrors Swift's Combine sink on fftAnalyzer.gatedCaptureComplete.
+        self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
 
         # ── Saved measurements (view-layer import deferred until here) ────
         from views.tap_analysis_results_view import load_all_measurements as _load
@@ -528,6 +521,7 @@ class TapToneAnalyzer(
         from .realtime_fft_analyzer import _FftProcessingThread as _FPT
         self.mic.proc_thread = _FPT(mic=self.mic, parent=self)
         self.mic.proc_thread.set_calibration(self._calibration_corrections)
-        # Reconnect the analyzer-owned frame signal on the new thread.
+        # Reconnect the analyzer-owned signals on the new thread.
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
+        self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
         return self.mic.proc_thread

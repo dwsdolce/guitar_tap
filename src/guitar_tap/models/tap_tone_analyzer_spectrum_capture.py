@@ -1,224 +1,791 @@
 """
-PlateCapture — plate/brace fundamental-frequency capture via HPS.
+TapToneAnalyzer+SpectrumCapture — gated-FFT capture pipeline for plate/brace
+measurements, dominant-peak selection, and spectrum averaging.
 
 Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
 
-State machine for plate / brace material tap analysis.
+## Gated FFT Architecture
 
-Brace (1 tap):
-    IDLE → WAITING_L → COMPLETE
-    analysisComplete emits (f_long, 0.0, 0.0)
+The continuous FFT operates on a fixed long window (~400 ms at gatedCaptureDuration).
+For guitar measurements this is fine because the tap-detection threshold ensures we
+see the ring-out.  For plate and brace measurements the ring-out is much shorter and
+the transient tap energy is spread across the full window, reducing the apparent peak
+magnitude by up to ~15 dB.
 
-Plate without FLC (2 taps):
-    IDLE → WAITING_L → WAITING_C → COMPLETE
-    analysisComplete emits (f_long, f_cross, 0.0)
+The gated approach captures *raw PCM samples* starting just before the tap onset
+(via the pre-roll buffer) and running until the window fills:
 
-Plate with FLC (3 taps):
-    IDLE → WAITING_L → WAITING_C → WAITING_FLC → COMPLETE
-    analysisComplete emits (f_long, f_cross, f_flc)
+    ┌────────────────────────────────────┐
+    │  200 ms pre-roll  │  400 ms gate   │
+    │  (ring buffer)    │  (new samples) │
+    └────────────────────────────────────┘
+                  ↑ tap onset
 
-The caller feeds each detected tap's linear magnitude spectrum via on_tap().
-HPS is used to extract the dominant fundamental frequency from each tap.
-The dB magnitude spectrum for each phase is stored for snapshot persistence.
+## Dominant Peak Selection — HPS + Q filter
+
+findDominantPeak uses a two-stage strategy:
+1. Q filtering: candidates with Q < 3 are rejected as impact thuds.
+2. Magnitude + HPS tie-breaking or lowest-significant selection for plate phases.
+
+## Spectrum Averaging
+
+Multiple taps are averaged in the linear power domain before peak detection.
+
+Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
 """
 
 from __future__ import annotations
 
-from enum import Enum, auto
-
-import numpy.typing as npt
-from PySide6 import QtCore
-
-from . import realtime_fft_analyzer as _rfa
+import threading
 
 
-class PlateCapture(QtCore.QObject):
-    """Plate / brace fundamental-frequency capture via HPS.
+class TapToneAnalyzerSpectrumCaptureMixin:
+    """Gated-FFT capture pipeline and spectrum averaging for TapToneAnalyzer.
 
     Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
+
+    Stored state (initialised in TapToneAnalyzer.__init__):
+        self.material_tap_phase: MaterialTapPhase
+        self.longitudinal_spectrum: tuple | None
+        self.cross_spectrum: tuple | None
+        self.flc_spectrum: tuple | None
+        self.longitudinal_peaks: list[ResonantPeak]
+        self.cross_peaks: list[ResonantPeak]
+        self.flc_peaks: list[ResonantPeak]
+        self.auto_selected_longitudinal_peak_id: str | None
+        self.auto_selected_cross_peak_id: str | None
+        self.auto_selected_flc_peak_id: str | None
+        self.selected_longitudinal_peak: ResonantPeak | None
+        self.selected_cross_peak: ResonantPeak | None
+        self.selected_flc_peak: ResonantPeak | None
+        self.captured_taps: list[tuple]
     """
 
-    stateChanged:     QtCore.Signal = QtCore.Signal(str)
-    fLCaptured:       QtCore.Signal = QtCore.Signal(float)       # Hz
-    fCCaptured:       QtCore.Signal = QtCore.Signal(float)       # Hz
-    fFLCCaptured:     QtCore.Signal = QtCore.Signal(float)       # Hz
-    analysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)  # fL, fC, fFLC
+    # Gated capture window duration in seconds.
+    # Mirrors Swift TapToneAnalyzer.gatedCaptureDuration.
+    GATED_CAPTURE_DURATION: float = 0.4  # 400 ms
 
-    class State(Enum):
-        IDLE        = auto()
-        WAITING_L   = auto()
-        WAITING_C   = auto()
-        WAITING_FLC = auto()
-        COMPLETE    = auto()
+    # ------------------------------------------------------------------ #
+    # start_gated_capture
+    # Mirrors Swift TapToneAnalyzer.startGatedCapture(phase:)
+    # ------------------------------------------------------------------ #
 
-    def __init__(
-        self,
-        sample_freq: int = 48000,
-        n_f: int = 65536,
-        f_min: float = 50.0,
-        f_max: float = 2000.0,
-        parent: QtCore.QObject | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._sample_freq = sample_freq
-        self._n_f = n_f
-        self._f_min = f_min
-        self._f_max = f_max
-        self._state = self.State.IDLE
-        self._is_brace: bool = False
-        self._measure_flc: bool = False
-        self._f_long: float = 0.0
-        self._f_cross: float = 0.0
-        self._f_flc: float = 0.0
-        self._long_mag_db:  npt.NDArray | None = None
-        self._cross_mag_db: npt.NDArray | None = None
-        self._flc_mag_db:   npt.NDArray | None = None
+    def start_gated_capture(self, phase) -> None:
+        """Open a raw-PCM capture window for the current plate/brace phase.
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
+        Seeds the gated accumulator with the pre-roll contents so the tap attack
+        transient (which arrived before this call) is included in the captured window.
+        Starts a 2-second safety timeout that flushes or prompts a re-tap.
 
-    def start(self, is_brace: bool = False, measure_flc: bool = False) -> None:
-        """Begin longitudinal tap capture.
+        Mirrors Swift TapToneAnalyzer.startGatedCapture(phase:).
 
         Args:
-            is_brace:    True for brace (1 tap: longitudinal only).
-                         False for plate (2 or 3 taps).
-            measure_flc: True to add the FLC diagonal-tap phase (plate only).
+            phase: MaterialTapPhase being captured.
         """
-        self._is_brace    = is_brace
-        self._measure_flc = measure_flc and not is_brace
-        self._f_long  = 0.0
-        self._f_cross = 0.0
-        self._f_flc   = 0.0
-        self._long_mag_db  = None
-        self._cross_mag_db = None
-        self._flc_mag_db   = None
-        self._state = self.State.WAITING_L
-        self.stateChanged.emit("Tap long-grain (L) direction…")
-
-    def reset(self) -> None:
-        """Return to idle and clear captured values."""
-        self._state = self.State.IDLE
-        self._f_long  = 0.0
-        self._f_cross = 0.0
-        self._f_flc   = 0.0
-        self._long_mag_db  = None
-        self._cross_mag_db = None
-        self._flc_mag_db   = None
-        self.stateChanged.emit("")
-
-    def on_tap(
-        self,
-        mag_linear: npt.NDArray,
-        mag_db: npt.NDArray | None = None,
-    ) -> None:
-        """Call this when the tap detector fires.
-
-        Args:
-            mag_linear: Linear-scale FFT magnitude spectrum (for HPS).
-            mag_db:     dB-scale FFT magnitude spectrum (stored per-phase for
-                        snapshot persistence).  May be None if unavailable.
-        """
-        if self._state not in (
-            self.State.WAITING_L,
-            self.State.WAITING_C,
-            self.State.WAITING_FLC,
-        ):
-            return
-
-        freq = _rfa.hps_peak_freq(
-            mag_linear,
-            self._sample_freq,
-            self._n_f,
-            f_min=self._f_min,
-            f_max=self._f_max,
-        )
-        if freq <= 0:
-            return
-
-        if self._state == self.State.WAITING_L:
-            self._f_long       = freq
-            self._long_mag_db  = mag_db.copy() if mag_db is not None else None
-            self.fLCaptured.emit(freq)
-            if self._is_brace:
-                self._state = self.State.COMPLETE
-                self.stateChanged.emit(f"L: {freq:.1f} Hz — complete")
-                self.analysisComplete.emit(self._f_long, 0.0, 0.0)
-            else:
-                self._state = self.State.WAITING_C
-                self.stateChanged.emit(
-                    f"L: {freq:.1f} Hz — rotate 90°, then tap cross-grain (C) direction…"
-                )
-
-        elif self._state == self.State.WAITING_C:
-            self._f_cross      = freq
-            self._cross_mag_db = mag_db.copy() if mag_db is not None else None
-            self.fCCaptured.emit(freq)
-            if self._measure_flc:
-                self._state = self.State.WAITING_FLC
-                self.stateChanged.emit(
-                    f"L: {self._f_long:.1f} Hz  C: {freq:.1f} Hz"
-                    " — now tap FLC (diagonal) direction…"
-                )
-            else:
-                self._state = self.State.COMPLETE
-                self.stateChanged.emit(
-                    f"L: {self._f_long:.1f} Hz  C: {freq:.1f} Hz — complete"
-                )
-                self.analysisComplete.emit(self._f_long, self._f_cross, 0.0)
-
-        else:  # WAITING_FLC
-            self._f_flc      = freq
-            self._flc_mag_db = mag_db.copy() if mag_db is not None else None
-            self.fFLCCaptured.emit(freq)
-            self._state = self.State.COMPLETE
-            self.stateChanged.emit(
-                f"L: {self._f_long:.1f} Hz  C: {self._f_cross:.1f} Hz"
-                f"  FLC: {freq:.1f} Hz — complete"
+        # Delegate to the processing thread (which owns the pre-roll buffer and
+        # the raw PCM accumulator).
+        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+            self.mic.proc_thread.start_gated_capture(
+                phase, duration_seconds=self.GATED_CAPTURE_DURATION
             )
-            self.analysisComplete.emit(self._f_long, self._f_cross, self._f_flc)
+        else:
+            print("⚠️ start_gated_capture called with no mic — ignoring")
+            return
 
-    # ------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------
+        # Safety timeout: if the buffer still has audio after 2 s, flush it;
+        # if empty, ask the user to tap again.
+        # Mirrors Swift DispatchQueue.main.asyncAfter(deadline: .now() + 2.0).
+        def _safety_timeout() -> None:
+            if self.mic is None or not hasattr(self.mic, "proc_thread"):
+                return
+            partial = self.mic.proc_thread.cancel_gated_capture()
+            import numpy as np
+            if partial:
+                self.finish_gated_fft_capture(
+                    samples=np.array(partial, dtype=np.float32),
+                    sample_rate=float(self.mic.proc_thread._gated_sample_rate),
+                    phase=phase,
+                )
+            else:
+                print("⚠️ Gated capture timeout with no samples — tap again")
+                self.status_message = "No signal detected — tap again"
+                self.re_enable_detection_for_next_plate_tap()
 
-    @property
-    def state(self) -> State:
-        return self._state
+        t = threading.Timer(2.0, _safety_timeout)
+        t.daemon = True
+        t.start()
 
-    @property
-    def is_active(self) -> bool:
-        """True while waiting for any tap phase."""
-        return self._state in (
-            self.State.WAITING_L,
-            self.State.WAITING_C,
-            self.State.WAITING_FLC,
+    # ------------------------------------------------------------------ #
+    # finish_gated_fft_capture
+    # Mirrors Swift TapToneAnalyzer.finishGatedFFTCapture(samples:sampleRate:phase:)
+    # ------------------------------------------------------------------ #
+
+    def finish_gated_fft_capture(self, samples, sample_rate: float, phase) -> None:
+        """Process a captured PCM window and route to the appropriate phase handler.
+
+        Runs computeGatedFFT to produce a magnitude spectrum, then calls
+        findDominantPeak to identify the strongest material resonance.
+
+        Rejects the capture and requests a re-tap if:
+          - The FFT returns an empty spectrum.
+          - No peak is found in the search window.
+          - The dominant peak is below tapDetectionThreshold.
+
+        Mirrors Swift TapToneAnalyzer.finishGatedFFTCapture(samples:sampleRate:phase:).
+
+        Args:
+            samples:     Captured PCM samples (pre-roll + gate window), float32.
+            sample_rate: Hardware sample rate in Hz.
+            phase:       MaterialTapPhase active at capture time.
+        """
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        from models.measurement_type import MeasurementType as _MT
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+
+        # Compute Hann-windowed gated FFT.
+        magnitudes, frequencies = self.mic.proc_thread.compute_gated_fft(samples, sample_rate)
+
+        if not magnitudes:
+            print("⚠️ Gated FFT returned empty spectrum — tap again")
+            self.status_message = "No signal detected — tap again"
+            self.re_enable_detection_for_next_plate_tap()
+            return
+
+        # Determine the frequency search window for this phase.
+        # Mirrors Swift finishGatedFFTCapture switch over mType / phase.
+        meas_type = _tds.measurement_type()
+        if meas_type == _MT.BRACE:
+            hps_min_hz = 100.0
+            hps_max_hz = 1200.0
+        elif meas_type == _MT.PLATE:
+            if phase == _MTP.CAPTURING_LONGITUDINAL:
+                hps_min_hz = 50.0
+                hps_max_hz = 500.0
+            elif phase in (_MTP.CAPTURING_CROSS, _MTP.WAITING_FOR_CROSS_TAP):
+                hps_min_hz = 20.0
+                hps_max_hz = 250.0
+            elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
+                hps_min_hz = 20.0
+                hps_max_hz = 200.0
+            else:
+                hps_min_hz = 20.0
+                hps_max_hz = 600.0
+        else:
+            hps_min_hz = 20.0
+            hps_max_hz = 2000.0
+
+        # For all three plate phases prefer the lowest significant peak.
+        # Mirrors Swift: let preferLowest = (mType == .plate || phase == .capturingLongitudinal …)
+        prefer_lowest = (
+            meas_type == _MT.PLATE
+            or phase == _MTP.CAPTURING_LONGITUDINAL
+            or phase == _MTP.CAPTURING_CROSS
         )
 
-    @property
-    def f_long(self) -> float:
-        return self._f_long
+        dominant_peak = self.find_dominant_peak(
+            magnitudes=magnitudes,
+            frequencies=frequencies,
+            min_hz=hps_min_hz,
+            max_hz=hps_max_hz,
+            prefer_lowest_significant=prefer_lowest,
+        )
 
-    @property
-    def f_cross(self) -> float:
-        return self._f_cross
+        if dominant_peak is None:
+            print("⚠️ Gated FFT: no peak found — tap again")
+            self.status_message = "No resonance detected — tap again"
+            self.re_enable_detection_for_next_plate_tap()
+            return
 
-    @property
-    def f_flc(self) -> float:
-        return self._f_flc
+        # Reject captures where the dominant peak is below the tap detection threshold.
+        if dominant_peak.magnitude < self.tap_detection_threshold:
+            print(
+                f"⚠️ Gated FFT: dominant peak {dominant_peak.frequency:.1f} Hz @ "
+                f"{dominant_peak.magnitude:.1f} dB is below tap detection threshold "
+                f"({self.tap_detection_threshold:.0f} dB) — tap again"
+            )
+            self.status_message = "Signal too quiet — tap harder"
+            self.re_enable_detection_for_next_plate_tap()
+            return
 
-    @property
-    def long_mag_db(self) -> npt.NDArray | None:
-        """dB spectrum captured during the longitudinal tap phase."""
-        return self._long_mag_db
+        print(
+            f"📊 Gated FFT complete: {len(magnitudes)} bins, "
+            f"dominant peak {dominant_peak.frequency:.1f} Hz @ "
+            f"{dominant_peak.magnitude:.1f} dB, phase {phase}"
+        )
 
-    @property
-    def cross_mag_db(self) -> npt.NDArray | None:
-        """dB spectrum captured during the cross-grain tap phase."""
-        return self._cross_mag_db
+        # Store spectrum and advance tap counter.
+        # Mirrors Swift: materialCapturedTaps.append(...); currentTapCount += 1; tapProgress = ...
+        import datetime as _dt
+        self.captured_taps.append((magnitudes, frequencies, _dt.datetime.now()))
+        self.current_tap_count = len(self.captured_taps)
+        total = self.total_plate_taps
+        self.tap_progress = min(1.0, float(self.current_tap_count) / max(total, 1))
 
-    @property
-    def flc_mag_db(self) -> npt.NDArray | None:
-        """dB spectrum captured during the FLC diagonal tap phase."""
-        return self._flc_mag_db
+        # Route to the phase-specific handler.
+        # Mirrors Swift switch phase { case .capturingLongitudinal: … }
+        if phase == _MTP.CAPTURING_LONGITUDINAL:
+            self._handle_longitudinal_gated_progress(magnitudes, frequencies, dominant_peak)
+        elif phase in (_MTP.CAPTURING_CROSS, _MTP.WAITING_FOR_CROSS_TAP):
+            self._handle_cross_gated_progress(magnitudes, frequencies, dominant_peak)
+        elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
+            self._handle_flc_gated_progress(magnitudes, frequencies, dominant_peak)
+        else:
+            print(f"⚠️ Unexpected gated FFT capture in phase: {phase}")
+
+    # ------------------------------------------------------------------ #
+    # find_dominant_peak
+    # Mirrors Swift TapToneAnalyzer.findDominantPeak(…)
+    # ------------------------------------------------------------------ #
+
+    def find_dominant_peak(
+        self,
+        magnitudes: "list[float]",
+        frequencies: "list[float]",
+        min_hz: float = 20.0,
+        max_hz: float = 2000.0,
+        prefer_lowest_significant: bool = False,
+    ) -> "object | None":
+        """Select the dominant resonance peak from a gated-FFT spectrum.
+
+        Two-stage algorithm:
+          Step 1 — Candidate collection: find all local maxima above the median
+                   noise floor.  Compute Q and HPS score for each.
+          Step 2 — Selection:
+                   - Filter candidates with Q < 3 (impact thuds / broadband noise).
+                   - If prefer_lowest_significant: pick the lowest-frequency candidate
+                     within 15 dB of the strongest.
+                   - Otherwise: strongest wins unless a lower-frequency candidate is
+                     within 6 dB and has a comparable HPS score (within one order of
+                     magnitude).
+
+        Mirrors Swift TapToneAnalyzer.findDominantPeak(magnitudes:frequencies:…).
+
+        Args:
+            magnitudes:                dBFS magnitude spectrum from the gated FFT.
+            frequencies:               Frequency axis matching magnitudes, in Hz.
+            min_hz:                    Lower search bound in Hz.
+            max_hz:                    Upper search bound in Hz.
+            prefer_lowest_significant: When True, pick the lowest-frequency candidate
+                                       within 15 dB of the peak.
+
+        Returns:
+            ResonantPeak or None if no candidates are found.
+        """
+        from models.resonant_peak import ResonantPeak
+
+        n = len(magnitudes)
+        if n != len(frequencies) or n <= 10:
+            return None
+
+        start_idx = next((i for i, f in enumerate(frequencies) if f >= min_hz), 0)
+        end_idx   = next((i for i, f in enumerate(frequencies) if f > max_hz), n)
+        if start_idx >= end_idx:
+            return None
+
+        window_size = 5  # mirrors Swift windowSize = 5
+
+        # Adaptive noise floor — median of the search range.
+        # Mirrors Swift: sortedMags[sortedMags.count / 2]
+        search_mags = magnitudes[start_idx:end_idx]
+        sorted_mags = sorted(search_mags)
+        noise_floor = sorted_mags[len(sorted_mags) // 2]
+
+        # Pre-compute linear amplitudes for HPS scoring.
+        # Mirrors Swift: let linear = magnitudes.map { pow(10.0, max($0, -160) / 20.0) }
+        linear = [10.0 ** (max(m, -160.0) / 20.0) for m in magnitudes]
+
+        candidates = []  # (index, magnitude, hps_score, q_factor)
+
+        scan_start = start_idx + window_size
+        scan_end   = end_idx   - window_size
+
+        for i in range(scan_start, scan_end):
+            mag = magnitudes[i]
+            if mag <= noise_floor:
+                continue
+
+            # Local maximum check — mirrors Swift ±windowSize loop.
+            is_local = True
+            for offset in range(-window_size, window_size + 1):
+                if offset == 0:
+                    continue
+                j = i + offset
+                if 0 <= j < n and magnitudes[j] >= mag:
+                    is_local = False
+                    break
+            if not is_local:
+                continue
+
+            # HPS score: linear[i] × linear[2i] × linear[3i] (order 3).
+            # Mirrors Swift: for k in 2...3 { harmIdx = i*k; hpsScore *= linear[harmIdx] }
+            hps_score = linear[i]
+            for k in (2, 3):
+                harm_idx = i * k
+                if harm_idx < n:
+                    hps_score *= linear[harm_idx]
+
+            # Q factor — key discriminant between resonances (high-Q) and impact thuds (low-Q).
+            q, _ = self._calculate_q_factor(magnitudes, frequencies, i, mag)
+
+            candidates.append((i, mag, hps_score, q))
+
+        if not candidates:
+            return None
+
+        # Q filtering — mirrors Swift: let highQCandidates = candidates.filter { $0.qFactor >= minQ }
+        min_q = 3.0
+        high_q = [c for c in candidates if c[3] >= min_q]
+        if len(high_q) < len(candidates):
+            rejected = [c for c in candidates if c[3] < min_q]
+            rej_str = ", ".join(
+                f"{frequencies[c[0]]:.0f} Hz (Q={c[3]:.1f})" for c in rejected
+            )
+            print(f"🔇 Q-filtered out low-Q peaks: {rej_str}")
+        pool = high_q if high_q else candidates
+
+        by_magnitude = sorted(pool, key=lambda c: c[1], reverse=True)
+        strongest = by_magnitude[0]
+
+        if prefer_lowest_significant:
+            # Mirrors Swift: thresholdDB = strongest.magnitude - 15; pick lowest-index significant.
+            threshold_db = strongest[1] - 15.0
+            significant = [c for c in pool if c[1] >= threshold_db]
+            best = min(significant, key=lambda c: c[0])
+        else:
+            # Default: strongest wins unless a lower-frequency candidate is within 6 dB
+            # and has a comparable HPS score (within one order of magnitude).
+            # Mirrors Swift: for candidate in byMagnitude.dropFirst() { … }
+            current = strongest
+            for candidate in by_magnitude[1:]:
+                if candidate[0] >= current[0]:
+                    continue  # not lower frequency
+                mag_diff = current[1] - candidate[1]
+                if mag_diff < 6.0 and candidate[2] >= current[2] * 0.1:
+                    current = candidate
+            best = current
+
+        best_idx, best_mag, best_hps, best_q = best
+
+        # Refine with parabolic interpolation — mirrors Swift parabolicInterpolate call.
+        freq, mag = self._parabolic_interpolate(magnitudes, frequencies, best_idx)
+        quality, bandwidth = self._calculate_q_factor(magnitudes, frequencies, best_idx, mag)
+
+        # Pitch info — mirrors Swift pitchCalculator calls in findDominantPeak.
+        pitch_note = None
+        pitch_cents = None
+        pitch_frequency = None
+        if hasattr(self, "pitch_calculator") and self.pitch_calculator is not None:
+            try:
+                pitch_note      = self.pitch_calculator.note(float(freq))
+                pitch_cents     = self.pitch_calculator.cents(float(freq))
+                pitch_frequency = self.pitch_calculator.freq0(float(freq))
+            except Exception:
+                pass
+
+        print(
+            f"🎯 Dominant peak: {freq:.1f} Hz @ {mag:.1f} dB "
+            f"(Q: {best_q:.1f}, HPS score: {best_hps:.3e})"
+        )
+        return ResonantPeak(
+            frequency=freq, magnitude=mag,
+            quality=quality, bandwidth=bandwidth,
+            pitch_note=pitch_note, pitch_cents=pitch_cents,
+            pitch_frequency=pitch_frequency,
+        )
+
+    # ------------------------------------------------------------------ #
+    # _handle_longitudinal_gated_progress
+    # Mirrors Swift handleLongitudinalGatedProgress(magnitudes:frequencies:dominantPeak:)
+    # ------------------------------------------------------------------ #
+
+    def _handle_longitudinal_gated_progress(self, magnitudes, frequencies, dominant_peak) -> None:
+        """Handle a longitudinal gated-FFT tap result.
+
+        Mirrors Swift TapToneAnalyzer.handleLongitudinalGatedProgress(…).
+        """
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        from models.measurement_type import MeasurementType as _MT
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        import time as _t
+
+        captured = len(self.captured_taps)
+        total = self.number_of_taps
+        print(f"📊 Gated LONGITUDINAL tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
+
+        if captured < total:
+            self.status_message = f"L tap {captured}/{total} captured. Tap again..."
+            self.re_enable_detection_for_next_plate_tap()
+            return
+
+        # Average all captured spectra — mirrors Swift averageSpectra(from: materialCapturedTaps).
+        avg_mags, avg_freqs = self._average_captured_taps()
+        self.longitudinal_spectrum = (avg_mags, avg_freqs)
+
+        # Build the full peak list for display/manual override.
+        self.longitudinal_peaks = self._build_all_peaks(avg_mags, avg_freqs, dominant_peak)
+        self.auto_selected_longitudinal_peak_id = dominant_peak.id
+        self.selected_longitudinal_peak = (
+            next((p for p in self.longitudinal_peaks if p.id == dominant_peak.id), dominant_peak)
+        )
+        print(f"🔵 Auto-selected longitudinal peak: {dominant_peak.frequency} Hz")
+
+        self.current_peaks = self.longitudinal_peaks
+        self.selected_peak_ids = {p.id for p in self.longitudinal_peaks}
+        self.captured_taps.clear()
+
+        # Update displayed spectrum — mirrors Swift setFrozenSpectrum (empty for plate transitions).
+        import numpy as _np
+        self.frozen_frequencies = _np.array(avg_freqs)
+        self.frozen_magnitudes  = _np.array(avg_mags)
+
+        is_brace = (_tds.measurement_type() == _MT.BRACE)
+        if is_brace:
+            # Brace: only longitudinal tap — measurement complete.
+            sel_peak = next(
+                (p for p in self.longitudinal_peaks if p.id == dominant_peak.id),
+                dominant_peak
+            )
+            self.current_peaks = [sel_peak]
+            self.frozen_frequencies = _np.array([])
+            self.frozen_magnitudes  = _np.array([])
+            self.material_tap_phase = _MTP.COMPLETE
+            self.is_measurement_complete = True
+            self.tap_progress = 1.0
+            self.status_message = "Complete - check Results"
+            print(f"✅ Brace measurement complete: fL={dominant_peak.frequency} Hz")
+            # Emit final peaks.
+            self._emit_peaks_array(self.current_peaks)
+            self.plateAnalysisComplete.emit(dominant_peak.frequency, 0.0, 0.0)
+        else:
+            # Plate: transition to cross-grain phase.
+            self.material_tap_phase = _MTP.WAITING_FOR_CROSS_TAP
+            self.status_message = (
+                f"fL: {dominant_peak.frequency:.1f} Hz — rotate 90° for C tap"
+            )
+
+            cooldown = self.tap_cooldown
+            def _start_cross() -> None:
+                if self.mic is not None:
+                    level = self.mic.proc_thread.recent_peak_level_db
+                else:
+                    level = self.tap_peak_level
+                falling = self.tap_detection_threshold - self.hysteresis_margin
+                self.is_above_threshold = level > falling
+                self.is_detecting = True
+                self.tap_detected = False
+                self.material_tap_phase = _MTP.CAPTURING_CROSS
+                self.frozen_frequencies = _np.array([])
+                self.frozen_magnitudes  = _np.array([])
+                self.analyzer_start_time = _t.monotonic()
+
+            import threading
+            threading.Timer(cooldown, _start_cross).start()
+
+        # Notify spectrum update.
+        self._emit_peaks_array(self.current_peaks)
+        self.spectrumUpdated.emit(
+            self.frozen_frequencies if len(self.frozen_frequencies) else self.freq,
+            self.frozen_magnitudes  if len(self.frozen_magnitudes)  else self.freq * 0,
+        )
+
+    # ------------------------------------------------------------------ #
+    # _handle_cross_gated_progress
+    # Mirrors Swift handleCrossGatedProgress(magnitudes:frequencies:dominantPeak:)
+    # ------------------------------------------------------------------ #
+
+    def _handle_cross_gated_progress(self, magnitudes, frequencies, dominant_peak) -> None:
+        """Handle a cross-grain gated-FFT tap result.
+
+        Mirrors Swift TapToneAnalyzer.handleCrossGatedProgress(…).
+        """
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        import time as _t
+        import numpy as _np
+
+        captured = len(self.captured_taps)
+        total = self.number_of_taps
+        print(f"📊 Gated CROSS-GRAIN tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
+
+        if captured < total:
+            self.status_message = f"C tap {captured}/{total} captured. Tap again..."
+            self.re_enable_detection_for_next_plate_tap()
+            return
+
+        avg_mags, avg_freqs = self._average_captured_taps()
+        self.cross_spectrum = (avg_mags, avg_freqs)
+        self.cross_peaks = self._build_all_peaks(avg_mags, avg_freqs, dominant_peak)
+        self.auto_selected_cross_peak_id = dominant_peak.id
+        self.selected_cross_peak = (
+            next((p for p in self.cross_peaks if p.id == dominant_peak.id), dominant_peak)
+        )
+        print(f"🟠 Auto-selected cross-grain peak: {dominant_peak.frequency} Hz")
+        self.captured_taps.clear()
+
+        if _tds.measure_flc():
+            self.current_peaks = self.combine_plate_peaks()
+            self.frozen_frequencies = _np.array([])
+            self.frozen_magnitudes  = _np.array([])
+            self.material_tap_phase = _MTP.WAITING_FOR_FLC_TAP
+            self.status_message = (
+                f"fC: {dominant_peak.frequency:.1f} Hz — set up for FLC tap"
+            )
+            cooldown = self.tap_cooldown
+            def _start_flc() -> None:
+                if self.mic is not None:
+                    level = self.mic.proc_thread.recent_peak_level_db
+                else:
+                    level = self.tap_peak_level
+                falling = self.tap_detection_threshold - self.hysteresis_margin
+                self.is_above_threshold = level > falling
+                self.is_detecting = True
+                self.tap_detected = False
+                self.material_tap_phase = _MTP.CAPTURING_FLC
+                self.frozen_frequencies = _np.array([])
+                self.frozen_magnitudes  = _np.array([])
+                self.analyzer_start_time = _t.monotonic()
+            import threading
+            threading.Timer(cooldown, _start_flc).start()
+        else:
+            sel = self._resolved_plate_peaks(cross_override=self.selected_cross_peak or dominant_peak)
+            self.current_peaks = sel
+            self.selected_peak_ids = {p.id for p in sel}
+            self.frozen_frequencies = _np.array([])
+            self.frozen_magnitudes  = _np.array([])
+            self.material_tap_phase = _MTP.COMPLETE
+            self.is_measurement_complete = True
+            self.tap_progress = 1.0
+            fl_str = (
+                f"{self.selected_longitudinal_peak.frequency:.1f}"
+                if self.selected_longitudinal_peak
+                else "?"
+            )
+            self.status_message = (
+                f"Complete — fL: {fl_str} Hz, fC: {dominant_peak.frequency:.1f} Hz"
+            )
+            print(f"✅ Plate complete: fL={fl_str} Hz, fC={dominant_peak.frequency} Hz")
+            self._emit_peaks_array(self.current_peaks)
+            fl = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
+            self.plateAnalysisComplete.emit(fl, dominant_peak.frequency, 0.0)
+
+        self._emit_peaks_array(self.current_peaks)
+
+    # ------------------------------------------------------------------ #
+    # _handle_flc_gated_progress
+    # Mirrors Swift handleFlcGatedProgress(magnitudes:frequencies:dominantPeak:)
+    # ------------------------------------------------------------------ #
+
+    def _handle_flc_gated_progress(self, magnitudes, frequencies, dominant_peak) -> None:
+        """Handle an FLC (shear/diagonal) gated-FFT tap result.
+
+        Mirrors Swift TapToneAnalyzer.handleFlcGatedProgress(…).
+        """
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        import numpy as _np
+
+        captured = len(self.captured_taps)
+        total = self.number_of_taps
+        print(f"📊 Gated FLC tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
+
+        if captured < total:
+            self.status_message = f"FLC tap {captured}/{total} captured. Tap again..."
+            self.re_enable_detection_for_next_plate_tap()
+            return
+
+        avg_mags, avg_freqs = self._average_captured_taps()
+        self.flc_spectrum = (avg_mags, avg_freqs)
+        self.flc_peaks = self._build_all_peaks(avg_mags, avg_freqs, dominant_peak)
+        self.auto_selected_flc_peak_id = dominant_peak.id
+        self.selected_flc_peak = (
+            next((p for p in self.flc_peaks if p.id == dominant_peak.id), dominant_peak)
+        )
+        print(f"🟣 Auto-selected FLC peak: {dominant_peak.frequency} Hz")
+        self.captured_taps.clear()
+
+        sel = self._resolved_plate_peaks(
+            include_cross=True,
+            include_flc=True,
+            flc_override=self.selected_flc_peak or dominant_peak,
+        )
+        self.current_peaks = sel
+        self.selected_peak_ids = {p.id for p in sel}
+        self.frozen_frequencies = _np.array([])
+        self.frozen_magnitudes  = _np.array([])
+        self.material_tap_phase = _MTP.COMPLETE
+        self.is_measurement_complete = True
+        self.tap_progress = 1.0
+        self.status_message = "Complete - check Results"
+
+        l_freq = self.longitudinal_peaks[0].frequency if self.longitudinal_peaks else 0
+        c_freq = self.cross_peaks[0].frequency if self.cross_peaks else 0
+        print(f"✅ Plate complete: L={l_freq} C={c_freq} FLC={dominant_peak.frequency} Hz")
+
+        self._emit_peaks_array(self.current_peaks)
+        self.plateAnalysisComplete.emit(l_freq, c_freq, dominant_peak.frequency)
+
+    # ------------------------------------------------------------------ #
+    # _resolved_plate_peaks
+    # Mirrors Swift private func resolvedPlatePeaks(…)
+    # ------------------------------------------------------------------ #
+
+    def _resolved_plate_peaks(
+        self,
+        include_cross: bool = True,
+        cross_override=None,
+        include_flc: bool = False,
+        flc_override=None,
+    ) -> "list":
+        """Build the ordered peak list from whichever phase peaks are available.
+
+        Mirrors Swift TapToneAnalyzer.resolvedPlatePeaks(…).
+        """
+        sel = []
+        if self.selected_longitudinal_peak:
+            sel.append(self.selected_longitudinal_peak)
+        elif self.longitudinal_peaks:
+            sel.append(self.longitudinal_peaks[0])
+
+        if include_cross:
+            cross = cross_override or self.selected_cross_peak or (self.cross_peaks[0] if self.cross_peaks else None)
+            if cross:
+                sel.append(cross)
+
+        if include_flc:
+            flc = flc_override or self.selected_flc_peak or (self.flc_peaks[0] if self.flc_peaks else None)
+            if flc:
+                sel.append(flc)
+
+        return sel
+
+    # ------------------------------------------------------------------ #
+    # _build_all_peaks
+    # Mirrors Swift func buildAllPeaks(magnitudes:frequencies:dominantPeak:)
+    # ------------------------------------------------------------------ #
+
+    def _build_all_peaks(self, magnitudes, frequencies, dominant_peak) -> "list":
+        """Build a display-ready peak list ensuring dominantPeak is always present.
+
+        Runs findPeaks with no range restrictions, then replaces or prepends
+        dominantPeak so its UUID identity is preserved for ID-based lookups.
+
+        Mirrors Swift TapToneAnalyzer.buildAllPeaks(magnitudes:frequencies:dominantPeak:).
+        """
+        peaks = self.find_peaks(magnitudes, frequencies)
+        prox = self.PEAK_PROXIMITY_HZ
+
+        idx = next(
+            (i for i, p in enumerate(peaks) if abs(p.frequency - dominant_peak.frequency) < prox),
+            None,
+        )
+        if idx is not None:
+            peaks[idx] = dominant_peak
+        else:
+            peaks.insert(0, dominant_peak)
+        return peaks
+
+    # ------------------------------------------------------------------ #
+    # _average_captured_taps
+    # Mirrors Swift func averageSpectra(from:) — used for multi-tap phases
+    # ------------------------------------------------------------------ #
+
+    def _average_captured_taps(self) -> "tuple[list[float], list[float]]":
+        """Average the captured_taps spectra in the linear power domain.
+
+        Each entry in captured_taps is a (magnitudes, frequencies, captureTime) tuple
+        as stored by finish_gated_fft_capture.
+
+        Mirrors Swift TapToneAnalyzer.averageSpectra(from:) for material taps.
+
+        Returns:
+            (avg_magnitudes, frequencies) — both as list[float].
+        """
+        import math
+
+        taps = self.captured_taps
+        if not taps:
+            return [], []
+        if len(taps) == 1:
+            return list(taps[0][0]), list(taps[0][1])
+
+        mags0, freqs0, _ = taps[0]
+        n_bins = len(mags0)
+        if not all(len(t[0]) == n_bins for t in taps):
+            print("⚠️ Spectrum lengths don't match, using first tap only")
+            return list(mags0), list(freqs0)
+
+        power_sum = [0.0] * n_bins
+        for mags, _, _ in taps:
+            for b in range(n_bins):
+                power_sum[b] += 10.0 ** (mags[b] / 10.0)
+
+        n_taps = len(taps)
+        avg = [10.0 * math.log10(max(power_sum[b] / n_taps, 1e-30)) for b in range(n_bins)]
+        print(f"📊 Averaged {n_taps} spectra: {n_bins} bins each")
+        return avg, list(freqs0)
+
+    # ------------------------------------------------------------------ #
+    # process_multiple_taps
+    # Mirrors Swift TapToneAnalyzer.processMultipleTaps()
+    # ------------------------------------------------------------------ #
+
+    def process_multiple_taps(self) -> None:
+        """Average all captured guitar taps and freeze the result.
+
+        Called after all required taps have been captured (currentTapCount >= numberOfTaps).
+        Mirrors Swift TapToneAnalyzer.processMultipleTaps().
+        """
+        import numpy as _np
+
+        if not self.captured_taps:
+            return
+
+        print(f"🔬 Processing {len(self.captured_taps)} taps for averaging...")
+
+        # captured_taps for guitar mode stores raw mag_y_db arrays (not tuples).
+        # Use the existing averaging path that works on plain arrays.
+        stacked = _np.stack(self.captured_taps)
+        avg_db = 10.0 * _np.log10(_np.mean(_np.power(10.0, stacked / 10.0), axis=0))
+
+        self.frozen_frequencies = self.freq
+        self.frozen_magnitudes  = avg_db
+        self.is_measurement_complete = True
+        print(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
+
+        peaks = self.find_peaks(list(avg_db), list(self.freq))
+        self.current_peaks = peaks
+        self.loaded_measurement_peaks = None
+        self.selected_peak_ids = set()
+
+        self.status_message = (
+            f"Analysis complete! {len(peaks)} peaks identified "
+            f"(from {len(self.captured_taps)} averaged taps)."
+        )
+        self.tap_progress = 1.0
+        print(f"✅ Found {len(peaks)} peaks in averaged spectrum from {len(self.captured_taps)} taps")
+
+        self.captured_taps.clear()
+        self.tapDetectedSignal.emit()
+
+    # ------------------------------------------------------------------ #
+    # _emit_peaks_array — helper (no Swift equivalent)
+    # ------------------------------------------------------------------ #
+
+    def _emit_peaks_array(self, peaks: "list") -> None:
+        """Build the (N, 3) ndarray and emit peaksChanged.
+
+        Called after gated-FFT phase handlers update current_peaks, so the
+        spectrum view can annotate the live display.
+
+        This mirrors the store+emit block at the end of find_peaks but for
+        the gated path which bypasses find_peaks for current_peaks assignment.
+        """
+        import numpy as _np
+        if peaks:
+            arr = _np.array(
+                [[p.frequency, p.magnitude, p.quality] for p in peaks],
+                dtype=_np.float64,
+            )
+        else:
+            arr = _np.zeros((0, 3), dtype=_np.float64)
+        self.current_peaks = peaks
+        self.peaksChanged.emit(arr)

@@ -135,6 +135,11 @@ class _FftProcessingThread(QtCore.QThread):
     # Mirrors Swift RealtimeFFTAnalyzer @Published inputLevelDB.
     rmsLevelChanged: QtCore.Signal = QtCore.Signal(int)
 
+    # Emitted when a gated capture window fills: (samples: ndarray, sample_rate: float, phase: object).
+    # Delivered to the main thread via Qt queued connection.
+    # Mirrors Swift's DispatchQueue.main.async { finishGatedFFTCapture(samples:sampleRate:phase:) }.
+    gatedCaptureComplete: QtCore.Signal = QtCore.Signal(object, float, object)
+
     # MARK: - Initialization
 
     def __init__(
@@ -179,6 +184,27 @@ class _FftProcessingThread(QtCore.QThread):
         self._recent_peak_window: float = 0.5      # rolling window in seconds
         self._recent_peak_history: list = []       # [(timestamp, level_db), ...]
 
+        # MARK: - Gated FFT Capture (mirrors Swift accumulateGatedSamples / preRollBuffer)
+
+        # Pre-roll ring buffer: holds the most recent preRollSamples worth of raw PCM
+        # so the tap attack transient (which arrives before the detection event) is
+        # included in the gated capture window.
+        # Mirrors Swift TapToneAnalyzer.preRollBuffer and preRollSamples.
+        self._gated_lock = threading.Lock()
+        self._pre_roll_seconds: float = 0.2        # 200 ms pre-roll — mirrors Swift
+        self._pre_roll_samples: int = int(mic.rate * self._pre_roll_seconds)
+        self._pre_roll_buf: list = []              # raw PCM samples (float32)
+
+        # Gated capture accumulator: filled from tap-onset until gatedCaptureSamples.
+        # Mirrors Swift TapToneAnalyzer.gatedAccumBuffer / gatedCaptureActive.
+        self._gated_capture_active: bool = False
+        self._gated_capture_samples: int = 0      # target window size in samples
+        self._gated_capture_phase: object = None  # MaterialTapPhase at capture start
+        self._gated_accum: list = []              # accumulated raw PCM samples
+        self._gated_sample_rate: float = float(mic.rate)
+
+        # (gatedCaptureComplete is declared as a class-level Qt Signal above)
+
     # MARK: - QThread.run() — the processing loop
 
     def run(self) -> None:
@@ -204,14 +230,40 @@ class _FftProcessingThread(QtCore.QThread):
 
             enter_now = time.time()
             n = len(chunk)
+            chunk_f32 = chunk[:n].astype(np.float32)
 
             # Update ring buffer — shift old samples out, append new samples.
             # Mirrors Swift inputBuffer accumulation in processAudioBuffer(_:).
             self._audio_ring = np.concatenate(
-                [self._audio_ring[n:], chunk[:n].astype(np.float32)]
+                [self._audio_ring[n:], chunk_f32]
             )
             self._ring_fill = min(self._ring_fill + n, self._mic.m_t)
             self._samples_since_last_fft += n
+
+            # Maintain the pre-roll ring buffer (mirrors Swift preRollBuffer maintenance
+            # in accumulateGatedSamples — always updated, even when not capturing).
+            # Gated capture accumulation also happens here when active.
+            with self._gated_lock:
+                self._pre_roll_buf.extend(chunk_f32.tolist())
+                if len(self._pre_roll_buf) > self._pre_roll_samples:
+                    self._pre_roll_buf = self._pre_roll_buf[-self._pre_roll_samples:]
+
+                if self._gated_capture_active:
+                    self._gated_accum.extend(chunk_f32.tolist())
+                    if len(self._gated_accum) >= self._gated_capture_samples:
+                        # Window is full — close capture and dispatch to main thread.
+                        # Mirrors Swift: gatedCaptureActive = false; DispatchQueue.main.async
+                        self._gated_capture_active = False
+                        captured = self._gated_accum[:self._gated_capture_samples]
+                        phase = self._gated_capture_phase
+                        sample_rate = self._gated_sample_rate
+                        self._gated_accum = []
+                        # Emit on background thread; Qt queued connection delivers on main thread.
+                        self.gatedCaptureComplete.emit(
+                            np.array(captured, dtype=np.float32),
+                            sample_rate,
+                            phase,
+                        )
 
             # Per-chunk RMS level — used for plate/brace tap detection and decay.
             # Mirrors Swift RealtimeFFTAnalyzer inputLevelDB computation.
@@ -274,11 +326,116 @@ class _FftProcessingThread(QtCore.QThread):
         with self._recent_peak_lock:
             self._recent_peak_db = -100.0
             self._recent_peak_history = []
+        with self._gated_lock:
+            self._pre_roll_buf = []
+            self._gated_capture_active = False
+            self._gated_accum = []
 
     def set_calibration(self, arr: npt.NDArray | None) -> None:
         """Update the per-bin dB calibration correction array."""
         with self._settings_lock:
             self._calibration = arr
+
+    # MARK: - Gated FFT Capture API (mirrors Swift startGatedCapture / accumulateGatedSamples)
+
+    def start_gated_capture(self, phase: object, duration_seconds: float = 0.4) -> None:
+        """Seed the gated buffer from the pre-roll and begin accumulating samples.
+
+        Safe to call from the main thread while run() is executing on the
+        background thread; access is protected by _gated_lock.
+
+        Mirrors Swift TapToneAnalyzer.startGatedCapture(phase:):
+          - Seeds gatedAccumBuffer with preRollBuffer contents.
+          - Sets gatedCaptureActive = true.
+          - Stores gatedCapturePhase so finishGatedFFTCapture routes correctly.
+
+        The gated window is:
+          pre-roll (200 ms)  +  new samples until total >= gatedCaptureSamples
+
+        When the window fills, run() emits gatedCaptureComplete(samples, rate, phase)
+        which is delivered to the main thread via a Qt queued connection.
+
+        Args:
+            phase:            MaterialTapPhase being captured.
+            duration_seconds: Gate window duration in seconds (default 0.4 s = 400 ms,
+                              mirrors Swift gatedCaptureDuration constant).
+        """
+        rate = self._gated_sample_rate
+        target_samples = int(rate * duration_seconds)
+        window_ms = int(duration_seconds * 1000)
+        print(
+            f"🎯 Gated FFT capture started for phase {phase} — "
+            f"{target_samples}-sample window ({window_ms} ms at {int(rate)} Hz)"
+        )
+        with self._gated_lock:
+            # Seed accumulator with pre-roll (mirrors Swift: gatedAccumBuffer = preRollBuffer).
+            self._gated_accum = list(self._pre_roll_buf)
+            self._gated_capture_samples = target_samples
+            self._gated_capture_phase = phase
+            self._gated_capture_active = True
+
+    def cancel_gated_capture(self) -> None:
+        """Cancel any in-progress gated capture without emitting a result.
+
+        Safe to call from the main thread.  Used by the safety-timeout path
+        (mirrors Swift's 2-second timeout that calls reEnableDetectionForNextPlateTap
+        when the accumulator is empty).
+        """
+        with self._gated_lock:
+            partial = list(self._gated_accum)
+            self._gated_capture_active = False
+            self._gated_accum = []
+        return partial  # caller decides whether to flush or discard
+
+    def compute_gated_fft(
+        self,
+        samples: "npt.NDArray[np.float32]",
+        sample_rate: float,
+    ) -> "tuple[list[float], list[float]]":
+        """Compute a Hann-windowed FFT from a gated PCM capture.
+
+        Mirrors Swift RealtimeFFTAnalyzer.computeGatedFFT(samples:sampleRate:):
+        - Zero-pads to the next power-of-two, capped at 32768 samples.
+        - Applies a Hann window (suppresses sidelobes by ~31 dB vs rectangular).
+        - Returns the one-sided magnitude spectrum (dBFS) and frequency axis (Hz).
+
+        Args:
+            samples:     Raw PCM samples (mono, normalised to ±1.0, float32).
+            sample_rate: Hardware sample rate in Hz.
+
+        Returns:
+            (magnitudes_db, frequencies) — both as list[float].
+            Returns ([], []) if samples is empty.
+        """
+        from scipy.signal import get_window as _get_window
+
+        n = len(samples)
+        if n == 0:
+            return [], []
+
+        # Zero-pad to the next power-of-two, capped at 32768.
+        # Mirrors Swift nextPowerOfTwo(_:) with max cap.
+        MAX_FFT = 32768
+        fft_size = 1
+        while fft_size < n:
+            fft_size <<= 1
+        fft_size = min(fft_size, MAX_FFT)
+
+        # Truncate if capture is longer than fft_size.
+        chunk = samples[:fft_size].astype(np.float32)
+        if len(chunk) < fft_size:
+            chunk = np.concatenate([chunk, np.zeros(fft_size - len(chunk), dtype=np.float32)])
+
+        # Hann window — sidelobe suppression for accurate Q readings.
+        window = _get_window("hann", fft_size).astype(np.float64)
+
+        mag_db, _ = dft_anal(chunk, window, fft_size)
+
+        # Build the one-sided frequency axis.
+        half_n = fft_size // 2 + 1
+        freqs = [float(i) * sample_rate / fft_size for i in range(half_n)]
+
+        return list(mag_db), freqs
 
     @property
     def recent_peak_level_db(self) -> float:

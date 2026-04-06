@@ -111,6 +111,62 @@ class _ZoomPanPopup(QtWidgets.QFrame):
         self.show()
 
 
+class _PlateCaptureAdapter:
+    """Compatibility adapter exposing the old PlateCapture API over the
+    new gated-FFT pipeline (material_tap_phase + per-phase spectra).
+
+    Used by tap_tone_analysis_view._update_plate_phase_ui and the save
+    snapshot code which still read plate_capture.state / long_mag_db etc.
+    """
+
+    from enum import Enum as _Enum
+
+    class State(_Enum):
+        IDLE         = "idle"
+        WAITING_L    = "waiting_l"
+        WAITING_C    = "waiting_c"
+        WAITING_FLC  = "waiting_flc"
+        COMPLETE     = "complete"
+
+    def __init__(self, analyzer):
+        self._analyzer = analyzer
+
+    @property
+    def state(self) -> "State":
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        phase = self._analyzer.material_tap_phase
+        if phase == _MTP.COMPLETE:
+            return self.State.COMPLETE
+        if phase in (_MTP.CAPTURING_CROSS, _MTP.WAITING_FOR_CROSS_TAP):
+            return self.State.WAITING_C
+        if phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
+            return self.State.WAITING_FLC
+        if phase == _MTP.CAPTURING_LONGITUDINAL:
+            return self.State.WAITING_L
+        return self.State.IDLE  # NOT_STARTED
+
+    @property
+    def long_mag_db(self):
+        """Return longitudinal spectrum magnitudes as ndarray, or None."""
+        import numpy as _np
+        spec = self._analyzer.longitudinal_spectrum
+        return _np.array(spec[0]) if spec else None
+
+    @property
+    def cross_mag_db(self):
+        """Return cross-grain spectrum magnitudes as ndarray, or None."""
+        import numpy as _np
+        spec = self._analyzer.cross_spectrum
+        return _np.array(spec[0]) if spec else None
+
+    @property
+    def flc_mag_db(self):
+        """Return FLC spectrum magnitudes as ndarray, or None."""
+        import numpy as _np
+        spec = self._analyzer.flc_spectrum
+        return _np.array(spec[0]) if spec else None
+
+
 # pylint: disable=too-many-instance-attributes
 class FftCanvas(pg.PlotWidget):
     """Sample the audio stream and display the FFT
@@ -516,9 +572,11 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.frozen_magnitudes = value
 
     @property
-    def plate_capture(self) -> "pc.PlateCapture":
-        """The plate/brace capture state machine (read-only access for snapshot retrieval)."""
-        return self.analyzer.plate_capture
+    def plate_capture(self):
+        """Compatibility shim: returns an adapter exposing per-phase spectra
+        (long_mag_db, cross_mag_db, flc_mag_db) and phase state from the
+        gated-FFT pipeline via material_tap_phase."""
+        return _PlateCaptureAdapter(self.analyzer)
 
     @property
     def fmin(self) -> int:
