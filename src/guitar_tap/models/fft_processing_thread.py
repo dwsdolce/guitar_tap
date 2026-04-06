@@ -33,6 +33,7 @@ from PySide6 import QtCore
 import models.realtime_fft_analyzer as _rfa
 from models.tap_tone_analyzer_tap_detection import TapDetector
 from models.tap_tone_analyzer_decay_tracking import DecayTracker
+from utilities.logging import TAP_DEBUG
 
 
 class FftProcessingThread(QtCore.QThread):
@@ -214,12 +215,9 @@ class FftProcessingThread(QtCore.QThread):
 
             tap_fired = self._tap_pending and not is_frozen
             if self._tap_pending and is_frozen:
-                print(
-                    "TAP_DEBUG [run] tap_pending=True but is_measurement_complete=True"
-                    " → tap suppressed"
-                )
+                TAP_DEBUG("run", "tap_pending=True but is_measurement_complete=True → tap suppressed")
             if tap_fired:
-                print("TAP_DEBUG [run] tap_fired=True → forwarding to _do_capture_tap")
+                TAP_DEBUG("run", "tap_fired=True → forwarding to _do_capture_tap")
                 self._tap_pending = False
 
             exit_now = time.time()

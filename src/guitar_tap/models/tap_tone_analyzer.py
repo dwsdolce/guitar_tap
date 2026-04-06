@@ -89,6 +89,14 @@ from .fft_processing_thread import FftProcessingThread
 
 from PySide6 import QtCore
 
+# ── swiftui_compat — ObservableObject + Published ────────────────────────────
+# TapToneAnalyzer mirrors Swift's `final class TapToneAnalyzer: ObservableObject`.
+# swiftui_compat provides ObservableObject (subscribe/notify base) and
+# Published (class-level descriptor that fires _notify_change on every write).
+# Views connect via analyzer.subscribe(callback) in addition to Qt signals.
+
+from swiftui_compat import ObservableObject, Published
+
 
 # ── TapToneAnalyzer ───────────────────────────────────────────────────────────
 # Mirrors the top-level Swift TapToneAnalyzer class declaration and its stored
@@ -103,18 +111,74 @@ class TapToneAnalyzer(
     TapToneAnalyzerAnnotationManagementMixin,
     TapToneAnalyzerMeasurementManagementMixin,
     TapToneAnalyzerModeOverrideManagementMixin,
+    ObservableObject,
     QtCore.QObject,
 ):
     """Central analysis coordinator — owns all analysis state and business logic.
 
-    Mirrors Swift's TapToneAnalyzer ObservableObject.  FftCanvas (the view)
-    creates one of these, connects its signals to rendering slots, and delegates
-    all analysis method calls to it.
+    Mirrors Swift's `final class TapToneAnalyzer: ObservableObject`.
 
-    Emits Qt signals rather than Swift @Published properties so the view layer
-    can respond to state changes without polling.
+    Inherits from both swiftui_compat.ObservableObject and QtCore.QObject:
+    - ObservableObject provides subscribe()/notify() for model-layer observers
+      (the Python equivalent of Combine's objectWillChange publisher).
+    - QtCore.QObject provides Qt signals for the existing view layer.
+
+    @Published properties declared at class level mirror Swift's @Published vars.
+    Setting them fires _notify_change so any subscriber (including future SwiftUI-
+    style views) can react without polling.  Qt signals remain for the current
+    FftCanvas/TapToneAnalysisView layer.
     """
 
+    # ── @Published properties (mirrors Swift @Published vars) ────────────────
+    # Declared at class level so the Published descriptor is active on every
+    # instance.  Setting self.x = value in __init__ or any method fires
+    # _notify_change(attr_name, new_value) through the ObservableObject base.
+    #
+    # Mirrors Swift TapToneAnalyzer stored @Published properties.
+
+    # MARK: - Configuration
+    peak_threshold: float = Published(-60.0)        # mirrors peakThreshold: Float
+    min_frequency: float = Published(30.0)          # mirrors minFrequency: Float
+    max_frequency: float = Published(2000.0)        # mirrors maxFrequency: Float
+    max_peaks: int = Published(0)                   # mirrors maxPeaks: Int
+    decay_threshold: float = Published(15.0)        # mirrors decayThreshold: Float
+    number_of_taps: int = Published(1)              # mirrors numberOfTaps: Int
+    capture_window: float = Published(0.2)          # mirrors captureWindow: TimeInterval
+    tap_detection_threshold: float = Published(-40.0)   # mirrors tapDetectionThreshold: Float
+    hysteresis_margin: float = Published(3.0)       # mirrors hysteresisMargin: Float
+
+    # MARK: - Published Results
+    current_peaks: list = Published([])             # mirrors currentPeaks: [ResonantPeak]
+    identified_modes: list = Published([])          # mirrors identifiedModes: [(peak, mode)]
+    current_decay_time: object = Published(None)    # mirrors currentDecayTime: Float?
+    saved_measurements: list = Published([])        # mirrors savedMeasurements: [TapToneMeasurement]
+
+    # MARK: - Published Detection State
+    average_magnitude: float = Published(-100.0)    # mirrors averageMagnitude: Float
+    tap_detection_level: float = Published(-100.0)  # mirrors tapDetectionLevel: Float
+    tap_detected: bool = Published(False)           # mirrors tapDetected: Bool
+    is_detecting: bool = Published(False)           # mirrors isDetecting: Bool
+    is_detection_paused: bool = Published(False)    # mirrors isDetectionPaused: Bool
+    is_ready_for_detection: bool = Published(True)  # mirrors isReadyForDetection: Bool
+    current_tap_count: int = Published(0)           # mirrors currentTapCount: Int
+    tap_progress: float = Published(0.0)            # mirrors tapProgress: Float
+    status_message: str = Published("Tap the guitar to begin")  # mirrors statusMessage: String
+
+    # MARK: - Published Frozen Spectrum
+    frozen_frequencies: list = Published([])        # mirrors frozenFrequencies: [Float]
+    frozen_magnitudes: list = Published([])         # mirrors frozenMagnitudes: [Float]
+
+    # MARK: - Published Annotation & Selection State
+    peak_annotation_offsets: dict = Published({})   # mirrors peakAnnotationOffsets: [UUID: CGPoint]
+    peak_mode_overrides: dict = Published({})       # mirrors peakModeOverrides: [UUID: UserAssignedMode]
+    selected_peak_ids: set = Published(set())       # mirrors selectedPeakIDs: Set<UUID>
+    highlighted_peak_id: object = Published(None)   # mirrors highlightedPeakID: UUID?
+    annotation_visibility_mode: str = Published("selected")  # mirrors annotationVisibilityMode
+
+    # MARK: - Published Measurement Complete State
+    is_measurement_complete: bool = Published(False)  # mirrors isMeasurementComplete: Bool
+
+    # MARK: - Signals (Qt — view layer bridge, no Swift equivalent) ──────────
     # ── Signals (Python equivalents of Swift @Published properties) ────────
     # New peak list emitted after every analysis frame and after threshold/range changes.
     peaksChanged: QtCore.Signal = QtCore.Signal(object)          # ndarray (N, 3)
@@ -188,7 +252,11 @@ class TapToneAnalyzer(
         from models import microphone_calibration as _mc_mod
         from models.tap_display_settings import TapDisplaySettings as _tds
 
-        super().__init__(parent_widget)
+        # Initialise both bases explicitly.
+        # Qt's metaclass does not participate in Python's cooperative super()
+        # chain, so both must be called directly.
+        QtCore.QObject.__init__(self, parent_widget)
+        ObservableObject.__init__(self)
 
         self._sd = _sd
         self._np = _np
@@ -228,33 +296,51 @@ class TapToneAnalyzer(
         # Mirrors Swift TapToneAnalyzer @Published var displayMode: AnalysisDisplayMode = .live
         self._display_mode: AnalysisDisplayMode = AnalysisDisplayMode.LIVE
 
+        # ── @Published property initialisation from persisted settings ───────
+        # These assignments go through the Published descriptor, setting the
+        # per-instance storage key and firing _notify_change on the
+        # ObservableObject base.  Mirrors Swift's property initialiser syntax:
+        #   @Published var minFrequency: Float = TapDisplaySettings.analysisMinFrequency
+        self.min_frequency = float(_tds.analysis_f_min())
+        self.max_frequency = float(_tds.analysis_f_max())
+        self.max_peaks = _tds.max_peaks()
+        self.peak_threshold = float(_tds.peak_threshold())
+        self.tap_detection_threshold = float(_tds.tap_detection_threshold())
+        self.hysteresis_margin = float(_tds.hysteresis_margin())
+        self.annotation_visibility_mode = _tds.annotation_visibility_mode()
+
         # ── Measurement state ──────────────────────────────────────────────
-        self.is_measurement_complete: bool = False
+        # is_measurement_complete is a @Published property (class-level default False).
+        # No re-assignment needed here — the class default is correct.
 
         # Saved measurement list — mirrors Swift @Published var savedMeasurements: [TapToneMeasurement].
         # Loaded once at startup and kept in sync; all mutations go through the
         # mixin methods (save_measurement, update_measurement, delete_measurement,
         # delete_all_measurements) which persist and emit savedMeasurementsChanged.
         from views.tap_analysis_results_view import load_all_measurements as _load
-        self.savedMeasurements: list = _load()
+        self.saved_measurements = _load()
+        # Legacy alias kept for any remaining view code that reads savedMeasurements.
+        # Will be removed once the view layer is migrated.
+        self.savedMeasurements = self.saved_measurements
 
         # ── Peak analysis state ────────────────────────────────────────────
-        self.threshold: int = 60                          # 0-100 scale
+        self.threshold: int = 60                          # 0-100 scale (legacy)
         self.fmin: int = 0
         self.fmax: int = 1000
         self.n_fmin: int = 0
         self.n_fmax: int = 0
-        # Analysis frequency window and peak count limit — mirrors Swift
-        # @Published var minFrequency = TapDisplaySettings.analysisMinFrequency
-        # @Published var maxFrequency = TapDisplaySettings.analysisMaxFrequency
-        # @Published var maxPeaks     = TapDisplaySettings.maxPeaks
-        self.min_frequency: float = float(_tds.analysis_f_min())
-        self.max_frequency: float = float(_tds.analysis_f_max())
-        self.max_peaks: int = _tds.max_peaks()
         self.saved_mag_y_db = np.array([])
         self.saved_peaks = np.zeros((0, 3))               # (freq, mag, Q)
         self._loaded_measurement_peaks = None             # ndarray or None
         self.selected_peak: float = 0.0
+        # Frequency axis that matches saved_mag_y_db.
+        # Mirrors Swift frozenFrequencies: [Float] = [] on TapToneAnalyzer.
+        # A loaded measurement captured by Swift's gated FFT (32 768-sample window
+        # → 16 384 bins) has a different length than the live self.freq (32 769 bins
+        # for fft_size=65 536).  Storing the loaded axis here keeps self.freq intact
+        # (always the live FFT axis) and prevents shape-mismatch crashes when a
+        # queued FFT frame fires while a loaded measurement is displayed.
+        self._saved_freq = np.array([])
 
         # ── Averaging ──────────────────────────────────────────────────────
         self.avg_enable: bool = False

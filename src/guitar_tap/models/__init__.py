@@ -5,6 +5,11 @@ Each module in this package corresponds to a Swift source file in
 GuitarTap/Models/.  Import directly from the submodules or use the
 convenience re-exports provided here.
 
+Reactive pattern (mirrors Swift ObservableObject / @Published):
+  ObservableObject       — base class; provides subscribe() / _notify_change()
+  Published              — class-level descriptor; fires _notify_change on write
+  Both re-exported from swiftui_compat (the shared compatibility layer).
+
 Data model modules (safe to import anywhere):
   analysis_display_mode  → AnalysisDisplayMode
   audio_device           → AudioDevice
@@ -19,6 +24,7 @@ Data model modules (safe to import anywhere):
   microphone_calibration → MicrophoneCalibration, CalibrationStorage
   resonant_peak          → ResonantPeak
   spectrum_snapshot      → SpectrumSnapshot
+  tap_display_settings   → TapDisplaySettings
   tap_tone_measurement   → TapToneMeasurement
   user_assigned_mode     → UserAssignedMode
 
@@ -27,6 +33,10 @@ Analyser modules (NOT imported here — import directly to avoid circular deps):
   realtime_fft_analyzer  → RealtimeFFTAnalyzer (Microphone alias), dft_anal, ...
   tap_tone_analyzer      → TapToneAnalyzer, TapDetector, DecayTracker, PlateCapture, ...
 """
+
+# ── Reactive pattern — re-export from swiftui_compat ─────────────────────────
+# Mirrors Swift's ObservableObject protocol and @Published property wrapper.
+from swiftui_compat import ObservableObject, Published
 
 from .analysis_display_mode import AnalysisDisplayMode
 from .audio_device import AudioDevice
@@ -44,6 +54,10 @@ from .tap_tone_measurement import TapToneMeasurement
 from .user_assigned_mode import UserAssignedMode
 
 __all__ = [
+    # Reactive pattern (swiftui_compat re-exports)
+    "ObservableObject",
+    "Published",
+    # Models
     "AnalysisDisplayMode",
     "AudioDevice",
     "FftParameters",

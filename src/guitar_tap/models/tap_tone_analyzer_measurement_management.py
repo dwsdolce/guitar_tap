@@ -7,6 +7,8 @@ Mirrors Swift TapToneAnalyzer+MeasurementManagement.swift.
 
 from __future__ import annotations
 
+import numpy as np
+
 from .analysis_display_mode import AnalysisDisplayMode
 
 
@@ -91,11 +93,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self._tap_spectra.clear()
             self._loaded_measurement_peaks = None
             self.clear_annotation_offsets()
-            # Restore freq to native FFT bins — a loaded measurement may have overwritten
-            # self.freq with its saved frequency array (different length from the live FFT).
-            import numpy as np
-            x_axis = np.arange(0, self.fft_data.h_n_f + 1)
-            self.freq = x_axis * self.fft_data.sample_freq / self.fft_data.n_f
+            # Clear the frozen spectrum — mirrors Swift setFrozenSpectrum(frequencies: [], magnitudes: [])
+            # in reset() and cancelTapSequence().  Both arrays are reset to empty so they
+            # remain matched; _saved_freq will be populated again when the next tap fires or
+            # a measurement is loaded.
+            self.saved_mag_y_db = np.array([])
+            self._saved_freq = np.array([])
             # Clear comparison overlay — uses clear_comparison() so comparisonChanged(False)
             # is emitted when needed, allowing the UI to hide the comparison status bar.
             self.clear_comparison()

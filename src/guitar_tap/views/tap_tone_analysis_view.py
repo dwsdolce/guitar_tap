@@ -2758,7 +2758,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cross_snapshot: SpectrumSnapshot | None = None
         flc_snapshot: SpectrumSnapshot | None = None
         if hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
-            freqs = canvas.freq.tolist()
+            freqs = canvas.analyzer._saved_freq.tolist()
             mags  = canvas.saved_mag_y_db.tolist()
             # Read the actual Y axis range from the ViewBox so the snapshot stores
             # the chart's visible range, not the detection threshold.
@@ -3110,8 +3110,13 @@ class MainWindow(QtWidgets.QMainWindow):
             freq_arr = np.array(snap.frequencies, dtype=np.float64)
             mag_arr  = np.array(snap.magnitudes, dtype=np.float64)
             canvas.saved_mag_y_db = mag_arr
-            # Keep as float64 — int64 would quantize sub-Hz bins to 0, distorting the plot.
-            canvas.freq = freq_arr
+            # Store the loaded measurement's frequency axis on the analyzer without
+            # overwriting canvas.freq (the live FFT axis).  Swift measurements saved
+            # with computeGatedFFT have 16 384 bins (paddedSize/2 = 32 768/2) while
+            # the live Python FFT produces 32 769 bins (fft_size/2 + 1 = 65 536/2 + 1).
+            # Overwriting canvas.freq caused shape-mismatch crashes when a queued FFT
+            # frame fired with the live mag_y_db (32 769 bins) against the stale axis.
+            canvas.analyzer._saved_freq = freq_arr
             with QtCore.QSignalBlocker(self.min_spin):
                 self.min_spin.setValue(int(snap.min_freq))
             with QtCore.QSignalBlocker(self.max_spin):
@@ -3122,7 +3127,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # scatter plot automatically, so set_draw_data only needs the spectrum line.
             canvas.setYRange(snap.min_db, snap.max_db, padding=0)
             canvas.update_axis(int(snap.min_freq), int(snap.max_freq))
-            canvas.set_draw_data(mag_arr)
+            canvas.set_draw_data(mag_arr, freqs=freq_arr)
 
             # For plate/brace measurements set per-phase spectra on the analyzer — mirrors
             # Swift loadMeasurement restoring longitudinalSpectrum/crossSpectrum/flcSpectrum
@@ -3408,7 +3413,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loading_overlay.show_message("Exporting spectrum…")
         try:
             canvas = self.fft_canvas
-            freqs = canvas.freq.tolist() if hasattr(canvas.freq, "tolist") else list(canvas.freq)
+            saved_freq = canvas.analyzer._saved_freq
+            freqs = saved_freq.tolist() if hasattr(saved_freq, "tolist") else list(saved_freq)
             mags  = (canvas.saved_mag_y_db.tolist()
                      if hasattr(canvas.saved_mag_y_db, "tolist")
                      else list(canvas.saved_mag_y_db))

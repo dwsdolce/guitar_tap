@@ -27,6 +27,7 @@ from __future__ import annotations
 import time as _time
 
 from PySide6 import QtCore
+from utilities.logging import TAP_DEBUG
 
 from .analysis_display_mode import AnalysisDisplayMode
 
@@ -120,9 +121,9 @@ class TapDetector(QtCore.QObject):
     def reset(self) -> None:
         """Restart warmup (call after device change, new tap sequence, etc.)."""
         import traceback as _tb
-        print("TAP_DEBUG [TapDetector.reset] called from:")
-        for line in _tb.format_stack()[:-1]:
-            print("  ", line.strip())
+        TAP_DEBUG("TapDetector.reset", "called from:\n" + "\n".join(
+            "  " + line.strip() for line in _tb.format_stack()[:-1]
+        ))
         self._state = self._WARMUP
         self._state_entry_time = _time.monotonic()
         self._last_tap_time = None
@@ -201,16 +202,16 @@ class TapDetector(QtCore.QObject):
 
         # TAP_DEBUG: mode/threshold print (every frame, mirrors Swift detectTap top-of-function)
         if self._mode == self.MODE_PLATE_BRACE:
-            print(
-                f"TAP_DEBUG [detectTap] RELATIVE mode | "
+            TAP_DEBUG("detectTap",
+                f"RELATIVE mode | "
                 f"peakMag={level_db:.2f} noiseFloor={self._noise_floor_db:.2f} "
                 f"headroom={getattr(self, '_last_headroom', 0.0):.2f} "
                 f"risingThresh={rising_db:.2f} fallingThresh={falling_db:.2f} "
                 f"state={self._state}"
             )
         else:
-            print(
-                f"TAP_DEBUG [detectTap] ABSOLUTE mode | "
+            TAP_DEBUG("detectTap",
+                f"ABSOLUTE mode | "
                 f"peakMag={level_db:.2f} "
                 f"risingThresh={rising_db:.2f} fallingThresh={falling_db:.2f} "
                 f"state={self._state}"
@@ -220,8 +221,8 @@ class TapDetector(QtCore.QObject):
             case self._WARMUP:
                 remaining = self.warmup_s - (now - self._state_entry_time)
                 if remaining > 0:
-                    print(
-                        f"TAP_DEBUG [detectTap] WARMUP in progress | "
+                    TAP_DEBUG("detectTap",
+                        f"WARMUP in progress | "
                         f"remaining={remaining:.2f}s peakMag={level_db:.2f}"
                     )
                 else:
@@ -229,23 +230,23 @@ class TapDetector(QtCore.QObject):
                     # don't fire immediately if signal is already above threshold.
                     if amplitude >= rising_amp:
                         self._state = self._TRIGGERED
-                        print(
-                            f"TAP_DEBUG [detectTap] WARMUP EXIT (already above) | "
+                        TAP_DEBUG("detectTap",
+                            f"WARMUP EXIT (already above) | "
                             f"peakMag={level_db:.2f} risingThresh={rising_db:.2f} "
                             f"→ state=TRIGGERED"
                         )
                     else:
                         self._state = self._IDLE
                         if self._mode == self.MODE_PLATE_BRACE:
-                            print(
-                                f"TAP_DEBUG [detectTap] WARMUP EXIT (relative) | "
+                            TAP_DEBUG("detectTap",
+                                f"WARMUP EXIT (relative) | "
                                 f"peakMag={level_db:.2f} "
                                 f"noiseFloorAnchored={self._noise_floor_db:.2f} "
                                 f"risingAnchored={rising_db:.2f} isAboveThreshold=False"
                             )
                         else:
-                            print(
-                                f"TAP_DEBUG [detectTap] WARMUP EXIT (absolute) | "
+                            TAP_DEBUG("detectTap",
+                                f"WARMUP EXIT (absolute) | "
                                 f"peakMag={level_db:.2f} "
                                 f"risingThresh={rising_db:.2f} isAboveThreshold=False"
                             )
@@ -253,8 +254,8 @@ class TapDetector(QtCore.QObject):
 
             case self._IDLE:
                 now_above = amplitude >= rising_amp
-                print(
-                    f"TAP_DEBUG [detectTap] HYSTERESIS eval | "
+                TAP_DEBUG("detectTap",
+                    f"HYSTERESIS eval | "
                     f"peakMag={level_db:.2f} wasAbove=False nowAbove={now_above} "
                     f"risingThresh={rising_db:.2f} fallingThresh={falling_db:.2f} "
                     f"isDetecting=True currentTapCount=?"
@@ -266,8 +267,8 @@ class TapDetector(QtCore.QObject):
                         if self._last_tap_time is not None else 0.0
                     )
                     if cooldown_remaining > 0:
-                        print(
-                            f"TAP_DEBUG [detectTap] COOLDOWN active | "
+                        TAP_DEBUG("detectTap",
+                            f"COOLDOWN active | "
                             f"remaining={cooldown_remaining:.3f}s peakMag={level_db:.2f}"
                         )
                         # Signal is rising but still in cooldown — track as TRIGGERED
@@ -275,8 +276,8 @@ class TapDetector(QtCore.QObject):
                         self._state = self._TRIGGERED
                         self._state_entry_time = now
                     else:
-                        print(
-                            f"TAP_DEBUG [detectTap] RISING EDGE FIRED | "
+                        TAP_DEBUG("detectTap",
+                            f"RISING EDGE FIRED | "
                             f"peakMag={level_db:.2f} risingThresh={rising_db:.2f}"
                         )
                         self._last_tap_time = now
@@ -286,15 +287,15 @@ class TapDetector(QtCore.QObject):
 
             case self._TRIGGERED:
                 now_above = amplitude >= falling_amp
-                print(
-                    f"TAP_DEBUG [detectTap] HYSTERESIS eval | "
+                TAP_DEBUG("detectTap",
+                    f"HYSTERESIS eval | "
                     f"peakMag={level_db:.2f} wasAbove=True nowAbove={now_above} "
                     f"risingThresh={rising_db:.2f} fallingThresh={falling_db:.2f} "
                     f"isDetecting=False currentTapCount=?"
                 )
                 if not now_above:
-                    print(
-                        f"TAP_DEBUG [detectTap] FALLING EDGE | "
+                    TAP_DEBUG("detectTap",
+                        f"FALLING EDGE | "
                         f"peakMag={level_db:.2f} fallingThresh={falling_db:.2f} "
                         f"— signal settled, returning to IDLE"
                     )
@@ -322,18 +323,18 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         """
         import numpy as np
 
-        print(
-            f"TAP_DEBUG [handleTapDetection] ENTERED | "
+        TAP_DEBUG("handleTapDetection",
+            f"ENTERED | "
             f"tap_amp={tap_amp} is_guitar={self._proc_thread._is_guitar if self._proc_thread else '?'} "
             f"captured_so_far={len(self._tap_spectra)} numberOfTaps={self._tap_num}"
         )
         if not np.any(mag_y_db):
-            print("TAP_DEBUG [handleTapDetection] SKIPPED — mag_y_db is all zeros")
+            TAP_DEBUG("handleTapDetection", "SKIPPED — mag_y_db is all zeros")
             return
         self._tap_spectra.append(mag_y_db.copy())
         captured = len(self._tap_spectra)
-        print(
-            f"TAP_DEBUG [handleTapDetection] GUITAR TAP STORED | "
+        TAP_DEBUG("handleTapDetection",
+            f"GUITAR TAP STORED | "
             f"currentTapCount={captured} numberOfTaps={self._tap_num} "
             f"tapProgress={captured/max(self._tap_num,1):.2f}"
         )
@@ -385,15 +386,18 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self.do_capture_tap(mag_y_db, tap_amp)
             self.on_tap_for_plate()
 
-        # Emit spectrum for the view to draw
+        # Emit spectrum for the view to draw.
+        # Use _saved_freq (not self.freq) when emitting saved_mag_y_db: a measurement
+        # loaded from Swift's gated FFT has 16 384 bins while the live self.freq has
+        # 32 769 bins.  _saved_freq is always kept in sync with saved_mag_y_db.
         if self._display_mode == AnalysisDisplayMode.LIVE:
             if self.is_measurement_complete:
-                self.spectrumUpdated.emit(self.freq, self.saved_mag_y_db)
+                self.spectrumUpdated.emit(self._saved_freq, self.saved_mag_y_db)
             else:
                 _, peaks = self.find_peaks(mag_y_db)
                 self.spectrumUpdated.emit(self.freq, mag_y_db)
         elif self._display_mode == AnalysisDisplayMode.FROZEN:
-            self.spectrumUpdated.emit(self.freq, self.saved_mag_y_db)
+            self.spectrumUpdated.emit(self._saved_freq, self.saved_mag_y_db)
         # COMPARISON: skip spectrum update — only overlay curves shown
 
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))

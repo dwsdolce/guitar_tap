@@ -565,7 +565,7 @@ class FftCanvas(pg.PlotWidget):
         the two reads.
         """
         if self.analyzer.is_measurement_complete:
-            return (self.analyzer.freq, self.analyzer.saved_mag_y_db)
+            return (self.analyzer._saved_freq, self.analyzer.saved_mag_y_db)
         return (self.analyzer.freq, None)
 
     @property
@@ -743,10 +743,14 @@ class FftCanvas(pg.PlotWidget):
             freq_color = f"rgb({r},{g},{b})"
 
         elif self.is_measurement_complete and np.any(self.saved_mag_y_db):
-            # Snap to nearest FFT bin on the frozen curve
-            idx = int(np.searchsorted(self.freq, mouse_freq))
-            idx = max(0, min(idx, len(self.freq) - 1))
-            display_freq = float(self.freq[idx])
+            # Snap to nearest FFT bin on the frozen curve.
+            # Use _saved_freq (not self.freq): a Swift-saved plate measurement has
+            # 16 384 bins while the live self.freq has 32 769.  Indexing saved_mag_y_db
+            # with an index derived from self.freq would go out of bounds.
+            saved_freq = self.analyzer._saved_freq
+            idx = int(np.searchsorted(saved_freq, mouse_freq))
+            idx = max(0, min(idx, len(saved_freq) - 1))
+            display_freq = float(saved_freq[idx])
             display_db   = float(self.saved_mag_y_db[idx])
         else:
             # Free mouse tracking — no curve snap
