@@ -231,7 +231,23 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 final_peaks.extend(others)
 
         # Sort final result by magnitude descending — mirrors Swift.
-        return sorted(final_peaks, key=lambda p: p.magnitude, reverse=True)
+        final_peaks = sorted(final_peaks, key=lambda p: p.magnitude, reverse=True)
+
+        # Store and publish — mirrors Swift's @Published currentPeaks didSet behaviour.
+        # Swift: self.currentPeaks = finalPeaks  (fires objectWillChange + any subscribers)
+        # Python: store, build the (N, 3) ndarray the view expects, emit peaksChanged.
+        import numpy as _np
+        self.current_peaks = final_peaks
+        if final_peaks:
+            arr = _np.array(
+                [[p.frequency, p.magnitude, p.quality] for p in final_peaks],
+                dtype=_np.float64,
+            )
+        else:
+            arr = _np.zeros((0, 3), dtype=_np.float64)
+        self.peaksChanged.emit(arr)
+
+        return final_peaks
 
     # ------------------------------------------------------------------ #
     # remove_duplicate_peaks

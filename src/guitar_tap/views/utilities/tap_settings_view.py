@@ -238,8 +238,15 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def analysis_f_min(cls) -> float:
+        # Mirrors Swift: value != 0 ? value : defaultAnalysisMinFrequency
+        # QSettings returns None (not 0) for absent keys, so the v is not None
+        # check covers the absent-key case; f != 0 covers an explicit zero.
         v = cls._get("analysis/analysis_f_min", None)
-        return float(v) if v is not None else 30.0
+        if v is not None:
+            f = float(v)
+            if f != 0.0:
+                return f
+        return 30.0
 
     @classmethod
     def set_analysis_f_min(cls, v: float) -> None:
@@ -247,8 +254,13 @@ class AppSettings:
 
     @classmethod
     def analysis_f_max(cls) -> float:
+        # Mirrors Swift: value != 0 ? value : defaultAnalysisMaxFrequency
         v = cls._get("analysis/analysis_f_max", None)
-        return float(v) if v is not None else 2000.0
+        if v is not None:
+            f = float(v)
+            if f != 0.0:
+                return f
+        return 2000.0
 
     @classmethod
     def set_analysis_f_max(cls, v: float) -> None:

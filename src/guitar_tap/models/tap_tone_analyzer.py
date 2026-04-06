@@ -430,6 +430,24 @@ class TapToneAnalyzer(
         self.saved_measurements = _load()
         self.savedMeasurements = self.saved_measurements
 
+        # ── Wire FFT frames directly to the analyzer ──────────────────────
+        # Connect proc_thread.fftFrameReady → self.on_fft_frame here so the
+        # analyzer owns its own audio-frame wiring (mirrors Swift's direct
+        # RealtimeFFTAnalyzer.$magnitudes → TapToneAnalyzer subscription).
+        # FftCanvas._connect_proc_thread_signals() handles only rmsLevelChanged
+        # and finished — not fftFrameReady.
+        self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
+
+        # ── Auto-start tap sequence on first launch ────────────────────────
+        # Mirrors Swift start() auto-start guard:
+        #   if !isDetecting && !isMeasurementComplete && !isDetectionPaused
+        #      && currentTapCount == 0 { startTapSequence() }
+        # Safe to call synchronously here because fftFrameReady is now
+        # connected above before this line executes.
+        if (not self.is_detecting and not self.is_measurement_complete
+                and not self.is_detection_paused and self.current_tap_count == 0):
+            self.start_tap_sequence()
+
     # ------------------------------------------------------------------ #
     # display_mode property — kept in sync with FftCanvas.display_mode
     # ------------------------------------------------------------------ #
@@ -510,4 +528,6 @@ class TapToneAnalyzer(
         from .realtime_fft_analyzer import _FftProcessingThread as _FPT
         self.mic.proc_thread = _FPT(mic=self.mic, parent=self)
         self.mic.proc_thread.set_calibration(self._calibration_corrections)
+        # Reconnect the analyzer-owned frame signal on the new thread.
+        self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
         return self.mic.proc_thread

@@ -4864,8 +4864,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # Analysis frequency range
             AS.AppSettings.set_analysis_f_min(an_f_min_spin.value())
             AS.AppSettings.set_analysis_f_max(an_f_max_spin.value())
-            # Apply immediately to analyzer, mirroring Swift's @Published didSet on
-            # minFrequency / maxFrequency which makes the new window active at once.
+            # Apply immediately to analyzer — mirrors Swift's @Published didSet on
+            # minFrequency/maxFrequency which makes the new analysis window active at once.
             self.fft_canvas.analyzer.min_frequency = float(an_f_min_spin.value())
             self.fft_canvas.analyzer.max_frequency = float(an_f_max_spin.value())
 

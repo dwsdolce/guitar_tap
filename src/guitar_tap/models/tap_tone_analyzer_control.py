@@ -277,7 +277,7 @@ class TapToneAnalyzerControlMixin:
             avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
             self.frozen_magnitudes = avg_db
             self.frozen_frequencies = self.freq
-            _, _ = self.find_peaks(avg_db)
+            self.find_peaks(list(avg_db), list(self.freq))
             self.captured_taps.clear()
             self.tapDetectedSignal.emit()
         else:

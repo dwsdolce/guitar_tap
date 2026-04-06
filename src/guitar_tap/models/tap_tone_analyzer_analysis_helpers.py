@@ -24,7 +24,7 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         if self.loaded_measurement_peaks is not None:
             self._emit_loaded_peaks_at_threshold()
         else:
-            self.find_peaks(self.frozen_magnitudes)
+            self.find_peaks(list(self.frozen_magnitudes), list(self.freq))
 
     def _emit_loaded_peaks_at_threshold(self) -> None:
         """Filter loaded-measurement peaks by threshold and emit peaksChanged.
@@ -72,14 +72,15 @@ class TapToneAnalyzerAnalysisHelpersMixin:
 
             avg_amplitude = np.max(avg_mag_y_db) + 100
             if avg_amplitude > (self.peak_threshold + 100):
-                triggered, avg_peaks = self.find_peaks(avg_mag_y_db)
+                # find_peaks stores current_peaks and emits peaksChanged internally.
+                avg_peaks = self.find_peaks(list(avg_mag_y_db), list(self.freq))
+                triggered = len(avg_peaks) > 0
                 if triggered:
                     self.newSample.emit(self.is_measurement_complete)
                     self.mag_y_sum = mag_y_sum
                     self.num_averages = num_averages
                     self.averagesChanged.emit(int(self.num_averages))
                     self.frozen_magnitudes = avg_mag_y_db
-                    self.current_peaks = avg_peaks
                     self.spectrumUpdated.emit(self.freq, avg_mag_y_db)
 
         self.spectrumUpdated.emit(self.freq, self.frozen_magnitudes)

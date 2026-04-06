@@ -212,8 +212,12 @@ class FftCanvas(pg.PlotWidget):
             yMin=-120, yMax=20, minYRange=10,
         )
 
-        # Set the initial view X range; analyzer.min_frequency/max_frequency are set after the
-        # analyzer is constructed below (update_axis requires self.analyzer).
+        # Canvas-local display viewport — tracks the visible frequency range for
+        # pan/zoom and peak display.  Separate from analyzer.min_frequency/
+        # max_frequency, which mirror Swift TapToneAnalyzer.minFrequency and are
+        # the analysis window used by find_peaks (never written by canvas pan/zoom).
+        self._display_fmin: float = float(frange["f_min"])
+        self._display_fmax: float = float(frange["f_max"])
         self.setXRange(frange["f_min"], frange["f_max"], padding=0)
 
         # Resolve the saved AudioDevice (fingerprint → live index).
@@ -292,11 +296,11 @@ class FftCanvas(pg.PlotWidget):
         # in the model and survive pan/zoom annotation rebuilds.
         self.annotations._analyzer = self.analyzer
         # Display mode is initialised to AnalysisDisplayMode.LIVE in TapToneAnalyzer.__init__.
-        # Set initial threshold and freq range on the analyzer.
+        # Set initial peak threshold on the analyzer.
         # peak_threshold is stored as dBFS; threshold input is 0-100 scale.
         self.analyzer.peak_threshold = float(threshold - 100)
-        self.analyzer.min_frequency = float(frange["f_min"])
-        self.analyzer.max_frequency = float(frange["f_max"])
+        # analysis_min_frequency / analysis_max_frequency are initialised from AppSettings
+        # in TapToneAnalyzer.__init__ and must not be overwritten with the display viewport.
         # n_fmin / n_fmax are now computed properties — no assignment needed.
 
         # Convenience alias kept for code that still reads self.mic
@@ -518,19 +522,19 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def fmin(self) -> int:
-        return int(self.analyzer.min_frequency)
+        return int(self._display_fmin)
 
     @fmin.setter
     def fmin(self, value: int) -> None:
-        self.analyzer.min_frequency = float(value)
+        self._display_fmin = float(value)
 
     @property
     def fmax(self) -> int:
-        return int(self.analyzer.max_frequency)
+        return int(self._display_fmax)
 
     @fmax.setter
     def fmax(self, value: int) -> None:
-        self.analyzer.max_frequency = float(value)
+        self._display_fmax = float(value)
 
     @property
     def comparison_labels(self):
@@ -588,8 +592,11 @@ class FftCanvas(pg.PlotWidget):
         self._overlay_label.setPos(cx, cy)
 
     def _connect_proc_thread_signals(self) -> None:
-        """Connect proc_thread signals to FftCanvas slots."""
-        self.analyzer.mic.proc_thread.fftFrameReady.connect(self._on_fft_frame_ready)
+        """Connect proc_thread signals to FftCanvas slots.
+
+        fftFrameReady is connected inside TapToneAnalyzer.start() and
+        recreate_proc_thread() — not here.  The analyzer owns that wiring.
+        """
         self.analyzer.mic.proc_thread.rmsLevelChanged.connect(self.ampChanged)
         self.analyzer.mic.proc_thread.finished.connect(self._on_proc_thread_finished)
 
@@ -1099,10 +1106,8 @@ class FftCanvas(pg.PlotWidget):
     def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
         """Update the x-axis frequency range"""
         if fmin < fmax:
-            self.analyzer.min_frequency = float(fmin)
-            self.analyzer.max_frequency = float(fmax)
-            # n_fmin / n_fmax are computed properties — no assignment needed.
-
+            self._display_fmin = float(fmin)
+            self._display_fmax = float(fmax)
             self.setXRange(fmin, fmax, padding=0)
             if not init:
                 self.analyzer._recalculate_peaks()
@@ -1120,9 +1125,8 @@ class FftCanvas(pg.PlotWidget):
         fmax = int(round(x1))
         if fmin >= fmax:
             return
-        self.analyzer.min_frequency = float(fmin)
-        self.analyzer.max_frequency = float(fmax)
-        # n_fmin / n_fmax are computed properties — no assignment needed.
+        self._display_fmin = float(fmin)
+        self._display_fmax = float(fmax)
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
             self.analyzer._recalculate_peaks()
         self.freqRangeChanged.emit(fmin, fmax)
@@ -1465,7 +1469,7 @@ class FftCanvas(pg.PlotWidget):
         Returns (triggered, peaks) for call sites that need the return value.
         The analyzer emits peaksChanged, which is forwarded to FftCanvas.peaksChanged.
         """
-        return self.analyzer.find_peaks(mag_y_db)
+        return self.analyzer.find_peaks(mag_y_db, list(self.analyzer.freq))
 
     # ------------------------------------------------------------------ #
     # FFT frame handler (called from proc_thread signal)

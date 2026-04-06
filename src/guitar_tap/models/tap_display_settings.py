@@ -449,11 +449,15 @@ class TapDisplaySettings:
 
     @classmethod
     def tap_detection_threshold(cls) -> float:
-        """Persisted tap detection threshold (dB).
+        """Persisted tap detection threshold (dBFS, negative).
+
+        AppSettings stores the threshold on a 0–100 scale (60 → −40 dBFS).
+        This method converts to dBFS so callers receive a negative value
+        matching Swift's tapDetectionThreshold (e.g. −40.0).
 
         Mirrors Swift TapDisplaySettings.tapDetectionThreshold.
         """
-        return _app_settings().tap_threshold()
+        return float(_app_settings().tap_threshold()) - 100.0
 
     @classmethod
     def set_tap_detection_threshold(cls, v: float) -> None:
