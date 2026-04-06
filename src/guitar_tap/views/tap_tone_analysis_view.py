@@ -4888,7 +4888,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Recalculate peaks with the new analysis window and max_peaks, mirroring
             # Swift's recalculateFrozenPeaksIfNeeded() calls in applySettings().
-            self.fft_canvas.analyzer._recalculate_peaks()
+            self.fft_canvas.analyzer.recalculate_frozen_peaks_if_needed()
 
             # Hysteresis margin
             hyst_db = hyst_slider.value() * 0.5

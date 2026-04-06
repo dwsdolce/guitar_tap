@@ -1168,7 +1168,7 @@ class FftCanvas(pg.PlotWidget):
             self._display_fmax = float(fmax)
             self.setXRange(fmin, fmax, padding=0)
             if not init:
-                self.analyzer._recalculate_peaks()
+                self.analyzer.recalculate_frozen_peaks_if_needed()
 
     def _refresh_peaks_for_viewport(self, _vb=None, x_range=None) -> None:
         """Re-emit filtered peaks and update the freq-range label whenever the
@@ -1186,7 +1186,7 @@ class FftCanvas(pg.PlotWidget):
         self._display_fmin = float(fmin)
         self._display_fmax = float(fmax)
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
-            self.analyzer._recalculate_peaks()
+            self.analyzer.recalculate_frozen_peaks_if_needed()
         self.freqRangeChanged.emit(fmin, fmax)
 
     def set_max_average_count(self, max_average_count: int) -> None:
@@ -1436,7 +1436,7 @@ class FftCanvas(pg.PlotWidget):
         self.line_threshold.setPos(self.threshold_y)
         self.line_threshold.label.setText(f"Peak: {self.threshold_y} dB")
 
-        self.analyzer._recalculate_peaks()
+        self.analyzer.recalculate_frozen_peaks_if_needed()
 
         self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()

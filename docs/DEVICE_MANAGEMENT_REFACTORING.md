@@ -186,7 +186,27 @@ know about `CalibrationStorage` for the device-switch path.
 
 ---
 
-## Recommendation 4 — Expose `raw_sample_handler` on `RealtimeFFTAnalyzer`
+## Recommendation 4 — Expose `raw_sample_handler` on `RealtimeFFTAnalyzer` ✅ DONE
+
+**Status:** Implemented. `RealtimeFFTAnalyzer.raw_sample_handler` is a callback
+set by `TapToneAnalyzer.start()` to `self._accumulate_gated_samples`. Called by
+`_FftProcessingThread.run()` on every audio chunk. The pre-roll buffer and gated
+accumulator have moved from `_FftProcessingThread` to `TapToneAnalyzer` (stored
+properties in `__init__`). `TapToneAnalyzerSpectrumCaptureMixin` gained
+`_accumulate_gated_samples()` (the handler) and `start_gated_capture()` now
+operates on `self` state directly instead of delegating to `proc_thread`.
+`gatedCaptureComplete` Qt signal remains on `_FftProcessingThread` as the
+delivery mechanism.
+
+**Files changed:** `realtime_fft_analyzer.py` (added `raw_sample_handler`,
+removed gated state/methods from `_FftProcessingThread`),
+`tap_tone_analyzer.py` (added gated state to `__init__`, set `raw_sample_handler`
+in `start()`), `tap_tone_analyzer_spectrum_capture.py` (added
+`_accumulate_gated_samples()`, rewrote `start_gated_capture()` to own state directly)
+
+---
+
+**Original recommendation:**
 
 **Current state:** The gated-FFT pre-roll ring buffer and gated accumulator
 live on `_FftProcessingThread`. `TapToneAnalyzer` reaches into
@@ -249,9 +269,6 @@ as-is:
 | 1. Add `available_input_devices` / `selected_input_device` to `RealtimeFFTAnalyzer` | `realtime_fft_analyzer.py`, `realtime_fft_analyzer_device_management.py` | Low | ✅ Done |
 | 2. Consolidate enumeration into `load_available_input_devices()` | `realtime_fft_analyzer_device_management.py` (new), `realtime_fft_analyzer.py` | Medium | ✅ Done |
 | 3. Move calibration auto-load to `RealtimeFFTAnalyzer.set_device()` | `realtime_fft_analyzer_device_management.py`, `realtime_fft_analyzer.py`, `tap_tone_analyzer.py`, `tap_tone_analyzer_control.py` | Low | ✅ Done |
-| 4. Add `raw_sample_handler` callback; move gated state to analyzer | `realtime_fft_analyzer.py`, `tap_tone_analyzer_spectrum_capture.py` | High | Pending |
+| 4. Add `raw_sample_handler` callback; move gated state to analyzer | `realtime_fft_analyzer.py`, `tap_tone_analyzer.py`, `tap_tone_analyzer_spectrum_capture.py` | High | ✅ Done |
 
-Recommendations 1–3 are independent and can be done in any order.
-Recommendation 4 is the highest-impact architectural alignment but also the
-most invasive — it is best deferred until after the view-layer refactoring
-described in `PYTHON_ARCHITECTURE_RESTRUCTURING_PLAN.md` is complete.
+All four recommendations are now complete.

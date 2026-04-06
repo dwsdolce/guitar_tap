@@ -37,6 +37,8 @@ Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
 from __future__ import annotations
 
 import threading
+import numpy as np
+import numpy.typing as npt
 
 
 class TapToneAnalyzerSpectrumCaptureMixin:
@@ -66,6 +68,61 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     GATED_CAPTURE_DURATION: float = 0.4  # 400 ms
 
     # ------------------------------------------------------------------ #
+    # _accumulate_gated_samples
+    # Mirrors Swift TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:)
+    # ------------------------------------------------------------------ #
+
+    def _accumulate_gated_samples(self, chunk: "npt.NDArray[np.float32]", sample_rate: float) -> None:
+        """Maintain the pre-roll ring buffer and accumulate a gated capture window.
+
+        Called on every audio chunk by _FftProcessingThread.run() via
+        mic.raw_sample_handler.  Runs on the audio processing background thread
+        so all shared state is protected by self._gated_lock.
+
+        Mirrors Swift TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:):
+          - Always updates the pre-roll ring buffer.
+          - When gatedCaptureActive, appends to gatedAccumBuffer.
+          - When the window fills, sets gatedCaptureActive = false and dispatches
+            finishGatedFFTCapture to the main thread via gatedCaptureComplete signal.
+
+        Args:
+            chunk:       Raw PCM audio chunk (float32, mono, normalised ±1.0).
+            sample_rate: Hardware sample rate in Hz.
+        """
+        import numpy as np
+
+        samples = chunk.tolist()
+        with self._gated_lock:
+            # Maintain the pre-roll ring buffer — always, even when not capturing.
+            # Mirrors Swift: preRollBuffer.append(contentsOf: samples)
+            self._pre_roll_buf.extend(samples)
+            if len(self._pre_roll_buf) > self._pre_roll_samples:
+                self._pre_roll_buf = self._pre_roll_buf[-self._pre_roll_samples:]
+
+            if not self._gated_capture_active:
+                return
+
+            self._gated_accum.extend(samples)
+            if len(self._gated_accum) < self._gated_capture_samples:
+                return
+
+            # Window is full — close capture and dispatch to main thread.
+            # Mirrors Swift: gatedCaptureActive = false; DispatchQueue.main.async
+            self._gated_capture_active = False
+            captured = self._gated_accum[:self._gated_capture_samples]
+            phase = self._gated_capture_phase
+            self._gated_accum = []
+
+        # Emit on background thread; Qt queued connection delivers on main thread.
+        # gatedCaptureComplete signal is still on proc_thread as a delivery mechanism.
+        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+            self.mic.proc_thread.gatedCaptureComplete.emit(
+                np.array(captured, dtype=np.float32),
+                sample_rate,
+                phase,
+            )
+
+    # ------------------------------------------------------------------ #
     # start_gated_capture
     # Mirrors Swift TapToneAnalyzer.startGatedCapture(phase:)
     # ------------------------------------------------------------------ #
@@ -82,28 +139,39 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         Args:
             phase: MaterialTapPhase being captured.
         """
-        # Delegate to the processing thread (which owns the pre-roll buffer and
-        # the raw PCM accumulator).
-        if self.mic is not None and hasattr(self.mic, "proc_thread"):
-            self.mic.proc_thread.start_gated_capture(
-                phase, duration_seconds=self.GATED_CAPTURE_DURATION
-            )
-        else:
+        if self.mic is None:
             print("⚠️ start_gated_capture called with no mic — ignoring")
             return
+
+        rate = float(self._gated_sample_rate)
+        target_samples = int(rate * self.GATED_CAPTURE_DURATION)
+        window_ms = int(self.GATED_CAPTURE_DURATION * 1000)
+        print(
+            f"🎯 Gated FFT capture started for phase {phase} — "
+            f"{target_samples}-sample window ({window_ms} ms at {int(rate)} Hz)"
+        )
+        with self._gated_lock:
+            # Seed accumulator with pre-roll (mirrors Swift: gatedAccumBuffer = preRollBuffer).
+            self._gated_accum = list(self._pre_roll_buf)
+            self._gated_capture_samples = target_samples
+            self._gated_capture_phase = phase
+            self._gated_capture_active = True
 
         # Safety timeout: if the buffer still has audio after 2 s, flush it;
         # if empty, ask the user to tap again.
         # Mirrors Swift DispatchQueue.main.asyncAfter(deadline: .now() + 2.0).
         def _safety_timeout() -> None:
-            if self.mic is None or not hasattr(self.mic, "proc_thread"):
-                return
-            partial = self.mic.proc_thread.cancel_gated_capture()
             import numpy as np
+            with self._gated_lock:
+                if not self._gated_capture_active:
+                    return  # already completed normally
+                self._gated_capture_active = False
+                partial = list(self._gated_accum)
+                self._gated_accum = []
             if partial:
                 self.finish_gated_fft_capture(
                     samples=np.array(partial, dtype=np.float32),
-                    sample_rate=float(self.mic.proc_thread._gated_sample_rate),
+                    sample_rate=self._gated_sample_rate,
                     phase=phase,
                 )
             else:

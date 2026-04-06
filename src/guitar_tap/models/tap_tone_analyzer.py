@@ -352,6 +352,30 @@ class TapToneAnalyzer(
         self.is_tracking_decay: bool = False
         self._decay_tracking_timer = None
 
+        # ── Gated FFT capture state ────────────────────────────────────────
+        # Mirrors Swift TapToneAnalyzer stored properties for gated capture:
+        #   preRollBuffer: [Float]     — ring buffer of recent raw PCM
+        #   preRollSamples: Int        — capacity of the pre-roll buffer
+        #   gatedAccumBuffer: [Float]  — accumulator for the capture window
+        #   gatedCaptureActive: Bool   — whether a capture is in progress
+        #   gatedCaptureSamples: Int   — target window size in samples
+        #   gatedCapturePhase: ...     — phase at capture start
+        #
+        # Previously lived on _FftProcessingThread; moved here so that
+        # _accumulate_gated_samples (called via mic.raw_sample_handler) owns
+        # this state directly — matching Swift where
+        # TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:) owns the buffers.
+        import threading as _threading
+        self._pre_roll_seconds: float = 0.2         # 200 ms pre-roll (mirrors Swift)
+        self._pre_roll_samples: int = 0             # set in start() once sample rate is known
+        self._pre_roll_buf: list = []               # raw PCM samples (float32)
+        self._gated_lock = _threading.Lock()
+        self._gated_capture_active: bool = False
+        self._gated_capture_samples: int = 0        # target window size in samples
+        self._gated_capture_phase: object = None    # MaterialTapPhase at capture start
+        self._gated_accum: list = []                # accumulated raw PCM samples
+        self._gated_sample_rate: float = 44100.0    # updated in start()
+
     def start(
         self,
         parent_widget,
@@ -413,11 +437,23 @@ class TapToneAnalyzer(
         # ── Guitar/mode classification ────────────────────────────────────
         self._guitar_type = guitar_type
 
+        # ── Gated-FFT capture state — initialise rate-dependent fields ───────
+        # _pre_roll_samples and _gated_sample_rate depend on the actual hardware
+        # sample rate, which is only known after the mic is constructed.
+        self._gated_sample_rate = float(self.mic.rate)
+        self._pre_roll_samples = int(self.mic.rate * self._pre_roll_seconds)
+
         # ── Gated-FFT capture signal ───────────────────────────────────────
         # Wire the processing thread's gatedCaptureComplete signal to the
         # finishGatedFFTCapture handler (from TapToneAnalyzerSpectrumCaptureMixin).
         # Mirrors Swift's Combine sink on fftAnalyzer.gatedCaptureComplete.
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
+
+        # ── Raw-sample handler ────────────────────────────────────────────
+        # Set mic.raw_sample_handler so _FftProcessingThread.run() calls
+        # _accumulate_gated_samples on every audio chunk.
+        # Mirrors Swift TapToneAnalyzer.start() registering rawSampleHandler.
+        self.mic.raw_sample_handler = self._accumulate_gated_samples
 
         # ── Saved measurements (view-layer import deferred until here) ────
         from views.tap_analysis_results_view import load_all_measurements as _load

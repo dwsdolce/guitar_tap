@@ -105,19 +105,30 @@ if platform.system() == "Darwin":
 # This class is an implementation detail of RealtimeFFTAnalyzer and is created
 # and owned by it (self.proc_thread).  It is not a separate model entity and
 # has no corresponding file in the Swift source.
+#
+# Gated capture state (pre-roll buffer, accumulator, active flag) was previously
+# owned here.  It has been moved to TapToneAnalyzer to match Swift's ownership
+# model where TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:) owns those
+# buffers.  This thread now calls mic.raw_sample_handler(chunk, rate) on every
+# chunk so TapToneAnalyzer can accumulate directly.
+# The gatedCaptureComplete Qt signal remains here as the delivery mechanism.
 
 class _FftProcessingThread(QtCore.QThread):
-    """Audio processing thread — all DSP runs here, off the main/GUI thread.
+    """Audio processing thread — continuous FFT and raw-sample delivery.
 
     Drains mic.queue chunk-by-chunk, maintains the ring buffer, computes the
-    FFT and per-chunk RMS level, and emits results to the main thread via Qt
-    signals.  Tap detection and decay tracking are NOT performed here.
+    FFT and per-chunk RMS level, calls mic.raw_sample_handler on every chunk,
+    and emits results to the main thread via Qt signals.
+    Tap detection, decay tracking, and gated capture are NOT performed here.
 
     Mirrors the audio delivery pipeline in Swift's RealtimeFFTAnalyzer:
-    - Ring buffer         ↔ Swift's inputBuffer accumulation in processAudioBuffer(_:)
-    - dft_anal call       ↔ Swift performFFT(on:) via AVAudioEngine FFT node
-    - fftFrameReady       ↔ Swift @Published magnitudes / inputLevelDB publishers
-    - recent_peak_level_db ↔ Swift recentPeakLevelDB rolling-max property
+    - Ring buffer           ↔ Swift's inputBuffer accumulation in processAudioBuffer(_:)
+    - dft_anal call         ↔ Swift performFFT(on:) via AVAudioEngine FFT node
+    - fftFrameReady         ↔ Swift @Published magnitudes / inputLevelDB publishers
+    - recent_peak_level_db  ↔ Swift recentPeakLevelDB rolling-max property
+    - raw_sample_handler    ↔ Swift rawSampleHandler callback (delivered per-chunk)
+    - gatedCaptureComplete  ↔ delivery signal for finishGatedFFTCapture (emitted by
+                               TapToneAnalyzer._accumulate_gated_samples when window fills)
 
     Python-only: Swift uses AVAudioEngine taps on the main audio graph rather
     than a separate QThread.
@@ -186,24 +197,16 @@ class _FftProcessingThread(QtCore.QThread):
         self._recent_peak_window: float = 0.5      # rolling window in seconds
         self._recent_peak_history: list = []       # [(timestamp, level_db), ...]
 
-        # MARK: - Gated FFT Capture (mirrors Swift accumulateGatedSamples / preRollBuffer)
-
-        # Pre-roll ring buffer: holds the most recent preRollSamples worth of raw PCM
-        # so the tap attack transient (which arrives before the detection event) is
-        # included in the gated capture window.
-        # Mirrors Swift TapToneAnalyzer.preRollBuffer and preRollSamples.
-        self._gated_lock = threading.Lock()
-        self._pre_roll_seconds: float = 0.2        # 200 ms pre-roll — mirrors Swift
-        self._pre_roll_samples: int = int(mic.rate * self._pre_roll_seconds)
-        self._pre_roll_buf: list = []              # raw PCM samples (float32)
-
-        # Gated capture accumulator: filled from tap-onset until gatedCaptureSamples.
-        # Mirrors Swift TapToneAnalyzer.gatedAccumBuffer / gatedCaptureActive.
-        self._gated_capture_active: bool = False
-        self._gated_capture_samples: int = 0      # target window size in samples
-        self._gated_capture_phase: object = None  # MaterialTapPhase at capture start
-        self._gated_accum: list = []              # accumulated raw PCM samples
-        self._gated_sample_rate: float = float(mic.rate)
+        # NOTE: The pre-roll buffer and gated accumulator previously lived here.
+        # They have been moved to TapToneAnalyzer (as _pre_roll_buf, _gated_accum,
+        # etc.) and are maintained by TapToneAnalyzer._accumulate_gated_samples(),
+        # which is called via mic.raw_sample_handler on every audio chunk.
+        # This matches Swift where TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:)
+        # owns the buffers rather than RealtimeFFTAnalyzer.
+        #
+        # gatedCaptureComplete signal remains here as the delivery mechanism —
+        # _accumulate_gated_samples emits it when the window fills so that the
+        # queued Qt connection delivers finishGatedFFTCapture on the main thread.
 
         # (gatedCaptureComplete is declared as a class-level Qt Signal above)
 
@@ -242,30 +245,14 @@ class _FftProcessingThread(QtCore.QThread):
             self._ring_fill = min(self._ring_fill + n, self._mic.m_t)
             self._samples_since_last_fft += n
 
-            # Maintain the pre-roll ring buffer (mirrors Swift preRollBuffer maintenance
-            # in accumulateGatedSamples — always updated, even when not capturing).
-            # Gated capture accumulation also happens here when active.
-            with self._gated_lock:
-                self._pre_roll_buf.extend(chunk_f32.tolist())
-                if len(self._pre_roll_buf) > self._pre_roll_samples:
-                    self._pre_roll_buf = self._pre_roll_buf[-self._pre_roll_samples:]
-
-                if self._gated_capture_active:
-                    self._gated_accum.extend(chunk_f32.tolist())
-                    if len(self._gated_accum) >= self._gated_capture_samples:
-                        # Window is full — close capture and dispatch to main thread.
-                        # Mirrors Swift: gatedCaptureActive = false; DispatchQueue.main.async
-                        self._gated_capture_active = False
-                        captured = self._gated_accum[:self._gated_capture_samples]
-                        phase = self._gated_capture_phase
-                        sample_rate = self._gated_sample_rate
-                        self._gated_accum = []
-                        # Emit on background thread; Qt queued connection delivers on main thread.
-                        self.gatedCaptureComplete.emit(
-                            np.array(captured, dtype=np.float32),
-                            sample_rate,
-                            phase,
-                        )
+            # Deliver every raw audio chunk to the raw_sample_handler if set.
+            # Mirrors Swift RealtimeFFTAnalyzer calling rawSampleHandler on every
+            # audio buffer on audioProcessingQueue.
+            # TapToneAnalyzer sets this to _accumulate_gated_samples so it can
+            # own the pre-roll buffer and gated accumulator directly.
+            handler = self._mic.raw_sample_handler
+            if handler is not None:
+                handler(chunk_f32, float(self._mic.rate))
 
             # Per-chunk RMS level — used for plate/brace tap detection and decay.
             # Mirrors Swift RealtimeFFTAnalyzer inputLevelDB computation.
@@ -328,66 +315,13 @@ class _FftProcessingThread(QtCore.QThread):
         with self._recent_peak_lock:
             self._recent_peak_db = -100.0
             self._recent_peak_history = []
-        with self._gated_lock:
-            self._pre_roll_buf = []
-            self._gated_capture_active = False
-            self._gated_accum = []
 
     def set_calibration(self, arr: npt.NDArray | None) -> None:
         """Update the per-bin dB calibration correction array."""
         with self._settings_lock:
             self._calibration = arr
 
-    # MARK: - Gated FFT Capture API (mirrors Swift startGatedCapture / accumulateGatedSamples)
-
-    def start_gated_capture(self, phase: object, duration_seconds: float = 0.4) -> None:
-        """Seed the gated buffer from the pre-roll and begin accumulating samples.
-
-        Safe to call from the main thread while run() is executing on the
-        background thread; access is protected by _gated_lock.
-
-        Mirrors Swift TapToneAnalyzer.startGatedCapture(phase:):
-          - Seeds gatedAccumBuffer with preRollBuffer contents.
-          - Sets gatedCaptureActive = true.
-          - Stores gatedCapturePhase so finishGatedFFTCapture routes correctly.
-
-        The gated window is:
-          pre-roll (200 ms)  +  new samples until total >= gatedCaptureSamples
-
-        When the window fills, run() emits gatedCaptureComplete(samples, rate, phase)
-        which is delivered to the main thread via a Qt queued connection.
-
-        Args:
-            phase:            MaterialTapPhase being captured.
-            duration_seconds: Gate window duration in seconds (default 0.4 s = 400 ms,
-                              mirrors Swift gatedCaptureDuration constant).
-        """
-        rate = self._gated_sample_rate
-        target_samples = int(rate * duration_seconds)
-        window_ms = int(duration_seconds * 1000)
-        print(
-            f"🎯 Gated FFT capture started for phase {phase} — "
-            f"{target_samples}-sample window ({window_ms} ms at {int(rate)} Hz)"
-        )
-        with self._gated_lock:
-            # Seed accumulator with pre-roll (mirrors Swift: gatedAccumBuffer = preRollBuffer).
-            self._gated_accum = list(self._pre_roll_buf)
-            self._gated_capture_samples = target_samples
-            self._gated_capture_phase = phase
-            self._gated_capture_active = True
-
-    def cancel_gated_capture(self) -> None:
-        """Cancel any in-progress gated capture without emitting a result.
-
-        Safe to call from the main thread.  Used by the safety-timeout path
-        (mirrors Swift's 2-second timeout that calls reEnableDetectionForNextPlateTap
-        when the accumulator is empty).
-        """
-        with self._gated_lock:
-            partial = list(self._gated_accum)
-            self._gated_capture_active = False
-            self._gated_accum = []
-        return partial  # caller decides whether to flush or discard
+    # MARK: - Gated FFT Compute (pure function; no gated state owned here)
 
     def compute_gated_fft(
         self,
@@ -602,6 +536,14 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
         # calibration from CalibrationStorage.
         # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
         self._on_calibration_changed: "Callable[[object | None], None] | None" = on_calibration_changed
+
+        # Raw-sample handler callback.
+        # Mirrors Swift RealtimeFFTAnalyzer.rawSampleHandler: (([Float], Double) -> Void)?
+        # Set by TapToneAnalyzer.start() to self._accumulate_gated_samples so that
+        # TapToneAnalyzer owns the pre-roll buffer and gated accumulator directly,
+        # matching Swift where TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:)
+        # is the handler.
+        self.raw_sample_handler: "Callable[[np.ndarray, float], None] | None" = None
 
         # Python-only: off-main-thread DSP worker.
         # Mirrors Swift's AVAudioEngine audio processing queue that delivers

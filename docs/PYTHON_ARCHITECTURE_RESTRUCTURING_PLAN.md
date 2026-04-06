@@ -6,7 +6,12 @@ Make the Python codebase a faithful mirror of the Swift architecture: same class
 
 ---
 
-## Part 1 — Reactive Pattern: Replace PyQt Signals with Python `@property` + Observer
+## Part 1 — Reactive Pattern: Replace PyQt Signals with Python `@property` + Observer ✅ DONE
+
+**Status:** `ObservableObject` base class and `Published` descriptor live in
+`swiftui_compat/observable.py` and `swiftui_compat/descriptors.py`. `TapToneAnalyzer`
+inherits from `ObservableObject` and uses `QtCore.Signal` (not `pyqtSignal`). All model
+state changes fire through `Published` / `_notify_change()`.
 
 ### Current State (Python)
 
@@ -67,7 +72,11 @@ class ObservableObject:
 
 ---
 
-## Part 2 — Eliminate Separate `TapDetector` and `DecayTracker` Classes
+## Part 2 — Eliminate Separate `TapDetector` and `DecayTracker` Classes ✅ DONE
+
+**Status:** No separate `TapDetector` or `DecayTracker` classes exist. All tap detection
+and decay tracking state and logic live as methods directly on `TapToneAnalyzer` via
+`TapToneAnalyzerTapDetectionHandlerMixin` and `TapToneAnalyzerDecayTrackingMixin`.
 
 ### Current State (Python)
 
@@ -172,7 +181,11 @@ class TapToneAnalyzerDecayTrackingMixin:
 
 ---
 
-## Part 3 — Property Name and Type Alignment
+## Part 3 — Property Name and Type Alignment ✅ DONE
+
+**Status:** All `TapToneAnalyzer` property names align with Swift (snake_case equivalents
+of Swift camelCase). `current_peaks` is `list[ResonantPeak]`, `frozen_magnitudes` /
+`frozen_frequencies` are `list[float]`, etc.
 
 ### Current Python names vs Swift names
 
@@ -211,7 +224,10 @@ All properties on `TapToneAnalyzer` should be renamed from Python snake_case-wit
 
 ---
 
-## Part 4 — `TapDisplaySettings` as a Proper Settings Singleton
+## Part 4 — `TapDisplaySettings` as a Proper Settings Singleton ✅ DONE
+
+**Status:** `models/tap_display_settings.py` exists as a QSettings-backed model-layer
+singleton. No model files import from views for settings.
 
 ### Current State
 
@@ -227,7 +243,11 @@ Move `AppSettings` entirely to `models/tap_display_settings.py` as `TapDisplaySe
 
 ---
 
-## Part 5 — Restructure `TapToneAnalyzer.__init__` to Match Swift's Stored Properties
+## Part 5 — Restructure `TapToneAnalyzer.__init__` to Match Swift's Stored Properties ✅ DONE
+
+**Status:** `TapToneAnalyzer.__init__(fft_analyzer=None)` requires no audio hardware.
+All stored properties have sensible defaults. Audio-hardware setup is deferred to
+`start(parent_widget, fft_params, audio_device, ...)`, called only by the view layer.
 
 ### Current State
 
@@ -293,7 +313,11 @@ Audio-hardware-specific setup (mic, processing thread) moves to a separate `star
 
 ---
 
-## Part 6 — Restructure `find_peaks` to Match Swift's Hz-Based API
+## Part 6 — Restructure `find_peaks` to Match Swift's Hz-Based API ✅ DONE
+
+**Status:** `find_peaks(magnitudes, frequencies, min_hz, max_hz)` takes Hz-based float
+lists and returns `list[ResonantPeak]`. Mirrors Swift's
+`findPeaks(magnitudes:frequencies:minHz:maxHz:) → [ResonantPeak]`.
 
 ### Current State
 
@@ -486,26 +510,26 @@ class TestFrozenPeakRecalculation:
 
 ## Summary of Files Changed
 
-| File | Action |
-|------|--------|
-| `models/observable_object.py` | **New** — `@published` descriptor + `ObservableObject` base |
-| `models/tap_display_settings.py` | **New** — move `AppSettings` here from views, eliminating model→view import |
-| `models/tap_tone_analyzer.py` | **Rewrite** — new `__init__`, `ObservableObject` base, no `QObject`, all stored properties |
-| `models/tap_tone_analyzer_decay_tracking.py` | **Delete `DecayTracker`** — replace entirely with `TapToneAnalyzerDecayTrackingMixin` |
-| `models/tap_tone_analyzer_tap_detection.py` | **Delete `TapDetector`** — merge all state and logic into `TapToneAnalyzerTapDetectionHandlerMixin` |
-| `models/tap_tone_analyzer_peak_analysis.py` | **Rewrite `find_peaks`** — Hz-based signature, returns `list[ResonantPeak]` |
-| `models/tap_tone_analyzer_annotation_management.py` | **Expand** — add all Swift annotation/selection methods |
-| `models/tap_tone_analyzer_mode_override_management.py` | **Expand** — add `set_mode_override`, `effective_mode_label`, `has_manual_override` |
-| `models/tap_tone_analyzer_analysis_helpers.py` | **Rename** `_recalculate_peaks` → `recalculate_frozen_peaks_if_needed`; port internals to `list[ResonantPeak]` |
-| `models/tap_tone_analyzer_control.py` | **Rewrite** — `start_tap_sequence`, `reset`, `pause_tap_detection` match Swift method shapes |
-| `models/resonant_peak.py` | **Ensure** UUID `id` always present; add `make_peak` factory on analyzer |
-| `models/fft_processing_thread.py` | **Remove** `TapDetector`/`DecayTracker` ownership — becomes pure audio callback deliverer |
-| `tests/test_tap_detection.py` | **Rewrite** — `TapToneAnalyzer`-based, T1–T8 direct ports |
-| `tests/test_decay_tracking.py` | **Rewrite** — `TapToneAnalyzer`-based, DK1–DK7 direct ports |
-| `tests/test_annotation_state.py` | **Rewrite** — live state tests, D1–PS6 direct ports |
-| `tests/test_frozen_peak_recalculation.py` | **Rewrite** — `recalculate_frozen_peaks_if_needed`, PR1–PR7 direct ports |
-| `tests/test_peak_finding.py` | **Rewrite** — Hz-based API, `list[ResonantPeak]` results |
-| `views/` (all) | **Update** signal connections: `pyqtSignal.connect` → `analyzer.observe(...)` |
+| File | Action | Status |
+|------|--------|--------|
+| `models/observable_object.py` | **New** — `@published` descriptor + `ObservableObject` base | ✅ Done (in `swiftui_compat`) |
+| `models/tap_display_settings.py` | **New** — move `AppSettings` here from views, eliminating model→view import | ✅ Done |
+| `models/tap_tone_analyzer.py` | **Rewrite** — new `__init__`, `ObservableObject` base, no `QObject`, all stored properties | ✅ Done |
+| `models/tap_tone_analyzer_decay_tracking.py` | **Delete `DecayTracker`** — replace entirely with `TapToneAnalyzerDecayTrackingMixin` | ✅ Done |
+| `models/tap_tone_analyzer_tap_detection.py` | **Delete `TapDetector`** — merge all state and logic into `TapToneAnalyzerTapDetectionHandlerMixin` | ✅ Done |
+| `models/tap_tone_analyzer_peak_analysis.py` | **Rewrite `find_peaks`** — Hz-based signature, returns `list[ResonantPeak]` | ✅ Done |
+| `models/tap_tone_analyzer_annotation_management.py` | **Expand** — add all Swift annotation/selection methods | ✅ Done — all Swift methods present (`updateAnnotationOffset`, `getAnnotationOffset`, `resetAnnotationOffset`, `resetAllAnnotationOffsets`, `applyAnnotationOffsets`, `selectLongitudinalPeak`, `selectCrossPeak`, `selectFlcPeak`); plan entries for `toggle_peak_selection` etc. have no Swift equivalent |
+| `models/tap_tone_analyzer_mode_override_management.py` | **Expand** — add `set_mode_override`, `effective_mode_label`, `has_manual_override` | ✅ Done — all Swift methods present (`applyModeOverrides`, `resetAllModeOverrides`, `resetModeOverride`); `set_mode_override`, `effective_mode_label`, `has_manual_override` have no Swift equivalent |
+| `models/tap_tone_analyzer_analysis_helpers.py` | **Rename** `_recalculate_peaks` → `recalculate_frozen_peaks_if_needed`; port internals to `list[ResonantPeak]` | ✅ Done — renamed; all call sites updated; frozen and loaded-measurement paths correct |
+| `models/tap_tone_analyzer_control.py` | **Rewrite** — `start_tap_sequence`, `reset`, `pause_tap_detection` match Swift method shapes | ✅ Done (`start_tap_sequence`, `pause_tap_detection`, `cancel_tap_sequence` present) |
+| `models/resonant_peak.py` | **Ensure** UUID `id` always present; add `make_peak` factory on analyzer | ✅ Done (`id: str` auto-assigned on construction) |
+| `models/fft_processing_thread.py` | **Remove** `TapDetector`/`DecayTracker` ownership — becomes pure audio callback deliverer | ✅ Done (pure DSP thread; no `TapDetector`/`DecayTracker`) |
+| `tests/test_tap_detection.py` | **Rewrite** — `TapToneAnalyzer`-based, T1–T8 direct ports | ✅ Done |
+| `tests/test_decay_tracking.py` | **Rewrite** — `TapToneAnalyzer`-based, DK1–DK7 direct ports | ✅ Done |
+| `tests/test_annotation_state.py` | **Rewrite** — live state tests, D1–PS6 direct ports | ✅ Done (UUID-keyed) |
+| `tests/test_frozen_peak_recalculation.py` | **Rewrite** — `recalculate_frozen_peaks_if_needed`, PR1–PR7 direct ports | ✅ Done — `TestRecalculateFrozenPeaksIfNeeded` added (PR-A1–A5 call `recalculate_frozen_peaks_if_needed` directly on `TapToneAnalyzer`); PR1–PR7 remap helpers retained |
+| `tests/test_peak_finding.py` | **Rewrite** — Hz-based API, `list[ResonantPeak]` results | ✅ Done |
+| `views/` (all) | **Update** signal connections: `pyqtSignal.connect` → `analyzer.observe(...)` | Pending — view-layer work (see `SWIFTUI_COMPAT_VIEW_LAYER_PLAN.md`) |
 
 ---
 
@@ -513,14 +537,14 @@ class TestFrozenPeakRecalculation:
 
 This is a ground-up rewrite of the model layer. The recommended sequence minimises the amount of broken intermediate state:
 
-1. **`ObservableObject` + `TapDisplaySettings`** first — no dependencies on anything else; unblocks all subsequent steps.
-2. **`ResonantPeak` UUID stabilisation** — needed before annotation management can be UUID-keyed and before `find_peaks` can return `list[ResonantPeak]`.
-3. **`TapToneAnalyzer.__init__` restructuring** — new property names, `ObservableObject` base, hardware-free defaults.
-4. **Merge `TapDetector` → `detect_tap()`** and **`DecayTracker` → `TapToneAnalyzerDecayTrackingMixin`** — now that `TapToneAnalyzer` is instantiable without hardware, tests call methods directly on it, exactly like Swift tests do.
-5. **`find_peaks` Hz-based rewrite** — depends on `ResonantPeak` UUID stabilisation.
-6. **Annotation management expansion** — depends on UUID-keyed peaks.
-7. **View layer updates** — adapt signal connections to `observe()` pattern last, after model layer is solid and tested.
-8. **Test rewrites** — follow each model change immediately; no test should be written against the old API once the new one exists.
+1. ✅ **`ObservableObject` + `TapDisplaySettings`** first — no dependencies on anything else; unblocks all subsequent steps.
+2. ✅ **`ResonantPeak` UUID stabilisation** — needed before annotation management can be UUID-keyed and before `find_peaks` can return `list[ResonantPeak]`.
+3. ✅ **`TapToneAnalyzer.__init__` restructuring** — new property names, `ObservableObject` base, hardware-free defaults.
+4. ✅ **Merge `TapDetector` → `detect_tap()`** and **`DecayTracker` → `TapToneAnalyzerDecayTrackingMixin`** — now that `TapToneAnalyzer` is instantiable without hardware, tests call methods directly on it, exactly like Swift tests do.
+5. ✅ **`find_peaks` Hz-based rewrite** — depends on `ResonantPeak` UUID stabilisation.
+6. ✅ **Annotation management expansion** — all Swift annotation and mode-override methods present. Plan entries for `toggle_peak_selection`, `select_all_peaks`, `set_mode_override`, etc. have no Swift equivalent and were dropped. `_recalculate_peaks` renamed to `recalculate_frozen_peaks_if_needed`; all call sites updated; `test_frozen_peak_recalculation.py` updated to call it directly on `TapToneAnalyzer`.
+7. **View layer updates** — adapt signal connections to `observe()` pattern last, after model layer is solid and tested. See `SWIFTUI_COMPAT_VIEW_LAYER_PLAN.md`.
+8. ✅ **Test rewrites** — complete: tap detection, decay tracking, annotation state, peak finding, frozen peak recalculation all done.
 
 ---
 

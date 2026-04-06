@@ -365,7 +365,7 @@ class TapToneAnalyzerControlMixin:
     def set_threshold(self, threshold: int) -> None:
         """Set the peak-detection threshold (0-100 scale, stored as dBFS)."""
         self.peak_threshold = float(threshold - 100)
-        self._recalculate_peaks()
+        self.recalculate_frozen_peaks_if_needed()
 
     def set_fmin(self, fmin: int) -> None:
         self.update_axis(fmin, int(self.max_frequency))
@@ -380,7 +380,7 @@ class TapToneAnalyzerControlMixin:
             self.max_frequency = float(fmax)
             # n_fmin / n_fmax are now computed properties — no assignment needed.
         if not init:
-            self._recalculate_peaks()
+            self.recalculate_frozen_peaks_if_needed()
 
     def set_max_average_count(self, max_average_count: int) -> None:
         self.max_average_count = max_average_count
@@ -428,8 +428,10 @@ class TapToneAnalyzerControlMixin:
 
         # Cancel any in-flight gated capture when resetting phase state.
         # Mirrors Swift which simply clears gatedCaptureActive in resetMaterialPhaseState.
-        if self.mic is not None and hasattr(self.mic, "proc_thread"):
-            self.mic.proc_thread.cancel_gated_capture()
+        # Gated state now lives on self (TapToneAnalyzer), not on proc_thread.
+        with self._gated_lock:
+            self._gated_capture_active = False
+            self._gated_accum = []
 
     def _reset_decay_tracking(self) -> None:
         """Stop any active decay tracking and clear the associated timer.

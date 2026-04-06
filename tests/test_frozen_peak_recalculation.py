@@ -9,12 +9,16 @@ In Python, 'peak recalculation' means re-running the peak detection pipeline
 spectrum data.  This is used when the user changes the peak threshold or
 analysis window on a frozen/loaded measurement.
 
-The tests validate the data-remapping logic:
-  - Peaks below the threshold are excluded (PR2a–PR2c)
-  - annotation_offsets are remapped to new peaks by nearest-frequency match (PR3a/PR3b)
-  - peak_mode_overrides are remapped similarly (PR4/PR4b)
-  - selected_peak_ids are carried forward by frequency proximity (PR5a/PR5b)
-  - Guard: an empty peak list does not crash remap logic (PR6)
+The tests validate:
+  - recalculate_frozen_peaks_if_needed() on TapToneAnalyzer (PR-A tests):
+    the unified entry point dispatches correctly for frozen-spectrum (live-tap)
+    and loaded-measurement paths, and threshold changes take effect.
+  - The data-remapping logic (PR1–PR7):
+    - Peaks below the threshold are excluded (PR2a–PR2c)
+    - annotation_offsets are remapped to new peaks by nearest-frequency match (PR3a/PR3b)
+    - peak_mode_overrides are remapped similarly (PR4/PR4b)
+    - selected_peak_ids are carried forward by frequency proximity (PR5a/PR5b)
+    - Guard: an empty peak list does not crash remap logic (PR6)
 
 Since the Python remap logic lives in TapToneMeasurement data structures
 rather than in a separate 'recalculate' method, tests here validate the
@@ -40,6 +44,28 @@ from guitar_tap.models.realtime_fft_analyzer_fft_processing import (
     peak_interp,
     peak_q_factor,
 )
+
+# PySide6 application — required for QObject construction.
+# Mirrors the fixture pattern used in test_tap_detection.py.
+from PySide6 import QtWidgets
+
+_APP = None
+
+
+def _get_app():
+    global _APP
+    if _APP is None:
+        _APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    return _APP
+
+
+@pytest.fixture(scope="session", autouse=True)
+def qt_app():
+    return _get_app()
+
+
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+from guitar_tap.models.guitar_type import GuitarType
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +145,149 @@ def _remap_by_freq(
         if best_id is not None and best_id in old_map:
             result[new_freq] = old_map[best_id]
     return result
+
+
+# ---------------------------------------------------------------------------
+# PR-A: TapToneAnalyzer.recalculate_frozen_peaks_if_needed() integration tests
+#
+# These tests exercise the unified entry point directly on TapToneAnalyzer,
+# mirroring Swift FrozenPeakRecalculationTests which call
+# recalculateFrozenPeaksIfNeeded() on a real TapToneAnalyzer instance.
+# ---------------------------------------------------------------------------
+
+
+class TestRecalculateFrozenPeaksIfNeeded:
+    """Integration tests for recalculate_frozen_peaks_if_needed() on TapToneAnalyzer.
+
+    Mirrors Swift FrozenPeakRecalculationTests — exercises the unified
+    recalculateFrozenPeaksIfNeeded() entry point rather than the underlying
+    pipeline helpers directly.
+    """
+
+    # Helper: build a synthetic spectrum with one clear peak at freq_hz.
+    @staticmethod
+    def _make_spectrum_with_peak(
+        freq_hz: float,
+        peak_db: float = -20.0,
+        floor_db: float = -80.0,
+        sample_freq: int = SAMPLE_FREQ,
+        n_fft: int = N_F,
+    ):
+        n_bins = n_fft // 2 + 1
+        hz_per_bin = sample_freq / n_fft
+        mag = np.full(n_bins, floor_db, dtype=np.float64)
+        _add_tone(mag, freq_hz, peak_db)
+        freqs = np.array([i * hz_per_bin for i in range(n_bins)])
+        return freqs, mag
+
+    def test_PRA1_frozen_spectrum_path_detects_peak(self, qt_app):
+        """PR-A1: When loaded_measurement_peaks is None, uses frozen spectrum.
+
+        Mirrors Swift recalculateFrozenPeaksIfNeeded — frozen path calls
+        findPeaks on frozenMagnitudes and updates currentPeaks.
+        """
+        sut = TapToneAnalyzer()
+        sut._guitar_type = GuitarType.CLASSICAL
+        freqs, mag = self._make_spectrum_with_peak(200.0, peak_db=-20.0)
+        sut.freq = freqs
+        sut.frozen_magnitudes = mag
+        sut.peak_threshold = -60.0
+        sut.min_frequency = 80.0
+        sut.max_frequency = 1200.0
+        sut.loaded_measurement_peaks = None
+
+        sut.recalculate_frozen_peaks_if_needed()
+
+        assert len(sut.current_peaks) >= 1, (
+            "frozen-spectrum path should detect the 200 Hz peak"
+        )
+        detected_freqs = [p.frequency for p in sut.current_peaks]
+        assert any(abs(f - 200.0) < 20.0 for f in detected_freqs), (
+            f"Expected peak near 200 Hz; got {[f'{f:.1f}' for f in detected_freqs]}"
+        )
+
+    def test_PRA2_threshold_change_removes_weak_peak(self, qt_app):
+        """PR-A2: Raising peak_threshold removes sub-threshold peaks on recalculate.
+
+        Mirrors Swift PR2c — the frozen path re-runs find_peaks with the new
+        threshold, so previously detected weak peaks disappear.
+        """
+        sut = TapToneAnalyzer()
+        sut._guitar_type = GuitarType.CLASSICAL
+        freqs, mag = self._make_spectrum_with_peak(200.0, peak_db=-50.0)
+        sut.freq = freqs
+        sut.frozen_magnitudes = mag
+        sut.min_frequency = 80.0
+        sut.max_frequency = 1200.0
+        sut.loaded_measurement_peaks = None
+
+        # Low threshold: peak should be detected.
+        sut.peak_threshold = -60.0
+        sut.recalculate_frozen_peaks_if_needed()
+        detected_low = [p.frequency for p in sut.current_peaks]
+        assert any(abs(f - 200.0) < 20.0 for f in detected_low), (
+            "Peak should be detected at low threshold"
+        )
+
+        # Raised threshold: weak peak should be removed.
+        sut.peak_threshold = -40.0
+        sut.recalculate_frozen_peaks_if_needed()
+        detected_high = [p.frequency for p in sut.current_peaks]
+        assert not any(abs(f - 200.0) < 20.0 for f in detected_high), (
+            "Weak peak should be absent after raising threshold"
+        )
+
+    def test_PRA3_loaded_measurement_path_filters_by_threshold(self, qt_app):
+        """PR-A3: When loaded_measurement_peaks is set, threshold is applied to it.
+
+        Mirrors Swift recalculateFrozenPeaksIfNeeded — loaded path filters
+        loaded_measurement_peaks by peak_threshold and stores in current_peaks.
+        """
+        sut = TapToneAnalyzer()
+
+        # loaded_measurement_peaks is an (N, 3) array: [freq, mag, quality]
+        sut.loaded_measurement_peaks = np.array([
+            [200.0, -25.0, 10.0],   # above threshold
+            [400.0, -65.0, 8.0],    # below threshold
+        ])
+        sut.peak_threshold = -60.0
+
+        sut.recalculate_frozen_peaks_if_needed()
+
+        assert sut.current_peaks.shape[0] == 1, (
+            "Only the above-threshold peak should remain"
+        )
+        assert abs(sut.current_peaks[0, 0] - 200.0) < 1.0, (
+            "The surviving peak should be at 200 Hz"
+        )
+
+    def test_PRA4_loaded_measurement_all_below_threshold_yields_empty(self, qt_app):
+        """PR-A4: All loaded peaks below threshold → current_peaks is empty array."""
+        sut = TapToneAnalyzer()
+        sut.loaded_measurement_peaks = np.array([
+            [200.0, -70.0, 10.0],
+            [400.0, -65.0, 8.0],
+        ])
+        sut.peak_threshold = -60.0
+
+        sut.recalculate_frozen_peaks_if_needed()
+
+        assert sut.current_peaks.shape[0] == 0, (
+            "No peaks should remain when all are below threshold"
+        )
+
+    def test_PRA5_empty_frozen_magnitudes_yields_no_peaks(self, qt_app):
+        """PR-A5: Empty frozen_magnitudes does not crash; current_peaks stays empty."""
+        sut = TapToneAnalyzer()
+        sut._guitar_type = GuitarType.CLASSICAL
+        sut.freq = np.array([])
+        sut.frozen_magnitudes = np.array([])
+        sut.loaded_measurement_peaks = None
+        sut.peak_threshold = -60.0
+
+        sut.recalculate_frozen_peaks_if_needed()   # must not raise
+
+        assert len(sut.current_peaks) == 0
 
 
 # ---------------------------------------------------------------------------

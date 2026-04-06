@@ -14,12 +14,15 @@ class TapToneAnalyzerAnalysisHelpersMixin:
     Mirrors Swift TapToneAnalyzer+AnalysisHelpers.swift.
     """
 
-    def _recalculate_peaks(self) -> None:
+    def recalculate_frozen_peaks_if_needed(self) -> None:
         """Refresh peak display after threshold or frequency-axis change.
 
         Single unified path for both live and frozen/loaded measurements —
-        mirrors Swift recalculateFrozenPeaksIfNeeded which handles both cases
+        mirrors Swift recalculateFrozenPeaksIfNeeded() which handles both cases
         in one method rather than at every call site.
+
+        Mirrors Swift TapToneAnalyzer+AnalysisHelpers.swift:
+        recalculateFrozenPeaksIfNeeded().
         """
         if self.loaded_measurement_peaks is not None:
             self._emit_loaded_peaks_at_threshold()

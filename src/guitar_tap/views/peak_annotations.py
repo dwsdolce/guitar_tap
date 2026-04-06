@@ -362,7 +362,7 @@ class FftAnnotations(QtCore.QObject):
                 x, y = pos.x(), pos.y()
                 ann_dict["xytext"] = (x, y)
                 if self._analyzer is not None:
-                    self._analyzer.update_annotation_offset(ann_dict["freq"], x, y)
+                    self._analyzer.update_annotation_offset(ann_dict["freq"], (x, y))
         self.restoreFocus.emit()
 
     # ── label reset ───────────────────────────────────────────────────────────
