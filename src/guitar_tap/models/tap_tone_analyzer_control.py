@@ -221,7 +221,7 @@ class TapToneAnalyzerControlMixin:
         self._reset_material_phase_state(to=new_phase)
 
         # Clear annotation offsets so dragged positions reset for the new measurement.
-        self.clear_annotation_offsets()
+        self.reset_all_annotation_offsets()
 
         # Clear frozen spectrum so live FFT is shown while waiting for taps.
         self.frozen_magnitudes = np.array([])

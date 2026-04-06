@@ -2607,11 +2607,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
         # Gore Target Thickness
         try:
-            _preset_str  = AS.AppSettings.plate_stiffness_preset()
-            _preset      = PSP.PlateStiffnessPreset(_preset_str)
-            _fvs         = (AS.AppSettings.custom_plate_stiffness()
-                            if _preset == PSP.PlateStiffnessPreset.CUSTOM
-                            else _preset.value)
+            _fvs         = TDS.plate_stiffness()
             _body_l      = AS.AppSettings.guitar_body_length()
             _body_w      = AS.AppSettings.guitar_body_width()
             # Mirrors Swift: props.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:)

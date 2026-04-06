@@ -17,9 +17,9 @@ additions; they are not parity violations.
 |---|---|---|
 | `annotation_visibility_mode.py` | `AnnotationVisibilityMode.swift` | ✅ Equivalent |
 | `tap_display_settings.py` | `TapDisplaySettings.swift` | ⚠️ Minor gaps (see §2) |
-| `tap_tone_analyzer_annotation_management.py` | `TapToneAnalyzer+AnnotationManagement.swift` | ❌ Methods in wrong files (see §3) |
-| `tap_tone_analyzer_mode_override_management.py` | `TapToneAnalyzer+ModeOverrideManagement.swift` | ❌ Methods in wrong files (see §4) |
-| `tap_tone_analyzer_analysis_helpers.py` | `TapToneAnalyzer+AnalysisHelpers.swift` | ❌ Wrong file — content belongs in PeakAnalysis (see §5) |
+| `tap_tone_analyzer_annotation_management.py` | `TapToneAnalyzer+AnnotationManagement.swift` | ⚠️ Structural extras (see §3) |
+| `tap_tone_analyzer_mode_override_management.py` | `TapToneAnalyzer+ModeOverrideManagement.swift` | ⚠️ Structural extras (see §4) |
+| `tap_tone_analyzer_analysis_helpers.py` | `TapToneAnalyzer+AnalysisHelpers.swift` | ❌ Wrong file — core content belongs in PeakAnalysis (see §5) |
 | `tap_tone_analyzer_measurement_management.py` | `TapToneAnalyzer+MeasurementManagement.swift` | ✅ Equivalent |
 | `tap_tone_analyzer_peak_analysis.py` | `TapToneAnalyzer+PeakAnalysis.swift` | ⚠️ Missing methods (see §7) |
 
@@ -61,26 +61,17 @@ No issues found.
 
 **Gap 1 — `plateStiffness` computed property absent in Python.**
 
-Swift `TapDisplaySettings.swift` exposes a computed property:
-```swift
-var plateStiffness: Double {
-    plateStiffnessPreset == "Custom" ? customPlateStiffness : presetStiffnessValue
-}
-```
-Python has `plate_stiffness_preset()` and `custom_plate_stiffness()` but no equivalent
-`plate_stiffness()` computed property that resolves the preset-or-custom logic.
-Any call site needing the effective stiffness must currently perform this
-logic itself.
+Swift `TapDisplaySettings` exposes a `plateStiffness` computed property that resolves
+the preset-or-custom logic and returns the effective numeric stiffness value. Python
+has `plate_stiffness_preset()` and `custom_plate_stiffness()` but no combining
+`plate_stiffness()` classmethod.
 
 **Gap 2 — Legacy aliases block.**
 
-Python adds a `# MARK: - Legacy aliases` block at the bottom with three alias
-classmethods (`analysis_f_min`, `analysis_f_max`, `tap_threshold`). These are absent
-from Swift.
-
-**Action required:** Find all call sites of `analysis_f_min`, `analysis_f_max`, and
-`tap_threshold`; update them to use the canonical names (`analysis_frequency_min`,
-`analysis_frequency_max`, `tap_detection_threshold`); then delete the alias block.
+Python has three legacy alias classmethods that have no Swift equivalents:
+`analysis_f_min()`, `analysis_f_max()`, and `tap_threshold()`. These exist for
+backward compatibility with older call sites but violate parity — Swift uses only the
+canonical names `analysisMinFrequency`, `analysisMaxFrequency`, and `tapThreshold`.
 
 ### Recommendation
 
@@ -415,18 +406,24 @@ should be re-aligned.
 
 ## Implementation Priority
 
-| Priority | Work |
-|---|---|
-| High | Delete `clear_annotation_offsets()` alias; update 3 call sites to `reset_all_annotation_offsets()` |
-| High | Delete `analysis_f_min` / `analysis_f_max` / `tap_threshold` aliases; update all call sites to canonical names |
-| High | Add `plate_stiffness()` computed property to tap_display_settings.py |
-| High | Add the 5 missing AnalysisHelpers query methods to analysis_helpers.py |
-| Medium | Move `toggle_peak_selection`, `select_all_peaks`, `select_no_peaks`, `visible_peaks`, `cycle_annotation_visibility` from annotation_management.py to tap_tone_analyzer.py |
-| Medium | Move `set_mode_override`, `has_manual_override`, `effective_mode_label`, `set_guitar_type` from mode_override_management.py to tap_tone_analyzer.py |
-| Medium | Move `reset_to_auto_selection` from annotation_management.py to peak_analysis.py |
-| Medium | Move `start_plate_analysis`, `reset_plate_analysis` from mode_override_management.py to spectrum_capture.py |
-| Medium | Move `recalculate_frozen_peaks_if_needed`, `_apply_frozen_peak_state`, `_emit_loaded_peaks_at_threshold` from analysis_helpers.py to peak_analysis.py |
-| Medium | Move `process_averages` from analysis_helpers.py to spectrum_capture.py |
-| Low | Add `analyze_magnitudes()` to peak_analysis.py |
-| Low | Add `reclassify_peaks()` to peak_analysis.py |
-| Low | Re-align declaration order in peak_analysis.py after structural moves |
+### High
+
+- [x] Delete `clear_annotation_offsets()` alias; update 3 call sites to `reset_all_annotation_offsets()`
+- [x] Delete `analysis_f_min` / `analysis_f_max` / `tap_threshold` aliases; update all call sites to canonical names
+- [x] Add `plate_stiffness()` computed property to tap_display_settings.py
+- [x] Add the 5 missing AnalysisHelpers query methods to analysis_helpers.py
+
+### Medium
+
+- [x] Move `toggle_peak_selection`, `select_all_peaks`, `select_no_peaks`, `visible_peaks`, `cycle_annotation_visibility` from annotation_management.py to tap_tone_analyzer.py
+- [x] Move `set_mode_override`, `has_manual_override`, `effective_mode_label`, `set_guitar_type` from mode_override_management.py to tap_tone_analyzer.py
+- [x] Move `reset_to_auto_selection` from annotation_management.py to peak_analysis.py
+- [x] Move `start_plate_analysis`, `reset_plate_analysis` from mode_override_management.py to spectrum_capture.py
+- [x] Move `recalculate_frozen_peaks_if_needed`, `_apply_frozen_peak_state`, `_emit_loaded_peaks_at_threshold` from analysis_helpers.py to peak_analysis.py
+- [x] Move `process_averages` from analysis_helpers.py to spectrum_capture.py
+
+### Low
+
+- [x] Add `analyze_magnitudes()` to peak_analysis.py
+- [x] Add `reclassify_peaks()` to peak_analysis.py
+- [x] Re-align declaration order in peak_analysis.py after structural moves

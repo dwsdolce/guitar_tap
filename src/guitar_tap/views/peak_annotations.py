@@ -395,5 +395,5 @@ class FftAnnotations(QtCore.QObject):
                 ann._update_arrow()
                 ann_dict["xytext"] = (ann._default_pos.x(), ann._default_pos.y())
         if self._analyzer is not None:
-            self._analyzer.clear_annotation_offsets()
+            self._analyzer.reset_all_annotation_offsets()
         self.restoreFocus.emit()

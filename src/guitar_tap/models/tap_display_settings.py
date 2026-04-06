@@ -220,6 +220,25 @@ class TapDisplaySettings:
     def set_custom_plate_stiffness(cls, v: float) -> None:
         _app_settings().set_custom_plate_stiffness(v)
 
+    @classmethod
+    def plate_stiffness(cls) -> float:
+        """Resolved vibrational stiffness value (f_vs) for the current preset.
+
+        Returns the preset's fixed value, or the user-entered custom value when
+        the preset is CUSTOM.
+
+        Mirrors Swift TapDisplaySettings.plateStiffness.
+        """
+        from .plate_stiffness_preset import PlateStiffnessPreset
+        raw = cls.plate_stiffness_preset()
+        try:
+            preset = PlateStiffnessPreset(raw)
+        except ValueError:
+            preset = PlateStiffnessPreset.CUSTOM
+        if preset == PlateStiffnessPreset.CUSTOM:
+            return cls.custom_plate_stiffness()
+        return preset.value
+
     # MARK: - Brace Dimensions
 
     @classmethod
@@ -551,20 +570,3 @@ class TapDisplaySettings:
         s.set_hysteresis_margin(cls.DEFAULT_HYSTERESIS_MARGIN)
         s.set_measure_flc(False)
 
-    # MARK: - Legacy aliases (Python-only, for backward compatibility)
-    # These alias the old AppSettings method names used by model files.
-
-    @classmethod
-    def analysis_f_min(cls) -> float:
-        """Legacy alias for analysis_min_frequency()."""
-        return cls.analysis_min_frequency()
-
-    @classmethod
-    def analysis_f_max(cls) -> float:
-        """Legacy alias for analysis_max_frequency()."""
-        return cls.analysis_max_frequency()
-
-    @classmethod
-    def tap_threshold(cls) -> float:
-        """Legacy alias for tap_detection_threshold()."""
-        return cls.tap_detection_threshold()

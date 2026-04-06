@@ -275,8 +275,8 @@ class TapToneAnalyzer(
         # ── @Published property initialisation from persisted settings ───────
         # Mirrors Swift's property initialisers:
         #   @Published var minFrequency: Float = TapDisplaySettings.analysisMinFrequency
-        self.min_frequency = float(_tds.analysis_f_min())
-        self.max_frequency = float(_tds.analysis_f_max())
+        self.min_frequency = float(_tds.analysis_min_frequency())
+        self.max_frequency = float(_tds.analysis_max_frequency())
         self.max_peaks = _tds.max_peaks()
         self.peak_threshold = float(_tds.peak_threshold())
         self.tap_detection_threshold = float(_tds.tap_detection_threshold())
@@ -573,3 +573,115 @@ class TapToneAnalyzer(
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
         return self.mic.proc_thread
+
+    # ------------------------------------------------------------------ #
+    # Guitar Type & Mode Override
+    # Mirrors Swift TapToneAnalyzer.swift (not in any extension file):
+    #   setGuitarType / effectiveModeLabel / setModeOverride / hasManualOverride
+    # ------------------------------------------------------------------ #
+
+    def set_guitar_type(self, guitar_type) -> None:
+        """Update the guitar type used for mode classification.
+
+        Mirrors Swift setting ``guitarType`` on ``TapToneAnalyzer``.
+        """
+        self._guitar_type = guitar_type
+
+    def effective_mode_label(self, peak) -> str:
+        """Return the display label for a peak, respecting any user override.
+
+        If ``peak_mode_overrides`` contains an entry for ``peak.id``, that
+        string is returned. Otherwise the auto-classification from
+        ``GuitarMode.classify_peak`` is used.
+
+        Mirrors Swift ``effectiveModeLabel(for peak: ResonantPeak) -> String``.
+        """
+        override = self.peak_mode_overrides.get(peak.id)
+        if override:
+            return override
+        from .guitar_mode import classify_peak
+        from .guitar_type import GuitarType
+        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+        return classify_peak(peak.frequency, guitar_type)
+
+    def set_mode_override(self, mode: "str | None", peak_id: str) -> None:
+        """Set or clear a mode-label override for a specific peak.
+
+        Passing ``None`` or the string ``"auto"`` clears any existing override.
+        Any other string is stored as a manual label.
+
+        Mirrors Swift ``setModeOverride(_ override: UserAssignedMode, for peakID: UUID)``.
+        """
+        if mode is None or mode == "auto":
+            self.peak_mode_overrides.pop(peak_id, None)
+        else:
+            self.peak_mode_overrides[peak_id] = mode
+
+    def has_manual_override(self, peak_id: str) -> bool:
+        """Return ``True`` when the peak has a manually-assigned (non-auto) mode label.
+
+        Mirrors Swift ``hasManualOverride(for peakID: UUID) -> Bool``.
+        """
+        return peak_id in self.peak_mode_overrides
+
+    # ------------------------------------------------------------------ #
+    # Guitar Peak Selection
+    # Mirrors Swift TapToneAnalyzer.swift (not in any extension file):
+    #   togglePeakSelection / selectAllPeaks / selectNoPeaks /
+    #   cycleAnnotationVisibility / visiblePeaks
+    # ------------------------------------------------------------------ #
+
+    def toggle_peak_selection(self, peak_id: str) -> None:
+        """Toggle the selection state of a single guitar peak.
+
+        Mirrors Swift ``togglePeakSelection(_ peakID: UUID)``.
+
+        Args:
+            peak_id: ``ResonantPeak.id`` (UUID string).
+        """
+        current = set(self.selected_peak_ids)
+        if peak_id in current:
+            current.discard(peak_id)
+        else:
+            current.add(peak_id)
+        self.selected_peak_ids = current
+        self.user_has_modified_peak_selection = True
+
+    def select_all_peaks(self) -> None:
+        """Mark all current peaks as selected.
+
+        Mirrors Swift ``selectAllPeaks()``.
+        """
+        self.selected_peak_ids = {p.id for p in self.current_peaks}
+        self.user_has_modified_peak_selection = True
+
+    def select_no_peaks(self) -> None:
+        """Clear all peak selections.
+
+        Mirrors Swift ``selectNoPeaks()``.
+        """
+        self.selected_peak_ids = set()
+        self.user_has_modified_peak_selection = True
+
+    def cycle_annotation_visibility(self) -> None:
+        """Advance annotation_visibility_mode: all → selected → none → all.
+
+        Persists the new value via TapDisplaySettings.
+        Mirrors Swift ``cycleAnnotationVisibility()``.
+        """
+        self.annotation_visibility_mode = self.annotation_visibility_mode.next
+
+    @property
+    def visible_peaks(self) -> list:
+        """Subset of current_peaks to render given annotation_visibility_mode.
+
+        Mirrors Swift ``visiblePeaks: [ResonantPeak]``.
+        """
+        from .annotation_visibility_mode import AnnotationVisibilityMode
+        mode = self.annotation_visibility_mode
+        if mode == AnnotationVisibilityMode.ALL:
+            return list(self.current_peaks)
+        if mode == AnnotationVisibilityMode.SELECTED:
+            return [p for p in self.current_peaks if p.id in self.selected_peak_ids]
+        # NONE
+        return []

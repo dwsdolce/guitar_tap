@@ -144,7 +144,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         if not is_complete:
             self.captured_taps.clear()
             self.loaded_measurement_peaks = None
-            self.clear_annotation_offsets()
+            self.reset_all_annotation_offsets()
             # Clear the frozen spectrum — mirrors Swift setFrozenSpectrum(frequencies: [], magnitudes: [])
             # in reset() and cancelTapSequence().  Both arrays are reset to empty so they
             # remain matched; frozen_frequencies will be populated again when the next tap

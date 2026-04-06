@@ -19,6 +19,203 @@ class TapToneAnalyzerPeakAnalysisMixin:
     PEAK_PROXIMITY_HZ: float = 2.0
 
     # ------------------------------------------------------------------ #
+    # analyze_magnitudes
+    # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift analyzeMagnitudes(_:frequencies:peakMagnitude:)
+    # ------------------------------------------------------------------ #
+
+    def analyze_magnitudes(
+        self,
+        magnitudes: "list[float]",
+        frequencies: "list[float]",
+        peak_magnitude: float,
+    ) -> None:
+        """Update live peaks from a new FFT frame.
+
+        Called on each FFT output frame while detection is active. Finds peaks,
+        updates ``current_peaks``, auto-selects all new peaks, and classifies modes.
+
+        Mirrors Swift ``analyzeMagnitudes(_:frequencies:peakMagnitude:)``.
+
+        Args:
+            magnitudes:     Magnitude spectrum in dBFS, one value per FFT bin.
+            frequencies:    Frequency axis in Hz matching *magnitudes*.
+            peak_magnitude: Maximum bin magnitude in dBFS (used by tap detection
+                            and decay tracking; not used in Python peak finding
+                            since tap detection is handled separately).
+        """
+        from .guitar_mode import GuitarMode
+        from .guitar_type import GuitarType
+
+        # Only analyze when detection is active, paused (spectrum stays live),
+        # or in a capture window; stop once the measurement is complete.
+        # Mirrors Swift's guard on isDetecting || isDetectionPaused || captureTimer != nil.
+        if not (
+            getattr(self, "is_detecting", False)
+            or getattr(self, "is_detection_paused", False)
+            or getattr(self, "capture_timer", None) is not None
+        ):
+            return
+        if getattr(self, "is_measurement_complete", False):
+            return
+
+        peaks = self.find_peaks(magnitudes, frequencies)
+        self.current_peaks = peaks
+        # Auto-select all newly detected peaks so visibility mode «selected»
+        # shows everything by default — mirrors Swift selectedPeakIDs = Set(peaks.map { $0.id }).
+        self.selected_peak_ids = {p.id for p in peaks}
+
+        # Classify modes using the context-aware algorithm.
+        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+        mode_map = GuitarMode.classify_all(peaks, guitar_type)
+        self.identified_modes = [
+            {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
+            for p in peaks
+        ]
+
+    # ------------------------------------------------------------------ #
+    # recalculate_frozen_peaks_if_needed / _apply_frozen_peak_state
+    # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift
+    # ------------------------------------------------------------------ #
+
+    def recalculate_frozen_peaks_if_needed(self) -> None:
+        """Refresh peak display after threshold or frequency-axis change.
+
+        Single unified path for both live and frozen/loaded measurements —
+        mirrors Swift recalculateFrozenPeaksIfNeeded().
+        """
+        if getattr(self, "is_loading_measurement", False):
+            return
+
+        import numpy as np
+        frozen_mag = self.frozen_magnitudes
+        frozen_freq = self.frozen_frequencies
+        if (
+            not self.is_measurement_complete
+            or (hasattr(frozen_freq, "__len__") and len(frozen_freq) == 0)
+            or (hasattr(frozen_mag, "__len__") and len(frozen_mag) == 0)
+        ):
+            return
+
+        is_guitar = getattr(self._measurement_type, "is_guitar", True)
+        tolerance = 5.0  # Hz — matches Swift tolerance constant
+
+        # Snapshot frequency-keyed state BEFORE UUIDs change.
+        offsets_by_freq = []
+        for uid, offset in list(self.peak_annotation_offsets.items()):
+            match = next(
+                (p for p in self.current_peaks if p.id == uid), None
+            )
+            if match is not None:
+                offsets_by_freq.append((match.frequency, offset))
+
+        overrides_by_freq = []
+        for uid, label in list(self.peak_mode_overrides.items()):
+            match = next(
+                (p for p in self.current_peaks if p.id == uid), None
+            )
+            if match is not None:
+                overrides_by_freq.append((match.frequency, label))
+
+        previously_selected_freqs: list = []
+        if is_guitar and self.user_has_modified_peak_selection:
+            if self.selected_peak_frequencies:
+                previously_selected_freqs = list(self.selected_peak_frequencies)
+            elif self.loaded_measurement_peaks:
+                previously_selected_freqs = [
+                    p.frequency
+                    for p in self.loaded_measurement_peaks
+                    if p.id in self.selected_peak_ids
+                ]
+            else:
+                previously_selected_freqs = [
+                    p.frequency
+                    for p in self.current_peaks
+                    if p.id in self.selected_peak_ids
+                ]
+
+        if self.loaded_measurement_peaks is not None:
+            peaks = [
+                p for p in self.loaded_measurement_peaks
+                if p.magnitude >= self.peak_threshold
+            ]
+            if not peaks:
+                self.current_peaks = []
+                self.identified_modes = []
+                self.peaksChanged.emit([])
+                return
+
+            self.current_peaks = peaks
+            modes_by_freq = [
+                (entry["peak"].frequency, entry["mode"])
+                for entry in self.identified_modes
+                if "peak" in entry and "mode" in entry
+            ]
+            if not modes_by_freq:
+                from .guitar_mode import GuitarMode, classify_peak
+                from .guitar_type import GuitarType
+                guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+                modes_by_freq = [
+                    (p.frequency, GuitarMode.classify(p.frequency, guitar_type))
+                    for p in self.loaded_measurement_peaks
+                ]
+
+            self._apply_frozen_peak_state(
+                peaks=peaks,
+                modes_by_freq=modes_by_freq,
+                offsets_by_freq=offsets_by_freq,
+                overrides_by_freq=overrides_by_freq,
+                previously_selected_freqs=previously_selected_freqs,
+                is_guitar=is_guitar,
+                tolerance=tolerance,
+            )
+            self.peaksChanged.emit(peaks)
+            return
+
+        modes_by_freq = [
+            (entry["peak"].frequency, entry["mode"])
+            for entry in self.identified_modes
+            if "peak" in entry and "mode" in entry
+        ]
+
+        peaks = self.find_peaks(list(frozen_mag), list(frozen_freq))
+        if not peaks:
+            self.current_peaks = []
+            self.identified_modes = []
+            self.peaksChanged.emit([])
+            return
+
+        self.current_peaks = peaks
+        self._apply_frozen_peak_state(
+            peaks=peaks,
+            modes_by_freq=modes_by_freq,
+            offsets_by_freq=offsets_by_freq,
+            overrides_by_freq=overrides_by_freq,
+            previously_selected_freqs=previously_selected_freqs,
+            is_guitar=is_guitar,
+            tolerance=tolerance,
+        )
+        self.peaksChanged.emit(peaks)
+
+    # ------------------------------------------------------------------ #
+    # reset_to_auto_selection
+    # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift resetToAutoSelection()
+    # ------------------------------------------------------------------ #
+
+    def reset_to_auto_selection(self) -> None:
+        """Clear the manual-modification flag and re-run auto-selection.
+
+        Mirrors Swift ``resetToAutoSelection()``.
+        Does nothing if ``current_peaks`` is empty.
+        """
+        self.user_has_modified_peak_selection = False
+        self.selected_peak_frequencies = []
+        peaks = self.current_peaks
+        if not peaks:
+            return
+        # Re-run guitar mode auto-selection.
+        self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
+
+    # ------------------------------------------------------------------ #
     # find_peaks
     # Mirrors Swift findPeaks(magnitudes:frequencies:minHz:maxHz:)
     # ------------------------------------------------------------------ #
@@ -240,144 +437,90 @@ class TapToneAnalyzerPeakAnalysisMixin:
         return final_peaks
 
     # ------------------------------------------------------------------ #
-    # remove_duplicate_peaks
-    # Mirrors Swift removeDuplicatePeaks(_:)
+    # _apply_frozen_peak_state  (private helper)
+    # Mirrors Swift applyFrozenPeakState(peaks:modesByFrequency:...)
     # ------------------------------------------------------------------ #
 
-    def remove_duplicate_peaks(self, peaks: "list") -> "list":
-        """Remove near-duplicate peaks (within PEAK_PROXIMITY_HZ of each other).
+    def _apply_frozen_peak_state(
+        self,
+        peaks: list,
+        modes_by_freq: list,
+        offsets_by_freq: list,
+        overrides_by_freq: list,
+        previously_selected_freqs: list,
+        is_guitar: bool,
+        tolerance: float,
+    ) -> None:
+        """Remap annotation offsets, mode overrides, and selections to new peak UUIDs.
 
-        Keeps the higher-magnitude peak from each near-duplicate pair.
-        Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift removeDuplicatePeaks(_:).
-
-        Args:
-            peaks: Input peak list (any order).
-
-        Returns:
-            List with near-duplicates removed, preserving insertion order of
-            the first-seen instance (updated if a later duplicate has higher
-            magnitude).
+        Mirrors Swift ``applyFrozenPeakState(peaks:modesByFrequency:...)``.
         """
-        unique: "list" = []
-        tol = self.PEAK_PROXIMITY_HZ
-
-        for peak in peaks:
-            dup_idx = next(
-                (
-                    j for j, existing in enumerate(unique)
-                    if abs(existing.frequency - peak.frequency) < tol
-                ),
-                None,
-            )
-            if dup_idx is None:
-                unique.append(peak)
-            elif peak.magnitude > unique[dup_idx].magnitude:
-                unique[dup_idx] = peak
-
-        return unique
-
-    # ------------------------------------------------------------------ #
-    # guitar_mode_selected_peak_ids
-    # Mirrors Swift guitarModeSelectedPeakIDs(from:)
-    # ------------------------------------------------------------------ #
-
-    def guitar_mode_selected_peak_ids(self, peaks: "list | None" = None) -> set:
-        """Return the set of peak IDs that should be auto-selected for guitar modes.
-
-        Picks the highest-magnitude peak within each claimed guitar mode band
-        (Air, Top, Back, Dipole, RingMode, UpperModes).
-
-        Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift
-        ``guitarModeSelectedPeakIDs(from:)``.
-
-        Args:
-            peaks: Peaks to evaluate; defaults to ``self.current_peaks``.
-
-        Returns:
-            Set of ``ResonantPeak.id`` strings for the auto-selected peaks.
-        """
-        from .guitar_mode import classify_peak
+        from .guitar_mode import GuitarMode, classify_peak
         from .guitar_type import GuitarType
 
-        candidates = peaks if peaks is not None else self.current_peaks
-        claimed_modes = {"Air (Helmholtz)", "Top", "Back", "Dipole", "Ring Mode", "Upper Modes"}
         guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+        fresh_mode_map = {
+            p.id: GuitarMode.classify(p.frequency, guitar_type)
+            for p in peaks
+        }
 
-        best_per_mode: dict = {}
-        for peak in candidates:
-            mode_label = classify_peak(peak.frequency, guitar_type)
-            if mode_label not in claimed_modes:
-                continue
-            existing = best_per_mode.get(mode_label)
-            if existing is None or peak.magnitude > existing.magnitude:
-                best_per_mode[mode_label] = peak
+        new_identified: list = []
+        for new_peak in peaks:
+            saved_mode = None
+            for freq_val, mode_val in modes_by_freq:
+                if abs(freq_val - new_peak.frequency) <= tolerance:
+                    saved_mode = mode_val
+                    break
+            mode = saved_mode if saved_mode is not None else (
+                fresh_mode_map.get(new_peak.id, GuitarMode.UNKNOWN)
+            )
+            new_identified.append({"peak": new_peak, "mode": mode})
+        self.identified_modes = new_identified
 
-        return {p.id for p in best_per_mode.values()}
+        new_offsets: dict = {}
+        for new_peak in peaks:
+            for freq_val, offset_val in offsets_by_freq:
+                if abs(freq_val - new_peak.frequency) <= tolerance:
+                    new_offsets[new_peak.id] = offset_val
+                    break
+        self.peak_annotation_offsets = new_offsets
 
-    # ------------------------------------------------------------------ #
-    # average_spectra
-    # Mirrors Swift averageSpectra(from:)
-    # ------------------------------------------------------------------ #
+        new_overrides: dict = {}
+        for new_peak in peaks:
+            for freq_val, label_val in overrides_by_freq:
+                if abs(freq_val - new_peak.frequency) <= tolerance:
+                    new_overrides[new_peak.id] = label_val
+                    break
+        self.peak_mode_overrides = new_overrides
 
-    def average_spectra(
-        self,
-        from_taps: "list[tuple]",
-    ) -> "tuple[list[float], list[float]]":
-        """Average multiple captured spectra in the linear power domain.
-
-        Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift averageSpectra(from:).
-
-        Each element of from_taps must have:
-            .magnitudes (or [0]) — dBFS magnitude array
-            .frequencies (or [1]) — frequency axis in Hz
-
-        Averaging in the power domain (not amplitude or dB) is physically
-        correct for non-periodic impulse responses where inter-tap phase
-        alignment cannot be guaranteed.  Mirrors Swift:
-            p_avg = (1/N) × Σ 10^(dB_n / 10)   [per bin]
-            dB_avg = 10 × log10(p_avg)
-
-        Args:
-            from_taps: List of tap-capture tuples/objects.  Each entry is
-                       expected to expose .magnitudes and .frequencies, OR
-                       be a plain tuple (magnitudes, frequencies[, ...]).
-
-        Returns:
-            (frequencies, magnitudes) — averaged frequency axis and dBFS
-            magnitude array, both as list[float].  Returns ([], []) if
-            from_taps is empty.
-        """
-        import math
-
-        if not from_taps:
-            return [], []
-
-        # Accept both named-attribute objects and plain (mags, freqs[, ...]) tuples.
-        def _mags(entry):
-            return entry.magnitudes if hasattr(entry, "magnitudes") else entry[0]
-
-        def _freqs(entry):
-            return entry.frequencies if hasattr(entry, "frequencies") else entry[1]
-
-        freqs = list(_freqs(from_taps[0]))
-        n_bins = len(freqs)
-        n_taps = len(from_taps)
-
-        # Accumulate linear power per bin.
-        power_sum = [0.0] * n_bins
-        for tap in from_taps:
-            mags = _mags(tap)
-            for b in range(min(n_bins, len(mags))):
-                # 10^(dB / 10) — power domain averaging (mirrors Swift).
-                power_sum[b] += 10.0 ** (mags[b] / 10.0)
-
-        # Convert averaged power back to dB.
-        avg_mags = [
-            10.0 * math.log10(max(power_sum[b] / n_taps, 1e-30))
-            for b in range(n_bins)
-        ]
-
-        return freqs, avg_mags
+        if not is_guitar:
+            self.selected_peak_ids = {p.id for p in peaks}
+            self.selected_peak_frequencies = [p.frequency for p in peaks]
+        elif self.user_has_modified_peak_selection:
+            carried_ids: set = set()
+            carried_freqs: list = []
+            for old_freq in previously_selected_freqs:
+                candidates = [
+                    p for p in peaks
+                    if abs(p.frequency - old_freq) <= tolerance
+                ]
+                if candidates:
+                    closest = min(
+                        candidates, key=lambda p: abs(p.frequency - old_freq)
+                    )
+                    if closest.id not in carried_ids:
+                        carried_ids.add(closest.id)
+                        carried_freqs.append(closest.frequency)
+                else:
+                    carried_freqs.append(old_freq)
+            self.selected_peak_ids = carried_ids
+            self.selected_peak_frequencies = carried_freqs
+        else:
+            auto_ids = self.guitar_mode_selected_peak_ids(peaks)
+            self.selected_peak_ids = auto_ids
+            self.selected_peak_frequencies = [
+                p.frequency for p in peaks if p.id in auto_ids
+            ]
 
     # ------------------------------------------------------------------ #
     # _make_peak  (private helper)
@@ -433,6 +576,105 @@ class TapToneAnalyzerPeakAnalysisMixin:
             pitch_cents=pitch_cents,
             pitch_frequency=pitch_frequency,
         )
+
+    # ------------------------------------------------------------------ #
+    # guitar_mode_selected_peak_ids
+    # Mirrors Swift guitarModeSelectedPeakIDs(from:)
+    # ------------------------------------------------------------------ #
+
+    def guitar_mode_selected_peak_ids(self, peaks: "list | None" = None) -> set:
+        """Return the set of peak IDs that should be auto-selected for guitar modes.
+
+        Picks the highest-magnitude peak within each claimed guitar mode band
+        (Air, Top, Back, Dipole, RingMode, UpperModes).
+
+        Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift
+        ``guitarModeSelectedPeakIDs(from:)``.
+
+        Args:
+            peaks: Peaks to evaluate; defaults to ``self.current_peaks``.
+
+        Returns:
+            Set of ``ResonantPeak.id`` strings for the auto-selected peaks.
+        """
+        from .guitar_mode import classify_peak
+        from .guitar_type import GuitarType
+
+        candidates = peaks if peaks is not None else self.current_peaks
+        claimed_modes = {"Air (Helmholtz)", "Top", "Back", "Dipole", "Ring Mode", "Upper Modes"}
+        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+
+        best_per_mode: dict = {}
+        for peak in candidates:
+            mode_label = classify_peak(peak.frequency, guitar_type)
+            if mode_label not in claimed_modes:
+                continue
+            existing = best_per_mode.get(mode_label)
+            if existing is None or peak.magnitude > existing.magnitude:
+                best_per_mode[mode_label] = peak
+
+        return {p.id for p in best_per_mode.values()}
+
+    # ------------------------------------------------------------------ #
+    # reclassify_peaks
+    # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift reclassifyPeaks()
+    # ------------------------------------------------------------------ #
+
+    def reclassify_peaks(self) -> None:
+        """Re-run mode classification on the current peaks without re-detecting them.
+
+        Called when the guitar type changes (acoustic ↔ classical) so that
+        ``identified_modes`` stays consistent with the updated mode-range
+        boundaries without requiring a new tap.
+
+        Mirrors Swift ``reclassifyPeaks()``.
+        """
+        from .guitar_mode import GuitarMode
+        from .guitar_type import GuitarType
+
+        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+        mode_map = GuitarMode.classify_all(self.current_peaks, guitar_type)
+        self.identified_modes = [
+            {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
+            for p in self.current_peaks
+        ]
+
+    # ------------------------------------------------------------------ #
+    # remove_duplicate_peaks
+    # Mirrors Swift removeDuplicatePeaks(_:)
+    # ------------------------------------------------------------------ #
+
+    def remove_duplicate_peaks(self, peaks: "list") -> "list":
+        """Remove near-duplicate peaks (within PEAK_PROXIMITY_HZ of each other).
+
+        Keeps the higher-magnitude peak from each near-duplicate pair.
+        Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift removeDuplicatePeaks(_:).
+
+        Args:
+            peaks: Input peak list (any order).
+
+        Returns:
+            List with near-duplicates removed, preserving insertion order of
+            the first-seen instance (updated if a later duplicate has higher
+            magnitude).
+        """
+        unique: "list" = []
+        tol = self.PEAK_PROXIMITY_HZ
+
+        for peak in peaks:
+            dup_idx = next(
+                (
+                    j for j, existing in enumerate(unique)
+                    if abs(existing.frequency - peak.frequency) < tol
+                ),
+                None,
+            )
+            if dup_idx is None:
+                unique.append(peak)
+            elif peak.magnitude > unique[dup_idx].magnitude:
+                unique[dup_idx] = peak
+
+        return unique
 
     # ------------------------------------------------------------------ #
     # _parabolic_interpolate  (private helper)
@@ -522,3 +764,81 @@ class TapToneAnalyzerPeakAnalysisMixin:
         quality   = center_freq / bandwidth if bandwidth > 0.0 else 0.0
 
         return quality, bandwidth
+
+    # ------------------------------------------------------------------ #
+    # average_spectra
+    # Mirrors Swift averageSpectra(from:)
+    # ------------------------------------------------------------------ #
+
+    def average_spectra(
+        self,
+        from_taps: "list[tuple]",
+    ) -> "tuple[list[float], list[float]]":
+        """Average multiple captured spectra in the linear power domain.
+
+        Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift averageSpectra(from:).
+
+        Each element of from_taps must have:
+            .magnitudes (or [0]) — dBFS magnitude array
+            .frequencies (or [1]) — frequency axis in Hz
+
+        Averaging in the power domain (not amplitude or dB) is physically
+        correct for non-periodic impulse responses where inter-tap phase
+        alignment cannot be guaranteed.  Mirrors Swift:
+            p_avg = (1/N) × Σ 10^(dB_n / 10)   [per bin]
+            dB_avg = 10 × log10(p_avg)
+
+        Args:
+            from_taps: List of tap-capture tuples/objects.  Each entry is
+                       expected to expose .magnitudes and .frequencies, OR
+                       be a plain tuple (magnitudes, frequencies[, ...]).
+
+        Returns:
+            (frequencies, magnitudes) — averaged frequency axis and dBFS
+            magnitude array, both as list[float].  Returns ([], []) if
+            from_taps is empty.
+        """
+        import math
+
+        if not from_taps:
+            return [], []
+
+        # Accept both named-attribute objects and plain (mags, freqs[, ...]) tuples.
+        def _mags(entry):
+            return entry.magnitudes if hasattr(entry, "magnitudes") else entry[0]
+
+        def _freqs(entry):
+            return entry.frequencies if hasattr(entry, "frequencies") else entry[1]
+
+        freqs = list(_freqs(from_taps[0]))
+        n_bins = len(freqs)
+        n_taps = len(from_taps)
+
+        # Accumulate linear power per bin.
+        power_sum = [0.0] * n_bins
+        for tap in from_taps:
+            mags = _mags(tap)
+            for b in range(min(n_bins, len(mags))):
+                # 10^(dB / 10) — power domain averaging (mirrors Swift).
+                power_sum[b] += 10.0 ** (mags[b] / 10.0)
+
+        # Convert averaged power back to dB.
+        avg_mags = [
+            10.0 * math.log10(max(power_sum[b] / n_taps, 1e-30))
+            for b in range(n_bins)
+        ]
+
+        return freqs, avg_mags
+
+    def _emit_loaded_peaks_at_threshold(self) -> None:
+        """Filter loaded-measurement peaks by threshold and emit peaksChanged.
+
+        Mirrors Swift recalculateFrozenPeaksIfNeeded — applied when threshold or
+        frequency range changes while a measurement is frozen/loaded.
+        """
+        assert self.loaded_measurement_peaks is not None
+        threshold_db = self.peak_threshold
+        filtered = [p for p in self.loaded_measurement_peaks if p.magnitude >= threshold_db]
+
+        self.current_peaks = filtered
+        self.peaksChanged.emit(filtered)
