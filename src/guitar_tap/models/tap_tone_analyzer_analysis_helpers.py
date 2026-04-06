@@ -27,7 +27,10 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         if self.loaded_measurement_peaks is not None:
             self._emit_loaded_peaks_at_threshold()
         else:
-            self.find_peaks(list(self.frozen_magnitudes), list(self.freq))
+            # Frozen-spectrum path — mirrors Swift analyzeMagnitudes() store+publish block.
+            peaks = self.find_peaks(list(self.frozen_magnitudes), list(self.freq))
+            self.current_peaks = peaks
+            self.peaksChanged.emit(peaks)
 
     def _emit_loaded_peaks_at_threshold(self) -> None:
         """Filter loaded-measurement peaks by threshold and emit peaksChanged.
@@ -36,23 +39,13 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         frequency range changes while a measurement is frozen/loaded.
         Viewport filtering (fmin/fmax) is applied by the results panel at display time.
         """
-        import numpy as np
-
         assert self.loaded_measurement_peaks is not None
         threshold_db = self.peak_threshold
-        peaks = self.loaded_measurement_peaks[
-            self.loaded_measurement_peaks[:, 1] >= threshold_db
-        ]
+        filtered = [p for p in self.loaded_measurement_peaks if p.magnitude >= threshold_db]
 
-        empty = np.zeros((0, 3))
-        if peaks.shape[0] == 0:
-            self.current_peaks = empty
-            self.peaksChanged.emit(empty)
-            return
-
-        self.current_peaks = peaks
+        self.current_peaks = filtered
         # Emit all threshold-passing peaks — viewport filtering applied by results panel.
-        self.peaksChanged.emit(peaks)
+        self.peaksChanged.emit(filtered)
 
     def process_averages(self, mag_y) -> None:
         """Accumulate and average FFT linear magnitudes.
@@ -75,8 +68,10 @@ class TapToneAnalyzerAnalysisHelpersMixin:
 
             avg_amplitude = np.max(avg_mag_y_db) + 100
             if avg_amplitude > (self.peak_threshold + 100):
-                # find_peaks stores current_peaks and emits peaksChanged internally.
                 avg_peaks = self.find_peaks(list(avg_mag_y_db), list(self.freq))
+                if avg_peaks:
+                    self.current_peaks = avg_peaks
+                    self.peaksChanged.emit(avg_peaks)
                 triggered = len(avg_peaks) > 0
                 if triggered:
                     self.newSample.emit(self.is_measurement_complete)

@@ -419,6 +419,7 @@ class PeakListWidget(QtWidgets.QWidget):
         self.selected_freq_index: int = -1
         # Mirrors Swift measurementType.isGuitar — controls pitch row visibility in cards.
         self._is_guitar: bool = True
+        self._last_peaks: list = []  # list[ResonantPeak]
         self._last_data: "npt.NDArray | None" = None
 
         data: npt.NDArray = np.vstack(([], [])).T
@@ -620,9 +621,17 @@ class PeakListWidget(QtWidgets.QWidget):
         if self._last_data is not None:
             self._rebuild_cards(self._last_data)
 
-    def update_data(self, data: npt.NDArray) -> bool:
+    def update_data(self, peaks: list) -> bool:  # list[ResonantPeak]
+        self._last_peaks = peaks
+        if peaks:
+            data = np.array(
+                [[p.frequency, p.magnitude, p.quality] for p in peaks],
+                dtype=np.float64,
+            )
+        else:
+            data = np.zeros((0, 3), dtype=np.float64)
         self._last_data = data
-        self.model.update_data(data)
+        self.model.update_data(peaks)
         self._rebuild_cards(data)
         if self.selected_freq > 0:
             self.select_row(self.selected_freq)

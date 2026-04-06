@@ -524,7 +524,7 @@ class FftCanvas(pg.PlotWidget):
         # Last viewport-filtered peaks received via peaksChanged signal.
         # Tracks the emitted slice so point_picked and update_mode_colors
         # don't need to re-derive it from saved_peaks + index fields.
-        self._current_peaks: np.ndarray = np.zeros((0, 3))
+        self._current_peaks: list = []  # list[ResonantPeak]
 
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
@@ -977,8 +977,8 @@ class FftCanvas(pg.PlotWidget):
             if self.annotations.select_annotation(scatter):
                 return
             index0 = points[0].index()
-            if self._current_peaks.size > 0 and index0 < len(self._current_peaks):
-                freq = float(self._current_peaks[index0][0])
+            if self._current_peaks and index0 < len(self._current_peaks):
+                freq = float(self._current_peaks[index0].frequency)
                 self.peakSelected.emit(freq)
 
     # ── info button & zoom/pan help ───────────────────────────────────────────
@@ -1440,8 +1440,8 @@ class FftCanvas(pg.PlotWidget):
 
         self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()
-        if self._current_peaks.size > 0 and self.analyzer.selected_peak > 0:
-            if self.analyzer.selected_peak in self._current_peaks[:, 0]:
+        if self._current_peaks and self.analyzer.selected_peak > 0:
+            if self.analyzer.selected_peak in [p.frequency for p in self._current_peaks]:
                 self.peakSelected.emit(self.analyzer.selected_peak)
 
     def _peak_brushes(self, freqs) -> list:
@@ -1455,10 +1455,12 @@ class FftCanvas(pg.PlotWidget):
     def update_mode_colors(self, color_map: dict) -> None:
         """Update the per-peak mode colour map and redraw scatter points."""
         self._mode_color_map = color_map
-        if self._current_peaks.size > 0:
+        if self._current_peaks:
+            freqs = [p.frequency for p in self._current_peaks]
+            mags  = [p.magnitude for p in self._current_peaks]
             self.points.setData(
-                x=self._current_peaks[:, 0], y=self._current_peaks[:, 1],
-                brush=self._peak_brushes(self._current_peaks[:, 0]),
+                x=freqs, y=mags,
+                brush=self._peak_brushes(freqs),
             )
 
     def _on_peaks_changed_scatter(self, peaks) -> None:
@@ -1470,14 +1472,13 @@ class FftCanvas(pg.PlotWidget):
         mirrors how Swift's SpectrumView reactively re-filters currentPeaks
         on every render rather than keeping a separate scatter-plot state.
         """
-        if hasattr(peaks, "size") and peaks.size > 0:
-            self._current_peaks = peaks
-            self.points.setData(
-                x=peaks[:, 0], y=peaks[:, 1],
-                brush=self._peak_brushes(peaks[:, 0]),
-            )
+        if peaks:
+            self._current_peaks = peaks  # list[ResonantPeak]
+            freqs = [p.frequency for p in peaks]
+            mags  = [p.magnitude for p in peaks]
+            self.points.setData(x=freqs, y=mags, brush=self._peak_brushes(freqs))
         else:
-            self._current_peaks = np.zeros((0, 3))
+            self._current_peaks = []
             self.points.setData(x=[], y=[])
 
     def set_draw_data(self, mag_db, freqs=None) -> None:

@@ -133,11 +133,14 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._rebuild_instructions()
         self._rebuild_rows()
 
-    def update_peaks(self, data: np.ndarray) -> None:
-        """Refresh from a (N, ≥2) numpy array [freq, mag, ...]."""
-        if isinstance(data, np.ndarray) and data.ndim == 2 and data.shape[0] > 0:
-            self._peaks = [(float(data[i, 0]), float(data[i, 1]))
-                           for i in range(data.shape[0])]
+    def update_peaks(self, peaks) -> None:
+        """Refresh from a list[ResonantPeak]."""
+        if peaks and not isinstance(peaks, np.ndarray):
+            self._peaks = [(float(p.frequency), float(p.magnitude)) for p in peaks]
+        elif isinstance(peaks, np.ndarray) and peaks.ndim == 2 and peaks.shape[0] > 0:
+            # Fallback for direct ndarray calls (e.g. load path).
+            self._peaks = [(float(peaks[i, 0]), float(peaks[i, 1]))
+                           for i in range(peaks.shape[0])]
         else:
             self._peaks = []
         existing = {f for f, _ in self._peaks}
@@ -1979,24 +1982,19 @@ class MainWindow(QtWidgets.QMainWindow):
         Mirrors Swift TapAnalysisResultsView.sortedPeaksWithModes which filters
         analyzer.currentPeaks by minFreq/maxFreq at display time.
         """
-        import numpy as np
-        self._current_peaks_all = peaks if isinstance(peaks, np.ndarray) else None
+        self._current_peaks_all = peaks if isinstance(peaks, list) else []
         self._refresh_results_peaks()
 
     def _refresh_results_peaks(self) -> None:
         """Re-apply the viewport filter to cached all-peaks and update the widget."""
-        import numpy as np
         peaks = self._current_peaks_all
-        if peaks is None or not isinstance(peaks, np.ndarray) or peaks.ndim != 2:
-            self.peak_widget.update_data(np.zeros((0, 3)))
-            return
-        if peaks.shape[0] == 0:
-            self.peak_widget.update_data(peaks)
+        if not peaks:
+            self.peak_widget.update_data([])
             return
         fmin = self.fft_canvas.fmin
         fmax = self.fft_canvas.fmax
-        mask = (peaks[:, 0] > fmin) & (peaks[:, 0] < fmax)
-        self.peak_widget.update_data(peaks[mask])
+        filtered = [p for p in peaks if fmin < p.frequency < fmax]
+        self.peak_widget.update_data(filtered)
 
     def _on_canvas_freq_range_changed(self, fmin: int, fmax: int) -> None:
         """Update freq label and re-filter the results panel when viewport changes."""
@@ -2238,22 +2236,21 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _on_peaks_changed_ratios(self, peaks: object) -> None:
-        import numpy as np
-        if not isinstance(peaks, np.ndarray) or peaks.ndim != 2 or peaks.shape[0] == 0:
+        if not isinstance(peaks, list) or not peaks:
             return
         # Apply viewport filter — mirrors Swift where ratios use sortedPeaksWithModes
         # (which filters analyzer.currentPeaks by minFreq/maxFreq).
         fmin = self.fft_canvas.fmin
         fmax = self.fft_canvas.fmax
-        peaks = peaks[(peaks[:, 0] > fmin) & (peaks[:, 0] < fmax)]
-        if peaks.shape[0] == 0:
+        filtered = [p for p in peaks if fmin < p.frequency < fmax]
+        if not filtered:
             return
         guitar_type_str = self.guitar_type_combo.currentText()
         try:
             guitar_type = GT.GuitarType(guitar_type_str)
         except ValueError:
             return
-        peaks_data = [(float(row[0]), float(row[1])) for row in peaks]
+        peaks_data = [(float(p.frequency), float(p.magnitude)) for p in filtered]
         idx_map = GM.GuitarMode._classify_all_tuples(peaks_data, guitar_type)
         mode_freqs: dict[str, float] = {}
         for i, mode in idx_map.items():
@@ -3059,7 +3056,9 @@ class MainWindow(QtWidgets.QMainWindow):
             peaks_array = np.zeros((0, 3), dtype=np.float64)
 
         canvas.saved_peaks = peaks_array
-        canvas._loaded_measurement_peaks = peaks_array  # authoritative; used by threshold/range sliders
+        # Store list[ResonantPeak] with persisted UUIDs — mirrors Swift loadMeasurement()
+        # assigning currentPeaks = measurement.peaks directly (Codable UUIDs preserved).
+        canvas._loaded_measurement_peaks = list(m.peaks) if m.peaks else []  # authoritative; used by threshold/range sliders
         self._loaded_resonant_peaks = list(m.peaks) if m.peaks else []  # full objects, used by export
         self._loaded_measurement = m  # full measurement, used by export for visibility filtering
 
@@ -3249,14 +3248,15 @@ class MainWindow(QtWidgets.QMainWindow):
             _ann_offset = ann_offsets.get(p.id) or ann_offsets.get(p.id.upper() if p.id else "")
             if _ann_offset:
                 xytext = (float(_ann_offset[0]), float(_ann_offset[1]))
-                # Mirror Swift: populate analyzer.peak_annotation_offsets so the export
-                # and any subsequent pan/zoom rebuild can always read from this single source.
-                canvas.analyzer.peak_annotation_offsets[freq] = xytext
+                # Mirror Swift: populate analyzer.peak_annotation_offsets keyed by peak UUID
+                # so update_annotation() can restore saved positions on the next peaksChanged.
+                canvas.analyzer.peak_annotation_offsets[p.id] = xytext
             else:
                 xytext = (freq, mag + 14.0)
             html = peak_model.annotation_html(freq, mag, mode_str)
             canvas.annotations.annotations.append(
                 {
+                    "peak_id":    p.id,
                     "freq":       freq,
                     "annotation": None,
                     "arrow_line": None,
@@ -3306,7 +3306,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 show_cross=not _restored_mt.is_brace,
                 show_flc=_show_flc,
             )
-            self._material_peak_widget.update_peaks(peaks_array)
+            self._material_peak_widget.update_peaks(list(m.peaks) if m.peaks else [])
             self._material_peak_widget.set_assignment(_f_long, _f_cross, _f_flc)
 
             if _f_long > 0:

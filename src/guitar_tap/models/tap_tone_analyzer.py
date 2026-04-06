@@ -172,7 +172,7 @@ class TapToneAnalyzer(
     # MARK: - Signals (Qt — view layer bridge, no Swift equivalent) ──────────
     # ── Signals (Python equivalents of Swift @Published properties) ────────
     # New peak list emitted after every analysis frame and after threshold/range changes.
-    peaksChanged: QtCore.Signal = QtCore.Signal(object)          # ndarray (N, 3)
+    peaksChanged: QtCore.Signal = QtCore.Signal(object)          # list[ResonantPeak]
     # Full spectrum ready for the view to draw.
     spectrumUpdated: QtCore.Signal = QtCore.Signal(object, object)  # (freqs, mags_db)
     # A single tap has been fully captured (all required taps averaged).
@@ -289,7 +289,7 @@ class TapToneAnalyzer(
         # ── Peak analysis state ────────────────────────────────────────────
         self.frozen_magnitudes = np.array([])
         self.current_peaks: list = []
-        self.loaded_measurement_peaks: "list | None" = None
+        self.loaded_measurement_peaks: "list[ResonantPeak] | None" = None
         self.selected_peak: float = 0.0
         self.frozen_frequencies = np.array([])
 

@@ -526,6 +526,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.plateAnalysisComplete.emit(dominant_peak.frequency, 0.0, 0.0)
         else:
             # Plate: transition to cross-grain phase.
+            # Emit longitudinal peaks now — mirrors Swift's single currentPeaks assignment.
+            self._emit_peaks_array(self.current_peaks)
             self.material_tap_phase = _MTP.WAITING_FOR_CROSS_TAP
             self.status_message = (
                 f"fL: {dominant_peak.frequency:.1f} Hz — rotate 90° for C tap"
@@ -549,8 +551,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             import threading
             threading.Timer(cooldown, _start_cross).start()
 
-        # Notify spectrum update.
-        self._emit_peaks_array(self.current_peaks)
+        # Notify spectrum update (no peaksChanged here — each branch above emits exactly once).
         self.spectrumUpdated.emit(
             self.frozen_frequencies if len(self.frozen_frequencies) else self.freq,
             self.frozen_magnitudes  if len(self.frozen_magnitudes)  else self.freq * 0,
@@ -821,6 +822,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         peaks = self.find_peaks(list(avg_db), list(self.freq))
         self.current_peaks = peaks
+        self.peaksChanged.emit(peaks)
         self.loaded_measurement_peaks = None
         self.selected_peak_ids = set()
 
@@ -839,7 +841,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # ------------------------------------------------------------------ #
 
     def _emit_peaks_array(self, peaks: "list") -> None:
-        """Build the (N, 3) ndarray and emit peaksChanged.
+        """Emit peaksChanged with the list[ResonantPeak] — objects all the way through.
 
         Called after gated-FFT phase handlers update current_peaks, so the
         spectrum view can annotate the live display.
@@ -847,13 +849,5 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         This mirrors the store+emit block at the end of find_peaks but for
         the gated path which bypasses find_peaks for current_peaks assignment.
         """
-        import numpy as _np
-        if peaks:
-            arr = _np.array(
-                [[p.frequency, p.magnitude, p.quality] for p in peaks],
-                dtype=_np.float64,
-            )
-        else:
-            arr = _np.zeros((0, 3), dtype=_np.float64)
         self.current_peaks = peaks
-        self.peaksChanged.emit(arr)
+        self.peaksChanged.emit(peaks)  # list[ResonantPeak] — mirrors Swift currentPeaks

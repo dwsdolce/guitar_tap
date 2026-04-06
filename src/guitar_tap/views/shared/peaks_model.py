@@ -33,7 +33,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     accessing the underlying data model.
     """
 
-    annotationUpdate: QtCore.Signal = QtCore.Signal(float, float, str, str)  # (freq, mag, html, mode_str)
+    annotationUpdate: QtCore.Signal = QtCore.Signal(str, float, float, str, str)  # (peak_id, freq, mag, html, mode_str)
     clearAnnotations: QtCore.Signal = QtCore.Signal()
     hideAnnotations: QtCore.Signal = QtCore.Signal()
     hideAnnotation: QtCore.Signal = QtCore.Signal(float)
@@ -63,6 +63,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     def __init__(self, data: npt.NDArray) -> None:
         super().__init__()
+        self._peaks: list = []  # list[ResonantPeak] — authoritative peak objects
         self._data: npt.NDArray = data
         self.pitch: pitch_c.Pitch = pitch_c.Pitch(440)
         self.modes_width: int = len(max(self.mode_strings, key=len))
@@ -101,8 +102,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if self._annotation_mode == mode:
             return
         self._annotation_mode = mode
-        if self._data is not None and self._data.shape[0] > 0:
-            self.update_data(self._data)
+        if self._peaks:
+            self.update_data(self._peaks)
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the mode."""
@@ -318,12 +319,16 @@ class PeaksModel(QtCore.QAbstractTableModel):
             case _:
                 return QtCore.QVariant()
 
-    def update_data(self, data: np.ndarray) -> None:
+    def update_data(self, peaks: list) -> None:
         """Update the data model from outside the object and then update the table.
+
+        Accepts list[ResonantPeak] — objects all the way through, mirroring Swift's
+        currentPeaks: [ResonantPeak]. Builds the internal ndarray for existing display
+        logic (freq_value, magnitude_value, q_value, row-based accessors).
 
         Pure notifier — never touches selection state (selected_frequencies or
         is_live).  The caller owns selection state; this method only stores the
-        new peak array, recomputes derived mode data, and refreshes annotations.
+        new peak list, recomputes derived mode data, and refreshes annotations.
 
         Mirrors Swift's reactive approach: SpectrumView re-evaluates
         selectedPeakIDs filtering at render time whenever currentPeaks changes,
@@ -331,7 +336,14 @@ class PeaksModel(QtCore.QAbstractTableModel):
         data updates.
         """
         self.layoutAboutToBeChanged.emit()
-        self._data = data
+        self._peaks = peaks
+        if peaks:
+            self._data = np.array(
+                [[p.frequency, p.magnitude, p.quality] for p in peaks],
+                dtype=np.float64,
+            )
+        else:
+            self._data = np.zeros((0, 3), dtype=np.float64)
         self._recompute_auto_modes()
         self._emit_mode_colors()
         self.layoutChanged.emit()
@@ -349,8 +361,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
             freq = self.freq_value(idx)
             mag  = self.magnitude_value(idx)
             mode = self.mode_value(idx)
+            peak_id = peaks[row].id if row < len(peaks) else ""
             if self.annotation_mode == "All" or self.show_value_bool(idx):
-                self.annotationUpdate.emit(freq, mag, self.annotation_html(freq, mag, mode), mode)
+                self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
 
     def refresh_annotations(self) -> None:
         """Re-emit annotation signals for the current peaks and annotation_mode.
@@ -370,8 +383,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
             freq = self.freq_value(idx)
             mag  = self.magnitude_value(idx)
             mode = self.mode_value(idx)
+            peak_id = self._peaks[row].id if row < len(self._peaks) else ""
             if self._annotation_mode == "All" or self.show_value_bool(idx):
-                self.annotationUpdate.emit(freq, mag, self.annotation_html(freq, mag, mode), mode)
+                self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
 
     def clear_annotations(self) -> None:
         """Clear all annotations."""

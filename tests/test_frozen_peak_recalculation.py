@@ -243,36 +243,38 @@ class TestRecalculateFrozenPeaksIfNeeded:
         Mirrors Swift recalculateFrozenPeaksIfNeeded — loaded path filters
         loaded_measurement_peaks by peak_threshold and stores in current_peaks.
         """
+        from models.resonant_peak import ResonantPeak
         sut = TapToneAnalyzer()
 
-        # loaded_measurement_peaks is an (N, 3) array: [freq, mag, quality]
-        sut.loaded_measurement_peaks = np.array([
-            [200.0, -25.0, 10.0],   # above threshold
-            [400.0, -65.0, 8.0],    # below threshold
-        ])
+        # loaded_measurement_peaks is list[ResonantPeak]
+        sut.loaded_measurement_peaks = [
+            ResonantPeak(frequency=200.0, magnitude=-25.0, quality=10.0),  # above threshold
+            ResonantPeak(frequency=400.0, magnitude=-65.0, quality=8.0),   # below threshold
+        ]
         sut.peak_threshold = -60.0
 
         sut.recalculate_frozen_peaks_if_needed()
 
-        assert sut.current_peaks.shape[0] == 1, (
+        assert len(sut.current_peaks) == 1, (
             "Only the above-threshold peak should remain"
         )
-        assert abs(sut.current_peaks[0, 0] - 200.0) < 1.0, (
+        assert abs(sut.current_peaks[0].frequency - 200.0) < 1.0, (
             "The surviving peak should be at 200 Hz"
         )
 
     def test_PRA4_loaded_measurement_all_below_threshold_yields_empty(self, qt_app):
-        """PR-A4: All loaded peaks below threshold → current_peaks is empty array."""
+        """PR-A4: All loaded peaks below threshold → current_peaks is empty list."""
+        from models.resonant_peak import ResonantPeak
         sut = TapToneAnalyzer()
-        sut.loaded_measurement_peaks = np.array([
-            [200.0, -70.0, 10.0],
-            [400.0, -65.0, 8.0],
-        ])
+        sut.loaded_measurement_peaks = [
+            ResonantPeak(frequency=200.0, magnitude=-70.0, quality=10.0),
+            ResonantPeak(frequency=400.0, magnitude=-65.0, quality=8.0),
+        ]
         sut.peak_threshold = -60.0
 
         sut.recalculate_frozen_peaks_if_needed()
 
-        assert sut.current_peaks.shape[0] == 0, (
+        assert len(sut.current_peaks) == 0, (
             "No peaks should remain when all are below threshold"
         )
 

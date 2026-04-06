@@ -223,7 +223,7 @@ class FftAnnotations(QtCore.QObject):
         return text_item, arrow_line
 
     def update_annotation(
-        self, freq: float, mag: float, html: str, mode_str: str
+        self, peak_id: str, freq: float, mag: float, html: str, mode_str: str
     ) -> None:
         """Create a new annotation or update an existing one for *freq*."""
         idx = self.find_annotation_index(freq)
@@ -233,6 +233,7 @@ class FftAnnotations(QtCore.QObject):
             ann_dict = self.annotations[idx]
             ann_dict["html"]     = html
             ann_dict["mode_str"] = mode_str
+            ann_dict["peak_id"]  = peak_id
 
             if ann_dict["annotation"] is None:
                 xy_text = ann_dict["xytext"]
@@ -251,10 +252,10 @@ class FftAnnotations(QtCore.QObject):
                 )
         else:
             # Restore saved offset from the analyzer if the user previously dragged
-            # this annotation (mirrors Swift peakAnnotationOffsets lookup).
+            # this annotation — keyed by peak_id (UUID), mirrors Swift peakAnnotationOffsets.
             saved = (
-                self._analyzer.peak_annotation_offsets.get(freq)
-                if self._analyzer is not None
+                self._analyzer.peak_annotation_offsets.get(peak_id)
+                if self._analyzer is not None and peak_id
                 else None
             )
             xy_text = saved if saved is not None else (freq, mag + self._LABEL_OFFSET_DB)
@@ -263,6 +264,7 @@ class FftAnnotations(QtCore.QObject):
             )
             self.annotations.append(
                 {
+                    "peak_id":    peak_id,
                     "freq":       freq,
                     "annotation": ann,
                     "arrow_line": arrow_line,
@@ -362,7 +364,7 @@ class FftAnnotations(QtCore.QObject):
                 x, y = pos.x(), pos.y()
                 ann_dict["xytext"] = (x, y)
                 if self._analyzer is not None:
-                    self._analyzer.update_annotation_offset(ann_dict["freq"], (x, y))
+                    self._analyzer.update_annotation_offset(ann_dict["peak_id"], (x, y))
         self.restoreFocus.emit()
 
     # ── label reset ───────────────────────────────────────────────────────────
