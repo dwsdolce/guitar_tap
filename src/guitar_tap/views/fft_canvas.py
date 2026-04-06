@@ -526,6 +526,13 @@ class FftCanvas(pg.PlotWidget):
         # don't need to re-derive it from saved_peaks + index fields.
         self._current_peaks: list = []  # list[ResonantPeak]
 
+        # Legacy numpy array of shape (N, 3) — [frequency, magnitude, quality].
+        # Used by plate-mode consumers that do column-slice arithmetic.
+        # Decoupled from analyzer.current_peaks (list[ResonantPeak]) to avoid
+        # corrupting the typed peak list with raw arrays.
+        import numpy as _np
+        self._saved_peaks_array: "npt.NDArray" = _np.zeros((0, 3), dtype=_np.float64)
+
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
 
@@ -557,11 +564,11 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def saved_peaks(self) -> npt.NDArray:
-        return self.analyzer.current_peaks
+        return self._saved_peaks_array
 
     @saved_peaks.setter
     def saved_peaks(self, value) -> None:
-        self.analyzer.current_peaks = value
+        self._saved_peaks_array = value
 
     @property
     def saved_mag_y_db(self):

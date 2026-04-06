@@ -17,6 +17,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 
 import views.fft_canvas as fft_c
 from models.analysis_display_mode import AnalysisDisplayMode
+from models.annotation_visibility_mode import AnnotationVisibilityMode
 import views.shared.peak_card_widget as PT
 import views.utilities.tap_settings_view as AS
 from models.tap_display_settings import TapDisplaySettings as TDS
@@ -531,12 +532,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.annotations_btn.setStyleSheet("border: none")
         _saved_mode = TDS.annotation_visibility_mode()
         _saved_idx = next(
-            (i for i, (name, _) in enumerate(self._ANN_MODES) if name == _saved_mode), 0
+            (i for i, mode in enumerate(self._ANN_MODES) if mode == _saved_mode), 0
         )
         self._ann_mode_idx: int = _saved_idx
-        self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[_saved_idx][1]))
+        self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[_saved_idx].icon_name))
         self.annotations_btn.setToolTip(
-            f"Annotation visibility: {_saved_mode}\n"
+            f"Annotation visibility: {_saved_mode.label}\n"
             "Click to cycle: Selected → None → All"
         )
         hl.addWidget(self.annotations_btn)
@@ -2011,24 +2012,24 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     # (mode, icon_name) — order defines the cycle; matches Swift: selected→all→none
-    _ANN_MODES: tuple[tuple[str, str], ...] = (
-        ("Selected", "fa5.star"),       # star.fill
-        ("None",     "fa5.eye-slash"),  # eye.slash
-        ("All",      "fa5.eye"),        # eye
+    _ANN_MODES: tuple[AnnotationVisibilityMode, ...] = (
+        AnnotationVisibilityMode.SELECTED,
+        AnnotationVisibilityMode.NONE,
+        AnnotationVisibilityMode.ALL,
     )
 
     def _on_cycle_annotation_mode(self) -> None:
         self._ann_mode_idx = (self._ann_mode_idx + 1) % len(self._ANN_MODES)
-        next_mode, next_icon = self._ANN_MODES[self._ann_mode_idx]
-        self.annotations_btn.setIcon(qta.icon(next_icon))
+        next_mode = self._ANN_MODES[self._ann_mode_idx]
+        self.annotations_btn.setIcon(qta.icon(next_mode.icon_name))
         self.annotations_btn.setToolTip(
-            f"Annotation visibility: {next_mode}\n"
+            f"Annotation visibility: {next_mode.label}\n"
             "Click to cycle: Selected → None → All"
         )
         TDS.set_annotation_visibility_mode(next_mode)
         self._apply_annotation_mode(next_mode)
 
-    def _apply_annotation_mode(self, mode: str) -> None:
+    def _apply_annotation_mode(self, mode: AnnotationVisibilityMode) -> None:
         """Set the annotation visibility mode.
 
         Setting annotation_mode on the model is reactive: its property setter
@@ -2903,7 +2904,7 @@ class MainWindow(QtWidgets.QMainWindow):
             microphone_uid=mic_uid,
             measurement_type=mt.value,
             guitar_type=self.guitar_type_combo.currentText(),
-            annotation_visibility_mode=self._ANN_MODES[self._ann_mode_idx][0].lower(),
+            annotation_visibility_mode=self._ANN_MODES[self._ann_mode_idx].value,
         )
 
     def _on_save_measurement(self) -> None:
@@ -3268,16 +3269,15 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
         # Restore annotation visibility mode — mirrors Swift: annotationVisibilityMode ?? .all
-        _mode_name_map = {"all": "All", "selected": "Selected", "none": "None"}
-        target_mode = _mode_name_map.get(
-            (m.annotation_visibility_mode or "all").lower(), "All"
+        target_mode = AnnotationVisibilityMode.from_string(
+            m.annotation_visibility_mode or "all"
         )
         target_idx = next(
-            (i for i, (name, _) in enumerate(self._ANN_MODES) if name == target_mode),
+            (i for i, mode in enumerate(self._ANN_MODES) if mode == target_mode),
             self._ann_mode_idx,
         )
         self._ann_mode_idx = target_idx
-        self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[target_idx][1]))
+        self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[target_idx].icon_name))
 
         # For plate/brace, restore material peak widget and compute properties
         if not _restored_mt.is_guitar:
@@ -3439,13 +3439,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 if self._loaded_resonant_peaks and self._loaded_measurement is not None:
                     m_exp = self._loaded_measurement
                     all_peaks = self._loaded_resonant_peaks
-                    visibility_mode = (m_exp.annotation_visibility_mode or "all").lower()
+                    visibility_mode = AnnotationVisibilityMode.from_string(
+                        m_exp.annotation_visibility_mode or "all"
+                    )
                     selected_ids = set(
                         m_exp.selected_peak_ids or [p.id for p in all_peaks]
                     )
-                    if visibility_mode == "selected":
+                    if visibility_mode == AnnotationVisibilityMode.SELECTED:
                         peaks_list = [p for p in all_peaks if p.id in selected_ids]
-                    elif visibility_mode == "none":
+                    elif visibility_mode == AnnotationVisibilityMode.NONE:
                         peaks_list = []
                     else:
                         peaks_list = list(all_peaks)

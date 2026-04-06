@@ -3,6 +3,7 @@
 """
 
 from __future__ import annotations
+import os
 from PySide6 import QtCore
 
 
@@ -37,6 +38,11 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def _s(cls) -> QtCore.QSettings:
+        # Mirror Swift's XCTestConfigurationFilePath check: redirect to an
+        # isolated suite when running under pytest so tests never touch the
+        # user's real preferences.
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            return QtCore.QSettings("Dolcesfogato.tests", cls._APP)
         return QtCore.QSettings(cls._ORG, cls._APP)
 
     @classmethod

@@ -26,6 +26,8 @@ SeeAlso: TapSettingsView, TapToneAnalyzer, SpectrumView
 
 from __future__ import annotations
 
+from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
+
 
 def _app_settings():
     """Lazy import of AppSettings to avoid circular dependencies."""
@@ -285,17 +287,27 @@ class TapDisplaySettings:
     # MARK: - Annotation Visibility Mode
 
     @classmethod
-    def annotation_visibility_mode(cls) -> str:
-        """The last-used annotation visibility mode ('Selected', 'None', or 'All').
+    def annotation_visibility_mode(cls) -> AnnotationVisibilityMode:
+        """The last-used annotation visibility mode.
+
+        Reads the raw string from QSettings and normalises it to
+        ``AnnotationVisibilityMode``, defaulting to ``SELECTED``.
 
         Mirrors Swift TapDisplaySettings.annotationVisibilityMode.
         """
-        return _app_settings().annotation_visibility_mode()
+        raw = _app_settings().annotation_visibility_mode()
+        return AnnotationVisibilityMode.from_string(raw)
 
     @classmethod
-    def set_annotation_visibility_mode(cls, mode: str) -> None:
-        """Mirrors Swift TapDisplaySettings.annotationVisibilityMode setter."""
-        _app_settings().set_annotation_visibility_mode(mode)
+    def set_annotation_visibility_mode(cls, mode: AnnotationVisibilityMode) -> None:
+        """Persist the annotation visibility mode.
+
+        Stores the canonical lowercase raw value so both Swift and Python
+        read the same serialized string.
+
+        Mirrors Swift TapDisplaySettings.annotationVisibilityMode setter.
+        """
+        _app_settings().set_annotation_visibility_mode(mode.value)
 
     # MARK: - Display Frequency Range
 

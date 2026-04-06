@@ -277,6 +277,44 @@ class TapToneAnalyzerPeakAnalysisMixin:
         return unique
 
     # ------------------------------------------------------------------ #
+    # guitar_mode_selected_peak_ids
+    # Mirrors Swift guitarModeSelectedPeakIDs(from:)
+    # ------------------------------------------------------------------ #
+
+    def guitar_mode_selected_peak_ids(self, peaks: "list | None" = None) -> set:
+        """Return the set of peak IDs that should be auto-selected for guitar modes.
+
+        Picks the highest-magnitude peak within each claimed guitar mode band
+        (Air, Top, Back, Dipole, RingMode, UpperModes).
+
+        Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift
+        ``guitarModeSelectedPeakIDs(from:)``.
+
+        Args:
+            peaks: Peaks to evaluate; defaults to ``self.current_peaks``.
+
+        Returns:
+            Set of ``ResonantPeak.id`` strings for the auto-selected peaks.
+        """
+        from .guitar_mode import classify_peak
+        from .guitar_type import GuitarType
+
+        candidates = peaks if peaks is not None else self.current_peaks
+        claimed_modes = {"Air (Helmholtz)", "Top", "Back", "Dipole", "Ring Mode", "Upper Modes"}
+        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+
+        best_per_mode: dict = {}
+        for peak in candidates:
+            mode_label = classify_peak(peak.frequency, guitar_type)
+            if mode_label not in claimed_modes:
+                continue
+            existing = best_per_mode.get(mode_label)
+            if existing is None or peak.magnitude > existing.magnitude:
+                best_per_mode[mode_label] = peak
+
+        return {p.id for p in best_per_mode.values()}
+
+    # ------------------------------------------------------------------ #
     # average_spectra
     # Mirrors Swift averageSpectra(from:)
     # ------------------------------------------------------------------ #

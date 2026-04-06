@@ -86,6 +86,8 @@ from PySide6 import QtCore
 
 from swiftui_compat import ObservableObject, Published
 
+from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
+
 
 # ── TapToneAnalyzer ───────────────────────────────────────────────────────────
 # Mirrors the top-level Swift TapToneAnalyzer class declaration and its stored
@@ -164,7 +166,7 @@ class TapToneAnalyzer(
     peak_mode_overrides: dict = Published({})       # mirrors peakModeOverrides: [UUID: UserAssignedMode]
     selected_peak_ids: set = Published(set())       # mirrors selectedPeakIDs: Set<UUID>
     highlighted_peak_id: object = Published(None)   # mirrors highlightedPeakID: UUID?
-    annotation_visibility_mode: str = Published("selected")  # mirrors annotationVisibilityMode
+    annotation_visibility_mode: AnnotationVisibilityMode = Published(AnnotationVisibilityMode.SELECTED)  # mirrors annotationVisibilityMode
 
     # MARK: - Published Measurement Complete State
     is_measurement_complete: bool = Published(False)  # mirrors isMeasurementComplete: Bool
@@ -279,7 +281,7 @@ class TapToneAnalyzer(
         self.peak_threshold = float(_tds.peak_threshold())
         self.tap_detection_threshold = float(_tds.tap_detection_threshold())
         self.hysteresis_margin = float(_tds.hysteresis_margin())
-        self.annotation_visibility_mode = _tds.annotation_visibility_mode()
+        self.annotation_visibility_mode = AnnotationVisibilityMode.from_string(_tds.annotation_visibility_mode())
 
         # ── Measurement state ──────────────────────────────────────────────
         # saved_measurements loaded lazily by start() to avoid importing views here.
@@ -292,6 +294,15 @@ class TapToneAnalyzer(
         self.loaded_measurement_peaks: "list[ResonantPeak] | None" = None
         self.selected_peak: float = 0.0
         self.frozen_frequencies = np.array([])
+        # Whether the user has manually changed peak selection since last auto-run.
+        # Mirrors Swift TapToneAnalyzer.userHasModifiedPeakSelection.
+        self.user_has_modified_peak_selection: bool = False
+        # Suppresses recalculate_frozen_peaks_if_needed() during loadMeasurement.
+        # Mirrors Swift TapToneAnalyzer.isLoadingMeasurement.
+        self.is_loading_measurement: bool = False
+        # Frequencies of currently selected peaks — stable carry-forward for
+        # recalculate_frozen_peaks_if_needed(). Mirrors Swift selectedPeakFrequencies.
+        self.selected_peak_frequencies: list = []
 
         # ── Averaging ──────────────────────────────────────────────────────
         self.avg_enable: bool = False

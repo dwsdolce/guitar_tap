@@ -76,6 +76,56 @@ class TapToneAnalyzerModeOverrideManagementMixin:
         """
         self.peak_mode_overrides.pop(peak_id, None)
 
+    def set_mode_override(self, mode: "str | None", peak_id: str) -> None:
+        """Set or clear a mode-label override for a specific peak.
+
+        Passing ``None`` or the string ``"auto"`` clears any existing override
+        (equivalent to Swift ``setModeOverride(.auto, for: peakID)``).
+        Any other string is stored as a manual label
+        (equivalent to Swift ``setModeOverride(.assigned("label"), for: peakID)``).
+
+        Mirrors Swift ``setModeOverride(_ override: UserAssignedMode, for peakID: UUID)``.
+
+        Args:
+            mode:    Label string for ``assigned`` overrides, or ``None`` / ``"auto"``
+                     to revert to auto-classification.
+            peak_id: ``ResonantPeak.id`` (UUID string).
+        """
+        if mode is None or mode == "auto":
+            self.peak_mode_overrides.pop(peak_id, None)
+        else:
+            self.peak_mode_overrides[peak_id] = mode
+
+    def has_manual_override(self, peak_id: str) -> bool:
+        """Return ``True`` when the peak has a manually-assigned (non-auto) mode label.
+
+        Mirrors Swift ``hasManualOverride(for peakID: UUID) -> Bool``.
+
+        Args:
+            peak_id: ``ResonantPeak.id`` (UUID string).
+        """
+        return peak_id in self.peak_mode_overrides
+
+    def effective_mode_label(self, peak) -> str:
+        """Return the display label for a peak, respecting any user override.
+
+        If ``peak_mode_overrides`` contains an entry for ``peak.id``, that
+        string is returned. Otherwise the auto-classification from
+        ``GuitarMode.classify_peak`` is used.
+
+        Mirrors Swift ``effectiveModeLabel(for peak: ResonantPeak) -> String``.
+
+        Args:
+            peak: A ``ResonantPeak`` instance.
+        """
+        override = self.peak_mode_overrides.get(peak.id)
+        if override:
+            return override
+        from .guitar_mode import classify_peak
+        from .guitar_type import GuitarType
+        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+        return classify_peak(peak.frequency, guitar_type)
+
     # ------------------------------------------------------------------ #
     # Plate analysis (mirrors TapToneAnalyzer+SpectrumCapture.swift)
     # ------------------------------------------------------------------ #

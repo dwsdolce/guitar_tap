@@ -13,6 +13,8 @@ Key change from earlier revision: the dictionary is keyed by ``ResonantPeak.id``
 
 from __future__ import annotations
 
+from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
+
 
 class TapToneAnalyzerAnnotationManagementMixin:
     """Peak selection and annotation offset helpers for TapToneAnalyzer.
@@ -90,6 +92,82 @@ class TapToneAnalyzerAnnotationManagementMixin:
     def clear_annotation_offsets(self) -> None:
         """Alias for reset_all_annotation_offsets() — retained for compatibility."""
         self.reset_all_annotation_offsets()
+
+    # ------------------------------------------------------------------ #
+    # Guitar Peak Selection
+    # Mirrors Swift TapToneAnalyzer togglePeakSelection / selectAllPeaks /
+    # selectNoPeaks / resetToAutoSelection / visiblePeaks /
+    # cycleAnnotationVisibility
+    # ------------------------------------------------------------------ #
+
+    def toggle_peak_selection(self, peak_id: str) -> None:
+        """Toggle the selection state of a single guitar peak.
+
+        Mirrors Swift ``togglePeakSelection(_ peakID: UUID)``.
+
+        Args:
+            peak_id: ``ResonantPeak.id`` (UUID string).
+        """
+        # Always assign a fresh set to avoid mutating the Published default.
+        current = set(self.selected_peak_ids)
+        if peak_id in current:
+            current.discard(peak_id)
+        else:
+            current.add(peak_id)
+        self.selected_peak_ids = current
+        self.user_has_modified_peak_selection = True
+
+    def select_all_peaks(self) -> None:
+        """Mark all current peaks as selected.
+
+        Mirrors Swift ``selectAllPeaks()``.
+        """
+        self.selected_peak_ids = {p.id for p in self.current_peaks}
+        self.user_has_modified_peak_selection = True
+
+    def select_no_peaks(self) -> None:
+        """Clear all peak selections.
+
+        Mirrors Swift ``selectNoPeaks()``.
+        """
+        self.selected_peak_ids = set()
+        self.user_has_modified_peak_selection = True
+
+    def reset_to_auto_selection(self) -> None:
+        """Clear the manual-modification flag and re-run auto-selection.
+
+        Mirrors Swift ``resetToAutoSelection()``.
+        Does nothing if ``current_peaks`` is empty.
+        """
+        self.user_has_modified_peak_selection = False
+        self.selected_peak_frequencies = []
+        peaks = self.current_peaks
+        if not peaks:
+            return
+        # Re-run guitar mode auto-selection via PeakAnalysis mixin.
+        self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
+
+    @property
+    def visible_peaks(self) -> list:
+        """Subset of current_peaks to render given annotation_visibility_mode.
+
+        Mirrors Swift ``visiblePeaks: [ResonantPeak]``.
+        """
+        mode = self.annotation_visibility_mode
+        if mode == AnnotationVisibilityMode.ALL:
+            return list(self.current_peaks)
+        if mode == AnnotationVisibilityMode.SELECTED:
+            return [p for p in self.current_peaks if p.id in self.selected_peak_ids]
+        # NONE
+        return []
+
+    def cycle_annotation_visibility(self) -> None:
+        """Advance annotation_visibility_mode: all → selected → none → all.
+
+        Persists the new value via TapDisplaySettings.
+        Mirrors Swift ``cycleAnnotationVisibility()``.
+        """
+        self.annotation_visibility_mode = self.annotation_visibility_mode.next
 
     def apply_annotation_offsets(
         self, offsets: dict[str, tuple[float, float]]

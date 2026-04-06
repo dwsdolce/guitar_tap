@@ -63,6 +63,8 @@ makeExportableSpectrumView:
 
 from __future__ import annotations
 
+from models.annotation_visibility_mode import AnnotationVisibilityMode
+
 __all__ = [
     "ExportableSpectrumChart",
     "make_exportable_spectrum_view",
@@ -1043,11 +1045,11 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
 
     # Mirror TapToneAnalyzer.visiblePeaks: filter by annotationVisibilityMode and selectedPeakIDs.
     all_peaks = m.peaks or []
-    visibility_mode = (m.annotation_visibility_mode or "all").lower()
+    visibility_mode = AnnotationVisibilityMode.from_string(m.annotation_visibility_mode or "all")
     selected_ids = set(m.selected_peak_ids or [p.id for p in all_peaks])
-    if visibility_mode == "selected":
+    if visibility_mode == AnnotationVisibilityMode.SELECTED:
         visible_peaks = [p for p in all_peaks if p.id in selected_ids]
-    elif visibility_mode == "none":
+    elif visibility_mode == AnnotationVisibilityMode.NONE:
         visible_peaks = []
     else:
         visible_peaks = all_peaks
