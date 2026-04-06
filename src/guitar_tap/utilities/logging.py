@@ -11,3 +11,4 @@ _tap_debug_enabled = os.environ.get("ENABLE_TAP_DEBUG") is not None
 def TAP_DEBUG(category: str, message: str) -> None:
     if _tap_debug_enabled:
         print(f"TAP_DEBUG [{category}] {message}")
+    # print(f"TAP_DEBUG [{category}] {message}")

@@ -16,6 +16,18 @@ runtime, matching Swift's architecture.
 
 Previously lived in views/fft_canvas.py as ``FftData``.  Moved here so
 business-layer configuration lives in the model layer, not the view layer.
+
+## Lifecycle / Removal Note
+
+This class exists solely because FftCanvas (the view) currently constructs
+RealtimeFFTAnalyzer and must pass FFT configuration forward to the analyzer
+before the mic object exists.  When the view layer is refactored so that
+TapToneAnalyzer owns its own RealtimeFFTAnalyzer from construction time
+(i.e. FftCanvas is no longer responsible for creating the mic), this class
+becomes unnecessary: sample_freq and n_f can be passed directly to
+RealtimeFFTAnalyzer.__init__, and the freq axis / n_fmin / n_fmax computations
+can move into TapToneAnalyzer and RealtimeFFTAnalyzer themselves — exactly
+as they already are in Swift.
 """
 
 from __future__ import annotations
