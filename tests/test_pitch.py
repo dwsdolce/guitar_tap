@@ -150,6 +150,17 @@ class TestInTune:
             "11 cents sharp should NOT be in tune"
         )
 
+    def test_eight_cents_flat_is_in_tune(self):
+        """A frequency 8 cents flat is still in tune at the default 10-cent threshold.
+
+        Mirrors Swift eightCentsFlat_isInTune — verifies the threshold is symmetric
+        (both sharp and flat are checked against the same ±threshold window).
+        """
+        eight_cents_flat = 440.0 * (2 ** (-8.0 / 1200.0))
+        assert _pitch.is_in_tune(eight_cents_flat), (
+            "8 cents flat should be in tune at the default 10-cent threshold"
+        )
+
     def test_flat_out_of_tune(self):
         """A frequency more than 10 cents flat is out of tune."""
         flat = 440.0 * (2 ** (-15.0 / 1200.0))

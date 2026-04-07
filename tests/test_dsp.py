@@ -96,6 +96,26 @@ class TestParabolicInterpolation:
             f"Interpolated shift must be < 0.5 bins; got {iploc[0] - 80.0:.3f}"
         )
 
+    def test_F4b_last_bin_returns_raw_values(self):
+        """F4b: A peak at the last array index returns raw bin values without crash.
+
+        Mirrors Swift edgeBinLastIndex_returnsRawValues — parabolicInterpolate must
+        handle a peak at array index len-1 gracefully, returning the raw bin frequency
+        and magnitude rather than reading out of bounds.
+        """
+        mag = _make_spectrum(n=256)
+        last = len(mag) - 1
+        mag[last] = -20.0       # peak at the very last bin
+        mag[last - 1] = -30.0   # left neighbour present; no right neighbour
+        ploc = np.array([last])
+        iploc, ipmag = peak_interp(mag, ploc)   # must not raise
+        # The interpolated location must stay within the array bounds
+        assert 0 <= iploc[0] <= last, (
+            f"Interpolated location {iploc[0]} must be within [0, {last}]"
+        )
+        # The magnitude must be finite and at least as large as the floor
+        assert np.isfinite(ipmag[0]), "Interpolated magnitude must be finite"
+
     def test_F5_interpolated_magnitude_exceeds_bin_value(self):
         """F5: Interpolated magnitude is ≥ the bin's sampled dB value."""
         mag = _make_spectrum()

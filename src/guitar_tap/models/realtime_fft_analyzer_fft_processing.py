@@ -174,10 +174,22 @@ def peak_interp(
     gives sub-bin accuracy roughly 10× finer than the raw bin spacing.
     """
     val = magnitude[ploc]
-    lval = magnitude[ploc - 1]
-    rval = magnitude[ploc + 1]
-    iploc = ploc + 0.5 * (lval - rval) / (lval - 2 * val + rval)
-    ipmag = val - 0.25 * (lval - rval) * (iploc - ploc)
+    n = len(magnitude)
+    # Guard: bins at the array boundary have no neighbour on one side.
+    # Return the raw bin value (no sub-bin correction), mirroring Swift's
+    # parabolicInterpolate edge-bin guard.
+    interior = (ploc > 0) & (ploc < n - 1)
+    iploc = np.where(interior, ploc, ploc).astype(np.float64)
+    ipmag = val.copy().astype(np.float64)
+    if np.any(interior):
+        lval = magnitude[ploc[interior] - 1]
+        rval = magnitude[ploc[interior] + 1]
+        denom = lval - 2 * val[interior] + rval
+        # Avoid division by zero if the parabola is degenerate (flat peak)
+        safe = denom != 0
+        shift = np.where(safe, 0.5 * (lval - rval) / np.where(denom != 0, denom, 1.0), 0.0)
+        iploc[interior] = ploc[interior] + shift
+        ipmag[interior] = val[interior] - 0.25 * (lval - rval) * shift
     return iploc, ipmag
 
 

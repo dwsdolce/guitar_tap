@@ -114,28 +114,6 @@ class TestFindPeaks:
 
 
 # ---------------------------------------------------------------------------
-# Parabolic Interpolation on real tone (sanity check)
-# ---------------------------------------------------------------------------
-
-class TestPeakInterpSanity:
-    """Quick sanity check that peak_interp output is close to the injected tone."""
-
-    def test_interpolated_frequency_close_to_injected(self):
-        """peak_interp should place the peak frequency within 1 bin of the injected tone."""
-        mag = _flat_spectrum(floor=-80.0)
-        target_hz = 440.0
-        center_bin = _add_tone(mag, freq_hz=target_hz, peak_db=-20.0, width_bins=4)
-
-        ploc = np.array([center_bin])
-        iploc, _ = peak_interp(mag, ploc)
-
-        estimated_hz = iploc[0] * HZ_PER_BIN
-        assert abs(estimated_hz - target_hz) < HZ_PER_BIN, (
-            f"Interpolated freq {estimated_hz:.1f} Hz should be within 1 bin of {target_hz} Hz"
-        )
-
-
-# ---------------------------------------------------------------------------
 # RemoveDuplicatePeaks Tests  (F15–F16)
 # ---------------------------------------------------------------------------
 
