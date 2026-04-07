@@ -192,7 +192,9 @@ Result: Pitch → 22 ↔ 22 ✓
 1. **Python:** `cd /Users/dws/src/guitar_tap && .venv/bin/pytest tests/ -q` — must show **249/249** passing
    (260 − 12 removed + 1 DSP + 1 Pitch − 1 PeakFinding = 249)
 2. **Swift:** `BuildProject` — must build cleanly with no errors, and `GetTestList` = **264** total
-   (249 paired + 2 SF Symbol icon-name + 12 SpectrumViewGesture + 1 TestRunner = 264)
+   (249 paired + 2 SF Symbol icon-name + 12 SpectrumViewGesture + 1 TestRunner = 264);
+   runner reports **263 passed** — the 1 difference is `testRunnerBootstrap` in `TestRunner.swift`,
+   an XCTest stub that appears in the static inventory but does not run as a Swift Testing `@Test`.
 
 ---
 
