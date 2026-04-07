@@ -11,6 +11,7 @@ from PySide6 import QtCore
 from models import pitch as pitch_c
 from models import guitar_type as gt
 from models import guitar_mode as gm
+from models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
 
 
 class ColumnIndex(Enum):
@@ -76,20 +77,18 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.user_has_modified_peak_selection: bool = False
         self._programmatic_update: bool = False
         # Current annotation visibility mode.
-        # Values: "Selected", "None", "All"  (mirrors Swift annotationVisibilityMode)
-        # Use set_annotation_mode() to change — it re-runs update_data() reactively.
-        self._annotation_mode: str = "Selected"
+        self._annotation_mode: AVM = AVM.SELECTED
         self._auto_mode_map: dict[float, gm.GuitarMode] = {}  # freq → mode, from classify_all
 
     # MARK: - Annotation mode (reactive, mirrors Swift @Published annotationVisibilityMode)
 
     @property
-    def annotation_mode(self) -> str:
-        """Current annotation visibility mode: "Selected", "None", or "All"."""
+    def annotation_mode(self) -> AVM:
+        """Current annotation visibility mode."""
         return self._annotation_mode
 
     @annotation_mode.setter
-    def annotation_mode(self, mode: str) -> None:
+    def annotation_mode(self, mode: AVM) -> None:
         """Set the annotation visibility mode and re-apply it to the current peaks.
 
         Mirrors Swift's behaviour where changing annotationVisibilityMode on
@@ -348,12 +347,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._emit_mode_colors()
         self.layoutChanged.emit()
 
-        # Refresh annotations based on current is_live / selected_frequencies state.
-        # "None"     → hide everything
-        # "Selected" → show peaks whose show_value_bool is True
-        # "All"      → show every peak regardless of selection
+        # Refresh annotations based on current annotation_mode:
+        # NONE     → hide everything
+        # SELECTED → show peaks whose show_value_bool is True
+        # ALL      → show every peak regardless of selection
         self.clearAnnotations.emit()
-        if self.annotation_mode == "None":
+        if self.annotation_mode == AVM.NONE:
             return
 
         for row in range(self._data.shape[0]):
@@ -362,7 +361,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             mag  = self.magnitude_value(idx)
             mode = self.mode_value(idx)
             peak_id = peaks[row].id if row < len(peaks) else ""
-            if self.annotation_mode == "All" or self.show_value_bool(idx):
+            if self.annotation_mode == AVM.ALL or self.show_value_bool(idx):
                 self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
 
     def refresh_annotations(self) -> None:
@@ -376,7 +375,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if self._data is None or self._data.shape[0] == 0:
             return
         self.clearAnnotations.emit()
-        if self._annotation_mode == "None":
+        if self._annotation_mode == AVM.NONE:
             return
         for row in range(self._data.shape[0]):
             idx = self.index(row, 0)
@@ -384,7 +383,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             mag  = self.magnitude_value(idx)
             mode = self.mode_value(idx)
             peak_id = self._peaks[row].id if row < len(self._peaks) else ""
-            if self._annotation_mode == "All" or self.show_value_bool(idx):
+            if self._annotation_mode == AVM.ALL or self.show_value_bool(idx):
                 self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
 
     def clear_annotations(self) -> None:

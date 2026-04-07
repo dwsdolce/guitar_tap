@@ -1733,7 +1733,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_measurement_complete(False)
 
         # Seed the model's annotation_mode so the live FFT path respects the saved setting
-        self._apply_annotation_mode(self._ANN_MODES[self._ann_mode_idx][0])
+        self._apply_annotation_mode(self._ANN_MODES[self._ann_mode_idx])
 
         # Restore calibration status label and device name in status bar
         device_name = canvas.current_calibration_device() or AS.AppSettings.device_name()
@@ -3221,48 +3221,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tap_num_spin.setValue(m.number_of_taps)
 
         # Restore annotations
-        # Also populate analyzer.peak_annotation_offsets from the measurement's saved offsets
-        # so that the export path can always read from a single live source — mirrors Swift
-        # loadMeasurement() which calls peakAnnotationOffsets = measurement.peakAnnotationOffsets.
-        canvas.annotations.clear_annotations()
+        # Populate analyzer.peak_annotation_offsets from the measurement's saved offsets
+        # so update_annotation() can restore dragged positions — mirrors Swift loadMeasurement()
+        # which assigns peakAnnotationOffsets = measurement.peakAnnotationOffsets.
         canvas.analyzer.peak_annotation_offsets.clear()
         ann_offsets = m.annotation_offsets or {}
         for p in m.peaks:
-            freq = p.frequency
-            mag  = p.magnitude
-            if _restored_mt.is_guitar:
-                mode_str = (
-                    peak_model.modes.get(freq)
-                    or p.mode_label
-                    or GM.classify_peak(freq, peak_model.guitar_type)
-                )
-            else:
-                # Plate/brace: use the material mode label set above; never fall back to guitar classifier
-                mode_str = peak_model.modes.get(freq, "Peak")
-            # ann_offsets stores [absFreqHz, absDB] — absolute data-space label-center position.
-            # Mirrors Swift peakAnnotationOffsets where CGPoint(x: absFreqHz, y: absDB).
-            # No conversion needed: use directly as xytext and populate peak_annotation_offsets.
             _ann_offset = ann_offsets.get(p.id) or ann_offsets.get(p.id.upper() if p.id else "")
             if _ann_offset:
-                xytext = (float(_ann_offset[0]), float(_ann_offset[1]))
-                # Mirror Swift: populate analyzer.peak_annotation_offsets keyed by peak UUID
-                # so update_annotation() can restore saved positions on the next peaksChanged.
-                canvas.analyzer.peak_annotation_offsets[p.id] = xytext
-            else:
-                xytext = (freq, mag + 14.0)
-            html = peak_model.annotation_html(freq, mag, mode_str)
-            canvas.annotations.annotations.append(
-                {
-                    "peak_id":    p.id,
-                    "freq":       freq,
-                    "annotation": None,
-                    "arrow_line": None,
-                    "mag":        mag,
-                    "html":       html,
-                    "mode_str":   mode_str,
-                    "xytext":     xytext,
-                }
-            )
+                canvas.analyzer.peak_annotation_offsets[p.id] = (
+                    float(_ann_offset[0]), float(_ann_offset[1])
+                )
 
         # Restore annotation visibility mode — mirrors Swift: annotationVisibilityMode ?? .all
         target_mode = AnnotationVisibilityMode.from_string(
@@ -3274,6 +3243,25 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self._ann_mode_idx = target_idx
         self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[target_idx].icon_name))
+        # Set annotation mode directly on the private attribute so the public setter's
+        # no-op guard and premature update_data call are both bypassed.  The correct
+        # annotation render happens below via _emit_loaded_peaks_at_threshold, which
+        # drives _on_peaks_changed_results → peak_widget.update_data(filtered) →
+        # model.update_data() — that call reads _annotation_mode and peak_model.modes
+        # (now populated above) to emit the right annotations.
+        peak_model._annotation_mode = target_mode
+
+        # Emit peaksChanged with the threshold-filtered loaded peaks.  This single call:
+        #   1. Updates canvas._current_peaks → _on_peaks_changed_scatter redraws scatter
+        #      dots at the correct peak positions.
+        #   2. Updates peak_widget via _on_peaks_changed_results → _refresh_results_peaks
+        #      → peak_widget.update_data(filtered) → model.update_data() → emits
+        #      clearAnnotations + annotationUpdate with the correct mode labels from
+        #      peak_model.modes (set above).
+        # Called unconditionally — for the no-snapshot else branch above, this is the
+        # second call, but that is harmless and needed to ensure model.modes is applied
+        # (the first call at line 3149 fired before peak_model.modes was populated).
+        canvas._emit_loaded_peaks_at_threshold()
 
         # For plate/brace, restore material peak widget and compute properties
         if not _restored_mt.is_guitar:
