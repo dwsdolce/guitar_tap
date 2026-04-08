@@ -17,22 +17,6 @@ class TapToneAnalyzerAnalysisHelpersMixin:
     # MARK: - Query methods
     # Mirrors Swift TapToneAnalyzer+AnalysisHelpers.swift
 
-    def get_peaks(self, low: float, high: float) -> list:
-        """Return current peaks whose frequency falls within [low, high] Hz.
-
-        Mirrors Swift ``getPeaks(in:)`` — filters ``currentPeaks`` by a
-        closed frequency range.
-
-        Args:
-            low:  Lower bound of the Hz range (inclusive).
-            high: Upper bound of the Hz range (inclusive).
-
-        Returns:
-            Subset of ``current_peaks`` within the range, in source order
-            (descending magnitude).
-        """
-        return [p for p in self.current_peaks if low <= p.frequency <= high]
-
     def peak_mode(self, peak) -> "GuitarMode":
         """Return the context-aware GuitarMode assigned to *peak*.
 
@@ -95,40 +79,3 @@ class TapToneAnalyzerAnalysisHelpersMixin:
             return None
         return top_peak.frequency / air_peak.frequency
 
-    def compare_to(self, measurement) -> list:
-        """Compare live peaks against a saved measurement by frequency proximity.
-
-        For each peak in *measurement.peaks* finds the live peak closest in
-        frequency and reports the signed Hz delta.
-
-        Mirrors Swift ``compareTo(_:)``.
-
-        Args:
-            measurement: A ``TapToneMeasurement`` whose ``.peaks`` list is
-                compared against the current live ``current_peaks``.
-
-        Returns:
-            A list of dicts with keys:
-              - ``"current"``: the nearest live ``ResonantPeak``, or ``None``
-                if ``current_peaks`` is empty.
-              - ``"saved"``: the original ``ResonantPeak`` from the measurement.
-              - ``"difference"``: ``current.frequency − saved.frequency`` in Hz;
-                0 when no current peak is available.
-        """
-        result = []
-        for saved_peak in measurement.peaks:
-            if self.current_peaks:
-                current_peak = min(
-                    self.current_peaks,
-                    key=lambda p: abs(p.frequency - saved_peak.frequency),
-                )
-                difference = current_peak.frequency - saved_peak.frequency
-            else:
-                current_peak = None
-                difference = 0.0
-            result.append({
-                "current": current_peak,
-                "saved": saved_peak,
-                "difference": difference,
-            })
-        return result

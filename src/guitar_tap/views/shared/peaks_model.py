@@ -94,15 +94,15 @@ class PeaksModel(QtCore.QAbstractTableModel):
         Mirrors Swift's behaviour where changing annotationVisibilityMode on
         TapToneAnalyzer automatically re-evaluates visiblePeaks (a computed
         property), causing the chart to re-render with the correct subset.
-        Here we re-run update_data() so the single annotation-emission path
-        in update_data() applies the new mode to whatever peaks are currently
-        loaded — no separate imperative show/hide calls needed.
+        Uses refresh_annotations() so the pre-installed _auto_mode_map (from
+        update_data_with_modes) is preserved — only annotation emission changes,
+        not mode classification.
         """
         if self._annotation_mode == mode:
             return
         self._annotation_mode = mode
         if self._peaks:
-            self.update_data(self._peaks)
+            self.refresh_annotations()
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the mode."""
@@ -344,6 +344,41 @@ class PeaksModel(QtCore.QAbstractTableModel):
         else:
             self._data = np.zeros((0, 3), dtype=np.float64)
         self._recompute_auto_modes()
+        self._emit_mode_colors()
+        self.layoutChanged.emit()
+
+    def update_data_with_modes(
+        self,
+        peaks_with_modes: "list[tuple]",  # list[(ResonantPeak, GuitarMode)]
+    ) -> None:
+        """Update the data model with pre-classified (peak, mode) pairs.
+
+        Mirrors Swift TapAnalysisResultsView.sortedPeaksWithModes (line 287–290)
+        which maps each peak through ``analyzer.peakMode(for:)`` to produce
+        ``(peak: ResonantPeak, mode: GuitarMode)`` tuples.  By accepting the
+        pre-computed modes the model skips ``_recompute_auto_modes()`` and uses
+        the analyzer's ``identifiedModes`` as the authoritative source — ensuring
+        context-aware, overlap-resolving classification is applied (e.g. classical
+        Top/Back both in 190–230 Hz show distinct labels).
+
+        Args:
+            peaks_with_modes: Sequence of ``(peak, mode)`` tuples already
+                              classified by ``TapToneAnalyzer.peak_mode()``.
+        """
+        peaks = [p for p, _ in peaks_with_modes]
+        self.layoutAboutToBeChanged.emit()
+        self._peaks = peaks
+        if peaks:
+            self._data = np.array(
+                [[p.frequency, p.magnitude, p.quality] for p in peaks],
+                dtype=np.float64,
+            )
+        else:
+            self._data = np.zeros((0, 3), dtype=np.float64)
+        # Install the caller-supplied mode map directly — bypasses classify_all.
+        self._auto_mode_map = {
+            p.frequency: mode for p, mode in peaks_with_modes
+        }
         self._emit_mode_colors()
         self.layoutChanged.emit()
 

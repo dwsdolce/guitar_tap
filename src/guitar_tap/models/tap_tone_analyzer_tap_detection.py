@@ -568,9 +568,13 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             if self.is_measurement_complete:
                 self.spectrumUpdated.emit(self.frozen_frequencies, self.frozen_magnitudes)
             else:
-                peaks = self.find_peaks(list(mag_y_db), list(self.freq))
-                self.current_peaks = peaks
-                self.peaksChanged.emit(peaks)
+                # Delegate to analyze_magnitudes — mirrors Swift setupSubscriptions()
+                # Combine sink at TapToneAnalyzer.swift:876 which calls
+                # self?.analyzeMagnitudes(magnitudes, frequencies:, peakMagnitude:).
+                # analyze_magnitudes updates current_peaks, selected_peak_ids,
+                # identified_modes, and emits peaksChanged via its internal logic.
+                peak_mag = float(fft_peak_amp) - 100.0
+                self.analyze_magnitudes(list(mag_y_db), list(self.freq), peak_mag)
                 self.spectrumUpdated.emit(self.freq, mag_y_db)
         elif self._display_mode == AnalysisDisplayMode.FROZEN:
             self.spectrumUpdated.emit(self.frozen_frequencies, self.frozen_magnitudes)

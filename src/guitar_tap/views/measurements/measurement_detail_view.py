@@ -387,29 +387,13 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _compute_tap_tone_ratio(self) -> float | None:
-        """Compute fTop/fAir ratio from peaks using classify_all."""
-        m = self._m
-        if not m.peaks:
-            return None
-        try:
-            gt = _resolve_guitar_type(m.guitar_type)
-            id_map = GM.GuitarMode.classify_all(m.peaks, gt)
+        """Return fTop/fAir ratio for the measurement.
 
-            air_freq = next(
-                (p.frequency for p in m.peaks
-                 if id_map.get(p.id, GM.GuitarMode.UNKNOWN).normalized == GM.GuitarMode.AIR),
-                None,
-            )
-            top_freq = next(
-                (p.frequency for p in m.peaks
-                 if id_map.get(p.id, GM.GuitarMode.UNKNOWN).normalized == GM.GuitarMode.TOP),
-                None,
-            )
-            if air_freq and top_freq and air_freq > 0:
-                return top_freq / air_freq
-        except Exception:
-            pass
-        return None
+        Delegates to TapToneMeasurement.tap_tone_ratio (the computed property),
+        which uses GuitarMode.classify_all on the stored peaks.
+        Mirrors measurement_detail_view reading m.tap_tone_ratio first, per §4.
+        """
+        return self._m.tap_tone_ratio
 
     # ── Slots ─────────────────────────────────────────────────────────────────
 

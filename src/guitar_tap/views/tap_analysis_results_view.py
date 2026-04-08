@@ -284,6 +284,8 @@ class PDFReportData:
 def pdf_report_data_from_measurement(
     measurement: TapToneMeasurement,
     spectrum_image_data: bytes | None = None,
+    tap_tone_ratio: "float | None" = None,
+    peak_modes: "dict | None" = None,
 ) -> PDFReportData:
     """Build a ``PDFReportData`` from a persisted ``TapToneMeasurement``.
 
@@ -294,6 +296,28 @@ def pdf_report_data_from_measurement(
     measurement's stored peak IDs and snapshot dimensions so that computed
     values match the live analysis view.  Peaks are filtered to those within
     the saved display frequency range.
+
+    Args:
+        measurement:       The measurement to export.
+        spectrum_image_data: PNG-encoded spectrum chart, or None.
+        tap_tone_ratio:    Pre-computed ratio from the live analyzer
+                           (``TapToneAnalyzer.calculate_tap_tone_ratio()``).
+                           When supplied this overrides the value derived from
+                           the measurement peaks so that user mode overrides and
+                           context-aware classification from ``identifiedModes``
+                           are reflected in the PDF.  Mirrors
+                           ``TapToneAnalysisView+Export.swift:124`` which passes
+                           ``tap.calculateTapToneRatio()`` directly.
+                           Pass ``None`` (default) when building from a saved
+                           measurement where no live analyzer is available.
+        peak_modes:        Pre-computed ``{peak_id: GuitarMode}`` dict from the
+                           live analyzer's ``identified_modes``.  Mirrors Swift
+                           ``peakModes: Dictionary(uniqueKeysWithValues:
+                           tap.identifiedModes.map { ($0.peak.id, $0.mode) })``.
+                           When supplied this overrides the ``classify_all``
+                           result so user mode overrides and context-aware
+                           classification are preserved.  Pass ``None`` (default)
+                           when building from a saved measurement.
     """
     from models import measurement_type as MT
     from models import guitar_mode as GM
@@ -335,11 +359,16 @@ def pdf_report_data_from_measurement(
         [p for p in range_peaks if p.id in selected_ids],
         key=lambda p: p.frequency,
     )
-    peak_modes: dict = {}
-    try:
-        peak_modes = GM.GuitarMode.classify_all(visible_peaks, gt)
-    except Exception:
-        pass
+    # Use caller-supplied peak_modes (from live analyzer.identified_modes) when
+    # available — mirrors Swift peakModes: Dictionary(uniqueKeysWithValues:
+    # tap.identifiedModes.map { ($0.peak.id, $0.mode) }).
+    # Fall back to classify_all for saved measurements without a live analyzer.
+    if peak_modes is None:
+        peak_modes = {}
+        try:
+            peak_modes = GM.GuitarMode.classify_all(visible_peaks, gt)
+        except Exception:
+            pass
 
     # ── Derive material properties ────────────────────────────────────────
     plate_props = None
@@ -425,7 +454,10 @@ def pdf_report_data_from_measurement(
         selected_cross_peak_id=m.selected_cross_peak_id,
         selected_flc_peak_id=m.selected_flc_peak_id,
         decay_time=m.decay_time,
-        tap_tone_ratio=m.tap_tone_ratio,
+        # Use the caller-supplied ratio (from the live analyzer) when available,
+        # falling back to the measurement's computed property for saved measurements.
+        # Mirrors TapToneAnalysisView+Export.swift:124: tapToneRatio: tap.calculateTapToneRatio().
+        tap_tone_ratio=tap_tone_ratio if tap_tone_ratio is not None else m.tap_tone_ratio,
         plate_properties=plate_props,
         brace_properties=brace_props,
         guitar_body_length=guitar_body_length,

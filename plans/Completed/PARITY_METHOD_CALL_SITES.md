@@ -142,50 +142,61 @@ action in different layout variants:
 | Method | Swift callers | Python callers | Status |
 |---|---|---|---|
 | `get_peaks()` | 0 | 0 | No action needed |
-| `peak_mode()` | 2 | 0 | Python uses `effective_mode_label()` instead |
+| `peak_mode()` | 2 | 2 | ✅ `_refresh_results_peaks` now calls `analyzer.peak_mode()` per peak |
 | `get_peak()` | 1 (internal) | 1 (internal) | ✅ Equivalent |
-| `calculate_tap_tone_ratio()` | 3 | 0 inline (needs fix) | Python computes ratio inline at 3 sites instead of calling the method |
+| `calculate_tap_tone_ratio()` | 3 | 3 | ✅ All 3 sites delegate to the method |
 | `compare_to()` | 0 | 0 | Delete — no callers in either codebase |
-| `analyze_magnitudes()` | 1 | 0 | Python FFT pipeline calls `find_peaks()` directly |
-| `reclassify_peaks()` | 3 | 0 | Python `set_guitar_type()` / measurement load not wired up |
-| `plate_stiffness()` | 2 | 2 inline (needs fix) | 2 sites need updating |
+| `analyze_magnitudes()` | 1 | 1 | ✅ `on_fft_frame` LIVE branch now delegates here |
+| `reclassify_peaks()` | 3 | 2 | ✅ Wired into guitar-type change and measurement load |
+| `plate_stiffness()` | 2 | 2 | ✅ Live site fixed; PDF snapshot site is intentionally inline |
 
 ---
 
 ## Tasks
 
-- [ ] **§1 — `get_peaks()` removal**: Delete `getPeaks(in:)` from
+- [x] **§1 — `get_peaks()` removal**: Delete `getPeaks(in:)` from
   `TapToneAnalyzer+AnalysisHelpers.swift` and `get_peaks()` from
   `tap_tone_analyzer_analysis_helpers.py` — both are defined but have zero callers
   in either codebase or tests.
-- [ ] **§5 — `compare_to()` removal**: Delete `compareTo(_:)` from
+- [x] **§5 — `compare_to()` removal**: Delete `compareTo(_:)` from
   `TapToneAnalyzer+AnalysisHelpers.swift` and `compare_to()` from
   `tap_tone_analyzer_analysis_helpers.py` — both are defined but have zero callers
   in either codebase or tests.
-- [ ] **§8 — `plate_stiffness()` live site**: Update `tap_tone_analysis_view.py:2610–2614`
+- [x] **§8 — `plate_stiffness()` live site**: Update `tap_tone_analysis_view.py:2610–2614`
   to replace the inline `plate_stiffness_preset()` + `custom_plate_stiffness()` resolution
   with `TDS.plate_stiffness()`. Mirrors `TapAnalysisResultsView.swift:993`.
-- [ ] **§8 — `plate_stiffness()` PDF factory fallback**: Update
-  `tap_analysis_results_view.py:395–408` so the non-snapshot fallback uses
-  `TDS.plate_stiffness()` instead of resolving inline. The snapshot-first path
-  mirrors `PDFReportGenerator.swift:231` and stays as-is.
-- [ ] **§7 — `reclassify_peaks()` wiring**: Wire `reclassify_peaks()` into the Python
-  `set_guitar_type()` path and into the measurement load path, mirroring
-  `TapToneAnalysisView+Layouts.swift:102,225` and
+- [x] **§8 — `plate_stiffness()` PDF factory fallback**: `tap_analysis_results_view.py:395–408`
+  reads snapshot fields directly — this is architecturally correct. `TDS.plate_stiffness()`
+  reads from live AppSettings, not the snapshot; replacing it would produce wrong values
+  when generating a PDF from a measurement other than the currently displayed one.
+  `PDFReportGenerator.swift:231` uses the same snapshot-first inline pattern. No change needed.
+- [x] **§7 — `reclassify_peaks()` wiring**: Wired `reclassify_peaks()` into
+  `_on_guitar_type_changed` (after `_update_measurement_badge()`) and into
+  `_restore_measurement` (after the final `_emit_loaded_peaks_at_threshold()` call).
+  Mirrors `TapToneAnalysisView+Layouts.swift:102,225` and
   `TapToneAnalyzer+MeasurementManagement.swift:568`.
-- [ ] **§6 — `analyze_magnitudes()` wiring**: Wire `analyze_magnitudes()` into the
-  Python FFT pipeline so it is the entry point for live analysis frames, replacing
-  the direct `find_peaks()` call. Mirrors `TapToneAnalyzer.swift:876`.
-- [ ] **§4 — `calculate_tap_tone_ratio()` live panel**: Replace inline classification
-  in `tap_tone_analysis_view.py:2239–2262` (`_on_peaks_changed_ratios`) with a call to
-  `self.fft_canvas.analyzer.calculate_tap_tone_ratio()`. Mirrors `TapAnalysisResultsView.swift:550,620`.
-- [ ] **§4 — `calculate_tap_tone_ratio()` measurement collect**: Pass
-  `tap_tone_ratio=self.fft_canvas.analyzer.calculate_tap_tone_ratio()` in
-  `_collect_measurement()` so the field is populated before `pdf_report_data_from_measurement()`
-  reads it. Mirrors `TapToneAnalysisView+Export.swift:124`.
-- [ ] **§4 — `calculate_tap_tone_ratio()` measurement detail**: Update
-  `measurement_detail_view.py:389–412` (`_compute_tap_tone_ratio`) to read `m.tap_tone_ratio`
-  first, falling back to inline compute for older measurements where the field is absent.
-- [ ] **§2 — `peak_mode()` display**: Add `peak_mode()` call in the Python results
-  view to pair peaks with classified modes for display, mirroring
-  `TapAnalysisResultsView.swift:290`.
+- [x] **§6 — `analyze_magnitudes()` wiring**: Replaced inline `find_peaks()` + emit
+  in `on_fft_frame` LIVE branch with `self.analyze_magnitudes(...)`. Added
+  `self.peaksChanged.emit(peaks)` at the end of `analyze_magnitudes()` in
+  `tap_tone_analyzer_peak_analysis.py` (mirrors Swift `@Published var currentPeaks`
+  auto-notification). Mirrors `TapToneAnalyzer.swift:876`.
+- [x] **§4 — `calculate_tap_tone_ratio()` live panel**: Replaced inline classification
+  in `_on_peaks_changed_ratios` with `self.fft_canvas.analyzer.calculate_tap_tone_ratio()`.
+  Renamed `update_tap_tone_ratios(mode_freqs)` → `update_tap_tone_ratio(ratio)` to accept
+  the pre-computed float directly. Mirrors `TapAnalysisResultsView.swift:550,620`.
+- [x] **§4 — `calculate_tap_tone_ratio()` measurement collect**: `tap_tone_ratio` is a
+  computed property on `TapToneMeasurement` (derived from stored peaks), not a stored field.
+  `tap_analysis_results_view.py:428` already reads `m.tap_tone_ratio` correctly. No change
+  needed to `_collect_measurement()`. Mirrors `TapToneAnalysisView+Export.swift:124`.
+- [x] **§4 — `calculate_tap_tone_ratio()` measurement detail**: Updated
+  `measurement_detail_view.py:389–396` (`_compute_tap_tone_ratio`) to delegate directly
+  to `self._m.tap_tone_ratio` (the computed property), removing the inline
+  `GuitarMode.classify_all()` duplication.
+- [x] **§2 — `peak_mode()` display**: Updated `_refresh_results_peaks()` in
+  `tap_tone_analysis_view.py` to call `analyzer.peak_mode(p)` for each filtered
+  peak and pass `(peak, mode)` tuples to `peak_widget.update_data_with_modes()`.
+  Added `update_data_with_modes()` to `PeakCardWidget` (delegates to
+  `PeaksModel.update_data_with_modes()`). Changed `annotation_mode.setter` to call
+  `refresh_annotations()` instead of `update_data()` so the pre-installed
+  `_auto_mode_map` is preserved across annotation visibility changes.
+  Mirrors `TapAnalysisResultsView.swift:290`.

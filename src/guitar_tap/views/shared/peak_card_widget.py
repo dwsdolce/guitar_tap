@@ -637,6 +637,30 @@ class PeakListWidget(QtWidgets.QWidget):
             self.select_row(self.selected_freq)
         return True
 
+    def update_data_with_modes(self, peaks_with_modes: list) -> bool:  # list[(ResonantPeak, GuitarMode)]
+        """Update with pre-classified (peak, mode) pairs.
+
+        Mirrors Swift TapAnalysisResultsView.sortedPeaksWithModes (line 287–290)
+        which maps each peak through analyzer.peakMode(for:).  Delegates to
+        PeaksModel.update_data_with_modes so the model installs caller-supplied
+        modes directly without re-running classify_all.
+        """
+        peaks = [p for p, _ in peaks_with_modes]
+        if peaks:
+            data = np.array(
+                [[p.frequency, p.magnitude, p.quality] for p in peaks],
+                dtype=np.float64,
+            )
+        else:
+            data = np.zeros((0, 3), dtype=np.float64)
+        self._last_peaks = peaks
+        self._last_data = data
+        self.model.update_data_with_modes(peaks_with_modes)
+        self._rebuild_cards(data)
+        if self.selected_freq > 0:
+            self.select_row(self.selected_freq)
+        return True
+
     def save_peaks(self) -> None:
         if not self._saved_path:
             self._saved_path = os.path.expanduser("~/Documents/GuitarTap")

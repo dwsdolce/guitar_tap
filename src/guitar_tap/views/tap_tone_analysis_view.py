@@ -26,7 +26,6 @@ from views.exportable_spectrum_chart import make_exportable_spectrum_view
 from models import TapToneMeasurement, ResonantPeak, SpectrumSnapshot
 from models import plate_stiffness_preset as PSP
 from models import guitar_type as GT
-from models import guitar_mode as GM
 from models import measurement_type as MT
 from models import microphone_calibration as _mc_mod
 import views.measurements.measurements_list_view as MD
@@ -1843,11 +1842,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self._results_status_lbl.setStyleSheet("color: gray;")
             self._results_status_lbl.setText("Stopped")
 
-    def update_tap_tone_ratios(self, mode_freqs: dict[str, float]) -> None:
-        helm = mode_freqs.get("Air (Helmholtz)")
-        top  = mode_freqs.get("Top")
-        if top and helm and helm > 0:
-            ratio = top / helm
+    def update_tap_tone_ratio(self, ratio: "float | None") -> None:
+        """Update the tap-tone ratio display from a pre-computed ratio.
+
+        Mirrors TapAnalysisResultsView.swift:550,620.
+        """
+        if ratio is not None:
             quality, color = self._tap_ratio_quality(ratio)
             self._gs_ratio_value.setText(f"{ratio:.2f}:1")
             self._gs_ratio_quality.setText(quality)
@@ -1987,15 +1987,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_results_peaks()
 
     def _refresh_results_peaks(self) -> None:
-        """Re-apply the viewport filter to cached all-peaks and update the widget."""
+        """Re-apply the viewport filter and pair each peak with its mode.
+
+        Mirrors Swift TapAnalysisResultsView.sortedPeaksWithModes (line 276–291)
+        which filters analyzer.currentPeaks by [minFreq, maxFreq] then maps each
+        peak through analyzer.peakMode(for:) to produce (peak, mode) tuples.
+        The pre-classified tuples are passed to update_data_with_modes so the
+        model installs the analyzer's identifiedModes directly without re-running
+        classify_all.
+        """
         peaks = self._current_peaks_all
         if not peaks:
-            self.peak_widget.update_data([])
+            self.peak_widget.update_data_with_modes([])
             return
         fmin = self.fft_canvas.fmin
         fmax = self.fft_canvas.fmax
-        filtered = [p for p in peaks if fmin < p.frequency < fmax]
-        self.peak_widget.update_data(filtered)
+        analyzer = self.fft_canvas.analyzer
+        # Mirrors Swift: .filter { peak.frequency >= minFreq && peak.frequency <= maxFreq }
+        #                .map { (peak: peak, mode: analyzer.peakMode(for: peak)) }
+        peaks_with_modes = [
+            (p, analyzer.peak_mode(p))
+            for p in peaks
+            if fmin < p.frequency < fmax
+        ]
+        self.peak_widget.update_data_with_modes(peaks_with_modes)
 
     def _on_canvas_freq_range_changed(self, fmin: int, fmax: int) -> None:
         """Update freq label and re-filter the results panel when viewport changes."""
@@ -2231,6 +2246,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_widget.model.set_guitar_type(guitar_type)
         self.fft_canvas.set_guitar_type_bands(guitar_type)
         self._update_measurement_badge()
+        self.fft_canvas.analyzer.reclassify_peaks()
 
     # ================================================================
     # Peaks / ratios
@@ -2239,27 +2255,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_peaks_changed_ratios(self, peaks: object) -> None:
         if not isinstance(peaks, list) or not peaks:
             return
-        # Apply viewport filter — mirrors Swift where ratios use sortedPeaksWithModes
-        # (which filters analyzer.currentPeaks by minFreq/maxFreq).
-        fmin = self.fft_canvas.fmin
-        fmax = self.fft_canvas.fmax
-        filtered = [p for p in peaks if fmin < p.frequency < fmax]
-        if not filtered:
-            return
-        guitar_type_str = self.guitar_type_combo.currentText()
-        try:
-            guitar_type = GT.GuitarType(guitar_type_str)
-        except ValueError:
-            return
-        peaks_data = [(float(p.frequency), float(p.magnitude)) for p in filtered]
-        idx_map = GM.GuitarMode._classify_all_tuples(peaks_data, guitar_type)
-        mode_freqs: dict[str, float] = {}
-        for i, mode in idx_map.items():
-            if mode is not GM.GuitarMode.UNKNOWN:
-                mode_val = mode.value
-                if mode_val not in mode_freqs:
-                    mode_freqs[mode_val] = peaks_data[i][0]
-        self.update_tap_tone_ratios(mode_freqs)
+        # Delegate to the analyzer — mirrors TapAnalysisResultsView.swift:550,620.
+        ratio = self.fft_canvas.analyzer.calculate_tap_tone_ratio()
+        self.update_tap_tone_ratio(ratio)
 
     def _on_peak_selected(self, freq: float) -> None:
         self.fft_canvas.select_peak(freq)
@@ -3262,6 +3260,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # second call, but that is harmless and needed to ensure model.modes is applied
         # (the first call at line 3149 fired before peak_model.modes was populated).
         canvas._emit_loaded_peaks_at_threshold()
+        # Re-classify now that current_peaks is populated from the loaded measurement.
+        # Mirrors TapToneAnalyzer+MeasurementManagement.swift:568.
+        canvas.analyzer.reclassify_peaks()
 
         # For plate/brace, restore material peak widget and compute properties
         if not _restored_mt.is_guitar:
@@ -3582,8 +3583,24 @@ class MainWindow(QtWidgets.QMainWindow):
         # the same renderer as Export Spectrum so both outputs are consistent.
         png_data: bytes | None = M.render_spectrum_image_for_measurement(m)
         try:
-            # Mirrors Swift: PDFReportData.from(measurement:) → PDFReportGenerator.generate(data:)
-            report_data = M.pdf_report_data_from_measurement(m, png_data)
+            # Mirrors Swift TapToneAnalysisView+Export.swift:124,134:
+            #   tapToneRatio: tap.calculateTapToneRatio()
+            #   peakModes: Dictionary(uniqueKeysWithValues:
+            #       tap.identifiedModes.map { ($0.peak.id, $0.mode) })
+            # Both values come from the live analyzer so that identifiedModes
+            # (including user mode overrides) is the source of truth, not a
+            # fresh classify_all pass on the measurement's stored peaks.
+            _analyzer = self.fft_canvas.analyzer
+            _live_peak_modes = {
+                entry["peak"].id: entry["mode"]
+                for entry in _analyzer.identified_modes
+                if "peak" in entry and "mode" in entry
+            }
+            report_data = M.pdf_report_data_from_measurement(
+                m, png_data,
+                tap_tone_ratio=_analyzer.calculate_tap_tone_ratio(),
+                peak_modes=_live_peak_modes,
+            )
             M.export_pdf(report_data, path)
             # Success is silent on macOS — mirrors Swift MeasurementFileExporter
             # which only logs to console and shows no confirmation alert.

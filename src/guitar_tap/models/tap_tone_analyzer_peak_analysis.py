@@ -72,6 +72,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
             for p in peaks
         ]
 
+        # Notify observers — mirrors Swift @Published var currentPeaks which
+        # automatically publishes to all subscribers including the peaks display.
+        self.peaksChanged.emit(peaks)
+
     # ------------------------------------------------------------------ #
     # recalculate_frozen_peaks_if_needed / _apply_frozen_peak_state
     # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift
