@@ -1,408 +1,485 @@
-# Structural Divergence Audit: Swift ↔ Python
+# Structural Divergence Audit: Swift ↔ Python TapToneAnalyzer
 
-Objective re-analysis of every place where the Python codebase is structurally different from
-the Swift codebase. This document does not evaluate whether a difference "affects correctness"
-or is "acceptable". It records every difference so that the reader can decide what to act on.
-
----
-
-## Methodology
-
-Each Swift file was read in full and compared line-by-line against its Python counterpart.
-For methods that exist in both, sub-method call order and parameter lists were checked.
-For properties, Swift `@Published` declarations (including `didSet`/`willSet` observers) were
-compared against Python `Published()` descriptors.
+**Methodology**: Every section below is derived directly from reading all 10 Swift extension
+files and all 10 Python mixin/class files side-by-side. No section was carried forward from a
+prior version without re-reading the source.
 
 ---
 
-## 1. TapToneAnalyzer+AnalysisHelpers.swift  ↔  tap_tone_analyzer_analysis_helpers.py
+## §1 — AnalysisHelpers
 
-### 1a. Method parity
+### Swift (`TapToneAnalyzer+AnalysisHelpers.swift`, 95 lines)
 
-| Swift | Python | Notes |
+Three public methods, all read-only queries on `currentPeaks` / `identifiedModes`:
+
+| Swift method | Return type | Notes |
 |---|---|---|
-| `peakMode(for:) -> GuitarMode` | `peak_mode(peak) -> GuitarMode` | ✓ Same logic |
-| `getPeak(for:) -> ResonantPeak?` | `get_peak(mode) -> ResonantPeak \| None` | ✓ Same logic |
-| `calculateTapToneRatio() -> Float?` | `calculate_tap_tone_ratio() -> float \| None` | ✓ Same logic |
+| `peakMode(for peak: ResonantPeak) -> GuitarMode` | `GuitarMode` | Looks up `identifiedModes`; falls back to `GuitarMode.classify` |
+| `getPeak(for mode: GuitarMode) -> ResonantPeak?` | optional | Returns highest-magnitude peak for the mode |
+| `calculateTapToneRatio() -> Float?` | optional | `fTop / fAir`; nil if either peak absent |
 
-No methods missing in either direction.
+### Python (`tap_tone_analyzer_analysis_helpers.py`, 81 lines)
 
----
-
-## 2. TapToneAnalyzer+PeakAnalysis.swift  ↔  tap_tone_analyzer_peak_analysis.py
-
-### 2a. Method parity
-
-All methods present in both. No missing methods in either direction.
-
-### 2b. `identified_modes` data structure
-
-- **Swift:** `identifiedModes: [(peak: ResonantPeak, mode: GuitarMode)]` — array of named tuples
-- **Python:** `identified_modes: list[dict]` — array of dicts `{"peak": p, "mode": m}`
-
-Python uses a dict where Swift uses a named tuple. Every access site must use `entry["peak"]` /
-`entry["mode"]` instead of `item.peak` / `item.mode`.
-
-### 2c. `set_tap_num` early-completion in Python
-
-Swift handles early completion inside `numberOfTaps.didSet` on the analyzer.
-Python handles it in `tap_tone_analyzer_control.py: set_tap_num()`. The logic is equivalent
-but lives in a different file and is invoked imperatively rather than reactively. See §7b.
-
----
-
-## 3. TapToneAnalyzer+TapDetection.swift  ↔  tap_tone_analyzer_tap_detection.py
-
-### 3a. Method parity
-
-All methods present in both. No missing methods.
-
-### 3b. Threading
-
-- **Swift:** Combine subscription fires on `DispatchQueue.main` (FFT frames arrive on main).
-- **Python:** `on_fft_frame` executes on whichever thread Qt delivers the audio callback;
-  no explicit thread dispatch is performed.
-
----
-
-## 4. TapToneAnalyzer+MeasurementManagement.swift  ↔  tap_tone_analyzer_measurement_management.py
-
-### 4a. Methods in Swift with no Python equivalent
-
-| Swift method | Notes |
+| Python method | Differences |
 |---|---|
-| `static var measurementsFileURL: URL` | File I/O path lives in model layer in Swift; Python defers to views module |
-| `loadPersistedMeasurements()` | Swift loads from disk in model; Python delegates to views layer |
-| `persistMeasurements()` | Swift writes to disk in model (background thread); Python calls views-layer helper |
-| `exportMeasurement(_:completion:)` | No Python equivalent on the analyzer |
+| `peak_mode(peak)` | Identical logic. Falls back to `GuitarMode.classify(peak.frequency, guitar_type)` with explicit `guitar_type` arg not present in Swift signature (Swift gets `guitarType` from `self`) |
+| `get_peak(mode)` | Uses `entry["mode"].normalized == mode.normalized` for comparison; Swift uses `identifiedModes.map { $0.mode }` directly |
+| `calculate_tap_tone_ratio()` | Identical algorithm |
 
-### 4b. Methods in Python with no Swift equivalent
+**Verdict**: Full method parity. Minor implementation differences only.
+
+---
+
+## §2 — PeakAnalysis
+
+### Swift (`TapToneAnalyzer+PeakAnalysis.swift`, 749 lines)
+
+| Method | Access | Notes |
+|---|---|---|
+| `analyzeMagnitudes(_:frequencies:peakMagnitude:)` | internal | Calls `findPeaks`, updates `currentPeaks`/`selectedPeakIDs`/`identifiedModes`, emits via `@Published` |
+| `recalculateFrozenPeaksIfNeeded()` | internal | Unified path for live and frozen/loaded spectra |
+| `resetToAutoSelection()` | internal | Clears `userHasModifiedPeakSelection`, re-runs `guitarModeSelectedPeakIDs` |
+| `findPeaks(magnitudes:frequencies:minHz:maxHz:)` | internal | Two-pass: known-mode ranges + inter-mode; uses `lastClaimedFrequency` cursor |
+| `applyFrozenPeakState(peaks:modesByFrequency:...)` | private | Remaps offsets/overrides/selections to new UUIDs by frequency proximity |
+| `makePeak(at:magnitudes:frequencies:)` | private | Builds `ResonantPeak` with parabolic interpolation + Q factor |
+| `guitarModeSelectedPeakIDs(from:)` | internal | Returns `Set<UUID>` of auto-selected peaks per mode |
+| `reclassifyPeaks()` | internal | Re-runs mode classification on existing peaks |
+| `removeDuplicatePeaks(_:)` | internal | 2 Hz proximity threshold |
+| `parabolicInterpolate(magnitudes:frequencies:peakIndex:)` | internal | δ = 0.5·(α−γ)/(α−2β+γ) |
+| `calculateQFactor(magnitudes:frequencies:peakIndex:peakMagnitude:)` | internal | −3 dB bandwidth walk |
+
+Note: `averageSpectra(from:)` lives in `+SpectrumCapture.swift` in Swift, not here.
+
+### Python (`tap_tone_analyzer_peak_analysis.py`, 849 lines)
+
+Full method parity for all 11 methods above. Python additionally contains:
+
+- `average_spectra(from_taps)` — placed here rather than in the spectrum-capture mixin (file-organisation difference only; both are accessible on the shared `TapToneAnalyzer` object).
+- `_emit_loaded_peaks_at_threshold()` — extra helper with no direct Swift counterpart; filters `loaded_measurement_peaks` by threshold and emits `peaksChanged`. Swift covers this via `recalculateFrozenPeaksIfNeeded`.
+
+**Key structural differences**:
+
+1. **`analyze_magnitudes` emit**: Swift auto-fires `objectWillChange` via `@Published`. Python explicitly calls `self.peaksChanged.emit(peaks)`.
+
+2. **`identified_modes` type**: Swift stores `[(peak: ResonantPeak, mode: GuitarMode)]` named-field tuples. Python stores `[{"peak": ..., "mode": ...}]` list of dicts.
+
+3. **`recalculate_frozen_peaks_if_needed` guard**: Python adds `if self.is_loading_measurement: return` at the top. Swift has no equivalent flag — measurement loading is synchronous on the main thread.
+
+**Verdict**: Full method parity. Structural difference in `identified_modes` type.
+
+---
+
+## §3 — TapDetection
+
+### Swift (`TapToneAnalyzer+TapDetection.swift`, 450 lines)
+
+| Method | Notes |
+|---|---|
+| `detectTap(peakMagnitude:magnitudes:frequencies:)` | Hysteresis state machine; guitar = absolute threshold, plate/brace = EMA-relative |
+| `handleTapDetection(magnitudes:frequencies:time:)` | Dispatches to guitar path or `handlePlateTapDetection` |
+| `totalPlateTaps` (computed var) | `numberOfTaps × 2` or `× 3` with FLC; brace = `numberOfTaps` |
+| `handlePlateTapDetection(magnitudes:frequencies:time:)` | Switches on `materialTapPhase`, calls `startGatedCapture` |
+| `reEnableDetectionForNextPlateTap()` | `DispatchQueue.main.asyncAfter(tapCooldown)` re-arms |
+| `combinePlatePeaks() -> [ResonantPeak]` | Merges L/C/FLC peaks with 5 Hz dedup tolerance |
+
+Swift `handleTapDetection` schedules `processMultipleTaps()` via `DispatchQueue.main.asyncAfter(captureWindow)`. Re-enable after mid-sequence guitar tap uses same `DispatchQueue.main.asyncAfter`.
+
+### Python (`tap_tone_analyzer_tap_detection.py`, 697 lines)
+
+All 6 methods/properties above are present. Python additionally contains:
+
+| Extra Python method | Description |
+|---|---|
+| `on_fft_frame(...)` | Main-thread FFT frame receiver. Routes to `analyze_magnitudes`, `detect_tap`, `track_decay_fast`, emits spectrum and level signals. Mirrors Swift's `setupSubscriptions()` Combine sinks. |
+| `_on_rms_level_changed(rms_amp)` | `@Slot(int)` for plate/brace tap detection at ~43 Hz. Mirrors Swift's fast-path `$inputLevelDB` Combine sink. |
+| `reset_tap_detector()` | Restarts warmup; mirrors Swift `analyzerStartTime = Date()` pattern. |
+| `_finish_capture()` | `@Slot()` averaging + freeze. Mirrors Swift `finishCapture()` + `processMultipleTaps()`. |
+| `_do_reenable_guitar()` | `@Slot()` re-arms detection after guitar tap cooldown. |
+| `_do_reenable_detection()` | `@Slot()` re-arms for plate/brace. |
+
+**Thread-safety difference (key)**:
+
+- Swift: `DispatchQueue.main.asyncAfter` — closure runs on main thread automatically.
+- Python: `threading.Timer(delay, callback)` fires on a background thread. All timer callbacks post to the main thread via `QMetaObject.invokeMethod(self, "slot_name", QueuedConnection)` before touching any shared state.
+
+This pattern appears in:
+- `_handle_tap_detection` → `_finish_capture` (after `capture_window`)
+- `_handle_tap_detection` → `_do_reenable_guitar` (after `tap_cooldown`)
+- `re_enable_detection_for_next_plate_tap` → `_do_reenable_detection` (after `tap_cooldown`)
+
+**Noise floor re-enable difference**:
+
+- `_do_reenable_guitar` reads `self._current_peak_magnitude_db` (instantaneous FFT peak, ~2.7 Hz). Mirrors Swift reading `fftAnalyzer.peakMagnitude`.
+- `_do_reenable_detection` reads `self._current_input_level_db` (instantaneous RMS, ~43 Hz). Mirrors Swift reading `fftAnalyzer.inputLevelDB`. This distinction prevents the 0.5 s rolling `recent_peak_level_db` from incorrectly latching `is_above_threshold = True`.
+
+**Verdict**: Full method parity. Python adds the `@Slot` targets for timer callbacks and the `on_fft_frame`/`_on_rms_level_changed` signal-wiring equivalents, which replace Swift's Combine subscriptions and `DispatchQueue.main.asyncAfter` calls.
+
+---
+
+## §4 — MeasurementManagement
+
+### Swift (`TapToneAnalyzer+MeasurementManagement.swift`, 733 lines)
+
+| Method | Notes |
+|---|---|
+| `loadPersistedMeasurements()` | Loads JSON from Documents directory |
+| `persistMeasurements()` | Saves JSON to Documents directory |
+| `saveMeasurement(peaks:selectedPeakIDs:decayTime:tapToneRatio:...)` | **14 named parameters**; builds `TapToneMeasurement` and appends |
+| `updateMeasurement(_:with:)` | Replaces a measurement in-place |
+| `deleteMeasurement(_:)` | Removes by ID |
+| `importMeasurements(from:)` | Full import with image loading + mic warning |
+| `importMeasurements(json:)` | Simple string-based import, no images |
+| `loadMeasurement(_:)` | Comprehensive restore — see §11 |
+| `exportMeasurement(_:completion:)` | Background-queue JSON encoding |
+| `loadComparison(measurements:)` | Loads comparison spectra + axis range |
+| `clearComparison()` | Removes comparison spectra |
+
+### Python (`tap_tone_analyzer_measurement_management.py`)
+
+| Python method | Swift equivalent |
+|---|---|
+| `_persist_measurements()` | `persistMeasurements()` |
+| `import_measurements(path)` | `importMeasurements(from:)` |
+| `import_measurements_from_data(data)` | `importMeasurements(json:)` |
+| `save_measurement(measurement)` | `saveMeasurement(...)` — **takes a pre-built object, not 14 params** |
+| `update_measurement(measurement)` | `updateMeasurement(_:with:)` |
+| `delete_measurement(measurement_id)` | `deleteMeasurement(_:)` |
+| `delete_all_measurements()` | No direct Swift counterpart in this file |
+| `set_measurement_complete(measurement_id)` | No Swift counterpart |
+| `load_comparison(measurements)` | `loadComparison(measurements:)` |
+| `clear_comparison()` | `clearComparison()` |
+
+**Key divergences**:
+
+1. **`save_measurement` signature**: Python takes a pre-built object. Swift `saveMeasurement` takes 14 individual named parameters and builds the object internally.
+
+2. **`load_measurement` location**: Swift `loadMeasurement(_:)` lives here. Python's equivalent is in `tap_tone_analyzer_control.py`, not in the MeasurementManagement mixin.
+
+3. **`load_persisted_measurements` location**: Not in Python's MeasurementManagement mixin. Equivalent initialisation happens in `tap_tone_analyzer.py` `__init__`.
+
+4. **`exportMeasurement`**: No Python equivalent in this mixin. Python export is handled by the view layer (`tap_tone_analysis_view_export.py`, currently a stub).
+
+5. **Persistence mechanism**: Swift writes a single JSON file to the Documents directory. Python delegates to `save_all_measurements` via the view layer.
+
+**Verdict**: Partial structural divergence. Python mixin covers save/delete/compare but omits `load_measurement` and `load_persisted_measurements`. `save_measurement` signature is fundamentally different.
+
+---
+
+## §5 — AnnotationManagement
+
+### Swift (`TapToneAnalyzer+AnnotationManagement.swift`, 188 lines)
+
+| Method | Notes |
+|---|---|
+| `updateAnnotationOffset(_:for:)` | Sets per-peak offset in `peakAnnotationOffsets` |
+| `getAnnotationOffset(for:)` | Returns offset or `(0,0)` |
+| `resetAnnotationOffset(for:)` | Removes single entry |
+| `resetAllAnnotationOffsets()` | Clears all |
+| `applyAnnotationOffsets(_:)` | Replaces entire dict |
+| `selectLongitudinalPeak(_:)` | Sets `selectedLongitudinalPeak`; calls `resolvedPlatePeaks`; updates `currentPeaks` |
+| `selectCrossPeak(_:)` | Same for cross |
+| `selectFlcPeak(_:)` | Same for FLC |
+
+`effectiveLongitudinalPeakID`, `effectiveCrossPeakID`, `effectiveFlcPeakID` are **computed vars in `TapToneAnalyzer.swift`** (main file), not in `+AnnotationManagement.swift`. Swift logic is three-layer:
+
+```swift
+effectiveLongitudinalPeakID =
+    userSelectedLongitudinalPeakID
+    ?? selectedLongitudinalPeak?.id      // ← phase-stored peak (middle layer)
+    ?? autoSelectedLongitudinalPeakID
+```
+
+### Python (`tap_tone_analyzer_annotation_management.py`)
+
+Same 8 methods with snake_case names — full parity.
+
+`effective_longitudinal_peak_id`, `effective_cross_peak_id`, `effective_flc_peak_id` are **properties in this mixin** (not in main `tap_tone_analyzer.py`). Their Python logic is **two-layer**:
+
+```python
+@property
+def effective_longitudinal_peak_id(self):
+    return self.user_selected_longitudinal_peak_id or self.auto_selected_longitudinal_peak_id
+```
+
+**The middle layer (`selected_longitudinal_peak?.id`) is absent from Python's effective-ID resolution.** Python has `self.selected_longitudinal_peak` as an instance attribute (set in `_reset_material_phase_state`) but `effective_longitudinal_peak_id` does not consult it.
+
+**Verdict**: Method parity. Structural difference: Swift three-layer `effectiveXxxPeakID` resolution vs Python two-layer (missing `selectedXxxPeak?.id` middle layer).
+
+---
+
+## §6 — ModeOverrideManagement
+
+### Swift (`TapToneAnalyzer+ModeOverrideManagement.swift`, 99 lines)
+
+| Method | Notes |
+|---|---|
+| `applyModeOverrides(_ overrides: [UUID: UserAssignedMode])` | Replaces entire dict |
+| `resetAllModeOverrides()` | Clears all overrides |
+| `resetModeOverride(for peakID: UUID)` | Removes single entry |
+
+### Python (`tap_tone_analyzer_mode_override_management.py`, 74 lines)
 
 | Python method | Notes |
 |---|---|
-| `delete_all_measurements()` | Swift has no `deleteAllMeasurements()` |
-| `set_measurement_complete(is_complete:)` | Swift manages frozen state differently (via published properties + view logic) |
-| `_persist_measurements()` | Helper; calls into views layer |
-| `_comparison_label(m)` | Static label-generation helper |
+| `apply_mode_overrides(overrides: dict[str, str])` | `overrides` is `{UUID-string → mode-label-string}` vs Swift `[UUID: UserAssignedMode]` |
+| `reset_all_mode_overrides()` | Identical |
+| `reset_mode_override(peak_id: str)` | Identical |
 
-### 4c. `saveMeasurement` parameter structure
-
-- **Swift `saveMeasurement(...)`:** Takes 16+ individual named parameters
-  (`tapLocation`, `notes`, `includeSpectrum`, `spectrumSnapshot`, `longitudinalSnapshot`, etc.)
-  and builds the `TapToneMeasurement` inside the method.
-- **Python `save_measurement(measurement)`:** Takes a single fully-built `TapToneMeasurement`
-  object. Assembly is done at the call site (`_collect_measurement()` in the view).
-
-### 4d. `loadMeasurement` architecture
-
-- **Swift `loadMeasurement(_:)`:** 281-line method on the analyzer. Restores all analyzer state
-  (`currentPeaks`, `selectedPeakIDs`, `peakModeOverrides`, `annotationVisibilityMode`, etc.)
-  via direct property assignment on the analyzer. Sets 28+ `loaded*` @Published properties so
-  SwiftUI views can show/hide settings-restored-from-measurement UI reactively.
-- **Python:** No `load_measurement` on the analyzer. All restoration is done in
-  `_restore_measurement()` in the view layer (~360 lines). Restores state by calling
-  `.setValue()` / `.setCurrentText()` directly on UI widgets.
-
-### 4e. `load_comparison` return shape
-
-- **Swift `loadComparison(measurements:)`:** Stores data in `comparisonSpectra:
-  [(magnitudes: [Float], frequencies: [Float], color: Color, label: String)]` — a single
-  @Published array of 4-tuples.
-- **Python `load_comparison(measurements:)`:** Stores data in two separate lists:
-  `_comparison_data: list[dict]` and uses `comparisonChanged` signal. Different internal
-  shape from Swift.
+**Verdict**: Full method parity. Type difference: Swift uses typed `UUID` keys and `UserAssignedMode` values; Python uses plain strings for both.
 
 ---
 
-## 5. TapToneAnalyzer+AnnotationManagement.swift  ↔  tap_tone_analyzer_annotation_management.py
+## §7 — TapToneAnalyzer Main Class
 
-### 5a. Thread-safety guards
+### Swift (`TapToneAnalyzer.swift`, 975 lines) — key `@Published` properties
 
-Swift marks every mutating method "Safe to call from any thread" and implements this via
-`Thread.isMainThread` + `DispatchQueue.main.async` dispatch:
+**Analysis-state properties** (with `didSet` side effects noted):
 
-| Swift method | Thread-safe? |
-|---|---|
-| `updateAnnotationOffset(for:offset:)` | ✓ has `Thread.isMainThread` + async dispatch |
-| `resetAnnotationOffset(for:)` | ✓ has `Thread.isMainThread` + async dispatch |
-| `resetAllAnnotationOffsets()` | ✓ has `Thread.isMainThread` + async dispatch |
-| `applyAnnotationOffsets(_:)` | ✓ has `Thread.isMainThread` + async dispatch |
-| `getAnnotationOffset(for:)` | read-only, no dispatch needed |
-| `selectLongitudinalPeak(_:)` | no dispatch (assumed main-thread only) |
-| `selectCrossPeak(_:)` | no dispatch |
-| `selectFlcPeak(_:)` | no dispatch |
-
-**Python has NO thread-safety checks or dispatches in any of these methods.**
-
-### 5b. Type differences
-
-| Swift | Python |
-|---|---|
-| `peakID: UUID` | `peak_id: str` |
-| returns / accepts `CGPoint` | returns / accepts `tuple[float, float]` |
-
-### 5c. Methods present in Python but not Swift
-
-Python adds three `@property` computed properties (`effective_longitudinal_peak_id`,
-`effective_cross_peak_id`, `effective_flc_peak_id`). Swift computes these as properties
-on `TapToneAnalyzer` itself (not in this extension file), so they exist in Swift but in
-a different location.
-
----
-
-## 6. TapToneAnalyzer+ModeOverrideManagement.swift  ↔  tap_tone_analyzer_mode_override_management.py
-
-### 6a. Thread-safety guards
-
-All three Swift methods are marked "Safe to call from any thread" and use
-`Thread.isMainThread` + `DispatchQueue.main.async`.
-
-**Python has NO thread-safety checks or dispatches in any of these methods.**
-
-### 6b. Type differences
-
-| Swift | Python |
-|---|---|
-| `[UUID: UserAssignedMode]` | `dict[str, str]` |
-
----
-
-## 7. TapToneAnalyzer.swift (property declarations)  ↔  tap_tone_analyzer.py
-
-### 7a. `@Published` properties missing from Python
-
-Swift defines **80 `@Published` properties** in total. Python has **~33**.
-
-The following Swift `@Published` properties have **no Python `Published()` equivalent**:
-
-#### `loaded*` group (28 properties)
-
-These expose measurement-restoration state reactively to SwiftUI views. Python stores the
-equivalent data imperatively in the view layer instead.
-
-| Swift property | Type |
-|---|---|
-| `loadedAxisRange` | `LoadedAxisRange?` |
-| `loadedMinFreq` | `Float?` |
-| `loadedMaxFreq` | `Float?` |
-| `loadedMinDB` | `Float?` |
-| `loadedMaxDB` | `Float?` |
-| `loadedTapDetectionThreshold` | `Float?` |
-| `loadedHysteresisMargin` | `Float?` |
-| `loadedPeakThreshold` | `Float?` |
-| `loadedNumberOfTaps` | `Int?` |
-| `loadedShowUnknownModes` | `Bool?` |
-| `loadedGuitarType` | `GuitarType?` |
-| `loadedMeasurementType` | `MeasurementType?` |
-| `loadedSelectedLongitudinalPeakID` | `UUID?` |
-| `loadedSelectedCrossPeakID` | `UUID?` |
-| `loadedSelectedFlcPeakID` | `UUID?` |
-| `loadedPlateLength` | `Float?` |
-| `loadedPlateWidth` | `Float?` |
-| `loadedPlateThickness` | `Float?` |
-| `loadedPlateMass` | `Float?` |
-| `loadedGuitarBodyLength` | `Float?` |
-| `loadedGuitarBodyWidth` | `Float?` |
-| `loadedPlateStiffnessPreset` | `PlateStiffnessPreset?` |
-| `loadedCustomPlateStiffness` | `Float?` |
-| `loadedMeasureFlc` | `Bool?` |
-| `loadedBraceLength` | `Float?` |
-| `loadedBraceWidth` | `Float?` |
-| `loadedBraceThickness` | `Float?` |
-| `loadedBraceMass` | `Float?` |
-| `loadedMeasurementName` | `String?` |
-
-Python stores only `self._loaded_measurement: TapToneMeasurement | None` and two simple
-view-state vars (`_loaded_tap_threshold`, `_loaded_tap_num`) in the view layer.
-
-#### Material tap phase / plate-specific group
-
-| Swift property | Type | Python equivalent |
+| Property | Type | `didSet` side effect |
 |---|---|---|
-| `materialTapPhase` | `MaterialTapPhase` (Published) | Has Python equivalent |
-| `longitudinalSpectrum` | `(magnitudes, frequencies)?` (Published) | Not a Published property in Python |
-| `crossSpectrum` | `(magnitudes, frequencies)?` (Published) | Not a Published property in Python |
-| `longitudinalPeaks` | `[ResonantPeak]` (Published) | Not Published in Python |
-| `crossPeaks` | `[ResonantPeak]` (Published) | Not Published in Python |
-| `autoSelectedLongitudinalPeakID` | `UUID?` (Published) | Not Published in Python |
-| `selectedLongitudinalPeak` | `ResonantPeak?` (Published) | Not Published in Python |
-| `userSelectedLongitudinalPeakID` | `UUID?` (Published) | Not Published in Python |
-| `autoSelectedCrossPeakID` | `UUID?` (Published) | Not Published in Python |
-| `selectedCrossPeak` | `ResonantPeak?` (Published) | Not Published in Python |
-| `userSelectedCrossPeakID` | `UUID?` (Published) | Not Published in Python |
-| `flcPeaks` | `[ResonantPeak]` (Published) | Not Published in Python |
-| `flcSpectrum` | `(magnitudes, frequencies)?` (Published) | Not Published in Python |
-| `autoSelectedFlcPeakID` | `UUID?` (Published) | Not Published in Python |
-| `selectedFlcPeak` | `ResonantPeak?` (Published) | Not Published in Python |
-| `userSelectedFlcPeakID` | `UUID?` (Published) | Not Published in Python |
-| `showLoadedSettingsWarning` | `Bool` (Published) | View-layer `_show_loaded_settings_warning` bool |
-| `microphoneWarning` | `String?` (Published) | Not Published in Python |
-| `sourceMeasurementTimestamp` | `Date?` (Published) | Not Published in Python |
-| `displayMode` | `AnalysisDisplayMode` (Published) | Has Python equivalent |
-| `comparisonSpectra` | tuple array (Published) | Different structure; see §4e |
+| `peakThreshold` | `Float` | Calls `recalculateFrozenPeaksIfNeeded()` + persists to `TapDisplaySettings` |
+| `minFrequency` | `Float` | None |
+| `maxFrequency` | `Float` | None |
+| `numberOfTaps` | `Int` | Updates status if detecting; triggers `processMultipleTaps` if already have enough taps |
+| `tapDetectionThreshold` | `Float` | Persists to `TapDisplaySettings`; clears `showLoadedSettingsWarning` |
+| `hysteresisMargin` | `Float` | Persists to `TapDisplaySettings` |
+| `isMeasurementComplete` | `Bool` | Clears `showLoadedSettingsWarning` when set to `true` |
+| `displayMode` | `AnalysisDisplayMode` | None |
+| `comparisonSpectra` | array | None |
 
-### 7b. `@Published` properties whose `didSet` observers have no Python equivalent
+**Loaded-measurement `@Published` properties** (lines 600–657):
 
-Python's `Published` descriptor only emits `_notify_change`. It has no mechanism for
-`didSet`-style side effects. These Swift properties have `didSet` blocks that Python
-does not replicate in the model layer:
+`loadedPeakThreshold`, `loadedNumberOfTaps`, `loadedShowUnknownModes`, `loadedGuitarType`, `loadedMeasurementType`, `showLoadedSettingsWarning`, `microphoneWarning`, `loadedSelectedLongitudinalPeakID`, `loadedSelectedCrossPeakID`, `loadedSelectedFlcPeakID`, `loadedPlateLength`, `loadedPlateWidth`, `loadedPlateThickness`, `loadedPlateMass`, `loadedGuitarBodyLength`, `loadedGuitarBodyWidth`, `loadedPlateStiffnessPreset`, `loadedCustomPlateStiffness`, `loadedMeasureFlc`, `loadedBraceLength`, `loadedBraceWidth`, `loadedBraceThickness`, `loadedBraceMass`, `sourceMeasurementTimestamp`, `loadedMeasurementName`
 
-| Swift property | didSet behavior | Python equivalent location |
-|---|---|---|
-| `peakThreshold` | (1) Persists to `TapDisplaySettings`; (2) calls `recalculateFrozenPeaksIfNeeded()` | Persistence happens in view-layer `_on_apply_settings()`; `recalculateFrozenPeaksIfNeeded()` is not called on threshold change in Python |
-| `tapDetectionThreshold` | (1) Persists to `TapDisplaySettings`; (2) clears `showLoadedSettingsWarning` if value ≠ loaded value | Persistence in view-layer `_on_tap_threshold_changed()`; warning cleared via `_clear_loaded_settings_warning()` |
-| `hysteresisMargin` | Persists to `TapDisplaySettings` | Persistence in view-layer settings-apply handler |
-| `numberOfTaps` | (1) Updates `statusMessage`; (2) triggers early completion if `currentTapCount >= numberOfTaps`; (3) clears warning | Handled in `set_tap_num()` in `tap_tone_analyzer_control.py` (equivalent logic exists); warning cleared in view layer |
-| `isMeasurementComplete` | Clears `showLoadedSettingsWarning` when `true` | Handled in view-layer `_clear_loaded_settings_warning()` |
+**Gated FFT state** (non-`@Published`, lines 679–743):
 
-**For `peakThreshold` specifically:** Swift's `didSet` calls `recalculateFrozenPeaksIfNeeded()`
-every time the threshold changes. Python does **not** call this when the threshold changes —
-only when a measurement is loaded.
+`mpmLock`, `gatedCaptureActive`, `gatedAccumBuffer`, `gatedCaptureCompletion`, `gatedCapturePhase`, `mpmSampleRate`, `preRollBuffer`, `noiseFloorEstimate`, `noiseFloorAlpha`
 
----
+**Atomic helpers**:
+- `setFrozenSpectrum(frequencies:magnitudes:)` — calls `objectWillChange.send()` before assigning both arrays to prevent SwiftUI from seeing a length mismatch mid-render.
+- `setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:)` — same pattern for four axis bounds.
 
-## 8. TapToneAnalysisView+Export.swift  ↔  `_on_export_pdf` in tap_tone_analysis_view.py
+**`init` / `setupSubscriptions`**:
 
-### 8a. Fields passed to PDFReportData by Swift but NOT as explicit parameters in Python
+`init(fftAnalyzer:)` restores persisted settings from `TapDisplaySettings`, calls `loadPersistedMeasurements()`, then `setupSubscriptions()`. `setupSubscriptions()` wires 4 Combine sinks:
+1. `$magnitudes + $frequencies + $peakMagnitude` → `analyzeMagnitudes` (~1 Hz, main thread)
+2. `$inputLevelDB` → `trackDecayFast` (~10 Hz, main thread)
+3. `$inputLevelDB` (plate/brace only, guarded) → `detectTap` (~10 Hz, main thread)
+4. `$routeChangeRestartCount` → `handleRouteChangeRestart` (main thread)
 
-Swift `exportPDFReport()` (line 115) constructs `PDFReportData` with 26 named parameters.
-Python calls `M.pdf_report_data_from_measurement(m, png_data, tap_tone_ratio=..., peak_modes=...)`.
+**`handleRouteChangeRestart`**: 2-second settle delay; re-anchors `isAboveThreshold` to current `peakMagnitude`; restores `isDetecting` state.
 
-The following fields that Swift passes explicitly from the **live analyzer** are instead
-derived by Python from the **collected measurement object `m`** (populated by `_collect_measurement()`):
+### Python (`tap_tone_analyzer.py`, 680 lines) — equivalents
 
-| Swift source | Swift parameter | Python path |
-|---|---|---|
-| `tap.sourceMeasurementTimestamp ?? Date()` | `timestamp:` | `m.timestamp` (from `_collect_measurement`) |
-| `tap.selectedPeakIDs` | `selectedPeakIDs:` | `m.selected_peak_ids` (from `_collect_measurement`) |
-| `tap.currentDecayTime` | `decayTime:` | `m.decay_time` (from `_collect_measurement`) |
-| `tap.peakModeOverrides` | `peakModeOverrides:` | `m.peak_mode_overrides` (from `_collect_measurement`) |
-| `tap.effectiveLongitudinalPeakID` | `selectedLongitudinalPeakID:` | `m.selected_longitudinal_peak_id` |
-| `tap.effectiveCrossPeakID` | `selectedCrossPeakID:` | `m.selected_cross_peak_id` |
-| `tap.effectiveFlcPeakID` | `selectedFlcPeakID:` | `m.selected_flc_peak_id` |
-| `fft.selectedInputDevice?.name` | `microphoneName:` | `m.microphone_name` |
-| `fft.activeCalibration?.name` | `calibrationName:` | `m.calibration_name` |
-| `TapDisplaySettings.guitarBodyLength` | `guitarBodyLength:` | Derived by `pdf_report_data_from_measurement` from snapshot |
-| `TapDisplaySettings.guitarBodyWidth` | `guitarBodyWidth:` | Derived by `pdf_report_data_from_measurement` from snapshot |
-| `TapDisplaySettings.plateStiffness` | `plateStiffness:` | Derived by `pdf_report_data_from_measurement` from snapshot |
-| `TapDisplaySettings.plateStiffnessPreset` | `plateStiffnessPreset:` | Derived by `pdf_report_data_from_measurement` from snapshot |
+Python replaces every `@Published` property with a plain instance attribute (`self.x = default` in `__init__`) plus explicit Qt signals defined at class level. Reactivity is opt-in.
 
-Swift reads `guitarBodyLength`, `guitarBodyWidth`, `plateStiffness`, and `plateStiffnessPreset`
-from **live `TapDisplaySettings`**. Python reads these from the **snapshot stored inside
-the measurement** (via `pdf_report_data_from_measurement`). These are different sources.
+**`didSet` side effects — replication status**:
 
-### 8b. `peakModeOverrides` parameter not accepted by `pdf_report_data_from_measurement`
+| Swift `didSet` | Python replication |
+|---|---|
+| `peakThreshold.didSet` → `recalculateFrozenPeaksIfNeeded()` + persist | `set_threshold()` in `control.py` calls recalculate ✅ but does **not** persist to `TapDisplaySettings` ❌ |
+| `tapDetectionThreshold.didSet` → persist + clear warning | `set_tap_threshold()` sets value only — neither persist nor warning-clear ❌ |
+| `hysteresisMargin.didSet` → persist | `set_hysteresis_margin()` sets value only — no persist ❌ |
+| `isMeasurementComplete.didSet` → clear warning | Not replicated as a helper; handled contextually ❌ |
+| `numberOfTaps.didSet` → process if enough taps | `set_tap_num()` handles the early-process case ✅ |
 
-Swift passes `peakModeOverrides: tap.peakModeOverrides` directly from the live analyzer to
-`PDFReportData`. Python's `pdf_report_data_from_measurement` does not accept a
-`peak_mode_overrides` parameter — it always reads `m.peak_mode_overrides`. The live
-analyzer's `peak_mode_overrides` is not forwarded explicitly.
+**`setFrozenSpectrum` / `setLoadedAxisRange` atomicity**: Not replicated. Frozen arrays are assigned as separate lines wherever needed. No `objectWillChange.send()` equivalent.
+
+**`handleRouteChangeRestart`**: Not replicated. Python's `_on_devices_refreshed` calls `mic.reinitialize_portaudio()` and emits `devicesChanged`, but the 2-second settle delay and `isAboveThreshold` re-anchor are absent.
+
+**Python-only properties / methods on main class**:
+
+| Python | Notes |
+|---|---|
+| `is_comparing` (property) | Returns `self._display_mode == COMPARISON`; no Swift equivalent |
+| `n_fmin`, `n_fmax` (computed properties) | FFT bin index for `min_frequency`/`max_frequency`; no Swift equivalent |
+| `saved_measurements` / `savedMeasurements` | Legacy alias pair |
+| `set_material_spectra(longitudinal, cross, flc)` | Aggregates spectra for the spectrum view; no direct Swift equivalent |
+| `recreate_proc_thread()` | Python-only audio pipeline management |
+| `display_mode` (property with setter) | Setter emits `displayModeChanged`; Swift uses `@Published var displayMode` |
+
+**Verdict**: All properties present in Python as plain instance attributes. Key gaps: `tapDetectionThreshold` and `hysteresisMargin` setter side effects (persist to settings) not replicated; `setFrozenSpectrum` atomicity not replicated; `handleRouteChangeRestart` 2-second settle not replicated. Python has `is_comparing`, `n_fmin`, `n_fmax` with no Swift equivalent.
 
 ---
 
-## 9. `cycle_annotation_visibility` / `cycleAnnotationVisibility`
+## §8 — PDF Export
 
-**Swift** (`TapToneAnalyzer.swift` line 415–418):
+### Swift (`PDFReportGenerator.swift`, 1040 lines)
+
+`PDFReportData` is a value struct with ~25 fields including: `timestamp`, `tapLocation`, `notes`, `measurementType`, `guitarType`, `peaks`, `selectedPeakIDs`, `decayTime`, `tapToneRatio`, `spectrumImageData`, `minFreq`, `maxFreq`, `plateProperties`, `braceProperties`, `selectedLongitudinalPeakID`, `selectedCrossPeakID`, `selectedFlcPeakID`, `peakModeOverrides`, `peakModes`, `microphoneName`, `calibrationName`, `guitarBodyLength`, `guitarBodyWidth`, `plateStiffness`, `plateStiffnessPreset`.
+
+`PDFReportData.from(measurement:spectrumImageData:)` — static factory that re-derives `PlateProperties`/`BraceProperties` from stored dimensions and peak IDs.
+
+`PDFReportGenerator.generate(data:)` — must be called on `@MainActor`; uses `ImageRenderer` to render `PDFReportContentView` into a `CGContext` PDF page.
+
+### Python
+
+`tap_tone_analysis_view_export.py` is a **stub** (15 lines, docstring only). No `PDFReportData` struct or `PDFReportGenerator` equivalent exists. The comment states: "Pending: extract the export-related callbacks from `tap_tone_analysis_view.MainWindow`".
+
+**Verdict**: Swift has a full PDF report pipeline. Python has a stub with no PDF export implementation.
+
+---
+
+## §9 — `cycleAnnotationVisibility` Persistence
+
+### Swift (`TapToneAnalyzer.swift`)
+
 ```swift
 func cycleAnnotationVisibility() {
-    annotationVisibilityMode = annotationVisibilityMode.next
-    TapDisplaySettings.annotationVisibilityMode = annotationVisibilityMode
+    // cycles .all → .selected → .none → .all
+    TapDisplaySettings.annotationVisibilityMode = annotationVisibilityMode  // ← persists
 }
 ```
-Persistence is in the **model**.
 
-**Python** (`tap_tone_analyzer.py` line 666–672):
+### Python (`tap_tone_analyzer.py`)
+
 ```python
-def cycle_annotation_visibility(self) -> None:
-    """Advance annotation_visibility_mode: all → selected → none → all.
-
-    Persists the new value via TapDisplaySettings.
-    Mirrors Swift ``cycleAnnotationVisibility()``.
-    """
-    self.annotation_visibility_mode = self.annotation_visibility_mode.next
+def cycle_annotation_visibility(self):
+    # cycles self.annotation_visibility_mode
+    # does NOT write to TapDisplaySettings
 ```
-The docstring claims persistence but the code **does not call
-`TapDisplaySettings.set_annotation_visibility_mode()`**. Persistence is done in the view
-layer (`_on_cycle_annotation_mode()` calls `TDS.set_annotation_visibility_mode(next_mode)`).
-`cycle_annotation_visibility()` on the analyzer is not the actual UI call site — the view
-calls `_on_cycle_annotation_mode` directly, bypassing this method.
+
+**Verdict**: Python `cycle_annotation_visibility` does not persist the new mode to `TapDisplaySettings`. This is a confirmed missing side effect.
 
 ---
 
-## 10. `peakThreshold` — `recalculateFrozenPeaksIfNeeded()` not called on change
+## §10 — Settings Persistence on Property Write
 
-**Swift** (`TapToneAnalyzer.swift` line 98–103):
-```swift
-@Published var peakThreshold: Float = TapDisplaySettings.peakThreshold {
-    didSet {
-        TapDisplaySettings.peakThreshold = peakThreshold
-        recalculateFrozenPeaksIfNeeded()
-    }
-}
-```
-Every time `peakThreshold` changes, frozen peaks are immediately recalculated.
+### Swift
 
-**Python:** `peak_threshold` is a plain `Published(-60.0)` descriptor. No call to
-`recalculate_frozen_peaks_if_needed()` is made when the threshold changes. Recalculation
-only happens on explicit user action or measurement load.
+Four properties auto-persist via `didSet`:
 
----
+| Property | Persists to |
+|---|---|
+| `peakThreshold` | `TapDisplaySettings.peakThreshold` |
+| `tapDetectionThreshold` | `TapDisplaySettings.tapDetectionThreshold` |
+| `hysteresisMargin` | `TapDisplaySettings.hysteresisMargin` |
+| `annotationVisibilityMode` (via `cycleAnnotationVisibility`) | `TapDisplaySettings.annotationVisibilityMode` |
 
-## 11. Settings persistence architecture
+### Python
 
-**Swift:** Persistence of analysis settings (`peakThreshold`, `tapDetectionThreshold`,
-`hysteresisMargin`) happens in `@Published didSet` observers **in the model layer**.
+| Property | Persists? |
+|---|---|
+| `peak_threshold` via `set_threshold()` | ❌ `recalculate_frozen_peaks_if_needed()` is called but `TapDisplaySettings.peak_threshold` is NOT written |
+| `tap_detection_threshold` via `set_tap_threshold()` | ❌ Not persisted |
+| `hysteresis_margin` via `set_hysteresis_margin()` | ❌ Not persisted |
+| `annotation_visibility_mode` via `cycle_annotation_visibility()` | ❌ Not persisted |
 
-**Python:** Persistence happens in **view-layer event handlers**:
-- `_on_tap_threshold_changed` → `AS.AppSettings.set_tap_threshold()`
-- Settings-apply dialog → `AS.AppSettings.set_peak_threshold()`, `set_hysteresis_margin()`
-
-The Python `Published` descriptor has no mechanism for `didSet` observers.
+**Verdict**: None of the four settings-persistence `didSet` side effects are replicated in Python. Settings written during a session are lost on restart.
 
 ---
 
-## 12. `loadMeasurement` architecture
+## §11 — `loadMeasurement` Comprehensiveness
 
-**Swift:** `loadMeasurement(_:)` is a 281-line method on `TapToneAnalyzer`. It restores all
-analyzer state (peaks, selections, overrides, spectra, display settings) via direct
-property assignment, then sets 28+ `loaded*` @Published properties so SwiftUI views
-reactively show/hide "settings restored from measurement" UI.
+### Swift (`TapToneAnalyzer+MeasurementManagement.swift`, ~lines 450–628)
 
-**Python:** No equivalent method on the analyzer. All restoration is done in
-`_restore_measurement()` (~360 lines) in the **view layer**. The view directly manipulates
-UI widgets (`.setValue()`, `.setCurrentText()`) and stores only two values from the loaded
-measurement (`_loaded_tap_threshold`, `_loaded_tap_num`) for warning-banner logic.
+`loadMeasurement(_:)` performs:
+1. Freezes spectrum via `setFrozenSpectrum`; sets `isMeasurementComplete = true`
+2. Loads peaks into `loadedMeasurementPeaks`; calls `recalculateFrozenPeaksIfNeeded()`
+3. Restores `selectedPeakIDs` from `measurement.selectedPeakIDs`
+4. Restores mode overrides via `applyModeOverrides`
+5. Restores annotation offsets via `applyAnnotationOffsets`
+6. Restores axis range atomically via `setLoadedAxisRange`
+7. Sets `showLoadedSettingsWarning = true`
+8. Sets all loaded-settings `@Published` vars: `loadedPeakThreshold`, `loadedNumberOfTaps`, `loadedGuitarType`, `loadedMeasurementType`, all plate/brace dimension properties
+9. Restores plate/brace phase peaks: `longitudinalPeaks`, `crossPeaks`, `flcPeaks`, `selectedLongitudinalPeak`, etc.
+10. Auto-selects/warns microphone: tries UID match, then name match; emits `microphoneWarning` if not found
+
+### Python
+
+Python's `load_measurement` equivalent is in `tap_tone_analyzer_control.py`. It performs the same logical steps. Differences:
+
+- Uses `self._set_material_tap_phase(phase)` to emit `plateStatusChanged` instead of direct assignment.
+- Axis range restore assigns `self.loaded_min_freq` etc. individually (no atomic helper).
+- Microphone device-switch logic is delegated to the view layer; only `self.microphone_warning` is set here.
+- `show_loaded_settings_warning = True` with explicit signal emit.
+
+**Verdict**: Structural parity. Axis range restore is non-atomic in Python.
 
 ---
 
-## 13. Comparison data structure
+## §12 — Comparison Overlay
 
-**Swift:** `comparisonSpectra: [(magnitudes: [Float], frequencies: [Float], color: Color, label: String)]`
-— single `@Published` array of 4-tuples.
+### Swift (`TapToneAnalyzer+MeasurementManagement.swift`, lines 682–731)
 
-**Python:** `_comparison_data` (list of dicts) + separate `comparison_labels` (list of tuples).
-Different shape; accessed via different code paths.
+`loadComparison(measurements:)`:
+- Filters to measurements with `spectrumSnapshot != nil`
+- Assigns colors from a 5-color palette cycling by index
+- Calls `setLoadedAxisRange` atomically with union of all snapshot axis ranges
+- Sets `displayMode = .comparison` (or `.live` if empty)
+
+`clearComparison()`: sets `comparisonSpectra = []`, `displayMode = .live`
+
+### Python (`tap_tone_analyzer_measurement_management.py`)
+
+`load_comparison(measurements)` and `clear_comparison()` are present. Differences:
+
+- Uses matching 5-color `comparisonPalette`
+- Axis range: assigns `self.loaded_min_freq` etc. individually — **no atomic helper**
+- Emits `comparisonLoaded` signal after loading (no Swift equivalent signal; Swift uses `@Published`)
+- `clear_comparison()` sets `self.comparison_spectra = []` and emits `displayModeChanged`
+
+**Verdict**: Functional parity. Axis range assignment is non-atomic in Python. Python emits an additional `comparisonLoaded` signal.
 
 ---
 
-## Summary Table
+## §13 — Control (start/stop/reset/tap-sequence)
 
-| # | Area | Swift | Python | Difference |
+### Swift (`TapToneAnalyzer+Control.swift`, 348 lines)
+
+| Method | Notes |
+|---|---|
+| `start()` | Starts `fftAnalyzer`; sets `isReadyForDetection = true` |
+| `stop()` | Stops `fftAnalyzer` |
+| `reset()` | Stops detection; calls `resetMaterialPhaseState(.notStarted)` + `resetDecayTracking`; clears frozen spectrum, peaks, annotation offsets; clears loaded-measurement state |
+| `startTapSequence()` | Seeds noise floor; resets per-sequence state; arms detection; sets status message |
+| `pauseTapDetection()` | No-op if not detecting/already paused; sets `isDetectionPaused = true` |
+| `resumeTapDetection()` | Resets warm-up timer; re-arms detection; restores prompt |
+| `cancelTapSequence()` | Like reset but keeps detection active |
+| `resetMaterialPhaseState(to:)` | private; clears all phase state |
+| `resetDecayTracking()` | private; stops timer, clears flag |
+
+### Python (`tap_tone_analyzer_control.py`, 466 lines)
+
+All methods above are present with snake_case names plus additional Python-only methods:
+
+| Extra Python method | Description |
+|---|---|
+| `_set_status_message(message)` | Assigns `status_message` + emits `statusMessageChanged`. Mirrors Swift `@Published statusMessage` auto-emit. |
+| `_on_devices_refreshed()` | Hot-plug handler; no Swift equivalent in Control |
+| `load_calibration(path)` | Loads calibration file |
+| `load_calibration_from_profile(cal)` | Applies pre-parsed calibration |
+| `clear_calibration()` | Removes calibration |
+| `current_calibration_device()` | Returns calibration device name |
+| `set_device(device)` | Switches input device; syncs `fft_data.sample_freq` |
+| `_on_mic_calibration_changed(cal)` | Applies/clears calibration from device switch |
+| `set_tap_threshold(value)` | Sets `tap_detection_threshold` (no persist) |
+| `set_hysteresis_margin(value)` | Sets `hysteresis_margin` (no persist) |
+| `set_measurement_type(measurement_type)` | Sets `_measurement_type` |
+| `set_threshold(threshold)` | Sets `peak_threshold` + calls `recalculate_frozen_peaks_if_needed` |
+| `set_fmin / set_fmax / update_axis` | Update frequency analysis range |
+| `set_max_average_count / reset_averaging / set_avg_enable / set_auto_scale` | Additional parameter setters |
+| `_reset_material_phase_state(to)` | private; mirrors Swift; includes gated-capture cancel |
+| `_reset_decay_tracking()` | private; mirrors Swift |
+
+**Verdict**: Full parity for the core 9 methods. Python adds `_set_status_message` (explicitly required since `status_message` is not `@Published`), calibration management, and additional parameter setters that are handled elsewhere in Swift.
+
+---
+
+## Summary of Confirmed Divergences
+
+| # | Location | Swift behaviour | Python behaviour | Severity |
 |---|---|---|---|---|
-| 1 | `identified_modes` structure | Named tuple array `[(peak:, mode:)]` | Dict array `[{"peak":, "mode":}]` | Different accessor syntax |
-| 2 | Thread safety in AnnotationManagement | Every mutating method has `Thread.isMainThread` + `DispatchQueue.main.async` | No thread-safety checks | Absent in Python |
-| 3 | Thread safety in ModeOverrideManagement | All 3 methods thread-safe | No thread-safety checks | Absent in Python |
-| 4 | `saveMeasurement` parameters | 16+ individual named parameters | Single `TapToneMeasurement` object | Structure differs |
-| 5 | `loadMeasurement` location | Model layer (281-line method on analyzer) | View layer (360-line `_restore_measurement`) | Layer inversion |
-| 6 | `loaded*` @Published properties | 28+ reactive published properties on analyzer | Not present; view stores 2 plain vars | Absent in Python |
-| 7 | Material spectrum @Published properties | `longitudinalSpectrum`, `crossSpectrum`, `longitudinalPeaks`, `crossPeaks`, etc. all @Published | Not Published in Python | Absent in Python |
-| 8 | `peakThreshold.didSet` → `recalculateFrozenPeaksIfNeeded()` | Automatic on every threshold change | Not called on threshold change | Missing side effect |
-| 9 | Settings persistence location | `@Published didSet` in model | View-layer event handlers | Layer difference |
-| 10 | `cycleAnnotationVisibility` persistence | Persists in model method | Model method does not persist; view handler does | Docstring wrong; code path differs |
-| 11 | `comparisonSpectra` structure | Single @Published 4-tuple array | Two separate lists | Different shape |
-| 12 | PDF export: `guitarBodyLength/Width`, `plateStiffness`, `plateStiffnessPreset` | Read from live `TapDisplaySettings` | Read from measurement snapshot | Different source |
-| 13 | PDF export: `peakModeOverrides` | Passed explicitly from live `tap.peakModeOverrides` | Not a parameter; read from `m.peak_mode_overrides` | Not forwarded explicitly |
-| 14 | Measurement file I/O | On the model (`measurementsFileURL`, `loadPersistedMeasurements`, `persistMeasurements`) | On views module | Layer difference |
-| 15 | `exportMeasurement` | On the analyzer | Not on the analyzer | Absent in Python |
-| 16 | `delete_all_measurements` | Not on the analyzer | On the analyzer mixin | Extra in Python |
-| 17 | `set_measurement_complete` | Not a single method; managed via @Published properties | Single method on analyzer mixin | Extra in Python |
+| D1 | `effectiveXxxPeakID` | 3-layer: user → selected → auto | 2-layer: user → auto (middle layer missing) | Medium |
+| D2 | `cycleAnnotationVisibility` | Persists to `TapDisplaySettings` | Does not persist | High |
+| D3 | `tapDetectionThreshold` write | `didSet` persists to `TapDisplaySettings` | Setter does not persist | High |
+| D4 | `hysteresisMargin` write | `didSet` persists to `TapDisplaySettings` | Setter does not persist | High |
+| D5 | `peakThreshold` write | `didSet` persists + calls recalculate | `set_threshold()` calls recalculate but does not persist | Medium |
+| D6 | `setFrozenSpectrum` atomicity | `objectWillChange.send()` + atomic assign | Separate assignments, no render atomicity | Low |
+| D7 | PDF export | Full `PDFReportData` + `PDFReportGenerator` pipeline | Stub file only; not implemented | High |
+| D8 | `handleRouteChangeRestart` | 2 s settle + re-anchor `isAboveThreshold` | Not replicated; only reinitialises PortAudio | Medium |
+| D9 | `save_measurement` signature | 14 named params | Takes pre-built object | Low (different boundary) |
+| D10 | `load_measurement` location | In `+MeasurementManagement.swift` | In `control.py` (not in mixin) | Low (organisation only) |
+| D11 | `identified_modes` type | `[(peak: ResonantPeak, mode: GuitarMode)]` named tuples | `[{"peak": ..., "mode": ...}]` dicts | Low |
+| D12 | `average_spectra` location | In `+SpectrumCapture.swift` | In `tap_tone_analyzer_peak_analysis.py` | Low (organisation only) |
+| D13 | Timer threading | `DispatchQueue.main.asyncAfter` | `threading.Timer` + `QMetaObject.invokeMethod(QueuedConnection)` | Implementation difference only (correct) |

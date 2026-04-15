@@ -6,9 +6,6 @@ sounddevice==0.5.5
 pyqtgraph==0.14.0
 QtAwesome==1.4.1
 reportlab==4.4.10
-# Local editable installs — not on PyPI
--e ../pyedifice
--e ../swiftui_compat
 
 # macOS only — install with: pip install -r requirements-macos.txt
 # pyobjc
