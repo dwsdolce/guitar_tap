@@ -14,22 +14,23 @@
  * numpy
  * scipy
  * sounddevice
- * pyqt6
+ * PySide6
  * pyqtgraph
- * qtawesome
+ * QtAwesome
+ * reportlab
  * pyobjc (on MAC only)
 
  ## To run this software from source:
  * Download the source code or clone the repository from https://github.com/dwsdolce/guitar_tap
- * Install python from https://www.python.org/ (the latest python is preferred 3.11).
+ * Install python from https://www.python.org/ (Python 3.14 or later required).
  * Open a cmd window or shell/terminal that can run python
 
  * For Windows and Linux
-  	- pip install numpy scipy scipy-stubs sounddevice pyqt6 pyqtgraph qtawesome
+  	- pip install numpy scipy sounddevice PySide6 pyqtgraph QtAwesome reportlab
 	- python guitar_tap.py
 
  * For MAC
- 	- pip install numpy scipy scipy-stubs sounddevice pyqt6 pyqtgraph qtawesome
+ 	- pip install numpy scipy sounddevice PySide6 pyqtgraph QtAwesome reportlab
 	- pip install pyobjc
 	- python guitar_tap.py
 

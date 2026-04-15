@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import threading
 import time as _time
+from PySide6 import QtCore
+from PySide6.QtCore import Slot
 
 from utilities.logging import TAP_DEBUG
 
@@ -222,9 +224,14 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self.tap_detected = True
             self.last_tap_time = now
             # Capture the recent peak input level for decay tracking reference.
-            # Use _proc_thread.recent_peak_level_db which holds the max level over the
-            # last 0.5 s, ensuring we get the actual tap peak even though FFT detection
-            # is delayed (mirrors Swift: tapPeakLevel = fftAnalyzer.recentPeakLevelDB).
+            # Mirrors Swift TapToneAnalyzer+TapDetection.swift:
+            #   tapPeakLevel = fftAnalyzer.recentPeakLevelDB  (0.5 s rolling max)
+            # This is the CORRECT intentional use of recentPeakLevelDB: at tap-fire time
+            # the peak-hold captures the actual tap transient even though FFT detection
+            # lags by up to one FFT frame.
+            # CONTRAST with re-enable closures (_reenable, _start_cross, _start_flc,
+            # _do_reenable_detection) which must use instantaneous level so a held peak
+            # does not incorrectly latch is_above_threshold = True.
             # Fall back to peak_magnitude when mic is None (tests, no audio hardware).
             if self.mic is not None and hasattr(self.mic, "proc_thread"):
                 self.tap_peak_level = self.mic.proc_thread.recent_peak_level_db
@@ -305,37 +312,32 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         # If all taps collected: schedule processMultipleTaps after captureWindow.
         # (mirrors Swift: captureTimer fires finishCapture(), then processMultipleTaps().)
-        # Python equivalent: wait captureWindow, then call _finish_capture() which averages.
+        # threading.Timer fires on a background thread; dispatch to main thread
+        # via invokeMethod so _finish_capture runs on the main thread.
         if self.current_tap_count >= self.number_of_taps:
-            t = threading.Timer(self.capture_window, self._finish_capture)
+            def _enqueue_finish() -> None:
+                QtCore.QMetaObject.invokeMethod(
+                    self,
+                    "_finish_capture",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                )
+            t = threading.Timer(self.capture_window, _enqueue_finish)
             t.daemon = True
             t.start()
         else:
             # Re-enable detection after cooldown for next tap
             # (mirrors Swift lines 294-322).
+            # threading.Timer fires on a background thread; dispatch to main
+            # thread via invokeMethod before touching any state shared with
+            # the main thread.  Mirrors Swift DispatchQueue.main.asyncAfter.
             cooldown = self.tap_cooldown
 
             def _reenable() -> None:
-                if self.mic is not None and hasattr(self.mic, "proc_thread"):
-                    current_level = self.mic.proc_thread.recent_peak_level_db
-                else:
-                    current_level = self.tap_peak_level
-                falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
-                if current_level <= falling_threshold:
-                    self.is_above_threshold = False
-                    self.is_detecting = True
-                    self.tap_detected = False
-                    self.status_message = (
-                        f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
-                    )
-                else:
-                    self.is_above_threshold = True
-                    self.is_detecting = True
-                    self.tap_detected = False
-                    self.status_message = (
-                        f"Tap {self.current_tap_count}/{self.number_of_taps} captured."
-                        " Waiting for settle..."
-                    )
+                QtCore.QMetaObject.invokeMethod(
+                    self,
+                    "_do_reenable_guitar",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                )
 
             t = threading.Timer(cooldown, _reenable)
             t.daemon = True
@@ -345,10 +347,14 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     # _finish_capture — mirrors Swift finishCapture() + processMultipleTaps()
     # ------------------------------------------------------------------ #
 
+    @Slot()
     def _finish_capture(self) -> None:
         """Average all captured tap spectra and freeze the result.
 
         Called after captureWindow seconds from the final tap.
+        Invoked via QMetaObject.invokeMethod(QueuedConnection) from the
+        threading.Timer callback in _handle_tap_detection, so this always
+        runs on the main thread.
         Mirrors Swift finishCapture() which calls processMultipleTaps().
         """
         import numpy as np
@@ -364,6 +370,36 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.peaksChanged.emit(peaks)
         self.captured_taps.clear()
         self.tapDetectedSignal.emit()
+
+    @Slot()
+    def _do_reenable_guitar(self) -> None:
+        """Main-thread slot: re-arm detection after guitar tap cooldown.
+
+        Invoked via QMetaObject.invokeMethod(QueuedConnection) from the
+        _reenable closure in _handle_tap_detection, so this always runs on
+        the main thread.
+        Mirrors Swift handleTapDetection re-enable closure dispatched with
+        DispatchQueue.main.asyncAfter.
+        Uses _current_peak_magnitude_db (instantaneous FFT peak) — mirrors
+        Swift fftAnalyzer.peakMagnitude read in the re-enable closure.
+        """
+        current_level = self._current_peak_magnitude_db
+        falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
+        if current_level <= falling_threshold:
+            self.is_above_threshold = False
+            self.is_detecting = True
+            self.tap_detected = False
+            self.status_message = (
+                f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
+            )
+        else:
+            self.is_above_threshold = True
+            self.is_detecting = True
+            self.tap_detected = False
+            self.status_message = (
+                f"Tap {self.current_tap_count}/{self.number_of_taps} captured."
+                " Waiting for settle..."
+            )
 
     # ------------------------------------------------------------------ #
     # totalPlateTaps — mirrors Swift var totalPlateTaps: Int
@@ -453,24 +489,43 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         cooldown = self.tap_cooldown
 
         def _reenable() -> None:
-            # Use recent_peak_level_db as the proxy for current input level.
-            # (Swift uses fftAnalyzer.inputLevelDB directly.)
-            current_level = self.mic.proc_thread.recent_peak_level_db
-            falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
-            self.is_above_threshold = current_level > falling_threshold
-            self.is_detecting = True
-            self.tap_detected = False
-            TAP_DEBUG(
-                "reEnableDetectionForNextPlateTap",
-                f"Re-enabled | currentLevel={current_level:.2f} "
-                f"fallingThreshold={falling_threshold:.2f} "
-                f"isAboveThreshold={self.is_above_threshold} "
-                f"isDetecting={self.is_detecting}"
+            # threading.Timer fires on a background thread; post to main thread
+            # before touching any Published properties or Qt state.
+            QtCore.QMetaObject.invokeMethod(
+                self,
+                "_do_reenable_detection",
+                QtCore.Qt.ConnectionType.QueuedConnection,
             )
 
         t = threading.Timer(cooldown, _reenable)
         t.daemon = True
         t.start()
+
+    @Slot()
+    def _do_reenable_detection(self) -> None:
+        """Main-thread slot that applies the re-enable state after cooldown.
+
+        Called via QMetaObject.invokeMethod(QueuedConnection) from _reenable,
+        so this always runs on the main thread.
+        Mirrors Swift: DispatchQueue.main.asyncAfter { ... } in reEnableDetectionForNextPlateTap().
+        """
+        # Use instantaneous level — mirrors Swift fftAnalyzer.inputLevelDB.
+        # recent_peak_level_db holds a 0.5 s rolling max and stays elevated after
+        # a tap, which would incorrectly latch is_above_threshold = True and block
+        # the next tap.  _current_input_level_db is updated at ~43 Hz by
+        # _on_rms_level_changed and reflects the current signal level, not the peak.
+        current_level = self._current_input_level_db
+        falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
+        self.is_above_threshold = current_level > falling_threshold
+        self.is_detecting = True
+        self.tap_detected = False
+        TAP_DEBUG(
+            "reEnableDetectionForNextPlateTap",
+            f"Re-enabled | currentLevel={current_level:.2f} "
+            f"fallingThreshold={falling_threshold:.2f} "
+            f"isAboveThreshold={self.is_above_threshold} "
+            f"isDetecting={self.is_detecting}"
+        )
 
     # ------------------------------------------------------------------ #
     # combine_plate_peaks — mirrors Swift func combinePlatePeaks() -> [ResonantPeak]
@@ -548,20 +603,26 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         from models.tap_display_settings import TapDisplaySettings as _tds
 
         self._current_mag_y = mag_y
+        self._current_mag_y_db = mag_y_db
+
+        # Cache instantaneous FFT peak magnitude — mirrors Swift fftAnalyzer.peakMagnitude.
+        # Updated here at the FFT frame rate (~2.7 Hz).  Used by guitar-mode _reenable()
+        # to seed is_above_threshold, exactly as Swift handleTapDetection() does.
+        # Distinct from _current_input_level_db (fftAnalyzer.inputLevelDB / RMS, ~43 Hz).
+        self._current_peak_magnitude_db = float(fft_peak_amp) - 100.0
 
         # Fast path: decay tracking uses per-buffer RMS level at ~10 Hz.
         # Mirrors Swift fftAnalyzer.$inputLevelDB → trackDecayFast(inputLevel:).
         level_db = float(rms_amp) - 100.0
         self.track_decay_fast(level_db)
 
-        # Tap detection — mirrors Swift Combine subscription routing:
-        #   guitar:       fftAnalyzer.$magnitudes → detectTap with FFT peak level
-        #   plate/brace:  fftAnalyzer.$inputLevelDB → detectTap with RMS level
+        # Guitar-mode tap detection only — plate/brace is driven by
+        # _on_rms_level_changed at ~43 Hz via rmsLevelChanged signal.
+        # Mirrors Swift Combine routing: fftAnalyzer.$magnitudes → detectTap.
         if self.is_detecting and not self.is_detection_paused and not self.is_measurement_complete:
             meas_type = _tds.measurement_type()
-            use_relative = (meas_type == _MT.PLATE or meas_type == _MT.BRACE)
-            peak_mag = (float(rms_amp) - 100.0) if use_relative else (float(fft_peak_amp) - 100.0)
-            self.detect_tap(peak_mag, mag_y_db, self.freq)
+            if meas_type != _MT.PLATE and meas_type != _MT.BRACE:
+                self.detect_tap(float(fft_peak_amp) - 100.0, mag_y_db, self.freq)
 
         # Emit spectrum for the view to draw.
         if self._display_mode == AnalysisDisplayMode.LIVE:
@@ -585,6 +646,37 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         peak_idx = int(np.argmax(mag_y_db))
         if peak_idx < len(self.freq):
             self.peakInfoChanged.emit(float(self.freq[peak_idx]), float(mag_y_db[peak_idx]))
+
+    # ------------------------------------------------------------------ #
+    # _on_rms_level_changed — plate/brace tap detection at ~43 Hz
+    # ------------------------------------------------------------------ #
+
+    @Slot(int)
+    def _on_rms_level_changed(self, rms_amp: int) -> None:
+        """Plate/brace tap detection driven at ~43 Hz from per-chunk RMS level.
+
+        Mirrors Swift's Combine sink on fftAnalyzer.$inputLevelDB which fires
+        every 1024 samples (~43 Hz).  Guitar-mode tap detection stays in
+        on_fft_frame (~2.7 Hz) because FFT-peak magnitude is required there.
+
+        Args:
+            rms_amp: Per-chunk RMS level on 0-100 scale (dBFS + 100).
+        """
+        from models.measurement_type import MeasurementType as _MT
+        from models.tap_display_settings import TapDisplaySettings as _tds
+
+        # Cache instantaneous level — mirrors Swift fftAnalyzer.inputLevelDB.
+        # Must be stored before the early-return guards so _do_reenable_detection
+        # always has a fresh value even when detection is paused/complete.
+        self._current_input_level_db = float(rms_amp) - 100.0
+
+        if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
+            return
+        meas_type = _tds.measurement_type()
+        if meas_type != _MT.PLATE and meas_type != _MT.BRACE:
+            return
+        peak_mag = self._current_input_level_db
+        self.detect_tap(peak_mag, self._current_mag_y_db, self.freq)
 
     # ------------------------------------------------------------------ #
     # reset_tap_detector — mirrors Swift analyzerStartTime = Date() reset

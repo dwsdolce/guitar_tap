@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import threading
 import time as _time
+from PySide6 import QtCore
+from PySide6.QtCore import Slot
 
 
 class TapToneAnalyzerDecayTrackingMixin:
@@ -74,8 +76,16 @@ class TapToneAnalyzerDecayTrackingMixin:
             self._decay_tracking_timer.cancel()
 
         # Stop decay tracking after 3 seconds.
-        # Mirrors Swift: Timer.scheduledTimer(withTimeInterval: 3.0, ...)
-        self._decay_tracking_timer = threading.Timer(3.0, self.stop_decay_tracking)
+        # Mirrors Swift: Timer.scheduledTimer(withTimeInterval: 3.0, ...) which fires
+        # on the main RunLoop.  threading.Timer fires on a background thread, so post
+        # to the main thread via invokeMethod before touching any shared state.
+        def _fire_stop() -> None:
+            QtCore.QMetaObject.invokeMethod(
+                self,
+                "stop_decay_tracking",
+                QtCore.Qt.ConnectionType.QueuedConnection,
+            )
+        self._decay_tracking_timer = threading.Timer(3.0, _fire_stop)
         self._decay_tracking_timer.daemon = True
         self._decay_tracking_timer.start()
 
@@ -84,6 +94,7 @@ class TapToneAnalyzerDecayTrackingMixin:
     # Mirrors Swift stopDecayTracking()
     # ------------------------------------------------------------------ #
 
+    @Slot()
     def stop_decay_tracking(self) -> None:
         """Finalise the decay-tracking window.
 
@@ -91,7 +102,11 @@ class TapToneAnalyzerDecayTrackingMixin:
         appending samples.  current_decay_time retains whatever value was
         established during the window (or None if none was).
 
-        Mirrors Swift stopDecayTracking().
+        Mirrors Swift stopDecayTracking(), which always runs on the main thread
+        (Swift's Timer fires on the RunLoop of the scheduling thread = main).
+        Called directly from the main thread (e.g., on tap reset) or via
+        QMetaObject.invokeMethod(QueuedConnection) from the threading.Timer
+        callback in start_decay_tracking.
         """
         self.is_tracking_decay = False
         if self._decay_tracking_timer is not None:

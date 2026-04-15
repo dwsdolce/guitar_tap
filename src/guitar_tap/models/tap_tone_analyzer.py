@@ -78,14 +78,6 @@ from .fft_parameters import FftParameters
 
 from PySide6 import QtCore
 
-# ── swiftui_compat — ObservableObject + Published ────────────────────────────
-# TapToneAnalyzer mirrors Swift's `final class TapToneAnalyzer: ObservableObject`.
-# swiftui_compat provides ObservableObject (subscribe/notify base) and
-# Published (class-level descriptor that fires _notify_change on every write).
-# Views connect via analyzer.subscribe(callback) in addition to Qt signals.
-
-from swiftui_compat import ObservableObject, Published
-
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
 
 
@@ -104,72 +96,14 @@ class TapToneAnalyzer(
     TapToneAnalyzerMeasurementManagementMixin,
     TapToneAnalyzerModeOverrideManagementMixin,
     TapToneAnalyzerSpectrumCaptureMixin,
-    ObservableObject,
     QtCore.QObject,
 ):
     """Central analysis coordinator — owns all analysis state and business logic.
 
     Mirrors Swift's `final class TapToneAnalyzer: ObservableObject`.
-
-    Inherits from both swiftui_compat.ObservableObject and QtCore.QObject:
-    - ObservableObject provides subscribe()/notify() for model-layer observers
-      (the Python equivalent of Combine's objectWillChange publisher).
-    - QtCore.QObject provides Qt signals for the existing view layer.
-
-    @Published properties declared at class level mirror Swift's @Published vars.
-    Setting them fires _notify_change so any subscriber (including future SwiftUI-
-    style views) can react without polling.  Qt signals remain for the current
-    FftCanvas/TapToneAnalysisView layer.
+    All reactive UI updates use Qt signals; properties are plain instance
+    attributes initialised in __init__.
     """
-
-    # ── @Published properties (mirrors Swift @Published vars) ────────────────
-    # Declared at class level so the Published descriptor is active on every
-    # instance.  Setting self.x = value in __init__ or any method fires
-    # _notify_change(attr_name, new_value) through the ObservableObject base.
-    #
-    # Mirrors Swift TapToneAnalyzer stored @Published properties.
-
-    # MARK: - Configuration
-    peak_threshold: float = Published(-60.0)        # mirrors peakThreshold: Float
-    min_frequency: float = Published(30.0)          # mirrors minFrequency: Float
-    max_frequency: float = Published(2000.0)        # mirrors maxFrequency: Float
-    max_peaks: int = Published(0)                   # mirrors maxPeaks: Int
-    decay_threshold: float = Published(15.0)        # mirrors decayThreshold: Float
-    number_of_taps: int = Published(1)              # mirrors numberOfTaps: Int
-    capture_window: float = Published(0.2)          # mirrors captureWindow: TimeInterval
-    tap_detection_threshold: float = Published(-40.0)   # mirrors tapDetectionThreshold: Float
-    hysteresis_margin: float = Published(3.0)       # mirrors hysteresisMargin: Float
-
-    # MARK: - Published Results
-    current_peaks: list = Published([])             # mirrors currentPeaks: [ResonantPeak]
-    identified_modes: list = Published([])          # mirrors identifiedModes: [(peak, mode)]
-    current_decay_time: object = Published(None)    # mirrors currentDecayTime: Float?
-    saved_measurements: list = Published([])        # mirrors savedMeasurements: [TapToneMeasurement]
-
-    # MARK: - Published Detection State
-    average_magnitude: float = Published(-100.0)    # mirrors averageMagnitude: Float
-    tap_detection_level: float = Published(-100.0)  # mirrors tapDetectionLevel: Float
-    tap_detected: bool = Published(False)           # mirrors tapDetected: Bool
-    is_detecting: bool = Published(False)           # mirrors isDetecting: Bool
-    is_detection_paused: bool = Published(False)    # mirrors isDetectionPaused: Bool
-    is_ready_for_detection: bool = Published(True)  # mirrors isReadyForDetection: Bool
-    current_tap_count: int = Published(0)           # mirrors currentTapCount: Int
-    tap_progress: float = Published(0.0)            # mirrors tapProgress: Float
-    status_message: str = Published("Tap the guitar to begin")  # mirrors statusMessage: String
-
-    # MARK: - Published Frozen Spectrum
-    frozen_frequencies: list = Published([])        # mirrors frozenFrequencies: [Float]
-    frozen_magnitudes: list = Published([])         # mirrors frozenMagnitudes: [Float]
-
-    # MARK: - Published Annotation & Selection State
-    peak_annotation_offsets: dict = Published({})   # mirrors peakAnnotationOffsets: [UUID: CGPoint]
-    peak_mode_overrides: dict = Published({})       # mirrors peakModeOverrides: [UUID: UserAssignedMode]
-    selected_peak_ids: set = Published(set())       # mirrors selectedPeakIDs: Set<UUID>
-    highlighted_peak_id: object = Published(None)   # mirrors highlightedPeakID: UUID?
-    annotation_visibility_mode: AnnotationVisibilityMode = Published(AnnotationVisibilityMode.SELECTED)  # mirrors annotationVisibilityMode
-
-    # MARK: - Published Measurement Complete State
-    is_measurement_complete: bool = Published(False)  # mirrors isMeasurementComplete: Bool
 
     # MARK: - Signals (Qt — view layer bridge, no Swift equivalent) ──────────
     # ── Signals (Python equivalents of Swift @Published properties) ────────
@@ -241,11 +175,9 @@ class TapToneAnalyzer(
         from models.tap_display_settings import TapDisplaySettings as _tds
         from models.material_tap_phase import MaterialTapPhase as _MTP
 
-        # Initialise both bases explicitly.
         # Qt's metaclass does not participate in Python's cooperative super()
-        # chain, so both must be called directly.
+        # chain, so the QObject base must be initialised explicitly.
         QtCore.QObject.__init__(self, None)
-        ObservableObject.__init__(self)
 
         self._np = np
         self._gm = _gm
@@ -272,28 +204,59 @@ class TapToneAnalyzer(
         # ── Display mode (mirrors Swift AnalysisDisplayMode) ───────────────
         self._display_mode: AnalysisDisplayMode = AnalysisDisplayMode.LIVE
 
-        # ── @Published property initialisation from persisted settings ───────
-        # Mirrors Swift's property initialisers:
-        #   @Published var minFrequency: Float = TapDisplaySettings.analysisMinFrequency
-        self.min_frequency = float(_tds.analysis_min_frequency())
-        self.max_frequency = float(_tds.analysis_max_frequency())
-        self.max_peaks = _tds.max_peaks()
-        self.peak_threshold = float(_tds.peak_threshold())
-        self.tap_detection_threshold = float(_tds.tap_detection_threshold())
-        self.hysteresis_margin = float(_tds.hysteresis_margin())
-        self.annotation_visibility_mode = AnnotationVisibilityMode.from_string(_tds.annotation_visibility_mode())
+        # ── Stored properties — mirrors Swift TapToneAnalyzer @Published vars ──
+        # Previously declared as Published(...) class-level descriptors.
+        # Plain instance attributes are equivalent: all reactive UI updates
+        # go through Qt signals, not through the swiftui_compat notify chain.
 
-        # ── Measurement state ──────────────────────────────────────────────
-        # saved_measurements loaded lazily by start() to avoid importing views here.
-        self.saved_measurements = []
-        self.savedMeasurements = self.saved_measurements  # legacy alias
+        # MARK: - Configuration (mirrors Swift @Published vars)
+        self.min_frequency: float = float(_tds.analysis_min_frequency())   # mirrors minFrequency
+        self.max_frequency: float = float(_tds.analysis_max_frequency())   # mirrors maxFrequency
+        self.max_peaks: int = _tds.max_peaks()                             # mirrors maxPeaks
+        self.peak_threshold: float = float(_tds.peak_threshold())          # mirrors peakThreshold
+        self.tap_detection_threshold: float = float(_tds.tap_detection_threshold())  # mirrors tapDetectionThreshold
+        self.hysteresis_margin: float = float(_tds.hysteresis_margin())    # mirrors hysteresisMargin
+        self.decay_threshold: float = 15.0                                 # mirrors decayThreshold
+        self.number_of_taps: int = 1                                       # mirrors numberOfTaps
+        self.capture_window: float = 0.2                                   # mirrors captureWindow
 
-        # ── Peak analysis state ────────────────────────────────────────────
-        self.frozen_magnitudes = np.array([])
-        self.current_peaks: list = []
+        # MARK: - Results
+        self.current_peaks: list = []                                      # mirrors currentPeaks
+        self.identified_modes: list = []                                   # mirrors identifiedModes
+        self.current_decay_time: "float | None" = None                    # mirrors currentDecayTime
+        self.saved_measurements: list = []                                 # mirrors savedMeasurements
+        self.savedMeasurements = self.saved_measurements                   # legacy alias
+
+        # MARK: - Detection State
+        self.average_magnitude: float = -100.0      # mirrors averageMagnitude
+        self.tap_detection_level: float = -100.0    # mirrors tapDetectionLevel
+        self.tap_detected: bool = False             # mirrors tapDetected
+        self.is_detecting: bool = False             # mirrors isDetecting
+        self.is_detection_paused: bool = False      # mirrors isDetectionPaused
+        self.is_ready_for_detection: bool = True    # mirrors isReadyForDetection
+        self.current_tap_count: int = 0             # mirrors currentTapCount
+        self.tap_progress: float = 0.0              # mirrors tapProgress
+        self.status_message: str = "Tap the guitar to begin"  # mirrors statusMessage
+
+        # MARK: - Frozen Spectrum
+        self.frozen_frequencies = np.array([])      # mirrors frozenFrequencies
+        self.frozen_magnitudes = np.array([])       # mirrors frozenMagnitudes
+
+        # MARK: - Annotation & Selection State
+        self.peak_annotation_offsets: dict = {}     # mirrors peakAnnotationOffsets
+        self.peak_mode_overrides: dict = {}         # mirrors peakModeOverrides
+        self.selected_peak_ids: set = set()         # mirrors selectedPeakIDs
+        self.highlighted_peak_id = None             # mirrors highlightedPeakID
+        self.annotation_visibility_mode = AnnotationVisibilityMode.from_string(
+            _tds.annotation_visibility_mode()
+        )                                           # mirrors annotationVisibilityMode
+
+        # MARK: - Measurement Complete State
+        self.is_measurement_complete: bool = False  # mirrors isMeasurementComplete
+
+        # ── Additional peak analysis state ────────────────────────────────
         self.loaded_measurement_peaks: "list[ResonantPeak] | None" = None
         self.selected_peak: float = 0.0
-        self.frozen_frequencies = np.array([])
         # Whether the user has manually changed peak selection since last auto-run.
         # Mirrors Swift TapToneAnalyzer.userHasModifiedPeakSelection.
         self.user_has_modified_peak_selection: bool = False
@@ -311,7 +274,11 @@ class TapToneAnalyzer(
         self.num_averages: int = 0
 
         # ── Multi-tap accumulator ─────────────────────────────────────────
-        self.number_of_taps: int = 1
+        # Consolidates Swift's two separate lists into one, cleared between phases:
+        #   capturedTaps         — guitar mode (raw mag_y_db arrays)
+        #   materialCapturedTaps — plate/brace phases (magnitudes, frequencies, captureTime) tuples
+        # Python clears this list at the start of each phase / tap sequence,
+        # so the same list safely serves both roles.
         self.captured_taps: list = []
 
         # ── Auto-scale ────────────────────────────────────────────────────
@@ -321,6 +288,17 @@ class TapToneAnalyzer(
         self._measurement_type = _mt_mod.MeasurementType.CLASSICAL
 
         self._current_mag_y = np.array([])
+        self._current_mag_y_db = np.array([])
+        # Instantaneous RMS level in dBFS — mirrors Swift fftAnalyzer.inputLevelDB.
+        # Updated every ~23 ms by _on_rms_level_changed; used by _do_reenable_detection
+        # so it reads the current level (not the 0.5 s peak-hold) exactly as Swift does.
+        self._current_input_level_db: float = -100.0
+        # Instantaneous FFT peak magnitude in dBFS — mirrors Swift fftAnalyzer.peakMagnitude.
+        # Updated every ~370 ms (at FFT rate) by on_fft_frame; used by guitar-mode _reenable()
+        # which mirrors Swift handleTapDetection's re-enable closure using fftAnalyzer.peakMagnitude.
+        # Distinct from _current_input_level_db (inputLevelDB/RMS) and from tap_peak_level
+        # (recentPeakLevelDB, captured at tap-fire time).
+        self._current_peak_magnitude_db: float = -100.0
 
         # ── Per-phase material spectra ────────────────────────────────────
         self._material_spectra: list = []
@@ -385,7 +363,10 @@ class TapToneAnalyzer(
         self._gated_capture_samples: int = 0        # target window size in samples
         self._gated_capture_phase: object = None    # MaterialTapPhase at capture start
         self._gated_accum: list = []                # accumulated raw PCM samples
-        self._gated_sample_rate: float = 44100.0    # updated in start()
+        # Placeholder; overridden in start() to float(self.mic.rate).
+        # Swift uses 48000 as its placeholder (mpmSampleRate); Python uses 44100.0.
+        # Both values are replaced by the actual hardware rate before first use.
+        self._gated_sample_rate: float = 44100.0
 
     def start(
         self,
@@ -428,7 +409,7 @@ class TapToneAnalyzer(
         self.mic = _Mic(
             parent_widget,
             rate=fft_params.sample_freq,
-            chunksize=4096,
+            chunksize=1024,
             device=audio_device,
             on_devices_changed=self._devicesRefreshed.emit,
             on_calibration_changed=self._on_mic_calibration_changed,
@@ -478,6 +459,13 @@ class TapToneAnalyzer(
         # FftCanvas._connect_proc_thread_signals() handles only rmsLevelChanged
         # and finished — not fftFrameReady.
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
+
+        # ── Wire per-chunk RMS level for plate/brace tap detection ────────
+        # Connect proc_thread.rmsLevelChanged → self._on_rms_level_changed so
+        # plate/brace tap detection fires at ~43 Hz (every 1024 samples) rather
+        # than at the FFT-frame rate (~2.7 Hz).  Mirrors Swift's Combine sink on
+        # fftAnalyzer.$inputLevelDB used for plate/brace detectTap calls.
+        self.mic.proc_thread.rmsLevelChanged.connect(self._on_rms_level_changed)
 
         # ── Auto-start tap sequence on first launch ────────────────────────
         # Mirrors Swift start() auto-start guard:

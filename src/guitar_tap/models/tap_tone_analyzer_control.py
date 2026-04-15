@@ -208,9 +208,12 @@ class TapToneAnalyzerControlMixin:
 
         # Seed the noise-floor estimate from the current ambient level so the first
         # relative-threshold calculation is accurate immediately.
-        # Mirrors Swift: self.noiseFloorEstimate = self.fftAnalyzer.inputLevelDB
-        # Python equivalent: read the rolling recent-peak from the processing thread.
-        self.noise_floor_estimate = self.mic.proc_thread.recent_peak_level_db
+        # Mirrors Swift TapToneAnalyzer+Control.swift:
+        #   self.noiseFloorEstimate = self.fftAnalyzer.inputLevelDB  (instantaneous RMS)
+        # Use _current_input_level_db which caches fftAnalyzer.inputLevelDB at ~43 Hz
+        # via _on_rms_level_changed — NOT recent_peak_level_db (0.5 s peak-hold /
+        # fftAnalyzer.recentPeakLevelDB), which would inflate the initial noise estimate.
+        self.noise_floor_estimate = self._current_input_level_db
 
         self.current_decay_time = None
         self.peak_magnitude_history = []
@@ -409,7 +412,7 @@ class TapToneAnalyzerControlMixin:
 
         Mirrors Swift private func resetMaterialPhaseState(to phase: MaterialTapPhase).
         """
-        self.material_tap_phase = to
+        self._set_material_tap_phase(to)
 
         # Clear all per-phase spectra and peak selections.
         self.longitudinal_spectrum = None

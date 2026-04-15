@@ -137,9 +137,13 @@ class _FftProcessingThread(QtCore.QThread):
     # MARK: - Signals
 
     # (mag_y_db, mag_y, fft_peak_amp, rms_amp, fps, sample_dt, processing_dt)
-    # fft_peak_amp: FFT peak level on 0-100 scale (dBFS + 100), used by guitar mode.
-    # rms_amp:      Per-chunk RMS level on 0-100 scale (dBFS + 100), used by plate/brace.
-    # Mirrors Swift RealtimeFFTAnalyzer @Published magnitudes and inputLevelDB.
+    # fft_peak_amp: FFT peak level on 0-100 scale (dBFS + 100).
+    #               Mirrors Swift fftAnalyzer.peakMagnitude (instantaneous FFT peak, ~2.7 Hz).
+    #               Used by guitar-mode tap detection and guitar-mode re-enable closure.
+    # rms_amp:      Per-chunk RMS level on 0-100 scale (dBFS + 100).
+    #               Mirrors Swift fftAnalyzer.inputLevelDB (instantaneous RMS, ~43 Hz).
+    #               Used by plate/brace tap detection, decay tracking, and re-enable closures.
+    # NOTE: rms_amp is NOT fftAnalyzer.recentPeakLevelDB (0.5 s peak-hold).  See rmsLevelChanged.
     fftFrameReady: QtCore.Signal = QtCore.Signal(
         np.ndarray, np.ndarray, int, int, float, float, float
     )
@@ -254,14 +258,21 @@ class _FftProcessingThread(QtCore.QThread):
             if handler is not None:
                 handler(chunk_f32, float(self._mic.rate))
 
-            # Per-chunk RMS level — used for plate/brace tap detection and decay.
-            # Mirrors Swift RealtimeFFTAnalyzer inputLevelDB computation.
+            # Per-chunk RMS level — mirrors Swift fftAnalyzer.inputLevelDB.
+            # This is the INSTANTANEOUS RMS level for the current 1024-sample chunk, ~43 Hz.
+            # Stored in TapToneAnalyzer._current_input_level_db via _on_rms_level_changed.
+            # Used by: plate/brace detectTap(), re-enable closures (_do_reenable_detection,
+            # _start_cross, _start_flc), noise_floor_estimate seed, and decay tracking.
+            # NOT the same as recentPeakLevelDB (0.5 s peak-hold) — see block below.
             rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
             level_db = 20.0 * np.log10(max(rms, 1e-10))
             rms_amp = int(level_db + 100.0)
             self.rmsLevelChanged.emit(rms_amp)
 
-            # Update rolling recent-peak history (mirrors Swift recentPeakLevelDB).
+            # Update rolling recent-peak history — mirrors Swift fftAnalyzer.recentPeakLevelDB.
+            # recentPeakLevelDB holds the rolling MAX over the last 0.5 s.  It is ONLY correct
+            # to use at tap-fire time (tapPeakLevel = fftAnalyzer.recentPeakLevelDB) so the
+            # peak-hold captures the tap transient.  Re-enable closures must NOT use this.
             # Trim entries older than the window, then update the rolling max.
             with self._recent_peak_lock:
                 cutoff = enter_now - self._recent_peak_window
@@ -288,7 +299,10 @@ class _FftProcessingThread(QtCore.QThread):
             if calibration is not None:
                 mag_y_db = mag_y_db + calibration
 
-            # FFT peak level (guitar mode) — 0-100 scale.
+            # FFT peak level — 0-100 scale (dBFS + 100).
+            # Mirrors Swift fftAnalyzer.peakMagnitude: the instantaneous FFT peak magnitude.
+            # Stored in TapToneAnalyzer._current_peak_magnitude_db for use by guitar-mode
+            # re-enable closure (mirrors Swift handleTapDetection re-enable reading peakMagnitude).
             fft_peak_amp = int(np.max(mag_y_db) + 100.0)
 
             exit_now = time.time()
