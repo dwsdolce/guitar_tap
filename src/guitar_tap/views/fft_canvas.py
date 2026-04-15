@@ -202,6 +202,7 @@ class FftCanvas(pg.PlotWidget):
     plateStatusChanged: QtCore.Signal = QtCore.Signal(str)    # plate capture status
     plateAnalysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)  # fL, fC, fFLC
     tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)   # True=paused
+    statusMessageChanged: QtCore.Signal = QtCore.Signal(str)  # mirrors Swift @Published var statusMessage
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
     levelChanged: QtCore.Signal = QtCore.Signal(int)              # level 0-100 (dB+100)
     comparisonChanged: QtCore.Signal = QtCore.Signal(bool)         # True=entering, False=leaving
@@ -376,6 +377,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.plateStatusChanged.connect(self.plateStatusChanged)
         self.analyzer.plateAnalysisComplete.connect(self.plateAnalysisComplete)
         self.analyzer.tapDetectionPaused.connect(self.tapDetectionPaused)
+        self.analyzer.statusMessageChanged.connect(self.statusMessageChanged)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
         self.analyzer.materialSpectraChanged.connect(self.load_material_spectra)
         self.analyzer.peakInfoChanged.connect(self.peakInfoChanged)

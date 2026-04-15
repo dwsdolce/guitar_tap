@@ -152,6 +152,8 @@ class TapToneAnalyzer(
     freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)
     # Peak info for status bar: (peak_hz, peak_db).
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)
+    # Human-readable status string for the status bar (mirrors Swift @Published var statusMessage).
+    statusMessageChanged: QtCore.Signal = QtCore.Signal(str)
     # Internal: fired from hotplug monitor thread → main thread (no-arg).
     _devicesRefreshed: QtCore.Signal = QtCore.Signal()
 
@@ -236,7 +238,9 @@ class TapToneAnalyzer(
         self.is_ready_for_detection: bool = True    # mirrors isReadyForDetection
         self.current_tap_count: int = 0             # mirrors currentTapCount
         self.tap_progress: float = 0.0              # mirrors tapProgress
-        self.status_message: str = "Tap the guitar to begin"  # mirrors statusMessage
+        # All writes must go through _set_status_message() to emit statusMessageChanged.
+        # Mirrors Swift @Published var statusMessage: String.
+        self.status_message: str = "Tap the guitar to begin"
 
         # MARK: - Frozen Spectrum
         self.frozen_frequencies = np.array([])      # mirrors frozenFrequencies

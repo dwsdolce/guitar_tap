@@ -17,6 +17,22 @@ class TapToneAnalyzerControlMixin:
     """
 
     # ------------------------------------------------------------------ #
+    # _set_status_message
+    # ------------------------------------------------------------------ #
+
+    def _set_status_message(self, message: str) -> None:
+        """Assign status_message and notify the view via statusMessageChanged.
+
+        All writes to status_message must go through this helper so that the
+        status bar label is kept in sync.  Mirrors Swift @Published var
+        statusMessage: String whose every write auto-fires objectWillChange on
+        TapToneAnalyzer, causing SwiftUI to re-render the Text(tap.statusMessage)
+        label in TapToneAnalysisView+Controls.swift.
+        """
+        self.status_message = message
+        self.statusMessageChanged.emit(message)
+
+    # ------------------------------------------------------------------ #
     # Hot-plug (mirrors FftCanvas._on_devices_refreshed)
     # ------------------------------------------------------------------ #
 
@@ -124,7 +140,7 @@ class TapToneAnalyzerControlMixin:
             return
         self.is_detecting = False
         self.is_detection_paused = True
-        self.status_message = "Detection paused – tap freely, then resume"
+        self._set_status_message("Detection paused – tap freely, then resume")
         self.tapDetectionPaused.emit(True)
 
     def resume_tap_detection(self) -> None:
@@ -157,19 +173,19 @@ class TapToneAnalyzerControlMixin:
             from models.material_tap_phase import MaterialTapPhase as _MTP
             phase = getattr(self, "material_tap_phase", _MTP.NOT_STARTED)
             if phase == _MTP.CAPTURING_LONGITUDINAL:
-                self.status_message = "Ready for fL tap" if is_brace else "Ready for L tap"
+                self._set_status_message("Ready for fL tap" if is_brace else "Ready for L tap")
             elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
-                self.status_message = "Ready for FLC tap"
+                self._set_status_message("Ready for FLC tap")
             else:
-                self.status_message = "Ready for C tap"
+                self._set_status_message("Ready for C tap")
         elif self.current_tap_count == 0:
-            self.status_message = (
+            self._set_status_message(
                 "Tap the guitar..."
                 if self.number_of_taps == 1
                 else f"Tap the guitar {self.number_of_taps} times..."
             )
         else:
-            self.status_message = (
+            self._set_status_message(
                 f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
             )
 
@@ -243,7 +259,7 @@ class TapToneAnalyzerControlMixin:
 
         # Set context-appropriate status message (mirrors Swift lines 184-196).
         if is_brace:
-            self.status_message = (
+            self._set_status_message(
                 f"Ready for fL tap (×{self.number_of_taps})"
                 if self.number_of_taps > 1
                 else "Ready for fL tap"
@@ -252,13 +268,13 @@ class TapToneAnalyzerControlMixin:
             measure_flc = _tds.measure_flc()
             if self.number_of_taps > 1:
                 phases = "L, C, FLC" if measure_flc else "L, C"
-                self.status_message = (
+                self._set_status_message(
                     f"Ready for L tap (×{self.number_of_taps} each for {phases})"
                 )
             else:
-                self.status_message = "Ready for L tap"
+                self._set_status_message("Ready for L tap")
         else:
-            self.status_message = (
+            self._set_status_message(
                 "Tap the guitar..."
                 if self.number_of_taps == 1
                 else f"Tap the guitar {self.number_of_taps} times..."
@@ -340,11 +356,11 @@ class TapToneAnalyzerControlMixin:
 
         # Show an appropriate ready prompt (mirrors Swift cancelTapSequence lines 299-305).
         if is_brace:
-            self.status_message = "Ready for fL tap"
+            self._set_status_message("Ready for fL tap")
         elif is_plate:
-            self.status_message = "Ready for L tap"
+            self._set_status_message("Ready for L tap")
         else:
-            self.status_message = (
+            self._set_status_message(
                 "Tap the guitar..."
                 if self.number_of_taps == 1
                 else f"Tap the guitar {self.number_of_taps} times..."

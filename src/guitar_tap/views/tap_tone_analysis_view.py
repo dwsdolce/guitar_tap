@@ -1690,6 +1690,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Tap events
         canvas.tapDetected.connect(self._on_tap_detected)
+        canvas.statusMessageChanged.connect(self._on_status_message_changed)
         canvas.ringOutMeasured.connect(self.set_ring_out)
         canvas.ringOutMeasured.connect(self._on_ring_out_measured)
         canvas.tapCountChanged.connect(self.set_tap_count)
@@ -1984,6 +1985,32 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer.currentPeaks by minFreq/maxFreq at display time.
         """
         self._current_peaks_all = peaks if isinstance(peaks, list) else []
+
+        # Rule 5a: propagate selection state when peaks change on a frozen measurement.
+        #
+        # Swift's applyFrozenPeakState() writes selectedPeakIDs which SwiftUI
+        # propagates automatically to every view. In Python, _apply_frozen_peak_state()
+        # writes analyzer.selected_peak_frequencies but the peaksChanged signal chain
+        # (→ _on_peaks_changed_results → update_data_with_modes) never touches
+        # peak_widget.model.selected_frequencies.
+        #
+        # _restore_measurement sets selected_frequencies directly *before* emitting
+        # peaks and calls set_measurement_complete(True) *after*, so
+        # _is_measurement_complete is False during restore — the guard below correctly
+        # skips that path (restore already handled it).
+        #
+        # Guitar-live path: _is_measurement_complete is False until _on_tap_detected
+        # calls set_measurement_complete(True) then auto_select_peaks_by_mode() —
+        # also skipped by the guard.
+        #
+        # Mirrors Swift: applyFrozenPeakState sets selectedPeakIDs which propagates to
+        # all views automatically via @Published.
+        if self._is_measurement_complete:
+            analyzer = self.fft_canvas.analyzer
+            sel_freqs = getattr(analyzer, "selected_peak_frequencies", None)
+            if sel_freqs is not None:
+                self.peak_widget.model.selected_frequencies = set(sel_freqs)
+
         self._refresh_results_peaks()
 
     def _refresh_results_peaks(self) -> None:
@@ -2156,6 +2183,16 @@ class MainWindow(QtWidgets.QMainWindow):
     # Tap events
     # ================================================================
 
+    def _on_status_message_changed(self, msg: str) -> None:
+        """Reflect analyzer.status_message in the status bar label.
+
+        Connected to canvas.statusMessageChanged, which forwards
+        analyzer.statusMessageChanged (mirrors Swift Text(tap.statusMessage)
+        re-rendering whenever the @Published var statusMessage changes).
+        """
+        self._sb_detect_msg.setText(msg)
+        self._sb_detect_msg.setStyleSheet("")
+
     def _on_tap_detected(self) -> None:
         """Auto-hold results when a tap fires (guitar mode only)."""
         if not self._current_mt().is_guitar:
@@ -2167,14 +2204,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
             except Exception:
                 pass
-        n_peaks = len(self.fft_canvas.saved_peaks)
-        n_taps = max(self._tap_count_captured, 1)
-        msg = (
-            f"Analysis complete! {n_peaks} peaks identified"
-            f" (from {n_taps} averaged tap{'s' if n_taps != 1 else ''})."
-        )
-        self._sb_detect_msg.setText(msg)
-        self._sb_detect_msg.setStyleSheet("color: orange;")
+        # Status message is set by the model via statusMessageChanged → _on_status_message_changed.
         self._sb_detect_dot.setStyleSheet("color: orange;")
 
     def _on_new_tap(self) -> None:
@@ -2193,8 +2223,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tap_count_captured = 0
         self._sb_tap_count.setVisible(False)
         self._sb_progress.setVisible(False)
-        self._sb_detect_msg.setText("Listening for tap…")
-        self._sb_detect_msg.setStyleSheet("")
+        # Status message emitted by cancel_tap_sequence via statusMessageChanged → _on_status_message_changed.
         # For plate/brace measurements, automatically arm the capture state machine.
         mt = self._current_mt()
         if not mt.is_guitar:
@@ -2309,15 +2338,20 @@ class MainWindow(QtWidgets.QMainWindow):
         peak_model = self.peak_widget.model
         mt = self._current_mt()
 
-        # Rebuild model.modes for plate/brace labels
+        # Rebuild model.modes for plate/brace labels.
+        # Use fft_canvas._current_peaks (list[ResonantPeak], populated by peaksChanged
+        # for all measurement modes) rather than fft_canvas.saved_peaks (a legacy numpy
+        # array only populated for guitar mode — always empty for plate/brace).
+        # Rule 7: slot payload (long_freq, cross_freq, flc_freq) is the authoritative
+        # source; _current_peaks provides the full peak list to label.
         for freq in list(peak_model.modes.keys()):
             if peak_model.modes.get(freq) in ("Longitudinal", "Cross-grain", "FLC", "Peak"):
                 del peak_model.modes[freq]
 
-        peaks = self.fft_canvas.saved_peaks
-        if peaks.ndim == 2 and peaks.shape[0] > 0:
-            for f in peaks[:, 0]:
-                ff = float(f)
+        current_peaks = self.fft_canvas._current_peaks  # list[ResonantPeak]
+        if current_peaks:
+            for peak in current_peaks:
+                ff = float(peak.frequency)
                 if long_freq  > 0 and abs(ff - long_freq)  < 0.5:
                     peak_model.modes[ff] = "Longitudinal"
                 elif cross_freq > 0 and abs(ff - cross_freq) < 0.5:
@@ -2326,6 +2360,13 @@ class MainWindow(QtWidgets.QMainWindow):
                     peak_model.modes[ff] = "FLC"
                 else:
                     peak_model.modes[ff] = "Peak"
+            # Keep selected_frequencies in sync with the new L/C/FLC assignment so
+            # annotation mode "Selected" shows labels for the assigned peaks.
+            # Mirrors Swift togglePeakSelection / selectLongitudinalPeak updating
+            # selectedPeakIDs when the user reassigns in TapAnalysisResultsView.
+            peak_model.selected_frequencies = {
+                f for f in (long_freq, cross_freq, flc_freq) if f > 0
+            }
             peak_model.refresh_annotations()
 
         # Show/hide placeholder vs content and recalculate
@@ -2486,45 +2527,27 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Please enter them in Settings → Measurement Type.",
             )
             return
-        # Assign material mode labels to peaks; find actual snapped frequencies
-        peak_model = self.peak_widget.model
-        peaks = self.fft_canvas.saved_peaks
-        actual_long = 0.0
-        actual_cross = 0.0
-        actual_flc = 0.0
-        if len(peaks) > 0:
-            freqs = peaks[:, 0]
-            modes: dict[float, str] = {}
-            used: set[int] = set()
-            if f_long > 0:
-                idx = int(np.argmin(np.abs(freqs - f_long)))
-                used.add(idx)
-                actual_long = float(freqs[idx])
-                modes[actual_long] = "Longitudinal"
-            if f_cross > 0 and not mt.is_brace:
-                dists = np.abs(freqs - f_cross).copy()
-                for i in used:
-                    dists[i] = np.inf
-                idx = int(np.argmin(dists))
-                used.add(idx)
-                actual_cross = float(freqs[idx])
-                modes[actual_cross] = "Cross-grain"
-            if f_flc > 0 and not mt.is_brace:
-                dists = np.abs(freqs - f_flc).copy()
-                for i in used:
-                    dists[i] = np.inf
-                idx = int(np.argmin(dists))
-                used.add(idx)
-                actual_flc = float(freqs[idx])
-                modes[actual_flc] = "FLC"
-            for i, f in enumerate(freqs):
-                if i not in used:
-                    modes[float(f)] = "Peak"
-            peak_model.modes = modes
+        # The plateAnalysisComplete signal carries the exact selected peak frequencies
+        # from the model's selected_longitudinal_peak / selected_cross_peak /
+        # selected_flc_peak. Use them directly — mirrors Swift passing
+        # effectiveLongitudinalPeakID == item.peak.id to MaterialPeakRowView.
+        actual_long  = f_long  if f_long  > 0 else 0.0
+        actual_cross = f_cross if (f_cross > 0 and not mt.is_brace) else 0.0
+        actual_flc   = f_flc   if (f_flc   > 0 and not mt.is_brace) else 0.0
 
-        # Update material peak widget with auto-assigned frequencies
+        # Update material peak widget with auto-assigned frequencies.
+        # set_assignment highlights the L/C/FLC buttons on the matching peak rows —
+        # equivalent to Swift MaterialPeakRowView(isLongitudinal: effectiveID == peak.id).
         self._material_peak_widget.set_assignment(actual_long, actual_cross,
                                                    flc_freq=actual_flc)
+
+        # Populate selected_frequencies with the assigned peak frequencies so that
+        # annotation mode "Selected" shows labels for the L/C/FLC peaks.
+        # Mirrors Swift selectedPeakIDs = Set(resolvedPlatePeaks().map { $0.id })
+        # set at the end of each gated-FFT phase in TapToneAnalyzer+SpectrumCapture.swift.
+        assigned = {f for f in (actual_long, actual_cross, actual_flc) if f > 0}
+        self.peak_widget.model.selected_frequencies = assigned
+        self.peak_widget.model.refresh_annotations()
 
         try:
             if mt.is_brace:

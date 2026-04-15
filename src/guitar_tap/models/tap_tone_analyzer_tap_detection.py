@@ -128,7 +128,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 )
                 self.tap_detected = False
                 # Mirrors Swift: statusMessage = "Initializing... (Xs)"
-                self.status_message = f"Initializing... ({remaining:.1f}s)"
+                self._set_status_message(f"Initializing... ({remaining:.1f}s)")
                 self.just_exited_warmup = True
                 return
 
@@ -155,7 +155,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 )
             self.tap_detected = False
             # Mirrors Swift: statusMessage = "Tap the guitar..." / "Tap N times..."
-            self.status_message = (
+            self._set_status_message(
                 "Tap the guitar..."
                 if self.number_of_taps == 1
                 else f"Tap the guitar {self.number_of_taps} times..."
@@ -175,7 +175,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         # Update status when ready and waiting for the first tap (mirrors Swift).
         if self.current_tap_count == 0 and "Initializing" in self.status_message:
-            self.status_message = (
+            self._set_status_message(
                 "Tap the guitar..."
                 if self.number_of_taps == 1
                 else f"Tap the guitar {self.number_of_taps} times..."
@@ -210,7 +210,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     f"SIGNAL SETTLED | tap {self.current_tap_count}/{self.number_of_taps}"
                     f" — signal dropped below falling threshold"
                 )
-                self.status_message = (
+                self._set_status_message(
                     f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
                 )
 
@@ -304,11 +304,11 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         # Status message (mirrors Swift lines 282-286).
         if self.current_tap_count < self.number_of_taps:
-            self.status_message = (
+            self._set_status_message(
                 f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
             )
         else:
-            self.status_message = "All taps captured. Processing..."
+            self._set_status_message("All taps captured. Processing...")
 
         # If all taps collected: schedule processMultipleTaps after captureWindow.
         # (mirrors Swift: captureTimer fires finishCapture(), then processMultipleTaps().)
@@ -389,14 +389,14 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self.is_above_threshold = False
             self.is_detecting = True
             self.tap_detected = False
-            self.status_message = (
+            self._set_status_message(
                 f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
             )
         else:
             self.is_above_threshold = True
             self.is_detecting = True
             self.tap_detected = False
-            self.status_message = (
+            self._set_status_message(
                 f"Tap {self.current_tap_count}/{self.number_of_taps} captured."
                 " Waiting for settle..."
             )
