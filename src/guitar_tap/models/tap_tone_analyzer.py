@@ -667,13 +667,27 @@ class TapToneAnalyzer(
     def visible_peaks(self) -> list:
         """Subset of current_peaks to render given annotation_visibility_mode.
 
+        In guitar mode, peaks classified as Unknown are excluded when
+        ``TapDisplaySettings.show_unknown_modes`` is False, keeping the chart
+        consistent with the Analysis Results panel.
+
         Mirrors Swift ``visiblePeaks: [ResonantPeak]``.
         """
         from .annotation_visibility_mode import AnnotationVisibilityMode
         mode = self.annotation_visibility_mode
         if mode == AnnotationVisibilityMode.ALL:
-            return list(self.current_peaks)
-        if mode == AnnotationVisibilityMode.SELECTED:
-            return [p for p in self.current_peaks if p.id in self.selected_peak_ids]
-        # NONE
-        return []
+            candidates = list(self.current_peaks)
+        elif mode == AnnotationVisibilityMode.SELECTED:
+            candidates = [p for p in self.current_peaks if p.id in self.selected_peak_ids]
+        else:
+            # NONE
+            return []
+
+        # Filter unknown-mode peaks in guitar mode when the setting is off
+        from .tap_display_settings import TapDisplaySettings
+        from .guitar_mode import GuitarMode
+        measurement_type = TapDisplaySettings.measurement_type()
+        if measurement_type.is_guitar and not TapDisplaySettings.show_unknown_modes():
+            guitar_type = TapDisplaySettings.guitar_type()
+            candidates = [p for p in candidates if GuitarMode.is_known(p.frequency, guitar_type)]
+        return candidates

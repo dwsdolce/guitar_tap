@@ -1150,7 +1150,7 @@ Key methods:
 
 **Swift-only methods (no Python equivalents)**:
 
-`registerSampleRateListener(for:)` — PortAudio provides no equivalent per-device sample-rate change notification.
+`registerSampleRateListener(for:)` — PortAudio does not surface per-device sample-rate change notifications through its public API. However, OS-level APIs exist on all platforms: macOS (CoreAudio `kAudioDevicePropertyNominalSampleRate`), Windows (WASAPI `IMMNotificationClient::OnPropertyValueChanged` / `IAudioSessionEvents::OnSessionDisconnected` with `DisconnectReasonFormatChanged`), and Linux (PulseAudio `pa_context_subscribe(PA_SUBSCRIPTION_MASK_SOURCE)` via `pulsectl`, or PipeWire `pw_stream_events.param_changed`; bare ALSA has no notification mechanism). The fix in Python is to extend the existing platform-native monitors to also watch for sample rate changes. D26 is fixable in code on macOS, Windows, and PulseAudio/PipeWire Linux; bare ALSA Linux has no fix.
 `handleRouteChange(notification:)`, `restartEngineAfterRouteChange()` — iOS-specific; no Python equivalent.
 
 **Divergences**:
@@ -1162,7 +1162,7 @@ Key methods:
 5. **Auto-device-switch on plug-in**: Swift `loadAvailableInputDevicesMacOS()` compares the new device list against the previous list and automatically calls `setInputDevice(_:)` for the first newly-connected real device (filtered for transient `CADefaultDeviceAggregate` artifacts), stopping and restarting the engine immediately. Python's `_notify_devices_changed()` only calls `self._on_devices_changed()`, which emits `devicesChanged` and rebuilds the UI combo box — the user must manually select the new device. This is a behavioural divergence, not a PortAudio limitation: the auto-selection logic can be added to Python's `_notify_devices_changed()` path.
 6. **Stale `_gated_sample_rate` after device switch**: In `TapToneAnalyzer.set_device()`, `fft_data.sample_freq` is synced to `mic.rate` after the device switch, but `_gated_sample_rate` (used to compute the gated MPM capture window size) is not updated. It is set only once in `start()`. If the new device has a different sample rate, the gated capture window is sized incorrectly. Fix: add `self._gated_sample_rate = float(self.mic.rate)` and `self._pre_roll_samples = int(self.mic.rate * self._pre_roll_seconds)` to `set_device()` after `self.mic.set_device(device)`.
 
-**Verdict**: Hot-plug detection is functionally present on all platforms. Two additional gaps identified: auto-device-switch (fixable in Python) and stale `_gated_sample_rate` (one-liner fix in `set_device()`). `registerSampleRateListener` (mid-session rate change on active device) is a PortAudio limitation with no code fix possible; user-facing documentation must explain the limitation and the manual workaround (switch devices or restart).
+**Verdict**: Hot-plug detection is functionally present on all platforms. Two additional gaps identified: auto-device-switch (fixable in Python) and stale `_gated_sample_rate` (one-liner fix in `set_device()`). `registerSampleRateListener` (mid-session sample rate change on active device) is fixable in code by extending the existing platform-native monitors: macOS via CoreAudio `kAudioDevicePropertyNominalSampleRate`, Windows via WASAPI `IMMNotificationClient`/`IAudioSessionEvents`. Linux mechanism is under investigation. D26 is no longer considered a PortAudio limitation.
 
 ---
 
@@ -1234,7 +1234,7 @@ No structural divergence beyond file organisation (already noted in §2).
 | D23 | `PlateStiffnessPreset.value` | Computed var (Float) — no name collision | `value` property overrides `Enum.value`; display bug at `tap_tone_analysis_view.py:2653` (float shown where string expected) | Medium — active display regression |
 | D24 | `CalibrationStorage` device key | CoreAudio UID (stable) | Device name string (best-effort) | Medium (devices not cross-platform portable) |
 | D25 | `AVAudioDevice` identifier | `uid: String` (platform-assigned) | `fingerprint: str` (synthesised, best-effort) | Medium |
-| D26 | `registerSampleRateListener` | Present (macOS CoreAudio) — detects mid-session rate change on active device | Not present (PortAudio limitation — no per-device rate-change notification); user-facing documentation required to explain the limitation and workaround | Low |
+| D26 | `registerSampleRateListener` | Present (macOS CoreAudio) — detects mid-session rate change on active device | Not present — PortAudio does not surface this but macOS (CoreAudio) and Windows (WASAPI) both have OS APIs for it; fixable by extending platform-native monitors. Linux under investigation. | Medium |
 | D27 | `FftParameters` | Not present | Python-only; `FftCanvas` constructs before `RealtimeFFTAnalyzer` exists; fields belong on `RealtimeFFTAnalyzer` | Medium — construction-order dependency that should be eliminated |
 | D28 | `TapToneMeasurement.annotation_offsets` | `[UUID: CGPoint]` | `{str: [float, float]}` | Low (boundary conversion needed) |
 | D29 | `TapToneMeasurement.peak_mode_overrides` | `[UUID: UserAssignedMode]` | `{str: str}` | Low (boundary conversion needed) |

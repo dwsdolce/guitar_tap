@@ -1478,11 +1478,23 @@ class FftCanvas(pg.PlotWidget):
         This is the single authoritative path for updating peak scatter points.
         Connected to analyzer.peaksChanged so both the scatter plot and the
         results panel (also connected to peaksChanged) are always in sync —
-        mirrors how Swift's SpectrumView reactively re-filters currentPeaks
-        on every render rather than keeping a separate scatter-plot state.
+        mirrors how Swift's SpectrumView.allPeaksInRange reactively re-filters
+        currentPeaks on every render rather than keeping a separate state.
+
+        In guitar mode, unknown-mode peaks are excluded when show_unknown_modes
+        is False, mirroring Swift's SpectrumView.allPeaksInRange filter.
         """
         if peaks:
-            self._current_peaks = peaks  # list[ResonantPeak]
+            # Filter unknown peaks in guitar mode when the setting is off
+            mt = _as.AppSettings.measurement_type()
+            if mt.is_guitar and not _as.AppSettings.show_unknown_modes():
+                guitar_type_str = _as.AppSettings.guitar_type()
+                try:
+                    guitar_type = gt.GuitarType(guitar_type_str)
+                except ValueError:
+                    guitar_type = gt.GuitarType.CLASSICAL
+                peaks = [p for p in peaks if gm.GuitarMode.is_known(p.frequency, guitar_type)]
+            self._current_peaks = peaks
             freqs = [p.frequency for p in peaks]
             mags  = [p.magnitude for p in peaks]
             self.points.setData(x=freqs, y=mags, brush=self._peak_brushes(freqs))

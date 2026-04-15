@@ -2032,11 +2032,20 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer = self.fft_canvas.analyzer
         # Mirrors Swift: .filter { peak.frequency >= minFreq && peak.frequency <= maxFreq }
         #                .map { (peak: peak, mode: analyzer.peakMode(for: peak)) }
+        #                .filter { showUnknownModes || mode.normalized != .unknown }
+        from models.guitar_mode import GuitarMode
+        mt = self._current_mt()
+        show_unknown = AS.AppSettings.show_unknown_modes()
         peaks_with_modes = [
             (p, analyzer.peak_mode(p))
             for p in peaks
             if fmin < p.frequency < fmax
         ]
+        if mt.is_guitar and not show_unknown:
+            peaks_with_modes = [
+                (p, m) for p, m in peaks_with_modes
+                if m != GuitarMode.UNKNOWN
+            ]
         self.peak_widget.update_data_with_modes(peaks_with_modes)
 
     def _on_canvas_freq_range_changed(self, fmin: int, fmax: int) -> None:
@@ -2089,6 +2098,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_threshold_changed(self, db_val: int) -> None:
         self.fft_canvas.set_threshold(db_val + 100)
         AS.AppSettings.set_threshold(db_val + 100)
+        AS.AppSettings.set_peak_threshold(float(db_val))  # keep single source of truth in sync — mirrors Swift peakThreshold didSet
         self.peak_min_readout.setText(f"{db_val} dB")
 
     def _clear_loaded_settings_warning(self) -> None:
@@ -4895,8 +4905,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.fft_canvas.analyzer.min_frequency = float(an_f_min_spin.value())
             self.fft_canvas.analyzer.max_frequency = float(an_f_max_spin.value())
 
-            # Show Unknown Modes
+            # Show Unknown Modes — save and immediately refresh chart + results panel.
+            # Unlike Swift where computed properties re-read the setting on every render,
+            # Python requires an explicit re-emission of peaksChanged to push the new
+            # filtered list through _on_peaks_changed_scatter and _on_peaks_changed_results.
             AS.AppSettings.set_show_unknown_modes(show_unknown_cb.isChecked())
+            self.fft_canvas.analyzer.peaksChanged.emit(
+                list(self.fft_canvas.analyzer.current_peaks)
+            )
 
             # Peak threshold → AppSettings + main-window slider + graph
             final_db = int(peak_thresh_spin.value())

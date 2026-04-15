@@ -520,19 +520,27 @@ self._pre_roll_samples = int(self.mic.rate * self._pre_roll_seconds)
 
 ---
 
-### WI-19 — User documentation for mid-session sample rate limitation (fixes D26)
+### WI-19 — Mid-session sample rate change detection (fixes D26)
 
-**Divergence:** Swift `registerSampleRateListener(for:)` detects when the user changes the active device's sample rate in Audio MIDI Setup mid-session (e.g. 44.1 kHz → 48 kHz) and automatically stops, reconfigures, and restarts the audio engine. Python has no equivalent: PortAudio provides no per-device sample-rate-change notification, and the running stream continues at the originally configured rate until the user manually restarts the application or switches devices.
+**Divergence:** Swift `registerSampleRateListener(for:)` detects when the user changes the active device's sample rate in Audio MIDI Setup mid-session (e.g. 44.1 kHz → 48 kHz) and automatically stops, reconfigures, and restarts the audio engine. Python has no equivalent. PortAudio does not surface per-device sample-rate change notifications through its public API, but the underlying OS APIs do exist and can be called directly — the same pattern already used for hot-plug detection.
 
-**File:** User-facing documentation (e.g. the Quick Start Guide or an in-app help section).
+**Approach:** Extend the existing platform-native monitors in `realtime_fft_analyzer_device_management.py`:
 
-**Change:** Add a note to the user documentation explaining this limitation:
+- **macOS**: Register an additional `AudioObjectAddPropertyListener` on the active device for `kAudioDevicePropertyNominalSampleRate` (selector `0x73726174`, device scope). When fired, compare the new rate to the current stream rate; if different, stop the stream, update `mic.rate`, and restart — mirroring Swift's `registerSampleRateListener(for:)` behaviour. The CoreAudio `ctypes` infrastructure is already in place.
 
-> **Changing your microphone's sample rate mid-session (macOS):** If you change your input device's sample rate in Audio MIDI Setup while the Python application is running, the application will continue to use the original sample rate until you switch devices or restart. To apply a new sample rate, select a different device and then re-select your microphone, or restart the application. (The macOS/iOS app handles this automatically.)
+- **Windows**: Implement `IAudioSessionEvents::OnSessionDisconnected` (via `comtypes` or `pywin32`) and handle `DisconnectReasonFormatChanged`, or implement `IMMNotificationClient::OnPropertyValueChanged` filtering on `PKEY_AudioEngine_DeviceFormat`. Either approach triggers a stream teardown and reinitialisation at the new format.
 
-The code-level comment in `realtime_fft_analyzer_device_management.py` noting the PortAudio limitation should also be retained (it was added in an earlier pass).
+- **Linux**: More fragmented than the other platforms, depending on the audio layer in use:
+  - **ALSA (bare)**: No notification mechanism exists. ALSA has no push-event model for device parameter changes; errors from `snd_pcm_readi` are the only signal. PortAudio's ALSA backend inherits this — no fix possible at this layer.
+  - **PulseAudio**: `pa_context_subscribe(PA_SUBSCRIPTION_MASK_SOURCE)` + `pa_context_set_subscribe_callback()` fires on any source property change. In the callback, query the source info to check whether the sample rate changed. Not a pinpoint "rate changed" event, but works as a push notification. Python binding: `pulsectl` (pip-installable).
+  - **PipeWire (native)**: `pw_stream_events.param_changed` fires when the stream's negotiated format changes including sample rate; PipeWire can renegotiate mid-session rather than just disconnecting. Accessible via raw `ctypes` to `libpipewire`. On systems running PipeWire with the PulseAudio compatibility layer (`pipewire-pulse`), the `pulsectl` approach also works.
+  - **Practical recommendation**: Run a `pulsectl` subscription thread alongside the sounddevice stream. This covers both PulseAudio and PipeWire-as-PulseAudio (the default on Fedora, Ubuntu, Debian since ~2022). On pure ALSA systems no fix is possible; add a code comment noting the limitation.
 
-**Risk:** None — documentation only.
+**Files:** `realtime_fft_analyzer_device_management.py` (extend `_start_linux_monitor()`; add rate-change subscription alongside existing `pyudev` hot-plug monitor); Windows COM interop helper (TBD); `pulsectl` added to Linux dependencies.
+
+**Note:** The existing `_start_linux_monitor()` uses `pyudev` for hot-plug detection. The rate-change monitor is a separate concern and should run as an additional subscription thread alongside it, not replace it.
+
+**Risk:** Medium. Extends platform-native monitors with new property selectors; requires careful thread handling (CoreAudio callbacks run on a background thread). Follow the existing hot-plug callback pattern.
 
 ---
 
@@ -558,9 +566,9 @@ The code-level comment in `realtime_fft_analyzer_device_management.py` noting th
 | WI-16 | D23 | Bug fix (rename + display fix) | `plate_stiffness_preset.py`, `tap_display_settings.py`, `tap_analysis_results_view.py` |
 | WI-17 | D30 | New behaviour (auto-switch on plug-in) | `realtime_fft_analyzer_device_management.py`, `tap_tone_analyzer_control.py` |
 | WI-18 | D31 | Bug fix (one-liner) | `tap_tone_analyzer_control.py` |
-| WI-19 | D26 | User documentation + code comment | User-facing docs, `realtime_fft_analyzer_device_management.py` |
+| WI-19 | D26 | New behaviour (platform-native rate-change listeners) | `realtime_fft_analyzer_device_management.py`; Windows COM helper (TBD); Linux TBD |
 
-**All 31 divergences are addressed.** 7 bugs/races fixed (D1, D2, D3/D4/D5, D6, D12, D23, D31). 1 new behaviour (D30). 3 add missing methods/properties (D19, D20). 4 refactors (D9, D10, D13, D27). The remainder are documentation.
+**All 31 divergences are addressed.** 7 bugs/races fixed (D1, D2, D3/D4/D5, D6, D12, D23, D31). 3 new behaviours (D26, D30). 3 add missing methods/properties (D19, D20). 4 refactors (D9, D10, D13, D27). The remainder are documentation.
 
 ---
 
@@ -580,7 +588,7 @@ The code-level comment in `realtime_fft_analyzer_device_management.py` noting th
 12. **WI-16** (`PlateStiffnessPreset.value` → `stiffness` rename) — low risk; mechanical rename across 3 call sites
 13. **WI-17** (auto-device-switch on plug-in) — read `_notify_devices_changed()` and `_on_devices_refreshed()` first; medium risk
 14. **WI-3, WI-4, WI-5, WI-8, WI-9** — documentation passes; can be done in any order
-15. **WI-19** (user documentation for sample rate limitation) — write after WI-17/WI-18 so the documented workaround reflects final behaviour
+15. **WI-19** (platform-native rate-change listeners) — do after WI-17/WI-18 since all three touch the device management monitor; confirm Linux mechanism before implementing that platform; macOS and Windows can proceed independently
 
 ---
 
