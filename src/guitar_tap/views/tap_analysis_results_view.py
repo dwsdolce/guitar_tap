@@ -204,7 +204,7 @@ def export_measurement_json(m: TapToneMeasurement) -> str:
                 label = "Peak"
             peak_d["modeLabel"] = label
 
-    return json.dumps(d, indent=2, ensure_ascii=False, sort_keys=True)
+    return json.dumps([d], indent=2, ensure_ascii=False, sort_keys=True)
 
 
 def import_measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]:

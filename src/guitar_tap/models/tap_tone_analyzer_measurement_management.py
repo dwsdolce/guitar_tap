@@ -98,71 +98,217 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.savedMeasurements.append(measurement)
         self._persist_measurements()
 
+    def _make_phase_snapshot(
+        self,
+        magnitudes,
+        frequencies,
+        min_freq: float,
+        max_freq: float,
+        min_db: float,
+        max_db: float,
+        mt_str: str,
+    ):
+        """Build a per-phase ``SpectrumSnapshot`` from magnitude/frequency arrays.
+
+        Mirrors the local ``makePhaseSnapshot`` helper in Swift's
+        ``TapToneAnalysisView+Actions.saveMeasurement()`` — lifted to model scope
+        since the model owns the per-phase spectrum data.
+
+        Args:
+            magnitudes:  List or array of dB magnitudes for this phase.
+            frequencies: List or array of Hz frequencies for this phase.
+            min_freq:    Visible axis minimum frequency (Hz), from view.
+            max_freq:    Visible axis maximum frequency (Hz), from view.
+            min_db:      Visible axis minimum dB, from view.
+            max_db:      Visible axis maximum dB, from view.
+            mt_str:      Measurement type value string (e.g. ``"plate"``).
+        """
+        from .spectrum_snapshot import SpectrumSnapshot
+        from .tap_display_settings import TapDisplaySettings as TDS
+        from .measurement_type import MeasurementType
+
+        try:
+            mt = MeasurementType(mt_str)
+        except ValueError:
+            mt = MeasurementType.CLASSICAL
+
+        _psp_str = TDS.plate_stiffness_preset()
+        return SpectrumSnapshot(
+            frequencies=frequencies.tolist() if hasattr(frequencies, "tolist") else list(frequencies),
+            magnitudes=magnitudes.tolist() if hasattr(magnitudes, "tolist") else list(magnitudes),
+            min_freq=min_freq,
+            max_freq=max_freq,
+            min_db=min_db,
+            max_db=max_db,
+            is_logarithmic=False,
+            show_unknown_modes=TDS.show_unknown_modes(),
+            guitar_type=TDS.guitar_type(),
+            measurement_type=mt_str,
+            max_peaks=getattr(self, "max_peaks", None),
+            plate_length=TDS.plate_length() if mt.is_plate else None,
+            plate_width=TDS.plate_width() if mt.is_plate else None,
+            plate_thickness=TDS.plate_thickness() if mt.is_plate else None,
+            plate_mass=TDS.plate_mass() if mt.is_plate else None,
+            plate_stiffness_preset=_psp_str if mt.is_plate else None,
+            custom_plate_stiffness=(
+                TDS.custom_plate_stiffness()
+                if mt.is_plate and _psp_str == "Custom" else None
+            ),
+            guitar_body_length=TDS.guitar_body_length() if mt.is_plate else None,
+            guitar_body_width=TDS.guitar_body_width() if mt.is_plate else None,
+            measure_flc=TDS.measure_flc() if mt.is_plate else None,
+            brace_length=TDS.brace_length() if mt.is_brace else None,
+            brace_width=TDS.brace_width() if mt.is_brace else None,
+            brace_thickness=TDS.brace_thickness() if mt.is_brace else None,
+            brace_mass=TDS.brace_mass() if mt.is_brace else None,
+        )
+
     def save_measurement(
         self,
-        peaks: list,
-        decay_time: "float | None" = None,
         tap_location: "str | None" = None,
         notes: "str | None" = None,
+        include_spectrum: bool = True,
         spectrum_snapshot=None,
-        longitudinal_snapshot=None,
-        cross_snapshot=None,
-        flc_snapshot=None,
         annotation_offsets: "dict | None" = None,
-        selected_peak_ids: "list | None" = None,
-        selected_peak_frequencies: "list | None" = None,
-        annotation_visibility_mode: "str | None" = None,
-        tap_detection_threshold: "float | None" = None,
-        hysteresis_margin: "float | None" = None,
-        number_of_taps: "int | None" = None,
-        peak_threshold: "float | None" = None,
         selected_longitudinal_peak_id: "str | None" = None,
         selected_cross_peak_id: "str | None" = None,
         selected_flc_peak_id: "str | None" = None,
-        peak_mode_overrides: "dict | None" = None,
         microphone_name: "str | None" = None,
         microphone_uid: "str | None" = None,
         calibration_name: "str | None" = None,
-        measurement_type: "str | None" = None,
-        guitar_type: "str | None" = None,
+        min_freq: "float | None" = None,
+        max_freq: "float | None" = None,
+        min_db: "float | None" = None,
+        max_db: "float | None" = None,
     ) -> None:
-        """Assemble a new measurement from individual parameters, then persist.
+        """Assemble a new measurement from live analyzer state, then persist.
 
-        The model is responsible for constructing ``TapToneMeasurement`` —
-        the view layer must not call ``TapToneMeasurement.create()`` directly.
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(...)``:
 
-        Mirrors Swift
-        ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(tapLocation:notes:…)``,
-        which accepts individual parameters and constructs the record internally.
+        - Reads ``currentPeaks``, ``currentDecayTime``, ``selectedPeakIDs``,
+          ``peakAnnotationOffsets``, ``annotationVisibilityMode``, and
+          ``peakModeOverrides`` directly from model state — not passed by the view.
+        - Builds the guitar ``SpectrumSnapshot`` internally from
+          ``frozenFrequencies`` / ``frozenMagnitudes`` and ``TapDisplaySettings``.
+          The view passes only the four axis-range floats.
+        - Builds per-phase snapshots (plate/brace) internally from
+          ``self.longitudinal_spectrum``, ``self.cross_spectrum``, ``self.flc_spectrum``
+          using ``_make_phase_snapshot``.  These spectra are set on the model by the
+          gated-FFT capture pipeline — the view does not pass them.
+        - ``spectrum_snapshot`` is an optional override (mirrors Swift's
+          ``spectrumSnapshot: SpectrumSnapshot? = nil``) used by the import path.
+        - ``annotation_offsets`` falls back to ``self.peak_annotation_offsets``
+          when ``None``, matching Swift's ``annotationOffsets ?? peakAnnotationOffsets``.
         """
         from .tap_tone_measurement import TapToneMeasurement
+        from .spectrum_snapshot import SpectrumSnapshot
+        from .tap_display_settings import TapDisplaySettings as TDS
+        from .measurement_type import MeasurementType
+
+        mt_str = TDS.measurement_type().value
+        try:
+            mt = MeasurementType(mt_str)
+        except ValueError:
+            mt = MeasurementType.CLASSICAL
+
+        # Resolve axis range — fall back to TapDisplaySettings when not passed by view.
+        # Mirrors Swift: minFreq ?? TapDisplaySettings.minFrequency etc.
+        _min_freq = min_freq if min_freq is not None else TDS.min_frequency()
+        _max_freq = max_freq if max_freq is not None else TDS.max_frequency()
+        _min_db   = min_db   if min_db   is not None else TDS.min_magnitude()
+        _max_db   = max_db   if max_db   is not None else 0.0
+
+        # ── Build guitar SpectrumSnapshot internally ──────────────────────────
+        # Mirrors Swift: snapshot = spectrumSnapshot ?? SpectrumSnapshot(
+        #     frequencies: isMeasurementComplete ? frozenFrequencies : fftAnalyzer.frequencies,
+        #     magnitudes:  isMeasurementComplete ? frozenMagnitudes  : fftAnalyzer.magnitudes, ...)
+        guitar_snapshot = None
+        if include_spectrum and mt.is_guitar:
+            freqs = self.frozen_frequencies
+            mags  = self.frozen_magnitudes
+            if freqs is not None and len(freqs) > 0:
+                guitar_snapshot = spectrum_snapshot or SpectrumSnapshot(
+                    frequencies=freqs.tolist() if hasattr(freqs, "tolist") else list(freqs),
+                    magnitudes=mags.tolist()  if hasattr(mags,  "tolist") else list(mags),
+                    min_freq=_min_freq,
+                    max_freq=_max_freq,
+                    min_db=_min_db,
+                    max_db=_max_db,
+                    is_logarithmic=False,
+                    show_unknown_modes=TDS.show_unknown_modes(),
+                    guitar_type=TDS.guitar_type(),
+                    measurement_type=mt_str,
+                    max_peaks=getattr(self, "max_peaks", None),
+                )
+
+        # ── Build per-phase snapshots internally ──────────────────────────────
+        # Mirrors Swift: longSnap = makePhaseSnapshot(tap.longitudinalSpectrum...)
+        # Per-phase spectra are set on self by the gated-FFT capture pipeline.
+        longitudinal_snapshot = None
+        cross_snapshot = None
+        flc_snapshot = None
+        if include_spectrum and not mt.is_guitar:
+            _kw = dict(min_freq=_min_freq, max_freq=_max_freq,
+                       min_db=_min_db, max_db=_max_db, mt_str=mt_str)
+            if self.longitudinal_spectrum is not None:
+                _mags, _freqs = self.longitudinal_spectrum
+                longitudinal_snapshot = self._make_phase_snapshot(_mags, _freqs, **_kw)
+            if mt == MeasurementType.PLATE and self.cross_spectrum is not None:
+                _mags, _freqs = self.cross_spectrum
+                cross_snapshot = self._make_phase_snapshot(_mags, _freqs, **_kw)
+            if mt == MeasurementType.PLATE and self.flc_spectrum is not None:
+                _mags, _freqs = self.flc_spectrum
+                flc_snapshot = self._make_phase_snapshot(_mags, _freqs, **_kw)
+
+        # ── Read model state directly — mirrors Swift currentPeaks etc. ───────
+        peaks = list(self.current_peaks)
+        decay_time = getattr(self, "current_decay_time", None)
+
+        # annotation_offsets: passed value or self.peak_annotation_offsets
+        # Mirrors Swift: annotationOffsets ?? peakAnnotationOffsets
+        offsets = annotation_offsets if annotation_offsets is not None \
+                  else dict(self.peak_annotation_offsets)
+
+        # selectedPeakIDs / selectedPeakFrequencies
+        # Mirrors Swift: selectedPeakIDs.isEmpty ? nil : Array(selectedPeakIDs)
+        sel_ids = list(self.selected_peak_ids)
+        sel_freqs = (
+            [p.frequency for p in peaks if p.id in self.selected_peak_ids]
+            if sel_ids else None
+        )
+
+        ann_vis = getattr(self, "annotation_visibility_mode", None)
+        ann_vis_str = ann_vis.value if ann_vis is not None else None
+
+        overrides = dict(self.peak_mode_overrides) if self.peak_mode_overrides else None
 
         measurement = TapToneMeasurement.create(
             peaks=peaks,
             decay_time=decay_time,
             tap_location=tap_location,
             notes=notes,
-            spectrum_snapshot=spectrum_snapshot,
+            spectrum_snapshot=guitar_snapshot,
             longitudinal_snapshot=longitudinal_snapshot,
             cross_snapshot=cross_snapshot,
             flc_snapshot=flc_snapshot,
-            annotation_offsets=annotation_offsets,
-            selected_peak_ids=selected_peak_ids,
-            selected_peak_frequencies=selected_peak_frequencies,
-            annotation_visibility_mode=annotation_visibility_mode,
-            tap_detection_threshold=tap_detection_threshold,
-            hysteresis_margin=hysteresis_margin,
-            number_of_taps=number_of_taps,
-            peak_threshold=peak_threshold,
-            selected_longitudinal_peak_id=selected_longitudinal_peak_id,
-            selected_cross_peak_id=selected_cross_peak_id,
-            selected_flc_peak_id=selected_flc_peak_id,
-            peak_mode_overrides=peak_mode_overrides,
+            annotation_offsets=offsets or None,
+            selected_peak_ids=sel_ids or None,
+            selected_peak_frequencies=sel_freqs,
+            annotation_visibility_mode=ann_vis_str,
+            tap_detection_threshold=getattr(self, "tap_detection_threshold", None),
+            hysteresis_margin=getattr(self, "hysteresis_margin", None),
+            number_of_taps=getattr(self, "number_of_taps", None),
+            peak_threshold=getattr(self, "peak_threshold", None),
+            # Plate/brace peak selections — mirrors Swift conditional nil assignments
+            selected_longitudinal_peak_id=selected_longitudinal_peak_id if not mt.is_guitar else None,
+            selected_cross_peak_id=selected_cross_peak_id if mt == MeasurementType.PLATE else None,
+            selected_flc_peak_id=selected_flc_peak_id if mt == MeasurementType.PLATE else None,
+            peak_mode_overrides=overrides,
             microphone_name=microphone_name,
             microphone_uid=microphone_uid,
             calibration_name=calibration_name,
-            measurement_type=measurement_type,
-            guitar_type=guitar_type,
+            measurement_type=mt_str,
+            guitar_type=TDS.guitar_type(),
         )
         self._append_measurement(measurement)
 

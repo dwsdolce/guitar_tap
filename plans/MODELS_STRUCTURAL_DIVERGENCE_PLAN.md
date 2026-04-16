@@ -354,29 +354,66 @@ Reset-to-empty calls (clearing both to `np.array([])`) should also use `set_froz
 
 ---
 
-### WI-27 — Move `SpectrumSnapshot` assembly into model layer (fixes D39)
+### WI-27 — Move all `SpectrumSnapshot` assembly into model layer; fix naming and structure (fixes D39)
 
-**Divergence:** Swift's `saveMeasurement(...)` builds the `SpectrumSnapshot` (and per-phase snapshots) internally from live analyzer state — `frozenFrequencies`, `frozenMagnitudes`, `TapDisplaySettings.*`, and the `isMeasurementComplete` flag. Python's `_collect_measurement_params()` in the view builds all `SpectrumSnapshot` objects before passing them to `analyzer.save_measurement(...)`. The snapshot assembly belongs in the model layer.
+**Divergence (corrected and expanded):** Both guitar and per-phase `SpectrumSnapshot` objects are domain data and belong in the model. Python currently builds per-phase snapshots in the view (`_collect_measurement_params()`) because the per-phase magnitude arrays live on `canvas.plate_capture` (a view-layer object). In Swift they live on the analyzer (`tap.longitudinalSpectrum`, `tap.crossSpectrum`, `tap.flcSpectrum`). There are four connected structural problems:
 
-Specifically, Swift reads:
-- `isMeasurementComplete ? frozenFrequencies : fftAnalyzer.frequencies` — live vs frozen
-- `isMeasurementComplete ? frozenMagnitudes : fftAnalyzer.magnitudes`
-- `TapDisplaySettings.minFrequency`, `.maxFrequency`, `.minMagnitude`, `.maxMagnitude`
-- `TapDisplaySettings.showUnknownModes`, `.guitarType`, `.measurementType`, `.maxPeaks`
-- Per-phase: plate/brace per-phase magnitudes live on the analyzer (`longitudinalSpectrum`, `crossSpectrum`, `flcSpectrum`)
-- Plate/brace dimensions: `TapDisplaySettings.plateLength` etc.
+1. **Per-phase spectra live in the wrong layer.** Python: `canvas.plate_capture.long_mag_db` etc. (view layer). Swift: `tap.longitudinalSpectrum` etc. (model/analyzer). The per-phase magnitude arrays must move onto the analyzer so the model can build all snapshots itself.
 
-Python's view currently reads ViewBox Y-range, `plate_capture` arrays, AppSettings dimension values, and builds `SpectrumSnapshot(...)` directly.
+2. **All snapshot assembly must move to the model.** Once the per-phase spectra are on the analyzer, the model's `save_measurement()` can build guitar *and* per-phase `SpectrumSnapshot` objects from its own state — exactly as Swift's model `saveMeasurement()` does in `TapToneAnalyzer+MeasurementManagement.swift` (lines 191–207). Python's model already builds the guitar snapshot correctly; the per-phase snapshot assembly still lives in the view and must move.
+
+3. **View method name mismatch.** Swift's view has `saveMeasurement()` (`TapToneAnalysisView+Actions.swift` line 115). Python's view has `_collect_measurement_params()` — wrong name. The method must be renamed `save_measurement()` and restructured to call `analyzer.save_measurement(...)` directly (not return a dict). The `makePhaseSnapshot` / `_make_phase_snapshot` local helper disappears because snapshot building moves to the model.
+
+4. **Model signature must match Swift exactly.** Swift's model `saveMeasurement` signature (`TapToneAnalyzer+MeasurementManagement.swift` lines 166–184) includes an optional `spectrumSnapshot: SpectrumSnapshot? = nil` override parameter used by the import path. Python's current model signature omits this and must be updated to match.
+
+**Correct architecture (both Swift and Python):**
+- Model `save_measurement()` builds ALL snapshots — guitar snapshot from `frozen_frequencies`/`frozen_magnitudes`, per-phase snapshots from `self.longitudinal_spectrum`/`self.cross_spectrum`/`self.flc_spectrum`.
+- View `save_measurement()` does only: read axis range floats from ViewBox (genuine view state), read mic/calibration device identity, call `analyzer.save_measurement(...)`.
+- No `SpectrumSnapshot` construction anywhere in the view.
+
+**Swift reference — model `saveMeasurement` builds guitar snapshot** (`TapToneAnalyzer+MeasurementManagement.swift` lines 191–204):
+```swift
+if includeSpectrum && measurementType.isGuitar {
+    snapshot = spectrumSnapshot ?? SpectrumSnapshot(
+        frequencies: isMeasurementComplete ? frozenFrequencies : fftAnalyzer.frequencies,
+        magnitudes:  isMeasurementComplete ? frozenMagnitudes  : fftAnalyzer.magnitudes,
+        minFreq: minFreq ?? TapDisplaySettings.minFrequency, ...
+    )
+}
+```
+
+**Swift reference — view `saveMeasurement` builds per-phase snapshots** (`TapToneAnalysisView+Actions.swift` lines 151–165) using `tap.longitudinalSpectrum` etc. — this is where Python currently is. **This is the Swift technical debt we are fixing in Python** — per-phase spectra should be on the analyzer and per-phase snapshots should be built in the model.
+
+**Four implementation steps:**
+
+**Step 1 — Move per-phase spectra onto the analyzer** (`tap_tone_analyzer.py`):
+- `self.longitudinal_spectrum`, `self.cross_spectrum`, `self.flc_spectrum` already exist as `None` on the analyzer (lines 315–317). They are currently populated by `canvas.plate_capture` in the view. Instead, the analyzer's `_finish_capture` / phase-completion paths must set these directly, mirroring Swift's `@Published var longitudinalSpectrum` on the analyzer.
+- Concretely: wherever `canvas.plate_capture.long_mag_db` / `.cross_mag_db` / `.flc_mag_db` are currently set in the view's capture flow, also set `analyzer.longitudinal_spectrum`, `analyzer.cross_spectrum`, `analyzer.flc_spectrum` as `(magnitudes, frequencies)` tuples mirroring Swift's `(magnitudes: [Float], frequencies: [Float])` named tuples.
+
+**Step 2 — Move per-phase snapshot assembly into model** (`tap_tone_analyzer_measurement_management.py`):
+- Add a `_make_phase_snapshot(magnitudes, frequencies, min_freq, max_freq, min_db, max_db)` method to the model (private helper, mirrors Swift's local `makePhaseSnapshot` but lifted to model scope since the model owns the data).
+- In `save_measurement()`, build `longitudinal_snapshot`, `cross_snapshot`, `flc_snapshot` from `self.longitudinal_spectrum`, `self.cross_spectrum`, `self.flc_spectrum` using `_make_phase_snapshot`.
+- Remove `longitudinal_snapshot`, `cross_snapshot`, `flc_snapshot` from `save_measurement()`'s public parameter list (they are no longer passed from the view).
+- Add `spectrum_snapshot: SpectrumSnapshot | None = None` optional override parameter to match Swift's signature.
+
+**Step 3 — Rename and restructure view method** (`tap_tone_analysis_view.py`):
+- Rename `_collect_measurement_params()` → `save_measurement(tap_location, notes)`.
+- Remove all `SpectrumSnapshot` construction (the `_make_phase_snapshot` local helper and everything using it).
+- The method now: reads axis range floats, reads mic/calibration identity, calls `analyzer.save_measurement(tap_location=..., notes=..., min_freq=..., max_freq=..., min_db=..., max_db=..., microphone_name=..., microphone_uid=..., calibration_name=..., selected_longitudinal_peak_id=..., selected_cross_peak_id=..., selected_flc_peak_id=...)` directly, then clears UI state (mirrors Swift's `tapLocation = ""; notes = ""; showingSaveSheet = false; isSavingMeasurement = false`).
+- Update all callers of the old `_collect_measurement_params()` to call `save_measurement()` directly.
+
+**Step 4 — Update model signature** (`tap_tone_analyzer_measurement_management.py`):
+- Add `spectrum_snapshot: SpectrumSnapshot | None = None` parameter (optional override for import/testing path).
+- Verify all other parameters match Swift's signature exactly.
 
 **Files:**
-- `src/guitar_tap/models/tap_tone_analyzer_measurement_management.py` — move snapshot assembly into `save_measurement()`; remove snapshot parameters from the public signature (or keep them as optional overrides for the import path)
-- `src/guitar_tap/views/tap_tone_analysis_view.py` — remove `SpectrumSnapshot` construction from `_collect_measurement_params()`; pass raw axis range values and dimension values instead, or rely on model reading them from `TapDisplaySettings`
+- `src/guitar_tap/models/tap_tone_analyzer.py` — Step 1: populate `longitudinal_spectrum`, `cross_spectrum`, `flc_spectrum` in capture completion paths
+- `src/guitar_tap/models/tap_tone_analyzer_measurement_management.py` — Steps 2 & 4: add `_make_phase_snapshot`; build all snapshots in model; update signature
+- `src/guitar_tap/views/tap_tone_analysis_view.py` — Step 3: rename `_collect_measurement_params` → `save_measurement`; remove snapshot construction; call model directly
 
-**Note on axis range:** Swift's view passes `minFreq`/`maxFreq`/`minDB`/`maxDB` as explicit parameters to `saveMeasurement` (the view's `@State` values) because the view owns the displayed range. Python must continue to pass the visible axis range values from the ViewBox, since those are view-layer state. The model can accept them as plain `float` parameters and pass them to `SpectrumSnapshot(...)` internally — this matches the Swift pattern.
+**Note on axis range:** Swift's view passes `minFreq`/`maxFreq`/`minDB`/`maxDB` as explicit `@State` floats. Python view passes ViewBox Y-range floats. Both are genuine view state — this is correct and intentional.
 
-**Before implementing:** Read `_collect_measurement_params()` snapshot-building section in full. Read Swift `saveMeasurement` snapshot construction. Enumerate which values are genuinely view-state (axis range, plate_capture per-phase arrays) vs model-state (frozen frequencies/magnitudes, display settings).
-
-**Risk:** Medium-High. Touches `save_measurement`'s public signature and `_collect_measurement_params`. Do after WI-13 (already done) and before WI-14.
+**Risk:** Medium-High. Four coordinated changes across three files. Do steps in order: 1 → 2 → 3 → 4. Run tests after each step.
 
 ---
 
@@ -701,7 +738,7 @@ self._pre_roll_samples = int(self.mic.rate * self._pre_roll_seconds)
 - [x] 6. **WI-10** (`QTimer.singleShot` refactor) — replaced 7 `threading.Timer`+`invokeMethod` pairs across 3 files; removed `import threading` from all 3; 290 tests green
 - [x] 7. **WI-13** (model owns measurement assembly) — read `_collect_measurement()` and `TapToneMeasurement.create()` in full before editing; update import path explicitly
 - [x] 7a. **WI-32** (`_finish_capture` `selected_peak_ids` + `identified_modes`) — discovered during WI-13 manual verification; `selected_peak_ids` now set via `guitar_mode_selected_peak_ids(peaks)` matching Swift; `identified_modes` now set from `GuitarMode.classify_all` result
-- [ ] 8. **WI-27** (model owns snapshot assembly) — do after WI-13; read `_collect_measurement_params()` snapshot section and Swift `saveMeasurement` snapshot construction; enumerate view-state vs model-state values before editing; both files touched by WI-13 also touched here
+- [ ] 8. **WI-27** (all snapshot assembly in model; fix naming) — four steps in order: (1) populate `analyzer.longitudinal_spectrum/cross_spectrum/flc_spectrum` in capture completion paths; (2) add `_make_phase_snapshot` to model, build all snapshots in `save_measurement()`; (3) rename view `_collect_measurement_params` → `save_measurement`, remove all snapshot construction, call model directly; (4) add `spectrum_snapshot` optional override to model signature. Run tests after each step.
 - [ ] 9. **WI-28** (remove `_append_measurement`; wire import path through model) — do after WI-27 since WI-27 changes `save_measurement`'s internals; read full import block in `measurements_list_view.py` before editing; verify `import_measurements_from_data` return value covers auto-load use case
 - [ ] 10. **WI-29** (PDF timestamp — use source measurement timestamp) — single-field fix in `_on_export_pdf()`; confirm `_loaded_measurement.timestamp` attribute name before editing
 - [ ] 11. **WI-31** (PDF microphone name — use selected device, not calibration device) — read `realtime_fft_analyzer.py` to find the correct selected-device name property before editing `_on_export_pdf()`
@@ -736,7 +773,7 @@ After implementation:
 - [ ] 6. **WI-11:** Verify `FftParameters` is no longer imported anywhere; verify `fft_parameters.py` is deleted; run FFT capture sequence end-to-end.
 - [x] 7. **WI-13:** Save a measurement from the UI — verify it is persisted correctly. Import a measurement from file — verify `_append_measurement` path works. Export a PDF report — verify it generates correctly with peaks, spectrum image, and metadata (tap location, notes, decay time). Confirm `_collect_measurement()` is no longer present in the view. Model `save_measurement(...)` accepts individual parameters and constructs `TapToneMeasurement` internally. `_append_measurement` used by import path. `_on_export_pdf` now builds `PDFReportData` directly from live analyzer state (no `TapToneMeasurement` intermediary), mirroring Swift `exportPDFReport()`. All bugs found during WI-13 manual verification fixed (annotation signal arity, UUID staleness in `_finish_capture`, annotation mode mismatch after tap). D44 identified during verification → WI-32.
 - [x] 7a. **WI-32:** `_finish_capture` sets `selected_peak_ids` via `guitar_mode_selected_peak_ids(peaks)` (matches Swift's `guitarModeSelectedPeakIDs`); sets `identified_modes` from `GuitarMode.classify_all` result (matches Swift's `identifiedModes` assignment). Tests green.
-- [ ] 8. **WI-27:** Save a guitar measurement — verify the spectrum snapshot is generated entirely within the model from live analyzer state (frozen frequencies/magnitudes). Save a plate measurement — verify per-phase snapshots (longitudinal, cross, FLC) are built in the model. Confirm `_collect_measurement_params()` no longer constructs any `SpectrumSnapshot` objects.
+- [ ] 8. **WI-27:** Code checks (a–f done): (a) `analyzer.longitudinal_spectrum`, `cross_spectrum`, `flc_spectrum` set in spectrum capture. (b) Guitar snapshot built in model from `frozen_frequencies`/`frozen_magnitudes`. (c) Per-phase snapshots built in model from `self.longitudinal_spectrum` etc. (d) No `SpectrumSnapshot` construction in the view. (e) View method named `save_measurement`, calls `analyzer.save_measurement(...)` directly, no dict return. (f) Model signature has `spectrum_snapshot=None` override. **User runtime verification required (Swift and Python):** (g) Take a plate/brace measurement, save it, then reload the file — verify the saved measurement displays all three per-phase spectrum images correctly (longitudinal, cross, FLC). (h) Take a guitar measurement, save it, reload — verify the guitar spectrum displays correctly. (i) Export a PDF from a saved plate measurement — verify all three phase spectra appear in the PDF.
 - [ ] 9. **WI-28:** Import a measurement from file — verify the model's `import_measurements_from_data` is called directly; confirm `_append_measurement` no longer exists in the model; confirm `M.import_measurements_from_json` is no longer called from `measurements_list_view.py`.
 - [ ] 10. **WI-29:** Export a PDF from a loaded measurement — verify the PDF timestamp matches the original capture time, not the export time. Export a PDF from a live (unsaved) capture — verify the PDF timestamp is approximately now.
 - [ ] 11. **WI-31:** Export a PDF — verify `microphone_name` in the report matches the currently selected input device (not the calibration device name).

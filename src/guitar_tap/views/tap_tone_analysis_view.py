@@ -23,7 +23,7 @@ import views.utilities.tap_settings_view as AS
 from models.tap_display_settings import TapDisplaySettings as TDS
 import views.tap_analysis_results_view as M
 from views.exportable_spectrum_chart import make_exportable_spectrum_view
-from models import TapToneMeasurement, ResonantPeak, SpectrumSnapshot
+from models import TapToneMeasurement, ResonantPeak
 from models import plate_stiffness_preset as PSP
 from models import guitar_type as GT
 from models import measurement_type as MT
@@ -2708,220 +2708,36 @@ class MainWindow(QtWidgets.QMainWindow):
     # Measurements save / load / export
     # ================================================================
 
-    def _collect_measurement_params(
+    def save_measurement(
         self,
         tap_location: str | None = None,
         notes: str | None = None,
-    ) -> dict:
-        """Collect view-side measurement parameters as a plain dict.
+    ) -> None:
+        """Collect view-side state and delegate to the model to save a measurement.
 
-        Gathers all information visible to the view layer (widget values,
-        canvas state, peak table contents, annotation positions) and returns
-        it as a dict of keyword arguments suitable for passing directly to
-        ``analyzer.save_measurement(**params)``.
-
-        The model is responsible for constructing ``TapToneMeasurement`` from
-        these parameters — this method must not call ``TapToneMeasurement.create()``.
-
-        Mirrors Swift: the view collects individual parameters and passes them
-        to ``saveMeasurement(tapLocation:notes:…)`` on the model; the model
-        assembles the record internally.
+        Mirrors Swift ``TapToneAnalysisView+Actions.saveMeasurement()``:
+        reads the visible axis range (view @State), reads device identity,
+        reads effective peak role IDs from the analyzer, then calls
+        ``analyzer.save_measurement(...)`` directly.  The model builds all
+        ``SpectrumSnapshot`` objects internally from its own state.
         """
-        import uuid as _uuid
-        from datetime import datetime, timezone
         canvas = self.fft_canvas
-        model  = self.peak_widget.model
-        mt     = self._current_mt()
+        analyzer = canvas.analyzer
+        mt = self._current_mt()
 
-        # Build ResonantPeak list from the current peaks table
-        peaks: list[ResonantPeak] = []
-        selected_ids: list[str] = []
-        # For guitar: user-assigned mode overrides in Swift format {uuid: mode_string}
-        # For plate/brace: use selectedLongitudinalPeakID etc. instead (set below)
-        peak_mode_overrides: dict[str, str] = {}
-        # Material peak ID tracking (plate/brace only)
-        selected_longitudinal_peak_id: str | None = None
-        selected_cross_peak_id: str | None = None
-        selected_flc_peak_id: str | None = None
+        # ── Axis range — view @State, mirrors Swift minFreq/maxFreq/minDB/maxDB ──
+        min_freq_val = float(self.min_spin.value())
+        max_freq_val = float(self.max_spin.value())
+        try:
+            _, _y_range = canvas.getPlotItem().getViewBox().viewRange()
+            min_db_val = float(_y_range[0])
+            max_db_val = float(_y_range[1])
+        except Exception:
+            min_db_val = float(self.threshold_slider.value())
+            max_db_val = 0.0
 
-        ts = datetime.now(timezone.utc).isoformat()
-        from models.pitch import Pitch as _Pitch
-        _pitch_calc = _Pitch(a4=440)
-        for row in range(model.rowCount(QtCore.QModelIndex())):
-            idx  = model.index(row, 0)
-            freq = model.freq_value(idx)
-            mag  = model.magnitude_value(idx)
-            q    = model.q_value(idx)
-            show = model.show_value(idx)
-            mode = model.mode_value(idx)
-            peak_id = str(_uuid.uuid4())
-
-            bandwidth = freq / max(q, 0.001) if q else 0.0
-            entry = ResonantPeak(
-                id=peak_id,
-                frequency=freq,
-                magnitude=mag,
-                quality=q,
-                bandwidth=bandwidth,
-                timestamp=ts,
-                mode_label=mode,
-                pitch_note=_pitch_calc.note(freq),
-                pitch_cents=_pitch_calc.cents(freq),
-                pitch_frequency=_pitch_calc.freq0(freq),
-            )
-            peaks.append(entry)
-
-            if show == "on":
-                selected_ids.append(peak_id)
-
-            if mt.is_guitar:
-                # Guitar: record user mode overrides (freq in model.modes = override set)
-                if freq in model.modes:
-                    peak_mode_overrides[peak_id] = model.modes[freq]
-            else:
-                # Plate/brace: track which peak was selected for each material mode
-                label = model.modes.get(freq, "")
-                if label == "Longitudinal":
-                    selected_longitudinal_peak_id = peak_id
-                elif label == "Cross-grain":
-                    selected_cross_peak_id = peak_id
-                elif label == "FLC":
-                    selected_flc_peak_id = peak_id
-
-        # Annotation positions — store as absolute data-space [absFreqHz, absDB].
-        # xytext from the live canvas is already the absolute (freq, dB) label-center position.
-        # Mirrors Swift peakAnnotationOffsets: [UUID: CGPoint] where x=absFreqHz, y=absDB.
-        freq_to_id = {p.frequency: p.id for p in peaks}
-        annotation_offsets: dict[str, list[float]] = {}
-        for ann_dict in canvas.annotations.annotations:
-            ann_freq = ann_dict.get("freq")
-            xytext   = ann_dict.get("xytext")
-            if ann_freq is not None and xytext and ann_freq in freq_to_id:
-                annotation_offsets[freq_to_id[ann_freq]] = [float(xytext[0]), float(xytext[1])]
-
-        # Spectrum snapshot — guitar uses spectrumSnapshot; plate/brace use phase snapshots
-        spectrum_snapshot: SpectrumSnapshot | None = None
-        longitudinal_snapshot: SpectrumSnapshot | None = None
-        cross_snapshot: SpectrumSnapshot | None = None
-        flc_snapshot: SpectrumSnapshot | None = None
-        if hasattr(canvas, "saved_mag_y_db") and np.any(canvas.saved_mag_y_db):
-            freqs = canvas.analyzer.frozen_frequencies.tolist()
-            mags  = canvas.saved_mag_y_db.tolist()
-            # Read the actual Y axis range from the ViewBox so the snapshot stores
-            # the chart's visible range, not the detection threshold.
-            try:
-                _, _y_range = canvas.getPlotItem().getViewBox().viewRange()
-                _snap_min_db = float(_y_range[0])
-                _snap_max_db = float(_y_range[1])
-            except Exception:
-                _snap_min_db = float(self.threshold_slider.value())
-                _snap_max_db = float(np.max(canvas.saved_mag_y_db)) + 10.0
-            # Axis range: always use the visible chart range (spinner values and
-            # ViewBox Y range), not application preference defaults.  This mirrors
-            # the Swift fix where saveMeasurement() receives the view's @State
-            # minFreq/maxFreq/minDB/maxDB rather than TapDisplaySettings defaults,
-            # ensuring that a saved measurement re-imports with an identical display.
-            _snap_base = dict(
-                frequencies=freqs,
-                magnitudes=mags,
-                min_freq=float(self.min_spin.value()),
-                max_freq=float(self.max_spin.value()),
-                min_db=_snap_min_db,
-                max_db=_snap_max_db,
-                guitar_type=self.guitar_type_combo.currentText(),
-                measurement_type=mt.value,
-            )
-            if mt.is_guitar:
-                spectrum_snapshot = SpectrumSnapshot(**_snap_base)
-            else:
-                # Plate/brace: embed current dimensions in the longitudinal snapshot
-                # so they are restored when the measurement is loaded back.
-                _dims = self._get_current_dims()
-                _pc = canvas.plate_capture
-                if mt.is_brace:
-                    _l_mags = (
-                        _pc.long_mag_db.tolist()
-                        if _pc.long_mag_db is not None
-                        else mags
-                    )
-                    longitudinal_snapshot = SpectrumSnapshot(
-                        frequencies=freqs,
-                        magnitudes=_l_mags,
-                        min_freq=float(self.min_spin.value()),
-                        max_freq=float(self.max_spin.value()),
-                        min_db=_snap_min_db,
-                        max_db=_snap_max_db,
-                        guitar_type=self.guitar_type_combo.currentText(),
-                        measurement_type=mt.value,
-                        brace_length=_dims.length_mm if _dims else None,
-                        brace_width=_dims.width_mm if _dims else None,
-                        brace_thickness=_dims.thickness_mm if _dims else None,
-                        brace_mass=_dims.mass_g if _dims else None,
-                    )
-                else:
-                    _psp_str = AS.AppSettings.plate_stiffness_preset()
-                    _plate_dim_kwargs = dict(
-                        plate_length=_dims.length_mm if _dims else None,
-                        plate_width=_dims.width_mm if _dims else None,
-                        plate_thickness=_dims.thickness_mm if _dims else None,
-                        plate_mass=_dims.mass_g if _dims else None,
-                        plate_stiffness_preset=_psp_str,
-                        custom_plate_stiffness=(
-                            AS.AppSettings.custom_plate_stiffness()
-                            if _psp_str == "Custom" else None
-                        ),
-                        guitar_body_length=AS.AppSettings.guitar_body_length(),
-                        guitar_body_width=AS.AppSettings.guitar_body_width(),
-                    )
-                    # Longitudinal snapshot uses the mag_db stored per-phase
-                    # (falls back to saved_mag_y_db if per-phase data is missing)
-                    _l_mags = (
-                        _pc.long_mag_db.tolist()
-                        if _pc.long_mag_db is not None
-                        else mags
-                    )
-                    longitudinal_snapshot = SpectrumSnapshot(
-                        frequencies=freqs,
-                        magnitudes=_l_mags,
-                        min_freq=float(self.min_spin.value()),
-                        max_freq=float(self.max_spin.value()),
-                        min_db=_snap_min_db,
-                        max_db=_snap_max_db,
-                        guitar_type=self.guitar_type_combo.currentText(),
-                        measurement_type=mt.value,
-                        **_plate_dim_kwargs,
-                    )
-                    # Cross-grain snapshot
-                    if _pc.cross_mag_db is not None:
-                        _c_mags = _pc.cross_mag_db.tolist()
-                        cross_snapshot = SpectrumSnapshot(
-                            frequencies=freqs,
-                            magnitudes=_c_mags,
-                            min_freq=float(self.min_spin.value()),
-                            max_freq=float(self.max_spin.value()),
-                            min_db=_snap_min_db,
-                            max_db=_snap_max_db,
-                            guitar_type=self.guitar_type_combo.currentText(),
-                            measurement_type=mt.value,
-                            **_plate_dim_kwargs,
-                        )
-                    # FLC snapshot
-                    if _pc.flc_mag_db is not None:
-                        _flc_mags = _pc.flc_mag_db.tolist()
-                        flc_snapshot = SpectrumSnapshot(
-                            frequencies=freqs,
-                            magnitudes=_flc_mags,
-                            min_freq=float(self.min_spin.value()),
-                            max_freq=float(self.max_spin.value()),
-                            min_db=_snap_min_db,
-                            max_db=_snap_max_db,
-                            guitar_type=self.guitar_type_combo.currentText(),
-                            measurement_type=mt.value,
-                            **_plate_dim_kwargs,
-                        )
-
-        # Capture the current audio device identity for later restoration.
-        mic_name: str | None = getattr(canvas.analyzer, "_calibration_device_name", None) or None
+        # ── Device identity — mirrors Swift fft.selectedInputDevice / fft.activeCalibration ──
+        mic_name: str | None = getattr(analyzer, "_calibration_device_name", None) or None
         mic_uid: str | None = None
         try:
             from models.audio_device import AudioDevice as _AD
@@ -2931,29 +2747,24 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
-        return dict(
-            peaks=peaks,
-            decay_time=self._ring_out_s,
+        # ── Plate/brace peak role selections — mirrors Swift tap.effectiveLongitudinalPeakID ──
+        selected_longitudinal_peak_id = analyzer.effective_longitudinal_peak_id if not mt.is_guitar else None
+        selected_cross_peak_id        = analyzer.effective_cross_peak_id        if mt.is_plate  else None
+        selected_flc_peak_id          = analyzer.effective_flc_peak_id          if mt.is_plate  else None
+
+        analyzer.save_measurement(
             tap_location=tap_location or None,
             notes=notes or None,
-            spectrum_snapshot=spectrum_snapshot,
-            longitudinal_snapshot=longitudinal_snapshot,
-            cross_snapshot=cross_snapshot,
-            flc_snapshot=flc_snapshot,
-            selected_peak_ids=selected_ids or None,
-            peak_mode_overrides=peak_mode_overrides or None,
-            annotation_offsets=annotation_offsets or None,
-            tap_detection_threshold=float(self.tap_threshold_slider.value()),
-            number_of_taps=self.tap_num_spin.value(),
-            peak_threshold=float(self.threshold_slider.value()) if mt.is_guitar else None,
+            include_spectrum=True,
             selected_longitudinal_peak_id=selected_longitudinal_peak_id,
             selected_cross_peak_id=selected_cross_peak_id,
             selected_flc_peak_id=selected_flc_peak_id,
             microphone_name=mic_name,
             microphone_uid=mic_uid,
-            measurement_type=mt.value,
-            guitar_type=self.guitar_type_combo.currentText(),
-            annotation_visibility_mode=self._ANN_MODES[self._ann_mode_idx].value,
+            min_freq=min_freq_val,
+            max_freq=max_freq_val,
+            min_db=min_db_val,
+            max_db=max_db_val,
         )
 
     def _on_save_measurement(self) -> None:
@@ -2971,25 +2782,23 @@ class MainWindow(QtWidgets.QMainWindow):
         if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
-        # Write back into live state before collecting (mirrors Swift binding update)
+        # Write back into live state before saving (mirrors Swift binding update)
         self._tap_location = dlg.tap_location
         self._notes = dlg.notes
 
-        params = self._collect_measurement_params(
-            tap_location=self._tap_location,
-            notes=self._notes,
-        )
-
-        # Clear after saving — mirrors Swift: tapLocation = ""; notes = ""
-        self._tap_location = ""
-        self._notes = ""
-
         try:
-            self.fft_canvas.analyzer.save_measurement(**params)
+            self.save_measurement(
+                tap_location=self._tap_location,
+                notes=self._notes,
+            )
         except OSError as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Save Error", f"Could not save measurement:\n{exc}"
             )
+
+        # Clear after saving — mirrors Swift: tapLocation = ""; notes = ""
+        self._tap_location = ""
+        self._notes = ""
 
     def _on_open_measurements(self) -> None:
         dlg = MD.MeasurementsDialog(self.fft_canvas.analyzer, self)
