@@ -2214,6 +2214,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
             except Exception:
                 pass
+            # auto_select_peaks_by_mode emits clearAnnotations then only re-emits
+            # annotationUpdate for the auto-selected peaks. Re-apply the active
+            # annotation mode so ALL/NONE/SELECTED is correctly reflected on the graph.
+            self.peak_widget.model.refresh_annotations()
         # Status message is set by the model via statusMessageChanged → _on_status_message_changed.
         self._sb_detect_dot.setStyleSheet("color: orange;")
 
@@ -2227,6 +2231,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._is_measurement_complete:
             self.set_measurement_complete(False)
         self._is_paused = False
+        # Clear loaded measurement state — mirrors Swift loadMeasurement clearing
+        # currentPeaks/selectedPeakIDs when a new tap begins, ensuring _on_export_pdf
+        # reads live analyzer state rather than stale loaded-measurement data.
+        self._loaded_resonant_peaks = []
+        self._loaded_measurement = None
         # cancel_tap_sequence clears accumulated spectra and restarts warmup,
         # matching Swift's cancelTapSequence behaviour.
         self.fft_canvas.cancel_tap_sequence()
@@ -2342,7 +2351,7 @@ class MainWindow(QtWidgets.QMainWindow):
     ) -> None:
         """Called when the user reassigns L/C/FLC buttons in the material peak list.
 
-        Updates model.modes (so annotations and _collect_measurement stay correct)
+        Updates model.modes (so annotations and _collect_measurement_params stay correct)
         and recomputes/displays the material properties.
         """
         peak_model = self.peak_widget.model
@@ -2699,12 +2708,25 @@ class MainWindow(QtWidgets.QMainWindow):
     # Measurements save / load / export
     # ================================================================
 
-    def _collect_measurement(
+    def _collect_measurement_params(
         self,
         tap_location: str | None = None,
         notes: str | None = None,
-    ) -> TapToneMeasurement:
-        """Collect the current held peaks and spectrum into a TapToneMeasurement."""
+    ) -> dict:
+        """Collect view-side measurement parameters as a plain dict.
+
+        Gathers all information visible to the view layer (widget values,
+        canvas state, peak table contents, annotation positions) and returns
+        it as a dict of keyword arguments suitable for passing directly to
+        ``analyzer.save_measurement(**params)``.
+
+        The model is responsible for constructing ``TapToneMeasurement`` from
+        these parameters — this method must not call ``TapToneMeasurement.create()``.
+
+        Mirrors Swift: the view collects individual parameters and passes them
+        to ``saveMeasurement(tapLocation:notes:…)`` on the model; the model
+        assembles the record internally.
+        """
         import uuid as _uuid
         from datetime import datetime, timezone
         canvas = self.fft_canvas
@@ -2909,7 +2931,7 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
-        return TapToneMeasurement.create(
+        return dict(
             peaks=peaks,
             decay_time=self._ring_out_s,
             tap_location=tap_location or None,
@@ -2953,7 +2975,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tap_location = dlg.tap_location
         self._notes = dlg.notes
 
-        m = self._collect_measurement(
+        params = self._collect_measurement_params(
             tap_location=self._tap_location,
             notes=self._notes,
         )
@@ -2963,7 +2985,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notes = ""
 
         try:
-            self.fft_canvas.analyzer.save_measurement(m)
+            self.fft_canvas.analyzer.save_measurement(**params)
         except OSError as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Save Error", f"Could not save measurement:\n{exc}"
@@ -3596,47 +3618,229 @@ class MainWindow(QtWidgets.QMainWindow):
         M.update_export_dir(path)
 
         self._loading_overlay.show_message("Generating PDF report…")
-        # Always collect from live UI state — mirrors Swift exportPDFReport() which
-        # reads tap.currentPeaks / tap.selectedPeakIDs / tap.calculateTapToneRatio()
-        # directly from the live analyzer, never from a stored TapToneMeasurement.
-        # When a measurement was loaded, _restore_measurement() already pushed all its
-        # data into the live canvas/peak-table state, so _collect_measurement() reads
-        # the correct peaks, selections, and tap_location from there.
-        # tapLocation: mirrors Swift `tapLocation.isEmpty ? nil : tapLocation` —
-        # _tap_location is "" after a load (chart title comes from loadedMeasurementName)
-        # and non-empty only if the user typed a location before saving a fresh tap.
-        loc = self._tap_location if self._tap_location else None
-        # For a loaded measurement, use its tap_location directly since _tap_location
-        # is cleared on load — mirrors Swift where tapLocation is "" and the subtitle
-        # falls back to tap.loadedMeasurementName.
-        if loc is None and self._loaded_measurement is not None:
-            loc = self._loaded_measurement.tap_location or None
-        m = self._collect_measurement(tap_location=loc, notes=self._notes or None)
-        # Render the composite spectrum image for embedding in the PDF — uses
-        # the same renderer as Export Spectrum so both outputs are consistent.
-        png_data: bytes | None = M.render_spectrum_image_for_measurement(m)
         try:
-            # Mirrors Swift TapToneAnalysisView+Export.swift:124,134:
-            #   tapToneRatio: tap.calculateTapToneRatio()
-            #   peakModes: Dictionary(uniqueKeysWithValues:
-            #       tap.identifiedModes.map { ($0.peak.id, $0.mode) })
-            # Both values come from the live analyzer so that identifiedModes
-            # (including user mode overrides) is the source of truth, not a
-            # fresh classify_all pass on the measurement's stored peaks.
-            _analyzer = self.fft_canvas.analyzer
-            _live_peak_modes = {
+            # Mirrors Swift exportPDFReport() which reads live analyzer state
+            # directly — no TapToneMeasurement is constructed at any point.
+            canvas   = self.fft_canvas
+            analyzer = canvas.analyzer
+            mt       = self._current_mt()
+            is_guitar = mt.is_guitar
+
+            # ── tapLocation / notes — mirrors Swift: tapLocation.isEmpty ? nil : tapLocation ──
+            loc = self._tap_location if self._tap_location else None
+            if loc is None and self._loaded_measurement is not None:
+                loc = self._loaded_measurement.tap_location or None
+            notes_val = self._notes if self._notes else None
+
+            # ── Frequency / dB range from visible axis — mirrors Swift minFreq/maxFreq ────────
+            min_freq_val = float(self.min_spin.value())
+            max_freq_val = float(self.max_spin.value())
+            try:
+                _, y_range = canvas.getPlotItem().getViewBox().viewRange()
+                min_db_val = float(y_range[0])
+                max_db_val = float(y_range[1])
+            except Exception:
+                min_db_val = float(self.threshold_slider.value())
+                max_db_val = 0.0
+
+            # ── Peaks — use stored ResonantPeak objects when available, fall back to live analyzer ─
+            all_peaks: list = []
+            sel_long_id  = None
+            sel_cross_id = None
+            sel_flc_id   = None
+            mode_overrides: dict = {}
+            annotation_positions: dict = {}
+            selected_ids: set = set()
+
+            if self._loaded_resonant_peaks and self._loaded_measurement is not None:
+                m_exp = self._loaded_measurement
+                all_peaks = list(self._loaded_resonant_peaks)
+                selected_ids = set(
+                    m_exp.selected_peak_ids or [p.id for p in all_peaks]
+                )
+                sel_long_id  = m_exp.selected_longitudinal_peak_id
+                sel_cross_id = m_exp.selected_cross_peak_id
+                sel_flc_id   = m_exp.selected_flc_peak_id
+                mode_overrides = m_exp.peak_mode_overrides or {}
+                # peak_annotation_offsets is keyed by peak_id (UUID string), not frequency.
+                for _pid, (_lx, _ly) in analyzer.peak_annotation_offsets.items():
+                    annotation_positions[_pid] = [float(_lx), float(_ly)]
+            else:
+                # Mirror Swift: read tap.currentPeaks and tap.selectedPeakIDs directly
+                # from the live analyzer — do NOT reconstruct peaks from the table model.
+                all_peaks = list(analyzer.current_peaks)
+                selected_ids = set(analyzer.selected_peak_ids)
+                sel_long_id  = analyzer.effective_longitudinal_peak_id
+                sel_cross_id = analyzer.effective_cross_peak_id
+                sel_flc_id   = analyzer.effective_flc_peak_id
+                mode_overrides = dict(analyzer.peak_mode_overrides)
+                # peak_annotation_offsets is keyed by peak_id (UUID string), not frequency.
+                for _pid, (_lx, _ly) in analyzer.peak_annotation_offsets.items():
+                    annotation_positions[_pid] = [float(_lx), float(_ly)]
+
+            # Mirror Swift: rangeFilteredPeaks = tap.currentPeaks.filter { freq in range }
+            range_peaks = [p for p in all_peaks
+                           if min_freq_val <= p.frequency <= max_freq_val]
+            if not selected_ids:
+                selected_ids = {p.id for p in range_peaks}
+
+            # ── Peak modes from live identifiedModes — mirrors Swift peakModes ───────────────
+            peak_modes = {
                 entry["peak"].id: entry["mode"]
-                for entry in _analyzer.identified_modes
+                for entry in analyzer.identified_modes
                 if "peak" in entry and "mode" in entry
             }
-            report_data = M.pdf_report_data_from_measurement(
-                m, png_data,
-                tap_tone_ratio=_analyzer.calculate_tap_tone_ratio(),
-                peak_modes=_live_peak_modes,
+
+            # ── Material properties — mirrors Swift plate/brace derivation ────────────────────
+            plate_props = None
+            brace_props = None
+            if mt == MT.MeasurementType.PLATE:
+                long_peak  = next((p for p in all_peaks if p.id == sel_long_id),  None)
+                cross_peak = next((p for p in all_peaks if p.id == sel_cross_id), None)
+                flc_peak   = next((p for p in all_peaks if p.id == sel_flc_id),   None) if sel_flc_id else None
+                if long_peak and cross_peak:
+                    dims = PA.MaterialDimensions(
+                        length_mm=TDS.plate_length(),
+                        width_mm=TDS.plate_width(),
+                        thickness_mm=TDS.plate_thickness(),
+                        mass_g=TDS.plate_mass(),
+                    )
+                    if dims.is_valid():
+                        try:
+                            plate_props = PA.calculate_plate_properties(
+                                dims, long_peak.frequency, cross_peak.frequency,
+                                f_flc_hz=flc_peak.frequency if flc_peak else None,
+                            )
+                        except Exception:
+                            pass
+            elif mt == MT.MeasurementType.BRACE:
+                long_peak = next((p for p in all_peaks if p.id == sel_long_id), None)
+                if long_peak:
+                    dims = PA.MaterialDimensions(
+                        length_mm=TDS.brace_length(),
+                        width_mm=TDS.brace_width(),
+                        thickness_mm=TDS.brace_thickness(),
+                        mass_g=TDS.brace_mass(),
+                    )
+                    if dims.is_valid():
+                        try:
+                            brace_props = PA.calculate_brace_properties(dims, long_peak.frequency)
+                        except Exception:
+                            pass
+
+            # ── Gore / plate stiffness — mirrors Swift's TapDisplaySettings reads ─────────────
+            from views.utilities.tap_settings_view import AppSettings as _AppSettings
+            _preset_str = _AppSettings.plate_stiffness_preset()
+            try:
+                _preset = PSP.PlateStiffnessPreset(_preset_str)
+            except ValueError:
+                _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
+            if _preset == PSP.PlateStiffnessPreset.CUSTOM:
+                plate_stiffness = _AppSettings.custom_plate_stiffness() or 75.0
+            else:
+                plate_stiffness = _preset.value
+
+            # ── Render spectrum PNG — mirrors Swift createExportableSpectrumView() ─────────────
+            saved_freq = analyzer.frozen_frequencies
+            freqs = saved_freq.tolist() if hasattr(saved_freq, "tolist") else list(saved_freq)
+            mags  = (canvas.saved_mag_y_db.tolist()
+                     if hasattr(canvas.saved_mag_y_db, "tolist")
+                     else list(canvas.saved_mag_y_db))
+
+            # Use the live annotation visibility mode from the view's cycle index.
+            # analyzer.annotation_visibility_mode is only set at init and is not updated
+            # when the user cycles the annotation button — _ann_mode_idx is authoritative.
+            visibility_mode = self._ANN_MODES[self._ann_mode_idx]
+            if visibility_mode == AnnotationVisibilityMode.SELECTED:
+                vis_peaks = [p for p in all_peaks if p.id in selected_ids]
+            elif visibility_mode == AnnotationVisibilityMode.NONE:
+                vis_peaks = []
+            else:
+                vis_peaks = list(all_peaks)
+
+            _material_spectra = None
+            if not is_guitar and self._loaded_measurement is not None:
+                _ms: list = []
+                m_exp = self._loaded_measurement
+                if m_exp.longitudinal_snapshot is not None:
+                    ls = m_exp.longitudinal_snapshot
+                    _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
+                                "color": "blue", "label": "Longitudinal (L)"})
+                if m_exp.cross_snapshot is not None:
+                    cs = m_exp.cross_snapshot
+                    _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
+                                "color": "orange", "label": "Cross-grain (C)"})
+                if m_exp.flc_snapshot is not None:
+                    fs = m_exp.flc_snapshot
+                    _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
+                                "color": "purple", "label": "FLC"})
+                if _ms:
+                    _material_spectra = _ms
+
+            gt_str = self.guitar_type_combo.currentText() if hasattr(self, "guitar_type_combo") else None
+            try:
+                raw_title = canvas.getPlotItem().titleLabel.text or ""
+                chart_title = raw_title.strip() if raw_title.strip() else "FFT Peaks"
+            except Exception:
+                chart_title = "FFT Peaks"
+
+            from datetime import datetime, timezone as _tz
+            date_label = datetime.now(_tz.utc).isoformat()
+
+            png_data: bytes | None = None
+            if freqs and mags:
+                try:
+                    png_data = make_exportable_spectrum_view(
+                        frequencies=freqs, magnitudes=mags,
+                        min_freq=min_freq_val, max_freq=max_freq_val,
+                        min_db=min_db_val,    max_db=max_db_val,
+                        peaks=vis_peaks,
+                        annotation_positions=annotation_positions,
+                        measurement_type_str=mt.value if not is_guitar else None,
+                        selected_longitudinal_peak_id=sel_long_id,
+                        selected_cross_peak_id=sel_cross_id,
+                        selected_flc_peak_id=sel_flc_id,
+                        mode_overrides=mode_overrides,
+                        peak_modes=peak_modes,
+                        material_spectra=_material_spectra,
+                        guitar_type_str=gt_str,
+                        date_label=date_label,
+                        chart_title=chart_title,
+                    )
+                except Exception:
+                    pass
+
+            # ── Build PDFReportData directly — mirrors Swift PDFReportData(...) init ─────────
+            report_data = M.PDFReportData(
+                timestamp=datetime.now(_tz.utc).isoformat(),
+                tap_location=loc,
+                notes=notes_val,
+                measurement_type_str=mt.value,
+                guitar_type_str=gt_str or TDS.guitar_type(),
+                microphone_name=getattr(analyzer, "_calibration_device_name", None) or None,
+                calibration_name=None,
+                min_freq=min_freq_val,
+                max_freq=max_freq_val,
+                peaks=range_peaks,
+                selected_peak_ids=selected_ids,
+                peak_modes=peak_modes,
+                peak_mode_overrides=mode_overrides,
+                selected_longitudinal_peak_id=sel_long_id,
+                selected_cross_peak_id=sel_cross_id,
+                selected_flc_peak_id=sel_flc_id,
+                decay_time=getattr(analyzer, "current_decay_time", None),
+                tap_tone_ratio=analyzer.calculate_tap_tone_ratio(),
+                plate_properties=plate_props,
+                brace_properties=brace_props,
+                guitar_body_length=_AppSettings.guitar_body_length() or 490.0,
+                guitar_body_width=_AppSettings.guitar_body_width() or 390.0,
+                plate_stiffness=plate_stiffness,
+                plate_stiffness_preset_str=_preset_str,
+                spectrum_image_data=png_data,
             )
+
             M.export_pdf(report_data, path)
-            # Success is silent on macOS — mirrors Swift MeasurementFileExporter
-            # which only logs to console and shows no confirmation alert.
+            # Success is silent — mirrors Swift MeasurementFileExporter.
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export PDF:\n{exc}"

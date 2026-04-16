@@ -426,7 +426,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             return
 
         for item in imported:
-            self._analyzer.save_measurement(item)
+            self._analyzer._append_measurement(item)
 
         if len(imported) == 1:
             # Auto-load single imported measurement (matches Swift importFromFile behaviour).

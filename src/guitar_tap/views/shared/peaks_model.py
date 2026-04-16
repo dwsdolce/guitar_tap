@@ -467,7 +467,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
             mag  = self.magnitude_value(idx)
             mode = self.mode_value(idx)
             html = self.annotation_html(freq, mag, mode)
-            self.annotationUpdate.emit(freq, mag, html, mode)
+            peak_id = self._peaks[row].id if row < len(self._peaks) else ""
+            self.annotationUpdate.emit(peak_id, freq, mag, html, mode)
 
     def update_annotation(self, index: QtCore.QModelIndex) -> None:
         """Update the annotation for the model index."""
@@ -477,7 +478,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
         mode = self.mode_value(index)
         if show:
             html = self.annotation_html(freq, mag, mode)
-            self.annotationUpdate.emit(freq, mag, html, mode)
+            row = index.row()
+            peak_id = self._peaks[row].id if row < len(self._peaks) else ""
+            self.annotationUpdate.emit(peak_id, freq, mag, html, mode)
             # print(f"PeaksModel: update_annotation: {annotation_text}")
         else:
             # Remove annotations

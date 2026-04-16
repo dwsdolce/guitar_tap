@@ -343,6 +343,27 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.frozen_frequencies = self.freq
         peaks = self.find_peaks(list(avg_db), list(self.freq))
         self.current_peaks = peaks
+
+        # Mirrors Swift processMultipleTaps() lines 804-812:
+        #   selectedPeakIDs = guitarModeSelectedPeakIDs(from: peaksFromAveragedSpectrum)
+        #   identifiedModes = peaksFromAveragedSpectrum.map { (peak: $0, mode: captureModeMap[$0.id] ?? .unknown) }
+        # Select only the guitar-mode auto-selected subset (not all peaks).
+        # Without this, selected_peak_ids holds stale UUIDs from the pre-capture
+        # live updates and the PDF export visible_peaks filter returns nothing.
+        self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
+
+        # Classify modes so identified_modes references the new averaged peaks.
+        # Without this, identified_modes is left pointing at old live-update
+        # peak objects with stale UUIDs after capture completes.
+        from .guitar_mode import GuitarMode
+        from .guitar_type import GuitarType
+        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
+        mode_map = GuitarMode.classify_all(peaks, guitar_type)
+        self.identified_modes = [
+            {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
+            for p in peaks
+        ]
+
         self.peaksChanged.emit(peaks)
         self.captured_taps.clear()
         self.tapDetectedSignal.emit()

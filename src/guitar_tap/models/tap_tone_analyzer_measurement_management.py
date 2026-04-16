@@ -86,13 +86,85 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self._persist_measurements()
         return measurements
 
-    def save_measurement(self, measurement) -> None:
-        """Append a new measurement, persist to disk, and notify observers.
+    def _append_measurement(self, measurement) -> None:
+        """Append a pre-built measurement, persist to disk, and notify observers.
 
-        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(_:)``.
+        Used internally by ``save_measurement`` and by the import path which
+        passes already-deserialized ``TapToneMeasurement`` objects.
+
+        Mirrors Swift ``savedMeasurements.append(measurement)`` +
+        ``persistMeasurements()`` in ``TapToneAnalyzer+MeasurementManagement``.
         """
         self.savedMeasurements.append(measurement)
         self._persist_measurements()
+
+    def save_measurement(
+        self,
+        peaks: list,
+        decay_time: "float | None" = None,
+        tap_location: "str | None" = None,
+        notes: "str | None" = None,
+        spectrum_snapshot=None,
+        longitudinal_snapshot=None,
+        cross_snapshot=None,
+        flc_snapshot=None,
+        annotation_offsets: "dict | None" = None,
+        selected_peak_ids: "list | None" = None,
+        selected_peak_frequencies: "list | None" = None,
+        annotation_visibility_mode: "str | None" = None,
+        tap_detection_threshold: "float | None" = None,
+        hysteresis_margin: "float | None" = None,
+        number_of_taps: "int | None" = None,
+        peak_threshold: "float | None" = None,
+        selected_longitudinal_peak_id: "str | None" = None,
+        selected_cross_peak_id: "str | None" = None,
+        selected_flc_peak_id: "str | None" = None,
+        peak_mode_overrides: "dict | None" = None,
+        microphone_name: "str | None" = None,
+        microphone_uid: "str | None" = None,
+        calibration_name: "str | None" = None,
+        measurement_type: "str | None" = None,
+        guitar_type: "str | None" = None,
+    ) -> None:
+        """Assemble a new measurement from individual parameters, then persist.
+
+        The model is responsible for constructing ``TapToneMeasurement`` —
+        the view layer must not call ``TapToneMeasurement.create()`` directly.
+
+        Mirrors Swift
+        ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(tapLocation:notes:…)``,
+        which accepts individual parameters and constructs the record internally.
+        """
+        from .tap_tone_measurement import TapToneMeasurement
+
+        measurement = TapToneMeasurement.create(
+            peaks=peaks,
+            decay_time=decay_time,
+            tap_location=tap_location,
+            notes=notes,
+            spectrum_snapshot=spectrum_snapshot,
+            longitudinal_snapshot=longitudinal_snapshot,
+            cross_snapshot=cross_snapshot,
+            flc_snapshot=flc_snapshot,
+            annotation_offsets=annotation_offsets,
+            selected_peak_ids=selected_peak_ids,
+            selected_peak_frequencies=selected_peak_frequencies,
+            annotation_visibility_mode=annotation_visibility_mode,
+            tap_detection_threshold=tap_detection_threshold,
+            hysteresis_margin=hysteresis_margin,
+            number_of_taps=number_of_taps,
+            peak_threshold=peak_threshold,
+            selected_longitudinal_peak_id=selected_longitudinal_peak_id,
+            selected_cross_peak_id=selected_cross_peak_id,
+            selected_flc_peak_id=selected_flc_peak_id,
+            peak_mode_overrides=peak_mode_overrides,
+            microphone_name=microphone_name,
+            microphone_uid=microphone_uid,
+            calibration_name=calibration_name,
+            measurement_type=measurement_type,
+            guitar_type=guitar_type,
+        )
+        self._append_measurement(measurement)
 
     def update_measurement(
         self,
