@@ -1970,12 +1970,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_fmin_changed(self, value: int) -> None:
         self.fft_canvas.set_fmin(value)
-        AS.AppSettings.set_f_min(value)
+        AS.AppSettings.set_f_min(value, self._current_mt())
         self._update_freq_range_label()
 
     def _on_fmax_changed(self, value: int) -> None:
         self.fft_canvas.set_fmax(value)
-        AS.AppSettings.set_f_max(value)
+        AS.AppSettings.set_f_max(value, self._current_mt())
         self._update_freq_range_label()
 
     def _on_peaks_changed_results(self, peaks: object) -> None:
@@ -4187,6 +4187,10 @@ class MainWindow(QtWidgets.QMainWindow):
             max_peaks_widget.setEnabled(is_guitar)
             if is_guitar:
                 _update_mode_ranges(unified)
+            # Reload the frequency spinners from the stored values for the newly
+            # selected type so the Display Settings section shows the correct range.
+            self.min_spin.setValue(AS.AppSettings.f_min(mt_val))
+            self.max_spin.setValue(AS.AppSettings.f_max(mt_val))
 
         meas_type_combo.currentTextChanged.connect(_on_meas_type_changed)
 
@@ -4275,7 +4279,7 @@ class MainWindow(QtWidgets.QMainWindow):
         reset_disp_btn.setToolTip("Restore factory display settings for the current measurement type")
 
         def _reset_display_defaults() -> None:
-            meas_t = self.measurement_type_combo.currentText()
+            meas_t = meas_type_combo.currentText()
             f_min_def = {"Plate": 30, "Brace": 30}.get(meas_t, 75)
             f_max_def = {"Plate": 600, "Brace": 1000}.get(meas_t, 350)
             self.min_spin.setValue(f_min_def)
@@ -4970,6 +4974,61 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_brace_width(brace_width_spin.value())
             AS.AppSettings.set_brace_thickness(brace_thick_spin.value())
             AS.AppSettings.set_brace_mass(brace_mass_spin.value())
+
+            # If a brace/plate measurement is active, recalculate material properties
+            # using the freshly saved dimensions.
+            #
+            # Mirrors Swift: applySettings() → onApply?() → reclassifyPeaks() →
+            # identifiedModes @Published → SwiftUI re-evaluates calculatedBraceProperties
+            # (computed property that reads TapDisplaySettings + effectiveLongitudinalPeakID).
+            #
+            # Python has no reactive computed properties, so we mirror the Swift computed
+            # property directly: read effective peak IDs from the analyzer, look up peak
+            # objects from the phase-specific lists (live) or current_peaks (restored),
+            # read fresh dimensions from AppSettings, then repopulate the section.
+            if (mt_val is MT.MeasurementType.BRACE or mt_val is MT.MeasurementType.PLATE) \
+                    and self._is_measurement_complete:
+                _az = self.fft_canvas.analyzer
+                _long_id = _az.effective_longitudinal_peak_id
+                if _long_id:
+                    # Mirrors Swift: search longitudinalPeaks first (live), then
+                    # sortedPeaksWithModes / currentPeaks (saved measurement).
+                    _long_peak = (
+                        next((p for p in _az.longitudinal_peaks if p.id == _long_id), None)
+                        or next((p for p in _az.current_peaks if p.id == _long_id), None)
+                    )
+                    if _long_peak:
+                        _dims = self._get_current_dims()
+                        if _dims and _dims.is_valid():
+                            try:
+                                if mt_val is MT.MeasurementType.BRACE:
+                                    self._populate_brace_section(
+                                        PA.calculate_brace_properties(
+                                            _dims, _long_peak.frequency
+                                        )
+                                    )
+                                else:
+                                    _cross_id = _az.effective_cross_peak_id
+                                    _cross_peak = (
+                                        next((p for p in _az.cross_peaks if p.id == _cross_id), None)
+                                        or next((p for p in _az.current_peaks if p.id == _cross_id), None)
+                                    ) if _cross_id else None
+                                    _flc_id = _az.effective_flc_peak_id
+                                    _flc_peak = (
+                                        next((p for p in _az.flc_peaks if p.id == _flc_id), None)
+                                        or next((p for p in _az.current_peaks if p.id == _flc_id), None)
+                                    ) if _flc_id else None
+                                    if _cross_peak:
+                                        self._populate_plate_section(
+                                            PA.calculate_plate_properties(
+                                                _dims,
+                                                _long_peak.frequency,
+                                                _cross_peak.frequency,
+                                                f_flc_hz=_flc_peak.frequency if _flc_peak else None,
+                                            )
+                                        )
+                            except ValueError:
+                                pass
 
             dlg.accept()
 

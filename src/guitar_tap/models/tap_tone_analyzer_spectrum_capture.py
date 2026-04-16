@@ -575,6 +575,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         self.current_peaks = self.longitudinal_peaks
         self.selected_peak_ids = {p.id for p in self.longitudinal_peaks}
+        # Mirrors Swift TapToneAnalyzer+SpectrumCapture: selectedPeakIDs = Set(longitudinalPeaks.map { $0.id })
+        # selected_peak_frequencies must be set here (not only in _apply_frozen_peak_state) so
+        # that _on_peaks_changed_results → peak_widget.model.selected_frequencies is correct
+        # for live plate/brace measurements that never go through recalculate_frozen_peaks_if_needed.
+        self.selected_peak_frequencies = [p.frequency for p in self.longitudinal_peaks]
         self.captured_taps.clear()
 
         # Update displayed spectrum — mirrors Swift setFrozenSpectrum (empty for plate transitions).
@@ -671,6 +676,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             sel = self._resolved_plate_peaks(cross_override=self.selected_cross_peak or dominant_peak)
             self.current_peaks = sel
             self.selected_peak_ids = {p.id for p in sel}
+            self.selected_peak_frequencies = [p.frequency for p in sel]
             self.set_frozen_spectrum(_np.array([]), _np.array([]))
             self._set_material_tap_phase(_MTP.COMPLETE)
             self.is_measurement_complete = True
@@ -738,6 +744,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
         self.current_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
+        self.selected_peak_frequencies = [p.frequency for p in sel]
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
         self._set_material_tap_phase(_MTP.COMPLETE)
         self.is_measurement_complete = True
