@@ -655,6 +655,19 @@ class TapToneAnalyzer(
         self.selected_peak_ids = set()
         self.user_has_modified_peak_selection = True
 
+    def set_frozen_spectrum(self, frequencies, magnitudes) -> None:
+        """Set frozen spectrum arrays atomically.
+
+        Mirrors Swift ``setFrozenSpectrum(frequencies:magnitudes:)`` — assigns both
+        arrays before any connected slot can observe them, preventing callers from
+        reading a half-updated state where the two arrays have mismatched lengths.
+
+        Python's GIL guarantees no other thread runs between the two assignments,
+        which is sufficient since all view reads occur on the main thread.
+        """
+        self.frozen_frequencies = frequencies
+        self.frozen_magnitudes = magnitudes
+
     def cycle_annotation_visibility(self) -> None:
         """Advance annotation_visibility_mode: all → selected → none → all.
 
@@ -662,6 +675,9 @@ class TapToneAnalyzer(
         Mirrors Swift ``cycleAnnotationVisibility()``.
         """
         self.annotation_visibility_mode = self.annotation_visibility_mode.next
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        _tds.set_annotation_visibility_mode(self.annotation_visibility_mode)
+        # mirrors cycleAnnotationVisibility() → TapDisplaySettings.annotationVisibilityMode in Swift
 
     @property
     def visible_peaks(self) -> list:

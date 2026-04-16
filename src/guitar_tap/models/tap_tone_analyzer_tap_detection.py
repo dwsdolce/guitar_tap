@@ -23,7 +23,6 @@ behaviour is independent of the audio block size or call rate.
 
 from __future__ import annotations
 
-import threading
 import time as _time
 from PySide6 import QtCore
 from PySide6.QtCore import Slot
@@ -312,36 +311,14 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         # If all taps collected: schedule processMultipleTaps after captureWindow.
         # (mirrors Swift: captureTimer fires finishCapture(), then processMultipleTaps().)
-        # threading.Timer fires on a background thread; dispatch to main thread
-        # via invokeMethod so _finish_capture runs on the main thread.
+        # QTimer.singleShot fires on the main thread.
         if self.current_tap_count >= self.number_of_taps:
-            def _enqueue_finish() -> None:
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "_finish_capture",
-                    QtCore.Qt.ConnectionType.QueuedConnection,
-                )
-            t = threading.Timer(self.capture_window, _enqueue_finish)
-            t.daemon = True
-            t.start()
+            QtCore.QTimer.singleShot(int(self.capture_window * 1000), self._finish_capture)
         else:
             # Re-enable detection after cooldown for next tap
             # (mirrors Swift lines 294-322).
-            # threading.Timer fires on a background thread; dispatch to main
-            # thread via invokeMethod before touching any state shared with
-            # the main thread.  Mirrors Swift DispatchQueue.main.asyncAfter.
             cooldown = self.tap_cooldown
-
-            def _reenable() -> None:
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "_do_reenable_guitar",
-                    QtCore.Qt.ConnectionType.QueuedConnection,
-                )
-
-            t = threading.Timer(cooldown, _reenable)
-            t.daemon = True
-            t.start()
+            QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_reenable_guitar)
 
     # ------------------------------------------------------------------ #
     # _finish_capture — mirrors Swift finishCapture() + processMultipleTaps()
@@ -352,9 +329,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         """Average all captured tap spectra and freeze the result.
 
         Called after captureWindow seconds from the final tap.
-        Invoked via QMetaObject.invokeMethod(QueuedConnection) from the
-        threading.Timer callback in _handle_tap_detection, so this always
-        runs on the main thread.
+        Invoked via QTimer.singleShot from _handle_tap_detection, so this
+        always runs on the main thread.
         Mirrors Swift finishCapture() which calls processMultipleTaps().
         """
         import numpy as np
@@ -487,19 +463,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         )
 
         cooldown = self.tap_cooldown
-
-        def _reenable() -> None:
-            # threading.Timer fires on a background thread; post to main thread
-            # before touching any Published properties or Qt state.
-            QtCore.QMetaObject.invokeMethod(
-                self,
-                "_do_reenable_detection",
-                QtCore.Qt.ConnectionType.QueuedConnection,
-            )
-
-        t = threading.Timer(cooldown, _reenable)
-        t.daemon = True
-        t.start()
+        QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_reenable_detection)
 
     @Slot()
     def _do_reenable_detection(self) -> None:

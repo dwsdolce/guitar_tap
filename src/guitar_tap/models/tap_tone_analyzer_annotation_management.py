@@ -108,34 +108,49 @@ class TapToneAnalyzerAnnotationManagementMixin:
 
     @property
     def effective_longitudinal_peak_id(self) -> str | None:
-        """The effective longitudinal peak UUID: user override or auto-selected.
+        """The effective longitudinal peak UUID applying three-layer priority.
 
-        Mirrors Swift ``effectiveLongitudinalPeakID``.
+        Priority: userSelectedLongitudinalPeakID > selectedLongitudinalPeak.id
+        > autoSelectedLongitudinalPeakID.
+
+        Mirrors Swift ``effectiveLongitudinalPeakID``:
+            userSelectedLongitudinalPeakID ?? selectedLongitudinalPeak?.id ?? autoSelectedLongitudinalPeakID
         """
         return (
             self.user_selected_longitudinal_peak_id
+            or (self.selected_longitudinal_peak.id if self.selected_longitudinal_peak else None)
             or self.auto_selected_longitudinal_peak_id
         )
 
     @property
     def effective_cross_peak_id(self) -> str | None:
-        """The effective cross-grain peak UUID: user override or auto-selected.
+        """The effective cross-grain peak UUID applying three-layer priority.
 
-        Mirrors Swift ``effectiveCrossPeakID``.
+        Priority: userSelectedCrossPeakID > selectedCrossPeak.id
+        > autoSelectedCrossPeakID.
+
+        Mirrors Swift ``effectiveCrossPeakID``:
+            userSelectedCrossPeakID ?? selectedCrossPeak?.id ?? autoSelectedCrossPeakID
         """
         return (
             self.user_selected_cross_peak_id
+            or (self.selected_cross_peak.id if self.selected_cross_peak else None)
             or self.auto_selected_cross_peak_id
         )
 
     @property
     def effective_flc_peak_id(self) -> str | None:
-        """The effective FLC peak UUID: user override or auto-selected.
+        """The effective FLC peak UUID applying three-layer priority.
 
-        Mirrors Swift ``effectiveFlcPeakID``.
+        Priority: userSelectedFlcPeakID > selectedFlcPeak.id
+        > autoSelectedFlcPeakID.
+
+        Mirrors Swift ``effectiveFlcPeakID``:
+            userSelectedFlcPeakID ?? selectedFlcPeak?.id ?? autoSelectedFlcPeakID
         """
         return (
             self.user_selected_flc_peak_id
+            or (self.selected_flc_peak.id if self.selected_flc_peak else None)
             or self.auto_selected_flc_peak_id
         )
 

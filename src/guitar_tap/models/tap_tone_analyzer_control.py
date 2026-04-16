@@ -125,10 +125,16 @@ class TapToneAnalyzerControlMixin:
     def set_tap_threshold(self, value: int) -> None:
         """Update tap-trigger threshold (0-100 scale → dBFS)."""
         self.tap_detection_threshold = float(value - 100)
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        _tds.set_tap_detection_threshold(self.tap_detection_threshold)
+        # mirrors tapDetectionThreshold.didSet in Swift
 
     def set_hysteresis_margin(self, value: float) -> None:
         """Update the hysteresis margin (dB)."""
         self.hysteresis_margin = float(value)
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        _tds.set_hysteresis_margin(self.hysteresis_margin)
+        # mirrors hysteresisMargin.didSet in Swift
 
     def pause_tap_detection(self) -> None:
         """Pause tap detection mid-sequence without losing the current tap count.
@@ -243,8 +249,7 @@ class TapToneAnalyzerControlMixin:
         self.reset_all_annotation_offsets()
 
         # Clear frozen spectrum so live FFT is shown while waiting for taps.
-        self.frozen_magnitudes = np.array([])
-        self.frozen_frequencies = np.array([])
+        self.set_frozen_spectrum(np.array([]), np.array([]))
 
         # Always start with is_above_threshold = False so the first real tap produces
         # a genuine rising edge.  The warm-up period suppresses detections for the
@@ -301,8 +306,7 @@ class TapToneAnalyzerControlMixin:
             self.number_of_taps = new_num
             stacked = np.stack(self.captured_taps[:new_num])
             avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
-            self.frozen_magnitudes = avg_db
-            self.frozen_frequencies = self.freq
+            self.set_frozen_spectrum(self.freq, avg_db)
             peaks = self.find_peaks(list(avg_db), list(self.freq))
             self.current_peaks = peaks
             self.peaksChanged.emit(peaks)
@@ -347,8 +351,7 @@ class TapToneAnalyzerControlMixin:
         self._reset_decay_tracking()
 
         # Clear frozen spectrum (mirrors Swift setFrozenSpectrum(frequencies: [], magnitudes: [])).
-        self.frozen_magnitudes = np.array([])
-        self.frozen_frequencies = np.array([])
+        self.set_frozen_spectrum(np.array([]), np.array([]))
 
         # Reset the warm-up timer for the restarted sequence (mirrors Swift lines 292-293).
         self.analyzer_start_time = _time.monotonic()
@@ -386,6 +389,9 @@ class TapToneAnalyzerControlMixin:
     def set_threshold(self, threshold: int) -> None:
         """Set the peak-detection threshold (0-100 scale, stored as dBFS)."""
         self.peak_threshold = float(threshold - 100)
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        _tds.set_peak_threshold(self.peak_threshold)
+        # mirrors peakThreshold.didSet in Swift
         self.recalculate_frozen_peaks_if_needed()
 
     def set_fmin(self, fmin: int) -> None:

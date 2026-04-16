@@ -36,7 +36,6 @@ Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
 
 from __future__ import annotations
 
-import threading
 import numpy as np
 import numpy.typing as npt
 from PySide6 import QtCore
@@ -178,8 +177,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Safety timeout: if the buffer still has audio after 2 s, flush it;
         # if empty, ask the user to tap again.
         # Mirrors Swift DispatchQueue.main.asyncAfter(deadline: .now() + 2.0).
-        # threading.Timer fires on a background thread, so both branches must
-        # post work back to the main thread — same pattern as _accumulate_gated_samples.
+        # QTimer.singleShot fires on the main thread.
         def _safety_timeout() -> None:
             with self._gated_lock:
                 if not self._gated_capture_active:
@@ -198,23 +196,15 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                     )
             else:
                 print("⚠️ Gated capture timeout with no samples — tap again")
-                # Post to main thread via invokeMethod (no suitable signal for this path).
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "_on_safety_timeout_no_samples",
-                    QtCore.Qt.ConnectionType.QueuedConnection,
-                )
+                QtCore.QTimer.singleShot(0, self._on_safety_timeout_no_samples)
 
-        t = threading.Timer(2.0, _safety_timeout)
-        t.daemon = True
-        t.start()
+        QtCore.QTimer.singleShot(2000, _safety_timeout)
 
     @Slot()
     def _on_safety_timeout_no_samples(self) -> None:
         """Main-thread slot called by the safety timeout when no samples were captured.
 
-        Invoked via QMetaObject.invokeMethod(QueuedConnection) from the
-        threading.Timer callback, so this always runs on the main thread.
+        Invoked via QTimer.singleShot, so this always runs on the main thread.
         """
         self._set_status_message("No signal detected — tap again")
         self.re_enable_detection_for_next_plate_tap()
@@ -223,9 +213,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     def _do_start_cross(self) -> None:
         """Main-thread slot: arm detection for the cross-grain tap phase.
 
-        Invoked via QMetaObject.invokeMethod(QueuedConnection) from the
-        threading.Timer callback in _handle_longitudinal_gated_progress, so
-        this always runs on the main thread.
+        Invoked via QTimer.singleShot from _handle_longitudinal_gated_progress,
+        so this always runs on the main thread.
 
         Mirrors Swift handleLongitudinalGatedProgress() cross-transition closure:
           self.isAboveThreshold = fftAnalyzer.inputLevelDB > fallingThreshold
@@ -243,16 +232,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.is_detecting = True
         self.tap_detected = False
         self._set_material_tap_phase(_MTP.CAPTURING_CROSS)
-        self.frozen_frequencies = _np.array([])
-        self.frozen_magnitudes  = _np.array([])
+        self.set_frozen_spectrum(_np.array([]), _np.array([]))
 
     @Slot()
     def _do_start_flc(self) -> None:
         """Main-thread slot: arm detection for the FLC tap phase.
 
-        Invoked via QMetaObject.invokeMethod(QueuedConnection) from the
-        threading.Timer callback in _handle_cross_gated_progress, so
-        this always runs on the main thread.
+        Invoked via QTimer.singleShot from _handle_cross_gated_progress,
+        so this always runs on the main thread.
 
         Mirrors Swift handleCrossGatedProgress() FLC-transition closure:
           self.isAboveThreshold = fftAnalyzer.inputLevelDB > fallingThreshold
@@ -270,8 +257,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.is_detecting = True
         self.tap_detected = False
         self._set_material_tap_phase(_MTP.CAPTURING_FLC)
-        self.frozen_frequencies = _np.array([])
-        self.frozen_magnitudes  = _np.array([])
+        self.set_frozen_spectrum(_np.array([]), _np.array([]))
 
     # ------------------------------------------------------------------ #
     # finish_gated_fft_capture
@@ -593,8 +579,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         # Update displayed spectrum — mirrors Swift setFrozenSpectrum (empty for plate transitions).
         import numpy as _np
-        self.frozen_frequencies = _np.array(avg_freqs)
-        self.frozen_magnitudes  = _np.array(avg_mags)
+        self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
 
         is_brace = (_tds.measurement_type() == _MT.BRACE)
         if is_brace:
@@ -604,8 +589,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 dominant_peak
             )
             self.current_peaks = [sel_peak]
-            self.frozen_frequencies = _np.array([])
-            self.frozen_magnitudes  = _np.array([])
+            self.set_frozen_spectrum(_np.array([]), _np.array([]))
             self._set_material_tap_phase(_MTP.COMPLETE)
             self.is_measurement_complete = True
             self.tap_progress = 1.0
@@ -632,18 +616,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             )
 
             cooldown = self.tap_cooldown
-            def _start_cross() -> None:
-                # threading.Timer fires on a background thread; post to main thread
-                # before touching any Published properties or Qt state.
-                # Mirrors the same pattern as re_enable_detection_for_next_plate_tap.
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "_do_start_cross",
-                    QtCore.Qt.ConnectionType.QueuedConnection,
-                )
-
-            import threading
-            threading.Timer(cooldown, _start_cross).start()
+            QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_start_cross)
 
         # Notify spectrum update (no peaksChanged here — each branch above emits exactly once).
         self.spectrumUpdated.emit(
@@ -687,30 +660,18 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         if _tds.measure_flc():
             self.current_peaks = self.combine_plate_peaks()
-            self.frozen_frequencies = _np.array([])
-            self.frozen_magnitudes  = _np.array([])
+            self.set_frozen_spectrum(_np.array([]), _np.array([]))
             self._set_material_tap_phase(_MTP.WAITING_FOR_FLC_TAP)
             self._set_status_message(
                 f"fC: {dominant_peak.frequency:.1f} Hz — set up for FLC tap"
             )
             cooldown = self.tap_cooldown
-            def _start_flc() -> None:
-                # threading.Timer fires on a background thread; post to main thread
-                # before touching any Published properties or Qt state.
-                # Mirrors the same pattern as re_enable_detection_for_next_plate_tap.
-                QtCore.QMetaObject.invokeMethod(
-                    self,
-                    "_do_start_flc",
-                    QtCore.Qt.ConnectionType.QueuedConnection,
-                )
-            import threading
-            threading.Timer(cooldown, _start_flc).start()
+            QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_start_flc)
         else:
             sel = self._resolved_plate_peaks(cross_override=self.selected_cross_peak or dominant_peak)
             self.current_peaks = sel
             self.selected_peak_ids = {p.id for p in sel}
-            self.frozen_frequencies = _np.array([])
-            self.frozen_magnitudes  = _np.array([])
+            self.set_frozen_spectrum(_np.array([]), _np.array([]))
             self._set_material_tap_phase(_MTP.COMPLETE)
             self.is_measurement_complete = True
             self.tap_progress = 1.0
@@ -777,8 +738,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
         self.current_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
-        self.frozen_frequencies = _np.array([])
-        self.frozen_magnitudes  = _np.array([])
+        self.set_frozen_spectrum(_np.array([]), _np.array([]))
         self._set_material_tap_phase(_MTP.COMPLETE)
         self.is_measurement_complete = True
         self.tap_progress = 1.0
@@ -925,8 +885,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         stacked = _np.stack(self.captured_taps)
         avg_db = 10.0 * _np.log10(_np.mean(_np.power(10.0, stacked / 10.0), axis=0))
 
-        self.frozen_frequencies = self.freq
-        self.frozen_magnitudes  = avg_db
+        self.set_frozen_spectrum(self.freq, avg_db)
         self.is_measurement_complete = True
         print(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
 

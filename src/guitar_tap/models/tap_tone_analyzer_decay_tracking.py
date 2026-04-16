@@ -29,12 +29,11 @@ Stored properties initialised in TapToneAnalyzer.__init__:
     self.is_tracking_decay: bool
     self.current_decay_time: float | None   (seconds)
     self.decay_threshold: float             (dB, default 15.0)
-    self._decay_tracking_timer             (threading.Timer | None)
+    self._decay_tracking_timer             (QtCore.QTimer | None)
 """
 
 from __future__ import annotations
 
-import threading
 import time as _time
 from PySide6 import QtCore
 from PySide6.QtCore import Slot
@@ -73,21 +72,15 @@ class TapToneAnalyzerDecayTrackingMixin:
         # Cancel any existing timer before starting a new one.
         # Mirrors Swift: decayTrackingTimer?.invalidate()
         if self._decay_tracking_timer is not None:
-            self._decay_tracking_timer.cancel()
+            self._decay_tracking_timer.stop()
 
         # Stop decay tracking after 3 seconds.
         # Mirrors Swift: Timer.scheduledTimer(withTimeInterval: 3.0, ...) which fires
-        # on the main RunLoop.  threading.Timer fires on a background thread, so post
-        # to the main thread via invokeMethod before touching any shared state.
-        def _fire_stop() -> None:
-            QtCore.QMetaObject.invokeMethod(
-                self,
-                "stop_decay_tracking",
-                QtCore.Qt.ConnectionType.QueuedConnection,
-            )
-        self._decay_tracking_timer = threading.Timer(3.0, _fire_stop)
-        self._decay_tracking_timer.daemon = True
-        self._decay_tracking_timer.start()
+        # on the main RunLoop.  QTimer.singleShot fires on the main thread directly.
+        self._decay_tracking_timer = QtCore.QTimer()
+        self._decay_tracking_timer.setSingleShot(True)
+        self._decay_tracking_timer.timeout.connect(self.stop_decay_tracking)
+        self._decay_tracking_timer.start(3000)
 
     # ------------------------------------------------------------------ #
     # stop_decay_tracking
@@ -105,12 +98,11 @@ class TapToneAnalyzerDecayTrackingMixin:
         Mirrors Swift stopDecayTracking(), which always runs on the main thread
         (Swift's Timer fires on the RunLoop of the scheduling thread = main).
         Called directly from the main thread (e.g., on tap reset) or via
-        QMetaObject.invokeMethod(QueuedConnection) from the threading.Timer
-        callback in start_decay_tracking.
+        QTimer.singleShot from start_decay_tracking.
         """
         self.is_tracking_decay = False
         if self._decay_tracking_timer is not None:
-            self._decay_tracking_timer.cancel()
+            self._decay_tracking_timer.stop()
             self._decay_tracking_timer = None
 
     # ------------------------------------------------------------------ #

@@ -492,7 +492,8 @@ class TapDisplaySettings:
 
     @classmethod
     def set_tap_detection_threshold(cls, v: float) -> None:
-        _app_settings().set_tap_threshold(int(v))
+        # AppSettings stores on the 0–100 scale; convert dBFS back to slider integer.
+        _app_settings().set_tap_threshold(int(v + 100.0))
 
     @classmethod
     def hysteresis_margin(cls) -> float:
@@ -566,7 +567,7 @@ class TapDisplaySettings:
         s.set_peak_threshold(cls.DEFAULT_PEAK_THRESHOLD)
         s.set_max_peaks(cls.DEFAULT_MAX_PEAKS)
         s.set_hop_size_overlap(cls.DEFAULT_HOP_SIZE_OVERLAP)
-        s.set_tap_threshold(int(cls.DEFAULT_TAP_DETECTION_THRESHOLD))
+        s.set_tap_threshold(int(cls.DEFAULT_TAP_DETECTION_THRESHOLD + 100.0))
         s.set_hysteresis_margin(cls.DEFAULT_HYSTERESIS_MARGIN)
         s.set_measure_flc(False)
 

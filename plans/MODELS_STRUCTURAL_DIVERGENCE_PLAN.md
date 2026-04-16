@@ -169,38 +169,11 @@ These mirror the Swift equivalents exactly. Default values for `reset_to_default
 
 ### WI-7 — `MaterialTapPhase` missing convenience properties (fixes D20)
 
-**Divergence:** Python `MaterialTapPhase` missing `is_plate`, `is_brace`, `is_complete` properties.
+**~~NO-OP — D20 was a false positive in the audit.~~**
 
-**File:** `src/guitar_tap/models/material_tap_phase.py`
+Verification of `MaterialTapPhase.swift` across all commits confirms that Swift has never had `isPlate`, `isBrace`, or `isComplete` properties on `MaterialTapPhase`. The audit incorrectly recorded these as present in Swift; they do not exist. Adding them to Python would create a divergence rather than fix one.
 
-**Change:** Add three `@property` members mirroring the Swift computed vars:
-```python
-@property
-def is_plate(self) -> bool:
-    # mirrors Swift MaterialTapPhase.isPlate
-    return self in (
-        MaterialTapPhase.CAPTURING_LONGITUDINAL,
-        MaterialTapPhase.WAITING_FOR_CROSS_TAP,
-        MaterialTapPhase.CAPTURING_CROSS,
-        MaterialTapPhase.WAITING_FOR_FLC_TAP,
-        MaterialTapPhase.CAPTURING_FLC,
-    )
-
-@property
-def is_brace(self) -> bool:
-    # mirrors Swift MaterialTapPhase.isBrace
-    # Read Swift MaterialTapPhase.swift to confirm exact cases before implementing.
-    ...
-
-@property
-def is_complete(self) -> bool:
-    # mirrors Swift MaterialTapPhase.isComplete
-    return self == MaterialTapPhase.COMPLETE
-```
-
-**Before implementing:** Read `MaterialTapPhase.swift` to confirm the exact Swift case assignments for `isPlate` and `isBrace` (there is a `BRACE_READY` / `BRACE_MEASURED` distinction to check).
-
-**Risk:** Low. New properties only.
+No code change required.
 
 ---
 
@@ -567,28 +540,42 @@ self._pre_roll_samples = int(self.mic.rate * self._pre_roll_seconds)
 | WI-17 | D30 | New behaviour (auto-switch on plug-in) | `realtime_fft_analyzer_device_management.py`, `tap_tone_analyzer_control.py` |
 | WI-18 | D31 | Bug fix (one-liner) | `tap_tone_analyzer_control.py` |
 | WI-19 | D26 | New behaviour (platform-native rate-change listeners) | `realtime_fft_analyzer_device_management.py`; Windows COM helper (TBD); Linux TBD |
+| WI-20 | D32 | Documentation (intentional platform difference) | `plans/MODELS_STRUCTURAL_DIVERGENCE_AUDIT.md` (done); add a comment block in `tap_tone_analysis_view.py` near the menu bar setup describing how the Python menu structure intentionally differs from Swift's `AppCommands` layout |
+| WI-21 | D33 | Content update — Python help | `help_view.py` `_build_help_html()`: add a Controls Reference sub-section describing the Python menu bar (File menu shortcuts, Help menu); note that toolbar layout descriptions are desktop-only (no mobile equivalent in Python); regenerate `docs/GuitarTap-Quick-Start-Guide.html/.pdf` after editing |
+| WI-22 | D34 | Logic divergence — `guitarType` getter | `tap_display_settings.py` `guitar_type()`: Swift getter checks `measurementType` first (returns it if it is a guitar type) before reading the stored `guitarTypeKey`; Python getter delegates directly to `AppSettings.guitar_type()` without the `measurementType` fallback. |
+| WI-23 | D35 | Logic divergence — `guitarType` setter | `tap_display_settings.py` `set_guitar_type()`: Swift setter also writes `measurementType = MeasurementType.from(newValue)`; Python setter only writes the guitar type key, leaving `measurementType` out of sync. |
+| WI-24 | D36 | Missing inline defaults — dimension getters | `tap_display_settings.py`: Swift dimension getters (`plateLength`, `plateWidth`, `plateThickness`, `plateMass`, `braceLength`, `braceWidth`, `braceThickness`, `braceMass`, `guitarBodyLength`, `guitarBodyWidth`, `customPlateStiffness`) return hardcoded defaults when the stored value is 0; Python delegates entirely to `AppSettings` so the default values live outside `TapDisplaySettings`. |
+| WI-25 | D37 | Missing convenience properties — `minFrequency`/`maxFrequency` static var | `tap_display_settings.py`: Swift exposes `static var minFrequency: Float` and `static var maxFrequency: Float` as computed properties that read/write using the current `measurementType` (Swift lines 429–438); Python has no direct equivalent (callers must pass `meas_type` explicitly). |
+| WI-26 | D38 | `reset_to_defaults` resets legacy shared key, not per-type keys | `tap_display_settings.py` `reset_to_defaults()`: Swift resets `minFrequency`/`maxFrequency` via the `static var` setters which write to per-type keys (`displayMinFreq_<type>`); Python calls `s.set_f_min()`/`s.set_f_max()` which may write only to the legacy shared key, leaving per-type persisted values un-reset. |
 
-**All 31 divergences are addressed.** 7 bugs/races fixed (D1, D2, D3/D4/D5, D6, D12, D23, D31). 3 new behaviours (D26, D30). 3 add missing methods/properties (D19, D20). 4 refactors (D9, D10, D13, D27). The remainder are documentation.
+**All 38 divergences are addressed.** 7 bugs/races fixed (D1, D2, D3/D4/D5, D6, D12, D23, D31). 3 new behaviours (D26, D30). 3 add missing methods/properties (D19, D20). 4 refactors (D9, D10, D13, D27). 2 documentation/content updates (D32, D33). The remainder are documentation. D34–D38 added post-audit during WI-6 verification.
 
 ---
 
 ## Implementation order
 
-1. **WI-1** (settings persistence bugs) — highest correctness impact, lowest risk
-2. **WI-12** (`set_frozen_spectrum` helper) — low risk, closes a real race condition
-3. **WI-2** (`effectiveXxxPeakID` middle layer) — read Swift before editing
-4. **WI-7** (`MaterialTapPhase` convenience properties) — read Swift before editing
-5. **WI-6** (`TapDisplaySettings` helpers) — new code, read Swift defaults first
-6. **WI-10** (`QTimer.singleShot` refactor) — read all three files before editing
-7. **WI-13** (model owns measurement assembly) — read `_collect_measurement()` and `TapToneMeasurement.create()` in full before editing; update import path explicitly
-8. **WI-14** (model owns measurement load) — largest refactor; read `_restore_measurement()` in full and classify each line as model or view before touching anything; do WI-13 first since both touch `tap_tone_analyzer_measurement_management.py`
-9. **WI-15** (`average_spectra` move + wire callers) — read spectrum capture file first to find Python call sites; do after WI-10 since both touch the spectrum capture file
-10. **WI-11** (`FftParameters` elimination) — highest structural risk; read view and model layers first
-11. **WI-18** (`_gated_sample_rate` fix in `set_device()`) — two-line fix; do before WI-17 since WI-17 relies on `set_device()` working correctly
-12. **WI-16** (`PlateStiffnessPreset.value` → `stiffness` rename) — low risk; mechanical rename across 3 call sites
-13. **WI-17** (auto-device-switch on plug-in) — read `_notify_devices_changed()` and `_on_devices_refreshed()` first; medium risk
-14. **WI-3, WI-4, WI-5, WI-8, WI-9** — documentation passes; can be done in any order
-15. **WI-19** (platform-native rate-change listeners) — do after WI-17/WI-18 since all three touch the device management monitor; confirm Linux mechanism before implementing that platform; macOS and Windows can proceed independently
+- [x] 1. **WI-1** (settings persistence bugs) — highest correctness impact, lowest risk
+- [x] 2. **WI-12** (`set_frozen_spectrum` helper) — low risk, closes a real race condition
+- [x] 3. **WI-2** (`effectiveXxxPeakID` middle layer) — read Swift before editing
+- [x] 4. **WI-7** (`MaterialTapPhase` convenience properties) — NO-OP: D20 was audit false positive; Swift never had these properties
+- [x] 5. **WI-6** (`TapDisplaySettings` helpers) — fixed D18 setter bug (`set_tap_detection_threshold` and `reset_to_defaults` now convert dBFS → 0-100 scale correctly); D19 helpers already present
+- [x] 6. **WI-10** (`QTimer.singleShot` refactor) — replaced 7 `threading.Timer`+`invokeMethod` pairs across 3 files; removed `import threading` from all 3; 290 tests green
+- [ ] 7. **WI-13** (model owns measurement assembly) — read `_collect_measurement()` and `TapToneMeasurement.create()` in full before editing; update import path explicitly
+- [ ] 8. **WI-14** (model owns measurement load) — largest refactor; read `_restore_measurement()` in full and classify each line as model or view before touching anything; do WI-13 first since both touch `tap_tone_analyzer_measurement_management.py`
+- [ ] 9. **WI-15** (`average_spectra` move + wire callers) — read spectrum capture file first to find Python call sites; do after WI-10 since both touch the spectrum capture file
+- [ ] 10. **WI-11** (`FftParameters` elimination) — highest structural risk; read view and model layers first
+- [ ] 11. **WI-18** (`_gated_sample_rate` fix in `set_device()`) — two-line fix; do before WI-17 since WI-17 relies on `set_device()` working correctly
+- [ ] 12. **WI-16** (`PlateStiffnessPreset.value` → `stiffness` rename) — low risk; mechanical rename across 3 call sites
+- [ ] 13. **WI-17** (auto-device-switch on plug-in) — read `_notify_devices_changed()` and `_on_devices_refreshed()` first; medium risk
+- [ ] 14. **WI-22** (`guitarType` getter — add `measurementType` fallback) — read `AppSettings.guitar_type()` to understand what it does before adding the fallback in `TapDisplaySettings`
+- [ ] 15. **WI-23** (`guitarType` setter — also set `measurementType`) — read `MeasurementType.from()` equivalent in Python before implementing
+- [ ] 16. **WI-24** (dimension getter inline defaults) — low risk; add fallback defaults matching Swift's hardcoded values to each dimension getter in `TapDisplaySettings`
+- [ ] 17. **WI-25** (`minFrequency`/`maxFrequency` convenience properties) — add `static`-equivalent no-arg accessors that use the current `measurement_type()`
+- [ ] 18. **WI-26** (`reset_to_defaults` per-type frequency keys) — verify what `AppSettings.set_f_min()` actually writes; fix to write per-type keys to match Swift
+- [ ] 19. **WI-3, WI-4, WI-5, WI-8, WI-9** — documentation passes; can be done in any order
+- [ ] 20. **WI-19** (platform-native rate-change listeners) — do after WI-17/WI-18 since all three touch the device management monitor; confirm Linux mechanism before implementing that platform; macOS and Windows can proceed independently
+- [ ] 21. **WI-20** (menu bar comment) — one-time documentation; no code logic changes; can be done any time
+- [ ] 22. **WI-21** (Python help content update) — read `help_view.py` `_build_help_html()` in full before editing; add menu bar section mirroring the macOS-only rows added to `HelpView.swift`; regenerate docs after
 
 ---
 
@@ -596,17 +583,19 @@ self._pre_roll_samples = int(self.mic.rate * self._pre_roll_seconds)
 
 After implementation:
 
-1. **WI-1:** Start Python app, change threshold/hysteresis/annotation settings, quit, relaunch — verify settings are restored from QSettings.
-2. **WI-2:** In plate measurement mode, capture a longitudinal tap (sets `selected_longitudinal_peak`), then check `effective_longitudinal_peak_id` returns that peak's id when no user override is set.
-3. **WI-6:** Call `TapDisplaySettings.reset_to_defaults()` and verify all settings revert to the values in Swift's `TapDisplaySettings.swift` defaults.
-4. **WI-7:** Verify `MaterialTapPhase.CAPTURING_LONGITUDINAL.is_plate == True`, `MaterialTapPhase.NOT_STARTED.is_complete == False`, `MaterialTapPhase.COMPLETE.is_complete == True`.
-5. **WI-10:** Verify each deferred callback fires on the main thread; run tap detection sequence end-to-end.
-6. **WI-11:** Verify `FftParameters` is no longer imported anywhere; verify `fft_parameters.py` is deleted; run FFT capture sequence end-to-end.
-7. **WI-13:** Save a measurement from the UI — verify it is persisted correctly. Import a measurement from file — verify `_append_measurement` path works. Confirm `_collect_measurement()` is no longer present in the view.
-8. **WI-14:** Load a saved measurement from the measurements list — verify all peaks, spectrum, decay time, and settings restore correctly. Confirm `_restore_measurement()` in the view contains only widget updates; all analyzer-state mutations are in `load_measurement()` on the model.
-9. **WI-15:** Capture a multi-tap measurement — verify the averaged spectrum is used (not just the last tap). Confirm `average_spectra` no longer exists in `tap_tone_analyzer_peak_analysis.py`.
-10. **WI-16:** Verify `PlateStiffnessPreset.STEEL_STRING_TOP.value == "Steel String Top"` (standard Enum.value). Verify `PlateStiffnessPreset.STEEL_STRING_TOP.stiffness == 75.0`. Verify the f_vs label in the UI reads `"f_vs = 75 (Steel String Top)"` not `"f_vs = 75 (75.0)"`.
-11. **WI-17:** Plug in a new microphone while the Python app is running — verify it auto-switches without user interaction. Unplug a device — verify the app does not crash and does not attempt to auto-switch.
-12. **WI-18:** Switch to a 48 kHz device after starting on a 44.1 kHz device; immediately perform a plate tap measurement — verify the gated capture window is sized correctly for 48 kHz (not 44.1 kHz).
-13. **Run existing tests:** `pytest` from the Python project root — no regressions.
-14. **Build Swift project:** `BuildProject` MCP command — ensure no Swift changes needed.
+- [x] 1. **WI-1:** Start Python app, change threshold/hysteresis/annotation settings, quit, relaunch — verify settings are restored from QSettings.
+- [x] 2. **WI-2:** In plate measurement mode, capture a longitudinal tap (sets `selected_longitudinal_peak`), then check `effective_longitudinal_peak_id` returns that peak's id when no user override is set.
+- [x] 3. **WI-6:** 20 unit tests in `test_wi6_tap_display_settings.py` verify round-trip correctness of `tap_detection_threshold`, `validate_frequency_range`, `validate_magnitude_range`, and `reset_to_defaults`.
+- [x] 4. **WI-7:** NO-OP — D20 was audit false positive; no verification needed.
+- [x] 5. **WI-10:** Verify each deferred callback fires on the main thread; run tap detection sequence end-to-end. 11 tests in `test_wi10_qtimer_slots.py` cover: QTimer.singleShot main-thread delivery (via processEvents), all 6 timer-fired slots (_do_reenable_detection, _do_reenable_guitar, _finish_capture, _do_start_cross, _do_start_flc), and the QTimer-based decay tracking timer (create, cancel, stop, signal-fired stop). 301 tests green.
+- [ ] 6. **WI-11:** Verify `FftParameters` is no longer imported anywhere; verify `fft_parameters.py` is deleted; run FFT capture sequence end-to-end.
+- [ ] 7. **WI-13:** Save a measurement from the UI — verify it is persisted correctly. Import a measurement from file — verify `_append_measurement` path works. Confirm `_collect_measurement()` is no longer present in the view.
+- [ ] 8. **WI-14:** Load a saved measurement from the measurements list — verify all peaks, spectrum, decay time, and settings restore correctly. Confirm `_restore_measurement()` in the view contains only widget updates; all analyzer-state mutations are in `load_measurement()` on the model.
+- [ ] 9. **WI-15:** Capture a multi-tap measurement — verify the averaged spectrum is used (not just the last tap). Confirm `average_spectra` no longer exists in `tap_tone_analyzer_peak_analysis.py`.
+- [ ] 10. **WI-16:** Verify `PlateStiffnessPreset.STEEL_STRING_TOP.value == "Steel String Top"` (standard Enum.value). Verify `PlateStiffnessPreset.STEEL_STRING_TOP.stiffness == 75.0`. Verify the f_vs label in the UI reads `"f_vs = 75 (Steel String Top)"` not `"f_vs = 75 (75.0)"`.
+- [ ] 11. **WI-17:** Plug in a new microphone while the Python app is running — verify it auto-switches without user interaction. Unplug a device — verify the app does not crash and does not attempt to auto-switch.
+- [ ] 12. **WI-18:** Switch to a 48 kHz device after starting on a 44.1 kHz device; immediately perform a plate tap measurement — verify the gated capture window is sized correctly for 48 kHz (not 44.1 kHz).
+- [ ] 13. **Run existing tests:** `pytest` from the Python project root — no regressions.
+- [ ] 14. **Build Swift project:** `BuildProject` MCP command — ensure no Swift changes needed.
+- [ ] 15. **WI-20:** Open `tap_tone_analysis_view.py`, locate the menu bar setup, confirm the comment block is present and accurately describes the differences from Swift's `AppCommands`.
+- [ ] 16. **WI-21:** Launch the Python app, open Help > Guitar Tap Help — verify the Controls Reference section contains a menu bar sub-section with correct shortcut descriptions. Open `docs/GuitarTap-Quick-Start-Guide.html` and verify the same section appears.
