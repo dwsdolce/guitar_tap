@@ -28,13 +28,19 @@ _AnnDict = dict[str, Any]
 class DraggableTextItem(pg.TextItem):
     """Styled annotation badge that can be dragged and reset via RMB menu."""
 
+    # Corner radius in pixels — mirrors Swift RoundedRectangle(cornerRadius: 6)
+    _CORNER_RADIUS: float = 6.0
+
     def __init__(
         self,
         anchor: tuple[float, float] = (0.5, 0.5),
         fill: QtGui.QBrush | None = None,
         border: QtGui.QPen | None = None,
     ) -> None:
-        super().__init__(html="", anchor=anchor, fill=fill, border=border)
+        # Pass fill but NOT border to the parent — we draw the rounded border ourselves
+        # in paint() so pyqtgraph doesn't draw a square one on top of ours.
+        super().__init__(html="", anchor=anchor, fill=fill, border=None)
+        self._border_pen: QtGui.QPen = border or QtGui.QPen(QtCore.Qt.PenStyle.NoPen)
         self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
 
@@ -42,6 +48,38 @@ class DraggableTextItem(pg.TextItem):
         self._peak_freq: float = 0.0
         self._peak_mag: float = 0.0
         self._default_pos: QtCore.QPointF | None = None
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionGraphicsItem,
+        widget: QtWidgets.QWidget | None = None,
+    ) -> None:
+        """Draw the rounded-rectangle background and border, then the text.
+
+        We draw the background and border ourselves (rounded corners), then
+        paint the inner QGraphicsTextItem directly — bypassing pg.TextItem.paint()
+        which would draw a square background on top.  Calling super().paint()
+        with mutated self.fill/self.border is unsafe under PySide6/Shiboken and
+        causes a SIGSEGV via re-entrant virtual dispatch.
+        """
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        br = self.boundingRect()
+        # Draw rounded background fill
+        if self.fill is not None:
+            painter.setBrush(self.fill)
+        else:
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        painter.setPen(self._border_pen)
+        painter.drawRoundedRect(br, self._CORNER_RADIUS, self._CORNER_RADIUS)
+        # Paint just the text by delegating to the inner QGraphicsTextItem.
+        # pg.TextItem stores the text as self.textItem (a QGraphicsTextItem child).
+        # We translate the painter to the textItem's position and paint it directly.
+        painter.save()
+        text_pos = self.textItem.pos()
+        painter.translate(text_pos)
+        self.textItem.paint(painter, option, widget)
+        painter.restore()
 
     # ── HTML content ──────────────────────────────────────────────────────────
 
@@ -55,10 +93,16 @@ class DraggableTextItem(pg.TextItem):
         self.updateTextPos()
 
     def restyle(self, mode_color: tuple[int, int, int]) -> None:
-        """Update fill and border colours when the mode changes."""
+        """Update fill and border colours when the mode changes.
+
+        Mirrors Swift PeakAnnotationLabel which uses .background(.background.secondary)
+        — an opaque system background — with a coloured border stroke.
+        """
         r, g, b = mode_color
-        self.fill   = pg.mkBrush(r, g, b, 25)
-        self.border = pg.mkPen((r, g, b, 180), width=1.5)
+        # Opaque system-background fill (mirrors Swift .background.secondary).
+        bg = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Window)
+        self.fill        = pg.mkBrush(bg)
+        self._border_pen = pg.mkPen((r, g, b, 255), width=1.5)
         self.update()
 
     # ── arrow line ────────────────────────────────────────────────────────────
@@ -176,10 +220,11 @@ class FftAnnotations(QtCore.QObject):
         mode_color: tuple[int, int, int],
     ) -> DraggableTextItem:
         r, g, b = mode_color
+        bg = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Window)
         item = DraggableTextItem(
             anchor=(0.5, 0.5),
-            fill=pg.mkBrush(r, g, b, 25),
-            border=pg.mkPen((r, g, b, 180), width=1.5),
+            fill=pg.mkBrush(bg),
+            border=pg.mkPen((r, g, b, 255), width=1.5),
         )
         item.set_html(html)
         item.setPos(xy_text[0], xy_text[1])
