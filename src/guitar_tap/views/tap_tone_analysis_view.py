@@ -2386,6 +2386,12 @@ class MainWindow(QtWidgets.QMainWindow):
             peak_model.selected_frequencies = {
                 f for f in (long_freq, cross_freq, flc_freq) if f > 0
             }
+            # Also update the peak ID fields so mode_value() stays consistent with
+            # the modes dict for any peaks not covered by a freq match.
+            az = self.fft_canvas.analyzer
+            peak_model.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
+            peak_model.selected_cross_peak_id        = az.effective_cross_peak_id
+            peak_model.selected_flc_peak_id         = az.effective_flc_peak_id
             peak_model.refresh_annotations()
 
         # Show/hide placeholder vs content and recalculate
@@ -2566,6 +2572,16 @@ class MainWindow(QtWidgets.QMainWindow):
         # set at the end of each gated-FFT phase in TapToneAnalyzer+SpectrumCapture.swift.
         assigned = {f for f in (actual_long, actual_cross, actual_flc) if f > 0}
         self.peak_widget.model.selected_frequencies = assigned
+
+        # Pass the selected peak IDs (UUID strings) to the model so mode_value() can
+        # resolve "Longitudinal" / "Cross-grain" / "FLC" labels by direct ID comparison.
+        # Mirrors Swift modeLabel in DraggablePeakAnnotation which checks
+        # peak.id == selectedLongitudinalPeakID / selectedCrossPeakID / selectedFlcPeakID.
+        az = self.fft_canvas.analyzer
+        self.peak_widget.model.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
+        self.peak_widget.model.selected_cross_peak_id        = az.effective_cross_peak_id
+        self.peak_widget.model.selected_flc_peak_id         = az.effective_flc_peak_id
+
         self.peak_widget.model.refresh_annotations()
 
         try:
@@ -2947,6 +2963,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 p.frequency for p in m.peaks
                 if (p.id or "").upper() in _plate_selected_ids
             }
+            # Also store the UUID strings so mode_value() resolves L/C/FLC labels by
+            # direct ID comparison — mirrors Swift modeLabel in DraggablePeakAnnotation.
+            peak_model.selected_longitudinal_peak_id = m.selected_longitudinal_peak_id
+            peak_model.selected_cross_peak_id        = m.selected_cross_peak_id
+            peak_model.selected_flc_peak_id         = m.selected_flc_peak_id
         else:
             selected_ids = set(
                 m.selected_peak_ids if m.selected_peak_ids is not None

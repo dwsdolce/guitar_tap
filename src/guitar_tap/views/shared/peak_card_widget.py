@@ -613,11 +613,14 @@ class PeakListWidget(QtWidgets.QWidget):
         """Set whether this widget is displaying guitar peaks (shows pitch) or not.
 
         Mirrors Swift measurementType.isGuitar guard on pitch display in PeakAnnotationLabel.
-        Rebuilds cards immediately so the change takes effect without waiting for new data.
+        Propagates to the underlying PeaksModel so mode_value() resolves L/C/FLC labels
+        for plate/brace measurements. Rebuilds cards immediately so the change takes
+        effect without waiting for new data.
         """
         if self._is_guitar == is_guitar:
             return
         self._is_guitar = is_guitar
+        self.model.is_guitar = is_guitar
         if self._last_data is not None:
             self._rebuild_cards(self._last_data)
 

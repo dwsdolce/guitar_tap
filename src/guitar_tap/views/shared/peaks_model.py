@@ -79,6 +79,15 @@ class PeaksModel(QtCore.QAbstractTableModel):
         # Current annotation visibility mode.
         self._annotation_mode: AVM = AVM.SELECTED
         self._auto_mode_map: dict[float, gm.GuitarMode] = {}  # freq → mode, from classify_all
+        # Selected L/C/FLC peak IDs for plate/brace measurements.
+        # Mirrors Swift selectedLongitudinalPeakID / selectedCrossPeakID / selectedFlcPeakID
+        # passed as parameters to PeakAnnotationsOverlay / DraggablePeakAnnotation.
+        self.selected_longitudinal_peak_id: str | None = None
+        self.selected_cross_peak_id: str | None = None
+        self.selected_flc_peak_id: str | None = None
+        # Whether this model is displaying guitar peaks or plate/brace peaks.
+        # Mirrors Swift measurementType.isGuitar guard in modeLabel / modeColor.
+        self.is_guitar: bool = True
 
     # MARK: - Annotation mode (reactive, mirrors Swift @Published annotationVisibilityMode)
 
@@ -134,10 +143,29 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._auto_mode_map = {peaks[i][0]: mode for i, mode in idx_map.items()}
 
     def mode_value(self, index: QtCore.QModelIndex) -> str:
-        """Return mode: manual override if set, else auto-classified."""
+        """Return mode: manual override if set, else resolved by measurement type.
+
+        For plate/brace measurements (non-guitar), mirrors Swift modeLabel in
+        DraggablePeakAnnotation: checks peak.id against selectedLongitudinalPeakID,
+        selectedCrossPeakID, selectedFlcPeakID, returning the matching label or "Peak".
+
+        For guitar measurements, uses manual override, then auto-classified GuitarMode.
+        """
         freq = self.freq_value(index)
         if freq in self.modes:
             return self.modes[freq]
+        # Plate/brace: determine label by selected peak ID, mirrors Swift modeLabel.
+        if not self.is_guitar:
+            row = index.row()
+            peak_id = self._peaks[row].id if row < len(self._peaks) else None
+            if peak_id is not None:
+                if peak_id == self.selected_longitudinal_peak_id:
+                    return "Longitudinal"
+                if peak_id == self.selected_cross_peak_id:
+                    return "Cross-grain"
+                if peak_id == self.selected_flc_peak_id:
+                    return "FLC"
+            return "Peak"
         mode = self._auto_mode_map.get(freq)
         if mode is not None:
             return mode.value
@@ -643,3 +671,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
             self.modes = {}
             self.selected_frequencies = set()
             self._auto_mode_map = {}
+            self.selected_longitudinal_peak_id = None
+            self.selected_cross_peak_id = None
+            self.selected_flc_peak_id = None
