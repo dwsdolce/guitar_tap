@@ -2143,7 +2143,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._is_running and (self._is_measurement_complete or is_comparing)
         )
 
-        self.pause_tap_btn.setEnabled(is_detecting and (tap_num > 1 or is_plate))
+        self.pause_tap_btn.setEnabled(is_detecting or self._is_paused)
         self.cancel_tap_btn.setEnabled(
             is_detecting and tap_num > 1
             and 0 < self._tap_count_captured < tap_num
