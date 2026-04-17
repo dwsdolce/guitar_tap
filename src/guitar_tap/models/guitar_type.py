@@ -159,3 +159,20 @@ class GuitarType(Enum):
         if decay_time < t.good:
             return "Good"
         return "Excellent"
+
+    def decay_quality_color(self, decay_time: float) -> str:
+        """Return a hex color string for a measured ring-out time.
+
+        Mirrors Swift Float.decayQualityColor(for:) extension in Extensions.swift.
+        Colors: gray (very short) → orange → yellow → green → blue (excellent).
+        """
+        t = self.decay_thresholds
+        if decay_time < t.very_short:
+            return "#8E8E93"   # SwiftUI .gray
+        if decay_time < t.short:
+            return "#FF9500"   # SwiftUI .orange
+        if decay_time < t.moderate:
+            return "#FFCC00"   # SwiftUI .yellow
+        if decay_time < t.good:
+            return "#34C759"   # SwiftUI .green
+        return "#007AFF"       # SwiftUI .blue

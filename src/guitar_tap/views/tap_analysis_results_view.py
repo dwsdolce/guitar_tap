@@ -620,20 +620,13 @@ def export_pdf(data: PDFReportData, output_path: str) -> None:
 
     # ── Quality helpers (mirrors Swift extensions) ────────────────────────
     def _quality_color(label: str) -> colors.Color:
-        """Map WoodQuality / sustain quality label to a reportlab Color."""
-        hex_map = {
-            "Excellent": (0.0,  0.5,  0.9),
-            "Very Good": (0.0,  0.6,  0.0),
-            "Good":      (0.13, 0.53, 0.0),
-            "Fair":      (1.0,  0.6,  0.0),
-            "Poor":      (1.0,  0.24, 0.19),
-            # Sustain quality labels
-            "Very Short": (1.0, 0.24, 0.19),
-            "Short":      (1.0, 0.6,  0.0),
-            "Moderate":   (1.0, 0.6,  0.0),
-        }
-        r, g, b = hex_map.get(label, (0.45, 0.45, 0.45))
-        return colors.Color(r, g, b)
+        """Map a WoodQuality label to a reportlab Color.
+
+        Mirrors Swift PDFReportGenerator which uses WoodQuality.color directly —
+        the single source of truth in MaterialProperties. No fallback, matching Swift.
+        """
+        from models.material_properties import WoodQuality as _WQ
+        return colors.HexColor(_WQ(label).color)
 
     def _ratio_quality(ratio: float) -> tuple[str, colors.Color]:
         if ratio < 1.7:
@@ -962,9 +955,10 @@ def export_pdf(data: PDFReportData, output_path: str) -> None:
         if data.decay_time is not None:
             try:
                 decay_label = gt.decay_quality_label(data.decay_time)
+                dc = colors.HexColor(gt.decay_quality_color(data.decay_time))
             except Exception:
                 decay_label = ""
-            dc = _quality_color(decay_label)
+                dc = colors.Color(0.45, 0.45, 0.45)
             boxes.append(_AnalysisBox(
                 title="Ring-Out Time",
                 value=f"{data.decay_time:.2f} s",

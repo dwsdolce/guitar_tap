@@ -3322,20 +3322,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 elif self._loaded_resonant_peaks:
                     peaks_list = list(self._loaded_resonant_peaks)
                 else:
-                    model = self.peak_widget.model
-                    for row in range(model.rowCount(QtCore.QModelIndex())):
-                        idx = model.index(row, 0)
-                        freq = model.freq_value(idx)
-                        mag  = model.magnitude_value(idx)
-                        mode = model.mode_value(idx) if hasattr(model, "mode_value") else ""
-                        peaks_list.append(type("_P", (), {
-                            "frequency": freq,
-                            "magnitude": mag,
-                            "id": str(row),
-                            "mode_label": mode,
-                            "pitch_note": None,
-                            "pitch_cents": None,
-                        })())
+                    # Mirror Swift createExportableSpectrumView(): read live analyzer state.
+                    # tap.visiblePeaks → currentPeaks filtered by annotation visibility mode.
+                    _az = canvas.analyzer
+                    peaks_list = list(_az.current_peaks)
+                    _sel_long_id  = _az.effective_longitudinal_peak_id
+                    _sel_cross_id = _az.effective_cross_peak_id
+                    _sel_flc_id   = _az.effective_flc_peak_id
+                    _mode_overrides = dict(_az.peak_mode_overrides)
+                    for _pid, (_lx, _ly) in _az.peak_annotation_offsets.items():
+                        _annotation_positions[_pid] = [float(_lx), float(_ly)]
             except Exception:
                 pass
 
@@ -3358,25 +3354,41 @@ class MainWindow(QtWidgets.QMainWindow):
                 export_min_db = float(self.threshold_slider.value())
                 export_max_db = float(max(mags)) + 10.0 if mags else 0.0
 
-            # Build material_spectra from the loaded measurement's per-phase snapshots —
-            # mirrors Swift's materialSpectra computed property in TapToneAnalysisView+SpectrumViews:
-            # longitudinalSpectrum → "Longitudinal (L)", crossSpectrum → "Cross-grain (C)", flcSpectrum → "FLC".
+            # Build material_spectra — mirrors Swift's materialSpectra computed property
+            # (TapToneAnalysisView+SpectrumViews.swift), which reads tap.longitudinalSpectrum,
+            # tap.crossSpectrum, tap.flcSpectrum for both live and loaded measurements.
+            # For loaded measurements: snapshots come from _loaded_measurement.
+            # For live measurements: spectra come from analyzer._material_spectra
+            # (set by set_material_spectra() at capture completion).
             _material_spectra = None
-            if not is_guitar and self._loaded_measurement is not None:
-                m_exp = self._loaded_measurement
+            if not is_guitar:
                 _ms: list = []
-                if m_exp.longitudinal_snapshot is not None:
-                    ls = m_exp.longitudinal_snapshot
-                    _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                "color": "blue", "label": "Longitudinal (L)"})
-                if m_exp.cross_snapshot is not None:
-                    cs = m_exp.cross_snapshot
-                    _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                "color": "orange", "label": "Cross-grain (C)"})
-                if m_exp.flc_snapshot is not None:
-                    fs = m_exp.flc_snapshot
-                    _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                "color": "purple", "label": "FLC"})
+                if self._loaded_measurement is not None:
+                    m_exp = self._loaded_measurement
+                    if m_exp.longitudinal_snapshot is not None:
+                        ls = m_exp.longitudinal_snapshot
+                        _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
+                                    "color": "blue", "label": "Longitudinal (L)"})
+                    if m_exp.cross_snapshot is not None:
+                        cs = m_exp.cross_snapshot
+                        _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
+                                    "color": "orange", "label": "Cross-grain (C)"})
+                    if m_exp.flc_snapshot is not None:
+                        fs = m_exp.flc_snapshot
+                        _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
+                                    "color": "purple", "label": "FLC"})
+                else:
+                    # Live measurement: read per-phase spectra from the analyzer.
+                    # _material_spectra is a list of (label, (r,g,b), freqs, mags) tuples.
+                    _COLOR_NAMES = {
+                        (0, 122, 255): "blue",
+                        (255, 149, 0): "orange",
+                        (175, 82, 222): "purple",
+                    }
+                    for _label, _rgb, _mfreqs, _mmags in getattr(canvas.analyzer, "_material_spectra", []):
+                        _color = _COLOR_NAMES.get(tuple(_rgb), "blue")
+                        _ms.append({"frequencies": list(_mfreqs), "magnitudes": list(_mmags),
+                                    "color": _color, "label": _label})
                 if _ms:
                     _material_spectra = _ms
 
@@ -3567,22 +3579,37 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 vis_peaks = list(all_peaks)
 
+            # Build material_spectra — mirrors Swift's materialSpectra computed property
+            # (TapToneAnalysisView+SpectrumViews.swift), which reads tap.longitudinalSpectrum,
+            # tap.crossSpectrum, tap.flcSpectrum for both live and loaded measurements.
             _material_spectra = None
-            if not is_guitar and self._loaded_measurement is not None:
+            if not is_guitar:
                 _ms: list = []
-                m_exp = self._loaded_measurement
-                if m_exp.longitudinal_snapshot is not None:
-                    ls = m_exp.longitudinal_snapshot
-                    _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                "color": "blue", "label": "Longitudinal (L)"})
-                if m_exp.cross_snapshot is not None:
-                    cs = m_exp.cross_snapshot
-                    _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                "color": "orange", "label": "Cross-grain (C)"})
-                if m_exp.flc_snapshot is not None:
-                    fs = m_exp.flc_snapshot
-                    _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                "color": "purple", "label": "FLC"})
+                if self._loaded_measurement is not None:
+                    m_exp = self._loaded_measurement
+                    if m_exp.longitudinal_snapshot is not None:
+                        ls = m_exp.longitudinal_snapshot
+                        _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
+                                    "color": "blue", "label": "Longitudinal (L)"})
+                    if m_exp.cross_snapshot is not None:
+                        cs = m_exp.cross_snapshot
+                        _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
+                                    "color": "orange", "label": "Cross-grain (C)"})
+                    if m_exp.flc_snapshot is not None:
+                        fs = m_exp.flc_snapshot
+                        _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
+                                    "color": "purple", "label": "FLC"})
+                else:
+                    # Live measurement: read per-phase spectra from the analyzer.
+                    _COLOR_NAMES = {
+                        (0, 122, 255): "blue",
+                        (255, 149, 0): "orange",
+                        (175, 82, 222): "purple",
+                    }
+                    for _label, _rgb, _mfreqs, _mmags in getattr(analyzer, "_material_spectra", []):
+                        _color = _COLOR_NAMES.get(tuple(_rgb), "blue")
+                        _ms.append({"frequencies": list(_mfreqs), "magnitudes": list(_mmags),
+                                    "color": _color, "label": _label})
                 if _ms:
                     _material_spectra = _ms
 
@@ -3596,8 +3623,11 @@ class MainWindow(QtWidgets.QMainWindow):
             from datetime import datetime, timezone as _tz
             date_label = datetime.now(_tz.utc).isoformat()
 
+            # Mirror Swift createExportableSpectrumView(): always call make_exportable_spectrum_view.
+            # For plate/brace, frozenFrequencies is intentionally empty — the spectrum renders
+            # via material_spectra (per-phase overlays). Swift has no "if freqs and mags" guard.
             png_data: bytes | None = None
-            if freqs and mags:
+            if freqs or _material_spectra:
                 try:
                     png_data = make_exportable_spectrum_view(
                         frequencies=freqs, magnitudes=mags,
