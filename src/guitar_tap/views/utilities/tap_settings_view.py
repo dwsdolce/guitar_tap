@@ -58,15 +58,35 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def default_f_min(cls, meas_type: "str | object" = "") -> int:
-        """Factory default fmin — does not read QSettings."""
-        key_str = _meas_key(meas_type)
-        return 30 if key_str in ("Plate", "Brace") else 75
+        """Factory default fmin — delegates to TapDisplaySettings (single source of truth).
+
+        Mirrors Swift TapDisplaySettings.defaultMinFrequency(for:).
+        TapDisplaySettings owns the actual constants; this method is a thin adapter
+        so that view-layer callers (graph reset, settings UI) stay in sync automatically
+        whenever the model-layer defaults change.
+        """
+        from models.tap_display_settings import TapDisplaySettings  # noqa: PLC0415
+        from models.measurement_type import MeasurementType         # noqa: PLC0415
+        if not isinstance(meas_type, MeasurementType):
+            key_str = _meas_key(meas_type)
+            meas_type = next((m for m in MeasurementType if m.storage_key == key_str), None)
+        return int(TapDisplaySettings.default_min_frequency(meas_type))
 
     @classmethod
     def default_f_max(cls, meas_type: "str | object" = "") -> int:
-        """Factory default fmax — does not read QSettings."""
-        key_str = _meas_key(meas_type)
-        return {"Plate": 600, "Brace": 1000}.get(key_str, 350)
+        """Factory default fmax — delegates to TapDisplaySettings (single source of truth).
+
+        Mirrors Swift TapDisplaySettings.defaultMaxFrequency(for:).
+        TapDisplaySettings owns the actual constants; this method is a thin adapter
+        so that view-layer callers (graph reset, settings UI) stay in sync automatically
+        whenever the model-layer defaults change.
+        """
+        from models.tap_display_settings import TapDisplaySettings  # noqa: PLC0415
+        from models.measurement_type import MeasurementType         # noqa: PLC0415
+        if not isinstance(meas_type, MeasurementType):
+            key_str = _meas_key(meas_type)
+            meas_type = next((m for m in MeasurementType if m.storage_key == key_str), None)
+        return int(TapDisplaySettings.default_max_frequency(meas_type))
 
     @classmethod
     def default_db_min(cls) -> float:

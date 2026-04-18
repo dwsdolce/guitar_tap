@@ -2485,6 +2485,12 @@ class MainWindow(QtWidgets.QMainWindow):
         mt = self._current_mt()
         AS.AppSettings.set_measurement_type(mt)
         self.fft_canvas.set_measurement_type(mt)
+        # Load the persisted axis range for the newly selected measurement type.
+        # Swift initialises @State minFreq/maxFreq from TapDisplaySettings.minFrequency
+        # (a per-type stored value) at startup; when the type changes the stored value
+        # for the new type is the right range to show (e.g. 20–200 Hz for plate, falling
+        # back to the factory default if never explicitly saved by the user).
+        self.fft_canvas._reset_both_to_saved()
         self.reset_auto_selection_btn.setVisible(mt.is_guitar)
         self.threshold_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
@@ -4208,31 +4214,28 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_dims_hdr.setFont(hdr_font)
         plate_layout.addWidget(plate_dims_hdr)
 
-        def _dim_spinbox(suffix: str, max_val: float = 2000.0,
-                         decimals: int = 1) -> QtWidgets.QDoubleSpinBox:
-            sb = QtWidgets.QDoubleSpinBox()
-            sb.setDecimals(decimals)
-            sb.setMinimum(0.01)
-            sb.setMaximum(max_val)
-            sb.setSuffix(f" {suffix}")
-            return sb
+        def _dim_field(unit: str, value: float) -> QtWidgets.QLineEdit:
+            """Text field for a dimension value — mirrors Swift TextField bound to a String."""
+            tf = QtWidgets.QLineEdit(str(value))
+            tf.setFixedWidth(80)
+            tf.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+            tf.setPlaceholderText(unit)
+            return tf
 
-        def _dim_row(text: str, widget: QtWidgets.QWidget) -> QtWidgets.QHBoxLayout:
+        def _dim_row(text: str, widget: QtWidgets.QWidget,
+                     unit: str = "") -> QtWidgets.QHBoxLayout:
             row = QtWidgets.QHBoxLayout()
             row.addWidget(QtWidgets.QLabel(text))
             row.addStretch()
-            widget.setFixedWidth(110)
             row.addWidget(widget)
+            if unit:
+                row.addWidget(QtWidgets.QLabel(unit))
             return row
 
-        plate_length_spin = _dim_spinbox("mm", 2000.0)
-        plate_length_spin.setValue(AS.AppSettings.plate_length())
-        plate_width_spin = _dim_spinbox("mm", 1000.0)
-        plate_width_spin.setValue(AS.AppSettings.plate_width())
-        plate_thick_spin = _dim_spinbox("mm", 50.0, decimals=2)
-        plate_thick_spin.setValue(AS.AppSettings.plate_thickness())
-        plate_mass_spin = _dim_spinbox("g", 5000.0)
-        plate_mass_spin.setValue(AS.AppSettings.plate_mass())
+        plate_length_field = _dim_field("mm", AS.AppSettings.plate_length())
+        plate_width_field = _dim_field("mm", AS.AppSettings.plate_width())
+        plate_thick_field = _dim_field("mm", AS.AppSettings.plate_thickness())
+        plate_mass_field = _dim_field("g", AS.AppSettings.plate_mass())
 
         plate_density_lbl = QtWidgets.QLabel("—")
         plate_density_lbl.setFont(small)
@@ -4240,10 +4243,10 @@ class MainWindow(QtWidgets.QMainWindow):
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
 
-        plate_layout.addLayout(_dim_row("Length (along grain):", plate_length_spin))
-        plate_layout.addLayout(_dim_row("Width (cross grain):", plate_width_spin))
-        plate_layout.addLayout(_dim_row("Thickness:", plate_thick_spin))
-        plate_layout.addLayout(_dim_row("Mass:", plate_mass_spin))
+        plate_layout.addLayout(_dim_row("Length (along grain):", plate_length_field, "mm"))
+        plate_layout.addLayout(_dim_row("Width (cross grain):", plate_width_field, "mm"))
+        plate_layout.addLayout(_dim_row("Thickness:", plate_thick_field, "mm"))
+        plate_layout.addLayout(_dim_row("Mass:", plate_mass_field, "g"))
 
         _density_row = QtWidgets.QHBoxLayout()
         _density_row.addWidget(QtWidgets.QLabel("Calculated Density:"))
@@ -4252,20 +4255,24 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_layout.addLayout(_density_row)
 
         def _update_plate_density() -> None:
-            L = plate_length_spin.value()
-            W = plate_width_spin.value()
-            T = plate_thick_spin.value()
-            m = plate_mass_spin.value()
+            try:
+                L = float(plate_length_field.text())
+                W = float(plate_width_field.text())
+                T = float(plate_thick_field.text())
+                m = float(plate_mass_field.text())
+            except ValueError:
+                plate_density_lbl.setText("—")
+                return
             if L > 0 and W > 0 and T > 0 and m > 0:
                 density = m / ((L / 10) * (W / 10) * (T / 10))
                 plate_density_lbl.setText(f"{density:.3f} g/cm³")
             else:
                 plate_density_lbl.setText("—")
 
-        plate_length_spin.valueChanged.connect(lambda _: _update_plate_density())
-        plate_width_spin.valueChanged.connect(lambda _: _update_plate_density())
-        plate_thick_spin.valueChanged.connect(lambda _: _update_plate_density())
-        plate_mass_spin.valueChanged.connect(lambda _: _update_plate_density())
+        plate_length_field.textChanged.connect(lambda _: _update_plate_density())
+        plate_width_field.textChanged.connect(lambda _: _update_plate_density())
+        plate_thick_field.textChanged.connect(lambda _: _update_plate_density())
+        plate_mass_field.textChanged.connect(lambda _: _update_plate_density())
         _update_plate_density()
 
         plate_layout.addWidget(_hsep())
@@ -4292,12 +4299,10 @@ class MainWindow(QtWidgets.QMainWindow):
         gore_desc.setWordWrap(True)
         plate_layout.addWidget(gore_desc)
 
-        gore_body_len_spin = _dim_spinbox("mm", 1000.0)
-        gore_body_len_spin.setValue(AS.AppSettings.guitar_body_length())
-        gore_body_wid_spin = _dim_spinbox("mm", 1000.0)
-        gore_body_wid_spin.setValue(AS.AppSettings.guitar_body_width())
-        plate_layout.addLayout(_dim_row("Body Length (a):", gore_body_len_spin))
-        plate_layout.addLayout(_dim_row("Lower Bout Width (b):", gore_body_wid_spin))
+        gore_body_len_field = _dim_field("mm", AS.AppSettings.guitar_body_length())
+        gore_body_wid_field = _dim_field("mm", AS.AppSettings.guitar_body_width())
+        plate_layout.addLayout(_dim_row("Body Length (a):", gore_body_len_field, "mm"))
+        plate_layout.addLayout(_dim_row("Lower Bout Width (b):", gore_body_wid_field, "mm"))
         plate_layout.addWidget(_hsep())
 
         fvs_hdr = QtWidgets.QLabel("Plate Vibrational Stiffness (f_vs)")
@@ -4334,12 +4339,10 @@ class MainWindow(QtWidgets.QMainWindow):
         custom_fvs_row = QtWidgets.QHBoxLayout(custom_fvs_widget)
         custom_fvs_row.setContentsMargins(0, 0, 0, 0)
         custom_fvs_row.addWidget(QtWidgets.QLabel("Custom f_vs value:"))
-        custom_fvs_spin = QtWidgets.QDoubleSpinBox()
-        custom_fvs_spin.setDecimals(1)
-        custom_fvs_spin.setMinimum(1.0)
-        custom_fvs_spin.setMaximum(500.0)
-        custom_fvs_spin.setValue(AS.AppSettings.custom_plate_stiffness())
-        custom_fvs_row.addWidget(custom_fvs_spin)
+        custom_fvs_field = QtWidgets.QLineEdit(str(AS.AppSettings.custom_plate_stiffness()))
+        custom_fvs_field.setFixedWidth(80)
+        custom_fvs_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        custom_fvs_row.addWidget(custom_fvs_field)
         custom_fvs_widget.setVisible(fvs_combo.currentText() == "Custom")
         fvs_combo.currentTextChanged.connect(
             lambda t: custom_fvs_widget.setVisible(t == "Custom")
@@ -4358,14 +4361,10 @@ class MainWindow(QtWidgets.QMainWindow):
         brace_dims_hdr.setFont(hdr_font)
         brace_layout.addWidget(brace_dims_hdr)
 
-        brace_length_spin = _dim_spinbox("mm", 1000.0)
-        brace_length_spin.setValue(AS.AppSettings.brace_length())
-        brace_width_spin = _dim_spinbox("mm", 200.0)
-        brace_width_spin.setValue(AS.AppSettings.brace_width())
-        brace_thick_spin = _dim_spinbox("mm", 200.0, decimals=2)
-        brace_thick_spin.setValue(AS.AppSettings.brace_thickness())
-        brace_mass_spin = _dim_spinbox("g", 500.0)
-        brace_mass_spin.setValue(AS.AppSettings.brace_mass())
+        brace_length_field = _dim_field("mm", AS.AppSettings.brace_length())
+        brace_width_field = _dim_field("mm", AS.AppSettings.brace_width())
+        brace_thick_field = _dim_field("mm", AS.AppSettings.brace_thickness())
+        brace_mass_field = _dim_field("g", AS.AppSettings.brace_mass())
 
         brace_density_lbl = QtWidgets.QLabel("—")
         brace_density_lbl.setFont(small)
@@ -4373,21 +4372,18 @@ class MainWindow(QtWidgets.QMainWindow):
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
 
-        brace_layout.addLayout(_dim_row("Length (along grain):", brace_length_spin))
-        brace_layout.addLayout(_dim_row("Width (breadth):", brace_width_spin))
-        brace_layout.addLayout(_dim_row("Height (tap direction):", brace_thick_spin))
+        brace_layout.addLayout(_dim_row("Length (along grain):", brace_length_field, "mm"))
+        brace_layout.addLayout(_dim_row("Width (breadth):", brace_width_field, "mm"))
+        brace_layout.addLayout(_dim_row("Height (tap direction):", brace_thick_field, "mm"))
 
         height_note = QtWidgets.QLabel(
             "Brace height when lying flat — this is the t dimension in the stiffness formula"
         )
         height_note.setFont(small)
         height_note.setWordWrap(True)
-        _height_note_row = QtWidgets.QHBoxLayout()
-        _height_note_row.addWidget(height_note, stretch=1)
-        _height_note_row.addSpacing(110)
-        brace_layout.addLayout(_height_note_row)
+        brace_layout.addWidget(height_note)
 
-        brace_layout.addLayout(_dim_row("Mass:", brace_mass_spin))
+        brace_layout.addLayout(_dim_row("Mass:", brace_mass_field, "g"))
 
         _brace_density_row = QtWidgets.QHBoxLayout()
         _brace_density_row.addWidget(QtWidgets.QLabel("Calculated Density:"))
@@ -4396,20 +4392,24 @@ class MainWindow(QtWidgets.QMainWindow):
         brace_layout.addLayout(_brace_density_row)
 
         def _update_brace_density() -> None:
-            L = brace_length_spin.value()
-            W = brace_width_spin.value()
-            T = brace_thick_spin.value()
-            m = brace_mass_spin.value()
+            try:
+                L = float(brace_length_field.text())
+                W = float(brace_width_field.text())
+                T = float(brace_thick_field.text())
+                m = float(brace_mass_field.text())
+            except ValueError:
+                brace_density_lbl.setText("—")
+                return
             if L > 0 and W > 0 and T > 0 and m > 0:
                 density = m / ((L / 10) * (W / 10) * (T / 10))
                 brace_density_lbl.setText(f"{density:.3f} g/cm³")
             else:
                 brace_density_lbl.setText("—")
 
-        brace_length_spin.valueChanged.connect(lambda _: _update_brace_density())
-        brace_width_spin.valueChanged.connect(lambda _: _update_brace_density())
-        brace_thick_spin.valueChanged.connect(lambda _: _update_brace_density())
-        brace_mass_spin.valueChanged.connect(lambda _: _update_brace_density())
+        brace_length_field.textChanged.connect(lambda _: _update_brace_density())
+        brace_width_field.textChanged.connect(lambda _: _update_brace_density())
+        brace_thick_field.textChanged.connect(lambda _: _update_brace_density())
+        brace_mass_field.textChanged.connect(lambda _: _update_brace_density())
         _update_brace_density()
         mg.addWidget(brace_widget)
 
@@ -4468,10 +4468,12 @@ class MainWindow(QtWidgets.QMainWindow):
             max_peaks_widget.setEnabled(is_guitar)
             if is_guitar:
                 _update_mode_ranges(unified)
-            # Reload the frequency spinners from the stored values for the newly
+            # Reload the frequency text fields from the stored values for the newly
             # selected type so the Display Settings section shows the correct range.
-            self.min_spin.setValue(AS.AppSettings.f_min(mt_val))
-            self.max_spin.setValue(AS.AppSettings.f_max(mt_val))
+            # Mirrors Swift TapSettingsView+Sections.swift onChange(of: selectedMeasurementType)
+            # which sets minFreqInput/maxFreqInput string state without touching the axis.
+            disp_f_min_field.setText(str(AS.AppSettings.f_min(mt_val)))
+            disp_f_max_field.setText(str(AS.AppSettings.f_max(mt_val)))
 
         meas_type_combo.currentTextChanged.connect(_on_meas_type_changed)
 
@@ -4508,34 +4510,52 @@ class MainWindow(QtWidgets.QMainWindow):
             desc_lbl.setFont(small)
             layout.addWidget(desc_lbl)
 
-        db_min_spin = QtWidgets.QDoubleSpinBox()
-        db_min_spin.setRange(-120, 20)
-        db_min_spin.setDecimals(1)
-        db_min_spin.setSuffix(" dB")
-        db_min_spin.setValue(AS.AppSettings.db_min())
+        # Local staging text fields — mirrors Swift's @State String vars
+        # minFreqInput / maxFreqInput / minDBInput / maxDBInput.
+        # Values are only applied to the graph when Done is pressed (_apply_settings),
+        # not live as the user types, matching Swift TapSettingsView behaviour.
+        _tf_width = 70
 
-        db_max_spin = QtWidgets.QDoubleSpinBox()
-        db_max_spin.setRange(-120, 20)
-        db_max_spin.setDecimals(1)
-        db_max_spin.setSuffix(" dB")
-        db_max_spin.setValue(AS.AppSettings.db_max())
+        disp_f_min_field = QtWidgets.QLineEdit(
+            str(int(AS.AppSettings.f_min(self.fft_canvas.analyzer._measurement_type)))
+        )
+        disp_f_min_field.setFixedWidth(_tf_width)
+        disp_f_min_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+
+        disp_f_max_field = QtWidgets.QLineEdit(
+            str(int(AS.AppSettings.f_max(self.fft_canvas.analyzer._measurement_type)))
+        )
+        disp_f_max_field.setFixedWidth(_tf_width)
+        disp_f_max_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+
+        disp_db_min_field = QtWidgets.QLineEdit(
+            f"{AS.AppSettings.db_min():.1f}"
+        )
+        disp_db_min_field.setFixedWidth(_tf_width)
+        disp_db_min_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+
+        disp_db_max_field = QtWidgets.QLineEdit(
+            f"{AS.AppSettings.db_max():.1f}"
+        )
+        disp_db_max_field.setFixedWidth(_tf_width)
+        disp_db_max_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
         _range_block(
             dg,
             "Frequency Range",
-            self.min_spin, self.max_spin,
+            disp_f_min_field, disp_f_max_field,
             "Hz",
             "Frequency range shown in the spectrum chart",
         )
         _range_block(
             dg,
             "Magnitude Range",
-            db_min_spin, db_max_spin,
+            disp_db_min_field, disp_db_max_field,
             "dB",
             "Magnitude range shown in the spectrum chart",
         )
 
-        # db range persisted on Apply only
+        # All display range values applied on Done only (see _apply_settings)
 
         save_view_btn = QtWidgets.QPushButton("Save Current View")
         save_view_btn.setToolTip("Persist the current pan/zoom state as the default view")
@@ -4548,10 +4568,10 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_f_max(int(x_range[1]), meas_t)
             AS.AppSettings.set_db_min(y_range[0])
             AS.AppSettings.set_db_max(y_range[1])
-            self.min_spin.setValue(int(x_range[0]))
-            self.max_spin.setValue(int(x_range[1]))
-            db_min_spin.setValue(y_range[0])
-            db_max_spin.setValue(y_range[1])
+            disp_f_min_field.setText(str(int(x_range[0])))
+            disp_f_max_field.setText(str(int(x_range[1])))
+            disp_db_min_field.setText(f"{y_range[0]:.1f}")
+            disp_db_max_field.setText(f"{y_range[1]:.1f}")
 
         save_view_btn.clicked.connect(_save_current_view)
         dg.addWidget(save_view_btn)
@@ -4560,13 +4580,14 @@ class MainWindow(QtWidgets.QMainWindow):
         reset_disp_btn.setToolTip("Restore factory display settings for the current measurement type")
 
         def _reset_display_defaults() -> None:
-            meas_t = meas_type_combo.currentText()
-            f_min_def = {"Plate": 30, "Brace": 30}.get(meas_t, 75)
-            f_max_def = {"Plate": 600, "Brace": 1000}.get(meas_t, 350)
-            self.min_spin.setValue(f_min_def)
-            self.max_spin.setValue(f_max_def)
-            db_min_spin.setValue(-100.0)
-            db_max_spin.setValue(0.0)
+            # Delegate to AppSettings → TapDisplaySettings (single source of truth).
+            # Mirrors Swift TapSettingsView resetDisplaySettingsToDefaults() which
+            # calls TapDisplaySettings.defaultMinFrequency(for:) / defaultMaxFrequency(for:).
+            mt_val = MT.MeasurementType(meas_type_combo.currentText())
+            disp_f_min_field.setText(str(AS.AppSettings.default_f_min(mt_val)))
+            disp_f_max_field.setText(str(AS.AppSettings.default_f_max(mt_val)))
+            disp_db_min_field.setText(f"{AS.AppSettings.default_db_min():.1f}")
+            disp_db_max_field.setText(f"{AS.AppSettings.default_db_max():.1f}")
 
         reset_disp_btn.clicked.connect(_reset_display_defaults)
         dg.addWidget(reset_disp_btn)
@@ -4593,25 +4614,21 @@ class MainWindow(QtWidgets.QMainWindow):
         su_layout.addWidget(unknown_desc)
         an.addWidget(show_unknown_widget)
 
-        # Analysis Frequency Range — same _range_block pattern as Display
-        an_f_min_spin = QtWidgets.QDoubleSpinBox()
-        an_f_min_spin.setRange(0, 22050)
-        an_f_min_spin.setDecimals(0)
-        an_f_min_spin.setSuffix(" Hz")
-        an_f_min_spin.setValue(AS.AppSettings.analysis_f_min())
+        # Analysis Frequency Range — text fields matching Swift TextField bound to analysisMinFreqInput
+        an_f_min_field = QtWidgets.QLineEdit(str(int(AS.AppSettings.analysis_f_min())))
+        an_f_min_field.setFixedWidth(_tf_width)
+        an_f_min_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
-        an_f_max_spin = QtWidgets.QDoubleSpinBox()
-        an_f_max_spin.setRange(0, 22050)
-        an_f_max_spin.setDecimals(0)
-        an_f_max_spin.setSuffix(" Hz")
-        an_f_max_spin.setValue(AS.AppSettings.analysis_f_max())
+        an_f_max_field = QtWidgets.QLineEdit(str(int(AS.AppSettings.analysis_f_max())))
+        an_f_max_field.setFixedWidth(_tf_width)
+        an_f_max_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
         # analysis range persisted on Apply only
 
         _range_block(
             an,
             "Analysis Frequency Range",
-            an_f_min_spin, an_f_max_spin,
+            an_f_min_field, an_f_max_field,
             "Hz",
             "Frequency range used for peak detection",
         )
@@ -4625,12 +4642,11 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_hdr.setFont(hdr_font)
         pt_layout.addWidget(pt_hdr)
         pt_row = QtWidgets.QHBoxLayout()
-        peak_thresh_spin = QtWidgets.QDoubleSpinBox()
-        peak_thresh_spin.setRange(-120, 0)
-        peak_thresh_spin.setDecimals(1)
-        peak_thresh_spin.setSuffix(" dB")
-        peak_thresh_spin.setValue(AS.AppSettings.peak_threshold())
-        pt_row.addWidget(peak_thresh_spin)
+        peak_thresh_field = QtWidgets.QLineEdit(f"{AS.AppSettings.peak_threshold():.0f}")
+        peak_thresh_field.setFixedWidth(_tf_width)
+        peak_thresh_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        pt_row.addWidget(peak_thresh_field)
+        pt_row.addWidget(QtWidgets.QLabel("dB"))
         pt_row.addStretch()
         pt_layout.addLayout(pt_row)
         pt_desc = QtWidgets.QLabel("Minimum magnitude for peak detection. Typical range: -60 to -40 dB")
@@ -4650,11 +4666,11 @@ class MainWindow(QtWidgets.QMainWindow):
         mp_layout.addWidget(mp_hdr)
         mp_row = QtWidgets.QHBoxLayout()
         saved_max_peaks = AS.AppSettings.max_peaks()
-        mp_spin = QtWidgets.QSpinBox()
-        mp_spin.setRange(1, 100)
-        mp_spin.setValue(saved_max_peaks if saved_max_peaks > 0 else 10)
-        mp_spin.setEnabled(saved_max_peaks != 0)
-        mp_row.addWidget(mp_spin)
+        mp_field = QtWidgets.QLineEdit(str(saved_max_peaks if saved_max_peaks > 0 else 10))
+        mp_field.setFixedWidth(_tf_width)
+        mp_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        mp_field.setEnabled(saved_max_peaks != 0)
+        mp_row.addWidget(mp_field)
         mp_row.addWidget(QtWidgets.QLabel("peaks"))
         mp_row.addStretch()
         mp_layout.addLayout(mp_row)
@@ -4669,10 +4685,10 @@ class MainWindow(QtWidgets.QMainWindow):
         mp_layout.addWidget(mp_desc)
 
         def _on_all_peaks_toggled(checked: bool) -> None:
-            mp_spin.setEnabled(not checked)  # UI only — persisted on Apply
+            mp_field.setEnabled(not checked)  # UI only — persisted on Apply
 
         mp_all_cb.toggled.connect(_on_all_peaks_toggled)
-        # mp_spin persisted on Apply only
+        # mp_field persisted on Apply only
         an.addWidget(max_peaks_widget)
 
         # Hysteresis Margin
@@ -4720,9 +4736,9 @@ class MainWindow(QtWidgets.QMainWindow):
         reset_analysis_btn = QtWidgets.QPushButton("Reset Analysis Settings")
 
         def _reset_analysis_settings() -> None:
-            an_f_min_spin.setValue(30.0)
-            an_f_max_spin.setValue(2000.0)
-            peak_thresh_spin.setValue(-60.0)
+            an_f_min_field.setText("30")
+            an_f_max_field.setText("2000")
+            peak_thresh_field.setText("-60")
             mp_all_cb.setChecked(True)
             hyst_slider.setValue(6)  # 6 steps × 0.5 = 3.0 dB default
 
@@ -4790,7 +4806,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _update_sr_lbl(combo_idx: int) -> None:
             if 0 <= combo_idx < len(input_devices):
-                sr_val.setText(f"{input_devices[combo_idx].sample_rate / 1000:.0f} kHz")
+                sr_val.setText(f"{input_devices[combo_idx].sample_rate:.0f} Hz")
             else:
                 sr_val.setText("")
 
@@ -5199,23 +5215,61 @@ class MainWindow(QtWidgets.QMainWindow):
             if gt is not None:
                 self.guitar_type_combo.setCurrentText(gt.value)
 
-            # Display frequency range (min_spin/max_spin already live via _on_fmin/fmax_changed)
-            AS.AppSettings.set_f_min(self.min_spin.value(), mt_val)
-            AS.AppSettings.set_f_max(self.max_spin.value(), mt_val)
+            # Display frequency range — parse the staging text fields and apply to the
+            # canvas + toolbar spinners, mirroring Swift applySettings() which validates
+            # minFreqInput/maxFreqInput Strings and writes through the @Binding to the chart.
+            try:
+                new_f_min = int(float(disp_f_min_field.text()))
+                new_f_max = int(float(disp_f_max_field.text()))
+            except ValueError:
+                new_f_min = int(AS.AppSettings.f_min(mt_val))
+                new_f_max = int(AS.AppSettings.f_max(mt_val))
+            new_f_min, new_f_max = min(new_f_min, new_f_max - 1), max(new_f_min + 1, new_f_max)
+            AS.AppSettings.set_f_min(new_f_min, mt_val)
+            AS.AppSettings.set_f_max(new_f_max, mt_val)
+            # Update the staging fields to show the validated (possibly clamped) values
+            disp_f_min_field.setText(str(new_f_min))
+            disp_f_max_field.setText(str(new_f_max))
+            # Apply to the canvas and sync the toolbar spinners (which drive the freq-range label)
+            with QtCore.QSignalBlocker(self.min_spin):
+                self.min_spin.setValue(new_f_min)
+            with QtCore.QSignalBlocker(self.max_spin):
+                self.max_spin.setValue(new_f_max)
+            self.fft_canvas.update_axis(new_f_min, new_f_max)
+            self._update_freq_range_label()
 
-            # Display magnitude range — persist and immediately apply to canvas,
-            # mirroring Swift's @State minDB/maxDB binding which updates SpectrumView reactively.
-            AS.AppSettings.set_db_min(db_min_spin.value())
-            AS.AppSettings.set_db_max(db_max_spin.value())
-            self.fft_canvas.setYRange(db_min_spin.value(), db_max_spin.value(), padding=0)
+            # Display magnitude range — parse, persist, and apply to canvas.
+            try:
+                new_db_min = float(disp_db_min_field.text())
+                new_db_max = float(disp_db_max_field.text())
+            except ValueError:
+                new_db_min = AS.AppSettings.db_min()
+                new_db_max = AS.AppSettings.db_max()
+            new_db_min, new_db_max = min(new_db_min, new_db_max - 1), max(new_db_min + 1, new_db_max)
+            AS.AppSettings.set_db_min(new_db_min)
+            AS.AppSettings.set_db_max(new_db_max)
+            disp_db_min_field.setText(f"{new_db_min:.1f}")
+            disp_db_max_field.setText(f"{new_db_max:.1f}")
+            self.fft_canvas.setYRange(new_db_min, new_db_max, padding=0)
 
-            # Analysis frequency range
-            AS.AppSettings.set_analysis_f_min(an_f_min_spin.value())
-            AS.AppSettings.set_analysis_f_max(an_f_max_spin.value())
+            # Analysis frequency range — parse text fields, mirrors Swift applySettings()
+            # validating analysisMinFreqInput/analysisMaxFreqInput Strings.
+            try:
+                new_an_f_min = float(an_f_min_field.text())
+                new_an_f_max = float(an_f_max_field.text())
+            except ValueError:
+                new_an_f_min = AS.AppSettings.analysis_f_min()
+                new_an_f_max = AS.AppSettings.analysis_f_max()
+            new_an_f_min = max(0.0, min(new_an_f_min, new_an_f_max - 1))
+            new_an_f_max = max(new_an_f_min + 1, new_an_f_max)
+            AS.AppSettings.set_analysis_f_min(new_an_f_min)
+            AS.AppSettings.set_analysis_f_max(new_an_f_max)
+            an_f_min_field.setText(str(int(new_an_f_min)))
+            an_f_max_field.setText(str(int(new_an_f_max)))
             # Apply immediately to analyzer — mirrors Swift's @Published didSet on
             # minFrequency/maxFrequency which makes the new analysis window active at once.
-            self.fft_canvas.analyzer.min_frequency = float(an_f_min_spin.value())
-            self.fft_canvas.analyzer.max_frequency = float(an_f_max_spin.value())
+            self.fft_canvas.analyzer.min_frequency = new_an_f_min
+            self.fft_canvas.analyzer.max_frequency = new_an_f_max
 
             # Show Unknown Modes — save and immediately refresh chart + results panel.
             # Unlike Swift where computed properties re-read the setting on every render,
@@ -5227,7 +5281,12 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
             # Peak threshold → AppSettings + main-window slider + graph
-            final_db = int(peak_thresh_spin.value())
+            try:
+                final_db = int(float(peak_thresh_field.text()))
+            except ValueError:
+                final_db = int(AS.AppSettings.peak_threshold())
+            final_db = max(-120, min(0, final_db))
+            peak_thresh_field.setText(str(final_db))
             AS.AppSettings.set_peak_threshold(float(final_db))
             AS.AppSettings.set_threshold(final_db + 100)
             slider_val = max(-100, min(-20, final_db))
@@ -5235,7 +5294,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.threshold_slider.setValue(slider_val)
 
             # Max peaks
-            new_max_peaks = 0 if mp_all_cb.isChecked() else mp_spin.value()
+            try:
+                _mp_val = int(mp_field.text())
+            except ValueError:
+                _mp_val = 10
+            new_max_peaks = 0 if mp_all_cb.isChecked() else max(1, _mp_val)
             AS.AppSettings.set_max_peaks(new_max_peaks)
             # Apply immediately to analyzer, mirroring Swift's @Published didSet on maxPeaks.
             self.fft_canvas.analyzer.max_peaks = new_max_peaks
@@ -5252,23 +5315,31 @@ class MainWindow(QtWidgets.QMainWindow):
             # Hop size overlap (mirrors Swift: TapDisplaySettings.hopSizeOverlap = fftAnalyzer.hopSizeOverlap)
             AS.AppSettings.set_hop_size_overlap(float(hop_slider.value() * 5))
 
-            # Plate / brace / gore / f_vs dimensions
-            AS.AppSettings.set_plate_length(plate_length_spin.value())
-            AS.AppSettings.set_plate_width(plate_width_spin.value())
-            AS.AppSettings.set_plate_thickness(plate_thick_spin.value())
-            AS.AppSettings.set_plate_mass(plate_mass_spin.value())
+            # Plate / brace / gore / f_vs dimensions — parse text fields, mirrors Swift
+            # applySettings() which parses plateLengthInput etc. with Float(input) ?? 0.
+            def _pf(field: QtWidgets.QLineEdit, fallback: float) -> float:
+                try:
+                    v = float(field.text())
+                    return v if v > 0 else fallback
+                except ValueError:
+                    return fallback
+
+            AS.AppSettings.set_plate_length(_pf(plate_length_field, AS.AppSettings.plate_length()))
+            AS.AppSettings.set_plate_width(_pf(plate_width_field, AS.AppSettings.plate_width()))
+            AS.AppSettings.set_plate_thickness(_pf(plate_thick_field, AS.AppSettings.plate_thickness()))
+            AS.AppSettings.set_plate_mass(_pf(plate_mass_field, AS.AppSettings.plate_mass()))
             AS.AppSettings.set_measure_flc(measure_flc_cb.isChecked())
-            AS.AppSettings.set_guitar_body_length(gore_body_len_spin.value())
-            AS.AppSettings.set_guitar_body_width(gore_body_wid_spin.value())
+            AS.AppSettings.set_guitar_body_length(_pf(gore_body_len_field, AS.AppSettings.guitar_body_length()))
+            AS.AppSettings.set_guitar_body_width(_pf(gore_body_wid_field, AS.AppSettings.guitar_body_width()))
             fvs_idx = fvs_combo.currentIndex()
             AS.AppSettings.set_plate_stiffness_preset(
                 PRESET_STORAGE_NAMES[fvs_idx] if 0 <= fvs_idx < len(PRESET_STORAGE_NAMES) else "Steel String Top"
             )
-            AS.AppSettings.set_custom_plate_stiffness(custom_fvs_spin.value())
-            AS.AppSettings.set_brace_length(brace_length_spin.value())
-            AS.AppSettings.set_brace_width(brace_width_spin.value())
-            AS.AppSettings.set_brace_thickness(brace_thick_spin.value())
-            AS.AppSettings.set_brace_mass(brace_mass_spin.value())
+            AS.AppSettings.set_custom_plate_stiffness(_pf(custom_fvs_field, AS.AppSettings.custom_plate_stiffness()))
+            AS.AppSettings.set_brace_length(_pf(brace_length_field, AS.AppSettings.brace_length()))
+            AS.AppSettings.set_brace_width(_pf(brace_width_field, AS.AppSettings.brace_width()))
+            AS.AppSettings.set_brace_thickness(_pf(brace_thick_field, AS.AppSettings.brace_thickness()))
+            AS.AppSettings.set_brace_mass(_pf(brace_mass_field, AS.AppSettings.brace_mass()))
 
             # If the FLC flag changed but the measurement type stayed the same,
             # setCurrentText above won't emit currentTextChanged (identical value),

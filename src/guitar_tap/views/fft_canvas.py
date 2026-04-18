@@ -1419,6 +1419,18 @@ class FftCanvas(pg.PlotWidget):
             return
 
         self._has_material_spectra = True
+
+        # Clear the live fft_line immediately so the stale waveform from just
+        # before the phase transition does not persist as a red ghost underneath
+        # the phase overlay curves.  set_draw_data() will keep it cleared while
+        # is_reviewing is True (it skips the setData call), but we must clear it
+        # here on the transition because set_draw_data() may not be called again
+        # until the next FFT frame arrives.
+        # Mirrors Swift SpectrumView: spectrumLineContent is excluded from the
+        # chart entirely when isReviewingMaterialPhase is true.
+        if self.analyzer.material_tap_phase.is_reviewing:
+            self.fft_line.setData([], [])
+
         for label, (r, g, b), freq_list, mag_list in spectra:
             freq_arr = np.array(freq_list, dtype=np.float64)
             mag_arr  = np.array(mag_list,  dtype=np.float64)
@@ -1457,10 +1469,10 @@ class FftCanvas(pg.PlotWidget):
         self._comparison_legend = legend
         self._reposition_comparison_legend()
 
-        # Leave fft_line visible — the live waveform is always shown so the user
-        # can see the spectrum they need to tap. Phase overlay curves are drawn
-        # on top. Mirrors Swift SpectrumView.baseChart which renders spectrumLineContent
-        # unconditionally and then adds materialSpectraContent on top.
+        # fft_line is cleared above when entering a review phase (mirrors Swift hiding
+        # spectrumLineContent when isReviewingMaterialPhase is true).  During capture
+        # phases (not reviewing) the live waveform remains visible so the user can
+        # see the spectrum as they prepare to tap.
 
     def set_fmin(self, fmin: int) -> None:
         """As it says"""

@@ -360,21 +360,33 @@ class TapDisplaySettings:
     def default_min_frequency(cls, meas_type: "str | object | None" = None) -> float:
         """Default minimum display frequency for the given measurement type (Hz).
 
-        Mirrors Swift TapDisplaySettings.defaultMinFrequency(for:).
+        Single source of truth — mirrors Swift TapDisplaySettings.defaultMinFrequency(for:).
+        AppSettings.default_f_min() delegates back to this method; do not call
+        AppSettings here to avoid a circular dependency.
         """
-        if meas_type is None:
-            return cls.DEFAULT_MIN_FREQUENCY
-        return float(_app_settings().default_f_min(meas_type))
+        from models.measurement_type import MeasurementType  # noqa: PLC0415
+        if isinstance(meas_type, MeasurementType):
+            if meas_type == MeasurementType.PLATE:
+                return cls.DEFAULT_PLATE_MIN_FREQUENCY
+            if meas_type == MeasurementType.BRACE:
+                return cls.DEFAULT_BRACE_MIN_FREQUENCY
+        return cls.DEFAULT_MIN_FREQUENCY
 
     @classmethod
     def default_max_frequency(cls, meas_type: "str | object | None" = None) -> float:
         """Default maximum display frequency for the given measurement type (Hz).
 
-        Mirrors Swift TapDisplaySettings.defaultMaxFrequency(for:).
+        Single source of truth — mirrors Swift TapDisplaySettings.defaultMaxFrequency(for:).
+        AppSettings.default_f_max() delegates back to this method; do not call
+        AppSettings here to avoid a circular dependency.
         """
-        if meas_type is None:
-            return cls.DEFAULT_MAX_FREQUENCY
-        return float(_app_settings().default_f_max(meas_type))
+        from models.measurement_type import MeasurementType  # noqa: PLC0415
+        if isinstance(meas_type, MeasurementType):
+            if meas_type == MeasurementType.PLATE:
+                return cls.DEFAULT_PLATE_MAX_FREQUENCY
+            if meas_type == MeasurementType.BRACE:
+                return cls.DEFAULT_BRACE_MAX_FREQUENCY
+        return cls.DEFAULT_MAX_FREQUENCY
 
     @classmethod
     def min_frequency(cls, meas_type: "str | object | None" = None) -> float:
