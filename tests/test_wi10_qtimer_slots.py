@@ -156,9 +156,10 @@ class TestTapDetectionSlots:
         sut.current_tap_count = 1
 
         # Seed captured_taps with a minimal valid entry so averaging succeeds.
-        freqs = np.linspace(20, 5000, 64, dtype=np.float32)
+        # Production code stores bare magnitude arrays (not tuples) — see
+        # tap_tone_analyzer_tap_detection.py captured_taps.append(mag_y_db.copy()).
         mags = np.full(64, -60.0, dtype=np.float32)
-        sut.captured_taps = [(mags, freqs)]
+        sut.captured_taps = [mags]
 
         # _finish_capture calls _average_captured_taps then clears captured_taps.
         sut._finish_capture()
