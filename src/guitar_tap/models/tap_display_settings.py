@@ -51,11 +51,37 @@ class TapDisplaySettings:
     # Default maximum frequency for guitar spectrum display (Hz)
     DEFAULT_MAX_FREQUENCY: float = 350.0
 
-    # Default minimum frequency for plate spectrum display (Hz)
-    DEFAULT_PLATE_MIN_FREQUENCY: float = 30.0
+    # Default minimum frequency for plate spectrum display (Hz).
+    # Free-plate fLC values start as low as ~25 Hz; 20 Hz provides a small margin.
+    DEFAULT_PLATE_MIN_FREQUENCY: float = 20.0
 
-    # Default maximum frequency for plate spectrum display (Hz)
-    DEFAULT_PLATE_MAX_FREQUENCY: float = 600.0
+    # Default maximum frequency for plate spectrum display (Hz).
+    #
+    # GuitarTap measures free-plate material properties using the tap-tone method
+    # described in:
+    #   Gore, T. & Gilet, G., "Contemporary Acoustic Guitar Design and Build,"
+    #   2nd ed., Vol. 1 §4.5 (Gore Guitars, 2011).
+    #
+    # The method is: tap a raw, unbraced rectangular plate blank and measure the
+    # three lowest bending/torsional resonances to derive elastic stiffness constants.
+    # The resulting frequencies across a range of tonewoods (spruce, cedar, etc.) are:
+    #
+    #   fLC (torsional / twist mode):  ~25-76 Hz
+    #   fL  (longitudinal bending):    ~43-77 Hz
+    #   fC  (cross-grain bending):     ~57-194 Hz  <- sets the ceiling
+    #
+    # Empirical ranges from Trevor Gore course materials (multiple tonewoods).
+    # The method and underlying physics (orthotropic plate equations) are documented
+    # in the book; for additional corroboration see:
+    #   Haines, D.W., "On musical instrument wood,"
+    #   Catgut Acoustical Society Newsletter 31, 23-32 (1979).
+    #
+    # Note: these are free-plate resonances on a raw blank, not assembled-box
+    # resonances (which are much higher at ~90-260 Hz and measure a different thing).
+    #
+    # 200 Hz provides a comfortable margin above the observed fC maximum (~194 Hz)
+    # while keeping the spectrum tightly focused on the region of interest.
+    DEFAULT_PLATE_MAX_FREQUENCY: float = 200.0
 
     # Default minimum frequency for brace spectrum display (Hz)
     DEFAULT_BRACE_MIN_FREQUENCY: float = 30.0

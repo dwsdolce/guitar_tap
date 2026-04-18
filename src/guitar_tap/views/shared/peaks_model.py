@@ -184,10 +184,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
         Computed at query time — mirrors Swift SpectrumView filtering
         currentPeaks using selectedPeakIDs at render time.
-        In live mode every peak is shown; in frozen mode only explicitly
-        selected frequencies are shown.
+        In live guitar mode every peak is shown; in plate/brace mode (even
+        during capture) only explicitly selected frequencies are shown so that
+        only the identified peak's star is filled — mirrors Swift where
+        selectedPeakIDs is managed exclusively by phase-completion handlers.
         """
-        if self.is_live:
+        if self.is_live and self.is_guitar:
             return True
         return float(self.freq_value(index)) in self.selected_frequencies
 

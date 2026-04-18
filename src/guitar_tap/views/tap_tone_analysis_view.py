@@ -111,7 +111,10 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         if self._long_freq  not in existing: self._long_freq  = 0.0
         if self._cross_freq not in existing: self._cross_freq = 0.0
         if self._flc_freq   not in existing: self._flc_freq   = 0.0
-        self._selected = set(existing)
+        # Only the identified (auto-selected) peaks are selected — mirrors Swift
+        # MaterialPeakRowView where isSelected reflects selectedPeakIDs which contains
+        # only the dominant peak(s) set by phase-completion handlers.
+        self._selected = {f for f in (self._long_freq, self._cross_freq, self._flc_freq) if f > 0.0}
         self._rebuild_rows()
 
     def set_assignment(self, long_freq: float, cross_freq: float = 0.0,
@@ -119,19 +122,13 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._long_freq  = long_freq
         self._cross_freq = cross_freq
         self._flc_freq   = flc_freq
+        # Keep selected set in sync with identified peaks.
+        self._selected = {f for f in (self._long_freq, self._cross_freq, self._flc_freq) if f > 0.0}
         self._rebuild_rows()
 
     def long_freq(self)  -> float: return self._long_freq
     def cross_freq(self) -> float: return self._cross_freq
     def flc_freq(self)   -> float: return self._flc_freq
-
-    def select_all(self) -> None:
-        self._selected = {f for f, _ in self._peaks}
-        self._rebuild_rows()
-
-    def deselect_all(self) -> None:
-        self._selected.clear()
-        self._rebuild_rows()
 
     # ── private helpers ─────────────────────────────────────────────────
 
@@ -151,21 +148,17 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         hl.setContentsMargins(0, 2, 0, 2)
         hl.setSpacing(8)
 
-        # Star toggle — same style as peak_card_widget
-        star = QtWidgets.QToolButton()
-        star.setFixedSize(24, 24)
+        # Star indicator — display-only, mirrors Swift MaterialPeakRowView which renders
+        # a plain Image(systemName:) with no onToggleSelection callback in plate/brace mode.
         is_sel = freq in self._selected
-        star.setText("★" if is_sel else "☆")
+        star = QtWidgets.QLabel("★" if is_sel else "☆")
+        star.setFixedSize(24, 24)
+        star.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         star_color = "rgb(30,120,255)" if is_sel else "rgb(160,160,160)"
-        star.setStyleSheet(
-            f"QToolButton {{ border: none; background: transparent; color: {star_color}; }}"
-        )
         star_fnt = QtGui.QFont()
         star_fnt.setPointSize(14)
         star.setFont(star_fnt)
-        star.setCheckable(True)
-        star.setChecked(is_sel)
-        star.clicked.connect(lambda _chk, f=freq: self._toggle_sel(f))
+        star.setStyleSheet(f"color: {star_color};")
         hl.addWidget(star)
 
         # Frequency + magnitude labels
@@ -219,12 +212,6 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
             "border-radius: 6px; border: none;}"
         )
         return btn
-
-    def _toggle_sel(self, freq: float) -> None:
-        if freq in self._selected: self._selected.discard(freq)
-        else:                      self._selected.add(freq)
-        self._rebuild_rows()
-
 
 class MaterialInstructionsWidget(QtWidgets.QWidget):
     """Process instructions shown at the bottom of the material scroll view.
@@ -2047,8 +2034,13 @@ class MainWindow(QtWidgets.QMainWindow):
         #
         # Mirrors Swift: applyFrozenPeakState sets selectedPeakIDs which propagates to
         # all views automatically via @Published.
-        if self._is_measurement_complete:
-            analyzer = self.fft_canvas.analyzer
+        # For guitar mode, only propagate selection when measurement is complete.
+        # For plate/brace, propagate on every peaksChanged so that only the
+        # identified peak's star is filled during capture and review phases —
+        # mirrors Swift where selectedPeakIDs (managed by phase-completion handlers)
+        # drives the star display at all times.
+        analyzer = self.fft_canvas.analyzer
+        if self._is_measurement_complete or not self._current_mt().is_guitar:
             sel_freqs = getattr(analyzer, "selected_peak_frequencies", None)
             if sel_freqs is not None:
                 self.peak_widget.model.selected_frequencies = set(sel_freqs)

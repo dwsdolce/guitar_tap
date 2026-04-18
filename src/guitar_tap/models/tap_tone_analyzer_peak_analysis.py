@@ -80,7 +80,11 @@ class TapToneAnalyzerPeakAnalysisMixin:
         self.current_peaks = peaks
         # Auto-select all newly detected peaks so visibility mode «selected»
         # shows everything by default — mirrors Swift selectedPeakIDs = Set(peaks.map { $0.id }).
-        self.selected_peak_ids = {p.id for p in peaks}
+        # In plate/brace mode, selection is managed exclusively by the phase-completion handlers
+        # so that only the identified peak(s) appear selected — don't clobber it here.
+        from models.tap_display_settings import TapDisplaySettings as _tds_pa
+        if _tds_pa.measurement_type().is_guitar:
+            self.selected_peak_ids = {p.id for p in peaks}
 
         # Classify modes using the context-aware algorithm.
         guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
@@ -525,8 +529,11 @@ class TapToneAnalyzerPeakAnalysisMixin:
         self.peak_mode_overrides = new_overrides
 
         if not is_guitar:
-            self.selected_peak_ids = {p.id for p in peaks}
-            self.selected_peak_frequencies = [p.frequency for p in peaks]
+            # Plate/brace: selection is managed exclusively by the phase-completion handlers
+            # (only the identified peak is selected). Don't clobber it here.
+            self.selected_peak_frequencies = [
+                p.frequency for p in peaks if p.id in self.selected_peak_ids
+            ]
         elif self.user_has_modified_peak_selection:
             carried_ids: set = set()
             carried_freqs: list = []

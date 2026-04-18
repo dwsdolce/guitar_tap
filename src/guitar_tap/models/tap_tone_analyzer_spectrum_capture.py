@@ -303,17 +303,32 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             hps_max_hz = 1200.0
         elif meas_type == _MT.PLATE:
             if phase == _MTP.CAPTURING_LONGITUDINAL:
-                hps_min_hz = 50.0
-                hps_max_hz = 500.0
+                # fL: longitudinal bending mode of a free rectangular plate blank.
+                # Gore course data: ~43-77 Hz across tonewoods (Gore & Gilet Vol.1 §4.5).
+                # Note: fL and fLC ranges overlap (~43-77 Hz vs ~25-76 Hz); the tap
+                # orientation physically selects the mode — fL is excited by a tap near
+                # the centre of the long edge, not a corner tap.
+                # Upper bound 100 Hz covers outliers; lower bound 20 Hz excludes DC/rumble.
+                hps_min_hz = 20.0
+                hps_max_hz = 100.0
             elif phase == _MTP.CAPTURING_CROSS:
-                hps_min_hz = 20.0
-                hps_max_hz = 250.0
+                # fC: cross-grain bending mode of a free rectangular plate blank.
+                # Gore course data: ~57-194 Hz across tonewoods (Gore & Gilet Vol.1 §4.5).
+                # Upper bound 220 Hz covers outliers; lower bound 40 Hz excludes fL/fLC.
+                hps_min_hz = 40.0
+                hps_max_hz = 220.0
             elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
-                hps_min_hz = 20.0
-                hps_max_hz = 200.0
+                # fLC: torsional (twist) mode of a free rectangular plate blank.
+                # Gore course data: ~25-76 Hz across tonewoods (Gore & Gilet Vol.1 §4.5).
+                # fLC is weak and overlaps fL in frequency; it is distinguished by tap
+                # placement (corner tap) and the characteristic low-amplitude ring-out.
+                # Upper bound 100 Hz covers outliers; lower bound 15 Hz is near the limit
+                # of typical measurement microphones.
+                hps_min_hz = 15.0
+                hps_max_hz = 100.0
             else:
-                hps_min_hz = 20.0
-                hps_max_hz = 600.0
+                hps_min_hz = 15.0
+                hps_max_hz = 220.0
         else:
             hps_min_hz = 20.0
             hps_max_hz = 2000.0
@@ -341,7 +356,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             return
 
         # Reject captures where the dominant peak is below the tap detection threshold.
-        if dominant_peak.magnitude < self.tap_detection_threshold:
+        #
+        # Exception: fLC (torsional mode) is inherently 20–30 dB weaker than fL/fC in
+        # the spectral domain — the tap already triggered (proving a real strike occurred),
+        # so there is no benefit in applying a spectral magnitude gate for this phase.
+        # The tap trigger threshold already ensures the audio event was real.
+        is_flc_phase = phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP)
+        if not is_flc_phase and dominant_peak.magnitude < self.tap_detection_threshold:
             print(
                 f"⚠️ Gated FFT: dominant peak {dominant_peak.frequency:.1f} Hz @ "
                 f"{dominant_peak.magnitude:.1f} dB is below tap detection threshold "
@@ -591,12 +612,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         print(f"🔵 Auto-selected longitudinal peak: {dominant_peak.frequency} Hz")
 
         self.current_peaks = self.longitudinal_peaks
-        self.selected_peak_ids = {p.id for p in self.longitudinal_peaks}
-        # Mirrors Swift TapToneAnalyzer+SpectrumCapture: selectedPeakIDs = Set(longitudinalPeaks.map { $0.id })
+        # Only the identified (auto-selected) peak is selected — others are informational.
+        # Mirrors Swift: selectedPeakIDs = Set([dominantPeak.id])
+        self.selected_peak_ids = {dominant_peak.id}
         # selected_peak_frequencies must be set here (not only in _apply_frozen_peak_state) so
         # that _on_peaks_changed_results → peak_widget.model.selected_frequencies is correct
         # for live plate/brace measurements that never go through recalculate_frozen_peaks_if_needed.
-        self.selected_peak_frequencies = [p.frequency for p in self.longitudinal_peaks]
+        self.selected_peak_frequencies = [dominant_peak.frequency]
         self.captured_taps.clear()
 
         # Update displayed spectrum — mirrors Swift setFrozenSpectrum (empty for plate transitions).
@@ -688,6 +710,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Pause at review state regardless of whether FLC is needed.
         # accept_current_phase() will check measure_flc and route accordingly.
         self.current_peaks = self.combine_plate_peaks()
+        # Only the identified (auto-selected) L and C peaks are selected — others are informational.
+        # Mirrors Swift: selectedPeakIDs = Set([autoSelectedLongitudinalPeakID, autoSelectedCrossPeakID].compactMap { $0 })
+        self.selected_peak_ids = {
+            pid for pid in (self.auto_selected_longitudinal_peak_id, self.auto_selected_cross_peak_id)
+            if pid is not None
+        }
         self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
         self._set_material_tap_phase(_MTP.REVIEWING_CROSS)
         self.is_detecting = False
