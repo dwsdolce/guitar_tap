@@ -622,6 +622,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_status_message(
                 f"fL: {dominant_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
             )
+            # Show longitudinal overlay — mirrors Swift's @Published longitudinalSpectrum
+            # causing materialSpectra to return [("Longitudinal (L)", .blue, ...)] which
+            # SpectrumView renders instead of the primary curve (exclusive: no live curve shown).
+            l_mags, l_freqs = self.longitudinal_spectrum
+            self.set_material_spectra([
+                ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
+            ])
 
         # Notify spectrum update (no peaksChanged here — each branch above emits exactly once).
         self.spectrumUpdated.emit(
@@ -672,6 +679,15 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self._set_status_message(
             f"fC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
         )
+        # Show longitudinal + cross overlays — mirrors Swift's @Published crossSpectrum
+        # causing materialSpectra to return L + C series (SpectrumView replaces primary curve).
+        spectra = []
+        if self.longitudinal_spectrum:
+            l_mags, l_freqs = self.longitudinal_spectrum
+            spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+        c_mags, c_freqs = self.cross_spectrum
+        spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+        self.set_material_spectra(spectra)
         self._emit_peaks_array(self.current_peaks)
 
     # ------------------------------------------------------------------ #
@@ -721,6 +737,18 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self._set_status_message(
             f"fLC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to complete or Redo to re-tap"
         )
+        # Show longitudinal + cross + FLC overlays — mirrors Swift's @Published flcSpectrum
+        # causing materialSpectra to return L + C + FLC series (replaces primary curve).
+        spectra = []
+        if self.longitudinal_spectrum:
+            l_mags, l_freqs = self.longitudinal_spectrum
+            spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+        if self.cross_spectrum:
+            c_mags, c_freqs = self.cross_spectrum
+            spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+        f_mags, f_freqs = self.flc_spectrum
+        spectra.append(("FLC", (175, 82, 222), list(f_freqs), list(f_mags)))
+        self.set_material_spectra(spectra)
         self._emit_peaks_array(self.current_peaks)
 
     # ------------------------------------------------------------------ #
@@ -768,9 +796,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         Runs findPeaks with no range restrictions, then replaces or prepends
         dominantPeak so its UUID identity is preserved for ID-based lookups.
 
+        For plate/brace, uses the median of the full spectrum as an adaptive
+        noise-floor threshold instead of the guitar-mode peak_threshold.
         Mirrors Swift TapToneAnalyzer.buildAllPeaks(magnitudes:frequencies:dominantPeak:).
         """
-        peaks = self.find_peaks(magnitudes, frequencies)
+        sorted_mags = sorted(magnitudes)
+        median_threshold = sorted_mags[len(sorted_mags) // 2]
+        peaks = self.find_peaks(magnitudes, frequencies, threshold_override=median_threshold)
         prox = self.PEAK_PROXIMITY_HZ
 
         idx = next(

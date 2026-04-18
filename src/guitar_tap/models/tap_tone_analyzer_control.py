@@ -449,6 +449,8 @@ class TapToneAnalyzerControlMixin:
             self.tap_progress = 0.0
             capture_phase = _MTP.CAPTURING_LONGITUDINAL
             status_msg = "Ready for L tap — tap again"
+            # longitudinalSpectrum = nil → materialSpectra returns [] → live curve restored.
+            self.set_material_spectra([])
 
         elif phase == _MTP.REVIEWING_CROSS:
             # Clear cross data only — longitudinal stays.
@@ -464,6 +466,12 @@ class TapToneAnalyzerControlMixin:
             self.tap_progress = float(l_count) / float(self.total_plate_taps)
             capture_phase = _MTP.CAPTURING_CROSS
             status_msg = "Ready for C tap — tap again"
+            # crossSpectrum = nil → materialSpectra returns [L only] → show longitudinal overlay.
+            spectra = []
+            if self.longitudinal_spectrum:
+                l_mags, l_freqs = self.longitudinal_spectrum
+                spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+            self.set_material_spectra(spectra)
 
         elif phase == _MTP.REVIEWING_FLC:
             # Clear FLC data only — L and C stay.
@@ -483,6 +491,15 @@ class TapToneAnalyzerControlMixin:
             self.tap_progress = float(lc_count) / float(self.total_plate_taps)
             capture_phase = _MTP.CAPTURING_FLC
             status_msg = "Ready for FLC tap — tap again"
+            # flcSpectrum = nil → materialSpectra returns [L, C] → show both overlays.
+            spectra = []
+            if self.longitudinal_spectrum:
+                l_mags, l_freqs = self.longitudinal_spectrum
+                spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+            if self.cross_spectrum:
+                c_mags, c_freqs = self.cross_spectrum
+                spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+            self.set_material_spectra(spectra)
 
         else:
             print(f"⚠️ redo_current_phase called in unexpected phase: {phase}")
@@ -669,6 +686,9 @@ class TapToneAnalyzerControlMixin:
         self.user_selected_longitudinal_peak_id = None
         self.user_selected_cross_peak_id = None
         self.user_selected_flc_peak_id = None
+        # All phase spectra cleared — mirrors Swift's @Published vars becoming nil,
+        # which causes materialSpectra to return [] and SpectrumView to restore the live curve.
+        self.set_material_spectra([])
 
         # Cancel any in-flight gated capture when resetting phase state.
         # Mirrors Swift which simply clears gatedCaptureActive in resetMaterialPhaseState.

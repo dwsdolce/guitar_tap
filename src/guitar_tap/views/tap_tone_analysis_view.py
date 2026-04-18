@@ -652,13 +652,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Peak Min ──────────────────────────────────────────────────────
         peak_min_val = AS.AppSettings.threshold()   # 0-100 scale
-        self.threshold_slider, self.peak_min_readout, _peak_reset = \
+        self.threshold_slider, self.peak_min_readout, self.peak_min_reset_btn = \
             _db_slider_group(
                 "Peak Min:", -100, -20, peak_min_val, 40,
                 "Minimum magnitude a spectral peak must have to be reported\n"
                 "(shown as green line on the spectrum)",
             )
-        _peak_reset.clicked.connect(lambda: self.threshold_slider.setValue(-60))
+        self.peak_min_reset_btn.clicked.connect(lambda: self.threshold_slider.setValue(-60))
 
         hl.addStretch()
 
@@ -1529,18 +1529,34 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_material_instr_panel(self) -> QtWidgets.QFrame:
         """Compact phase-instructions panel shown below the graph for plate/brace modes.
 
-        Mirrors Swift's materialInstructionsView / decayTimeView.
-        Visible only when measurement type is plate/brace; updates as PlateCapture
-        state advances through IDLE → WAITING_L → WAITING_C → WAITING_FLC → COMPLETE.
+        Mirrors Swift's materialInstructionsView (GroupBox layout):
+          Row 1: [dot] [shortStatus]  [Spacer]  [Step N/M]
+          Divider
+          Row 2: [icon]  [title]
+                         [description]
         """
         frame = QtWidgets.QFrame()
         frame.setObjectName("material_instr_panel")
         frame.setStyleSheet(
             "#material_instr_panel { border-top: 1px solid palette(mid); }"
         )
-        hl = QtWidgets.QHBoxLayout(frame)
-        hl.setContentsMargins(8, 6, 8, 6)
-        hl.setSpacing(8)
+        vl = QtWidgets.QVBoxLayout(frame)
+        vl.setContentsMargins(8, 6, 8, 6)
+        vl.setSpacing(4)
+
+        # ── GroupBox title — mirrors Swift GroupBox("Plate Measurement") label ──
+        _title_font = QtGui.QFont()
+        _title_font.setPointSize(9)
+        _title_font.setBold(True)
+        self._mip_group_title_lbl = QtWidgets.QLabel("Plate Measurement")
+        self._mip_group_title_lbl.setFont(_title_font)
+        self._mip_group_title_lbl.setStyleSheet("color: palette(shadow);")
+        vl.addWidget(self._mip_group_title_lbl)
+
+        # ── Row 1: dot + shortStatus + spacer + step counter ────────────
+        row1 = QtWidgets.QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(6)
 
         # Phase colour dot
         self._mip_dot = QtWidgets.QLabel()
@@ -1548,42 +1564,72 @@ class MainWindow(QtWidgets.QMainWindow):
         self._mip_dot.setStyleSheet(
             "QLabel { background-color: gray; border-radius: 5px; }"
         )
-        hl.addWidget(self._mip_dot, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+        row1.addWidget(self._mip_dot, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
 
-        # Title + body text (stacked)
-        txt = QtWidgets.QVBoxLayout()
-        txt.setContentsMargins(0, 0, 0, 0)
-        txt.setSpacing(1)
-
+        # Short status text — e.g. "L tap...", "Review L" (colored like the dot)
         _bold9 = QtGui.QFont()
         _bold9.setPointSize(9)
         _bold9.setBold(True)
-        self._mip_title_lbl = QtWidgets.QLabel("Press New Tap to begin")
-        self._mip_title_lbl.setFont(_bold9)
-        txt.addWidget(self._mip_title_lbl)
+        self._mip_short_status_lbl = QtWidgets.QLabel("Ready")
+        self._mip_short_status_lbl.setFont(_bold9)
+        self._mip_short_status_lbl.setStyleSheet("color: gray;")
+        row1.addWidget(self._mip_short_status_lbl)
 
+        row1.addStretch(1)
+
+        # Step counter on the right — e.g. "Step 1/3", "✓" (secondary color)
         _sm9 = QtGui.QFont()
         _sm9.setPointSize(9)
-        self._mip_body_lbl = QtWidgets.QLabel(
-            "Press 'New Tap' to start the plate measurement."
-        )
-        self._mip_body_lbl.setFont(_sm9)
-        self._mip_body_lbl.setStyleSheet("color: palette(shadow);")
-        txt.addWidget(self._mip_body_lbl)
-
-        hl.addLayout(txt, stretch=1)
-
-        # Step counter on the right (e.g. "1/3", "2/3", "✓")
-        _bold9r = QtGui.QFont()
-        _bold9r.setPointSize(9)
-        _bold9r.setBold(True)
         self._mip_step_lbl = QtWidgets.QLabel("")
-        self._mip_step_lbl.setFont(_bold9r)
-        self._mip_step_lbl.setStyleSheet("color: rgb(40,100,210);")
+        self._mip_step_lbl.setFont(_sm9)
+        self._mip_step_lbl.setStyleSheet("color: palette(shadow);")
         self._mip_step_lbl.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
-        hl.addWidget(self._mip_step_lbl)
+        row1.addWidget(self._mip_step_lbl)
+
+        vl.addLayout(row1)
+
+        # ── Divider ──────────────────────────────────────────────────────
+        div = QtWidgets.QFrame()
+        div.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        div.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        vl.addWidget(div)
+
+        # ── Row 2: icon + (title / description) ─────────────────────────
+        row2 = QtWidgets.QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(10)
+
+        # Phase icon (qtawesome SF-symbol equivalent)
+        self._mip_icon_lbl = QtWidgets.QLabel()
+        self._mip_icon_lbl.setFixedSize(30, 30)
+        self._mip_icon_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        row2.addWidget(self._mip_icon_lbl, 0, QtCore.Qt.AlignmentFlag.AlignTop)
+
+        # Title + description stacked
+        txt = QtWidgets.QVBoxLayout()
+        txt.setContentsMargins(0, 0, 0, 0)
+        txt.setSpacing(2)
+
+        _med9 = QtGui.QFont()
+        _med9.setPointSize(9)
+        self._mip_title_lbl = QtWidgets.QLabel("Press New Tap to begin")
+        self._mip_title_lbl.setFont(_med9)
+        txt.addWidget(self._mip_title_lbl)
+
+        _cap9 = QtGui.QFont()
+        _cap9.setPointSize(9)
+        self._mip_body_lbl = QtWidgets.QLabel(
+            "Press 'New Tap' to start the plate measurement."
+        )
+        self._mip_body_lbl.setFont(_cap9)
+        self._mip_body_lbl.setStyleSheet("color: palette(shadow);")
+        self._mip_body_lbl.setWordWrap(True)
+        txt.addWidget(self._mip_body_lbl)
+
+        row2.addLayout(txt, stretch=1)
+        vl.addLayout(row2)
 
         frame.setVisible(False)  # Shown when plate/brace type is selected
         return frame
@@ -2011,6 +2057,16 @@ class MainWindow(QtWidgets.QMainWindow):
             if sel_freqs is not None:
                 self.peak_widget.model.selected_frequencies = set(sel_freqs)
 
+        # Push plate/brace phase peak IDs to the model on every peaksChanged so
+        # annotations label the identified peak immediately — mirrors Swift's
+        # @Published effectiveLongitudinalPeakID auto-propagation.
+        az = self.fft_canvas.analyzer
+        if not self._current_mt().is_guitar:
+            pm = self.peak_widget.model
+            pm.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
+            pm.selected_cross_peak_id        = az.effective_cross_peak_id
+            pm.selected_flc_peak_id          = az.effective_flc_peak_id
+
         self._refresh_results_peaks()
 
     def _refresh_results_peaks(self) -> None:
@@ -2022,6 +2078,11 @@ class MainWindow(QtWidgets.QMainWindow):
         The pre-classified tuples are passed to update_data_with_modes so the
         model installs the analyzer's identifiedModes directly without re-running
         classify_all.
+
+        Swift sortedPeaksWithModes:
+          measurementType.isGuitar
+              ? (peak.frequency >= minFreq && peak.frequency <= maxFreq)
+              : true    // plate/brace: never filter by display range
         """
         peaks = self._current_peaks_all
         if not peaks:
@@ -2030,16 +2091,15 @@ class MainWindow(QtWidgets.QMainWindow):
         fmin = self.fft_canvas.fmin
         fmax = self.fft_canvas.fmax
         analyzer = self.fft_canvas.analyzer
-        # Mirrors Swift: .filter { peak.frequency >= minFreq && peak.frequency <= maxFreq }
-        #                .map { (peak: peak, mode: analyzer.peakMode(for: peak)) }
-        #                .filter { showUnknownModes || mode.normalized != .unknown }
         from models.guitar_mode import GuitarMode
         mt = self._current_mt()
         show_unknown = AS.AppSettings.show_unknown_modes()
+        # Mirrors Swift: plate/brace bypasses the frequency range filter (`: true`).
+        # Guitar mode filters to the displayed viewport.
         peaks_with_modes = [
             (p, analyzer.peak_mode(p))
             for p in peaks
-            if fmin < p.frequency < fmax
+            if not mt.is_guitar or (fmin <= p.frequency <= fmax)
         ]
         if mt.is_guitar and not show_unknown:
             peaks_with_modes = [
@@ -2047,6 +2107,24 @@ class MainWindow(QtWidgets.QMainWindow):
                 if m != GuitarMode.UNKNOWN
             ]
         self.peak_widget.update_data_with_modes(peaks_with_modes)
+
+        # For plate/brace: mirror Swift's live reactive MaterialPeakRowView binding:
+        #   isLongitudinal: effectiveLongitudinalPeakID == item.peak.id
+        # Swift re-evaluates this on every body render. Python must call
+        # set_assignment whenever peaks change so the L/C/FLC buttons stay
+        # in sync — _on_plate_analysis_complete only fires after all phases
+        # complete, so intermediate phases need this path.
+        if not mt.is_guitar:
+            long_id  = analyzer.effective_longitudinal_peak_id
+            cross_id = analyzer.effective_cross_peak_id
+            flc_id   = analyzer.effective_flc_peak_id
+            # Resolve UUIDs to frequencies via the current peak list.
+            peak_by_id = {p.id: p for p in peaks}
+            long_freq  = float(peak_by_id[long_id].frequency)  if long_id  and long_id  in peak_by_id else 0.0
+            cross_freq = float(peak_by_id[cross_id].frequency) if cross_id and cross_id in peak_by_id else 0.0
+            flc_freq   = float(peak_by_id[flc_id].frequency)   if flc_id   and flc_id   in peak_by_id else 0.0
+            self._material_peak_widget.set_assignment(long_freq, cross_freq,
+                                                      flc_freq=flc_freq)
 
     def _on_canvas_freq_range_changed(self, fmin: int, fmax: int) -> None:
         """Update freq label and re-filter the results panel when viewport changes."""
@@ -2146,7 +2224,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tap_num = self.tap_num_spin.value()
         mt = self._current_mt()
         is_plate = not mt.is_guitar
-        is_detecting = self._is_running and not self._is_measurement_complete
+        # Mirrors Swift isDetecting: False when paused (pauseTapDetection sets isDetecting=false)
+        is_detecting = self._is_running and not self._is_measurement_complete and not self._is_paused
         is_comparing = self.fft_canvas.is_comparing
         in_review = self._is_in_review_phase()
 
@@ -2158,11 +2237,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.pause_tap_btn.setEnabled(True)
             self.cancel_tap_btn.setEnabled(True)
 
-            # Relabel Pause → Accept (green checkmark).
+            # Relabel Pause → Accept with green tint.
+            # Mirrors Swift: .tint(isInReviewPhase ? .green : nil)
             self.pause_tap_btn.setText("Accept")
-            self.pause_tap_btn.setIcon(qta.icon("fa5.check-circle"))
+            self.pause_tap_btn.setIcon(qta.icon("fa5.check-circle", color="green"))
+            self.pause_tap_btn.setStyleSheet("color: green;")
 
-            # Relabel Cancel → Redo <phase>.
+            # Relabel Cancel → Redo <phase> with orange foreground.
+            # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? .orange : .gray)
             from models.material_tap_phase import MaterialTapPhase as _MTP
             phase = self.fft_canvas.analyzer.material_tap_phase
             redo_labels = {
@@ -2171,7 +2253,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 _MTP.REVIEWING_FLC:          "Redo FLC",
             }
             self.cancel_tap_btn.setText(redo_labels.get(phase, "Redo"))
-            self.cancel_tap_btn.setIcon(qta.icon("fa5.undo"))
+            self.cancel_tap_btn.setIcon(qta.icon("fa5s.undo", color="orange"))
+            self.cancel_tap_btn.setStyleSheet("color: orange;")
         else:
             # Normal (non-review) state — restore standard labels first.
             if self._is_paused:
@@ -2180,8 +2263,8 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self.pause_tap_btn.setText("Pause")
                 self.pause_tap_btn.setIcon(qta.icon("fa5.pause-circle"))
+            self.pause_tap_btn.setStyleSheet("")
             self.cancel_tap_btn.setText("Cancel")
-            self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle"))
 
             # New Tap: always enabled for plate/brace (start over anytime);
             # for guitar it requires a complete or comparison state.
@@ -2194,10 +2277,26 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
 
             self.pause_tap_btn.setEnabled(is_detecting or self._is_paused)
-            self.cancel_tap_btn.setEnabled(
-                is_detecting and tap_num > 1
-                and 0 < self._tap_count_captured < tap_num
+
+            # Mirrors Swift cancelButtonEnabled:
+            #   plate/brace: True whenever isDetecting (cancel = abort the sequence)
+            #   guitar: True only in multi-tap mode before all taps captured
+            if is_plate:
+                cancel_enabled = is_detecting
+            else:
+                cancel_enabled = (
+                    is_detecting and tap_num > 1
+                    and 0 < self._tap_count_captured < tap_num
+                )
+            self.cancel_tap_btn.setEnabled(cancel_enabled)
+            # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? .orange : .gray)
+            self.cancel_tap_btn.setStyleSheet(
+                "color: orange;" if cancel_enabled else "color: gray;"
             )
+            if cancel_enabled:
+                self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle", color="orange"))
+            else:
+                self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle"))
 
     # ================================================================
     # Pause / Cancel tap detection
@@ -2251,9 +2350,15 @@ class MainWindow(QtWidgets.QMainWindow):
         Connected to canvas.statusMessageChanged, which forwards
         analyzer.statusMessageChanged (mirrors Swift Text(tap.statusMessage)
         re-rendering whenever the @Published var statusMessage changes).
+
+        Mirrors Swift: .foregroundColor(tap.isDetecting ? .primary : .orange)
+        During review phases isDetecting is False → orange.
         """
         self._sb_detect_msg.setText(msg)
-        self._sb_detect_msg.setStyleSheet("")
+        in_review = self._is_in_review_phase()
+        self._sb_detect_msg.setStyleSheet(
+            "color: orange;" if in_review else ""
+        )
 
     def _on_tap_detected(self) -> None:
         """Auto-hold results when a tap fires (guitar mode only)."""
@@ -2379,6 +2484,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_auto_selection_btn.setVisible(mt.is_guitar)
         self.threshold_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
+        self.peak_min_reset_btn.setEnabled(mt.is_guitar)
         self.peak_widget.set_is_guitar(mt.is_guitar)
         self._guitar_summary.setVisible(mt.is_guitar)
         self._material_section.setVisible(not mt.is_guitar and self._is_measurement_complete)
@@ -2507,24 +2613,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_plate_status_changed(self, status: str) -> None:
         """Update instructions panel, status bar, and buttons for plate/brace capture progress."""
-        from models.analysis_display_mode import AnalysisDisplayMode
         from models.material_tap_phase import MaterialTapPhase as _MTP
 
         self._update_plate_phase_ui(status)
         self._update_tap_buttons()
 
-        # Switch display mode and push peak selection IDs when entering/leaving a review phase.
+        # Push the current phase selection IDs to the peaks model so the annotations
+        # label the identified peak (e.g. "Longitudinal") rather than the generic "Peak".
+        # Mirrors Swift: effectiveLongitudinalPeakID is a @Published-chain computed property
+        # that SwiftUI propagates automatically; Python requires an explicit push here.
         az = self.fft_canvas.analyzer
         phase = az.material_tap_phase
         in_review = phase in (_MTP.REVIEWING_LONGITUDINAL, _MTP.REVIEWING_CROSS, _MTP.REVIEWING_FLC)
-
-        # Freeze the spectrum during review so the captured waveform stays visible.
-        self.fft_canvas.display_mode = (
-            AnalysisDisplayMode.FROZEN if in_review else AnalysisDisplayMode.LIVE
-        )
-
-        # Push the current phase selection IDs to the peaks model so the annotations
-        # label the identified peak (e.g. "Longitudinal") rather than the generic "Peak".
         if in_review:
             pm = self.peak_widget.model
             pm.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
@@ -2546,115 +2646,179 @@ class MainWindow(QtWidgets.QMainWindow):
         measure_flc = (not is_brace) and AS.AppSettings.measure_flc()
         total = 1 if is_brace else (3 if measure_flc else 2)
 
+        # Update GroupBox title — mirrors Swift GroupBox("Brace Measurement" / "Plate Measurement")
+        self._mip_group_title_lbl.setText(
+            "Brace Measurement" if is_brace else "Plate Measurement"
+        )
+
         # ── Instructions panel ──────────────────────────────────────────
+        # Each state sets: dot color, shortStatus text+color, step label,
+        # icon (qtawesome equiv of SF Symbol), title, and body description.
+        # Mirrors Swift materialInstructionsView computed properties.
+
         if state == State.IDLE:
-            self._mip_dot.setStyleSheet(
-                "QLabel { background-color: gray; border-radius: 5px; }"
+            color_hex  = "gray"
+            short_status = "Ready"
+            step_text  = f"Step\u00a01/{total}"  # Swift: materialPhaseStep returns 1 for notStarted
+            icon_name  = "fa5s.hand-point-up"
+            title      = "Press \u2018New Tap\u2019 to Begin"
+            tap_word   = "three-tap" if measure_flc else "two-tap"
+            body       = (
+                "Press \u2018New Tap\u2019 to begin the brace fL measurement."
+                if is_brace else
+                f"Press \u2018New Tap\u2019 to begin the {tap_word} plate measurement process."
             )
-            self._mip_title_lbl.setText("Press New Tap to begin")
-            self._mip_body_lbl.setText(
-                f"Press \u2018New Tap\u2019 to start the "
-                f"{'one' if is_brace else ('two' if not measure_flc else 'three')}"
-                f"-tap {'brace' if is_brace else 'plate'} measurement."
-            )
-            self._mip_step_lbl.setText("")
             self._sb_plate_step_lbl.setVisible(False)
 
         elif state == State.WAITING_L:
-            self._mip_dot.setStyleSheet(
-                "QLabel { background-color: #1976D2; border-radius: 5px; }"
+            color_hex  = "#1976D2"
+            short_status = "L tap..."
+            step_text  = f"Step\u00a01/{total}"
+            icon_name  = "fa5s.wave-square"
+            title      = (
+                "Step 1: Longitudinal (fL) Mode" if is_brace
+                else "Step 1: Longitudinal (L) Mode"
             )
-            self._mip_title_lbl.setText("Step 1: Longitudinal (L)")
-            self._mip_body_lbl.setText(
+            body       = (
                 "Hold brace at 22% from one end along the length. Tap center."
                 if is_brace else
-                "Hold plate at 22% from one end along the length, near one long edge. Tap center."
+                "Hold plate at 22% from one end along the length, near one long edge "
+                "(not at the width node). Tap center."
             )
-            self._mip_step_lbl.setText(f"1/{total}")
             self._sb_plate_step_lbl.setText(f"Step\u00a01/{total}")
-            self._sb_plate_step_lbl.setVisible(True)
-
-        elif state == State.WAITING_C:
-            self._mip_dot.setStyleSheet(
-                "QLabel { background-color: #E65100; border-radius: 5px; }"
-            )
-            self._mip_title_lbl.setText("Step 2: Cross-grain (C)")
-            self._mip_body_lbl.setText(
-                "Rotate 90\u00b0. Hold plate at 22% from one end along the width, "
-                "near one short edge. Tap center."
-            )
-            self._mip_step_lbl.setText(f"2/{total}")
-            self._sb_plate_step_lbl.setText(f"Step\u00a02/{total}")
             self._sb_plate_step_lbl.setVisible(True)
 
         elif state == State.REVIEWING_L:
-            self._mip_dot.setStyleSheet(
-                "QLabel { background-color: #1976D2; border-radius: 5px; }"
+            color_hex  = "#1976D2"
+            short_status = "Review L"
+            step_text  = f"Step\u00a01/{total}"
+            icon_name  = "fa5.check-circle"
+            title      = "Review L Tap \u2014 Accept or Redo"
+            body       = (
+                "L tap captured. Review the spectrum \u2014 press Accept to continue "
+                "to the C tap, or Redo to re-capture."
             )
-            self._mip_title_lbl.setText("Review L Tap \u2014 Accept or Redo")
-            self._mip_body_lbl.setText(
-                "L tap captured. Press \u2018Accept\u2019 to continue to the "
-                + ("C tap, or \u2018Redo L\u2019 to re-capture.")
-            )
-            self._mip_step_lbl.setText(f"1/{total}")
-            self._sb_plate_step_lbl.setText(f"Step\u00a01/{total}")
-            self._sb_plate_step_lbl.setVisible(True)
+            # Mirrors Swift: step label only shown when isDetecting (hidden during review)
+            self._sb_plate_step_lbl.setVisible(False)
 
-        elif state == State.REVIEWING_C:
-            self._mip_dot.setStyleSheet(
-                "QLabel { background-color: #E65100; border-radius: 5px; }"
+        elif state == State.WAITING_C:
+            color_hex  = "#E65100"
+            short_status = "C tap..."
+            step_text  = f"Step\u00a02/{total}"
+            icon_name  = "fa5s.wave-square"
+            title      = "Step 2: Cross-grain (C) Mode"
+            body       = (
+                "Hold plate at 22% from one end along the width, near one short edge "
+                "(not at the length node). Tap center."
             )
-            self._mip_title_lbl.setText("Review C Tap \u2014 Accept or Redo")
-            self._mip_body_lbl.setText(
-                "C tap captured. Press \u2018Accept\u2019 to continue"
-                + (" to FLC tap" if measure_flc else " and complete")
-                + ", or \u2018Redo C\u2019 to re-capture."
-            )
-            self._mip_step_lbl.setText(f"2/{total}")
             self._sb_plate_step_lbl.setText(f"Step\u00a02/{total}")
             self._sb_plate_step_lbl.setVisible(True)
 
-        elif state == State.WAITING_FLC:
-            self._mip_dot.setStyleSheet(
-                "QLabel { background-color: #7B1FA2; border-radius: 5px; }"
+        elif state == State.REVIEWING_C:
+            color_hex  = "#E65100"
+            short_status = "Review C"
+            step_text  = f"Step\u00a02/{total}"
+            icon_name  = "fa5.check-circle"
+            title      = "Review C Tap \u2014 Accept or Redo"
+            body       = (
+                "C tap captured. Review the spectrum \u2014 press Accept to continue, "
+                "or Redo to re-capture."
             )
-            self._mip_title_lbl.setText("Step 3: FLC (Diagonal)")
-            self._mip_body_lbl.setText(
-                "Hold plate at the midpoint of one long edge. "
-                "Tap near the opposite corner (~22% from both end and side)."
-            )
-            self._mip_step_lbl.setText(f"3/{total}")
-            self._sb_plate_step_lbl.setText(f"Step\u00a03/{total}")
-            self._sb_plate_step_lbl.setVisible(True)
-
-        elif state == State.REVIEWING_FLC:
-            self._mip_dot.setStyleSheet(
-                "QLabel { background-color: #7B1FA2; border-radius: 5px; }"
-            )
-            self._mip_title_lbl.setText("Review FLC Tap \u2014 Accept or Redo")
-            self._mip_body_lbl.setText(
-                "FLC tap captured. Press \u2018Accept\u2019 to complete the measurement, "
-                "or \u2018Redo FLC\u2019 to re-capture."
-            )
-            self._mip_step_lbl.setText(f"3/{total}")
-            self._sb_plate_step_lbl.setText(f"Step\u00a03/{total}")
-            self._sb_plate_step_lbl.setVisible(True)
-
-        else:  # COMPLETE
-            self._mip_dot.setStyleSheet(
-                "QLabel { background-color: #388E3C; border-radius: 5px; }"
-            )
-            self._mip_title_lbl.setText("Measurement Complete")
-            self._mip_body_lbl.setText(
-                "All modes captured. Review the peak selections in the results panel."
-            )
-            self._mip_step_lbl.setText("\u2713")
+            # Mirrors Swift: step label only shown when isDetecting (hidden during review)
             self._sb_plate_step_lbl.setVisible(False)
 
+        elif state == State.WAITING_FLC:
+            color_hex  = "#7B1FA2"
+            step_text  = f"Step\u00a03/{total}"
+            self._sb_plate_step_lbl.setText(f"Step\u00a03/{total}")
+            self._sb_plate_step_lbl.setVisible(True)
+            # WAITING_FLC covers two Swift sub-states; distinguish via underlying MTP phase.
+            mtp = self.fft_canvas.analyzer.material_tap_phase
+            from models.material_tap_phase import MaterialTapPhase as _MTPLocal
+            if mtp == _MTPLocal.CAPTURING_FLC:
+                # Swift capturingFlc: actively capturing the FLC tap
+                short_status = "FLC tap..."
+                icon_name    = "fa5s.wave-square"
+                title        = "Step 3: FLC (Diagonal) Mode"
+                body         = (
+                    "Hold plate at the midpoint of one long edge. Tap near the opposite corner "
+                    "(~22% from both the end and the side). Measures shear stiffness."
+                )
+            else:
+                # Swift waitingForFlcTap: C captured, user repositioning for FLC
+                short_status = "Tap for FLC"
+                icon_name    = "fa5s.sync-alt"
+                title        = "C Captured \u2014 Prepare for Step 3"
+                body         = (
+                    "Cross-grain mode captured! Now hold plate at the midpoint of one long edge. "
+                    "Tap near the opposite corner (~22% from both sides) for FLC."
+                )
+
+        elif state == State.REVIEWING_FLC:
+            color_hex  = "#7B1FA2"
+            short_status = "Review FLC"
+            step_text  = f"Step\u00a03/{total}"
+            icon_name  = "fa5.check-circle"
+            title      = "Review FLC Tap \u2014 Accept or Redo"
+            body       = (
+                "FLC tap captured. Review the spectrum \u2014 press Accept to complete "
+                "the measurement, or Redo to re-capture."
+            )
+            # Mirrors Swift: step label only shown when isDetecting (hidden during review)
+            self._sb_plate_step_lbl.setVisible(False)
+
+        else:  # COMPLETE
+            color_hex  = "#388E3C"
+            short_status = "Done"
+            last_step  = total if measure_flc else (1 if is_brace else 2)
+            step_text  = f"Step\u00a0{last_step}/{total}"
+            icon_name  = "fa5s.check-circle"
+            title      = "Measurement Complete"
+            if is_brace:
+                body = (
+                    "fL captured! Review the fL (blue) peak selection in the Results panel. "
+                    "Adjust if the auto-selection isn\u2019t correct."
+                )
+            else:
+                flc_part = ", and FLC (purple)" if measure_flc else ""
+                body = (
+                    f"All modes captured! Review the L (blue), C (orange){flc_part} peak "
+                    "selections in the Results panel. Adjust if the auto-selection isn\u2019t correct."
+                )
+            self._sb_plate_step_lbl.setVisible(False)
+
+        # Apply dot color
+        self._mip_dot.setStyleSheet(
+            f"QLabel {{ background-color: {color_hex}; border-radius: 5px; }}"
+        )
+
+        # Apply shortStatus text + matching color
+        self._mip_short_status_lbl.setText(short_status)
+        self._mip_short_status_lbl.setStyleSheet(f"color: {color_hex};")
+
+        # Apply step label (secondary color, "Step N/M" format)
+        self._mip_step_lbl.setText(step_text)
+
+        # Apply phase icon (qtawesome equivalent of SF Symbol name)
+        try:
+            icon_px = qta.icon(icon_name, color=color_hex).pixmap(24, 24)
+            self._mip_icon_lbl.setPixmap(icon_px)
+        except Exception:
+            self._mip_icon_lbl.clear()
+
+        # Apply title and body description
+        self._mip_title_lbl.setText(title)
+        self._mip_body_lbl.setText(body)
+
         # ── Status bar detect message (left side) ───────────────────────
+        # Mirrors Swift: Text(tap.statusMessage).foregroundColor(tap.isDetecting ? .primary : .orange)
+        # During REVIEWING phases isDetecting is False, so the message is orange.
         if status:
             self._sb_detect_msg.setText(status)
-            self._sb_detect_msg.setStyleSheet("")
+            in_review = state in (State.REVIEWING_L, State.REVIEWING_C, State.REVIEWING_FLC)
+            self._sb_detect_msg.setStyleSheet(
+                "color: orange;" if in_review else ""
+            )
 
     def _on_plate_analysis_complete(self, f_long: float, f_cross: float, f_flc: float) -> None:
         """Auto-compute material properties and display in results panel."""

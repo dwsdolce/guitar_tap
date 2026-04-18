@@ -723,6 +723,8 @@ class FftCanvas(pg.PlotWidget):
         except ValueError:
             return
         self.analyzer._guitar_type = guitar_type
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        is_guitar = _tds.measurement_type().is_guitar
         for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):
             r, g, b, _ = rgba
             pen = pg.mkPen((r, g, b), width=1, style=QtCore.Qt.PenStyle.DashLine)
@@ -734,13 +736,13 @@ class FftCanvas(pg.PlotWidget):
                 label=abbrev, labelOpts=lbl_opts,
             )
             lo_line.setZValue(-10)
-            lo_line.setVisible(self._mode_bands_visible)
+            lo_line.setVisible(self._mode_bands_visible and is_guitar)
             self.addItem(lo_line)
             self._mode_band_items.append(lo_line)
 
             hi_line = pg.InfiniteLine(pos=hi, angle=90, movable=False, pen=pen)
             hi_line.setZValue(-10)
-            hi_line.setVisible(self._mode_bands_visible)
+            hi_line.setVisible(self._mode_bands_visible and is_guitar)
             self.addItem(hi_line)
             self._mode_band_items.append(hi_line)
 
@@ -750,10 +752,19 @@ class FftCanvas(pg.PlotWidget):
         self._mode_band_items.clear()
 
     def show_mode_bands(self, visible: bool) -> None:
-        """Show or hide all mode band overlays."""
+        """Show or hide all mode band overlays.
+
+        Mirrors Swift modeBoundaryContent which is always gated by
+        `showModeBoundaries && measurementType.isGuitar` — both conditions
+        are re-evaluated on every render.  Python must apply the same joint
+        gate here because setVisible(visible) would otherwise re-show bands
+        when called while in plate/brace mode.
+        """
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        is_guitar = _tds.measurement_type().is_guitar
         self._mode_bands_visible = visible
         for item in self._mode_band_items:
-            item.setVisible(visible)
+            item.setVisible(visible and is_guitar)
 
     # ------------------------------------------------------------------ #
     # Hot-plug device detection (forwarded from analyzer signals)
@@ -776,8 +787,14 @@ class FftCanvas(pg.PlotWidget):
 
         freq_color = "rgb(220,50,50)"   # default red
 
-        if self.is_comparing:
-            # Snap to the nearest comparison curve by screen-Y distance (mirrors
+        # Material spectra overlays (plate/brace review states) are stored in
+        # _comparison_curves even when is_comparing is False.  Snap to them
+        # whenever they are present — mirrors Swift resolveSnapState which snaps
+        # when isMeasurementComplete || !materialSpectra.isEmpty.
+        has_material_curves = bool(self._comparison_curves)
+
+        if self.is_comparing or (has_material_curves and not self.is_measurement_complete):
+            # Snap to the nearest comparison/material curve by screen-Y distance (mirrors
             # Swift's nearestSeriesIndex() with curveGravityThreshold = 12 pt).
             best_idx   = getattr(self, "_locked_series_index", 0)
             best_px_dy = float("inf")
@@ -1526,7 +1543,10 @@ class FftCanvas(pg.PlotWidget):
                     ``self.freq`` for legacy callers.
         """
         freq_axis = freqs if freqs is not None else self.freq
-        if np.any(mag_db):
+        # Do not overwrite fft_line while material spectra overlays are active —
+        # mirrors Swift SpectrumView which renders materialSpectraContent exclusively
+        # (instead of spectrumLineContent) when materialSpectra is non-empty.
+        if np.any(mag_db) and not self._comparison_curves:
             self.fft_line.setData(freq_axis, mag_db)
         if self.analyzer._auto_scale_db and np.any(mag_db):
             valid = mag_db[(mag_db > -100) & (mag_db < 20)]
