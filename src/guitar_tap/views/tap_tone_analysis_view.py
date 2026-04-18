@@ -2041,9 +2041,21 @@ class MainWindow(QtWidgets.QMainWindow):
         # drives the star display at all times.
         analyzer = self.fft_canvas.analyzer
         if self._is_measurement_complete or not self._current_mt().is_guitar:
-            sel_freqs = getattr(analyzer, "selected_peak_frequencies", None)
-            if sel_freqs is not None:
-                self.peak_widget.model.selected_frequencies = set(sel_freqs)
+            if not self._current_mt().is_guitar:
+                # For plate/brace during live measurement, selected_frequencies must
+                # include ALL identified peaks so far (L, C, FLC as available) so that
+                # review phases show all accumulated annotations — mirrors Swift where
+                # selectedPeakIDs contains every resolved peak from all completed phases.
+                az = self.fft_canvas.analyzer
+                self.peak_widget.model.selected_frequencies = {
+                    p.frequency
+                    for p in (az.selected_longitudinal_peak, az.selected_cross_peak, az.selected_flc_peak)
+                    if p is not None
+                }
+            else:
+                sel_freqs = getattr(analyzer, "selected_peak_frequencies", None)
+                if sel_freqs is not None:
+                    self.peak_widget.model.selected_frequencies = set(sel_freqs)
 
         # Push plate/brace phase peak IDs to the model on every peaksChanged so
         # annotations label the identified peak immediately — mirrors Swift's
@@ -2561,6 +2573,14 @@ class MainWindow(QtWidgets.QMainWindow):
             pm.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
             pm.selected_cross_peak_id        = az.effective_cross_peak_id
             pm.selected_flc_peak_id          = az.effective_flc_peak_id
+            # Populate selected_frequencies so show_value_bool() returns True for all
+            # identified peaks — mirrors Swift selectedPeakIDs which includes all
+            # resolved L/C/FLC peaks in the annotation visibility filter.
+            pm.selected_frequencies = {
+                p.frequency
+                for p in (az.selected_longitudinal_peak, az.selected_cross_peak, az.selected_flc_peak)
+                if p is not None
+            }
             pm.refresh_annotations()
 
     def _plate_step_label(self, phase_step: int, total: int) -> str:

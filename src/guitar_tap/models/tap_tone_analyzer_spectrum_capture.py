@@ -339,6 +339,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             meas_type == _MT.PLATE
             or phase == _MTP.CAPTURING_LONGITUDINAL
             or phase == _MTP.CAPTURING_CROSS
+            or phase == _MTP.CAPTURING_FLC
+            or phase == _MTP.WAITING_FOR_FLC_TAP
         )
 
         dominant_peak = self.find_dominant_peak(
