@@ -91,46 +91,11 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._peak_layout.addStretch()
         outer.addWidget(self._peak_container)
 
-        # ── separator + instruction section ────────────────────────────────
-        outer.addWidget(_hsep())
-
-        instr = QtWidgets.QWidget()
-        il = QtWidgets.QVBoxLayout(instr)
-        il.setContentsMargins(0, 4, 0, 0)
-        il.setSpacing(4)
-
-        _bold9 = QtGui.QFont()
-        _bold9.setPointSize(9)
-        _bold9.setBold(True)
-        self._instr_title = QtWidgets.QLabel()
-        self._instr_title.setFont(_bold9)
-        il.addWidget(self._instr_title)
-
-        # Steps container — rebuilt per mode
-        self._instr_steps_widget = QtWidgets.QWidget()
-        self._instr_steps_layout = QtWidgets.QVBoxLayout(self._instr_steps_widget)
-        self._instr_steps_layout.setContentsMargins(0, 0, 0, 0)
-        self._instr_steps_layout.setSpacing(6)
-        il.addWidget(self._instr_steps_widget)
-
-        _italic9 = QtGui.QFont()
-        _italic9.setPointSize(9)
-        _italic9.setItalic(True)
-        self._instr_footer = QtWidgets.QLabel()
-        self._instr_footer.setFont(_italic9)
-        self._instr_footer.setWordWrap(True)
-        self._instr_footer.setStyleSheet("color: palette(shadow);")
-        il.addWidget(self._instr_footer)
-
-        outer.addWidget(instr)
-        self._rebuild_instructions()
-
     # ── public API ──────────────────────────────────────────────────────
 
     def set_mode(self, show_cross: bool, show_flc: bool) -> None:
         self._show_cross = show_cross
         self._show_flc   = show_flc
-        self._rebuild_instructions()
         self._rebuild_rows()
 
     def update_peaks(self, peaks) -> None:
@@ -297,6 +262,52 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._rebuild_rows()
         self.assignmentChanged.emit(self._long_freq, self._cross_freq, self._flc_freq)
 
+
+class MaterialInstructionsWidget(QtWidgets.QWidget):
+    """Process instructions shown at the bottom of the material scroll view.
+
+    Mirrors Swift plateProcessInstructionsSection / braceProcessInstructionsSection,
+    which appear after the plate/brace properties section (not after peaks).
+    """
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._show_cross: bool = True
+        self._show_flc:   bool = False
+
+        il = QtWidgets.QVBoxLayout(self)
+        il.setContentsMargins(0, 4, 0, 0)
+        il.setSpacing(4)
+
+        _bold9 = QtGui.QFont()
+        _bold9.setPointSize(9)
+        _bold9.setBold(True)
+        self._instr_title = QtWidgets.QLabel()
+        self._instr_title.setFont(_bold9)
+        il.addWidget(self._instr_title)
+
+        self._instr_steps_widget = QtWidgets.QWidget()
+        self._instr_steps_layout = QtWidgets.QVBoxLayout(self._instr_steps_widget)
+        self._instr_steps_layout.setContentsMargins(0, 0, 0, 0)
+        self._instr_steps_layout.setSpacing(6)
+        il.addWidget(self._instr_steps_widget)
+
+        _italic9 = QtGui.QFont()
+        _italic9.setPointSize(9)
+        _italic9.setItalic(True)
+        self._instr_footer = QtWidgets.QLabel()
+        self._instr_footer.setFont(_italic9)
+        self._instr_footer.setWordWrap(True)
+        self._instr_footer.setStyleSheet("color: palette(shadow);")
+        il.addWidget(self._instr_footer)
+
+        self._rebuild()
+
+    def set_mode(self, show_cross: bool, show_flc: bool) -> None:
+        self._show_cross = show_cross
+        self._show_flc   = show_flc
+        self._rebuild()
+
     def _step_row(self, dot_color: str, bold_title: str, body: str) -> QtWidgets.QWidget:
         """One instruction step: colored circle + bold title + body text."""
         _sm = QtGui.QFont()
@@ -331,8 +342,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         hl.addLayout(txt_vbox, stretch=1)
         return w
 
-    def _rebuild_instructions(self) -> None:
-        # Clear existing step widgets
+    def _rebuild(self) -> None:
         while self._instr_steps_layout.count() > 0:
             item = self._instr_steps_layout.takeAt(0)
             if item.widget():
@@ -929,6 +939,85 @@ class MainWindow(QtWidgets.QMainWindow):
         # Redirect ps_vbox for remaining plate content rows
         ps_vbox = pc_vbox
 
+        # ── Gore Target Thickness box (shown immediately after peaks — key result) ──
+        # Mirrors Swift: goreThicknessSectionView is placed BEFORE platePropertiesSection.
+        self._gore_frame = QtWidgets.QFrame()
+        self._gore_frame.setObjectName("gore_frame")
+        # Swift: Color.accentColor.opacity(0.08); system blue = #007AFF → alpha ~20/255
+        self._gore_frame.setStyleSheet(
+            "#gore_frame { background-color: rgba(0,122,255,20);"
+            " border-radius: 8px; }"
+        )
+        _gf_vbox = QtWidgets.QVBoxLayout(self._gore_frame)
+        _gf_vbox.setContentsMargins(8, 4, 8, 4)
+        _gf_vbox.setSpacing(3)
+
+        _gore_hdr_fnt = QtGui.QFont()
+        _gore_hdr_fnt.setPointSize(small_font.pointSize())
+        _gore_hdr_fnt.setBold(True)
+        _gore_title_lbl = QtWidgets.QLabel("Gore Target Thickness")
+        _gore_title_lbl.setFont(_gore_hdr_fnt)
+        _gf_vbox.addWidget(_gore_title_lbl)
+
+        _gore_val_row = QtWidgets.QHBoxLayout()
+        _gore_val_row.setSpacing(6)
+        self._gore_thickness_value = QtWidgets.QLabel("—")
+        _gv_fnt = QtGui.QFont()
+        _gv_fnt.setPointSize(32)
+        _gv_fnt.setBold(True)
+        self._gore_thickness_value.setFont(_gv_fnt)
+        self._gore_thickness_value.setStyleSheet("color: #007AFF;")
+        _gore_val_row.addWidget(self._gore_thickness_value)
+        _gore_mm_lbl = QtWidgets.QLabel("mm")
+        _gore_mm_fnt = QtGui.QFont()
+        _gore_mm_fnt.setPointSize(small_font.pointSize() + 4)
+        _gore_mm_lbl.setFont(_gore_mm_fnt)
+        _gore_mm_lbl.setStyleSheet("color: palette(shadow);")
+        _gore_val_row.addWidget(_gore_mm_lbl)
+        _gore_val_row.addStretch()
+        _gf_vbox.addLayout(_gore_val_row)
+
+        # GLC known: "Shear Modulus (GLC):"  [spacer]  "X.XXX GPa"
+        _gore_glc_row_w = QtWidgets.QWidget()
+        _gore_glc_hl = QtWidgets.QHBoxLayout(_gore_glc_row_w)
+        _gore_glc_hl.setContentsMargins(0, 0, 0, 0)
+        _gore_glc_title = QtWidgets.QLabel("Shear Modulus (GLC):")
+        _gore_glc_title.setFont(small_font)
+        _gore_glc_title.setStyleSheet("color: palette(shadow);")
+        self._gore_glc_value = QtWidgets.QLabel("—")
+        self._gore_glc_value.setFont(small_font)
+        _gore_glc_hl.addWidget(_gore_glc_title)
+        _gore_glc_hl.addStretch()
+        _gore_glc_hl.addWidget(self._gore_glc_value)
+        _gore_glc_row_w.setVisible(False)
+        _gf_vbox.addWidget(_gore_glc_row_w)
+        self._gore_glc_row_w = _gore_glc_row_w
+
+        # GLC not known: info message
+        self._gore_glc_info = QtWidgets.QLabel()
+        self._gore_glc_info.setFont(small_font)
+        self._gore_glc_info.setStyleSheet("color: palette(shadow);")
+        self._gore_glc_info.setWordWrap(True)
+        _gf_vbox.addWidget(self._gore_glc_info)
+
+        self._gore_params_lbl = QtWidgets.QLabel()
+        _gp_fnt = QtGui.QFont()
+        _gp_fnt.setPointSize(max(small_font.pointSize() - 1, 8))
+        self._gore_params_lbl.setFont(_gp_fnt)
+        self._gore_params_lbl.setStyleSheet("color: palette(shadow);")
+        _gf_vbox.addWidget(self._gore_params_lbl)
+
+        self._gore_frame.setVisible(False)
+        ps_vbox.addWidget(self._gore_frame)
+
+        # Separator between gore box and plate properties (mirrors Swift Divider).
+        # Hidden when gore is hidden so there's no double-separator.
+        self._gore_sep = _hsep()
+        self._gore_sep.setVisible(False)
+        ps_vbox.addWidget(self._gore_sep)
+
+        # ── Plate Properties section (mirrors Swift platePropertiesSection) ──
+
         # Frequencies — one per line (fL, fC, optionally fLC)
         self._plate_fl_lbl = QtWidgets.QLabel("fL (Longitudinal): —")
         self._plate_fl_lbl.setFont(small_font)
@@ -1082,76 +1171,6 @@ class MainWindow(QtWidgets.QMainWindow):
         _overall_row.addWidget(self._plate_overall_quality)
         ps_vbox.addLayout(_overall_row)
 
-        # ── Gore Target Thickness box ─────────────────────────────────────
-        self._gore_frame = QtWidgets.QFrame()
-        self._gore_frame.setObjectName("gore_frame")
-        # Swift: Color.accentColor.opacity(0.08); system blue = #007AFF → alpha ~20/255
-        self._gore_frame.setStyleSheet(
-            "#gore_frame { background-color: rgba(0,122,255,20);"
-            " border-radius: 8px; }"
-        )
-        _gf_vbox = QtWidgets.QVBoxLayout(self._gore_frame)
-        _gf_vbox.setContentsMargins(8, 4, 8, 4)
-        _gf_vbox.setSpacing(3)
-
-        _gore_hdr_fnt = QtGui.QFont()
-        _gore_hdr_fnt.setPointSize(small_font.pointSize())
-        _gore_hdr_fnt.setBold(True)
-        _gore_title_lbl = QtWidgets.QLabel("Gore Target Thickness")
-        _gore_title_lbl.setFont(_gore_hdr_fnt)
-        _gf_vbox.addWidget(_gore_title_lbl)
-
-        _gore_val_row = QtWidgets.QHBoxLayout()
-        _gore_val_row.setSpacing(6)
-        self._gore_thickness_value = QtWidgets.QLabel("—")
-        _gv_fnt = QtGui.QFont()
-        _gv_fnt.setPointSize(32)
-        _gv_fnt.setBold(True)
-        self._gore_thickness_value.setFont(_gv_fnt)
-        self._gore_thickness_value.setStyleSheet("color: #007AFF;")
-        _gore_val_row.addWidget(self._gore_thickness_value)
-        _gore_mm_lbl = QtWidgets.QLabel("mm")
-        _gore_mm_fnt = QtGui.QFont()
-        _gore_mm_fnt.setPointSize(small_font.pointSize() + 4)
-        _gore_mm_lbl.setFont(_gore_mm_fnt)
-        _gore_mm_lbl.setStyleSheet("color: palette(shadow);")
-        _gore_val_row.addWidget(_gore_mm_lbl)
-        _gore_val_row.addStretch()
-        _gf_vbox.addLayout(_gore_val_row)
-
-        # GLC known: "Shear Modulus (GLC):"  [spacer]  "X.XXX GPa"
-        _gore_glc_row_w = QtWidgets.QWidget()
-        _gore_glc_hl = QtWidgets.QHBoxLayout(_gore_glc_row_w)
-        _gore_glc_hl.setContentsMargins(0, 0, 0, 0)
-        _gore_glc_title = QtWidgets.QLabel("Shear Modulus (GLC):")
-        _gore_glc_title.setFont(small_font)
-        _gore_glc_title.setStyleSheet("color: palette(shadow);")
-        self._gore_glc_value = QtWidgets.QLabel("—")
-        self._gore_glc_value.setFont(small_font)
-        _gore_glc_hl.addWidget(_gore_glc_title)
-        _gore_glc_hl.addStretch()
-        _gore_glc_hl.addWidget(self._gore_glc_value)
-        _gore_glc_row_w.setVisible(False)
-        _gf_vbox.addWidget(_gore_glc_row_w)
-        self._gore_glc_row_w = _gore_glc_row_w
-
-        # GLC not known: info message
-        self._gore_glc_info = QtWidgets.QLabel()
-        self._gore_glc_info.setFont(small_font)
-        self._gore_glc_info.setStyleSheet("color: palette(shadow);")
-        self._gore_glc_info.setWordWrap(True)
-        _gf_vbox.addWidget(self._gore_glc_info)
-
-        self._gore_params_lbl = QtWidgets.QLabel()
-        _gp_fnt = QtGui.QFont()
-        _gp_fnt.setPointSize(max(small_font.pointSize() - 1, 8))
-        self._gore_params_lbl.setFont(_gp_fnt)
-        self._gore_params_lbl.setStyleSheet("color: palette(shadow);")
-        _gf_vbox.addWidget(self._gore_params_lbl)
-
-        self._gore_frame.setVisible(False)
-        ps_vbox.addWidget(self._gore_frame)
-
         ms_vbox.addWidget(self._plate_section)
 
         self._brace_section.setVisible(False)
@@ -1159,12 +1178,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_section.setVisible(False)
 
         # ── Wrap _material_peak_widget + _material_section in a scroll area ──
+        # Process instructions — shown after plate/brace properties (mirrors Swift layout:
+        # plateProcessInstructionsSection / braceProcessInstructionsSection appear at the
+        # bottom of the scroll view, after goreThicknessSectionView and platePropertiesSection).
+        self._material_instr_widget = MaterialInstructionsWidget()
+
         _mat_container = QtWidgets.QWidget()
         _mat_vbox = QtWidgets.QVBoxLayout(_mat_container)
         _mat_vbox.setContentsMargins(0, 0, 0, 0)
         _mat_vbox.setSpacing(8)
         _mat_vbox.addWidget(self._material_peak_widget)
         _mat_vbox.addWidget(self._material_section)
+        _mat_vbox.addWidget(_hsep())
+        _mat_vbox.addWidget(self._material_instr_widget)
         _mat_vbox.addStretch()
 
         self._material_scroll = QtWidgets.QScrollArea()
@@ -2498,6 +2524,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 show_cross=not mt.is_brace,
                 show_flc=show_flc,
             )
+            self._material_instr_widget.set_mode(
+                show_cross=not mt.is_brace,
+                show_flc=show_flc,
+            )
             self._mat_title.setText(
                 "Brace Properties" if mt.is_brace else "Plate Properties"
             )
@@ -2971,10 +3001,13 @@ class MainWindow(QtWidgets.QMainWindow):
                     f"\n{_preset_lbl}"
                 )
                 self._gore_frame.setVisible(True)
+                self._gore_sep.setVisible(True)
             else:
                 self._gore_frame.setVisible(False)
+                self._gore_sep.setVisible(False)
         except Exception:
             self._gore_frame.setVisible(False)
+            self._gore_sep.setVisible(False)
         self._plate_placeholder.setVisible(False)
         self._plate_content.setVisible(True)
         self._brace_section.setVisible(False)
@@ -3452,6 +3485,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # Populate material peak widget with loaded peaks and assignment
             _show_flc = (not _restored_mt.is_brace) and _f_flc > 0
             self._material_peak_widget.set_mode(
+                show_cross=not _restored_mt.is_brace,
+                show_flc=_show_flc,
+            )
+            self._material_instr_widget.set_mode(
                 show_cross=not _restored_mt.is_brace,
                 show_flc=_show_flc,
             )
