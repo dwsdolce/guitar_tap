@@ -106,13 +106,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
         max_freq: float,
         min_db: float,
         max_db: float,
-        mt_str: str,
     ):
         """Build a per-phase ``SpectrumSnapshot`` from magnitude/frequency arrays.
 
-        Mirrors the local ``makePhaseSnapshot`` helper in Swift's
-        ``TapToneAnalysisView+Actions.saveMeasurement()`` — lifted to model scope
-        since the model owns the per-phase spectrum data.
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.makePhaseSnapshot(...)``.
+        Reads ``TapDisplaySettings.measurementType`` internally — the measurement type
+        is not passed as a parameter (mirrors Swift where the helper captures it locally).
 
         Args:
             magnitudes:  List or array of dB magnitudes for this phase.
@@ -121,18 +120,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
             max_freq:    Visible axis maximum frequency (Hz), from view.
             min_db:      Visible axis minimum dB, from view.
             max_db:      Visible axis maximum dB, from view.
-            mt_str:      Measurement type value string (e.g. ``"plate"``).
         """
         from .spectrum_snapshot import SpectrumSnapshot
         from .tap_display_settings import TapDisplaySettings as TDS
-        from .measurement_type import MeasurementType
 
-        try:
-            mt = MeasurementType(mt_str)
-        except ValueError:
-            mt = MeasurementType.CLASSICAL
-
-        _psp_str = TDS.plate_stiffness_preset()
+        measurement_type = TDS.measurement_type()
         return SpectrumSnapshot(
             frequencies=frequencies.tolist() if hasattr(frequencies, "tolist") else list(frequencies),
             magnitudes=magnitudes.tolist() if hasattr(magnitudes, "tolist") else list(magnitudes),
@@ -143,24 +135,21 @@ class TapToneAnalyzerMeasurementManagementMixin:
             is_logarithmic=False,
             show_unknown_modes=TDS.show_unknown_modes(),
             guitar_type=TDS.guitar_type(),
-            measurement_type=mt_str,
+            measurement_type=measurement_type.value,
             max_peaks=getattr(self, "max_peaks", None),
-            plate_length=TDS.plate_length() if mt.is_plate else None,
-            plate_width=TDS.plate_width() if mt.is_plate else None,
-            plate_thickness=TDS.plate_thickness() if mt.is_plate else None,
-            plate_mass=TDS.plate_mass() if mt.is_plate else None,
-            plate_stiffness_preset=_psp_str if mt.is_plate else None,
-            custom_plate_stiffness=(
-                TDS.custom_plate_stiffness()
-                if mt.is_plate and _psp_str == "Custom" else None
-            ),
-            guitar_body_length=TDS.guitar_body_length() if mt.is_plate else None,
-            guitar_body_width=TDS.guitar_body_width() if mt.is_plate else None,
-            measure_flc=TDS.measure_flc() if mt.is_plate else None,
-            brace_length=TDS.brace_length() if mt.is_brace else None,
-            brace_width=TDS.brace_width() if mt.is_brace else None,
-            brace_thickness=TDS.brace_thickness() if mt.is_brace else None,
-            brace_mass=TDS.brace_mass() if mt.is_brace else None,
+            plate_length=TDS.plate_length() if measurement_type.is_plate else None,
+            plate_width=TDS.plate_width() if measurement_type.is_plate else None,
+            plate_thickness=TDS.plate_thickness() if measurement_type.is_plate else None,
+            plate_mass=TDS.plate_mass() if measurement_type.is_plate else None,
+            guitar_body_length=TDS.guitar_body_length() if measurement_type.is_plate else None,
+            guitar_body_width=TDS.guitar_body_width() if measurement_type.is_plate else None,
+            plate_stiffness_preset=TDS.plate_stiffness_preset() if measurement_type.is_plate else None,
+            custom_plate_stiffness=TDS.custom_plate_stiffness() if measurement_type.is_plate else None,
+            measure_flc=TDS.measure_flc() if measurement_type.is_plate else None,
+            brace_length=TDS.brace_length() if measurement_type.is_brace else None,
+            brace_width=TDS.brace_width() if measurement_type.is_brace else None,
+            brace_thickness=TDS.brace_thickness() if measurement_type.is_brace else None,
+            brace_mass=TDS.brace_mass() if measurement_type.is_brace else None,
         )
 
     def save_measurement(
@@ -248,8 +237,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         cross_snapshot = None
         flc_snapshot = None
         if include_spectrum and not mt.is_guitar:
-            _kw = dict(min_freq=_min_freq, max_freq=_max_freq,
-                       min_db=_min_db, max_db=_max_db, mt_str=mt_str)
+            _kw = dict(min_freq=_min_freq, max_freq=_max_freq, min_db=_min_db, max_db=_max_db)
             if self.longitudinal_spectrum is not None:
                 _mags, _freqs = self.longitudinal_spectrum
                 longitudinal_snapshot = self._make_phase_snapshot(_mags, _freqs, **_kw)
@@ -271,7 +259,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         # selectedPeakIDs / selectedPeakFrequencies
         # Mirrors Swift: selectedPeakIDs.isEmpty ? nil : Array(selectedPeakIDs)
-        sel_ids = list(self.selected_peak_ids)
+        # and currentPeaks.filter { selectedPeakIDs.contains($0.id) }.map { $0.frequency }
+        sel_ids = list(self.selected_peak_ids) if self.selected_peak_ids else None
         sel_freqs = (
             [p.frequency for p in peaks if p.id in self.selected_peak_ids]
             if sel_ids else None
@@ -307,8 +296,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             microphone_name=microphone_name,
             microphone_uid=microphone_uid,
             calibration_name=calibration_name,
-            measurement_type=mt_str,
-            guitar_type=TDS.guitar_type(),
         )
         self._append_measurement(measurement)
 

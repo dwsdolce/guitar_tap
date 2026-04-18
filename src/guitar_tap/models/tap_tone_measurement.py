@@ -388,12 +388,23 @@ class TapToneMeasurement:
         if self.calibration_name:
             d["calibrationName"] = self.calibration_name
 
-        # Convenience top-level fields for external consumers — mirrors Swift
-        # encode(to:) which resolves these from the snapshot.
-        if self.measurement_type:
-            d["measurementType"] = self.measurement_type
-        if self.guitar_type:
-            d["guitarType"] = self.guitar_type
+        # Convenience top-level fields for external consumers.
+        # Mirrors Swift encode(to:): resolved from the snapshot, not from stored fields.
+        # Swift: resolvedMeasurementType = spectrumSnapshot?.measurementType ?? longitudinalSnapshot?.measurementType
+        #        resolvedGuitarType       = spectrumSnapshot?.guitarType      ?? longitudinalSnapshot?.guitarType
+        _snap_for_type = self.spectrum_snapshot or self.longitudinal_snapshot
+        _resolved_mt = (
+            (_snap_for_type.measurement_type if _snap_for_type else None)
+            or self.measurement_type
+        )
+        _resolved_gt = (
+            (_snap_for_type.guitar_type if _snap_for_type else None)
+            or self.guitar_type
+        )
+        if _resolved_mt:
+            d["measurementType"] = _resolved_mt
+        if _resolved_gt:
+            d["guitarType"] = _resolved_gt
 
         # Peaks written last, with modeLabel injected per entry — mirrors Swift
         # encode(to:) PeakExportCodingKeys loop.  Note: export_measurement_json()
