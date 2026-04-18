@@ -531,6 +531,11 @@ class FftCanvas(pg.PlotWidget):
         # Comparison overlay state — mirrors comparisonSpectra in TapToneAnalyzer.swift
         self._comparison_curves: list[pg.PlotDataItem] = []
         self._comparison_legend: QtWidgets.QWidget | None = None
+        # True when _comparison_curves contains material phase overlays (L/C/FLC)
+        # rather than user-loaded comparison files.  When True, fft_line must still
+        # be updated so the live waveform is visible underneath the overlays —
+        # mirrors Swift SpectrumView always rendering spectrumLineContent.
+        self._has_material_spectra: bool = False
 
         # Last viewport-filtered peaks received via peaksChanged signal.
         # Tracks the emitted slice so point_picked and update_mode_colors
@@ -1384,6 +1389,7 @@ class FftCanvas(pg.PlotWidget):
         for curve in self._comparison_curves:
             self.removeItem(curve)
         self._comparison_curves.clear()
+        self._has_material_spectra = False
         if self._comparison_legend is not None:
             self._comparison_legend.deleteLater()
             self._comparison_legend = None
@@ -1401,6 +1407,8 @@ class FftCanvas(pg.PlotWidget):
         Each entry in `spectra` is (label, (r,g,b), freq_list, mag_list).
         Reuses the _comparison_curves / legend infrastructure so the display is
         identical to the comparison overlay but driven by phase snapshots.
+        The live fft_line remains visible underneath the overlays — mirrors Swift's
+        spectrumLineContent always being rendered with materialSpectraContent on top.
         """
         import numpy as np
 
@@ -1410,6 +1418,7 @@ class FftCanvas(pg.PlotWidget):
         if not spectra:
             return
 
+        self._has_material_spectra = True
         for label, (r, g, b), freq_list, mag_list in spectra:
             freq_arr = np.array(freq_list, dtype=np.float64)
             mag_arr  = np.array(mag_list,  dtype=np.float64)
@@ -1448,8 +1457,10 @@ class FftCanvas(pg.PlotWidget):
         self._comparison_legend = legend
         self._reposition_comparison_legend()
 
-        # Hide the single-line spectrum — only the phase curves should be visible.
-        self.fft_line.setData([], [])
+        # Leave fft_line visible — the live waveform is always shown so the user
+        # can see the spectrum they need to tap. Phase overlay curves are drawn
+        # on top. Mirrors Swift SpectrumView.baseChart which renders spectrumLineContent
+        # unconditionally and then adds materialSpectraContent on top.
 
     def set_fmin(self, fmin: int) -> None:
         """As it says"""
@@ -1543,10 +1554,18 @@ class FftCanvas(pg.PlotWidget):
                     ``self.freq`` for legacy callers.
         """
         freq_axis = freqs if freqs is not None else self.freq
-        # Do not overwrite fft_line while material spectra overlays are active —
-        # mirrors Swift SpectrumView which renders materialSpectraContent exclusively
-        # (instead of spectrumLineContent) when materialSpectra is non-empty.
-        if np.any(mag_db) and not self._comparison_curves:
+        # Suppress fft_line (live waveform) in two cases:
+        # 1. User comparison mode (user-loaded files) — only overlay curves shown.
+        # 2. Material phase review (REVIEWING_L/C/FLC) — only frozen phase overlays
+        #    and peak annotations should be visible, no live waveform underneath.
+        # Mirrors Swift SpectrumView.baseChart: spectrumLineContent is hidden when
+        # isReviewingMaterialPhase is true.
+        is_user_comparison = bool(self._comparison_curves) and not self._has_material_spectra
+        is_reviewing = (
+            self._has_material_spectra
+            and self.analyzer.material_tap_phase.is_reviewing
+        )
+        if np.any(mag_db) and not is_user_comparison and not is_reviewing:
             self.fft_line.setData(freq_axis, mag_db)
         if self.analyzer._auto_scale_db and np.any(mag_db):
             valid = mag_db[(mag_db > -100) & (mag_db < 20)]

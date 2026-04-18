@@ -102,6 +102,18 @@ class MaterialTapPhase(Enum):
     # MARK: - UI Strings
 
     @property
+    def is_reviewing(self) -> bool:
+        """Whether this phase is a review state (frozen spectrum, user decides Accept or Redo).
+
+        Mirrors Swift MaterialTapPhase.isReviewing.
+        """
+        return self in (
+            MaterialTapPhase.REVIEWING_LONGITUDINAL,
+            MaterialTapPhase.REVIEWING_CROSS,
+            MaterialTapPhase.REVIEWING_FLC,
+        )
+
+    @property
     def instruction(self) -> str:
         """Full instructional text appropriate for the current phase.
 

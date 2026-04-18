@@ -297,11 +297,18 @@ class TapToneAnalyzerControlMixin:
         Mirrors Swift numberOfTaps.didSet: if the user reduces the tap count
         to at or below what has already been captured mid-sequence, process
         immediately rather than waiting for more taps.
+
+        Note: the "process immediately" path only applies to guitar mode.  In
+        plate/brace mode captured_taps holds (magnitudes, frequencies, timestamp)
+        tuples (not homogeneous numpy arrays), and the tap count spinner is
+        disabled once any tap is captured, so this branch is unreachable in that
+        mode during normal use.
         """
         import numpy as np
         new_num = max(1, n)
         captured = len(self.captured_taps)
-        if captured >= new_num and captured > 0:
+        is_guitar = getattr(self._measurement_type, "is_guitar", True)
+        if is_guitar and captured >= new_num and captured > 0:
             # Already have enough — process now (mirrors Swift numberOfTaps.didSet)
             self.number_of_taps = new_num
             stacked = np.stack(self.captured_taps[:new_num])
@@ -507,6 +514,11 @@ class TapToneAnalyzerControlMixin:
 
         # Clear frozen spectrum for the redo.
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
+
+        # Notify the view of the updated cumulative tap count so the spinner
+        # lock and phase label reflect the correct state (mirrors Swift where
+        # currentTapCount is @Published and the view re-renders automatically).
+        self.tapCountChanged.emit(self.current_tap_count, self.number_of_taps)
 
         # Reset warm-up and re-arm detection.
         level = self._current_input_level_db

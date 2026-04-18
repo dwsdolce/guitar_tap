@@ -391,7 +391,7 @@ class AppSettings:
     @classmethod
     def measure_flc(cls) -> bool:
         v = cls._get("plate/measure_flc", None)
-        return bool(v) if v is not None else False
+        return str(v).lower() == "true" if v is not None else False
 
     @classmethod
     def set_measure_flc(cls, v: bool) -> None:

@@ -365,6 +365,21 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         total = self.total_plate_taps
         self.tap_progress = min(1.0, float(self.current_tap_count) / max(total, 1))
 
+        # Compute cumulative tap count across all phases — mirrors Swift's currentTapCount
+        # which is never reset between phases.  Python resets captured_taps (and thus
+        # current_tap_count) after each phase completes, so we must add the per-phase offset.
+        # phase_index: L=0, C=1, FLC=2
+        if phase == _MTP.CAPTURING_LONGITUDINAL:
+            _phase_index = 0
+        elif phase == _MTP.CAPTURING_CROSS:
+            _phase_index = 1
+        elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
+            _phase_index = 2
+        else:
+            _phase_index = 0
+        _cumulative = _phase_index * self.number_of_taps + self.current_tap_count
+        self.tapCountChanged.emit(_cumulative, self.number_of_taps)
+
         # Route to the phase-specific handler.
         # Mirrors Swift switch phase { case .capturingLongitudinal: … }
         if phase == _MTP.CAPTURING_LONGITUDINAL:

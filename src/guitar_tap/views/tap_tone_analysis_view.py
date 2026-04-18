@@ -59,15 +59,14 @@ def _hsep() -> QtWidgets.QFrame:
 
 
 class MaterialPeakListWidget(QtWidgets.QWidget):
-    """Plate/brace peak list with L/C/FLC mode-assignment buttons.
+    """Plate/brace peak list with L/C/FLC mode indicators.
 
     Mirrors Swift's MaterialPeakRowView rows inside peaksAndModesSection.
-    Each row shows: star toggle | frequency | magnitude | L button | [C] | [FLC]
-    Instruction text is shown below the peak list.
+    Each row shows: star toggle | frequency | magnitude | L badge | [C] | [FLC]
+    The L/C/FLC badges are display-only — they show which peak was auto-identified
+    for each phase. Assignment is driven entirely by the analyzer; Redo is the
+    only way to change it.
     """
-
-    # Emits (long_freq, cross_freq, flc_freq); 0.0 = not assigned.
-    assignmentChanged = QtCore.Signal(float, float, float)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -188,25 +187,19 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         tv.addWidget(m_lbl)
         hl.addWidget(txt, stretch=1)
 
-        # L button (always shown)
+        # L badge (always shown) — display-only, shows auto-identified peak
         is_l = (freq == self._long_freq)
-        l_btn = self._mode_btn("L", is_l, "#1976D2")
-        l_btn.clicked.connect(lambda _, f=freq: self._assign_long(f))
-        hl.addWidget(l_btn)
+        hl.addWidget(self._mode_btn("L", is_l, "#1976D2"))
 
-        # C button (plate only)
+        # C badge (plate only)
         if self._show_cross:
             is_c = (freq == self._cross_freq)
-            c_btn = self._mode_btn("C", is_c, "#E65100")
-            c_btn.clicked.connect(lambda _, f=freq: self._assign_cross(f))
-            hl.addWidget(c_btn)
+            hl.addWidget(self._mode_btn("C", is_c, "#E65100"))
 
-        # FLC button (plate + FLC only)
+        # FLC badge (plate + FLC only)
         if self._show_flc:
             is_flc = (freq == self._flc_freq)
-            flc_btn = self._mode_btn("FLC", is_flc, "#7B1FA2", width=42)
-            flc_btn.clicked.connect(lambda _, f=freq: self._assign_flc(f))
-            hl.addWidget(flc_btn)
+            hl.addWidget(self._mode_btn("FLC", is_flc, "#7B1FA2", width=42))
 
         return w
 
@@ -231,36 +224,6 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         if freq in self._selected: self._selected.discard(freq)
         else:                      self._selected.add(freq)
         self._rebuild_rows()
-
-    def _assign_long(self, freq: float) -> None:
-        if self._long_freq == freq:
-            self._long_freq = 0.0
-        else:
-            if self._cross_freq == freq: self._cross_freq = 0.0
-            if self._flc_freq   == freq: self._flc_freq   = 0.0
-            self._long_freq = freq
-        self._rebuild_rows()
-        self.assignmentChanged.emit(self._long_freq, self._cross_freq, self._flc_freq)
-
-    def _assign_cross(self, freq: float) -> None:
-        if self._cross_freq == freq:
-            self._cross_freq = 0.0
-        else:
-            if self._long_freq == freq: self._long_freq = 0.0
-            if self._flc_freq  == freq: self._flc_freq  = 0.0
-            self._cross_freq = freq
-        self._rebuild_rows()
-        self.assignmentChanged.emit(self._long_freq, self._cross_freq, self._flc_freq)
-
-    def _assign_flc(self, freq: float) -> None:
-        if self._flc_freq == freq:
-            self._flc_freq = 0.0
-        else:
-            if self._long_freq  == freq: self._long_freq  = 0.0
-            if self._cross_freq == freq: self._cross_freq = 0.0
-            self._flc_freq = freq
-        self._rebuild_rows()
-        self.assignmentChanged.emit(self._long_freq, self._cross_freq, self._flc_freq)
 
 
 class MaterialInstructionsWidget(QtWidgets.QWidget):
@@ -1496,6 +1459,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _norm_hl.addWidget(self._sb_tap_count)
 
         # Plate/brace phase step indicator (hidden by default)
+        # Wide enough to fit "Phase 1/2 · Tap 3/5" when numberOfTaps > 1.
         self._sb_plate_step_lbl = QtWidgets.QLabel("")
         self._sb_plate_step_lbl.setFont(caption)
         self._sb_plate_step_lbl.setStyleSheet("color: rgb(40,100,210); font-weight: bold;")
@@ -1556,7 +1520,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """Compact phase-instructions panel shown below the graph for plate/brace modes.
 
         Mirrors Swift's materialInstructionsView (GroupBox layout):
-          Row 1: [dot] [shortStatus]  [Spacer]  [Step N/M]
+          Row 1: [dot] [shortStatus]  [Spacer]  [Phase N/M]
           Divider
           Row 2: [icon]  [title]
                          [description]
@@ -1603,7 +1567,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         row1.addStretch(1)
 
-        # Step counter on the right — e.g. "Step 1/3", "✓" (secondary color)
+        # Phase counter on the right — e.g. "Phase 1/3", "✓" (secondary color)
         _sm9 = QtGui.QFont()
         _sm9.setPointSize(9)
         self._mip_step_lbl = QtWidgets.QLabel("")
@@ -1612,6 +1576,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._mip_step_lbl.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
+        self._mip_step_lbl.setMinimumWidth(70)
         row1.addWidget(self._mip_step_lbl)
 
         vl.addLayout(row1)
@@ -1733,9 +1698,6 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peaksChanged.connect(self._on_peaks_changed_results)
         canvas.peaksChanged.connect(self._on_peaks_changed_ratios)
         canvas.peaksChanged.connect(self._material_peak_widget.update_peaks)
-        self._material_peak_widget.assignmentChanged.connect(
-            self._on_material_assignment_changed
-        )
         canvas.peakSelected.connect(self.peak_widget.select_row)
         canvas.peakDeselected.connect(self.peak_widget.clear_selection)
         canvas.averagesChanged.connect(self.set_avg_completed)
@@ -1837,12 +1799,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tap_count_total = total
         # Only show count/progress while actively detecting — mirrors Swift `isDetecting && currentTapCount > 0`
         show = captured > 0 and not self._is_measurement_complete
+        mt = self._current_mt()
+        # For plate with numberOfTaps > 1 the tap counter is embedded in the phase label
+        # (mirrors Swift "Phase N/total · Tap p/q"), so hide the standalone tap count label.
+        embed_in_phase = show and not mt.is_brace and not mt.is_guitar and total > 1
         if show:
             pct = int(min(captured, total) * 100 / max(total, 1))  # clamp — mirrors Swift min(1.0, ...)
             self._sb_progress.setValue(pct)
-            self._sb_tap_count.setText(f"{captured}/{total}")
+            if not embed_in_phase:
+                self._sb_tap_count.setText(f"{captured}/{total}")
         self._sb_progress.setVisible(show)
-        self._sb_tap_count.setVisible(show)
+        self._sb_tap_count.setVisible(show and not embed_in_phase)
+        # Refresh the phase label text to embed the updated tap count (when visible on plate).
+        if self._sb_plate_step_lbl.isVisible() and embed_in_phase:
+            self._update_plate_phase_ui()
         self._update_tap_buttons()
 
     def set_ring_out(self, time_s: float) -> None:
@@ -2227,6 +2197,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # (mirrors Swift numberOfTaps.didSet)
         if self._loaded_tap_num is not None and n != self._loaded_tap_num:
             self._clear_loaded_settings_warning()
+        # Update the cached total so _plate_step_label() uses the new denominator.
+        # In Swift this is reactive: numberOfTaps @Published causes Text(phaseLabel)
+        # to re-evaluate automatically. In Python we must update _tap_count_total and
+        # refresh the phase label manually whenever the spinner value changes.
+        self._tap_count_total = n
+        if self._sb_plate_step_lbl.isVisible():
+            self._update_plate_phase_ui()
 
     # ================================================================
     # Tap button state
@@ -2246,9 +2223,16 @@ class MainWindow(QtWidgets.QMainWindow):
         ) and not self._current_mt().is_guitar
 
     def _update_tap_buttons(self) -> None:
-        """Refresh enabled/disabled state of New Tap, Pause, and Cancel buttons."""
+        """Refresh enabled/disabled state of New Tap, Pause, Cancel, and tap count spinner."""
         tap_num = self.tap_num_spin.value()
         mt = self._current_mt()
+
+        # Mirrors Swift: .disabled(tap.currentTapCount > 0 && !tap.isMeasurementComplete)
+        # Lock the tap count spinner once any tap has been detected in the current sequence,
+        # so the total can't change mid-measurement. Re-enables when measurement completes.
+        self.tap_num_spin.setEnabled(
+            not (self._tap_count_captured > 0 and not self._is_measurement_complete)
+        )
         is_plate = not mt.is_guitar
         # Mirrors Swift isDetecting: False when paused (pauseTapDetection sets isDetecting=false)
         is_detecting = self._is_running and not self._is_measurement_complete and not self._is_paused
@@ -2381,9 +2365,11 @@ class MainWindow(QtWidgets.QMainWindow):
         During review phases isDetecting is False → orange.
         """
         self._sb_detect_msg.setText(msg)
+        # Mirrors Swift: .foregroundColor(tap.isDetecting ? .primary : .orange)
+        # isDetecting is False during review phases AND when paused — both get orange.
         in_review = self._is_in_review_phase()
         self._sb_detect_msg.setStyleSheet(
-            "color: orange;" if in_review else ""
+            "color: orange;" if (in_review or self._is_paused) else ""
         )
 
     def _on_tap_detected(self) -> None:
@@ -2534,89 +2520,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_plate_phase_ui()   # Reset panel to IDLE state for new type
         self._update_measurement_badge()
 
-    def _on_material_assignment_changed(
-        self, long_freq: float, cross_freq: float, flc_freq: float
-    ) -> None:
-        """Called when the user reassigns L/C/FLC buttons in the material peak list.
-
-        Updates model.modes (so annotations and _collect_measurement_params stay correct)
-        and recomputes/displays the material properties.
-        """
-        peak_model = self.peak_widget.model
-        mt = self._current_mt()
-
-        # Rebuild model.modes for plate/brace labels.
-        # Use fft_canvas._current_peaks (list[ResonantPeak], populated by peaksChanged
-        # for all measurement modes) rather than fft_canvas.saved_peaks (a legacy numpy
-        # array only populated for guitar mode — always empty for plate/brace).
-        # Rule 7: slot payload (long_freq, cross_freq, flc_freq) is the authoritative
-        # source; _current_peaks provides the full peak list to label.
-        for freq in list(peak_model.modes.keys()):
-            if peak_model.modes.get(freq) in ("Longitudinal", "Cross-grain", "FLC", "Peak"):
-                del peak_model.modes[freq]
-
-        current_peaks = self.fft_canvas._current_peaks  # list[ResonantPeak]
-        if current_peaks:
-            for peak in current_peaks:
-                ff = float(peak.frequency)
-                if long_freq  > 0 and abs(ff - long_freq)  < 0.5:
-                    peak_model.modes[ff] = "Longitudinal"
-                elif cross_freq > 0 and abs(ff - cross_freq) < 0.5:
-                    peak_model.modes[ff] = "Cross-grain"
-                elif flc_freq   > 0 and abs(ff - flc_freq)  < 0.5:
-                    peak_model.modes[ff] = "FLC"
-                else:
-                    peak_model.modes[ff] = "Peak"
-            # Keep selected_frequencies in sync with the new L/C/FLC assignment so
-            # annotation mode "Selected" shows labels for the assigned peaks.
-            # Mirrors Swift togglePeakSelection / selectLongitudinalPeak updating
-            # selectedPeakIDs when the user reassigns in TapAnalysisResultsView.
-            peak_model.selected_frequencies = {
-                f for f in (long_freq, cross_freq, flc_freq) if f > 0
-            }
-            # Also update the peak ID fields so mode_value() stays consistent with
-            # the modes dict for any peaks not covered by a freq match.
-            az = self.fft_canvas.analyzer
-            peak_model.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
-            peak_model.selected_cross_peak_id        = az.effective_cross_peak_id
-            peak_model.selected_flc_peak_id         = az.effective_flc_peak_id
-            peak_model.refresh_annotations()
-
-        # Show/hide placeholder vs content and recalculate
-        dims = self._get_current_dims()
-        if dims and dims.is_valid() and long_freq > 0:
-            try:
-                if mt.is_brace:
-                    self._populate_brace_section(
-                        PA.calculate_brace_properties(dims, long_freq)
-                    )
-                elif cross_freq > 0:
-                    self._populate_plate_section(
-                        PA.calculate_plate_properties(
-                            dims, long_freq, cross_freq,
-                            f_flc_hz=flc_freq if flc_freq > 0 else None,
-                        ),
-                    )
-                else:
-                    # L assigned but C not yet — show partial placeholder
-                    self._plate_content.setVisible(False)
-                    self._plate_placeholder.setVisible(True)
-                    self._plate_placeholder_lbl.setText("Select a cross-grain (C) peak")
-            except ValueError:
-                pass
-        else:
-            # No valid assignment — show placeholder
-            if mt.is_brace:
-                self._brace_content.setVisible(False)
-                self._brace_placeholder.setVisible(True)
-            else:
-                self._plate_content.setVisible(False)
-                self._plate_placeholder.setVisible(True)
-                self._plate_placeholder_lbl.setText(
-                    "Select a longitudinal (L) peak"
-                    if long_freq == 0 else "Select a cross-grain (C) peak"
-                )
-
     def _update_measurement_badge(self) -> None:
         """Refresh the badge in the Analysis Results panel.
 
@@ -2662,6 +2565,25 @@ class MainWindow(QtWidgets.QMainWindow):
             pm.selected_flc_peak_id          = az.effective_flc_peak_id
             pm.refresh_annotations()
 
+    def _plate_step_label(self, phase_step: int, total: int) -> str:
+        """Return the status bar phase label, appending tap count when numberOfTaps > 1 on plate.
+
+        Mirrors Swift:
+          tap.numberOfTaps > 1
+            ? "Phase N/total · Tap p/q"
+            : "Phase N/total"
+        For brace there is no per-phase tap averaging display (single phase), so
+        the bare "Phase N/M" string is returned regardless of tap count.
+        """
+        base = f"Phase\u00a0{phase_step}/{total}"
+        mt = self._current_mt()
+        tap_num = self._tap_count_total
+        if not mt.is_brace and tap_num > 1:
+            # Mirrors Swift: max(0, tap.currentTapCount - (materialPhaseStep - 1) * tap.numberOfTaps)
+            tap_in_phase = max(0, self._tap_count_captured - (phase_step - 1) * tap_num)
+            return f"{base}\u00a0\u00b7\u00a0Tap\u00a0{tap_in_phase}/{tap_num}"
+        return base
+
     def _update_plate_phase_ui(self, status: str = "") -> None:
         """Sync the material instructions panel and status bar to the current PlateCapture state.
 
@@ -2689,7 +2611,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if state == State.IDLE:
             color_hex  = "gray"
             short_status = "Ready"
-            step_text  = f"Step\u00a01/{total}"  # Swift: materialPhaseStep returns 1 for notStarted
+            step_text  = f"Phase\u00a01/{total}"  # Swift: materialPhaseStep returns 1 for notStarted
             icon_name  = "fa5s.hand-point-up"
             title      = "Press \u2018New Tap\u2019 to Begin"
             tap_word   = "three-tap" if measure_flc else "two-tap"
@@ -2703,7 +2625,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif state == State.WAITING_L:
             color_hex  = "#1976D2"
             short_status = "L tap..."
-            step_text  = f"Step\u00a01/{total}"
+            step_text  = f"Phase\u00a01/{total}"
             icon_name  = "fa5s.wave-square"
             title      = (
                 "Step 1: Longitudinal (fL) Mode" if is_brace
@@ -2715,13 +2637,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Hold plate at 22% from one end along the length, near one long edge "
                 "(not at the width node). Tap center."
             )
-            self._sb_plate_step_lbl.setText(f"Step\u00a01/{total}")
+            self._sb_plate_step_lbl.setText(self._plate_step_label(1, total))
             self._sb_plate_step_lbl.setVisible(True)
 
         elif state == State.REVIEWING_L:
             color_hex  = "#1976D2"
             short_status = "Review L"
-            step_text  = f"Step\u00a01/{total}"
+            step_text  = f"Phase\u00a01/{total}"
             icon_name  = "fa5.check-circle"
             title      = "Review L Tap \u2014 Accept or Redo"
             body       = (
@@ -2734,20 +2656,20 @@ class MainWindow(QtWidgets.QMainWindow):
         elif state == State.WAITING_C:
             color_hex  = "#E65100"
             short_status = "C tap..."
-            step_text  = f"Step\u00a02/{total}"
+            step_text  = f"Phase\u00a02/{total}"
             icon_name  = "fa5s.wave-square"
             title      = "Step 2: Cross-grain (C) Mode"
             body       = (
                 "Hold plate at 22% from one end along the width, near one short edge "
                 "(not at the length node). Tap center."
             )
-            self._sb_plate_step_lbl.setText(f"Step\u00a02/{total}")
+            self._sb_plate_step_lbl.setText(self._plate_step_label(2, total))
             self._sb_plate_step_lbl.setVisible(True)
 
         elif state == State.REVIEWING_C:
             color_hex  = "#E65100"
             short_status = "Review C"
-            step_text  = f"Step\u00a02/{total}"
+            step_text  = f"Phase\u00a02/{total}"
             icon_name  = "fa5.check-circle"
             title      = "Review C Tap \u2014 Accept or Redo"
             body       = (
@@ -2759,8 +2681,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         elif state == State.WAITING_FLC:
             color_hex  = "#7B1FA2"
-            step_text  = f"Step\u00a03/{total}"
-            self._sb_plate_step_lbl.setText(f"Step\u00a03/{total}")
+            step_text  = f"Phase\u00a03/{total}"
+            self._sb_plate_step_lbl.setText(self._plate_step_label(3, total))
             self._sb_plate_step_lbl.setVisible(True)
             # WAITING_FLC covers two Swift sub-states; distinguish via underlying MTP phase.
             mtp = self.fft_canvas.analyzer.material_tap_phase
@@ -2787,7 +2709,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif state == State.REVIEWING_FLC:
             color_hex  = "#7B1FA2"
             short_status = "Review FLC"
-            step_text  = f"Step\u00a03/{total}"
+            step_text  = f"Phase\u00a03/{total}"
             icon_name  = "fa5.check-circle"
             title      = "Review FLC Tap \u2014 Accept or Redo"
             body       = (
@@ -2801,7 +2723,7 @@ class MainWindow(QtWidgets.QMainWindow):
             color_hex  = "#388E3C"
             short_status = "Done"
             last_step  = total if measure_flc else (1 if is_brace else 2)
-            step_text  = f"Step\u00a0{last_step}/{total}"
+            step_text  = f"Phase\u00a0{last_step}/{total}"
             icon_name  = "fa5s.check-circle"
             title      = "Measurement Complete"
             if is_brace:
@@ -2826,7 +2748,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._mip_short_status_lbl.setText(short_status)
         self._mip_short_status_lbl.setStyleSheet(f"color: {color_hex};")
 
-        # Apply step label (secondary color, "Step N/M" format)
+        # Apply phase counter label (secondary color, "Phase N/M" format)
         self._mip_step_lbl.setText(step_text)
 
         # Apply phase icon (qtawesome equivalent of SF Symbol name)
@@ -5272,7 +5194,8 @@ class MainWindow(QtWidgets.QMainWindow):
             _current_flc = AS.AppSettings.measure_flc()
             _type_changed = (mt_val != _current_mt)
             _flc_changed = (measure_flc_cb.isChecked() != _current_flc)
-            if (_type_changed or _flc_changed) and not _current_mt.is_guitar and self._is_running:
+            _needs_restart = (_type_changed or _flc_changed) and not _current_mt.is_guitar and self._is_running
+            if _needs_restart:
                 self._is_paused = False
                 self.fft_canvas.cancel_tap_sequence()
                 self._tap_count_captured = 0
@@ -5354,6 +5277,21 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_brace_width(brace_width_spin.value())
             AS.AppSettings.set_brace_thickness(brace_thick_spin.value())
             AS.AppSettings.set_brace_mass(brace_mass_spin.value())
+
+            # If the FLC flag changed but the measurement type stayed the same,
+            # setCurrentText above won't emit currentTextChanged (identical value),
+            # so explicitly refresh the peak widget columns and process instructions.
+            # Mirrors Swift: SwiftUI reactively re-evaluates includesFlcTap whenever
+            # TapDisplaySettings.measureFlc changes, updating both the column visibility
+            # and the process instruction text automatically.
+            if _flc_changed and not _type_changed and not mt_val.is_guitar:
+                self._on_measurement_type_changed(mt_val.short_name)
+
+            # Restart the plate/brace capture state machine after all settings are
+            # saved so the new phase count (2 vs 3) is immediately active.
+            # Mirrors Swift: onApply?(measurementChanged) → startTapSequence().
+            if _needs_restart and not mt_val.is_guitar:
+                self.fft_canvas.start_plate_analysis()
 
             # If a brace/plate measurement is active, recalculate material properties
             # using the freshly saved dimensions.
