@@ -448,7 +448,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         if phase in (
             _MTP.CAPTURING_LONGITUDINAL,
             _MTP.CAPTURING_CROSS,
-            _MTP.WAITING_FOR_CROSS_TAP,
             _MTP.CAPTURING_FLC,
             _MTP.WAITING_FOR_FLC_TAP,
         ):
@@ -458,9 +457,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             # then calls finishGatedFFTCapture via the gatedCaptureComplete signal.
             self.start_gated_capture(phase)
         else:
+            # Covers .notStarted, .complete, .reviewingLongitudinal, .reviewingCross,
+            # .reviewingFlc — mirrors Swift's combined default case.
             TAP_DEBUG("handlePlateTapDetection",
                 f"UNEXPECTED TAP | phase={phase} — tap ignored"
             )
+            print(f"⚠️ Unexpected tap in plate phase: {phase}")
 
     # ------------------------------------------------------------------ #
     # re_enable_detection_for_next_plate_tap

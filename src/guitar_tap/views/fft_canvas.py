@@ -122,11 +122,14 @@ class _PlateCaptureAdapter:
     from enum import Enum as _Enum
 
     class State(_Enum):
-        IDLE         = "idle"
-        WAITING_L    = "waiting_l"
-        WAITING_C    = "waiting_c"
-        WAITING_FLC  = "waiting_flc"
-        COMPLETE     = "complete"
+        IDLE          = "idle"
+        WAITING_L     = "waiting_l"
+        REVIEWING_L   = "reviewing_l"
+        WAITING_C     = "waiting_c"
+        REVIEWING_C   = "reviewing_c"
+        WAITING_FLC   = "waiting_flc"
+        REVIEWING_FLC = "reviewing_flc"
+        COMPLETE      = "complete"
 
     def __init__(self, analyzer):
         self._analyzer = analyzer
@@ -137,10 +140,16 @@ class _PlateCaptureAdapter:
         phase = self._analyzer.material_tap_phase
         if phase == _MTP.COMPLETE:
             return self.State.COMPLETE
-        if phase in (_MTP.CAPTURING_CROSS, _MTP.WAITING_FOR_CROSS_TAP):
+        if phase == _MTP.REVIEWING_LONGITUDINAL:
+            return self.State.REVIEWING_L
+        if phase == _MTP.CAPTURING_CROSS:
             return self.State.WAITING_C
+        if phase == _MTP.REVIEWING_CROSS:
+            return self.State.REVIEWING_C
         if phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
             return self.State.WAITING_FLC
+        if phase == _MTP.REVIEWING_FLC:
+            return self.State.REVIEWING_FLC
         if phase == _MTP.CAPTURING_LONGITUDINAL:
             return self.State.WAITING_L
         return self.State.IDLE  # NOT_STARTED
@@ -392,7 +401,7 @@ class FftCanvas(pg.PlotWidget):
 
         # FFT line
         self.fft_line: pg.PlotDataItem = self.plot(
-            [], [], pen=pg.mkPen("b", width=1)
+            [], [], pen=pg.mkPen("r", width=1)
         )
 
         # Peak scatter points

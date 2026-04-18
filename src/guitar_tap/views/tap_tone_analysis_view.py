@@ -2128,38 +2128,96 @@ class MainWindow(QtWidgets.QMainWindow):
     # Tap button state
     # ================================================================
 
+    def _is_in_review_phase(self) -> bool:
+        """Return True when the analyzer is paused at a per-phase review state.
+
+        Mirrors Swift TapToneAnalysisView.isInReviewPhase.
+        """
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        phase = self.fft_canvas.analyzer.material_tap_phase
+        return phase in (
+            _MTP.REVIEWING_LONGITUDINAL,
+            _MTP.REVIEWING_CROSS,
+            _MTP.REVIEWING_FLC,
+        ) and not self._current_mt().is_guitar
+
     def _update_tap_buttons(self) -> None:
         """Refresh enabled/disabled state of New Tap, Pause, and Cancel buttons."""
         tap_num = self.tap_num_spin.value()
-        is_plate = not self._current_mt().is_guitar
+        mt = self._current_mt()
+        is_plate = not mt.is_guitar
         is_detecting = self._is_running and not self._is_measurement_complete
-
-        # New Tap: enabled when frozen, OR when comparing (mirrors Swift: .disabled(
-        # tap.comparisonSpectra.isEmpty && (!fft.isRunning || !tap.isReadyForDetection
-        # || tap.isDetecting)) — comparison always unlocks the button so the user can
-        # start a fresh tap while viewing the overlay).
         is_comparing = self.fft_canvas.is_comparing
-        self.new_tap_btn.setEnabled(
-            self._is_running and (self._is_measurement_complete or is_comparing)
-        )
+        in_review = self._is_in_review_phase()
 
-        self.pause_tap_btn.setEnabled(is_detecting or self._is_paused)
-        self.cancel_tap_btn.setEnabled(
-            is_detecting and tap_num > 1
-            and 0 < self._tap_count_captured < tap_num
-        )
+        if in_review:
+            # Review phase: New Tap always available (start over), Accept and Redo enabled.
+            # Mirrors Swift: newTapButtonDisabled always False for plate/brace,
+            # pauseResumeButtonEnabled / cancelButtonEnabled return True in review.
+            self.new_tap_btn.setEnabled(self._is_running)
+            self.pause_tap_btn.setEnabled(True)
+            self.cancel_tap_btn.setEnabled(True)
+
+            # Relabel Pause → Accept (green checkmark).
+            self.pause_tap_btn.setText("Accept")
+            self.pause_tap_btn.setIcon(qta.icon("fa5.check-circle"))
+
+            # Relabel Cancel → Redo <phase>.
+            from models.material_tap_phase import MaterialTapPhase as _MTP
+            phase = self.fft_canvas.analyzer.material_tap_phase
+            redo_labels = {
+                _MTP.REVIEWING_LONGITUDINAL: "Redo L",
+                _MTP.REVIEWING_CROSS:        "Redo C",
+                _MTP.REVIEWING_FLC:          "Redo FLC",
+            }
+            self.cancel_tap_btn.setText(redo_labels.get(phase, "Redo"))
+            self.cancel_tap_btn.setIcon(qta.icon("fa5.undo"))
+        else:
+            # Normal (non-review) state — restore standard labels first.
+            if self._is_paused:
+                self.pause_tap_btn.setText("Resume")
+                self.pause_tap_btn.setIcon(qta.icon("fa5.play-circle"))
+            else:
+                self.pause_tap_btn.setText("Pause")
+                self.pause_tap_btn.setIcon(qta.icon("fa5.pause-circle"))
+            self.cancel_tap_btn.setText("Cancel")
+            self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle"))
+
+            # New Tap: always enabled for plate/brace (start over anytime);
+            # for guitar it requires a complete or comparison state.
+            # Mirrors Swift newTapButtonDisabled returning false for plate/brace.
+            if is_plate and self._is_running:
+                self.new_tap_btn.setEnabled(True)
+            else:
+                self.new_tap_btn.setEnabled(
+                    self._is_running and (self._is_measurement_complete or is_comparing)
+                )
+
+            self.pause_tap_btn.setEnabled(is_detecting or self._is_paused)
+            self.cancel_tap_btn.setEnabled(
+                is_detecting and tap_num > 1
+                and 0 < self._tap_count_captured < tap_num
+            )
 
     # ================================================================
     # Pause / Cancel tap detection
     # ================================================================
 
     def _on_pause_tap(self) -> None:
-        if self._is_paused:
+        if self._is_in_review_phase():
+            # In review mode the Pause button acts as Accept.
+            self.fft_canvas.analyzer.accept_current_phase()
+        elif self._is_paused:
             self.fft_canvas.resume_tap_detection()
         else:
             self.fft_canvas.pause_tap_detection()
 
     def _on_cancel_tap(self) -> None:
+        if self._is_in_review_phase():
+            # In review mode the Cancel button acts as Redo.
+            self.fft_canvas.analyzer.redo_current_phase()
+            self._update_tap_buttons()
+            return
         self._is_paused = False
         self.fft_canvas.cancel_tap_sequence()
         self._tap_count_captured = 0
@@ -2167,12 +2225,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_tap_detection_paused(self, paused: bool) -> None:
         self._is_paused = paused
-        if paused:
-            self.pause_tap_btn.setText("Resume")
-            self.pause_tap_btn.setIcon(qta.icon("fa5.play-circle"))
-        else:
-            self.pause_tap_btn.setText("Pause")
-            self.pause_tap_btn.setIcon(qta.icon("fa5.pause-circle"))
         self._update_tap_buttons()
 
     # ================================================================
@@ -2454,8 +2506,31 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _on_plate_status_changed(self, status: str) -> None:
-        """Update instructions panel and status bar for plate/brace capture progress."""
+        """Update instructions panel, status bar, and buttons for plate/brace capture progress."""
+        from models.analysis_display_mode import AnalysisDisplayMode
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+
         self._update_plate_phase_ui(status)
+        self._update_tap_buttons()
+
+        # Switch display mode and push peak selection IDs when entering/leaving a review phase.
+        az = self.fft_canvas.analyzer
+        phase = az.material_tap_phase
+        in_review = phase in (_MTP.REVIEWING_LONGITUDINAL, _MTP.REVIEWING_CROSS, _MTP.REVIEWING_FLC)
+
+        # Freeze the spectrum during review so the captured waveform stays visible.
+        self.fft_canvas.display_mode = (
+            AnalysisDisplayMode.FROZEN if in_review else AnalysisDisplayMode.LIVE
+        )
+
+        # Push the current phase selection IDs to the peaks model so the annotations
+        # label the identified peak (e.g. "Longitudinal") rather than the generic "Peak".
+        if in_review:
+            pm = self.peak_widget.model
+            pm.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
+            pm.selected_cross_peak_id        = az.effective_cross_peak_id
+            pm.selected_flc_peak_id          = az.effective_flc_peak_id
+            pm.refresh_annotations()
 
     def _update_plate_phase_ui(self, status: str = "") -> None:
         """Sync the material instructions panel and status bar to the current PlateCapture state.
@@ -2512,6 +2587,33 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setText(f"Step\u00a02/{total}")
             self._sb_plate_step_lbl.setVisible(True)
 
+        elif state == State.REVIEWING_L:
+            self._mip_dot.setStyleSheet(
+                "QLabel { background-color: #1976D2; border-radius: 5px; }"
+            )
+            self._mip_title_lbl.setText("Review L Tap \u2014 Accept or Redo")
+            self._mip_body_lbl.setText(
+                "L tap captured. Press \u2018Accept\u2019 to continue to the "
+                + ("C tap, or \u2018Redo L\u2019 to re-capture.")
+            )
+            self._mip_step_lbl.setText(f"1/{total}")
+            self._sb_plate_step_lbl.setText(f"Step\u00a01/{total}")
+            self._sb_plate_step_lbl.setVisible(True)
+
+        elif state == State.REVIEWING_C:
+            self._mip_dot.setStyleSheet(
+                "QLabel { background-color: #E65100; border-radius: 5px; }"
+            )
+            self._mip_title_lbl.setText("Review C Tap \u2014 Accept or Redo")
+            self._mip_body_lbl.setText(
+                "C tap captured. Press \u2018Accept\u2019 to continue"
+                + (" to FLC tap" if measure_flc else " and complete")
+                + ", or \u2018Redo C\u2019 to re-capture."
+            )
+            self._mip_step_lbl.setText(f"2/{total}")
+            self._sb_plate_step_lbl.setText(f"Step\u00a02/{total}")
+            self._sb_plate_step_lbl.setVisible(True)
+
         elif state == State.WAITING_FLC:
             self._mip_dot.setStyleSheet(
                 "QLabel { background-color: #7B1FA2; border-radius: 5px; }"
@@ -2520,6 +2622,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self._mip_body_lbl.setText(
                 "Hold plate at the midpoint of one long edge. "
                 "Tap near the opposite corner (~22% from both end and side)."
+            )
+            self._mip_step_lbl.setText(f"3/{total}")
+            self._sb_plate_step_lbl.setText(f"Step\u00a03/{total}")
+            self._sb_plate_step_lbl.setVisible(True)
+
+        elif state == State.REVIEWING_FLC:
+            self._mip_dot.setStyleSheet(
+                "QLabel { background-color: #7B1FA2; border-radius: 5px; }"
+            )
+            self._mip_title_lbl.setText("Review FLC Tap \u2014 Accept or Redo")
+            self._mip_body_lbl.setText(
+                "FLC tap captured. Press \u2018Accept\u2019 to complete the measurement, "
+                "or \u2018Redo FLC\u2019 to re-capture."
             )
             self._mip_step_lbl.setText(f"3/{total}")
             self._sb_plate_step_lbl.setText(f"Step\u00a03/{total}")
@@ -4948,6 +5063,19 @@ class MainWindow(QtWidgets.QMainWindow):
             # Measurement type → main window
             unified = meas_type_combo.currentText()
             mt_val = MT.MeasurementType(unified)
+
+            # Cancel any in-progress plate/brace measurement if the measurement type
+            # or the FLC setting changes — mirrors Swift onApply(didChangeType:) which
+            # calls cancelTapSequence() when the new type differs.
+            _current_mt = self._current_mt()
+            _current_flc = AS.AppSettings.measure_flc()
+            _type_changed = (mt_val != _current_mt)
+            _flc_changed = (measure_flc_cb.isChecked() != _current_flc)
+            if (_type_changed or _flc_changed) and not _current_mt.is_guitar and self._is_running:
+                self._is_paused = False
+                self.fft_canvas.cancel_tap_sequence()
+                self._tap_count_captured = 0
+
             self.measurement_type_combo.setCurrentText(
                 "Guitar" if mt_val.is_guitar else mt_val.short_name
             )

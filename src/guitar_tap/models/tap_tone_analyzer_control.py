@@ -372,6 +372,223 @@ class TapToneAnalyzerControlMixin:
         self.tapCountChanged.emit(0, self.number_of_taps)
 
     # ------------------------------------------------------------------ #
+    # Phase Review — Accept / Redo
+    # Mirrors Swift TapToneAnalyzer+Control acceptCurrentPhase() / redoCurrentPhase()
+    # ------------------------------------------------------------------ #
+
+    def accept_current_phase(self) -> None:
+        """Advance from a reviewing phase to the next capture phase (or complete).
+
+        Called when the user presses Accept after reviewing a frozen spectrum.
+        Mirrors Swift TapToneAnalyzer+Control.acceptCurrentPhase().
+        """
+        import numpy as _np
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        import time as _time_mod
+
+        phase = self.material_tap_phase
+
+        if phase == _MTP.REVIEWING_LONGITUDINAL:
+            # Advance to cross-grain capture.
+            # Mirrors Swift: set phase first, then clear frozen spectrum.
+            self._set_material_tap_phase(_MTP.CAPTURING_CROSS)
+            self.set_frozen_spectrum(_np.array([]), _np.array([]))
+            level = self._current_input_level_db
+            falling = self.tap_detection_threshold - self.hysteresis_margin
+            self.is_above_threshold = level > falling
+            self.analyzer_start_time = _time_mod.monotonic()
+            self.is_detecting = True
+            self.tap_detected = False
+            self._set_status_message("Rotate 90° and tap for C")
+
+        elif phase == _MTP.REVIEWING_CROSS:
+            if _tds.measure_flc():
+                # Advance to FLC waiting then capturing.
+                # Mirrors Swift: set WAITING_FOR_FLC_TAP and status message first,
+                # then transition to CAPTURING_FLC and clear frozen spectrum inside
+                # the asyncAfter closure (after the cooldown delay).
+                self._set_material_tap_phase(_MTP.WAITING_FOR_FLC_TAP)
+                self._set_status_message("Set up for FLC tap, then tap")
+                cooldown = self.tap_cooldown
+                from PySide6 import QtCore
+                QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_start_flc)
+            else:
+                # No FLC — finalise measurement now.
+                self._finalise_plate_no_flc()
+
+        elif phase == _MTP.REVIEWING_FLC:
+            # Finalise measurement with all three phases.
+            self._finalise_plate_with_flc()
+
+        else:
+            print(f"⚠️ accept_current_phase called in unexpected phase: {phase}")
+
+    def redo_current_phase(self) -> None:
+        """Clear the current phase's data and re-arm detection to re-capture it.
+
+        Called when the user presses Redo after reviewing a frozen spectrum.
+        Only the current phase's data is cleared; earlier phases are preserved.
+        Mirrors Swift TapToneAnalyzer+Control.redoCurrentPhase().
+        """
+        import numpy as _np
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        import time as _time_mod
+
+        phase = self.material_tap_phase
+
+        if phase == _MTP.REVIEWING_LONGITUDINAL:
+            # Clear longitudinal data only.
+            self.longitudinal_spectrum = None
+            self.longitudinal_peaks = []
+            self.auto_selected_longitudinal_peak_id = None
+            self.selected_longitudinal_peak = None
+            self.user_selected_longitudinal_peak_id = None
+            self.captured_taps.clear()
+            self.current_tap_count = 0
+            self.tap_progress = 0.0
+            capture_phase = _MTP.CAPTURING_LONGITUDINAL
+            status_msg = "Ready for L tap — tap again"
+
+        elif phase == _MTP.REVIEWING_CROSS:
+            # Clear cross data only — longitudinal stays.
+            self.cross_spectrum = None
+            self.cross_peaks = []
+            self.auto_selected_cross_peak_id = None
+            self.selected_cross_peak = None
+            self.user_selected_cross_peak_id = None
+            self.captured_taps.clear()
+            # Mirrors Swift: lCount = (longitudinalSpectrum != nil) ? numberOfTaps : 0
+            l_count = self.number_of_taps if self.longitudinal_spectrum is not None else 0
+            self.current_tap_count = l_count
+            self.tap_progress = float(l_count) / float(self.total_plate_taps)
+            capture_phase = _MTP.CAPTURING_CROSS
+            status_msg = "Ready for C tap — tap again"
+
+        elif phase == _MTP.REVIEWING_FLC:
+            # Clear FLC data only — L and C stay.
+            self.flc_spectrum = None
+            self.flc_peaks = []
+            self.auto_selected_flc_peak_id = None
+            self.selected_flc_peak = None
+            self.user_selected_flc_peak_id = None
+            self.captured_taps.clear()
+            # Mirrors Swift: lcCount = (longitudinalSpectrum != nil && crossSpectrum != nil) ? numberOfTaps * 2 : 0
+            lc_count = (
+                self.number_of_taps * 2
+                if (self.longitudinal_spectrum is not None and self.cross_spectrum is not None)
+                else 0
+            )
+            self.current_tap_count = lc_count
+            self.tap_progress = float(lc_count) / float(self.total_plate_taps)
+            capture_phase = _MTP.CAPTURING_FLC
+            status_msg = "Ready for FLC tap — tap again"
+
+        else:
+            print(f"⚠️ redo_current_phase called in unexpected phase: {phase}")
+            return
+
+        # Clear frozen spectrum for the redo.
+        self.set_frozen_spectrum(_np.array([]), _np.array([]))
+
+        # Reset warm-up and re-arm detection.
+        level = self._current_input_level_db
+        falling = self.tap_detection_threshold - self.hysteresis_margin
+        self.is_above_threshold = level > falling
+        self.analyzer_start_time = _time_mod.monotonic()
+        self.is_detecting = True
+        self.tap_detected = False
+
+        self._set_material_tap_phase(capture_phase)
+        self._set_status_message(status_msg)
+
+    def _finalise_plate_no_flc(self) -> None:
+        """Complete a two-tap plate measurement (L + C, no FLC).
+
+        Called from accept_current_phase when leaving REVIEWING_CROSS without FLC.
+        Mirrors the no-FLC branch of Swift acceptCurrentPhase.
+        """
+        import numpy as _np
+
+        sel = self._resolved_plate_peaks(
+            cross_override=self.selected_cross_peak or (self.cross_peaks[0] if self.cross_peaks else None)
+        )
+        self.current_peaks = sel
+        self.selected_peak_ids = {p.id for p in sel}
+        self.selected_peak_frequencies = [p.frequency for p in sel]
+        self.set_frozen_spectrum(_np.array([]), _np.array([]))
+
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        self._set_material_tap_phase(_MTP.COMPLETE)
+        self.is_measurement_complete = True
+        self.tap_progress = 1.0
+
+        fl_str = (
+            f"{self.selected_longitudinal_peak.frequency:.1f}"
+            if self.selected_longitudinal_peak else "?"
+        )
+        fc_str = (
+            f"{self.selected_cross_peak.frequency:.1f}"
+            if self.selected_cross_peak else "?"
+        )
+        self._set_status_message(
+            f"Complete \u2014 fL: {fl_str} Hz, fC: {fc_str} Hz"
+        )
+
+        self._emit_peaks_array(self.current_peaks)
+
+        l_mags, l_freqs = self.longitudinal_spectrum
+        c_mags, c_freqs = self.cross_spectrum
+        self.set_material_spectra([
+            ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
+            ("Cross-grain (C)",  (255, 149, 0), list(c_freqs), list(c_mags)),
+        ])
+
+        fl = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
+        fc = self.selected_cross_peak.frequency if self.selected_cross_peak else 0.0
+        self.plateAnalysisComplete.emit(fl, fc, 0.0)
+
+    def _finalise_plate_with_flc(self) -> None:
+        """Complete a three-tap plate measurement (L + C + FLC).
+
+        Called from accept_current_phase when leaving REVIEWING_FLC.
+        Mirrors the FLC branch of Swift acceptCurrentPhase.
+        """
+        import numpy as _np
+
+        sel = self._resolved_plate_peaks(
+            include_cross=True,
+            include_flc=True,
+            flc_override=self.selected_flc_peak or (self.flc_peaks[0] if self.flc_peaks else None),
+        )
+        self.current_peaks = sel
+        self.selected_peak_ids = {p.id for p in sel}
+        self.selected_peak_frequencies = [p.frequency for p in sel]
+        self.set_frozen_spectrum(_np.array([]), _np.array([]))
+
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+        self._set_material_tap_phase(_MTP.COMPLETE)
+        self.is_measurement_complete = True
+        self.tap_progress = 1.0
+        self._set_status_message("Complete \u2014 check Results")
+
+        self._emit_peaks_array(self.current_peaks)
+
+        l_mags, l_freqs = self.longitudinal_spectrum
+        c_mags, c_freqs = self.cross_spectrum
+        f_mags, f_freqs = self.flc_spectrum
+        self.set_material_spectra([
+            ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
+            ("Cross-grain (C)",  (255, 149, 0), list(c_freqs), list(c_mags)),
+            ("FLC",              (175, 82, 222), list(f_freqs), list(f_mags)),
+        ])
+
+        l_freq = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
+        c_freq = self.selected_cross_peak.frequency if self.selected_cross_peak else 0.0
+        f_freq = self.selected_flc_peak.frequency if self.selected_flc_peak else 0.0
+        self.plateAnalysisComplete.emit(l_freq, c_freq, f_freq)
+
+    # ------------------------------------------------------------------ #
     # Measurement type
     # ------------------------------------------------------------------ #
 

@@ -305,7 +305,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             if phase == _MTP.CAPTURING_LONGITUDINAL:
                 hps_min_hz = 50.0
                 hps_max_hz = 500.0
-            elif phase in (_MTP.CAPTURING_CROSS, _MTP.WAITING_FOR_CROSS_TAP):
+            elif phase == _MTP.CAPTURING_CROSS:
                 hps_min_hz = 20.0
                 hps_max_hz = 250.0
             elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
@@ -369,11 +369,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Mirrors Swift switch phase { case .capturingLongitudinal: … }
         if phase == _MTP.CAPTURING_LONGITUDINAL:
             self._handle_longitudinal_gated_progress(magnitudes, frequencies, dominant_peak)
-        elif phase in (_MTP.CAPTURING_CROSS, _MTP.WAITING_FOR_CROSS_TAP):
+        elif phase == _MTP.CAPTURING_CROSS:
             self._handle_cross_gated_progress(magnitudes, frequencies, dominant_peak)
         elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
             self._handle_flc_gated_progress(magnitudes, frequencies, dominant_peak)
         else:
+            # Covers .notStarted, .complete, .reviewingLongitudinal, .reviewingCross, .reviewingFlc
+            # — mirrors Swift's combined default case.
             print(f"⚠️ Unexpected gated FFT capture in phase: {phase}")
 
     # ------------------------------------------------------------------ #
@@ -612,16 +614,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             ])
             self.plateAnalysisComplete.emit(dominant_peak.frequency, 0.0, 0.0)
         else:
-            # Plate: transition to cross-grain phase.
+            # Plate: pause at review state — user must press Accept to continue or Redo to re-tap.
             # Emit longitudinal peaks now — mirrors Swift's single currentPeaks assignment.
             self._emit_peaks_array(self.current_peaks)
-            self._set_material_tap_phase(_MTP.WAITING_FOR_CROSS_TAP)
+            self._set_material_tap_phase(_MTP.REVIEWING_LONGITUDINAL)
+            self.is_detecting = False
             self._set_status_message(
-                f"fL: {dominant_peak.frequency:.1f} Hz — rotate 90° for C tap"
+                f"fL: {dominant_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
             )
-
-            cooldown = self.tap_cooldown
-            QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_start_cross)
 
         # Notify spectrum update (no peaksChanged here — each branch above emits exactly once).
         self.spectrumUpdated.emit(
@@ -663,46 +663,15 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         print(f"🟠 Auto-selected cross-grain peak: {dominant_peak.frequency} Hz")
         self.captured_taps.clear()
 
-        if _tds.measure_flc():
-            self.current_peaks = self.combine_plate_peaks()
-            self.set_frozen_spectrum(_np.array([]), _np.array([]))
-            self._set_material_tap_phase(_MTP.WAITING_FOR_FLC_TAP)
-            self._set_status_message(
-                f"fC: {dominant_peak.frequency:.1f} Hz — set up for FLC tap"
-            )
-            cooldown = self.tap_cooldown
-            QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_start_flc)
-        else:
-            sel = self._resolved_plate_peaks(cross_override=self.selected_cross_peak or dominant_peak)
-            self.current_peaks = sel
-            self.selected_peak_ids = {p.id for p in sel}
-            self.selected_peak_frequencies = [p.frequency for p in sel]
-            self.set_frozen_spectrum(_np.array([]), _np.array([]))
-            self._set_material_tap_phase(_MTP.COMPLETE)
-            self.is_measurement_complete = True
-            self.tap_progress = 1.0
-            fl_str = (
-                f"{self.selected_longitudinal_peak.frequency:.1f}"
-                if self.selected_longitudinal_peak
-                else "?"
-            )
-            self._set_status_message(
-                f"Complete — fL: {fl_str} Hz, fC: {dominant_peak.frequency:.1f} Hz"
-            )
-            print(f"✅ Plate complete: fL={fl_str} Hz, fC={dominant_peak.frequency} Hz")
-            self._emit_peaks_array(self.current_peaks)
-            # Emit L + C spectra for display — mirrors Swift's @Published crossSpectrum
-            # being set, which causes TapToneAnalysisView.materialSpectra to return
-            # both the blue (L) and orange (C) overlay waveforms.
-            l_mags, l_freqs = self.longitudinal_spectrum
-            c_mags, c_freqs = self.cross_spectrum
-            self.set_material_spectra([
-                ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
-                ("Cross-grain (C)",  (255, 149, 0), list(c_freqs), list(c_mags)),
-            ])
-            fl = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
-            self.plateAnalysisComplete.emit(fl, dominant_peak.frequency, 0.0)
-
+        # Pause at review state regardless of whether FLC is needed.
+        # accept_current_phase() will check measure_flc and route accordingly.
+        self.current_peaks = self.combine_plate_peaks()
+        self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
+        self._set_material_tap_phase(_MTP.REVIEWING_CROSS)
+        self.is_detecting = False
+        self._set_status_message(
+            f"fC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
+        )
         self._emit_peaks_array(self.current_peaks)
 
     # ------------------------------------------------------------------ #
@@ -737,6 +706,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         print(f"🟣 Auto-selected FLC peak: {dominant_peak.frequency} Hz")
         self.captured_taps.clear()
 
+        # Pause at review state — mirrors Swift: currentPeaks = resolvedPlatePeaks(includeCross:true,
+        # includeFlc:true, flcOverride: selectedFlcPeak ?? dominantPeak) before freezing.
         sel = self._resolved_plate_peaks(
             include_cross=True,
             include_flc=True,
@@ -744,30 +715,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
         self.current_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
-        self.selected_peak_frequencies = [p.frequency for p in sel]
-        self.set_frozen_spectrum(_np.array([]), _np.array([]))
-        self._set_material_tap_phase(_MTP.COMPLETE)
-        self.is_measurement_complete = True
-        self.tap_progress = 1.0
-        self._set_status_message("Complete - check Results")
-
-        l_freq = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
-        c_freq = self.selected_cross_peak.frequency if self.selected_cross_peak else 0.0
-        print(f"✅ Plate complete: L={l_freq} C={c_freq} FLC={dominant_peak.frequency} Hz")
-
+        self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
+        self._set_material_tap_phase(_MTP.REVIEWING_FLC)
+        self.is_detecting = False
+        self._set_status_message(
+            f"fLC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to complete or Redo to re-tap"
+        )
         self._emit_peaks_array(self.current_peaks)
-        # Emit L + C + FLC spectra for display — mirrors Swift's @Published flcSpectrum
-        # being set, which causes TapToneAnalysisView.materialSpectra to return all
-        # three overlay waveforms (blue L, orange C, purple FLC).
-        l_mags, l_freqs = self.longitudinal_spectrum
-        c_mags, c_freqs = self.cross_spectrum
-        f_mags, f_freqs = self.flc_spectrum
-        self.set_material_spectra([
-            ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
-            ("Cross-grain (C)",  (255, 149, 0), list(c_freqs), list(c_mags)),
-            ("FLC",              (175, 82, 222), list(f_freqs), list(f_mags)),
-        ])
-        self.plateAnalysisComplete.emit(l_freq, c_freq, dominant_peak.frequency)
 
     # ------------------------------------------------------------------ #
     # _resolved_plate_peaks

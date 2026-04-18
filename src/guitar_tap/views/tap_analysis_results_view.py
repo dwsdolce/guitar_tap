@@ -900,48 +900,39 @@ def export_pdf(data: PDFReportData, output_path: str) -> None:
 
     story.append(Spacer(1, 14))
 
-    # --- TAP INSTRUCTIONS (plate / brace only) ---------------------------
-    if mt == MT.MeasurementType.PLATE:
-        has_flc = bool(data.selected_flc_peak_id)
-        tap_title = "Three-Tap Measurement Process:" if has_flc else "Two-Tap Measurement Process:"
-        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-        story.append(Spacer(1, 6))
-        story.append(Paragraph(tap_title, S_BODY_B))
-        story.append(Spacer(1, 4))
-
-        def _instr_row(label: str, detail: str):
-            return Paragraph(f"<b>{label}</b>  {detail}", S_SMALL)
-
-        story.append(_instr_row(
-            "1. Longitudinal (L) Tap",
-            "Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center.",
-        ))
-        story.append(Spacer(1, 2))
-        story.append(_instr_row(
-            "2. Cross-grain (C) Tap",
-            "Rotate 90\u00b0. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center.",
-        ))
-        if has_flc:
-            story.append(Spacer(1, 2))
-            story.append(_instr_row(
-                "3. FLC (Diagonal) Tap",
-                "Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures shear stiffness.",
-            ))
-        story.append(Spacer(1, 4))
-        story.append(Paragraph("The strongest peak from each tap is auto-selected.", S_SMALL_I))
-        story.append(Spacer(1, 14))
-
-    elif mt == MT.MeasurementType.BRACE:
-        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-        story.append(Spacer(1, 6))
-        story.append(Paragraph("Single-Tap Measurement (fL only):", S_BODY_B))
-        story.append(Spacer(1, 4))
-        story.append(Paragraph(
-            "<b>1. Longitudinal (fL) Tap</b>  Hold brace at 22% from one end along the length. Tap center.",
-            S_SMALL,
-        ))
-        story.append(Spacer(1, 4))
-        story.append(Paragraph("The strongest peak is auto-selected.", S_SMALL_I))
+    # --- GORE TARGET THICKNESS (plate only, immediately after peaks — key result) ---
+    if mt == MT.MeasurementType.PLATE and plate_props is not None and gore_thickness_mm is not None:
+        if _preset == PSP.PlateStiffnessPreset.CUSTOM:
+            preset_label = f"f_vs = {int(plate_stiffness)} (custom)"
+        else:
+            preset_label = f"f_vs = {int(plate_stiffness)} ({_preset_str})"
+        body_label = (
+            f"Body: {guitar_body_length:.0f} \u00d7 {guitar_body_width:.0f} mm "
+            f"\u00b7 {preset_label}"
+        )
+        if glc_pa is not None and glc_pa > 0:
+            glc_line = f"GLC (Shear Modulus): {glc_pa/1e9:.3f} GPa"
+        else:
+            glc_line = "GLC assumed 0 \u2014 FLC tap not performed"
+        gore_content = [
+            Paragraph("Gore Target Thickness", S_SMALL),
+            Spacer(1, 4),
+            Paragraph(
+                f"<b><font size='16' color='#2659C0'>{gore_thickness_mm:.2f} mm</font></b>",
+                S_BODY,
+            ),
+            Paragraph(body_label, S_SMALL),
+            Paragraph(glc_line, S_SMALL_I),
+        ]
+        gore_tbl = Table([[gore_content]])
+        gore_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.15, 0.35, 0.75, 0.07)),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(gore_tbl)
         story.append(Spacer(1, 14))
 
     # --- ANALYSIS RESULTS ------------------------------------------------
@@ -1141,41 +1132,6 @@ def export_pdf(data: PDFReportData, output_path: str) -> None:
         ]))
         story.append(oq_tbl)
 
-        # Gore Target Thickness box (blue background)
-        if gore_thickness_mm is not None:
-            story.append(Spacer(1, 8))
-            if _preset == PSP.PlateStiffnessPreset.CUSTOM:
-                preset_label = f"f_vs = {int(plate_stiffness)} (custom)"
-            else:
-                preset_label = f"f_vs = {int(plate_stiffness)} ({_preset_str})"
-            body_label = (
-                f"Body: {guitar_body_length:.0f} \u00d7 {guitar_body_width:.0f} mm "
-                f"\u00b7 {preset_label}"
-            )
-            if glc_pa is not None and glc_pa > 0:
-                glc_line = f"GLC (Shear Modulus): {glc_pa/1e9:.3f} GPa"
-            else:
-                glc_line = "GLC assumed 0 \u2014 FLC tap not performed"
-            gore_content = [
-                Paragraph("Gore Target Thickness", S_SMALL),
-                Spacer(1, 4),
-                Paragraph(
-                    f"<b><font size='16' color='#2659C0'>{gore_thickness_mm:.2f} mm</font></b>",
-                    S_BODY,
-                ),
-                Paragraph(body_label, S_SMALL),
-                Paragraph(glc_line, S_SMALL_I),
-            ]
-            gore_tbl = Table([[gore_content]])
-            gore_tbl.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.15, 0.35, 0.75, 0.07)),
-                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-                ("TOPPADDING",    (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]))
-            story.append(gore_tbl)
-
     elif mt == MT.MeasurementType.BRACE and brace_props is not None:
         # ── Brace Properties ────────────────────────────────────────────
         story.append(Paragraph("Brace Properties", S_SECTION))
@@ -1275,6 +1231,50 @@ def export_pdf(data: PDFReportData, output_path: str) -> None:
             ("ROUNDEDCORNERS", [4]),
         ]))
         story.append(oq_tbl)
+
+    # --- TAP INSTRUCTIONS (plate / brace only, at end — mirrors live view ordering) ---
+    if mt == MT.MeasurementType.PLATE:
+        has_flc = bool(data.selected_flc_peak_id)
+        tap_title = "Three-Tap Measurement Process:" if has_flc else "Two-Tap Measurement Process:"
+        story.append(Spacer(1, 14))
+        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(tap_title, S_BODY_B))
+        story.append(Spacer(1, 4))
+
+        def _instr_row(label: str, detail: str):
+            return Paragraph(f"<b>{label}</b>  {detail}", S_SMALL)
+
+        story.append(_instr_row(
+            "1. Longitudinal (L) Tap",
+            "Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center.",
+        ))
+        story.append(Spacer(1, 2))
+        story.append(_instr_row(
+            "2. Cross-grain (C) Tap",
+            "Rotate 90\u00b0. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center.",
+        ))
+        if has_flc:
+            story.append(Spacer(1, 2))
+            story.append(_instr_row(
+                "3. FLC (Diagonal) Tap",
+                "Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures shear stiffness.",
+            ))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("The strongest peak from each tap is auto-selected.", S_SMALL_I))
+
+    elif mt == MT.MeasurementType.BRACE:
+        story.append(Spacer(1, 14))
+        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Single-Tap Measurement (fL only):", S_BODY_B))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(
+            "<b>1. Longitudinal (fL) Tap</b>  Hold brace at 22% from one end along the length. Tap center.",
+            S_SMALL,
+        ))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("The strongest peak is auto-selected.", S_SMALL_I))
 
     # --- FOOTER -----------------------------------------------------------
     story.append(Spacer(1, 16))
