@@ -282,8 +282,8 @@ class FftCanvas(pg.PlotWidget):
         # pan/zoom and peak display.  Separate from analyzer.min_frequency/
         # max_frequency, which mirror Swift TapToneAnalyzer.minFrequency and are
         # the analysis window used by find_peaks (never written by canvas pan/zoom).
-        self._display_fmin: float = float(frange["f_min"])
-        self._display_fmax: float = float(frange["f_max"])
+        self._minFreq: float = float(frange["f_min"])
+        self._maxFreq: float = float(frange["f_max"])
         self.setXRange(frange["f_min"], frange["f_max"], padding=0)
 
         # Resolve the saved AudioDevice (fingerprint → live index).
@@ -602,20 +602,20 @@ class FftCanvas(pg.PlotWidget):
         return _PlateCaptureAdapter(self.analyzer)
 
     @property
-    def fmin(self) -> int:
-        return int(self._display_fmin)
+    def minFreq(self) -> int:
+        return int(self._minFreq)
 
-    @fmin.setter
-    def fmin(self, value: int) -> None:
-        self._display_fmin = float(value)
+    @minFreq.setter
+    def minFreq(self, value: int) -> None:
+        self._minFreq = float(value)
 
     @property
-    def fmax(self) -> int:
-        return int(self._display_fmax)
+    def maxFreq(self) -> int:
+        return int(self._maxFreq)
 
-    @fmax.setter
-    def fmax(self, value: int) -> None:
-        self._display_fmax = float(value)
+    @maxFreq.setter
+    def maxFreq(self, value: int) -> None:
+        self._maxFreq = float(value)
 
     @property
     def comparison_labels(self):
@@ -1204,8 +1204,8 @@ class FftCanvas(pg.PlotWidget):
     def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
         """Update the x-axis frequency range"""
         if fmin < fmax:
-            self._display_fmin = float(fmin)
-            self._display_fmax = float(fmax)
+            self._minFreq = float(fmin)
+            self._maxFreq = float(fmax)
             self.setXRange(fmin, fmax, padding=0)
             if not init:
                 self.analyzer.recalculate_frozen_peaks_if_needed()
@@ -1223,8 +1223,8 @@ class FftCanvas(pg.PlotWidget):
         fmax = int(round(x1))
         if fmin >= fmax:
             return
-        self._display_fmin = float(fmin)
-        self._display_fmax = float(fmax)
+        self._minFreq = float(fmin)
+        self._maxFreq = float(fmax)
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
             self.analyzer.recalculate_frozen_peaks_if_needed()
         self.freqRangeChanged.emit(fmin, fmax)
@@ -1474,13 +1474,13 @@ class FftCanvas(pg.PlotWidget):
         # phases (not reviewing) the live waveform remains visible so the user can
         # see the spectrum as they prepare to tap.
 
-    def set_fmin(self, fmin: int) -> None:
+    def setMinFreq(self, minFreq: int) -> None:
         """As it says"""
-        self.update_axis(fmin, self.fmax)
+        self.update_axis(minFreq, self.maxFreq)
 
-    def set_fmax(self, fmax: int) -> None:
+    def setMaxFreq(self, maxFreq: int) -> None:
         """As it says"""
-        self.update_axis(self.fmin, fmax)
+        self.update_axis(self.minFreq, maxFreq)
 
     def set_threshold(self, threshold: int) -> None:
         """Set the threshold used to limit both the triggering of a sample

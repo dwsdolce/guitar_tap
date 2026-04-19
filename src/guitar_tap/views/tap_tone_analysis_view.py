@@ -1275,16 +1275,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if _red_px is not None:
             self.avg_done.setPixmap(_red_px)
 
-        # Frequency range spinners: shown in Settings dialog
-        self.min_spin = QtWidgets.QSpinBox()
-        self.min_spin.setMinimum(0)
-        self.min_spin.setMaximum(22050)
-        self.min_spin.setValue(int(f_range["f_min"]))
-
-        self.max_spin = QtWidgets.QSpinBox()
-        self.max_spin.setMinimum(0)
-        self.max_spin.setMaximum(22050)
-        self.max_spin.setValue(int(f_range["f_max"]))
 
         return panel
 
@@ -1645,11 +1635,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cancel_tap_btn.clicked.connect(self._on_cancel_tap)
         canvas.tapDetectionPaused.connect(self._on_tap_detection_paused)
 
-        # Frequency range spinners → canvas + label + persist
-        self.min_spin.valueChanged.connect(self._on_fmin_changed)
-        self.max_spin.valueChanged.connect(self._on_fmax_changed)
-
-        # Canvas viewport pan/zoom → update spinboxes + persist
         canvas.freqRangeChanged.connect(self._on_canvas_freq_range_changed)
 
         # Auto dB
@@ -1784,9 +1769,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_tap_count(self, captured: int, total: int) -> None:
         self._tap_count_captured = captured
         self._tap_count_total = total
-        # Only show count/progress while actively detecting — mirrors Swift `isDetecting && currentTapCount > 0`
-        show = captured > 0 and not self._is_measurement_complete
+        # Mirror Swift exactly:
+        #   tap.isDetecting && (isPlate || tap.currentTapCount > 0)
+        # isDetecting becomes False at the approve/redo step — hiding the count during review.
         mt = self._current_mt()
+        is_detecting = self.fft_canvas.analyzer.is_detecting
+        is_plate_or_brace = not mt.is_guitar
+        show = is_detecting and (is_plate_or_brace or captured > 0)
         # For plate with numberOfTaps > 1 the tap counter is embedded in the phase label
         # (mirrors Swift "Phase N/total · Tap p/q"), so hide the standalone tap count label.
         embed_in_phase = show and not mt.is_brace and not mt.is_guitar and total > 1
@@ -1994,19 +1983,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.avg_enable.setEnabled(False)
 
     # ================================================================
-    # Frequency range
-    # ================================================================
-
-    def _on_fmin_changed(self, value: int) -> None:
-        self.fft_canvas.set_fmin(value)
-        AS.AppSettings.set_f_min(value, self._current_mt())
-        self._update_freq_range_label()
-
-    def _on_fmax_changed(self, value: int) -> None:
-        self.fft_canvas.set_fmax(value)
-        AS.AppSettings.set_f_max(value, self._current_mt())
-        self._update_freq_range_label()
-
     def _on_peaks_changed_results(self, peaks: object) -> None:
         """Filter all peaks to the current viewport and forward to the results panel.
 
@@ -2093,8 +2069,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not peaks:
             self.peak_widget.update_data_with_modes([])
             return
-        fmin = self.fft_canvas.fmin
-        fmax = self.fft_canvas.fmax
+        fmin = self.fft_canvas.minFreq
+        fmax = self.fft_canvas.maxFreq
         analyzer = self.fft_canvas.analyzer
         from models.guitar_mode import GuitarMode
         mt = self._current_mt()
@@ -2138,7 +2114,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_freq_range_label(self) -> None:
         self.freq_range_label.setText(
-            f"Showing {self.min_spin.value()} – {self.max_spin.value()} Hz"
+            f"Showing {self.fft_canvas.minFreq} – {self.fft_canvas.maxFreq} Hz"
         )
 
     # ================================================================
@@ -3006,8 +2982,8 @@ class MainWindow(QtWidgets.QMainWindow):
         mt = self._current_mt()
 
         # ── Axis range — view @State, mirrors Swift minFreq/maxFreq/minDB/maxDB ──
-        min_freq_val = float(self.min_spin.value())
-        max_freq_val = float(self.max_spin.value())
+        min_freq_val = float(canvas.minFreq)
+        max_freq_val = float(canvas.maxFreq)
         try:
             _, _y_range = canvas.getPlotItem().getViewBox().viewRange()
             min_db_val = float(_y_range[0])
@@ -3266,10 +3242,6 @@ class MainWindow(QtWidgets.QMainWindow):
             # Overwriting canvas.freq caused shape-mismatch crashes when a queued FFT
             # frame fired with the live mag_y_db (32 769 bins) against the stale axis.
             canvas.analyzer.frozen_frequencies = freq_arr
-            with QtCore.QSignalBlocker(self.min_spin):
-                self.min_spin.setValue(int(snap.min_freq))
-            with QtCore.QSignalBlocker(self.max_spin):
-                self.max_spin.setValue(int(snap.max_freq))
             # Restore dB axis range from snapshot, then update the frequency axis.
             # update_axis calls _emit_loaded_peaks_at_threshold which emits peaksChanged
             # with the correctly filtered peaks — _on_peaks_changed_scatter updates the
@@ -3284,18 +3256,39 @@ class MainWindow(QtWidgets.QMainWindow):
             # The analyzer emits materialSpectraChanged → FftCanvas.load_material_spectra().
             if not _restored_mt.is_guitar:
                 _phase_spectra: list = []
+                # Mirrors Swift loadMeasurement() which sets longitudinalSpectrum /
+                # crossSpectrum / flcSpectrum as (magnitudes:frequencies:) tuples directly
+                # on the analyzer so a subsequent saveMeasurement() can read them back.
                 if m.longitudinal_snapshot is not None:
                     ls = m.longitudinal_snapshot
                     _phase_spectra.append(("Longitudinal (L)", (0, 122, 255),
                                            list(ls.frequencies), list(ls.magnitudes)))
+                    canvas.analyzer.longitudinal_spectrum = (
+                        np.array(ls.magnitudes, dtype=np.float64),
+                        np.array(ls.frequencies, dtype=np.float64),
+                    )
+                else:
+                    canvas.analyzer.longitudinal_spectrum = None
                 if _restored_mt.is_plate and m.cross_snapshot is not None:
                     cs = m.cross_snapshot
                     _phase_spectra.append(("Cross-grain (C)", (255, 149, 0),
                                            list(cs.frequencies), list(cs.magnitudes)))
+                    canvas.analyzer.cross_spectrum = (
+                        np.array(cs.magnitudes, dtype=np.float64),
+                        np.array(cs.frequencies, dtype=np.float64),
+                    )
+                else:
+                    canvas.analyzer.cross_spectrum = None
                 if _restored_mt.is_plate and m.flc_snapshot is not None:
                     fs = m.flc_snapshot
                     _phase_spectra.append(("FLC", (175, 82, 222),
                                            list(fs.frequencies), list(fs.magnitudes)))
+                    canvas.analyzer.flc_spectrum = (
+                        np.array(fs.magnitudes, dtype=np.float64),
+                        np.array(fs.frequencies, dtype=np.float64),
+                    )
+                else:
+                    canvas.analyzer.flc_spectrum = None
                 canvas.analyzer.set_material_spectra(_phase_spectra)
         else:
             # No snapshot — emit peaks filtered to current range
@@ -3727,8 +3720,8 @@ class MainWindow(QtWidgets.QMainWindow):
             png_bytes = make_exportable_spectrum_view(
                 frequencies=freqs,
                 magnitudes=mags,
-                min_freq=float(self.min_spin.value()),
-                max_freq=float(self.max_spin.value()),
+                min_freq=float(canvas.minFreq),
+                max_freq=float(canvas.maxFreq),
                 min_db=export_min_db,
                 max_db=export_max_db,
                 peaks=peaks_list,
@@ -3784,8 +3777,8 @@ class MainWindow(QtWidgets.QMainWindow):
             notes_val = self._notes if self._notes else None
 
             # ── Frequency / dB range from visible axis — mirrors Swift minFreq/maxFreq ────────
-            min_freq_val = float(self.min_spin.value())
-            max_freq_val = float(self.max_spin.value())
+            min_freq_val = float(canvas.minFreq)
+            max_freq_val = float(canvas.maxFreq)
             try:
                 _, y_range = canvas.getPlotItem().getViewBox().viewRange()
                 min_db_val = float(y_range[0])
@@ -5255,13 +5248,6 @@ class MainWindow(QtWidgets.QMainWindow):
             _update_cal_display()
             _update_cal_meta()
 
-        # ── Snapshot live main-window state for Cancel revert ─────────────
-        # (dialog-local widgets are discarded on Cancel; only live-updated
-        #  main-window widgets need explicit restoration)
-        _snap_f_min = self.min_spin.value()
-        _snap_f_max = self.max_spin.value()
-        _snap_meas_t = self.measurement_type_combo.currentText()
-        _snap_guitar_t = self.guitar_type_combo.currentText()
 
         def _apply_settings() -> None:
             # Measurement type → main window
@@ -5281,12 +5267,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.fft_canvas.cancel_tap_sequence()
                 self._tap_count_captured = 0
 
-            self.measurement_type_combo.setCurrentText(
-                "Guitar" if mt_val.is_guitar else mt_val.short_name
-            )
+            # Apply measurement type to the main-window combos with signals blocked so
+            # _on_measurement_type_changed does not fire here prematurely — mirrors Swift
+            # where selectedMeasurementType is a local @State var that only writes to
+            # TapDisplaySettings when applySettings() is called, never during dialog interaction.
+            with QtCore.QSignalBlocker(self.measurement_type_combo):
+                self.measurement_type_combo.setCurrentText(
+                    "Guitar" if mt_val.is_guitar else mt_val.short_name
+                )
             gt = mt_val.guitar_type
             if gt is not None:
-                self.guitar_type_combo.setCurrentText(gt.value)
+                with QtCore.QSignalBlocker(self.guitar_type_combo):
+                    self.guitar_type_combo.setCurrentText(gt.value)
 
             # Display frequency range — parse the staging text fields and apply to the
             # canvas + toolbar spinners, mirroring Swift applySettings() which validates
@@ -5303,11 +5295,6 @@ class MainWindow(QtWidgets.QMainWindow):
             # Update the staging fields to show the validated (possibly clamped) values
             disp_f_min_field.setText(str(new_f_min))
             disp_f_max_field.setText(str(new_f_max))
-            # Apply to the canvas and sync the toolbar spinners (which drive the freq-range label)
-            with QtCore.QSignalBlocker(self.min_spin):
-                self.min_spin.setValue(new_f_min)
-            with QtCore.QSignalBlocker(self.max_spin):
-                self.max_spin.setValue(new_f_max)
             self.fft_canvas.update_axis(new_f_min, new_f_max)
             self._update_freq_range_label()
 
@@ -5414,13 +5401,11 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_brace_thickness(_pf(brace_thick_field, AS.AppSettings.brace_thickness()))
             AS.AppSettings.set_brace_mass(_pf(brace_mass_field, AS.AppSettings.brace_mass()))
 
-            # If the FLC flag changed but the measurement type stayed the same,
-            # setCurrentText above won't emit currentTextChanged (identical value),
-            # so explicitly refresh the peak widget columns and process instructions.
-            # Mirrors Swift: SwiftUI reactively re-evaluates includesFlcTap whenever
-            # TapDisplaySettings.measureFlc changes, updating both the column visibility
-            # and the process instruction text automatically.
-            if _flc_changed and not _type_changed and not mt_val.is_guitar:
+            # Fire _on_measurement_type_changed exactly once after all settings are
+            # persisted — mirrors Swift's onApply?(measurementChanged) callback which
+            # runs after applySettings() completes.  Signals on the combos were blocked
+            # above so this is the single, authoritative trigger.
+            if _type_changed or _flc_changed:
                 self._on_measurement_type_changed(mt_val.short_name)
 
             # Restart the plate/brace capture state machine after all settings are
@@ -5487,12 +5472,7 @@ class MainWindow(QtWidgets.QMainWindow):
             dlg.accept()
 
         def _cancel_settings() -> None:
-            # Restore main-window frequency range (fires _on_fmin/fmax_changed → canvas + AppSettings)
-            self.min_spin.setValue(_snap_f_min)
-            self.max_spin.setValue(_snap_f_max)
-            # Restore measurement type combos
-            self.measurement_type_combo.setCurrentText(_snap_meas_t)
-            self.guitar_type_combo.setCurrentText(_snap_guitar_t)
+            # Mirrors Swift Cancel → dismiss() with no side-effects.
             dlg.reject()
 
         # ── Apply / Cancel buttons ─────────────────────────────────────────
@@ -5514,8 +5494,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fft_canvas.devicesChanged.disconnect(_on_device_list_changed)
 
         # Re-hide the reparented widgets
-        self.min_spin.setParent(None)  # type: ignore[call-overload]
-        self.max_spin.setParent(None)  # type: ignore[call-overload]
         self.num_averages.setParent(None)  # type: ignore[call-overload]
         self.avg_enable.setParent(None)  # type: ignore[call-overload]
         self.avg_completed.setParent(None)  # type: ignore[call-overload]

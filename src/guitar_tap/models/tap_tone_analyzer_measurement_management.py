@@ -276,6 +276,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             decay_time=decay_time,
             tap_location=tap_location,
             notes=notes,
+            measurement_type=mt_str,
             spectrum_snapshot=guitar_snapshot,
             longitudinal_snapshot=longitudinal_snapshot,
             cross_snapshot=cross_snapshot,
