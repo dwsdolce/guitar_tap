@@ -270,6 +270,11 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         is_plate = (meas_type == _MT.PLATE)
         is_brace = (meas_type == _MT.BRACE)
 
+        print(f"🎯 _handle_tap_detection: QSettings measurementType={meas_type!r} "
+              f"is_plate={is_plate} is_brace={is_brace} "
+              f"material_tap_phase={self.material_tap_phase} "
+              f"→ routing to {'PLATE/BRACE pipeline' if (is_plate or is_brace) else 'GUITAR pipeline'}")
+
         TAP_DEBUG("handleTapDetection",
             f"ENTERED | measurementType={meas_type} "
             f"isPlate={is_plate} isBrace={is_brace} "
@@ -362,6 +367,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
             for p in peaks
         ]
+
+        self.set_measurement_complete(True)
+        # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
+        if self.show_loaded_settings_warning:
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
 
         self.peaksChanged.emit(peaks)
         self.captured_taps.clear()
@@ -607,6 +618,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # Mirrors Swift Combine routing: fftAnalyzer.$magnitudes → detectTap.
         if self.is_detecting and not self.is_detection_paused and not self.is_measurement_complete:
             meas_type = _tds.measurement_type()
+            if not hasattr(self, '_dbg_fft_frame_logged'):
+                self._dbg_fft_frame_logged = True
+                print(f"🎞 on_fft_frame (first detecting frame): QSettings measurementType={meas_type!r} "
+                      f"→ {'calling detect_tap (guitar)' if meas_type != _MT.PLATE and meas_type != _MT.BRACE else 'SKIPPING detect_tap (plate/brace)'}")
             if meas_type != _MT.PLATE and meas_type != _MT.BRACE:
                 self.detect_tap(float(fft_peak_amp) - 100.0, mag_y_db, self.freq)
 
@@ -659,6 +674,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
             return
         meas_type = _tds.measurement_type()
+        if not hasattr(self, '_dbg_rms_logged'):
+            self._dbg_rms_logged = True
+            print(f"📶 _on_rms_level_changed (first detecting call): QSettings measurementType={meas_type!r} "
+                  f"→ {'calling detect_tap (plate/brace)' if meas_type == _MT.PLATE or meas_type == _MT.BRACE else 'RETURNING early (guitar)'}")
         if meas_type != _MT.PLATE and meas_type != _MT.BRACE:
             return
         peak_mag = self._current_input_level_db

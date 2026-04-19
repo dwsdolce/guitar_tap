@@ -2,7 +2,7 @@
 pytest configuration for GuitarTap test suite.
 
 Mirrors the Swift test-sandbox pattern (TapDisplaySettings.swift):
-  - QSettings are redirected to an isolated "Dolcesfogato.tests/GuitarTap" suite
+  - QSettings are redirected to an isolated "Dolcesfogato.tests/guitar_tap" suite
     (controlled by the PYTEST_CURRENT_TEST env-var check in AppSettings._s()).
   - The measurements file is redirected to $TMPDIR/com.guitartap.tests/
     (controlled by the PYTEST_CURRENT_TEST env-var check in measurements_file()).
@@ -33,7 +33,7 @@ def _clear_test_sandbox():
     """
     # QSettings — wipe the isolated suite.
     from PySide6 import QtCore
-    isolated = QtCore.QSettings("Dolcesfogato.tests", "GuitarTap")
+    isolated = QtCore.QSettings("Dolcesfogato.tests", "guitar_tap")
     isolated.clear()
     isolated.sync()
 

@@ -1730,11 +1730,18 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas = self.fft_canvas
 
         saved_mt = AS.AppSettings.measurement_type()
+        print(f"🚀 _init_state: QSettings measurementType={saved_mt!r} is_guitar={saved_mt.is_guitar}")
         if saved_mt.is_guitar:
             self.measurement_type_combo.setCurrentText("Guitar")
             self.guitar_type_combo.setCurrentText(saved_mt.short_name)
         else:
             self.measurement_type_combo.setCurrentText(saved_mt.short_name)
+        # Always sync QSettings to the resolved combo value — if the combo text was
+        # already at the default and setCurrentText() fired no signal, QSettings may
+        # still hold a stale value from a previous session.
+        resolved_mt = self._current_mt()
+        AS.AppSettings.set_measurement_type(resolved_mt)
+        print(f"🚀 _init_state: combo resolved to={resolved_mt!r} — written to QSettings")
 
         saved_gt = AS.AppSettings.guitar_type()
         self.peak_widget.model.set_guitar_type(saved_gt)
@@ -2090,6 +2097,10 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer = self.fft_canvas.analyzer
         from models.guitar_mode import GuitarMode
         mt = self._current_mt()
+        if not getattr(self, '_dbg_peaks_logged', False):
+            self._dbg_peaks_logged = True
+            print(f"📋 _on_peaks_changed_results (first call): combo='{self.measurement_type_combo.currentText()}' "
+                  f"→ mt={mt!r} is_guitar={mt.is_guitar}")
         show_unknown = AS.AppSettings.show_unknown_modes()
         # Mirrors Swift: plate/brace bypasses the frequency range filter (`: true`).
         # Guitar mode filters to the displayed viewport.
@@ -2582,6 +2593,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.measurement_type_combo.currentText(),
             self.guitar_type_combo.currentText(),
         )
+        print(f"🏷  _update_measurement_badge: combo='{self.measurement_type_combo.currentText()}' "
+              f"guitar_type='{self.guitar_type_combo.currentText()}' → mt={mt!r}")
         self.measurement_type_badge.setText(mt.short_name)
         self.measurement_type_badge.setStyleSheet(
             "background: rgba(0,100,255,0.15); border-radius: 4px; padding: 1px 6px;"
@@ -5203,6 +5216,11 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_brace_width(_pf(brace_width_field, AS.AppSettings.brace_width()))
             AS.AppSettings.set_brace_thickness(_pf(brace_thick_field, AS.AppSettings.brace_thickness()))
             AS.AppSettings.set_brace_mass(_pf(brace_mass_field, AS.AppSettings.brace_mass()))
+
+            # Always persist the current measurement type — QSettings may hold a stale
+            # value from a previous session if the user never changed the type in this
+            # dialog (the signal-blocked combo update above does not write to QSettings).
+            AS.AppSettings.set_measurement_type(mt_val)
 
             # Fire _on_measurement_type_changed exactly once after all settings are
             # persisted — mirrors Swift's onApply?(measurementChanged) callback which

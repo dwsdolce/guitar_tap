@@ -299,6 +299,86 @@ For every slot handler `_on_xxx(self, *payload_params)`:
 
 ---
 
+### Rule 8 — Critical state flags must have exhaustive transition tests
+
+Certain boolean or enum properties are **critical state flags**: their value
+controls fundamental routing decisions that affect visible behaviour, and a
+wrong value is invisible until a user reports a symptom.
+
+**The failure mode that produced this rule:**
+
+`is_measurement_complete` (Python) / `isMeasurementComplete` (Swift) controls
+whether the spectrum display freezes or keeps painting live FFT frames.  An
+audit of `_finish_capture()` declared "Full method parity" after verifying that
+averaging logic, peak finding, and signal emissions were present — but did not
+line-by-line check that every Swift assignment had a Python counterpart.
+`isMeasurementComplete = true` at Swift line 804 had no Python equivalent.
+The frozen spectrum never froze.
+
+A subsequent work item (D44/WI-32) revisited `_finish_capture()` to fix UUID
+staleness, verified "Tests green" for that specific issue, and still did not
+notice the missing `set_measurement_complete(True)` call because that was not
+in scope for D44.
+
+#### What counts as a critical state flag
+
+A property is a critical state flag if:
+
+- It gates a rendering path, a signal routing decision, or a detection path
+  (i.e., getting it wrong causes the wrong thing to happen silently), **AND**
+- It is written at multiple call sites scattered across several methods, **AND**
+- Missing one write site produces a symptom that does not raise an exception
+  (silent wrong behaviour).
+
+Current critical state flags:
+
+| Flag | Controls | Write True paths | Write False paths |
+|---|---|---|---|
+| `is_measurement_complete` / `isMeasurementComplete` | Spectrum freeze/live; tap detection guard | `_finish_capture`, `set_measurement_complete(True)`, `load_measurement` | `start_tap_sequence`, `cancel_tap_sequence`, `set_measurement_complete(False)` |
+| `is_detecting` / `isDetecting` | Whether `detect_tap` is called each FFT frame | `start_tap_sequence`, `cancel_tap_sequence`, `_do_reenable_guitar`, `_do_reenable_detection` | `_handle_tap_detection` (arms timer), `reset()` |
+| `material_tap_phase` / `materialTapPhase` | Which gated-FFT phase runs next | Every phase-transition call site | `start_tap_sequence`, `cancel_tap_sequence` |
+
+#### Rule 8 requirements
+
+For each critical state flag:
+
+1. **Write-site enumeration**: Every location in Swift that assigns the flag
+   must be listed in a table.  Every location in Python that assigns the flag
+   must be listed.  Both lists must match (same count, same logical paths).
+
+2. **Dedicated test file**: A test file named
+   `test_<flag_name>_transitions.py` (Python) and
+   `<FlagName>TransitionTests.swift` (Swift) must exist and must contain one
+   test per write-True path and one test per write-False path.
+
+3. **Tests run in CI**: These files must be included in the normal pytest / Xcode
+   test plan run; they must not be skipped.
+
+4. **Scope-independence**: When a work item (WI-xx) touches a function that
+   writes a critical state flag, the work item's verification step must
+   **always** include "confirm all critical-flag assignments in this function
+   match Swift" — regardless of whether the work item is about that flag.
+
+#### Write-site table format
+
+| Swift assignment location | Swift line | Python equivalent location | Present? |
+|---|---|---|---|
+| `processMultipleTaps()` | 804 | `_finish_capture()` | ✅ (added WI-36) |
+| `loadMeasurement(_:)` | ~460 | `load_measurement()` | ✅ |
+| `startTapSequence()` | ~140 | `start_tap_sequence()` | ✅ |
+| `cancelTapSequence()` | ~280 | `cancel_tap_sequence()` | ✅ |
+
+A ✗ or blank in the "Present?" column is a confirmed bug; file a work item
+immediately.
+
+#### When to update the write-site table
+
+- When any new code path in Swift assigns a critical state flag
+- When any new code path in Python assigns a critical state flag
+- After any WI that modifies a function listed in the table
+
+---
+
 ## Audit Checklist
 
 For each Swift `@Published` property:
@@ -324,6 +404,12 @@ For each Swift `@Published` property:
 
 5. **Record outcome** in `REACTIVE_PROPERTY_AUDIT_RESULTS.md`.
 
+6. **If the property is a critical state flag (Rule 8):**
+   - [ ] Write-site table exists and is complete for both Swift and Python
+   - [ ] `test_<flag>_transitions.py` exists and has one test per write path
+   - [ ] `<Flag>TransitionTests.swift` exists and has one test per write path
+   - [ ] Both test files pass
+
 ---
 
 ## When to Re-Run This Audit
@@ -342,6 +428,14 @@ Re-run Rule 6 (computed view property audit) whenever:
 - A new `@Published` property is added that feeds an existing computed view property
 - A new completion path or state transition is added in Python (e.g., a new phase in
   the plate capture state machine)
+
+Re-run Rule 8 (critical state flag audit) whenever:
+
+- A new write site for a critical state flag is added in Swift or Python
+- A work item modifies any function listed in a critical-flag write-site table
+  (the work item's verification step must include the Rule 8 write-site check
+  regardless of the work item's stated scope)
+- A new critical state flag is identified (add it to the table in Rule 8)
 
 Re-run Rule 7 (slot payload consumption audit) whenever:
 

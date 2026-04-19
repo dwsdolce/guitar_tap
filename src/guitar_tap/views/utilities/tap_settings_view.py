@@ -31,7 +31,7 @@ class AppSettings:
     """
 
     _ORG = "Dolcesfogato"
-    _APP = "GuitarTap"
+    _APP = "guitar_tap"
 
     # ------------------------------------------------------------------ #
     # Internal helpers

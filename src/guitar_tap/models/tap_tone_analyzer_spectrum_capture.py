@@ -602,7 +602,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             return
 
         # Average all captured spectra — mirrors Swift averageSpectra(from: materialCapturedTaps).
-        avg_mags, avg_freqs = self._average_captured_taps()
+        avg_mags, avg_freqs = self.average_spectra(from_taps=self.captured_taps)
         self.longitudinal_spectrum = (avg_mags, avg_freqs)
 
         # Build the full peak list for display/manual override.
@@ -680,6 +680,40 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
 
     # ------------------------------------------------------------------ #
+    # _resolved_plate_peaks
+    # Mirrors Swift func resolvedPlatePeaks(…)
+    # ------------------------------------------------------------------ #
+
+    def _resolved_plate_peaks(
+        self,
+        include_cross: bool = True,
+        cross_override=None,
+        include_flc: bool = False,
+        flc_override=None,
+    ) -> "list":
+        """Build the ordered peak list from whichever phase peaks are available.
+
+        Mirrors Swift TapToneAnalyzer.resolvedPlatePeaks(…).
+        """
+        sel = []
+        if self.selected_longitudinal_peak:
+            sel.append(self.selected_longitudinal_peak)
+        elif self.longitudinal_peaks:
+            sel.append(self.longitudinal_peaks[0])
+
+        if include_cross:
+            cross = cross_override or self.selected_cross_peak or (self.cross_peaks[0] if self.cross_peaks else None)
+            if cross:
+                sel.append(cross)
+
+        if include_flc:
+            flc = flc_override or self.selected_flc_peak or (self.flc_peaks[0] if self.flc_peaks else None)
+            if flc:
+                sel.append(flc)
+
+        return sel
+
+    # ------------------------------------------------------------------ #
     # _handle_cross_gated_progress
     # Mirrors Swift handleCrossGatedProgress(magnitudes:frequencies:dominantPeak:)
     # ------------------------------------------------------------------ #
@@ -703,7 +737,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.re_enable_detection_for_next_plate_tap()
             return
 
-        avg_mags, avg_freqs = self._average_captured_taps()
+        avg_mags, avg_freqs = self.average_spectra(from_taps=self.captured_taps)
         self.cross_spectrum = (avg_mags, avg_freqs)
         self.cross_peaks = self._build_all_peaks(avg_mags, avg_freqs, dominant_peak)
         self.auto_selected_cross_peak_id = dominant_peak.id
@@ -761,7 +795,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.re_enable_detection_for_next_plate_tap()
             return
 
-        avg_mags, avg_freqs = self._average_captured_taps()
+        avg_mags, avg_freqs = self.average_spectra(from_taps=self.captured_taps)
         self.flc_spectrum = (avg_mags, avg_freqs)
         self.flc_peaks = self._build_all_peaks(avg_mags, avg_freqs, dominant_peak)
         self.auto_selected_flc_peak_id = dominant_peak.id
@@ -801,40 +835,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self._emit_peaks_array(self.current_peaks)
 
     # ------------------------------------------------------------------ #
-    # _resolved_plate_peaks
-    # Mirrors Swift private func resolvedPlatePeaks(…)
-    # ------------------------------------------------------------------ #
-
-    def _resolved_plate_peaks(
-        self,
-        include_cross: bool = True,
-        cross_override=None,
-        include_flc: bool = False,
-        flc_override=None,
-    ) -> "list":
-        """Build the ordered peak list from whichever phase peaks are available.
-
-        Mirrors Swift TapToneAnalyzer.resolvedPlatePeaks(…).
-        """
-        sel = []
-        if self.selected_longitudinal_peak:
-            sel.append(self.selected_longitudinal_peak)
-        elif self.longitudinal_peaks:
-            sel.append(self.longitudinal_peaks[0])
-
-        if include_cross:
-            cross = cross_override or self.selected_cross_peak or (self.cross_peaks[0] if self.cross_peaks else None)
-            if cross:
-                sel.append(cross)
-
-        if include_flc:
-            flc = flc_override or self.selected_flc_peak or (self.flc_peaks[0] if self.flc_peaks else None)
-            if flc:
-                sel.append(flc)
-
-        return sel
-
-    # ------------------------------------------------------------------ #
     # _build_all_peaks
     # Mirrors Swift func buildAllPeaks(magnitudes:frequencies:dominantPeak:)
     # ------------------------------------------------------------------ #
@@ -865,44 +865,67 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         return peaks
 
     # ------------------------------------------------------------------ #
-    # _average_captured_taps
-    # Mirrors Swift func averageSpectra(from:) — used for multi-tap phases
+    # average_spectra
+    # Mirrors Swift func averageSpectra(from:)
     # ------------------------------------------------------------------ #
 
-    def _average_captured_taps(self) -> "tuple[list[float], list[float]]":
-        """Average the captured_taps spectra in the linear power domain.
+    def average_spectra(self, from_taps: "list[tuple]") -> "tuple[list[float], list[float]]":
+        """Average multiple tap spectra using frequency-domain power averaging.
 
-        Each entry in captured_taps is a (magnitudes, frequencies, captureTime) tuple
+        Mirrors Swift TapToneAnalyzer.averageSpectra(from:).
+
+        Each entry in from_taps is a (magnitudes, frequencies, captureTime) tuple
         as stored by finish_gated_fft_capture.
 
-        Mirrors Swift TapToneAnalyzer.averageSpectra(from:) for material taps.
+        Args:
+            from_taps: List of (magnitudes, frequencies, captureTime) tuples.
 
         Returns:
-            (avg_magnitudes, frequencies) — both as list[float].
+            (magnitudes, frequencies) of the averaged spectrum.
+            Returns ([], []) if from_taps is empty, returns the single tap's
+            data unchanged if len == 1, returns first tap's data if lengths differ.
         """
         import math
 
-        taps = self.captured_taps
-        if not taps:
+        if not from_taps:
             return [], []
-        if len(taps) == 1:
-            return list(taps[0][0]), list(taps[0][1])
+        if len(from_taps) == 1:
+            return list(from_taps[0][0]), list(from_taps[0][1])
 
-        mags0, freqs0, _ = taps[0]
+        mags0, freqs0, _ = from_taps[0]
         n_bins = len(mags0)
-        if not all(len(t[0]) == n_bins for t in taps):
-            print("⚠️ Spectrum lengths don't match, using first tap only")
+        if not all(len(t[0]) == n_bins for t in from_taps):
+            print("⚠️ Warning: Spectrum lengths don't match, using first tap only")
             return list(mags0), list(freqs0)
 
         power_sum = [0.0] * n_bins
-        for mags, _, _ in taps:
+        for mags, _, _ in from_taps:
             for b in range(n_bins):
                 power_sum[b] += 10.0 ** (mags[b] / 10.0)
 
-        n_taps = len(taps)
+        n_taps = len(from_taps)
         avg = [10.0 * math.log10(max(power_sum[b] / n_taps, 1e-30)) for b in range(n_bins)]
         print(f"📊 Averaged {n_taps} spectra: {n_bins} bins each")
         return avg, list(freqs0)
+
+    # ------------------------------------------------------------------ #
+    # finish_capture
+    # Mirrors Swift TapToneAnalyzer.finishCapture()
+    # ------------------------------------------------------------------ #
+
+    def finish_capture(self) -> None:
+        """Invalidate the guitar-mode capture timer after the ring-out window closes.
+
+        Mirrors Swift TapToneAnalyzer.finishCapture(), which calls
+        captureTimer?.invalidate() and sets captureTimer = nil.
+
+        In Python, the capture timer is a QTimer.singleShot closure that holds
+        no persistent reference, so there is no timer object to invalidate.
+        This method exists to maintain structural parity with Swift.
+        """
+        # No persistent captureTimer reference in Python — QTimer.singleShot
+        # fires once and discards itself. Nothing to clean up.
+        pass
 
     # ------------------------------------------------------------------ #
     # process_multiple_taps
@@ -923,9 +946,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         print(f"🔬 Processing {len(self.captured_taps)} taps for averaging...")
 
         # captured_taps for guitar mode stores raw mag_y_db arrays (not tuples).
-        # Use the existing averaging path that works on plain arrays.
-        stacked = _np.stack(self.captured_taps)
-        avg_db = 10.0 * _np.log10(_np.mean(_np.power(10.0, stacked / 10.0), axis=0))
+        # Wrap them into (magnitudes, frequencies, captureTime) tuples so
+        # average_spectra(from:) receives the same structure as the plate path.
+        import datetime as _dt
+        freq_list = list(self.freq)
+        now = _dt.datetime.now()
+        tap_tuples = [(list(t), freq_list, now) for t in self.captured_taps]
+        avg_mags, avg_freqs = self.average_spectra(from_taps=tap_tuples)
+        avg_db = _np.array(avg_mags)
 
         self.set_frozen_spectrum(self.freq, avg_db)
         self.set_measurement_complete(True)
@@ -935,7 +963,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.showLoadedSettingsWarningChanged.emit(False)
         print(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
 
-        peaks = self.find_peaks(list(avg_db), list(self.freq))
+        peaks = self.find_peaks(avg_mags, avg_freqs)
         self.current_peaks = peaks
         self.peaksChanged.emit(peaks)
         self.loaded_measurement_peaks = None

@@ -230,6 +230,10 @@ class TapToneAnalyzerControlMixin:
         is_plate = (meas_type == _MT.PLATE)
         is_brace = (meas_type == _MT.BRACE)
 
+        print(f"🔧 start_tap_sequence: QSettings measurementType={meas_type!r} "
+              f"is_plate={is_plate} is_brace={is_brace} "
+              f"→ phase will be {'CAPTURING_LONGITUDINAL' if (is_plate or is_brace) else 'NOT_STARTED'}")
+
         # Mirrors Swift startTapSequence() lines 140-143:
         #   self.comparisonSpectra = []  (handled by view's clear_comparison())
         #   self.displayMode = .live
