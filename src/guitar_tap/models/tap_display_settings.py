@@ -677,26 +677,4 @@ class TapDisplaySettings:
             return (clamped_min, clamped_max)
         return (cls.min_magnitude(), cls.max_magnitude())
 
-    # MARK: - Reset to Defaults
-
-    @classmethod
-    def reset_to_defaults(cls) -> None:
-        """Reset all persisted settings to their default values.
-
-        Mirrors Swift TapDisplaySettings.resetToDefaults().
-        """
-        s = _app_settings()
-        s.set_guitar_type("acoustic")
-        s.set_show_unknown_modes(True)
-        s.set_f_min(int(cls.DEFAULT_MIN_FREQUENCY))
-        s.set_f_max(int(cls.DEFAULT_MAX_FREQUENCY))
-        s.set_db_min(cls.DEFAULT_MIN_MAGNITUDE)
-        s.set_db_max(cls.DEFAULT_MAX_MAGNITUDE)
-        s.set_analysis_f_min(cls.DEFAULT_ANALYSIS_MIN_FREQUENCY)
-        s.set_analysis_f_max(cls.DEFAULT_ANALYSIS_MAX_FREQUENCY)
-        s.set_peak_threshold(cls.DEFAULT_PEAK_THRESHOLD)
-        s.set_max_peaks(cls.DEFAULT_MAX_PEAKS)
-        s.set_tap_threshold(int(cls.DEFAULT_TAP_DETECTION_THRESHOLD + 100.0))
-        s.set_hysteresis_margin(cls.DEFAULT_HYSTERESIS_MARGIN)
-        s.set_measure_flc(False)
 

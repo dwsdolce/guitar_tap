@@ -22,6 +22,7 @@ from models.analysis_display_mode import AnalysisDisplayMode
 import models.tap_tone_analyzer as td
 import models.tap_tone_analyzer as pc
 import views.utilities.tap_settings_view as _as
+from models.tap_display_settings import TapDisplaySettings as _tds
 
 
 class _SceneMouseReleaseFilter(QtCore.QObject):
@@ -1215,17 +1216,16 @@ class FftCanvas(pg.PlotWidget):
         )
 
     def _reset_both_to_saved(self) -> None:
-        mt = self.analyzer._measurement_type
         self._apply_axis_range(
-            _as.AppSettings.f_min(mt), _as.AppSettings.f_max(mt),
+            _tds.min_frequency(), _tds.max_frequency(),
             _as.AppSettings.db_min(), _as.AppSettings.db_max(),
         )
 
     def _reset_freq_to_defaults(self) -> None:
-        mt = self.analyzer._measurement_type
         _, (db_min, db_max) = self.getPlotItem().vb.viewRange()
         self._apply_axis_range(
-            _as.AppSettings.default_f_min(mt), _as.AppSettings.default_f_max(mt),
+            _tds.default_min_frequency(_tds.measurement_type()),
+            _tds.default_max_frequency(_tds.measurement_type()),
             db_min, db_max,
         )
 

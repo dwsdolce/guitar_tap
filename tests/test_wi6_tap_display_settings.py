@@ -211,36 +211,3 @@ class TestD19ValidateMagnitudeRange:
         assert lo == pytest.approx(-60.0)
         assert hi == pytest.approx(-50.0)
 
-
-# ---------------------------------------------------------------------------
-# D19 — reset_to_defaults smoke test
-# ---------------------------------------------------------------------------
-
-class TestD19ResetToDefaults:
-    """D19: reset_to_defaults() restores key settings to Swift-matching defaults."""
-
-    def _cls(self):
-        _get_app()
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings
-        return TapDisplaySettings
-
-    def test_tap_detection_threshold_reset(self):
-        """tapDetectionThreshold resets to -40.0 dBFS (matches Swift default)."""
-        tds = self._cls()
-        tds.set_tap_detection_threshold(-20.0)   # dirty the value
-        tds.reset_to_defaults()
-        assert tds.tap_detection_threshold() == pytest.approx(-40.0)
-
-    def test_hysteresis_margin_reset(self):
-        """hysteresisMargin resets to 3.0 dB (matches Swift default)."""
-        tds = self._cls()
-        tds.set_hysteresis_margin(10.0)
-        tds.reset_to_defaults()
-        assert tds.hysteresis_margin() == pytest.approx(3.0)
-
-    def test_measure_flc_reset(self):
-        """measureFlc resets to False (matches Swift default)."""
-        tds = self._cls()
-        tds.set_measure_flc(True)
-        tds.reset_to_defaults()
-        assert tds.measure_flc() is False
