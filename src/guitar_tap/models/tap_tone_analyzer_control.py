@@ -73,10 +73,13 @@ class TapToneAnalyzerControlMixin:
         self._calibration_corrections = cal.interpolate_to_bins(self.freq)
         if self.mic.proc_thread is not None:
             self.mic.proc_thread.set_calibration(self._calibration_corrections)
+        # Track the name so _on_export_pdf can report it — mirrors Swift activeCalibration?.name.
+        self._active_calibration_name = getattr(cal, "name", None)
 
     def clear_calibration(self) -> None:
         """Remove the active calibration."""
         self._calibration_corrections = None
+        self._active_calibration_name = None
         if self.mic.proc_thread is not None:
             self.mic.proc_thread.set_calibration(None)
 

@@ -2992,16 +2992,12 @@ class MainWindow(QtWidgets.QMainWindow):
             min_db_val = float(self.threshold_slider.value())
             max_db_val = 0.0
 
-        # ── Device identity — mirrors Swift fft.selectedInputDevice / fft.activeCalibration ──
-        mic_name: str | None = getattr(analyzer, "_calibration_device_name", None) or None
-        mic_uid: str | None = None
-        try:
-            from models.audio_device import AudioDevice as _AD
-            _rate = canvas.mic.rate if canvas.mic else None
-            if mic_name and _rate:
-                mic_uid = _AD(name=mic_name, index=-1, sample_rate=float(_rate)).fingerprint
-        except Exception:
-            pass
+        # ── Device identity — mirrors Swift fft.selectedInputDevice?.name / fft.selectedInputDevice?.uid ──
+        # Use the currently selected input device (not the calibration-time device name).
+        _sel_dev = getattr(getattr(analyzer, "mic", None), "selected_input_device", None)
+        mic_name: str | None = getattr(_sel_dev, "name", None) or None
+        mic_uid: str | None = getattr(_sel_dev, "fingerprint", None) or None
+        cal_name: str | None = getattr(analyzer, "_active_calibration_name", None) or None
 
         # ── Plate/brace peak role selections — mirrors Swift tap.effectiveLongitudinalPeakID ──
         selected_longitudinal_peak_id = analyzer.effective_longitudinal_peak_id if not mt.is_guitar else None
@@ -3017,6 +3013,7 @@ class MainWindow(QtWidgets.QMainWindow):
             selected_flc_peak_id=selected_flc_peak_id,
             microphone_name=mic_name,
             microphone_uid=mic_uid,
+            calibration_name=cal_name,
             min_freq=min_freq_val,
             max_freq=max_freq_val,
             min_db=min_db_val,
@@ -3957,6 +3954,16 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 date_label = datetime.now(_tz.utc).isoformat()
 
+            # ── Device identity — mirrors Swift fft.selectedInputDevice?.name (WI-31) ──────────
+            # Use the currently selected input device, not the calibration-time device name.
+            _sel_dev = getattr(getattr(analyzer, "mic", None), "selected_input_device", None)
+            mic_name: str | None = getattr(_sel_dev, "name", None) or None
+
+            # ── Active calibration name — mirrors Swift fft.activeCalibration?.name (WI-30) ──
+            # Use _active_calibration_name which is set by both manual selection and
+            # device-specific auto-load (via load_calibration_from_profile).
+            _active_cal_name: str | None = getattr(analyzer, "_active_calibration_name", None) or None
+
             # Mirror Swift createExportableSpectrumView(): always call make_exportable_spectrum_view.
             # For plate/brace, frozenFrequencies is intentionally empty — the spectrum renders
             # via material_spectra (per-phase overlays). Swift has no "if freqs and mags" guard.
@@ -3990,8 +3997,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 notes=notes_val,
                 measurement_type_str=mt.value,
                 guitar_type_str=gt_str or TDS.guitar_type(),
-                microphone_name=getattr(analyzer, "_calibration_device_name", None) or None,
-                calibration_name=None,
+                microphone_name=mic_name,
+                calibration_name=_active_cal_name,
                 min_freq=min_freq_val,
                 max_freq=max_freq_val,
                 peaks=range_peaks,
@@ -4989,7 +4996,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 _mc_mod.CalibrationStorage.set_calibration_for_device(cur_dev, None)
                 self.fft_canvas.clear_calibration()
                 self.set_calibration_status("")
-            _update_cal_meta()
+            _update_cal_display()
 
         cal_combo.currentIndexChanged.connect(_on_cal_selected)
         _update_cal_display()

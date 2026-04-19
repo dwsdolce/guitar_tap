@@ -199,6 +199,9 @@ class TapToneAnalyzer(
         # ── Calibration ────────────────────────────────────────────────────
         self._calibration_corrections = None
         self._calibration_device_name: str = ""
+        # Name of the currently active calibration profile (device-specific or
+        # manually selected).  Mirrors Swift RealtimeFFTAnalyzer.activeCalibration?.name.
+        self._active_calibration_name: "str | None" = None
 
         # ── Guitar/mode classification ─────────────────────────────────────
         self._guitar_type = None
