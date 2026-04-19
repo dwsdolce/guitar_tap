@@ -35,10 +35,6 @@ This Python package mirrors that structure using separate modules:
       mirrors Swift AnalysisDisplayMode enum defined at file scope in TapToneAnalyzer.swift.
       Lives in its own file so mixin modules can import it without circular deps.
 
-  fft_parameters.py                       → FftParameters
-      Python-only — no Swift counterpart.  Swift stores equivalent values
-      directly on TapToneAnalyzer / RealtimeFFTAnalyzer.
-
 This file (tap_tone_analyzer.py) contains:
   - The TapToneAnalyzer class declaration, stored properties, and __init__
     (mirrors the top of Swift TapToneAnalyzer.swift)
@@ -65,14 +61,6 @@ from .tap_tone_analyzer_spectrum_capture import TapToneAnalyzerSpectrumCaptureMi
 # creating a circular dependency (they are imported by this file).
 
 from .analysis_display_mode import AnalysisDisplayMode
-
-# ── Python-only implementation types ─────────────────────────────────────────
-# FftParameters has no Swift counterpart; Swift stores equivalent values
-# directly on TapToneAnalyzer / RealtimeFFTAnalyzer.
-# _FftProcessingThread is a private implementation detail of RealtimeFFTAnalyzer
-# (owned via mic.proc_thread); it is not imported here.
-
-from .fft_parameters import FftParameters
 
 # ── PySide6 ─────────────────────────────────────────────────────────────────────
 
@@ -204,9 +192,8 @@ class TapToneAnalyzer(
         self.mic = fft_analyzer  # type: ignore[assignment]
 
         # ── FFT configuration ──────────────────────────────────────────────
-        # fft_data and freq are populated by start(); None-safe guarded by
-        # the n_fmin / n_fmax computed properties below.
-        self.fft_data = None
+        # freq is populated by start(); n_fmin / n_fmax read from self.mic
+        # which is None-safe guarded in their computed properties.
         self.freq = np.array([])
 
         # ── Calibration ────────────────────────────────────────────────────
@@ -397,23 +384,19 @@ class TapToneAnalyzer(
         # this state directly — matching Swift where
         # TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:) owns the buffers.
         import threading as _threading
-        self._pre_roll_seconds: float = 0.2         # 200 ms pre-roll (mirrors Swift)
-        self._pre_roll_samples: int = 0             # set in start() once sample rate is known
+        self._pre_roll_seconds: float = 0.2         # 200 ms pre-roll (mirrors Swift preRollDuration)
         self._pre_roll_buf: list = []               # raw PCM samples (float32)
         self._gated_lock = _threading.Lock()
         self._gated_capture_active: bool = False
-        self._gated_capture_samples: int = 0        # target window size in samples
+        self._gated_capture_samples: int = 0        # target window size in samples (snapshot at capture-open)
         self._gated_capture_phase: object = None    # MaterialTapPhase at capture start
         self._gated_accum: list = []                # accumulated raw PCM samples
-        # Placeholder; overridden in start() to float(self.mic.rate).
-        # Swift uses 48000 as its placeholder (mpmSampleRate); Python uses 44100.0.
-        # Both values are replaced by the actual hardware rate before first use.
-        self._gated_sample_rate: float = 44100.0
 
     def start(
         self,
         parent_widget,
-        fft_params: "FftParameters",
+        sample_rate: int,
+        fft_size: int,
         audio_device,
         calibration_corrections,
         guitar_type,
@@ -428,7 +411,8 @@ class TapToneAnalyzer(
 
         Args:
             parent_widget:           The FftCanvas (QObject parent).
-            fft_params:              FftParameters instance.
+            sample_rate:             Hardware sample rate in Hz.
+            fft_size:                FFT window size in samples (power of 2).
             audio_device:            AudioDevice to open, or None for the default.
             calibration_corrections: ndarray of per-bin dB corrections, or None.
             guitar_type:             GuitarType enum value for mode classification.
@@ -448,21 +432,23 @@ class TapToneAnalyzer(
         self._devicesRefreshed.connect(self._on_devices_refreshed)
 
         # ── Audio engine ──────────────────────────────────────────────────
+        # Mirrors Swift: RealtimeFFTAnalyzer owns fftSize and targetSampleRate directly.
         self.mic = _Mic(
             parent_widget,
-            rate=fft_params.sample_freq,
+            rate=sample_rate,
             chunksize=1024,
             device=audio_device,
             on_devices_changed=self._devicesRefreshed.emit,
             on_calibration_changed=self._on_mic_calibration_changed,
-            fft_size=fft_params.n_f,
+            fft_size=fft_size,
         )
         self.mic.proc_thread.setParent(self)
 
         # ── FFT configuration ─────────────────────────────────────────────
-        self.fft_data = fft_params
-        x_axis = np.arange(0, fft_params.h_n_f + 1)
-        self.freq = x_axis * fft_params.sample_freq / fft_params.n_f
+        # Read the actual hardware rate from mic (may differ from requested rate).
+        # Mirrors Swift: TapToneAnalyzer reads fftAnalyzer.targetSampleRate / fftSize.
+        x_axis = np.arange(0, self.mic.h_fft_size + 1)
+        self.freq = x_axis * self.mic.rate / self.mic.fft_size
 
         # ── Calibration ───────────────────────────────────────────────────
         self._calibration_corrections = calibration_corrections
@@ -470,12 +456,6 @@ class TapToneAnalyzer(
 
         # ── Guitar/mode classification ────────────────────────────────────
         self._guitar_type = guitar_type
-
-        # ── Gated-FFT capture state — initialise rate-dependent fields ───────
-        # _pre_roll_samples and _gated_sample_rate depend on the actual hardware
-        # sample rate, which is only known after the mic is constructed.
-        self._gated_sample_rate = float(self.mic.rate)
-        self._pre_roll_samples = int(self.mic.rate * self._pre_roll_seconds)
 
         # ── Gated-FFT capture signal ───────────────────────────────────────
         # Wire the processing thread's gatedCaptureComplete signal to the
@@ -539,30 +519,6 @@ class TapToneAnalyzer(
         Mirrors Swift TapToneAnalyzer computed property that checks displayMode == .comparison.
         """
         return self._display_mode == AnalysisDisplayMode.COMPARISON
-
-    @property
-    def n_fmin(self) -> int:
-        """Bin index corresponding to min_frequency.
-
-        Computed from min_frequency, mirrors Swift's bin-index helpers
-        derived from minFrequency inside findPeaks.
-        Returns 0 when fft_data is not yet set (before start()).
-        """
-        if self.fft_data is None:
-            return 0
-        return int(self.fft_data.n_f * self.min_frequency) // self.fft_data.sample_freq
-
-    @property
-    def n_fmax(self) -> int:
-        """Bin index corresponding to max_frequency.
-
-        Computed from max_frequency, mirrors Swift's bin-index helpers
-        derived from maxFrequency inside findPeaks.
-        Returns 0 when fft_data is not yet set (before start()).
-        """
-        if self.fft_data is None:
-            return 0
-        return int(self.fft_data.n_f * self.max_frequency) // self.fft_data.sample_freq
 
     def set_material_spectra(self, spectra: list) -> None:
         """Set per-phase plate/brace spectra and notify observers.

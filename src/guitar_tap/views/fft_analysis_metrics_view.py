@@ -130,9 +130,8 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
 
     def _build_ui(self) -> None:
         """Construct the dialog layout, mirroring Swift body."""
-        fft_data = self._canvas.fft_data
-        sr        = fft_data.sample_freq
-        fft_size  = fft_data.n_f                 # mirrors Swift RealtimeFFTAnalyzer.fftSize
+        sr       = float(self._canvas.analyzer.mic.rate)    # mirrors Swift RealtimeFFTAnalyzer.sampleRate
+        fft_size = self._canvas.analyzer.mic.fft_size       # mirrors Swift RealtimeFFTAnalyzer.fftSize
         spectral_res = sr / fft_size             # mirrors Swift frequencyResolution = sampleRate / fftSize
         bandwidth    = sr / 2                    # mirrors Swift bandwidth (0 Hz to Nyquist)
         sample_len   = fft_size / sr             # mirrors Swift sampleLengthSeconds = fftSize / sampleRate

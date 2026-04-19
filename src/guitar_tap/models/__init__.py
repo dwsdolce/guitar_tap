@@ -8,7 +8,6 @@ convenience re-exports provided here.
 Data model modules (safe to import anywhere):
   analysis_display_mode  → AnalysisDisplayMode
   audio_device           → AudioDevice
-  fft_parameters         → FftParameters
   guitar_type            → GuitarType, ModeRanges, DecayThresholds
   guitar_mode            → GuitarMode, get_bands, in_mode_range, ...
   material_properties    → PlateDimensions, PlateProperties, BraceProperties
@@ -30,7 +29,6 @@ Analyser modules (NOT imported here — import directly to avoid circular deps):
 
 from .analysis_display_mode import AnalysisDisplayMode
 from .audio_device import AudioDevice
-from .fft_parameters import FftParameters
 from .guitar_type import GuitarType, ModeRanges, DecayThresholds
 from .guitar_mode import GuitarMode, get_bands, in_mode_range, classify_peak, mode_display_name
 from .material_tap_phase import MaterialTapPhase
@@ -47,7 +45,6 @@ __all__ = [
     # Models
     "AnalysisDisplayMode",
     "AudioDevice",
-    "FftParameters",
     "GuitarType", "ModeRanges", "DecayThresholds",
     "GuitarMode", "get_bands", "in_mode_range", "classify_peak", "mode_display_name",
     "MaterialTapPhase",

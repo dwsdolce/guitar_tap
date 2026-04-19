@@ -19,7 +19,6 @@ from models import measurement_type as mt_mod
 from models import microphone_calibration as _mc_mod
 from models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 from models.analysis_display_mode import AnalysisDisplayMode
-from models.fft_parameters import FftParameters
 import models.tap_tone_analyzer as td
 import models.tap_tone_analyzer as pc
 import views.utilities.tap_settings_view as _as
@@ -269,11 +268,9 @@ class FftCanvas(pg.PlotWidget):
         # Disable pyqtgraph's built-in right-click menu; we provide our own.
         self.getPlotItem().setMenuEnabled(False)
 
-        self.fft_data: FftParameters = FftParameters(sampling_rate, fft_size)
-
         # threshold_y is the rendering value for the peak threshold line (dB relative to 0).
         # Derived from threshold on construction; kept in sync by set_threshold.
-        self.threshold_x: int = self.fft_data.sample_freq // 2
+        self.threshold_x: int = sampling_rate // 2
         self.threshold_y: int = threshold - 100
 
         # Enforce pan/zoom bounds matching Swift's SpectrumView+GestureHandlers limits:
@@ -324,12 +321,12 @@ class FftCanvas(pg.PlotWidget):
             except Exception:
                 pass
 
-        # Update fft_data to use the selected device's native sample rate.
+        # Use the selected device's native sample rate if available.
         # AudioDevice already carries sample_rate so no extra OS query is needed.
         if _saved_audio_device is not None:
             _native_rate = int(_saved_audio_device.sample_rate)
-            if _native_rate > 0 and _native_rate != self.fft_data.sample_freq:
-                self.fft_data.sample_freq = _native_rate
+            if _native_rate > 0:
+                sampling_rate = _native_rate
 
         # ── TapToneAnalyzer: the model ─────────────────────────────────────
         # Auto-load calibration profile before constructing the analyzer so we
@@ -345,8 +342,8 @@ class FftCanvas(pg.PlotWidget):
                     _saved_audio_device.name
                 )
             if _cal is not None:
-                _x = np.arange(0, self.fft_data.h_n_f + 1)
-                _freq_tmp = _x * self.fft_data.sample_freq // self.fft_data.n_f
+                _x = np.arange(0, fft_size // 2 + 1)
+                _freq_tmp = _x * sampling_rate // fft_size
                 _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
 
         guitar_type_str = _as.AppSettings.guitar_type()
@@ -358,7 +355,8 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer()
         self.analyzer.start(
             parent_widget=self,
-            fft_params=self.fft_data,
+            sample_rate=sampling_rate,
+            fft_size=fft_size,
             audio_device=_saved_audio_device,
             calibration_corrections=_initial_calibration,
             guitar_type=_guitar_type,
@@ -372,7 +370,6 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.peak_threshold = float(threshold - 100)
         # analysis_min_frequency / analysis_max_frequency are initialised from AppSettings
         # in TapToneAnalyzer.__init__ and must not be overwritten with the display viewport.
-        # n_fmin / n_fmax are now computed properties — no assignment needed.
 
         # Convenience alias kept for code that still reads self.mic
         self.mic: Microphone = self.analyzer.mic
@@ -1537,7 +1534,7 @@ class FftCanvas(pg.PlotWidget):
         """
         self.analyzer.peak_threshold = float(threshold - 100)
 
-        self.threshold_x = self.fft_data.sample_freq // 2
+        self.threshold_x = self.analyzer.mic.rate // 2
         self.threshold_y = threshold - 100
 
         self.line_threshold.setPos(self.threshold_y)

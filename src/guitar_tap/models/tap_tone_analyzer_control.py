@@ -92,9 +92,10 @@ class TapToneAnalyzerControlMixin:
 
         Delegates to RealtimeFFTAnalyzer.set_device(), which owns the stream
         restart and calibration auto-load (via _on_mic_calibration_changed).
-        This method only syncs the Python-layer fft_data sample rate after the
-        switch, which has no Swift equivalent (Swift derives sample rate from
-        the running AVAudioEngine directly).
+        _gated_sample_rate and _pre_roll_samples are computed properties that
+        read self.mic.rate directly, so they automatically reflect the new
+        device rate — mirrors Swift where preRollSamples and gatedCaptureSamples
+        are computed vars that always read from mpmSampleRate.
 
         Mirrors Swift TapToneAnalyzer+Control.swift: setInputDevice is called
         on fftAnalyzer, then selectedInputDevice.didSet applies calibration —
@@ -102,11 +103,6 @@ class TapToneAnalyzerControlMixin:
         """
         self._calibration_device_name = device.name
         self.mic.set_device(device)
-        # Sync fft_data sample rate to the new device's native rate so the
-        # frequency axis stays correct.  Python-only — Swift reads actualSampleRate
-        # from the running AVAudioEngine.
-        if self.mic.rate != self.fft_data.sample_freq:
-            self.fft_data.sample_freq = self.mic.rate
 
     def _on_mic_calibration_changed(self, cal) -> None:
         """Apply the calibration profile emitted by RealtimeFFTAnalyzer.set_device().
@@ -757,7 +753,6 @@ class TapToneAnalyzerControlMixin:
         if fmin < fmax:
             self.min_frequency = float(fmin)
             self.max_frequency = float(fmax)
-            # n_fmin / n_fmax are now computed properties — no assignment needed.
         if not init:
             self.recalculate_frozen_peaks_if_needed()
 

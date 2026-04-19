@@ -68,6 +68,35 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # Mirrors Swift TapToneAnalyzer.gatedCaptureDuration.
     GATED_CAPTURE_DURATION: float = 0.4  # 400 ms
 
+    @property
+    def _pre_roll_samples(self) -> int:
+        """Number of pre-roll samples at the current hardware sample rate.
+
+        Computed property — mirrors Swift:
+            var preRollSamples: Int { Int(mpmSampleRate * TapToneAnalyzer.preRollDuration) }
+
+        Always returns the correct value for the current device without any
+        explicit cache-invalidation on device switch.
+        """
+        if self.mic is None:
+            return int(44100 * self._pre_roll_seconds)
+        return int(self.mic.rate * self._pre_roll_seconds)
+
+    @property
+    def _gated_sample_rate(self) -> float:
+        """Current hardware sample rate in Hz.
+
+        Computed property — mirrors Swift:
+            var mpmSampleRate: Double  (updated on every audio buffer)
+
+        Reading self.mic.rate is equivalent: Python's RealtimeFFTAnalyzer
+        updates its rate field when the device changes, so this always
+        reflects the active hardware rate without any explicit update.
+        """
+        if self.mic is None:
+            return 44100.0
+        return float(self.mic.rate)
+
     # ------------------------------------------------------------------ #
     # _set_material_tap_phase
     # ------------------------------------------------------------------ #
