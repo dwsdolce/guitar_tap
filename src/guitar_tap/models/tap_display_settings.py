@@ -477,38 +477,56 @@ class TapDisplaySettings:
         return cls.DEFAULT_MAX_FREQUENCY
 
     @classmethod
-    def min_frequency(cls, meas_type: "str | object | None" = None) -> float:
-        """Persisted minimum frequency for display (Hz).
+    def min_frequency_for(cls, meas_type: "str | object") -> float:
+        """Persisted minimum frequency for display for a specific measurement type (Hz).
 
-        Mirrors Swift TapDisplaySettings.minFrequency(for:) and .minFrequency.
+        Mirrors Swift TapDisplaySettings.minFrequency(for:).
         """
-        if meas_type is None:
-            meas_type = cls.measurement_type()
         return float(_app_settings().f_min(meas_type))
 
     @classmethod
-    def set_min_frequency(cls, v: float, meas_type: "str | object | None" = None) -> None:
+    def set_min_frequency_for(cls, v: float, meas_type: "str | object") -> None:
         """Mirrors Swift TapDisplaySettings.setMinFrequency(_:for:)."""
-        if meas_type is None:
-            meas_type = cls.measurement_type()
         _app_settings().set_f_min(int(v), meas_type)
 
     @classmethod
-    def max_frequency(cls, meas_type: "str | object | None" = None) -> float:
-        """Persisted maximum frequency for display (Hz).
+    def min_frequency(cls) -> float:
+        """Persisted minimum frequency for the current measurement type (Hz).
 
-        Mirrors Swift TapDisplaySettings.maxFrequency(for:) and .maxFrequency.
+        Mirrors Swift TapDisplaySettings.minFrequency (static var getter).
         """
-        if meas_type is None:
-            meas_type = cls.measurement_type()
+        return cls.min_frequency_for(cls.measurement_type())
+
+    @classmethod
+    def set_min_frequency(cls, v: float) -> None:
+        """Mirrors Swift TapDisplaySettings.minFrequency (static var setter)."""
+        cls.set_min_frequency_for(v, cls.measurement_type())
+
+    @classmethod
+    def max_frequency_for(cls, meas_type: "str | object") -> float:
+        """Persisted maximum frequency for display for a specific measurement type (Hz).
+
+        Mirrors Swift TapDisplaySettings.maxFrequency(for:).
+        """
         return float(_app_settings().f_max(meas_type))
 
     @classmethod
-    def set_max_frequency(cls, v: float, meas_type: "str | object | None" = None) -> None:
+    def set_max_frequency_for(cls, v: float, meas_type: "str | object") -> None:
         """Mirrors Swift TapDisplaySettings.setMaxFrequency(_:for:)."""
-        if meas_type is None:
-            meas_type = cls.measurement_type()
         _app_settings().set_f_max(int(v), meas_type)
+
+    @classmethod
+    def max_frequency(cls) -> float:
+        """Persisted maximum frequency for the current measurement type (Hz).
+
+        Mirrors Swift TapDisplaySettings.maxFrequency (static var getter).
+        """
+        return cls.max_frequency_for(cls.measurement_type())
+
+    @classmethod
+    def set_max_frequency(cls, v: float) -> None:
+        """Mirrors Swift TapDisplaySettings.maxFrequency (static var setter)."""
+        cls.set_max_frequency_for(v, cls.measurement_type())
 
     # MARK: - dB Range
 
