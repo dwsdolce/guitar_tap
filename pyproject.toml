@@ -14,8 +14,6 @@ dependencies = [
     "pyqtgraph>=0.14",
     "QtAwesome>=1.4",
     "reportlab>=4.4",
-    "pyedifice",
-    "swiftui_compat",
 ]
 
 [project.optional-dependencies]
