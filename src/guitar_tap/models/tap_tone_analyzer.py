@@ -258,6 +258,12 @@ class TapToneAnalyzer(
         # MARK: - Measurement Complete State
         self.is_measurement_complete: bool = False  # mirrors isMeasurementComplete
 
+        # Mirrors Swift @Published var microphoneWarning: String?
+        # Set by import_measurements_from_data when an imported measurement's device
+        # is not among the currently available input devices.  View clears it after
+        # showing the alert (mirrors MeasurementsListView.swift behaviour).
+        self.microphone_warning: "str | None" = None
+
         # ── Additional peak analysis state ────────────────────────────────
         self.loaded_measurement_peaks: "list[ResonantPeak] | None" = None
         self.selected_peak: float = 0.0

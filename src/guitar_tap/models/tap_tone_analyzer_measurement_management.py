@@ -84,19 +84,34 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         self.savedMeasurements.extend(measurements)
         self._persist_measurements()
+
+        # Warn if any imported measurement's microphone is not currently available.
+        # Mirrors Swift importMeasurements(from:) — checks UID first, then name
+        # (Python companion app measurements store a "Name:SampleRate" fingerprint
+        # as the UID rather than a CoreAudio UID, so name matching is needed).
+        mic = getattr(self, "mic", None)
+        available_devices = getattr(mic, "available_input_devices", []) or []
+        available_uids  = {d.fingerprint for d in available_devices}
+        available_names = {d.name for d in available_devices}
+        missing_names: list = []
+        for m in measurements:
+            uid = getattr(m, "microphone_uid", None)
+            if uid:
+                found_by_uid  = uid in available_uids
+                mic_name = getattr(m, "microphone_name", None) or ""
+                found_by_name = (not found_by_uid) and (mic_name in available_names)
+                if not found_by_uid and not found_by_name:
+                    label = mic_name or uid
+                    if label not in missing_names:
+                        missing_names.append(label)
+        if missing_names:
+            joined = ", ".join(missing_names)
+            self.microphone_warning = (
+                f"Recorded with {joined}, which is not currently connected. "
+                f"Attach it and select it in the microphone settings for accurate analysis."
+            )
+
         return measurements
-
-    def _append_measurement(self, measurement) -> None:
-        """Append a pre-built measurement, persist to disk, and notify observers.
-
-        Used internally by ``save_measurement`` and by the import path which
-        passes already-deserialized ``TapToneMeasurement`` objects.
-
-        Mirrors Swift ``savedMeasurements.append(measurement)`` +
-        ``persistMeasurements()`` in ``TapToneAnalyzer+MeasurementManagement``.
-        """
-        self.savedMeasurements.append(measurement)
-        self._persist_measurements()
 
     def _make_phase_snapshot(
         self,
@@ -298,7 +313,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
             microphone_uid=microphone_uid,
             calibration_name=calibration_name,
         )
-        self._append_measurement(measurement)
+        self.savedMeasurements.append(measurement)
+        self._persist_measurements()
 
     def update_measurement(
         self,

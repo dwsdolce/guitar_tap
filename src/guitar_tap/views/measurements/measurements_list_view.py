@@ -418,15 +418,13 @@ class MeasurementsDialog(QtWidgets.QDialog):
             return
         M.update_export_dir(path)
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                raw = f.read()
-            imported = M.import_measurements_from_json(raw)
+            with open(path, "rb") as f:
+                data = f.read()
+            # mirrors Swift importMeasurements(from: Data) — model owns decode+append
+            imported = self._analyzer.import_measurements_from_data(data)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Import Error", str(exc))
             return
-
-        for item in imported:
-            self._analyzer._append_measurement(item)
 
         if len(imported) == 1:
             # Auto-load single imported measurement (matches Swift importFromFile behaviour).

@@ -145,8 +145,8 @@ This pattern appears in:
 | Python method | Swift equivalent |
 |---|---|
 | `_persist_measurements()` | `persistMeasurements()` |
-| `import_measurements(path)` | `importMeasurements(from:)` |
-| `import_measurements_from_data(data)` | `importMeasurements(json:)` |
+| `import_measurements(path)` | `importMeasurements(json:)` — string-based import, no mic warning |
+| `import_measurements_from_data(data)` | `importMeasurements(from:)` — bytes import + mic warning ✅ (WI-28) |
 | `save_measurement(measurement)` | `saveMeasurement(...)` — **takes a pre-built object, not 14 params** |
 | `update_measurement(measurement)` | `updateMeasurement(_:with:)` |
 | `delete_measurement(measurement_id)` | `deleteMeasurement(_:)` |
@@ -167,7 +167,9 @@ This pattern appears in:
 
 5. **Persistence mechanism**: Swift writes a single JSON file to the Documents directory. Python delegates to `save_all_measurements` via the view layer.
 
-**Verdict**: Partial structural divergence. Python mixin covers save/delete/compare but omits `load_measurement` and `load_persisted_measurements`. `save_measurement` signature is fundamentally different.
+6. **`microphone_warning` on model**: Swift has `@Published var microphoneWarning: String?` on `TapToneAnalyzer`. Swift's `importMeasurements(from:)` sets it when an imported measurement's device is not available. Swift's `loadMeasurement(_:)` also sets it when a loaded measurement's device is not connected. Python now initialises `self.microphone_warning: str | None = None` on `TapToneAnalyzer.__init__` (✅ WI-28), and `import_measurements_from_data` sets it. The `loadMeasurement` equivalent (`_restore_measurement` in the view) still handles its mic warning via view-local state — this will be resolved when WI-14 moves `load_measurement` to the model.
+
+**Verdict**: Partial structural divergence. Python mixin covers save/delete/compare but omits `load_measurement` and `load_persisted_measurements`. `save_measurement` signature is fundamentally different. `import_measurements_from_data` now matches Swift's `importMeasurements(from:)` for array-only decoding and microphone warning (✅ WI-28).
 
 ---
 

@@ -3944,7 +3944,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 chart_title = "FFT Peaks"
 
             from datetime import datetime, timezone as _tz
-            date_label = datetime.now(_tz.utc).isoformat()
+            # mirrors Swift: tap.sourceMeasurementTimestamp ?? Date()
+            # Use the original capture time when a saved measurement is loaded;
+            # fall back to now for a live (unsaved) capture.
+            if self._loaded_measurement is not None:
+                try:
+                    date_label = datetime.fromisoformat(
+                        self._loaded_measurement.timestamp
+                    ).isoformat()
+                except Exception:
+                    date_label = datetime.now(_tz.utc).isoformat()
+            else:
+                date_label = datetime.now(_tz.utc).isoformat()
 
             # Mirror Swift createExportableSpectrumView(): always call make_exportable_spectrum_view.
             # For plate/brace, frozenFrequencies is intentionally empty — the spectrum renders
@@ -3974,7 +3985,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # ── Build PDFReportData directly — mirrors Swift PDFReportData(...) init ─────────
             report_data = M.PDFReportData(
-                timestamp=datetime.now(_tz.utc).isoformat(),
+                timestamp=date_label,
                 tap_location=loc,
                 notes=notes_val,
                 measurement_type_str=mt.value,

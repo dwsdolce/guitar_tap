@@ -567,11 +567,13 @@ def export_pdf(data: PDFReportData, output_path: str) -> None:
     except ValueError:
         _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
 
-    # Timestamp
+    # Timestamp — mirrors Swift Date().formatted() which displays in local time.
     try:
         ts = _dt.fromisoformat(data.timestamp)
+        if ts.tzinfo is not None:
+            ts = ts.astimezone()   # convert UTC (or any tz-aware) to local time
     except Exception:
-        ts = _dt.now(_tz.utc)
+        ts = _dt.now(_tz.utc).astimezone()
     date_str = f"{ts.strftime('%B')} {ts.day}, {ts.year}"
     _hour = ts.hour % 12 or 12
     _ampm = "AM" if ts.hour < 12 else "PM"
