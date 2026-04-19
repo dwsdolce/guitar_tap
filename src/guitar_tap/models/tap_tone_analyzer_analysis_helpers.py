@@ -31,8 +31,8 @@ class TapToneAnalyzerAnalysisHelpersMixin:
             if entry.get("peak") and entry["peak"].id == peak.id:
                 return entry["mode"]
         # Fall back to classify on the single peak.
-        guitar_type = getattr(self, "_guitar_type", None)
-        return GuitarMode.classify(peak.frequency, guitar_type)
+        from models.tap_display_settings import TapDisplaySettings as _tds_pm
+        return GuitarMode.classify(peak.frequency, _tds_pm.guitar_type())
 
     def get_peak(self, mode: "GuitarMode") -> "ResonantPeak | None":
         """Return the highest-magnitude peak classified as *mode*.

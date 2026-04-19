@@ -439,7 +439,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
       audioEngine, inputNode, audioProcessingQueue, bufferAccessQueue
       magnitudes, frequencies, peakFrequency, peakMagnitude (@Published)
       inputLevelDB, displayLevelDB, recentPeakLevelDB, recentPeakTime
-      actualSampleRate, hopSizeOverlap, frequencyResolution, bandwidth
+      actualSampleRate, frequencyResolution, bandwidth
       sampleLengthSeconds, frameRate, processingTimeMs, avgProcessingTimeMs
       activeCalibration, calibrationCorrections, rawSampleHandler
       fftSetup, targetSampleRate, useHardwareSampleRate

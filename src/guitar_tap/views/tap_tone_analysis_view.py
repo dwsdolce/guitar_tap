@@ -344,10 +344,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_measurement_complete: bool = False
         self._tap_count_captured: int = 0
         self._tap_count_total: int = 1
-        # Loaded-settings warning — mirrors Swift showLoadedSettingsWarning
-        self._show_loaded_settings_warning: bool = False
-        self._loaded_tap_threshold: int | None = None   # dB value at load time
-        self._loaded_tap_num: int | None = None         # tap count at load time
         self._help_dialog: HD.HelpDialog | None = None
         self._metrics_dialog: FMV.FFTAnalysisMetricsView | None = None
         self.avg_enable_saved: bool = False
@@ -1697,6 +1693,16 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tap events
         canvas.tapDetected.connect(self._on_tap_detected)
         canvas.statusMessageChanged.connect(self._on_status_message_changed)
+        # Mirrors Swift @Published var isMeasurementComplete driving view updates reactively.
+        canvas.measurementComplete.connect(self.set_measurement_complete)
+        # Mirrors Swift SpectrumView body reading tap.loadedMeasurementName ?? "New" reactively.
+        canvas.loadedMeasurementNameChanged.connect(canvas.set_loaded_measurement_name)
+        # Mirrors Swift .onChange(of: tap.showLoadedSettingsWarning) driving banner animation.
+        canvas.showLoadedSettingsWarningChanged.connect(self._on_loaded_settings_warning_changed)
+        # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
+        canvas.requestDeviceSwitch.connect(self._on_request_device_switch)
+        # Mirrors Swift @Published var microphoneWarning driving alert sheet.
+        canvas.microphoneWarningChanged.connect(self._on_microphone_warning_changed)
         canvas.ringOutMeasured.connect(self.set_ring_out)
         canvas.ringOutMeasured.connect(self._on_ring_out_measured)
         canvas.tapCountChanged.connect(self.set_tap_count)
@@ -1822,6 +1828,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_tap_dot.setStyleSheet("color: green;")
             self._sb_tap_msg.setText("Tap Detected!")
             self._sb_tap_msg.setStyleSheet("color: green;")
+            # Mirrors Swift: phase/tap count labels are guarded by tap.isDetecting.
+            # When frozen, isDetecting is false → labels are hidden.
+            self._sb_tap_count.setVisible(False)
+            self._sb_plate_step_lbl.setVisible(False)
         else:
             self._sb_tap_dot.setStyleSheet("color: rgba(128,128,128,77);")
             self._sb_tap_msg.setText("Waiting for tap…")
@@ -1915,11 +1925,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_measurement_complete(self, checked: bool) -> None:
         self._is_measurement_complete = checked
         self.fft_canvas.set_measurement_complete(checked)
-        if not checked:
-            self.fft_canvas.set_loaded_measurement_name(None)
-        else:
-            # Successful capture — clear loaded-settings warning (matches Swift isMeasurementComplete.didSet)
-            self._clear_loaded_settings_warning()
+        # loadedMeasurementName is cleared by start_tap_sequence() / reset(), not here.
+        # showLoadedSettingsWarning is cleared by the model via showLoadedSettingsWarningChanged signal.
+
+        # Refresh status label colour immediately so that any status message emitted
+        # *before* measurementComplete(True) (e.g. "Loaded measurement (frozen)...")
+        # is displayed in orange.  Mirrors Swift's batched objectWillChange: by the
+        # time SwiftUI re-renders Text(tap.statusMessage) the isDetecting flag is
+        # already updated, so the foregroundColor(.orange) modifier sees the correct
+        # state.  In Python the signal order is serial, so we refresh here.
+        self._sb_detect_msg.setStyleSheet("color: orange;" if checked else "")
+
         self.peak_widget.data_held(checked)
         mt = self._current_mt()
         if not mt.is_guitar:
@@ -2160,28 +2176,60 @@ class MainWindow(QtWidgets.QMainWindow):
         AS.AppSettings.set_peak_threshold(float(db_val))  # keep single source of truth in sync — mirrors Swift peakThreshold didSet
         self.peak_min_readout.setText(f"{db_val} dB")
 
-    def _clear_loaded_settings_warning(self) -> None:
-        """Hide the loaded-settings warning banner — mirrors Swift showLoadedSettingsWarning = false."""
-        self._show_loaded_settings_warning = False
-        self._warn_pulse_timer.stop()
-        self._warn_opacity_effect.setOpacity(1.0)
-        self._sb_warning_wgt.setVisible(False)
+    def _on_loaded_settings_warning_changed(self, active: bool) -> None:
+        """Show or hide the loaded-settings warning banner.
+
+        Connected to canvas.showLoadedSettingsWarningChanged — mirrors Swift
+        .onChange(of: tap.showLoadedSettingsWarning) driving banner animation.
+        """
+        if active:
+            analyzer = self.fft_canvas.analyzer
+            threshold_db = int(analyzer.loaded_tap_detection_threshold) if analyzer.loaded_tap_detection_threshold is not None else "?"
+            num_taps = analyzer.loaded_number_of_taps if analyzer.loaded_number_of_taps is not None else "?"
+            self._sb_warning_msg.setText(
+                f"Settings from loaded measurement — Threshold: {threshold_db} dB"
+                f" · Taps: {num_taps}"
+            )
+            self._sb_warning_wgt.setVisible(True)
+            self._warn_pulse_t = 0.0
+            self._warn_pulse_timer.start()
+        else:
+            self._warn_pulse_timer.stop()
+            self._warn_opacity_effect.setOpacity(1.0)
+            self._sb_warning_wgt.setVisible(False)
+
+    def _on_request_device_switch(self, device) -> None:
+        """Switch to the device emitted by the model after loading a measurement.
+
+        Connected to canvas.requestDeviceSwitch — mirrors Swift
+        fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
+        """
+        canvas = self.fft_canvas
+        canvas.set_device(device)
+        AS.AppSettings.set_audio_device(device)
+        self.device_status_lbl.setText(device.name)
+
+    def _on_microphone_warning_changed(self, warning: "str | None") -> None:
+        """Display or clear the mic-not-connected warning.
+
+        Connected to canvas.microphoneWarningChanged — mirrors Swift
+        @Published var microphoneWarning driving an alert sheet.
+        """
+        if warning is None:
+            return
+        if getattr(self, "_suppress_mic_warning", False):
+            self._pending_mic_warning = warning
+        else:
+            from PySide6 import QtWidgets
+            QtWidgets.QMessageBox.warning(self, "Microphone Not Connected", warning)
 
     def _on_tap_threshold_changed(self, db_val: int) -> None:
         self.fft_canvas.set_tap_threshold(db_val + 100)
         AS.AppSettings.set_tap_threshold(db_val + 100)
         self.tap_threshold_readout.setText(f"{db_val} dB")
-        # Clear loaded-settings warning when user manually changes threshold
-        # (mirrors Swift tapDetectionThreshold.didSet)
-        if self._loaded_tap_threshold is not None and db_val != self._loaded_tap_threshold:
-            self._clear_loaded_settings_warning()
 
     def _on_tap_num_changed(self, n: int) -> None:
         self.fft_canvas.set_tap_num(n)
-        # Clear loaded-settings warning when user manually changes tap count
-        # (mirrors Swift numberOfTaps.didSet)
-        if self._loaded_tap_num is not None and n != self._loaded_tap_num:
-            self._clear_loaded_settings_warning()
         # Update the cached total so _plate_step_label() uses the new denominator.
         # In Swift this is reactive: numberOfTaps @Published causes Text(phaseLabel)
         # to re-evaluate automatically. In Python we must update _tap_count_total and
@@ -2377,31 +2425,36 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_detect_dot.setStyleSheet("color: orange;")
 
     def _on_new_tap(self) -> None:
-        """Begin a new tap sequence, clearing any in-progress accumulated spectra."""
+        """Begin a new tap sequence, clearing any in-progress accumulated spectra.
+
+        Mirrors Swift New Tap button action: tap.startTapSequence().
+        startTapSequence() sets isMeasurementComplete = false, clears captured
+        taps, resets material phase state for plate/brace, and emits measurementComplete(False).
+        In Python, start_analyzer() calls analyzer.start_tap_sequence() and also
+        restarts the audio processing thread (equivalent to Swift's AVAudioEngine restart
+        that occurs when startTapSequence re-arms the audio pipeline).
+        """
         # Exit comparison mode first — required when _is_measurement_complete is False
-        # (e.g. user entered comparison from live-detecting state) since the
-        # set_measurement_complete(False) path below would be skipped entirely.
+        # (e.g. user entered comparison from live-detecting state).
         if self.fft_canvas.is_comparing:
             self.fft_canvas.clear_comparison()
-        if self._is_measurement_complete:
-            self.set_measurement_complete(False)
         self._is_paused = False
         # Clear loaded measurement state — mirrors Swift loadMeasurement clearing
         # currentPeaks/selectedPeakIDs when a new tap begins, ensuring _on_export_pdf
         # reads live analyzer state rather than stale loaded-measurement data.
         self._loaded_resonant_peaks = []
         self._loaded_measurement = None
-        # cancel_tap_sequence clears accumulated spectra and restarts warmup,
-        # matching Swift's cancelTapSequence behaviour.
-        self.fft_canvas.cancel_tap_sequence()
         self._tap_count_captured = 0
         self._sb_tap_count.setVisible(False)
         self._sb_progress.setVisible(False)
-        # Status message emitted by cancel_tap_sequence via statusMessageChanged → _on_status_message_changed.
-        # For plate/brace measurements, automatically arm the capture state machine.
-        mt = self._current_mt()
-        if not mt.is_guitar:
-            self.fft_canvas.start_plate_analysis()
+        # restart_tap_sequence() calls analyzer.start_tap_sequence() (sets
+        # is_measurement_complete = False, emits measurementComplete(False)) and
+        # resets the ring buffer state — without stopping the processing thread.
+        # This mirrors Swift's New Tap button calling tap.startTapSequence() on a
+        # continuously-running AVAudioEngine (no engine restart on New Tap in Swift).
+        # For plate/brace, start_tap_sequence() already transitions material_tap_phase
+        # to CAPTURING_LONGITUDINAL — no separate start_plate_analysis() call needed.
+        self.fft_canvas.restart_tap_sequence()
 
     def _on_ring_out_measured(self, time_s: float) -> None:
         self._ring_out_s = time_s
@@ -2922,7 +2975,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 _preset_lbl = (
                     f"f_vs = {int(_fvs)} (custom)"
                     if _preset == PSP.PlateStiffnessPreset.CUSTOM
-                    else f"f_vs = {int(_fvs)} ({_preset.value})"
+                    else f"f_vs = {int(_fvs)} ({_preset.value})"  # .value returns the human-readable label string
                 )
                 self._gore_params_lbl.setText(
                     f"Body: {_body_l:.0f} \u00d7 {_body_w:.0f} mm"
@@ -3133,67 +3186,59 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _restore_measurement(self, m: TapToneMeasurement) -> None:
         canvas = self.fft_canvas
+        analyzer = canvas.analyzer
 
-        # Loading a measurement exits comparison mode and enters frozen mode —
-        # mirrors comparisonSpectra = [] + displayMode = .frozen in loadMeasurement() in Swift.
-        canvas.clear_comparison()
-        # Clear stale tap count before set_measurement_complete(False) so that
-        # the brief _is_measurement_complete=False window doesn't display a stale
-        # "N/M" count in the status bar — mirrors Swift where currentTapCount is
-        # always 0 when loading a measurement (the counter is reset by resetState).
+        # ── Clear stale view-side tap count before model changes state ────────
         self._tap_count_captured = 0
         self._sb_tap_count.setVisible(False)
         if self._is_measurement_complete:
-            self.set_measurement_complete(False)
-        # Set FROZEN after the set_measurement_complete(False) call — that call invokes
-        # analyzer.clear_comparison() which sets _display_mode = LIVE; setting FROZEN
-        # here ensures the loaded measurement is displayed correctly.
-        canvas.display_mode = AnalysisDisplayMode.FROZEN
+            # Temporarily un-complete so set_measurement_complete(True) at the
+            # end fires its signal properly — view-side guard only.
+            self._is_measurement_complete = False
 
-        # Restore display settings
+        # ── Delegate all model-state restoration to the model ─────────────────
+        # Mirrors Swift: TapToneAnalyzer.loadMeasurement(_:) is a model method.
+        # load_measurement() sets peaks, spectra, selections, annotation offsets,
+        # analysis settings, detection flags, AppSettings (the Python equivalent
+        # of Swift's loaded* @Published + .onReceive → TapDisplaySettings writes),
+        # and emits measurementComplete(True) + the status message.
+        analyzer.load_measurement(m)
+
+        # ── Store view-side references used by export / peak model ────────────
+        self._loaded_resonant_peaks = list(m.peaks) if m.peaks else []
+        self._loaded_measurement = m
+
+        _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
+
+        # ── Update measurement-type / guitar-type combo boxes ─────────────────
+        # AppSettings was already updated by load_measurement(); read back from
+        # there to drive the combos — mirrors Swift .onReceive writing to
+        # TapDisplaySettings which the bound pickers observe automatically.
         if m.guitar_type:
             self.guitar_type_combo.setCurrentText(m.guitar_type)
         if m.measurement_type:
-            # Swift may save various string forms; normalise via from_string() then
-            # map to the three combo values ("Guitar", "Plate", "Brace").
             _mt = MT.MeasurementType.from_string(m.measurement_type)
             _combo_val = "Guitar" if _mt.is_guitar else _mt.short_name
             self.measurement_type_combo.setCurrentText(_combo_val)
 
-        # Restore peaks (built early so _loaded_measurement_peaks is set before
-        # update_axis fires, preventing a stale find_peaks call from the spinner signals)
+        # ── Sync canvas saved_peaks array (used for scatter-plot drawing) ─────
         if m.peaks:
             peaks_array = np.array(
                 [[p.frequency, p.magnitude, p.quality] for p in m.peaks],
                 dtype=np.float64,
             )
-            # Sort by frequency so that range-slicing in _emit_loaded_peaks_at_threshold
-            # and update_mode_colors gives only in-range peaks.
             peaks_array = peaks_array[np.argsort(peaks_array[:, 0])]
         else:
             peaks_array = np.zeros((0, 3), dtype=np.float64)
-
         canvas.saved_peaks = peaks_array
-        # Store list[ResonantPeak] with persisted UUIDs — mirrors Swift loadMeasurement()
-        # assigning currentPeaks = measurement.peaks directly (Codable UUIDs preserved).
-        canvas._loaded_measurement_peaks = list(m.peaks) if m.peaks else []  # authoritative; used by threshold/range sliders
-        self._loaded_resonant_peaks = list(m.peaks) if m.peaks else []  # full objects, used by export
-        self._loaded_measurement = m  # full measurement, used by export for visibility filtering
+        # canvas._loaded_measurement_peaks mirrors analyzer.loaded_measurement_peaks
+        # (already set by load_measurement) — keep in sync for threshold slider use.
+        canvas._loaded_measurement_peaks = analyzer.loaded_measurement_peaks or []
 
+        # ── Update peak_model view state ──────────────────────────────────────
         peak_model = self.peak_widget.model
 
-        _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
-
-        # Restore selection state — mirrors Swift: selectedPeakIDs ?? all peaks.
-        # Set selected_frequencies and is_live directly on the model so that
-        # update_data (which fires later via update_axis → peaksChanged) reads the
-        # correct state at query time rather than overwriting it.  This is the
-        # reactive pattern: authoritative state lives here; update_data only notifies.
         if not _restored_mt.is_guitar:
-            # Plate / brace: the three per-phase IDs (selected_longitudinal_peak_id,
-            # selected_cross_peak_id, selected_flc_peak_id) identify the L/C/FLC peaks.
-            # selected_peak_ids is unused for plate/brace — falling back to it would
-            # select all peaks, showing 15+ rows instead of the correct 2-3.
             _plate_selected_ids: set[str] = set()
             for _pid in (
                 m.selected_longitudinal_peak_id,
@@ -3206,11 +3251,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 p.frequency for p in m.peaks
                 if (p.id or "").upper() in _plate_selected_ids
             }
-            # Also store the UUID strings so mode_value() resolves L/C/FLC labels by
-            # direct ID comparison — mirrors Swift modeLabel in DraggablePeakAnnotation.
             peak_model.selected_longitudinal_peak_id = m.selected_longitudinal_peak_id
             peak_model.selected_cross_peak_id        = m.selected_cross_peak_id
-            peak_model.selected_flc_peak_id         = m.selected_flc_peak_id
+            peak_model.selected_flc_peak_id          = m.selected_flc_peak_id
         else:
             selected_ids = set(
                 m.selected_peak_ids if m.selected_peak_ids is not None
@@ -3221,108 +3264,8 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         peak_model.is_live = False
 
-        # Restore spectrum snapshot if available.
-        # For guitar: use spectrumSnapshot. For plate/brace: spectrumSnapshot is nil;
-        # use longitudinalSnapshot instead — mirrors Swift: longitudinalSnapshot ?? spectrumSnapshot.
-        # Block spinner valueChanged signals while setting values to prevent
-        # spurious update_axis → find_peaks calls with stale magnitude data.
-        _snap = m.spectrum_snapshot or m.longitudinal_snapshot
-        if _snap is not None:
-            snap = _snap
-            freq_arr = np.array(snap.frequencies, dtype=np.float64)
-            mag_arr  = np.array(snap.magnitudes, dtype=np.float64)
-            canvas.saved_mag_y_db = mag_arr
-            # Store the loaded measurement's frequency axis on the analyzer without
-            # overwriting canvas.freq (the live FFT axis).  Swift measurements saved
-            # with computeGatedFFT have 16 384 bins (paddedSize/2 = 32 768/2) while
-            # the live Python FFT produces 32 769 bins (fft_size/2 + 1 = 65 536/2 + 1).
-            # Overwriting canvas.freq caused shape-mismatch crashes when a queued FFT
-            # frame fired with the live mag_y_db (32 769 bins) against the stale axis.
-            canvas.analyzer.frozen_frequencies = freq_arr
-            # Restore dB axis range from snapshot, then update the frequency axis.
-            # update_axis calls _emit_loaded_peaks_at_threshold which emits peaksChanged
-            # with the correctly filtered peaks — _on_peaks_changed_scatter updates the
-            # scatter plot automatically, so set_draw_data only needs the spectrum line.
-            canvas.setYRange(snap.min_db, snap.max_db, padding=0)
-            canvas.update_axis(int(snap.min_freq), int(snap.max_freq))
-            canvas.set_draw_data(mag_arr, freqs=freq_arr)
-
-            # For plate/brace measurements set per-phase spectra on the analyzer — mirrors
-            # Swift loadMeasurement restoring longitudinalSpectrum/crossSpectrum/flcSpectrum
-            # as @Published properties so the view reactively rebuilds materialSpectra.
-            # The analyzer emits materialSpectraChanged → FftCanvas.load_material_spectra().
-            if not _restored_mt.is_guitar:
-                _phase_spectra: list = []
-                # Mirrors Swift loadMeasurement() which sets longitudinalSpectrum /
-                # crossSpectrum / flcSpectrum as (magnitudes:frequencies:) tuples directly
-                # on the analyzer so a subsequent saveMeasurement() can read them back.
-                if m.longitudinal_snapshot is not None:
-                    ls = m.longitudinal_snapshot
-                    _phase_spectra.append(("Longitudinal (L)", (0, 122, 255),
-                                           list(ls.frequencies), list(ls.magnitudes)))
-                    canvas.analyzer.longitudinal_spectrum = (
-                        np.array(ls.magnitudes, dtype=np.float64),
-                        np.array(ls.frequencies, dtype=np.float64),
-                    )
-                else:
-                    canvas.analyzer.longitudinal_spectrum = None
-                if _restored_mt.is_plate and m.cross_snapshot is not None:
-                    cs = m.cross_snapshot
-                    _phase_spectra.append(("Cross-grain (C)", (255, 149, 0),
-                                           list(cs.frequencies), list(cs.magnitudes)))
-                    canvas.analyzer.cross_spectrum = (
-                        np.array(cs.magnitudes, dtype=np.float64),
-                        np.array(cs.frequencies, dtype=np.float64),
-                    )
-                else:
-                    canvas.analyzer.cross_spectrum = None
-                if _restored_mt.is_plate and m.flc_snapshot is not None:
-                    fs = m.flc_snapshot
-                    _phase_spectra.append(("FLC", (175, 82, 222),
-                                           list(fs.frequencies), list(fs.magnitudes)))
-                    canvas.analyzer.flc_spectrum = (
-                        np.array(fs.magnitudes, dtype=np.float64),
-                        np.array(fs.frequencies, dtype=np.float64),
-                    )
-                else:
-                    canvas.analyzer.flc_spectrum = None
-                canvas.analyzer.set_material_spectra(_phase_spectra)
-        else:
-            # No snapshot — emit peaks filtered to current range
-            canvas._emit_loaded_peaks_at_threshold()
-
-        # Restore ring-out
-        self._ring_out_s = m.decay_time
-        if m.decay_time is not None:
-            self.set_ring_out(m.decay_time)
-
-        # Restore plate/brace dimensions from the snapshot — mirrors Swift's .onReceive
-        # handlers that write loadedXxx published properties back to TapDisplaySettings.
-        # Updating AppSettings here means the settings panel reflects the loaded dims.
+        # ── Restore peak mode labels into peak_model.modes ────────────────────
         if not _restored_mt.is_guitar:
-            _snap_for_dims = m.longitudinal_snapshot or m.spectrum_snapshot
-            if _snap_for_dims is not None:
-                if _restored_mt.is_brace:
-                    if _snap_for_dims.brace_length    is not None: AS.AppSettings.set_brace_length(_snap_for_dims.brace_length)
-                    if _snap_for_dims.brace_width     is not None: AS.AppSettings.set_brace_width(_snap_for_dims.brace_width)
-                    if _snap_for_dims.brace_thickness is not None: AS.AppSettings.set_brace_thickness(_snap_for_dims.brace_thickness)
-                    if _snap_for_dims.brace_mass      is not None: AS.AppSettings.set_brace_mass(_snap_for_dims.brace_mass)
-                else:
-                    if _snap_for_dims.plate_length    is not None: AS.AppSettings.set_plate_length(_snap_for_dims.plate_length)
-                    if _snap_for_dims.plate_width     is not None: AS.AppSettings.set_plate_width(_snap_for_dims.plate_width)
-                    if _snap_for_dims.plate_thickness is not None: AS.AppSettings.set_plate_thickness(_snap_for_dims.plate_thickness)
-                    if _snap_for_dims.plate_mass      is not None: AS.AppSettings.set_plate_mass(_snap_for_dims.plate_mass)
-                    if _snap_for_dims.plate_stiffness_preset is not None:
-                        AS.AppSettings.set_plate_stiffness_preset(_snap_for_dims.plate_stiffness_preset)
-                    if _snap_for_dims.custom_plate_stiffness is not None:
-                        AS.AppSettings.set_custom_plate_stiffness(_snap_for_dims.custom_plate_stiffness)
-                    if _snap_for_dims.guitar_body_length is not None:
-                        AS.AppSettings.set_guitar_body_length(_snap_for_dims.guitar_body_length)
-                    if _snap_for_dims.guitar_body_width is not None:
-                        AS.AppSettings.set_guitar_body_width(_snap_for_dims.guitar_body_width)
-
-        if not _restored_mt.is_guitar:
-            # Plate / brace: label peaks by selectedLongitudinalPeakID / selectedCrossPeakID / selectedFlcPeakID
             _id_to_label: dict[str, str] = {}
             if m.selected_longitudinal_peak_id:
                 _id_to_label[m.selected_longitudinal_peak_id.upper()] = "Longitudinal"
@@ -3336,50 +3279,17 @@ class MainWindow(QtWidgets.QMainWindow):
                     (p.id or "").upper(), "Peak"
                 )
         elif m.peak_mode_overrides:
-            # Guitar: manual mode overrides (keyed by UUID in new format)
-            id_to_mode = m.peak_mode_overrides
             peak_model.modes = {}
             for p in m.peaks:
-                if p.id in id_to_mode:
-                    peak_model.modes[p.frequency] = id_to_mode[p.id]
+                if p.id in m.peak_mode_overrides:
+                    peak_model.modes[p.frequency] = m.peak_mode_overrides[p.id]
         else:
             peak_model.modes = {}
 
-        # Mark as user-modified so threshold changes carry selections forward by
-        # frequency proximity — mirrors Swift: userHasModifiedPeakSelection = true
         peak_model._set_user_modified(True)
 
-        # Restore analysis settings saved with the measurement.
-        # Format: Swift saves dBFS (negative); old Python saves internal 0-100 scale (positive).
-        # Detect by sign: negative → dBFS directly; non-negative → convert (value - 100).
-        if m.tap_detection_threshold is not None:
-            val = float(m.tap_detection_threshold)
-            db = int(val) if val < 0 else int(val - 100)
-            self.tap_threshold_slider.setValue(max(-80, min(-20, db)))
-        if m.peak_threshold is not None:
-            val = float(m.peak_threshold)
-            db = int(val) if val < 0 else int(val - 100)
-            self.threshold_slider.setValue(max(-100, min(-20, db)))
-        if m.number_of_taps is not None:
-            self.tap_num_spin.setValue(m.number_of_taps)
-
-        # Restore annotations
-        # Populate analyzer.peak_annotation_offsets from the measurement's saved offsets
-        # so update_annotation() can restore dragged positions — mirrors Swift loadMeasurement()
-        # which assigns peakAnnotationOffsets = measurement.peakAnnotationOffsets.
-        canvas.analyzer.peak_annotation_offsets.clear()
-        ann_offsets = m.annotation_offsets or {}
-        for p in m.peaks:
-            _ann_offset = ann_offsets.get(p.id) or ann_offsets.get(p.id.upper() if p.id else "")
-            if _ann_offset:
-                canvas.analyzer.peak_annotation_offsets[p.id] = (
-                    float(_ann_offset[0]), float(_ann_offset[1])
-                )
-
-        # Restore annotation visibility mode — mirrors Swift: annotationVisibilityMode ?? .all
-        target_mode = AnnotationVisibilityMode.from_string(
-            m.annotation_visibility_mode or "all"
-        )
+        # ── Restore annotation visibility mode into peak_model ────────────────
+        target_mode = analyzer.annotation_visibility_mode
         target_idx = next(
             (i for i, mode in enumerate(self._ANN_MODES) if mode == target_mode),
             self._ann_mode_idx,
@@ -3387,63 +3297,62 @@ class MainWindow(QtWidgets.QMainWindow):
         self._ann_mode_idx = target_idx
         self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[target_idx].icon_name))
         # Set annotation mode directly on the private attribute so the public setter's
-        # no-op guard and premature update_data call are both bypassed.  The correct
-        # annotation render happens below via _emit_loaded_peaks_at_threshold, which
-        # drives _on_peaks_changed_results → peak_widget.update_data(filtered) →
-        # model.update_data() — that call reads _annotation_mode and peak_model.modes
-        # (now populated above) to emit the right annotations.
+        # no-op guard and premature update_data call are both bypassed.
         peak_model._annotation_mode = target_mode
 
-        # Emit peaksChanged with the threshold-filtered loaded peaks.  This single call:
-        #   1. Updates canvas._current_peaks → _on_peaks_changed_scatter redraws scatter
-        #      dots at the correct peak positions.
-        #   2. Updates peak_widget via _on_peaks_changed_results → _refresh_results_peaks
-        #      → peak_widget.update_data(filtered) → model.update_data() → emits
-        #      clearAnnotations + annotationUpdate with the correct mode labels from
-        #      peak_model.modes (set above).
-        # Called unconditionally — for the no-snapshot else branch above, this is the
-        # second call, but that is harmless and needed to ensure model.modes is applied
-        # (the first call at line 3149 fired before peak_model.modes was populated).
-        # Mirror Swift loadMeasurement() lines 573-581 exactly:
-        # Set selected[Longitudinal|Cross|Flc]Peak on the analyzer by resolving
-        # the stored UUIDs into the already-populated current_peaks.  This means
-        # effective[Longitudinal|Cross|Flc]PeakID will return the correct UUID
-        # when _emit_loaded_peaks_at_threshold fires peaksChanged →
-        # _on_peaks_changed_results → set_assignment(), so the L/C/FLC badges
-        # and star indicators in MaterialPeakListWidget are correct automatically.
-        # Swift:
-        #   selectedLongitudinalPeak = measurement.selectedLongitudinalPeakID
-        #       .flatMap { id in currentPeaks.first(where: { $0.id == id }) }
-        #   selectedCrossPeak = measurement.selectedCrossPeakID
-        #       .flatMap { id in currentPeaks.first(where: { $0.id == id }) }
-        #   selectedFlcPeak = measurement.selectedFlcPeakID
-        #       .flatMap { id in currentPeaks.first(where: { $0.id == id }) }
-        #   userSelectedLongitudinalPeakID = nil  // and cross/flc
-        threshold_db = canvas.analyzer.peak_threshold
-        canvas.analyzer.current_peaks = [
-            p for p in canvas.analyzer.loaded_measurement_peaks
-            if p.magnitude >= threshold_db
-        ]
-        _peak_by_id = {(p.id or "").upper(): p for p in canvas.analyzer.current_peaks}
-        canvas.analyzer.selected_longitudinal_peak = (
-            _peak_by_id.get((m.selected_longitudinal_peak_id or "").upper())
-        )
-        canvas.analyzer.selected_cross_peak = (
-            _peak_by_id.get((m.selected_cross_peak_id or "").upper())
-        )
-        canvas.analyzer.selected_flc_peak = (
-            _peak_by_id.get((m.selected_flc_peak_id or "").upper())
-        )
-        canvas.analyzer.user_selected_longitudinal_peak_id = None
-        canvas.analyzer.user_selected_cross_peak_id = None
-        canvas.analyzer.user_selected_flc_peak_id = None
+        # ── Draw spectrum on canvas ───────────────────────────────────────────
+        _snap = m.spectrum_snapshot or m.longitudinal_snapshot
+        if _snap is not None:
+            snap = _snap
+            freq_arr = np.array(snap.frequencies, dtype=np.float64)
+            mag_arr  = np.array(snap.magnitudes, dtype=np.float64)
+            # set_frozen_spectrum keeps frozen_frequencies and frozen_magnitudes in
+            # sync.  For plate/brace measurements load_measurement() clears
+            # frozen_frequencies (plate mode doesn't use the combined frozen
+            # spectrum for model purposes), so we must re-populate it here so
+            # that the canvas crosshair snap (_on_mouse_moved) has a matching
+            # freq array to index into.
+            analyzer.set_frozen_spectrum(freq_arr, mag_arr)
+            canvas.setYRange(snap.min_db, snap.max_db, padding=0)
+            canvas.update_axis(int(snap.min_freq), int(snap.max_freq))
+            canvas.set_draw_data(mag_arr, freqs=freq_arr)
 
-        canvas.analyzer.reclassify_peaks()
+            # For plate/brace: build material-spectra list for canvas display.
+            # The per-phase spectra were already restored onto the analyzer by
+            # load_measurement(); read them back to build the canvas overlay list.
+            if not _restored_mt.is_guitar:
+                _phase_spectra: list = []
+                if m.longitudinal_snapshot is not None:
+                    ls = m.longitudinal_snapshot
+                    _phase_spectra.append(("Longitudinal (L)", (0, 122, 255),
+                                           list(ls.frequencies), list(ls.magnitudes)))
+                if _restored_mt.is_plate and m.cross_snapshot is not None:
+                    cs = m.cross_snapshot
+                    _phase_spectra.append(("Cross-grain (C)", (255, 149, 0),
+                                           list(cs.frequencies), list(cs.magnitudes)))
+                if _restored_mt.is_plate and m.flc_snapshot is not None:
+                    fs = m.flc_snapshot
+                    _phase_spectra.append(("FLC", (175, 82, 222),
+                                           list(fs.frequencies), list(fs.magnitudes)))
+                canvas.analyzer.set_material_spectra(_phase_spectra)
+        else:
+            canvas._emit_loaded_peaks_at_threshold()
 
-        # For plate/brace, configure the material peak widget's badge columns
-        # before peaksChanged fires so _rebuild_rows() shows C and FLC columns.
+        # ── Restore ring-out widget ───────────────────────────────────────────
+        self._ring_out_s = m.decay_time
+        if m.decay_time is not None:
+            self.set_ring_out(m.decay_time)
+
+        # ── Restore analysis settings sliders/spinners ────────────────────────
+        # load_measurement() already wrote the model attrs; read them back to
+        # drive the Qt widgets — mirrors Swift .onReceive on loaded* properties.
+        self.tap_threshold_slider.setValue(int(analyzer.tap_detection_threshold))
+        self.threshold_slider.setValue(int(analyzer.peak_threshold))
+        self.tap_num_spin.setValue(analyzer.number_of_taps)
+
+        # ── Configure material peak widget columns ────────────────────────────
         if not _restored_mt.is_guitar:
-            _f_flc = canvas.analyzer.selected_flc_peak.frequency if canvas.analyzer.selected_flc_peak else 0.0
+            _f_flc = analyzer.selected_flc_peak.frequency if analyzer.selected_flc_peak else 0.0
             _show_flc = (not _restored_mt.is_brace) and _f_flc > 0
             self._material_peak_widget.set_mode(
                 show_cross=not _restored_mt.is_brace,
@@ -3456,12 +3365,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         canvas._emit_loaded_peaks_at_threshold()
 
-        # For plate/brace, compute and display material properties
+        # ── Compute and display material properties (plate/brace) ─────────────
         if not _restored_mt.is_guitar:
-            _f_long  = canvas.analyzer.selected_longitudinal_peak.frequency if canvas.analyzer.selected_longitudinal_peak else 0.0
-            _f_cross = canvas.analyzer.selected_cross_peak.frequency        if canvas.analyzer.selected_cross_peak        else 0.0
-            _f_flc   = canvas.analyzer.selected_flc_peak.frequency          if canvas.analyzer.selected_flc_peak          else 0.0
-
+            _f_long  = analyzer.selected_longitudinal_peak.frequency if analyzer.selected_longitudinal_peak else 0.0
+            _f_cross = analyzer.selected_cross_peak.frequency        if analyzer.selected_cross_peak        else 0.0
+            _f_flc   = analyzer.selected_flc_peak.frequency          if analyzer.selected_flc_peak          else 0.0
             if _f_long > 0:
                 _dims = self._get_current_dims()
                 if _dims and _dims.is_valid():
@@ -3480,84 +3388,27 @@ class MainWindow(QtWidgets.QMainWindow):
                     except ValueError:
                         pass
 
-        # Update chart title to show the measurement name — mirrors Swift loadedMeasurementName.
-        canvas.set_loaded_measurement_name(m.tap_location)
-        # Clear live tap_location/notes — mirrors Swift where tapLocation is "" when a
-        # measurement is loaded (the chart title comes from loadedMeasurementName instead).
+        # ── Chart title ───────────────────────────────────────────────────────
+        # loadedMeasurementNameChanged signal emitted by _load_measurement_body()
+        # drives canvas.set_loaded_measurement_name() reactively — no explicit call needed.
         self._tap_location = ""
         self._notes = ""
 
-        # Auto-select the recorded microphone if it is available — mirrors Swift
-        # loadMeasurement(_:) device-restore block in TapToneAnalyzer+MeasurementManagement.swift.
-        # Matching uses AudioDevice.fingerprint (name:sample_rate) with a name-only fallback,
-        # equivalent to Swift's uid-based lookup via AVAudioDevice.uid.
-        mic_name = m.microphone_name
-        if mic_name:
-            import sounddevice as _sd_local
-            from models.audio_device import AudioDevice as _AudioDevice
-            try:
-                _all = [
-                    _AudioDevice.from_sounddevice_dict(d)
-                    for d in _sd_local.query_devices()
-                    if d["max_input_channels"] > 0
-                ]
-            except Exception:
-                _all = []
-            # Fingerprint match first; fall back to name-only (measurements saved without fingerprint).
-            match = next((d for d in _all if d.fingerprint == (m.microphone_uid or "")), None)
-            if match is None:
-                match = next((d for d in _all if d.name == mic_name), None)
-            if match is not None:
-                if canvas.analyzer._calibration_device_name != match.name:
-                    canvas.set_device(match)
-                    AS.AppSettings.set_audio_device(match)
-                    self.device_status_lbl.setText(match.name)
-            else:
-                warning = (
-                    f"This measurement was recorded with '{mic_name}', which is not "
-                    f"currently connected. Attach it and select it in the microphone "
-                    f"settings for accurate analysis."
-                )
-                if getattr(self, "_suppress_mic_warning", False):
-                    # Caller (e.g. _on_import) will fold the warning into its own dialog.
-                    self._pending_mic_warning = warning
-                else:
-                    from PySide6 import QtWidgets
-                    QtWidgets.QMessageBox.warning(
-                        self, "Microphone Not Connected", warning
-                    )
+        # ── Auto-select the recorded microphone ───────────────────────────────
+        # Handled reactively: _load_measurement_body() emits requestDeviceSwitch
+        # (drives _on_request_device_switch) and microphoneWarningChanged
+        # (drives _on_microphone_warning_changed).  No view-side logic needed here.
 
-        # For plate/brace measurements, advance material_tap_phase to COMPLETE so
-        # _update_plate_phase_ui renders "Measurement Complete" / "Done" — mirrors Swift
-        # loadMeasurement() setting materialTapPhase = .complete.
+        # ── Advance plate/brace phase UI to COMPLETE ──────────────────────────
+        # load_measurement() already set material_tap_phase = COMPLETE on the model.
         _mt_now = self._current_mt()
         if not _mt_now.is_guitar:
-            from models.material_tap_phase import MaterialTapPhase as _MTPRestore
-            canvas.analyzer.material_tap_phase = _MTPRestore.COMPLETE
             self._update_plate_phase_ui()
 
-        self.set_measurement_complete(True)
-
-        # Set the status message AFTER set_measurement_complete so _is_measurement_complete
-        # is True when the signal fires, giving the label the correct orange color.
-        # Mirrors Swift: statusMessage = "Loaded measurement (frozen). Press 'Resume' or 'New Tap' to continue."
-        canvas.analyzer._set_status_message(
-            "Loaded measurement (frozen). Press \u2018Resume\u2019 or \u2018New Tap\u2019 to continue."
-        )
-
-        # Arm the loaded-settings warning AFTER set_measurement_complete so it isn't
-        # immediately cleared by that call — mirrors Swift showLoadedSettingsWarning = true
-        # being the last statement in loadMeasurement().
-        self._loaded_tap_threshold = self.tap_threshold_slider.value()
-        self._loaded_tap_num = self.tap_num_spin.value()
-        self._show_loaded_settings_warning = True
-        self._sb_warning_msg.setText(
-            f"Settings from loaded measurement \u2014 Threshold: {self._loaded_tap_threshold} dB"
-            f" \u00b7 Taps: {self._loaded_tap_num}"
-        )
-        self._sb_warning_wgt.setVisible(True)
-        self._warn_pulse_t = 0.0
-        self._warn_pulse_timer.start()
+        # ── Finalise view-side measurement-complete state ─────────────────────
+        # Handled reactively: _load_measurement_body() emits measurementComplete(True)
+        # as its last action (after all state is restored), which drives
+        # set_measurement_complete() via the canvas.measurementComplete signal connection.
 
     def _on_export_spectrum(self) -> None:
         import time as _time
@@ -3657,12 +3508,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
             gt_str = self.guitar_type_combo.currentText() if hasattr(self, "guitar_type_combo") else None
 
-            # Mirror Swift: chart title is "FFT Peaks — {tapLocation}" when a measurement is loaded
-            try:
-                raw_title = canvas.getPlotItem().titleLabel.text or ""
-                chart_title = raw_title.strip() if raw_title.strip() else "FFT Peaks"
-            except Exception:
-                chart_title = "FFT Peaks"
+            # Mirrors Swift: tap.loadedMeasurementName ?? "New" used in chart title.
+            _loaded_name = getattr(analyzer, "loaded_measurement_name", None)
+            chart_title = f"FFT Peaks \u2014 {_loaded_name}" if _loaded_name else "FFT Peaks \u2014 New"
 
             # Read the actual Y axis range from the ViewBox — mirrors Swift's
             # minDB/maxDB which come from the chart's current axis domain.
@@ -3879,7 +3727,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if _preset == PSP.PlateStiffnessPreset.CUSTOM:
                 plate_stiffness = _AppSettings.custom_plate_stiffness() or 75.0
             else:
-                plate_stiffness = _preset.value
+                plate_stiffness = _preset.stiffness
 
             # ── Render spectrum PNG — mirrors Swift createExportableSpectrumView() ─────────────
             saved_freq = analyzer.frozen_frequencies
@@ -3934,21 +3782,19 @@ class MainWindow(QtWidgets.QMainWindow):
                     _material_spectra = _ms
 
             gt_str = self.guitar_type_combo.currentText() if hasattr(self, "guitar_type_combo") else None
-            try:
-                raw_title = canvas.getPlotItem().titleLabel.text or ""
-                chart_title = raw_title.strip() if raw_title.strip() else "FFT Peaks"
-            except Exception:
-                chart_title = "FFT Peaks"
+
+            # Mirrors Swift: tap.loadedMeasurementName ?? "New" used in chart title.
+            _loaded_name = getattr(analyzer, "loaded_measurement_name", None)
+            chart_title = f"FFT Peaks \u2014 {_loaded_name}" if _loaded_name else "FFT Peaks \u2014 New"
 
             from datetime import datetime, timezone as _tz
-            # mirrors Swift: tap.sourceMeasurementTimestamp ?? Date()
+            # Mirrors Swift: tap.sourceMeasurementTimestamp ?? Date()
             # Use the original capture time when a saved measurement is loaded;
             # fall back to now for a live (unsaved) capture.
-            if self._loaded_measurement is not None:
+            _src_ts = getattr(analyzer, "source_measurement_timestamp", None)
+            if _src_ts is not None:
                 try:
-                    date_label = datetime.fromisoformat(
-                        self._loaded_measurement.timestamp
-                    ).isoformat()
+                    date_label = datetime.fromisoformat(_src_ts).isoformat()
                 except Exception:
                     date_label = datetime.now(_tz.utc).isoformat()
             else:
@@ -4972,12 +4818,16 @@ class MainWindow(QtWidgets.QMainWindow):
             _rebuild_cal_combo()
             cur_dev = device_combo.currentText()
             active = _mc_mod.CalibrationStorage.calibration_for_device(cur_dev)
-            if active:
-                for i in range(cal_combo.count()):
-                    if cal_combo.itemData(i) == active.id:
-                        cal_combo.setCurrentIndex(i)
-                        return
-            cal_combo.setCurrentIndex(0)
+            cal_combo.blockSignals(True)
+            try:
+                if active:
+                    for i in range(cal_combo.count()):
+                        if cal_combo.itemData(i) == active.id:
+                            cal_combo.setCurrentIndex(i)
+                            return
+                cal_combo.setCurrentIndex(0)
+            finally:
+                cal_combo.blockSignals(False)
 
         def _on_cal_selected(index: int) -> None:
             """Activate the selected calibration for the current device."""
@@ -5132,68 +4982,7 @@ class MainWindow(QtWidgets.QMainWindow):
         aud.addWidget(cal_footer)
 
         # =====================================================
-        # 5. FFT Processing Section
-        # =====================================================
-        fft_group = QtWidgets.QGroupBox("")
-        fg = QtWidgets.QVBoxLayout(fft_group)
-        fg.addWidget(_group_header("mdi.waveform", "FFT Processing"))
-
-        hop_hdr_row = QtWidgets.QHBoxLayout()
-        hop_hdr = QtWidgets.QLabel("Hop Size Overlap")
-        hop_hdr.setFont(hdr_font)
-        hop_hdr_row.addWidget(hop_hdr)
-        hop_hdr_row.addStretch()
-        hop_readout = QtWidgets.QLabel(f"{int(AS.AppSettings.hop_size_overlap())}%")
-        hop_readout.setFont(hdr_font)
-        hop_hdr_row.addWidget(hop_readout)
-        fg.addLayout(hop_hdr_row)
-
-        hop_row = QtWidgets.QHBoxLayout()
-        hop_zero_lbl = QtWidgets.QLabel("0%")
-        hop_zero_lbl.setFont(small)
-        hop_row.addWidget(hop_zero_lbl)
-        hop_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        hop_slider.setRange(0, 15)   # 0–15 steps × 5 % = 0–75 %
-        hop_slider.setValue(int(AS.AppSettings.hop_size_overlap() / 5))
-        hop_row.addWidget(hop_slider)
-        hop_max_lbl = QtWidgets.QLabel("75%")
-        hop_max_lbl.setFont(small)
-        hop_row.addWidget(hop_max_lbl)
-        fg.addLayout(hop_row)
-
-        hop_context_lbl = QtWidgets.QLabel()
-        hop_context_lbl.setFont(small)
-        hop_context_lbl.setWordWrap(True)
-        hop_context_lbl.setStyleSheet("color: #007AFF;")  # blue, matches Swift accent
-
-        def _hop_context(pct: int) -> str:
-            if pct == 0:
-                return "0% overlap: Maximum frame rate, no smoothing"
-            if pct <= 25:
-                return "Low overlap: Fast response with minimal smoothing"
-            if pct <= 50:
-                return "Medium overlap: Balanced response and smoothness"
-            return "High overlap: Smooth results, slower response"
-
-        def _on_hop_changed(steps: int) -> None:
-            pct = steps * 5
-            hop_readout.setText(f"{pct}%")
-            hop_context_lbl.setText(_hop_context(pct))
-
-        hop_slider.valueChanged.connect(_on_hop_changed)
-        _on_hop_changed(hop_slider.value())
-
-        hop_note = QtWidgets.QLabel(
-            "Controls the overlap between FFT windows. Higher overlap provides smoother "
-            "results but reduces frame rate."
-        )
-        hop_note.setFont(small)
-        hop_note.setWordWrap(True)
-        fg.addWidget(hop_note)
-        fg.addWidget(hop_context_lbl)
-
-        # =====================================================
-        # 6. About & Help Section
+        # 5. About & Help Section
         # =====================================================
         about_group = QtWidgets.QGroupBox("")
         ab = QtWidgets.QVBoxLayout(about_group)
@@ -5224,7 +5013,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # =====================================================
         # Final layout — matches Swift TapSettingsView.body order:
         # audioInputSection, measurementTypeSection,
-        # Advanced (collapsible: Display, Analysis, FFT), aboutSection
+        # Advanced (collapsible: Display, Analysis), aboutSection
         # =====================================================
         vbox.addWidget(audio_group)
         vbox.addWidget(meas_group)
@@ -5238,14 +5027,13 @@ class MainWindow(QtWidgets.QMainWindow):
         adv_btn.setStyleSheet("QPushButton { text-align: left; padding: 4px 6px; }")
         vbox.addWidget(adv_btn)
 
-        # Advanced collapsible content (Display, Analysis, FFT)
+        # Advanced collapsible content (Display, Analysis)
         adv_content = QtWidgets.QWidget()
         adv_cl = QtWidgets.QVBoxLayout(adv_content)
         adv_cl.setContentsMargins(0, 0, 0, 0)
         adv_cl.setSpacing(8)
         adv_cl.addWidget(disp_group)
         adv_cl.addWidget(analysis_group)
-        adv_cl.addWidget(fft_group)
         adv_content.setVisible(False)
         vbox.addWidget(adv_content)
 
@@ -5389,9 +5177,6 @@ class MainWindow(QtWidgets.QMainWindow):
             hyst_db = hyst_slider.value() * 0.5
             self.fft_canvas.set_hysteresis_margin(hyst_db)
             AS.AppSettings.set_hysteresis_margin(hyst_db)
-
-            # Hop size overlap (mirrors Swift: TapDisplaySettings.hopSizeOverlap = fftAnalyzer.hopSizeOverlap)
-            AS.AppSettings.set_hop_size_overlap(float(hop_slider.value() * 5))
 
             # Plate / brace / gore / f_vs dimensions — parse text fields, mirrors Swift
             # applySettings() which parses plateLengthInput etc. with Float(input) ?? 0.

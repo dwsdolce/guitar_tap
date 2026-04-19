@@ -130,7 +130,12 @@ class TapToneAnalyzerControlMixin:
         self.tap_detection_threshold = float(value - 100)
         from models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_tap_detection_threshold(self.tap_detection_threshold)
-        # mirrors tapDetectionThreshold.didSet in Swift
+        # Mirrors Swift tapDetectionThreshold.didSet: clear warning if user deviates from loaded value.
+        if (self.show_loaded_settings_warning
+                and self.loaded_tap_detection_threshold is not None
+                and self.tap_detection_threshold != self.loaded_tap_detection_threshold):
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
 
     def set_hysteresis_margin(self, value: float) -> None:
         """Update the hysteresis margin (dB)."""
@@ -219,10 +224,25 @@ class TapToneAnalyzerControlMixin:
         from models.measurement_type import MeasurementType as _MT
         from models.tap_display_settings import TapDisplaySettings as _tds
         from models.material_tap_phase import MaterialTapPhase as _MTP
+        from .analysis_display_mode import AnalysisDisplayMode as _ADM
 
         meas_type = _tds.measurement_type()
         is_plate = (meas_type == _MT.PLATE)
         is_brace = (meas_type == _MT.BRACE)
+
+        # Mirrors Swift startTapSequence() lines 140-143:
+        #   self.comparisonSpectra = []  (handled by view's clear_comparison())
+        #   self.displayMode = .live
+        #   self.loadedMeasurementName = nil  (set below)
+        #   self.isMeasurementComplete = false
+        self._display_mode = _ADM.LIVE
+        self.show_loaded_settings_warning = False
+        self.showLoadedSettingsWarningChanged.emit(False)
+
+        # Mirrors Swift: isMeasurementComplete = false (clears frozen state before new sequence).
+        # Emitted here so the view transitions to live mode before audio starts.
+        self.is_measurement_complete = False
+        self.measurementComplete.emit(False)
 
         # Clear per-sequence accumulated data (mirrors Swift startTapSequence async block).
         self.captured_taps.clear()
@@ -292,6 +312,11 @@ class TapToneAnalyzerControlMixin:
         self.current_peaks = []
         self.identified_modes = []
 
+        # Mirrors Swift startTapSequence: loadedMeasurementName = nil
+        self.loaded_measurement_name = None
+        self.source_measurement_timestamp = None
+        self.loadedMeasurementNameChanged.emit(None)
+
         self.tapCountChanged.emit(0, self.number_of_taps)
 
     def set_tap_num(self, n: int) -> None:
@@ -326,6 +351,12 @@ class TapToneAnalyzerControlMixin:
             self.number_of_taps = new_num
             # Don't clear spectra when count is raised mid-sequence — keep what
             # was already captured (mirrors Swift which never clears capturedTaps here).
+        # Mirrors Swift numberOfTaps.didSet: clear warning if user deviates from loaded value.
+        if (self.show_loaded_settings_warning
+                and self.loaded_number_of_taps is not None
+                and self.number_of_taps != self.loaded_number_of_taps):
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
 
     # ------------------------------------------------------------------ #
     # Cancel
@@ -380,6 +411,66 @@ class TapToneAnalyzerControlMixin:
             )
 
         self.tapCountChanged.emit(0, self.number_of_taps)
+
+    def reset(self) -> None:
+        """Clear all analyzer state and stop detection.
+
+        Mirrors Swift TapToneAnalyzer+Control.reset().  Unlike cancel_tap_sequence(),
+        this leaves isDetecting = False so the user must explicitly start a new sequence.
+
+        State cleared:
+        - currentPeaks, identifiedModes, currentDecayTime
+        - sourceMeasurementTimestamp, loadedMeasurementName
+        - peakMagnitudeHistory, tapDetected, isDetecting, capturedTaps
+        - isAboveThreshold, analyzerStartTime (warm-up timer)
+        - frozenSpectrum (unfrozen), isMeasurementComplete = False
+        - peakAnnotationOffsets
+        - materialTapPhase → .notStarted
+        - displayMode → .live
+        - showLoadedSettingsWarning = False
+        - statusMessage → "Tap the guitar to begin"
+        """
+        import numpy as np
+        from .analysis_display_mode import AnalysisDisplayMode
+        from .material_tap_phase import MaterialTapPhase as _MTP
+
+        self.current_peaks = []
+        self.identified_modes = []
+        self.current_decay_time = None
+
+        # Mirrors Swift: sourceMeasurementTimestamp = nil; loadedMeasurementName = nil
+        self.source_measurement_timestamp = None
+        self.loaded_measurement_name = None
+        self.loadedMeasurementNameChanged.emit(None)
+
+        self.peak_magnitude_history = []
+        self.tap_detected = False
+        self.is_detecting = False
+        self.current_tap_count = 0
+        self.tap_progress = 0.0
+        self.captured_taps.clear()
+
+        # Always start fresh so the first new tap is detected on a rising edge.
+        self.is_above_threshold = False
+        self.analyzer_start_time = _time.monotonic()
+
+        self._reset_decay_tracking()
+
+        # Clear frozen spectrum (mirrors Swift setFrozenSpectrum(frequencies: [], magnitudes: [])).
+        self.set_frozen_spectrum(np.array([]), np.array([]))
+        self.is_measurement_complete = False
+        self.measurementComplete.emit(False)
+
+        # Clear annotation label offsets (mirrors Swift peakAnnotationOffsets = [:]).
+        self.reset_all_annotation_offsets()
+
+        # Reset all plate/brace phase state to notStarted (mirrors Swift line 110).
+        self._reset_material_phase_state(to=_MTP.NOT_STARTED)
+
+        self._display_mode = AnalysisDisplayMode.LIVE
+        self.show_loaded_settings_warning = False
+        self.showLoadedSettingsWarningChanged.emit(False)
+        self._set_status_message("Tap the guitar to begin")
 
     # ------------------------------------------------------------------ #
     # Phase Review — Accept / Redo
@@ -552,7 +643,11 @@ class TapToneAnalyzerControlMixin:
 
         from models.material_tap_phase import MaterialTapPhase as _MTP
         self._set_material_tap_phase(_MTP.COMPLETE)
-        self.is_measurement_complete = True
+        self.set_measurement_complete(True)
+        # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
+        if self.show_loaded_settings_warning:
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
         self.tap_progress = 1.0
 
         fl_str = (
@@ -600,9 +695,13 @@ class TapToneAnalyzerControlMixin:
 
         from models.material_tap_phase import MaterialTapPhase as _MTP
         self._set_material_tap_phase(_MTP.COMPLETE)
-        self.is_measurement_complete = True
+        self.set_measurement_complete(True)
+        # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
+        if self.show_loaded_settings_warning:
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
         self.tap_progress = 1.0
-        self._set_status_message("Complete \u2014 check Results")
+        self._set_status_message("Complete - check Results")
 
         self._emit_peaks_array(self.current_peaks)
 

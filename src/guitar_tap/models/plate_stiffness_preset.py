@@ -28,7 +28,7 @@ class PlateStiffnessPreset(Enum):
     # MARK: - Vibrational Stiffness Value
 
     @property
-    def value(self) -> float:
+    def stiffness(self) -> float:
         """The vibrational stiffness value (f_vs) for this preset.
 
         Returns 0 for CUSTOM; callers should use the user-entered custom value in that case.

@@ -446,13 +446,6 @@ def _build_help_html() -> str:
         "to include every peak above the threshold. Fewer peaks reduces visual clutter when "
         "testing assembled guitars."
     ))
-    parts.append(_row(
-        "FFT Processing",
-        "Advanced &rarr; FFT Processing. Controls the hop-size overlap between FFT windows. "
-        "Higher overlap provides smoother results but reduces frame rate. Changes take effect "
-        "the next time the analyzer is started."
-    ))
-
     # ── Tips & Technique ─────────────────────────────────────────────────
     parts.append(_h2("mdi.lightbulb-outline", "Tips &amp; Technique"))
     parts.append(_row(

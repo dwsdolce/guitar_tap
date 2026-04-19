@@ -107,9 +107,6 @@ class TapDisplaySettings:
     # Default maximum number of peaks to detect and store (0 = all peaks)
     DEFAULT_MAX_PEAKS: int = 0
 
-    # Default hop size overlap percentage
-    DEFAULT_HOP_SIZE_OVERLAP: float = 0.0
-
     # Default tap detection threshold in dB
     DEFAULT_TAP_DETECTION_THRESHOLD: float = -40.0
 
@@ -134,17 +131,49 @@ class TapDisplaySettings:
     # MARK: - Guitar Type (backward compatibility)
 
     @classmethod
-    def guitar_type(cls) -> str:
-        """The currently selected guitar type (for backward compatibility).
+    def guitar_type(cls) -> "GuitarType":
+        """The currently selected guitar type.
 
-        Mirrors Swift TapDisplaySettings.guitarType.
+        Mirrors Swift TapDisplaySettings.guitarType getter (WI-22 / D34):
+        checks measurementType first — if it is a guitar type, returns it;
+        otherwise falls back to the stored guitarTypeKey for backward
+        compatibility.  Always returns a GuitarType enum value.
         """
-        return _app_settings().guitar_type()
+        from .guitar_type import GuitarType
+        # Check measurementType first — mirrors Swift's getter which reads
+        # measurementType.guitarType before falling back to the stored key.
+        mt = cls.measurement_type()
+        gt_from_mt = mt.guitar_type  # GuitarType | None
+        if gt_from_mt is not None:
+            return gt_from_mt
+        # Fall back to the stored guitarTypeKey (backward compatibility).
+        raw = _app_settings().guitar_type()
+        try:
+            return GuitarType(raw)
+        except (ValueError, KeyError):
+            return GuitarType.CLASSICAL
 
     @classmethod
-    def set_guitar_type(cls, v: str) -> None:
-        """Mirrors Swift TapDisplaySettings.guitarType setter."""
-        _app_settings().set_guitar_type(v)
+    def set_guitar_type(cls, v: "str | GuitarType") -> None:
+        """Set the guitar type and keep measurementType in sync.
+
+        Mirrors Swift TapDisplaySettings.guitarType setter (WI-23 / D35):
+        writes the raw guitar type value *and* updates measurementType so
+        that the two settings stay in sync — matching Swift's setter which
+        calls ``measurementType = MeasurementType.from(newValue)``.
+        """
+        from .guitar_type import GuitarType
+        from .measurement_type import MeasurementType
+        if isinstance(v, GuitarType):
+            gt = v
+        else:
+            try:
+                gt = GuitarType(v)
+            except (ValueError, KeyError):
+                gt = GuitarType.CLASSICAL
+        _app_settings().set_guitar_type(gt.value)
+        # Also update measurementType — mirrors Swift's setter.
+        _app_settings().set_measurement_type(MeasurementType.from_guitar_type(gt))
 
     # MARK: - Plate Dimensions
 
@@ -263,7 +292,7 @@ class TapDisplaySettings:
             preset = PlateStiffnessPreset.CUSTOM
         if preset == PlateStiffnessPreset.CUSTOM:
             return cls.custom_plate_stiffness()
-        return preset.value
+        return preset.stiffness
 
     # MARK: - Brace Dimensions
 
@@ -500,20 +529,6 @@ class TapDisplaySettings:
     def set_max_peaks(cls, v: int) -> None:
         _app_settings().set_max_peaks(v)
 
-    # MARK: - FFT Settings
-
-    @classmethod
-    def hop_size_overlap(cls) -> float:
-        """Persisted hop size overlap percentage.
-
-        Mirrors Swift TapDisplaySettings.hopSizeOverlap.
-        """
-        return _app_settings().hop_size_overlap()
-
-    @classmethod
-    def set_hop_size_overlap(cls, v: float) -> None:
-        _app_settings().set_hop_size_overlap(v)
-
     # MARK: - Tap Detection
 
     @classmethod
@@ -604,7 +619,6 @@ class TapDisplaySettings:
         s.set_analysis_f_max(cls.DEFAULT_ANALYSIS_MAX_FREQUENCY)
         s.set_peak_threshold(cls.DEFAULT_PEAK_THRESHOLD)
         s.set_max_peaks(cls.DEFAULT_MAX_PEAKS)
-        s.set_hop_size_overlap(cls.DEFAULT_HOP_SIZE_OVERLAP)
         s.set_tap_threshold(int(cls.DEFAULT_TAP_DETECTION_THRESHOLD + 100.0))
         s.set_hysteresis_margin(cls.DEFAULT_HYSTERESIS_MARGIN)
         s.set_measure_flc(False)

@@ -211,7 +211,12 @@ class FftCanvas(pg.PlotWidget):
     plateStatusChanged: QtCore.Signal = QtCore.Signal(str)    # plate capture status
     plateAnalysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)  # fL, fC, fFLC
     tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)   # True=paused
+    measurementComplete: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var isMeasurementComplete
     statusMessageChanged: QtCore.Signal = QtCore.Signal(str)  # mirrors Swift @Published var statusMessage
+    loadedMeasurementNameChanged: QtCore.Signal = QtCore.Signal(object)  # str | None — mirrors Swift @Published var loadedMeasurementName
+    showLoadedSettingsWarningChanged: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var showLoadedSettingsWarning
+    microphoneWarningChanged: QtCore.Signal = QtCore.Signal(object)        # str | None — mirrors Swift @Published var microphoneWarning
+    requestDeviceSwitch: QtCore.Signal = QtCore.Signal(object)             # AudioDevice — mirrors Swift fftAnalyzer.setInputDevice(match)
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
     levelChanged: QtCore.Signal = QtCore.Signal(int)              # level 0-100 (dB+100)
     comparisonChanged: QtCore.Signal = QtCore.Signal(bool)         # True=entering, False=leaving
@@ -386,7 +391,12 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.plateStatusChanged.connect(self.plateStatusChanged)
         self.analyzer.plateAnalysisComplete.connect(self.plateAnalysisComplete)
         self.analyzer.tapDetectionPaused.connect(self.tapDetectionPaused)
+        self.analyzer.measurementComplete.connect(self.measurementComplete)
         self.analyzer.statusMessageChanged.connect(self.statusMessageChanged)
+        self.analyzer.loadedMeasurementNameChanged.connect(self.loadedMeasurementNameChanged)
+        self.analyzer.showLoadedSettingsWarningChanged.connect(self.showLoadedSettingsWarningChanged)
+        self.analyzer.microphoneWarningChanged.connect(self.microphoneWarningChanged)
+        self.analyzer.requestDeviceSwitch.connect(self.requestDeviceSwitch)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
         self.analyzer.materialSpectraChanged.connect(self.load_material_spectra)
         self.analyzer.peakInfoChanged.connect(self.peakInfoChanged)
@@ -686,18 +696,49 @@ class FftCanvas(pg.PlotWidget):
         pass  # placeholder for future cleanup if needed
 
     def start_analyzer(self) -> None:
-        """Start the processing thread and hide the idle overlay."""
+        """Start the processing thread and hide the idle overlay.
+
+        Called on initial startup (thread not yet running).  Delegates all
+        model-state reset to analyzer.start_tap_sequence() — mirrors Swift
+        where startTapSequence() is a model method that owns
+        isMeasurementComplete, capturedTaps, etc.  Canvas is responsible only
+        for thread lifecycle and UI overlay.
+
+        For New Tap while the thread is already running, use
+        restart_tap_sequence() instead, which keeps the thread alive
+        (no audio dropout) — mirrors Swift's AVAudioEngine running continuously.
+        """
         self._overlay_label.setVisible(False)
-        self.set_measurement_complete(False)
+        self.analyzer.start_tap_sequence()
         if self.analyzer.mic.proc_thread.isRunning():
             self.analyzer.mic.proc_thread.stop()
             self.analyzer.mic.proc_thread.wait(500)
             # Recreate thread on the mic (RealtimeFFTAnalyzer owns it) to reset all state.
             self.analyzer.recreate_proc_thread()
             self._connect_proc_thread_signals()
-        self.analyzer.captured_taps.clear()
         self.analyzer.mic.proc_thread.reset_state()
         self.analyzer.mic.proc_thread.start()
+
+    def restart_tap_sequence(self) -> None:
+        """Begin a new tap sequence while the processing thread is already running.
+
+        Mirrors Swift's New Tap button calling tap.startTapSequence() on a
+        continuously-running AVAudioEngine — no audio engine restart occurs.
+        In Python the PortAudio stream runs continuously; only the ring buffer
+        state is reset (reset_state() is thread-safe) and the analysis state
+        machine is restarted via start_tap_sequence().
+
+        If the thread is not running for any reason, falls back to start_analyzer().
+        """
+        if not self.analyzer.mic.proc_thread.isRunning():
+            # Fallback: thread died unexpectedly — do a full restart.
+            self.start_analyzer()
+            return
+        # Reset analysis state (is_measurement_complete = False, is_detecting = True, etc.)
+        self.analyzer.start_tap_sequence()
+        # Reset ring buffer so stale pre-tap audio doesn't contaminate the new sequence.
+        # reset_state() is safe to call on a running thread.
+        self.analyzer.mic.proc_thread.reset_state()
 
     def stop_analyzer(self) -> None:
         """Stop the processing thread and show the idle overlay."""
@@ -847,10 +888,14 @@ class FftCanvas(pg.PlotWidget):
             # 16 384 bins while the live self.freq has 32 769.  Indexing frozen_magnitudes
             # with an index derived from self.freq would go out of bounds.
             frozen_freq = self.analyzer.frozen_frequencies
-            idx = int(np.searchsorted(frozen_freq, mouse_freq))
-            idx = max(0, min(idx, len(frozen_freq) - 1))
-            display_freq = float(frozen_freq[idx])
-            display_db   = float(self.saved_mag_y_db[idx])
+            if len(frozen_freq) > 0:
+                idx = int(np.searchsorted(frozen_freq, mouse_freq))
+                idx = max(0, min(idx, len(frozen_freq) - 1))
+                display_freq = float(frozen_freq[idx])
+                display_db   = float(self.saved_mag_y_db[idx])
+            else:
+                display_freq = mouse_freq
+                display_db   = mouse_db
         else:
             # Free mouse tracking — no curve snap
             display_freq = mouse_freq
@@ -1369,8 +1414,12 @@ class FftCanvas(pg.PlotWidget):
         self.comparisonChanged.emit(is_comparing)
 
     def set_measurement_complete(self, is_measurement_complete: bool) -> None:
-        """Flag to enable/disable the holding of peaks."""
-        self.analyzer.set_measurement_complete(is_measurement_complete)
+        """Update canvas-side UI for frozen/live state.
+
+        Called by the view in response to the measurementComplete signal from the
+        model.  Does NOT call analyzer.set_measurement_complete — the model is the
+        source of truth and already emitted the signal that triggered this call.
+        """
         if not is_measurement_complete:
             self.selected_point.setData(x=[], y=[])
             self.clear_selected_peak()

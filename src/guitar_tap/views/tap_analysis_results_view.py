@@ -434,7 +434,7 @@ def pdf_report_data_from_measurement(
             if snap_for_gore and snap_for_gore.custom_plate_stiffness else None
         ) or 75.0
     else:
-        plate_stiffness = _preset.value
+        plate_stiffness = _preset.stiffness
 
     return PDFReportData(
         timestamp=m.timestamp,

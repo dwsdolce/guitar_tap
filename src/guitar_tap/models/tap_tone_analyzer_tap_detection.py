@@ -356,9 +356,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # Without this, identified_modes is left pointing at old live-update
         # peak objects with stale UUIDs after capture completes.
         from .guitar_mode import GuitarMode
-        from .guitar_type import GuitarType
-        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
-        mode_map = GuitarMode.classify_all(peaks, guitar_type)
+        from models.tap_display_settings import TapDisplaySettings as _tds_fc
+        mode_map = GuitarMode.classify_all(peaks, _tds_fc.guitar_type())
         self.identified_modes = [
             {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
             for p in peaks

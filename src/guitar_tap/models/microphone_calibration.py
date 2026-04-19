@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 import numpy.typing as npt
+from PySide6 import QtCore
 
 
 # MARK: - CalibrationFileParser (module-level helpers)
@@ -436,7 +437,6 @@ class CalibrationStorage:
 
     @classmethod
     def _s(cls):
-        from PySide6 import QtCore
         return QtCore.QSettings(cls._ORG, cls._APP)
 
     # MARK: - CRUD

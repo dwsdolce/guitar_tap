@@ -154,6 +154,19 @@ class TapToneAnalyzer(
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)
     # Human-readable status string for the status bar (mirrors Swift @Published var statusMessage).
     statusMessageChanged: QtCore.Signal = QtCore.Signal(str)
+    # Emitted when loadedMeasurementName changes (mirrors Swift @Published var loadedMeasurementName).
+    # Payload: str | None — the new name, or None when cleared.
+    loadedMeasurementNameChanged: QtCore.Signal = QtCore.Signal(object)
+    # Emitted when showLoadedSettingsWarning changes (mirrors Swift @Published var showLoadedSettingsWarning).
+    # Payload: bool — True to show warning, False to hide.
+    showLoadedSettingsWarningChanged: QtCore.Signal = QtCore.Signal(bool)
+    # Emitted when microphoneWarning changes (mirrors Swift @Published var microphoneWarning).
+    # Payload: str | None — warning text, or None when cleared.
+    microphoneWarningChanged: QtCore.Signal = QtCore.Signal(object)
+    # Emitted when load_measurement() finds the recorded device is currently connected
+    # and wants the view to switch to it.  Payload: AudioDevice.
+    # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
+    requestDeviceSwitch: QtCore.Signal = QtCore.Signal(object)
     # Internal: fired from hotplug monitor thread → main thread (no-arg).
     _devicesRefreshed: QtCore.Signal = QtCore.Signal()
 
@@ -261,11 +274,27 @@ class TapToneAnalyzer(
         # MARK: - Measurement Complete State
         self.is_measurement_complete: bool = False  # mirrors isMeasurementComplete
 
+        # Mirrors Swift @Published var showLoadedSettingsWarning: Bool
+        # Set True by load_measurement(); cleared when the user changes threshold
+        # or tap count away from the loaded values, or on a successful new tap, or reset.
+        self.show_loaded_settings_warning: bool = False
+        # Sentinel values stored at load time — used to detect user-initiated changes.
+        # Mirror Swift loadedTapDetectionThreshold and loadedNumberOfTaps.
+        self.loaded_tap_detection_threshold: "float | None" = None
+        self.loaded_number_of_taps: "int | None" = None
+
         # Mirrors Swift @Published var microphoneWarning: String?
         # Set by import_measurements_from_data when an imported measurement's device
         # is not among the currently available input devices.  View clears it after
         # showing the alert (mirrors MeasurementsListView.swift behaviour).
         self.microphone_warning: "str | None" = None
+
+        # ── Loaded-measurement metadata ────────────────────────────────────
+        # Mirrors Swift @Published var loadedMeasurementName: String? and
+        # @Published var sourceMeasurementTimestamp: Date?
+        # Set by load_measurement(); cleared by start_tap_sequence() / reset.
+        self.loaded_measurement_name: "str | None" = None
+        self.source_measurement_timestamp: "str | None" = None  # ISO-8601 string
 
         # ── Additional peak analysis state ────────────────────────────────
         self.loaded_measurement_peaks: "list[ResonantPeak] | None" = None
@@ -585,7 +614,16 @@ class TapToneAnalyzer(
         """Update the guitar type used for mode classification.
 
         Mirrors Swift setting ``guitarType`` on ``TapToneAnalyzer``.
+        Accepts either a GuitarType enum value or its raw string (e.g. "Classical").
+        Always stores a GuitarType enum so reclassify_peaks() can call
+        guitar_type.mode_ranges without a type check.
         """
+        from .guitar_type import GuitarType
+        if isinstance(guitar_type, str):
+            try:
+                guitar_type = GuitarType(guitar_type)
+            except (ValueError, KeyError):
+                guitar_type = GuitarType.CLASSICAL
         self._guitar_type = guitar_type
 
     def effective_mode_label(self, peak) -> str:
@@ -601,9 +639,8 @@ class TapToneAnalyzer(
         if override:
             return override
         from .guitar_mode import classify_peak
-        from .guitar_type import GuitarType
-        guitar_type = getattr(self, "_guitar_type", None) or GuitarType.CLASSICAL
-        return classify_peak(peak.frequency, guitar_type)
+        from models.tap_display_settings import TapDisplaySettings as _tds_eml
+        return classify_peak(peak.frequency, _tds_eml.guitar_type())
 
     def set_mode_override(self, mode: "str | None", peak_id: str) -> None:
         """Set or clear a mode-label override for a specific peak.

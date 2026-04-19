@@ -637,7 +637,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.current_peaks = [sel_peak]
             self.set_frozen_spectrum(_np.array([]), _np.array([]))
             self._set_material_tap_phase(_MTP.COMPLETE)
-            self.is_measurement_complete = True
+            self.set_measurement_complete(True)
+            # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
+            if self.show_loaded_settings_warning:
+                self.show_loaded_settings_warning = False
+                self.showLoadedSettingsWarningChanged.emit(False)
             self.tap_progress = 1.0
             self._set_status_message("Complete - check Results")
             print(f"✅ Brace measurement complete: fL={dominant_peak.frequency} Hz")
@@ -924,7 +928,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         avg_db = 10.0 * _np.log10(_np.mean(_np.power(10.0, stacked / 10.0), axis=0))
 
         self.set_frozen_spectrum(self.freq, avg_db)
-        self.is_measurement_complete = True
+        self.set_measurement_complete(True)
+        # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
+        if self.show_loaded_settings_warning:
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
         print(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
 
         peaks = self.find_peaks(list(avg_db), list(self.freq))

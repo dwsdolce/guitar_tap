@@ -317,18 +317,6 @@ class AppSettings:
         cls._set("analysis/max_peaks", max(0, v))
 
     # ------------------------------------------------------------------ #
-    # Hop size overlap (0–75 %)
-    # ------------------------------------------------------------------ #
-    @classmethod
-    def hop_size_overlap(cls) -> float:
-        v = cls._get("fft/hop_size_overlap", None)
-        return float(v) if v is not None else 0.0
-
-    @classmethod
-    def set_hop_size_overlap(cls, v: float) -> None:
-        cls._set("fft/hop_size_overlap", v)
-
-    # ------------------------------------------------------------------ #
     # Plate dimensions (mm / g)
     # ------------------------------------------------------------------ #
     @classmethod

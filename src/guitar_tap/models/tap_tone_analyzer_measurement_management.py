@@ -91,6 +91,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # as the UID rather than a CoreAudio UID, so name matching is needed).
         mic = getattr(self, "mic", None)
         available_devices = getattr(mic, "available_input_devices", []) or []
+        # available_input_devices starts empty; populate if needed.
+        if not available_devices and mic is not None and hasattr(mic, "load_available_input_devices"):
+            mic.load_available_input_devices()
+            available_devices = getattr(mic, "available_input_devices", []) or []
         available_uids  = {d.fingerprint for d in available_devices}
         available_names = {d.name for d in available_devices}
         missing_names: list = []
@@ -315,6 +319,340 @@ class TapToneAnalyzerMeasurementManagementMixin:
         )
         self.savedMeasurements.append(measurement)
         self._persist_measurements()
+
+    def load_measurement(self, measurement) -> None:
+        """Restore full analyser state from a saved measurement.
+
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.loadMeasurement(_:)``.
+
+        Sets all model-owned state — peaks, spectra, selections, annotation
+        offsets, analysis settings, detection flags — and writes display
+        settings to AppSettings (the Python equivalent of Swift's ``loaded*``
+        published properties, which the view's ``.onReceive`` handlers propagate
+        to ``TapDisplaySettings``).
+
+        The calling view is responsible for all Qt widget updates, canvas
+        drawing calls, and the mic auto-select block (which requires access to
+        canvas and label widgets).
+        """
+        import numpy as np
+        from .analysis_display_mode import AnalysisDisplayMode
+        from .measurement_type import MeasurementType
+        from .annotation_visibility_mode import AnnotationVisibilityMode
+
+        # Suppress recalculate_frozen_peaks_if_needed() for the duration of the
+        # load — mirrors Swift: isLoadingMeasurement = true / defer { = false }
+        self.is_loading_measurement = True
+        try:
+            self._load_measurement_body(measurement)
+        finally:
+            self.is_loading_measurement = False
+
+    def _load_measurement_body(self, measurement) -> None:
+        """Inner implementation called by load_measurement(); guards isLoadingMeasurement."""
+        import numpy as np
+        from .analysis_display_mode import AnalysisDisplayMode
+        from .measurement_type import MeasurementType
+        from .annotation_visibility_mode import AnnotationVisibilityMode
+
+        print("🔄 Loading measurement...")
+
+        # ── Exit comparison mode, enter frozen mode ───────────────────────────
+        # Mirrors Swift: comparisonSpectra = []; displayMode = .frozen
+        self.clear_comparison()
+        self._display_mode = AnalysisDisplayMode.FROZEN
+
+        # ── Restore peaks ─────────────────────────────────────────────────────
+        # Mirrors Swift: currentPeaks = measurement.peaks
+        self.current_peaks = list(measurement.peaks) if measurement.peaks else []
+
+        # ── Restore decay time ────────────────────────────────────────────────
+        self.current_decay_time = measurement.decay_time
+
+        # ── Determine measurement type ────────────────────────────────────────
+        mt_str = measurement.measurement_type or ""
+        try:
+            mt = MeasurementType(mt_str)
+        except ValueError:
+            mt = MeasurementType.CLASSICAL
+
+        # ── Restore per-phase spectra for plate/brace ─────────────────────────
+        # Mirrors Swift: longitudinalSpectrum = (magnitudes:frequencies:) etc.
+        has_material_spectra = measurement.longitudinal_snapshot is not None
+        if measurement.longitudinal_snapshot is not None:
+            ls = measurement.longitudinal_snapshot
+            self.longitudinal_spectrum = (
+                np.array(ls.magnitudes, dtype=np.float64),
+                np.array(ls.frequencies, dtype=np.float64),
+            )
+        else:
+            self.longitudinal_spectrum = None
+
+        if measurement.cross_snapshot is not None:
+            cs = measurement.cross_snapshot
+            self.cross_spectrum = (
+                np.array(cs.magnitudes, dtype=np.float64),
+                np.array(cs.frequencies, dtype=np.float64),
+            )
+        else:
+            self.cross_spectrum = None
+
+        if measurement.flc_snapshot is not None:
+            fs = measurement.flc_snapshot
+            self.flc_spectrum = (
+                np.array(fs.magnitudes, dtype=np.float64),
+                np.array(fs.frequencies, dtype=np.float64),
+            )
+        else:
+            self.flc_spectrum = None
+
+        # ── Reset per-phase peak arrays ───────────────────────────────────────
+        # Mirrors Swift lines 453/456/460/463/467/470:
+        #   longitudinalPeaks = []; crossPeaks = []; flcPeaks = []
+        self.longitudinal_peaks = []
+        self.cross_peaks = []
+        self.flc_peaks = []
+
+        # ── Restore frozen spectrum ───────────────────────────────────────────
+        # Mirrors Swift: setFrozenSpectrum(frequencies:magnitudes:)
+        if has_material_spectra:
+            # Plate/brace: frozen spectrum not used; clear it.
+            self.set_frozen_spectrum(np.array([]), np.array([]))
+            from .material_tap_phase import MaterialTapPhase
+            self.material_tap_phase = MaterialTapPhase.COMPLETE
+        elif measurement.spectrum_snapshot is not None:
+            snap = measurement.spectrum_snapshot
+            self.set_frozen_spectrum(
+                np.array(snap.frequencies, dtype=np.float64),
+                np.array(snap.magnitudes, dtype=np.float64),
+            )
+        else:
+            self.set_frozen_spectrum(np.array([]), np.array([]))
+
+        # ── Restore display settings → AppSettings ────────────────────────────
+        # Mirrors Swift's loaded* @Published properties + .onReceive handlers
+        # that write to TapDisplaySettings.  In Python TapDisplaySettings is
+        # AppSettings, so we write there directly.
+        from views.utilities.tap_settings_view import AppSettings as AS
+        settings_snapshot = measurement.longitudinal_snapshot or measurement.spectrum_snapshot
+        if settings_snapshot is not None:
+            snap = settings_snapshot
+            from .measurement_type import MeasurementType as _MT
+            print(f"  📊 Publishing display ranges: {snap.min_freq}-{snap.max_freq} Hz, {snap.min_db}-{snap.max_db} dB")
+            if snap.show_unknown_modes is not None:
+                print(f"  👁️ Publishing showUnknownModes: {snap.show_unknown_modes}")
+            if snap.guitar_type is not None:
+                print(f"  🎸 Publishing guitarType: {snap.guitar_type}")
+                try:
+                    AS.set_guitar_type(snap.guitar_type)
+                except Exception:
+                    pass
+            if snap.measurement_type is not None:
+                print(f"  📐 Publishing measurementType: {snap.measurement_type}")
+                try:
+                    mt_enum = _MT(snap.measurement_type) if isinstance(snap.measurement_type, str) else snap.measurement_type
+                    AS.set_measurement_type(mt_enum)
+                except (ValueError, KeyError):
+                    pass
+            if mt.is_brace:
+                if snap.brace_length    is not None: AS.set_brace_length(snap.brace_length)
+                if snap.brace_width     is not None: AS.set_brace_width(snap.brace_width)
+                if snap.brace_thickness is not None: AS.set_brace_thickness(snap.brace_thickness)
+                if snap.brace_mass      is not None: AS.set_brace_mass(snap.brace_mass)
+            elif mt.is_plate:
+                if snap.plate_length    is not None:
+                    print(f"  📏 Publishing plate dimensions: L={snap.plate_length}mm")
+                    AS.set_plate_length(snap.plate_length)
+                if snap.plate_width     is not None: AS.set_plate_width(snap.plate_width)
+                if snap.plate_thickness is not None: AS.set_plate_thickness(snap.plate_thickness)
+                if snap.plate_mass      is not None: AS.set_plate_mass(snap.plate_mass)
+                if snap.plate_stiffness_preset is not None:
+                    print(f"  🪵 Publishing plateStiffnessPreset: {snap.plate_stiffness_preset}")
+                    AS.set_plate_stiffness_preset(snap.plate_stiffness_preset)
+                if snap.custom_plate_stiffness is not None:
+                    AS.set_custom_plate_stiffness(snap.custom_plate_stiffness)
+                if snap.guitar_body_length is not None:
+                    AS.set_guitar_body_length(snap.guitar_body_length)
+                if snap.guitar_body_width is not None:
+                    AS.set_guitar_body_width(snap.guitar_body_width)
+        else:
+            print("  ⚠️ No spectrum snapshot in measurement")
+
+        # ── Store loaded-measurement metadata ─────────────────────────────────
+        # Mirrors Swift: loadedMeasurementName = measurement.tapLocation (nil if empty)
+        #                sourceMeasurementTimestamp = measurement.timestamp
+        _name = measurement.tap_location
+        self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)
+        self.source_measurement_timestamp = measurement.timestamp
+        self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
+
+        # ── Restore plate/brace peak selections ───────────────────────────────
+        # Mirrors Swift: selectedLongitudinalPeak = measurement.selectedLongitudinalPeakID
+        #     .flatMap { id in currentPeaks.first(where: { $0.id == id }) }
+        _peak_by_id = {(p.id or "").upper(): p for p in self.current_peaks}
+        self.selected_longitudinal_peak = (
+            _peak_by_id.get((measurement.selected_longitudinal_peak_id or "").upper())
+        )
+        self.selected_cross_peak = (
+            _peak_by_id.get((measurement.selected_cross_peak_id or "").upper())
+        )
+        self.selected_flc_peak = (
+            _peak_by_id.get((measurement.selected_flc_peak_id or "").upper())
+        )
+        # Mirrors Swift: userSelectedLongitudinalPeakID = nil (and cross/flc)
+        self.user_selected_longitudinal_peak_id = None
+        self.user_selected_cross_peak_id = None
+        self.user_selected_flc_peak_id = None
+        print(f"  🔵 Restored longitudinal peak: {self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else -1} Hz")
+        print(f"  🟠 Restored cross-grain peak: {self.selected_cross_peak.frequency if self.selected_cross_peak else -1} Hz")
+        print(f"  🟣 Restored FLC peak: {self.selected_flc_peak.frequency if self.selected_flc_peak else -1} Hz")
+
+        # ── Stop tap detection ────────────────────────────────────────────────
+        # Mirrors Swift: isDetecting = false; isDetectionPaused = false;
+        # isMeasurementComplete = true; currentTapCount = 0; tapProgress = 0.0
+        # NOTE: is_measurement_complete is set via set_measurement_complete(True) at the
+        # END of this method (after all state is restored) so that when measurementComplete
+        # fires the view receives it with fully-populated model state — equivalent to
+        # SwiftUI's batched objectWillChange which defers re-render until run-loop end.
+        self.is_detecting = False
+        self.is_detection_paused = False
+        self.is_measurement_complete = True  # set early; signal fires at end of method
+        self.current_tap_count = 0
+        self.tap_progress = 0.0
+        print("  🧊 Spectrum frozen, tap detection disabled")
+
+        # ── Retain loaded peaks for recalculate_frozen_peaks_if_needed() ──────
+        # Mirrors Swift: loadedMeasurementPeaks = measurement.peaks
+        self.loaded_measurement_peaks = list(measurement.peaks) if measurement.peaks else []
+
+        # ── Restore annotation offsets ────────────────────────────────────────
+        # Mirrors Swift: peakAnnotationOffsets = measurement.peakAnnotationOffsets
+        self.peak_annotation_offsets.clear()
+        ann_offsets = measurement.annotation_offsets or {}
+        for p in (measurement.peaks or []):
+            _off = ann_offsets.get(p.id) or ann_offsets.get((p.id or "").upper())
+            if _off:
+                self.peak_annotation_offsets[p.id] = (float(_off[0]), float(_off[1]))
+        print(f"  🏷️ Restored {len(self.peak_annotation_offsets)} annotation offsets")
+
+        # ── Restore selected peak IDs ─────────────────────────────────────────
+        # Mirrors Swift: selectedPeakIDs = saved ?? all; userHasModifiedPeakSelection = true
+        if measurement.selected_peak_ids is not None:
+            self.selected_peak_ids = set(measurement.selected_peak_ids)
+        else:
+            self.selected_peak_ids = {p.id for p in self.current_peaks}
+        self.user_has_modified_peak_selection = True
+        # Seed stable frequency cache — mirrors Swift selectedPeakFrequencies assignment
+        self.selected_peak_frequencies = [
+            p.frequency for p in self.current_peaks
+            if p.id in self.selected_peak_ids
+        ]
+        print(f"  ⭐ Restored {len(self.selected_peak_ids)} selected peaks")
+
+        # ── Restore annotation visibility mode ────────────────────────────────
+        # Mirrors Swift: annotationVisibilityMode = measurement.annotationVisibilityMode ?? .all
+        self.annotation_visibility_mode = AnnotationVisibilityMode.from_string(
+            measurement.annotation_visibility_mode or "all"
+        )
+        print(f"  👁️ Restored annotation visibility: {self.annotation_visibility_mode.value}")
+
+        # ── Restore peak mode overrides ───────────────────────────────────────
+        # Mirrors Swift: applyModeOverrides(overrides) or peakModeOverrides = [:]
+        overrides = measurement.peak_mode_overrides
+        if overrides:
+            self.apply_mode_overrides(overrides)
+            print(f"  🏷️ Restored {len(overrides)} mode overrides")
+        else:
+            self.peak_mode_overrides = {}
+
+        # ── Reclassify peaks ──────────────────────────────────────────────────
+        # Mirrors Swift: reclassifyPeaks()  (after peakModeOverrides is set)
+        self.reclassify_peaks()
+        print(f"  🔬 Reclassified {len(getattr(self, 'identified_modes', []))} modes after load")
+
+        # ── Restore analysis settings ─────────────────────────────────────────
+        # Mirrors Swift: tapDetectionThreshold = ...; loadedTapDetectionThreshold = ...
+        # (Python has no separate loaded* properties; write directly to model attrs)
+        if measurement.tap_detection_threshold is not None:
+            val = float(measurement.tap_detection_threshold)
+            db = int(val) if val < 0 else int(val - 100)
+            self.tap_detection_threshold = float(max(-80, min(-20, db)))
+            print(f"  🎯 Publishing tap threshold: {self.tap_detection_threshold} dB")
+        else:
+            print("  ⚠️ No tap threshold in measurement")
+        if measurement.hysteresis_margin is not None:
+            self.hysteresis_margin = float(measurement.hysteresis_margin)
+            print(f"  🔄 Publishing hysteresis: {self.hysteresis_margin} dB")
+        else:
+            print("  ⚠️ No hysteresis in measurement")
+        if measurement.number_of_taps is not None:
+            self.number_of_taps = int(measurement.number_of_taps)
+            print(f"  🔢 Publishing number of taps: {self.number_of_taps}")
+        else:
+            print("  ⚠️ No number of taps in measurement")
+        if measurement.peak_threshold is not None:
+            val = float(measurement.peak_threshold)
+            db = int(val) if val < 0 else int(val - 100)
+            self.peak_threshold = float(max(-100, min(-20, db)))
+            print(f"  📊 Publishing peak threshold: {self.peak_threshold} dB")
+        else:
+            print("  ⚠️ No peak threshold in measurement")
+
+        # ── Auto-select the recorded microphone ───────────────────────────────
+        # Mirrors Swift loadMeasurement(_:) device-restore block.
+        # UID match is tried first; name match is fallback for Python companion
+        # app measurements (which store a "Name:SampleRate" fingerprint as UID).
+        mic_uid  = measurement.microphone_uid
+        mic_name = measurement.microphone_name
+        if mic_uid or mic_name:
+            mic = getattr(self, "mic", None)
+            available: list = getattr(mic, "available_input_devices", []) or []
+            # available_input_devices starts empty until load_available_input_devices()
+            # is called. If it is still empty, populate it now so the match below
+            # has a real device list to work with.
+            if not available and mic is not None and hasattr(mic, "load_available_input_devices"):
+                mic.load_available_input_devices()
+                available = getattr(mic, "available_input_devices", []) or []
+            match = next((d for d in available if d.fingerprint == mic_uid), None)
+            if match is None and mic_name:
+                match = next((d for d in available if d.name == mic_name), None)
+            label = mic_name or mic_uid or ""
+            if match is not None:
+                # Device is connected — request switch; calibration loads automatically.
+                if self._calibration_device_name != match.name:
+                    self.requestDeviceSwitch.emit(match)
+                    print(f"🎤 Auto-selected microphone '{label}' for loaded measurement")
+                self.microphone_warning = None
+                self.microphoneWarningChanged.emit(None)
+            else:
+                warning = (
+                    f"This measurement was recorded with '{label}', which is not "
+                    f"currently connected. Attach it and select it in the microphone "
+                    f"settings for accurate analysis."
+                )
+                self.microphone_warning = warning
+                self.microphoneWarningChanged.emit(warning)
+
+        # ── Arm loaded-settings warning ───────────────────────────────────────
+        # Mirrors Swift: showLoadedSettingsWarning = true (last statement in loadMeasurement)
+        # Store sentinels so set_tap_threshold/set_tap_num can detect user-initiated changes.
+        self.loaded_tap_detection_threshold = self.tap_detection_threshold
+        self.loaded_number_of_taps = self.number_of_taps
+        self.show_loaded_settings_warning = True
+        self.showLoadedSettingsWarningChanged.emit(True)
+
+        # ── Status message ────────────────────────────────────────────────────
+        # Mirrors Swift: statusMessage = "Loaded measurement (frozen)..."
+        self._set_status_message(
+            "Loaded measurement (frozen). Press 'Resume' or 'New Tap' to continue."
+        )
+
+        print(f"✅ Loaded measurement with {len(self.current_peaks)} peaks (frozen)")
+
+        # ── Emit measurementComplete — all state now fully restored ───────────
+        # Fired last so the view receives it with fully-populated model state.
+        # Equivalent to SwiftUI's batched objectWillChange deferring re-render.
+        self.measurementComplete.emit(True)
 
     def update_measurement(
         self,
