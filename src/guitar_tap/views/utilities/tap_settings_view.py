@@ -321,8 +321,11 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def plate_length(cls) -> float:
+        # Returns raw stored value (0.0 if never set).
+        # Default applied by TapDisplaySettings.plate_length() — mirrors Swift where
+        # UserDefaults.float(forKey:) returns 0.0 and TapDisplaySettings applies the default.
         v = cls._get("plate/length", None)
-        return float(v) if v is not None and float(v) > 0 else 500.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_plate_length(cls, v: float) -> None:
@@ -331,7 +334,7 @@ class AppSettings:
     @classmethod
     def plate_width(cls) -> float:
         v = cls._get("plate/width", None)
-        return float(v) if v is not None and float(v) > 0 else 200.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_plate_width(cls, v: float) -> None:
@@ -340,7 +343,7 @@ class AppSettings:
     @classmethod
     def plate_thickness(cls) -> float:
         v = cls._get("plate/thickness", None)
-        return float(v) if v is not None and float(v) > 0 else 3.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_plate_thickness(cls, v: float) -> None:
@@ -349,7 +352,7 @@ class AppSettings:
     @classmethod
     def plate_mass(cls) -> float:
         v = cls._get("plate/mass", None)
-        return float(v) if v is not None and float(v) > 0 else 100.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_plate_mass(cls, v: float) -> None:
@@ -361,7 +364,7 @@ class AppSettings:
     @classmethod
     def guitar_body_length(cls) -> float:
         v = cls._get("plate/gore_body_length", None)
-        return float(v) if v is not None and float(v) > 0 else 490.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_guitar_body_length(cls, v: float) -> None:
@@ -370,7 +373,7 @@ class AppSettings:
     @classmethod
     def guitar_body_width(cls) -> float:
         v = cls._get("plate/gore_body_width", None)
-        return float(v) if v is not None and float(v) > 0 else 390.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_guitar_body_width(cls, v: float) -> None:
@@ -387,7 +390,7 @@ class AppSettings:
     @classmethod
     def custom_plate_stiffness(cls) -> float:
         v = cls._get("plate/custom_stiffness", None)
-        return float(v) if v is not None and float(v) > 0 else 75.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_custom_plate_stiffness(cls, v: float) -> None:
@@ -411,7 +414,7 @@ class AppSettings:
     @classmethod
     def brace_length(cls) -> float:
         v = cls._get("brace/length", None)
-        return float(v) if v is not None and float(v) > 0 else 300.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_brace_length(cls, v: float) -> None:
@@ -420,7 +423,7 @@ class AppSettings:
     @classmethod
     def brace_width(cls) -> float:
         v = cls._get("brace/width", None)
-        return float(v) if v is not None and float(v) > 0 else 6.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_brace_width(cls, v: float) -> None:
@@ -430,7 +433,7 @@ class AppSettings:
     def brace_thickness(cls) -> float:
         """Brace height (tap direction / t dimension)."""
         v = cls._get("brace/thickness", None)
-        return float(v) if v is not None and float(v) > 0 else 12.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_brace_thickness(cls, v: float) -> None:
@@ -439,7 +442,7 @@ class AppSettings:
     @classmethod
     def brace_mass(cls) -> float:
         v = cls._get("brace/mass", None)
-        return float(v) if v is not None and float(v) > 0 else 8.0
+        return float(v) if v is not None else 0.0
 
     @classmethod
     def set_brace_mass(cls, v: float) -> None:

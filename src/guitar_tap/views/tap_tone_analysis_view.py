@@ -1730,7 +1730,6 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas = self.fft_canvas
 
         saved_mt = AS.AppSettings.measurement_type()
-        print(f"🚀 _init_state: QSettings measurementType={saved_mt!r} is_guitar={saved_mt.is_guitar}")
         if saved_mt.is_guitar:
             self.measurement_type_combo.setCurrentText("Guitar")
             self.guitar_type_combo.setCurrentText(saved_mt.short_name)
@@ -1741,7 +1740,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # still hold a stale value from a previous session.
         resolved_mt = self._current_mt()
         AS.AppSettings.set_measurement_type(resolved_mt)
-        print(f"🚀 _init_state: combo resolved to={resolved_mt!r} — written to QSettings")
 
         saved_gt = AS.AppSettings.guitar_type()
         self.peak_widget.model.set_guitar_type(saved_gt)
@@ -2097,10 +2095,6 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer = self.fft_canvas.analyzer
         from models.guitar_mode import GuitarMode
         mt = self._current_mt()
-        if not getattr(self, '_dbg_peaks_logged', False):
-            self._dbg_peaks_logged = True
-            print(f"📋 _on_peaks_changed_results (first call): combo='{self.measurement_type_combo.currentText()}' "
-                  f"→ mt={mt!r} is_guitar={mt.is_guitar}")
         show_unknown = AS.AppSettings.show_unknown_modes()
         # Mirrors Swift: plate/brace bypasses the frequency range filter (`: true`).
         # Guitar mode filters to the displayed viewport.
@@ -2593,8 +2587,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.measurement_type_combo.currentText(),
             self.guitar_type_combo.currentText(),
         )
-        print(f"🏷  _update_measurement_badge: combo='{self.measurement_type_combo.currentText()}' "
-              f"guitar_type='{self.guitar_type_combo.currentText()}' → mt={mt!r}")
         self.measurement_type_badge.setText(mt.short_name)
         self.measurement_type_badge.setStyleSheet(
             "background: rgba(0,100,255,0.15); border-radius: 4px; padding: 1px 6px;"
@@ -2963,8 +2955,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Gore Target Thickness
         try:
             _fvs         = TDS.plate_stiffness()
-            _body_l      = AS.AppSettings.guitar_body_length()
-            _body_w      = AS.AppSettings.guitar_body_width()
+            _body_l      = TDS.guitar_body_length()
+            _body_w      = TDS.guitar_body_width()
             try:
                 _preset = PSP.PlateStiffnessPreset(AS.AppSettings.plate_stiffness_preset())
             except (ValueError, KeyError):
@@ -3009,21 +3001,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_section.setVisible(True)
 
     def _get_current_dims(self) -> PA.PlateDimensions | None:
-        """Return current plate/brace dimensions from AppSettings."""
+        """Return current plate/brace dimensions from TapDisplaySettings."""
         mt = self._current_mt()
         if mt.is_brace:
             return PA.PlateDimensions(
-                length_mm=AS.AppSettings.brace_length(),
-                width_mm=AS.AppSettings.brace_width(),
-                thickness_mm=AS.AppSettings.brace_thickness(),
-                mass_g=AS.AppSettings.brace_mass(),
+                length_mm=TDS.brace_length(),
+                width_mm=TDS.brace_width(),
+                thickness_mm=TDS.brace_thickness(),
+                mass_g=TDS.brace_mass(),
             )
         else:
             return PA.PlateDimensions(
-                length_mm=AS.AppSettings.plate_length(),
-                width_mm=AS.AppSettings.plate_width(),
-                thickness_mm=AS.AppSettings.plate_thickness(),
-                mass_g=AS.AppSettings.plate_mass(),
+                length_mm=TDS.plate_length(),
+                width_mm=TDS.plate_width(),
+                thickness_mm=TDS.plate_thickness(),
+                mass_g=TDS.plate_mass(),
             )
 
     # ================================================================
@@ -3738,7 +3730,7 @@ class MainWindow(QtWidgets.QMainWindow):
             except ValueError:
                 _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
             if _preset == PSP.PlateStiffnessPreset.CUSTOM:
-                plate_stiffness = _AppSettings.custom_plate_stiffness() or 75.0
+                plate_stiffness = TDS.custom_plate_stiffness()
             else:
                 plate_stiffness = _preset.stiffness
 
@@ -3871,8 +3863,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 tap_tone_ratio=analyzer.calculate_tap_tone_ratio(),
                 plate_properties=plate_props,
                 brace_properties=brace_props,
-                guitar_body_length=_AppSettings.guitar_body_length() or 490.0,
-                guitar_body_width=_AppSettings.guitar_body_width() or 390.0,
+                guitar_body_length=TDS.guitar_body_length(),
+                guitar_body_width=TDS.guitar_body_width(),
                 plate_stiffness=plate_stiffness,
                 plate_stiffness_preset_str=_preset_str,
                 spectrum_image_data=png_data,
@@ -3892,8 +3884,13 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _on_devices_changed(self, device_names: list[str]) -> None:
-        """A device was added or removed. Auto-select any newly arrived device."""
-        from models.audio_device import AudioDevice as _AudioDevice
+        """Sync the UI after the model has processed a hot-plug event.
+
+        The model (_on_devices_refreshed) already called set_device() on the
+        newly-selected device via mic.load_available_input_devices() +
+        auto-selection logic. We read the already-selected device from the
+        model rather than re-implementing the selection here.
+        """
         new_names = set(device_names)
         added = new_names - self._known_input_device_names
         self._known_input_device_names = new_names
@@ -3901,53 +3898,38 @@ class MainWindow(QtWidgets.QMainWindow):
         if not added:
             return
 
-        # Find the AudioDevice for the first newly arrived device and select it.
-        new_name = next(iter(added))
-        try:
-            for d in sd.query_devices():
-                if str(d["name"]) == new_name and d["max_input_channels"] > 0:
-                    audio_dev = _AudioDevice.from_sounddevice_dict(d)
-                    self.fft_canvas.set_device(audio_dev)
-                    AS.AppSettings.set_audio_device(audio_dev)
-                    self.device_status_lbl.setText(audio_dev.name)
-                    _cal = _mc_mod.CalibrationStorage.calibration_for_device(audio_dev.fingerprint)
-                    if _cal is None:
-                        _cal = _mc_mod.CalibrationStorage.calibration_for_device(audio_dev.name)
-                    self.set_calibration_status(_cal.name if _cal else "")
-                    break
-        except Exception:
-            pass
+        # Read the device the model already selected — do not call set_device() again.
+        selected = getattr(self.fft_canvas.analyzer, "mic", None)
+        selected = getattr(selected, "selected_input_device", None) if selected else None
+
+        if selected is not None and selected.name in added:
+            self.device_status_lbl.setText(selected.name)
+            AS.AppSettings.set_audio_device(selected)
+            _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.fingerprint)
+            if _cal is None:
+                _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.name)
+            self.set_calibration_status(_cal.name if _cal else "")
 
     def _on_device_lost(self, device_name: str) -> None:
-        """Active device disconnected — fall back to system default input."""
-        from models.audio_device import AudioDevice as _AudioDevice
-        fallback_dev: _AudioDevice | None = None
-        try:
-            default_idx = int(sd.default.device[0])
-            default_info = sd.query_devices(default_idx)
-            if default_info["max_input_channels"] > 0:
-                fallback_dev = _AudioDevice.from_sounddevice_dict(default_info)
-        except Exception:
-            pass
-        if fallback_dev is None:
-            # No system default — take first available input
-            try:
-                for d in sd.query_devices():
-                    if d["max_input_channels"] > 0:
-                        fallback_dev = _AudioDevice.from_sounddevice_dict(d)
-                        break
-            except Exception:
-                pass
-        if fallback_dev is None:
+        """Active device disconnected — sync the UI to the model's already-chosen fallback.
+
+        The model (_on_devices_refreshed) already called _auto_select_on_hotplug()
+        via load_available_input_devices(), which falls back to built-in or first
+        available, and then called set_device() on the fallback. We just read the
+        model's selection and update the UI labels.
+        """
+        selected = getattr(self.fft_canvas.analyzer, "mic", None)
+        selected = getattr(selected, "selected_input_device", None) if selected else None
+
+        if selected is None:
             self.device_status_lbl.setText("⚠ No audio input device available")
             return
 
-        self.fft_canvas.set_device(fallback_dev)
-        AS.AppSettings.set_audio_device(fallback_dev)
-        self.device_status_lbl.setText(fallback_dev.name)
-        _cal = _mc_mod.CalibrationStorage.calibration_for_device(fallback_dev.fingerprint)
+        self.device_status_lbl.setText(selected.name)
+        AS.AppSettings.set_audio_device(selected)
+        _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.fingerprint)
         if _cal is None:
-            _cal = _mc_mod.CalibrationStorage.calibration_for_device(fallback_dev.name)
+            _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.name)
         self.set_calibration_status(_cal.name if _cal else "")
 
     def import_calibration(self) -> None:
@@ -4175,10 +4157,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 row.addWidget(QtWidgets.QLabel(unit))
             return row
 
-        plate_length_field = _dim_field("mm", AS.AppSettings.plate_length())
-        plate_width_field = _dim_field("mm", AS.AppSettings.plate_width())
-        plate_thick_field = _dim_field("mm", AS.AppSettings.plate_thickness())
-        plate_mass_field = _dim_field("g", AS.AppSettings.plate_mass())
+        plate_length_field = _dim_field("mm", TDS.plate_length())
+        plate_width_field = _dim_field("mm", TDS.plate_width())
+        plate_thick_field = _dim_field("mm", TDS.plate_thickness())
+        plate_mass_field = _dim_field("g", TDS.plate_mass())
 
         plate_density_lbl = QtWidgets.QLabel("—")
         plate_density_lbl.setFont(small)
@@ -4242,8 +4224,8 @@ class MainWindow(QtWidgets.QMainWindow):
         gore_desc.setWordWrap(True)
         plate_layout.addWidget(gore_desc)
 
-        gore_body_len_field = _dim_field("mm", AS.AppSettings.guitar_body_length())
-        gore_body_wid_field = _dim_field("mm", AS.AppSettings.guitar_body_width())
+        gore_body_len_field = _dim_field("mm", TDS.guitar_body_length())
+        gore_body_wid_field = _dim_field("mm", TDS.guitar_body_width())
         plate_layout.addLayout(_dim_row("Body Length (a):", gore_body_len_field, "mm"))
         plate_layout.addLayout(_dim_row("Lower Bout Width (b):", gore_body_wid_field, "mm"))
         plate_layout.addWidget(_hsep())
@@ -4282,7 +4264,7 @@ class MainWindow(QtWidgets.QMainWindow):
         custom_fvs_row = QtWidgets.QHBoxLayout(custom_fvs_widget)
         custom_fvs_row.setContentsMargins(0, 0, 0, 0)
         custom_fvs_row.addWidget(QtWidgets.QLabel("Custom f_vs value:"))
-        custom_fvs_field = QtWidgets.QLineEdit(str(AS.AppSettings.custom_plate_stiffness()))
+        custom_fvs_field = QtWidgets.QLineEdit(str(TDS.custom_plate_stiffness()))
         custom_fvs_field.setFixedWidth(80)
         custom_fvs_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         custom_fvs_row.addWidget(custom_fvs_field)
@@ -4304,10 +4286,10 @@ class MainWindow(QtWidgets.QMainWindow):
         brace_dims_hdr.setFont(hdr_font)
         brace_layout.addWidget(brace_dims_hdr)
 
-        brace_length_field = _dim_field("mm", AS.AppSettings.brace_length())
-        brace_width_field = _dim_field("mm", AS.AppSettings.brace_width())
-        brace_thick_field = _dim_field("mm", AS.AppSettings.brace_thickness())
-        brace_mass_field = _dim_field("g", AS.AppSettings.brace_mass())
+        brace_length_field = _dim_field("mm", TDS.brace_length())
+        brace_width_field = _dim_field("mm", TDS.brace_width())
+        brace_thick_field = _dim_field("mm", TDS.brace_thickness())
+        brace_mass_field = _dim_field("g", TDS.brace_mass())
 
         brace_density_lbl = QtWidgets.QLabel("—")
         brace_density_lbl.setFont(small)
@@ -5200,22 +5182,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 except ValueError:
                     return fallback
 
-            AS.AppSettings.set_plate_length(_pf(plate_length_field, AS.AppSettings.plate_length()))
-            AS.AppSettings.set_plate_width(_pf(plate_width_field, AS.AppSettings.plate_width()))
-            AS.AppSettings.set_plate_thickness(_pf(plate_thick_field, AS.AppSettings.plate_thickness()))
-            AS.AppSettings.set_plate_mass(_pf(plate_mass_field, AS.AppSettings.plate_mass()))
+            AS.AppSettings.set_plate_length(_pf(plate_length_field, TDS.plate_length()))
+            AS.AppSettings.set_plate_width(_pf(plate_width_field, TDS.plate_width()))
+            AS.AppSettings.set_plate_thickness(_pf(plate_thick_field, TDS.plate_thickness()))
+            AS.AppSettings.set_plate_mass(_pf(plate_mass_field, TDS.plate_mass()))
             AS.AppSettings.set_measure_flc(measure_flc_cb.isChecked())
-            AS.AppSettings.set_guitar_body_length(_pf(gore_body_len_field, AS.AppSettings.guitar_body_length()))
-            AS.AppSettings.set_guitar_body_width(_pf(gore_body_wid_field, AS.AppSettings.guitar_body_width()))
+            AS.AppSettings.set_guitar_body_length(_pf(gore_body_len_field, TDS.guitar_body_length()))
+            AS.AppSettings.set_guitar_body_width(_pf(gore_body_wid_field, TDS.guitar_body_width()))
             fvs_idx = fvs_combo.currentIndex()
             AS.AppSettings.set_plate_stiffness_preset(
                 PRESET_STORAGE_NAMES[fvs_idx] if 0 <= fvs_idx < len(PRESET_STORAGE_NAMES) else "Steel String Top"
             )
-            AS.AppSettings.set_custom_plate_stiffness(_pf(custom_fvs_field, AS.AppSettings.custom_plate_stiffness()))
-            AS.AppSettings.set_brace_length(_pf(brace_length_field, AS.AppSettings.brace_length()))
-            AS.AppSettings.set_brace_width(_pf(brace_width_field, AS.AppSettings.brace_width()))
-            AS.AppSettings.set_brace_thickness(_pf(brace_thick_field, AS.AppSettings.brace_thickness()))
-            AS.AppSettings.set_brace_mass(_pf(brace_mass_field, AS.AppSettings.brace_mass()))
+            AS.AppSettings.set_custom_plate_stiffness(_pf(custom_fvs_field, TDS.custom_plate_stiffness()))
+            AS.AppSettings.set_brace_length(_pf(brace_length_field, TDS.brace_length()))
+            AS.AppSettings.set_brace_width(_pf(brace_width_field, TDS.brace_width()))
+            AS.AppSettings.set_brace_thickness(_pf(brace_thick_field, TDS.brace_thickness()))
+            AS.AppSettings.set_brace_mass(_pf(brace_mass_field, TDS.brace_mass()))
 
             # Always persist the current measurement type — QSettings may hold a stale
             # value from a previous session if the user never changed the type in this

@@ -37,20 +37,61 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
 
     def _on_devices_refreshed(self) -> None:
-        """Handle a hot-plug event (always on main thread)."""
-        self.mic.reinitialize_portaudio()
+        """Handle a hot-plug event (always on main thread).
+
+        Mirrors Swift loadAvailableInputDevicesMacOS() which:
+        1. Re-enumerates the device list
+        2. Auto-selects newly connected real devices (or falls back on disconnect)
+        3. Calls setInputDevice(_:) if the selection changed
+
+        Python adds an explicit PortAudio re-init step because sounddevice
+        caches the device list at Pa_Initialize() time (Swift CoreAudio/
+        AVAudioSession don't have this limitation).
+
+        We call mic.load_available_input_devices() — the direct mirror of Swift's
+        loadAvailableInputDevicesMacOS() — but temporarily suppress its
+        _on_devices_changed callback to avoid recursing back into this method.
+        """
+        import sounddevice as _sd
+        previous_device = self.mic.selected_input_device
+
+        # Flush PortAudio's cached device list so query_devices() reflects
+        # the current OS device state. Swift CoreAudio doesn't need this step.
         try:
-            names: list = sorted(
-                str(d["name"]) for d in self._sd.query_devices() if d["max_input_channels"] > 0
-            )
+            _sd._terminate()
+            _sd._initialize()
         except Exception:
-            names = []
+            pass
+
+        # Re-enumerate and apply auto-selection (fingerprint-based diff,
+        # aggregate filter, built-in fallback) — mirrors Swift
+        # loadAvailableInputDevicesMacOS() auto-selection logic.
+        # Suppress the _on_devices_changed callback to avoid re-entry.
+        saved_cb = self.mic._on_devices_changed
+        self.mic._on_devices_changed = None
+        try:
+            self.mic.load_available_input_devices()
+        finally:
+            self.mic._on_devices_changed = saved_cb
+
+        names: list[str] = sorted(d.name for d in self.mic.available_input_devices)
         self.devicesChanged.emit(names)
-        if (
-            self._calibration_device_name
-            and self._calibration_device_name not in names
-        ):
-            self.currentDeviceLost.emit(self._calibration_device_name)
+
+        # If auto-selection changed the active device, open the new stream and
+        # auto-load its calibration.
+        # Mirrors Swift setInputDevice(_:) called from loadAvailableInputDevicesMacOS().
+        new_device = self.mic.selected_input_device
+        prev_fp = getattr(previous_device, "fingerprint", None)
+        new_fp  = getattr(new_device, "fingerprint", None)
+
+        if new_device is not None and new_fp != prev_fp:
+            self.set_device(new_device)
+
+        # Notify the view if the previously active device disappeared.
+        # Mirrors Swift's "disconnected" log path in loadAvailableInputDevicesMacOS().
+        prev_name = getattr(previous_device, "name", None) or self._calibration_device_name
+        if prev_name and prev_name not in names:
+            self.currentDeviceLost.emit(prev_name)
 
     # ------------------------------------------------------------------ #
     # Calibration
@@ -225,10 +266,6 @@ class TapToneAnalyzerControlMixin:
         meas_type = _tds.measurement_type()
         is_plate = (meas_type == _MT.PLATE)
         is_brace = (meas_type == _MT.BRACE)
-
-        print(f"🔧 start_tap_sequence: QSettings measurementType={meas_type!r} "
-              f"is_plate={is_plate} is_brace={is_brace} "
-              f"→ phase will be {'CAPTURING_LONGITUDINAL' if (is_plate or is_brace) else 'NOT_STARTED'}")
 
         # Mirrors Swift startTapSequence() lines 140-143:
         #   self.comparisonSpectra = []  (handled by view's clear_comparison())

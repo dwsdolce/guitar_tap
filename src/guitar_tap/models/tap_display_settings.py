@@ -113,6 +113,42 @@ class TapDisplaySettings:
     # Default hysteresis margin in dB
     DEFAULT_HYSTERESIS_MARGIN: float = 3.0
 
+    # MARK: - Default Dimension Constants (mirrors Swift inline defaults in each getter)
+    # Swift getters return `value > 0 ? value : <default>` — Python mirrors this pattern.
+
+    # Default plate length in mm (along grain direction)
+    DEFAULT_PLATE_LENGTH: float = 500.0
+
+    # Default plate width in mm (cross grain direction)
+    DEFAULT_PLATE_WIDTH: float = 200.0
+
+    # Default plate thickness in mm
+    DEFAULT_PLATE_THICKNESS: float = 3.0
+
+    # Default plate mass in grams
+    DEFAULT_PLATE_MASS: float = 100.0
+
+    # Default guitar body length in mm (neck join to tail, finished dimensions)
+    DEFAULT_GUITAR_BODY_LENGTH: float = 490.0
+
+    # Default guitar lower bout width in mm (finished dimensions)
+    DEFAULT_GUITAR_BODY_WIDTH: float = 390.0
+
+    # Default custom plate vibrational stiffness value
+    DEFAULT_CUSTOM_PLATE_STIFFNESS: float = 75.0
+
+    # Default brace length in mm (along grain direction)
+    DEFAULT_BRACE_LENGTH: float = 300.0
+
+    # Default brace width in mm (across grain)
+    DEFAULT_BRACE_WIDTH: float = 6.0
+
+    # Default brace height in mm (vertical cross-section, t in the formula)
+    DEFAULT_BRACE_THICKNESS: float = 12.0
+
+    # Default brace mass in grams
+    DEFAULT_BRACE_MASS: float = 8.0
+
     # MARK: - Measurement Type
 
     @classmethod
@@ -181,9 +217,11 @@ class TapDisplaySettings:
     def plate_length(cls) -> float:
         """Plate length in mm (along grain direction).
 
-        Mirrors Swift TapDisplaySettings.plateLength.
+        Mirrors Swift TapDisplaySettings.plateLength — returns DEFAULT_PLATE_LENGTH
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 500.0`.
         """
-        return _app_settings().plate_length()
+        v = _app_settings().plate_length()
+        return v if v > 0 else cls.DEFAULT_PLATE_LENGTH
 
     @classmethod
     def set_plate_length(cls, v: float) -> None:
@@ -193,9 +231,11 @@ class TapDisplaySettings:
     def plate_width(cls) -> float:
         """Plate width in mm (cross grain direction).
 
-        Mirrors Swift TapDisplaySettings.plateWidth.
+        Mirrors Swift TapDisplaySettings.plateWidth — returns DEFAULT_PLATE_WIDTH
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 200.0`.
         """
-        return _app_settings().plate_width()
+        v = _app_settings().plate_width()
+        return v if v > 0 else cls.DEFAULT_PLATE_WIDTH
 
     @classmethod
     def set_plate_width(cls, v: float) -> None:
@@ -205,9 +245,11 @@ class TapDisplaySettings:
     def plate_thickness(cls) -> float:
         """Plate thickness in mm.
 
-        Mirrors Swift TapDisplaySettings.plateThickness.
+        Mirrors Swift TapDisplaySettings.plateThickness — returns DEFAULT_PLATE_THICKNESS
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 3.0`.
         """
-        return _app_settings().plate_thickness()
+        v = _app_settings().plate_thickness()
+        return v if v > 0 else cls.DEFAULT_PLATE_THICKNESS
 
     @classmethod
     def set_plate_thickness(cls, v: float) -> None:
@@ -217,9 +259,11 @@ class TapDisplaySettings:
     def plate_mass(cls) -> float:
         """Plate mass in grams.
 
-        Mirrors Swift TapDisplaySettings.plateMass.
+        Mirrors Swift TapDisplaySettings.plateMass — returns DEFAULT_PLATE_MASS
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 100.0`.
         """
-        return _app_settings().plate_mass()
+        v = _app_settings().plate_mass()
+        return v if v > 0 else cls.DEFAULT_PLATE_MASS
 
     @classmethod
     def set_plate_mass(cls, v: float) -> None:
@@ -231,9 +275,11 @@ class TapDisplaySettings:
     def guitar_body_length(cls) -> float:
         """Guitar body length (neck join to tail, finished dimensions) in mm.
 
-        Mirrors Swift TapDisplaySettings.guitarBodyLength.
+        Mirrors Swift TapDisplaySettings.guitarBodyLength — returns DEFAULT_GUITAR_BODY_LENGTH
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 490.0`.
         """
-        return _app_settings().guitar_body_length()
+        v = _app_settings().guitar_body_length()
+        return v if v > 0 else cls.DEFAULT_GUITAR_BODY_LENGTH
 
     @classmethod
     def set_guitar_body_length(cls, v: float) -> None:
@@ -243,9 +289,11 @@ class TapDisplaySettings:
     def guitar_body_width(cls) -> float:
         """Guitar lower bout width (finished dimensions) in mm.
 
-        Mirrors Swift TapDisplaySettings.guitarBodyWidth.
+        Mirrors Swift TapDisplaySettings.guitarBodyWidth — returns DEFAULT_GUITAR_BODY_WIDTH
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 390.0`.
         """
-        return _app_settings().guitar_body_width()
+        v = _app_settings().guitar_body_width()
+        return v if v > 0 else cls.DEFAULT_GUITAR_BODY_WIDTH
 
     @classmethod
     def set_guitar_body_width(cls, v: float) -> None:
@@ -267,9 +315,12 @@ class TapDisplaySettings:
     def custom_plate_stiffness(cls) -> float:
         """Custom plate vibrational stiffness value (used when preset is 'Custom').
 
-        Mirrors Swift TapDisplaySettings.customPlateStiffness.
+        Mirrors Swift TapDisplaySettings.customPlateStiffness — returns
+        DEFAULT_CUSTOM_PLATE_STIFFNESS when the stored value is 0 (never set),
+        matching Swift's `value > 0 ? value : 75.0`.
         """
-        return _app_settings().custom_plate_stiffness()
+        v = _app_settings().custom_plate_stiffness()
+        return v if v > 0 else cls.DEFAULT_CUSTOM_PLATE_STIFFNESS
 
     @classmethod
     def set_custom_plate_stiffness(cls, v: float) -> None:
@@ -300,9 +351,11 @@ class TapDisplaySettings:
     def brace_length(cls) -> float:
         """Brace length in mm (along grain direction).
 
-        Mirrors Swift TapDisplaySettings.braceLength.
+        Mirrors Swift TapDisplaySettings.braceLength — returns DEFAULT_BRACE_LENGTH
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 300.0`.
         """
-        return _app_settings().brace_length()
+        v = _app_settings().brace_length()
+        return v if v > 0 else cls.DEFAULT_BRACE_LENGTH
 
     @classmethod
     def set_brace_length(cls, v: float) -> None:
@@ -312,9 +365,11 @@ class TapDisplaySettings:
     def brace_width(cls) -> float:
         """Brace width in mm (across grain).
 
-        Mirrors Swift TapDisplaySettings.braceWidth.
+        Mirrors Swift TapDisplaySettings.braceWidth — returns DEFAULT_BRACE_WIDTH
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 6.0`.
         """
-        return _app_settings().brace_width()
+        v = _app_settings().brace_width()
+        return v if v > 0 else cls.DEFAULT_BRACE_WIDTH
 
     @classmethod
     def set_brace_width(cls, v: float) -> None:
@@ -324,9 +379,11 @@ class TapDisplaySettings:
     def brace_thickness(cls) -> float:
         """Brace height in mm — the vertical cross-section (t in the formula).
 
-        Mirrors Swift TapDisplaySettings.braceThickness.
+        Mirrors Swift TapDisplaySettings.braceThickness — returns DEFAULT_BRACE_THICKNESS
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 12.0`.
         """
-        return _app_settings().brace_thickness()
+        v = _app_settings().brace_thickness()
+        return v if v > 0 else cls.DEFAULT_BRACE_THICKNESS
 
     @classmethod
     def set_brace_thickness(cls, v: float) -> None:
@@ -336,9 +393,11 @@ class TapDisplaySettings:
     def brace_mass(cls) -> float:
         """Brace mass in grams.
 
-        Mirrors Swift TapDisplaySettings.braceMass.
+        Mirrors Swift TapDisplaySettings.braceMass — returns DEFAULT_BRACE_MASS
+        when the stored value is 0 (never set), matching Swift's `value > 0 ? value : 8.0`.
         """
-        return _app_settings().brace_mass()
+        v = _app_settings().brace_mass()
+        return v if v > 0 else cls.DEFAULT_BRACE_MASS
 
     @classmethod
     def set_brace_mass(cls, v: float) -> None:
