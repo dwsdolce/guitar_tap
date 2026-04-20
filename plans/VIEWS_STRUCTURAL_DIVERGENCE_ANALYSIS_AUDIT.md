@@ -937,7 +937,106 @@ represents a technical debt item separate from the functional divergences catalo
 
 ---
 
-## Appendix B — File Location Quick Reference
+## Appendix B — Strategic Recommendations: Divergence Work vs QML Migration
+
+*Added after review of the full audit findings in the context of a potential QML migration.*
+
+### Recommended order of work
+
+**Phase 1 — Fix high-severity divergences first (prerequisites for everything else)**
+
+The 7 high-severity items must be addressed before either the QML migration or broader divergence
+remediation, because they represent correctness bugs, not just structural debt:
+
+1. **D-V38** — `hideAnnotation` / `showAnnotation` / `annotationUpdate` use `float` frequency as
+   peak identifier instead of UUID. This is an architectural prerequisite for QML: any
+   `QAbstractListModel` built for the peaks list must key by UUID, not frequency. Fixing this
+   after the model is in place is significantly harder than fixing it now.
+2. **D-V42** — `identifiedModesChanged` signal / Rule 7 payload concern. If `identified_modes` is
+   stale when `peaksChanged` fires, mode labels are wrong. Must be confirmed and fixed before the
+   peaks model is restructured.
+3. **D-V7** — `cancelButtonEnabled` not re-evaluated on material phase transitions. Button state
+   correctness bug, independent of framework.
+4. **D-V8** — `.onReceive(tap.$showLoadedSettingsWarning)` / `$microphoneWarning` signal chains
+   unverified. Must be confirmed before any restructuring touches the signal wiring.
+5. **D-V10** — Axis-only zoom not implemented. pyqtgraph-level fix, unaffected by framework choice.
+6. **D-V31** — Microphone warning check not invoked on measurement import. Model-layer logic gap,
+   independent of framework.
+7. **D-V8 (second item)** — `identifiedModesChanged` signal chain verification (see D-V42).
+
+**Phase 2 — Extract the `tap_tone_analysis_view.py` monolith**
+
+The 5 stub extension files (`_actions.py`, `_controls.py`, `_export.py`, `_layouts.py`,
+`_spectrum_views.py`) were created as scaffolding for an extraction that was never completed.
+This extraction must happen before QML work begins because:
+
+- QML binds to clean, signal-emitting model objects and slim view coordinators. A monolith
+  provides no clean seam for QML to bind against.
+- The extraction is also divergence remediation — the Swift codebase has this separation as its
+  design; the Python monolith is itself a divergence from that design.
+- Doing the extraction now (as divergence work) means the QML migration starts with a correct
+  structural foundation rather than porting structural debt into a new framework.
+
+The extraction order should match the Swift extension file responsibilities:
+- `_layouts.py` first — purely structural, no logic, lowest risk
+- `_controls.py` second — widget construction only, no signal logic
+- `_actions.py` third — action handlers, needs signal wiring to be stable first (D-V7, D-V8)
+- `_export.py` fourth — export logic; the comparison export work done in this session is a preview
+- `_spectrum_views.py` last — most coupled to `FftCanvas`
+
+**Phase 3 — Remaining medium/low divergences**
+
+Once Phase 1 and Phase 2 are complete, the remaining items can be addressed in severity order.
+Items that resolve naturally under QML (D-V4, D-V40 loading overlay; D-V19 batch peak controls;
+D-V29 showUnknownModes consistency) can be deferred to the QML migration if that is planned.
+Items that QML cannot help with (D-V10/D-V11/D-V12 gesture gaps; D-V13 parabolic interpolation;
+D-V14 threshold RuleMark; D-V15 axis tick algorithm; D-V18 annotation coordinate space) should
+be addressed as part of Phase 2 since they are pyqtgraph-level issues independent of framework.
+
+**Phase 4 — QML migration (if pursued)**
+
+The QML migration is worthwhile given the clean model layer inherited from the SwiftUI
+architecture. However, it should only start after Phases 1–2 are complete. The recommended
+migration order within QML work:
+
+1. `AppState` / global state first — sliders, status, proves the Python↔QML bridge works
+2. Settings dialog — self-contained, no list models, good QML practice
+3. Metrics window — pure property bindings, straightforward
+4. Peaks list — first `QAbstractListModel`, the hardest conceptual step but most reusable pattern;
+   requires D-V38 to be fixed (UUID keys, not frequency floats)
+5. Saved measurements window — second list model, much easier once the peaks pattern is established
+6. Main layout + `FftCanvas` embed via `QQuickWidget`
+7. Menu bar, help window — lowest risk, last
+
+### Why divergence work makes the QML migration better
+
+Several divergences *resolve themselves* naturally in QML:
+- **D-V7/D-V8** (button state, `.onReceive` reactive chains) — QML `@Property` + signals gives
+  this for free; the "re-evaluate at every signal boundary" problem disappears.
+- **D-V42** (`identifiedModesChanged` stale-read risk) — QML's binding system re-evaluates all
+  dependents when a notify signal fires, reducing timing sensitivity.
+- **D-V4/D-V40** (LoadingOverlay not connected) — a `BusyIndicator` bound to `isExporting`
+  property is natural in QML.
+- **D-V19** (Select All / Select None) — trivial once peaks are in a proper `QAbstractListModel`.
+- **D-V29** (showUnknownModes inconsistency) — a single `@Property` on `AppState` ensures
+  consistency everywhere in QML.
+
+The items QML cannot help with are all pyqtgraph-level or model-layer issues that must be fixed
+regardless of framework choice.
+
+### The pyqtgraph seam
+
+`FftCanvas` performs real-time multi-spectrum rendering with annotation overlay, crosshair, and
+gesture handling. This is not replaceable with QML Canvas and should not be attempted. The correct
+architecture is `QQuickWidget` embedding `FftCanvas` inside QML. This seam is contained and
+manageable, but it means:
+- The pyqtgraph gesture divergences (D-V10, D-V11, D-V12) remain Qt widget-level problems that
+  QML cannot address.
+- Layout interactions between `QQuickWidget` and surrounding QML require careful sizing hints.
+
+---
+
+## Appendix C — File Location Quick Reference
 
 All paths are absolute:
 
