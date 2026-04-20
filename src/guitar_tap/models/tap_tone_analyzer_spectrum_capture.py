@@ -239,31 +239,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.re_enable_detection_for_next_plate_tap()
 
     @Slot()
-    def _do_start_cross(self) -> None:
-        """Main-thread slot: arm detection for the cross-grain tap phase.
-
-        Invoked via QTimer.singleShot from _handle_longitudinal_gated_progress,
-        so this always runs on the main thread.
-
-        Mirrors Swift handleLongitudinalGatedProgress() cross-transition closure:
-          self.isAboveThreshold = fftAnalyzer.inputLevelDB > fallingThreshold
-          self.isDetecting = true
-          self.materialTapPhase = .capturingCross
-        Does NOT reset analyzerStartTime — mirrors Swift reEnableDetectionForNextPlateTap
-        doc comment: resetting would restart warm-up and destabilise isAboveThreshold.
-        """
-        import numpy as _np
-        from models.material_tap_phase import MaterialTapPhase as _MTP
-        # Use instantaneous RMS level — mirrors Swift fftAnalyzer.inputLevelDB.
-        level = self._current_input_level_db
-        falling = self.tap_detection_threshold - self.hysteresis_margin
-        self.is_above_threshold = level > falling
-        self.is_detecting = True
-        self.tap_detected = False
-        self._set_material_tap_phase(_MTP.CAPTURING_CROSS)
-        self.set_frozen_spectrum(_np.array([]), _np.array([]))
-
-    @Slot()
     def _do_start_flc(self) -> None:
         """Main-thread slot: arm detection for the FLC tap phase.
 

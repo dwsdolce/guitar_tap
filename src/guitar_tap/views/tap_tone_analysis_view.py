@@ -1367,29 +1367,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return panel
 
-    def _build_decay_strip(self) -> QtWidgets.QWidget:
-        """Thin strip below the spectrum showing ring-out decay time."""
-        strip = QtWidgets.QWidget()
-        strip.setObjectName("decay_strip")
-        strip.setStyleSheet("#decay_strip { border-top: 1px solid palette(mid); }")
-        hl = QtWidgets.QHBoxLayout(strip)
-        hl.setContentsMargins(8, 2, 8, 2)
-
-        small_font = QtGui.QFont()
-        small_font.setPointSize(10)
-
-        lbl = QtWidgets.QLabel("Decay:")
-        lbl.setFont(small_font)
-        hl.addWidget(lbl)
-
-        self.ring_out_value = QtWidgets.QLabel("—")
-        self.ring_out_value.setFont(small_font)
-        self.ring_out_value.setToolTip("Ring-out: time from tap peak to 15 dB drop")
-        hl.addWidget(self.ring_out_value)
-
-        hl.addStretch()
-        return strip
-
     def _build_status_bar(self) -> QtWidgets.QWidget:
         """Bottom status bar matching the Swift fullStatusBar layout."""
         bar = QtWidgets.QWidget()
@@ -2473,11 +2450,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_running = True
         self.set_running(True)
         self.fft_canvas.start_analyzer()
-
-    def _stop_analyzer(self) -> None:
-        self._is_running = False
-        self.set_running(False)
-        self.fft_canvas.stop_analyzer()
 
     # ================================================================
     # Tap events

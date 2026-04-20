@@ -186,12 +186,6 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         self._update_compare_btn()
 
-    def _selected_measurement(self) -> TapToneMeasurement | None:
-        row = self._list.currentRow()
-        if 0 <= row < len(self._measurements):
-            return self._measurements[row]
-        return None
-
     def _update_compare_btn(self) -> None:
         if self._compare_mode:
             count = len(self._compare_ids)
