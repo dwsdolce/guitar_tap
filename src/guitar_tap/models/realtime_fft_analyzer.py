@@ -442,7 +442,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
       actualSampleRate, frequencyResolution, bandwidth
       sampleLengthSeconds, frameRate, processingTimeMs, avgProcessingTimeMs
       activeCalibration, calibrationCorrections, rawSampleHandler
-      fftSetup, targetSampleRate, useHardwareSampleRate
+      fftSetup
       isRunning, microphonePermissionDenied, routeChangeRestartCount
       firstBufferReceived, fftCount, engineStartTime
     """
@@ -457,7 +457,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
                  fft_size: int = 16384):
         """Create a new real-time FFT analyser and open the audio stream.
 
-        Mirrors Swift RealtimeFFTAnalyzer.init(fftSize:targetSampleRate:useHardwareSampleRate:).
+        Mirrors Swift RealtimeFFTAnalyzer.init(fftSize:).
         The Swift initialiser creates the AVAudioEngine and registers device listeners;
         this Python initialiser opens a sounddevice InputStream and starts the hot-plug monitor.
 

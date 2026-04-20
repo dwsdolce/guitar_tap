@@ -198,36 +198,3 @@ class Pitch:
         Mirrors Swift Pitch.isInTune(frequency:threshold:).
         """
         return abs(self.cents(frequency)) <= threshold
-
-
-# MARK: - Debug / Testing
-
-def run_example() -> None:
-    """Run a set of sample pitch calculations and print results to the console.
-
-    Useful for verifying that the equal-temperament formula produces expected values.
-
-    Mirrors Swift Pitch.runExample() (DEBUG-only static function in Pitch.swift).
-    """
-    pitch = Pitch(a4=440)
-
-    print("Example 1:")
-    f1: float = 173
-    print(f"f_1 = {f1}")
-    print(f"Note = {pitch.note(f1)}")
-    print(f"f_0 = {pitch.freq0(f1)}")
-    print(f"cents = {pitch.cents(f1)}")
-    print("==========================")
-
-    print("Example 2:")
-    f2: float = 175.8
-    print(f"f_1 = {f2}")
-    print(f"Note = {pitch.note(f2)}")
-    print(f"f_0 = {pitch.freq0(f2)}")
-    print(f"cents = {pitch.cents(f2)}")
-    print(f"formatted = {pitch.formatted_note(f2)}")
-    print(f"in tune? {pitch.is_in_tune(f2)}")
-
-
-if __name__ == "__main__":
-    run_example()

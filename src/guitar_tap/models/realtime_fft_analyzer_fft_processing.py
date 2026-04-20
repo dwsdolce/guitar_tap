@@ -20,8 +20,7 @@ Swift-only functions (no Python equivalent):
   updateFrequencyBins()      — publishes @Published frequencies on main thread
   updateCalibrationCorrections() — pre-computes calibration offsets per bin
   updateMetrics()            — publishes frequencyResolution, bandwidth, frameRate
-  processAudioBuffer(_:)     — AVAudioEngine tap handler (buffer accumulation + resampling)
-  resample(_:from:to:)       — linear-interpolation resampler for hardware ↔ target rate
+  processAudioBuffer(_:)     — AVAudioEngine tap handler (buffer accumulation + FFT dispatch)
   nextPowerOfTwo(_:)         — helper for computeGatedFFT zero-padding size
 
 These functions are re-exported by realtime_fft_analyzer.py for backward
