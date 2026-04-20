@@ -32,6 +32,10 @@ Key Derived Properties:
   Specific modulus | E / ρ (GPa/(g/cm³)) | Primary quality indicator; higher = lighter, stiffer wood
   Speed of sound   | √(E/ρ) (m/s)        | Governs how quickly vibrations travel through the plate
   Radiation ratio  | c_L / ρ             | Efficiency of acoustic power radiation
+
+NOTE: stores dimensions in mm and mass in g (user-facing units).
+Swift equivalent stores in SI (m, kg) directly.
+Use .length_m, .width_m, .thickness_m, .mass_kg for SI access.
 """
 
 from __future__ import annotations

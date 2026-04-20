@@ -71,14 +71,13 @@ class ResonantPeak:
     # Mirrors Swift ResonantPeak.bandwidth.
     bandwidth: float = 0.0
 
-    # Stable unique identifier — mirrors Swift ResonantPeak.id (UUID).
+    # str form of UUID — Swift uses UUID type.
     # Auto-assigned on construction (matching Swift's init which calls UUID()).
-    # Stored as a string (UUID string) in Python; Swift uses UUID directly.
+    # Mirrors Swift ResonantPeak.id.
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
-    # Wall-clock time at which this peak was detected, as an ISO-8601 string.
+    # ISO-8601 string — Swift uses Date.
     # Auto-assigned on construction (matching Swift's init which calls Date()).
-    # Swift stores this as Date; Python stores it as an ISO-8601 string.
     # Mirrors Swift ResonantPeak.timestamp.
     timestamp: str = field(default_factory=_now_iso)
 
@@ -101,8 +100,8 @@ class ResonantPeak:
     # Mirrors Swift ResonantPeak.pitchFrequency.
     pitch_frequency: float | None = None
 
-    # Mode label injected at serialisation time by TapToneMeasurement.
-    # Python-only — not present in Swift ResonantPeak struct.
+    # Python-only display hint — not present in Swift ResonantPeak.
+    # Set by the view layer before rendering; not persisted.
     mode_label: str = ""
 
     # MARK: - Computed Properties

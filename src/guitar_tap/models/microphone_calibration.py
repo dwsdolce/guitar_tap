@@ -433,7 +433,11 @@ class CalibrationStorage:
     _APP  = "GuitarTap"
     _STORAGE_KEY    = "storedCalibrations"    # JSON array of calibration dicts.
     _ACTIVE_KEY     = "activeCalibrationID"   # UUID string of the global active calibration.
-    _DEVICE_MAP_KEY = "deviceCalibrationMap"  # JSON dict: deviceName → calibrationUUID.
+    # JSON dict: deviceName → calibrationUUID.
+    # Keys by device name rather than a stable hardware UID because PortAudio provides
+    # no persistent device UID. Swift equivalent keys by CoreAudio UID (stable across
+    # sessions and renames). Python uses device name as a best-effort substitute.
+    _DEVICE_MAP_KEY = "deviceCalibrationMap"
 
     @classmethod
     def _s(cls):

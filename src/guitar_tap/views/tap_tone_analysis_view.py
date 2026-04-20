@@ -357,10 +357,33 @@ class MainWindow(QtWidgets.QMainWindow):
         from _version import __version_string__
         self.setWindowTitle(f"Guitar Tap {__version_string__}")
 
-        # Menu bar — Help menu
+        # Menu bar
+        #
+        # Python intentionally implements only a Help menu here. Swift's full
+        # macOS menu bar is built via AppCommands (GuitarTapApp.swift) using
+        # SwiftUI's declarative CommandGroup API, which inserts items into the
+        # App, File, View, Edit, and Help menus via the native macOS menu system.
+        #
+        # Swift AppCommands shortcuts and their Python equivalents:
+        #   ⌘,  Settings          → toolbar Settings button
+        #   ⌘S  Save Measurement  → toolbar Save button
+        #   ⌘E  Export Spectrum   → toolbar Export button
+        #   ⇧⌘E Export PDF        → toolbar Export PDF button
+        #   ⌘0  Auto dB           → spectrum plot right-click context menu
+        #   ⌘`  Cycle Annotations → spectrum plot right-click context menu
+        #   ⌘M  Show Metrics      → toolbar Metrics button
+        #   ⌘L  Show Measurements → toolbar Measurements button
+        #   ⌘?  Help              → Help menu below (Cmd+? on macOS, F1 on Win/Linux)
+        #
+        # This is a deliberate design choice: the Python version is cross-platform
+        # and toolbar-centric. Qt renders the menu bar natively per platform
+        # (top-of-screen on macOS, inside the window on Windows/Linux) with no
+        # extra code required.
         help_menu = self.menuBar().addMenu("Help")
         help_action = QtGui.QAction("Guitar Tap Help", self)
-        help_action.setShortcut(QtGui.QKeySequence("Ctrl+?"))
+        help_action.setShortcut(
+            QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.HelpContents)
+        )
         help_action.triggered.connect(self._show_help)
         help_menu.addAction(help_action)
 
