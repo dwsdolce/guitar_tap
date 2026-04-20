@@ -153,7 +153,7 @@ class _PeakRow(QtWidgets.QFrame):
         row1.addWidget(mode_lbl)
         row1.addStretch()
 
-        freq_lbl = QtWidgets.QLabel(f"{peak.frequency:.2f} Hz")
+        freq_lbl = QtWidgets.QLabel(f"{peak.frequency:.1f} Hz")
         freq_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
         row1.addWidget(freq_lbl)
         info_col.addLayout(row1)
