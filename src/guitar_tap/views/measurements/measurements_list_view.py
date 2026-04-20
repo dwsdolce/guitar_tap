@@ -52,7 +52,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self.setMinimumSize(520, 340)
 
         self._compare_mode: bool = False
-        self._compare_ids: set[str] = set()
+        self._compare_indices: set[int] = set()  # mirrors Swift selectedCompareIndices: Set<Int>
 
         self._build_ui()
         self._rebuild_list()
@@ -152,9 +152,9 @@ class MeasurementsDialog(QtWidgets.QDialog):
         # Done ↔ Cancel
         self._done_btn.setText("Cancel" if self._compare_mode else "Done")
 
-        for m in self._measurements:
+        for idx, m in enumerate(self._measurements):
             eligible = m.spectrum_snapshot is not None
-            selected = m.id in self._compare_ids
+            selected = idx in self._compare_indices  # index-based, mirrors Swift selectedCompareIndices
 
             item = QtWidgets.QListWidgetItem()
             row = MeasurementRowView(
@@ -172,10 +172,11 @@ class MeasurementsDialog(QtWidgets.QDialog):
             self._list.setItemWidget(item, row)
 
             if self._compare_mode:
-                # Row click toggles selection in _compare_ids then rebuilds.
-                m_captured = m
+                # Row click toggles selection by index, then rebuilds.
+                # Using index (not m.id) so duplicate-imported measurements each
+                # have an independent selection state — mirrors Swift toggleCompareSelection(at:for:).
                 row.clicked.connect(
-                    lambda checked=False, m=m_captured: self._toggle_compare(m)
+                    lambda checked=False, i=idx, meas=m: self._toggle_compare(i, meas)
                 )
             else:
                 # Full-row click opens details (matches .contentShape(Rectangle()) in Swift)
@@ -188,7 +189,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
     def _update_compare_btn(self) -> None:
         if self._compare_mode:
-            count = len(self._compare_ids)
+            count = len(self._compare_indices)
             self._compare_btn.setText(f"Compare ({count})")
             self._compare_btn.setEnabled(count >= 2)
         else:
@@ -207,37 +208,46 @@ class MeasurementsDialog(QtWidgets.QDialog):
         else:
             # Enter compare mode
             self._compare_mode = True
-            self._compare_ids.clear()
+            self._compare_indices.clear()
             self._rebuild_list()
 
-    def _toggle_compare(self, m: "TapToneMeasurement") -> None:
+    def _toggle_compare(self, index: int, m: "TapToneMeasurement") -> None:
+        """Toggle the measurement at *index* in/out of the comparison set.
+
+        Uses the list index (not m.id) so that duplicate-imported measurements
+        — which share the same UUID — each have an independent selection state.
+        Mirrors Swift toggleCompareSelection(at:for:).
+        """
         if m.spectrum_snapshot is None:
             return
-        if m.id in self._compare_ids:
-            self._compare_ids.discard(m.id)
+        if index in self._compare_indices:
+            self._compare_indices.discard(index)
         else:
-            self._compare_ids.add(m.id)
+            self._compare_indices.add(index)
         self._update_compare_btn()
         self._rebuild_list()
 
     def _open_comparison(self) -> None:
         """Emit comparisonRequested and close — mirrors the loadComparison() call path in Swift.
 
-        Only measurements with a spectrum_snapshot are included (mirrors the
-        `filter { $0.spectrumSnapshot != nil }` guard in loadComparison()).
+        Resolves selected indices to measurements in list order, then filters to
+        those with a spectrum_snapshot — mirrors selectedCompareMeasurements + the
+        `filter { $0.spectrumSnapshot != nil }` guard in loadComparison().
         """
-        selected = [m for m in self._measurements if m.id in self._compare_ids]
-        with_snapshots = [m for m in selected if m.spectrum_snapshot is not None]
-        if len(with_snapshots) < 2:
+        selected = [
+            m for idx, m in enumerate(self._measurements)
+            if idx in self._compare_indices and m.spectrum_snapshot is not None
+        ]
+        if len(selected) < 2:
             return
-        self.comparisonRequested.emit(with_snapshots)
+        self.comparisonRequested.emit(selected)
         self.accept()
 
     def _on_done(self) -> None:
         if self._compare_mode:
             # Cancel compare mode
             self._compare_mode = False
-            self._compare_ids.clear()
+            self._compare_indices.clear()
             self._rebuild_list()
         else:
             self.accept()
@@ -381,7 +391,13 @@ class MeasurementsDialog(QtWidgets.QDialog):
         # This mirrors Swift's deleteMeasurement(at:) approach: duplicate imports share
         # the same id, so only the specific entry at `index` should be removed.
         self._analyzer.delete_measurement(index)
-        self._compare_ids.discard(m.id)
+        # Remove the deleted index and shift down any higher indices so the set
+        # stays consistent with the new array positions after deletion.
+        self._compare_indices = {
+            i - 1 if i > index else i
+            for i in self._compare_indices
+            if i != index
+        }
 
     def _on_delete_all(self) -> None:
         if not self._measurements:
@@ -398,7 +414,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         box.exec()
         if box.clickedButton() != delete_btn:
             return
-        self._compare_ids.clear()
+        self._compare_indices.clear()
         self._analyzer.delete_all_measurements()
 
     def _on_import(self) -> None:

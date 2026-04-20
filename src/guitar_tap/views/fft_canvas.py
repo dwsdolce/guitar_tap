@@ -1389,17 +1389,21 @@ class FftCanvas(pg.PlotWidget):
         self.line_tap_threshold.setVisible(showing)
         self.line_reset_threshold.setVisible(showing)
 
-        if is_comparing and self.analyzer._comparison_data:
-            # Apply axis ranges derived from the comparison snapshots.
-            all_freqs = [d["freqs"] for d in self.analyzer._comparison_data if len(d["freqs"]) > 0]
-            all_mags  = [d["mags"]  for d in self.analyzer._comparison_data if len(d["mags"])  > 0]
-            if all_freqs and all_mags:
-                import numpy as _np
-                min_freq = int(min(_np.min(f) for f in all_freqs))
-                max_freq = int(max(_np.max(f) for f in all_freqs))
-                min_db   = float(min(_np.min(m) for m in all_mags))
-                max_db   = float(max(_np.max(m) for m in all_mags))
-                self.setXRange(min_freq, max_freq, padding=0)
+        if is_comparing:
+            # Apply axis ranges from the saved snapshot display bounds — mirrors Swift
+            # loadComparison(measurements:) which computes the union of each snapshot's
+            # minFreq/maxFreq/minDB/maxDB and publishes it via setLoadedAxisRange.
+            #
+            # Do NOT derive ranges from np.min/max of the raw frequency/magnitude arrays:
+            # that gives the full FFT extent (e.g. 0–5000 Hz) rather than the display
+            # window that was active when each measurement was captured.
+            snaps = self.analyzer.loaded_comparison_snapshots()
+            if snaps:
+                min_freq = int(min(s.min_freq for s in snaps))
+                max_freq = int(max(s.max_freq for s in snaps))
+                min_db   = float(min(s.min_db   for s in snaps))
+                max_db   = float(max(s.max_db   for s in snaps))
+                self.update_axis(min_freq, max_freq)
                 self.setYRange(min_db, max_db, padding=0)
 
         self.comparisonChanged.emit(is_comparing)

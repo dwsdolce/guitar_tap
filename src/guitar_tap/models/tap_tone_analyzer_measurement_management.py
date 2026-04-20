@@ -740,17 +740,36 @@ class TapToneAnalyzerMeasurementManagementMixin:
         ]
 
         with_snapshots = [m for m in measurements if m.spectrum_snapshot is not None]
+
+        # Build base labels then disambiguate duplicates so the legend is unambiguous.
+        # Two measurements with the same tap_location (or both without one) would
+        # otherwise produce identical legend entries.  Mirrors the duplicate-label
+        # disambiguation added to Swift loadComparison(measurements:).
+        base_labels = [self._comparison_label(m) for m in with_snapshots]
+        label_counts: dict[str, int] = {}
+        label_occurrence: dict[str, int] = {}
+        for lbl in base_labels:
+            label_counts[lbl] = label_counts.get(lbl, 0) + 1
+        unique_labels: list[str] = []
+        for lbl in base_labels:
+            if label_counts[lbl] > 1:
+                label_occurrence[lbl] = label_occurrence.get(lbl, 0) + 1
+                unique_labels.append(f"{lbl} ({label_occurrence[lbl]})")
+            else:
+                unique_labels.append(lbl)
+
         result = []
         for idx, m in enumerate(with_snapshots):
             snap = m.spectrum_snapshot
             color = _PALETTE[idx % len(_PALETTE)]
             freq_arr = np.array(snap.frequencies, dtype=np.float64)
             mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
-            label = self._comparison_label(m)
+            label = unique_labels[idx]
             self.comparison_labels.append((label, color))
             self._comparison_data.append({
                 "label": label, "color": color,
                 "freqs": freq_arr, "mags": mag_arr,
+                "snapshot": snap,   # stored so loaded_comparison_snapshots() can read display bounds
             })
             result.append((label, color, freq_arr, mag_arr))
 
@@ -779,6 +798,15 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.comparison_labels.clear()
         if was_comparing:
             self.comparisonChanged.emit(False)
+
+    def loaded_comparison_snapshots(self) -> list:
+        """Return the SpectrumSnapshot for each loaded comparison measurement.
+
+        Used by FftCanvas to read the saved display bounds (min_freq, max_freq,
+        min_db, max_db) so the axis is set to the union of the snapshots' display
+        windows — mirroring Swift setLoadedAxisRange in loadComparison(measurements:).
+        """
+        return [d["snapshot"] for d in self._comparison_data if d.get("snapshot") is not None]
 
     @staticmethod
     def _comparison_label(m) -> str:
