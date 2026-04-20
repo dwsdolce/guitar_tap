@@ -43,6 +43,89 @@ def _now_iso() -> str:
 
 
 @dataclass
+class ComparisonEntry:
+    """A single spectrum entry within a saved comparison measurement.
+
+    Stores everything needed to restore one overlay in a comparison chart:
+    the full spectrum snapshot, selected peaks, guitar type, display label,
+    and chart color (as RGBA components, since Color is not serialisable).
+
+    Mirrors Swift ComparisonEntry struct (TapToneMeasurement.swift).
+
+    JSON key mapping (camelCase, matching Swift CodingKeys):
+      id, label, colorComponents, snapshot, peaks, guitarType, sourceMeasurementID
+    """
+
+    # Stable unique identifier for this entry.
+    # Mirrors Swift ComparisonEntry.id (UUID).
+    id: str
+
+    # Display label for this spectrum (e.g. "Bridge", "Bridge (2)").
+    # Mirrors Swift ComparisonEntry.label.
+    label: str
+
+    # Chart color stored as [red, green, blue, alpha], each 0.0–1.0.
+    # Color is not serialisable; the fixed comparison palette makes this round-trip exact.
+    # Mirrors Swift ComparisonEntry.colorComponents ([Double]).
+    color_components: list[float]
+
+    # Full spectrum snapshot providing magnitudes, frequencies, and axis ranges.
+    # Mirrors Swift ComparisonEntry.snapshot (SpectrumSnapshot).
+    snapshot: SpectrumSnapshot
+
+    # Selected peaks for this measurement at save time.
+    # Mirrors Swift ComparisonEntry.peaks ([ResonantPeak]).
+    peaks: list[ResonantPeak]
+
+    # Guitar type active when the source measurement was recorded, used for mode classification.
+    # Stored as raw string in Python; Swift uses GuitarType enum.
+    # Mirrors Swift ComparisonEntry.guitarType (GuitarType?).
+    guitar_type: str | None = None
+
+    # UUID of the source TapToneMeasurement this entry was created from, if available.
+    # Mirrors Swift ComparisonEntry.sourceMeasurementID (UUID?).
+    source_measurement_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Encode as a JSON-compatible dict using Swift camelCase field names.
+
+        Mirrors Swift ComparisonEntry's synthesized Codable encode(to:).
+        Python-only — Swift uses synthesized Codable.
+        """
+        d: dict[str, Any] = {
+            "id": self.id,
+            "label": self.label,
+            "colorComponents": self.color_components,
+            "snapshot": self.snapshot.to_dict(),
+            "peaks": [p.to_dict() for p in self.peaks],
+        }
+        if self.guitar_type is not None:
+            d["guitarType"] = self.guitar_type
+        if self.source_measurement_id is not None:
+            d["sourceMeasurementID"] = self.source_measurement_id
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ComparisonEntry":
+        """Decode a Swift-format ComparisonEntry JSON object.
+
+        Python-only — Swift uses synthesized Codable.
+        """
+        snap_d = d.get("snapshot", {})
+        snapshot = SpectrumSnapshot.from_dict(snap_d)
+        peaks = [ResonantPeak.from_dict(p) for p in d.get("peaks", [])]
+        return cls(
+            id=d.get("id", str(uuid.uuid4())),
+            label=d.get("label", ""),
+            color_components=d.get("colorComponents", [0.0, 0.0, 1.0, 1.0]),
+            snapshot=snapshot,
+            peaks=peaks,
+            guitar_type=d.get("guitarType"),
+            source_measurement_id=d.get("sourceMeasurementID"),
+        )
+
+
+@dataclass
 class TapToneMeasurement:
     """A complete record of a tap-tone measurement session, including spectrum data, peaks,
     display state, and all analysis settings active at the time of capture.
@@ -211,7 +294,23 @@ class TapToneMeasurement:
     measurement_type: str | None = None
     guitar_type: str | None = None
 
+    # MARK: - Comparison Record
+
+    # When non-None, this measurement is a saved comparison record rather than a single tap.
+    # Each entry holds the full spectrum data for one overlaid spectrum in the comparison.
+    # Additive and backward-compatible: existing measurements decode with None and are unaffected.
+    # Mirrors Swift TapToneMeasurement.comparisonEntries ([ComparisonEntry]?).
+    comparison_entries: list[ComparisonEntry] | None = None
+
     # MARK: - Computed Properties
+
+    @property
+    def is_comparison(self) -> bool:
+        """True when this measurement is a saved comparison record.
+
+        Mirrors Swift TapToneMeasurement.isComparison.
+        """
+        return self.comparison_entries is not None
 
     @property
     def tap_tone_ratio(self) -> float | None:
@@ -412,6 +511,11 @@ class TapToneMeasurement:
         # whatever is already stored in peak.mode_label.
         d["peaks"] = [p.to_dict() for p in self.peaks]
 
+        # Comparison entries — omitted (encodeIfPresent) when None.
+        # Mirrors Swift TapToneMeasurement.encode(to:) comparisonEntries.
+        if self.comparison_entries is not None:
+            d["comparisonEntries"] = [e.to_dict() for e in self.comparison_entries]
+
         return d
 
     @staticmethod
@@ -475,6 +579,14 @@ class TapToneMeasurement:
                         overrides[str(uid)] = label
             peak_mode_overrides = overrides if overrides else None
 
+        # Comparison entries — None when absent (backward-compatible).
+        comp_entries_raw = d.get("comparisonEntries")
+        comparison_entries = (
+            [ComparisonEntry.from_dict(e) for e in comp_entries_raw]
+            if comp_entries_raw is not None
+            else None
+        )
+
         return TapToneMeasurement(
             id=d.get("id", str(uuid.uuid4())),
             timestamp=d.get("timestamp", _now_iso()),
@@ -503,6 +615,7 @@ class TapToneMeasurement:
             calibration_name=d.get("calibrationName"),
             measurement_type=d.get("measurementType"),
             guitar_type=d.get("guitarType"),
+            comparison_entries=comparison_entries,
         )
 
     @staticmethod
@@ -532,6 +645,7 @@ class TapToneMeasurement:
         calibration_name: str | None = None,
         measurement_type: str | None = None,
         guitar_type: str | None = None,
+        comparison_entries: list[ComparisonEntry] | None = None,
     ) -> "TapToneMeasurement":
         """Factory method — creates a new measurement with a fresh UUID and current timestamp.
 
@@ -570,4 +684,5 @@ class TapToneMeasurement:
             calibration_name=calibration_name,
             measurement_type=measurement_type,
             guitar_type=guitar_type,
+            comparison_entries=comparison_entries,
         )

@@ -579,6 +579,134 @@ class TestWithMethod:
 
 
 # ---------------------------------------------------------------------------
+# ComparisonEntry and TapToneMeasurement with comparisonEntries (Phase 2)
+# Mirrors Swift ComparisonEntryCodableTests
+# ---------------------------------------------------------------------------
+
+class TestComparisonEntryCodable:
+    """JSON round-trip tests for ComparisonEntry and TapToneMeasurement.comparisonEntries.
+
+    Mirrors Swift ComparisonEntryCodableTests.
+    """
+
+    def _make_entry(
+        self,
+        label: str = "Bridge",
+        guitar_type: str | None = "Classical",
+    ):
+        """Create a minimal ComparisonEntry for testing."""
+        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+        snap = _make_snapshot()
+        peak = _make_peak()
+        return ComparisonEntry(
+            id=str(uuid.uuid4()),
+            label=label,
+            color_components=[0.2, 0.4, 0.8, 1.0],
+            snapshot=snap,
+            peaks=[peak],
+            guitar_type=guitar_type,
+            source_measurement_id=None,
+        )
+
+    def test_comparison_entry_to_dict_has_required_keys(self):
+        """ComparisonEntry.to_dict() should include id, label, colorComponents, snapshot, peaks."""
+        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+        entry = self._make_entry()
+        d = entry.to_dict()
+        assert "id" in d
+        assert "label" in d
+        assert "colorComponents" in d
+        assert "snapshot" in d
+        assert "peaks" in d
+
+    def test_comparison_entry_round_trip_preserves_id(self):
+        """ComparisonEntry id survives to_dict() / from_dict() round-trip."""
+        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+        entry = self._make_entry()
+        restored = ComparisonEntry.from_dict(entry.to_dict())
+        assert restored.id == entry.id
+
+    def test_comparison_entry_round_trip_preserves_label(self):
+        """ComparisonEntry label survives round-trip."""
+        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+        entry = self._make_entry(label="Neck Joint")
+        restored = ComparisonEntry.from_dict(entry.to_dict())
+        assert restored.label == "Neck Joint"
+
+    def test_comparison_entry_round_trip_preserves_color_components(self):
+        """color_components [r,g,b,a] survive round-trip."""
+        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+        entry = self._make_entry()
+        restored = ComparisonEntry.from_dict(entry.to_dict())
+        for orig, rt in zip(entry.color_components, restored.color_components):
+            assert abs(orig - rt) < 1e-9
+
+    def test_comparison_entry_round_trip_preserves_guitar_type(self):
+        """guitar_type string survives round-trip."""
+        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+        entry = self._make_entry(guitar_type="Acoustic")
+        restored = ComparisonEntry.from_dict(entry.to_dict())
+        assert restored.guitar_type == "Acoustic"
+
+    def test_comparison_entry_none_guitar_type_omitted_from_dict(self):
+        """guitar_type=None should not write the 'guitarType' key to the dict."""
+        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+        entry = self._make_entry(guitar_type=None)
+        d = entry.to_dict()
+        assert "guitarType" not in d
+
+    def test_comparison_entry_round_trip_preserves_peak_count(self):
+        """Peak list length is preserved through round-trip."""
+        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+        snap = _make_snapshot()
+        peaks = [_make_peak(freq=100.0 + i * 50.0) for i in range(3)]
+        entry = ComparisonEntry(
+            id=str(uuid.uuid4()), label="Multi",
+            color_components=[0.0, 0.0, 1.0, 1.0],
+            snapshot=snap, peaks=peaks, guitar_type="Classical",
+            source_measurement_id=None,
+        )
+        restored = ComparisonEntry.from_dict(entry.to_dict())
+        assert len(restored.peaks) == 3
+
+    def test_tap_tone_measurement_round_trip_with_comparison_entries(self):
+        """A TapToneMeasurement with comparisonEntries serialises and deserialises correctly."""
+        entry1 = self._make_entry(label="Bridge")
+        entry2 = self._make_entry(label="Neck")
+        m = TapToneMeasurement.create(
+            peaks=[],
+            tap_location="My Comparison",
+            comparison_entries=[entry1, entry2],
+        )
+        restored = _round_trip(m)
+        assert restored.is_comparison
+        assert restored.comparison_entries is not None
+        assert len(restored.comparison_entries) == 2
+        labels = [e.label for e in restored.comparison_entries]
+        assert "Bridge" in labels
+        assert "Neck" in labels
+
+    def test_measurement_without_comparison_entries_has_none(self):
+        """A regular measurement (no comparisonEntries key in JSON) decodes with None."""
+        m = TapToneMeasurement.create(peaks=[])
+        d = m.to_dict()
+        assert "comparisonEntries" not in d
+        restored = TapToneMeasurement.from_dict(d)
+        assert restored.comparison_entries is None
+        assert not restored.is_comparison
+
+    def test_is_comparison_property_true_for_comparison_record(self):
+        """is_comparison returns True when comparison_entries is not None."""
+        m = TapToneMeasurement.create(peaks=[], comparison_entries=[self._make_entry()])
+        assert m.is_comparison
+
+    def test_is_comparison_property_false_for_regular_measurement(self):
+        """is_comparison returns False for a regular tap measurement."""
+        m = TapToneMeasurement.create(peaks=[])
+        assert not m.is_comparison
+
+
+# ---------------------------------------------------------------------------
 # Fixture loading (skipped if file not present)
 # ---------------------------------------------------------------------------
 

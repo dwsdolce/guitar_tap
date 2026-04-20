@@ -357,6 +357,14 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         print("🔄 Loading measurement...")
 
+        # ── Comparison record early return ────────────────────────────────────
+        # Mirrors Swift loadMeasurement(_:) early-return path for comparison records.
+        # If this is a saved comparison, restore it directly and skip all single-
+        # measurement logic below.
+        if measurement.is_comparison:
+            self._restore_comparison_from_entries(measurement)
+            return
+
         # ── Exit comparison mode, enter frozen mode ───────────────────────────
         # Mirrors Swift: comparisonSpectra = []; displayMode = .frozen
         self.clear_comparison()
@@ -765,13 +773,24 @@ class TapToneAnalyzerMeasurementManagementMixin:
             freq_arr = np.array(snap.frequencies, dtype=np.float64)
             mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
             label = unique_labels[idx]
+            # Filter to selected peaks only (mirrors Swift loadComparison selectedPeakIDs logic).
+            selected_ids: set = set(m.selected_peak_ids or [p.id for p in (m.peaks or [])])
+            selected_peaks = [p for p in (m.peaks or []) if p.id in selected_ids]
             self.comparison_labels.append((label, color))
             self._comparison_data.append({
                 "label": label, "color": color,
                 "freqs": freq_arr, "mags": mag_arr,
-                "snapshot": snap,   # stored so loaded_comparison_snapshots() can read display bounds
+                "snapshot": snap,
+                "peaks": selected_peaks,
+                "guitar_type": snap.guitar_type,
             })
+            self.comparison_snapshots.append(snap)   # mirrors Swift comparisonSnapshots = spectraAndSnapshots.map(\.snapshot)
             result.append((label, color, freq_arr, mag_arr))
+
+        # Clear chart title to "New" for a live comparison (mirrors Swift loadComparison
+        # setting loadedMeasurementName = nil after building comparisonSpectra).
+        self.loaded_measurement_name = None
+        self.loadedMeasurementNameChanged.emit(None)
 
         if with_snapshots:
             snaps = [m.spectrum_snapshot for m in with_snapshots]
@@ -796,17 +815,113 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self._display_mode = AnalysisDisplayMode.LIVE
         self._comparison_data.clear()
         self.comparison_labels.clear()
+        self.comparison_snapshots.clear()   # mirrors Swift clearComparison: comparisonSnapshots = []
         if was_comparing:
             self.comparisonChanged.emit(False)
 
+    def save_comparison(
+        self,
+        tap_location: "str | None" = None,
+        notes: "str | None" = None,
+    ) -> None:
+        """Save the current live comparison as a TapToneMeasurement with comparisonEntries.
+
+        Creates a new TapToneMeasurement whose comparisonEntries hold a snapshot of the
+        current comparison data, then appends it to savedMeasurements and persists.
+
+        Mirrors Swift TapToneAnalyzer.saveComparison(tapLocation:notes:)
+        (TapToneAnalyzer+MeasurementManagement.swift).
+        """
+        import uuid as _uuid
+        from .tap_tone_measurement import TapToneMeasurement, ComparisonEntry
+
+        if not self._comparison_data:
+            return
+
+        entries: list = []
+        for entry in self._comparison_data:
+            r, g, b = entry["color"]
+            color_components = [r / 255.0, g / 255.0, b / 255.0, 1.0]
+            ce = ComparisonEntry(
+                id=str(_uuid.uuid4()),
+                label=entry["label"],
+                color_components=color_components,
+                snapshot=entry["snapshot"],
+                peaks=entry.get("peaks", []),
+                guitar_type=entry.get("guitar_type"),
+                source_measurement_id=None,
+            )
+            entries.append(ce)
+
+        m = TapToneMeasurement.create(
+            peaks=[],
+            tap_location=tap_location,
+            notes=notes,
+            comparison_entries=entries,
+        )
+        self.savedMeasurements.append(m)
+        self._persist_measurements()
+
+    def _restore_comparison_from_entries(self, measurement) -> None:
+        """Restore comparison state from a saved comparison record's comparisonEntries.
+
+        Called from _load_measurement_body() when the measurement is a comparison record
+        (measurement.is_comparison is True).  Reconstructs _comparison_data and sets
+        display mode to COMPARISON, mirroring Swift's loadMeasurement comparison path.
+
+        Mirrors Swift TapToneAnalyzer._restoreComparisonFromEntries(_:)
+        (TapToneAnalyzer+MeasurementManagement.swift).
+        """
+        import numpy as np
+
+        entries = measurement.comparison_entries
+        self._comparison_data.clear()
+        self.comparison_labels.clear()
+        self.comparison_snapshots.clear()   # mirrors Swift loadMeasurement: comparisonSnapshots = entries.map(\.snapshot)
+
+        for entry in entries:
+            comps = (entry.color_components + [1.0])[:4]
+            r, g, b, _a = comps
+            color = (int(r * 255), int(g * 255), int(b * 255))
+            snap = entry.snapshot
+            freq_arr = np.array(snap.frequencies, dtype=np.float64)
+            mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
+            self._comparison_data.append({
+                "label": entry.label,
+                "color": color,
+                "freqs": freq_arr,
+                "mags":  mag_arr,
+                "snapshot": snap,
+                "peaks": entry.peaks,
+                "guitar_type": entry.guitar_type,
+            })
+            self.comparison_labels.append((entry.label, color))
+            self.comparison_snapshots.append(snap)
+
+        # Restore union axis bounds from saved snapshot ranges.
+        snaps = [e.snapshot for e in entries]
+        if snaps:
+            min_f = min(s.min_freq for s in snaps)
+            max_f = max(s.max_freq for s in snaps)
+            self.update_axis(int(min_f), int(max_f))
+
+        _name = measurement.tap_location
+        self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)
+        self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
+        self._display_mode = AnalysisDisplayMode.COMPARISON
+        self.comparisonChanged.emit(True)
+
     def loaded_comparison_snapshots(self) -> list:
-        """Return the SpectrumSnapshot for each loaded comparison measurement.
+        """Return the SpectrumSnapshot for each loaded comparison spectrum.
+
+        Mirrors Swift TapToneAnalyzer.comparisonSnapshots — the parallel array
+        kept in sync with comparisonSpectra (_comparison_data).
 
         Used by FftCanvas to read the saved display bounds (min_freq, max_freq,
         min_db, max_db) so the axis is set to the union of the snapshots' display
-        windows — mirroring Swift setLoadedAxisRange in loadComparison(measurements:).
+        windows.
         """
-        return [d["snapshot"] for d in self._comparison_data if d.get("snapshot") is not None]
+        return list(self.comparison_snapshots)
 
     @staticmethod
     def _comparison_label(m) -> str:

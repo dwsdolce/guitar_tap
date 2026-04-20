@@ -831,7 +831,7 @@ class FftCanvas(pg.PlotWidget):
         # when isMeasurementComplete || !materialSpectra.isEmpty.
         has_material_curves = bool(self._comparison_curves)
 
-        if self.is_comparing or (has_material_curves and not self.is_measurement_complete):
+        if (self.is_comparing or (has_material_curves and not self.is_measurement_complete)) and self._comparison_curves:
             # Snap to the nearest comparison/material curve by screen-Y distance (mirrors
             # Swift's nearestSeriesIndex() with curveGravityThreshold = 12 pt).
             best_idx   = getattr(self, "_locked_series_index", 0)
@@ -1311,10 +1311,29 @@ class FftCanvas(pg.PlotWidget):
         """
         self.clear_comparison()
 
-        # Delegate to analyzer — get back the curve data
-        curve_data = self.analyzer.load_comparison(measurements)
+        # Delegate to analyzer — populates _comparison_data / comparison_labels
+        self.analyzer.load_comparison(measurements)
 
-        for label, color, freq_arr, mag_arr in curve_data:
+        # Render the curves from analyzer state (shared with the restore path).
+        self._render_comparison_curves()
+
+        # comparisonChanged (and therefore _on_comparison_changed_from_analyzer)
+        # was already emitted by analyzer.load_comparison — visibility and axis
+        # ranges are applied there.
+
+    def _render_comparison_curves(self) -> None:
+        """Create PlotDataItem curves and legend from analyzer._comparison_data.
+
+        Called both by load_comparison() (live path) and by
+        _on_comparison_changed_from_analyzer() when curves are absent (restore path).
+        Assumes _comparison_curves is empty; callers must call clear_comparison() first
+        if needed.
+        """
+        for entry in self.analyzer._comparison_data:
+            label    = entry["label"]
+            color    = entry["color"]
+            freq_arr = entry["freqs"]
+            mag_arr  = entry["mags"]
             curve = pg.PlotDataItem(
                 freq_arr, mag_arr,
                 pen=pg.mkPen(color, width=1.5),
@@ -1323,7 +1342,7 @@ class FftCanvas(pg.PlotWidget):
             self.addItem(curve)
             self._comparison_curves.append(curve)
 
-        if curve_data:
+        if self._comparison_curves:
             # Legend — horizontal overlay, top-right
             legend = QtWidgets.QWidget(self)
             legend.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -1350,14 +1369,11 @@ class FftCanvas(pg.PlotWidget):
             self._comparison_legend = legend
             self._reposition_comparison_legend()
 
-        # Clear the main spectrum line — only the comparison curves should be visible.
+        # Clear the main spectrum line — only comparison curves should be visible.
         self.fft_line.setData([], [])
         self.points.setData(x=[], y=[])
 
         self._locked_series_index = 0
-        # comparisonChanged (and therefore _on_comparison_changed_from_analyzer)
-        # was already emitted by analyzer.load_comparison — visibility and axis
-        # ranges are applied there.
 
     def clear_comparison(self) -> None:
         """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
@@ -1390,6 +1406,12 @@ class FftCanvas(pg.PlotWidget):
         self.line_reset_threshold.setVisible(showing)
 
         if is_comparing:
+            # On the restore path (loading a saved comparison record), the analyzer
+            # has populated _comparison_data but the canvas has no curves yet.
+            # Render them now before updating the axis or emitting outward.
+            if not self._comparison_curves and self.analyzer._comparison_data:
+                self._render_comparison_curves()
+
             # Apply axis ranges from the saved snapshot display bounds — mirrors Swift
             # loadComparison(measurements:) which computes the union of each snapshot's
             # minFreq/maxFreq/minDB/maxDB and publishes it via setLoadedAxisRange.

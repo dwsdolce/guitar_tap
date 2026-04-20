@@ -332,6 +332,7 @@ class TapToneAnalyzer(
         # ── Comparison overlay data ───────────────────────────────────────
         self.comparison_labels: list = []
         self._comparison_data: list = []
+        self.comparison_snapshots: list = []   # parallel to _comparison_data — mirrors Swift comparisonSnapshots
 
         # ── Plate/brace phase state ───────────────────────────────────────
         self.material_tap_phase: "_MTP" = _MTP.NOT_STARTED

@@ -181,10 +181,23 @@ class TestSpectrumCapturePhaseSlots:
         return sut
 
     def test_do_start_cross_arms_cross_grain_detection(self):
-        """_do_start_cross (site 2) sets phase to CAPTURING_CROSS and enables detection."""
-        sut = self._make()
+        """Accepting REVIEWING_LONGITUDINAL sets phase to CAPTURING_CROSS and enables detection.
 
-        sut._do_start_cross()
+        The dedicated _do_start_cross slot was inlined into accept_current_phase().
+        The behaviour is unchanged: advancing from REVIEWING_LONGITUDINAL must set
+        CAPTURING_CROSS and arm tap detection.
+        """
+        import numpy as _np
+        # Use the bare 'models' import path to match the internal code's enum identity.
+        # The analyzer imports MaterialTapPhase as 'from models.material_tap_phase import ...'
+        # so we must use the same path to avoid the dual-import-path enum mismatch.
+        from models.material_tap_phase import MaterialTapPhase
+        sut = self._make()
+        # Seed a minimal frozen spectrum so accept_current_phase doesn't crash
+        sut.set_frozen_spectrum(_np.array([100.0]), _np.array([-40.0]))
+        sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_LONGITUDINAL)
+
+        sut.accept_current_phase()
 
         # Compare via .value to avoid enum identity issues from dual import paths.
         assert sut.material_tap_phase.value == "Capturing Cross-grain"

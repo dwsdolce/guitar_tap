@@ -382,7 +382,8 @@ class ExportableSpectrumChart:
                 if sf and sm:
                     sc = [max(self.min_db, min(self.max_db, v)) for v in sm]
                     color_key = series.get("color", "blue")
-                    rgb = _COLOR_MAP.get(color_key, (0, 122, 255))
+                    # color may be an (r,g,b) tuple (comparison path) or a string (plate/brace path)
+                    rgb = color_key if isinstance(color_key, tuple) else _COLOR_MAP.get(color_key, (0, 122, 255))
                     plot.plot(sf, sc, pen=pg.mkPen(rgb, width=2))
         else:
             # Mirrors: LineMark(...).foregroundStyle(.red)
@@ -959,7 +960,8 @@ def make_exportable_spectrum_view(
         painter.setFont(label_font)
         for series in material_spectra[:5]:
             color_key = series.get("color", "blue")
-            r, g, b = _LEG_COLOR_MAP.get(color_key, (0, 122, 255))
+            # color may be an (r,g,b) tuple (comparison path) or a string (plate/brace path)
+            r, g, b = color_key if isinstance(color_key, tuple) else _LEG_COLOR_MAP.get(color_key, (0, 122, 255))
             lbl = series.get("label", "?")
             painter.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)

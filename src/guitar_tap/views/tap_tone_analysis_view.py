@@ -35,6 +35,7 @@ import views.help_view as HD
 import views.utilities.gt_images as gt_i
 import views.fft_analysis_metrics_view as FMV
 from views.shared.loading_overlay import LoadingOverlay
+from views.comparison_results_view import ComparisonResultsView
 import qtawesome as qta
 
 # Package root: src/guitar_tap/views/ → src/guitar_tap/
@@ -827,12 +828,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addWidget(_hsep())
 
-        # Comparison mode placeholder — shown instead of peak list while comparing.
-        self._comparing_lbl = QtWidgets.QLabel()
-        self._comparing_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self._comparing_lbl.setStyleSheet("color: gray; font-size: 13px;")
-        self._comparing_lbl.setVisible(False)
-        vbox.addWidget(self._comparing_lbl, stretch=1)
+        # Comparison mode grid — replaces peak list while comparing.
+        # Shows Air / Top / Back frequencies per spectrum (mirrors Swift ComparisonResultsView).
+        self._comparison_results_view = ComparisonResultsView()
+        self._comparison_results_view.setVisible(False)
+        vbox.addWidget(self._comparison_results_view, stretch=1)
 
         # Peaks table — the main content for guitar mode
         self.peak_widget = PT.PeakListWidget()
@@ -3129,11 +3129,18 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_save_measurement(self) -> None:
         """Show save dialog then persist the measurement.
 
-        Mirrors Swift: the Save sheet receives tapLocation/notes as @Binding so it
-        edits the view's live state directly.  Here we pre-populate the dialog from
-        self._tap_location / self._notes and write back on accept, then clear them —
-        exactly as Swift clears tapLocation = "" / notes = "" after saveMeasurement().
+        In comparison mode, routes to save_comparison() instead of save_measurement().
+        Mirrors Swift: Save Comparison button calls saveComparison(tapLocation:notes:)
+        when displayMode == .comparison (TapToneAnalysisView+Export.swift).
+
+        For normal measurements mirrors Swift: the Save sheet receives tapLocation/notes
+        as @Binding so it edits the view's live state directly.  Here we pre-populate
+        the dialog from self._tap_location / self._notes and write back on accept, then
+        clear them — exactly as Swift clears tapLocation = "" / notes = "" after
+        saveMeasurement().
         """
+        is_comparing = self.fft_canvas.is_comparing
+
         dlg = SMD.SaveMeasurementDialog(self)
         # Pre-populate from live state (mirrors Swift @Binding to the view's @State vars)
         dlg.set_tap_location(self._tap_location)
@@ -3145,15 +3152,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tap_location = dlg.tap_location
         self._notes = dlg.notes
 
-        try:
-            self.save_measurement(
-                tap_location=self._tap_location,
-                notes=self._notes,
-            )
-        except OSError as exc:
-            QtWidgets.QMessageBox.warning(
-                self, "Save Error", f"Could not save measurement:\n{exc}"
-            )
+        if is_comparing:
+            # Route to save_comparison() — mirrors Swift saveComparison(tapLocation:notes:).
+            try:
+                self.fft_canvas.analyzer.save_comparison(
+                    tap_location=self._tap_location or None,
+                    notes=self._notes or None,
+                )
+            except OSError as exc:
+                QtWidgets.QMessageBox.warning(
+                    self, "Save Error", f"Could not save comparison:\n{exc}"
+                )
+        else:
+            try:
+                self.save_measurement(
+                    tap_location=self._tap_location,
+                    notes=self._notes,
+                )
+            except OSError as exc:
+                QtWidgets.QMessageBox.warning(
+                    self, "Save Error", f"Could not save measurement:\n{exc}"
+                )
 
         # Clear after saving — mirrors Swift: tapLocation = ""; notes = ""
         self._tap_location = ""
@@ -3189,9 +3208,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if is_comparing:
             self._sb_compare_msg.setText(f"Comparing {n} measurements")
 
-        # ── Analysis Results: show placeholder label ↔ peak list ─────────────
-        self._comparing_lbl.setVisible(is_comparing)
-        self._comparing_lbl.setText(f"Comparing {n} measurements")
+        # ── Analysis Results: show comparison grid ↔ peak list ───────────────
+        if is_comparing:
+            # Populate the Air/Top/Back grid from current comparison data.
+            self._comparison_results_view.set_comparison_data(
+                self.fft_canvas.analyzer._comparison_data
+            )
+        self._comparison_results_view.setVisible(is_comparing)
         self.peak_widget.setVisible(not is_comparing)
         # Scroll area (plate/brace) also hidden while comparing
         self._material_scroll.setVisible(not is_comparing)
@@ -3218,12 +3241,15 @@ class MainWindow(QtWidgets.QMainWindow):
         # in TapAnalysisResultsView.swift.
         # Export Spectrum remains visible and is enabled during comparison.
         if is_comparing:
-            self.save_measurement_btn.setEnabled(False)
+            # Save is enabled in comparison mode — routes to save_comparison().
+            # Mirrors Swift: Save Comparison button visible when displayMode == .comparison.
+            self.save_measurement_btn.setEnabled(True)
             self.export_spectrum_btn.setEnabled(True)
-            self.export_pdf_btn.setVisible(False)
-            self._menu_save_action.setEnabled(False)
+            self.export_pdf_btn.setVisible(True)
+            self.export_pdf_btn.setEnabled(True)
+            self._menu_save_action.setEnabled(True)
             self._menu_export_spectrum_action.setEnabled(True)
-            self._menu_export_pdf_action.setEnabled(False)
+            self._menu_export_pdf_action.setEnabled(True)
         else:
             self.save_measurement_btn.setEnabled(self._is_measurement_complete)
             self.export_spectrum_btn.setEnabled(self._is_measurement_complete)
@@ -3491,6 +3517,43 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loading_overlay.show_message("Exporting spectrum…")
         try:
             canvas = self.fft_canvas
+
+            # ── Comparison mode: render overlay chart from _comparison_data ───
+            if canvas.is_comparing:
+                from views.exportable_spectrum_chart import make_exportable_spectrum_view as _mev
+                analyzer = canvas.analyzer
+                comparison_spectra = []
+                for entry in analyzer._comparison_data:
+                    r, g, b = entry["color"]
+                    comparison_spectra.append({
+                        "frequencies": list(entry["freqs"]),
+                        "magnitudes":  list(entry["mags"]),
+                        "color": (r, g, b),
+                        "label": entry["label"],
+                    })
+                snaps = [e["snapshot"] for e in analyzer._comparison_data if e.get("snapshot")]
+                min_freq = float(min(s.min_freq for s in snaps)) if snaps else 50.0
+                max_freq = float(max(s.max_freq for s in snaps)) if snaps else 1000.0
+                min_db   = float(min(s.min_db   for s in snaps)) if snaps else -100.0
+                max_db   = float(max(s.max_db   for s in snaps)) if snaps else 0.0
+                _loc = (analyzer.loaded_measurement_name or self._tap_location or "").strip()
+                chart_title = f"Comparison \u2014 {_loc}" if _loc else "Comparison"
+                from datetime import datetime, timezone
+                date_label = datetime.now(timezone.utc).isoformat()
+                png_bytes = _mev(
+                    frequencies=[], magnitudes=[],
+                    min_freq=min_freq, max_freq=max_freq,
+                    min_db=min_db, max_db=max_db,
+                    peaks=[],
+                    material_spectra=comparison_spectra if comparison_spectra else None,
+                    chart_title=chart_title,
+                    date_label=date_label,
+                )
+                with open(path, "wb") as f:
+                    f.write(png_bytes)
+                return
+
+            # ── Single-spectrum path ──────────────────────────────────────────
             saved_freq = canvas.analyzer.frozen_frequencies
             freqs = saved_freq.tolist() if hasattr(saved_freq, "tolist") else list(saved_freq)
             mags  = (canvas.saved_mag_y_db.tolist()
@@ -3568,7 +3631,7 @@ class MainWindow(QtWidgets.QMainWindow):
             gt_str = _gt.value if _gt else None
 
             # Mirrors Swift: tap.loadedMeasurementName ?? "New" used in chart title.
-            _loaded_name = getattr(analyzer, "loaded_measurement_name", None)
+            _loaded_name = getattr(canvas.analyzer, "loaded_measurement_name", None)
             chart_title = f"FFT Peaks \u2014 {_loaded_name}" if _loaded_name else "FFT Peaks \u2014 New"
 
             # Read the actual Y axis range from the ViewBox — mirrors Swift's
@@ -3649,6 +3712,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_export_pdf(self) -> None:
         import time as _time
+
+        # In comparison mode route to the comparison PDF export path.
+        # Mirrors Swift exportComparisonPDFReport() called when displayMode == .comparison.
+        if self.fft_canvas.is_comparing:
+            self._on_export_comparison_pdf()
+            return
 
         suggested_name = f"report-{int(_time.time())}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
@@ -3930,6 +3999,115 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export PDF:\n{exc}"
+            )
+        finally:
+            self._loading_overlay.hide()
+
+    def _on_export_comparison_pdf(self) -> None:
+        """Export a comparison PDF report from the live comparison state.
+
+        Renders the current comparison overlay chart to PNG, builds
+        ComparisonPDFReportData from the live _comparison_data, then calls
+        export_comparison_pdf() to write the PDF.
+
+        Mirrors Swift exportComparisonPDFReport() in TapToneAnalysisView+Export.swift.
+        """
+        import time as _time
+
+        # Mirrors Swift: let label = tap.loadedMeasurementName ?? tapLocation
+        # basename is "report-<ts>" when label is empty, else "<label>-<ts>".
+        _label = (self.fft_canvas.analyzer.loaded_measurement_name or self._tap_location or "").strip()
+        suggested_name = (
+            (_label.replace(" ", "-").replace("/", "-").lower() + f"-{int(_time.time())}.pdf")
+            if _label
+            else f"report-{int(_time.time())}.pdf"
+        )
+        suggested_path = os.path.join(M.last_export_dir(), suggested_name)
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Comparison PDF Report",
+            suggested_path,
+            "PDF files (*.pdf)",
+        )
+        if not path:
+            return
+        if not path.endswith(".pdf"):
+            path += ".pdf"
+        M.update_export_dir(path)
+
+        self._loading_overlay.show_message("Generating comparison PDF report…")
+        try:
+            canvas   = self.fft_canvas
+            analyzer = canvas.analyzer
+
+            # Render the comparison overlay chart image from live comparison data.
+            from views.exportable_spectrum_chart import make_exportable_spectrum_view
+            import numpy as np
+            comparison_spectra = []
+            for entry in analyzer._comparison_data:
+                r, g, b = entry["color"]
+                comparison_spectra.append({
+                    "frequencies": list(entry["freqs"]),
+                    "magnitudes":  list(entry["mags"]),
+                    "color": (r, g, b),
+                    "label": entry["label"],
+                })
+
+            snaps = [e["snapshot"] for e in analyzer._comparison_data if e.get("snapshot")]
+            min_freq = float(min(s.min_freq for s in snaps)) if snaps else 50.0
+            max_freq = float(max(s.max_freq for s in snaps)) if snaps else 1000.0
+            min_db   = float(min(s.min_db   for s in snaps)) if snaps else -100.0
+            max_db   = float(max(s.max_db   for s in snaps)) if snaps else 0.0
+
+            loc = self._tap_location or None
+            if loc is None and analyzer.loaded_measurement_name:
+                loc = analyzer.loaded_measurement_name
+            chart_title = f"Comparison — {loc}" if loc else "Comparison"
+
+            png_data = make_exportable_spectrum_view(
+                frequencies=[], magnitudes=[],
+                min_freq=min_freq, max_freq=max_freq,
+                min_db=min_db,     max_db=max_db,
+                peaks=[],
+                material_spectra=comparison_spectra if comparison_spectra else None,
+                chart_title=chart_title,
+            )
+
+            # Build mode_frequencies list from live _comparison_data.
+            from models.guitar_mode import GuitarMode
+            from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
+
+            mode_frequencies = []
+            for entry in analyzer._comparison_data:
+                mode_freqs = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+                    entry.get("peaks", []), entry.get("guitar_type")
+                )
+                r, g, b = entry["color"]
+                mode_frequencies.append((
+                    entry["label"],
+                    (r, g, b),
+                    mode_freqs.get(GuitarMode.AIR),
+                    mode_freqs.get(GuitarMode.TOP),
+                    mode_freqs.get(GuitarMode.BACK),
+                ))
+
+            from datetime import datetime, timezone
+            timestamp = datetime.now(timezone.utc).isoformat()
+
+            report_data = M.ComparisonPDFReportData(
+                timestamp=timestamp,
+                comparison_label=loc,
+                notes=self._notes or None,
+                spectrum_image_data=png_data,
+                entries=[],   # entries not needed for live export (no saved ComparisonEntry objects)
+                mode_frequencies=mode_frequencies,
+            )
+
+            M.export_comparison_pdf(report_data, path)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Export Error", f"Could not export comparison PDF:\n{exc}"
             )
         finally:
             self._loading_overlay.hide()

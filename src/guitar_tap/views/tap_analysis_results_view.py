@@ -39,6 +39,10 @@ __all__ = [
     "PDFReportData",
     "measurements_file",
     "render_spectrum_image_for_measurement",
+    "render_spectrum_image_for_comparison",
+    "ComparisonPDFReportData",
+    "comparison_pdf_report_data_from_measurement",
+    "export_comparison_pdf",
     "default_export_dir",
     "last_export_dir",
     "update_export_dir",
@@ -1305,6 +1309,400 @@ def export_pdf(data: PDFReportData, output_path: str) -> None:
     story.append(footer_tbl)
 
     # ── Build PDF ─────────────────────────────────────────────────────────
+    frame = Frame(MARGIN, MARGIN, CONTENT_W, PAGE_H - 2 * MARGIN, id="main")
+    page_template = PageTemplate(id="letter", frames=[frame])
+    doc = BaseDocTemplate(
+        output_path,
+        pagesize=letter,
+        pageTemplates=[page_template],
+        leftMargin=MARGIN,
+        rightMargin=MARGIN,
+        topMargin=MARGIN,
+        bottomMargin=MARGIN,
+    )
+    doc.build(story)
+
+
+# ── Comparison Mode Support ────────────────────────────────────────────────────
+# The functions below mirror Swift's comparison export additions in Phase 2:
+#   - renderSpectrumImageForComparison  (ExportableSpectrumChart.swift)
+#   - ComparisonPDFReportData           (PDFReportGenerator.swift)
+#   - generateComparison / ComparisonPDFReportContentView (PDFReportGenerator.swift)
+#   - exportComparisonPDFReport         (TapToneAnalysisView+Export.swift)
+
+
+def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "bytes | None":
+    """Render the comparison overlay chart to PNG bytes for a saved comparison record.
+
+    Mirrors Swift renderSpectrumImageForComparison(_:) in ExportableSpectrumChart.swift.
+
+    Returns PNG bytes, or None if the measurement is not a comparison record or has
+    no entries.
+    """
+    from views.exportable_spectrum_chart import make_exportable_spectrum_view
+
+    if not measurement.is_comparison:
+        return None
+    entries = measurement.comparison_entries
+    if not entries:
+        return None
+
+    # Build comparison_spectra list matching the format expected by make_exportable_spectrum_view
+    # when passed as material_spectra (each with frequencies, magnitudes, color, label).
+    comparison_spectra = []
+    for entry in entries:
+        comps = (entry.color_components + [1.0])[:4]
+        r, g, b, _a = comps
+        # make_exportable_spectrum_view accepts color as an (r,g,b) tuple or named color string.
+        color = (int(r * 255), int(g * 255), int(b * 255))
+        comparison_spectra.append({
+            "frequencies": list(entry.snapshot.frequencies),
+            "magnitudes":  list(entry.snapshot.magnitudes),
+            "color": color,
+            "label": entry.label,
+        })
+
+    snaps = [e.snapshot for e in entries]
+    min_freq = float(min(s.min_freq for s in snaps))
+    max_freq = float(max(s.max_freq for s in snaps))
+    min_db   = float(min(s.min_db   for s in snaps))
+    max_db   = float(max(s.max_db   for s in snaps))
+
+    loc = measurement.tap_location
+    chart_title = f"Comparison — {loc}" if (loc and loc.strip()) else "Comparison"
+    date_label = str(measurement.timestamp) if measurement.timestamp else ""
+
+    return make_exportable_spectrum_view(
+        frequencies=[],
+        magnitudes=[],
+        min_freq=min_freq,
+        max_freq=max_freq,
+        min_db=min_db,
+        max_db=max_db,
+        peaks=[],
+        material_spectra=comparison_spectra,
+        date_label=date_label,
+        chart_title=chart_title,
+    )
+
+
+@dataclass
+class ComparisonPDFReportData:
+    """All data required to render a PDF comparison report.
+
+    Mirrors Swift ComparisonPDFReportData struct (PDFReportGenerator.swift).
+
+    Create from a saved comparison measurement with
+    comparison_pdf_report_data_from_measurement(), or from live comparison state
+    in tap_tone_analysis_view_export.py.
+    """
+
+    # Date/time the report was generated.  ISO-8601 string.
+    # Mirrors Swift ComparisonPDFReportData.timestamp (Date).
+    timestamp: str
+
+    # User-supplied name for the comparison (from tap_location), or None.
+    # Mirrors Swift ComparisonPDFReportData.comparisonLabel.
+    comparison_label: str | None
+
+    # Free-text notes from the save form, or None.
+    # Mirrors Swift ComparisonPDFReportData.notes.
+    notes: str | None
+
+    # PNG-encoded spectrum overlay chart image, or None if unavailable.
+    # Mirrors Swift ComparisonPDFReportData.spectrumImageData.
+    spectrum_image_data: bytes | None
+
+    # Comparison entries — one per overlaid spectrum.
+    # Mirrors Swift ComparisonPDFReportData.entries ([ComparisonEntry]).
+    entries: list   # list[ComparisonEntry]
+
+    # Resolved Air/Top/Back frequencies per entry.
+    # Each tuple: (label, color_rgb, air_hz, top_hz, back_hz) where *_hz may be None.
+    # Mirrors Swift ComparisonPDFReportData.modeFrequencies.
+    mode_frequencies: list  # list[tuple[str, tuple, float|None, float|None, float|None]]
+
+
+def comparison_pdf_report_data_from_measurement(
+    measurement: TapToneMeasurement,
+    spectrum_image_data: "bytes | None" = None,
+) -> ComparisonPDFReportData:
+    """Build a ComparisonPDFReportData from a saved comparison TapToneMeasurement.
+
+    If spectrum_image_data is not provided it is rendered from the measurement's
+    comparisonEntries.
+
+    Mirrors the reportData construction in Swift exportComparisonPDFReport()
+    (TapToneAnalysisView+Export.swift).
+    """
+    from models.guitar_mode import GuitarMode
+    from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
+
+    entries = measurement.comparison_entries or []
+
+    if spectrum_image_data is None:
+        spectrum_image_data = render_spectrum_image_for_comparison(measurement)
+
+    mode_frequencies = []
+    for entry in entries:
+        mode_freqs = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+            entry.peaks, entry.guitar_type
+        )
+        comps = (entry.color_components + [1.0])[:4]
+        r, g, b, _a = comps
+        color_rgb = (int(r * 255), int(g * 255), int(b * 255))
+        mode_frequencies.append((
+            entry.label,
+            color_rgb,
+            mode_freqs.get(GuitarMode.AIR),
+            mode_freqs.get(GuitarMode.TOP),
+            mode_freqs.get(GuitarMode.BACK),
+        ))
+
+    from datetime import datetime, timezone
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    return ComparisonPDFReportData(
+        timestamp=timestamp,
+        comparison_label=measurement.tap_location or None,
+        notes=measurement.notes or None,
+        spectrum_image_data=spectrum_image_data,
+        entries=entries,
+        mode_frequencies=mode_frequencies,
+    )
+
+
+def export_comparison_pdf(data: ComparisonPDFReportData, output_path: str) -> None:
+    """Render a comparison tap-tone report to PDF using reportlab.
+
+    Layout (mirrors Swift ComparisonPDFReportContentView in PDFReportGenerator.swift):
+      Header  — "GuitarTap" bold title + "Comparison Report" subtitle + date/time
+      Accent bar (blue)
+      Metadata — Comparison label, Notes, N spectra, Frequency range
+      Spectrum image (if present)
+      Grey divider
+      Peak Mode Comparison table — Air / Top / Back per spectrum
+      Footer — version + generation timestamp
+
+    Page geometry: US Letter 612×792 pt, margins 36 pt, content width 540 pt.
+
+    Mirrors Swift PDFReportGenerator.generateComparison(data:) +
+    ComparisonPDFReportContentView (PDFReportGenerator.swift).
+    """
+    from io import BytesIO
+
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import (
+        BaseDocTemplate, Frame, Image as RLImage, PageTemplate, Paragraph,
+        Spacer, Table, TableStyle,
+    )
+    from reportlab.lib.colors import HexColor, Color as RLColor
+
+    PAGE_W, PAGE_H = letter  # 612 × 792 pt
+    MARGIN = 36
+    CONTENT_W = PAGE_W - 2 * MARGIN
+
+    # ── Colours ───────────────────────────────────────────────────────────────
+    BLUE     = HexColor("#2659BF")  # GuitarTap brand blue
+    SECONDARY = colors.Color(0.4, 0.4, 0.4)
+    DARK     = colors.Color(0.1, 0.1, 0.1)
+
+    # ── Paragraph styles ──────────────────────────────────────────────────────
+    def _style(name, **kw):
+        return ParagraphStyle(name, **kw)
+
+    S_TITLE    = _style("title",    fontSize=22, fontName="Helvetica-Bold",
+                        textColor=BLUE,     leading=26, spaceAfter=2)
+    S_SUBTITLE = _style("subtitle", fontSize=13, fontName="Helvetica",
+                        textColor=SECONDARY, leading=15, spaceAfter=8)
+    S_DATE     = _style("date",     fontSize=11, fontName="Helvetica",
+                        textColor=SECONDARY, leading=13, alignment=TA_RIGHT)
+    S_META_LBL = _style("metalbl",  fontSize=11, fontName="Helvetica-Bold",
+                        textColor=SECONDARY, leading=13)
+    S_META_VAL = _style("metaval",  fontSize=11, fontName="Helvetica",
+                        textColor=DARK,     leading=13)
+    S_SECTION  = _style("section",  fontSize=13, fontName="Helvetica-Bold",
+                        textColor=DARK,     leading=16, spaceBefore=6, spaceAfter=4)
+    S_THEAD    = _style("thead",    fontSize=10, fontName="Helvetica-Bold",
+                        textColor=SECONDARY, leading=12)
+    S_TCELL    = _style("tcell",    fontSize=10, fontName="Helvetica",
+                        textColor=DARK,     leading=12)
+    S_TCELL_DIM = _style("tcell_dim", fontSize=10, fontName="Helvetica",
+                         textColor=SECONDARY, leading=12, alignment=TA_RIGHT)
+    S_TCELL_R  = _style("tcell_r",  fontSize=10, fontName="Helvetica",
+                        textColor=DARK,     leading=12, alignment=TA_RIGHT)
+    S_FOOTER   = _style("footer",   fontSize=9,  fontName="Helvetica",
+                        textColor=SECONDARY, leading=11)
+
+    story = []
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    try:
+        ts = data.timestamp[:16].replace("T", " ")
+    except Exception:
+        ts = data.timestamp
+
+    header_tbl = Table(
+        [[Paragraph("GuitarTap", S_TITLE),
+          Paragraph(ts, S_DATE)]],
+        colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4],
+    )
+    header_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header_tbl)
+    story.append(Paragraph("Comparison Report", S_SUBTITLE))
+
+    # Accent bar
+    accent = Table([[""]], colWidths=[CONTENT_W], rowHeights=[3])
+    accent.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BLUE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(accent)
+    story.append(Spacer(1, 12))
+
+    # ── Metadata ─────────────────────────────────────────────────────────────
+    def meta_row(label: str, value: str) -> Table:
+        tbl = Table(
+            [[Paragraph(f"{label}:", S_META_LBL),
+              Paragraph(value, S_META_VAL)]],
+            colWidths=[100, CONTENT_W - 100],
+        )
+        tbl.setStyle(TableStyle([
+            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ]))
+        return tbl
+
+    if data.comparison_label:
+        story.append(meta_row("Comparison", data.comparison_label))
+    if data.notes:
+        story.append(meta_row("Notes", data.notes))
+    # Use mode_frequencies count for live exports (entries is empty); fall back to entries.
+    n = len(data.mode_frequencies) if data.mode_frequencies else len(data.entries)
+    story.append(meta_row("Spectra", f"{n} spectra compared"))
+
+    # Frequency range from entries
+    if data.entries:
+        snaps = [e.snapshot for e in data.entries]
+        try:
+            min_f = min(s.min_freq for s in snaps)
+            max_f = max(s.max_freq for s in snaps)
+            story.append(meta_row("Frequency Range", f"{min_f:.0f} Hz – {max_f:.0f} Hz"))
+        except Exception:
+            pass
+
+    story.append(Spacer(1, 14))
+
+    # ── Spectrum image ────────────────────────────────────────────────────────
+    if data.spectrum_image_data:
+        story.append(Paragraph("Frequency Spectrum", S_SECTION))
+        try:
+            from PIL import Image as _PILImage
+            import io as _io
+            _pil = _PILImage.open(_io.BytesIO(data.spectrum_image_data))
+            _w_px, _h_px = _pil.size
+            _aspect = _h_px / _w_px if _w_px > 0 else 0.5
+            _img_h = CONTENT_W * _aspect
+            from reportlab.platypus import Image as _RLImg
+            story.append(_RLImg(_io.BytesIO(data.spectrum_image_data), width=CONTENT_W, height=_img_h))
+        except Exception:
+            pass
+        story.append(Spacer(1, 14))
+
+    # Divider
+    div = Table([[""]], colWidths=[CONTENT_W], rowHeights=[1])
+    div.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.3)),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(div)
+    story.append(Spacer(1, 14))
+
+    # ── Peak Mode Comparison table ────────────────────────────────────────────
+    story.append(Paragraph("Peak Mode Comparison", S_SECTION))
+
+    col_w_label = CONTENT_W - 3 * 90
+    table_data = [
+        [Paragraph("Spectrum", S_THEAD),
+         Paragraph("Air",  S_THEAD),
+         Paragraph("Top",  S_THEAD),
+         Paragraph("Back", S_THEAD)],
+    ]
+
+    for label, color_rgb, air_hz, top_hz, back_hz in data.mode_frequencies:
+        def freq_cell(hz):
+            if hz is None:
+                return Paragraph("\u2014", S_TCELL_DIM)
+            return Paragraph(f"{hz:.1f} Hz", S_TCELL_R)
+
+        # Coloured dot approximation: use a tiny colored table cell prefix
+        # (reportlab doesn't support inline circles; use a colored character approach)
+        r8, g8, b8 = color_rgb
+        dot_color = colors.Color(r8 / 255.0, g8 / 255.0, b8 / 255.0)
+        label_para = Paragraph(
+            f'<font color="#{r8:02x}{g8:02x}{b8:02x}">●</font> {label}',
+            S_TCELL,
+        )
+        table_data.append([label_para, freq_cell(air_hz), freq_cell(top_hz), freq_cell(back_hz)])
+
+    mode_tbl = Table(
+        table_data,
+        colWidths=[col_w_label, 90, 90, 90],
+    )
+    mode_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  colors.Color(0.9, 0.9, 0.9)),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.Color(0.97, 0.97, 0.97)]),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN",         (1, 0), (-1, -1), "RIGHT"),
+        ("ROUNDEDCORNERS", [4],),
+    ]))
+    story.append(mode_tbl)
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 16))
+    footer_div = Table([[""]], colWidths=[CONTENT_W], rowHeights=[1])
+    footer_div.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.2)),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(footer_div)
+    story.append(Spacer(1, 8))
+
+    now_str = data.timestamp[:16].replace("T", " ")
+    footer_tbl = Table(
+        [[Paragraph("Generated by GuitarTap", S_FOOTER),
+          Paragraph(now_str, _style("footer_r", fontSize=9, fontName="Helvetica",
+                                    textColor=SECONDARY, leading=11, alignment=TA_RIGHT))]],
+        colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4],
+    )
+    footer_tbl.setStyle(TableStyle([
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(footer_tbl)
+
+    # ── Build PDF ─────────────────────────────────────────────────────────────
     frame = Frame(MARGIN, MARGIN, CONTENT_W, PAGE_H - 2 * MARGIN, id="main")
     page_template = PageTemplate(id="letter", frames=[frame])
     doc = BaseDocTemplate(

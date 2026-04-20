@@ -104,17 +104,23 @@ class MeasurementRowView(QtWidgets.QWidget):
         content = QtWidgets.QVBoxLayout()
         content.setSpacing(3)
 
-        # Line 1: location + waveform + time + chevron
+        # Line 1: location + icon + time + chevron
         line1 = QtWidgets.QHBoxLayout()
         line1.setSpacing(6)
 
-        loc = QtWidgets.QLabel(m.tap_location or "Measurement")
+        loc = QtWidgets.QLabel(m.tap_location or ("Comparison" if m.is_comparison else "Measurement"))
         loc.setStyleSheet("font-weight: bold; font-size: 13px;")
         loc.setWordWrap(True)
         line1.addWidget(loc)
         line1.addStretch()
 
-        if m.spectrum_snapshot is not None:
+        if m.is_comparison:
+            # Chart icon — mirrors SF Symbol "chart.bar.doc.horizontal" used in Swift
+            chart_icon = QtWidgets.QLabel("📊")
+            chart_icon.setStyleSheet("font-size: 11px;")
+            chart_icon.setToolTip("Comparison record")
+            line1.addWidget(chart_icon)
+        elif m.spectrum_snapshot is not None:
             wave = QtWidgets.QLabel("〜")
             wave.setStyleSheet("color: #28a028; font-size: 11px;")
             wave.setToolTip("Has spectrum snapshot")
@@ -146,14 +152,18 @@ class MeasurementRowView(QtWidgets.QWidget):
 
         content.addLayout(line1)
 
-        # Line 2: peaks • ratio • decay
-        parts: list[str] = [f"{len(m.peaks)} peaks"]
-        ratio = tap_tone_ratio(m)
-        if ratio is not None:
-            parts.append(f"Ratio: {ratio:.2f}")
-        if m.decay_time is not None:
-            parts.append(f"Decay: {m.decay_time:.2f}s")
-        meta = QtWidgets.QLabel("  •  ".join(parts))
+        # Line 2: for comparison records show spectrum count; for regular show peaks/ratio/decay
+        if m.is_comparison:
+            n = len(m.comparison_entries) if m.comparison_entries else 0
+            meta = QtWidgets.QLabel(f"{n} spectra compared")
+        else:
+            parts: list[str] = [f"{len(m.peaks)} peaks"]
+            ratio = tap_tone_ratio(m)
+            if ratio is not None:
+                parts.append(f"Ratio: {ratio:.2f}")
+            if m.decay_time is not None:
+                parts.append(f"Decay: {m.decay_time:.2f}s")
+            meta = QtWidgets.QLabel("  •  ".join(parts))
         meta.setStyleSheet("color: #888888; font-size: 10px;")
         content.addWidget(meta)
 

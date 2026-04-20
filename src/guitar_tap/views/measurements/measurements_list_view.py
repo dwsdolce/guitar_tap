@@ -142,7 +142,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
             f"Total: {n} measurement{'s' if n != 1 else ''}"
         )
 
-        comparable = sum(1 for m in self._measurements if m.spectrum_snapshot is not None)
+        comparable = sum(
+            1 for m in self._measurements
+            if m.spectrum_snapshot is not None and not m.is_comparison
+        )
         self._compare_btn.setEnabled(
             comparable >= 2 if not self._compare_mode else True
         )
@@ -153,7 +156,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self._done_btn.setText("Cancel" if self._compare_mode else "Done")
 
         for idx, m in enumerate(self._measurements):
-            eligible = m.spectrum_snapshot is not None
+            # Comparison records are never eligible for compare-mode selection.
+            eligible = m.spectrum_snapshot is not None and not m.is_comparison
             selected = idx in self._compare_indices  # index-based, mirrors Swift selectedCompareIndices
 
             item = QtWidgets.QListWidgetItem()
@@ -194,7 +198,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
             self._compare_btn.setEnabled(count >= 2)
         else:
             comparable = sum(
-                1 for m in self._measurements if m.spectrum_snapshot is not None
+                1 for m in self._measurements
+                if m.spectrum_snapshot is not None and not m.is_comparison
             )
             self._compare_btn.setText("Compare…")
             self._compare_btn.setEnabled(comparable >= 2)
@@ -218,7 +223,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         — which share the same UUID — each have an independent selection state.
         Mirrors Swift toggleCompareSelection(at:for:).
         """
-        if m.spectrum_snapshot is None:
+        if m.spectrum_snapshot is None or m.is_comparison:
             return
         if index in self._compare_indices:
             self._compare_indices.discard(index)
@@ -333,8 +338,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
     def _export_spectrum(self, m: TapToneMeasurement) -> None:
         """Export the spectrum PNG for *m* — mirrors Swift exportSpectrumMeasurement(_:).
 
-        Calls render_spectrum_image_for_measurement (which uses the same renderer as the
-        main Export Spectrum button) then writes the result to a user-chosen path.
+        Routes to render_spectrum_image_for_comparison for comparison records and to
+        render_spectrum_image_for_measurement for regular measurements.
         """
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
@@ -347,7 +352,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
         if not path.endswith(".png"):
             path += ".png"
         M.update_export_dir(path)
-        png_data = M.render_spectrum_image_for_measurement(m)
+        if m.is_comparison:
+            png_data = M.render_spectrum_image_for_comparison(m)
+        else:
+            png_data = M.render_spectrum_image_for_measurement(m)
         if png_data is None:
             QtWidgets.QMessageBox.warning(self, "Export Error", "This measurement has no spectrum snapshot.")
             return
@@ -358,22 +366,44 @@ class MeasurementsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
     def _export_pdf(self, m: TapToneMeasurement) -> None:
+        """Route PDF export to the comparison path for comparison records."""
+        if m.is_comparison:
+            self._export_comparison_pdf(m)
+        else:
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                "Export PDF Report",
+                os.path.join(M.last_export_dir(), m.base_filename + ".pdf"),
+                "PDF files (*.pdf)",
+            )
+            if not path:
+                return
+            M.update_export_dir(path)
+            # Render spectrum image from the saved snapshot (mirrors Swift
+            # renderSpectrumImageForMeasurement called from exportPDFReport).
+            png_data = M.render_spectrum_image_for_measurement(m)
+            try:
+                # Mirrors Swift: PDFReportData.from(measurement:) → PDFReportGenerator.generate(data:)
+                report_data = M.pdf_report_data_from_measurement(m, png_data)
+                M.export_pdf(report_data, path)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
+
+    def _export_comparison_pdf(self, m: TapToneMeasurement) -> None:
+        """Export a comparison PDF report — mirrors Swift's comparison PDF export path."""
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Export PDF Report",
+            "Export Comparison PDF Report",
             os.path.join(M.last_export_dir(), m.base_filename + ".pdf"),
             "PDF files (*.pdf)",
         )
         if not path:
             return
         M.update_export_dir(path)
-        # Render spectrum image from the saved snapshot (mirrors Swift
-        # renderSpectrumImageForMeasurement called from exportPDFReport).
-        png_data = M.render_spectrum_image_for_measurement(m)
+        png_data = M.render_spectrum_image_for_comparison(m)
         try:
-            # Mirrors Swift: PDFReportData.from(measurement:) → PDFReportGenerator.generate(data:)
-            report_data = M.pdf_report_data_from_measurement(m, png_data)
-            M.export_pdf(report_data, path)
+            report_data = M.comparison_pdf_report_data_from_measurement(m, png_data)
+            M.export_comparison_pdf(report_data, path)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 

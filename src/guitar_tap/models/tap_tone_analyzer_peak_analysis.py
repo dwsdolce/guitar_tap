@@ -816,3 +816,46 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         self.current_peaks = filtered
         self.peaksChanged.emit(filtered)
+
+    @staticmethod
+    def resolved_mode_peaks(
+        peaks: list,
+        guitar_type: "str | None" = None,
+    ) -> dict:
+        """Return {GuitarMode: frequency_hz} for the highest-magnitude peak per mode.
+
+        Runs GuitarMode.classify_all on ``peaks`` using ``guitar_type`` for mode-range
+        boundaries, then returns a map from each identified GuitarMode to the frequency
+        of the highest-magnitude peak classified into that mode.
+
+        Only Air, Top, and Back modes are displayed in the comparison table, but all
+        known modes are returned so the caller can choose which columns to show.
+
+        Mirrors Swift TapToneAnalyzer.resolvedModePeaks(peaks:guitarType:)
+        (TapToneAnalyzer+PeakAnalysis.swift).
+        """
+        from .guitar_mode import GuitarMode
+        from .guitar_type import GuitarType
+
+        # Resolve guitar_type string to enum value, falling back to Classical.
+        gt: "GuitarType | None" = None
+        if guitar_type is not None:
+            try:
+                gt = GuitarType(guitar_type)
+            except Exception:
+                gt = GuitarType.CLASSICAL
+
+        mode_map: dict = GuitarMode.classify_all(peaks, gt)
+
+        result: dict = {}
+        best_magnitude: dict = {}
+        for peak in peaks:
+            mode = mode_map.get(peak.id)
+            if mode is None or mode == GuitarMode.UNKNOWN:
+                continue
+            existing_mag = best_magnitude.get(mode)
+            if existing_mag is not None and peak.magnitude <= existing_mag:
+                continue
+            result[mode] = peak.frequency
+            best_magnitude[mode] = peak.magnitude
+        return result
