@@ -157,6 +157,29 @@ class TapToneAnalyzerControlMixin:
         else:
             self.clear_calibration()
 
+    def _on_mic_sample_rate_changed(self) -> None:
+        """Handle a sample-rate change on the current input device.
+
+        Called by the platform sample-rate listener (CoreAudio on macOS, polling
+        on Windows/Linux) after a 0.3 s delay.  Restarts the audio stream by
+        re-calling set_device() with the currently selected device, which closes
+        the old stream, opens a new one at the updated rate, and auto-loads
+        calibration.
+
+        Mirrors Swift's registerSampleRateListener block which calls stop() then,
+        after a 0.3 s DispatchQueue.main.asyncAfter, calls try self.start() and
+        increments routeChangeRestartCount.
+
+        The 0.3 s delay is already applied by the listener before this method is
+        invoked, so no additional delay is needed here.
+        """
+        from PyQt6.QtCore import QTimer as _QTimer
+        device = self.mic.selected_input_device
+        if device is None:
+            return
+        # Dispatch back onto the main thread (the listener fires on a daemon thread).
+        _QTimer.singleShot(0, lambda: self.set_device(device))
+
     # ------------------------------------------------------------------ #
     # Tap detector control — all state lives directly on TapToneAnalyzer,
     # mirroring Swift where detectTap() and all tap state are on the class.

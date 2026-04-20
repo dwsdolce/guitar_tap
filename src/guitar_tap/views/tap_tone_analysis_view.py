@@ -359,31 +359,112 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Menu bar
         #
-        # Python intentionally implements only a Help menu here. Swift's full
-        # macOS menu bar is built via AppCommands (GuitarTapApp.swift) using
-        # SwiftUI's declarative CommandGroup API, which inserts items into the
-        # App, File, View, Edit, and Help menus via the native macOS menu system.
+        # The Python app is cross-platform (Windows/Linux primary, macOS also supported).
+        # Qt renders the menu bar inside the window on Windows and Linux.  On macOS,
+        # Qt moves it to the top-of-screen system menu bar automatically — no platform
+        # guards are needed in code.
         #
-        # Swift AppCommands shortcuts and their Python equivalents:
-        #   ⌘,  Settings          → toolbar Settings button
-        #   ⌘S  Save Measurement  → toolbar Save button
-        #   ⌘E  Export Spectrum   → toolbar Export button
-        #   ⇧⌘E Export PDF        → toolbar Export PDF button
-        #   ⌘0  Auto dB           → spectrum plot right-click context menu
-        #   ⌘`  Cycle Annotations → spectrum plot right-click context menu
-        #   ⌘M  Show Metrics      → toolbar Metrics button
-        #   ⌘L  Show Measurements → toolbar Measurements button
-        #   ⌘?  Help              → Help menu below (Cmd+? on macOS, F1 on Win/Linux)
+        # Certain QAction MenuRole values cause Qt to relocate actions on macOS:
+        #   AboutRole       → placed as first item in the system Application menu
+        #   PreferencesRole → placed after About in the system Application menu
+        # On Windows/Linux these roles are ignored and the actions stay in the menu
+        # where they were added, so the GuitarTap menu is always visible there.
         #
-        # This is a deliberate design choice: the Python version is cross-platform
-        # and toolbar-centric. Qt renders the menu bar natively per platform
-        # (top-of-screen on macOS, inside the window on Windows/Linux) with no
-        # extra code required.
-        help_menu = self.menuBar().addMenu("Help")
+        # The Swift app (macOS/iOS only) uses SwiftUI CommandGroup to build its menus.
+        # Python ↔ Swift menu correspondence (Python is primary; Swift is macOS-native twin):
+        #   GuitarTap menu: About Guitar Tap… ↔  .appInfo CommandGroup (system-provided)
+        #                   Settings… (Ctrl+,) ↔  CommandGroup(after: .appInfo) Settings… (⌘,)
+        #   File menu:      Close (Ctrl+W)     ↔  standard Window-scene Close item (⌘W)
+        #                   Save Measurement…  ↔  CommandGroup(after: .saveItem) Save… (⌘S)
+        #                   Export Spectrum…   ↔  Export Spectrum Image… (⌘E)
+        #                   Export PDF…        ↔  Export PDF Report… (⇧⌘E)
+        #   View menu:      Auto dB (Ctrl+0)   ↔  CommandGroup(after: .sidebar) Auto dB (⌘0)
+        #                   Cycle Annotations  ↔  Cycle Annotations (⌘`)
+        #                   Show Metrics       ↔  Show Metrics (⌘M)
+        #                   Show Measurements  ↔  Show Measurements (⌘L)
+        #   Help menu:      Guitar Tap Help (F1) ↔  CommandGroup(replacing: .help) (⌘?)
+
+        mb = self.menuBar()
+
+        # -- GuitarTap menu --
+        # Windows/Linux: visible as an ordinary first menu containing About and Settings.
+        # macOS: Qt moves AboutRole and PreferencesRole actions into the system
+        # Application menu automatically, leaving this menu empty (and hidden).
+        app_menu = mb.addMenu("GuitarTap")
+        about_action = QtGui.QAction("About Guitar Tap…", self)
+        about_action.setMenuRole(QtGui.QAction.MenuRole.AboutRole)
+        about_action.triggered.connect(self._show_about)
+        app_menu.addAction(about_action)
+        settings_action = QtGui.QAction("Settings…", self)
+        settings_action.setShortcut(QtGui.QKeySequence("Ctrl+,"))
+        settings_action.setMenuRole(QtGui.QAction.MenuRole.PreferencesRole)
+        settings_action.triggered.connect(self._show_settings)
+        app_menu.addAction(settings_action)
+
+        # -- File menu --
+        file_menu = mb.addMenu("File")
+
+        # Close mirrors the standard "Close" item Swift's Window scene adds on macOS.
+        close_action = QtGui.QAction("Close", self)
+        close_action.setShortcut(QtGui.QKeySequence.StandardKey.Close)
+        close_action.triggered.connect(self.close)
+        file_menu.addAction(close_action)
+
+        file_menu.addSeparator()
+
+        self._menu_save_action = QtGui.QAction("Save Measurement…", self)
+        self._menu_save_action.setShortcut(QtGui.QKeySequence.StandardKey.Save)
+        self._menu_save_action.setEnabled(False)
+        self._menu_save_action.triggered.connect(self._on_save_measurement)
+        file_menu.addAction(self._menu_save_action)
+
+        file_menu.addSeparator()
+
+        self._menu_export_spectrum_action = QtGui.QAction("Export Spectrum Image…", self)
+        self._menu_export_spectrum_action.setShortcut(QtGui.QKeySequence("Ctrl+E"))
+        self._menu_export_spectrum_action.setEnabled(False)
+        self._menu_export_spectrum_action.triggered.connect(self._on_export_spectrum)
+        file_menu.addAction(self._menu_export_spectrum_action)
+
+        self._menu_export_pdf_action = QtGui.QAction("Export PDF Report…", self)
+        self._menu_export_pdf_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+E"))
+        self._menu_export_pdf_action.setEnabled(False)
+        self._menu_export_pdf_action.triggered.connect(self._on_export_pdf)
+        file_menu.addAction(self._menu_export_pdf_action)
+
+        # -- View menu --
+        view_menu = mb.addMenu("View")
+
+        self._menu_auto_db_action = QtGui.QAction("Auto dB", self)
+        self._menu_auto_db_action.setShortcut(QtGui.QKeySequence("Ctrl+0"))
+        self._menu_auto_db_action.setCheckable(True)
+        self._menu_auto_db_action.triggered.connect(self._on_menu_auto_db)
+        view_menu.addAction(self._menu_auto_db_action)
+
+        cycle_ann_action = QtGui.QAction("Cycle Annotations", self)
+        cycle_ann_action.setShortcut(QtGui.QKeySequence("Ctrl+`"))
+        cycle_ann_action.triggered.connect(self._on_cycle_annotation_mode)
+        view_menu.addAction(cycle_ann_action)
+
+        view_menu.addSeparator()
+
+        show_metrics_action = QtGui.QAction("Show Metrics", self)
+        show_metrics_action.setShortcut(QtGui.QKeySequence("Ctrl+M"))
+        show_metrics_action.triggered.connect(self._show_metrics)
+        view_menu.addAction(show_metrics_action)
+
+        show_measurements_action = QtGui.QAction("Show Measurements", self)
+        show_measurements_action.setShortcut(QtGui.QKeySequence("Ctrl+L"))
+        show_measurements_action.triggered.connect(self._on_open_measurements)
+        view_menu.addAction(show_measurements_action)
+
+        # -- Help menu --
+        help_menu = mb.addMenu("Help")
         help_action = QtGui.QAction("Guitar Tap Help", self)
         help_action.setShortcut(
             QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.HelpContents)
         )
+        help_action.setMenuRole(QtGui.QAction.MenuRole.NoRole)
         help_action.triggered.connect(self._show_help)
         help_menu.addAction(help_action)
 
@@ -1840,11 +1921,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_tap_msg.setText("Waiting for tap…")
             self._sb_tap_msg.setStyleSheet("color: gray;")
 
+    def _on_menu_auto_db(self, checked: bool) -> None:
+        """Toggle Auto dB from the View menu; keeps the toolbar button in sync."""
+        self.auto_db_btn.setChecked(checked)
+
     def _on_auto_db_toggled(self, enabled: bool) -> None:
         if enabled:
             self.auto_db_btn.setIcon(qta.icon("mdi.swap-vertical-circle", color="#27ae60"))
         else:
             self.auto_db_btn.setIcon(qta.icon("mdi.swap-vertical-circle-outline"))
+        # Keep the View menu checkmark in sync with the toolbar button state.
+        self._menu_auto_db_action.setChecked(enabled)
 
     def _on_framerate_update(
         self, framerate: float, _sampletime: float, processingtime: float
@@ -1956,6 +2043,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.save_measurement_btn.setEnabled(True)
             self.export_spectrum_btn.setEnabled(True)
             self.export_pdf_btn.setEnabled(True)
+            self._menu_save_action.setEnabled(True)
+            self._menu_export_spectrum_action.setEnabled(True)
+            self._menu_export_pdf_action.setEnabled(True)
             self.select_all_btn.setEnabled(mt.is_guitar)
             self.deselect_all_btn.setEnabled(mt.is_guitar)
             self.reset_auto_selection_btn.setEnabled(
@@ -1966,6 +2056,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.save_measurement_btn.setEnabled(False)
             self.export_spectrum_btn.setEnabled(False)
             self.export_pdf_btn.setEnabled(False)
+            self._menu_save_action.setEnabled(False)
+            self._menu_export_spectrum_action.setEnabled(False)
+            self._menu_export_pdf_action.setEnabled(False)
             self.select_all_btn.setEnabled(False)
             self.deselect_all_btn.setEnabled(False)
             self.reset_auto_selection_btn.setEnabled(False)
@@ -3156,11 +3249,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.save_measurement_btn.setEnabled(False)
             self.export_spectrum_btn.setEnabled(True)
             self.export_pdf_btn.setVisible(False)
+            self._menu_save_action.setEnabled(False)
+            self._menu_export_spectrum_action.setEnabled(True)
+            self._menu_export_pdf_action.setEnabled(False)
         else:
             self.save_measurement_btn.setEnabled(self._is_measurement_complete)
             self.export_spectrum_btn.setEnabled(self._is_measurement_complete)
             self.export_pdf_btn.setVisible(True)
             self.export_pdf_btn.setEnabled(self._is_measurement_complete)
+            self._menu_save_action.setEnabled(self._is_measurement_complete)
+            self._menu_export_spectrum_action.setEnabled(self._is_measurement_complete)
+            self._menu_export_pdf_action.setEnabled(self._is_measurement_complete)
 
         # ── Peak-selection buttons ─────────────────────────────────────────────
         can_select = self._is_measurement_complete and not is_comparing and TDS.measurement_type().is_guitar
@@ -5276,6 +5375,16 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
     # Help
     # ================================================================
+
+    def _show_about(self) -> None:
+        QtWidgets.QMessageBox.about(
+            self,
+            "About Guitar Tap",
+            "<b>Guitar Tap</b><br><br>"
+            "An acoustic analysis tool for guitar makers.<br><br>"
+            "Tap-tone analysis using real-time FFT to identify "
+            "resonant frequencies of guitar top and back plates.",
+        )
 
     def _show_help(self) -> None:
         if self._help_dialog is None or not self._help_dialog.isVisible():

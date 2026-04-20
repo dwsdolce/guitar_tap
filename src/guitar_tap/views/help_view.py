@@ -346,6 +346,27 @@ def _build_help_html() -> str:
         ["fa5.chart-bar"]
     ))
     parts.append(_row(
+        "Menu Bar",
+        "The menu bar has four menus:<br><br>"
+        "<b>GuitarTap menu:</b><br>"
+        "&bull; <b>About Guitar Tap…</b> &mdash; shows app description<br>"
+        "&bull; <b>Settings…</b> &mdash; Ctrl+, (⌘, on macOS)<br>"
+        "On macOS these items are automatically moved to the system Application menu.<br><br>"
+        "<b>File menu:</b><br>"
+        "&bull; <b>Close</b> &mdash; Ctrl+W (⌘W on macOS) &mdash; closes the window<br>"
+        "&bull; <b>Save Measurement…</b> &mdash; Ctrl+S<br>"
+        "&bull; <b>Export Spectrum Image…</b> &mdash; Ctrl+E<br>"
+        "&bull; <b>Export PDF Report…</b> &mdash; Ctrl+Shift+E<br>"
+        "Save and Export items are disabled until a measurement is complete.<br><br>"
+        "<b>View menu:</b><br>"
+        "&bull; <b>Auto dB</b> &mdash; Ctrl+0 &mdash; toggles auto-scaling of the dB axis<br>"
+        "&bull; <b>Cycle Annotations</b> &mdash; Ctrl+` &mdash; cycles Selected → None → All<br>"
+        "&bull; <b>Show Metrics</b> &mdash; Ctrl+M &mdash; opens the FFT diagnostics panel<br>"
+        "&bull; <b>Show Measurements</b> &mdash; Ctrl+L &mdash; opens the saved measurements browser<br><br>"
+        "<b>Help menu:</b><br>"
+        "&bull; <b>Guitar Tap Help</b> &mdash; F1 (⌘? on macOS) &mdash; opens this window"
+    ))
+    parts.append(_row(
         "Zoom &amp; Pan Help",
         "Scroll over the chart to zoom &mdash; the axis depends on where the pointer is: "
         "over the plot area it zooms both axes; over the frequency axis (bottom) it zooms "

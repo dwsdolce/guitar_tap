@@ -453,6 +453,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
                  device: "AudioDevice | None" = None,
                  on_devices_changed: Callable[[], None] | None = None,
                  on_calibration_changed: "Callable[[object | None], None] | None" = None,
+                 on_sample_rate_changed: "Callable[[], None] | None" = None,
                  fft_size: int = 16384):
         """Create a new real-time FFT analyser and open the audio stream.
 
@@ -473,6 +474,10 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
                                      exists for the new device.
                                      Mirrors Swift selectedInputDevice.didSet calling
                                      setCalibrationWithoutSavingDeviceMapping(_:).
+            on_sample_rate_changed:  Callback fired when the current device's sample rate changes
+                                     (e.g. user changes Audio MIDI Setup on macOS).  Called with
+                                     no arguments after a 0.3 s delay.
+                                     Mirrors Swift registerSampleRateListener(for:) block.
             fft_size:                FFT window size (power of 2).
                                      Mirrors Swift RealtimeFFTAnalyzer.fftSize.
         """
@@ -550,6 +555,25 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
         # calibration from CalibrationStorage.
         # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
         self._on_calibration_changed: "Callable[[object | None], None] | None" = on_calibration_changed
+
+        # Sample-rate-change callback.
+        # Called by the platform sample-rate listener (CoreAudio on macOS, polling
+        # on Windows/Linux) after a 0.3 s delay when the current device's sample
+        # rate changes.  Handler in TapToneAnalyzerControlMixin restarts the stream.
+        # Mirrors Swift registerSampleRateListener(for:) block.
+        self._on_sample_rate_changed: "Callable[[], None] | None" = on_sample_rate_changed
+
+        # Register the initial per-device sample-rate listener now that
+        # _on_sample_rate_changed is set and the stream is open.
+        # Mirrors Swift start() → registerSampleRateListener(for: deviceID).
+        if on_sample_rate_changed is not None and device is not None:
+            p = platform.system()
+            if p == "Darwin":
+                self._start_coreaudio_sample_rate_monitor(device.name)
+            elif p == "Windows":
+                self._start_windows_sample_rate_monitor()
+            elif p == "Linux":
+                self._start_linux_sample_rate_monitor()
 
         # Raw-sample handler callback.
         # Mirrors Swift RealtimeFFTAnalyzer.rawSampleHandler: (([Float], Double) -> Void)?

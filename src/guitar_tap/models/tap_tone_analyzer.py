@@ -435,6 +435,7 @@ class TapToneAnalyzer(
             device=audio_device,
             on_devices_changed=self._devicesRefreshed.emit,
             on_calibration_changed=self._on_mic_calibration_changed,
+            on_sample_rate_changed=self._on_mic_sample_rate_changed,
             fft_size=fft_size,
         )
         self.mic.proc_thread.setParent(self)
