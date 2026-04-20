@@ -203,9 +203,6 @@ class TapToneAnalyzer(
         # manually selected).  Mirrors Swift RealtimeFFTAnalyzer.activeCalibration?.name.
         self._active_calibration_name: "str | None" = None
 
-        # ── Guitar/mode classification ─────────────────────────────────────
-        self._guitar_type = None
-
         # ── Display mode (mirrors Swift AnalysisDisplayMode) ───────────────
         self._display_mode: AnalysisDisplayMode = AnalysisDisplayMode.LIVE
 
@@ -399,7 +396,6 @@ class TapToneAnalyzer(
         fft_size: int,
         audio_device,
         calibration_corrections,
-        guitar_type,
     ) -> None:
         """Wire up audio hardware and load persisted state.
 
@@ -415,7 +411,6 @@ class TapToneAnalyzer(
             fft_size:                FFT window size in samples (power of 2).
             audio_device:            AudioDevice to open, or None for the default.
             calibration_corrections: ndarray of per-bin dB corrections, or None.
-            guitar_type:             GuitarType enum value for mode classification.
         """
         import sounddevice as _sd
         import numpy as np
@@ -453,9 +448,6 @@ class TapToneAnalyzer(
         # ── Calibration ───────────────────────────────────────────────────
         self._calibration_corrections = calibration_corrections
         self._calibration_device_name = audio_device.name if audio_device else ""
-
-        # ── Guitar/mode classification ────────────────────────────────────
-        self._guitar_type = guitar_type
 
         # ── Gated-FFT capture signal ───────────────────────────────────────
         # Wire the processing thread's gatedCaptureComplete signal to the
@@ -561,26 +553,10 @@ class TapToneAnalyzer(
         return self.mic.proc_thread
 
     # ------------------------------------------------------------------ #
-    # Guitar Type & Mode Override
+    # Mode Override
     # Mirrors Swift TapToneAnalyzer.swift (not in any extension file):
-    #   setGuitarType / effectiveModeLabel / setModeOverride / hasManualOverride
+    #   effectiveModeLabel / setModeOverride / hasManualOverride
     # ------------------------------------------------------------------ #
-
-    def set_guitar_type(self, guitar_type) -> None:
-        """Update the guitar type used for mode classification.
-
-        Mirrors Swift setting ``guitarType`` on ``TapToneAnalyzer``.
-        Accepts either a GuitarType enum value or its raw string (e.g. "Classical").
-        Always stores a GuitarType enum so reclassify_peaks() can call
-        guitar_type.mode_ranges without a type check.
-        """
-        from .guitar_type import GuitarType
-        if isinstance(guitar_type, str):
-            try:
-                guitar_type = GuitarType(guitar_type)
-            except (ValueError, KeyError):
-                guitar_type = GuitarType.CLASSICAL
-        self._guitar_type = guitar_type
 
     def effective_mode_label(self, peak) -> str:
         """Return the display label for a peak, respecting any user override.

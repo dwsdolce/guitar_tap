@@ -348,10 +348,6 @@ class FftCanvas(pg.PlotWidget):
                 _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
 
         guitar_type_str = _as.AppSettings.guitar_type()
-        try:
-            _guitar_type = gt.GuitarType(guitar_type_str)
-        except ValueError:
-            _guitar_type = gt.GuitarType.CLASSICAL
 
         self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer()
         self.analyzer.start(
@@ -360,7 +356,6 @@ class FftCanvas(pg.PlotWidget):
             fft_size=fft_size,
             audio_device=_saved_audio_device,
             calibration_corrections=_initial_calibration,
-            guitar_type=_guitar_type,
         )
         # Wire the analyzer into FftAnnotations so dragged positions are persisted
         # in the model and survive pan/zoom annotation rebuilds.
@@ -766,7 +761,6 @@ class FftCanvas(pg.PlotWidget):
             guitar_type = gt.GuitarType(guitar_type_str)
         except ValueError:
             return
-        self.analyzer._guitar_type = guitar_type
         from models.tap_display_settings import TapDisplaySettings as _tds
         is_guitar = _tds.measurement_type().is_guitar
         for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):

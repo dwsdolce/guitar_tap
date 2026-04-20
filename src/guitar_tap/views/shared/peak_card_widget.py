@@ -479,6 +479,9 @@ class PeakListWidget(QtWidgets.QWidget):
             self.updateGeometry()
             return
 
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        _gt = _tds.guitar_type()
+
         # Sort by frequency ascending
         order = np.argsort(data[:, 0])
         for i in order:
@@ -495,7 +498,7 @@ class PeakListWidget(QtWidgets.QWidget):
                 freq=freq,
                 mag_db=mag_db,
                 q=q,
-                guitar_type=self.model.guitar_type,
+                guitar_type=_gt,
                 mode=mode,
                 show=show,
                 is_held=self._is_held,
@@ -544,8 +547,10 @@ class PeakListWidget(QtWidgets.QWidget):
 
     def _on_model_layout_changed(self) -> None:
         """Refresh mode displays when guitar_type changes."""
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        _gt = _tds.guitar_type()
         for card in self._cards:
-            card.set_guitar_type(self.model.guitar_type)
+            card.set_guitar_type(_gt)
             row = int(self.model.freq_index(card.freq))
             if row < 0:
                 continue

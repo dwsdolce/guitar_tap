@@ -351,6 +351,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # Without this, selected_peak_ids holds stale UUIDs from the pre-capture
         # live updates and the PDF export visible_peaks filter returns nothing.
         self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
+        self.selected_peak_frequencies = [
+            p.frequency for p in peaks if p.id in self.selected_peak_ids
+        ]
+        self.user_has_modified_peak_selection = False
 
         # Classify modes so identified_modes references the new averaged peaks.
         # Without this, identified_modes is left pointing at old live-update

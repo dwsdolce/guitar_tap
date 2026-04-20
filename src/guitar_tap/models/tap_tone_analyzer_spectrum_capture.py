@@ -994,9 +994,34 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         peaks = self.find_peaks(avg_mags, avg_freqs)
         self.current_peaks = peaks
+
+        # Classify modes before emitting peaksChanged so that peak_mode()
+        # returns correct context-aware results when _on_peaks_changed_results
+        # calls update_data_with_modes. Mirrors analyze_magnitudes() which
+        # also sets identified_modes before peaksChanged.emit().
+        from .guitar_mode import GuitarMode as _GM
+        from models.tap_display_settings import TapDisplaySettings as _tds_sc
+        _mode_map = _GM.classify_all(peaks, _tds_sc.guitar_type())
+        self.identified_modes = [
+            {"peak": p, "mode": _mode_map.get(p.id, _GM.UNKNOWN)}
+            for p in peaks
+        ]
+
+        # Mirrors Swift processMultipleTaps() lines 817-818:
+        #   selectedPeakIDs = guitarModeSelectedPeakIDs(from: peaksFromAveragedSpectrum)
+        # Set selection in the model before peaksChanged fires so that
+        # _on_peaks_changed_results (which guards on _is_measurement_complete,
+        # already True at this point) can propagate selected_peak_frequencies
+        # to the view's PeaksModel. This removes the need for _on_tap_detected
+        # to call auto_select_peaks_by_mode() in the view layer.
+        self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
+        self.selected_peak_frequencies = [
+            p.frequency for p in peaks if p.id in self.selected_peak_ids
+        ]
+        self.user_has_modified_peak_selection = False
+
         self.peaksChanged.emit(peaks)
         self.loaded_measurement_peaks = None
-        self.selected_peak_ids = set()
 
         self._set_status_message(
             f"Analysis complete! {len(peaks)} peaks identified "

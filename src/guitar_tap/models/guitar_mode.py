@@ -37,14 +37,20 @@ from .guitar_type import GuitarType
 # MARK: - Module-Level Helpers (Python-only, no direct Swift equivalent)
 
 def get_bands(
-    guitar_type: GuitarType,
+    guitar_type: "GuitarType | None" = None,
 ) -> list[tuple[float, float, str, tuple[int, int, int, int]]]:
     """Return (lo_hz, hi_hz, mode_value, rgba) for every band of *guitar_type*.
 
     Uses the same modeRanges as Swift — a single unified set of bands for both
     display and auto-classification.  *mode_value* is the GuitarMode raw value
     string (e.g. ``"Air (Helmholtz)"``), accepted by ``GuitarMode.from_mode_string``.
+
+    Mirrors Swift GuitarMode.classifyAll(_:guitarType:) default parameter:
+    guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
     """
+    if guitar_type is None:
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        guitar_type = _tds.guitar_type()
     r = guitar_type.mode_ranges
     entries: list[tuple[GuitarMode, tuple[float, float]]] = [
         (GuitarMode.AIR,         r.air),
@@ -61,13 +67,18 @@ def get_bands(
     return result
 
 
-def in_mode_range(freq: float, mode_str: str, guitar_type: GuitarType) -> bool:
+def in_mode_range(freq: float, mode_str: str, guitar_type: "GuitarType | None" = None) -> bool:
     """Return True if *freq* falls within the mode_ranges window for *mode_str*.
 
     Accepts GuitarMode raw values (e.g. ``"Air (Helmholtz)"``), legacy Python
     mode strings (e.g. ``"Helmholtz T(1,1)_1"``), and custom labels.
     Returns False for unrecognised / UNKNOWN modes.
+
+    guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
     """
+    if guitar_type is None:
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        guitar_type = _tds.guitar_type()
     mode = GuitarMode.from_mode_string(mode_str)
     if mode is GuitarMode.UNKNOWN:
         return False
@@ -75,12 +86,17 @@ def in_mode_range(freq: float, mode_str: str, guitar_type: GuitarType) -> bool:
     return lo <= freq <= hi
 
 
-def classify_peak(freq: float, guitar_type: GuitarType) -> str:
+def classify_peak(freq: float, guitar_type: "GuitarType | None" = None) -> str:
     """Return the GuitarMode raw value string for *freq* using *guitar_type*'s mode ranges.
 
     Delegates to ``GuitarMode.classify`` — uses the same unified bands as Swift.
     Returns ``""`` (unknown) if no band matches.
+
+    guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
     """
+    if guitar_type is None:
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        guitar_type = _tds.guitar_type()
     mode = GuitarMode.classify(freq, guitar_type)
     return mode.value
 
@@ -158,16 +174,20 @@ class GuitarMode(Enum):
     # MARK: - Classification
 
     @classmethod
-    def classify(cls, freq: float, guitar_type: GuitarType) -> GuitarMode:
+    def classify(cls, freq: float, guitar_type: "GuitarType | None" = None) -> "GuitarMode":
         """Classify a frequency into a guitar mode for a specific guitar type.
 
         - Parameters:
           - freq: The peak frequency to classify, in Hz.
           - guitar_type: The guitar type whose mode-range bands are used for classification.
+            Defaults to TapDisplaySettings.guitarType when not supplied.
         - Returns: The matching GuitarMode, or UNKNOWN if no band matches.
 
         Mirrors Swift GuitarMode.classify(frequency:guitarType:).
         """
+        if guitar_type is None:
+            from models.tap_display_settings import TapDisplaySettings as _tds
+            guitar_type = _tds.guitar_type()
         ranges = guitar_type.mode_ranges
         checks: list[tuple[tuple[float, float], GuitarMode]] = [
             (ranges.air,         cls.AIR),
@@ -186,7 +206,7 @@ class GuitarMode(Enum):
     def classify_all(
         cls,
         peaks: list,
-        guitar_type: GuitarType,
+        guitar_type: "GuitarType | None" = None,
     ) -> dict:
         """Classify a set of ResonantPeak objects into guitar modes using a context-aware claiming algorithm.
 
@@ -216,9 +236,15 @@ class GuitarMode(Enum):
         - Parameters:
           - peaks: List of objects with ``.id``, ``.frequency``, and ``.magnitude``.
           - guitar_type: The guitar type whose mode-range bands are used.
+            Defaults to TapDisplaySettings.guitarType when not supplied,
+            mirroring Swift's ``guitarType: GuitarType = TapDisplaySettings.guitarType``
+            default parameter on ``GuitarMode.classifyAll(_:guitarType:)``.
         - Returns: A dict mapping each peak's ``.id`` to its GuitarMode.
           Mirrors Swift ``[UUID: GuitarMode]``.
         """
+        if guitar_type is None:
+            from models.tap_display_settings import TapDisplaySettings as _tds
+            guitar_type = _tds.guitar_type()
         ordered_modes = sorted(
             [cls.AIR, cls.TOP, cls.BACK, cls.DIPOLE, cls.RING_MODE, cls.UPPER_MODES],
             key=lambda m: m.mode_range(guitar_type)[0],
@@ -249,14 +275,19 @@ class GuitarMode(Enum):
     def _classify_all_tuples(
         cls,
         peaks: list[tuple[float, float]],
-        guitar_type: GuitarType,
+        guitar_type: "GuitarType | None" = None,
     ) -> dict[int, "GuitarMode"]:
         """Classify (frequency, magnitude) tuples, returning {index: GuitarMode}.
 
         Internal helper for call sites that have no peak UUIDs (e.g. live numpy data
         in PeaksModel).  All code that works with ResonantPeak objects should use
         classify_all() instead so that the return type matches Swift's [UUID: GuitarMode].
+
+        guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
         """
+        if guitar_type is None:
+            from models.tap_display_settings import TapDisplaySettings as _tds
+            guitar_type = _tds.guitar_type()
         ordered_modes = sorted(
             [cls.AIR, cls.TOP, cls.BACK, cls.DIPOLE, cls.RING_MODE, cls.UPPER_MODES],
             key=lambda m: m.mode_range(guitar_type)[0],
@@ -283,7 +314,7 @@ class GuitarMode(Enum):
         return result
 
     @staticmethod
-    def is_known(freq: float, guitar_type: GuitarType) -> bool:
+    def is_known(freq: float, guitar_type: "GuitarType | None" = None) -> bool:
         """Return True if *freq* falls within any named mode range for the given guitar type.
 
         Use this for filtering peaks by visibility (the "hide unknown modes" setting) instead
@@ -294,9 +325,13 @@ class GuitarMode(Enum):
         - Parameters:
           - freq: The peak frequency to test, in Hz.
           - guitar_type: The guitar type whose mode-range bands are used.
+            Defaults to TapDisplaySettings.guitarType when not supplied.
 
         Mirrors Swift GuitarMode.isKnown(frequency:guitarType:).
         """
+        if guitar_type is None:
+            from models.tap_display_settings import TapDisplaySettings as _tds
+            guitar_type = _tds.guitar_type()
         r = guitar_type.mode_ranges
         return (
             r.air[0]         <= freq <= r.air[1]         or
@@ -309,15 +344,19 @@ class GuitarMode(Enum):
 
     # MARK: - Frequency Ranges
 
-    def mode_range(self, guitar_type: GuitarType) -> tuple[float, float]:
+    def mode_range(self, guitar_type: "GuitarType | None" = None) -> tuple[float, float]:
         """The classification frequency range for this mode for a specific guitar type.
 
         - Parameter guitar_type: The guitar type whose mode_ranges table is consulted.
+          Defaults to TapDisplaySettings.guitarType when not supplied.
         - Returns: A (lo_hz, hi_hz) tuple.  Returns (0.0, 20000.0) for UNKNOWN and
           for any unrecognised future cases.
 
         Mirrors Swift GuitarMode.modeRange(for:).
         """
+        if guitar_type is None:
+            from models.tap_display_settings import TapDisplaySettings as _tds
+            guitar_type = _tds.guitar_type()
         ranges = guitar_type.mode_ranges
         n = self.normalized
         _range_map = {

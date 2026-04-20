@@ -680,17 +680,6 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.setContentsMargins(6, 4, 6, 4)
         vbox.setSpacing(4)
 
-        # Guitar type and measurement type — hidden; shown in Settings dialog
-        self.guitar_type_combo = QtWidgets.QComboBox()
-        self.guitar_type_combo.addItems(["Classical", "Flamenco", "Acoustic"])
-        self.guitar_type_combo.setToolTip(
-            "Select the guitar type to set mode classification frequency bands"
-        )
-        self.measurement_type_combo = QtWidgets.QComboBox()
-        self.measurement_type_combo.addItems(["Guitar", "Plate", "Brace"])
-        self.measurement_type_combo.setToolTip(
-            "Guitar: FFT peak analysis\nPlate / Brace: two-tap material property analysis"
-        )
 
         # Row 1: "Analysis Results" (bold) + measurement type badge
         title_row = QtWidgets.QHBoxLayout()
@@ -1671,13 +1660,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_user_modified_selection_changed
         )
 
-        # Guitar type
-        self.guitar_type_combo.currentTextChanged.connect(self._on_guitar_type_changed)
-
-        # Measurement type + plate dialog
-        self.measurement_type_combo.currentTextChanged.connect(
-            self._on_measurement_type_changed
-        )
         canvas.plateStatusChanged.connect(self._on_plate_status_changed)
         canvas.plateAnalysisComplete.connect(self._on_plate_analysis_complete)
 
@@ -1753,22 +1735,15 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas = self.fft_canvas
 
         saved_mt = AS.AppSettings.measurement_type()
-        if saved_mt.is_guitar:
-            self.measurement_type_combo.setCurrentText("Guitar")
-            self.guitar_type_combo.setCurrentText(saved_mt.short_name)
-        else:
-            self.measurement_type_combo.setCurrentText(saved_mt.short_name)
-        # Always sync QSettings to the resolved combo value — if the combo text was
-        # already at the default and setCurrentText() fired no signal, QSettings may
-        # still hold a stale value from a previous session.
-        resolved_mt = self._current_mt()
-        AS.AppSettings.set_measurement_type(resolved_mt)
+        # Persist the resolved measurement type so QSettings is always in sync with
+        # TapDisplaySettings — mirrors Swift where TapDisplaySettings.measurementType
+        # is written once from UserDefaults/defaults on init.
+        AS.AppSettings.set_measurement_type(saved_mt)
 
         saved_gt = AS.AppSettings.guitar_type()
-        self.peak_widget.model.set_guitar_type(saved_gt)
         canvas.set_guitar_type_bands(saved_gt)
         self._update_measurement_badge()
-        self.reset_auto_selection_btn.setVisible(self._current_mt().is_guitar)
+        self.reset_auto_selection_btn.setVisible(TDS.measurement_type().is_guitar)
 
         self.set_measurement_complete(False)
 
@@ -1806,7 +1781,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Mirror Swift exactly:
         #   tap.isDetecting && (isPlate || tap.currentTapCount > 0)
         # isDetecting becomes False at the approve/redo step — hiding the count during review.
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
         is_detecting = self.fft_canvas.analyzer.is_detecting
         is_plate_or_brace = not mt.is_guitar
         show = is_detecting and (is_plate_or_brace or captured > 0)
@@ -1840,14 +1815,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_level_changed(self, amp: int) -> None:
         # Plate/brace mode: show RMS input level gated to FFT frame rate —
         # mirrors Swift fft.displayLevelDB used when !measurementType.isGuitar
-        if self._is_running and not self._current_mt().is_guitar:
+        if self._is_running and not TDS.measurement_type().is_guitar:
             self._sb_avg_lbl.setText(f"{amp - 100.0:.1f} dB")
 
     def _on_peak_info(self, peak_hz: float, peak_db: float) -> None:
         if self._is_running:
             # Guitar mode: show FFT peak magnitude — mirrors Swift fft.peakMagnitude
             # Plate/brace: _sb_avg_lbl is updated in _on_level_changed (displayLevelDB)
-            if self._current_mt().is_guitar:
+            if TDS.measurement_type().is_guitar:
                 self._sb_avg_lbl.setText(f"{peak_db:.1f} dB")
             self._sb_peak_lbl.setText(f"Peak: {peak_db:.1f} dB @ {peak_hz:.1f} Hz")
 
@@ -1928,7 +1903,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _decay_quality(self, time_s: float) -> tuple[str, str]:
         """Return (label, hex-color) for a ring-out time. Mirrors Swift decayQuality."""
-        gt_text = self.guitar_type_combo.currentText() if hasattr(self, "guitar_type_combo") else ""
+        gt_text = TDS.measurement_type().guitar_type.value if TDS.measurement_type().guitar_type else ""
         if "Classical" in gt_text:
             vs, sh, mo, go = 0.15, 0.35, 0.60, 1.0
         elif "Flamenco" in gt_text:
@@ -1965,7 +1940,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_detect_msg.setStyleSheet("color: orange;" if checked else "")
 
         self.peak_widget.data_held(checked)
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
         if not mt.is_guitar:
             self._material_section.setVisible(checked)
         if checked:
@@ -2060,8 +2035,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # mirrors Swift where selectedPeakIDs (managed by phase-completion handlers)
         # drives the star display at all times.
         analyzer = self.fft_canvas.analyzer
-        if self._is_measurement_complete or not self._current_mt().is_guitar:
-            if not self._current_mt().is_guitar:
+        if self._is_measurement_complete or not TDS.measurement_type().is_guitar:
+            if not TDS.measurement_type().is_guitar:
                 # For plate/brace: build selected_frequencies from all identified peaks.
                 # During a live measurement use the analyzer's in-memory peak objects
                 # (L/C/FLC as available).  During a loaded/frozen measurement those
@@ -2086,7 +2061,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # annotations label the identified peak immediately — mirrors Swift's
         # @Published effectiveLongitudinalPeakID auto-propagation.
         az = self.fft_canvas.analyzer
-        if not self._current_mt().is_guitar:
+        if not TDS.measurement_type().is_guitar:
             pm = self.peak_widget.model
             pm.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
             pm.selected_cross_peak_id        = az.effective_cross_peak_id
@@ -2117,7 +2092,7 @@ class MainWindow(QtWidgets.QMainWindow):
         fmax = self.fft_canvas.maxFreq
         analyzer = self.fft_canvas.analyzer
         from models.guitar_mode import GuitarMode
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
         show_unknown = AS.AppSettings.show_unknown_modes()
         # Mirrors Swift: plate/brace bypasses the frequency range filter (`: true`).
         # Guitar mode filters to the displayed viewport.
@@ -2281,12 +2256,12 @@ class MainWindow(QtWidgets.QMainWindow):
             _MTP.REVIEWING_LONGITUDINAL,
             _MTP.REVIEWING_CROSS,
             _MTP.REVIEWING_FLC,
-        ) and not self._current_mt().is_guitar
+        ) and not TDS.measurement_type().is_guitar
 
     def _update_tap_buttons(self) -> None:
         """Refresh enabled/disabled state of New Tap, Pause, Cancel, and tap count spinner."""
         tap_num = self.tap_num_spin.value()
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
 
         # Mirrors Swift: .disabled(tap.currentTapCount > 0 && !tap.isMeasurementComplete)
         # Lock the tap count spinner once any tap has been detected in the current sequence,
@@ -2435,20 +2410,16 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _on_tap_detected(self) -> None:
-        """Auto-hold results when a tap fires (guitar mode only)."""
-        if not self._current_mt().is_guitar:
-            return
-        if not self._is_measurement_complete:
-            self.set_measurement_complete(True)
-            try:
-                guitar_type = GT.GuitarType(self.guitar_type_combo.currentText())
-                self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
-            except Exception:
-                pass
-            # auto_select_peaks_by_mode emits clearAnnotations then only re-emits
-            # annotationUpdate for the auto-selected peaks. Re-apply the active
-            # annotation mode so ALL/NONE/SELECTED is correctly reflected on the graph.
-            self.peak_widget.model.refresh_annotations()
+        """Update the status dot when a tap fires.
+
+        Selection is handled in the model layer: both _finish_capture (single-tap)
+        and _finish_guitar_tap_sequence (multi-tap) set selected_peak_ids and
+        selected_peak_frequencies before emitting peaksChanged, so
+        _on_peaks_changed_results already propagates the selection to
+        peak_widget.model.selected_frequencies. Mirrors Swift where
+        processMultipleTaps() sets selectedPeakIDs synchronously before any
+        @Published notifications propagate.
+        """
         # Status message is set by the model via statusMessageChanged → _on_status_message_changed.
         self._sb_detect_dot.setStyleSheet("color: orange;")
 
@@ -2504,8 +2475,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # The loaded peaks remain authoritative for the lifetime of the loaded
         # measurement — only unfreezing (returning to live capture) clears them.
         try:
-            guitar_type = GT.GuitarType(self.guitar_type_combo.currentText())
-            self.peak_widget.model.auto_select_peaks_by_mode(guitar_type)
+            self.peak_widget.model.auto_select_peaks_by_mode()
         except Exception:
             pass
 
@@ -2513,24 +2483,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_auto_selection_btn.setEnabled(
             modified and self._is_measurement_complete
         )
-
-    # ================================================================
-    # Guitar type
-    # ================================================================
-
-    def _current_mt(self) -> MT.MeasurementType:
-        """Return the MeasurementType that reflects both UI combos."""
-        return MT.MeasurementType.from_combo_values(
-            self.measurement_type_combo.currentText(),
-            self.guitar_type_combo.currentText(),
-        )
-
-    def _on_guitar_type_changed(self, guitar_type: str) -> None:
-        AS.AppSettings.set_guitar_type(guitar_type)
-        self.peak_widget.model.set_guitar_type(guitar_type)
-        self.fft_canvas.set_guitar_type_bands(guitar_type)
-        self._update_measurement_badge()
-        self.fft_canvas.analyzer.reclassify_peaks()
 
     # ================================================================
     # Peaks / ratios
@@ -2557,7 +2509,7 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _on_measurement_type_changed(self, _: str) -> None:
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
         AS.AppSettings.set_measurement_type(mt)
         self.fft_canvas.set_measurement_type(mt)
         # Load the persisted axis range for the newly selected measurement type.
@@ -2577,7 +2529,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_widget.setVisible(mt.is_guitar)
         self._material_scroll.setVisible(not mt.is_guitar)
         self._material_instr_panel.setVisible(not mt.is_guitar)
-        if not mt.is_guitar:
+        if mt.is_guitar:
+            gt = mt.guitar_type
+            if gt is not None:
+                self.fft_canvas.set_guitar_type_bands(gt.value)
+        else:
             show_flc = (not mt.is_brace) and AS.AppSettings.measure_flc()
             self._material_peak_widget.set_mode(
                 show_cross=not mt.is_brace,
@@ -2591,6 +2547,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Brace Properties" if mt.is_brace else "Plate Properties"
             )
             self._update_plate_phase_ui()   # Reset panel to IDLE state for new type
+        # Mirrors Swift onApply: if measurementChanged { startTapSequence() }
+        # restart_tap_sequence() resets is_measurement_complete → False (via
+        # measurementComplete signal), clears peaks/spectra, and seeds the noise floor —
+        # so the next tap starts clean regardless of which type was active before.
+        # Only do this when the analyzer thread is running (i.e. app is live, not init).
+        if self._is_running:
+            self.fft_canvas.restart_tap_sequence()
         self._update_measurement_badge()
 
     def _update_measurement_badge(self) -> None:
@@ -2606,10 +2569,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "background: rgba(160,32,240,0.20); border-radius: 4px; padding: 1px 6px;"
             )
             return
-        mt = MT.MeasurementType.from_combo_values(
-            self.measurement_type_combo.currentText(),
-            self.guitar_type_combo.currentText(),
-        )
+        mt = TDS.measurement_type()
         self.measurement_type_badge.setText(mt.short_name)
         self.measurement_type_badge.setStyleSheet(
             "background: rgba(0,100,255,0.15); border-radius: 4px; padding: 1px 6px;"
@@ -2657,7 +2617,7 @@ class MainWindow(QtWidgets.QMainWindow):
         the bare "Phase N/M" string is returned regardless of tap count.
         """
         base = f"Phase\u00a0{phase_step}/{total}"
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
         tap_num = self._tap_count_total
         if not mt.is_brace and tap_num > 1:
             # Mirrors Swift: max(0, tap.currentTapCount - (materialPhaseStep - 1) * tap.numberOfTaps)
@@ -2670,7 +2630,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         Called on every PlateCapture.stateChanged emission and on measurement type change.
         """
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
         pc = self.fft_canvas.plate_capture
         state = pc.state
         State = type(pc).State
@@ -2857,7 +2817,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_plate_analysis_complete(self, f_long: float, f_cross: float, f_flc: float) -> None:
         """Auto-compute material properties and display in results panel."""
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
         dims = self._get_current_dims()
         if dims is None or not dims.is_valid():
             QtWidgets.QMessageBox.warning(
@@ -3025,7 +2985,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _get_current_dims(self) -> PA.PlateDimensions | None:
         """Return current plate/brace dimensions from TapDisplaySettings."""
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
         if mt.is_brace:
             return PA.PlateDimensions(
                 length_mm=TDS.brace_length(),
@@ -3060,7 +3020,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         canvas = self.fft_canvas
         analyzer = canvas.analyzer
-        mt = self._current_mt()
+        mt = TDS.measurement_type()
 
         # ── Axis range — view @State, mirrors Swift minFreq/maxFreq/minDB/maxDB ──
         min_freq_val = float(canvas.minFreq)
@@ -3172,7 +3132,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_scroll.setVisible(not is_comparing)
         # Guitar summary (Ring-Out, Tap Ratio) — mirrors
         # `measurementType.isGuitar && analyzer.displayMode != .comparison` in Swift
-        self._guitar_summary.setVisible(self._current_mt().is_guitar and not is_comparing)
+        self._guitar_summary.setVisible(TDS.measurement_type().is_guitar and not is_comparing)
 
         # ── display_mode is already set by load_comparison / clear_comparison ──
         # The canvas _on_fft_frame_ready gates on display_mode == COMPARISON to
@@ -3203,7 +3163,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.export_pdf_btn.setEnabled(self._is_measurement_complete)
 
         # ── Peak-selection buttons ─────────────────────────────────────────────
-        can_select = self._is_measurement_complete and not is_comparing and self._current_mt().is_guitar
+        can_select = self._is_measurement_complete and not is_comparing and TDS.measurement_type().is_guitar
         self.select_all_btn.setEnabled(can_select)
         self.deselect_all_btn.setEnabled(can_select)
         self.reset_auto_selection_btn.setEnabled(
@@ -3238,16 +3198,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
 
-        # ── Update measurement-type / guitar-type combo boxes ─────────────────
-        # AppSettings was already updated by load_measurement(); read back from
-        # there to drive the combos — mirrors Swift .onReceive writing to
-        # TapDisplaySettings which the bound pickers observe automatically.
-        if m.guitar_type:
-            self.guitar_type_combo.setCurrentText(m.guitar_type)
+        # ── Propagate measurement type to TapDisplaySettings ──────────────────
+        # AppSettings was already updated by load_measurement(); call
+        # _on_measurement_type_changed to propagate the loaded type to the UI —
+        # mirrors Swift .onReceive writing to TapDisplaySettings which the bound
+        # pickers observe automatically.
         if m.measurement_type:
             _mt = MT.MeasurementType.from_string(m.measurement_type)
-            _combo_val = "Guitar" if _mt.is_guitar else _mt.short_name
-            self.measurement_type_combo.setCurrentText(_combo_val)
+            AS.AppSettings.set_measurement_type(_mt)
+            self._on_measurement_type_changed(_mt.short_name)
 
         # ── Sync canvas saved_peaks array (used for scatter-plot drawing) ─────
         if m.peaks:
@@ -3429,7 +3388,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Advance plate/brace phase UI to COMPLETE ──────────────────────────
         # load_measurement() already set material_tap_phase = COMPLETE on the model.
-        _mt_now = self._current_mt()
+        _mt_now = TDS.measurement_type()
         if not _mt_now.is_guitar:
             self._update_plate_phase_ui()
 
@@ -3467,7 +3426,7 @@ class MainWindow(QtWidgets.QMainWindow):
                      if hasattr(canvas.saved_mag_y_db, "tolist")
                      else list(canvas.saved_mag_y_db))
 
-            mt = self._current_mt()
+            mt = TDS.measurement_type()
             is_guitar = mt.is_guitar
 
             from datetime import datetime, timezone
@@ -3534,7 +3493,8 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception:
                 pass
 
-            gt_str = self.guitar_type_combo.currentText() if hasattr(self, "guitar_type_combo") else None
+            _gt = TDS.measurement_type().guitar_type
+            gt_str = _gt.value if _gt else None
 
             # Mirrors Swift: tap.loadedMeasurementName ?? "New" used in chart title.
             _loaded_name = getattr(analyzer, "loaded_measurement_name", None)
@@ -3640,7 +3600,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # directly — no TapToneMeasurement is constructed at any point.
             canvas   = self.fft_canvas
             analyzer = canvas.analyzer
-            mt       = self._current_mt()
+            mt       = TDS.measurement_type()
             is_guitar = mt.is_guitar
 
             # ── tapLocation / notes — mirrors Swift: tapLocation.isEmpty ? nil : tapLocation ──
@@ -3809,7 +3769,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 if _ms:
                     _material_spectra = _ms
 
-            gt_str = self.guitar_type_combo.currentText() if hasattr(self, "guitar_type_combo") else None
+            _gt = TDS.measurement_type().guitar_type
+            gt_str = _gt.value if _gt else None
 
             # Mirrors Swift: tap.loadedMeasurementName ?? "New" used in chart title.
             _loaded_name = getattr(analyzer, "loaded_measurement_name", None)
@@ -4076,8 +4037,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         MEAS_TYPES = [mt.value for mt in MT.MeasurementType]
 
-        # Derive the current unified type from the existing hidden combos
-        cur_unified = self._current_mt().value
+        # Read the current measurement type from TapDisplaySettings (single source of truth)
+        cur_unified = TDS.measurement_type().value
 
         meas_type_row = QtWidgets.QHBoxLayout()
         meas_type_row.addWidget(QtWidgets.QLabel("Measurement Type:"))
@@ -4511,7 +4472,7 @@ class MainWindow(QtWidgets.QMainWindow):
         def _save_current_view() -> None:
             vb = self.fft_canvas.getPlotItem().vb
             x_range, y_range = vb.viewRange()
-            meas_t = self.measurement_type_combo.currentText()
+            meas_t = TDS.measurement_type()
             AS.AppSettings.set_f_min(int(x_range[0]), meas_t)
             AS.AppSettings.set_f_max(int(x_range[1]), meas_t)
             AS.AppSettings.set_db_min(y_range[0])
@@ -5081,7 +5042,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # Cancel any in-progress plate/brace measurement if the measurement type
             # or the FLC setting changes — mirrors Swift onApply(didChangeType:) which
             # calls cancelTapSequence() when the new type differs.
-            _current_mt = self._current_mt()
+            _current_mt = TDS.measurement_type()
             _current_flc = AS.AppSettings.measure_flc()
             _type_changed = (mt_val != _current_mt)
             _flc_changed = (measure_flc_cb.isChecked() != _current_flc)
@@ -5091,18 +5052,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.fft_canvas.cancel_tap_sequence()
                 self._tap_count_captured = 0
 
-            # Apply measurement type to the main-window combos with signals blocked so
-            # _on_measurement_type_changed does not fire here prematurely — mirrors Swift
-            # where selectedMeasurementType is a local @State var that only writes to
-            # TapDisplaySettings when applySettings() is called, never during dialog interaction.
-            with QtCore.QSignalBlocker(self.measurement_type_combo):
-                self.measurement_type_combo.setCurrentText(
-                    "Guitar" if mt_val.is_guitar else mt_val.short_name
-                )
-            gt = mt_val.guitar_type
-            if gt is not None:
-                with QtCore.QSignalBlocker(self.guitar_type_combo):
-                    self.guitar_type_combo.setCurrentText(gt.value)
+            # Apply measurement type to TapDisplaySettings — mirrors Swift where
+            # selectedMeasurementType (local @State) is written to TapDisplaySettings
+            # only when applySettings() is called, never during dialog interaction.
+            AS.AppSettings.set_measurement_type(mt_val)
 
             # Display frequency range — parse the staging text fields and apply to the
             # canvas + toolbar spinners, mirroring Swift applySettings() which validates
@@ -5222,15 +5175,9 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_brace_thickness(_pf(brace_thick_field, TDS.brace_thickness()))
             AS.AppSettings.set_brace_mass(_pf(brace_mass_field, TDS.brace_mass()))
 
-            # Always persist the current measurement type — QSettings may hold a stale
-            # value from a previous session if the user never changed the type in this
-            # dialog (the signal-blocked combo update above does not write to QSettings).
-            AS.AppSettings.set_measurement_type(mt_val)
-
             # Fire _on_measurement_type_changed exactly once after all settings are
             # persisted — mirrors Swift's onApply?(measurementChanged) callback which
-            # runs after applySettings() completes.  Signals on the combos were blocked
-            # above so this is the single, authoritative trigger.
+            # runs after applySettings() completes.
             if _type_changed or _flc_changed:
                 self._on_measurement_type_changed(mt_val.short_name)
 

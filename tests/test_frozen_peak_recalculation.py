@@ -65,7 +65,6 @@ def qt_app():
 
 
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
-from guitar_tap.models.guitar_type import GuitarType
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +186,6 @@ class TestRecalculateFrozenPeaksIfNeeded:
         findPeaks on frozenMagnitudes and updates currentPeaks.
         """
         sut = TapToneAnalyzer()
-        sut._guitar_type = GuitarType.CLASSICAL
         freqs, mag = self._make_spectrum_with_peak(200.0, peak_db=-20.0)
         sut.freq = freqs
         sut.frozen_frequencies = freqs
@@ -215,7 +213,6 @@ class TestRecalculateFrozenPeaksIfNeeded:
         threshold, so previously detected weak peaks disappear.
         """
         sut = TapToneAnalyzer()
-        sut._guitar_type = GuitarType.CLASSICAL
         freqs, mag = self._make_spectrum_with_peak(200.0, peak_db=-50.0)
         sut.freq = freqs
         sut.frozen_frequencies = freqs
@@ -249,7 +246,6 @@ class TestRecalculateFrozenPeaksIfNeeded:
         """
         from models.resonant_peak import ResonantPeak
         sut = TapToneAnalyzer()
-        sut._guitar_type = GuitarType.CLASSICAL
         # Frozen arrays must be non-empty to pass the guard (matches Swift behaviour).
         sut.frozen_frequencies = np.array([100.0, 200.0, 400.0])
         sut.frozen_magnitudes = np.array([-80.0, -25.0, -65.0])
@@ -275,7 +271,6 @@ class TestRecalculateFrozenPeaksIfNeeded:
         """PR-A4: All loaded peaks below threshold → current_peaks is empty list."""
         from models.resonant_peak import ResonantPeak
         sut = TapToneAnalyzer()
-        sut._guitar_type = GuitarType.CLASSICAL
         sut.frozen_frequencies = np.array([100.0, 200.0, 400.0])
         sut.frozen_magnitudes = np.array([-80.0, -70.0, -65.0])
         sut.is_measurement_complete = True
@@ -294,7 +289,6 @@ class TestRecalculateFrozenPeaksIfNeeded:
     def test_PRA5_empty_frozen_magnitudes_yields_no_peaks(self, qt_app):
         """PR-A5: Empty frozen_magnitudes does not crash; current_peaks stays empty."""
         sut = TapToneAnalyzer()
-        sut._guitar_type = GuitarType.CLASSICAL
         sut.freq = np.array([])
         sut.frozen_magnitudes = np.array([])
         sut.loaded_measurement_peaks = None

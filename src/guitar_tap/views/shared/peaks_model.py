@@ -73,7 +73,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.is_live: bool = True
         self.selected_frequencies: set[float] = set()
         self.show_column: int = ColumnIndex.Show.value
-        self.guitar_type: gt.GuitarType = gt.GuitarType.CLASSICAL
         self.user_has_modified_peak_selection: bool = False
         self._programmatic_update: bool = False
         # Current annotation visibility mode.
@@ -139,7 +138,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             return
         peaks = [(float(self._data[i, 0]), float(self._data[i, 1]))
                  for i in range(self._data.shape[0])]
-        idx_map = gm.GuitarMode._classify_all_tuples(peaks, self.guitar_type)
+        idx_map = gm.GuitarMode._classify_all_tuples(peaks)
         self._auto_mode_map = {peaks[i][0]: mode for i, mode in idx_map.items()}
 
     def mode_value(self, index: QtCore.QModelIndex) -> str:
@@ -169,7 +168,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         mode = self._auto_mode_map.get(freq)
         if mode is not None:
             return mode.value
-        return gm.classify_peak(freq, self.guitar_type)
+        return gm.classify_peak(freq)
 
     def set_show_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the show."""
@@ -258,14 +257,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
         rows.append(f'<span style="color:rgb(50,50,50);">{freq:.1f} Hz</span>')
         rows.append(f'<span style="color:rgb(110,110,110);">{mag:.1f} dB</span>')
         return '<center>' + '<br/>'.join(rows) + '</center>'
-
-    def set_guitar_type(self, guitar_type: str) -> None:
-        """Change the guitar type used for auto mode classification."""
-        self.layoutAboutToBeChanged.emit()
-        self.guitar_type = gt.GuitarType(guitar_type)
-        self._recompute_auto_modes()   # mirrors Swift reclassifyPeaks()
-        self._emit_mode_colors()
-        self.layoutChanged.emit()
 
     def data_value(self, index: QtCore.QModelIndex) -> QtCore.QVariant:
         """Return the value from the data for cols 1/2 and the value in
@@ -616,7 +607,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             self.hideAnnotations.emit()
         self.layoutChanged.emit()
 
-    def auto_select_peaks_by_mode(self, guitar_type: gt.GuitarType) -> None:
+    def auto_select_peaks_by_mode(self) -> None:
         """Auto-select the highest-magnitude peak assigned to each guitar mode.
 
         Mirrors Swift guitarModeSelectedPeakIDs (updated algorithm):
