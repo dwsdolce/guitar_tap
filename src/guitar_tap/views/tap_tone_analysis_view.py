@@ -5571,7 +5571,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Refresh device and calibration display live while the dialog is open
         self.fft_canvas.devicesChanged.connect(_on_device_list_changed)
-        dlg.resize(460, 700)
+        dlg.resize(max(dlg.sizeHint().width(), 460), 700)
         dlg.exec()
         self.fft_canvas.devicesChanged.disconnect(_on_device_list_changed)
 
