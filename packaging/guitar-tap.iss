@@ -4,7 +4,11 @@
 #pragma verboselevel 9
 
 #define MyAppName "Guitar Tap"
-; #define MyAppVersion "0.10"
+#define VersionFile FileOpen(AddBackslash(SourcePath) + "..\src\guitar_tap\version")
+#define VersionBuildFile FileOpen(AddBackslash(SourcePath) + "..\src\guitar_tap\version_build")
+#define MyAppVersion Trim(FileRead(VersionFile)) + "." + Trim(FileRead(VersionBuildFile))
+#expr FileClose(VersionFile)
+#expr FileClose(VersionBuildFile)
 #define MyAppPublisher "Dolce Sfogato"
 #define MyAppURL "https://www.dolcesfogato.com/"
 #define MyAppExeName "guitar-tap.exe"

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 # Run from the project root regardless of where this script is invoked from.
 cd "$(dirname "$0")/.."
@@ -39,8 +40,8 @@ fi
 # Run pyinstaller
 #===============================================
 # Get the full version (e.g. 1.0.245) matching what the spec file produces
-version="`cat src/guitar_tap/version`"
-version_build="`cat src/guitar_tap/version_build`"
+version="`tr -d '\r\n' < src/guitar_tap/version`"
+version_build="`tr -d '\r\n' < src/guitar_tap/version_build`"
 version="${version}.${version_build}"
 echo "Creating installer for version ${version}"
 pyinstaller -y packaging/guitar-tap.spec
@@ -58,7 +59,7 @@ ISCC_PATH="C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
 #===============================================
 # You must install Inno Setup 6 to build the installer
 #===============================================
-"$ISCC_PATH" /DMyAppVersion=${version} /F $ifile_win
+"$ISCC_PATH" /F "$ifile_win"
 if [ $? -ne 0 ]; then
     echo "Creating the installer failed"
     exit 1
