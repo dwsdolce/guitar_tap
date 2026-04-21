@@ -1,5 +1,8 @@
 # Development and testing dependencies
 # pip install -r requirements.txt -r requirements-dev.txt
+# To build installers:
+# pip install -r requirements.txt -r requirements-dev.txt -r requirements-macos.txt
+pyinstaller>=6.0
 pytest==9.0.2
 pytest-cov==7.1.0
 mypy==1.19.1

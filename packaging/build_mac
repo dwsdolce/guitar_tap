@@ -3,68 +3,33 @@
 # Run from the project root regardless of where this script is invoked from.
 cd "$(dirname "$0")/.."
 
-# There are two fors for this command:
+# Usage:
+#   build_mac          — defaults to dmg
+#   build_mac dmg|pkg
 #   build_mac help
-# and
-#   build_mac arm|intel dmg|pkg
 #
-# The script reinvokes if the current architecture is not the desired one.
-#
-if [[ $# == 1 ]]
+if [[ $# == 0 ]]
+then
+    format="dmg"
+elif [[ $# == 1 ]]
 then
     if [[ "$1" == "help" ]]
     then
-        echo "build_mac arm|intel dmg|pkg"
+        echo "build_mac [dmg|pkg]"
         exit 0
-     fi
-elif [[ $# !=  2 ]]
-then
-    echo "build_mac arm|intel dmg|pkg"
-    exit 1
-fi
-
-desired="$1"
-if [[ $desired == "intel" ]]
-then
-    desired_arch="i386"
-    desired_arch_option="x86_64"
-elif [[ $desired == "arm" ]]
-then
-    desired_arch="arm64"
-    desired_arch_option="arm64"
+    fi
+    format="$1"
+    if [[ $format != "dmg" && $format != "pkg" ]]
+    then
+        echo "Unknown installer format: $format"
+        echo "build_mac [dmg|pkg]"
+        exit 1
+    fi
 else
-    echo "Unknown platform to build: $desired"
-    echo "build_mac arm|intel dmg|pkg"
+    echo "build_mac [dmg|pkg]"
     exit 1
 fi
 
-format="$2"
-if [[ $format != "dmg" && $format != "pkg" ]]
-then
-    echo "Unknown installer format to build: $format"
-    echo "build_mac arm|intel dmg|pkg"
-    exit 1
-fi
-    
-current_arch=`arch`
-if [[ $current_arch != $desired_arch ]]
-then
-    env /usr/bin/arch -$desired_arch_option /bin/zsh ./packaging/build_mac $desired $format
-    exit $?
-fi
-
-#===============================================
-# Setup the correct python environment
-#===============================================
-#if [[ `arch` == "i386" ]]
-#then
-#    echo "Activating i386 virtual environment for Python"
-#    source ~/i386/bin/activate
-#elif [[ `arch` == 'arm64' ]]
-#then
-#    echo "Activating arm64 virtual environment for Python"
-#    source ~/arm64/bin/activate
-#fi
 
 echo "Running build for `arch` architecure"
 
@@ -86,8 +51,10 @@ fi
 #===============================================
 # Run pyinstaller
 #===============================================
-# Get the product version
+# Get the full version (e.g. 1.0.245) matching what the spec file produces
 VERSION="`cat src/guitar_tap/version`"
+VERSION_BUILD="`cat src/guitar_tap/version_build`"
+VERSION="${VERSION}.${VERSION_BUILD}"
 echo "Creating installer for version ${VERSION}"
 pyinstaller -y packaging/guitar-tap.spec
 if [ $? -ne 0 ]; then
@@ -102,7 +69,7 @@ rm -rf dist/guitar-tap
 # Create the format.
 #===============================================
 echo "Creating the ${format}"
-installer_name="Guitar_Tap_V${VERSION}_${desired}.${format}"
+installer_name="Guitar_Tap_V${VERSION}.${format}"
 test -f $installer_name && rm $installer_name
 
 if [[ $format == "dmg" ]]
@@ -132,7 +99,7 @@ else
         --version "${VERSION}" \
         --install-location "/Applications" \
         packages/GuitarTap.pkg
-    productbuild --distribution ./packaging/guitar-tap.${desired}.dist  \
+    productbuild --distribution ./packaging/guitar-tap.arm.dist  \
         --package-path ./packages \
         --sign "Developer ID Installer: David Smith (43QHHT3XK2)" \
         $installer_name
@@ -158,7 +125,7 @@ echo "Done Creating the ${format}"
 # Notarize the format.
 #===============================================
 echo "Notarizing the ${format}"
-xcrun notarytool submit $installer_name --wait --apple-id dws@dolcesfogato.com --password ouio-uwqe-qzhz-ukmm --team-id 43QHHT3XK2
+xcrun notarytool submit $installer_name --wait --keychain-profile "notarytool-profile"
 if [ $? -ne 0 ]; then
     echo "Notarizing the ${format} failed"
     exit 1
@@ -171,7 +138,7 @@ echo "Done Notarizing the ${format}"
 echo "Stapling the ${format}"
 xcrun stapler staple $installer_name
 if [ $? -ne 0 ]; then
-    echo "Stapling the {format} failed"
+    echo "Stapling the ${format} failed"
     exit 1
 fi
 

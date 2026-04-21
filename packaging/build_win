@@ -38,8 +38,10 @@ fi
 #===============================================
 # Run pyinstaller
 #===============================================
-# Get the product version
+# Get the full version (e.g. 1.0.245) matching what the spec file produces
 version="`cat src/guitar_tap/version`"
+version_build="`cat src/guitar_tap/version_build`"
+version="${version}.${version_build}"
 echo "Creating installer for version ${version}"
 pyinstaller -y packaging/guitar-tap.spec
 if [ $? -ne 0 ]; then

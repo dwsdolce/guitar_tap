@@ -4,12 +4,6 @@
 # Run from the project root regardless of where this script is invoked from.
 cd "$(dirname "$0")/.."
 
-#===============================================
-# Setup the correct python environment
-#===============================================
-echo "Activating linux virtual environment for Python"
-source ".venv/Scripts/activate"
-
 echo "Running build for `arch` architecure"
 
 #===============================================
@@ -30,9 +24,11 @@ fi
 #===============================================
 # Run pyinstaller
 #===============================================
-# Get the product version
-version="`cat src/guitar_tap/version`"
-echo "Creating installer for version ${version}"
+# Get the full version (e.g. 1.0.245) matching what the spec file produces
+VERSION="`cat src/guitar_tap/version`"
+VERSION_BUILD="`cat src/guitar_tap/version_build`"
+VERSION="${VERSION}.${VERSION_BUILD}"
+echo "Creating installer for version ${VERSION}"
 pyinstaller -y packaging/guitar-tap.spec
 if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"

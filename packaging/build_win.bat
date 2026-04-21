@@ -39,8 +39,10 @@ echo gen_version_build: version_build = %VERSION_BUILD%
 REM ===============================================
 REM Run pyinstaller
 REM ===============================================
-REM Get the product version
+REM Get the full version (e.g. 1.0.245) matching what the spec file produces
 set /p version=<src\guitar_tap\version
+set /p version_build=<src\guitar_tap\version_build
+set version=%version%.%version_build%
 echo Creating installer for version %version%
 pyinstaller -y packaging\guitar-tap.spec
 if errorlevel 1 (
