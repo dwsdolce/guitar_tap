@@ -522,7 +522,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ch.setContentsMargins(0, 4, 0, 0)
         root.addWidget(content, stretch=1)
 
-        # Left: canvas + pyqtgraph toolbar
+        # Left: canvas + material instructions panel (below graph, plate/brace only)
         canvas_widget = QtWidgets.QWidget()
         cv = QtWidgets.QVBoxLayout(canvas_widget)
         cv.setContentsMargins(0, 0, 8, 0)
@@ -534,7 +534,6 @@ class MainWindow(QtWidgets.QMainWindow):
         cv.addWidget(self._material_instr_panel)
 
         ch.addWidget(canvas_widget, stretch=1)
-
         ch.addWidget(_vsep())
 
         # Right: results panel — sizes to its content, never hidden
@@ -574,7 +573,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_db_btn.setToolButtonStyle(
             QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon
         )
-        self.auto_db_btn.setStyleSheet("border: none")
+        self.auto_db_btn.setStyleSheet(
+            "QToolButton { border: none; }"
+            "QToolButton:checked { border: none; color: palette(button-text); }"
+        )
         self.auto_db_btn.setCheckable(True)
         self.auto_db_btn.setChecked(False)
         self.auto_db_btn.setToolTip("Automatically scale the dB axis to the spectrum floor")
@@ -3249,10 +3251,33 @@ class MainWindow(QtWidgets.QMainWindow):
             self._comparison_results_view.set_comparison_data(
                 self.fft_canvas.analyzer._comparison_data
             )
+            # Set the right panel minimum width from the table's actual column
+            # widths now that set_comparison_data() has called
+            # resizeColumnToContents(0) to fit the real label content.
+            _tbl = self._comparison_results_view._table
+            _label_col_w = _tbl.columnWidth(0)
+            _fixed_cols_w = sum(_tbl.columnWidth(c) for c in range(1, 4))
+            _frame = _tbl.frameWidth() * 2
+            _panel_margins = self._right_panel.layout().contentsMargins()
+            _panel_h_margins = _panel_margins.left() + _panel_margins.right()
+            self._right_panel.setMinimumWidth(
+                _label_col_w + _fixed_cols_w + _frame + _panel_h_margins
+            )
+        else:
+            self._right_panel.setMinimumWidth(0)
         self._comparison_results_view.setVisible(is_comparing)
         self.peak_widget.setVisible(not is_comparing)
         # Scroll area (plate/brace) also hidden while comparing
         self._material_scroll.setVisible(not is_comparing)
+        # Peak selection buttons hidden when there are no peaks to act on —
+        # mirrors Swift `if !sortedPeaksWithModes.isEmpty` which evaluates to
+        # empty during comparison (and also when no measurement has been made).
+        _has_peaks = not is_comparing and self.peak_widget.model.rowCount(QtCore.QModelIndex()) > 0
+        self.select_all_btn.setVisible(_has_peaks)
+        self.deselect_all_btn.setVisible(_has_peaks)
+        self.reset_auto_selection_btn.setVisible(
+            _has_peaks and TDS.measurement_type().is_guitar
+        )
         # Guitar summary (Ring-Out, Tap Ratio) — mirrors
         # `measurementType.isGuitar && analyzer.displayMode != .comparison` in Swift
         self._guitar_summary.setVisible(TDS.measurement_type().is_guitar and not is_comparing)

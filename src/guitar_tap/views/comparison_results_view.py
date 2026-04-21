@@ -31,7 +31,7 @@ class ComparisonResultsView(QtWidgets.QWidget):
 
     # Columns shown in the table — mirrors Swift columns: [.air, .top, .back]
     _COLUMN_MODES = ["Air", "Top", "Back"]
-    _COLUMN_WIDTH = 80   # pixels for each frequency column
+    _COLUMN_WIDTH = 80   # pixels for each frequency column (Qt px ≈ Swift 72pt + cell padding)
     _LABEL_WIDTH  = 130  # pixels for the spectrum label column
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
@@ -67,7 +67,7 @@ class ComparisonResultsView(QtWidgets.QWidget):
             ["Spectrum"] + self._COLUMN_MODES
         )
         self._table.horizontalHeader().setSectionResizeMode(
-            0, QtWidgets.QHeaderView.ResizeMode.Stretch
+            0, QtWidgets.QHeaderView.ResizeMode.Interactive
         )
         for col in range(1, 4):
             self._table.horizontalHeader().setSectionResizeMode(
@@ -81,6 +81,12 @@ class ComparisonResultsView(QtWidgets.QWidget):
         self._table.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self._table.setShowGrid(False)
         self._table.setAlternatingRowColors(False)
+        # Use caption-equivalent font size — mirrors Swift .font(.caption) applied
+        # to the whole ComparisonResultsView VStack (~11 pt on macOS).
+        caption_font = self._table.font()
+        caption_font.setPointSize(10)
+        self._table.setFont(caption_font)
+        self._table.horizontalHeader().setFont(caption_font)
         # Match surrounding panel's background.
         self._table.setStyleSheet("QTableWidget { border: none; }")
 
@@ -118,13 +124,28 @@ class ComparisonResultsView(QtWidgets.QWidget):
                 text = self._freq_text(freq)
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setTextAlignment(
-                    int(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+                    int(QtCore.Qt.AlignmentFlag.AlignCenter)
                 )
                 if freq is None:
                     item.setForeground(QtGui.QColor(150, 150, 150))
                 self._table.setItem(row, col, item)
 
         self._table.resizeRowsToContents()
+
+        # Measure column 0 width using font metrics on the exact 10pt font used
+        # in _make_label_cell, then add the fixed chrome (dot + spacing + margins).
+        # resizeColumnToContents(0) does not work for setCellWidget cells.
+        _label_font = QtGui.QFont()
+        _label_font.setPointSize(10)
+        _fm = QtGui.QFontMetrics(_label_font)
+        _max_text_w = max(
+            (_fm.horizontalAdvance(entry.get("label", ""))
+             for entry in comparison_data),
+            default=0,
+        )
+        # dot(10) + spacing(6) + text + left-margin(6) + right-margin(4)
+        _col0_w = min(10 + 6 + _max_text_w + 6 + 4, 190)
+        self._table.setColumnWidth(0, _col0_w)
 
     @staticmethod
     def _make_label_cell(label: str, color_rgb: tuple) -> QtWidgets.QWidget:
@@ -142,9 +163,19 @@ class ComparisonResultsView(QtWidgets.QWidget):
             f"background-color: rgb({r},{g},{b}); border-radius: 5px;"
         )
 
-        # Label text
+        # Label text — elide at tail when the column is too narrow to show the
+        # full name, mirroring Swift's .lineLimit(1).truncationMode(.tail).
+        # Font must be set explicitly because this is a QWidget cell, not a
+        # QTableWidgetItem, so it does not inherit the table's caption font.
         text_label = QtWidgets.QLabel(label)
-        text_label.setMaximumWidth(200)
+        text_label.setMinimumWidth(0)
+        text_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Ignored,
+            QtWidgets.QSizePolicy.Policy.Preferred,
+        )
+        caption_font = text_label.font()
+        caption_font.setPointSize(10)
+        text_label.setFont(caption_font)
 
         layout.addWidget(dot)
         layout.addWidget(text_label, 1)
