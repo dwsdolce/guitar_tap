@@ -38,6 +38,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtWidgets  # noqa: E402
 
+# Offscreen/minimal Qt platforms warn if PySide6/lib/fonts is missing.
+# We don't render with Qt fonts (only produce HTML), so create an empty
+# directory to silence the warning.
+_pyside_dir = os.path.dirname(QtWidgets.__file__)
+_fonts_dir = os.path.join(_pyside_dir, "lib", "fonts")
+os.makedirs(_fonts_dir, exist_ok=True)
+
 _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
 # ---------------------------------------------------------------------------
