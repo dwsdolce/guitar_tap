@@ -4976,11 +4976,12 @@ class MainWindow(QtWidgets.QMainWindow):
         device_combo.setToolTip("Select the microphone or audio input device to use")
         device_combo.setEditable(True)
         device_combo.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed
         )
         device_combo.setSizeAdjustPolicy(
-            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
+        device_combo.setMaximumWidth(300)
         le = device_combo.lineEdit()
         if le is not None:
             le.setAlignment(
