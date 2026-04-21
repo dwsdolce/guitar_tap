@@ -385,33 +385,53 @@ class MainWindow(QtWidgets.QMainWindow):
         #                   Show Measurements  ↔  Show Measurements (⌘L)
         #   Help menu:      Guitar Tap Help (F1) ↔  CommandGroup(replacing: .help) (⌘?)
 
+        import sys as _sys
         mb = self.menuBar()
 
-        # -- GuitarTap menu --
-        # Windows/Linux: visible as an ordinary first menu containing About and Settings.
-        # macOS: Qt moves AboutRole and PreferencesRole actions into the system
-        # Application menu automatically, leaving this menu empty (and hidden).
-        app_menu = mb.addMenu("GuitarTap")
-        about_action = QtGui.QAction("About Guitar Tap…", self)
-        about_action.setMenuRole(QtGui.QAction.MenuRole.AboutRole)
-        about_action.triggered.connect(self._show_about)
-        app_menu.addAction(about_action)
-        settings_action = QtGui.QAction("Settings…", self)
-        settings_action.setShortcut(QtGui.QKeySequence("Ctrl+,"))
-        settings_action.setMenuRole(QtGui.QAction.MenuRole.PreferencesRole)
-        settings_action.triggered.connect(self._show_settings)
-        app_menu.addAction(settings_action)
+        # ── Menu structure by platform ────────────────────────────────────────
+        #
+        # macOS:
+        #   App menu (auto):  About Guitar Tap…  /  Settings… (⌘,)  /  Quit
+        #                     Qt moves AboutRole + PreferencesRole here automatically.
+        #   File:             Close (⌘W)  |  Save  |  Export…  /  Export PDF…
+        #   View:             Auto dB  /  Cycle Annotations  |  Show Metrics  /  Show Measurements
+        #   Help:             Guitar Tap Help
+        #
+        # Windows:
+        #   File:             Save  |  Export…  /  Export PDF…  |  Settings…  |  Exit
+        #   View:             (same as macOS)
+        #   Help:             Guitar Tap Help  |  About Guitar Tap…
+        #
+        # Linux:
+        #   File:             Save  |  Export…  /  Export PDF…  |  Settings…  |  Quit
+        #   View:             (same as macOS)
+        #   Help:             Guitar Tap Help  |  About Guitar Tap…
+        # ─────────────────────────────────────────────────────────────────────
+
+        # macOS only: GuitarTap app menu — Qt automatically moves AboutRole and
+        # PreferencesRole into the system Application menu and hides this menu.
+        if _sys.platform == "darwin":
+            app_menu = mb.addMenu("GuitarTap")
+            about_action_mac = QtGui.QAction("About Guitar Tap…", self)
+            about_action_mac.setMenuRole(QtGui.QAction.MenuRole.AboutRole)
+            about_action_mac.triggered.connect(self._show_about)
+            app_menu.addAction(about_action_mac)
+            settings_action_mac = QtGui.QAction("Settings…", self)
+            settings_action_mac.setShortcut(QtGui.QKeySequence("Ctrl+,"))
+            settings_action_mac.setMenuRole(QtGui.QAction.MenuRole.PreferencesRole)
+            settings_action_mac.triggered.connect(self._show_settings)
+            app_menu.addAction(settings_action_mac)
 
         # -- File menu --
         file_menu = mb.addMenu("File")
 
-        # Close mirrors the standard "Close" item Swift's Window scene adds on macOS.
-        close_action = QtGui.QAction("Close", self)
-        close_action.setShortcut(QtGui.QKeySequence.StandardKey.Close)
-        close_action.triggered.connect(self.close)
-        file_menu.addAction(close_action)
-
-        file_menu.addSeparator()
+        if _sys.platform == "darwin":
+            # macOS: "Close" mirrors the standard Window-scene Close item (⌘W).
+            close_action = QtGui.QAction("Close", self)
+            close_action.setShortcut(QtGui.QKeySequence.StandardKey.Close)
+            close_action.triggered.connect(self.close)
+            file_menu.addAction(close_action)
+            file_menu.addSeparator()
 
         self._menu_save_action = QtGui.QAction("Save Measurement…", self)
         self._menu_save_action.setShortcut(QtGui.QKeySequence.StandardKey.Save)
@@ -432,6 +452,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._menu_export_pdf_action.setEnabled(False)
         self._menu_export_pdf_action.triggered.connect(self._on_export_pdf)
         file_menu.addAction(self._menu_export_pdf_action)
+
+        if _sys.platform != "darwin":
+            # Windows/Linux: Settings in File menu (standard placement on these platforms).
+            file_menu.addSeparator()
+            settings_action = QtGui.QAction("Settings…", self)
+            settings_action.setShortcut(QtGui.QKeySequence("Ctrl+,"))
+            settings_action.triggered.connect(self._show_settings)
+            file_menu.addAction(settings_action)
+            # Exit (Windows) / Quit (Linux) at the very bottom of File menu.
+            file_menu.addSeparator()
+            exit_label = "Exit" if _sys.platform == "win32" else "Quit"
+            exit_action = QtGui.QAction(exit_label, self)
+            exit_action.setShortcut(QtGui.QKeySequence.StandardKey.Quit)
+            exit_action.triggered.connect(self.close)
+            file_menu.addAction(exit_action)
 
         # -- View menu --
         view_menu = mb.addMenu("View")
@@ -462,12 +497,17 @@ class MainWindow(QtWidgets.QMainWindow):
         # -- Help menu --
         help_menu = mb.addMenu("Help")
         help_action = QtGui.QAction("Guitar Tap Help", self)
-        help_action.setShortcut(
-            QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.HelpContents)
-        )
+        help_action.setShortcut(QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.HelpContents))
         help_action.setMenuRole(QtGui.QAction.MenuRole.NoRole)
         help_action.triggered.connect(self._show_help)
         help_menu.addAction(help_action)
+
+        if _sys.platform != "darwin":
+            # Windows/Linux: About belongs in the Help menu (standard placement).
+            help_menu.addSeparator()
+            about_action = QtGui.QAction("About Guitar Tap…", self)
+            about_action.triggered.connect(self._show_about)
+            help_menu.addAction(about_action)
 
         # Window geometry
         geom = AS.AppSettings.window_geometry()
