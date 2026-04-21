@@ -73,8 +73,8 @@ def last_export_dir() -> str:
     Persisted across launches via QSettings — mirrors Swift's UserDefaults
     bookmark storage in MeasurementFileExporter.
     """
-    from PySide6.QtCore import QSettings
-    stored = QSettings().value(_EXPORT_DIR_KEY)
+    from views.utilities.tap_settings_view import AppSettings
+    stored = AppSettings._s().value(_EXPORT_DIR_KEY)
     if stored and os.path.isdir(stored):
         return stored
     return default_export_dir()
@@ -82,8 +82,8 @@ def last_export_dir() -> str:
 
 def update_export_dir(chosen_path: str) -> None:
     """Persist the directory of *chosen_path* as the new last-used export dir."""
-    from PySide6.QtCore import QSettings
-    QSettings().setValue(_EXPORT_DIR_KEY, os.path.dirname(chosen_path))
+    from views.utilities.tap_settings_view import AppSettings
+    AppSettings._s().setValue(_EXPORT_DIR_KEY, os.path.dirname(chosen_path))
 
 
 # ── Persistence paths ─────────────────────────────────────────────────────────
