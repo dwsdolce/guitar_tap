@@ -93,7 +93,14 @@ class TapToneAnalyzerMeasurementManagementMixin:
         available_devices = getattr(mic, "available_input_devices", []) or []
         # available_input_devices starts empty; populate if needed.
         if not available_devices and mic is not None and hasattr(mic, "load_available_input_devices"):
-            mic.load_available_input_devices()
+            # Suppress _on_devices_changed to avoid triggering _on_devices_refreshed,
+            # which calls sd._terminate()/_initialize() and kills the live audio stream.
+            saved_cb = mic._on_devices_changed
+            mic._on_devices_changed = None
+            try:
+                mic.load_available_input_devices()
+            finally:
+                mic._on_devices_changed = saved_cb
             available_devices = getattr(mic, "available_input_devices", []) or []
         available_uids  = {d.fingerprint for d in available_devices}
         available_names = {d.name for d in available_devices}
@@ -619,7 +626,15 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # is called. If it is still empty, populate it now so the match below
             # has a real device list to work with.
             if not available and mic is not None and hasattr(mic, "load_available_input_devices"):
-                mic.load_available_input_devices()
+                # Suppress _on_devices_changed to avoid triggering _on_devices_refreshed,
+                # which calls sd._terminate()/_initialize() and kills the live audio stream.
+                # We only need the device list here — no hot-plug side-effects.
+                saved_cb = mic._on_devices_changed
+                mic._on_devices_changed = None
+                try:
+                    mic.load_available_input_devices()
+                finally:
+                    mic._on_devices_changed = saved_cb
                 available = getattr(mic, "available_input_devices", []) or []
             match = next((d for d in available if d.fingerprint == mic_uid), None)
             if match is None and mic_name:

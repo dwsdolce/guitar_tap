@@ -463,6 +463,19 @@ class TapToneAnalyzer(
         # Mirrors Swift TapToneAnalyzer.start() registering rawSampleHandler.
         self.mic.raw_sample_handler = self._accumulate_gated_samples
 
+        # ── Initial device enumeration ────────────────────────────────────
+        # Mirrors Swift RealtimeFFTAnalyzer.init() calling loadAvailableInputDevices()
+        # synchronously so that availableInputDevices is populated before any
+        # measurement can be loaded. Suppresses the _on_devices_changed callback to
+        # avoid triggering _on_devices_refreshed (which calls sd._terminate()) during
+        # init — the hot-plug monitor will handle subsequent changes.
+        saved_cb = self.mic._on_devices_changed
+        self.mic._on_devices_changed = None
+        try:
+            self.mic.load_available_input_devices()
+        finally:
+            self.mic._on_devices_changed = saved_cb
+
         # ── Saved measurements (view-layer import deferred until here) ────
         from views.tap_analysis_results_view import load_all_measurements as _load
         self.saved_measurements = _load()

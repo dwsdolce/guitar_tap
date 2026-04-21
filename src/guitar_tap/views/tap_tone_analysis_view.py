@@ -2382,14 +2382,22 @@ class MainWindow(QtWidgets.QMainWindow):
             self.pause_tap_btn.setStyleSheet("")
             self.cancel_tap_btn.setText("Cancel")
 
-            # New Tap: always enabled for plate/brace (start over anytime);
-            # for guitar it requires a complete or comparison state.
-            # Mirrors Swift newTapButtonDisabled returning false for plate/brace.
-            if is_plate and self._is_running:
-                self.new_tap_btn.setEnabled(True)
+            # New Tap: always enabled for plate/brace when running or when a
+            # measurement is loaded (complete state); for guitar it requires a
+            # complete or comparison state.
+            # Mirrors Swift newTapButtonDisabled: disabled only when fft.isRunning
+            # is false (audio not yet started) AND no measurement has been loaded.
+            # In the Python app _is_running is False when a measurement is loaded
+            # before the analyzer is started, so we treat _is_measurement_complete
+            # as an additional "ready" condition — the user can always start a new
+            # tap from a loaded/frozen measurement even before starting audio.
+            if is_plate:
+                self.new_tap_btn.setEnabled(
+                    self._is_running or self._is_measurement_complete or is_comparing
+                )
             else:
                 self.new_tap_btn.setEnabled(
-                    self._is_running and (self._is_measurement_complete or is_comparing)
+                    self._is_measurement_complete or is_comparing
                 )
 
             self.pause_tap_btn.setEnabled(is_detecting or self._is_paused)
@@ -2573,7 +2581,15 @@ class MainWindow(QtWidgets.QMainWindow):
     # Measurement type / plate analysis
     # ================================================================
 
-    def _on_measurement_type_changed(self, _: str) -> None:
+    def _apply_measurement_type_to_ui(self) -> None:
+        """Update all UI elements that depend on the current measurement type.
+
+        This is the load-path equivalent of Swift's .onReceive(tap.$loadedMeasurementType)
+        handler — it propagates a measurement-type change to every bound control and
+        widget WITHOUT restarting the tap sequence.  Called from both the load path
+        (_on_loaded_measurement_type) and the settings-apply path
+        (_on_measurement_type_changed), mirroring how Swift separates the two concerns.
+        """
         mt = TDS.measurement_type()
         AS.AppSettings.set_measurement_type(mt)
         self.fft_canvas.set_measurement_type(mt)
@@ -2611,7 +2627,27 @@ class MainWindow(QtWidgets.QMainWindow):
             self._mat_title.setText(
                 "Brace Properties" if mt.is_brace else "Plate Properties"
             )
-            self._update_plate_phase_ui()   # Reset panel to IDLE state for new type
+            self._update_plate_phase_ui()   # Reset panel to IDLE/COMPLETE state for type
+        self._update_measurement_badge()
+
+    def _on_loaded_measurement_type(self, _: str) -> None:
+        """Handle a measurement-type change that originated from loading a saved measurement.
+
+        Mirrors Swift's .onReceive(tap.$loadedMeasurementType) handler: updates all
+        bound controls and widgets for the new type but does NOT restart the tap
+        sequence — the loaded measurement state must be preserved.
+        """
+        self._apply_measurement_type_to_ui()
+
+    def _on_measurement_type_changed(self, _: str) -> None:
+        """Handle a measurement-type change that originated from the settings UI.
+
+        Mirrors Swift's onApply?(measurementChanged) callback in TapSettingsView:
+        updates the UI for the new type AND restarts the tap sequence so the next
+        tap starts from a clean state.  Only restarts when the analyzer is running
+        (i.e. not during app initialisation).
+        """
+        self._apply_measurement_type_to_ui()
         # Mirrors Swift onApply: if measurementChanged { startTapSequence() }
         # restart_tap_sequence() resets is_measurement_complete → False (via
         # measurementComplete signal), clears peaks/spectra, and seeds the noise floor —
@@ -2619,7 +2655,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Only do this when the analyzer thread is running (i.e. app is live, not init).
         if self._is_running:
             self.fft_canvas.restart_tap_sequence()
-        self._update_measurement_badge()
 
     def _update_measurement_badge(self) -> None:
         """Refresh the badge in the Analysis Results panel.
@@ -3297,13 +3332,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Propagate measurement type to TapDisplaySettings ──────────────────
         # AppSettings was already updated by load_measurement(); call
-        # _on_measurement_type_changed to propagate the loaded type to the UI —
-        # mirrors Swift .onReceive writing to TapDisplaySettings which the bound
-        # pickers observe automatically.
+        # _on_loaded_measurement_type to propagate the loaded type to the UI —
+        # mirrors Swift .onReceive(tap.$loadedMeasurementType) which updates the
+        # bound picker without restarting the tap sequence.
         if m.measurement_type:
             _mt = MT.MeasurementType.from_string(m.measurement_type)
             AS.AppSettings.set_measurement_type(_mt)
-            self._on_measurement_type_changed(_mt.short_name)
+            self._on_loaded_measurement_type(_mt.short_name)
 
         # ── Sync canvas saved_peaks array (used for scatter-plot drawing) ─────
         if m.peaks:
