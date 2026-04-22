@@ -176,3 +176,51 @@ class AudioDevice:
             f"AudioDevice(name={self.name!r}, index={self.index}, "
             f"sample_rate={self.sample_rate})"
         )
+
+
+def filter_input_devices(raw: "list[dict]") -> "list[dict]":
+    """Return the subset of PortAudio devices that are real capture inputs.
+
+    Keeps anything with ``max_input_channels > 0`` on macOS/Linux (the host APIs
+    there don't produce the kind of duplicates/pseudo-devices we need to strip).
+
+    On Windows, PortAudio enumerates each physical device under every host API
+    it was built with (MME, DirectSound, WASAPI, WDM-KS), plus the Sound Mapper
+    routing pseudo-devices and WASAPI loopback endpoints (which PortAudio
+    exposes as capture devices even though they're really speaker outputs).
+    Filter down to a single host API (preferring WASAPI, then DirectSound, then
+    MME) and drop the pseudo / loopback entries.
+    """
+    import platform
+    import sounddevice as _sd
+
+    inputs = [d for d in raw if int(d["max_input_channels"]) > 0]
+    if platform.system() != "Windows":
+        return inputs
+
+    try:
+        apis = _sd.query_hostapis()
+    except Exception:
+        return inputs
+
+    preferred_api: "int | None" = None
+    for preferred_name in ("Windows WASAPI", "Windows DirectSound", "MME"):
+        for i, a in enumerate(apis):
+            if a["name"] == preferred_name:
+                preferred_api = i
+                break
+        if preferred_api is not None:
+            break
+
+    pseudo = ("microsoft sound mapper", "primary sound capture")
+    out: list[dict] = []
+    for d in inputs:
+        name_l = str(d["name"]).lower()
+        if any(p in name_l for p in pseudo):
+            continue
+        if "loopback" in name_l:
+            continue
+        if preferred_api is not None and int(d["hostapi"]) != preferred_api:
+            continue
+        out.append(d)
+    return out

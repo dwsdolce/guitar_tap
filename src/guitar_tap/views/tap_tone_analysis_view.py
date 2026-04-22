@@ -1814,8 +1814,9 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.devicesChanged.connect(self._on_devices_changed)
         canvas.currentDeviceLost.connect(self._on_device_lost)
         try:
+            from models.audio_device import filter_input_devices as _filt
             self._known_input_device_names: set[str] = {
-                str(d["name"]) for d in sd.query_devices() if d["max_input_channels"] > 0
+                str(d["name"]) for d in _filt(list(sd.query_devices()))
             }
         except Exception:
             self._known_input_device_names = set()
@@ -5032,12 +5033,12 @@ class MainWindow(QtWidgets.QMainWindow):
         aud.addLayout(dev_row)
 
         from models.audio_device import AudioDevice as _AudioDevice
+        from models.audio_device import filter_input_devices as _filter_inputs
         input_devices: list[_AudioDevice] = []
         try:
             default_input = sd.query_devices(kind="input")
-            for dev in sd.query_devices():
-                if dev["max_input_channels"] > 0:
-                    input_devices.append(_AudioDevice.from_sounddevice_dict(dev))
+            for dev in _filter_inputs(list(sd.query_devices())):
+                input_devices.append(_AudioDevice.from_sounddevice_dict(dev))
         except Exception:
             pass
 
@@ -5089,8 +5090,7 @@ class MainWindow(QtWidgets.QMainWindow):
             try:
                 new_devices: list[_AudioDevice] = [
                     _AudioDevice.from_sounddevice_dict(dev)
-                    for dev in sd.query_devices()
-                    if dev["max_input_channels"] > 0
+                    for dev in _filter_inputs(list(sd.query_devices()))
                 ]
             except Exception:
                 return

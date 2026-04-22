@@ -55,6 +55,13 @@ class TapToneAnalyzerControlMixin:
         import sounddevice as _sd
         previous_device = self.mic.selected_input_device
 
+        # Close the active stream BEFORE terminating PortAudio. Calling
+        # Pa_Terminate while a stream is open leaves the Python stream handle
+        # dangling on a torn-down PortAudio instance; on Windows WMME this has
+        # been observed to leave the next InputStream unable to deliver
+        # samples even though it opens successfully.
+        self.mic._close_stream_only()
+
         # Flush PortAudio's cached device list so query_devices() reflects
         # the current OS device state. Swift CoreAudio doesn't need this step.
         try:
@@ -77,14 +84,11 @@ class TapToneAnalyzerControlMixin:
         names: list[str] = sorted(d.name for d in self.mic.available_input_devices)
         self.devicesChanged.emit(names)
 
-        # If auto-selection changed the active device, open the new stream and
-        # auto-load its calibration.
-        # Mirrors Swift setInputDevice(_:) called from loadAvailableInputDevicesMacOS().
+        # PortAudio was re-initialized, so the previous stream is dead — always
+        # reopen on the currently-selected device (which may be the same one,
+        # a newly-plugged device, or a fallback after disconnect).
         new_device = self.mic.selected_input_device
-        prev_fp = getattr(previous_device, "fingerprint", None)
-        new_fp  = getattr(new_device, "fingerprint", None)
-
-        if new_device is not None and new_fp != prev_fp:
+        if new_device is not None:
             self.set_device(new_device)
 
         # Notify the view if the previously active device disappeared.

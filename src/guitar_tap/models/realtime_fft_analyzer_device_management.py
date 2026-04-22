@@ -97,15 +97,14 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
           4. First available device
         """
         from .audio_device import AudioDevice as _AD
+        from .audio_device import filter_input_devices as _filter
         try:
             raw = list(sd.query_devices())
         except Exception:
             return
 
         devices: list[AudioDevice] = [
-            _AD.from_sounddevice_dict(d)
-            for d in raw
-            if int(d["max_input_channels"]) > 0
+            _AD.from_sounddevice_dict(d) for d in _filter(raw)
         ]
 
         previous = list(self.available_input_devices)
@@ -198,11 +197,45 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         if current is not None:
             still_present = any(d.fingerprint == current.fingerprint for d in devices)
             if not still_present:
-                builtins = [
+                # Filter out Windows/DirectSound pseudo-devices that route to the
+                # system default but can't reliably capture, especially right
+                # after a real device was unplugged.
+                pseudo = ("microsoft sound mapper", "primary sound capture", "sound mapper")
+                real = [
                     d for d in devices
-                    if "built-in" in d.name.lower() or "macbook" in d.name.lower()
+                    if not any(p in d.name.lower() for p in pseudo)
                 ]
-                self.selected_input_device = builtins[0] if builtins else (devices[0] if devices else None)
+
+                chosen = None
+                # Priority 1: current system default input (post-reinit)
+                try:
+                    default_index = sd.default.device[0]
+                    if default_index is not None and default_index >= 0:
+                        chosen = next(
+                            (d for d in real if d.index == default_index), None
+                        )
+                except Exception:
+                    pass
+
+                # Priority 2: built-in microphone by name
+                if chosen is None:
+                    builtins = [
+                        d for d in real
+                        if "built-in" in d.name.lower()
+                        or "macbook" in d.name.lower()
+                    ]
+                    if builtins:
+                        chosen = builtins[0]
+
+                # Priority 3: first real device
+                if chosen is None and real:
+                    chosen = real[0]
+
+                # Last resort: anything
+                if chosen is None and devices:
+                    chosen = devices[0]
+
+                self.selected_input_device = chosen
 
     # MARK: - Device Switch (mirrors setInputDevice(_:))
 
@@ -635,8 +668,11 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
     def _start_windows_monitor(self) -> None:
         """Register a Windows device-interface arrival/removal notification.
 
-        Uses CM_Register_Notification (cfgmgr32) to watch all device-interface
-        events (CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE = 1).
+        Uses CM_Register_Notification (cfgmgr32) with
+        CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE (0) and
+        CM_NOTIFY_FILTER_FLAG_ALL_INTERFACE_CLASSES (0x1) so events for every
+        device class are delivered. Without the flag (or a specific ClassGuid)
+        CM_Register_Notification returns an error and no callbacks ever fire.
 
         Python-only — Swift targets macOS/iOS only.
         """
@@ -644,12 +680,27 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
 
         cfgmgr = ctypes.WinDLL("cfgmgr32")  # type: ignore[attr-defined]
 
-        # CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE = 1
+        # CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE = 0. The Windows union is sized
+        # by the DeviceInstance.InstanceId variant (200 WCHARs = 400 bytes), so
+        # we must match that total size or CM_Register_Notification returns
+        # CR_INVALID_DATA (0x1F).
         class _CMNotifyFilter(ctypes.Structure):
             class _U(ctypes.Union):
                 class _DevIface(ctypes.Structure):
                     _fields_ = [("ClassGuid", ctypes.c_byte * 16)]
-                _fields_ = [("DeviceInterface", _DevIface)]
+
+                class _DevHandle(ctypes.Structure):
+                    _fields_ = [("hTarget", ctypes.c_void_p)]
+
+                class _DevInstance(ctypes.Structure):
+                    _fields_ = [("InstanceId", ctypes.c_wchar * 200)]
+
+                _fields_ = [
+                    ("DeviceInterface", _DevIface),
+                    ("DeviceHandle",    _DevHandle),
+                    ("DeviceInstance",  _DevInstance),
+                ]
+
             _fields_ = [
                 ("cbSize",     ctypes.c_ulong),
                 ("Flags",      ctypes.c_ulong),
@@ -675,17 +726,20 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
 
         filt = _CMNotifyFilter()
         filt.cbSize = ctypes.sizeof(_CMNotifyFilter)
-        filt.FilterType = 1
+        filt.FilterType = 0  # CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE
+        filt.Flags = 0x1     # CM_NOTIFY_FILTER_FLAG_ALL_INTERFACE_CLASSES
 
         self._win_cb = CB_TYPE(_cb)
         self._win_hnotify = ctypes.c_void_p()
         self._win_cfgmgr = cfgmgr
-        cfgmgr.CM_Register_Notification(
+        rc = cfgmgr.CM_Register_Notification(
             ctypes.byref(filt),
             None,
             self._win_cb,
             ctypes.byref(self._win_hnotify),
         )
+        if rc != 0:
+            print(f"CM_Register_Notification failed (CR=0x{rc:08X}); hot-plug disabled")
 
     def _stop_windows_monitor(self) -> None:
         """Unregister the Windows CM_Register_Notification handle.
