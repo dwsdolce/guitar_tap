@@ -58,4 +58,13 @@ if __name__ == "__main__":
     app.show()
     app.activateWindow()
     app.raise_()
+
+    # Close the PyInstaller bootloader splash (Windows/Linux only).
+    # Harmless no-op when running from source or on macOS.
+    try:
+        import pyi_splash  # type: ignore[import-not-found]
+        pyi_splash.close()
+    except ImportError:
+        pass
+
     qapp.exec()

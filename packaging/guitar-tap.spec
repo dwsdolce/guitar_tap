@@ -49,10 +49,25 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# SPLASH is Windows/Linux only — PyInstaller upstream does not support it on
+# macOS, where Launch Services shows a bouncing dock icon instead.
+splash = None
+if sys.platform != 'darwin':
+    splash = Splash(
+        os.path.join(project_root, 'src/guitar_tap/icons/guitar-tap-splash.png'),
+        binaries=a.binaries,
+        datas=a.datas,
+        text_pos=None,
+        always_on_top=True,
+    )
+
+exe_args = [pyz, a.scripts]
+if splash is not None:
+    exe_args.append(splash)
+exe_args.append([])
+
 exe = EXE(
-    pyz,
-    a.scripts,
-    [],
+    *exe_args,
     exclude_binaries=True,
     name='guitar-tap',
     icon=os.path.join(project_root, 'src/guitar_tap/icons/guitar-tap.ico'),
@@ -67,10 +82,14 @@ exe = EXE(
     codesign_identity='Developer ID Application: David Smith (43QHHT3XK2)',
     entitlements_file=os.path.join(SPECPATH, 'entitlements.plist'),
 )
+
+collect_args = [exe]
+if splash is not None:
+    collect_args.append(splash.binaries)
+collect_args.extend([a.binaries, a.datas])
+
 coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
+    *collect_args,
     strip=False,
     upx=True,
     upx_exclude=[],

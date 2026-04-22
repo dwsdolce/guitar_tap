@@ -29,6 +29,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
+; Always show the Directory page so the user may choose a different location
+; when an existing install is present (see [Code] section).
+UsePreviousAppDir=no
 LicenseFile=..\LICENSE
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
@@ -57,4 +60,70 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// Detect any existing install of this AppId and let the user choose to
+// uninstall it, install alongside it in a different location, or cancel.
+const
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1';
+
+function GetExistingRegValue(const ValueName: String): String;
+var
+  S: String;
+begin
+  S := '';
+  if not RegQueryStringValue(HKLM, UninstallKey, ValueName, S) then
+    RegQueryStringValue(HKCU, UninstallKey, ValueName, S);
+  Result := S;
+end;
+
+function InitializeSetup(): Boolean;
+var
+  UninstallCmd, ExistingVersion, ExistingLocation, Msg: String;
+  Response, ResultCode: Integer;
+begin
+  Result := True;
+  UninstallCmd := GetExistingRegValue('UninstallString');
+  if UninstallCmd = '' then
+    Exit;
+
+  ExistingVersion  := GetExistingRegValue('DisplayVersion');
+  ExistingLocation := GetExistingRegValue('InstallLocation');
+
+  Msg := '{#MyAppName}';
+  if ExistingVersion <> '' then
+    Msg := Msg + ' ' + ExistingVersion;
+  Msg := Msg + ' is already installed';
+  if ExistingLocation <> '' then
+    Msg := Msg + ' at:' + #13#10 + ExistingLocation;
+  Msg := Msg + #13#10#13#10 +
+    'Yes    - Uninstall the existing version, then install {#MyAppVersion}.' + #13#10 +
+    'No     - Install {#MyAppVersion} to a different location (the existing install stays on disk and must be uninstalled manually if unwanted).' + #13#10 +
+    'Cancel - Abort this installation.';
+
+  Response := MsgBox(Msg, mbConfirmation, MB_YESNOCANCEL);
+  case Response of
+    IDYES:
+      begin
+        UninstallCmd := RemoveQuotes(UninstallCmd);
+        if not Exec(UninstallCmd, '/SILENT /NORESTART /SUPPRESSMSGBOXES', '',
+                    SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+        begin
+          MsgBox('Failed to launch the existing uninstaller. Please uninstall {#MyAppName} manually, then re-run this installer.',
+                 mbError, MB_OK);
+          Result := False;
+        end
+        else if ResultCode <> 0 then
+        begin
+          MsgBox('The existing uninstaller returned error code ' + IntToStr(ResultCode) + '.' + #13#10 +
+                 'Installation cannot continue. Please uninstall {#MyAppName} manually, then re-run this installer.',
+                 mbError, MB_OK);
+          Result := False;
+        end;
+      end;
+    IDCANCEL:
+      Result := False;
+    // IDNO: fall through — the Directory page will let the user pick a new path.
+  end;
+end;
 

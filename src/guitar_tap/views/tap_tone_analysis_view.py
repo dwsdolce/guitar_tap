@@ -5628,13 +5628,16 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _show_about(self) -> None:
+        from _version import __version_string__
         QtWidgets.QMessageBox.about(
             self,
             "About Guitar Tap",
-            "<b>Guitar Tap</b><br><br>"
+            "<b>Guitar Tap</b><br>"
+            f"Version {__version_string__}<br><br>"
             "An acoustic analysis tool for guitar makers.<br><br>"
             "Tap-tone analysis using real-time FFT to identify "
-            "resonant frequencies of guitar top and back plates.",
+            "resonant frequencies of guitar top and back plates.<br><br>"
+            "Copyright © 2026 David W. Smith dba Dolce Sfogato",
         )
 
     def _show_help(self) -> None:
