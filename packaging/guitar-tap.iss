@@ -62,6 +62,16 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+// Win32 API imports for disabling WOW64 file-system redirection.
+// The installer is a 32-bit process; without these, FileExists on
+// "C:\Program Files\..." is silently redirected to "C:\Program Files (x86)\...".
+// ArchitecturesAllowed=x64compatible already blocks 32-bit Windows, so these
+// kernel32 exports are guaranteed to be present at runtime.
+function Wow64DisableWow64FsRedirection(var OldValue: LongWord): Boolean;
+  external 'Wow64DisableWow64FsRedirection@kernel32.dll stdcall';
+function Wow64RevertWow64FsRedirection(OldValue: LongWord): Boolean;
+  external 'Wow64RevertWow64FsRedirection@kernel32.dll stdcall';
+
 // Detect any existing install of this AppId and let the user choose to
 // uninstall it, install alongside it in a different location, or cancel.
 const
@@ -83,17 +93,26 @@ end;
 function FindUninstallerInDir(const Dir: String): String;
 var
   I: Integer;
-  Candidate: String;
+  NumStr, Candidate: String;
+  OldRedir: LongWord;
 begin
   Result := '';
-  for I := 0 to 9 do
-  begin
-    Candidate := AddBackslash(Dir) + 'unins' + Format('%.3d', [I]) + '.exe';
-    if FileExists(Candidate) then
+  Wow64DisableWow64FsRedirection(OldRedir);
+  try
+    for I := 0 to 9 do
     begin
-      Result := Candidate;
-      Exit;
+      NumStr := IntToStr(I);
+      while Length(NumStr) < 3 do
+        NumStr := '0' + NumStr;
+      Candidate := AddBackslash(Dir) + 'unins' + NumStr + '.exe';
+      if FileExists(Candidate) then
+      begin
+        Result := Candidate;
+        Break;
+      end;
     end;
+  finally
+    Wow64RevertWow64FsRedirection(OldRedir);
   end;
 end;
 
