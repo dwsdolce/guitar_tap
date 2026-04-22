@@ -77,6 +77,26 @@ begin
   Result := S;
 end;
 
+// Earlier Inno-built installers may not have registered under our current
+// AppId (or the registry entry was lost), so also probe the chosen install
+// directory for an Inno uninstaller EXE (unins000.exe..unins009.exe).
+function FindUninstallerInDir(const Dir: String): String;
+var
+  I: Integer;
+  Candidate: String;
+begin
+  Result := '';
+  for I := 0 to 9 do
+  begin
+    Candidate := AddBackslash(Dir) + 'unins' + Format('%.3d', [I]) + '.exe';
+    if FileExists(Candidate) then
+    begin
+      Result := Candidate;
+      Exit;
+    end;
+  end;
+end;
+
 function InitializeSetup(): Boolean;
 var
   UninstallCmd, ExistingVersion, ExistingLocation, Msg: String;
@@ -124,6 +144,51 @@ begin
     IDCANCEL:
       Result := False;
     // IDNO: fall through — the Directory page will let the user pick a new path.
+  end;
+end;
+
+// Fires after the user picks a destination folder. If that folder already
+// contains an Inno uninstaller (from a prior install whose registry entry is
+// missing or used a different AppId), offer to run it before overwriting.
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  SelectedDir, UninstallExe, Msg: String;
+  Response, ResultCode: Integer;
+begin
+  Result := True;
+  if CurPageID <> wpSelectDir then
+    Exit;
+
+  SelectedDir := WizardDirValue;
+  UninstallExe := FindUninstallerInDir(SelectedDir);
+  if UninstallExe = '' then
+    Exit;
+
+  Msg := 'An existing installation was found at:' + #13#10 + SelectedDir + #13#10#13#10 +
+    'Yes    - Run the existing uninstaller, then install {#MyAppVersion}.' + #13#10 +
+    'No     - Install {#MyAppVersion} into this folder anyway (existing files may be overwritten and orphaned files may remain).' + #13#10 +
+    'Cancel - Go back and choose a different location.';
+
+  Response := MsgBox(Msg, mbConfirmation, MB_YESNOCANCEL);
+  case Response of
+    IDYES:
+      begin
+        if not Exec(UninstallExe, '/SILENT /NORESTART /SUPPRESSMSGBOXES', '',
+                    SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+        begin
+          MsgBox('Failed to launch the existing uninstaller.', mbError, MB_OK);
+          Result := False;
+        end
+        else if ResultCode <> 0 then
+        begin
+          MsgBox('The existing uninstaller returned error code ' + IntToStr(ResultCode) + '.',
+                 mbError, MB_OK);
+          Result := False;
+        end;
+      end;
+    IDCANCEL:
+      Result := False;
+    // IDNO: fall through and install into the same folder.
   end;
 end;
 
