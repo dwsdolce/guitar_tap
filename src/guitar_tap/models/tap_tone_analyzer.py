@@ -145,6 +145,11 @@ class TapToneAnalyzer(
     # Emitted when loadedMeasurementName changes (mirrors Swift @Published var loadedMeasurementName).
     # Payload: str | None — the new name, or None when cleared.
     loadedMeasurementNameChanged: QtCore.Signal = QtCore.Signal(object)
+    # Emitted when mic.playing_file_name changes (mirrors Swift @Published var playingFileName
+    # on RealtimeFFTAnalyzer).  Payload: str | None — filename without extension, or None.
+    # Emitted by the view after calling mic.start_from_file / on playback end, mirroring
+    # Swift where @Published drives chartTitle reactively without any explicit emit.
+    playingFileNameChanged: QtCore.Signal = QtCore.Signal(object)
     # Emitted when showLoadedSettingsWarning changes (mirrors Swift @Published var showLoadedSettingsWarning).
     # Payload: bool — True to show warning, False to hide.
     showLoadedSettingsWarningChanged: QtCore.Signal = QtCore.Signal(bool)

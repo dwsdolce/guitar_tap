@@ -9,20 +9,29 @@ The Swift RealtimeFFTAnalyzer class is split across four Swift files:
   RealtimeFFTAnalyzer+DeviceManagement.swift — device enumeration, CoreAudio /
                                               AVAudioSession listeners, setInputDevice
 
-This Python package mirrors that structure using two modules:
+This Python package mirrors that structure using four modules:
 
-  realtime_fft_analyzer.py               → RealtimeFFTAnalyzer class
-      mirrors RealtimeFFTAnalyzer.swift + +EngineControl.swift + +DeviceManagement.swift
+  realtime_fft_analyzer.py                → RealtimeFFTAnalyzer class declaration,
+                                             stored properties, __init__
+      mirrors RealtimeFFTAnalyzer.swift (class declaration only)
       Also contains _FftProcessingThread, a Python-only private class that handles
       off-main-thread DSP.  Swift uses AVAudioEngine taps on the main audio graph
       instead; this class has no Swift counterpart and is an implementation detail
       of RealtimeFFTAnalyzer, not a separate model entity.
 
+  realtime_fft_analyzer_engine_control.py → RealtimeFFTAnalyzerEngineControlMixin
+      mirrors RealtimeFFTAnalyzer+EngineControl.swift
+      Methods: new_frame, get_frames, start, stop, start_from_file, close
+
   realtime_fft_analyzer_fft_processing.py → module-level FFT functions
       mirrors RealtimeFFTAnalyzer+FFTProcessing.swift
 
+  realtime_fft_analyzer_device_management.py → RealtimeFFTAnalyzerDeviceManagementMixin
+      mirrors RealtimeFFTAnalyzer+DeviceManagement.swift
+
 This file (realtime_fft_analyzer.py) contains:
-  - The RealtimeFFTAnalyzer class (audio capture, device management, start/stop)
+  - The RealtimeFFTAnalyzer class declaration and stored properties / __init__
+    (mirrors the top of Swift RealtimeFFTAnalyzer.swift)
   - _FftProcessingThread (Python-only private inner class — off-main-thread DSP loop)
   - Re-export of all FFT functions from realtime_fft_analyzer_fft_processing for
     backward compatibility (callers that do `import models.realtime_fft_analyzer as f_a`
@@ -31,16 +40,18 @@ This file (realtime_fft_analyzer.py) contains:
 
 Python ↔ Swift correspondence:
   RealtimeFFTAnalyzer class  ↔  RealtimeFFTAnalyzer class
-    __init__ / close         ↔  init / deinit
-    start / stop             ↔  start() / stop()
-    set_device               ↔  setInputDevice(_:)
+    __init__                 ↔  init (stored properties declared here)
+    start / stop             ↔  start() / stop()          [in engine_control mixin]
+    start_from_file          ↔  startFromFile(_:completion:) [in engine_control mixin]
+    close                    ↔  deinit                    [in engine_control mixin]
+    set_device               ↔  setInputDevice(_:)        [in device_management mixin]
     reinitialize_portaudio   ↔  (PortAudio-specific; no Swift equivalent)
     _start_hotplug_monitor   ↔  registerMacOSHardwareListener /
                                  iOS routeChangeNotification observer
     _start_coreaudio_monitor ↔  AudioObjectAddPropertyListener block
     _start_windows_monitor   ↔  CM_Register_Notification
     _start_linux_monitor     ↔  (Linux-only; no Swift equivalent)
-    get_frames / queue       ↔  rawSampleHandler / inputBuffer
+    get_frames / queue       ↔  rawSampleHandler / inputBuffer [in engine_control mixin]
     proc_thread              ↔  (no direct equivalent — Swift AVAudioEngine taps
                                  deliver audio on a dedicated audio thread; Python
                                  uses an explicit QThread for the same purpose)
@@ -89,6 +100,7 @@ import numpy.typing as npt
 from PySide6 import QtCore
 
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
+from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
 
 if platform.system() == "Darwin":
     from views.utilities import platform_adapters as mac_access
@@ -401,7 +413,7 @@ class _FftProcessingThread(QtCore.QThread):
             return self._recent_peak_db
 
 
-class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
+class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnalyzerDeviceManagementMixin):
     """Real-time FFT audio analyser using PortAudio/sounddevice.
 
     Captures audio from a selected input device, delivers raw PCM chunks via
@@ -608,179 +620,11 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
 
         atexit.register(self.close)
 
-    # MARK: - Engine Control (mirrors +EngineControl.swift)
-
-    # pylint: disable=unused-argument
-    def new_frame(self, data: np.ndarray, _frame_count, _time_info, _status) -> tuple[None, int]:
-        """PortAudio stream callback — enqueues the incoming audio chunk.
-
-        Called by PortAudio on every block of ``chunksize`` frames.
-        Enqueues the first channel's samples for _FftProcessingThread (self.proc_thread).
-
-        Python-only — Swift delivers audio via an AVAudioInputNode installTap block
-        that feeds ``processAudioBuffer(_:)`` on ``audioProcessingQueue``.
-        """
-        with self._stop_lock:
-            if self.is_stopped:
-                raise sd.CallbackStop
-        self.queue.put(data[:, 0])  # take first channel
-
-        return None
-
-    def get_frames(self) -> list[npt.NDArray[np.float32]]:
-        """Non-blocking drain: returns all audio chunks currently in the queue.
-
-        Python-only — Swift exposes audio via ``rawSampleHandler`` and the
-        ``inputBuffer`` accumulation inside ``processAudioBuffer(_:)``.
-        """
-        frames: list[npt.NDArray[np.float32]] = []
-        try:
-            while True:
-                frames.append(self.queue.get_nowait())
-        except queue.Empty:
-            pass
-        return frames
-
-    def start(self) -> None:
-        """Start the audio stream.
-
-        Mirrors Swift RealtimeFFTAnalyzer.start() (+EngineControl.swift).
-        Swift starts AVAudioEngine and installs the input tap after checking
-        microphone permission; Python starts the PortAudio InputStream directly.
-        """
-        self.stream.start()
-
-    def stop(self) -> None:
-        """Stop the audio stream.
-
-        Mirrors Swift RealtimeFFTAnalyzer.stop() (+EngineControl.swift).
-        """
-        with self._stop_lock:
-            self.is_stopped = True
-        self.is_playing_file = False
-        self.playing_file_name = None  # Mirrors Swift stop(): self?.playingFileName = nil
-        self.stream.stop()
-
-    # MARK: - WAV File Playback (mirrors Swift startFromFile(_ url:))
-
-    def start_from_file(self, path: str) -> None:
-        """Feed a WAV (or other audio) file through the same queue as the microphone.
-
-        Stops any active microphone stream, reads the file with soundfile, then
-        spawns a background thread that chunks samples into self.queue at real-time
-        pace so _FftProcessingThread sees them exactly as it would live microphone
-        audio.
-
-        Mirrors Swift RealtimeFFTAnalyzer.startFromFile(_ url:) in
-        RealtimeFFTAnalyzer+EngineControl.swift.  The key architectural difference is
-        that Swift attaches an AVAudioPlayerNode to the same AVAudioEngine; Python
-        injects chunks directly into the existing queue used by _FftProcessingThread.
-
-        Args:
-            path: Filesystem path to the audio file (WAV, AIFF, FLAC, OGG, etc.).
-                  soundfile is used for reading — see soundfile.available_formats().
-
-        Raises:
-            ImportError: if soundfile is not installed.
-            RuntimeError: if the file cannot be opened or has no audio channels.
-        """
-        import soundfile as _sf
-
-        # Stop the PortAudio stream so new_frame() doesn't race with the file thread.
-        with self._stop_lock:
-            self.is_stopped = True
-        try:
-            self.stream.stop()
-        except Exception:
-            pass
-
-        # Drain the queue so the processing thread starts fresh.
-        while not self.queue.empty():
-            try:
-                self.queue.get_nowait()
-            except Exception:
-                break
-
-        # Read the file — soundfile returns (data, samplerate).
-        # data shape: (frames,) for mono, (frames, channels) for multi-channel.
-        data, file_rate = _sf.read(path, dtype="float32", always_2d=True)
-        # Downmix to mono by averaging channels — same as Swift's tap using mono format.
-        mono = data.mean(axis=1).astype(np.float32)
-
-        # Update sample rate so _FftProcessingThread sees the file's native rate.
-        # Mirrors Swift actualSampleRate = fileFormat.sampleRate.
-        self.rate = int(file_rate)
-
-        chunksize = self.chunksize
-        self.is_playing_file = True
-        self.is_stopped = False  # allow queue.put without the stop guard
-
-        # Store the filename (without extension) for chart title use.
-        # Mirrors Swift: playingFileName = url.deletingPathExtension().lastPathComponent
-        import os as _os
-        self.playing_file_name = _os.path.splitext(_os.path.basename(path))[0]
-
-        # Use a mutable sentinel so _playback_worker can verify it is still the
-        # active playback thread when the post-playback 0.3 s delay completes.
-        # Mirrors Swift's `let scheduledPlayer = player` identity guard.
-        sentinel: list[threading.Thread | None] = [None]
-
-        def _playback_worker() -> None:
-            """Pace audio chunks into self.queue at real-time speed, then restart the mic."""
-            n_samples = len(mono)
-            idx = 0
-            chunk_duration = chunksize / file_rate  # seconds per chunk
-            while idx < n_samples:
-                if not self.is_playing_file:
-                    break
-                chunk = mono[idx: idx + chunksize]
-                if len(chunk) == 0:
-                    break
-                self.queue.put(chunk)
-                idx += chunksize
-                time.sleep(chunk_duration)
-            # Signal end-of-file.
-            self.is_playing_file = False
-
-            # Wait 0.3 s to let the last chunks drain through the FFT pipeline before
-            # restarting the mic — mirrors Swift asyncAfter(fileDuration + 0.3s).
-            time.sleep(0.3)
-
-            # Guard: if a new file was opened while we were sleeping, our thread is
-            # no longer the active one — skip the mic restart.
-            if self._file_playback_thread is not sentinel[0]:
-                return
-
-            # Restart the PortAudio stream so the mic is live again.
-            # Mirrors Swift try? self.start() which recreates the AVAudioEngine on the mic.
-            # TapToneAnalyzer's is_measurement_complete guard preserves frozen results
-            # so New Tap stays enabled — same as Swift's auto-start guard.
-            try:
-                with self._stop_lock:
-                    self.is_stopped = False
-                self.stream.start()
-            except Exception:
-                pass
-
-            # Clear the playing filename and notify the caller (e.g. to update chart title).
-            # Mirrors Swift's completion closure called inside asyncAfter after start().
-            self.playing_file_name = None
-            cb = self._on_playback_finished
-            if cb is not None:
-                cb()
-
-        thread = threading.Thread(target=_playback_worker, daemon=True, name="FilePlayback")
-        sentinel[0] = thread
-        self._file_playback_thread = thread
-        thread.start()
-
-    def close(self) -> None:
-        """Stop the audio stream and shut down the hot-plug monitor.
-
-        Mirrors Swift RealtimeFFTAnalyzer.deinit.
-        """
-        self._stop_hotplug_monitor()
-        self._close_stream_only()
+    # MARK: - Engine Control
+    # All engine control methods live in realtime_fft_analyzer_engine_control.py
+    # via RealtimeFFTAnalyzerEngineControlMixin, mirroring Swift's
+    # RealtimeFFTAnalyzer+EngineControl.swift extension.
+    # Methods: new_frame, get_frames, start, stop, start_from_file, close
 
     # MARK: - Device Management
     # All device management methods live in realtime_fft_analyzer_device_management.py

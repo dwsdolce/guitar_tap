@@ -214,6 +214,7 @@ class FftCanvas(pg.PlotWidget):
     measurementComplete: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var isMeasurementComplete
     statusMessageChanged: QtCore.Signal = QtCore.Signal(str)  # mirrors Swift @Published var statusMessage
     loadedMeasurementNameChanged: QtCore.Signal = QtCore.Signal(object)  # str | None — mirrors Swift @Published var loadedMeasurementName
+    playingFileNameChanged: QtCore.Signal = QtCore.Signal(object)        # str | None — mirrors Swift @Published var playingFileName on RealtimeFFTAnalyzer
     showLoadedSettingsWarningChanged: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var showLoadedSettingsWarning
     microphoneWarningChanged: QtCore.Signal = QtCore.Signal(object)        # str | None — mirrors Swift @Published var microphoneWarning
     requestDeviceSwitch: QtCore.Signal = QtCore.Signal(object)             # AudioDevice — mirrors Swift fftAnalyzer.setInputDevice(match)
@@ -387,6 +388,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.measurementComplete.connect(self.measurementComplete)
         self.analyzer.statusMessageChanged.connect(self.statusMessageChanged)
         self.analyzer.loadedMeasurementNameChanged.connect(self.loadedMeasurementNameChanged)
+        self.analyzer.playingFileNameChanged.connect(self.playingFileNameChanged)
         self.analyzer.showLoadedSettingsWarningChanged.connect(self.showLoadedSettingsWarningChanged)
         self.analyzer.microphoneWarningChanged.connect(self.microphoneWarningChanged)
         self.analyzer.requestDeviceSwitch.connect(self.requestDeviceSwitch)
@@ -939,6 +941,16 @@ class FftCanvas(pg.PlotWidget):
         """Public wrapper to reset the tap detector state machine."""
         self.analyzer.reset_tap_detector()
 
+    @property
+    def chart_title(self) -> str:
+        """Compute the chart title, mirroring Swift's chartTitle computed property:
+            fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
+        """
+        playing = getattr(self.analyzer.mic, "playing_file_name", None)
+        loaded = getattr(self.analyzer, "loaded_measurement_name", None)
+        suffix = playing or loaded or "New"
+        return f"FFT Peaks \u2014 {suffix}"
+
     def set_loaded_measurement_name(self, name: str | None) -> None:
         """Update the chart title to reflect the loaded measurement name.
 
@@ -947,6 +959,15 @@ class FftCanvas(pg.PlotWidget):
         """
         suffix = name if (name and name.strip()) else "New"
         self.setTitle(f"FFT Peaks \u2014 {suffix}", color="#333333")
+
+    def set_playing_file_name(self, name: str | None) -> None:
+        """Update the chart title to reflect the playing file name, or revert to
+        the loaded measurement name / 'New' when playback ends.
+
+        Mirrors Swift: chartTitle = fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
+        Connected to playingFileNameChanged signal.
+        """
+        self.setTitle(self.chart_title, color="#333333")
 
     def start_tap_sequence(self) -> None:
         """Begin a fresh tap sequence: clear any accumulated spectra and restart warmup."""

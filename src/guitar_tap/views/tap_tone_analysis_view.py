@@ -1821,10 +1821,12 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.measurementComplete.connect(self.set_measurement_complete)
         # Mirrors Swift SpectrumView body reading tap.loadedMeasurementName ?? "New" reactively.
         canvas.loadedMeasurementNameChanged.connect(canvas.set_loaded_measurement_name)
+        # Mirrors Swift chartTitle = fft.playingFileName ?? tap.loadedMeasurementName ?? "New".
+        canvas.playingFileNameChanged.connect(canvas.set_playing_file_name)
         # Mirrors Swift .tint(fft.isPlayingFile ? .orange : .blue) on the Play File button.
-        # The loadedMeasurementNameChanged signal fires with the filename when playback starts
-        # and with None when it ends — use that to drive the button color.
-        canvas.loadedMeasurementNameChanged.connect(self._on_playing_file_changed)
+        # playingFileNameChanged fires with the filename when file playback starts and None
+        # when it ends — dedicated signal, no guard needed.
+        canvas.playingFileNameChanged.connect(self._on_playing_file_changed)
         # Mirrors Swift .onChange(of: tap.showLoadedSettingsWarning) driving banner animation.
         canvas.showLoadedSettingsWarningChanged.connect(self._on_loaded_settings_warning_changed)
         # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
@@ -2543,17 +2545,34 @@ class MainWindow(QtWidgets.QMainWindow):
         if not path:
             return
 
+        analyzer = self.fft_canvas.analyzer
+
         try:
             # Start the processing thread if it isn't running yet (first use).
-            if not self.fft_canvas.analyzer.mic.proc_thread.isRunning():
+            if not analyzer.mic.proc_thread.isRunning():
                 self.fft_canvas.start_analyzer()
             else:
                 # Thread already running — reset ring-buffer state for the new source.
-                self.fft_canvas.analyzer.mic.proc_thread.reset_state()
+                analyzer.mic.proc_thread.reset_state()
 
-            # Feed the file through mic.queue at real-time pace, arm tap detection.
-            # Mirrors Swift: fft.startFromFile(url) + tapToneAnalyzer.startTapSequence().
-            self.fft_canvas.analyzer.start_from_file(path)
+            # Mirrors Swift openAudioFile(_:) which calls:
+            #   1. fft.startFromFile(url, completion:) — start engine, recompute freq bins
+            #   2. tapToneAnalyzer.startTapSequence(skipWarmup: true) — arm tap detection
+            # The completion closure in Swift releases security-scoped resource access;
+            # here we use it to emit playingFileNameChanged(None) and restore the title.
+            def _on_finished() -> None:
+                analyzer.playingFileNameChanged.emit(None)
+
+            analyzer.start_from_file(path, on_finished=_on_finished)
+
+            # Emit the playing filename so chartTitle updates reactively.
+            # Mirrors Swift: fft.playingFileName (@Published) drives chartTitle computed var.
+            analyzer.playingFileNameChanged.emit(analyzer.mic.playing_file_name)
+
+            # Arm tap detection with warmup skipped — the audio source is deterministic
+            # so there is no mic startup noise, and the tap may appear in the first 0.5 s.
+            # Mirrors Swift: tapToneAnalyzer.startTapSequence(skipWarmup: true)
+            analyzer.start_tap_sequence(skip_warmup=True)
 
             self._is_running = True
             self.set_running(True)
@@ -2566,19 +2585,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """Tint the Play File button orange while a file is playing, blue otherwise.
 
         Mirrors Swift .tint(fft.isPlayingFile ? .orange : .blue) on the Play File buttons.
-        Connected to canvas.loadedMeasurementNameChanged, which fires with the filename
-        when file playback starts and with None when it ends or a measurement is loaded.
-        We guard on mic.is_playing_file to avoid changing the color on normal measurement loads.
+        Connected to canvas.playingFileNameChanged, which fires with the filename when
+        file playback starts and with None when it ends — no guard needed since this
+        signal is dedicated to file-playback state (unlike loadedMeasurementNameChanged).
         """
-        if not hasattr(self, "_play_file_btn"):
-            return
-        is_playing = getattr(
-            getattr(self.fft_canvas.analyzer, "mic", None), "is_playing_file", False
-        )
-        if is_playing:
-            self._play_file_btn.setStyleSheet("color: orange;")
-        else:
-            self._play_file_btn.setStyleSheet("")
+        self._play_file_btn.setStyleSheet("color: orange;" if name is not None else "")
 
     # ================================================================
     # Tap events
@@ -3809,11 +3820,9 @@ class MainWindow(QtWidgets.QMainWindow):
             _gt = TDS.measurement_type().guitar_type
             gt_str = _gt.value if _gt else None
 
-            # Mirrors Swift: fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
-            _playing_name = getattr(getattr(canvas.analyzer, "mic", None), "playing_file_name", None)
-            _loaded_name = getattr(canvas.analyzer, "loaded_measurement_name", None)
-            _title_suffix = _playing_name or _loaded_name or "New"
-            chart_title = f"FFT Peaks \u2014 {_title_suffix}"
+            # Mirrors Swift chartTitle computed property:
+            # fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
+            chart_title = canvas.chart_title
 
             # Read the actual Y axis range from the ViewBox — mirrors Swift's
             # minDB/maxDB which come from the chart's current axis domain.
@@ -4093,11 +4102,9 @@ class MainWindow(QtWidgets.QMainWindow):
             _gt = TDS.measurement_type().guitar_type
             gt_str = _gt.value if _gt else None
 
-            # Mirrors Swift: fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
-            _playing_name = getattr(getattr(analyzer, "mic", None), "playing_file_name", None)
-            _loaded_name = getattr(analyzer, "loaded_measurement_name", None)
-            _title_suffix = _playing_name or _loaded_name or "New"
-            chart_title = f"FFT Peaks \u2014 {_title_suffix}"
+            # Mirrors Swift chartTitle computed property:
+            # fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
+            chart_title = canvas.chart_title
 
             from datetime import datetime, timezone as _tz
             # Mirrors Swift: tap.sourceMeasurementTimestamp ?? Date()
