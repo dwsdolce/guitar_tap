@@ -433,6 +433,13 @@ class MainWindow(QtWidgets.QMainWindow):
             file_menu.addAction(close_action)
             file_menu.addSeparator()
 
+        play_file_action = QtGui.QAction("Play Audio File…", self)
+        play_file_action.setShortcut(QtGui.QKeySequence("Ctrl+Alt+O"))
+        play_file_action.triggered.connect(self._open_audio_file)
+        file_menu.addAction(play_file_action)
+
+        file_menu.addSeparator()
+
         self._menu_save_action = QtGui.QAction("Save Measurement…", self)
         self._menu_save_action.setShortcut(QtGui.QKeySequence.StandardKey.Save)
         self._menu_save_action.setEnabled(False)
@@ -605,6 +612,18 @@ class MainWindow(QtWidgets.QMainWindow):
         hl.setSpacing(6)
 
         hl.addStretch()
+
+        self._play_file_btn = QtWidgets.QPushButton(
+            qta.icon("fa5s.file-audio"), "Play File\u2026"
+        )
+        self._play_file_btn.setToolTip(
+            "Feed an audio file through the analysis pipeline\n"
+            "(WAV, AIFF, FLAC \u2014 same pipeline as microphone, for cross-platform comparison)"
+        )
+        self._play_file_btn.clicked.connect(self._open_audio_file)
+        hl.addWidget(self._play_file_btn)
+
+        hl.addSpacing(4)
 
         self.auto_db_btn = QtWidgets.QToolButton()
         self.auto_db_btn.setIcon(qta.icon("mdi.swap-vertical-circle-outline"))
@@ -1802,6 +1821,10 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.measurementComplete.connect(self.set_measurement_complete)
         # Mirrors Swift SpectrumView body reading tap.loadedMeasurementName ?? "New" reactively.
         canvas.loadedMeasurementNameChanged.connect(canvas.set_loaded_measurement_name)
+        # Mirrors Swift .tint(fft.isPlayingFile ? .orange : .blue) on the Play File button.
+        # The loadedMeasurementNameChanged signal fires with the filename when playback starts
+        # and with None when it ends — use that to drive the button color.
+        canvas.loadedMeasurementNameChanged.connect(self._on_playing_file_changed)
         # Mirrors Swift .onChange(of: tap.showLoadedSettingsWarning) driving banner animation.
         canvas.showLoadedSettingsWarningChanged.connect(self._on_loaded_settings_warning_changed)
         # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
@@ -2501,6 +2524,61 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_running = True
         self.set_running(True)
         self.fft_canvas.start_analyzer()
+
+    def _open_audio_file(self) -> None:
+        """Open a file picker and feed the chosen audio file through the FFT pipeline.
+
+        Uses the same audio-processing queue as the microphone so the FFT, tap
+        detection, and peak analysis are completely unchanged.  This allows
+        apples-to-apples comparison between platforms using the same recording.
+
+        Mirrors Swift TapToneAnalysisView+Actions.openAudioFile(_:) / openWAVFile().
+        """
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open Audio File",
+            "",
+            "Audio files (*.wav *.aif *.aiff *.flac *.ogg);;All files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            # Start the processing thread if it isn't running yet (first use).
+            if not self.fft_canvas.analyzer.mic.proc_thread.isRunning():
+                self.fft_canvas.start_analyzer()
+            else:
+                # Thread already running — reset ring-buffer state for the new source.
+                self.fft_canvas.analyzer.mic.proc_thread.reset_state()
+
+            # Feed the file through mic.queue at real-time pace, arm tap detection.
+            # Mirrors Swift: fft.startFromFile(url) + tapToneAnalyzer.startTapSequence().
+            self.fft_canvas.analyzer.start_from_file(path)
+
+            self._is_running = True
+            self.set_running(True)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Could not play audio file", str(exc)
+            )
+
+    def _on_playing_file_changed(self, name: "str | None") -> None:
+        """Tint the Play File button orange while a file is playing, blue otherwise.
+
+        Mirrors Swift .tint(fft.isPlayingFile ? .orange : .blue) on the Play File buttons.
+        Connected to canvas.loadedMeasurementNameChanged, which fires with the filename
+        when file playback starts and with None when it ends or a measurement is loaded.
+        We guard on mic.is_playing_file to avoid changing the color on normal measurement loads.
+        """
+        if not hasattr(self, "_play_file_btn"):
+            return
+        is_playing = getattr(
+            getattr(self.fft_canvas.analyzer, "mic", None), "is_playing_file", False
+        )
+        if is_playing:
+            self._play_file_btn.setStyleSheet("color: orange;")
+        else:
+            self._play_file_btn.setStyleSheet("")
 
     # ================================================================
     # Tap events
@@ -3731,9 +3809,11 @@ class MainWindow(QtWidgets.QMainWindow):
             _gt = TDS.measurement_type().guitar_type
             gt_str = _gt.value if _gt else None
 
-            # Mirrors Swift: tap.loadedMeasurementName ?? "New" used in chart title.
+            # Mirrors Swift: fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
+            _playing_name = getattr(getattr(canvas.analyzer, "mic", None), "playing_file_name", None)
             _loaded_name = getattr(canvas.analyzer, "loaded_measurement_name", None)
-            chart_title = f"FFT Peaks \u2014 {_loaded_name}" if _loaded_name else "FFT Peaks \u2014 New"
+            _title_suffix = _playing_name or _loaded_name or "New"
+            chart_title = f"FFT Peaks \u2014 {_title_suffix}"
 
             # Read the actual Y axis range from the ViewBox — mirrors Swift's
             # minDB/maxDB which come from the chart's current axis domain.
@@ -4013,9 +4093,11 @@ class MainWindow(QtWidgets.QMainWindow):
             _gt = TDS.measurement_type().guitar_type
             gt_str = _gt.value if _gt else None
 
-            # Mirrors Swift: tap.loadedMeasurementName ?? "New" used in chart title.
+            # Mirrors Swift: fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
+            _playing_name = getattr(getattr(analyzer, "mic", None), "playing_file_name", None)
             _loaded_name = getattr(analyzer, "loaded_measurement_name", None)
-            chart_title = f"FFT Peaks \u2014 {_loaded_name}" if _loaded_name else "FFT Peaks \u2014 New"
+            _title_suffix = _playing_name or _loaded_name or "New"
+            chart_title = f"FFT Peaks \u2014 {_title_suffix}"
 
             from datetime import datetime, timezone as _tz
             # Mirrors Swift: tap.sourceMeasurementTimestamp ?? Date()

@@ -527,6 +527,21 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
         self.is_stopped: bool = False
         self.queue: queue.Queue[npt.NDArray[np.float32]] = queue.Queue()
 
+        # MARK: - WAV File Playback (mirrors Swift RealtimeFFTAnalyzer.isPlayingFile)
+        # True while a background thread is feeding a WAV file into self.queue.
+        # Set to False by stop() or when the file thread finishes.
+        self.is_playing_file: bool = False
+        self._file_playback_thread: threading.Thread | None = None
+
+        # Filename (without extension) of the file currently being played, or None.
+        # Mirrors Swift RealtimeFFTAnalyzer.playingFileName (@Published var).
+        self.playing_file_name: str | None = None
+
+        # Optional callback invoked (from the playback thread) when file playback ends
+        # and the mic stream has been restarted.  Used by TapToneAnalyzer to clear the
+        # chart title — mirrors Swift's completion closure in startFromFile(_:completion:).
+        self._on_playback_finished: Callable[[], None] | None = None
+
         # MARK: - Device Lists (mirrors Swift RealtimeFFTAnalyzer @Published properties)
 
         # Live list of available input devices.
@@ -642,7 +657,122 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerDeviceManagementMixin):
         """
         with self._stop_lock:
             self.is_stopped = True
+        self.is_playing_file = False
+        self.playing_file_name = None  # Mirrors Swift stop(): self?.playingFileName = nil
         self.stream.stop()
+
+    # MARK: - WAV File Playback (mirrors Swift startFromFile(_ url:))
+
+    def start_from_file(self, path: str) -> None:
+        """Feed a WAV (or other audio) file through the same queue as the microphone.
+
+        Stops any active microphone stream, reads the file with soundfile, then
+        spawns a background thread that chunks samples into self.queue at real-time
+        pace so _FftProcessingThread sees them exactly as it would live microphone
+        audio.
+
+        Mirrors Swift RealtimeFFTAnalyzer.startFromFile(_ url:) in
+        RealtimeFFTAnalyzer+EngineControl.swift.  The key architectural difference is
+        that Swift attaches an AVAudioPlayerNode to the same AVAudioEngine; Python
+        injects chunks directly into the existing queue used by _FftProcessingThread.
+
+        Args:
+            path: Filesystem path to the audio file (WAV, AIFF, FLAC, OGG, etc.).
+                  soundfile is used for reading — see soundfile.available_formats().
+
+        Raises:
+            ImportError: if soundfile is not installed.
+            RuntimeError: if the file cannot be opened or has no audio channels.
+        """
+        import soundfile as _sf
+
+        # Stop the PortAudio stream so new_frame() doesn't race with the file thread.
+        with self._stop_lock:
+            self.is_stopped = True
+        try:
+            self.stream.stop()
+        except Exception:
+            pass
+
+        # Drain the queue so the processing thread starts fresh.
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+            except Exception:
+                break
+
+        # Read the file — soundfile returns (data, samplerate).
+        # data shape: (frames,) for mono, (frames, channels) for multi-channel.
+        data, file_rate = _sf.read(path, dtype="float32", always_2d=True)
+        # Downmix to mono by averaging channels — same as Swift's tap using mono format.
+        mono = data.mean(axis=1).astype(np.float32)
+
+        # Update sample rate so _FftProcessingThread sees the file's native rate.
+        # Mirrors Swift actualSampleRate = fileFormat.sampleRate.
+        self.rate = int(file_rate)
+
+        chunksize = self.chunksize
+        self.is_playing_file = True
+        self.is_stopped = False  # allow queue.put without the stop guard
+
+        # Store the filename (without extension) for chart title use.
+        # Mirrors Swift: playingFileName = url.deletingPathExtension().lastPathComponent
+        import os as _os
+        self.playing_file_name = _os.path.splitext(_os.path.basename(path))[0]
+
+        # Use a mutable sentinel so _playback_worker can verify it is still the
+        # active playback thread when the post-playback 0.3 s delay completes.
+        # Mirrors Swift's `let scheduledPlayer = player` identity guard.
+        sentinel: list[threading.Thread | None] = [None]
+
+        def _playback_worker() -> None:
+            """Pace audio chunks into self.queue at real-time speed, then restart the mic."""
+            n_samples = len(mono)
+            idx = 0
+            chunk_duration = chunksize / file_rate  # seconds per chunk
+            while idx < n_samples:
+                if not self.is_playing_file:
+                    break
+                chunk = mono[idx: idx + chunksize]
+                if len(chunk) == 0:
+                    break
+                self.queue.put(chunk)
+                idx += chunksize
+                time.sleep(chunk_duration)
+            # Signal end-of-file.
+            self.is_playing_file = False
+
+            # Wait 0.3 s to let the last chunks drain through the FFT pipeline before
+            # restarting the mic — mirrors Swift asyncAfter(fileDuration + 0.3s).
+            time.sleep(0.3)
+
+            # Guard: if a new file was opened while we were sleeping, our thread is
+            # no longer the active one — skip the mic restart.
+            if self._file_playback_thread is not sentinel[0]:
+                return
+
+            # Restart the PortAudio stream so the mic is live again.
+            # Mirrors Swift try? self.start() which recreates the AVAudioEngine on the mic.
+            # TapToneAnalyzer's is_measurement_complete guard preserves frozen results
+            # so New Tap stays enabled — same as Swift's auto-start guard.
+            try:
+                with self._stop_lock:
+                    self.is_stopped = False
+                self.stream.start()
+            except Exception:
+                pass
+
+            # Clear the playing filename and notify the caller (e.g. to update chart title).
+            # Mirrors Swift's completion closure called inside asyncAfter after start().
+            self.playing_file_name = None
+            cb = self._on_playback_finished
+            if cb is not None:
+                cb()
+
+        thread = threading.Thread(target=_playback_worker, daemon=True, name="FilePlayback")
+        sentinel[0] = thread
+        self._file_playback_thread = thread
+        thread.start()
 
     def close(self) -> None:
         """Stop the audio stream and shut down the hot-plug monitor.

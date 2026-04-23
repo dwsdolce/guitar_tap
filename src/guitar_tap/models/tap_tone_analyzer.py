@@ -507,6 +507,27 @@ class TapToneAnalyzer(
             self.start_tap_sequence()
 
     # ------------------------------------------------------------------ #
+    # FFT frequency axis
+    # ------------------------------------------------------------------ #
+
+    def _update_frequency_bins(self) -> None:
+        """Recompute self.freq from the current mic sample rate.
+
+        Must be called whenever self.mic.rate changes (e.g. after start_from_file
+        changes the rate to match a WAV file's native sample rate).
+
+        Mirrors Swift RealtimeFFTAnalyzer.updateFrequencyBins() called in
+        startFromFile(_:) after setting actualSampleRate = engineSampleRate.
+
+        Without this, self.freq retains the bins computed at construction from
+        the hardware mic rate, causing peak-frequency lookups to be scaled by
+        (hardware_rate / file_rate) during file playback.
+        """
+        import numpy as _np
+        x_axis = _np.arange(0, self.mic.h_fft_size + 1)
+        self.freq = x_axis * self.mic.rate / self.mic.fft_size
+
+    # ------------------------------------------------------------------ #
     # display_mode property — kept in sync with FftCanvas.display_mode
     # ------------------------------------------------------------------ #
 

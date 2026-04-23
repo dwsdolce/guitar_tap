@@ -273,7 +273,53 @@ class TapToneAnalyzerControlMixin:
     # Tap sequence management
     # ------------------------------------------------------------------ #
 
-    def start_tap_sequence(self) -> None:
+    def start_from_file(self, path: str) -> None:
+        """Feed an audio file through the analysis pipeline (instead of the microphone).
+
+        Stops the PortAudio stream, reads the file via soundfile, injects chunks
+        into mic.queue at real-time pace, then arms tap detection — bypassing
+        the normal mic.start() call so no microphone permission is needed.
+
+        Mirrors Swift TapToneAnalysisView+Actions.openAudioFile(_:) which calls
+        fft.startFromFile(url) followed by tapToneAnalyzer.startTapSequence(skipWarmup: true).
+
+        Args:
+            path: Filesystem path to the audio file.
+        """
+        # Register a callback so the chart title reverts when playback ends.
+        # Mirrors Swift's completion closure passed to fft.startFromFile(_:completion:)
+        # which calls url.stopAccessingSecurityScopedResource(); here we emit None to
+        # restore "FFT Peaks — New".  The callback runs on the playback background thread
+        # so we must use a thread-safe signal emit.
+        def _on_finished() -> None:
+            # Restore frequency axis to the mic's hardware rate now that the
+            # mic stream has been restarted (mic.rate is back to hardware rate).
+            # Mirrors Swift's start() → updateFrequencyBins() call chain.
+            self._update_frequency_bins()
+            self.loadedMeasurementNameChanged.emit(None)
+
+        self.mic._on_playback_finished = _on_finished
+
+        self.mic.start_from_file(path)
+
+        # Recompute the frequency axis now that self.mic.rate reflects the file's sample rate.
+        # Mirrors Swift updateFrequencyBins() called after starting the file engine.
+        # Without this, self.freq still holds bins computed from the mic's hardware rate,
+        # so all peak-frequency lookups during file playback would be scaled incorrectly
+        # when the file rate differs from the mic rate.
+        self._update_frequency_bins()
+
+        # Emit the filename as the chart title.
+        # Mirrors Swift: fft.playingFileName drives chartTitle via fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
+        self.loadedMeasurementNameChanged.emit(self.mic.playing_file_name)
+
+        # skip_warmup=True mirrors Swift openAudioFile which calls
+        # startTapSequence(skipWarmup: true): the audio source is deterministic
+        # so there is no mic startup noise to suppress, and the tap transient
+        # may appear within the first warmup_period seconds of the recording.
+        self.start_tap_sequence(skip_warmup=True)
+
+    def start_tap_sequence(self, skip_warmup: bool = False) -> None:
         """Begin a new tap detection sequence, resetting all per-sequence state.
 
         Mirrors Swift startTapSequence() including:
@@ -344,8 +390,16 @@ class TapToneAnalyzerControlMixin:
         self.is_above_threshold = False
         self.just_exited_warmup = False  # Will be set True as warm-up ends.
 
-        # Reset the warm-up timer for this new sequence (mirrors Swift analyzerStartTime = Date()).
-        self.analyzer_start_time = _time.monotonic()
+        # Reset the warm-up timer for this new sequence.
+        # Mirrors Swift TapToneAnalyzer+Control.swift startTapSequence(skipWarmup:):
+        # For file playback (skip_warmup=True) set the start time far enough in the
+        # past that the warmup_period has already elapsed when the first audio buffer
+        # arrives.  The audio source is deterministic, so no startup-noise suppression
+        # is needed, and the tap transient may appear within the first 0.5 s of the file.
+        if skip_warmup:
+            self.analyzer_start_time = _time.monotonic() - (self.warmup_period + 0.1)
+        else:
+            self.analyzer_start_time = _time.monotonic()
 
         self.is_detecting = True
 

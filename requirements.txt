@@ -6,6 +6,7 @@ sounddevice==0.5.5
 pyqtgraph==0.14.0
 QtAwesome==1.4.1
 reportlab==4.4.10
+soundfile==0.10.3
 
 # macOS only — install with: pip install -r requirements-macos.txt
 # pyobjc
