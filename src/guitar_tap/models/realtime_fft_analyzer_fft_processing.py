@@ -118,8 +118,20 @@ def dft_anal(
 
     complex_fft = fft(fftbuffer)
 
-    # One-sided spectrum: bins 0 … N/2 inclusive
+    # One-sided spectrum: bins 0 … N/2 inclusive.
     abs_fft = abs(complex_fft[:half_n_freq_samples])
+
+    # Apply one-sided spectrum amplitude correction.
+    #
+    # scipy/numpy fft() returns the full two-sided DFT.  When we take only
+    # the positive-frequency half (bins 0 … N/2) we discard the mirror
+    # image, so the interior bins each hold only half the total signal power.
+    # Multiplying by 2 restores the correct amplitude — matching the factor
+    # already present in Swift's vDSP_DFT_zrop output, which folds the
+    # two-sided spectrum into the one-sided form before returning.
+    # DC (bin 0) and Nyquist (bin N/2) have no mirror, so they are not doubled.
+    abs_fft[1:-1] *= 2.0
+
     abs_fft[abs_fft < np.finfo(float).eps] = np.finfo(float).eps  # guard against log(0)
 
     magnitude = 20 * np.log10(abs_fft)

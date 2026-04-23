@@ -187,15 +187,15 @@ class _FftProcessingThread(QtCore.QThread):
         self._mic = mic
         self._stop_event = threading.Event()
 
-        # MARK: - Ring Buffer State
-
-        # Circular ring buffer holding the most recent m_t audio samples.
-        # Mirrors Swift's inputBuffer accumulation in processAudioBuffer(_:).
-        self._audio_ring: npt.NDArray[np.float32] = np.zeros(
-            mic.m_t, dtype=np.float32
-        )
-        self._ring_fill: int = 0
-        self._samples_since_last_fft: int = 0
+        # MARK: - Input Buffer State
+        #
+        # Growing accumulator — mirrors Swift's inputBuffer ([Float]) in
+        # processAudioBuffer(_:).  Samples are appended each chunk; when
+        # count >= fft_size an FFT fires on the first fft_size samples, then
+        # those samples are removed (hop = fft_size, 0 % overlap), exactly
+        # matching Swift's inputBuffer.removeFirst(hopSize) pattern.
+        self._input_buffer: list[npt.NDArray[np.float32]] = []
+        self._input_buffer_len: int = 0  # running total of samples stored
 
         # MARK: - Thread-Safe Settings
 
@@ -250,16 +250,11 @@ class _FftProcessingThread(QtCore.QThread):
                 calibration = self._calibration
 
             enter_now = time.time()
-            n = len(chunk)
-            chunk_f32 = chunk[:n].astype(np.float32)
+            chunk_f32 = chunk.astype(np.float32)
 
-            # Update ring buffer — shift old samples out, append new samples.
-            # Mirrors Swift inputBuffer accumulation in processAudioBuffer(_:).
-            self._audio_ring = np.concatenate(
-                [self._audio_ring[n:], chunk_f32]
-            )
-            self._ring_fill = min(self._ring_fill + n, self._mic.m_t)
-            self._samples_since_last_fft += n
+            # Accumulate samples — mirrors Swift inputBuffer.append(contentsOf: samples).
+            self._input_buffer.append(chunk_f32)
+            self._input_buffer_len += len(chunk_f32)
 
             # Deliver every raw audio chunk to the raw_sample_handler if set.
             # Mirrors Swift RealtimeFFTAnalyzer calling rawSampleHandler on every
@@ -296,35 +291,52 @@ class _FftProcessingThread(QtCore.QThread):
                     (v for _, v in self._recent_peak_history), default=-100.0
                 )
 
-            # Only compute a new FFT once m_t new samples have accumulated.
-            if self._samples_since_last_fft < self._mic.m_t:
-                continue
-            self._samples_since_last_fft -= self._mic.m_t
+            # Fire an FFT for each complete fft_size-sample chunk available,
+            # consuming hop = fft_size samples each time (0 % overlap).
+            # Mirrors Swift:
+            #   while inputBuffer.count >= fftSize {
+            #       chunk = Array(inputBuffer.prefix(fftSize))
+            #       inputBuffer.removeFirst(hopSize)
+            #       performFFT(on: chunk)
+            #   }
+            fft_size = self._mic.fft_size
+            while self._input_buffer_len >= fft_size:
+                # Flatten buffered chunks into one contiguous array.
+                flat = np.concatenate(self._input_buffer)
 
-            sample_dt = enter_now - lastupdate
-            lastupdate = enter_now
+                # Extract exactly fft_size samples (prefix) — mirrors Swift prefix(fftSize).
+                samples = flat[:fft_size]
 
-            # FFT — mirrors Swift RealtimeFFTAnalyzer performFFT(on:).
-            mag_y_db, mag_y = dft_anal(
-                self._audio_ring, self._mic.window_fcn, self._mic.fft_size
-            )
-            if calibration is not None:
-                mag_y_db = mag_y_db + calibration
+                # Remove hop (= fft_size) samples from the front —
+                # mirrors Swift inputBuffer.removeFirst(hopSize).
+                remainder = flat[fft_size:]
+                self._input_buffer = [remainder] if len(remainder) else []
+                self._input_buffer_len = len(remainder)
 
-            # FFT peak level — 0-100 scale (dBFS + 100).
-            # Mirrors Swift fftAnalyzer.peakMagnitude: the instantaneous FFT peak magnitude.
-            # Stored in TapToneAnalyzer._current_peak_magnitude_db for use by guitar-mode
-            # re-enable closure (mirrors Swift handleTapDetection re-enable reading peakMagnitude).
-            fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+                sample_dt = enter_now - lastupdate
+                lastupdate = enter_now
 
-            exit_now = time.time()
-            processing_dt = exit_now - enter_now
-            fps = 1.0 / max(sample_dt, 1e-12)
+                # FFT — mirrors Swift RealtimeFFTAnalyzer performFFT(on:).
+                mag_y_db, mag_y = dft_anal(
+                    samples, self._mic.window_fcn, fft_size
+                )
+                if calibration is not None:
+                    mag_y_db = mag_y_db + calibration
 
-            self.fftFrameReady.emit(
-                mag_y_db, mag_y, fft_peak_amp, rms_amp,
-                fps, sample_dt, processing_dt,
-            )
+                # FFT peak level — 0-100 scale (dBFS + 100).
+                # Mirrors Swift fftAnalyzer.peakMagnitude: the instantaneous FFT peak magnitude.
+                # Stored in TapToneAnalyzer._current_peak_magnitude_db for use by guitar-mode
+                # re-enable closure (mirrors Swift handleTapDetection re-enable reading peakMagnitude).
+                fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+
+                exit_now = time.time()
+                processing_dt = exit_now - enter_now
+
+                fps = 1.0 / max(sample_dt, 1e-12)
+                self.fftFrameReady.emit(
+                    mag_y_db, mag_y, fft_peak_amp, rms_amp,
+                    fps, sample_dt, processing_dt,
+                )
 
     # MARK: - Public API (safe to call from main thread)
 
@@ -333,10 +345,12 @@ class _FftProcessingThread(QtCore.QThread):
         self._stop_event.set()
 
     def reset_state(self) -> None:
-        """Reset ring buffer state; call before start()."""
-        self._audio_ring = np.zeros(self._mic.m_t, dtype=np.float32)
-        self._ring_fill = 0
-        self._samples_since_last_fft = 0
+        """Reset input buffer state; call before start().
+
+        Mirrors Swift inputBuffer.removeAll() + related resets in startFromFile.
+        """
+        self._input_buffer = []
+        self._input_buffer_len = 0
         self._stop_event.clear()
         with self._recent_peak_lock:
             self._recent_peak_db = -100.0

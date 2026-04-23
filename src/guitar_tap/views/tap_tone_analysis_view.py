@@ -2539,11 +2539,12 @@ class MainWindow(QtWidgets.QMainWindow):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Open Audio File",
-            "",
+            M.last_export_dir(),
             "Audio files (*.wav *.aif *.aiff *.flac *.ogg);;All files (*)",
         )
         if not path:
             return
+        M.update_export_dir(path)
 
         analyzer = self.fft_canvas.analyzer
 

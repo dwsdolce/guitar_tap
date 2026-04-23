@@ -930,5 +930,5 @@ class TapToneAnalyzerControlMixin:
         """
         self.is_tracking_decay = False
         if self._decay_tracking_timer is not None:
-            self._decay_tracking_timer.cancel()
+            self._decay_tracking_timer.stop()
             self._decay_tracking_timer = None
