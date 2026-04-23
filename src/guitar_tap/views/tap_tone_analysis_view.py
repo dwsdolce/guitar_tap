@@ -2559,21 +2559,22 @@ class MainWindow(QtWidgets.QMainWindow):
             # Mirrors Swift openAudioFile(_:) which calls:
             #   1. fft.startFromFile(url, completion:) — start engine, recompute freq bins
             #   2. tapToneAnalyzer.startTapSequence(skipWarmup: true) — arm tap detection
-            # The completion closure in Swift releases security-scoped resource access;
-            # here we use it to emit playingFileNameChanged(None) and restore the title.
-            def _on_finished() -> None:
-                analyzer.playingFileNameChanged.emit(None)
-
-            analyzer.start_from_file(path, on_finished=_on_finished)
-
-            # Emit the playing filename so chartTitle updates reactively.
-            # Mirrors Swift: fft.playingFileName (@Published) drives chartTitle computed var.
-            analyzer.playingFileNameChanged.emit(analyzer.mic.playing_file_name)
+            # The completion closure in Swift releases security-scoped resource access.
+            # It does NOT clear playingFileName — that stays set until stop() is called,
+            # so the chart title continues showing the filename while the result is frozen.
+            # Python matches: no emit here, playing_file_name cleared only by stop().
+            analyzer.start_from_file(path, on_finished=None)
 
             # Arm tap detection with warmup skipped — the audio source is deterministic
             # so there is no mic startup noise, and the tap may appear in the first 0.5 s.
             # Mirrors Swift: tapToneAnalyzer.startTapSequence(skipWarmup: true)
             analyzer.start_tap_sequence(skip_warmup=True)
+
+            # Emit the playing filename AFTER start_tap_sequence so the title update
+            # is last — start_tap_sequence emits loadedMeasurementNameChanged(None)
+            # which calls set_loaded_measurement_name and would overwrite the title.
+            # Mirrors Swift: fft.playingFileName (@Published) drives chartTitle computed var.
+            analyzer.playingFileNameChanged.emit(analyzer.mic.playing_file_name)
 
             self._is_running = True
             self.set_running(True)

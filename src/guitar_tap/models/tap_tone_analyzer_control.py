@@ -294,9 +294,9 @@ class TapToneAnalyzerControlMixin:
                          mic stream has been restarted.  Mirrors Swift's completion
                          parameter on startFromFile(_:completion:).
         """
-        # Wire the completion callback.  The view passes a closure that emits
-        # playingFileNameChanged(None) and restores the freq axis — mirroring
-        # Swift's completion block that releases security-scoped resource access.
+        # Wire the completion callback.  Mirrors Swift's completion block that releases
+        # security-scoped resource access after playback.  Python uses it to restore the
+        # frequency axis; the view no longer passes a closure (on_finished=None).
         def _on_finished_wrapper() -> None:
             # Restore frequency axis to the mic's hardware rate now that the
             # mic stream has been restarted (mic.rate is back to hardware rate).

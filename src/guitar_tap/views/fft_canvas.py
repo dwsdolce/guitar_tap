@@ -954,11 +954,10 @@ class FftCanvas(pg.PlotWidget):
     def set_loaded_measurement_name(self, name: str | None) -> None:
         """Update the chart title to reflect the loaded measurement name.
 
-        Mirrors Swift: chartTitle = tap.loadedMeasurementName ?? "New"
-        used as 'FFT Peaks — {chartTitle}'.
+        Mirrors Swift: chartTitle = fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
+        If a file is currently playing its name takes priority over the loaded measurement name.
         """
-        suffix = name if (name and name.strip()) else "New"
-        self.setTitle(f"FFT Peaks \u2014 {suffix}", color="#333333")
+        self.setTitle(self.chart_title, color="#333333")
 
     def set_playing_file_name(self, name: str | None) -> None:
         """Update the chart title to reflect the playing file name, or revert to

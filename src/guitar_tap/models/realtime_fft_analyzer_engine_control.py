@@ -385,9 +385,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             except Exception:
                 pass
 
-            # Clear the playing filename and notify the caller (e.g. to update chart title).
-            # Mirrors Swift's completion closure called inside asyncAfter after start().
-            self.playing_file_name = None
+            # Notify the caller (e.g. to restore freq axis after mic restart).
+            # Mirrors Swift's completion?() call inside asyncAfter after start().
+            # Swift does NOT clear playingFileName here — it stays set until stop() is
+            # called (see stop(): playingFileName = nil on main thread).  Python matches
+            # that: playing_file_name is cleared only by stop(), not here.
             cb = self._on_playback_finished
             if cb is not None:
                 cb()
