@@ -755,6 +755,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tap_num_spin.setMaximum(10)
         self.tap_num_spin.setValue(1)
         self.tap_num_spin.setToolTip("Number of taps to accumulate and average")
+        self.tap_num_spin.setMaximumWidth(60)
         hl.addWidget(self.tap_num_spin)
 
         hl.addWidget(_vsep())
