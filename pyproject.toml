@@ -7,7 +7,7 @@ name = "guitar-tap"
 version = "0.11"
 requires-python = ">=3.14"
 dependencies = [
-    "PySide6>=6.10.1",
+    "PySide6>=6.11.0",
     "numpy>=2.4",
     "scipy>=1.17",
     "sounddevice>=0.5",
