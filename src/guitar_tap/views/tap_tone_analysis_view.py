@@ -756,6 +756,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tap_num_spin.setValue(1)
         self.tap_num_spin.setFixedWidth(45)
         self.tap_num_spin.setToolTip("Number of taps to accumulate and average")
+        # Explicitly set text/background colors so the value is visible on all
+        # platforms (Windows dark/high-contrast themes can otherwise render the
+        # value text in the same color as the background, making it invisible).
+        self.tap_num_spin.setStyleSheet(
+            "QSpinBox { color: palette(text); background: palette(base); }"
+        )
         hl.addWidget(self.tap_num_spin)
 
         hl.addWidget(_vsep())

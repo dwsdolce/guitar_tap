@@ -304,6 +304,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # Mirrors Swift's `let scheduledPlayer = player` identity guard.
         sentinel: list[threading.Thread | None] = [None]
 
+        fft_size = self.fft_size  # capture for use inside worker
+
         def _playback_worker() -> None:
             """Pace audio chunks into self.queue at real-time speed, then restart the mic."""
             n_samples = len(mono)
@@ -329,6 +331,48 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             # no longer the active one — skip the mic restart.
             if self._file_playback_thread is not sentinel[0]:
                 return
+
+            # Force-flush any partial audio still in the processing thread's ring buffer.
+            #
+            # Mirrors Swift's end-of-file partial flush in startFromFile's asyncAfter block.
+            #
+            # The file may be shorter than one FFT window (fft_size samples, ~1.49 s at
+            # 44.1 kHz).  When that happens _FftProcessingThread.run() never accumulates
+            # m_t new samples, so the FFT never fires — the file produces zero FFT frames
+            # and tap detection never fires during playback.
+            #
+            # After the mic restarts, the thread continues accumulating from where it left
+            # off.  The first m_t - (file_samples % m_t) mic samples push the counter over
+            # the threshold, and the FFT fires on a mix of file tail + live mic noise,
+            # producing a ragged spectrum that trips tap detection with garbage data.
+            #
+            # Fix: zero-pad the ring buffer to m_t and force one FFT frame through
+            # fftFrameReady right now, then reset the accumulator so the mic starts
+            # from a clean slate — exactly mirroring the Swift zero-pad + performFFT call.
+            proc = self.proc_thread
+            if proc is not None:
+                # Import inside worker to avoid circular import at module level.
+                from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
+                ring = proc._audio_ring.copy()
+                # Zero-pad leading portion if the ring hasn't filled yet.
+                # The padded zeros lower the average level but don't distort the
+                # ring-out peaks — the file signal is in the trailing portion.
+                if proc._ring_fill < fft_size:
+                    pad = fft_size - proc._ring_fill
+                    ring[:pad] = 0.0
+                mag_y_db, mag_y = _dft_anal(ring, self.window_fcn, fft_size)
+                with proc._settings_lock:
+                    cal = proc._calibration
+                if cal is not None:
+                    mag_y_db = mag_y_db + cal
+                fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+                # rms_amp: use 0 (silence) since the file has ended.
+                proc.fftFrameReady.emit(mag_y_db, mag_y, fft_peak_amp, 0, 0.0, 0.0, 0.0)
+                # Reset the accumulator so the mic begins from a clean slate.
+                # Mirrors Swift's inputBuffer.removeAll() before start().
+                proc._samples_since_last_fft = 0
+                proc._audio_ring[:] = 0.0
+                proc._ring_fill = 0
 
             # Restart the PortAudio stream so the mic is live again.
             # Mirrors Swift try? self.start() which recreates the AVAudioEngine on the mic.
