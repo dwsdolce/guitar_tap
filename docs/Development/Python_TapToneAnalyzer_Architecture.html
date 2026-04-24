@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GuitarTap Python — TapToneAnalyzer Architecture</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 960px; margin: 0 auto; padding: 2rem; background: #f9f8f5; color: #1a1a18; }
+  h1 { font-size: 1.6rem; font-weight: 500; margin-bottom: 0.25rem; }
+  .subtitle { color: #6b6b66; font-size: 0.9rem; margin-bottom: 2.5rem; }
+  h2 { font-size: 1.1rem; font-weight: 500; margin: 2.5rem 0 0.5rem; color: #1a1a18; }
+  h3 { font-size: 0.95rem; font-weight: 500; margin: 1.5rem 0 0.4rem; color: #3d3d3a; }
+  p { font-size: 0.92rem; line-height: 1.7; color: #3d3d3a; margin: 0.4rem 0 0.8rem; }
+  .card { background: #fff; border: 1px solid #e0dfd7; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+  ul { font-size: 0.92rem; line-height: 1.8; color: #3d3d3a; padding-left: 1.4rem; margin: 0.25rem 0 1rem; }
+  li { margin-bottom: 0.15rem; }
+  code { font-family: "SF Mono", Menlo, monospace; font-size: 0.82rem; background: #f1efe8; padding: 1px 5px; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; margin: 0.75rem 0 1rem; }
+  th { text-align: left; padding: 6px 10px; background: #f1efe8; border-bottom: 1px solid #d3d1c7; font-weight: 500; color: #2c2c2a; }
+  td { padding: 5px 10px; border-bottom: 1px solid #ede9e0; color: #3d3d3a; vertical-align: top; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .th { font-size: 14px; font-weight: 500; fill: #1a1a18; }
+  .ts { font-size: 12px; font-weight: 400; fill: #5f5e5a; }
+  .node { cursor: default; }
+  .c-purple rect, .c-purple ellipse { fill: #eeedfe; stroke: #534ab7; }
+  .c-purple .th { fill: #3c3489; } .c-purple .ts { fill: #534ab7; }
+  .c-teal rect, .c-teal ellipse { fill: #e1f5ee; stroke: #0f6e56; }
+  .c-teal .th { fill: #085041; } .c-teal .ts { fill: #0f6e56; }
+  .c-amber rect, .c-amber ellipse { fill: #faeeda; stroke: #854f0b; }
+  .c-amber .th { fill: #633806; } .c-amber .ts { fill: #854f0b; }
+  .c-coral rect, .c-coral ellipse { fill: #faece7; stroke: #993c1d; }
+  .c-coral .th { fill: #712b13; } .c-coral .ts { fill: #993c1d; }
+  .c-green rect, .c-green ellipse { fill: #eaf3de; stroke: #3b6d11; }
+  .c-green .th { fill: #173404; } .c-green .ts { fill: #3b6d11; }
+  .c-pink rect, .c-pink ellipse { fill: #fbeaf0; stroke: #993556; }
+  .c-pink .th { fill: #4b1528; } .c-pink .ts { fill: #993556; }
+  .c-blue rect, .c-blue ellipse { fill: #e6f1fb; stroke: #185fa5; }
+  .c-blue .th { fill: #042c53; } .c-blue .ts { fill: #185fa5; }
+  .c-gray rect, .c-gray ellipse { fill: #f1efe8; stroke: #5f5e5a; }
+  .c-gray .th { fill: #2c2c2a; } .c-gray .ts { fill: #5f5e5a; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1a1a18; color: #e0dfd7; }
+    h1, h2, h3 { color: #e0dfd7; }
+    p, ul, td { color: #b4b2a9; }
+    .subtitle { color: #888780; }
+    .card { background: #2c2c2a; border-color: #444441; }
+    code { background: #2c2c2a; color: #c2c0b6; }
+    th { background: #2c2c2a; color: #d3d1c7; border-color: #444441; }
+    td { border-color: #3a3a38; }
+    .th { fill: #e0dfd7; } .ts { fill: #888780; }
+    .c-purple rect, .c-purple ellipse { fill: #3c3489; stroke: #afa9ec; }
+    .c-purple .th { fill: #cecbf6; } .c-purple .ts { fill: #afa9ec; }
+    .c-teal rect, .c-teal ellipse { fill: #085041; stroke: #5dcaa5; }
+    .c-teal .th { fill: #9fe1cb; } .c-teal .ts { fill: #5dcaa5; }
+    .c-amber rect, .c-amber ellipse { fill: #633806; stroke: #ef9f27; }
+    .c-amber .th { fill: #fac775; } .c-amber .ts { fill: #ef9f27; }
+    .c-coral rect, .c-coral ellipse { fill: #712b13; stroke: #f0997b; }
+    .c-coral .th { fill: #f5c4b3; } .c-coral .ts { fill: #f0997b; }
+    .c-green rect, .c-green ellipse { fill: #27500a; stroke: #97c459; }
+    .c-green .th { fill: #c0dd97; } .c-green .ts { fill: #97c459; }
+    .c-pink rect, .c-pink ellipse { fill: #4b1528; stroke: #ed93b1; }
+    .c-pink .th { fill: #f4c0d1; } .c-pink .ts { fill: #ed93b1; }
+    .c-blue rect, .c-blue ellipse { fill: #0c447c; stroke: #85b7eb; }
+    .c-blue .th { fill: #b5d4f4; } .c-blue .ts { fill: #85b7eb; }
+    .c-gray rect, .c-gray ellipse { fill: #444441; stroke: #888780; }
+    .c-gray .th { fill: #d3d1c7; } .c-gray .ts { fill: #888780; }
+  }
+</style>
+</head>
+<body>
+
+<h1>GuitarTap Python — TapToneAnalyzer Architecture</h1>
+<p class="subtitle">tap_tone_analyzer.py · 9 mixin modules · mirrors Swift TapToneAnalyzer + 8 extensions</p>
+
+<!-- ═══ DIAGRAM 1: Full class overview ═══ -->
+<h2>1. Full class architecture</h2>
+<p><code>TapToneAnalyzer</code> inherits from 9 mixins plus <code>QObject</code>. The base file holds all stored properties, <code>__init__</code>, Qt signals, the <code>start()</code> wiring method, and a handful of helper methods that Swift places directly on the class (not in any extension). Unlike Swift's <code>@Published</code> Combine-driven UI, Python uses Qt signals to notify the view layer.</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 660" role="img">
+  <title>TapToneAnalyzer full class architecture</title>
+  <defs><marker id="a0" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- Outer container -->
+  <g class="c-gray"><rect x="30" y="30" width="620" height="530" rx="20" stroke-width="0.5"/>
+    <text class="th" x="340" y="56" text-anchor="middle" dominant-baseline="central">TapToneAnalyzer(QObject)</text>
+    <text class="ts" x="340" y="72" text-anchor="middle" dominant-baseline="central">Inherits 9 mixins · mirrors Swift TapToneAnalyzer: ObservableObject</text>
+  </g>
+
+  <!-- init / start -->
+  <g class="node c-purple"><rect x="160" y="88" width="360" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="106" text-anchor="middle" dominant-baseline="central">__init__ + start(parent, rate, fft_size, device, cal)</text>
+    <text class="ts" x="340" y="124" text-anchor="middle" dominant-baseline="central">Stored props, wire proc_thread signals, raw_sample_handler, auto-start</text>
+  </g>
+
+  <!-- Row 2: core mixins -->
+  <g class="node c-teal"><rect x="50" y="188" width="130" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="115" y="206" text-anchor="middle" dominant-baseline="central">ControlMixin</text>
+    <text class="ts" x="115" y="224" text-anchor="middle" dominant-baseline="central">start/stop/reset/pause</text>
+  </g>
+  <g class="node c-teal"><rect x="196" y="188" width="140" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="266" y="206" text-anchor="middle" dominant-baseline="central">TapDetectionMixin</text>
+    <text class="ts" x="266" y="224" text-anchor="middle" dominant-baseline="central">Hysteresis detector</text>
+  </g>
+  <g class="node c-teal"><rect x="352" y="188" width="140" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="422" y="206" text-anchor="middle" dominant-baseline="central">PeakAnalysisMixin</text>
+    <text class="ts" x="422" y="224" text-anchor="middle" dominant-baseline="central">findPeaks, classify</text>
+  </g>
+  <g class="node c-teal"><rect x="508" y="188" width="132" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="574" y="206" text-anchor="middle" dominant-baseline="central">SpectrumCapture</text>
+    <text class="ts" x="574" y="224" text-anchor="middle" dominant-baseline="central">Gated FFT, avg</text>
+  </g>
+
+  <!-- Row 3: support mixins -->
+  <g class="node c-amber"><rect x="50" y="288" width="160" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="130" y="306" text-anchor="middle" dominant-baseline="central">MeasurementMgmt</text>
+    <text class="ts" x="130" y="324" text-anchor="middle" dominant-baseline="central">Save/load/compare</text>
+  </g>
+  <g class="node c-amber"><rect x="228" y="288" width="155" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="305" y="306" text-anchor="middle" dominant-baseline="central">DecayTracking</text>
+    <text class="ts" x="305" y="324" text-anchor="middle" dominant-baseline="central">Ring-out QTimer</text>
+  </g>
+  <g class="node c-amber"><rect x="401" y="288" width="155" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="478" y="306" text-anchor="middle" dominant-baseline="central">AnnotationMgmt</text>
+    <text class="ts" x="478" y="324" text-anchor="middle" dominant-baseline="central">Offsets, plate sel.</text>
+  </g>
+  <g class="node c-amber"><rect x="50" y="352" width="160" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="130" y="370" text-anchor="middle" dominant-baseline="central">ModeOverrideMgmt</text>
+    <text class="ts" x="130" y="388" text-anchor="middle" dominant-baseline="central">User peak labels</text>
+  </g>
+  <g class="node c-amber"><rect x="228" y="352" width="155" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="305" y="370" text-anchor="middle" dominant-baseline="central">AnalysisHelpers</text>
+    <text class="ts" x="305" y="388" text-anchor="middle" dominant-baseline="central">peak_mode, ratio</text>
+  </g>
+
+  <!-- Qt signals block -->
+  <g class="node c-blue"><rect x="50" y="460" width="580" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="478" text-anchor="middle" dominant-baseline="central">Qt signals (view-layer bridge)</text>
+    <text class="ts" x="340" y="494" text-anchor="middle" dominant-baseline="central">peaksChanged · spectrumUpdated · tapDetectedSignal · materialSpectraChanged · plateAnalysisComplete · statusMessageChanged · …</text>
+  </g>
+
+  <!-- External -->
+  <g class="node c-purple"><rect x="50" y="550" width="175" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="137" y="568" text-anchor="middle" dominant-baseline="central">RealtimeFFTAnalyzer</text>
+    <text class="ts" x="137" y="584" text-anchor="middle" dominant-baseline="central">self.mic — audio + FFT</text>
+  </g>
+  <g class="node c-purple"><rect x="255" y="550" width="175" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="342" y="568" text-anchor="middle" dominant-baseline="central">FftCanvas / views</text>
+    <text class="ts" x="342" y="584" text-anchor="middle" dominant-baseline="central">Connect Qt signals</text>
+  </g>
+  <g class="node c-purple"><rect x="460" y="550" width="190" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="555" y="568" text-anchor="middle" dominant-baseline="central">TapToneMeasurement</text>
+    <text class="ts" x="555" y="584" text-anchor="middle" dominant-baseline="central">JSON persist, Documents</text>
+  </g>
+
+  <!-- Arrows -->
+  <line x1="340" y1="136" x2="220" y2="186" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a0)"/>
+  <line x1="340" y1="136" x2="340" y2="186" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a0)"/>
+  <line x1="340" y1="136" x2="480" y2="186" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a0)"/>
+  <line x1="340" y1="504" x2="230" y2="548" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a0)"/>
+  <line x1="340" y1="504" x2="340" y2="548" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a0)"/>
+  <line x1="340" y1="504" x2="470" y2="548" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a0)"/>
+</svg>
+</div>
+
+<!-- ═══ DIAGRAM 2: FFT frame wiring ═══ -->
+<h2>2. FFT frame wiring and signal flow</h2>
+<p>Python replaces Swift's Combine subscriptions with Qt signal connections wired in <code>start()</code>. <code>fftFrameReady</code> (per-FFT, ~2.7 Hz) drives <code>on_fft_frame</code> which handles guitar-mode tap detection and peak analysis. <code>rmsLevelChanged</code> (~43 Hz) drives <code>_on_rms_level_changed</code> for plate/brace tap detection and decay tracking. <code>gatedCaptureComplete</code> delivers gated-FFT results to <code>finish_gated_fft_capture</code> on the main thread.</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 380" role="img">
+  <title>TapToneAnalyzer FFT frame wiring</title>
+  <defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- Source: proc_thread -->
+  <g class="node c-blue"><rect x="40" y="30" width="180" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="130" y="50" text-anchor="middle" dominant-baseline="central">_FftProcessingThread</text>
+    <text class="ts" x="130" y="68" text-anchor="middle" dominant-baseline="central">background QThread</text>
+  </g>
+
+  <!-- fftFrameReady -->
+  <g class="node c-teal"><rect x="270" y="30" width="175" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="357" y="50" text-anchor="middle" dominant-baseline="central">fftFrameReady signal</text>
+    <text class="ts" x="357" y="68" text-anchor="middle" dominant-baseline="central">~2.7 Hz, per FFT window</text>
+  </g>
+  <g class="node c-amber"><rect x="490" y="30" width="150" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="565" y="50" text-anchor="middle" dominant-baseline="central">on_fft_frame()</text>
+    <text class="ts" x="565" y="68" text-anchor="middle" dominant-baseline="central">Guitar tap + peaks</text>
+  </g>
+
+  <!-- rmsLevelChanged -->
+  <g class="node c-teal"><rect x="270" y="120" width="175" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="357" y="140" text-anchor="middle" dominant-baseline="central">rmsLevelChanged signal</text>
+    <text class="ts" x="357" y="158" text-anchor="middle" dominant-baseline="central">~43 Hz, per chunk</text>
+  </g>
+  <g class="node c-amber"><rect x="490" y="120" width="150" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="565" y="140" text-anchor="middle" dominant-baseline="central">_on_rms_level_changed</text>
+    <text class="ts" x="565" y="158" text-anchor="middle" dominant-baseline="central">Plate/brace tap + decay</text>
+  </g>
+
+  <!-- gatedCaptureComplete -->
+  <g class="node c-teal"><rect x="270" y="210" width="175" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="357" y="230" text-anchor="middle" dominant-baseline="central">gatedCaptureComplete</text>
+    <text class="ts" x="357" y="248" text-anchor="middle" dominant-baseline="central">Queued Qt connection</text>
+  </g>
+  <g class="node c-amber"><rect x="490" y="210" width="150" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="565" y="230" text-anchor="middle" dominant-baseline="central">finish_gated_fft_capture</text>
+    <text class="ts" x="565" y="248" text-anchor="middle" dominant-baseline="central">Phase handler routing</text>
+  </g>
+
+  <!-- raw_sample_handler -->
+  <g class="node c-teal"><rect x="270" y="300" width="175" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="357" y="320" text-anchor="middle" dominant-baseline="central">raw_sample_handler</text>
+    <text class="ts" x="357" y="338" text-anchor="middle" dominant-baseline="central">Called per chunk, audio q</text>
+  </g>
+  <g class="node c-amber"><rect x="490" y="300" width="150" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="565" y="320" text-anchor="middle" dominant-baseline="central">_accumulate_gated</text>
+    <text class="ts" x="565" y="338" text-anchor="middle" dominant-baseline="central">Samples pre-roll + gate</text>
+  </g>
+
+  <!-- Arrows from source -->
+  <line x1="220" y1="56" x2="268" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <path d="M 220 56 L 248 56 L 248 146 L 268 146" fill="none" stroke="#888780" stroke-width="1.2" marker-end="url(#a1)"/>
+  <path d="M 220 56 L 248 56 L 248 236 L 268 236" fill="none" stroke="#888780" stroke-width="1.2" marker-end="url(#a1)"/>
+  <path d="M 220 56 L 248 56 L 248 326 L 268 326" fill="none" stroke="#888780" stroke-width="1.2" marker-end="url(#a1)"/>
+  <line x1="445" y1="56" x2="488" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="445" y1="146" x2="488" y2="146" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="445" y1="236" x2="488" y2="236" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="445" y1="326" x2="488" y2="326" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+</svg>
+</div>
+
+<!-- ═══ DIAGRAM 3: Guitar mode flow ═══ -->
+<h2>3. Guitar mode measurement flow</h2>
+<p><code>on_fft_frame</code> is the main entry point for guitar mode. It calls <code>detect_tap</code> (absolute threshold hysteresis) and <code>analyze_magnitudes</code> on every FFT frame. On a rising edge, <code>handle_tap_detection</code> stores the spectrum, starts decay tracking, and schedules <code>process_multiple_taps</code> after the capture window. Spectrum averaging runs in the linear power domain.</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 400" role="img">
+  <title>Guitar mode measurement flow</title>
+  <defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <g class="node c-teal"><rect x="40" y="30" width="155" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="117" y="50" text-anchor="middle" dominant-baseline="central">start_tap_sequence</text>
+    <text class="ts" x="117" y="68" text-anchor="middle" dominant-baseline="central">Reset, warm-up, arm</text>
+  </g>
+  <g class="node c-teal"><rect x="220" y="30" width="155" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="297" y="50" text-anchor="middle" dominant-baseline="central">on_fft_frame()</text>
+    <text class="ts" x="297" y="68" text-anchor="middle" dominant-baseline="central">~2.7 Hz, main thread</text>
+  </g>
+  <g class="node c-teal"><rect x="400" y="30" width="240" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="520" y="50" text-anchor="middle" dominant-baseline="central">detect_tap (guitar)</text>
+    <text class="ts" x="520" y="68" text-anchor="middle" dominant-baseline="central">Absolute threshold hysteresis</text>
+  </g>
+
+  <g class="node c-coral"><rect x="400" y="140" width="240" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="520" y="160" text-anchor="middle" dominant-baseline="central">handle_tap_detection</text>
+    <text class="ts" x="520" y="178" text-anchor="middle" dominant-baseline="central">Store mag_y_db, start timer</text>
+  </g>
+  <g class="node c-amber"><rect x="40" y="140" width="155" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="117" y="160" text-anchor="middle" dominant-baseline="central">start_decay_tracking</text>
+    <text class="ts" x="117" y="178" text-anchor="middle" dominant-baseline="central">QTimer 3 s, history</text>
+  </g>
+  <g class="node c-amber"><rect x="220" y="140" width="155" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="297" y="160" text-anchor="middle" dominant-baseline="central">analyze_magnitudes</text>
+    <text class="ts" x="297" y="178" text-anchor="middle" dominant-baseline="central">find_peaks, classify</text>
+  </g>
+
+  <g class="node c-coral"><rect x="400" y="250" width="240" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="520" y="270" text-anchor="middle" dominant-baseline="central">process_multiple_taps</text>
+    <text class="ts" x="520" y="288" text-anchor="middle" dominant-baseline="central">average_spectra, find_peaks</text>
+  </g>
+  <g class="node c-coral"><rect x="220" y="250" width="155" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="297" y="270" text-anchor="middle" dominant-baseline="central">find_peaks</text>
+    <text class="ts" x="297" y="288" text-anchor="middle" dominant-baseline="central">2-pass, mode priority</text>
+  </g>
+  <g class="node c-coral"><rect x="40" y="250" width="155" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="117" y="270" text-anchor="middle" dominant-baseline="central">GuitarMode.classifyAll</text>
+    <text class="ts" x="117" y="288" text-anchor="middle" dominant-baseline="central">identified_modes updated</text>
+  </g>
+
+  <g class="node c-gray"><rect x="160" y="340" width="360" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="358" text-anchor="middle" dominant-baseline="central">set_frozen_spectrum + measurementComplete.emit(True)</text>
+    <text class="ts" x="340" y="374" text-anchor="middle" dominant-baseline="central">Atomic array update, unlocks save button</text>
+  </g>
+
+  <line x1="195" y1="56" x2="218" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="375" y1="56" x2="398" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="520" y1="82" x2="520" y2="138" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="400" y1="166" x2="377" y2="166" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="220" y1="166" x2="197" y2="166" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="520" y1="192" x2="520" y2="248" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="400" y1="276" x2="377" y2="276" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="220" y1="276" x2="197" y2="276" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="297" y1="302" x2="340" y2="338" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+</svg>
+</div>
+
+<!-- ═══ DIAGRAM 4: Plate/brace gated FFT flow ═══ -->
+<h2>4. Plate / brace gated FFT flow</h2>
+<p>Plate and brace modes bypass the continuous FFT path entirely. <code>_accumulate_gated_samples</code> (called via <code>raw_sample_handler</code> on the audio thread) maintains the 200 ms pre-roll ring buffer and accumulates the 400 ms gate window. When the window fills, it emits <code>gatedCaptureComplete</code> (queued Qt connection) delivering the samples to <code>finish_gated_fft_capture</code> on the main thread. The phase-state machine progresses through L → C → FLC with Accept/Redo at each review step.</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 480" role="img">
+  <title>Plate and brace gated FFT measurement flow</title>
+  <defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- Audio thread layer -->
+  <g class="node c-blue"><rect x="40" y="30" width="185" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="132" y="50" text-anchor="middle" dominant-baseline="central">_accumulate_gated_samples</text>
+    <text class="ts" x="132" y="68" text-anchor="middle" dominant-baseline="central">Audio thread, pre-roll + gate</text>
+  </g>
+  <g class="node c-purple"><rect x="260" y="30" width="180" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="350" y="50" text-anchor="middle" dominant-baseline="central">detect_tap (plate/brace)</text>
+    <text class="ts" x="350" y="68" text-anchor="middle" dominant-baseline="central">RMS, relative threshold</text>
+  </g>
+  <g class="node c-purple"><rect x="470" y="30" width="170" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="555" y="50" text-anchor="middle" dominant-baseline="central">start_gated_capture</text>
+    <text class="ts" x="555" y="68" text-anchor="middle" dominant-baseline="central">Seed pre-roll, 400 ms</text>
+  </g>
+
+  <!-- FFT layer -->
+  <g class="node c-teal"><rect x="40" y="150" width="240" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="160" y="170" text-anchor="middle" dominant-baseline="central">finish_gated_fft_capture</text>
+    <text class="ts" x="160" y="188" text-anchor="middle" dominant-baseline="central">compute_gated_fft + find_dominant_peak</text>
+  </g>
+  <g class="node c-teal"><rect x="300" y="150" width="180" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="390" y="170" text-anchor="middle" dominant-baseline="central">find_dominant_peak</text>
+    <text class="ts" x="390" y="188" text-anchor="middle" dominant-baseline="central">HPS + Q ≥ 3 filter</text>
+  </g>
+  <g class="node c-teal"><rect x="500" y="150" width="140" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="570" y="170" text-anchor="middle" dominant-baseline="central">hps_peak_freq</text>
+    <text class="ts" x="570" y="188" text-anchor="middle" dominant-baseline="central">Fundamental estimator</text>
+  </g>
+
+  <!-- Phase handlers -->
+  <g class="node c-coral"><rect x="40" y="260" width="170" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="125" y="280" text-anchor="middle" dominant-baseline="central">handle_longitudinal</text>
+    <text class="ts" x="125" y="298" text-anchor="middle" dominant-baseline="central">GatedProgress → review L</text>
+  </g>
+  <g class="node c-coral"><rect x="230" y="260" width="170" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="315" y="280" text-anchor="middle" dominant-baseline="central">handle_cross_gated</text>
+    <text class="ts" x="315" y="298" text-anchor="middle" dominant-baseline="central">Progress → review C</text>
+  </g>
+  <g class="node c-coral"><rect x="420" y="260" width="220" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="530" y="280" text-anchor="middle" dominant-baseline="central">handle_flc_gated</text>
+    <text class="ts" x="530" y="298" text-anchor="middle" dominant-baseline="central">Progress → review FLC</text>
+  </g>
+
+  <!-- Phase state machine -->
+  <g class="node c-gray"><rect x="40" y="360" width="600" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="378" text-anchor="middle" dominant-baseline="central">material_tap_phase state machine</text>
+    <text class="ts" x="340" y="396" text-anchor="middle" dominant-baseline="central">NOT_STARTED → CAPTURING_L → REVIEWING_L → CAPTURING_C → REVIEWING_C → [CAPTURING_FLC → REVIEWING_FLC →] COMPLETE</text>
+  </g>
+
+  <!-- Accept / Redo -->
+  <g class="node c-amber"><rect x="40" y="432" width="175" height="36" rx="6" stroke-width="0.5"/>
+    <text class="th" x="127" y="450" text-anchor="middle" dominant-baseline="central">accept_current_phase</text>
+  </g>
+  <g class="node c-amber"><rect x="240" y="432" width="160" height="36" rx="6" stroke-width="0.5"/>
+    <text class="th" x="320" y="450" text-anchor="middle" dominant-baseline="central">redo_current_phase</text>
+  </g>
+
+  <!-- Arrows -->
+  <line x1="225" y1="56" x2="258" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="440" y1="56" x2="468" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="555" y1="82" x2="555" y2="148" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="280" y1="176" x2="298" y2="176" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="480" y1="176" x2="498" y2="176" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="160" y1="202" x2="125" y2="258" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="160" y1="202" x2="315" y2="258" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="160" y1="202" x2="530" y2="258" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="340" y1="312" x2="340" y2="358" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="200" y1="408" x2="127" y2="430" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+  <line x1="250" y1="408" x2="310" y2="430" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+</svg>
+</div>
+
+<!-- ═══ DIAGRAM 5: Control and lifecycle ═══ -->
+<h2>5. Control, calibration, and device management</h2>
+<p><code>ControlMixin</code> owns the lifecycle: <code>start_tap_sequence</code>, <code>cancel_tap_sequence</code>, <code>reset</code>, <code>pause/resume_tap_detection</code>, and the Accept/Redo phase transitions. It also owns calibration loading and device switching. Hot-plug events arrive on the main thread via <code>_devicesRefreshed</code> signal, triggering PortAudio re-init and <code>mic.load_available_input_devices()</code>.</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 320" role="img">
+  <title>Control and device management call graph</title>
+  <defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- Lifecycle row -->
+  <g class="node c-purple"><rect x="40" y="30" width="155" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="117" y="48" text-anchor="middle" dominant-baseline="central">start_tap_sequence</text>
+    <text class="ts" x="117" y="66" text-anchor="middle" dominant-baseline="central">skipWarmup flag</text>
+  </g>
+  <g class="node c-purple"><rect x="215" y="30" width="135" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="282" y="48" text-anchor="middle" dominant-baseline="central">cancel_tap_sequence</text>
+    <text class="ts" x="282" y="66" text-anchor="middle" dominant-baseline="central">Keep detecting</text>
+  </g>
+  <g class="node c-purple"><rect x="370" y="30" width="110" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="425" y="48" text-anchor="middle" dominant-baseline="central">reset()</text>
+    <text class="ts" x="425" y="66" text-anchor="middle" dominant-baseline="central">Stop detection</text>
+  </g>
+  <g class="node c-purple"><rect x="500" y="30" width="140" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="570" y="48" text-anchor="middle" dominant-baseline="central">pause / resume</text>
+    <text class="ts" x="570" y="66" text-anchor="middle" dominant-baseline="central">Tap detection</text>
+  </g>
+
+  <!-- Private helpers -->
+  <g class="node c-teal"><rect x="40" y="130" width="170" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="125" y="148" text-anchor="middle" dominant-baseline="central">_reset_material_phase_state</text>
+    <text class="ts" x="125" y="164" text-anchor="middle" dominant-baseline="central">Clears all phase data</text>
+  </g>
+  <g class="node c-teal"><rect x="230" y="130" width="155" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="307" y="148" text-anchor="middle" dominant-baseline="central">_reset_decay_tracking</text>
+    <text class="ts" x="307" y="164" text-anchor="middle" dominant-baseline="central">Stops QTimer</text>
+  </g>
+  <g class="node c-teal"><rect x="405" y="130" width="235" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="522" y="148" text-anchor="middle" dominant-baseline="central">_set_status_message(msg)</text>
+    <text class="ts" x="522" y="164" text-anchor="middle" dominant-baseline="central">status_message + emit signal</text>
+  </g>
+
+  <!-- Device / calibration -->
+  <g class="node c-amber"><rect x="40" y="224" width="150" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="115" y="242" text-anchor="middle" dominant-baseline="central">set_device(device)</text>
+    <text class="ts" x="115" y="258" text-anchor="middle" dominant-baseline="central">→ mic.set_device()</text>
+  </g>
+  <g class="node c-amber"><rect x="210" y="224" width="175" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="297" y="242" text-anchor="middle" dominant-baseline="central">_on_mic_calibration_changed</text>
+    <text class="ts" x="297" y="258" text-anchor="middle" dominant-baseline="central">load_calibration_from_profile</text>
+  </g>
+  <g class="node c-amber"><rect x="405" y="224" width="235" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="522" y="242" text-anchor="middle" dominant-baseline="central">_on_devices_refreshed</text>
+    <text class="ts" x="522" y="258" text-anchor="middle" dominant-baseline="central">PortAudio re-init, reload devices</text>
+  </g>
+
+  <!-- start_from_file -->
+  <g class="node c-green"><rect x="40" y="286" width="280" height="24" rx="6" stroke-width="0.5"/>
+    <text class="ts" x="180" y="298" text-anchor="middle" dominant-baseline="central">start_from_file(path) → mic.start_from_file + _update_frequency_bins</text>
+  </g>
+
+  <!-- Arrows: lifecycle → helpers -->
+  <line x1="117" y1="78" x2="117" y2="128" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a4)"/>
+  <line x1="282" y1="78" x2="282" y2="128" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a4)"/>
+  <line x1="125" y1="174" x2="307" y2="222" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a4)"/>
+</svg>
+</div>
+
+<!-- ═══ Key notes ═══ -->
+<h2>Key architecture notes</h2>
+
+<h3>Swift @Published → Python Qt signals</h3>
+<p>Every Swift <code>@Published</code> property that drives UI has a corresponding Qt signal emitted explicitly from code. For example, writing <code>status_message</code> always goes through <code>_set_status_message()</code> which emits <code>statusMessageChanged</code>, mirroring Swift's automatic <code>objectWillChange</code> trigger on every assignment. The <code>measurementComplete</code>, <code>tapCountChanged</code>, <code>plateAnalysisComplete</code>, and <code>materialSpectraChanged</code> signals map to Swift's frozen-spectrum and isMeasurementComplete publishers.</p>
+
+<h3>Gated capture ownership</h3>
+<p>Pre-roll buffer (<code>_pre_roll_buf</code>), gated accumulator (<code>_gated_accum</code>), <code>_gated_capture_active</code>, and <code>_gated_lock</code> live on <code>TapToneAnalyzer</code>, not on <code>_FftProcessingThread</code>. This matches Swift where <code>TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:)</code> owns the buffers. <code>_accumulate_gated_samples</code> is set as <code>mic.raw_sample_handler</code> so it is called by the processing thread on every audio chunk. When the window fills, it emits <code>gatedCaptureComplete</code> (a queued Qt signal on the processing thread) which delivers the samples to <code>finish_gated_fft_capture</code> on the main thread.</p>
+
+<h3>Tap detection mode split</h3>
+<table>
+  <tr><th>Mode</th><th>Signal</th><th>Rate</th><th>Threshold</th></tr>
+  <tr><td>Guitar</td><td><code>fftFrameReady</code> → <code>on_fft_frame</code></td><td>~2.7 Hz</td><td>Absolute dBFS</td></tr>
+  <tr><td>Plate / Brace</td><td><code>rmsLevelChanged</code> → <code>_on_rms_level_changed</code></td><td>~43 Hz</td><td>Relative: noise floor EMA + headroom</td></tr>
+</table>
+
+<h3>Key Python-only differences from Swift</h3>
+<ul>
+  <li><code>_set_status_message(msg)</code> — explicit helper for all status string writes, emitting <code>statusMessageChanged</code>. Swift uses <code>@Published var statusMessage</code> which auto-notifies.</li>
+  <li><code>recreate_proc_thread()</code> — destroys and replaces <code>_FftProcessingThread</code>. Swift achieves equivalent reset via <code>AVAudioEngine.stop()</code> / <code>start()</code>.</li>
+  <li><code>_on_devices_refreshed()</code> — calls <code>sd._terminate() + sd._initialize()</code> before re-enumerating. Swift CoreAudio doesn't cache the device list.</li>
+  <li><code>_update_frequency_bins()</code> — called after file playback changes <code>mic.rate</code>. Mirrors Swift's <code>updateFrequencyBins()</code> in <code>startFromFile</code>.</li>
+  <li>Three-layer peak selection (<code>effective_longitudinal_peak_id</code> etc.) uses Python properties with <code>or</code>-chain logic, exactly mirroring Swift's <code>??</code> chain.</li>
+  <li><code>set_frozen_spectrum</code> uses Python's GIL as the atomicity guarantee (no <code>objectWillChange.send()</code> needed) — both arrays update before any view read since all reads are on the main thread.</li>
+</ul>
+
+<h3>Measurement persistence differences</h3>
+<p>Python delegates to <code>views.tap_analysis_results_view.save_all_measurements</code> / <code>load_all_measurements</code> rather than owning the file URL itself (Swift's <code>measurementsFileURL</code> is a static property on <code>TapToneAnalyzer</code>). The test-path redirect to a temp directory in Swift is handled by the view layer in Python.</p>
+
+<p style="margin-top:2rem;font-size:0.8rem;color:#888780;">Generated by Claude from GuitarTap Python source analysis · tap_tone_analyzer.py + 9 mixin modules</p>
+</body>
+</html>
