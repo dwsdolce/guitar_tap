@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GuitarTap Python — RealtimeFFTAnalyzer Architecture</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 960px; margin: 0 auto; padding: 2rem; background: #f9f8f5; color: #1a1a18; }
+  h1 { font-size: 1.6rem; font-weight: 500; margin-bottom: 0.25rem; }
+  .subtitle { color: #6b6b66; font-size: 0.9rem; margin-bottom: 2.5rem; }
+  h2 { font-size: 1.1rem; font-weight: 500; margin: 2.5rem 0 0.5rem; color: #1a1a18; }
+  h3 { font-size: 0.95rem; font-weight: 500; margin: 1.5rem 0 0.4rem; color: #3d3d3a; }
+  p { font-size: 0.92rem; line-height: 1.7; color: #3d3d3a; margin: 0.4rem 0 0.8rem; }
+  .card { background: #fff; border: 1px solid #e0dfd7; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+  ul { font-size: 0.92rem; line-height: 1.8; color: #3d3d3a; padding-left: 1.4rem; margin: 0.25rem 0 1rem; }
+  li { margin-bottom: 0.15rem; }
+  code { font-family: "SF Mono", Menlo, monospace; font-size: 0.82rem; background: #f1efe8; padding: 1px 5px; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; margin: 0.75rem 0 1rem; }
+  th { text-align: left; padding: 6px 10px; background: #f1efe8; border-bottom: 1px solid #d3d1c7; font-weight: 500; color: #2c2c2a; }
+  td { padding: 5px 10px; border-bottom: 1px solid #ede9e0; color: #3d3d3a; vertical-align: top; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .th { font-size: 14px; font-weight: 500; fill: #1a1a18; }
+  .ts { font-size: 12px; font-weight: 400; fill: #5f5e5a; }
+  .node { cursor: default; }
+  .c-purple rect, .c-purple ellipse { fill: #eeedfe; stroke: #534ab7; }
+  .c-purple .th { fill: #3c3489; } .c-purple .ts { fill: #534ab7; }
+  .c-teal rect, .c-teal ellipse { fill: #e1f5ee; stroke: #0f6e56; }
+  .c-teal .th { fill: #085041; } .c-teal .ts { fill: #0f6e56; }
+  .c-amber rect, .c-amber ellipse { fill: #faeeda; stroke: #854f0b; }
+  .c-amber .th { fill: #633806; } .c-amber .ts { fill: #854f0b; }
+  .c-coral rect, .c-coral ellipse { fill: #faece7; stroke: #993c1d; }
+  .c-coral .th { fill: #712b13; } .c-coral .ts { fill: #993c1d; }
+  .c-green rect, .c-green ellipse { fill: #eaf3de; stroke: #3b6d11; }
+  .c-green .th { fill: #173404; } .c-green .ts { fill: #3b6d11; }
+  .c-blue rect, .c-blue ellipse { fill: #e6f1fb; stroke: #185fa5; }
+  .c-blue .th { fill: #042c53; } .c-blue .ts { fill: #185fa5; }
+  .c-gray rect, .c-gray ellipse { fill: #f1efe8; stroke: #5f5e5a; }
+  .c-gray .th { fill: #2c2c2a; } .c-gray .ts { fill: #5f5e5a; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1a1a18; color: #e0dfd7; }
+    h1, h2, h3 { color: #e0dfd7; }
+    p, ul, td { color: #b4b2a9; }
+    .subtitle { color: #888780; }
+    .card { background: #2c2c2a; border-color: #444441; }
+    code { background: #2c2c2a; color: #c2c0b6; }
+    th { background: #2c2c2a; color: #d3d1c7; border-color: #444441; }
+    td { border-color: #3a3a38; }
+    .th { fill: #e0dfd7; } .ts { fill: #888780; }
+    .c-purple rect, .c-purple ellipse { fill: #3c3489; stroke: #afa9ec; }
+    .c-purple .th { fill: #cecbf6; } .c-purple .ts { fill: #afa9ec; }
+    .c-teal rect, .c-teal ellipse { fill: #085041; stroke: #5dcaa5; }
+    .c-teal .th { fill: #9fe1cb; } .c-teal .ts { fill: #5dcaa5; }
+    .c-amber rect, .c-amber ellipse { fill: #633806; stroke: #ef9f27; }
+    .c-amber .th { fill: #fac775; } .c-amber .ts { fill: #854f0b; }
+    .c-coral rect, .c-coral ellipse { fill: #712b13; stroke: #f0997b; }
+    .c-coral .th { fill: #f5c4b3; } .c-coral .ts { fill: #f0997b; }
+    .c-green rect, .c-green ellipse { fill: #27500a; stroke: #97c459; }
+    .c-green .th { fill: #c0dd97; } .c-green .ts { fill: #97c459; }
+    .c-blue rect, .c-blue ellipse { fill: #0c447c; stroke: #85b7eb; }
+    .c-blue .th { fill: #b5d4f4; } .c-blue .ts { fill: #85b7eb; }
+    .c-gray rect, .c-gray ellipse { fill: #444441; stroke: #888780; }
+    .c-gray .th { fill: #d3d1c7; } .c-gray .ts { fill: #888780; }
+  }
+</style>
+</head>
+<body>
+
+<h1>GuitarTap Python — RealtimeFFTAnalyzer Architecture</h1>
+<p class="subtitle">realtime_fft_analyzer.py · _engine_control mixin · _device_management mixin · _fft_processing module</p>
+
+<!-- ═══ DIAGRAM 1: Full class architecture ═══ -->
+<h2>1. Full class architecture</h2>
+<p><code>RealtimeFFTAnalyzer</code> inherits from two mixins. The base file holds all stored properties and <code>__init__</code>, plus the Python-only <code>_FftProcessingThread</code> (a <code>QThread</code> that handles off-main-thread DSP — there is no Swift equivalent). The module also re-exports all FFT functions from <code>_fft_processing</code> for backward compatibility.</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 580" role="img">
+  <title>RealtimeFFTAnalyzer full class architecture</title>
+  <defs><marker id="a0" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- Outer container -->
+  <g class="c-gray"><rect x="30" y="30" width="620" height="450" rx="20" stroke-width="0.5"/>
+    <text class="th" x="340" y="56" text-anchor="middle" dominant-baseline="central">RealtimeFFTAnalyzer</text>
+    <text class="ts" x="340" y="72" text-anchor="middle" dominant-baseline="central">Inherits from EngineControlMixin + DeviceManagementMixin</text>
+  </g>
+
+  <!-- init -->
+  <g class="node c-purple"><rect x="200" y="88" width="280" height="48" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="107" text-anchor="middle" dominant-baseline="central">__init__</text>
+    <text class="ts" x="340" y="124" text-anchor="middle" dominant-baseline="central">PortAudio stream, FFT config, hotplug monitor, proc_thread</text>
+  </g>
+
+  <!-- Python-only: _FftProcessingThread -->
+  <g class="node c-blue"><rect x="50" y="190" width="270" height="120" rx="12" stroke-width="0.5"/>
+    <text class="th" x="185" y="212" text-anchor="middle" dominant-baseline="central">_FftProcessingThread (Python-only)</text>
+    <text class="ts" x="185" y="228" text-anchor="middle" dominant-baseline="central">QThread — off-main-thread DSP loop</text>
+  </g>
+  <g class="node c-blue"><rect x="66" y="244" width="110" height="34" rx="6" stroke-width="0.5"/>
+    <text class="ts" x="121" y="261" text-anchor="middle" dominant-baseline="central">run() — FFT loop</text>
+  </g>
+  <g class="node c-blue"><rect x="190" y="244" width="120" height="34" rx="6" stroke-width="0.5"/>
+    <text class="ts" x="250" y="261" text-anchor="middle" dominant-baseline="central">compute_gated_fft</text>
+  </g>
+  <!-- Signals -->
+  <g class="node c-blue"><rect x="66" y="284" width="110" height="22" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="121" y="295" text-anchor="middle" dominant-baseline="central">fftFrameReady signal</text>
+  </g>
+  <g class="node c-blue"><rect x="190" y="284" width="120" height="22" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="250" y="295" text-anchor="middle" dominant-baseline="central">gatedCaptureComplete</text>
+  </g>
+
+  <!-- EngineControl mixin -->
+  <g class="node c-teal"><rect x="360" y="190" width="270" height="80" rx="12" stroke-width="0.5"/>
+    <text class="th" x="495" y="212" text-anchor="middle" dominant-baseline="central">EngineControlMixin</text>
+    <text class="ts" x="495" y="228" text-anchor="middle" dominant-baseline="central">start / stop / start_from_file / close</text>
+  </g>
+  <g class="node c-teal"><rect x="376" y="242" width="110" height="22" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="431" y="253" text-anchor="middle" dominant-baseline="central">new_frame callback</text>
+  </g>
+  <g class="node c-teal"><rect x="500" y="242" width="120" height="22" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="560" y="253" text-anchor="middle" dominant-baseline="central">get_frames drain</text>
+  </g>
+
+  <!-- DeviceManagement mixin -->
+  <g class="node c-coral"><rect x="50" y="360" width="580" height="98" rx="12" stroke-width="0.5"/>
+    <text class="th" x="340" y="382" text-anchor="middle" dominant-baseline="central">DeviceManagementMixin</text>
+    <text class="ts" x="340" y="398" text-anchor="middle" dominant-baseline="central">load_available_input_devices / set_device / hotplug monitors</text>
+  </g>
+  <g class="node c-coral"><rect x="66" y="410" width="110" height="30" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="121" y="425" text-anchor="middle" dominant-baseline="central">macOS CoreAudio</text>
+  </g>
+  <g class="node c-coral"><rect x="192" y="410" width="110" height="30" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="247" y="425" text-anchor="middle" dominant-baseline="central">Windows cfgmgr32</text>
+  </g>
+  <g class="node c-coral"><rect x="318" y="410" width="110" height="30" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="373" y="425" text-anchor="middle" dominant-baseline="central">Linux udev/pyudev</text>
+  </g>
+  <g class="node c-coral"><rect x="444" y="410" width="170" height="30" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="529" y="425" text-anchor="middle" dominant-baseline="central">SR polling (Win/Linux)</text>
+  </g>
+
+  <!-- fft_processing re-exports -->
+  <g class="node c-amber"><rect x="50" y="490" width="580" height="36" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="504" text-anchor="middle" dominant-baseline="central">Re-exports from _fft_processing</text>
+    <text class="ts" x="340" y="518" text-anchor="middle" dominant-baseline="central">dft_anal · peak_detection · peak_interp · peak_q_factor · hps_peak_freq · is_power2</text>
+  </g>
+
+  <!-- External consumers -->
+  <g class="node c-purple"><rect x="50" y="544" width="170" height="28" rx="6" stroke-width="0.5"/>
+    <text class="ts" x="135" y="558" text-anchor="middle" dominant-baseline="central">TapToneAnalyzer (owner)</text>
+  </g>
+  <g class="node c-purple"><rect x="250" y="544" width="170" height="28" rx="6" stroke-width="0.5"/>
+    <text class="ts" x="335" y="558" text-anchor="middle" dominant-baseline="central">Qt signals → main thread</text>
+  </g>
+  <g class="node c-purple"><rect x="450" y="544" width="180" height="28" rx="6" stroke-width="0.5"/>
+    <text class="ts" x="540" y="558" text-anchor="middle" dominant-baseline="central">raw_sample_handler callback</text>
+  </g>
+
+  <!-- Arrows -->
+  <line x1="340" y1="136" x2="260" y2="188" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a0)"/>
+  <line x1="340" y1="136" x2="460" y2="188" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a0)"/>
+  <line x1="340" y1="136" x2="340" y2="358" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a0)"/>
+</svg>
+</div>
+
+<!-- ═══ DIAGRAM 2: Audio processing pipeline ═══ -->
+<h2>2. Audio processing pipeline</h2>
+<p>PortAudio calls <code>new_frame</code> on every block, which enqueues the chunk into <code>self.queue</code>. <code>_FftProcessingThread.run()</code> drains the queue, maintains the ring buffer, computes per-chunk RMS, fires <code>raw_sample_handler</code> on every chunk (so <code>TapToneAnalyzer</code> gets the pre-roll and gated accumulator), and emits <code>fftFrameReady</code> for each complete FFT window. The Swift equivalent uses AVAudioEngine taps delivering directly to <code>audioProcessingQueue</code>.</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 480" role="img">
+  <title>Python audio processing pipeline</title>
+  <defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- PortAudio layer -->
+  <g class="node c-gray"><rect x="40" y="30" width="180" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="130" y="50" text-anchor="middle" dominant-baseline="central">PortAudio / sounddevice</text>
+    <text class="ts" x="130" y="68" text-anchor="middle" dominant-baseline="central">InputStream callback</text>
+  </g>
+  <g class="node c-teal"><rect x="260" y="30" width="160" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="50" text-anchor="middle" dominant-baseline="central">new_frame()</text>
+    <text class="ts" x="340" y="68" text-anchor="middle" dominant-baseline="central">Enqueue chunk → self.queue</text>
+  </g>
+  <g class="node c-blue"><rect x="470" y="30" width="170" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="555" y="50" text-anchor="middle" dominant-baseline="central">_FftProcessingThread</text>
+    <text class="ts" x="555" y="68" text-anchor="middle" dominant-baseline="central">queue.get() drain loop</text>
+  </g>
+
+  <!-- Ring buffer -->
+  <g class="node c-blue"><rect x="40" y="150" width="180" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="130" y="170" text-anchor="middle" dominant-baseline="central">_input_buffer (ring)</text>
+    <text class="ts" x="130" y="188" text-anchor="middle" dominant-baseline="central">Append chunks, hop=fft_size</text>
+  </g>
+  <!-- RMS -->
+  <g class="node c-blue"><rect x="260" y="150" width="160" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="170" text-anchor="middle" dominant-baseline="central">Per-chunk RMS</text>
+    <text class="ts" x="340" y="188" text-anchor="middle" dominant-baseline="central">rmsLevelChanged.emit()</text>
+  </g>
+  <!-- raw_sample_handler -->
+  <g class="node c-blue"><rect x="470" y="150" width="170" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="555" y="170" text-anchor="middle" dominant-baseline="central">raw_sample_handler</text>
+    <text class="ts" x="555" y="188" text-anchor="middle" dominant-baseline="central">→ TapToneAnalyzer pre-roll</text>
+  </g>
+
+  <!-- FFT -->
+  <g class="node c-amber"><rect x="40" y="260" width="180" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="130" y="280" text-anchor="middle" dominant-baseline="central">dft_anal()</text>
+    <text class="ts" x="130" y="298" text-anchor="middle" dominant-baseline="central">Rectangular window, scipy.fft</text>
+  </g>
+  <!-- recent_peak -->
+  <g class="node c-blue"><rect x="260" y="260" width="160" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="280" text-anchor="middle" dominant-baseline="central">recent_peak_level_db</text>
+    <text class="ts" x="340" y="298" text-anchor="middle" dominant-baseline="central">0.5 s rolling max (thread-safe)</text>
+  </g>
+  <!-- calibration -->
+  <g class="node c-amber"><rect x="470" y="260" width="170" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="555" y="280" text-anchor="middle" dominant-baseline="central">calibration apply</text>
+    <text class="ts" x="555" y="298" text-anchor="middle" dominant-baseline="central">mag_y_db += calibration</text>
+  </g>
+
+  <!-- fftFrameReady -->
+  <g class="node c-purple"><rect x="40" y="370" width="580" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="330" y="390" text-anchor="middle" dominant-baseline="central">fftFrameReady.emit(mag_y_db, mag_y, fft_peak_amp, rms_amp, fps, sample_dt, processing_dt)</text>
+    <text class="ts" x="330" y="408" text-anchor="middle" dominant-baseline="central">Qt signal → main thread → TapToneAnalyzer.on_fft_frame()</text>
+  </g>
+
+  <!-- Arrows -->
+  <line x1="220" y1="56" x2="258" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="420" y1="56" x2="468" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="555" y1="82" x2="555" y2="148" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="470" y1="176" x2="402" y2="176" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a1)"/>
+  <line x1="260" y1="176" x2="222" y2="176" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="130" y1="202" x2="130" y2="258" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="340" y1="202" x2="340" y2="258" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="220" y1="286" x2="258" y2="286" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="420" y1="286" x2="468" y2="286" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+  <line x1="330" y1="312" x2="330" y2="368" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a1)"/>
+</svg>
+</div>
+
+<!-- ═══ DIAGRAM 3: FFT processing functions ═══ -->
+<h2>3. FFT processing functions (_fft_processing module)</h2>
+<p>The module provides pure side-effect-free functions. <code>dft_anal</code> is the direct counterpart to Swift's <code>computeFFT(on:)</code> — both are the pure DSP core used by the test suite. Swift uses vDSP via deinterleaved split-complex format; Python uses <code>scipy.fft</code> with a zero-phase rotation trick. Both paths are equivalent: rectangular window for the live display path, Hann window for the gated plate/brace path.</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 320" role="img">
+  <title>FFT processing functions call graph</title>
+  <defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- dft_anal (central) -->
+  <g class="node c-amber"><rect x="240" y="30" width="200" height="52" rx="8" stroke-width="1"/>
+    <text class="th" x="340" y="50" text-anchor="middle" dominant-baseline="central">dft_anal(chunk, window, N)</text>
+    <text class="ts" x="340" y="68" text-anchor="middle" dominant-baseline="central">Pure DSP core — returns (mag_db, abs_fft)</text>
+  </g>
+
+  <!-- Two callers -->
+  <g class="node c-blue"><rect x="40" y="30" width="180" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="130" y="50" text-anchor="middle" dominant-baseline="central">_FftProcessingThread.run()</text>
+    <text class="ts" x="130" y="68" text-anchor="middle" dominant-baseline="central">Rectangular window, live</text>
+  </g>
+  <g class="node c-blue"><rect x="460" y="30" width="180" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="550" y="50" text-anchor="middle" dominant-baseline="central">compute_gated_fft()</text>
+    <text class="ts" x="550" y="68" text-anchor="middle" dominant-baseline="central">Hann window, plate/brace</text>
+  </g>
+
+  <!-- peak_detection -->
+  <g class="node c-teal"><rect x="40" y="160" width="170" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="125" y="180" text-anchor="middle" dominant-baseline="central">peak_detection(mag, thr)</text>
+    <text class="ts" x="125" y="198" text-anchor="middle" dominant-baseline="central">argrelmax ±5 bins → ploc</text>
+  </g>
+  <!-- peak_interp -->
+  <g class="node c-teal"><rect x="230" y="160" width="160" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="310" y="180" text-anchor="middle" dominant-baseline="central">peak_interp(mag, ploc)</text>
+    <text class="ts" x="310" y="198" text-anchor="middle" dominant-baseline="central">Parabolic → iploc, ipmag</text>
+  </g>
+  <!-- peak_q_factor -->
+  <g class="node c-teal"><rect x="410" y="160" width="160" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="490" y="180" text-anchor="middle" dominant-baseline="central">peak_q_factor(mag, …)</text>
+    <text class="ts" x="490" y="198" text-anchor="middle" dominant-baseline="central">−3 dB bandwidth Q</text>
+  </g>
+
+  <!-- hps_peak_freq -->
+  <g class="node c-coral"><rect x="200" y="260" width="280" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="278" text-anchor="middle" dominant-baseline="central">hps_peak_freq(mag_linear, …)</text>
+    <text class="ts" x="340" y="295" text-anchor="middle" dominant-baseline="central">HPS dominant-frequency estimator</text>
+  </g>
+
+  <!-- Arrows -->
+  <line x1="220" y1="56" x2="238" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="440" y1="56" x2="458" y2="56" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a2)"/>
+  <line x1="260" y1="82" x2="125" y2="158" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+  <line x1="340" y1="82" x2="310" y2="158" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+  <line x1="380" y1="82" x2="490" y2="158" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+  <line x1="490" y1="212" x2="400" y2="258" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+</svg>
+</div>
+
+<!-- ═══ DIAGRAM 4: Device management and hotplug ═══ -->
+<h2>4. Device management and hot-plug monitoring</h2>
+<p><code>load_available_input_devices</code> queries PortAudio and applies the same four-priority auto-selection policy as Swift's <code>loadAvailableInputDevicesMacOS</code>. <code>set_device</code> closes and reopens the stream, auto-loads calibration via the <code>_on_calibration_changed</code> callback, and registers the per-device sample-rate listener. Hot-plug monitoring is platform-split: CoreAudio listener on macOS, <code>CM_Register_Notification</code> on Windows, <code>pyudev</code> on Linux. Sample-rate change detection uses a CoreAudio listener on macOS and a polling thread on Windows/Linux (no native event).</p>
+<div class="card">
+<svg width="100%" viewBox="0 0 680 420" role="img">
+  <title>Device management and hotplug call graph</title>
+  <defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+  <!-- Top-level public API -->
+  <g class="node c-purple"><rect x="40" y="30" width="210" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="145" y="50" text-anchor="middle" dominant-baseline="central">load_available_input_devices</text>
+    <text class="ts" x="145" y="68" text-anchor="middle" dominant-baseline="central">Platform router, priority auto-select</text>
+  </g>
+  <g class="node c-purple"><rect x="270" y="30" width="160" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="350" y="50" text-anchor="middle" dominant-baseline="central">set_device(device)</text>
+    <text class="ts" x="350" y="68" text-anchor="middle" dominant-baseline="central">Reopen stream, calibration</text>
+  </g>
+  <g class="node c-purple"><rect x="450" y="30" width="190" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="545" y="50" text-anchor="middle" dominant-baseline="central">reinitialize_portaudio()</text>
+    <text class="ts" x="545" y="68" text-anchor="middle" dominant-baseline="central">sd._terminate + _initialize</text>
+  </g>
+
+  <!-- Auto-select helpers -->
+  <g class="node c-teal"><rect x="40" y="140" width="200" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="140" y="160" text-anchor="middle" dominant-baseline="central">_auto_select_initial_device</text>
+    <text class="ts" x="140" y="178" text-anchor="middle" dominant-baseline="central">Saved fp → BuiltIn → Default → First</text>
+  </g>
+  <g class="node c-teal"><rect x="260" y="140" width="170" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="345" y="160" text-anchor="middle" dominant-baseline="central">_auto_select_on_hotplug</text>
+    <text class="ts" x="345" y="178" text-anchor="middle" dominant-baseline="central">New real device or fallback</text>
+  </g>
+  <!-- calibration callback -->
+  <g class="node c-amber"><rect x="450" y="140" width="190" height="52" rx="8" stroke-width="0.5"/>
+    <text class="th" x="545" y="160" text-anchor="middle" dominant-baseline="central">_on_calibration_changed</text>
+    <text class="ts" x="545" y="178" text-anchor="middle" dominant-baseline="central">CalibrationStorage lookup → cb</text>
+  </g>
+
+  <!-- Hotplug monitors -->
+  <text class="ts" x="40" y="230" fill="#888780">Hot-plug monitors</text>
+  <g class="node c-coral"><rect x="40" y="242" width="140" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="110" y="260" text-anchor="middle" dominant-baseline="central">_start_coreaudio</text>
+    <text class="ts" x="110" y="276" text-anchor="middle" dominant-baseline="central">Monitor (macOS)</text>
+  </g>
+  <g class="node c-coral"><rect x="196" y="242" width="140" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="266" y="260" text-anchor="middle" dominant-baseline="central">_start_windows</text>
+    <text class="ts" x="266" y="276" text-anchor="middle" dominant-baseline="central">Monitor (cfgmgr32)</text>
+  </g>
+  <g class="node c-coral"><rect x="352" y="242" width="140" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="422" y="260" text-anchor="middle" dominant-baseline="central">_start_linux</text>
+    <text class="ts" x="422" y="276" text-anchor="middle" dominant-baseline="central">Monitor (pyudev)</text>
+  </g>
+  <g class="node c-coral"><rect x="508" y="242" width="132" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="574" y="260" text-anchor="middle" dominant-baseline="central">_notify_devices</text>
+    <text class="ts" x="574" y="276" text-anchor="middle" dominant-baseline="central">Changed → callback</text>
+  </g>
+
+  <!-- SR monitors -->
+  <text class="ts" x="40" y="316" fill="#888780">Sample-rate monitors</text>
+  <g class="node c-green"><rect x="40" y="328" width="185" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="132" y="346" text-anchor="middle" dominant-baseline="central">_start_coreaudio_sr</text>
+    <text class="ts" x="132" y="362" text-anchor="middle" dominant-baseline="central">Monitor (macOS, native event)</text>
+  </g>
+  <g class="node c-green"><rect x="245" y="328" width="185" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="337" y="346" text-anchor="middle" dominant-baseline="central">_start_windows_sr</text>
+    <text class="ts" x="337" y="362" text-anchor="middle" dominant-baseline="central">Monitor (polling every 5 s)</text>
+  </g>
+  <g class="node c-green"><rect x="450" y="328" width="185" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="542" y="346" text-anchor="middle" dominant-baseline="central">_start_linux_sr</text>
+    <text class="ts" x="542" y="362" text-anchor="middle" dominant-baseline="central">Monitor (polling every 5 s)</text>
+  </g>
+
+  <!-- Callback destination -->
+  <g class="node c-gray"><rect x="150" y="392" width="380" height="22" rx="4" stroke-width="0.5"/>
+    <text class="ts" x="340" y="403" text-anchor="middle" dominant-baseline="central">_on_sample_rate_changed → TapToneAnalyzerControlMixin restarts stream</text>
+  </g>
+
+  <!-- Arrows -->
+  <line x1="145" y1="82" x2="140" y2="138" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="200" y1="56" x2="260" y2="56" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+  <line x1="350" y1="82" x2="345" y2="138" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="430" y1="82" x2="545" y2="138" stroke="#888780" stroke-width="1.2" fill="none" marker-end="url(#a3)"/>
+  <line x1="110" y1="242" x2="560" y2="242" stroke="#888780" stroke-width="0.5" fill="none" stroke-dasharray="2 2"/>
+  <line x1="542" y1="328" x2="380" y2="390" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+  <line x1="337" y1="372" x2="337" y2="390" stroke="#888780" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+</svg>
+</div>
+
+<!-- ═══ Key notes ═══ -->
+<h2>Key architecture notes</h2>
+
+<h3>Swift vs Python structural differences</h3>
+<table>
+  <tr><th>Concern</th><th>Swift</th><th>Python</th></tr>
+  <tr><td>Audio engine</td><td>AVAudioEngine (AVFoundation)</td><td>sounddevice.InputStream (PortAudio)</td></tr>
+  <tr><td>Off-main DSP</td><td>AVAudioEngine audio processing queue (implicit)</td><td><code>_FftProcessingThread</code> (QThread, explicit)</td></tr>
+  <tr><td>Result delivery</td><td><code>@Published</code> via <code>DispatchQueue.main.async</code></td><td>Qt signals (<code>fftFrameReady</code>, <code>rmsLevelChanged</code>)</td></tr>
+  <tr><td>Audio chunk delivery</td><td><code>rawSampleHandler</code> callback + <code>inputBuffer</code></td><td><code>queue.Queue</code> + <code>raw_sample_handler</code></td></tr>
+  <tr><td>Device selection at start</td><td>AudioUnitSetProperty (AUHAL) before <code>audioEngine.start()</code></td><td>Applied at stream construction (<code>__init__</code> or <code>set_device()</code>)</td></tr>
+  <tr><td>Permission check</td><td><code>AVCaptureDevice.authorizationStatus</code> + 3 s TCC check</td><td>Implicit — PortAudio returns error at stream open</td></tr>
+  <tr><td>File playback</td><td><code>AVAudioPlayerNode</code> on the same engine</td><td>Background thread injects chunks into <code>self.queue</code></td></tr>
+  <tr><td>Device-list refresh</td><td><code>loadAvailableInputDevices()</code> via CoreAudio/AVAudioSession</td><td><code>reinitialize_portaudio()</code> — PortAudio caches at init time</td></tr>
+  <tr><td>Resource teardown</td><td>ARC / <code>deinit</code></td><td>Explicit <code>close()</code></td></tr>
+  <tr><td>iOS support</td><td>Yes (AVAudioSession, route change notifications)</td><td>Not applicable — macOS/desktop only</td></tr>
+</table>
+
+<h3>_FftProcessingThread — Python-only</h3>
+<p>Swift delivers audio on AVAudioEngine's dedicated audio thread with no separate QThread needed. Python's PortAudio callback must return immediately, so the DSP work is deferred to <code>_FftProcessingThread</code>. It owns the ring buffer (<code>_input_buffer</code>), the rolling peak history (<code>_recent_peak_history</code>), and the calibration lock. It does <em>not</em> own the pre-roll buffer or gated accumulator — those were moved to <code>TapToneAnalyzer</code> to match Swift's ownership model.</p>
+
+<h3>dft_anal vs computeFFT — implementation differences</h3>
+<p>Both are pure side-effect-free DSP cores used by the test suite. Swift uses <code>vDSP_DFT_zrop</code> (Accelerate) with deinterleaved split-complex format and explicit scale = 1/fftSize normalization. Python uses <code>scipy.fft.fft</code> with a zero-phase rotation into <code>fftbuffer</code> and normalizes implicitly via <code>window / sum(window)</code>. Both apply a rectangular window for the live display path and a Hann window for the gated plate/brace path, producing equivalent output.</p>
+
+<h3>Signal level properties</h3>
+<ul>
+  <li><code>rms_amp</code> / <code>rmsLevelChanged</code> — instantaneous per-chunk RMS (~43 Hz). Mirrors Swift <code>inputLevelDB</code>. Used by plate/brace tap detection and decay tracking.</li>
+  <li><code>recent_peak_level_db</code> — rolling max RMS over 0.5 s (thread-safe lock). Mirrors Swift <code>recentPeakLevelDB</code>. Used only at tap-fire time to set <code>tapPeakLevel</code>.</li>
+  <li><code>fft_peak_amp</code> — instantaneous FFT peak (per-frame, ~2.7 Hz). Mirrors Swift <code>peakMagnitude</code>. Used by guitar-mode tap detection.</li>
+</ul>
+
+<h3>Calibration application</h3>
+<p>Swift applies calibration inside <code>performFFT(on:)</code> after calling <code>computeFFT</code>, keeping <code>computeFFT</code> pure. Python applies it inside <code>_FftProcessingThread.run()</code> after calling <code>dft_anal</code>, using the same pattern: <code>mag_y_db = mag_y_db + calibration</code>. Both mirror the same comment: "mirrors Python <code>_FftProcessingThread.run()</code>: <code>mag_y_db = mag_y_db + calibration</code>".</p>
+
+<h3>Platform-specific hot-plug monitoring</h3>
+<p>macOS uses <code>AudioObjectAddPropertyListener</code> on <code>kAudioHardwarePropertyDevices</code> (mirrors Swift's <code>registerMacOSHardwareListener</code>). Windows uses <code>CM_Register_Notification</code> from cfgmgr32. Linux uses <code>pyudev</code> (optional dependency) watching the <code>sound</code> subsystem. Sample-rate change detection is native on macOS (<code>kAudioDevicePropertyNominalSampleRate</code> listener) but requires polling every 5 s on Windows and Linux since neither platform provides a native per-device sample-rate-changed event.</p>
+
+<p style="margin-top:2rem;font-size:0.8rem;color:#888780;">Generated by Claude from GuitarTap Python source analysis · realtime_fft_analyzer.py + 3 modules</p>
+</body>
+</html>
