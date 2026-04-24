@@ -316,6 +316,16 @@ def _build_help_html() -> str:
         "&ldquo;Reset Labels&rdquo;."
     ))
     parts.append(_row(
+        "Play Audio File",
+        "Feeds a WAV or audio file through the FFT pipeline instead of the microphone. "
+        "The file&rsquo;s tap is analysed exactly as a live microphone tap &mdash; tap "
+        "detection fires automatically, peaks are found, and results appear in the panel. "
+        "The chart title shows the filename while the file plays. After playback the "
+        "microphone restarts automatically. Access via File menu &rarr; "
+        "Play Audio File&hellip; (Ctrl+Alt+O).",
+        ["fa5.play-circle"]
+    ))
+    parts.append(_row(
         "Save",
         "Saves the current measurement &mdash; enabled only when the spectrum is frozen "
         "and peaks have been detected. Enter a location label and optional notes.",
@@ -354,6 +364,7 @@ def _build_help_html() -> str:
         "On macOS these items are automatically moved to the system Application menu.<br><br>"
         "<b>File menu:</b><br>"
         "&bull; <b>Close</b> &mdash; Ctrl+W (⌘W on macOS) &mdash; closes the window<br>"
+        "&bull; <b>Play Audio File…</b> &mdash; Ctrl+Alt+O &mdash; feeds a WAV or audio file through the FFT pipeline instead of the microphone<br>"
         "&bull; <b>Save Measurement…</b> &mdash; Ctrl+S<br>"
         "&bull; <b>Export Spectrum Image…</b> &mdash; Ctrl+E<br>"
         "&bull; <b>Export PDF Report…</b> &mdash; Ctrl+Shift+E<br>"

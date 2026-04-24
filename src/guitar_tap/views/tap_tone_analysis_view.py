@@ -606,7 +606,35 @@ class MainWindow(QtWidgets.QMainWindow):
         """Top button bar: display toggles, save, measurements."""
         bar = QtWidgets.QWidget()
         bar.setObjectName("toolbar")
-        bar.setStyleSheet("#toolbar { border-bottom: 1px solid palette(mid); }")
+        # Blue-tinted bordered button style — mirrors Swift .buttonStyle(.bordered).tint(.blue).
+        # Applied to the toolbar container so all child QPushButtons inherit it.
+        # The play-file button overrides this to orange while a file is playing.
+        bar.setStyleSheet(
+            "#toolbar { border-bottom: 1px solid palette(mid); }"
+            "QPushButton {"
+            "  background-color: rgba(0, 122, 255, 0.12);"
+            "  border: 1px solid rgba(0, 122, 255, 0.35);"
+            "  border-radius: 6px;"
+            "  padding: 3px 8px;"
+            "  color: rgb(0, 100, 220);"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: rgba(0, 122, 255, 0.20);"
+            "  border-color: rgba(0, 122, 255, 0.55);"
+            "}"
+            "QPushButton:pressed {"
+            "  background-color: rgba(0, 122, 255, 0.30);"
+            "}"
+            "QPushButton:checked {"
+            "  background-color: rgba(0, 122, 255, 0.28);"
+            "  border-color: rgba(0, 122, 255, 0.60);"
+            "}"
+            "QPushButton:disabled {"
+            "  background-color: rgba(0, 122, 255, 0.05);"
+            "  border-color: rgba(0, 122, 255, 0.15);"
+            "  color: rgba(0, 100, 220, 0.40);"
+            "}"
+        )
         hl = QtWidgets.QHBoxLayout(bar)
         hl.setContentsMargins(8, 4, 8, 4)
         hl.setSpacing(6)
@@ -625,16 +653,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hl.addSpacing(4)
 
-        self.auto_db_btn = QtWidgets.QToolButton()
-        self.auto_db_btn.setIcon(qta.icon("mdi.swap-vertical-circle-outline"))
-        self.auto_db_btn.setIconSize(QtCore.QSize(18, 18))
-        self.auto_db_btn.setText("Auto dB")
-        self.auto_db_btn.setToolButtonStyle(
-            QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-        )
-        self.auto_db_btn.setStyleSheet(
-            "QToolButton { border: none; }"
-            "QToolButton:checked { border: none; color: palette(button-text); }"
+        self.auto_db_btn = QtWidgets.QPushButton(
+            qta.icon("mdi.swap-vertical-circle-outline"), "Auto dB"
         )
         self.auto_db_btn.setCheckable(True)
         self.auto_db_btn.setChecked(False)
@@ -643,20 +663,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hl.addSpacing(4)
 
-        self.annotations_btn = QtWidgets.QToolButton()
-        self.annotations_btn.setIcon(qta.icon("fa5.star"))
-        self.annotations_btn.setIconSize(QtCore.QSize(16, 16))
-        self.annotations_btn.setText("Annotations")
-        self.annotations_btn.setToolButtonStyle(
-            QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-        )
-        self.annotations_btn.setStyleSheet("border: none")
         _saved_mode = TDS.annotation_visibility_mode()
         _saved_idx = next(
             (i for i, mode in enumerate(self._ANN_MODES) if mode == _saved_mode), 0
         )
         self._ann_mode_idx: int = _saved_idx
-        self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[_saved_idx].icon_name))
+        self.annotations_btn = QtWidgets.QPushButton(
+            qta.icon(self._ANN_MODES[_saved_idx].icon_name), "Annotations"
+        )
         self.annotations_btn.setToolTip(
             f"Annotation visibility: {_saved_mode.label}\n"
             "Click to cycle: Selected → None → All"
@@ -2562,8 +2576,15 @@ class MainWindow(QtWidgets.QMainWindow):
             # The completion closure in Swift releases security-scoped resource access.
             # It does NOT clear playingFileName — that stays set until stop() is called,
             # so the chart title continues showing the filename while the result is frozen.
-            # Python matches: no emit here, playing_file_name cleared only by stop().
-            analyzer.start_from_file(path, on_finished=None)
+            # Python matches: playing_file_name is cleared only by stop(), not here.
+            # However we DO emit playingFileNameChanged(None) on completion so that
+            # _on_playing_file_changed clears the orange tint on the Play File button —
+            # this is safe because chart_title reads mic.playing_file_name directly
+            # (not the signal value), so the title is unaffected by the None emission.
+            def _on_finished_clear_tint() -> None:
+                analyzer.playingFileNameChanged.emit(None)
+
+            analyzer.start_from_file(path, on_finished=_on_finished_clear_tint)
 
             # Arm tap detection with warmup skipped — the audio source is deterministic
             # so there is no mic startup noise, and the tap may appear in the first 0.5 s.
@@ -2584,14 +2605,28 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
     def _on_playing_file_changed(self, name: "str | None") -> None:
-        """Tint the Play File button orange while a file is playing, blue otherwise.
+        """Tint the Play File button orange while a file is playing, clear tint when done.
 
         Mirrors Swift .tint(fft.isPlayingFile ? .orange : .blue) on the Play File buttons.
-        Connected to canvas.playingFileNameChanged, which fires with the filename when
-        file playback starts and with None when it ends — no guard needed since this
-        signal is dedicated to file-playback state (unlike loadedMeasurementNameChanged).
+        Receives the filename when playback starts (orange) and None when playback ends
+        (tint cleared). The chart title is NOT affected here — chart_title reads
+        mic.playing_file_name directly, which stays set until stop().
         """
-        self._play_file_btn.setStyleSheet("color: orange;" if name is not None else "")
+        if name is not None:
+            # Override to orange while a file is playing —
+            # mirrors Swift .tint(fft.isPlayingFile ? .orange : .blue).
+            self._play_file_btn.setStyleSheet(
+                "QPushButton {"
+                "  background-color: rgba(255, 149, 0, 0.15);"
+                "  border: 1px solid rgba(255, 149, 0, 0.45);"
+                "  border-radius: 6px;"
+                "  padding: 3px 8px;"
+                "  color: rgb(200, 100, 0);"
+                "}"
+            )
+        else:
+            # Clear override — button reverts to the toolbar-inherited blue style.
+            self._play_file_btn.setStyleSheet("")
 
     # ================================================================
     # Tap events
