@@ -261,6 +261,9 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         self.device_index = device.index
         self.rate = int(device.sample_rate)
         self.selected_input_device = device
+        # Reset diagnostic counters so each device session is reported independently.
+        self._diag_chunk_sizes_seen: set = set()
+        self._diag_chunk_count: int = 0
         with self._stop_lock:
             self.is_stopped = False
         self.stream = sd.InputStream(
@@ -272,6 +275,26 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             callback=self.new_frame,
         )
         self.stream.start()
+
+        # Diagnostic #1: verify actual vs. requested sample rate.
+        # On Windows WASAPI shared mode, the driver may silently resample to a
+        # different rate (commonly 48000 Hz even when 44100 Hz was requested).
+        # All gated-capture window calculations use self.rate, so a mismatch
+        # means every capture window is sized incorrectly.
+        try:
+            device_info = sd.query_devices(self.device_index)
+            actual_rate = int(device_info['default_samplerate'])
+            if actual_rate != self.rate:
+                print(
+                    f"[DIAG] WARNING: sample-rate mismatch — "
+                    f"requested={self.rate} Hz, device reports={actual_rate} Hz. "
+                    f"Gated capture window will be sized incorrectly. "
+                    f"(Cause #1: WASAPI shared-mode coercion)"
+                )
+            else:
+                print(f"[DIAG] sample rate OK: {self.rate} Hz")
+        except Exception as _diag_err:
+            print(f"[DIAG] sample-rate query failed: {_diag_err}")
 
         # Auto-load device-specific calibration.
         # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
