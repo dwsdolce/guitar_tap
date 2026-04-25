@@ -666,6 +666,8 @@ def make_exportable_spectrum_view(
     date_label: str = "",
     chart_title: str = "FFT Peaks",
     guitar_type_str: str | None = None,
+    software_version: str | None = None,
+    platform_str: str | None = None,
 ) -> bytes:
     """Python port of ``func makeExportableSpectrumView(...)`` in ExportableSpectrumChart.swift.
 
@@ -719,8 +721,8 @@ def make_exportable_spectrum_view(
     CHART_W       = 1400 * SCALE   # chart image width in pixels
     CHART_H       = 800  * SCALE   # chart image height in pixels
     PADDING       = 24   * SCALE   # outer padding and section gap
-    # Header: title row (36px) + date/range row (28px) + peaks row (24px) = 88px logical → *SCALE
-    HEADER_H      = 88   * SCALE
+    # Header: title row (36px) + date/range row (28px) + metadata row (24px) + peaks row (24px) = 112px logical → *SCALE
+    HEADER_H      = 112  * SCALE
     CHART_TITLE_H = 56   * SCALE   # Text(chartTitle) + .padding(.bottom, 16)
     # Summary: "Detected Peaks Summary" label (24px) + card row (68px) + bottom gap (PADDING) = 116px
     SUMMARY_H     = (116 if peaks else 0) * SCALE
@@ -835,6 +837,35 @@ def make_exportable_spectrum_view(
         f"  \u2022  {int(min_db)} to {int(max_db)} dB",
     )
     y += 28 * SCALE
+
+    # Swift: HStack { Type • Platform • GuitarTap vX.Y (build) }
+    meta_parts: list[str] = []
+    if measurement_type_str:
+        meta_parts.append(f"Type: {measurement_type_str}")
+    if platform_str is None:
+        import platform as _platform
+        _sys = _platform.system()
+        platform_str = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}.get(_sys, _sys)
+    meta_parts.append(f"Platform: {platform_str}")
+    if software_version is None:
+        try:
+            from _version import __version_string__ as _v
+            software_version = _v
+        except ImportError:
+            software_version = ""
+    if software_version:
+        meta_parts.append(f"GuitarTap v{software_version}")
+    meta_line = "  \u2022  ".join(meta_parts)
+    meta_font = QtGui.QFont()
+    meta_font.setPixelSize(12 * SCALE)
+    painter.setFont(meta_font)
+    painter.setPen(QtGui.QColor(100, 100, 100))
+    painter.drawText(
+        PADDING, y, TOTAL_W - PADDING * 2, 24 * SCALE,
+        QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
+        meta_line,
+    )
+    y += 24 * SCALE
 
     # Swift: if !materialSpectra.isEmpty { Text("Comparing N measurements") }
     #        else if !peaks.isEmpty { Text("Detected Peaks: N") }
