@@ -35,6 +35,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     """
 
     annotationUpdate: QtCore.Signal = QtCore.Signal(str, float, float, str, str)  # (peak_id, freq, mag, html, mode_str)
+    annotationsRefreshed: QtCore.Signal = QtCore.Signal()  # fired once after a batch of annotationUpdate emissions
     clearAnnotations: QtCore.Signal = QtCore.Signal()
     hideAnnotations: QtCore.Signal = QtCore.Signal()
     hideAnnotation: QtCore.Signal = QtCore.Signal(float)
@@ -419,6 +420,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             peak_id = peaks[row].id if row < len(peaks) else ""
             if self.annotation_mode == AVM.ALL or self.show_value_bool(idx):
                 self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
+        self.annotationsRefreshed.emit()
 
     def refresh_annotations(self) -> None:
         """Re-emit annotation signals for the current peaks and annotation_mode.
@@ -441,6 +443,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             peak_id = self._peaks[row].id if row < len(self._peaks) else ""
             if self._annotation_mode == AVM.ALL or self.show_value_bool(idx):
                 self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
+        self.annotationsRefreshed.emit()
 
     def clear_annotations(self) -> None:
         """Clear all annotations."""

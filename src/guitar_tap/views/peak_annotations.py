@@ -393,6 +393,10 @@ class FftAnnotations(QtCore.QObject):
                 self.plot_item.removeItem(ann_dict["arrow_line"])
         self.annotations = []
 
+    def refresh_display(self) -> None:
+        """Force the plot viewport to repaint after a batch of annotation changes."""
+        self.plot_item.vb.update()
+
     # ── drag completion ───────────────────────────────────────────────────────
 
     def annotation_moved(self, _event: object = None) -> None:

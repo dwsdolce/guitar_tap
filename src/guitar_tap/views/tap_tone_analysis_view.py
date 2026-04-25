@@ -1817,6 +1817,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Peaks table → canvas annotations
         model = self.peak_widget.model
         model.annotationUpdate.connect(canvas.annotations.update_annotation)
+        model.annotationsRefreshed.connect(canvas.annotations.refresh_display)
         model.clearAnnotations.connect(canvas.annotations.clear_annotations)
         model.showAnnotation.connect(canvas.annotations.show_annotation)
         model.hideAnnotation.connect(canvas.annotations.hide_annotation)
@@ -2716,10 +2717,28 @@ class MainWindow(QtWidgets.QMainWindow):
         # spectrum re-analysis, losing peaks that only exist in the saved data.
         # The loaded peaks remain authoritative for the lifetime of the loaded
         # measurement — only unfreezing (returning to live capture) clears them.
-        try:
-            self.peak_widget.model.auto_select_peaks_by_mode()
-        except Exception:
-            pass
+        #
+        # Delegate to the analyzer (mirrors Swift resetToAutoSelection()), which
+        # runs against ALL current_peaks regardless of the display viewport.
+        # The previous approach called peak_widget.model.auto_select_peaks_by_mode()
+        # which only saw viewport-filtered peaks, causing out-of-range peaks
+        # (e.g. Dipole at 438 Hz when the display is zoomed to 75–350 Hz) to be
+        # skipped even though they are the strongest representative of their mode.
+        analyzer = self.fft_canvas.analyzer
+        analyzer.reset_to_auto_selection()
+        # Populate selected_peak_frequencies from selected_peak_ids so the
+        # existing peaksChanged → _on_peaks_changed_results propagation path
+        # (line 2208) can push them to model.selected_frequencies correctly.
+        # Swift drives this via @Published selectedPeakIDs; Python needs the
+        # frequencies populated explicitly before the signal fires.
+        analyzer.selected_peak_frequencies = [
+            p.frequency for p in analyzer.current_peaks
+            if p.id in analyzer.selected_peak_ids
+        ]
+        # Emit peaksChanged: updates the scatter plot annotations AND triggers
+        # _on_peaks_changed_results which propagates selected_peak_frequencies
+        # to model.selected_frequencies and redraws the results panel rows.
+        analyzer.peaksChanged.emit(list(analyzer.current_peaks))
 
     def _on_user_modified_selection_changed(self, modified: bool) -> None:
         self.reset_auto_selection_btn.setEnabled(
@@ -2825,6 +2844,23 @@ class MainWindow(QtWidgets.QMainWindow):
         # Guitar-to-guitar switches reclassify peaks with the new ranges instead.
         if self._is_running and crosses_boundary:
             self.fft_canvas.restart_tap_sequence()
+        elif not crosses_boundary:
+            # Guitar-to-guitar switch: re-run mode classification with the new
+            # guitar type's frequency bands and reset to auto peak selection.
+            # Mirrors Swift TapSettingsView+Actions.swift onApply:
+            #   tapToneAnalyzer.reclassifyPeaks()
+            #   tapToneAnalyzer.resetToAutoSelection()
+            analyzer = self.fft_canvas.analyzer
+            analyzer.reclassify_peaks()
+            analyzer.reset_to_auto_selection()
+            # Python-specific bridging: populate selected_peak_frequencies from
+            # selected_peak_ids so _on_peaks_changed_results can push them to
+            # model.selected_frequencies.  Swift drives this via @Published.
+            analyzer.selected_peak_frequencies = [
+                p.frequency for p in analyzer.current_peaks
+                if p.id in analyzer.selected_peak_ids
+            ]
+            analyzer.peaksChanged.emit(list(analyzer.current_peaks))
 
     def _update_measurement_badge(self) -> None:
         """Refresh the badge in the Analysis Results panel.

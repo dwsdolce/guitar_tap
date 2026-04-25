@@ -240,6 +240,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
         if not peaks:
             return
         # Re-run guitar mode auto-selection.
+        # Mirrors Swift exactly: only selected_peak_ids is set; selected_peak_frequencies
+        # stays empty (it was cleared above).  selected_peak_frequencies is a carry-forward
+        # cache used by threshold adjustments — not a UI signal.  The view layer pushes
+        # the selection to the model directly after calling this method.
         self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
 
     # ------------------------------------------------------------------ #
@@ -676,6 +680,11 @@ class TapToneAnalyzerPeakAnalysisMixin:
             {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
             for p in self.current_peaks
         ]
+        # Unlike Swift where @Published identified_modes auto-notifies subscribers,
+        # Python requires an explicit signal emission so the scatter plot and results
+        # panel receive the reclassified peaks.  Mirrors the pattern used in
+        # recalculate_frozen_peaks_if_needed() and analyze_magnitudes().
+        self.peaksChanged.emit(list(self.current_peaks))
 
     # ------------------------------------------------------------------ #
     # remove_duplicate_peaks
