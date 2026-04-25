@@ -25,6 +25,10 @@ This Python package mirrors that structure using four modules:
 
   realtime_fft_analyzer_fft_processing.py → module-level FFT functions
       mirrors RealtimeFFTAnalyzer+FFTProcessing.swift
+      Key correspondence: dft_anal ↔ computeFFT(on:) (pure DSP core).
+      Swift's performFFT(on:) is now a thin wrapper around computeFFT that only
+      dispatches results to @Published; Python's equivalent thin wrapper is the
+      dft_anal call + fftFrameReady.emit inside _FftProcessingThread.run().
 
   realtime_fft_analyzer_device_management.py → RealtimeFFTAnalyzerDeviceManagementMixin
       mirrors RealtimeFFTAnalyzer+DeviceManagement.swift

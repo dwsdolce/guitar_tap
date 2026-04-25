@@ -5,8 +5,13 @@ Contains the module-level FFT analysis functions that correspond to methods on
 Swift's RealtimeFFTAnalyzer extension in +FFTProcessing.swift.
 
 Python ↔ Swift correspondence:
-  dft_anal        ↔  performFFT (rectangular window, live display) /
-                      computeGatedFFT (Hann window, plate/brace capture)
+  dft_anal        ↔  computeFFT(on:) — pure DSP core (rectangular window, live display
+                      path).  Swift's performFFT(on:) is now a thin wrapper that calls
+                      computeFFT and dispatches its results to @Published properties;
+                      dft_anal is the direct counterpart of computeFFT because both
+                      are the side-effect-free computation layer used by the test suite.
+  dft_anal        ↔  computeGatedFFT (Hann window, plate/brace capture) — see also
+                      _FftProcessingThread.compute_gated_fft() in realtime_fft_analyzer.py
   peak_detection  ↔  findPeaks — threshold + local-maximum filter
   peak_interp     ↔  findPeaks — parabolic sub-bin interpolation
   peak_q_factor   ↔  findPeaks — −3 dB bandwidth Q calculation
@@ -17,6 +22,9 @@ Python-only functions (no direct Swift equivalent):
   is_power2       — explicit check; Swift lets vDSP validate the size at setup time
 
 Swift-only functions (no Python equivalent):
+  performFFT(on:)            — thin wrapper around computeFFT; publishes to @Published
+                               on main thread.  Python equivalent: _FftProcessingThread.run()
+                               calls dft_anal and emits fftFrameReady.
   updateFrequencyBins()      — publishes @Published frequencies on main thread
   updateCalibrationCorrections() — pre-computes calibration offsets per bin
   updateMetrics()            — publishes frequencyResolution, bandwidth, frameRate

@@ -18,9 +18,10 @@ from . import guitar_type as gt
 
 
 class MeasurementType(Enum):
+    GENERIC   = "Generic Guitar"
+    ACOUSTIC  = "Acoustic Guitar"
     CLASSICAL = "Classical Guitar"
     FLAMENCO  = "Flamenco Guitar"
-    ACOUSTIC  = "Acoustic Guitar"
     PLATE     = "Material (Plate)"
     BRACE     = "Material (Brace)"
 
@@ -33,6 +34,7 @@ class MeasurementType(Enum):
         Mirrors Swift MeasurementType.shortName.
         """
         return {
+            MeasurementType.GENERIC:   "Generic",
             MeasurementType.CLASSICAL: "Classical",
             MeasurementType.FLAMENCO:  "Flamenco",
             MeasurementType.ACOUSTIC:  "Acoustic",
@@ -47,6 +49,7 @@ class MeasurementType(Enum):
         Mirrors Swift MeasurementType.description.
         """
         return {
+            MeasurementType.GENERIC:   "Broad ranges covering all guitar types",
             MeasurementType.CLASSICAL: "Nylon string, fan-braced, deep body",
             MeasurementType.FLAMENCO:  "Nylon string, light bracing, shallow body",
             MeasurementType.ACOUSTIC:  "Steel string, X-braced (Dreadnought, OM, etc.)",
@@ -63,6 +66,7 @@ class MeasurementType(Enum):
         Mirrors Swift MeasurementType.isGuitar.
         """
         return self in (
+            MeasurementType.GENERIC,
             MeasurementType.CLASSICAL,
             MeasurementType.FLAMENCO,
             MeasurementType.ACOUSTIC,
@@ -93,6 +97,7 @@ class MeasurementType(Enum):
         Mirrors Swift MeasurementType.guitarType.
         """
         return {
+            MeasurementType.GENERIC:   gt.GuitarType.GENERIC,
             MeasurementType.CLASSICAL: gt.GuitarType.CLASSICAL,
             MeasurementType.FLAMENCO:  gt.GuitarType.FLAMENCO,
             MeasurementType.ACOUSTIC:  gt.GuitarType.ACOUSTIC,
@@ -105,6 +110,7 @@ class MeasurementType(Enum):
         Mirrors Swift MeasurementType.from(_:GuitarType).
         """
         return {
+            gt.GuitarType.GENERIC:   MeasurementType.GENERIC,
             gt.GuitarType.CLASSICAL: MeasurementType.CLASSICAL,
             gt.GuitarType.FLAMENCO:  MeasurementType.FLAMENCO,
             gt.GuitarType.ACOUSTIC:  MeasurementType.ACOUSTIC,
@@ -133,8 +139,12 @@ class MeasurementType(Enum):
             return MeasurementType.FLAMENCO
         if "acoustic" in lower:
             return MeasurementType.ACOUSTIC
-        # Default guitar → classical
-        return MeasurementType.CLASSICAL
+        if "classical" in lower:
+            return MeasurementType.CLASSICAL
+        if "generic" in lower:
+            return MeasurementType.GENERIC
+        # Default guitar → generic (broad ranges covering all guitar types)
+        return MeasurementType.GENERIC
 
     @staticmethod
     def from_combo_values(measurement: str, guitar_type: str) -> MeasurementType:
@@ -147,4 +157,4 @@ class MeasurementType(Enum):
         try:
             return MeasurementType.from_guitar_type(gt.GuitarType(guitar_type))
         except (ValueError, KeyError):
-            return MeasurementType.CLASSICAL
+            return MeasurementType.GENERIC

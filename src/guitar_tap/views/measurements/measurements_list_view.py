@@ -330,9 +330,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
             return
         M.update_export_dir(path)
         try:
+            text = M.export_measurement_json(m)
             with open(path, "w", encoding="utf-8") as f:
-                f.write(M.export_measurement_json(m))
-        except OSError as exc:
+                f.write(text)
+        except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
     def _export_spectrum(self, m: TapToneMeasurement) -> None:

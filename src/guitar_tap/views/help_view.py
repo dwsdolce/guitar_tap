@@ -101,7 +101,8 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Choose a Measurement Type",
         "In Settings, the Measurement Type section is directly below Audio Input. "
-        "Pick Classical Guitar, Flamenco, Steel String, Material (Plate), or Material (Brace). "
+        "Pick Generic Guitar (the default, with broad ranges covering all types), "
+        "Classical Guitar, Flamenco, Steel String, Material (Plate), or Material (Brace). "
         "The right choice determines which mode-frequency ranges are used and which "
         "measurements are calculated."
     ))
@@ -128,9 +129,10 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Step 1 &mdash; Configure",
-        "In Settings choose the guitar type (Classical, Flamenco, or Acoustic/Steel String) "
-        "in the Measurement Type section. Each type has calibrated frequency windows for "
-        "each mode, shown there. The Show Unknown Modes toggle is in the Advanced section."
+        "In Settings choose the guitar type (Generic Guitar by default, or Classical, "
+        "Flamenco, Acoustic/Steel String) in the Measurement Type section. Each type has "
+        "calibrated frequency windows for each mode, shown there. Generic Guitar uses broad "
+        "ranges that cover all guitar types. The Show Unknown Modes toggle is in the Advanced section."
     ))
     parts.append(_row(
         "Step 2 &mdash; Position the Microphone",
@@ -428,9 +430,9 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Measurement Type",
-        "Shown below Audio Input. Choose Classical Guitar, Flamenco, Acoustic/Steel String, "
-        "Material (Plate), or Material (Brace). Determines which mode frequency windows are "
-        "applied and which calculations appear in Results."
+        "Shown below Audio Input. Choose Generic Guitar (the default), Classical Guitar, "
+        "Flamenco, Acoustic/Steel String, Material (Plate), or Material (Brace). "
+        "Determines which mode frequency windows are applied and which calculations appear in Results."
     ))
     parts.append(_row(
         "Advanced (collapsed section)",

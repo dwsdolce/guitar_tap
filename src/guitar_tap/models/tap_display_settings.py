@@ -187,7 +187,7 @@ class TapDisplaySettings:
         try:
             return GuitarType(raw)
         except (ValueError, KeyError):
-            return GuitarType.CLASSICAL
+            return GuitarType.GENERIC
 
     @classmethod
     def set_guitar_type(cls, v: "str | GuitarType") -> None:
@@ -206,7 +206,7 @@ class TapDisplaySettings:
             try:
                 gt = GuitarType(v)
             except (ValueError, KeyError):
-                gt = GuitarType.CLASSICAL
+                gt = GuitarType.GENERIC
         _app_settings().set_guitar_type(gt.value)
         # Also update measurementType — mirrors Swift's setter.
         _app_settings().set_measurement_type(MeasurementType.from_guitar_type(gt))

@@ -84,16 +84,6 @@ if __name__ == "__main__":
 
     sys.excepthook = _excepthook
 
-    # Close the PyInstaller bootloader splash as soon as Qt is ready.
-    # Must happen before MainWindow() construction so the splash is always
-    # dismissed even if initialisation is slow or raises an exception.
-    # Harmless no-op when running from source or on macOS.
-    try:
-        import pyi_splash  # type: ignore[import-not-found]
-        pyi_splash.close()
-    except ImportError:
-        pass
-
     try:
         app = MainWindow()
         app.setWindowIcon(QtGui.QIcon(os.path.join(basedir, "icons/guitar-tap.svg")))

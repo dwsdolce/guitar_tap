@@ -90,6 +90,7 @@ class TapToneAnalyzerControlMixin:
         new_device = self.mic.selected_input_device
         if new_device is not None:
             self.set_device(new_device)
+            self.handle_route_change_restart()
 
         # Notify the view if the previously active device disappeared.
         # Mirrors Swift's "disconnected" log path in loadAvailableInputDevicesMacOS().
@@ -182,7 +183,75 @@ class TapToneAnalyzerControlMixin:
         if device is None:
             return
         # Dispatch back onto the main thread (the listener fires on a daemon thread).
-        _QTimer.singleShot(0, lambda: self.set_device(device))
+        # Also call handle_route_change_restart() to mirror Swift incrementing
+        # routeChangeRestartCount after start(), which triggers handleRouteChangeRestart().
+        _QTimer.singleShot(0, lambda: (self.set_device(device), self.handle_route_change_restart()))
+
+    def handle_route_change_restart(self) -> None:
+        """Respond to an audio-engine restart triggered by a device or route change.
+
+        Mirrors Swift TapToneAnalyzer.handleRouteChangeRestart():
+        - If detection was active: temporarily disable, reset warmup timer,
+          wait 2 s for the FFT buffer to refill, then restore is_detecting.
+        - If is_measurement_complete (frozen result): leave it untouched.
+        - If idle (not detecting): stay idle.
+
+        The 2-second settle delay mirrors Swift's conservative wait to ensure
+        the FFT buffer contains valid post-restart data before
+        is_above_threshold is re-anchored.
+        """
+        from PyQt6.QtCore import QTimer as _QTimer
+
+        was_detecting = self.is_detecting
+
+        # Temporarily disable detection to suppress false tap triggers
+        # during the engine restart transient.
+        self.is_ready_for_detection = False
+        self.is_detecting = False
+
+        # Reset the warmup timer so the new engine session starts cleanly.
+        self.analyzer_start_time = _time.monotonic()
+
+        # Pre-set is_above_threshold = True so the first FFT frame does not
+        # fire a false rising edge.  Mirrors Swift's pre-set before settle delay.
+        self.is_above_threshold = True
+        self.tap_detected = False
+
+        self._set_status_message("Audio device changed - reinitializing...")
+
+        # Wait for the FFT pipeline to fill with valid post-restart data
+        # (~1.36 s for 65 536 samples at 48 kHz).  Use 2 s to be safe,
+        # matching Swift's fftSettleTime constant.
+        _QTimer.singleShot(
+            2000,
+            lambda: self._restore_detection_after_route_change(was_detecting),
+        )
+
+    def _restore_detection_after_route_change(self, was_detecting: bool) -> None:
+        """Re-anchor threshold and restore detection state after the settle delay.
+
+        Mirrors the DispatchQueue.main.asyncAfter block in Swift's
+        handleRouteChangeRestart(): checks the stream is still open,
+        re-anchors is_above_threshold to the current audio level, and
+        restores is_detecting if it was active before the route change.
+        """
+        # Guard: stream may have been stopped again before the timer fired.
+        if self.mic.is_stopped:
+            return
+
+        current_level = self._current_input_level_db
+        self.is_above_threshold = current_level > self.tap_detection_threshold
+
+        self.is_ready_for_detection = True
+
+        if was_detecting:
+            self.is_detecting = True
+            self._set_status_message(
+                "Tap the guitar..." if self.number_of_taps == 1
+                else f"Tap the guitar {self.number_of_taps} times..."
+            )
+        else:
+            self._set_status_message("Ready")
 
     # ------------------------------------------------------------------ #
     # Tap detector control — all state lives directly on TapToneAnalyzer,

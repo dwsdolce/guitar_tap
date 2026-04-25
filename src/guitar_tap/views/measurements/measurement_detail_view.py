@@ -425,7 +425,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             text = M.export_measurement_json(self._m)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
-        except OSError as exc:
+        except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export:\n{exc}"
             )

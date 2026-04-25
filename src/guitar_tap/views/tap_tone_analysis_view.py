@@ -2808,21 +2808,22 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self._apply_measurement_type_to_ui()
 
-    def _on_measurement_type_changed(self, _: str) -> None:
+    def _on_measurement_type_changed(self, _: str, crosses_boundary: bool = True) -> None:
         """Handle a measurement-type change that originated from the settings UI.
 
         Mirrors Swift's onApply?(measurementChanged) callback in TapSettingsView:
-        updates the UI for the new type AND restarts the tap sequence so the next
-        tap starts from a clean state.  Only restarts when the analyzer is running
-        (i.e. not during app initialisation).
+        updates the UI for the new type.  Only restarts the tap sequence when the
+        change crosses the guitar/material boundary (guitar ↔ plate/brace) — a
+        guitar-to-guitar switch (e.g. Generic → Classical) preserves the current
+        tap sequence so peaks remain visible without unfreezing the spectrum.
+
+        Mirrors Swift TapSettingsView+Actions.swift: measurementChanged is only True
+        when crossesBoundary (previousType.isGuitar != selectedType.isGuitar).
         """
         self._apply_measurement_type_to_ui()
-        # Mirrors Swift onApply: if measurementChanged { startTapSequence() }
-        # restart_tap_sequence() resets is_measurement_complete → False (via
-        # measurementComplete signal), clears peaks/spectra, and seeds the noise floor —
-        # so the next tap starts clean regardless of which type was active before.
-        # Only do this when the analyzer thread is running (i.e. app is live, not init).
-        if self._is_running:
+        # Only restart when crossing the guitar/material boundary.
+        # Guitar-to-guitar switches reclassify peaks with the new ranges instead.
+        if self._is_running and crosses_boundary:
             self.fft_canvas.restart_tap_sequence()
 
     def _update_measurement_badge(self) -> None:
@@ -5207,7 +5208,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     AS.AppSettings.set_audio_device(audio_dev)
                     self.device_status_lbl.setText(audio_dev.name)
                     _update_cal_display()
-
         device_combo.currentIndexChanged.connect(_on_device_selected)
 
         def _rebuild_device_combo(_: list[str]) -> None:
@@ -5654,8 +5654,11 @@ class MainWindow(QtWidgets.QMainWindow):
             # Fire _on_measurement_type_changed exactly once after all settings are
             # persisted — mirrors Swift's onApply?(measurementChanged) callback which
             # runs after applySettings() completes.
+            # Only crosses the guitar/material boundary when isGuitar changes —
+            # a guitar-to-guitar switch (e.g. Generic → Classical) preserves the tap sequence.
             if _type_changed or _flc_changed:
-                self._on_measurement_type_changed(mt_val.short_name)
+                _crosses_boundary = _current_mt.is_guitar != mt_val.is_guitar
+                self._on_measurement_type_changed(mt_val.short_name, crosses_boundary=_crosses_boundary)
 
             # Restart the plate/brace capture state machine after all settings are
             # saved so the new phase count (2 vs 3) is immediately active.

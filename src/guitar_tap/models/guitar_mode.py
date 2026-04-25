@@ -251,12 +251,20 @@ class GuitarMode(Enum):
         )
         result: dict = {}
         claimed_ids: set = set()
+        claimed_top_frequency: float | None = None
 
         for mode in ordered_modes:
             lo, hi = mode.mode_range(guitar_type)
+            # Back must always be strictly above the claimed Top frequency —
+            # mirrors Swift's effectiveLowerBound constraint in classifyAll().
+            effective_lo = (
+                max(lo, claimed_top_frequency + 1.0)
+                if mode is cls.BACK and claimed_top_frequency is not None
+                else lo
+            )
             candidates = [
                 (p.id, p.magnitude) for p in peaks
-                if lo <= p.frequency <= hi
+                if effective_lo <= p.frequency <= hi
                 and p.id not in claimed_ids
             ]
             if not candidates:
@@ -264,6 +272,9 @@ class GuitarMode(Enum):
             best_id = max(candidates, key=lambda x: x[1])[0]
             result[best_id] = mode
             claimed_ids.add(best_id)
+            if mode is cls.TOP:
+                best_peak = next(p for p in peaks if p.id == best_id)
+                claimed_top_frequency = best_peak.frequency
 
         for peak in peaks:
             if peak.id not in result:
@@ -294,18 +305,26 @@ class GuitarMode(Enum):
         )
         result: dict[int, GuitarMode] = {}
         claimed: set[int] = set()
+        claimed_top_frequency: float | None = None
 
         for mode in ordered_modes:
             lo, hi = mode.mode_range(guitar_type)
+            effective_lo = (
+                max(lo, claimed_top_frequency + 1.0)
+                if mode is cls.BACK and claimed_top_frequency is not None
+                else lo
+            )
             candidates = [
                 (i, mag) for i, (freq, mag) in enumerate(peaks)
-                if lo <= freq <= hi and i not in claimed
+                if effective_lo <= freq <= hi and i not in claimed
             ]
             if not candidates:
                 continue
             best_i = max(candidates, key=lambda x: x[1])[0]
             result[best_i] = mode
             claimed.add(best_i)
+            if mode is cls.TOP:
+                claimed_top_frequency = peaks[best_i][0]
 
         for i, (freq, _) in enumerate(peaks):
             if i not in result:

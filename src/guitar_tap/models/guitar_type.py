@@ -61,9 +61,10 @@ class GuitarType(Enum):
 
     Mirrors Swift GuitarType enum (GuitarType.swift).
     """
+    GENERIC   = "Generic"
+    ACOUSTIC  = "Acoustic"
     CLASSICAL = "Classical"
     FLAMENCO  = "Flamenco"
-    ACOUSTIC  = "Acoustic"
 
     # MARK: - Description
 
@@ -71,6 +72,7 @@ class GuitarType(Enum):
     def description(self) -> str:
         """Human-readable description of the guitar type shown in the settings UI."""
         return {
+            GuitarType.GENERIC:   "Broad ranges covering all guitar types",
             GuitarType.CLASSICAL: "Nylon string, fan-braced, deep body",
             GuitarType.FLAMENCO:  "Nylon string, light bracing, shallow body",
             GuitarType.ACOUSTIC:  "Steel string, X-braced (Dreadnought, OM, etc.)",
@@ -85,6 +87,14 @@ class GuitarType(Enum):
         Mirrors Swift GuitarType.modeRanges.
         """
         return {
+            GuitarType.GENERIC: ModeRanges(
+                air=(70, 135),          # Union of all types, widened to cover all instruments
+                top=(140, 260),         # Union of all top ranges
+                back=(180, 300),        # Union of all back ranges
+                dipole=(310, 460),      # Union of all dipole ranges
+                ring_mode=(580, 880),   # Union of all ring mode ranges
+                upper_modes=(880, 20000),
+            ),
             GuitarType.CLASSICAL: ModeRanges(
                 air=(80, 110),          # Lower air resonance due to deeper body
                 top=(170, 230),         # Main top resonance
@@ -120,6 +130,13 @@ class GuitarType(Enum):
         Mirrors Swift GuitarType.decayThresholds.
         """
         return {
+            GuitarType.GENERIC: DecayThresholds(
+                # Generic uses acoustic values as a middle-ground baseline
+                very_short=0.10,
+                short=0.25,
+                moderate=0.45,
+                good=0.75,
+            ),
             GuitarType.CLASSICAL: DecayThresholds(
                 # Classical guitars have longer sustain due to deeper body and heavier bracing
                 very_short=0.15,

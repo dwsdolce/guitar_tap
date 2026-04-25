@@ -42,6 +42,8 @@ SetupIconFile=..\src\guitar_tap\icons\guitar-tap.ico
 SolidCompression=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 WizardStyle=modern
+CloseApplications=yes
+UninstallCloseApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
