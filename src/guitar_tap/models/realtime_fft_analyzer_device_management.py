@@ -284,17 +284,26 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         # All gated-capture window calculations use self.rate, so a mismatch
         # means every capture window is sized incorrectly.
         try:
+            # Check what PortAudio actually negotiated for the open stream.
+            # This is the definitive rate — more reliable than default_samplerate
+            # from device info, which is the device's preferred rate, not the
+            # actual negotiated rate.
+            stream_rate = int(self.stream.samplerate)
             device_info = sd.query_devices(self.device_index)
-            actual_rate = int(device_info['default_samplerate'])
-            if actual_rate != self.rate:
+            device_default_rate = int(device_info['default_samplerate'])
+            if stream_rate != self.rate:
                 gt_log(
                     f"[DIAG] WARNING: sample-rate mismatch — "
-                    f"requested={self.rate} Hz, device reports={actual_rate} Hz. "
-                    f"Gated capture window will be sized incorrectly. "
+                    f"requested={self.rate} Hz, stream negotiated={stream_rate} Hz, "
+                    f"device default={device_default_rate} Hz. "
+                    f"Frequency axis will be scaled incorrectly. "
                     f"(Cause #1: WASAPI shared-mode coercion)"
                 )
             else:
-                gt_log(f"[DIAG] sample rate OK: {self.rate} Hz")
+                gt_log(
+                    f"[DIAG] sample rate OK: stream={stream_rate} Hz, "
+                    f"device default={device_default_rate} Hz"
+                )
         except Exception as _diag_err:
             gt_log(f"[DIAG] sample-rate query failed: {_diag_err}")
 
