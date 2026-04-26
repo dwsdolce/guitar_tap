@@ -105,6 +105,7 @@ from PySide6 import QtCore
 
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
 from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
+from guitar_tap.utilities.logging import gt_log
 
 if platform.system() == "Darwin":
     from views.utilities import platform_adapters as mac_access
@@ -550,6 +551,26 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             dtype=np.float32,
             blocksize=self.chunksize,
             callback=self.new_frame)
+
+        # Diagnostic: log actual negotiated stream rate at startup.
+        try:
+            stream_rate = int(self.stream.samplerate)
+            device_info = sd.query_devices(self.device_index)
+            device_default_rate = int(device_info['default_samplerate'])
+            if stream_rate != self.rate:
+                gt_log(
+                    f"[DIAG] WARNING: startup sample-rate mismatch — "
+                    f"requested={self.rate} Hz, stream negotiated={stream_rate} Hz, "
+                    f"device default={device_default_rate} Hz. "
+                    f"Frequency axis will be scaled incorrectly."
+                )
+            else:
+                gt_log(
+                    f"[DIAG] startup sample rate OK: stream={stream_rate} Hz, "
+                    f"device default={device_default_rate} Hz"
+                )
+        except Exception as _diag_err:
+            gt_log(f"[DIAG] startup sample-rate query failed: {_diag_err}")
 
         # Python-only: audio chunk delivery via Queue
         # Swift delivers audio via rawSampleHandler callback + inputBuffer accumulation
