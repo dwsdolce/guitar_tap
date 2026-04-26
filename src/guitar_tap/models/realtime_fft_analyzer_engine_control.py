@@ -247,44 +247,6 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 f"(Cause #4: CPU scheduling jitter / buffer overflow)"
             )
 
-        # ------------------------------------------------------------------
-        # Diagnostic #5: Raw WASAPI audio dump.
-        # Saves the first 5 seconds of raw captured audio (channel 0) to a WAV
-        # file at ~/Desktop/guitar_tap_raw_capture.wav so the PCM data can be
-        # compared with a known-good Audacity recording of the same signal.
-        # Enabled only on Windows to diagnose the spurious-peak issue.
-        # Set self._diag_raw_dump_enabled = False to disable.
-        # ------------------------------------------------------------------
-        import platform as _plat
-        if _plat.system() == "Windows":
-            if not hasattr(self, '_diag_raw_dump_enabled'):
-                self._diag_raw_dump_enabled: bool = True
-                self._diag_raw_dump_chunks: list = []
-                self._diag_raw_dump_done: bool = False
-                gt_log("[DIAG] raw audio dump enabled — will save first 5 s to ~/Desktop/guitar_tap_raw_capture.wav")
-            if self._diag_raw_dump_enabled and not self._diag_raw_dump_done:
-                self._diag_raw_dump_chunks.append(data[:, 0].copy())
-                total = sum(len(c) for c in self._diag_raw_dump_chunks)
-                rate = getattr(self, 'rate', 48000)
-                if total >= rate * 5:
-                    self._diag_raw_dump_done = True
-                    self._diag_raw_dump_enabled = False
-                    # Write in a daemon thread to avoid blocking the callback.
-                    import threading as _threading
-                    chunks_snapshot = list(self._diag_raw_dump_chunks)
-                    def _write_dump() -> None:
-                        try:
-                            import numpy as _np
-                            import soundfile as _sf
-                            import os as _os
-                            out_path = _os.path.expanduser("~/Desktop/guitar_tap_raw_capture.wav")
-                            pcm = _np.concatenate(chunks_snapshot)
-                            _sf.write(out_path, pcm, rate, subtype="FLOAT")
-                            gt_log(f"[DIAG] raw audio dump written: {out_path} ({len(pcm)} samples @ {rate} Hz)")
-                        except Exception as _e:
-                            gt_log(f"[DIAG] raw audio dump failed: {_e}")
-                    _threading.Thread(target=_write_dump, daemon=True, name="RawDump").start()
-
         return None
 
     def get_frames(self) -> list[npt.NDArray[np.float32]]:

@@ -544,14 +544,9 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self.window_fcn = _get_window("boxcar", fft_size)
 
         # Open the sounddevice stream; Swift opens AVAudioEngine in start()
-        # On Windows, open with the device's native channel count to avoid
-        # routing through the Windows APO mono-downmix, which introduces
-        # spectral artifacts.  new_frame takes data[:, 0] regardless.
-        from .realtime_fft_analyzer_device_management import _stream_channels_for_device
-        _open_channels = _stream_channels_for_device(self.device_index)
         self.stream: sd.InputStream = sd.InputStream(
             device=self.device_index,
-            channels=_open_channels,
+            channels=1,
             samplerate=self.rate,
             dtype=np.float32,
             blocksize=self.chunksize,
