@@ -865,19 +865,25 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         stop_event = threading.Event()
         self._sr_poll_stop = stop_event
         on_sr_changed = self._on_sample_rate_changed
-        initial_rate = self.rate
-        # Capture the device name at monitor-start time.  After a USB unplug,
-        # Windows renumbers PortAudio indices: device_index may silently start
-        # pointing at a completely different (WDM-KS) device whose
-        # default_samplerate differs from the original, producing a spurious
-        # "rate change" that would reopen the stream on the wrong backend.
-        # We guard against this by comparing the name at each poll; if it no
-        # longer matches we stop the monitor instead of firing on_sr_changed.
+        # Capture the device name and *hardware* default_samplerate at start.
+        # The poller compares against default_samplerate (not self.rate, which
+        # is the negotiated stream rate and may differ from the hardware nominal
+        # rate on Windows WASAPI shared-mode resampling).  Using self.rate as
+        # initial_rate would cause an immediate spurious fire on every start
+        # because the hardware nominal rate (e.g. 44100) differs from the
+        # negotiated rate (e.g. 48000).
+        #
+        # The name guard detects index renumbering after a USB unplug: Windows
+        # reassigns the old PortAudio index to a different (WDM-KS) device whose
+        # default_samplerate also differs, which would look like a rate change.
         initial_name: str = ""
+        initial_rate: int = 0
         try:
-            initial_name = str(sd.query_devices(self.device_index).get("name", ""))
+            dev_info = sd.query_devices(self.device_index)
+            initial_name = str(dev_info.get("name", ""))
+            initial_rate = int(dev_info.get("default_samplerate", self.rate))
         except Exception:
-            pass
+            initial_rate = self.rate
 
         def _poll() -> None:
             current_rate = initial_rate
