@@ -180,7 +180,7 @@ class TapToneAnalyzerControlMixin:
         The 0.3 s delay is already applied by the listener before this method is
         invoked, so no additional delay is needed here.
         """
-        from PyQt6.QtCore import QTimer as _QTimer
+        from PySide6.QtCore import QTimer as _QTimer
         device = self.mic.selected_input_device
         if device is None:
             return
@@ -202,7 +202,7 @@ class TapToneAnalyzerControlMixin:
         the FFT buffer contains valid post-restart data before
         is_above_threshold is re-anchored.
         """
-        from PyQt6.QtCore import QTimer as _QTimer
+        from PySide6.QtCore import QTimer as _QTimer
 
         was_detecting = self.is_detecting
 
