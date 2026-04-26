@@ -481,6 +481,13 @@ class TapToneAnalyzer(
         finally:
             self.mic._on_devices_changed = saved_cb
 
+        # Stamp the cooldown timer so the spurious CM_Register_Notification that
+        # Windows fires when Pa_OpenStream is called during init (or when the CM
+        # monitor registers) does not immediately trigger _on_devices_refreshed
+        # and switch away from the saved/selected device.
+        import time as _time_mod
+        self._devices_refresh_last_t = _time_mod.monotonic()
+
         # ── Saved measurements (view-layer import deferred until here) ────
         from views.tap_analysis_results_view import load_all_measurements as _load
         self.saved_measurements = _load()
