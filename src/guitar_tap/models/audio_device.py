@@ -205,12 +205,6 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
     import platform
     import sounddevice as _sd
 
-    try:
-        from guitar_tap.utilities.logging import gt_log as _gt_log
-    except Exception:
-        def _gt_log(msg: str) -> None:  # type: ignore[misc]
-            pass
-
     inputs = [d for d in raw if int(d["max_input_channels"]) > 0]
     if platform.system() != "Windows":
         return inputs
@@ -234,9 +228,6 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
         except Exception:
             pass
 
-    _gt_log(f"[filter_input_devices] api_names={api_names}")
-    _gt_log(f"[filter_input_devices] inputs={[(d['name'], d.get('hostapi'), d.get('_hostapi_name')) for d in inputs]}")
-
     preferred_api: "int | None" = None
     for preferred_name in ("Windows WASAPI", "Windows DirectSound", "MME"):
         for i, n in api_names.items():
@@ -245,9 +236,6 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
                 break
         if preferred_api is not None:
             break
-
-    _gt_log(f"[filter_input_devices] preferred_api={preferred_api} "
-            f"(api_names keys={list(api_names.keys())})")
 
     pseudo = ("microsoft sound mapper", "primary sound capture")
     out: list[dict] = []
@@ -261,5 +249,4 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
             continue
         out.append(d)
 
-    _gt_log(f"[filter_input_devices] result={[d['name'] for d in out]}")
     return out

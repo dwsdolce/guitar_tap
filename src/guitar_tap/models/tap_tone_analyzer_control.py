@@ -80,9 +80,7 @@ class TapToneAnalyzerControlMixin:
         # 1-2+ seconds after the initial unplug event, so they pass through.
         last = getattr(self, '_devices_refresh_last_t', 0.0)
         if now - last < 1.0:
-            gt_log(f"🔄 _on_devices_refreshed: suppressed (last refresh {now - last:.3f} s ago)")
             return
-        gt_log(f"🔄 _on_devices_refreshed: running (last was {now - last:.3f} s ago)")
         self._devices_refresh_active = True
         try:
             self._on_devices_refreshed_impl()
@@ -122,15 +120,12 @@ class TapToneAnalyzerControlMixin:
             self.mic._on_devices_changed = saved_cb
 
         names: list[str] = sorted(d.name for d in self.mic.available_input_devices)
-        gt_log(f"🔄 _on_devices_refreshed_impl: available={names}")
         self.devicesChanged.emit(names)
 
         # PortAudio was re-initialized, so the previous stream is dead — always
         # reopen on the currently-selected device (which may be the same one,
         # a newly-plugged device, or a fallback after disconnect).
         new_device = self.mic.selected_input_device
-        gt_log(f"🔄 _on_devices_refreshed_impl: selected={getattr(new_device, 'name', None)!r} "
-               f"index={getattr(new_device, 'index', None)}")
         if new_device is not None:
             self.set_device(new_device)
             self.handle_route_change_restart()
