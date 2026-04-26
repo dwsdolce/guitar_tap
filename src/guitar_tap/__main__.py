@@ -68,45 +68,45 @@ def _show_crash_dialog(exc_type, exc_value, exc_tb) -> None:
     )
     msg.exec()
 
-def _debug_log_path() -> str:
-    """Return a platform-appropriate path for the debug log.
+# def _debug_log_path() -> str:
+#     """Return a platform-appropriate path for the debug log.
 
-      Windows : %APPDATA%\\guitar-tap\\GuitarTap-debug.log
-      macOS   : ~/Library/Logs/GuitarTap/GuitarTap-debug.log
-      Linux   : ~/.local/share/GuitarTap/GuitarTap-debug.log
-    """
-    if os.name == "nt":
-        base = os.environ.get("APPDATA", os.path.expanduser("~"))
-        return os.path.join(base, "guitar-tap", "GuitarTap-debug.log")
-    elif sys.platform == "darwin":
-        return os.path.expanduser("~/Library/Logs/GuitarTap/GuitarTap-debug.log")
-    else:
-        return os.path.expanduser("~/.local/share/GuitarTap/GuitarTap-debug.log")
+#       Windows : %APPDATA%\\guitar-tap\\GuitarTap-debug.log
+#       macOS   : ~/Library/Logs/GuitarTap/GuitarTap-debug.log
+#       Linux   : ~/.local/share/GuitarTap/GuitarTap-debug.log
+#     """
+#     if os.name == "nt":
+#         base = os.environ.get("APPDATA", os.path.expanduser("~"))
+#         return os.path.join(base, "guitar-tap", "GuitarTap-debug.log")
+#     elif sys.platform == "darwin":
+#         return os.path.expanduser("~/Library/Logs/GuitarTap/GuitarTap-debug.log")
+#     else:
+#         return os.path.expanduser("~/.local/share/GuitarTap/GuitarTap-debug.log")
 
 
-def _redirect_logs_if_needed() -> None:
-    # """Redirect stdout/stderr to a log file when not running under a debugger."""
-    # if sys.gettrace() is not None:
-    #     return
-    # debug_env = (
-    #     "VSCODE_PID", "PYTHONDEBUG", "PYCHARM_HOSTED", "DEBUGGER", "PYDEVD_USE_FRAME_EVAL"
-    # )
-    # if any(v in os.environ for v in debug_env):
-    #     return
-    log_path = _debug_log_path()
-    log_dir = os.path.dirname(log_path)
-    os.makedirs(log_dir, exist_ok=True)
-    try:
-        log_file = open(log_path, "a", encoding="utf-8", buffering=1)  # noqa: WPS515
-        sys.stdout = log_file
-        sys.stderr = log_file
-    except OSError:
-        pass
+# def _redirect_logs_if_needed() -> None:
+#     # """Redirect stdout/stderr to a log file when not running under a debugger."""
+#     # if sys.gettrace() is not None:
+#     #     return
+#     # debug_env = (
+#     #     "VSCODE_PID", "PYTHONDEBUG", "PYCHARM_HOSTED", "DEBUGGER", "PYDEVD_USE_FRAME_EVAL"
+#     # )
+#     # if any(v in os.environ for v in debug_env):
+#     #     return
+#     log_path = _debug_log_path()
+#     log_dir = os.path.dirname(log_path)
+#     os.makedirs(log_dir, exist_ok=True)
+#     try:
+#         log_file = open(log_path, "a", encoding="utf-8", buffering=1)  # noqa: WPS515
+#         sys.stdout = log_file
+#         sys.stderr = log_file
+#     except OSError:
+#         pass
 
 
 
 if __name__ == "__main__":
-    _redirect_logs_if_needed()
+    # _redirect_logs_if_needed()
 
     if os.name == "nt":
         mutex = NM.NamedMutex("guitar-tap-running", True)
