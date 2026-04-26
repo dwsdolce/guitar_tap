@@ -55,7 +55,6 @@ from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
-from scipy.fft import fft
 
 Float64_1D = npt.NDArray[np.float64]
 
@@ -105,6 +104,7 @@ def dft_anal(
       calculations.  Mirrors Swift's identical choice documented in performFFT and
       computeGatedFFT.
     """
+    from scipy.fft import fft  # lazy: defers ~4 s cold-import cost until first FFT
     if not is_power2(n_freq_samples):
         raise ValueError("FFT size (N) is not a power of 2")
 

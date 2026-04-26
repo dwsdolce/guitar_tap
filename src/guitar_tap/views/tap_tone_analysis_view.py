@@ -12,7 +12,6 @@ The class is split across several mixin-style logical sections (matching Swift
 import os
 
 import numpy as np
-import sounddevice as sd
 from PySide6 import QtWidgets, QtGui, QtCore
 
 import views.fft_canvas as fft_c
@@ -534,23 +533,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Audio / FFT parameters
         self.threshold: int = AS.AppSettings.threshold()
-        fft_settings: dict[str, int] = {
+        self._fft_settings: dict[str, int] = {
             "sampling_rate": 48000,
             "fft_size": 4 * 16384,
         }
-        f_range: dict[str, int] = {
+        self._f_range: dict[str, int] = {
             "f_min": AS.AppSettings.f_min(),
             "f_max": AS.AppSettings.f_max(),
         }
-
-        # Build FftCanvas first — everything else references it
-        self.fft_canvas = fft_c.FftCanvas(
-            fft_settings["fft_size"],
-            fft_settings["sampling_rate"],
-            f_range,
-            self.threshold,
-        )
-        self.fft_canvas.setMinimumSize(500, 350)
 
         # ── Root layout (vertical) ───────────────────────────────────────
         main_widget = QtWidgets.QWidget()
@@ -560,7 +550,7 @@ class MainWindow(QtWidgets.QMainWindow):
         root.setContentsMargins(2, 2, 2, 2)
 
         root.addWidget(self._build_toolbar())
-        root.addWidget(self._build_controls_bar(fft_settings))
+        root.addWidget(self._build_controls_bar(self._fft_settings))
 
         # Content row: canvas (stretch) + divider + results panel (content-sized, always visible)
         content = QtWidgets.QWidget()
@@ -569,34 +559,42 @@ class MainWindow(QtWidgets.QMainWindow):
         ch.setContentsMargins(0, 4, 0, 0)
         root.addWidget(content, stretch=1)
 
-        # Left: canvas + material instructions panel (below graph, plate/brace only)
+        # Left: canvas placeholder (swapped for FftCanvas after window shows) +
+        # material instructions panel (below graph, plate/brace only)
         canvas_widget = QtWidgets.QWidget()
-        cv = QtWidgets.QVBoxLayout(canvas_widget)
-        cv.setContentsMargins(0, 0, 8, 0)
-        cv.setSpacing(0)
-        cv.addWidget(self.fft_canvas, stretch=1)
+        self._cv = QtWidgets.QVBoxLayout(canvas_widget)
+        self._cv.setContentsMargins(0, 0, 8, 0)
+        self._cv.setSpacing(0)
+
+        # Placeholder widget shown while FftCanvas initialises (audio device query,
+        # analyzer start).  Replaced by the real FftCanvas in _deferred_canvas_init.
+        self._canvas_placeholder = QtWidgets.QWidget()
+        self._canvas_placeholder.setMinimumSize(500, 350)
+        self._cv.addWidget(self._canvas_placeholder, stretch=1)
 
         # Material instructions panel (below graph, plate/brace only)
         self._material_instr_panel = self._build_material_instr_panel()
-        cv.addWidget(self._material_instr_panel)
+        self._cv.addWidget(self._material_instr_panel)
 
         ch.addWidget(canvas_widget, stretch=1)
         ch.addWidget(_vsep())
 
         # Right: results panel — sizes to its content, never hidden
-        self._right_panel = self._build_right_panel(f_range)
+        self._right_panel = self._build_right_panel(self._f_range)
         ch.addWidget(self._right_panel)
 
         # Bottom status bar
         root.addWidget(self._build_status_bar())
 
-        # Wire everything up
-        self._connect_signals()
-        self._init_state(f_range)
-
-        # Loading overlay — covers the central widget during slow export operations.
+        # Loading overlay — shown while FftCanvas initialises.
         # Mirrors Swift LoadingOverlay placed via .overlay on the root content view.
         self._loading_overlay = LoadingOverlay(main_widget)
+        self._loading_overlay.show_message("Starting audio…")
+
+        # Defer FftCanvas construction (audio device query + analyzer start) until
+        # after the window is shown so the user sees the UI immediately.
+        # Mirrors Swift's .task { } modifier which runs after first render.
+        QtCore.QTimer.singleShot(0, self._deferred_canvas_init)
 
     # ================================================================
     # Layout builders
@@ -1854,6 +1852,7 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.devicesChanged.connect(self._on_devices_changed)
         canvas.currentDeviceLost.connect(self._on_device_lost)
         try:
+            import sounddevice as sd  # lazy: defers ~400 ms cold-import cost
             from models.audio_device import filter_input_devices as _filt
             self._known_input_device_names: set[str] = {
                 str(d["name"]) for d in _filt(list(sd.query_devices()))
@@ -1899,6 +1898,36 @@ class MainWindow(QtWidgets.QMainWindow):
             self.set_calibration_status(_cal.name if _cal else "")
 
         self._start_analyzer()
+
+    def _deferred_canvas_init(self) -> None:
+        """Build FftCanvas and complete initialisation after the window is shown.
+
+        Called via QTimer.singleShot(0) from __init__ so the window frame and
+        toolbar appear immediately while the slow parts (sounddevice device query,
+        TapToneAnalyzer.start()) run on the first event-loop iteration.
+
+        Mirrors Swift's .task { } modifier which defers async work until after
+        the first render pass.
+        """
+        try:
+            self.fft_canvas = fft_c.FftCanvas(
+                self._fft_settings["fft_size"],
+                self._fft_settings["sampling_rate"],
+                self._f_range,
+                self.threshold,
+            )
+            self.fft_canvas.setMinimumSize(500, 350)
+
+            # Swap the placeholder out and insert the real canvas at index 0
+            # (the placeholder occupies stretch index 0; material panel is index 1).
+            placeholder = self._canvas_placeholder
+            self._cv.replaceWidget(placeholder, self.fft_canvas)
+            placeholder.deleteLater()
+
+            self._connect_signals()
+            self._init_state(self._f_range)
+        finally:
+            self._loading_overlay.hide()
 
     # ================================================================
     # State update methods (formerly in PeakControls)
@@ -5195,6 +5224,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dev_row.addWidget(device_combo)
         aud.addLayout(dev_row)
 
+        import sounddevice as sd  # lazy: already warm by this point; explicit for clarity
         from models.audio_device import AudioDevice as _AudioDevice
         from models.audio_device import filter_input_devices as _filter_inputs
         input_devices: list[_AudioDevice] = []
