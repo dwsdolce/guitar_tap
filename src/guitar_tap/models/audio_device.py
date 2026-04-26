@@ -195,28 +195,34 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
     WDM-KS streams without error in shared mode but they deliver all-zero
     samples (-313 dB), making them indistinguishable from a working device.
 
-    The ``raw`` list must contain the hostapi index as ``d["hostapi"]`` *and*
-    the corresponding human-readable api name is looked up from
-    sounddevice.query_hostapis().  If that lookup fails, the hostapi index
-    carried in each device dict is used directly from the ``raw`` entries
-    (which PortAudio always populates), and WDM-KS exclusion is applied by
-    name-matching on the device dict's hostapi field using the raw list itself.
-    This ensures WDM-KS filtering never silently falls back to passing
-    everything through.
+    The ``raw`` list may contain a pre-annotated ``"_hostapi_name"`` key added
+    by load_available_input_devices() before calling this function.  When
+    present, it is used in preference to a fresh query_hostapis() call.  If
+    query_hostapis() fails AND the annotation is absent, preferred_api stays
+    None and ALL non-pseudo, non-loopback inputs are returned unchanged
+    (matching the behaviour of the original code at commit 3598b90).
     """
     import platform
     import sounddevice as _sd
+
+    try:
+        from guitar_tap.utilities.logging import gt_log as _gt_log
+    except Exception:
+        def _gt_log(msg: str) -> None:  # type: ignore[misc]
+            pass
 
     inputs = [d for d in raw if int(d["max_input_channels"]) > 0]
     if platform.system() != "Windows":
         return inputs
 
-    # Build a hostapi-index → name mapping.  load_available_input_devices()
-    # pre-annotates each device dict with "_hostapi_name" (queried once before
-    # calling this function) so we can reliably identify WDM-KS even if
-    # query_hostapis() fails inside this function during a Windows device-
-    # enumeration cascade.  Fall back to calling query_hostapis() here only
-    # when the annotation is absent (e.g. tests or other callers).
+    # Build a hostapi-index → name mapping.
+    # Priority 1: pre-annotated "_hostapi_name" keys added by
+    #   load_available_input_devices() (avoids a second query_hostapis() call
+    #   during a Windows enumeration cascade when PortAudio may be unstable).
+    # Priority 2: fresh query_hostapis() call (original behaviour).
+    # If both fail, api_names stays empty and preferred_api stays None —
+    # the filter then only strips pseudo/loopback entries, matching the
+    # original safe fallback.
     api_names: "dict[int, str]" = {}
     for d in inputs:
         if "_hostapi_name" in d:
@@ -228,10 +234,9 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
         except Exception:
             pass
 
-    # Determine preferred host API (WASAPI > DirectSound > MME) and WDM-KS set.
-    wdm_ks_indices: "set[int]" = {
-        i for i, n in api_names.items() if n == "Windows WDM-KS"
-    }
+    _gt_log(f"[filter_input_devices] api_names={api_names}")
+    _gt_log(f"[filter_input_devices] inputs={[(d['name'], d.get('hostapi'), d.get('_hostapi_name')) for d in inputs]}")
+
     preferred_api: "int | None" = None
     for preferred_name in ("Windows WASAPI", "Windows DirectSound", "MME"):
         for i, n in api_names.items():
@@ -241,6 +246,9 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
         if preferred_api is not None:
             break
 
+    _gt_log(f"[filter_input_devices] preferred_api={preferred_api} "
+            f"(api_names keys={list(api_names.keys())})")
+
     pseudo = ("microsoft sound mapper", "primary sound capture")
     out: list[dict] = []
     for d in inputs:
@@ -249,21 +257,9 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
             continue
         if "loopback" in name_l:
             continue
-
-        hostapi_idx = int(d.get("hostapi", -1))
-        api_name = api_names.get(hostapi_idx, "")
-
-        # Always exclude WDM-KS — opens without error but delivers silence.
-        if hostapi_idx in wdm_ks_indices:
+        if preferred_api is not None and int(d.get("hostapi", -1)) != preferred_api:
             continue
-        # Fallback name check in case the index wasn't in our map.
-        if "wdm" in api_name.lower():
-            continue
-
-        # Keep only devices on the preferred host API when one was found.
-        if preferred_api is not None and hostapi_idx != preferred_api:
-            continue
-
         out.append(d)
 
+    _gt_log(f"[filter_input_devices] result={[d['name'] for d in out]}")
     return out

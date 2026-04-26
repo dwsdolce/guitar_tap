@@ -58,18 +58,37 @@ class TapToneAnalyzerControlMixin:
         the CM_Register_Notification callback, which queues another
         _on_devices_refreshed call on the main thread while the current refresh
         is still running.  The re-entrancy guard (Guard 1) drops those duplicates.
-        A post-completion call is legitimate (e.g. the second unplug notification
-        that arrives after PortAudio re-initializes) and must not be suppressed.
+
+        Post-completion cooldown: after the impl finishes, ignore additional calls
+        for 1.0 s.  This stops the cascade of CM_Register_Notification events
+        triggered by Pa_OpenStream (each stream open fires a CM notification that,
+        after the 0.5 s sleep in _notify_devices_changed, arrives ~0.5-0.7 s after
+        the previous impl completed).  Legitimate Windows device-settled
+        notifications (e.g. Realtek WASAPI becoming available after UMIK unplug)
+        arrive 1-2+ seconds after the initial event and are not suppressed.
         """
-        # Guard: already inside a refresh — drop the duplicate.
+        now = _time.monotonic()
+        # Guard 1: already inside a refresh — drop the duplicate.
         if getattr(self, '_devices_refresh_active', False):
             gt_log("🔄 _on_devices_refreshed: suppressed (already in progress)")
             return
+        # Guard 2: completed a refresh too recently — drop rapid-fire cascade.
+        # 1.0 s is long enough to swallow the CM notifications triggered by
+        # Pa_OpenStream (the stream open fires a CM notification which, after the
+        # 0.5 s sleep in _notify_devices_changed, arrives ~0.5-0.7 s after the
+        # impl finishes).  Legitimate Windows device-settled notifications arrive
+        # 1-2+ seconds after the initial unplug event, so they pass through.
+        last = getattr(self, '_devices_refresh_last_t', 0.0)
+        if now - last < 1.0:
+            gt_log(f"🔄 _on_devices_refreshed: suppressed (last refresh {now - last:.3f} s ago)")
+            return
+        gt_log(f"🔄 _on_devices_refreshed: running (last was {now - last:.3f} s ago)")
         self._devices_refresh_active = True
         try:
             self._on_devices_refreshed_impl()
         finally:
             self._devices_refresh_active = False
+            self._devices_refresh_last_t = _time.monotonic()
 
     def _on_devices_refreshed_impl(self) -> None:
         """Inner implementation of _on_devices_refreshed (called with debounce guard held)."""
@@ -103,12 +122,15 @@ class TapToneAnalyzerControlMixin:
             self.mic._on_devices_changed = saved_cb
 
         names: list[str] = sorted(d.name for d in self.mic.available_input_devices)
+        gt_log(f"🔄 _on_devices_refreshed_impl: available={names}")
         self.devicesChanged.emit(names)
 
         # PortAudio was re-initialized, so the previous stream is dead — always
         # reopen on the currently-selected device (which may be the same one,
         # a newly-plugged device, or a fallback after disconnect).
         new_device = self.mic.selected_input_device
+        gt_log(f"🔄 _on_devices_refreshed_impl: selected={getattr(new_device, 'name', None)!r} "
+               f"index={getattr(new_device, 'index', None)}")
         if new_device is not None:
             self.set_device(new_device)
             self.handle_route_change_restart()
