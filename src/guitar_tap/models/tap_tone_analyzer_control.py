@@ -194,58 +194,104 @@ class TapToneAnalyzerControlMixin:
 
         Mirrors Swift TapToneAnalyzer.handleRouteChangeRestart():
         - If detection was active: temporarily disable, reset warmup timer,
-          wait 2 s for the FFT buffer to refill, then restore is_detecting.
+          wait 3 s for the FFT buffer to refill (covering HALC startup transients),
+          then restore is_detecting.
         - If is_measurement_complete (frozen result): leave it untouched.
         - If idle (not detecting): stay idle.
+        - If the display was live: blank the spectrum and clear peak annotations
+          during the settle period so the view shows nothing rather than stale data.
 
-        The 2-second settle delay mirrors Swift's conservative wait to ensure
-        the FFT buffer contains valid post-restart data before
-        is_above_threshold is re-anchored.
+        The 3-second settle delay mirrors Swift's fftSettleTime constant (extended
+        from 2 s to absorb HALC/CoreAudio startup transients at ~2.5 s).
         """
+        import numpy as np
         from PySide6.QtCore import QTimer as _QTimer
+        from models.analysis_display_mode import AnalysisDisplayMode as _ADM
+
+        gt_log("🔄 TapToneAnalyzer: Handling route change restart - resetting detection state")
 
         was_detecting = self.is_detecting
 
-        # Temporarily disable detection to suppress false tap triggers
-        # during the engine restart transient.
+        # Disable the is_ready_for_detection flag while reinitialising.
+        # Mirrors Swift: isReadyForDetection = false / isDetecting = false.
         self.is_ready_for_detection = False
         self.is_detecting = False
 
         # Reset the warmup timer so the new engine session starts cleanly.
+        # Mirrors Swift: analyzerStartTime = Date().
         self.analyzer_start_time = _time.monotonic()
 
-        # Pre-set is_above_threshold = True so the first FFT frame does not
-        # fire a false rising edge.  Mirrors Swift's pre-set before settle delay.
+        # Pre-set is_above_threshold = True so the first FFT frame does not fire a
+        # false rising edge.  The actual value is corrected after the settle delay.
+        # Mirrors Swift: isAboveThreshold = true / tapDetected = false.
         self.is_above_threshold = True
         self.tap_detected = False
 
+        # Freeze the display on a blank spectrum while the pipeline refills with
+        # valid data from the new device.  Only freeze if we were in live mode —
+        # don't disturb a frozen measurement result.
+        # Mirrors Swift: wasLive / setFrozenSpectrum([], []) / displayMode = .frozen /
+        #                currentPeaks = [] / identifiedModes = [].
+        was_live = (self.display_mode == _ADM.LIVE)
+        if was_live:
+            self.set_frozen_spectrum(np.array([]), np.array([]))
+            self.display_mode = _ADM.FROZEN
+            self.current_peaks = []
+            self.identified_modes = []
+            self.peaksChanged.emit([])
+
+        # Mirrors Swift: statusMessage = "Audio device changed - reinitializing...".
         self._set_status_message("Audio device changed - reinitializing...")
 
         # Wait for the FFT pipeline to fill with valid post-restart data
-        # (~1.36 s for 65 536 samples at 48 kHz).  Use 2 s to be safe,
-        # matching Swift's fftSettleTime constant.
+        # (~1.36 s for 65 536 samples at 48 kHz).  Use 3 s to absorb HALC/CoreAudio
+        # startup transients that can arrive at ~2.5 s on the engine-recovery path.
+        # Mirrors Swift: fftSettleTime = 3.0 / DispatchQueue.main.asyncAfter.
         _QTimer.singleShot(
-            2000,
-            lambda: self._restore_detection_after_route_change(was_detecting),
+            3000,
+            lambda: self._restore_detection_after_route_change(was_detecting, was_live),
         )
 
-    def _restore_detection_after_route_change(self, was_detecting: bool) -> None:
+    def _restore_detection_after_route_change(self, was_detecting: bool, was_live: bool = False) -> None:
         """Re-anchor threshold and restore detection state after the settle delay.
 
-        Mirrors the DispatchQueue.main.asyncAfter block in Swift's
-        handleRouteChangeRestart(): checks the stream is still open,
-        re-anchors is_above_threshold to the current audio level, and
-        restores is_detecting if it was active before the route change.
+        This method is the structural equivalent of the combined
+        DispatchQueue.main.asyncAfter + $magnitudes.dropFirst().first() sink
+        closure in Swift's handleRouteChangeRestart().  It is a named method
+        rather than an inline lambda only because QTimer.singleShot requires a
+        callable — it should not be called from anywhere else.
+
+        Mirrors Swift's inner sink:
+        - Guards that the stream is still running.
+        - Re-anchors is_above_threshold to the current FFT peak magnitude.
+        - Calls setFrozenSpectrum([], []) then restores displayMode to .live.
+        - Sets isReadyForDetection = true.
+        - Restores is_detecting and status message.
         """
+        import numpy as np
+        from models.analysis_display_mode import AnalysisDisplayMode as _ADM
+
         # Guard: stream may have been stopped again before the timer fired.
+        # Mirrors Swift: guard self.fftAnalyzer.isRunning else { return }.
         if self.mic.is_stopped:
             return
 
-        current_level = self._current_input_level_db
+        # Re-anchor is_above_threshold to the current FFT peak magnitude.
+        # Mirrors Swift: let currentPeakMag = fftAnalyzer.peakMagnitude /
+        #                isAboveThreshold = (currentPeakMag > tapDetectionThreshold).
+        current_level = self._current_peak_magnitude_db
         self.is_above_threshold = current_level > self.tap_detection_threshold
 
+        # Unfreeze the display now that valid FFT data is available.
+        # Mirrors Swift: setFrozenSpectrum([], []) / displayMode = .live.
+        if was_live:
+            self.set_frozen_spectrum(np.array([]), np.array([]))
+            self.display_mode = _ADM.LIVE
+
+        # Mirrors Swift: isReadyForDetection = true.
         self.is_ready_for_detection = True
 
+        # Mirrors Swift: isDetecting / statusMessage restore block.
         if was_detecting:
             self.is_detecting = True
             self._set_status_message(
@@ -254,6 +300,10 @@ class TapToneAnalyzerControlMixin:
             )
         else:
             self._set_status_message("Ready")
+
+        gt_log(f"🔄 TapToneAnalyzer: Detection re-enabled after route change "
+               f"(current level: {current_level} dB, threshold: {self.tap_detection_threshold} dB, "
+               f"above threshold: {self.is_above_threshold})")
 
     # ------------------------------------------------------------------ #
     # Tap detector control — all state lives directly on TapToneAnalyzer,

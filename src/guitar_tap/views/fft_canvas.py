@@ -649,7 +649,14 @@ class FftCanvas(pg.PlotWidget):
         mag_db risk receiving mismatched arrays when the flag changes between
         the two reads.
         """
+        from models.analysis_display_mode import AnalysisDisplayMode as _ADM
         if self.analyzer.is_measurement_complete:
+            return (self.analyzer.frozen_frequencies, self.analyzer.frozen_magnitudes)
+        # During a device-change settle, display_mode is FROZEN but
+        # is_measurement_complete is False.  Return the frozen arrays directly
+        # (empty = blank spectrum during settle).  Mirrors the Swift fix in
+        # TapToneAnalysisView+SpectrumViews.swift displaySpectrum.
+        if self.analyzer.display_mode == _ADM.FROZEN:
             return (self.analyzer.frozen_frequencies, self.analyzer.frozen_magnitudes)
         return (self.analyzer.freq, None)
 
@@ -1663,8 +1670,12 @@ class FftCanvas(pg.PlotWidget):
             self._has_material_spectra
             and self.analyzer.material_tap_phase.is_reviewing
         )
-        if np.any(mag_db) and not is_user_comparison and not is_reviewing:
-            self.fft_line.setData(freq_axis, mag_db)
+        if not is_user_comparison and not is_reviewing:
+            if np.any(mag_db):
+                self.fft_line.setData(freq_axis, mag_db)
+            elif mag_db is not None and len(mag_db) == 0:
+                # Blank spectrum during device-change settle — clear the line.
+                self.fft_line.setData([], [])
         if self.analyzer._auto_scale_db and np.any(mag_db):
             valid = mag_db[(mag_db > -100) & (mag_db < 20)]
             if valid.size:
