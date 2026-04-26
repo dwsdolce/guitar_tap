@@ -204,7 +204,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         with self._stop_lock:
             if self.is_stopped:
                 raise sd.CallbackStop
-        self.queue.put(data[:, 0])  # take first channel
+        self.queue.put(data[:, 0].copy())  # copy before queuing — PortAudio reuses the buffer
 
         # ------------------------------------------------------------------
         # Diagnostic #2: variable chunk sizes (Cause #2 — WASAPI buffer negotiation).
