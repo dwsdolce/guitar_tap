@@ -54,28 +54,22 @@ class TapToneAnalyzerControlMixin:
         loadAvailableInputDevicesMacOS() — but temporarily suppress its
         _on_devices_changed callback to avoid recursing back into this method.
 
-        Debounce: on Windows, opening a new PortAudio stream triggers the
-        CM_Register_Notification callback, which queues another _on_devices_refreshed
-        call on the main thread — causing a cascade of 10+ restarts for a single
-        plug/unplug event.  We suppress re-entrant calls and any calls that arrive
-        within 3 s of the previous refresh completing.
+        Re-entrancy guard: on Windows, opening a new PortAudio stream triggers
+        the CM_Register_Notification callback, which queues another
+        _on_devices_refreshed call on the main thread while the current refresh
+        is still running.  The re-entrancy guard (Guard 1) drops those duplicates.
+        A post-completion call is legitimate (e.g. the second unplug notification
+        that arrives after PortAudio re-initializes) and must not be suppressed.
         """
-        now = _time.monotonic()
-        # Guard 1: already inside a refresh — drop the duplicate.
+        # Guard: already inside a refresh — drop the duplicate.
         if getattr(self, '_devices_refresh_active', False):
             gt_log("🔄 _on_devices_refreshed: suppressed (already in progress)")
-            return
-        # Guard 2: completed a refresh less than 3 s ago — drop the duplicate.
-        last = getattr(self, '_devices_refresh_last_t', 0.0)
-        if now - last < 3.0:
-            gt_log(f"🔄 _on_devices_refreshed: suppressed (last refresh {now - last:.1f} s ago)")
             return
         self._devices_refresh_active = True
         try:
             self._on_devices_refreshed_impl()
         finally:
             self._devices_refresh_active = False
-            self._devices_refresh_last_t = _time.monotonic()
 
     def _on_devices_refreshed_impl(self) -> None:
         """Inner implementation of _on_devices_refreshed (called with debounce guard held)."""

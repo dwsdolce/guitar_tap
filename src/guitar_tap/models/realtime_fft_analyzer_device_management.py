@@ -180,6 +180,18 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         except Exception:
             return
 
+        # Annotate each device dict with its host API name so filter_input_devices
+        # can exclude WDM-KS reliably even if a subsequent query_hostapis() call
+        # inside the filter fails during a Windows device-enumeration cascade.
+        try:
+            apis = list(sd.query_hostapis())
+            for d in raw:
+                idx = int(d.get("hostapi", -1))
+                if 0 <= idx < len(apis):
+                    d["_hostapi_name"] = apis[idx].get("name", "")
+        except Exception:
+            pass
+
         devices: list[AudioDevice] = [
             _AD.from_sounddevice_dict(d) for d in _filter(raw)
         ]

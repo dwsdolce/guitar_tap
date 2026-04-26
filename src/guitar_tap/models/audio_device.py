@@ -190,6 +190,19 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
     exposes as capture devices even though they're really speaker outputs).
     Filter down to a single host API (preferring WASAPI, then DirectSound, then
     MME) and drop the pseudo / loopback entries.
+
+    WDM-KS is always excluded regardless of API preference: PortAudio opens
+    WDM-KS streams without error in shared mode but they deliver all-zero
+    samples (-313 dB), making them indistinguishable from a working device.
+
+    The ``raw`` list must contain the hostapi index as ``d["hostapi"]`` *and*
+    the corresponding human-readable api name is looked up from
+    sounddevice.query_hostapis().  If that lookup fails, the hostapi index
+    carried in each device dict is used directly from the ``raw`` entries
+    (which PortAudio always populates), and WDM-KS exclusion is applied by
+    name-matching on the device dict's hostapi field using the raw list itself.
+    This ensures WDM-KS filtering never silently falls back to passing
+    everything through.
     """
     import platform
     import sounddevice as _sd
@@ -198,29 +211,35 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
     if platform.system() != "Windows":
         return inputs
 
-    try:
-        apis = _sd.query_hostapis()
-    except Exception:
-        return inputs
+    # Build a hostapi-index → name mapping.  load_available_input_devices()
+    # pre-annotates each device dict with "_hostapi_name" (queried once before
+    # calling this function) so we can reliably identify WDM-KS even if
+    # query_hostapis() fails inside this function during a Windows device-
+    # enumeration cascade.  Fall back to calling query_hostapis() here only
+    # when the annotation is absent (e.g. tests or other callers).
+    api_names: "dict[int, str]" = {}
+    for d in inputs:
+        if "_hostapi_name" in d:
+            api_names[int(d.get("hostapi", -1))] = str(d["_hostapi_name"])
+    if not api_names:
+        try:
+            for i, a in enumerate(_sd.query_hostapis()):
+                api_names[i] = str(a.get("name", ""))
+        except Exception:
+            pass
 
+    # Determine preferred host API (WASAPI > DirectSound > MME) and WDM-KS set.
+    wdm_ks_indices: "set[int]" = {
+        i for i, n in api_names.items() if n == "Windows WDM-KS"
+    }
     preferred_api: "int | None" = None
     for preferred_name in ("Windows WASAPI", "Windows DirectSound", "MME"):
-        for i, a in enumerate(apis):
-            if a["name"] == preferred_name:
+        for i, n in api_names.items():
+            if n == preferred_name:
                 preferred_api = i
                 break
         if preferred_api is not None:
             break
-
-    # Also build a set of WDM-KS host API indices so we can explicitly exclude
-    # them.  PortAudio's WDM-KS backend opens successfully in shared mode but
-    # delivers silence (zeros) — making it indistinguishable from a working
-    # device until audio is expected.  Excluding it prevents the hot-plug
-    # fallback from landing on a WDM-KS device when WASAPI is transiently
-    # absent during a Windows device-enumeration cascade.
-    wdm_ks_apis: set[int] = {
-        i for i, a in enumerate(apis) if a["name"] == "Windows WDM-KS"
-    }
 
     pseudo = ("microsoft sound mapper", "primary sound capture")
     out: list[dict] = []
@@ -230,10 +249,21 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
             continue
         if "loopback" in name_l:
             continue
-        # Always exclude WDM-KS — it opens without error but delivers silence.
-        if int(d["hostapi"]) in wdm_ks_apis:
+
+        hostapi_idx = int(d.get("hostapi", -1))
+        api_name = api_names.get(hostapi_idx, "")
+
+        # Always exclude WDM-KS — opens without error but delivers silence.
+        if hostapi_idx in wdm_ks_indices:
             continue
-        if preferred_api is not None and int(d["hostapi"]) != preferred_api:
+        # Fallback name check in case the index wasn't in our map.
+        if "wdm" in api_name.lower():
             continue
+
+        # Keep only devices on the preferred host API when one was found.
+        if preferred_api is not None and hostapi_idx != preferred_api:
+            continue
+
         out.append(d)
+
     return out
