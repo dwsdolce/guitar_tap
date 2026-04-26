@@ -28,6 +28,7 @@ from PySide6 import QtCore
 from PySide6.QtCore import Slot
 
 from utilities.logging import TAP_DEBUG
+from guitar_tap.utilities.logging import gt_log
 
 from .analysis_display_mode import AnalysisDisplayMode
 
@@ -471,7 +472,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             TAP_DEBUG("handlePlateTapDetection",
                 f"UNEXPECTED TAP | phase={phase} — tap ignored"
             )
-            print(f"⚠️ Unexpected tap in plate phase: {phase}")
+            gt_log(f"⚠️ Unexpected tap in plate phase: {phase}")
 
     # ------------------------------------------------------------------ #
     # re_enable_detection_for_next_plate_tap

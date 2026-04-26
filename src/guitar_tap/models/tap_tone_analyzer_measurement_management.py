@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from guitar_tap.utilities.logging import gt_log
 from .analysis_display_mode import AnalysisDisplayMode
 
 
@@ -362,7 +363,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         from .measurement_type import MeasurementType
         from .annotation_visibility_mode import AnnotationVisibilityMode
 
-        print("🔄 Loading measurement...")
+        gt_log("🔄 Loading measurement...")
 
         # ── Comparison record early return ────────────────────────────────────
         # Mirrors Swift loadMeasurement(_:) early-return path for comparison records.
@@ -453,17 +454,17 @@ class TapToneAnalyzerMeasurementManagementMixin:
         if settings_snapshot is not None:
             snap = settings_snapshot
             from .measurement_type import MeasurementType as _MT
-            print(f"  📊 Publishing display ranges: {snap.min_freq}-{snap.max_freq} Hz, {snap.min_db}-{snap.max_db} dB")
+            gt_log(f"  📊 Publishing display ranges: {snap.min_freq}-{snap.max_freq} Hz, {snap.min_db}-{snap.max_db} dB")
             if snap.show_unknown_modes is not None:
-                print(f"  👁️ Publishing showUnknownModes: {snap.show_unknown_modes}")
+                gt_log(f"  👁️ Publishing showUnknownModes: {snap.show_unknown_modes}")
             if snap.guitar_type is not None:
-                print(f"  🎸 Publishing guitarType: {snap.guitar_type}")
+                gt_log(f"  🎸 Publishing guitarType: {snap.guitar_type}")
                 try:
                     AS.set_guitar_type(snap.guitar_type)
                 except Exception:
                     pass
             if snap.measurement_type is not None:
-                print(f"  📐 Publishing measurementType: {snap.measurement_type}")
+                gt_log(f"  📐 Publishing measurementType: {snap.measurement_type}")
                 try:
                     mt_enum = _MT(snap.measurement_type) if isinstance(snap.measurement_type, str) else snap.measurement_type
                     AS.set_measurement_type(mt_enum)
@@ -476,13 +477,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 if snap.brace_mass      is not None: AS.set_brace_mass(snap.brace_mass)
             elif mt.is_plate:
                 if snap.plate_length    is not None:
-                    print(f"  📏 Publishing plate dimensions: L={snap.plate_length}mm")
+                    gt_log(f"  📏 Publishing plate dimensions: L={snap.plate_length}mm")
                     AS.set_plate_length(snap.plate_length)
                 if snap.plate_width     is not None: AS.set_plate_width(snap.plate_width)
                 if snap.plate_thickness is not None: AS.set_plate_thickness(snap.plate_thickness)
                 if snap.plate_mass      is not None: AS.set_plate_mass(snap.plate_mass)
                 if snap.plate_stiffness_preset is not None:
-                    print(f"  🪵 Publishing plateStiffnessPreset: {snap.plate_stiffness_preset}")
+                    gt_log(f"  🪵 Publishing plateStiffnessPreset: {snap.plate_stiffness_preset}")
                     AS.set_plate_stiffness_preset(snap.plate_stiffness_preset)
                 if snap.custom_plate_stiffness is not None:
                     AS.set_custom_plate_stiffness(snap.custom_plate_stiffness)
@@ -491,7 +492,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 if snap.guitar_body_width is not None:
                     AS.set_guitar_body_width(snap.guitar_body_width)
         else:
-            print("  ⚠️ No spectrum snapshot in measurement")
+            gt_log("  ⚠️ No spectrum snapshot in measurement")
 
         # ── Store loaded-measurement metadata ─────────────────────────────────
         # Mirrors Swift: loadedMeasurementName = measurement.tapLocation (nil if empty)
@@ -518,9 +519,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.user_selected_longitudinal_peak_id = None
         self.user_selected_cross_peak_id = None
         self.user_selected_flc_peak_id = None
-        print(f"  🔵 Restored longitudinal peak: {self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else -1} Hz")
-        print(f"  🟠 Restored cross-grain peak: {self.selected_cross_peak.frequency if self.selected_cross_peak else -1} Hz")
-        print(f"  🟣 Restored FLC peak: {self.selected_flc_peak.frequency if self.selected_flc_peak else -1} Hz")
+        gt_log(f"  🔵 Restored longitudinal peak: {self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else -1} Hz")
+        gt_log(f"  🟠 Restored cross-grain peak: {self.selected_cross_peak.frequency if self.selected_cross_peak else -1} Hz")
+        gt_log(f"  🟣 Restored FLC peak: {self.selected_flc_peak.frequency if self.selected_flc_peak else -1} Hz")
 
         # ── Stop tap detection ────────────────────────────────────────────────
         # Mirrors Swift: isDetecting = false; isDetectionPaused = false;
@@ -534,7 +535,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.is_measurement_complete = True  # set early; signal fires at end of method
         self.current_tap_count = 0
         self.tap_progress = 0.0
-        print("  🧊 Spectrum frozen, tap detection disabled")
+        gt_log("  🧊 Spectrum frozen, tap detection disabled")
 
         # ── Retain loaded peaks for recalculate_frozen_peaks_if_needed() ──────
         # Mirrors Swift: loadedMeasurementPeaks = measurement.peaks
@@ -548,7 +549,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             _off = ann_offsets.get(p.id) or ann_offsets.get((p.id or "").upper())
             if _off:
                 self.peak_annotation_offsets[p.id] = (float(_off[0]), float(_off[1]))
-        print(f"  🏷️ Restored {len(self.peak_annotation_offsets)} annotation offsets")
+        gt_log(f"  🏷️ Restored {len(self.peak_annotation_offsets)} annotation offsets")
 
         # ── Restore selected peak IDs ─────────────────────────────────────────
         # Mirrors Swift: selectedPeakIDs = saved ?? all; userHasModifiedPeakSelection = true
@@ -562,28 +563,28 @@ class TapToneAnalyzerMeasurementManagementMixin:
             p.frequency for p in self.current_peaks
             if p.id in self.selected_peak_ids
         ]
-        print(f"  ⭐ Restored {len(self.selected_peak_ids)} selected peaks")
+        gt_log(f"  ⭐ Restored {len(self.selected_peak_ids)} selected peaks")
 
         # ── Restore annotation visibility mode ────────────────────────────────
         # Mirrors Swift: annotationVisibilityMode = measurement.annotationVisibilityMode ?? .all
         self.annotation_visibility_mode = AnnotationVisibilityMode.from_string(
             measurement.annotation_visibility_mode or "all"
         )
-        print(f"  👁️ Restored annotation visibility: {self.annotation_visibility_mode.value}")
+        gt_log(f"  👁️ Restored annotation visibility: {self.annotation_visibility_mode.value}")
 
         # ── Restore peak mode overrides ───────────────────────────────────────
         # Mirrors Swift: applyModeOverrides(overrides) or peakModeOverrides = [:]
         overrides = measurement.peak_mode_overrides
         if overrides:
             self.apply_mode_overrides(overrides)
-            print(f"  🏷️ Restored {len(overrides)} mode overrides")
+            gt_log(f"  🏷️ Restored {len(overrides)} mode overrides")
         else:
             self.peak_mode_overrides = {}
 
         # ── Reclassify peaks ──────────────────────────────────────────────────
         # Mirrors Swift: reclassifyPeaks()  (after peakModeOverrides is set)
         self.reclassify_peaks()
-        print(f"  🔬 Reclassified {len(getattr(self, 'identified_modes', []))} modes after load")
+        gt_log(f"  🔬 Reclassified {len(getattr(self, 'identified_modes', []))} modes after load")
 
         # ── Restore analysis settings ─────────────────────────────────────────
         # Mirrors Swift: tapDetectionThreshold = ...; loadedTapDetectionThreshold = ...
@@ -592,26 +593,26 @@ class TapToneAnalyzerMeasurementManagementMixin:
             val = float(measurement.tap_detection_threshold)
             db = int(val) if val < 0 else int(val - 100)
             self.tap_detection_threshold = float(max(-80, min(-20, db)))
-            print(f"  🎯 Publishing tap threshold: {self.tap_detection_threshold} dB")
+            gt_log(f"  🎯 Publishing tap threshold: {self.tap_detection_threshold} dB")
         else:
-            print("  ⚠️ No tap threshold in measurement")
+            gt_log("  ⚠️ No tap threshold in measurement")
         if measurement.hysteresis_margin is not None:
             self.hysteresis_margin = float(measurement.hysteresis_margin)
-            print(f"  🔄 Publishing hysteresis: {self.hysteresis_margin} dB")
+            gt_log(f"  🔄 Publishing hysteresis: {self.hysteresis_margin} dB")
         else:
-            print("  ⚠️ No hysteresis in measurement")
+            gt_log("  ⚠️ No hysteresis in measurement")
         if measurement.number_of_taps is not None:
             self.number_of_taps = int(measurement.number_of_taps)
-            print(f"  🔢 Publishing number of taps: {self.number_of_taps}")
+            gt_log(f"  🔢 Publishing number of taps: {self.number_of_taps}")
         else:
-            print("  ⚠️ No number of taps in measurement")
+            gt_log("  ⚠️ No number of taps in measurement")
         if measurement.peak_threshold is not None:
             val = float(measurement.peak_threshold)
             db = int(val) if val < 0 else int(val - 100)
             self.peak_threshold = float(max(-100, min(-20, db)))
-            print(f"  📊 Publishing peak threshold: {self.peak_threshold} dB")
+            gt_log(f"  📊 Publishing peak threshold: {self.peak_threshold} dB")
         else:
-            print("  ⚠️ No peak threshold in measurement")
+            gt_log("  ⚠️ No peak threshold in measurement")
 
         # ── Auto-select the recorded microphone ───────────────────────────────
         # Mirrors Swift loadMeasurement(_:) device-restore block.
@@ -644,7 +645,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 # Device is connected — request switch; calibration loads automatically.
                 if self._calibration_device_name != match.name:
                     self.requestDeviceSwitch.emit(match)
-                    print(f"🎤 Auto-selected microphone '{label}' for loaded measurement")
+                    gt_log(f"🎤 Auto-selected microphone '{label}' for loaded measurement")
                 self.microphone_warning = None
                 self.microphoneWarningChanged.emit(None)
             else:
@@ -670,7 +671,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             "Loaded measurement (frozen). Press 'Resume' or 'New Tap' to continue."
         )
 
-        print(f"✅ Loaded measurement with {len(self.current_peaks)} peaks (frozen)")
+        gt_log(f"✅ Loaded measurement with {len(self.current_peaks)} peaks (frozen)")
 
         # ── Emit measurementComplete — all state now fully restored ───────────
         # Fired last so the view receives it with fully-populated model state.

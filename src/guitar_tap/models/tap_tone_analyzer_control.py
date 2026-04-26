@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import time as _time
 
+from guitar_tap.utilities.logging import gt_log
+
 
 class TapToneAnalyzerControlMixin:
     """Lifecycle control and parameter management for TapToneAnalyzer.
@@ -705,7 +707,7 @@ class TapToneAnalyzerControlMixin:
             self._finalise_plate_with_flc()
 
         else:
-            print(f"⚠️ accept_current_phase called in unexpected phase: {phase}")
+            gt_log(f"⚠️ accept_current_phase called in unexpected phase: {phase}")
 
     def redo_current_phase(self) -> None:
         """Clear the current phase's data and re-arm detection to re-capture it.
@@ -785,7 +787,7 @@ class TapToneAnalyzerControlMixin:
             self.set_material_spectra(spectra)
 
         else:
-            print(f"⚠️ redo_current_phase called in unexpected phase: {phase}")
+            gt_log(f"⚠️ redo_current_phase called in unexpected phase: {phase}")
             return
 
         # Clear frozen spectrum for the redo.

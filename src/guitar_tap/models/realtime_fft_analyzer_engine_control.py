@@ -177,6 +177,8 @@ import sounddevice as sd
 import numpy as np
 import numpy.typing as npt
 
+from guitar_tap.utilities.logging import gt_log
+
 if TYPE_CHECKING:
     from typing import Callable
 
@@ -216,7 +218,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self._diag_chunk_count: int = 0
         self._diag_chunk_count += 1
         if chunk_size != self.chunksize and chunk_size not in self._diag_chunk_sizes_seen:
-            print(
+            gt_log(
                 f"[DIAG] WARNING: chunk size mismatch — "
                 f"requested={self.chunksize}, received={chunk_size} "
                 f"(frame #{self._diag_chunk_count}). "
@@ -227,7 +229,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         report_interval = max(1, int(5 * getattr(self, 'rate', 44100) / max(1, self.chunksize)))
         if self._diag_chunk_count % report_interval == 0:
             sizes_str = ', '.join(str(s) for s in sorted(self._diag_chunk_sizes_seen))
-            print(
+            gt_log(
                 f"[DIAG] chunk-size summary after {self._diag_chunk_count} frames: "
                 f"sizes seen = {{{sizes_str}}} (requested={self.chunksize})"
             )
@@ -239,7 +241,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # the pre-roll buffer may contain stale data.
         # ------------------------------------------------------------------
         if _status:
-            print(
+            gt_log(
                 f"[DIAG] WARNING: PortAudio callback status={_status} "
                 f"at frame #{self._diag_chunk_count}. "
                 f"(Cause #4: CPU scheduling jitter / buffer overflow)"

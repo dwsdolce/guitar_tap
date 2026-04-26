@@ -28,6 +28,7 @@ from typing import Any
 from models.tap_tone_measurement import TapToneMeasurement
 from models.resonant_peak import ResonantPeak
 from models.spectrum_snapshot import SpectrumSnapshot
+from guitar_tap.utilities.logging import gt_log
 
 __all__ = [
     "load_all_measurements",
@@ -131,7 +132,7 @@ def load_all_measurements() -> list[TapToneMeasurement]:
             return [TapToneMeasurement.from_dict(d) for d in data]
         return [TapToneMeasurement.from_dict(data)]
     except Exception as exc:
-        print(f"Failed to load measurements: {exc}")
+        gt_log(f"Failed to load measurements: {exc}")
         return []
 
 
@@ -145,7 +146,7 @@ def save_all_measurements(measurements: list[TapToneMeasurement]) -> None:
             json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
         os.replace(tmp, path)
     except OSError as exc:
-        print(f"Failed to save measurements: {exc}")
+        gt_log(f"Failed to save measurements: {exc}")
 
 
 def export_measurement_json(m: TapToneMeasurement) -> str:

@@ -41,6 +41,8 @@ import numpy.typing as npt
 from PySide6 import QtCore
 from PySide6.QtCore import Slot
 
+from guitar_tap.utilities.logging import gt_log
+
 
 class TapToneAnalyzerSpectrumCaptureMixin:
     """Gated-FFT capture pipeline and spectrum averaging for TapToneAnalyzer.
@@ -186,13 +188,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             phase: MaterialTapPhase being captured.
         """
         if self.mic is None:
-            print("⚠️ start_gated_capture called with no mic — ignoring")
+            gt_log("⚠️ start_gated_capture called with no mic — ignoring")
             return
 
         rate = float(self._gated_sample_rate)
         target_samples = int(rate * self.GATED_CAPTURE_DURATION)
         window_ms = int(self.GATED_CAPTURE_DURATION * 1000)
-        print(
+        gt_log(
             f"🎯 Gated FFT capture started for phase {phase} — "
             f"{target_samples}-sample window ({window_ms} ms at {int(rate)} Hz)"
         )
@@ -224,7 +226,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                         phase,
                     )
             else:
-                print("⚠️ Gated capture timeout with no samples — tap again")
+                gt_log("⚠️ Gated capture timeout with no samples — tap again")
                 QtCore.QTimer.singleShot(0, self._on_safety_timeout_no_samples)
 
         QtCore.QTimer.singleShot(2000, _safety_timeout)
@@ -294,7 +296,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         magnitudes, frequencies = self.mic.proc_thread.compute_gated_fft(samples, sample_rate)
 
         if not magnitudes:
-            print("⚠️ Gated FFT returned empty spectrum — tap again")
+            gt_log("⚠️ Gated FFT returned empty spectrum — tap again")
             self._set_status_message("No signal detected — tap again")
             self.re_enable_detection_for_next_plate_tap()
             return
@@ -356,7 +358,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
 
         if dominant_peak is None:
-            print("⚠️ Gated FFT: no peak found — tap again")
+            gt_log("⚠️ Gated FFT: no peak found — tap again")
             self._set_status_message("No resonance detected — tap again")
             self.re_enable_detection_for_next_plate_tap()
             return
@@ -369,7 +371,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # The tap trigger threshold already ensures the audio event was real.
         is_flc_phase = phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP)
         if not is_flc_phase and dominant_peak.magnitude < self.tap_detection_threshold:
-            print(
+            gt_log(
                 f"⚠️ Gated FFT: dominant peak {dominant_peak.frequency:.1f} Hz @ "
                 f"{dominant_peak.magnitude:.1f} dB is below tap detection threshold "
                 f"({self.tap_detection_threshold:.0f} dB) — tap again"
@@ -378,7 +380,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.re_enable_detection_for_next_plate_tap()
             return
 
-        print(
+        gt_log(
             f"📊 Gated FFT complete: {len(magnitudes)} bins, "
             f"dominant peak {dominant_peak.frequency:.1f} Hz @ "
             f"{dominant_peak.magnitude:.1f} dB, phase {phase}"
@@ -418,7 +420,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         else:
             # Covers .notStarted, .complete, .reviewingLongitudinal, .reviewingCross, .reviewingFlc
             # — mirrors Swift's combined default case.
-            print(f"⚠️ Unexpected gated FFT capture in phase: {phase}")
+            gt_log(f"⚠️ Unexpected gated FFT capture in phase: {phase}")
 
     # ------------------------------------------------------------------ #
     # find_dominant_peak
@@ -528,7 +530,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             rej_str = ", ".join(
                 f"{frequencies[c[0]]:.0f} Hz (Q={c[3]:.1f})" for c in rejected
             )
-            print(f"🔇 Q-filtered out low-Q peaks: {rej_str}")
+            gt_log(f"🔇 Q-filtered out low-Q peaks: {rej_str}")
         pool = high_q if high_q else candidates
 
         by_magnitude = sorted(pool, key=lambda c: c[1], reverse=True)
@@ -570,7 +572,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             except Exception:
                 pass
 
-        print(
+        gt_log(
             f"🎯 Dominant peak: {freq:.1f} Hz @ {mag:.1f} dB "
             f"(Q: {best_q:.1f}, HPS score: {best_hps:.3e})"
         )
@@ -598,7 +600,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
-        print(f"📊 Gated LONGITUDINAL tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
+        gt_log(f"📊 Gated LONGITUDINAL tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
 
         if captured < total:
             self._set_status_message(f"L tap {captured}/{total} captured. Tap again...")
@@ -615,7 +617,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.selected_longitudinal_peak = (
             next((p for p in self.longitudinal_peaks if p.id == dominant_peak.id), dominant_peak)
         )
-        print(f"🔵 Auto-selected longitudinal peak: {dominant_peak.frequency} Hz")
+        gt_log(f"🔵 Auto-selected longitudinal peak: {dominant_peak.frequency} Hz")
 
         self.current_peaks = self.longitudinal_peaks
         # Only the identified (auto-selected) peak is selected — others are informational.
@@ -648,7 +650,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 self.showLoadedSettingsWarningChanged.emit(False)
             self.tap_progress = 1.0
             self._set_status_message("Complete - check Results")
-            print(f"✅ Brace measurement complete: fL={dominant_peak.frequency} Hz")
+            gt_log(f"✅ Brace measurement complete: fL={dominant_peak.frequency} Hz")
             # Emit final peaks.
             self._emit_peaks_array(self.current_peaks)
             # Emit the longitudinal spectrum for display — mirrors Swift's @Published
@@ -734,7 +736,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
-        print(f"📊 Gated CROSS-GRAIN tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
+        gt_log(f"📊 Gated CROSS-GRAIN tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
 
         if captured < total:
             self._set_status_message(f"C tap {captured}/{total} captured. Tap again...")
@@ -748,7 +750,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.selected_cross_peak = (
             next((p for p in self.cross_peaks if p.id == dominant_peak.id), dominant_peak)
         )
-        print(f"🟠 Auto-selected cross-grain peak: {dominant_peak.frequency} Hz")
+        gt_log(f"🟠 Auto-selected cross-grain peak: {dominant_peak.frequency} Hz")
         self.captured_taps.clear()
 
         # Pause at review state regardless of whether FLC is needed.
@@ -792,7 +794,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
-        print(f"📊 Gated FLC tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
+        gt_log(f"📊 Gated FLC tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
 
         if captured < total:
             self._set_status_message(f"FLC tap {captured}/{total} captured. Tap again...")
@@ -806,7 +808,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.selected_flc_peak = (
             next((p for p in self.flc_peaks if p.id == dominant_peak.id), dominant_peak)
         )
-        print(f"🟣 Auto-selected FLC peak: {dominant_peak.frequency} Hz")
+        gt_log(f"🟣 Auto-selected FLC peak: {dominant_peak.frequency} Hz")
         self.captured_taps.clear()
 
         # Pause at review state — mirrors Swift: currentPeaks = resolvedPlatePeaks(includeCross:true,
@@ -899,7 +901,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         mags0, freqs0, _ = from_taps[0]
         n_bins = len(mags0)
         if not all(len(t[0]) == n_bins for t in from_taps):
-            print("⚠️ Warning: Spectrum lengths don't match, using first tap only")
+            gt_log("⚠️ Warning: Spectrum lengths don't match, using first tap only")
             return list(mags0), list(freqs0)
 
         power_sum = [0.0] * n_bins
@@ -909,7 +911,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         n_taps = len(from_taps)
         avg = [10.0 * math.log10(max(power_sum[b] / n_taps, 1e-30)) for b in range(n_bins)]
-        print(f"📊 Averaged {n_taps} spectra: {n_bins} bins each")
+        gt_log(f"📊 Averaged {n_taps} spectra: {n_bins} bins each")
         return avg, list(freqs0)
 
     # ------------------------------------------------------------------ #
@@ -947,7 +949,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         if not self.captured_taps:
             return
 
-        print(f"🔬 Processing {len(self.captured_taps)} taps for averaging...")
+        gt_log(f"🔬 Processing {len(self.captured_taps)} taps for averaging...")
 
         # captured_taps for guitar mode stores raw mag_y_db arrays (not tuples).
         # Wrap them into (magnitudes, frequencies, captureTime) tuples so
@@ -965,7 +967,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         if self.show_loaded_settings_warning:
             self.show_loaded_settings_warning = False
             self.showLoadedSettingsWarningChanged.emit(False)
-        print(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
+        gt_log(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
 
         peaks = self.find_peaks(avg_mags, avg_freqs)
         self.current_peaks = peaks
@@ -1003,7 +1005,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             f"(from {len(self.captured_taps)} averaged taps)."
         )
         self.tap_progress = 1.0
-        print(f"✅ Found {len(peaks)} peaks in averaged spectrum from {len(self.captured_taps)} taps")
+        gt_log(f"✅ Found {len(peaks)} peaks in averaged spectrum from {len(self.captured_taps)} taps")
 
         self.captured_taps.clear()
         self.tapDetectedSignal.emit()

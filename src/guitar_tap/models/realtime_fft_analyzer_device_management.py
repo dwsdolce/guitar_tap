@@ -47,6 +47,8 @@ from typing import TYPE_CHECKING
 import sounddevice as sd
 import numpy as np
 
+from guitar_tap.utilities.logging import gt_log
+
 if TYPE_CHECKING:
     from .audio_device import AudioDevice
 
@@ -285,16 +287,16 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             device_info = sd.query_devices(self.device_index)
             actual_rate = int(device_info['default_samplerate'])
             if actual_rate != self.rate:
-                print(
+                gt_log(
                     f"[DIAG] WARNING: sample-rate mismatch — "
                     f"requested={self.rate} Hz, device reports={actual_rate} Hz. "
                     f"Gated capture window will be sized incorrectly. "
                     f"(Cause #1: WASAPI shared-mode coercion)"
                 )
             else:
-                print(f"[DIAG] sample rate OK: {self.rate} Hz")
+                gt_log(f"[DIAG] sample rate OK: {self.rate} Hz")
         except Exception as _diag_err:
-            print(f"[DIAG] sample-rate query failed: {_diag_err}")
+            gt_log(f"[DIAG] sample-rate query failed: {_diag_err}")
 
         # Auto-load device-specific calibration.
         # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
@@ -762,7 +764,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             ctypes.byref(self._win_hnotify),
         )
         if rc != 0:
-            print(f"CM_Register_Notification failed (CR=0x{rc:08X}); hot-plug disabled")
+            gt_log(f"CM_Register_Notification failed (CR=0x{rc:08X}); hot-plug disabled")
 
     def _stop_windows_monitor(self) -> None:
         """Unregister the Windows CM_Register_Notification handle.
