@@ -321,6 +321,17 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             except Exception:
                 break
 
+        # Clear the processing thread's input buffer so no stale mic samples
+        # are mixed into the first FFT frame from the file.
+        # Mirrors Swift: bufferAccessQueue.sync { inputBuffer.removeAll() }
+        # in RealtimeFFTAnalyzer+EngineControl.swift startFromFile(_:).
+        # Without this, leftover mic samples in _input_buffer combine with the
+        # first file chunks, producing a contaminated spectrum with spurious peaks.
+        proc = self.proc_thread
+        if proc is not None:
+            proc._input_buffer = []
+            proc._input_buffer_len = 0
+
         # Read the file — soundfile returns (data, samplerate).
         # data shape: (frames,) for mono, (frames, channels) for multi-channel.
         data, file_rate = _sf.read(path, dtype="float32", always_2d=True)
