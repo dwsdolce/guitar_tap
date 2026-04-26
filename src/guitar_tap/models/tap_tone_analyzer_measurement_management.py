@@ -160,7 +160,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             max_db=max_db,
             is_logarithmic=False,
             show_unknown_modes=TDS.show_unknown_modes(),
-            guitar_type=TDS.guitar_type(),
+            guitar_type=TDS.guitar_type().value,
             measurement_type=measurement_type.value,
             max_peaks=getattr(self, "max_peaks", None),
             plate_length=TDS.plate_length() if measurement_type.is_plate else None,
@@ -251,7 +251,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     max_db=_max_db,
                     is_logarithmic=False,
                     show_unknown_modes=TDS.show_unknown_modes(),
-                    guitar_type=TDS.guitar_type(),
+                    guitar_type=TDS.guitar_type().value,
                     measurement_type=mt_str,
                     max_peaks=getattr(self, "max_peaks", None),
                 )
