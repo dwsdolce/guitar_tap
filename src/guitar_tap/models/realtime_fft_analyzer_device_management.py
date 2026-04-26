@@ -854,6 +854,18 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         self._sr_poll_stop = stop_event
         on_sr_changed = self._on_sample_rate_changed
         initial_rate = self.rate
+        # Capture the device name at monitor-start time.  After a USB unplug,
+        # Windows renumbers PortAudio indices: device_index may silently start
+        # pointing at a completely different (WDM-KS) device whose
+        # default_samplerate differs from the original, producing a spurious
+        # "rate change" that would reopen the stream on the wrong backend.
+        # We guard against this by comparing the name at each poll; if it no
+        # longer matches we stop the monitor instead of firing on_sr_changed.
+        initial_name: str = ""
+        try:
+            initial_name = str(sd.query_devices(self.device_index).get("name", ""))
+        except Exception:
+            pass
 
         def _poll() -> None:
             current_rate = initial_rate
@@ -863,6 +875,14 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                     break
                 try:
                     dev_info = sd.query_devices(self.device_index)
+                    # If the device at this index has a different name the OS
+                    # renumbered devices after an unplug.  Stop polling to
+                    # avoid triggering a spurious rate-change restart onto
+                    # whatever device now occupies this index.
+                    current_name = str(dev_info.get("name", ""))
+                    if initial_name and current_name != initial_name:
+                        stop_event.set()
+                        break
                     new_rate = int(dev_info.get("default_samplerate", current_rate))
                     if new_rate != current_rate:
                         current_rate = new_rate
@@ -930,6 +950,13 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         self._sr_poll_stop = stop_event
         on_sr_changed = self._on_sample_rate_changed
         initial_rate = self.rate
+        # Capture device name at start — same guard as the Windows poller to
+        # detect index renumbering after a device unplug.
+        initial_name: str = ""
+        try:
+            initial_name = str(sd.query_devices(self.device_index).get("name", ""))
+        except Exception:
+            pass
 
         def _poll() -> None:
             current_rate = initial_rate
@@ -939,6 +966,10 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                     break
                 try:
                     dev_info = sd.query_devices(self.device_index)
+                    current_name = str(dev_info.get("name", ""))
+                    if initial_name and current_name != initial_name:
+                        stop_event.set()
+                        break
                     new_rate = int(dev_info.get("default_samplerate", current_rate))
                     if new_rate != current_rate:
                         current_rate = new_rate

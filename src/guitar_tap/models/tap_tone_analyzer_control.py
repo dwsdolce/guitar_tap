@@ -205,10 +205,44 @@ class TapToneAnalyzerControlMixin:
         The 0.3 s delay is already applied by the listener before this method is
         invoked, so no additional delay is needed here.
         """
+        import platform as _platform
+        import sounddevice as _sd
         from PySide6.QtCore import QTimer as _QTimer
+
         device = self.mic.selected_input_device
         if device is None:
             return
+
+        # On Windows, validate that the device we're about to restart on is still
+        # present as a non-WDM-KS device.  After a USB unplug the sample-rate
+        # poller may have fired before it detected the device-name change; by the
+        # time we reach here the PortAudio table may have been renumbered so that
+        # device.index now points to a WDM-KS device.  Opening it would produce a
+        # stream that delivers silence (-313 dB) with no error.
+        #
+        # Resolution strategy: look up the device by name in the *current*
+        # PortAudio device list and verify its host API is not WDM-KS.  If the
+        # device is absent or WDM-KS, suppress the restart silently — the
+        # CM_Register_Notification hot-plug path (_on_devices_refreshed) will
+        # handle recovery once PortAudio is re-initialized.
+        if _platform.system() == "Windows":
+            try:
+                apis = _sd.query_hostapis()
+                wdm_ks_indices = {i for i, a in enumerate(apis) if a["name"] == "Windows WDM-KS"}
+                all_devs = list(_sd.query_devices())
+                # Find the device by name in the live list
+                live = next(
+                    (d for d in all_devs
+                     if int(d["max_input_channels"]) > 0
+                     and str(d["name"]) == device.name),
+                    None,
+                )
+                if live is None or int(live["hostapi"]) in wdm_ks_indices:
+                    # Device gone or now on WDM-KS — skip the restart
+                    return
+            except Exception:
+                pass
+
         # Dispatch back onto the main thread (the listener fires on a daemon thread).
         # Also call handle_route_change_restart() to mirror Swift incrementing
         # routeChangeRestartCount after start(), which triggers handleRouteChangeRestart().
