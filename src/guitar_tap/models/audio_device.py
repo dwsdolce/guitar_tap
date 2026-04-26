@@ -212,6 +212,16 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
         if preferred_api is not None:
             break
 
+    # Also build a set of WDM-KS host API indices so we can explicitly exclude
+    # them.  PortAudio's WDM-KS backend opens successfully in shared mode but
+    # delivers silence (zeros) — making it indistinguishable from a working
+    # device until audio is expected.  Excluding it prevents the hot-plug
+    # fallback from landing on a WDM-KS device when WASAPI is transiently
+    # absent during a Windows device-enumeration cascade.
+    wdm_ks_apis: set[int] = {
+        i for i, a in enumerate(apis) if a["name"] == "Windows WDM-KS"
+    }
+
     pseudo = ("microsoft sound mapper", "primary sound capture")
     out: list[dict] = []
     for d in inputs:
@@ -219,6 +229,9 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
         if any(p in name_l for p in pseudo):
             continue
         if "loopback" in name_l:
+            continue
+        # Always exclude WDM-KS — it opens without error but delivers silence.
+        if int(d["hostapi"]) in wdm_ks_apis:
             continue
         if preferred_api is not None and int(d["hostapi"]) != preferred_api:
             continue
