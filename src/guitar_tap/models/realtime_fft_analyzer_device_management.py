@@ -53,6 +53,59 @@ if TYPE_CHECKING:
     from .audio_device import AudioDevice
 
 
+# MARK: - Stream Channel Selection (Python-only)
+
+def _stream_channels_for_device(device_index: "int | None") -> int:
+    """Return the channel count to use when opening a PortAudio input stream.
+
+    On Windows WASAPI shared mode, requesting channels=1 from a multi-channel
+    device routes the signal through the Windows APO (Audio Processing Object)
+    pipeline, which performs a mono downmix that can introduce spectral artifacts
+    (comb-filter / aliasing peaks).  Requesting the device's native channel count
+    instead bypasses this downmix; the caller takes channel 0 from the delivered
+    stereo buffer.
+
+    On macOS/Linux, channels=1 is returned unchanged — CoreAudio/ALSA do not have
+    this APO issue.
+
+    The 2-channel open is probed with check_input_settings before being returned.
+    If the driver rejects a stereo open (e.g. some Bluetooth HFP devices that
+    report max_input_channels=2 but only accept mono), falls back to channels=1.
+
+    Returns:
+        1 on macOS/Linux, or on Windows when the device is mono, when the channel
+        count cannot be determined, or when the driver rejects a stereo open.
+        Otherwise the device's native channel count (capped at 2) on Windows.
+    """
+    import platform as _platform
+    if _platform.system() != "Windows":
+        return 1
+    if device_index is None:
+        return 1
+    try:
+        dev_info = sd.query_devices(device_index)
+        n = int(dev_info.get("max_input_channels", 1))
+        if n <= 1:
+            return 1
+        # Cap at 2: we only use channel 0.
+        target = min(n, 2)
+        # Probe: verify the driver actually accepts a stereo open before committing.
+        # Some devices (e.g. Bluetooth HFP) report max_input_channels=2 but only
+        # accept channels=1 at the driver level.
+        try:
+            sd.check_input_settings(
+                device=device_index,
+                channels=target,
+                dtype="float32",
+                samplerate=float(dev_info.get("default_samplerate", 48000)),
+            )
+            return target
+        except Exception:
+            return 1
+    except Exception:
+        return 1
+
+
 # MARK: - Stream Diagnostics (Python-only)
 
 def _log_stream_diagnostics(stream: "sd.InputStream", requested_rate: int, device_index: "int | None") -> int:
@@ -78,6 +131,19 @@ def _log_stream_diagnostics(stream: "sd.InputStream", requested_rate: int, devic
         actual_rate = int(stream.samplerate)
     except Exception as e:
         gt_log(f"[DIAG] stream.samplerate query failed: {e}")
+
+    # Actual channel count negotiated by PortAudio.
+    try:
+        actual_channels = int(stream.channels)
+        if actual_channels > 1:
+            gt_log(
+                f"[DIAG] stream channels: {actual_channels} — "
+                f"opened stereo to bypass Windows APO mono-downmix; using channel 0"
+            )
+        else:
+            gt_log(f"[DIAG] stream channels: {actual_channels}")
+    except Exception as e:
+        gt_log(f"[DIAG] stream.channels query failed: {e}")
 
     # Rate mismatch — the most important thing to know on Windows WASAPI.
     if actual_rate != requested_rate:
@@ -343,9 +409,10 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         self._diag_chunk_count: int = 0
         with self._stop_lock:
             self.is_stopped = False
+        _channels = _stream_channels_for_device(self.device_index)
         self.stream = sd.InputStream(
             device=self.device_index,
-            channels=1,
+            channels=_channels,
             samplerate=self.rate,
             dtype=np.float32,
             blocksize=self.chunksize,
@@ -406,9 +473,10 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         try:
             with self._stop_lock:
                 self.is_stopped = False
+            _channels = _stream_channels_for_device(self.device_index)
             self.stream = sd.InputStream(
                 device=self.device_index,
-                channels=1,
+                channels=_channels,
                 samplerate=self.rate,
                 dtype=np.float32,
                 blocksize=self.chunksize,
