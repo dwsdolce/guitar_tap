@@ -53,7 +53,80 @@ if TYPE_CHECKING:
     from .audio_device import AudioDevice
 
 
-# MARK: - Device Management Mixin
+# MARK: - Stream Diagnostics (Python-only)
+
+def _log_stream_diagnostics(stream: "sd.InputStream", requested_rate: int, device_index: "int | None") -> int:
+    """Log detailed audio stream diagnostics and return the actual negotiated rate.
+
+    Emits enough information to diagnose Windows WASAPI shared-mode resampling,
+    host-API selection, and any rate mismatch between what was requested and what
+    PortAudio actually opened.  Called after every sd.InputStream open (startup
+    and device switch).
+
+    Args:
+        stream:         The open sd.InputStream.
+        requested_rate: The sample rate that was passed to sd.InputStream().
+        device_index:   The PortAudio device index that was opened (None = default).
+
+    Returns:
+        The actual negotiated sample rate as an int (use this for self.rate).
+    """
+    import sounddevice as _sd
+
+    actual_rate = requested_rate
+    try:
+        actual_rate = int(stream.samplerate)
+    except Exception as e:
+        gt_log(f"[DIAG] stream.samplerate query failed: {e}")
+
+    # Rate mismatch — the most important thing to know on Windows WASAPI.
+    if actual_rate != requested_rate:
+        gt_log(
+            f"[DIAG] SAMPLE RATE MISMATCH: requested={requested_rate} Hz, "
+            f"stream negotiated={actual_rate} Hz. "
+            f"Frequency axis will use {actual_rate} Hz."
+        )
+    else:
+        gt_log(f"[DIAG] sample rate OK: {actual_rate} Hz (requested={requested_rate} Hz)")
+
+    # Device info and host API.
+    try:
+        dev_info = _sd.query_devices(device_index if device_index is not None else _sd.default.device[0])
+        host_api_index = int(dev_info.get("hostapi", -1))
+        host_apis = _sd.query_hostapis()
+        host_api_name = host_apis[host_api_index]["name"] if 0 <= host_api_index < len(host_apis) else "unknown"
+        gt_log(
+            f"[DIAG] device: index={device_index}, name={dev_info.get('name')!r}, "
+            f"host_api={host_api_name!r}, "
+            f"default_samplerate={dev_info.get('default_samplerate')} Hz, "
+            f"max_input_channels={dev_info.get('max_input_channels')}"
+        )
+    except Exception as e:
+        gt_log(f"[DIAG] device info query failed: {e}")
+
+    # Probe which standard rates PortAudio will actually accept for this device.
+    # A rate that PortAudio accepts without error is one it can deliver natively
+    # or via its own resampler.  If 48000 is accepted but 44100 is not (or vice
+    # versa), that tells us the hardware's native rate.
+    probe_rates = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000]
+    supported: list[int] = []
+    unsupported: list[int] = []
+    for r in probe_rates:
+        try:
+            _sd.check_input_settings(
+                device=device_index,
+                channels=1,
+                dtype="float32",
+                samplerate=r,
+            )
+            supported.append(r)
+        except Exception:
+            unsupported.append(r)
+    gt_log(f"[DIAG] supported rates: {supported}")
+    gt_log(f"[DIAG] rejected rates:  {unsupported}")
+
+    return actual_rate
+
 
 class RealtimeFFTAnalyzerDeviceManagementMixin:
     """Device management methods for RealtimeFFTAnalyzer.
@@ -278,34 +351,8 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         )
         self.stream.start()
 
-        # Diagnostic #1: verify actual vs. requested sample rate.
-        # On Windows WASAPI shared mode, the driver may silently resample to a
-        # different rate (commonly 48000 Hz even when 44100 Hz was requested).
-        # All gated-capture window calculations use self.rate, so a mismatch
-        # means every capture window is sized incorrectly.
-        try:
-            # Check what PortAudio actually negotiated for the open stream.
-            # This is the definitive rate — more reliable than default_samplerate
-            # from device info, which is the device's preferred rate, not the
-            # actual negotiated rate.
-            stream_rate = int(self.stream.samplerate)
-            device_info = sd.query_devices(self.device_index)
-            device_default_rate = int(device_info['default_samplerate'])
-            if stream_rate != self.rate:
-                gt_log(
-                    f"[DIAG] WARNING: sample-rate mismatch — "
-                    f"requested={self.rate} Hz, stream negotiated={stream_rate} Hz, "
-                    f"device default={device_default_rate} Hz. "
-                    f"Frequency axis will be scaled incorrectly. "
-                    f"(Cause #1: WASAPI shared-mode coercion)"
-                )
-            else:
-                gt_log(
-                    f"[DIAG] sample rate OK: stream={stream_rate} Hz, "
-                    f"device default={device_default_rate} Hz"
-                )
-        except Exception as _diag_err:
-            gt_log(f"[DIAG] sample-rate query failed: {_diag_err}")
+        # Verify actual negotiated stream rate and log full device diagnostics.
+        self.rate = _log_stream_diagnostics(self.stream, self.rate, self.device_index)
 
         # Auto-load device-specific calibration.
         # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
