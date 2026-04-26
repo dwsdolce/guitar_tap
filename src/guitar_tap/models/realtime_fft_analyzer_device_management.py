@@ -104,26 +104,28 @@ def _log_stream_diagnostics(stream: "sd.InputStream", requested_rate: int, devic
     except Exception as e:
         gt_log(f"[DIAG] device info query failed: {e}")
 
-    # Probe which standard rates PortAudio will actually accept for this device.
-    # A rate that PortAudio accepts without error is one it can deliver natively
-    # or via its own resampler.  If 48000 is accepted but 44100 is not (or vice
-    # versa), that tells us the hardware's native rate.
-    probe_rates = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000]
-    supported: list[int] = []
-    unsupported: list[int] = []
-    for r in probe_rates:
-        try:
-            _sd.check_input_settings(
-                device=device_index,
-                channels=1,
-                dtype="float32",
-                samplerate=r,
-            )
-            supported.append(r)
-        except Exception:
-            unsupported.append(r)
-    gt_log(f"[DIAG] supported rates: {supported}")
-    gt_log(f"[DIAG] rejected rates:  {unsupported}")
+    # Rate probing via check_input_settings is skipped on macOS: repeated AUHAL
+    # configuration attempts corrupt PortAudio's internal state and prevent the
+    # real stream from starting (err=-50 / kAudio_ParamError).  The probe was
+    # only useful for diagnosing Windows WASAPI shared-mode resampling.
+    import platform as _platform
+    if _platform.system() != "Darwin":
+        probe_rates = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000]
+        supported: list[int] = []
+        unsupported: list[int] = []
+        for r in probe_rates:
+            try:
+                _sd.check_input_settings(
+                    device=device_index,
+                    channels=1,
+                    dtype="float32",
+                    samplerate=r,
+                )
+                supported.append(r)
+            except Exception:
+                unsupported.append(r)
+        gt_log(f"[DIAG] supported rates: {supported}")
+        gt_log(f"[DIAG] rejected rates:  {unsupported}")
 
     return actual_rate
 
