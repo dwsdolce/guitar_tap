@@ -383,6 +383,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # measurement logic below.
         if measurement.is_comparison:
             self._restore_comparison_from_entries(measurement)
+            # Clear any per-tap entries from a previously loaded multi-tap measurement.
+            # Mirrors Swift loadMeasurement(_:) isComparison branch:
+            #   tapEntries = []; showingMultiTapComparison = false
+            self.tap_entries = []
+            self.showing_multi_tap_comparison = False
             return
 
         # ── Exit comparison mode, enter frozen mode ───────────────────────────
@@ -703,15 +708,18 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     # ── Multi-Tap Comparison Overlays ──────────────────────────────────────────
 
-    # Comparison palette — must stay in sync with Swift TapToneAnalyzer.comparisonPalette
-    # and MultiTapComparisonResultsView.palette (inlined in view layer).
-    _MULTI_TAP_PALETTE = [
-        (0, 122, 255),    # blue
-        (255, 149, 0),    # orange
-        (52, 199, 89),    # green
-        (175, 82, 222),   # purple
-        (48, 176, 199),   # teal
+    # Comparison palette — mirrors Swift TapToneAnalyzer.comparisonPalette ([.blue, .orange, .green, .purple, .teal]).
+    # This is the single authoritative definition; all export sites import it from here.
+    _MULTI_TAP_PALETTE: list[tuple[int, int, int]] = [
+        (0,   122, 255),   # .blue
+        (255, 149,   0),   # .orange
+        (52,  199,  89),   # .green
+        (175,  82, 222),   # .purple
+        (48,  176, 199),   # .teal
     ]
+    # Averaged-row color — mirrors Swift TapToneAnalyzer.multiTapAvgColor (Color(red: 1.0, green: 0.85, blue: 0.0)).
+    # This is the single authoritative definition; all export sites import it from here.
+    _MULTI_TAP_AVG_COLOR: tuple[int, int, int] = (255, 217, 0)
 
     def apply_multi_tap_comparison_overlays(self, enabled: bool) -> None:
         """Populate or clear chart overlay entries for the multi-tap comparison view.

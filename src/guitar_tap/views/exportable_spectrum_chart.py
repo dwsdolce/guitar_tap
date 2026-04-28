@@ -136,12 +136,21 @@ class ExportableSpectrumChart:
         self.chart_title = chart_title
         self.guitar_type_str = guitar_type_str
 
-        # Resolve is_guitar from measurement_type_str
+        # Resolve is_guitar and guitar_type from measurement_type_str —
+        # mirrors Swift where MeasurementType carries both is_guitar and guitarType
+        # as computed properties, so a single measurementType parameter implicitly
+        # provides both pieces of information.
         self.is_guitar = True
+        _derived_guitar_type_str: str | None = guitar_type_str
         if measurement_type_str:
             try:
                 from models import measurement_type as _mt_mod
-                self.is_guitar = _mt_mod.MeasurementType(measurement_type_str).is_guitar
+                _mt_enum = _mt_mod.MeasurementType(measurement_type_str)
+                self.is_guitar = _mt_enum.is_guitar
+                # Derive guitar_type from measurement_type when not explicitly provided,
+                # matching Swift's implicit derivation via MeasurementType.guitarType.
+                if _derived_guitar_type_str is None and _mt_enum.guitar_type is not None:
+                    _derived_guitar_type_str = _mt_enum.guitar_type.value
             except Exception:
                 pass
 
@@ -152,7 +161,7 @@ class ExportableSpectrumChart:
             from models.guitar_mode import GuitarMode
             from models.guitar_type import GuitarType
             self._GuitarMode = GuitarMode
-            gt_enum = GuitarType(guitar_type_str) if guitar_type_str else GuitarType.CLASSICAL
+            gt_enum = GuitarType(_derived_guitar_type_str) if _derived_guitar_type_str else GuitarType.CLASSICAL
             self._guitar_type_enum = gt_enum
             if self.is_guitar:
                 # Pass all peaks (not just visible) so the claiming algorithm has the
