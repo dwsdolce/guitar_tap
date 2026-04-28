@@ -31,11 +31,12 @@ import views.utilities.gt_images as gt_i
 from views.shared.loading_overlay import LoadingOverlay
 
 import qtawesome as qta
+from views.comparison_results_view import ComparisonResultsView
+from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
 
 # Heavy imports deferred to _deferred_canvas_init to reduce startup time:
 #   fft_canvas — pulls in pyqtgraph (~4 s) and sounddevice (~0.4 s)
-#   MD, SMD, HD, FMV, ComparisonResultsView, MultiTapComparisonResultsView
-#   — all injected into the module namespace after the window is first shown
+#   MD, SMD, HD, FMV — injected into the module namespace after the window is first shown
 
 # Package root: src/guitar_tap/views/ → src/guitar_tap/
 basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1948,8 +1949,6 @@ class MainWindow(QtWidgets.QMainWindow):
             import views.save_measurement_sheet as SMD
             import views.help_view as HD
             import views.fft_analysis_metrics_view as FMV
-            from views.comparison_results_view import ComparisonResultsView
-            from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
             # Inject into the module namespace so all other methods can use them
             # as if they were top-level imports.
             import sys as _sys
@@ -1959,8 +1958,6 @@ class MainWindow(QtWidgets.QMainWindow):
             _m.SMD = SMD
             _m.HD = HD
             _m.FMV = FMV
-            _m.ComparisonResultsView = ComparisonResultsView
-            _m.MultiTapComparisonResultsView = MultiTapComparisonResultsView
 
             self.fft_canvas = fft_c.FftCanvas(
                 self._fft_settings["fft_size"],
