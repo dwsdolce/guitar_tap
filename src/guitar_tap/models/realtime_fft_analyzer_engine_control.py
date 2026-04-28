@@ -214,8 +214,10 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # DIAG: Capture the first 5 s of raw PCM to ~/Desktop/guitar_tap_raw_capture.wav.
         # Used to verify the actual sample rate of audio arriving from the OS.
         # Remove once the Windows sample-rate issue is resolved.
+        # Set _DIAG_CAPTURE_ENABLED = True to re-enable.
+        _DIAG_CAPTURE_ENABLED = False
         import os as _os
-        if not getattr(self, "_diag_capture_done", False):
+        if _DIAG_CAPTURE_ENABLED and not getattr(self, "_diag_capture_done", False):
             if not hasattr(self, "_diag_capture_chunks"):
                 self._diag_capture_chunks: list = []
                 self._diag_capture_samples: int = 0

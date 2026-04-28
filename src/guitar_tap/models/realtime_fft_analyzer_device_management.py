@@ -838,6 +838,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             initial_rate = int(dev_info.get("default_samplerate", self.rate))
         except Exception:
             initial_rate = self.rate
+        gt_log(f"DIAG C: Windows SR poller start — self.rate={self.rate}, initial_rate={initial_rate}, device='{initial_name}'")
 
         def _poll() -> None:
             current_rate = initial_rate

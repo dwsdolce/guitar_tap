@@ -520,6 +520,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self.rate: int = int(device.sample_rate) if device else rate
         self.chunksize: int = chunksize
         self.device_index: int | None = device.index if device else None
+        gt_log(f"DIAG A: device.sample_rate={device.sample_rate if device else 'n/a'} → self.rate={self.rate}")
 
         # MARK: - FFT Configuration (mirrors Swift RealtimeFFTAnalyzer)
 
@@ -554,6 +555,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
         from .realtime_fft_analyzer_device_management import _log_stream_diagnostics
         self.rate = _log_stream_diagnostics(self.stream, self.rate)
+        gt_log(f"DIAG B: stream.samplerate={self.stream.samplerate} → self.rate after diagnostics={self.rate}")
 
         # Python-only: audio chunk delivery via Queue
         # Swift delivers audio via rawSampleHandler callback + inputBuffer accumulation
