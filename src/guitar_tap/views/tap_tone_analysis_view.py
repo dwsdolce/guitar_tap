@@ -1491,7 +1491,7 @@ class MainWindow(QtWidgets.QMainWindow):
         hl.setSpacing(6)
 
         small = QtGui.QFont()
-        small.setPointSize(14)
+        small.setPointSize(12)
         caption = QtGui.QFont()
         caption.setPointSize(12)
 
