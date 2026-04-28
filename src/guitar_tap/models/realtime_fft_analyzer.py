@@ -552,12 +552,9 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             blocksize=self.chunksize,
             callback=self.new_frame)
 
-        # Verify actual negotiated stream rate and log full device diagnostics.
-        # On Windows WASAPI shared mode, PortAudio may silently resample to the
-        # Windows audio engine's configured rate even when a different rate was
-        # requested.  _log_stream_diagnostics returns the actual rate to use.
+        # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
         from .realtime_fft_analyzer_device_management import _log_stream_diagnostics
-        self.rate = _log_stream_diagnostics(self.stream, self.rate, self.device_index)
+        self.rate = _log_stream_diagnostics(self.stream, self.rate)
 
         # Python-only: audio chunk delivery via Queue
         # Swift delivers audio via rawSampleHandler callback + inputBuffer accumulation

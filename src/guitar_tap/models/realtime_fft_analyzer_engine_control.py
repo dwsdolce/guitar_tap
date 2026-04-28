@@ -206,46 +206,9 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 raise sd.CallbackStop
         self.queue.put(data[:, 0].copy())  # copy before queuing — PortAudio reuses the buffer
 
-        # ------------------------------------------------------------------
-        # Diagnostic #2: variable chunk sizes (Cause #2 — WASAPI buffer negotiation).
-        # PortAudio on Windows may deliver a different blocksize than requested.
-        # CoreAudio on macOS guarantees the requested blocksize.
-        # State is reset in set_device() each time a new stream is opened.
-        # ------------------------------------------------------------------
-        chunk_size = data.shape[0]
-        if not hasattr(self, '_diag_chunk_count'):
-            self._diag_chunk_sizes_seen: set = set()
-            self._diag_chunk_count: int = 0
-        self._diag_chunk_count += 1
-        if chunk_size != self.chunksize and chunk_size not in self._diag_chunk_sizes_seen:
-            gt_log(
-                f"[DIAG] WARNING: chunk size mismatch — "
-                f"requested={self.chunksize}, received={chunk_size} "
-                f"(frame #{self._diag_chunk_count}). "
-                f"(Cause #2: WASAPI variable buffer negotiation)"
-            )
-        self._diag_chunk_sizes_seen.add(chunk_size)
-        # Log a summary every ~5 seconds (approx. 5 s × rate / chunksize frames).
-        report_interval = max(1, int(5 * getattr(self, 'rate', 44100) / max(1, self.chunksize)))
-        if self._diag_chunk_count % report_interval == 0:
-            sizes_str = ', '.join(str(s) for s in sorted(self._diag_chunk_sizes_seen))
-            gt_log(
-                f"[DIAG] chunk-size summary after {self._diag_chunk_count} frames: "
-                f"sizes seen = {{{sizes_str}}} (requested={self.chunksize})"
-            )
-
-        # ------------------------------------------------------------------
-        # Diagnostic #4: PortAudio callback status flags (Cause #4 — CPU jitter).
-        # Non-zero _status indicates input overflow or output underflow, which
-        # means the callback was delayed and samples may have been dropped or
-        # the pre-roll buffer may contain stale data.
-        # ------------------------------------------------------------------
+        # Non-zero status means input overflow or output underflow; samples may have been dropped.
         if _status:
-            gt_log(
-                f"[DIAG] WARNING: PortAudio callback status={_status} "
-                f"at frame #{self._diag_chunk_count}. "
-                f"(Cause #4: CPU scheduling jitter / buffer overflow)"
-            )
+            gt_log(f"WARNING: PortAudio callback status={_status} (input overflow or CPU scheduling jitter)")
 
         return None
 
