@@ -718,15 +718,20 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
     def _start_windows_monitor(self) -> None:
         """Register a Windows device-interface arrival/removal notification.
 
-        Uses CM_Register_Notification (cfgmgr32) with
-        CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE (0) and
-        CM_NOTIFY_FILTER_FLAG_ALL_INTERFACE_CLASSES (0x1) so events for every
-        device class are delivered. Without the flag (or a specific ClassGuid)
-        CM_Register_Notification returns an error and no callbacks ever fire.
+        Uses CM_Register_Notification (cfgmgr32) filtered to the USB audio
+        device interface class GUID (KSCATEGORY_AUDIO =
+        {6994AD04-93EF-11D0-A3CC-00A0C9223196}) so only real audio device
+        arrivals and removals trigger the callback.
+
+        Previously used CM_NOTIFY_FILTER_FLAG_ALL_INTERFACE_CLASSES (0x1) which
+        fired on every device-interface event system-wide (USB hubs, HID, network
+        adapters, and PortAudio's own stream open/close).  Filtering to the audio
+        GUID eliminates those spurious callbacks.
 
         Python-only — Swift targets macOS/iOS only.
         """
         import ctypes
+        import struct
 
         cfgmgr = ctypes.WinDLL("cfgmgr32")  # type: ignore[attr-defined]
 
@@ -777,7 +782,16 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         filt = _CMNotifyFilter()
         filt.cbSize = ctypes.sizeof(_CMNotifyFilter)
         filt.FilterType = 0  # CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE
-        filt.Flags = 0x1     # CM_NOTIFY_FILTER_FLAG_ALL_INTERFACE_CLASSES
+        filt.Flags = 0       # 0 = filter to specific ClassGuid (not all classes)
+
+        # KSCATEGORY_AUDIO = {6994AD04-93EF-11D0-A3CC-00A0C9223196}
+        # Packed as Windows GUID: Data1(4B LE) Data2(2B LE) Data3(2B LE) Data4(8B BE)
+        guid_bytes = struct.pack(
+            "<IHH8s",
+            0x6994AD04, 0x93EF, 0x11D0,
+            bytes([0xA3, 0xCC, 0x00, 0xA0, 0xC9, 0x22, 0x31, 0x96])
+        )
+        ctypes.memmove(filt.u.DeviceInterface.ClassGuid, guid_bytes, 16)
 
         self._win_cb = CB_TYPE(_cb)
         self._win_hnotify = ctypes.c_void_p()

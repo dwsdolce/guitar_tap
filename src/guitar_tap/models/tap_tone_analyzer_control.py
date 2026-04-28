@@ -119,6 +119,25 @@ class TapToneAnalyzerControlMixin:
         finally:
             self.mic._on_devices_changed = saved_cb
 
+        # On Windows, PortAudio may not yet see a USB device that was present
+        # before reinit — the OS needs a moment to re-register it.  If the
+        # previously selected device is no longer in the list, wait briefly
+        # and re-enumerate once before accepting a fallback device.
+        import platform as _platform
+        if _platform.system() == "Windows" and previous_device is not None:
+            prev_fp = getattr(previous_device, "fingerprint", None)
+            if prev_fp and not any(
+                d.fingerprint == prev_fp for d in self.mic.available_input_devices
+            ):
+                import time as _time_mod
+                _time_mod.sleep(1.0)
+                self.mic._on_devices_changed = None
+                try:
+                    self.mic.load_available_input_devices()
+                finally:
+                    self.mic._on_devices_changed = saved_cb
+                gt_log(f"DIAG: re-enumerated after 1 s delay; selected='{getattr(self.mic.selected_input_device, 'name', None)}'")
+
         names: list[str] = sorted(d.name for d in self.mic.available_input_devices)
         self.devicesChanged.emit(names)
 
