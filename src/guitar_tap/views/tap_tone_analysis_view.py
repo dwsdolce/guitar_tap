@@ -569,8 +569,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Placeholder widget shown while FftCanvas initialises (audio device query,
         # analyzer start).  Replaced by the real FftCanvas in _deferred_canvas_init.
-        self._canvas_placeholder = QtWidgets.QWidget()
+        self._canvas_placeholder = QtWidgets.QLabel()
         self._canvas_placeholder.setMinimumSize(500, 350)
+        self._canvas_placeholder.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignVCenter
+        )
+        _splash_path = os.path.join(basedir, "icons", "guitar-tap-splash.png")
+        _splash_pix = QtGui.QPixmap(_splash_path)
+        if not _splash_pix.isNull():
+            self._canvas_placeholder.setPixmap(_splash_pix)
         self._cv.addWidget(self._canvas_placeholder, stretch=1)
 
         # Material instructions panel (below graph, plate/brace only)
