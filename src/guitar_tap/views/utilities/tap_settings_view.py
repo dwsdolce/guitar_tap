@@ -218,7 +218,7 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def guitar_type(cls) -> str:
-        return str(cls._get("analysis/guitar_type", "Classical"))
+        return str(cls._get("analysis/guitar_type", "Generic"))
 
     @classmethod
     def set_guitar_type(cls, v: str) -> None:
