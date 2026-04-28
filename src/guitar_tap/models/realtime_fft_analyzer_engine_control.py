@@ -168,6 +168,7 @@ is needed.
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
@@ -216,7 +217,6 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # Remove once the Windows sample-rate issue is resolved.
         # Set _DIAG_CAPTURE_ENABLED = True to re-enable.
         _DIAG_CAPTURE_ENABLED = False
-        import os as _os
         if _DIAG_CAPTURE_ENABLED and not getattr(self, "_diag_capture_done", False):
             if not hasattr(self, "_diag_capture_chunks"):
                 self._diag_capture_chunks: list = []
@@ -234,7 +234,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                     try:
                         import soundfile as _sf
                         import numpy as _np
-                        out_path = _os.path.expanduser("~/Desktop/guitar_tap_raw_capture.wav")
+                        out_path = os.path.expanduser("~/Desktop/guitar_tap_raw_capture.wav")
                         pcm = _np.concatenate(chunks_snapshot)
                         _sf.write(out_path, pcm, rate, subtype="FLOAT")
                         gt_log(f"DIAG: wrote {len(pcm)} samples at rate={rate} Hz to {out_path}")
