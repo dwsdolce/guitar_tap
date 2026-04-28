@@ -104,7 +104,10 @@ def dft_anal(
       calculations.  Mirrors Swift's identical choice documented in performFFT and
       computeGatedFFT.
     """
-    from scipy.fft import fft  # lazy: defers ~4 s cold-import cost until first FFT
+    # numpy.fft.fft is numerically identical to scipy.fft.fft for power-of-2 sizes
+    # (both use pocketfft since NumPy 1.17) and avoids the ~8 s scipy cold-import
+    # cost on Windows.
+    from numpy.fft import fft
     if not is_power2(n_freq_samples):
         raise ValueError("FFT size (N) is not a power of 2")
 
@@ -167,9 +170,15 @@ def peak_detection(
     implementation only checked ±1 bin, which is why it found far more peaks than
     Swift.  The default window_size=5 now matches Swift exactly.
     """
-    from scipy.signal import argrelmax
-    # Find all local maxima over the ±window_size neighbourhood
-    (local_max_indices,) = argrelmax(magnitude, order=window_size)
+    # Pure-numpy local-maximum detection — identical result to scipy.signal.argrelmax
+    # with order=window_size.  For each index i, checks that magnitude[i] is strictly
+    # greater than all neighbours in [i-window_size, i+window_size].
+    indices = np.arange(window_size, len(magnitude) - window_size)
+    is_max = np.ones(len(indices), dtype=bool)
+    for offset in range(1, window_size + 1):
+        is_max &= magnitude[indices] > magnitude[indices - offset]
+        is_max &= magnitude[indices] > magnitude[indices + offset]
+    local_max_indices = indices[is_max]
     # Keep only those above the threshold
     ploc = local_max_indices[magnitude[local_max_indices] > threshold]
     return ploc

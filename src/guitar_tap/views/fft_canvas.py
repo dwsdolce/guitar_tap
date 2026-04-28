@@ -7,7 +7,6 @@ import platform
 
 import pyqtgraph as pg
 import numpy as np
-import sounddevice as sd
 import numpy.typing as npt
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -292,6 +291,7 @@ class FftCanvas(pg.PlotWidget):
 
         # Resolve the saved AudioDevice (fingerprint → live index).
         # Mirrors Swift RealtimeFFTAnalyzer selectedInputDevice restore logic.
+        import sounddevice as sd  # deferred: ~0.4 s cold-import cost
         from models.audio_device import AudioDevice as _AudioDevice
         _saved_audio_device: _AudioDevice | None = None
         try:

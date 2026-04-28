@@ -9,7 +9,6 @@ requires-python = ">=3.14"
 dependencies = [
     "PySide6>=6.11.0",
     "numpy>=2.4",
-    "scipy>=1.17",
     "sounddevice>=0.5",
     "pyqtgraph>=0.14",
     "QtAwesome>=1.4",

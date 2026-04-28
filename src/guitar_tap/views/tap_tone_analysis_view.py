@@ -14,7 +14,6 @@ import os
 import numpy as np
 from PySide6 import QtWidgets, QtGui, QtCore
 
-import views.fft_canvas as fft_c
 from models.analysis_display_mode import AnalysisDisplayMode
 from models.annotation_visibility_mode import AnnotationVisibilityMode
 import views.shared.peak_card_widget as PT
@@ -27,16 +26,16 @@ from models import plate_stiffness_preset as PSP
 from models import guitar_type as GT
 from models import measurement_type as MT
 from models import microphone_calibration as _mc_mod
-import views.measurements.measurements_list_view as MD
-import views.save_measurement_sheet as SMD
 import models.material_properties as PA
-import views.help_view as HD
 import views.utilities.gt_images as gt_i
-import views.fft_analysis_metrics_view as FMV
 from views.shared.loading_overlay import LoadingOverlay
-from views.comparison_results_view import ComparisonResultsView
-from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
+
 import qtawesome as qta
+
+# Heavy imports deferred to _deferred_canvas_init to reduce startup time:
+#   fft_canvas — pulls in pyqtgraph (~4 s) and sounddevice (~0.4 s)
+#   MD, SMD, HD, FMV, ComparisonResultsView, MultiTapComparisonResultsView
+#   — all injected into the module namespace after the window is first shown
 
 # Package root: src/guitar_tap/views/ → src/guitar_tap/
 basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -345,8 +344,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_measurement_complete: bool = False
         self._tap_count_captured: int = 0
         self._tap_count_total: int = 1
-        self._help_dialog: HD.HelpDialog | None = None
-        self._metrics_dialog: FMV.FFTAnalysisMetricsView | None = None
+        self._help_dialog = None   # HelpDialog, lazily imported
+        self._metrics_dialog = None  # FFTAnalysisMetricsView, lazily imported
         self.avg_enable_saved: bool = False
         self._loaded_resonant_peaks: list = []  # ResonantPeak objects from last loaded measurement
         self._loaded_measurement = None          # full TapToneMeasurement, used for export filtering
@@ -1942,6 +1941,27 @@ class MainWindow(QtWidgets.QMainWindow):
         the first render pass.
         """
         try:
+            # Deferred heavy imports — pyqtgraph (~4 s) and sounddevice (~0.4 s)
+            # load here, after the window is already visible.
+            import views.fft_canvas as fft_c
+            import views.measurements.measurements_list_view as MD
+            import views.save_measurement_sheet as SMD
+            import views.help_view as HD
+            import views.fft_analysis_metrics_view as FMV
+            from views.comparison_results_view import ComparisonResultsView
+            from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
+            # Inject into the module namespace so all other methods can use them
+            # as if they were top-level imports.
+            import sys as _sys
+            _m = _sys.modules[__name__]
+            _m.fft_c = fft_c
+            _m.MD = MD
+            _m.SMD = SMD
+            _m.HD = HD
+            _m.FMV = FMV
+            _m.ComparisonResultsView = ComparisonResultsView
+            _m.MultiTapComparisonResultsView = MultiTapComparisonResultsView
+
             self.fft_canvas = fft_c.FftCanvas(
                 self._fft_settings["fft_size"],
                 self._fft_settings["sampling_rate"],

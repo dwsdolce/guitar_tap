@@ -388,8 +388,6 @@ class _FftProcessingThread(QtCore.QThread):
             (magnitudes_db, frequencies) — both as list[float].
             Returns ([], []) if samples is empty.
         """
-        from scipy.signal import get_window as _get_window
-
         n = len(samples)
         if n == 0:
             return [], []
@@ -408,7 +406,8 @@ class _FftProcessingThread(QtCore.QThread):
             chunk = np.concatenate([chunk, np.zeros(fft_size - len(chunk), dtype=np.float32)])
 
         # Hann window — sidelobe suppression for accurate Q readings.
-        window = _get_window("hann", fft_size).astype(np.float64)
+        # numpy.hanning is identical to scipy.signal.get_window("hann", N).
+        window = np.hanning(fft_size).astype(np.float64)
 
         mag_db, _ = dft_anal(chunk, window, fft_size)
 
@@ -513,7 +512,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
                                      Mirrors Swift RealtimeFFTAnalyzer.fftSize.
         """
         from .audio_device import AudioDevice as _AudioDevice
-        from scipy.signal import get_window as _get_window
 
         if platform.system() == "Darwin":
             mac_access.MacAccess(parent)
@@ -541,7 +539,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # performFFT which applies a rectangular window of exactly fftSize samples
         # with no zero-padding.
         # See realtime_fft_analyzer_fft_processing.py for why rectangular is preferred.
-        self.window_fcn = _get_window("boxcar", fft_size)
+        # numpy.ones is identical to scipy.signal.get_window("boxcar", N).
+        self.window_fcn = np.ones(fft_size)
 
         # Open the sounddevice stream; Swift opens AVAudioEngine in start()
         self.stream: sd.InputStream = sd.InputStream(
