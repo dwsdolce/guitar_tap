@@ -637,19 +637,13 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
 
     def cancel_tap_sequence(self) -> None:
-        """Cancel the current tap sequence and immediately restart detection from scratch.
+        """Cancel the current tap sequence and wait for the user to press New Tap.
 
-        Unlike reset(), cancel keeps detection active so the user can start a new
-        tap without pressing Start again.  Mirrors Swift cancelTapSequence().
+        Sets is_detecting = False and is_measurement_complete = True so the
+        New Tap button is re-enabled.  Mirrors Swift cancelTapSequence().
         """
         import numpy as np
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
         from models.material_tap_phase import MaterialTapPhase as _MTP
-
-        meas_type = _tds.measurement_type()
-        is_plate = (meas_type == _MT.PLATE)
-        is_brace = (meas_type == _MT.BRACE)
 
         self.captured_taps.clear()
         self.tap_entries = []
@@ -658,33 +652,21 @@ class TapToneAnalyzerControlMixin:
         self.tap_progress = 0.0
         self.tap_detected = False
         self.is_detection_paused = False
-        self.is_detecting = True  # mirrors Swift cancelTapSequence line 280
+        self.is_detecting = False
 
-        # Reset plate/brace state back to the start of the sequence
-        # (mirrors Swift resetMaterialPhaseState(to: newPhase)).
-        new_phase = _MTP.CAPTURING_LONGITUDINAL if (is_plate or is_brace) else _MTP.NOT_STARTED
-        self._reset_material_phase_state(to=new_phase)
+        # Mark as complete so New Tap is re-enabled after cancel.
+        self.is_measurement_complete = True
 
+        self._reset_material_phase_state(to=_MTP.NOT_STARTED)
         self._reset_decay_tracking()
 
         # Clear frozen spectrum (mirrors Swift setFrozenSpectrum(frequencies: [], magnitudes: [])).
         self.set_frozen_spectrum(np.array([]), np.array([]))
 
-        # Reset the warm-up timer for the restarted sequence (mirrors Swift lines 292-293).
         self.analyzer_start_time = _time.monotonic()
         self.is_above_threshold = False
 
-        # Show an appropriate ready prompt (mirrors Swift cancelTapSequence lines 299-305).
-        if is_brace:
-            self._set_status_message("Ready for fL tap")
-        elif is_plate:
-            self._set_status_message("Ready for L tap")
-        else:
-            self._set_status_message(
-                "Tap the guitar..."
-                if self.number_of_taps == 1
-                else f"Tap the guitar {self.number_of_taps} times..."
-            )
+        self._set_status_message("Cancelled — press New Tap to start again")
 
         self.tapCountChanged.emit(0, self.number_of_taps)
 

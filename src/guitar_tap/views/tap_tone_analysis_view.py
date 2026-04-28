@@ -3985,9 +3985,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_export_spectrum(self) -> None:
         import time as _time
 
-        # Build a suggested filename that mirrors Swift's base_filename pattern
-        # (e.g. "spectrum-1775190435.png").
-        suggested_name = f"spectrum-{int(_time.time())}.png"
+        # Derive filename from tap_location → loaded_measurement_name → "spectrum".
+        # Mirrors Swift exportCurrentSpectrum() label derivation.
+        _loc = self._tap_location.strip()
+        if not _loc:
+            _loc = (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
+        if not _loc:
+            _loc = "spectrum"
+        _stem = _loc.replace(" ", "-").replace("/", "-").lower()
+        suggested_name = f"{_stem}-{int(_time.time())}.png"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -4214,7 +4220,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_export_comparison_pdf()
             return
 
-        suggested_name = f"report-{int(_time.time())}.pdf"
+        # Derive filename from tap_location → loaded_measurement_name → "report".
+        # Mirrors Swift exportPDFReport() tapLocation / loadedMeasurementName fallback.
+        _pdf_loc = self._tap_location.strip()
+        if not _pdf_loc:
+            _pdf_loc = (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
+        if not _pdf_loc:
+            _pdf_loc = "report"
+        _pdf_stem = _pdf_loc.replace(" ", "-").replace("/", "-").lower()
+        suggested_name = f"{_pdf_stem}-{int(_time.time())}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -4238,10 +4252,10 @@ class MainWindow(QtWidgets.QMainWindow):
             mt       = TDS.measurement_type()
             is_guitar = mt.is_guitar
 
-            # ── tapLocation / notes — mirrors Swift: tapLocation.isEmpty ? nil : tapLocation ──
+            # ── tapLocation / notes — mirrors Swift: tapLocation.isEmpty ? tap.loadedMeasurementName : tapLocation ──
             loc = self._tap_location if self._tap_location else None
-            if loc is None and self._loaded_measurement is not None:
-                loc = self._loaded_measurement.tap_location or None
+            if loc is None:
+                loc = analyzer.loaded_measurement_name or None
             notes_val = self._notes if self._notes else None
 
             # ── Frequency / dB range from visible axis — mirrors Swift minFreq/maxFreq ────────
@@ -4680,8 +4694,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # ── Page 1: averaged result — mirrors Swift createAveragedSpectrumView() ──
             # Always reads frozen spectrum regardless of current display mode.
             loc = self._tap_location if self._tap_location else None
-            if loc is None and self._loaded_measurement is not None:
-                loc = self._loaded_measurement.tap_location or None
+            if loc is None:
+                loc = analyzer.loaded_measurement_name or None
             notes_val = self._notes if self._notes else None
 
             min_freq_val = float(canvas.minFreq)

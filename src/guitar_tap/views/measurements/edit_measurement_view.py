@@ -68,19 +68,19 @@ class EditMeasurementView(QtWidgets.QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         outer.addWidget(title)
 
-        # ── Tap Location ───────────────────────────────────────────────────────
-        # Mirrors Swift VStack { Text("Tap Location (Optional)") TextField(...) }
+        # ── Measurement Name ───────────────────────────────────────────────────
+        # Mirrors Swift VStack { Text("Measurement Name") TextField(...) }
         loc_group = QtWidgets.QVBoxLayout()
         loc_group.setSpacing(6)
 
-        loc_heading = QtWidgets.QLabel("Tap Location (Optional)")
+        loc_heading = QtWidgets.QLabel("Measurement Name")
         loc_heading_font = loc_heading.font()
         loc_heading_font.setBold(True)
         loc_heading.setFont(loc_heading_font)
         loc_group.addWidget(loc_heading)
 
         self._tap_location_edit = QtWidgets.QLineEdit()
-        self._tap_location_edit.setPlaceholderText("Bridge, Soundhole, Upper Bout…")
+        self._tap_location_edit.setPlaceholderText("e.g. Martin 000-28, Spruce Top")
         self._tap_location_edit.setText(self._measurement.tap_location or "")
         loc_group.addWidget(self._tap_location_edit)
 

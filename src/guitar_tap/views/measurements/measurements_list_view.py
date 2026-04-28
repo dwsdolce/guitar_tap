@@ -378,7 +378,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         if m.tap_entries:
             self._export_multi_tap_pdf(m)
         elif m.is_comparison:
-            self._export_comparison_pdf(m)
+            self._export_comparison_pdf_report(m)
         else:
             path, _ = QtWidgets.QFileDialog.getSaveFileName(
                 self,
@@ -505,12 +505,22 @@ class MeasurementsDialog(QtWidgets.QDialog):
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
-    def _export_comparison_pdf(self, m: TapToneMeasurement) -> None:
-        """Export a comparison PDF report — mirrors Swift's comparison PDF export path."""
+    def _export_comparison_pdf_report(self, m: TapToneMeasurement) -> None:
+        """Export a comparison PDF report.
+
+        Mirrors Swift exportComparisonPDFReport(for:) in MeasurementsListView.
+        """
+        label = m.tap_location or "measurement"
+        from datetime import datetime as _dt
+        try:
+            ts = int(_dt.fromisoformat(m.timestamp).timestamp())
+        except Exception:
+            ts = 0
+        basename = label.replace(" ", "-").lower() + f"-{ts}"
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Comparison PDF Report",
-            os.path.join(M.last_export_dir(), m.base_filename + ".pdf"),
+            os.path.join(M.last_export_dir(), basename + ".pdf"),
             "PDF files (*.pdf)",
         )
         if not path:

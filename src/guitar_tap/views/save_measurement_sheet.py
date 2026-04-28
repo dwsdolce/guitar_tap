@@ -17,10 +17,10 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
 
         # Tap location
-        loc_group = QtWidgets.QGroupBox("Tap Location (Optional)")
+        loc_group = QtWidgets.QGroupBox("Measurement Name")
         loc_layout = QtWidgets.QVBoxLayout(loc_group)
         self._location_edit = QtWidgets.QLineEdit()
-        self._location_edit.setPlaceholderText("Bridge, Soundhole, Upper Bout…")
+        self._location_edit.setPlaceholderText("e.g. Martin 000-28, Spruce Top")
         loc_layout.addWidget(self._location_edit)
         layout.addWidget(loc_group)
 
