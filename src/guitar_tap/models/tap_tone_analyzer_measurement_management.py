@@ -391,8 +391,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
             return
 
         # ── Exit comparison mode, enter frozen mode ───────────────────────────
-        # Mirrors Swift: comparisonSpectra = []; displayMode = .frozen
+        # Mirrors Swift: comparisonSpectra = []; setFrozenSpectrum([], []); displayMode = .frozen
+        # Clear frozen arrays first so the audio thread cannot emit a spectrumUpdated signal
+        # with stale frozen data in the window between _display_mode becoming FROZEN and the
+        # new measurement's spectrum being written — the same ghost-spectrum fix as Swift.
         self.clear_comparison()
+        self.frozen_frequencies = np.array([])
+        self.frozen_magnitudes = np.array([])
         self._display_mode = AnalysisDisplayMode.FROZEN
 
         # ── Restore peaks ─────────────────────────────────────────────────────
