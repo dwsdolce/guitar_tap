@@ -217,8 +217,10 @@ class TapToneAnalyzerControlMixin:
         invoked, so no additional delay is needed here.
         """
         from PySide6.QtCore import QTimer as _QTimer
+        from guitar_tap.utilities.logging import gt_log as _gt_log
 
         device = self.mic.selected_input_device
+        _gt_log(f"DIAG E: _on_mic_sample_rate_changed — selected_input_device='{device.name if device else None}'")
         if device is None:
             return
 

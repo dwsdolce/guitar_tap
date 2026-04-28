@@ -430,6 +430,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         """
         if self._on_devices_changed is None:
             return
+        gt_log("DIAG D: _notify_devices_changed fired")
         time.sleep(0.5)
         self._on_devices_changed()
 
