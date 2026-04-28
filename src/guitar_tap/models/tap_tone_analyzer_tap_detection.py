@@ -599,6 +599,13 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         from models.measurement_type import MeasurementType as _MT
         from models.tap_display_settings import TapDisplaySettings as _tds
 
+        # DIAG G: one-shot log on the very first frame to check freq axis size
+        if not hasattr(self, "_diag_g_fired"):
+            self._diag_g_fired = True
+            mic_rate = getattr(self.mic, "rate", "?") if self.mic else "?"
+            fft_size = getattr(self.mic, "fft_size", "?") if self.mic else "?"
+            gt_log(f"DIAG G: FIRST FRAME — len(self.freq)={len(self.freq)} mic.rate={mic_rate} fft_size={fft_size} mag_len={len(mag_y_db)}")
+
         self._current_mag_y = mag_y
         self._current_mag_y_db = mag_y_db
 

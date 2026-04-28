@@ -17,12 +17,6 @@ Swift ↔ Python method correspondence:
   loadAvailableInputDevicesMacOS()  ↔  _load_available_input_devices_macos() [called internally]
   registerMacOSHardwareListener()   ↔  _start_coreaudio_monitor()
   unregisterMacOSHardwareListener() ↔  _stop_coreaudio_monitor()
-  registerSampleRateListener(for:)  ↔  _start_coreaudio_sample_rate_monitor() [macOS]
-                                        _start_windows_sample_rate_monitor()   [Windows, polling]
-                                        _start_linux_sample_rate_monitor()     [Linux, polling]
-  unregisterSampleRateListener()    ↔  _stop_coreaudio_sample_rate_monitor()  [macOS]
-                                        _stop_windows_sample_rate_monitor()    [Windows]
-                                        _stop_linux_sample_rate_monitor()      [Linux]
   handleRouteChange(notification:)  ↔  (iOS-only — not applicable)
   restartEngineAfterRouteChange()   ↔  (iOS-only — not applicable)
   setInputDevice(_:)                ↔  set_device()
@@ -101,7 +95,6 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
       self._stop_lock               : threading.Lock
       self.is_stopped               : bool
       self._on_devices_changed      : Callable[[], None] | None
-      self._on_sample_rate_changed  : Callable[[], None] | None
       self._monitor_stop            : threading.Event
       self._monitor_thread          : threading.Thread | None
     """
@@ -336,18 +329,6 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             except Exception:
                 pass
 
-        # Register per-device sample-rate listener.
-        # Mirrors Swift start() → registerSampleRateListener(for: deviceID).
-        # _close_stream_only() already unregistered the previous listener above.
-        if self._on_sample_rate_changed is not None:
-            p = platform.system()
-            if p == "Darwin":
-                self._start_coreaudio_sample_rate_monitor(device.name)
-            elif p == "Windows":
-                self._start_windows_sample_rate_monitor()
-            elif p == "Linux":
-                self._start_linux_sample_rate_monitor()
-
     def reinitialize_portaudio(self) -> None:
         """Stop, reinitialize PortAudio (refreshes device list), then restart.
 
@@ -389,22 +370,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
     # MARK: - Internal Helpers
 
     def _close_stream_only(self) -> None:
-        """Stop and close the audio stream without touching the hot-plug monitor.
-
-        Also unregisters the per-device sample-rate listener, mirroring Swift's
-        stop() → unregisterSampleRateListener() call in EngineControl.swift.
-        """
-        # Unregister sample-rate listener before closing the stream.
-        # Mirrors Swift stop() → unregisterSampleRateListener().
-        p = platform.system()
-        if p == "Darwin":
-            self._stop_coreaudio_sample_rate_monitor()
-        elif p in ("Windows", "Linux"):
-            try:
-                self._sr_poll_stop.set()
-            except Exception:
-                pass
-
+        """Stop and close the audio stream without touching the hot-plug monitor."""
         with self._stop_lock:
             self.is_stopped = True
         try:
@@ -451,22 +417,17 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             self._start_linux_monitor()
 
     def _stop_hotplug_monitor(self) -> None:
-        """Stop the platform-appropriate hot-plug monitor and sample-rate listener.
+        """Stop the platform-appropriate hot-plug monitor.
 
-        Mirrors Swift unregisterMacOSHardwareListener() (which also calls
-        unregisterSampleRateListener()) and the iOS
+        Mirrors Swift unregisterMacOSHardwareListener() and the iOS
         NotificationCenter.removeObserver call in deinit.
         """
         self._monitor_stop.set()
         p = platform.system()
         if p == "Darwin":
             self._stop_coreaudio_monitor()
-            self._stop_coreaudio_sample_rate_monitor()
         elif p == "Windows":
             self._stop_windows_monitor()
-            self._stop_windows_sample_rate_monitor()
-        elif p == "Linux":
-            self._stop_linux_sample_rate_monitor()
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=2.0)
 
@@ -632,86 +593,6 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             pass
         return 0
 
-    def _start_coreaudio_sample_rate_monitor(self, device_name: str) -> None:
-        """Register a CoreAudio property listener for sample-rate changes on the current device.
-
-        Watches kAudioDevicePropertyNominalSampleRate (0x6E737274) on the
-        CoreAudio device whose name matches device_name.  When fired, calls
-        self._on_sample_rate_changed() on a daemon thread after a 0.3 s delay,
-        mirroring Swift's 0.3 s DispatchQueue.main.asyncAfter.
-
-        Stores the callback reference in self._sr_cb and the device ID in
-        self._sr_device_id to allow unregistration via
-        _stop_coreaudio_sample_rate_monitor().
-
-        Mirrors Swift registerSampleRateListener(for: deviceID).
-        """
-        if self._on_sample_rate_changed is None:
-            return
-
-        device_id = self._get_coreaudio_device_id(device_name)
-        if device_id == 0:
-            return
-
-        try:
-            import ctypes
-            import ctypes.util
-
-            _ca = ctypes.CDLL(ctypes.util.find_library("CoreAudio"))
-
-            class _PropAddr(ctypes.Structure):
-                _fields_ = [
-                    ("mSelector", ctypes.c_uint32),
-                    ("mScope",    ctypes.c_uint32),
-                    ("mElement",  ctypes.c_uint32),
-                ]
-
-            # kAudioDevicePropertyNominalSampleRate = 'nsrt' = 0x6E737274
-            prop = _PropAddr(0x6E737274, 0x676C6F62, 0)
-
-            CB_TYPE = ctypes.CFUNCTYPE(
-                ctypes.c_int32,
-                ctypes.c_uint32,
-                ctypes.c_uint32,
-                ctypes.POINTER(_PropAddr),
-                ctypes.c_void_p,
-            )
-
-            on_sr_changed = self._on_sample_rate_changed
-
-            def _listener(obj, n, addrs, data):
-                def _delayed():
-                    time.sleep(0.3)
-                    on_sr_changed()
-                threading.Thread(target=_delayed, daemon=True).start()
-                return 0
-
-            self._sr_cb = CB_TYPE(_listener)
-            self._sr_device_id = device_id
-            self._sr_ca_prop = prop
-            self._sr_ca = _ca
-            _ca.AudioObjectAddPropertyListener(
-                device_id, ctypes.byref(prop), self._sr_cb, None
-            )
-        except Exception:
-            pass
-
-    def _stop_coreaudio_sample_rate_monitor(self) -> None:
-        """Unregister the CoreAudio sample-rate property listener.
-
-        No-op if no listener is registered.
-        Mirrors Swift unregisterSampleRateListener().
-        """
-        try:
-            import ctypes
-            self._sr_ca.AudioObjectRemovePropertyListener(
-                self._sr_device_id, ctypes.byref(self._sr_ca_prop), self._sr_cb, None
-            )
-            self._sr_cb = None
-            self._sr_device_id = 0
-        except Exception:
-            pass
-
     # -- Windows: CM_Register_Notification (cfgmgr32, Windows 8+) ---------
     # Python-only — Swift targets macOS/iOS only.
 
@@ -815,82 +696,6 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         except Exception:
             pass
 
-    # -- Windows: sample-rate polling fallback ----------------------------
-    # Python-only — no per-device sample-rate event on Windows.
-
-    def _start_windows_sample_rate_monitor(self) -> None:
-        """Poll the current device's sample rate every 5 s on Windows.
-
-        Windows has no native per-device sample-rate-changed notification
-        analogous to CoreAudio's kAudioDevicePropertyNominalSampleRate, so we
-        fall back to polling via sounddevice.  If a change is detected,
-        calls self._on_sample_rate_changed() on the polling thread.
-
-        Python-only — Swift targets macOS/iOS only.
-        """
-        if self._on_sample_rate_changed is None:
-            return
-
-        stop_event = threading.Event()
-        self._sr_poll_stop = stop_event
-        on_sr_changed = self._on_sample_rate_changed
-        # Capture the device name and *hardware* default_samplerate at start.
-        # The poller compares against default_samplerate (not self.rate, which
-        # is the negotiated stream rate and may differ from the hardware nominal
-        # rate on Windows WASAPI shared-mode resampling).  Using self.rate as
-        # initial_rate would cause an immediate spurious fire on every start
-        # because the hardware nominal rate (e.g. 44100) differs from the
-        # negotiated rate (e.g. 48000).
-        #
-        # The name guard detects index renumbering after a USB unplug: Windows
-        # reassigns the old PortAudio index to a different (WDM-KS) device whose
-        # default_samplerate also differs, which would look like a rate change.
-        initial_name: str = ""
-        initial_rate: int = 0
-        try:
-            dev_info = sd.query_devices(self.device_index)
-            initial_name = str(dev_info.get("name", ""))
-            initial_rate = int(dev_info.get("default_samplerate", self.rate))
-        except Exception:
-            initial_rate = self.rate
-        gt_log(f"DIAG C: Windows SR poller start — self.rate={self.rate}, initial_rate={initial_rate}, device='{initial_name}'")
-
-        def _poll() -> None:
-            current_rate = initial_rate
-            while not stop_event.is_set():
-                stop_event.wait(timeout=5.0)
-                if stop_event.is_set():
-                    break
-                try:
-                    dev_info = sd.query_devices(self.device_index)
-                    # If the device at this index has a different name the OS
-                    # renumbered devices after an unplug.  Stop polling to
-                    # avoid triggering a spurious rate-change restart onto
-                    # whatever device now occupies this index.
-                    current_name = str(dev_info.get("name", ""))
-                    if initial_name and current_name != initial_name:
-                        stop_event.set()
-                        break
-                    new_rate = int(dev_info.get("default_samplerate", current_rate))
-                    if new_rate != current_rate:
-                        current_rate = new_rate
-                        on_sr_changed()
-                except Exception:
-                    pass
-
-        self._sr_poll_thread = threading.Thread(target=_poll, daemon=True)
-        self._sr_poll_thread.start()
-
-    def _stop_windows_sample_rate_monitor(self) -> None:
-        """Stop the Windows sample-rate polling thread.
-
-        Python-only — Swift targets macOS/iOS only.
-        """
-        try:
-            self._sr_poll_stop.set()
-        except Exception:
-            pass
-
     # -- Linux: udev via pyudev --------------------------------------------
     # Python-only — Swift targets macOS/iOS only.
 
@@ -919,61 +724,3 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         self._monitor_thread = threading.Thread(target=_run, daemon=True)
         self._monitor_thread.start()
 
-    # -- Linux: sample-rate polling fallback ------------------------------
-    # Python-only — ALSA has no per-device sample-rate-changed event.
-
-    def _start_linux_sample_rate_monitor(self) -> None:
-        """Poll the current device's sample rate every 5 s on Linux.
-
-        ALSA provides no per-device sample-rate-changed notification, so we
-        fall back to polling via sounddevice.  If a change is detected, calls
-        self._on_sample_rate_changed() on the polling thread.
-
-        Python-only — Swift targets macOS/iOS only.
-        """
-        if self._on_sample_rate_changed is None:
-            return
-
-        stop_event = threading.Event()
-        self._sr_poll_stop = stop_event
-        on_sr_changed = self._on_sample_rate_changed
-        initial_rate = self.rate
-        # Capture device name at start — same guard as the Windows poller to
-        # detect index renumbering after a device unplug.
-        initial_name: str = ""
-        try:
-            initial_name = str(sd.query_devices(self.device_index).get("name", ""))
-        except Exception:
-            pass
-
-        def _poll() -> None:
-            current_rate = initial_rate
-            while not stop_event.is_set():
-                stop_event.wait(timeout=5.0)
-                if stop_event.is_set():
-                    break
-                try:
-                    dev_info = sd.query_devices(self.device_index)
-                    current_name = str(dev_info.get("name", ""))
-                    if initial_name and current_name != initial_name:
-                        stop_event.set()
-                        break
-                    new_rate = int(dev_info.get("default_samplerate", current_rate))
-                    if new_rate != current_rate:
-                        current_rate = new_rate
-                        on_sr_changed()
-                except Exception:
-                    pass
-
-        self._sr_poll_thread = threading.Thread(target=_poll, daemon=True)
-        self._sr_poll_thread.start()
-
-    def _stop_linux_sample_rate_monitor(self) -> None:
-        """Stop the Linux sample-rate polling thread.
-
-        Python-only — Swift targets macOS/iOS only.
-        """
-        try:
-            self._sr_poll_stop.set()
-        except Exception:
-            pass

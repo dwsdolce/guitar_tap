@@ -219,35 +219,6 @@ class TapToneAnalyzerControlMixin:
         else:
             self.clear_calibration()
 
-    def _on_mic_sample_rate_changed(self) -> None:
-        """Handle a sample-rate change on the current input device.
-
-        Called by the platform sample-rate listener (CoreAudio on macOS, polling
-        on Windows/Linux) after a 0.3 s delay.  Restarts the audio stream by
-        re-calling set_device() with the currently selected device, which closes
-        the old stream, opens a new one at the updated rate, and auto-loads
-        calibration.
-
-        Mirrors Swift's registerSampleRateListener block which calls stop() then,
-        after a 0.3 s DispatchQueue.main.asyncAfter, calls try self.start() and
-        increments routeChangeRestartCount.
-
-        The 0.3 s delay is already applied by the listener before this method is
-        invoked, so no additional delay is needed here.
-        """
-        from PySide6.QtCore import QTimer as _QTimer
-        from guitar_tap.utilities.logging import gt_log as _gt_log
-
-        device = self.mic.selected_input_device
-        _gt_log(f"DIAG E: _on_mic_sample_rate_changed — selected_input_device='{device.name if device else None}'")
-        if device is None:
-            return
-
-        # Dispatch back onto the main thread (the listener fires on a daemon thread).
-        # Also call handle_route_change_restart() to mirror Swift incrementing
-        # routeChangeRestartCount after start(), which triggers handleRouteChangeRestart().
-        _QTimer.singleShot(0, lambda: (self.set_device(device), self.handle_route_change_restart()))
-
     def handle_route_change_restart(self) -> None:
         """Respond to an audio-engine restart triggered by a device or route change.
 
@@ -481,7 +452,10 @@ class TapToneAnalyzerControlMixin:
             # Restore frequency axis to the mic's hardware rate now that the
             # mic stream has been restarted (mic.rate is back to hardware rate).
             # Mirrors Swift's start() → updateFrequencyBins() inside the asyncAfter block.
-            self._update_frequency_bins()
+            # Must run on the main thread — _update_frequency_bins writes self.freq which
+            # on_fft_frame reads on the main thread (no lock).
+            from PySide6.QtCore import QTimer as _QTimer
+            _QTimer.singleShot(0, self._update_frequency_bins)
             if on_finished is not None:
                 on_finished()
 
