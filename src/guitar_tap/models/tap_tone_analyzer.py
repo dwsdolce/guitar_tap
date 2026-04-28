@@ -138,6 +138,11 @@ class TapToneAnalyzer(
     savedMeasurementsChanged: QtCore.Signal = QtCore.Signal()
     # Emitted when frequency range changes (fmin, fmax).
     freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)
+    # Emitted when a loaded measurement or comparison supplies all four axis bounds atomically.
+    # Payload: (min_freq: int, max_freq: int, min_db: float, max_db: float).
+    # Mirrors Swift TapToneAnalyzer.setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:) which
+    # publishes loadedAxisRange so TapToneAnalysisView can apply all four bounds in one pass.
+    loadedAxisRangeChanged: QtCore.Signal = QtCore.Signal(int, int, float, float)
     # Peak info for status bar: (peak_hz, peak_db).
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)
     # Human-readable status string for the status bar (mirrors Swift @Published var statusMessage).
@@ -338,6 +343,19 @@ class TapToneAnalyzer(
         self.comparison_labels: list = []
         self._comparison_data: list = []
         self.comparison_snapshots: list = []   # parallel to _comparison_data — mirrors Swift comparisonSnapshots
+
+        # ── Multi-Tap Comparison State ────────────────────────────────────
+        # Per-tap spectra and peaks from the most recent multi-tap guitar sequence.
+        # Empty list for single-tap sequences, plate, and brace measurements.
+        # Populated by process_multiple_taps(); cleared by reset paths in the control mixin.
+        # Mirrors Swift TapToneAnalyzer.tapEntries ([TapEntry]).
+        self.tap_entries: list = []
+
+        # When True and is_measurement_complete, the Results panel shows the per-tap
+        # comparison view instead of the averaged-only view.
+        # Reset to False when a new sequence starts.
+        # Mirrors Swift TapToneAnalyzer.showingMultiTapComparison (Bool).
+        self.showing_multi_tap_comparison: bool = False
 
         # ── Plate/brace phase state ───────────────────────────────────────
         self.material_tap_phase: "_MTP" = _MTP.NOT_STARTED

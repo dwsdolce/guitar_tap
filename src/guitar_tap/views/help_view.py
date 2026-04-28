@@ -167,6 +167,18 @@ def _build_help_html() -> str:
         "Use Pause between taps to let the ring-out decay."
     ))
     parts.append(_row(
+        "Multi-Tap Comparison",
+        "After a multi-tap guitar sequence (2&ndash;10 taps), the Results panel header "
+        "shows a <b>Taps</b> button. Click it to switch to Multi-Tap Comparison view: "
+        "the chart overlays each individual tap&rsquo;s spectrum in a distinct colour "
+        "alongside the averaged spectrum, and the Results panel shows an "
+        "Air / Top / Back frequency table with one row per tap plus a final Averaged row. "
+        "Click the button again to return to the normal averaged view. "
+        "The per-tap data is saved with the measurement and reloads correctly &mdash; "
+        "the Taps button reappears whenever a measurement with multi-tap data is loaded.",
+        ["fa5s.layer-group"]
+    ))
+    parts.append(_row(
         "Overriding Mode Classification",
         "If a peak is labelled Unknown, or misclassified, click it in the Results list "
         "and assign the correct mode manually. Your override is saved with the measurement."

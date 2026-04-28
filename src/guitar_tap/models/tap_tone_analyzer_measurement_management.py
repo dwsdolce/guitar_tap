@@ -298,12 +298,23 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         overrides = dict(self.peak_mode_overrides) if self.peak_mode_overrides else None
 
+        # Multi-tap entries — saved only for multi-tap guitar sequences.
+        # Mirrors Swift: tapEntries: measurementType.isGuitar && !tapEntries.isEmpty ? tapEntries : nil
+        tap_entries_to_save = (
+            list(self.tap_entries)
+            if mt.is_guitar and getattr(self, "tap_entries", [])
+            else None
+        )
+
         measurement = TapToneMeasurement.create(
             peaks=peaks,
             decay_time=decay_time,
             tap_location=tap_location,
             notes=notes,
-            measurement_type=mt_str,
+            # measurement_type is NOT passed here — mirrors Swift which stores the
+            # type only inside SpectrumSnapshot, not as a top-level measurement field.
+            # to_dict() resolves measurementType from the snapshot, so the JSON output
+            # matches Swift's format exactly.
             spectrum_snapshot=guitar_snapshot,
             longitudinal_snapshot=longitudinal_snapshot,
             cross_snapshot=cross_snapshot,
@@ -324,6 +335,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             microphone_name=microphone_name,
             microphone_uid=microphone_uid,
             calibration_name=calibration_name,
+            tap_entries=tap_entries_to_save,
         )
         self.savedMeasurements.append(measurement)
         self._persist_measurements()
@@ -668,15 +680,139 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # ── Status message ────────────────────────────────────────────────────
         # Mirrors Swift: statusMessage = "Loaded measurement (frozen)..."
         self._set_status_message(
-            "Loaded measurement (frozen). Press 'Resume' or 'New Tap' to continue."
+            "Loaded measurement (frozen). Press \u2018New Tap\u2019 to start a new measurement."
         )
 
         gt_log(f"✅ Loaded measurement with {len(self.current_peaks)} peaks (frozen)")
+
+        # ── Restore multi-tap entries ─────────────────────────────────────────
+        # Mirrors Swift: tapEntries = measurement.tapEntries ?? []
+        #               showingMultiTapComparison = false
+        # Placed last (matching Swift's loadMeasurement order) so all other
+        # state is fully set before the view's measurementComplete handler
+        # reads tap_entries to decide whether to show the toggle button.
+        self.tap_entries = list(measurement.tap_entries) if measurement.tap_entries else []
+        self.showing_multi_tap_comparison = False
+        if self.tap_entries:
+            gt_log(f"  📋 Restored {len(self.tap_entries)} per-tap entries for multi-tap comparison")
 
         # ── Emit measurementComplete — all state now fully restored ───────────
         # Fired last so the view receives it with fully-populated model state.
         # Equivalent to SwiftUI's batched objectWillChange deferring re-render.
         self.measurementComplete.emit(True)
+
+    # ── Multi-Tap Comparison Overlays ──────────────────────────────────────────
+
+    # Comparison palette — must stay in sync with Swift TapToneAnalyzer.comparisonPalette
+    # and MultiTapComparisonResultsView.palette (inlined in view layer).
+    _MULTI_TAP_PALETTE = [
+        (0, 122, 255),    # blue
+        (255, 149, 0),    # orange
+        (52, 199, 89),    # green
+        (175, 82, 222),   # purple
+        (48, 176, 199),   # teal
+    ]
+
+    def apply_multi_tap_comparison_overlays(self, enabled: bool) -> None:
+        """Populate or clear chart overlay entries for the multi-tap comparison view.
+
+        When ``enabled``:
+          - Builds one _comparison_data / comparison_labels entry per TapEntry
+            (colors from the fixed palette, labels "Tap 1" … "Tap N").
+          - Appends an Averaged entry in bold yellow using the current frozen spectrum.
+          - Sets display_mode = COMPARISON so the chart's materialSpectra picks up the
+            overlays (mirrors Swift's applyMultiTapComparisonOverlays(enabled:true)).
+
+        When ``enabled`` is False:
+          - Clears _comparison_data, comparison_labels, and comparison_snapshots.
+          - Sets display_mode = FROZEN (returns chart to averaged-only view).
+
+        Mirrors Swift TapToneAnalyzer+MeasurementManagement.applyMultiTapComparisonOverlays(enabled:).
+        """
+        import numpy as _np
+
+        if not enabled:
+            self._comparison_data = []
+            self.comparison_labels = []
+            self.comparison_snapshots = []
+            self._display_mode = AnalysisDisplayMode.FROZEN
+            self.comparisonChanged.emit(False)
+            return
+
+        # Mirrors Swift: guard !tapEntries.isEmpty else { return }
+        if not self.tap_entries:
+            return
+
+        entries: list = []
+        labels: list = []
+        snapshots: list = []
+
+        palette = self._MULTI_TAP_PALETTE
+        for idx, tap_entry in enumerate(self.tap_entries):
+            color = palette[idx % len(palette)]
+            label = f"Tap {tap_entry.tap_index}"
+            snap = tap_entry.snapshot
+            freqs = _np.array(snap.frequencies, dtype=_np.float64)
+            mags  = _np.array(snap.magnitudes,  dtype=_np.float64)
+            entries.append({
+                "label":      label,
+                "color":      color,
+                "freqs":      freqs,
+                "mags":       mags,
+                "snapshot":   snap,
+                "peaks":      [p for p in tap_entry.peaks
+                               if p.id in set(tap_entry.selected_peak_ids)],
+                "guitar_type": snap.guitar_type,
+            })
+            labels.append((label, color))
+            snapshots.append(snap)
+
+        # Averaged row — uses bold yellow, matches Swift's avgColor.
+        avg_color = (255, 217, 0)   # rgb(1.0, 0.85, 0.0) → 255, 217, 0
+        avg_label = "Averaged"
+        avg_freqs = self.frozen_frequencies
+        avg_mags  = self.frozen_magnitudes
+        if avg_freqs is not None and len(avg_freqs) > 0:
+            # Build a minimal snapshot for axis-range computation.
+            from .spectrum_snapshot import SpectrumSnapshot as _SS
+            from .tap_display_settings import TapDisplaySettings as _tds3
+            avg_snap = _SS(
+                frequencies=list(avg_freqs),
+                magnitudes=list(avg_mags),
+                min_freq=_tds3.min_frequency(),
+                max_freq=_tds3.max_frequency(),
+                min_db=_tds3.min_magnitude(),
+                max_db=0.0,
+                is_logarithmic=False,
+                show_unknown_modes=_tds3.show_unknown_modes(),
+                guitar_type=_tds3.guitar_type().value,
+                measurement_type=_tds3.measurement_type().value,
+                max_peaks=getattr(self, "max_peaks", None),
+            )
+            # Selected (mode-identified) averaged peaks only.
+            avg_sel_peaks = [
+                p for p in self.current_peaks
+                if p.id in self.selected_peak_ids
+            ]
+            entries.append({
+                "label":      avg_label,
+                "color":      avg_color,
+                "freqs":      _np.array(avg_freqs, dtype=_np.float64),
+                "mags":       _np.array(avg_mags,  dtype=_np.float64),
+                "snapshot":   avg_snap,
+                "peaks":      avg_sel_peaks,
+                "guitar_type": getattr(self, "guitar_type", None),
+            })
+            labels.append((avg_label, avg_color))
+            snapshots.append(avg_snap)
+
+        self._comparison_data = entries
+        self.comparison_labels = labels
+        self.comparison_snapshots = snapshots
+        # Set COMPARISON mode so the chart's materialSpectra feeds the overlays.
+        # Mirrors Swift applyMultiTapComparisonOverlays(enabled: true).
+        self._display_mode = AnalysisDisplayMode.COMPARISON
+        self.comparisonChanged.emit(True)
 
     def update_measurement(
         self,
@@ -810,9 +946,16 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         if with_snapshots:
             snaps = [m.spectrum_snapshot for m in with_snapshots]
-            min_freq = int(min(s.min_freq for s in snaps))
-            max_freq = int(max(s.max_freq for s in snaps))
-            self.update_axis(min_freq, max_freq)
+            # Broadcast the union axis ranges — mirrors Swift loadComparison(measurements:)
+            # which calls setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:) so all four
+            # bounds are published atomically. Using set_loaded_axis_range() here keeps
+            # the model as the single source of truth (vs computing the union in the canvas).
+            self.set_loaded_axis_range(
+                int(min(s.min_freq for s in snaps)),
+                int(max(s.max_freq for s in snaps)),
+                float(min(s.min_db  for s in snaps)),
+                float(max(s.max_db  for s in snaps)),
+            )
             self._display_mode = AnalysisDisplayMode.COMPARISON
             self.comparisonChanged.emit(True)
         else:
@@ -914,12 +1057,16 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.comparison_labels.append((entry.label, color))
             self.comparison_snapshots.append(snap)
 
-        # Restore union axis bounds from saved snapshot ranges.
+        # Restore union axis bounds — mirrors Swift loadMeasurement(_:) which calls
+        # setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:) for comparison entries.
         snaps = [e.snapshot for e in entries]
         if snaps:
-            min_f = min(s.min_freq for s in snaps)
-            max_f = max(s.max_freq for s in snaps)
-            self.update_axis(int(min_f), int(max_f))
+            self.set_loaded_axis_range(
+                int(min(s.min_freq for s in snaps)),
+                int(max(s.max_freq for s in snaps)),
+                float(min(s.min_db  for s in snaps)),
+                float(max(s.max_db  for s in snaps)),
+            )
 
         _name = measurement.tap_location
         self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)

@@ -43,6 +43,71 @@ def _now_iso() -> str:
 
 
 @dataclass
+class TapEntry:
+    """One individual tap's spectrum and detected peaks within a multi-tap guitar sequence.
+
+    Stores everything needed to display one tap's overlay on the comparison chart
+    and to populate its row in the multi-tap comparison results table.
+
+    Mirrors Swift TapEntry struct (TapToneMeasurement.swift).
+
+    JSON key mapping (camelCase, matching Swift CodingKeys):
+      id, tapIndex, snapshot, peaks, selectedPeakIDs
+    """
+
+    # Stable unique identifier for this tap entry.
+    # Mirrors Swift TapEntry.id (UUID).
+    id: str
+
+    # 1-based display index ("Tap 1", "Tap 2", …).
+    # Mirrors Swift TapEntry.tapIndex.
+    tap_index: int
+
+    # Full spectrum snapshot for this individual tap.
+    # Mirrors Swift TapEntry.snapshot (SpectrumSnapshot).
+    snapshot: SpectrumSnapshot
+
+    # All peaks detected on this tap's spectrum.
+    # Mirrors Swift TapEntry.peaks ([ResonantPeak]).
+    peaks: list[ResonantPeak]
+
+    # UUIDs of the auto-selected peaks for guitar mode (Air/Top/Back/…).
+    # Mirrors Swift TapEntry.selectedPeakIDs ([UUID]).
+    selected_peak_ids: list[str]
+
+    def to_dict(self) -> dict:
+        """Encode as a JSON-compatible dict using Swift camelCase field names.
+
+        Mirrors Swift TapEntry's synthesized Codable encode(to:).
+        Python-only — Swift uses synthesized Codable.
+        """
+        return {
+            "id": self.id,
+            "tapIndex": self.tap_index,
+            "snapshot": self.snapshot.to_dict(),
+            "peaks": [p.to_dict() for p in self.peaks],
+            "selectedPeakIDs": self.selected_peak_ids,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "TapEntry":
+        """Decode a Swift-format TapEntry JSON object.
+
+        Python-only — Swift uses synthesized Codable.
+        """
+        snap_d = d.get("snapshot", {})
+        snapshot = SpectrumSnapshot.from_dict(snap_d)
+        peaks = [ResonantPeak.from_dict(p) for p in d.get("peaks", [])]
+        return cls(
+            id=d.get("id", str(uuid.uuid4())),
+            tap_index=d.get("tapIndex", 1),
+            snapshot=snapshot,
+            peaks=peaks,
+            selected_peak_ids=d.get("selectedPeakIDs", []),
+        )
+
+
+@dataclass
 class ComparisonEntry:
     """A single spectrum entry within a saved comparison measurement.
 
@@ -302,6 +367,14 @@ class TapToneMeasurement:
     # Mirrors Swift TapToneMeasurement.comparisonEntries ([ComparisonEntry]?).
     comparison_entries: list[ComparisonEntry] | None = None
 
+    # MARK: - Multi-Tap Entries
+
+    # Individual tap spectra and peaks from a multi-tap guitar sequence.
+    # None for single-tap, plate, brace, and older saved measurements.
+    # Additive and backward-compatible: existing measurements decode with None and are unaffected.
+    # Mirrors Swift TapToneMeasurement.tapEntries ([TapEntry]?).
+    tap_entries: list[TapEntry] | None = None
+
     # MARK: - Computed Properties
 
     @property
@@ -516,6 +589,11 @@ class TapToneMeasurement:
         if self.comparison_entries is not None:
             d["comparisonEntries"] = [e.to_dict() for e in self.comparison_entries]
 
+        # Multi-tap entries — omitted (encodeIfPresent) when None.
+        # Mirrors Swift TapToneMeasurement.encode(to:) tapEntries.
+        if self.tap_entries is not None:
+            d["tapEntries"] = [e.to_dict() for e in self.tap_entries]
+
         return d
 
     @staticmethod
@@ -587,6 +665,14 @@ class TapToneMeasurement:
             else None
         )
 
+        # Multi-tap entries — None when absent (backward-compatible).
+        tap_entries_raw = d.get("tapEntries")
+        tap_entries = (
+            [TapEntry.from_dict(e) for e in tap_entries_raw]
+            if tap_entries_raw is not None
+            else None
+        )
+
         return TapToneMeasurement(
             id=d.get("id", str(uuid.uuid4())),
             timestamp=d.get("timestamp", _now_iso()),
@@ -616,6 +702,7 @@ class TapToneMeasurement:
             measurement_type=d.get("measurementType"),
             guitar_type=d.get("guitarType"),
             comparison_entries=comparison_entries,
+            tap_entries=tap_entries,
         )
 
     @staticmethod
@@ -646,6 +733,7 @@ class TapToneMeasurement:
         measurement_type: str | None = None,
         guitar_type: str | None = None,
         comparison_entries: list[ComparisonEntry] | None = None,
+        tap_entries: list[TapEntry] | None = None,
     ) -> "TapToneMeasurement":
         """Factory method — creates a new measurement with a fresh UUID and current timestamp.
 
@@ -685,4 +773,5 @@ class TapToneMeasurement:
             measurement_type=measurement_type,
             guitar_type=guitar_type,
             comparison_entries=comparison_entries,
+            tap_entries=tap_entries,
         )

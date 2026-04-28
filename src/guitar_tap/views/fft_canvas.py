@@ -393,6 +393,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.microphoneWarningChanged.connect(self.microphoneWarningChanged)
         self.analyzer.requestDeviceSwitch.connect(self.requestDeviceSwitch)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
+        self.analyzer.loadedAxisRangeChanged.connect(self._on_loaded_axis_range_changed)
         self.analyzer.materialSpectraChanged.connect(self.load_material_spectra)
         self.analyzer.peakInfoChanged.connect(self.peakInfoChanged)
         # spectrumUpdated drives the spectrum line rendering path.
@@ -1435,27 +1436,28 @@ class FftCanvas(pg.PlotWidget):
         if is_comparing:
             # On the restore path (loading a saved comparison record), the analyzer
             # has populated _comparison_data but the canvas has no curves yet.
-            # Render them now before updating the axis or emitting outward.
+            # Render them now before emitting outward.
             if not self._comparison_curves and self.analyzer._comparison_data:
                 self._render_comparison_curves()
-
-            # Apply axis ranges from the saved snapshot display bounds — mirrors Swift
-            # loadComparison(measurements:) which computes the union of each snapshot's
-            # minFreq/maxFreq/minDB/maxDB and publishes it via setLoadedAxisRange.
-            #
-            # Do NOT derive ranges from np.min/max of the raw frequency/magnitude arrays:
-            # that gives the full FFT extent (e.g. 0–5000 Hz) rather than the display
-            # window that was active when each measurement was captured.
-            snaps = self.analyzer.loaded_comparison_snapshots()
-            if snaps:
-                min_freq = int(min(s.min_freq for s in snaps))
-                max_freq = int(max(s.max_freq for s in snaps))
-                min_db   = float(min(s.min_db   for s in snaps))
-                max_db   = float(max(s.max_db   for s in snaps))
-                self.update_axis(min_freq, max_freq)
-                self.setYRange(min_db, max_db, padding=0)
+            # Axis bounds are applied by _on_loaded_axis_range_changed, which fires
+            # before this handler because set_loaded_axis_range() emits
+            # loadedAxisRangeChanged before the model emits comparisonChanged.
 
         self.comparisonChanged.emit(is_comparing)
+
+    def _on_loaded_axis_range_changed(
+        self, min_freq: int, max_freq: int, min_db: float, max_db: float
+    ) -> None:
+        """Apply all four axis bounds emitted by the model's set_loaded_axis_range().
+
+        Mirrors Swift TapToneAnalysisView's .onReceive(tap.$loadedAxisRange) handler
+        which sets minFreq/maxFreq/minDB/maxDB view-state in one pass.  Keeping the
+        union computation in the model and the application here in the canvas means
+        the canvas never needs to reach back into model internals (comparison_snapshots)
+        to derive axis bounds — the model is the single source of truth.
+        """
+        self.update_axis(min_freq, max_freq)
+        self.setYRange(min_db, max_db, padding=0)
 
     def set_measurement_complete(self, is_measurement_complete: bool) -> None:
         """Update canvas-side UI for frozen/live state.

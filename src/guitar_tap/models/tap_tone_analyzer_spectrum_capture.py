@@ -962,12 +962,24 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         avg_db = _np.array(avg_mags)
 
         self.set_frozen_spectrum(self.freq, avg_db)
-        self.set_measurement_complete(True)
+        # Set is_measurement_complete early (mirrors Swift isMeasurementComplete = true
+        # at the same point) but defer the signal emit until after peaks, modes, and
+        # selected IDs are fully populated — mirrors loadMeasurement() which also sets
+        # the flag early and emits last. Swift @Published batches all state in one render
+        # cycle; Python signals fire immediately, so the emit must come after all state
+        # is ready to avoid the view seeing an incomplete snapshot.
+        self.is_measurement_complete = True
         # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
         if self.show_loaded_settings_warning:
             self.show_loaded_settings_warning = False
             self.showLoadedSettingsWarningChanged.emit(False)
         gt_log(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
+
+        # Clear before peak classification — mirrors Swift processMultipleTaps() which
+        # sets loadedMeasurementPeaks = nil before classifying peaks and setting
+        # identifiedModes. Clearing here prevents recalculate_frozen_peaks_if_needed()
+        # from using stale loaded peaks if it runs during a peaksChanged handler.
+        self.loaded_measurement_peaks = None
 
         peaks = self.find_peaks(avg_mags, avg_freqs)
         self.current_peaks = peaks
@@ -998,16 +1010,68 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.user_has_modified_peak_selection = False
 
         self.peaksChanged.emit(peaks)
-        self.loaded_measurement_peaks = None
+        # Emit measurementComplete after all state is ready — mirrors loadMeasurement()
+        # ordering and ensures view observers see complete peaks + modes when they react.
+        self.measurementComplete.emit(True)
 
+        tap_count = len(self.captured_taps)
         self._set_status_message(
             f"Analysis complete! {len(peaks)} peaks identified "
-            f"(from {len(self.captured_taps)} averaged taps)."
+            f"(from {tap_count} averaged taps)."
         )
         self.tap_progress = 1.0
-        gt_log(f"✅ Found {len(peaks)} peaks in averaged spectrum from {len(self.captured_taps)} taps")
+        gt_log(f"✅ Found {len(peaks)} peaks in averaged spectrum from {tap_count} taps")
 
-        self.captured_taps.clear()
+        # ── Build per-tap entries for multi-tap comparison ─────────────────
+        # Mirrors Swift processMultipleTaps() per-tap block.
+        # Only built when there are 2+ taps (single-tap has nothing to compare).
+        if tap_count > 1:
+            from .tap_tone_measurement import TapEntry
+            from .spectrum_snapshot import SpectrumSnapshot
+            from .tap_display_settings import TapDisplaySettings as _tds2
+            from .measurement_type import MeasurementType as _MT2
+            import uuid as _uuid2
+
+            _mt_str2 = _tds2.measurement_type().value
+            _gt_str2 = _tds2.guitar_type().value
+            _show_unk2 = _tds2.show_unknown_modes()
+            _min_f2 = _tds2.min_frequency()
+            _max_f2 = _tds2.max_frequency()
+            _min_db2 = _tds2.min_magnitude()
+
+            tap_entries_built = []
+            for idx, tap_mags in enumerate(tap_tuples):
+                t_mags, t_freqs, _ = tap_mags
+                t_peaks = self.find_peaks(t_mags, t_freqs)
+                t_sel_ids = self.guitar_mode_selected_peak_ids(t_peaks)
+                snap = SpectrumSnapshot(
+                    frequencies=list(t_freqs),
+                    magnitudes=list(t_mags),
+                    min_freq=_min_f2,
+                    max_freq=_max_f2,
+                    min_db=_min_db2,
+                    max_db=0.0,
+                    is_logarithmic=False,
+                    show_unknown_modes=_show_unk2,
+                    guitar_type=_gt_str2,
+                    measurement_type=_mt_str2,
+                    max_peaks=getattr(self, "max_peaks", None),
+                )
+                tap_entries_built.append(TapEntry(
+                    id=str(_uuid2.uuid4()),
+                    tap_index=idx + 1,
+                    snapshot=snap,
+                    peaks=t_peaks,
+                    selected_peak_ids=list(t_sel_ids),
+                ))
+            self.tap_entries = tap_entries_built
+            gt_log(f"📋 Built {len(tap_entries_built)} tap entries for multi-tap comparison")
+        else:
+            self.tap_entries = []
+
+        # Do NOT clear captured_taps here — mirrors Swift processMultipleTaps() which
+        # leaves capturedTaps intact until resetForNewSequence()/reset() clears them.
+        # tap_entries now holds all per-tap data; captured_taps is only needed until reset.
         self.tapDetectedSignal.emit()
 
     # ------------------------------------------------------------------ #

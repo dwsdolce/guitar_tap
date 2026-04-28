@@ -35,6 +35,7 @@ import views.utilities.gt_images as gt_i
 import views.fft_analysis_metrics_view as FMV
 from views.shared.loading_overlay import LoadingOverlay
 from views.comparison_results_view import ComparisonResultsView
+from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
 import qtawesome as qta
 
 # Package root: src/guitar_tap/views/ → src/guitar_tap/
@@ -774,13 +775,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Threshold (tap detection) ──────────────────────────────────────
         tap_thresh_val = AS.AppSettings.tap_threshold()   # 0-100 scale
-        self.tap_threshold_slider, self.tap_threshold_readout, _tap_reset = \
+        self.tap_threshold_slider, self.tap_threshold_readout, self.tap_threshold_reset_btn = \
             _db_slider_group(
                 "Threshold:", -80, -20, tap_thresh_val, 60,
                 "Signal level that triggers tap detection\n"
                 "(shown as orange dashed line on the spectrum)",
             )
-        _tap_reset.clicked.connect(lambda: self.tap_threshold_slider.setValue(-40))
+        self.tap_threshold_reset_btn.clicked.connect(lambda: self.tap_threshold_slider.setValue(-40))
 
         hl.addWidget(_vsep())
 
@@ -854,7 +855,20 @@ class MainWindow(QtWidgets.QMainWindow):
             "background: rgba(0,100,255,0.15); border-radius: 4px;"
             "padding: 1px 6px;"
         )
+        # Multi-tap toggle button — visible only for completed multi-tap guitar sequences.
+        # Mirrors Swift TapAnalysisResultsView header toggle buttons.
+        # Position: before the measurement type badge (matches Swift header layout).
+        self._multi_tap_toggle_btn = QtWidgets.QPushButton("Taps")
+        self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
+        self._multi_tap_toggle_btn.setCheckable(True)
+        self._multi_tap_toggle_btn.setChecked(False)
+        self._multi_tap_toggle_btn.setFont(small_font)
+        self._multi_tap_toggle_btn.setVisible(False)
+        self._multi_tap_toggle_btn.setIcon(qta.icon("fa5s.layer-group", color="gray"))
+        title_row.addWidget(self._multi_tap_toggle_btn)
+
         title_row.addWidget(self.measurement_type_badge)
+
         vbox.addLayout(title_row)
 
         # Row 2: "Showing …" (left) + Select All / Deselect All / Reset buttons (right)
@@ -906,6 +920,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._comparison_results_view = ComparisonResultsView()
         self._comparison_results_view.setVisible(False)
         vbox.addWidget(self._comparison_results_view, stretch=1)
+
+        # Multi-tap comparison grid — replaces peak list when showing_multi_tap_comparison.
+        # Shows Air / Top / Back for each individual tap + Averaged row.
+        # Mirrors Swift MultiTapComparisonResultsView.
+        self._multi_tap_results_view = MultiTapComparisonResultsView()
+        self._multi_tap_results_view.setVisible(False)
+        vbox.addWidget(self._multi_tap_results_view, stretch=1)
 
         # Peaks table — the main content for guitar mode
         self.peak_widget = PT.PeakListWidget()
@@ -1481,7 +1502,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cal_status.setVisible(False)
 
         # Comparison mode row (hidden by default) — replaces tap state during comparison.
-        # Left: "Comparing N measurements"   Right: "Press New Tap to exit comparison"
+        # Left: "Comparing N measurements"   Right: context-sensitive exit hint (see _on_comparison_changed)
         self._sb_compare_wgt = QtWidgets.QWidget()
         _cmp_hl = QtWidgets.QHBoxLayout(self._sb_compare_wgt)
         _cmp_hl.setContentsMargins(0, 0, 0, 0)
@@ -1490,15 +1511,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_compare_msg.setFont(small)
         _cmp_hl.addWidget(self._sb_compare_msg)
         _cmp_hl.addStretch(1)
-        _cmp_exit = QtWidgets.QLabel("Press New Tap to exit comparison")
-        _cmp_exit.setFont(small)
-        _cmp_exit.setStyleSheet("color: gray;")
-        _cmp_hl.addWidget(_cmp_exit)
+        # Exit hint — text is updated in _on_comparison_changed() to match Swift's conditional:
+        #   showingMultiTapComparison ? "Press 'Taps' to return…" : "Press 'New Tap' for a new measurement"
+        self._sb_compare_exit = QtWidgets.QLabel("")
+        self._sb_compare_exit.setFont(small)
+        self._sb_compare_exit.setStyleSheet("color: gray;")
+        _cmp_hl.addWidget(self._sb_compare_exit)
         self._sb_compare_wgt.setVisible(False)
         hl.addWidget(self._sb_compare_wgt)
 
-        # Normal tap state widgets (hidden while comparing)
+        # Normal tap state widgets (hidden while comparing).
+        # Ignored horizontal policy prevents any label inside from driving window
+        # width expansion when this widget becomes visible after comparison mode.
         self._sb_normal_wgt = QtWidgets.QWidget()
+        self._sb_normal_wgt.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Ignored,
+            QtWidgets.QSizePolicy.Policy.Preferred,
+        )
         _norm_hl = QtWidgets.QHBoxLayout(self._sb_normal_wgt)
         _norm_hl.setContentsMargins(0, 0, 0, 0)
         _norm_hl.setSpacing(4)
@@ -1811,6 +1840,9 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.newSample.connect(self.peak_widget.new_data)
         canvas.annotations.restoreFocus.connect(self.peak_widget.restore_focus)
         canvas.comparisonChanged.connect(self._on_comparison_changed)
+
+        # Multi-tap toggle button
+        self._multi_tap_toggle_btn.toggled.connect(self._on_multi_tap_toggled)
 
         # Peaks table → canvas annotations
         model = self.peak_widget.model
@@ -2158,6 +2190,37 @@ class MainWindow(QtWidgets.QMainWindow):
             self._gs_ratio_quality.setText("")
         self._sb_frozen_wgt.setVisible(checked)
         self._sb_update_frozen_state(checked)
+
+        # Show the multi-tap toggle button when:
+        #   • guitar mode + measurement complete + tapEntries non-empty
+        #   AND either:
+        #     (a) not yet showing multi-tap comparison AND not in a saved-measurement
+        #         comparison  (mirrors Swift's first `if` branch — default tint), OR
+        #     (b) already showing multi-tap comparison  (mirrors Swift's `else if`
+        #         branch — orange tint, visible regardless of displayMode)
+        # Mirrors Swift TapAnalysisResultsView lines 138–165.
+        analyzer = self.fft_canvas.analyzer
+        _mt = TDS.measurement_type()
+        _in_saved_comparison = (
+            self.fft_canvas.display_mode == AnalysisDisplayMode.COMPARISON
+        )
+        _has_tap_entries = _mt.is_guitar and len(analyzer.tap_entries) > 0
+        _show_btn = _has_tap_entries and (
+            analyzer.showing_multi_tap_comparison
+            or not _in_saved_comparison
+        )
+        if not checked:
+            # Reset toggle silently (block signals to avoid triggering the
+            # toggled handler which would call apply_multi_tap_comparison_overlays).
+            self._multi_tap_toggle_btn.blockSignals(True)
+            self._multi_tap_toggle_btn.setChecked(False)
+            self._multi_tap_toggle_btn.blockSignals(False)
+            import qtawesome as _qta
+            self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="gray"))
+            self._multi_tap_toggle_btn.setStyleSheet("")
+            self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
+        self._multi_tap_toggle_btn.setVisible(checked and _show_btn)
+
         self._update_tap_buttons()
 
     def reset_averaging(self) -> None:
@@ -2894,11 +2957,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_measurement_badge(self) -> None:
         """Refresh the badge in the Analysis Results panel.
 
-        Shows 'Comparison' with a purple tint in comparison mode (mirrors
-        analyzer.displayMode == .comparison check in TapAnalysisResultsView.swift),
-        otherwise shows the measurement type short name with blue/orange tint.
+        Shows 'Comparison' with a purple tint only for saved-measurement comparison
+        (displayMode == COMPARISON and not showingMultiTapComparison) — mirrors
+        Swift TapAnalysisResultsView.swift:169. During multi-tap comparison the
+        measurement type badge (e.g. "Classical") is shown instead.
         """
-        if self.fft_canvas.display_mode == AnalysisDisplayMode.COMPARISON:
+        if (self.fft_canvas.display_mode == AnalysisDisplayMode.COMPARISON
+                and not self.fft_canvas.analyzer.showing_multi_tap_comparison):
             self.measurement_type_badge.setText("Comparison")
             self.measurement_type_badge.setStyleSheet(
                 "background: rgba(160,32,240,0.20); border-radius: 4px; padding: 1px 6px;"
@@ -3473,13 +3538,35 @@ class MainWindow(QtWidgets.QMainWindow):
         n = canvas.comparison_count
 
         # ── Status bar: swap normal widgets ↔ comparison info ────────────────
+        # Mirrors Swift TapToneAnalysisView+Controls.swift:
+        #   showingMultiTapComparison ? "Tap comparison — N taps + averaged"
+        #                             : "Comparing N measurements"
+        _is_saved_comparison = is_comparing and not self.fft_canvas.analyzer.showing_multi_tap_comparison
+        _is_multi_tap_comparison = is_comparing and self.fft_canvas.analyzer.showing_multi_tap_comparison
         self._sb_normal_wgt.setVisible(not is_comparing)
         self._sb_compare_wgt.setVisible(is_comparing)
-        if is_comparing:
+        # Warning banner: suppress during saved-measurement comparison (the comparison panel
+        # replaces this context entirely); keep visible during multi-tap comparison because
+        # the loaded settings still apply to any new tap the user might take.
+        # Mirrors Swift: isSavedComparison = displayMode == .comparison && !showingMultiTapComparison
+        _warn_active = self.fft_canvas.analyzer.show_loaded_settings_warning
+        self._sb_warning_wgt.setVisible(_warn_active and not _is_saved_comparison)
+        if _is_multi_tap_comparison:
+            n_taps = len(self.fft_canvas.analyzer.tap_entries)
+            self._sb_compare_msg.setText(f"Tap comparison \u2014 {n_taps} taps + averaged")
+            # Mirrors Swift: showingMultiTapComparison ? "Press 'Taps' to return to averaged view,
+            # or 'New Tap' for a new measurement" — uses typographic quotes matching Swift \u{2018}/\u{2019}
+            self._sb_compare_exit.setText(
+                "Press \u2018Taps\u2019 to return to averaged view, "
+                "or \u2018New Tap\u2019 for a new measurement"
+            )
+        elif _is_saved_comparison:
             self._sb_compare_msg.setText(f"Comparing {n} measurements")
+            # Mirrors Swift: !showingMultiTapComparison ? "Press 'New Tap' for a new measurement"
+            self._sb_compare_exit.setText("Press \u2018New Tap\u2019 for a new measurement")
 
         # ── Analysis Results: show comparison grid ↔ peak list ───────────────
-        if is_comparing:
+        if _is_saved_comparison:
             # Populate the Air/Top/Back grid from current comparison data.
             self._comparison_results_view.set_comparison_data(
                 self.fft_canvas.analyzer._comparison_data
@@ -3498,28 +3585,63 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         else:
             self._right_panel.setMinimumWidth(0)
-        self._comparison_results_view.setVisible(is_comparing)
-        self.peak_widget.setVisible(not is_comparing)
+        # Mutual exclusivity: saved-measurement comparison and multi-tap comparison
+        # cannot both be active at once.
+        #
+        # When is_comparing=True is triggered by multi-tap overlays,
+        # showing_multi_tap_comparison is already True (set before emit).
+        # In that case we must NOT uncheck the multi-tap button.
+        # Only turn off multi-tap when a saved-measurement comparison is being
+        # entered (showing_multi_tap_comparison=False at entry time).
+        analyzer = self.fft_canvas.analyzer
+        _is_multi_tap_initiated = analyzer.showing_multi_tap_comparison
+        if is_comparing and not _is_multi_tap_initiated:
+            # Entering saved-measurement comparison — disable multi-tap if active.
+            analyzer.showing_multi_tap_comparison = False
+            self._multi_tap_toggle_btn.setChecked(False)
+            self._multi_tap_toggle_btn.setStyleSheet("")
+            self._multi_tap_results_view.setVisible(False)
+
+        # saved-measurement comparison grid: visible only during saved comparison
+        self._comparison_results_view.setVisible(is_comparing and not _is_multi_tap_initiated)
+        # Multi-tap results view: visible when multi-tap is active (regardless of is_comparing,
+        # since multi-tap comparison sets display_mode=COMPARISON internally).
+        self._multi_tap_results_view.setVisible(_is_multi_tap_initiated)
+        self.peak_widget.setVisible(
+            not is_comparing and not _is_multi_tap_initiated
+        )
         # Scroll area (plate/brace) also hidden while comparing
         self._material_scroll.setVisible(not is_comparing)
-        # Peak selection buttons hidden when there are no peaks to act on —
-        # mirrors Swift `if !sortedPeaksWithModes.isEmpty` which evaluates to
-        # empty during comparison (and also when no measurement has been made).
-        _has_peaks = not is_comparing and self.peak_widget.model.rowCount(QtCore.QModelIndex()) > 0
+        # Peak selection buttons hidden when there are no peaks to act on or during
+        # multi-tap comparison — mirrors Swift:
+        # `if !sortedPeaksWithModes.isEmpty && !analyzer.showingMultiTapComparison`
+        _has_peaks = (
+            not is_comparing
+            and not _is_multi_tap_initiated
+            and self.peak_widget.model.rowCount(QtCore.QModelIndex()) > 0
+        )
         self.select_all_btn.setVisible(_has_peaks)
         self.deselect_all_btn.setVisible(_has_peaks)
         self.reset_auto_selection_btn.setVisible(
             _has_peaks and TDS.measurement_type().is_guitar
         )
         # Guitar summary (Ring-Out, Tap Ratio) — mirrors
-        # `measurementType.isGuitar && analyzer.displayMode != .comparison` in Swift
-        self._guitar_summary.setVisible(TDS.measurement_type().is_guitar and not is_comparing)
+        # `measurementType.isGuitar && (displayMode != .comparison || showingMultiTapComparison)` in Swift.
+        # Show during multi-tap comparison (analyzer is in COMPARISON for chart purposes but
+        # the summary still applies to the averaged result).
+        _showing_mt = self.fft_canvas.analyzer.showing_multi_tap_comparison
+        self._guitar_summary.setVisible(
+            TDS.measurement_type().is_guitar and (not is_comparing or _showing_mt)
+        )
 
         # ── display_mode is already set by load_comparison / clear_comparison ──
         # The canvas _on_fft_frame_ready gates on display_mode == COMPARISON to
         # suppress live updates — no need to touch is_measurement_complete here.
 
         # ── Annotations ───────────────────────────────────────────────────────
+        # Hide annotations during any comparison mode (saved or multi-tap).
+        # Mirrors Swift: when isComparing is true, SpectrumView receives peaks: nil
+        # and annotationPeaks: nil, so no annotations are rendered.
         if is_comparing:
             canvas.annotations.hide_annotations()
         else:
@@ -3560,7 +3682,80 @@ class MainWindow(QtWidgets.QMainWindow):
             can_select and self.peak_widget.model.user_has_modified_peak_selection
         )
 
+        # ── Threshold / Peak Min controls ──────────────────────────────────────
+        # Disabled (and dimmed) during comparison — mirrors Swift:
+        #   .disabled(tap.displayMode == .comparison) on Threshold HStack
+        #   .disabled(!isGuitar || tap.displayMode == .comparison) on Peak Min HStack
+        _mt_is_guitar = TDS.measurement_type().is_guitar
+        _thresh_enabled = not is_comparing
+        _peak_min_enabled = _mt_is_guitar and not is_comparing
+        self.tap_threshold_slider.setEnabled(_thresh_enabled)
+        self.tap_threshold_readout.setEnabled(_thresh_enabled)
+        self.tap_threshold_reset_btn.setEnabled(_thresh_enabled)
+        self.threshold_slider.setEnabled(_peak_min_enabled)
+        self.peak_min_readout.setEnabled(_peak_min_enabled)
+        self.peak_min_reset_btn.setEnabled(_peak_min_enabled)
+
         self._update_tap_buttons()
+
+    def _on_multi_tap_toggled(self, checked: bool) -> None:
+        """Handle the multi-tap comparison toggle button.
+
+        When checked: populate the multi-tap results grid, apply chart overlays.
+        When unchecked: clear the overlays, restore normal peak list view.
+
+        Mirrors Swift TapAnalysisResultsView multi-tap toggle button action.
+        """
+        analyzer = self.fft_canvas.analyzer
+        analyzer.showing_multi_tap_comparison = checked
+        analyzer.apply_multi_tap_comparison_overlays(enabled=checked)
+
+        # Mirror Swift .tint(.orange): orange background + border + text when active.
+        import qtawesome as _qta
+        if checked:
+            self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="rgb(200,100,0)"))
+            self._multi_tap_toggle_btn.setStyleSheet(
+                "QPushButton {"
+                "  background-color: rgba(255, 149, 0, 0.15);"
+                "  border: 1px solid rgba(255, 149, 0, 0.45);"
+                "  border-radius: 4px;"
+                "  padding: 2px 6px;"
+                "  color: rgb(200, 100, 0);"
+                "}"
+            )
+            self._multi_tap_toggle_btn.setToolTip("Show averaged result only")
+        else:
+            self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="gray"))
+            self._multi_tap_toggle_btn.setStyleSheet("")
+            self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
+
+        # _on_comparison_changed will fire from apply_multi_tap_comparison_overlays
+        # via comparisonChanged.emit — it handles all widget visibility updates.
+        # Populate the multi-tap results view now with tap-entry data.
+        if checked and analyzer.tap_entries:
+            self._populate_multi_tap_results_view()
+
+    def _populate_multi_tap_results_view(self) -> None:
+        """Rebuild the multi-tap comparison results table from analyzer.tap_entries.
+
+        Each row shows one individual tap (colored dot + "Tap N" + Air/Top/Back).
+        A final "Averaged" row uses the current averaged peaks.
+
+        Mirrors Swift MultiTapComparisonResultsView.
+        """
+        analyzer = self.fft_canvas.analyzer
+
+        # Averaged peaks: all peaks selected in the averaged (frozen) spectrum.
+        avg_sel_peaks = [
+            p for p in analyzer.current_peaks
+            if p.id in analyzer.selected_peak_ids
+        ]
+
+        self._multi_tap_results_view.set_tap_data(
+            tap_entries=analyzer.tap_entries,
+            averaged_peaks=avg_sel_peaks,
+            guitar_type=TDS.guitar_type().value,
+        )
 
     def _restore_measurement(self, m: TapToneMeasurement) -> None:
         canvas = self.fft_canvas

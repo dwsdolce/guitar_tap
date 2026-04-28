@@ -510,6 +510,8 @@ class TapToneAnalyzerControlMixin:
 
         # Clear per-sequence accumulated data (mirrors Swift startTapSequence async block).
         self.captured_taps.clear()
+        self.tap_entries = []
+        self.showing_multi_tap_comparison = False
         self.current_tap_count = 0
         self.tap_progress = 0.0
         self.tap_detected = False
@@ -650,6 +652,8 @@ class TapToneAnalyzerControlMixin:
         is_brace = (meas_type == _MT.BRACE)
 
         self.captured_taps.clear()
+        self.tap_entries = []
+        self.showing_multi_tap_comparison = False
         self.current_tap_count = 0
         self.tap_progress = 0.0
         self.tap_detected = False
@@ -721,6 +725,8 @@ class TapToneAnalyzerControlMixin:
         self.current_tap_count = 0
         self.tap_progress = 0.0
         self.captured_taps.clear()
+        self.tap_entries = []
+        self.showing_multi_tap_comparison = False
 
         # Always start fresh so the first new tap is detected on a rising edge.
         self.is_above_threshold = False
@@ -1027,6 +1033,21 @@ class TapToneAnalyzerControlMixin:
             self.max_frequency = float(fmax)
         if not init:
             self.recalculate_frozen_peaks_if_needed()
+
+    def set_loaded_axis_range(
+        self, min_freq: int, max_freq: int, min_db: float, max_db: float
+    ) -> None:
+        """Publish all four axis bounds atomically via loadedAxisRangeChanged.
+
+        Mirrors Swift TapToneAnalyzer.setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:)
+        which sets loadedAxisRange (a struct) in a single objectWillChange notification so
+        the view applies all four bounds in one render pass.
+
+        Also calls update_axis() to keep the model's peak-analysis frequency range in sync,
+        matching Swift where minFrequency/maxFrequency track the displayed range.
+        """
+        self.update_axis(min_freq, max_freq)
+        self.loadedAxisRangeChanged.emit(min_freq, max_freq, min_db, max_db)
 
     def set_max_average_count(self, max_average_count: int) -> None:
         self.max_average_count = max_average_count

@@ -56,6 +56,7 @@ class _StubAnalyzer(
     savedMeasurementsChanged: QtCore.Signal = QtCore.Signal()
     freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)
     loadedMeasurementNameChanged: QtCore.Signal = QtCore.Signal(object)
+    loadedAxisRangeChanged: QtCore.Signal = QtCore.Signal(int, int, float, float)
 
     def __init__(self) -> None:
         _get_app()
@@ -73,6 +74,10 @@ class _StubAnalyzer(
 
     def update_axis(self, min_freq: int, max_freq: int) -> None:
         self.freqRangeChanged.emit(min_freq, max_freq)
+
+    def set_loaded_axis_range(self, min_freq: int, max_freq: int, min_db: float, max_db: float) -> None:
+        self.update_axis(min_freq, max_freq)
+        self.loadedAxisRangeChanged.emit(min_freq, max_freq, min_db, max_db)
 
     def _persist_measurements(self) -> None:
         pass  # no-op stub
