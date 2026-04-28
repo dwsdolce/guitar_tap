@@ -204,11 +204,42 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         with self._stop_lock:
             if self.is_stopped:
                 raise sd.CallbackStop
-        self.queue.put(data[:, 0].copy())  # copy before queuing — PortAudio reuses the buffer
+        chunk = data[:, 0].copy()  # copy before queuing — PortAudio reuses the buffer
+        self.queue.put(chunk)
 
         # Non-zero status means input overflow or output underflow; samples may have been dropped.
         if _status:
             gt_log(f"WARNING: PortAudio callback status={_status} (input overflow or CPU scheduling jitter)")
+
+        # DIAG: Capture the first 5 s of raw PCM to ~/Desktop/guitar_tap_raw_capture.wav.
+        # Used to verify the actual sample rate of audio arriving from the OS.
+        # Remove once the Windows sample-rate issue is resolved.
+        import os as _os
+        if not getattr(self, "_diag_capture_done", False):
+            if not hasattr(self, "_diag_capture_chunks"):
+                self._diag_capture_chunks: list = []
+                self._diag_capture_samples: int = 0
+                gt_log(f"DIAG: starting raw audio capture at self.rate={self.rate} Hz")
+            target = self.rate * 5  # 5 seconds
+            if self._diag_capture_samples < target:
+                self._diag_capture_chunks.append(chunk)
+                self._diag_capture_samples += len(chunk)
+            else:
+                self._diag_capture_done = True
+                chunks_snapshot = list(self._diag_capture_chunks)
+                rate = self.rate
+                def _write() -> None:
+                    try:
+                        import soundfile as _sf
+                        import numpy as _np
+                        out_path = _os.path.expanduser("~/Desktop/guitar_tap_raw_capture.wav")
+                        pcm = _np.concatenate(chunks_snapshot)
+                        _sf.write(out_path, pcm, rate, subtype="FLOAT")
+                        gt_log(f"DIAG: wrote {len(pcm)} samples at rate={rate} Hz to {out_path}")
+                    except Exception as _e:
+                        gt_log(f"DIAG: capture write failed: {_e}")
+                import threading as _threading
+                _threading.Thread(target=_write, daemon=True).start()
 
         return None
 
