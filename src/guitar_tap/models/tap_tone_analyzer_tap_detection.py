@@ -642,7 +642,15 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.levelChanged.emit(fft_peak_amp)
         peak_idx = int(np.argmax(mag_y_db))
         if peak_idx < len(self.freq):
-            self.peakInfoChanged.emit(float(self.freq[peak_idx]), float(mag_y_db[peak_idx]))
+            peak_freq = float(self.freq[peak_idx])
+            # DIAG F: log mic.rate, fft_size, peak_idx and computed freq once per second
+            now_f = _time.monotonic()
+            if not hasattr(self, "_diag_f_last") or now_f - self._diag_f_last >= 1.0:
+                self._diag_f_last = now_f
+                mic_rate = getattr(self.mic, "rate", "?") if self.mic else "?"
+                fft_size = getattr(self.mic, "fft_size", "?") if self.mic else "?"
+                gt_log(f"DIAG F: peak_idx={peak_idx} freq={peak_freq:.1f} Hz mic.rate={mic_rate} fft_size={fft_size} freq_axis_len={len(self.freq)}")
+            self.peakInfoChanged.emit(peak_freq, float(mag_y_db[peak_idx]))
 
     # ------------------------------------------------------------------ #
     # _on_rms_level_changed — plate/brace tap detection at ~43 Hz
