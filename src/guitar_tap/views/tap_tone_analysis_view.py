@@ -1919,7 +1919,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # is written once from UserDefaults/defaults on init.
         AS.AppSettings.set_measurement_type(saved_mt)
 
-        saved_gt = AS.AppSettings.guitar_type()
+        # Derive guitar_type from measurement_type (authoritative) so a stale
+        # guitar_type registry key never overrides the displayed mode lines.
+        # Mirrors Swift TapDisplaySettings.guitarType getter which reads
+        # measurementType.guitarType before falling back to the stored key.
+        gt_from_mt = saved_mt.guitar_type  # GuitarType | None
+        saved_gt = gt_from_mt.value if gt_from_mt is not None else AS.AppSettings.guitar_type()
         canvas.set_guitar_type_bands(saved_gt)
         self._update_measurement_badge()
         self.reset_auto_selection_btn.setVisible(TDS.measurement_type().is_guitar)
