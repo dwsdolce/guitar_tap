@@ -286,7 +286,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             return
 
         # Guitar mode — store spectrum, start decay tracking, schedule finish.
-        self.captured_taps.append(mag_y_db.copy())
+        # Store (magnitudes, frequencies, captureTime) tuple — mirrors Swift:
+        #   capturedTaps.append((magnitudes: magnitudes, frequencies: frequencies, captureTime: time))
+        import datetime as _dt_td
+        self.captured_taps.append((list(mag_y_db), list(freq), _dt_td.datetime.now()))
         self.current_tap_count = len(self.captured_taps)
         self.tap_progress = min(1.0, float(self.current_tap_count) / max(self.number_of_taps, 1))
 
@@ -327,56 +330,19 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
     @Slot()
     def _finish_capture(self) -> None:
-        """Average all captured tap spectra and freeze the result.
+        """Average all captured tap spectra, build tap_entries, and freeze the result.
 
         Called after captureWindow seconds from the final tap.
         Invoked via QTimer.singleShot from _handle_tap_detection, so this
         always runs on the main thread.
-        Mirrors Swift finishCapture() which calls processMultipleTaps().
+
+        Mirrors Swift's combined finishCapture() + processMultipleTaps() flow:
+          finishCapture()      → invalidates captureTimer (no-op in Python)
+          processMultipleTaps() → averages spectra, builds tapEntries, freezes result
+        Delegates to process_multiple_taps() so that tap_entries is always built
+        for multi-tap guitar measurements, enabling the Taps toggle button.
         """
-        import numpy as np
-
-        if not self.captured_taps:
-            return
-        stacked = np.stack(self.captured_taps)
-        avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
-        self.frozen_magnitudes = avg_db
-        self.frozen_frequencies = self.freq
-        peaks = self.find_peaks(list(avg_db), list(self.freq))
-        self.current_peaks = peaks
-
-        # Mirrors Swift processMultipleTaps() lines 804-812:
-        #   selectedPeakIDs = guitarModeSelectedPeakIDs(from: peaksFromAveragedSpectrum)
-        #   identifiedModes = peaksFromAveragedSpectrum.map { (peak: $0, mode: captureModeMap[$0.id] ?? .unknown) }
-        # Select only the guitar-mode auto-selected subset (not all peaks).
-        # Without this, selected_peak_ids holds stale UUIDs from the pre-capture
-        # live updates and the PDF export visible_peaks filter returns nothing.
-        self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
-        self.selected_peak_frequencies = [
-            p.frequency for p in peaks if p.id in self.selected_peak_ids
-        ]
-        self.user_has_modified_peak_selection = False
-
-        # Classify modes so identified_modes references the new averaged peaks.
-        # Without this, identified_modes is left pointing at old live-update
-        # peak objects with stale UUIDs after capture completes.
-        from .guitar_mode import GuitarMode
-        from models.tap_display_settings import TapDisplaySettings as _tds_fc
-        mode_map = GuitarMode.classify_all(peaks, _tds_fc.guitar_type())
-        self.identified_modes = [
-            {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
-            for p in peaks
-        ]
-
-        self.set_measurement_complete(True)
-        # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
-        if self.show_loaded_settings_warning:
-            self.show_loaded_settings_warning = False
-            self.showLoadedSettingsWarningChanged.emit(False)
-
-        self.peaksChanged.emit(peaks)
-        self.captured_taps.clear()
-        self.tapDetectedSignal.emit()
+        self.process_multiple_taps()
 
     @Slot()
     def _do_reenable_guitar(self) -> None:

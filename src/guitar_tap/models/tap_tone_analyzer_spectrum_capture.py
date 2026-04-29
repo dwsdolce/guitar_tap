@@ -951,17 +951,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         gt_log(f"🔬 Processing {len(self.captured_taps)} taps for averaging...")
 
-        # captured_taps for guitar mode stores raw mag_y_db arrays (not tuples).
-        # Wrap them into (magnitudes, frequencies, captureTime) tuples so
-        # average_spectra(from:) receives the same structure as the plate path.
-        import datetime as _dt
-        freq_list = list(self.freq)
-        now = _dt.datetime.now()
-        tap_tuples = [(list(t), freq_list, now) for t in self.captured_taps]
+        # captured_taps stores (magnitudes, frequencies, captureTime) tuples —
+        # mirrors Swift capturedTaps which uses the same named-tuple structure.
+        # Pass directly to average_spectra; no wrapping needed.
+        tap_tuples = self.captured_taps
         avg_mags, avg_freqs = self.average_spectra(from_taps=tap_tuples)
         avg_db = _np.array(avg_mags)
 
-        self.set_frozen_spectrum(self.freq, avg_db)
+        self.set_frozen_spectrum(_np.array(avg_freqs), avg_db)
         # Set is_measurement_complete early (mirrors Swift isMeasurementComplete = true
         # at the same point) but defer the signal emit until after peaks, modes, and
         # selected IDs are fully populated — mirrors loadMeasurement() which also sets

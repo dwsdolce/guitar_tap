@@ -596,26 +596,19 @@ class TapToneAnalyzerControlMixin:
         immediately rather than waiting for more taps.
 
         Note: the "process immediately" path only applies to guitar mode.  In
-        plate/brace mode captured_taps holds (magnitudes, frequencies, timestamp)
-        tuples (not homogeneous numpy arrays), and the tap count spinner is
-        disabled once any tap is captured, so this branch is unreachable in that
-        mode during normal use.
+        plate/brace mode the tap count spinner is disabled once any tap is
+        captured, so this branch is unreachable in that mode during normal use.
         """
-        import numpy as np
         new_num = max(1, n)
         captured = len(self.captured_taps)
         is_guitar = getattr(self._measurement_type, "is_guitar", True)
         if is_guitar and captured >= new_num and captured > 0:
-            # Already have enough — process now (mirrors Swift numberOfTaps.didSet)
+            # Already have enough — process now (mirrors Swift numberOfTaps.didSet).
+            # Truncate to new_num taps then delegate to process_multiple_taps() so
+            # that tap_entries is built and all signals are emitted consistently.
             self.number_of_taps = new_num
-            stacked = np.stack(self.captured_taps[:new_num])
-            avg_db = 10.0 * np.log10(np.mean(np.power(10.0, stacked / 10.0), axis=0))
-            self.set_frozen_spectrum(self.freq, avg_db)
-            peaks = self.find_peaks(list(avg_db), list(self.freq))
-            self.current_peaks = peaks
-            self.peaksChanged.emit(peaks)
-            self.captured_taps.clear()
-            self.tapDetectedSignal.emit()
+            del self.captured_taps[new_num:]
+            self.process_multiple_taps()
         else:
             self.number_of_taps = new_num
             # Don't clear spectra when count is raised mid-sequence — keep what

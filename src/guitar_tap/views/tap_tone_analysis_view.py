@@ -5860,6 +5860,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_dev_idx = list_idx
         if current_dev_idx >= 0:
             device_combo.setCurrentIndex(current_dev_idx)
+            # _on_device_selected is not connected yet, so explicitly sync the engine
+            # to the saved device.  This mirrors the Swift path where selectedInputDevice
+            # is assigned during init before any UI signals are live.
+            init_dev = input_devices[current_dev_idx]
+            self.fft_canvas.set_device(init_dev)
+            AS.AppSettings.set_audio_device(init_dev)
 
         sr_row = QtWidgets.QHBoxLayout()
         sr_lbl = QtWidgets.QLabel("Sample Rate:")
@@ -5912,11 +5918,27 @@ class MainWindow(QtWidgets.QMainWindow):
                     restore_idx < 0 and audio_dev.name == saved_name
                 ):
                     restore_idx = list_idx
-            device_combo.blockSignals(False)
             if restore_idx >= 0:
                 device_combo.setCurrentIndex(restore_idx)
             elif input_devices:
+                # Saved device not present — select first available but do NOT
+                # switch the engine; leave it on whatever it already has.
                 device_combo.setCurrentIndex(0)
+            device_combo.blockSignals(False)
+            # Explicitly sync the engine to the restored device.  We cannot rely
+            # on _on_device_selected here because signals were blocked above.
+            # Only switch when the restored device differs from what the engine
+            # already has (fingerprint comparison mirrors _on_device_selected).
+            cur_idx = device_combo.currentIndex()
+            if 0 <= cur_idx < len(input_devices):
+                restored_dev = input_devices[cur_idx]
+                engine_dev = self.fft_canvas.analyzer.selected_input_device
+                engine_fp = engine_dev.fingerprint if engine_dev is not None else ""
+                if restored_dev.fingerprint != engine_fp:
+                    self.fft_canvas.set_device(restored_dev)
+                    AS.AppSettings.set_audio_device(restored_dev)
+                    self.device_status_lbl.setText(restored_dev.name)
+                    _update_cal_display()
             _update_sr_lbl(device_combo.currentIndex())
 
         aud.addWidget(_hsep())
