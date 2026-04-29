@@ -650,7 +650,10 @@ class TapToneAnalyzerControlMixin:
         self.is_detecting = False
 
         # Mark as complete so New Tap is re-enabled after cancel.
-        self.is_measurement_complete = True
+        # Use set_measurement_complete() to emit the measurementComplete signal
+        # so the view's set_measurement_complete() handler fires and updates the
+        # Taps button visibility and New Tap button enabled state.
+        self.set_measurement_complete(True)
 
         self._reset_material_phase_state(to=_MTP.NOT_STARTED)
         self._reset_decay_tracking()

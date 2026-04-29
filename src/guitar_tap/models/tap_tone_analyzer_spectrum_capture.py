@@ -1010,9 +1010,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.user_has_modified_peak_selection = False
 
         self.peaksChanged.emit(peaks)
-        # Emit measurementComplete after all state is ready — mirrors loadMeasurement()
-        # ordering and ensures view observers see complete peaks + modes when they react.
-        self.measurementComplete.emit(True)
 
         tap_count = len(self.captured_taps)
         self._set_status_message(
@@ -1068,6 +1065,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             gt_log(f"📋 Built {len(tap_entries_built)} tap entries for multi-tap comparison")
         else:
             self.tap_entries = []
+
+        # Emit measurementComplete after tap_entries is fully built so the view's
+        # set_measurement_complete() handler sees the correct tap_entries when it
+        # evaluates whether to show the Taps toggle button.
+        # Previously emitted before tap_entries was built, causing the button to
+        # never appear for multi-tap measurements.
+        self.measurementComplete.emit(True)
 
         # Do NOT clear captured_taps here — mirrors Swift processMultipleTaps() which
         # leaves capturedTaps intact until resetForNewSequence()/reset() clears them.
