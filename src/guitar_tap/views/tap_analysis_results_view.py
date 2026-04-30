@@ -1426,7 +1426,7 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
         comparison_spectra.append({
             "frequencies": list(avg_snap.frequencies),
             "magnitudes":  list(avg_snap.magnitudes),
-            "color": MULTI_TAP_AVERAGED_COLOR,
+            "color": MULTI_TAP_AVG_COLOR,
             "label": "Averaged",
         })
 

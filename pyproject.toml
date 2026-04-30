@@ -48,3 +48,6 @@ omit = ["tests/*", ".venv/*"]
 python_version = "3.14"
 strict = true
 exclude = ["tests/", ".venv/", "build/", "dist/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
