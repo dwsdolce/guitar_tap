@@ -874,6 +874,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
     def set_measurement_complete(self, is_complete: bool) -> None:
         """Freeze/unfreeze the spectrum and reset related state."""
         self.is_measurement_complete = is_complete
+        if is_complete:
+            # Mirrors Swift isMeasurementComplete.didSet: a successful new tap clears the
+            # loaded-settings warning so the user knows their loaded settings produced this result.
+            if self.show_loaded_settings_warning:
+                self.show_loaded_settings_warning = False
+                self.showLoadedSettingsWarningChanged.emit(False)
         if not is_complete:
             self.captured_taps.clear()
             self.loaded_measurement_peaks = None

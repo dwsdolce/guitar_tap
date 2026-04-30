@@ -412,6 +412,7 @@ class TapToneAnalyzer(
         self._gated_capture_samples: int = 0        # target window size in samples (snapshot at capture-open)
         self._gated_capture_phase: object = None    # MaterialTapPhase at capture start
         self._gated_accum: list = []                # accumulated raw PCM samples
+        self._mpm_sample_rate: float = 48000.0      # mirrors Swift mpmSampleRate (updated per audio buffer)
 
     def start(
         self,
@@ -750,3 +751,45 @@ class TapToneAnalyzer(
             guitar_type = TapDisplaySettings.guitar_type()
             candidates = [p for p in candidates if GuitarMode.is_known(p.frequency, guitar_type)]
         return candidates
+
+    # ------------------------------------------------------------------ #
+    # process_averages
+    # Mirrors Swift TapToneAnalyzer live-FFT accumulation logic
+    # (main class body, not SpectrumCapture extension)
+    # ------------------------------------------------------------------ #
+
+    def process_averages(self, mag_y) -> None:
+        """Accumulate and average FFT linear magnitudes.
+
+        Mirrors Swift TapToneAnalyzer averageSpectra / processMultipleTaps.
+        Emits newSample, averagesChanged, spectrumUpdated on each triggered frame.
+        """
+        import numpy as np
+
+        if self.num_averages < self.max_average_count:
+            if self.num_averages > 0:
+                mag_y_sum = self.mag_y_sum + mag_y
+            else:
+                mag_y_sum = mag_y
+            num_averages = self.num_averages + 1
+
+            avg_mag_y = mag_y_sum / num_averages
+            avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
+            avg_mag_y_db = 20 * np.log10(avg_mag_y)
+
+            avg_amplitude = np.max(avg_mag_y_db) + 100
+            if avg_amplitude > (self.peak_threshold + 100):
+                avg_peaks = self.find_peaks(list(avg_mag_y_db), list(self.freq))
+                if avg_peaks:
+                    self.current_peaks = avg_peaks
+                    self.peaksChanged.emit(avg_peaks)
+                triggered = len(avg_peaks) > 0
+                if triggered:
+                    self.newSample.emit(self.is_measurement_complete)
+                    self.mag_y_sum = mag_y_sum
+                    self.num_averages = num_averages
+                    self.averagesChanged.emit(int(self.num_averages))
+                    self.frozen_magnitudes = avg_mag_y_db
+                    self.spectrumUpdated.emit(self.freq, avg_mag_y_db)
+
+        self.spectrumUpdated.emit(self.freq, self.frozen_magnitudes)

@@ -490,10 +490,12 @@ class TapToneAnalyzerControlMixin:
         is_brace = (meas_type == _MT.BRACE)
 
         # Mirrors Swift startTapSequence() lines 140-143:
-        #   self.comparisonSpectra = []  (handled by view's clear_comparison())
+        #   self.comparisonSpectra = []
         #   self.displayMode = .live
         #   self.loadedMeasurementName = nil  (set below)
         #   self.isMeasurementComplete = false
+        # Clear comparison state on the model, matching Swift's model-owned clear.
+        self.clear_comparison()
         self._display_mode = _ADM.LIVE
         self.show_loaded_settings_warning = False
         self.showLoadedSettingsWarningChanged.emit(False)
@@ -639,6 +641,7 @@ class TapToneAnalyzerControlMixin:
         self.current_tap_count = 0
         self.tap_progress = 0.0
         self.tap_detected = False
+        self.last_tap_time = None
         self.is_detection_paused = False
         self.is_detecting = False
 
@@ -694,6 +697,7 @@ class TapToneAnalyzerControlMixin:
 
         self.peak_magnitude_history = []
         self.tap_detected = False
+        self.last_tap_time = None
         self.is_detecting = False
         self.current_tap_count = 0
         self.tap_progress = 0.0
@@ -1075,6 +1079,24 @@ class TapToneAnalyzerControlMixin:
         with self._gated_lock:
             self._gated_capture_active = False
             self._gated_accum = []
+
+    # ------------------------------------------------------------------ #
+    # Plate / brace tap sequence entry points
+    # Mirrors Swift TapToneAnalyzer+Control.swift (startTapSequence / cancelTapSequence)
+    # ------------------------------------------------------------------ #
+
+    def start_plate_analysis(self) -> None:
+        """Start a new plate/brace tap sequence via the gated-FFT pipeline.
+
+        The gated pipeline arms itself via start_tap_sequence(), which transitions
+        material_tap_phase to CAPTURING_LONGITUDINAL automatically.
+        Mirrors Swift's equivalent call that triggers the first capture phase.
+        """
+        self.start_tap_sequence()
+
+    def reset_plate_analysis(self) -> None:
+        """Abort the current plate/brace tap sequence and return to idle."""
+        self.cancel_tap_sequence()
 
     def _reset_decay_tracking(self) -> None:
         """Stop any active decay tracking and clear the associated timer.

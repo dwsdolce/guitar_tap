@@ -3639,8 +3639,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_widget.setVisible(
             not is_comparing and not _is_multi_tap_initiated
         )
-        # Scroll area (plate/brace) also hidden while comparing
-        self._material_scroll.setVisible(not is_comparing)
+        # Scroll area (plate/brace) only visible in plate/brace mode and not while comparing
+        self._material_scroll.setVisible(not is_comparing and not TDS.measurement_type().is_guitar)
         # Peak selection buttons hidden when there are no peaks to act on or during
         # multi-tap comparison — mirrors Swift:
         # `if !sortedPeaksWithModes.isEmpty && !analyzer.showingMultiTapComparison`
@@ -3757,6 +3757,21 @@ class MainWindow(QtWidgets.QMainWindow):
             self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="gray"))
             self._multi_tap_toggle_btn.setStyleSheet("")
             self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
+            # Remove the overlay curves from the canvas — apply_multi_tap_comparison_overlays
+            # clears the model state and emits comparisonChanged(False) but does not remove
+            # the plotted curves.  _clear_comparison_view() removes them without triggering
+            # another model-side clear (which would double-emit comparisonChanged).
+            self.fft_canvas._clear_comparison_view()
+            # Restore the averaged spectrum line and peak annotations now that the
+            # canvas is back in FROZEN mode.  _render_comparison_curves() clears
+            # self.points data, so we must re-emit peaksChanged so _on_peaks_changed_scatter
+            # rebuilds the scatter plot.
+            frozen_freqs = analyzer.frozen_frequencies
+            frozen_mags  = analyzer.frozen_magnitudes
+            if frozen_freqs is not None and len(frozen_freqs):
+                self.fft_canvas.set_draw_data(frozen_mags, freqs=frozen_freqs)
+            if analyzer.current_peaks:
+                analyzer.peaksChanged.emit(analyzer.current_peaks)
 
         # _on_comparison_changed will fire from apply_multi_tap_comparison_overlays
         # via comparisonChanged.emit — it handles all widget visibility updates.

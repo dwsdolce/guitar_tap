@@ -77,26 +77,24 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         Computed property — mirrors Swift:
             var preRollSamples: Int { Int(mpmSampleRate * TapToneAnalyzer.preRollDuration) }
 
-        Always returns the correct value for the current device without any
-        explicit cache-invalidation on device switch.
+        Uses _mpm_sample_rate (updated on every audio buffer) as the primary
+        source, matching Swift's stored mpmSampleRate property.
         """
-        if self.mic is None:
-            return int(44100 * self._pre_roll_seconds)
-        return int(self.mic.rate * self._pre_roll_seconds)
+        return int(self._mpm_sample_rate * self._pre_roll_seconds)
 
     @property
     def _gated_sample_rate(self) -> float:
         """Current hardware sample rate in Hz.
 
-        Computed property — mirrors Swift:
-            var mpmSampleRate: Double  (updated on every audio buffer)
-
-        Reading self.mic.rate is equivalent: Python's RealtimeFFTAnalyzer
-        updates its rate field when the device changes, so this always
-        reflects the active hardware rate without any explicit update.
+        Mirrors Swift mpmSampleRate (a stored property updated on every audio buffer).
+        _mpm_sample_rate is set at the top of _accumulate_gated_samples each call.
+        Falls back to mic.rate if no audio buffer has been received yet.
         """
+        rate = getattr(self, "_mpm_sample_rate", None)
+        if rate:
+            return float(rate)
         if self.mic is None:
-            return 44100.0
+            return 48000.0
         return float(self.mic.rate)
 
     # ------------------------------------------------------------------ #
@@ -139,7 +137,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         """
         import numpy as np
 
+        # Mirrors Swift: mpmSampleRate = sampleRate (stored property updated each call).
+        self._mpm_sample_rate = sample_rate
+
         samples = chunk.tolist()
+
+        # Step 1 — hold lock, update pre-roll and accumulator, read count, release.
+        # Mirrors Swift: mpmLock.lock() → append → let count = … → mpmLock.unlock()
         with self._gated_lock:
             # Maintain the pre-roll ring buffer — always, even when not capturing.
             # Mirrors Swift: preRollBuffer.append(contentsOf: samples)
@@ -151,11 +155,15 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 return
 
             self._gated_accum.extend(samples)
-            if len(self._gated_accum) < self._gated_capture_samples:
-                return
+            count = len(self._gated_accum)
+        # Lock released — mirrors Swift mpmLock.unlock() before count check.
 
-            # Window is full — close capture and dispatch to main thread.
-            # Mirrors Swift: gatedCaptureActive = false; DispatchQueue.main.async
+        if count < self._gated_capture_samples:
+            return
+
+        # Step 2 — window is full; re-acquire lock to slice and clear accumulator.
+        # Mirrors Swift: gatedCaptureActive = false; mpmLock.lock() → slice → mpmLock.unlock()
+        with self._gated_lock:
             self._gated_capture_active = False
             captured = self._gated_accum[:self._gated_capture_samples]
             phase = self._gated_capture_phase
@@ -187,23 +195,20 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         Args:
             phase: MaterialTapPhase being captured.
         """
-        if self.mic is None:
-            gt_log("⚠️ start_gated_capture called with no mic — ignoring")
-            return
-
         rate = float(self._gated_sample_rate)
         target_samples = int(rate * self.GATED_CAPTURE_DURATION)
         window_ms = int(self.GATED_CAPTURE_DURATION * 1000)
-        gt_log(
-            f"🎯 Gated FFT capture started for phase {phase} — "
-            f"{target_samples}-sample window ({window_ms} ms at {int(rate)} Hz)"
-        )
         with self._gated_lock:
             # Seed accumulator with pre-roll (mirrors Swift: gatedAccumBuffer = preRollBuffer).
             self._gated_accum = list(self._pre_roll_buf)
             self._gated_capture_samples = target_samples
             self._gated_capture_phase = phase
             self._gated_capture_active = True
+
+        gt_log(
+            f"🎯 Gated FFT capture started for phase {phase} — "
+            f"{target_samples}-sample window ({window_ms} ms at {int(rate)} Hz)"
+        )
 
         # Safety timeout: if the buffer still has audio after 2 s, flush it;
         # if empty, ask the user to tap again.
@@ -226,19 +231,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                         phase,
                     )
             else:
+                # QTimer.singleShot(2000, ...) already fires on the main thread,
+                # so call directly — mirrors Swift closure calling statusMessage and
+                # reEnableDetectionForNextPlateTap() directly in the timeout closure.
                 gt_log("⚠️ Gated capture timeout with no samples — tap again")
-                QtCore.QTimer.singleShot(0, self._on_safety_timeout_no_samples)
+                self._set_status_message("No signal detected — tap again")
+                self.re_enable_detection_for_next_plate_tap()
 
         QtCore.QTimer.singleShot(2000, _safety_timeout)
-
-    @Slot()
-    def _on_safety_timeout_no_samples(self) -> None:
-        """Main-thread slot called by the safety timeout when no samples were captured.
-
-        Invoked via QTimer.singleShot, so this always runs on the main thread.
-        """
-        self._set_status_message("No signal detected — tap again")
-        self.re_enable_detection_for_next_plate_tap()
 
     @Slot()
     def _do_start_flc(self) -> None:
@@ -256,6 +256,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         """
         import numpy as _np
         from models.material_tap_phase import MaterialTapPhase as _MTP
+        # Guard: if the sequence was cancelled or reset while the cooldown timer was
+        # running, the phase will no longer be WAITING_FOR_FLC_TAP.  Do not re-arm
+        # detection — mirrors Swift's captureTimer?.invalidate() cancellation idiom.
+        if self.material_tap_phase != _MTP.WAITING_FOR_FLC_TAP:
+            return
         # Use instantaneous RMS level — mirrors Swift fftAnalyzer.inputLevelDB.
         level = self._current_input_level_db
         falling = self.tap_detection_threshold - self.hysteresis_margin
@@ -391,23 +396,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         import datetime as _dt
         self.captured_taps.append((magnitudes, frequencies, _dt.datetime.now()))
         self.current_tap_count = len(self.captured_taps)
-        total = self.total_plate_taps
-        self.tap_progress = min(1.0, float(self.current_tap_count) / max(total, 1))
+        self.tap_progress = min(1.0, float(self.current_tap_count) / float(self.total_plate_taps))
 
-        # Compute cumulative tap count across all phases — mirrors Swift's currentTapCount
-        # which is never reset between phases.  Python resets captured_taps (and thus
-        # current_tap_count) after each phase completes, so we must add the per-phase offset.
-        # phase_index: L=0, C=1, FLC=2
-        if phase == _MTP.CAPTURING_LONGITUDINAL:
-            _phase_index = 0
-        elif phase == _MTP.CAPTURING_CROSS:
-            _phase_index = 1
-        elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
-            _phase_index = 2
-        else:
-            _phase_index = 0
-        _cumulative = _phase_index * self.number_of_taps + self.current_tap_count
-        self.tapCountChanged.emit(_cumulative, self.number_of_taps)
+        # Mirrors Swift: currentTapCount (@Published) → drives tap progress label in view.
+        # Swift SpectrumCapture.swift:292 increments currentTapCount and the @Published
+        # property notifies the view automatically. Python emits tapCountChanged explicitly.
+        self.tapCountChanged.emit(self.current_tap_count, self.number_of_taps)
 
         # Route to the phase-specific handler.
         # Mirrors Swift switch phase { case .capturingLongitudinal: … }
@@ -462,6 +456,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             ResonantPeak or None if no candidates are found.
         """
         from models.resonant_peak import ResonantPeak
+        from typing import NamedTuple
+
+        class _Candidate(NamedTuple):
+            index: int
+            magnitude: float
+            hps_score: float
+            q_factor: float
 
         n = len(magnitudes)
         if n != len(frequencies) or n <= 10:
@@ -495,12 +496,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 continue
 
             # Local maximum check — mirrors Swift ±windowSize loop.
+            # scan_start/scan_end guarantee i ± window_size stays within [0, n).
             is_local = True
             for offset in range(-window_size, window_size + 1):
                 if offset == 0:
                     continue
-                j = i + offset
-                if 0 <= j < n and magnitudes[j] >= mag:
+                if magnitudes[i + offset] >= mag:
                     is_local = False
                     break
             if not is_local:
@@ -517,60 +518,56 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             # Q factor — key discriminant between resonances (high-Q) and impact thuds (low-Q).
             q, _ = self._calculate_q_factor(magnitudes, frequencies, i, mag)
 
-            candidates.append((i, mag, hps_score, q))
+            candidates.append(_Candidate(index=i, magnitude=mag, hps_score=hps_score, q_factor=q))
 
         if not candidates:
             return None
 
         # Q filtering — mirrors Swift: let highQCandidates = candidates.filter { $0.qFactor >= minQ }
         min_q = 3.0
-        high_q = [c for c in candidates if c[3] >= min_q]
+        high_q = [c for c in candidates if c.q_factor >= min_q]
         if len(high_q) < len(candidates):
-            rejected = [c for c in candidates if c[3] < min_q]
+            rejected = [c for c in candidates if c.q_factor < min_q]
             rej_str = ", ".join(
-                f"{frequencies[c[0]]:.0f} Hz (Q={c[3]:.1f})" for c in rejected
+                f"{frequencies[c.index]:.0f} Hz (Q={c.q_factor:.1f})" for c in rejected
             )
             gt_log(f"🔇 Q-filtered out low-Q peaks: {rej_str}")
         pool = high_q if high_q else candidates
 
-        by_magnitude = sorted(pool, key=lambda c: c[1], reverse=True)
+        by_magnitude = sorted(pool, key=lambda c: c.magnitude, reverse=True)
         strongest = by_magnitude[0]
 
         if prefer_lowest_significant:
             # Mirrors Swift: thresholdDB = strongest.magnitude - 15; pick lowest-index significant.
-            threshold_db = strongest[1] - 15.0
-            significant = [c for c in pool if c[1] >= threshold_db]
-            best = min(significant, key=lambda c: c[0])
+            threshold_db = strongest.magnitude - 15.0
+            significant = [c for c in pool if c.magnitude >= threshold_db]
+            best = min(significant, key=lambda c: c.index)
         else:
             # Default: strongest wins unless a lower-frequency candidate is within 6 dB
             # and has a comparable HPS score (within one order of magnitude).
             # Mirrors Swift: for candidate in byMagnitude.dropFirst() { … }
             current = strongest
             for candidate in by_magnitude[1:]:
-                if candidate[0] >= current[0]:
+                if candidate.index >= current.index:
                     continue  # not lower frequency
-                mag_diff = current[1] - candidate[1]
-                if mag_diff < 6.0 and candidate[2] >= current[2] * 0.1:
+                mag_diff = current.magnitude - candidate.magnitude
+                if mag_diff < 6.0 and candidate.hps_score >= current.hps_score * 0.1:
                     current = candidate
             best = current
 
-        best_idx, best_mag, best_hps, best_q = best
+        best_idx = best.index
+        best_mag = best.magnitude
+        best_hps = best.hps_score
+        best_q   = best.q_factor
 
         # Refine with parabolic interpolation — mirrors Swift parabolicInterpolate call.
         freq, mag = self._parabolic_interpolate(magnitudes, frequencies, best_idx)
         quality, bandwidth = self._calculate_q_factor(magnitudes, frequencies, best_idx, mag)
 
         # Pitch info — mirrors Swift pitchCalculator calls in findDominantPeak.
-        pitch_note = None
-        pitch_cents = None
-        pitch_frequency = None
-        if hasattr(self, "pitch_calculator") and self.pitch_calculator is not None:
-            try:
-                pitch_note      = self.pitch_calculator.note(float(freq))
-                pitch_cents     = self.pitch_calculator.cents(float(freq))
-                pitch_frequency = self.pitch_calculator.freq0(float(freq))
-            except Exception:
-                pass
+        pitch_note      = self.pitch_calculator.note(float(freq))
+        pitch_cents     = self.pitch_calculator.cents(float(freq))
+        pitch_frequency = self.pitch_calculator.freq0(float(freq))
 
         gt_log(
             f"🎯 Dominant peak: {freq:.1f} Hz @ {mag:.1f} dB "
@@ -596,7 +593,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         from models.tap_display_settings import TapDisplaySettings as _tds
         from models.measurement_type import MeasurementType as _MT
         from models.material_tap_phase import MaterialTapPhase as _MTP
-        import time as _t
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
@@ -623,10 +619,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Only the identified (auto-selected) peak is selected — others are informational.
         # Mirrors Swift: selectedPeakIDs = Set([dominantPeak.id])
         self.selected_peak_ids = {dominant_peak.id}
-        # selected_peak_frequencies must be set here (not only in _apply_frozen_peak_state) so
-        # that _on_peaks_changed_results → peak_widget.model.selected_frequencies is correct
-        # for live plate/brace measurements that never go through recalculate_frozen_peaks_if_needed.
-        self.selected_peak_frequencies = [dominant_peak.frequency]
         self.captured_taps.clear()
 
         # Update displayed spectrum — mirrors Swift setFrozenSpectrum (empty for plate transitions).
@@ -731,7 +723,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         """
         from models.tap_display_settings import TapDisplaySettings as _tds
         from models.material_tap_phase import MaterialTapPhase as _MTP
-        import time as _t
         import numpy as _np
 
         captured = len(self.captured_taps)
@@ -839,6 +830,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         spectra.append(("FLC", (175, 82, 222), list(f_freqs), list(f_mags)))
         self.set_material_spectra(spectra)
         self._emit_peaks_array(self.current_peaks)
+        # Mirrors Swift handleFlcGatedProgress terminal log:
+        # gtLog("📊 FLC review: L=… C=… FLC=… Hz")
+        gt_log(
+            f"📊 FLC review: "
+            f"L={self.longitudinal_peaks[0].frequency if self.longitudinal_peaks else 0} "
+            f"C={self.cross_peaks[0].frequency if self.cross_peaks else 0} "
+            f"FLC={dominant_peak.frequency} Hz"
+        )
 
     # ------------------------------------------------------------------ #
     # _build_all_peaks
@@ -910,7 +909,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 power_sum[b] += 10.0 ** (mags[b] / 10.0)
 
         n_taps = len(from_taps)
-        avg = [10.0 * math.log10(max(power_sum[b] / n_taps, 1e-30)) for b in range(n_bins)]
+        avg = [10.0 * math.log10(power_sum[b] / n_taps) for b in range(n_bins)]
         gt_log(f"📊 Averaged {n_taps} spectra: {n_bins} bins each")
         return avg, list(freqs0)
 
@@ -972,19 +971,21 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.showLoadedSettingsWarningChanged.emit(False)
         gt_log(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
 
-        # Clear before peak classification — mirrors Swift processMultipleTaps() which
-        # sets loadedMeasurementPeaks = nil before classifying peaks and setting
-        # identifiedModes. Clearing here prevents recalculate_frozen_peaks_if_needed()
-        # from using stale loaded peaks if it runs during a peaksChanged handler.
-        self.loaded_measurement_peaks = None
-
         peaks = self.find_peaks(avg_mags, avg_freqs)
-        self.current_peaks = peaks
 
-        # Classify modes before emitting peaksChanged so that peak_mode()
-        # returns correct context-aware results when _on_peaks_changed_results
-        # calls update_data_with_modes. Mirrors analyze_magnitudes() which
-        # also sets identified_modes before peaksChanged.emit().
+        # Mirrors Swift processMultipleTaps() property-assignment sequence (lines 817-824):
+        #   currentPeaks = peaks
+        #   selectedPeakIDs = guitarModeSelectedPeakIDs(from: peaks)
+        #   userHasModifiedPeakSelection = false
+        #   loadedMeasurementPeaks = nil
+        #   selectedPeakFrequencies = []
+        #   identifiedModes = …
+        self.current_peaks = peaks
+        self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
+        self.user_has_modified_peak_selection = False
+        self.loaded_measurement_peaks = None
+        self.selected_peak_frequencies = []
+
         from .guitar_mode import GuitarMode as _GM
         from models.tap_display_settings import TapDisplaySettings as _tds_sc
         _mode_map = _GM.classify_all(peaks, _tds_sc.guitar_type())
@@ -992,21 +993,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             {"peak": p, "mode": _mode_map.get(p.id, _GM.UNKNOWN)}
             for p in peaks
         ]
-
-        # Mirrors Swift processMultipleTaps() lines 817-818:
-        #   selectedPeakIDs = guitarModeSelectedPeakIDs(from: peaksFromAveragedSpectrum)
-        # Set selection in the model before peaksChanged fires so that
-        # _on_peaks_changed_results (which guards on _is_measurement_complete,
-        # already True at this point) can propagate selected_peak_frequencies
-        # to the view's PeaksModel. This removes the need for _on_tap_detected
-        # to call auto_select_peaks_by_mode() in the view layer.
-        self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
-        self.selected_peak_frequencies = [
-            p.frequency for p in peaks if p.id in self.selected_peak_ids
-        ]
-        self.user_has_modified_peak_selection = False
-
-        self.peaksChanged.emit(peaks)
 
         tap_count = len(self.captured_taps)
         self._set_status_message(
@@ -1049,7 +1035,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                     show_unknown_modes=_show_unk2,
                     guitar_type=_gt_str2,
                     measurement_type=_mt_str2,
-                    max_peaks=getattr(self, "max_peaks", None),
+                    max_peaks=self.max_peaks,
                 )
                 tap_entries_built.append(TapEntry(
                     id=str(_uuid2.uuid4()),
@@ -1063,17 +1049,19 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         else:
             self.tap_entries = []
 
-        # Emit measurementComplete after tap_entries is fully built so the view's
-        # set_measurement_complete() handler sees the correct tap_entries when it
-        # evaluates whether to show the Taps toggle button.
-        # Previously emitted before tap_entries was built, causing the button to
-        # never appear for multi-tap measurements.
+        # Emit measurementComplete before peaksChanged so that the view's
+        # _is_measurement_complete flag is True when _on_peaks_changed_results runs.
+        # This is required for the selection guard in _on_peaks_changed_results to
+        # propagate selected_peak_frequencies, enabling peak annotations to appear.
+        # tap_entries is already fully built above, so the Taps button check works too.
         self.measurementComplete.emit(True)
+
+        # Now emit peaksChanged with _is_measurement_complete already True in the view.
+        self.peaksChanged.emit(peaks)
 
         # Do NOT clear captured_taps here — mirrors Swift processMultipleTaps() which
         # leaves capturedTaps intact until resetForNewSequence()/reset() clears them.
         # tap_entries now holds all per-tap data; captured_taps is only needed until reset.
-        self.tapDetectedSignal.emit()
 
     # ------------------------------------------------------------------ #
     # _emit_peaks_array — helper (no Swift equivalent)
@@ -1091,61 +1079,3 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.current_peaks = peaks
         self.peaksChanged.emit(peaks)  # list[ResonantPeak] — mirrors Swift currentPeaks
 
-    # ------------------------------------------------------------------ #
-    # Plate / brace tap sequence entry points
-    # Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift
-    # ------------------------------------------------------------------ #
-
-    def start_plate_analysis(self) -> None:
-        """Start a new plate/brace tap sequence via the gated-FFT pipeline.
-
-        The gated pipeline arms itself via start_tap_sequence(), which transitions
-        material_tap_phase to CAPTURING_LONGITUDINAL automatically.
-        Mirrors Swift's equivalent call that triggers the first capture phase.
-        """
-        self.start_tap_sequence()
-
-    def reset_plate_analysis(self) -> None:
-        """Abort the current plate/brace tap sequence and return to idle."""
-        self.cancel_tap_sequence()
-
-    # ------------------------------------------------------------------ #
-    # process_averages
-    # Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift processMultipleTaps()
-    # ------------------------------------------------------------------ #
-
-    def process_averages(self, mag_y) -> None:
-        """Accumulate and average FFT linear magnitudes.
-
-        Mirrors Swift TapToneAnalyzer+SpectrumCapture averageSpectra / processMultipleTaps.
-        Emits newSample, averagesChanged, spectrumUpdated on each triggered frame.
-        """
-        import numpy as np
-
-        if self.num_averages < self.max_average_count:
-            if self.num_averages > 0:
-                mag_y_sum = self.mag_y_sum + mag_y
-            else:
-                mag_y_sum = mag_y
-            num_averages = self.num_averages + 1
-
-            avg_mag_y = mag_y_sum / num_averages
-            avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
-            avg_mag_y_db = 20 * np.log10(avg_mag_y)
-
-            avg_amplitude = np.max(avg_mag_y_db) + 100
-            if avg_amplitude > (self.peak_threshold + 100):
-                avg_peaks = self.find_peaks(list(avg_mag_y_db), list(self.freq))
-                if avg_peaks:
-                    self.current_peaks = avg_peaks
-                    self.peaksChanged.emit(avg_peaks)
-                triggered = len(avg_peaks) > 0
-                if triggered:
-                    self.newSample.emit(self.is_measurement_complete)
-                    self.mag_y_sum = mag_y_sum
-                    self.num_averages = num_averages
-                    self.averagesChanged.emit(int(self.num_averages))
-                    self.frozen_magnitudes = avg_mag_y_db
-                    self.spectrumUpdated.emit(self.freq, avg_mag_y_db)
-
-        self.spectrumUpdated.emit(self.freq, self.frozen_magnitudes)
