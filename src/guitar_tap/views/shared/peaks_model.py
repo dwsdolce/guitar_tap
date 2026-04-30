@@ -72,7 +72,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.modes_column: int = ColumnIndex.Modes.value
         self.modes: dict[float, str] = {}
         self.is_live: bool = True
-        self.selected_frequencies: set[float] = set()
+        self.selected_peak_ids: set[str] = set()  # mirrors Swift selectedPeakIDs: Set<UUID>
         self.show_column: int = ColumnIndex.Show.value
         self.user_has_modified_peak_selection: bool = False
         self._programmatic_update: bool = False
@@ -168,30 +168,67 @@ class PeaksModel(QtCore.QAbstractTableModel):
             return "Peak"
         mode = self._auto_mode_map.get(freq)
         if mode is not None:
-            return mode.value
-        return gm.classify_peak(freq)
+            return mode.display_name
+        # Fallback: _auto_mode_map should always be populated for every current peak,
+        # but if somehow a frequency is missing, use classify_all (claiming algorithm)
+        # rather than classify_peak (simple range lookup) — mirrors Swift, which has
+        # no single-peak classify fallback; classifyAll is always used.
+        from models.resonant_peak import ResonantPeak as _RP
+        _fake = _RP(frequency=freq, magnitude=0.0, quality=1.0)
+        _mode = gm.GuitarMode.classify_all([_fake]).get(_fake.id, gm.GuitarMode.UNKNOWN)
+        return _mode.display_name
+
+    def peak_mode(self, index: QtCore.QModelIndex) -> str:
+        """Return the auto-classified mode string for a peak, ignoring any user override.
+
+        Mirrors Swift ``analyzer.peakMode(for:)`` — reads from ``identifiedModes``
+        (computed via ``classifyAll`` with full peak context) and never uses the
+        simple single-frequency range lookup.
+
+        Used by the card widget to show the correct label in
+        "Reset to Auto-Detected (X)" — identical to Swift's
+        ``"Reset to Auto-Detected (\(mode.displayName))"``
+        where ``mode`` is ``analyzer.peakMode(for: peak)``.
+        """
+        freq = self.freq_value(index)
+        if not self.is_guitar:
+            # Plate/brace: auto-label is the phase-assigned role, same as mode_value
+            # (there are no user overrides for plate/brace in the card menu).
+            return self.mode_value(index)
+        mode = self._auto_mode_map.get(freq)
+        if mode is not None:
+            return mode.display_name
+        # Fallback — same as mode_value fallback but always ignores overrides.
+        from models.resonant_peak import ResonantPeak as _RP
+        _fake = _RP(frequency=freq, magnitude=0.0, quality=1.0)
+        _mode = gm.GuitarMode.classify_all([_fake]).get(_fake.id, gm.GuitarMode.UNKNOWN)
+        return _mode.display_name
 
     def set_show_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the show."""
-        freq = self.freq_value(index)
+        row = index.row()
+        peak_id = self._peaks[row].id if row < len(self._peaks) else None
+        if peak_id is None:
+            return
         if value == "on":
-            self.selected_frequencies.add(freq)
+            self.selected_peak_ids.add(peak_id)
         else:
-            self.selected_frequencies.discard(freq)
+            self.selected_peak_ids.discard(peak_id)
 
     def show_value_bool(self, index: QtCore.QModelIndex) -> bool:
         """Return whether this peak is shown/selected.
 
-        Computed at query time — mirrors Swift SpectrumView filtering
-        currentPeaks using selectedPeakIDs at render time.
-        In live guitar mode every peak is shown; in plate/brace mode (even
-        during capture) only explicitly selected frequencies are shown so that
-        only the identified peak's star is filled — mirrors Swift where
-        selectedPeakIDs is managed exclusively by phase-completion handlers.
+        Mirrors Swift visiblePeaks filtering currentPeaks by selectedPeakIDs:
+          case .selected: candidates = currentPeaks.filter { selectedPeakIDs.contains($0.id) }
+        In live guitar mode every peak is shown (mirrors Swift .all candidates path
+        during live capture). In frozen/plate/brace mode, consult selectedPeakIDs.
         """
         if self.is_live and self.is_guitar:
             return True
-        return float(self.freq_value(index)) in self.selected_frequencies
+        row = index.row()
+        if row >= len(self._peaks):
+            return False
+        return self._peaks[row].id in self.selected_peak_ids
 
     def show_value(self, index: QtCore.QModelIndex) -> str:
         """Return the show for the row as "on" or "off"."""
@@ -347,7 +384,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         currentPeaks: [ResonantPeak]. Builds the internal ndarray for existing display
         logic (freq_value, magnitude_value, q_value, row-based accessors).
 
-        Pure notifier — never touches selection state (selected_frequencies or
+        Pure notifier — never touches selection state (selected_peak_ids or
         is_live).  The caller owns selection state; this method only stores the
         new peak list, recomputes derived mode data, and refreshes annotations.
 
@@ -418,7 +455,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
             mag  = self.magnitude_value(idx)
             mode = self.mode_value(idx)
             peak_id = peaks[row].id if row < len(peaks) else ""
-            if self.annotation_mode == AVM.ALL or self.show_value_bool(idx):
+            show = self.show_value_bool(idx)
+            if self.annotation_mode == AVM.ALL or show:
                 self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
         self.annotationsRefreshed.emit()
 
@@ -600,7 +638,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
         In live mode (is_live=True) the table is read-only and show_value_bool
         returns True for every peak.  In frozen mode (is_live=False) the table
-        is interactive and show_value_bool consults selected_frequencies.
+        is interactive and show_value_bool consults selected_peak_ids.
         """
         self.layoutAboutToBeChanged.emit()
         self.is_live = not held
@@ -622,7 +660,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         The claiming/overlap logic is entirely delegated to classifyAll —
         this method just picks the best representative of each assigned mode.
         """
-        self.selected_frequencies = set()
+        self.selected_peak_ids = set()
         self._programmatic_update = True
         self._set_user_modified(False)
         self.clearAnnotations.emit()
@@ -665,7 +703,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if not held:
             self.clear_annotations()
             self.modes = {}
-            self.selected_frequencies = set()
+            self.selected_peak_ids = set()
             self._auto_mode_map = {}
             self.selected_longitudinal_peak_id = None
             self.selected_cross_peak_id = None

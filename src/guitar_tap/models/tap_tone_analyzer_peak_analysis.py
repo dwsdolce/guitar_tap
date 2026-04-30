@@ -57,7 +57,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         if not (
             getattr(self, "is_detecting", False)
             or getattr(self, "is_detection_paused", False)
-            or getattr(self, "capture_timer", None) is not None
+            or getattr(self, "capture_timer_active", False)
         ):
             return
         if getattr(self, "is_measurement_complete", False):
@@ -179,11 +179,16 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 if "peak" in entry and "mode" in entry
             ]
             if not modes_by_freq:
-                from .guitar_mode import GuitarMode, classify_peak
+                from .guitar_mode import GuitarMode
                 from models.tap_display_settings import TapDisplaySettings as _tds_rfp
+                # Use classify_all (claiming algorithm) not GuitarMode.classify (simple
+                # range lookup per peak) — mirrors Swift GuitarMode.classifyAll(peaks).
+                _gt = _tds_rfp.guitar_type()
+                _cand = self.loaded_measurement_peaks
+                _mode_map = GuitarMode.classify_all(_cand, _gt)
                 modes_by_freq = [
-                    (p.frequency, GuitarMode.classify(p.frequency, _tds_rfp.guitar_type()))
-                    for p in self.loaded_measurement_peaks
+                    (p.frequency, _mode_map.get(p.id, GuitarMode.UNKNOWN))
+                    for p in _cand
                 ]
 
             self._apply_frozen_peak_state(
@@ -325,8 +330,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # Pass 1: scan each known-mode range for the strongest peak.
         # ---------------------------------------------------------------- #
         # Mirrors Swift Step 1: strongestPeakPerMode, lastClaimedFrequency.
-        strongest_per_mode: "dict" = {}  # GuitarMode → ResonantPeak
-        last_claimed_frequency: float = 0.0
+        strongest_per_mode: "dict" = {}     # GuitarMode → ResonantPeak
+        strongest_bin_per_mode: "dict" = {} # GuitarMode → raw bin index of winner
+        last_claimed_bin_idx: int = -1      # raw bin index of the last claimed peak
 
         for mode in known_modes:
             mode_range = mode.mode_range(guitar_type)
@@ -344,11 +350,12 @@ class TapToneAnalyzerPeakAnalysisMixin:
             if mode_start_idx >= mode_end_idx:
                 continue
 
-            # Advance scan start past the last claimed peak.
-            claimed_idx = next(
-                (i for i, f in enumerate(frequencies) if f > last_claimed_frequency),
-                start_idx,
-            )
+            # Advance scan start past the raw bin of the last claimed peak.
+            # Using the raw bin index (not the interpolated frequency) ensures
+            # the next mode's scan cannot revisit the same physical peak bin,
+            # even when parabolic interpolation pulls the reported frequency
+            # below the bin's own center frequency.
+            claimed_idx = (last_claimed_bin_idx + 1) if last_claimed_bin_idx >= 0 else start_idx
             effective_start = max(mode_start_idx, claimed_idx)
 
             scan_start = max(effective_start, start_idx + window_size)
@@ -380,9 +387,13 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 existing = strongest_per_mode.get(norm_mode)
                 if existing is None or mag > existing.magnitude:
                     strongest_per_mode[norm_mode] = peak
+                    strongest_bin_per_mode[norm_mode] = i  # raw bin of winner
 
-            # Advance claimed-frequency cursor.
+            # Advance claimed-bin cursor.
             # Mirrors Swift: isDuplicate check + lastClaimedFrequency update.
+            # We use the raw bin index (not interpolated frequency) to advance
+            # the cursor so parabolic interpolation cannot pull the boundary
+            # below the actual peak bin, causing the next mode to re-scan it.
             norm_for_cursor = mode.normalized if hasattr(mode, "normalized") else mode
             claimed = strongest_per_mode.get(norm_for_cursor)
             if claimed is not None:
@@ -395,10 +406,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 )
                 if is_dup:
                     del strongest_per_mode[norm_for_cursor]
+                    strongest_bin_per_mode.pop(norm_for_cursor, None)
                 else:
-                    last_claimed_frequency = max(
-                        last_claimed_frequency, claimed.frequency
-                    )
+                    claimed_bin = strongest_bin_per_mode.get(norm_for_cursor, -1)
+                    last_claimed_bin_idx = max(last_claimed_bin_idx, claimed_bin)
 
         # ---------------------------------------------------------------- #
         # Pass 2: unknown/inter-mode peaks outside all known-mode ranges.
@@ -496,13 +507,13 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         Mirrors Swift ``applyFrozenPeakState(peaks:modesByFrequency:...)``.
         """
-        from .guitar_mode import GuitarMode, classify_peak
+        from .guitar_mode import GuitarMode
         from models.tap_display_settings import TapDisplaySettings as _tds_afps
 
-        fresh_mode_map = {
-            p.id: GuitarMode.classify(p.frequency, _tds_afps.guitar_type())
-            for p in peaks
-        }
+        # Mirrors Swift applyFrozenPeakState: freshModeMap = GuitarMode.classifyAll(peaks)
+        # Swift uses the claiming algorithm (all peaks together) not single-peak classify,
+        # so peaks in the TOP/BACK overlap zone (180–260 Hz) are correctly disambiguated.
+        fresh_mode_map = GuitarMode.classify_all(peaks, _tds_afps.guitar_type())
 
         new_identified: list = []
         for new_peak in peaks:
@@ -640,21 +651,29 @@ class TapToneAnalyzerPeakAnalysisMixin:
         Returns:
             Set of ``ResonantPeak.id`` strings for the auto-selected peaks.
         """
-        from .guitar_mode import classify_peak
+        from .guitar_mode import GuitarMode
         from models.tap_display_settings import TapDisplaySettings as _tds_gms
 
         candidates = peaks if peaks is not None else self.current_peaks
-        claimed_modes = {"Air (Helmholtz)", "Top", "Back", "Dipole", "Ring Mode", "Upper Modes"}
         guitar_type = _tds_gms.guitar_type()
+
+        # Use classify_all (claiming algorithm) — mirrors Swift guitarModeSelectedPeakIDs(from:)
+        # which calls GuitarMode.classifyAll(candidates).  Using classify_peak (simple range
+        # lookup) is wrong because overlapping TOP/BACK ranges (e.g. 180–260 Hz) cause
+        # classify_peak to always return TOP for peaks in the overlap zone, making BACK
+        # unselectable when it falls below 260 Hz.
+        claimed_modes = {GuitarMode.AIR, GuitarMode.TOP, GuitarMode.BACK,
+                         GuitarMode.DIPOLE, GuitarMode.RING_MODE, GuitarMode.UPPER_MODES}
+        mode_map = GuitarMode.classify_all(candidates, guitar_type)
 
         best_per_mode: dict = {}
         for peak in candidates:
-            mode_label = classify_peak(peak.frequency, guitar_type)
-            if mode_label not in claimed_modes:
+            mode = mode_map.get(peak.id)
+            if mode not in claimed_modes:
                 continue
-            existing = best_per_mode.get(mode_label)
+            existing = best_per_mode.get(mode)
             if existing is None or peak.magnitude > existing.magnitude:
-                best_per_mode[mode_label] = peak
+                best_per_mode[mode] = peak
 
         return {p.id for p in best_per_mode.values()}
 

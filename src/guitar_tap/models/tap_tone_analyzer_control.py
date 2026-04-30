@@ -136,8 +136,6 @@ class TapToneAnalyzerControlMixin:
                     self.mic.load_available_input_devices()
                 finally:
                     self.mic._on_devices_changed = saved_cb
-                gt_log(f"DIAG: re-enumerated after 1 s delay; selected='{getattr(self.mic.selected_input_device, 'name', None)}'")
-
         names: list[str] = sorted(d.name for d in self.mic.available_input_devices)
         self.devicesChanged.emit(names)
 
@@ -621,6 +619,13 @@ class TapToneAnalyzerControlMixin:
                 and self.number_of_taps != self.loaded_number_of_taps):
             self.show_loaded_settings_warning = False
             self.showLoadedSettingsWarningChanged.emit(False)
+        # Mirrors Swift numberOfTaps.didSet: update status message when waiting
+        # for the first tap (isDetecting=True, currentTapCount=0).
+        if self.is_detecting and len(self.captured_taps) == 0:
+            self._set_status_message(
+                "Tap the guitar..." if self.number_of_taps == 1
+                else f"Tap the guitar {self.number_of_taps} times..."
+            )
 
     # ------------------------------------------------------------------ #
     # Cancel
@@ -644,6 +649,7 @@ class TapToneAnalyzerControlMixin:
         self.last_tap_time = None
         self.is_detection_paused = False
         self.is_detecting = False
+        self.capture_timer_active = False  # mirrors Swift captureTimer?.invalidate(); captureTimer = nil
 
         # Mark as complete so New Tap is re-enabled after cancel.
         # Use set_measurement_complete() to emit the measurementComplete signal
@@ -704,6 +710,7 @@ class TapToneAnalyzerControlMixin:
         self.captured_taps.clear()
         self.tap_entries = []
         self.showing_multi_tap_comparison = False
+        self.capture_timer_active = False  # mirrors Swift captureTimer?.invalidate(); captureTimer = nil
 
         # Always start fresh so the first new tap is detected on a rising edge.
         self.is_above_threshold = False
@@ -1025,15 +1032,6 @@ class TapToneAnalyzerControlMixin:
         """
         self.update_axis(min_freq, max_freq)
         self.loadedAxisRangeChanged.emit(min_freq, max_freq, min_db, max_db)
-
-    def set_max_average_count(self, max_average_count: int) -> None:
-        self.max_average_count = max_average_count
-
-    def reset_averaging(self) -> None:
-        self.num_averages = 0
-
-    def set_avg_enable(self, avg_enable: bool) -> None:
-        self.avg_enable = avg_enable
 
     def set_auto_scale(self, enabled: bool) -> None:
         self._auto_scale_db = enabled

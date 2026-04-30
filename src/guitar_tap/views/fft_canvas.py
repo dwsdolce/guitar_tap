@@ -199,7 +199,6 @@ class FftCanvas(pg.PlotWidget):
     peakSelected: QtCore.Signal = QtCore.Signal(float)
     peaksChanged: QtCore.Signal = QtCore.Signal(np.ndarray)
     ampChanged: QtCore.Signal = QtCore.Signal(int)
-    averagesChanged: QtCore.Signal = QtCore.Signal(int)
     framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
     newSample: QtCore.Signal = QtCore.Signal(bool)
     tapDetected: QtCore.Signal = QtCore.Signal()
@@ -375,7 +374,6 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.peaksChanged.connect(self.peaksChanged)
         self.analyzer.framerateUpdate.connect(self.framerateUpdate)
         self.analyzer.levelChanged.connect(self.levelChanged)
-        self.analyzer.averagesChanged.connect(self.averagesChanged)
         self.analyzer.newSample.connect(self.newSample)
         self.analyzer.tapDetectedSignal.connect(self._on_tap_detected_from_analyzer)
         self.analyzer.tapCountChanged.connect(self.tapCountChanged)
@@ -401,9 +399,6 @@ class FftCanvas(pg.PlotWidget):
         # both the scatter plot and the results panel.
         self.analyzer.spectrumUpdated.connect(self._on_spectrum_updated)
         self.analyzer.peaksChanged.connect(self._on_peaks_changed_scatter)
-        # Clear annotations reactively when a new averaged sample is accepted —
-        # mirrors Swift's onChange(of: tap.numAverages) rather than inline polling.
-        self.analyzer.averagesChanged.connect(self._on_averages_changed)
 
         # FFT line
         self.fft_line: pg.PlotDataItem = self.plot(
@@ -1293,18 +1288,6 @@ class FftCanvas(pg.PlotWidget):
             self.analyzer.recalculate_frozen_peaks_if_needed()
         self.freqRangeChanged.emit(fmin, fmax)
 
-    def set_max_average_count(self, max_average_count: int) -> None:
-        """Set the number of averages to take"""
-        self.analyzer.set_max_average_count(max_average_count)
-
-    def reset_averaging(self) -> None:
-        """Reset the number of averages taken to zero."""
-        self.analyzer.reset_averaging()
-
-    def set_avg_enable(self, avg_enable: bool) -> None:
-        """Flag to enable/disable the averaging"""
-        self.analyzer.set_avg_enable(avg_enable)
-
     # ------------------------------------------------------------------ #
     # Comparison overlay — delegates to analyzer + manages view curves
     # ------------------------------------------------------------------ #
@@ -1692,14 +1675,6 @@ class FftCanvas(pg.PlotWidget):
                     new_min, new_max = center - 10.0, center + 10.0
                 self.setYRange(new_min, new_max, padding=0)
 
-    def process_averages(self, mag_y) -> None:
-        """For the specified magnitude find the average with all the saved magnitudes.
-
-        Delegates to analyzer.process_averages.  Annotation clearing is handled
-        reactively via _on_averages_changed, connected to analyzer.averagesChanged.
-        """
-        self.analyzer.process_averages(mag_y)
-
     # ── find_peaks: thin wrapper that delegates to analyzer ───────────────────
 
     def find_peaks(self, mag_y_db):
@@ -1746,14 +1721,6 @@ class FftCanvas(pg.PlotWidget):
         consistent — mirroring the Swift displaySpectrum atomic-read pattern.
         """
         self.set_draw_data(mag_y_db, freqs=freqs)
-
-    def _on_averages_changed(self, _count: int) -> None:
-        """Clear annotations when a new averaged sample is accepted.
-
-        Connected to analyzer.averagesChanged — mirrors Swift's onChange(of: tap.numAverages).
-        Replaces the inline prev_averages != num_averages polling that was in process_averages.
-        """
-        self.annotations.clear_annotations()
 
     def _on_tap_detected_from_analyzer(self) -> None:
         """Relay analyzer.tapDetectedSignal → FftCanvas.tapDetected (hold trigger)."""

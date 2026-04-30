@@ -76,6 +76,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         q: float,
         guitar_type: gt.GuitarType,
         mode: str,
+        auto_mode: str,
         show: str,
         is_held: bool,
         pitch_obj: pitch_c.Pitch,
@@ -88,6 +89,10 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._q = q
         self._guitar_type = guitar_type
         self._mode = mode
+        # Context-aware auto-classified mode label from the model's _auto_mode_map
+        # (built by classify_all with full peak context).  Mirrors Swift's
+        # analyzer.peakMode(for:) which is passed separately from the effective label.
+        self._auto_mode = auto_mode
         self._show = show
         self._is_held = is_held
         self._pitch = pitch_obj
@@ -298,9 +303,11 @@ class PeakCardWidget(QtWidgets.QFrame):
         # ── Reset to auto (only when a manual override is active) ─────────
         reset_action = None
         if self._is_manual:
-            auto_str = gm.classify_peak(self._freq, self._guitar_type)
-            auto_label = gm.mode_display_name(auto_str) or "Unknown"
-            reset_action = menu.addAction(f"Reset to Auto-Detected ({auto_label})")
+            # Use self._auto_mode — the context-aware label from the model's
+            # _auto_mode_map (built by classify_all with all peaks together).
+            # Mirrors Swift: "Reset to Auto-Detected (\(mode.displayName))"
+            # where mode = analyzer.peakMode(for: peak) (from identifiedModes/classifyAll).
+            reset_action = menu.addAction(f"Reset to Auto-Detected ({self._auto_mode})")
             menu.addSeparator()
 
         # ── Standard Modes (GuitarMode.current_cases) ─────────────────────
@@ -326,11 +333,15 @@ class PeakCardWidget(QtWidgets.QFrame):
             return
 
         if chosen is reset_action:
-            self._mode = gm.classify_peak(self._freq, self._guitar_type)
+            # Don't set self._mode using classify_peak here — that uses a simple
+            # range lookup which can be wrong in the TOP/BACK overlap zone.
+            # Instead just clear the manual flag and emit modeReset; the model's
+            # _on_mode_reset handler will remove the override and push the correct
+            # auto-classified mode back via dataChanged → set_mode (which uses
+            # _auto_mode_map built by classify_all — the claiming algorithm).
             self._is_manual = False
             self._refresh_mode()
             self._refresh_bg()
-            self.modeChanged.emit(self._freq, self._mode)
             self.modeReset.emit(self._freq)
             return
 
@@ -366,8 +377,10 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._show = value
         self._refresh_star()
 
-    def set_mode(self, mode: str, is_manual: bool = False) -> None:
+    def set_mode(self, mode: str, auto_mode: str | None = None, is_manual: bool = False) -> None:
         self._mode = mode
+        if auto_mode is not None:
+            self._auto_mode = auto_mode
         self._is_manual = is_manual
         self._refresh_mode()
         self._refresh_bg()
@@ -491,6 +504,7 @@ class PeakListWidget(QtWidgets.QWidget):
 
             src_idx = self.model.index(int(self.model.freq_index(freq)), 0)
             mode = self.model.mode_value(src_idx)
+            auto_mode = self.model.peak_mode(src_idx)
             show = self.model.show_value(src_idx)
             is_manual = freq in self.model.modes
 
@@ -500,6 +514,7 @@ class PeakListWidget(QtWidgets.QWidget):
                 q=q,
                 guitar_type=_gt,
                 mode=mode,
+                auto_mode=auto_mode,
                 show=show,
                 is_held=self._is_held,
                 pitch_obj=self._pitch,
@@ -543,7 +558,8 @@ class PeakListWidget(QtWidgets.QWidget):
                 card.set_show(self.model.show_value(src_idx))
             elif col == pm.ColumnIndex.Modes.value:
                 mode = self.model.mode_value(src_idx)
-                card.set_mode(mode, is_manual=(freq in self.model.modes))
+                auto_mode = self.model.peak_mode(src_idx)
+                card.set_mode(mode, auto_mode=auto_mode, is_manual=(freq in self.model.modes))
 
     def _on_model_layout_changed(self) -> None:
         """Refresh mode displays when guitar_type changes."""
@@ -557,6 +573,7 @@ class PeakListWidget(QtWidgets.QWidget):
             src_idx = self.model.index(row, 0)
             card.set_mode(
                 self.model.mode_value(src_idx),
+                auto_mode=self.model.peak_mode(src_idx),
                 is_manual=(card.freq in self.model.modes),
             )
 

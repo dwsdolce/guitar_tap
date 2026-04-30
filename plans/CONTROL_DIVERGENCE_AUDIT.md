@@ -91,15 +91,18 @@ Investigation confirms this is **dead code in Swift**: the property is declared 
 never populated or read anywhere in the codebase (`TapToneAnalyzer.swift` line 837). Python correctly
 has no equivalent. This is a Swift-only dead declaration, not a Python omission.
 
-**Difference 3 — `captureTimer?.invalidate()` in Swift, no Python equivalent:**
+**Difference 3 — `captureTimer?.invalidate()` in Swift; `capture_timer_active = False` in Python:**
 Swift `reset()` (lines 94–95) and `cancelTapSequence()` (lines 329–330) invalidate and nil a
-persistent `captureTimer: Timer?`. Python has no stored `capture_timer` property. The equivalent
-in Python is `QTimer.singleShot()` called without retaining the timer reference, so there is
-no object to invalidate. The `finish_capture()` Python method is a no-op for this reason. This
-means that if a Python `QTimer.singleShot` capture callback fires after `reset()` or
-`cancel_tap_sequence()` has already run, there is no way to prevent the stale callback from
-executing. Whether this is a bug depends on how quickly `reset()` can race with an in-flight
-`QTimer.singleShot` callback.
+persistent `captureTimer: Timer?`. Python has no stored `capture_timer` property — the equivalent
+timer is fired with `QTimer.singleShot()` which discards the reference immediately. Python now
+carries a `capture_timer_active: bool` flag (declared in `TapToneAnalyzer.__init__`) that mirrors
+the semantic of `captureTimer != nil`. The flag is set `True` on every tap in
+`_handle_tap_detection` and cleared `False` in `_finish_capture()`, `reset()`, and
+`cancel_tap_sequence()`. This flag is used in `analyze_magnitudes` to replicate Swift's
+`captureTimer != nil` guard (see **Functional Consequence** below). The stale-callback race
+condition (a `QTimer.singleShot` callback firing after `reset()` / `cancel_tap_sequence()`) remains
+an open risk: Python cannot cancel an in-flight `singleShot` callback the way Swift can call
+`captureTimer?.invalidate()`.
 
 **Difference 4 — `loadedMeasurementName = nil` ordering:**
 Swift `reset()` sets `loadedMeasurementName = nil` near the *bottom* of the async block (line 113),
@@ -186,9 +189,9 @@ Same pattern as `pauseTapDetection`. Permitted reactivity translation.
 **Difference 1 — `tapsForAveraging = []` in Swift, no Python equivalent:**
 Same as `reset()` Difference 2 above. Dead code in Swift; Python correctly omits it.
 
-**Difference 2 — `captureTimer?.invalidate()` in Swift, no Python equivalent:**
-Same as `reset()` Difference 3 above. Stale `QTimer.singleShot` callbacks have no
-cancellation path in Python.
+**Difference 2 — `captureTimer?.invalidate()` in Swift; `capture_timer_active = False` in Python:**
+Same as `reset()` Difference 3 above. `capture_timer_active` is cleared to `False` in
+`cancel_tap_sequence()`. Stale `QTimer.singleShot` callbacks still have no cancellation path.
 
 **Difference 3 — `isMeasurementComplete = true` via direct assignment in Swift vs helper in Python:**
 Swift: `self.isMeasurementComplete = true` (line 318). Python: `self.set_measurement_complete(True)`.
@@ -376,7 +379,7 @@ Beyond the expected camelCase → snake_case convention, these names specificall
 | `mpmLock` | `_gated_lock` | Different name (aligns with `_gated_*` naming in Python) |
 | `analyzerStartTime = Date()` | `self.analyzer_start_time = _time.monotonic()` | Foundation `Date` → POSIX monotonic clock |
 | `lastTapTime: Date?` | `last_tap_time: float \| None` | Exists in Python but name matches; NOT cleared in `reset()` / `cancel_tap_sequence()` |
-| `captureTimer: Timer?` | no equivalent stored property | Swift persists a reference; Python uses `QTimer.singleShot` with no stored reference |
+| `captureTimer: Timer?` | `capture_timer_active: bool` | Swift persists a reference; Python uses `QTimer.singleShot` with no stored reference but carries a bool flag |
 | `tapsForAveraging: [[ResonantPeak]]` | no equivalent | Swift dead code — declared and cleared but never populated or read; Python correctly omits it |
 | `comparisonSpectra: [ComparisonSpectrum]` | `_comparison_data` / `comparison_labels` / `comparison_snapshots` | Swift: single list on model; Python: three parallel fields, view-managed clearing |
 
@@ -431,8 +434,9 @@ settings.
 
 - **`reset()` / `cancel_tap_sequence()`: `captureTimer` has no stored reference to invalidate.**
   Swift invalidates `captureTimer` in both. Python uses `QTimer.singleShot` with no stored reference,
-  so stale callbacks cannot be cancelled. `finish_capture()` is a no-op as a result. Whether a
-  stale callback can race with `reset()` / `cancel_tap_sequence()` should be assessed.
+  so stale callbacks cannot be cancelled. The `capture_timer_active` flag is cleared in both methods
+  to mirror the semantic state (`captureTimer = nil`), but an in-flight `QTimer.singleShot` callback
+  that fires after `reset()` / `cancel_tap_sequence()` will still execute with no way to prevent it.
 
 - **`startTapSequence()`: comparison state not cleared on the model.**
   Swift clears `comparisonSpectra = []` inside `startTapSequence()`. Python delegates this to the
@@ -461,7 +465,7 @@ settings.
 |---|---|---|
 | `analyzerStartTime: Date` | `analyzer_start_time: float` (`time.monotonic()`) | Foundation `Date` → POSIX monotonic clock |
 | `lastTapTime: Date?` | `last_tap_time: float \| None` | Exists in Python; not cleared in reset/cancel |
-| `captureTimer: Timer?` | no stored property | Swift persists and invalidates; Python discards after `singleShot` |
+| `captureTimer: Timer?` | `capture_timer_active: bool` | Swift persists and invalidates; Python carries a bool flag mirroring `captureTimer != nil`; stale-callback cancellation still not possible |
 | `tapsForAveraging: [[ResonantPeak]]` | no equivalent | Swift dead code — never populated or read; correctly absent from Python |
 | `comparisonSpectra: [ComparisonSpectrum]` | `_comparison_data` + `comparison_labels` + `comparison_snapshots` | Single model field vs three parallel view-managed fields |
 | `mpmLock: NSLock` | `_gated_lock: threading.Lock` | Both are mutex types; different APIs |
@@ -500,8 +504,69 @@ settings.
    inside `start_tap_sequence()`, or document that the caller is contractually required to call
    `clear_comparison()` first.
 
-5. **`QTimer.singleShot` capture callbacks cannot be cancelled.**
+5. **`QTimer.singleShot` capture callbacks cannot be cancelled. (Partially mitigated.)**
    Swift's `captureTimer` allows `reset()` / `cancelTapSequence()` to prevent stale callbacks from
-   firing. Python has no equivalent cancellation. Assess whether any `QTimer.singleShot` callbacks
-   in the tap detection path (e.g. `_finish_capture`, `_do_reenable_guitar`) can fire after a
-   `reset()` and cause incorrect state transitions.
+   firing via `captureTimer?.invalidate()`. Python has added `capture_timer_active: bool` to mirror
+   the semantic state of `captureTimer != nil` — this correctly gates `analyze_magnitudes` during
+   the ring-out window after each tap (fixing the bug where peaks were not displayed between taps
+   in a multi-tap sequence). However, `capture_timer_active = False` in `reset()` /
+   `cancel_tap_sequence()` does not prevent an in-flight `QTimer.singleShot` callback
+   (`_finish_capture`, `_do_reenable_guitar`) from executing after reset. The race condition remains
+   an open risk for investigation.
+
+---
+
+## 9. Functional Consequence of `captureTimer != nil` — Audit Gap (Resolved)
+
+The original audit (Section 8, item 5) noted `captureTimer: Timer?` as a structural difference
+and flagged stale-callback cancellation as an open risk, but did not assess the functional
+consequence of the missing guard in `analyzeMagnitudes`.
+
+### Root cause
+
+Swift `analyzeMagnitudes` (line 92 of `TapToneAnalyzer+PeakAnalysis.swift`) gates all peak
+analysis behind:
+
+```swift
+guard isDetecting || isDetectionPaused || captureTimer != nil else { return }
+```
+
+In Swift, `captureTimer` is set on **every** tap inside `handleTapDetection` (line 276) — a stored
+`Timer?` that remains non-nil for the entire ring-out capture window. So the guard passes and peaks
+continue to be found and displayed during each tap's ring-out.
+
+Python's equivalent guard read `getattr(self, "capture_timer", None) is not None`. Because Python
+uses `QTimer.singleShot()` which discards the timer reference immediately, this was **always**
+`None`. As soon as `_handle_tap_detection` set `is_detecting = False` (line 268), the guard failed
+and `analyze_magnitudes` returned immediately for the entire ring-out period.
+
+### Observed symptom
+
+During a multi-tap guitar sequence:
+
+- Each tap: `_handle_tap_detection` stored the spectrum and called `start_decay_tracking()`.
+- The FFT frame rate is ~2.7 Hz (~370 ms per frame). The guitar ring-out decays faster than one
+  FFT cycle in the conditions tested.
+- Peak analysis stopped immediately after `is_detecting` went `False`.
+- By the next FFT frame, the signal had decayed to noise → zero peaks found → graph and Analysis
+  Results panel showed no peaks during ring-out.
+
+The peaks table (which reads from `tap_entries` populated by `process_multiple_taps()`) showed
+correct peaks **after** the sequence completed. But the live graph and Analysis Results showed
+nothing during each intermediate tap's ring-out window.
+
+### Fix
+
+Added `capture_timer_active: bool = False` to `TapToneAnalyzer.__init__`. Updated the guard in
+`analyze_magnitudes` to use `_capture_active = getattr(self, "capture_timer_active", False)`.
+Set `True` on every tap in `_handle_tap_detection`; cleared `False` in `_finish_capture()`,
+`reset()`, and `cancel_tap_sequence()`.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `tap_tone_analyzer.py` | Added `self.capture_timer_active: bool = False` to `__init__` |
+| `tap_tone_analyzer_tap_detection.py` | `self.capture_timer_active = True` in `_handle_tap_detection`; `self.capture_timer_active = False` in `_finish_capture` |
+| `tap_tone_analyzer_peak_analysis.py` | Guard updated: `_capture_active = getattr(self, "capture_timer_active", False)` |
+| `tap_tone_analyzer_control.py` | `self.capture_timer_active = False` in `reset()` and `cancel_tap_sequence()` |

@@ -313,6 +313,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         else:
             self._set_status_message("All taps captured. Processing...")
 
+        # Set capture_timer_active = True for every tap — mirrors Swift setting
+        # captureTimer on every tap (line 276: captureTimer?.invalidate(); captureTimer = Timer...)
+        # so that captureTimer != nil is true during the ring-out window after each tap.
+        # This allows analyze_magnitudes to keep running and show peaks during ring-out.
+        self.capture_timer_active = True
+
         # If all taps collected: schedule processMultipleTaps after captureWindow.
         # (mirrors Swift: captureTimer fires finishCapture(), then processMultipleTaps().)
         # QTimer.singleShot fires on the main thread.
@@ -337,11 +343,13 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         always runs on the main thread.
 
         Mirrors Swift's combined finishCapture() + processMultipleTaps() flow:
-          finishCapture()      → invalidates captureTimer (no-op in Python)
+          finishCapture()      → invalidates captureTimer (captureTimer = nil)
           processMultipleTaps() → averages spectra, builds tapEntries, freezes result
         Delegates to process_multiple_taps() so that tap_entries is always built
         for multi-tap guitar measurements, enabling the Taps toggle button.
         """
+        # Mirrors Swift finishCapture(): captureTimer?.invalidate(); captureTimer = nil
+        self.capture_timer_active = False
         self.process_multiple_taps()
 
     @Slot()
@@ -565,13 +573,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         from models.measurement_type import MeasurementType as _MT
         from models.tap_display_settings import TapDisplaySettings as _tds
 
-        # DIAG G: one-shot log on the very first frame to check freq axis size
-        if not hasattr(self, "_diag_g_fired"):
-            self._diag_g_fired = True
-            mic_rate = getattr(self.mic, "rate", "?") if self.mic else "?"
-            fft_size = getattr(self.mic, "fft_size", "?") if self.mic else "?"
-            gt_log(f"DIAG G: FIRST FRAME — len(self.freq)={len(self.freq)} mic.rate={mic_rate} fft_size={fft_size} mag_len={len(mag_y_db)}")
-
         self._current_mag_y = mag_y
         self._current_mag_y_db = mag_y_db
 
@@ -616,13 +617,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         peak_idx = int(np.argmax(mag_y_db))
         if peak_idx < len(self.freq):
             peak_freq = float(self.freq[peak_idx])
-            # DIAG F: log mic.rate, fft_size, peak_idx and computed freq once per second
-            now_f = _time.monotonic()
-            if not hasattr(self, "_diag_f_last") or now_f - self._diag_f_last >= 1.0:
-                self._diag_f_last = now_f
-                mic_rate = getattr(self.mic, "rate", "?") if self.mic else "?"
-                fft_size = getattr(self.mic, "fft_size", "?") if self.mic else "?"
-                gt_log(f"DIAG F: peak_idx={peak_idx} freq={peak_freq:.1f} Hz mic.rate={mic_rate} fft_size={fft_size} freq_axis_len={len(self.freq)}")
             self.peakInfoChanged.emit(peak_freq, float(mag_y_db[peak_idx]))
 
     # ------------------------------------------------------------------ #

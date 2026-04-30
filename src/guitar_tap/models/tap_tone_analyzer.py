@@ -109,8 +109,6 @@ class TapToneAnalyzer(
     levelChanged: QtCore.Signal = QtCore.Signal(int)
     # FFT frame diagnostics: (fps, sample_dt, processing_dt).
     framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
-    # Averaging: number of completed averages.
-    averagesChanged: QtCore.Signal = QtCore.Signal(int)
     # Emitted on every live FFT frame (for average-enable logic).
     newSample: QtCore.Signal = QtCore.Signal(bool)
     # Display mode changed: emits the new DisplayMode enum value.
@@ -231,6 +229,7 @@ class TapToneAnalyzer(
         self.decay_threshold: float = 15.0                                 # mirrors decayThreshold
         self.number_of_taps: int = 1                                       # mirrors numberOfTaps
         self.capture_window: float = 0.2                                   # mirrors captureWindow
+        self.capture_timer_active: bool = False                            # mirrors captureTimer != nil
 
         # MARK: - Results
         self.current_peaks: list = []                                      # mirrors currentPeaks
@@ -302,12 +301,6 @@ class TapToneAnalyzer(
         # Frequencies of currently selected peaks — stable carry-forward for
         # recalculate_frozen_peaks_if_needed(). Mirrors Swift selectedPeakFrequencies.
         self.selected_peak_frequencies: list = []
-
-        # ── Averaging ──────────────────────────────────────────────────────
-        self.avg_enable: bool = False
-        self.max_average_count: int = 1
-        self.mag_y_sum = []
-        self.num_averages: int = 0
 
         # ── Multi-tap accumulator ─────────────────────────────────────────
         # Consolidates Swift's two separate lists into one, cleared between phases:
@@ -627,18 +620,24 @@ class TapToneAnalyzer(
     def effective_mode_label(self, peak) -> str:
         """Return the display label for a peak, respecting any user override.
 
-        If ``peak_mode_overrides`` contains an entry for ``peak.id``, that
-        string is returned. Otherwise the auto-classification from
-        ``GuitarMode.classify_peak`` is used.
+        Mirrors Swift ``effectiveModeLabel(for peak: ResonantPeak) -> String``:
 
-        Mirrors Swift ``effectiveModeLabel(for peak: ResonantPeak) -> String``.
+            switch peakModeOverrides[peak.id] ?? .auto {
+            case .auto:              return peakMode(for: peak).displayName
+            case .assigned(let l):   return l
+            }
+
+        For the auto case, delegates to ``self.peak_mode(peak)`` which reads
+        ``identified_modes`` (populated by ``classify_all`` with all peaks together)
+        before falling back to ``classify_all([peak])`` — identical to Swift
+        ``peakMode(for:)``.  Returns ``mode.display_name`` (human-readable),
+        not ``mode.value`` (internal enum string).
         """
         override = self.peak_mode_overrides.get(peak.id)
         if override:
             return override
-        from .guitar_mode import classify_peak
-        from models.tap_display_settings import TapDisplaySettings as _tds_eml
-        return classify_peak(peak.frequency, _tds_eml.guitar_type())
+        # Mirrors Swift .auto case: peakMode(for: peak).displayName
+        return self.peak_mode(peak).display_name
 
     def set_mode_override(self, mode: "str | None", peak_id: str) -> None:
         """Set or clear a mode-label override for a specific peak.
@@ -751,45 +750,3 @@ class TapToneAnalyzer(
             guitar_type = TapDisplaySettings.guitar_type()
             candidates = [p for p in candidates if GuitarMode.is_known(p.frequency, guitar_type)]
         return candidates
-
-    # ------------------------------------------------------------------ #
-    # process_averages
-    # Mirrors Swift TapToneAnalyzer live-FFT accumulation logic
-    # (main class body, not SpectrumCapture extension)
-    # ------------------------------------------------------------------ #
-
-    def process_averages(self, mag_y) -> None:
-        """Accumulate and average FFT linear magnitudes.
-
-        Mirrors Swift TapToneAnalyzer averageSpectra / processMultipleTaps.
-        Emits newSample, averagesChanged, spectrumUpdated on each triggered frame.
-        """
-        import numpy as np
-
-        if self.num_averages < self.max_average_count:
-            if self.num_averages > 0:
-                mag_y_sum = self.mag_y_sum + mag_y
-            else:
-                mag_y_sum = mag_y
-            num_averages = self.num_averages + 1
-
-            avg_mag_y = mag_y_sum / num_averages
-            avg_mag_y[avg_mag_y < np.finfo(float).eps] = np.finfo(float).eps
-            avg_mag_y_db = 20 * np.log10(avg_mag_y)
-
-            avg_amplitude = np.max(avg_mag_y_db) + 100
-            if avg_amplitude > (self.peak_threshold + 100):
-                avg_peaks = self.find_peaks(list(avg_mag_y_db), list(self.freq))
-                if avg_peaks:
-                    self.current_peaks = avg_peaks
-                    self.peaksChanged.emit(avg_peaks)
-                triggered = len(avg_peaks) > 0
-                if triggered:
-                    self.newSample.emit(self.is_measurement_complete)
-                    self.mag_y_sum = mag_y_sum
-                    self.num_averages = num_averages
-                    self.averagesChanged.emit(int(self.num_averages))
-                    self.frozen_magnitudes = avg_mag_y_db
-                    self.spectrumUpdated.emit(self.freq, avg_mag_y_db)
-
-        self.spectrumUpdated.emit(self.freq, self.frozen_magnitudes)

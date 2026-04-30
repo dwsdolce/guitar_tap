@@ -347,7 +347,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tap_count_total: int = 1
         self._help_dialog = None   # HelpDialog, lazily imported
         self._metrics_dialog = None  # FFTAnalysisMetricsView, lazily imported
-        self.avg_enable_saved: bool = False
         self._loaded_resonant_peaks: list = []  # ResonantPeak objects from last loaded measurement
         self._loaded_measurement = None          # full TapToneMeasurement, used for export filtering
         # Mirrors Swift's @State var tapLocation/notes on TapToneAnalysisView.
@@ -1442,30 +1441,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addLayout(_footer_row)
 
-        # Averaging widgets: shown in Settings dialog, not in main layout
-        self.num_averages = QtWidgets.QSpinBox()
-        self.num_averages.setMinimum(0)
-        self.num_averages.setMaximum(10)
-        self.num_averages.setValue(0)
-
-        self.avg_enable = QtWidgets.QToolButton()
-        self.avg_enable.setCheckable(True)
-        self.avg_enable.setChecked(False)
-
-        self.avg_restart = QtWidgets.QPushButton()
-        _style = self.style()
-        if _style is not None:
-            pixmapi = getattr(QtWidgets.QStyle.StandardPixmap, "SP_MediaSkipBackward")
-            self.avg_restart.setIcon(_style.standardIcon(pixmapi))
-
-        self.avg_completed = QtWidgets.QLabel("0")
-
-        self.avg_done = QtWidgets.QLabel()
-        _red_px = gt_i.GtImages.red_pixmap()
-        if _red_px is not None:
-            self.avg_done.setPixmap(_red_px)
-
-
         return panel
 
     def _build_status_bar(self) -> QtWidgets.QWidget:
@@ -1840,7 +1815,6 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peaksChanged.connect(self._material_peak_widget.update_peaks)
         canvas.peakSelected.connect(self.peak_widget.select_row)
         canvas.peakDeselected.connect(self.peak_widget.clear_selection)
-        canvas.averagesChanged.connect(self.set_avg_completed)
         canvas.framerateUpdate.connect(self._on_framerate_update)
         canvas.levelChanged.connect(self._on_level_changed)
         canvas.peakInfoChanged.connect(self._on_peak_info)
@@ -2153,15 +2127,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if time_s < go: return "Good",       "#4CAF50"
         return "Excellent",                  "#2196F3"
 
-    def set_avg_enable(self, state: bool) -> None:
-        self.fft_canvas.set_avg_enable(state)
-        if state:
-            self.avg_enable.setIcon(gt_i.GtImages.green_button_icon() or QtGui.QIcon())
-            self.avg_restart.setEnabled(True)
-        else:
-            self.avg_enable.setIcon(gt_i.GtImages.red_button_icon() or QtGui.QIcon())
-            self.avg_restart.setEnabled(False)
-
     def set_measurement_complete(self, checked: bool) -> None:
         self._is_measurement_complete = checked
         self.fft_canvas.set_measurement_complete(checked)
@@ -2186,10 +2151,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.auto_db_btn.setChecked(False)
 
         if checked:
-            self.avg_enable_saved = self.avg_enable.isChecked()
-            self.set_avg_enable(False)
-            self.avg_enable.setEnabled(False)
-            self.avg_restart.setEnabled(False)
             self.save_measurement_btn.setEnabled(True)
             self.export_spectrum_btn.setEnabled(True)
             self.export_pdf_btn.setEnabled(True)
@@ -2202,7 +2163,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 mt.is_guitar and self.peak_widget.model.user_has_modified_peak_selection
             )
         else:
-            self.avg_enable.setEnabled(True)
             self.save_measurement_btn.setEnabled(False)
             self.export_spectrum_btn.setEnabled(False)
             self.export_pdf_btn.setEnabled(False)
@@ -2248,32 +2208,25 @@ class MainWindow(QtWidgets.QMainWindow):
             self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="gray"))
             self._multi_tap_toggle_btn.setStyleSheet("")
             self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
+            # If the multi-tap table was visible (a new tap sequence is starting),
+            # hide it and restore the peak widget — mirrors what _on_comparison_changed
+            # does when is_comparing flips to False.  start_tap_sequence() resets
+            # showing_multi_tap_comparison but does NOT emit comparisonChanged, so
+            # _on_comparison_changed never fires and the table would remain visible.
+            if self._multi_tap_results_view.isVisible():
+                self._multi_tap_results_view.setVisible(False)
+                self.peak_widget.setVisible(True)
         self._multi_tap_toggle_btn.setVisible(checked and _show_btn)
 
+        # If the multi-tap table is still visible when a new measurement completes
+        # (the user didn't manually toggle it off between runs), repopulate it with
+        # the fresh tap-entry data.  This can happen because start_tap_sequence()
+        # resets showing_multi_tap_comparison but does NOT emit comparisonChanged, so
+        # the table stays visible with stale rows until the user toggles Taps.
+        if checked and _has_tap_entries and self._multi_tap_results_view.isVisible():
+            self._populate_multi_tap_results_view()
+
         self._update_tap_buttons()
-
-    def reset_averaging(self) -> None:
-        self.fft_canvas.reset_averaging()
-        self.set_avg_completed(0)
-        _px = gt_i.GtImages.red_pixmap()
-        if _px is not None:
-            self.avg_done.setPixmap(_px)
-        if self._is_measurement_complete:
-            self.set_measurement_complete(False)
-
-    def set_avg_completed(self, count: int) -> None:
-        self.avg_completed.setText(str(count))
-        if count >= self.num_averages.value():
-            _px = gt_i.GtImages.green_pixmap()
-            if _px is not None:
-                self.avg_done.setPixmap(_px)
-            self.num_averages.setEnabled(True)
-            self.set_measurement_complete(True)
-            self.avg_restart.setEnabled(True)
-        else:
-            self.num_averages.setEnabled(False)
-            self.avg_restart.setEnabled(False)
-            self.avg_enable.setEnabled(False)
 
     # ================================================================
     def _on_peaks_changed_results(self, peaks: object) -> None:
@@ -2286,50 +2239,51 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Rule 5a: propagate selection state when peaks change on a frozen measurement.
         #
-        # Swift's applyFrozenPeakState() writes selectedPeakIDs which SwiftUI
-        # propagates automatically to every view. In Python, _apply_frozen_peak_state()
-        # writes analyzer.selected_peak_frequencies but the peaksChanged signal chain
-        # (→ _on_peaks_changed_results → update_data_with_modes) never touches
-        # peak_widget.model.selected_frequencies.
+        # Mirrors Swift: visiblePeaks is a computed property that filters currentPeaks
+        # using selectedPeakIDs directly. Python mirrors this by pushing
+        # analyzer.selected_peak_ids (Set<str>) to peak_widget.model.selected_peak_ids
+        # so show_value_bool() evaluates peak.id membership without any frequency
+        # translation.
         #
-        # _restore_measurement sets selected_frequencies directly *before* emitting
-        # peaks and calls set_measurement_complete(True) *after*, so
-        # _is_measurement_complete is False during restore — the guard below correctly
-        # skips that path (restore already handled it).
+        # _restore_measurement sets selected_peak_ids directly *before* emitting peaks
+        # and calls set_measurement_complete(True) *after*, so _is_measurement_complete
+        # is False during restore — the guard below correctly skips that path.
         #
-        # Guitar-live path: _is_measurement_complete is False until _on_tap_detected
-        # calls set_measurement_complete(True) then auto_select_peaks_by_mode() —
-        # also skipped by the guard.
-        #
-        # Mirrors Swift: applyFrozenPeakState sets selectedPeakIDs which propagates to
-        # all views automatically via @Published.
+        # Guitar-live path: _is_measurement_complete is False during live capture —
+        # also skipped by the guard (is_live=True so show_value_bool returns True anyway).
         # For guitar mode, only propagate selection when measurement is complete.
         # For plate/brace, propagate on every peaksChanged so that only the
         # identified peak's star is filled during capture and review phases —
         # mirrors Swift where selectedPeakIDs (managed by phase-completion handlers)
         # drives the star display at all times.
+        # Mirrors Swift: visiblePeaks filters currentPeaks using selectedPeakIDs directly.
+        # Push the authoritative ID set to the model so show_value_bool() mirrors Swift's
+        # selectedPeakIDs.contains($0.id) without any frequency translation.
         analyzer = self.fft_canvas.analyzer
         if self._is_measurement_complete or not TDS.measurement_type().is_guitar:
             if not TDS.measurement_type().is_guitar:
-                # For plate/brace: build selected_frequencies from all identified peaks.
-                # During a live measurement use the analyzer's in-memory peak objects
-                # (L/C/FLC as available).  During a loaded/frozen measurement those
-                # objects are None, so fall back to the restored selected_frequencies
-                # already set by _restore_measurement — do not overwrite it.
+                # For plate/brace: selected_peak_ids on the analyzer holds exactly the
+                # identified L/C/FLC peak IDs (set by phase-completion handlers).
+                # During a loaded/frozen measurement the analyzer's objects are None but
+                # selected_peak_ids was already set by _restore_measurement — do not
+                # overwrite it.
                 az = self.fft_canvas.analyzer
-                live_freqs = {
-                    p.frequency
+                live_ids = {
+                    p.id
                     for p in (az.selected_longitudinal_peak, az.selected_cross_peak, az.selected_flc_peak)
                     if p is not None
                 }
-                if live_freqs:
-                    self.peak_widget.model.selected_frequencies = live_freqs
+                if live_ids:
+                    self.peak_widget.model.selected_peak_ids = live_ids
                 # else: frozen/loaded measurement — _restore_measurement already set
-                # selected_frequencies from selected*PeakID; leave it untouched.
+                # selected_peak_ids; leave it untouched.
             else:
-                sel_freqs = getattr(analyzer, "selected_peak_frequencies", None)
-                if sel_freqs is not None:
-                    self.peak_widget.model.selected_frequencies = set(sel_freqs)
+                # Guitar: pass selected_peak_ids (Set<UUID>) directly — mirrors Swift.
+                # selected_peak_frequencies is a carry-forward cache used only for threshold
+                # slider recovery; it is not the authoritative selection source.
+                sel_ids = getattr(analyzer, "selected_peak_ids", None)
+                if sel_ids is not None:
+                    self.peak_widget.model.selected_peak_ids = set(sel_ids)
 
         # Push plate/brace phase peak IDs to the model on every peaksChanged so
         # annotations label the identified peak immediately — mirrors Swift's
@@ -2514,6 +2468,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tap_count_total = n
         if self._sb_plate_step_lbl.isVisible():
             self._update_plate_phase_ui()
+        # Mirrors Swift: numberOfTaps @Published causes cancelButtonEnabled (a computed
+        # property that reads numberOfTaps) to be re-evaluated automatically. In Python
+        # we must explicitly refresh button states when the tap count changes.
+        self._update_tap_buttons()
 
     # ================================================================
     # Tap button state
@@ -2609,12 +2567,15 @@ class MainWindow(QtWidgets.QMainWindow):
             # Mirrors Swift cancelButtonEnabled:
             #   plate/brace: True whenever isDetecting (cancel = abort the sequence)
             #   guitar: True only in multi-tap mode before all taps captured
+            # Swift: isDetecting && numberOfTaps > 1 && currentTapCount < numberOfTaps
+            # No lower-bound on currentTapCount — Cancel is enabled from the moment
+            # the sequence starts (before the first tap), matching Swift behaviour.
             if is_plate:
                 cancel_enabled = is_detecting
             else:
                 cancel_enabled = (
                     is_detecting and tap_num > 1
-                    and 0 < self._tap_count_captured < tap_num
+                    and self._tap_count_captured < tap_num
                 )
             self.cancel_tap_btn.setEnabled(cancel_enabled)
             # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? .orange : .gray)
@@ -2777,12 +2738,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """Update the status dot when a tap fires.
 
         Selection is handled in the model layer: both _finish_capture (single-tap)
-        and _finish_guitar_tap_sequence (multi-tap) set selected_peak_ids and
-        selected_peak_frequencies before emitting peaksChanged, so
-        _on_peaks_changed_results already propagates the selection to
-        peak_widget.model.selected_frequencies. Mirrors Swift where
-        processMultipleTaps() sets selectedPeakIDs synchronously before any
-        @Published notifications propagate.
+        and process_multiple_taps() (multi-tap) set selected_peak_ids before emitting
+        peaksChanged, so _on_peaks_changed_results propagates the ID set directly to
+        peak_widget.model.selected_peak_ids. Mirrors Swift where processMultipleTaps()
+        sets selectedPeakIDs synchronously before @Published notifications propagate.
         """
         # Status message is set by the model via statusMessageChanged → _on_status_message_changed.
         self._sb_detect_dot.setStyleSheet("color: orange;")
@@ -2847,18 +2806,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # skipped even though they are the strongest representative of their mode.
         analyzer = self.fft_canvas.analyzer
         analyzer.reset_to_auto_selection()
-        # Populate selected_peak_frequencies from selected_peak_ids so the
-        # existing peaksChanged → _on_peaks_changed_results propagation path
-        # (line 2208) can push them to model.selected_frequencies correctly.
-        # Swift drives this via @Published selectedPeakIDs; Python needs the
-        # frequencies populated explicitly before the signal fires.
-        analyzer.selected_peak_frequencies = [
-            p.frequency for p in analyzer.current_peaks
-            if p.id in analyzer.selected_peak_ids
-        ]
         # Emit peaksChanged: updates the scatter plot annotations AND triggers
-        # _on_peaks_changed_results which propagates selected_peak_frequencies
-        # to model.selected_frequencies and redraws the results panel rows.
+        # _on_peaks_changed_results which propagates selected_peak_ids to the
+        # model directly — mirrors Swift @Published selectedPeakIDs propagation.
         analyzer.peaksChanged.emit(list(analyzer.current_peaks))
 
     def _on_user_modified_selection_changed(self, modified: bool) -> None:
@@ -2974,13 +2924,8 @@ class MainWindow(QtWidgets.QMainWindow):
             analyzer = self.fft_canvas.analyzer
             analyzer.reclassify_peaks()
             analyzer.reset_to_auto_selection()
-            # Python-specific bridging: populate selected_peak_frequencies from
-            # selected_peak_ids so _on_peaks_changed_results can push them to
-            # model.selected_frequencies.  Swift drives this via @Published.
-            analyzer.selected_peak_frequencies = [
-                p.frequency for p in analyzer.current_peaks
-                if p.id in analyzer.selected_peak_ids
-            ]
+            # Emit peaksChanged: triggers _on_peaks_changed_results which propagates
+            # selected_peak_ids to the model — mirrors Swift @Published propagation.
             analyzer.peaksChanged.emit(list(analyzer.current_peaks))
 
     def _update_measurement_badge(self) -> None:
@@ -3025,11 +2970,9 @@ class MainWindow(QtWidgets.QMainWindow):
             pm.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
             pm.selected_cross_peak_id        = az.effective_cross_peak_id
             pm.selected_flc_peak_id          = az.effective_flc_peak_id
-            # Populate selected_frequencies so show_value_bool() returns True for all
-            # identified peaks — mirrors Swift selectedPeakIDs which includes all
-            # resolved L/C/FLC peaks in the annotation visibility filter.
-            pm.selected_frequencies = {
-                p.frequency
+            # Mirrors Swift selectedPeakIDs containing the resolved L/C/FLC peak IDs.
+            pm.selected_peak_ids = {
+                p.id
                 for p in (az.selected_longitudinal_peak, az.selected_cross_peak, az.selected_flc_peak)
                 if p is not None
             }
@@ -3269,12 +3212,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_peak_widget.set_assignment(actual_long, actual_cross,
                                                    flc_freq=actual_flc)
 
-        # Populate selected_frequencies with the assigned peak frequencies so that
-        # annotation mode "Selected" shows labels for the L/C/FLC peaks.
         # Mirrors Swift selectedPeakIDs = Set(resolvedPlatePeaks().map { $0.id })
         # set at the end of each gated-FFT phase in TapToneAnalyzer+SpectrumCapture.swift.
-        assigned = {f for f in (actual_long, actual_cross, actual_flc) if f > 0}
-        self.peak_widget.model.selected_frequencies = assigned
+        az2 = self.fft_canvas.analyzer
+        self.peak_widget.model.selected_peak_ids = {
+            p.id
+            for p in (az2.selected_longitudinal_peak, az2.selected_cross_peak, az2.selected_flc_peak)
+            if p is not None
+        }
 
         # Pass the selected peak IDs (UUID strings) to the model so mode_value() can
         # resolve "Longitudinal" / "Cross-grain" / "FLC" labels by direct ID comparison.
@@ -3863,21 +3808,20 @@ class MainWindow(QtWidgets.QMainWindow):
             ):
                 if _pid:
                     _plate_selected_ids.add(_pid.upper())
-            peak_model.selected_frequencies = {
-                p.frequency for p in m.peaks
+            # Pass IDs directly — mirrors Swift selectedPeakIDs.contains($0.id).
+            peak_model.selected_peak_ids = {
+                p.id for p in m.peaks
                 if (p.id or "").upper() in _plate_selected_ids
             }
             peak_model.selected_longitudinal_peak_id = m.selected_longitudinal_peak_id
             peak_model.selected_cross_peak_id        = m.selected_cross_peak_id
             peak_model.selected_flc_peak_id          = m.selected_flc_peak_id
         else:
-            selected_ids = set(
+            # Pass IDs directly — mirrors Swift selectedPeakIDs.contains($0.id).
+            peak_model.selected_peak_ids = set(
                 m.selected_peak_ids if m.selected_peak_ids is not None
                 else [p.id for p in m.peaks]
             )
-            peak_model.selected_frequencies = {
-                p.frequency for p in m.peaks if p.id in selected_ids
-            }
         peak_model.is_live = False
 
         # ── Restore peak mode labels into peak_model.modes ────────────────────
@@ -6462,12 +6406,6 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg.exec()
         self.fft_canvas.devicesChanged.disconnect(_on_device_list_changed)
 
-        # Re-hide the reparented widgets
-        self.num_averages.setParent(None)  # type: ignore[call-overload]
-        self.avg_enable.setParent(None)  # type: ignore[call-overload]
-        self.avg_completed.setParent(None)  # type: ignore[call-overload]
-        self.avg_done.setParent(None)  # type: ignore[call-overload]
-        self.avg_restart.setParent(None)  # type: ignore[call-overload]
 
     # ================================================================
     # Help
