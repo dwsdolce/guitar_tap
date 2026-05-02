@@ -1305,7 +1305,7 @@ class FftCanvas(pg.PlotWidget):
     @staticmethod
     def _comparison_label(m: object) -> str:
         """Short label for the legend — mirrors comparisonLabel(for:) in Swift."""
-        loc = getattr(m, "tap_location", None)
+        loc = getattr(m, "measurement_name", None)
         if loc:
             return loc
         ts = getattr(m, "timestamp", "")

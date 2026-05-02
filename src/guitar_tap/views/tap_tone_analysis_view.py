@@ -349,9 +349,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._metrics_dialog = None  # FFTAnalysisMetricsView, lazily imported
         self._loaded_resonant_peaks: list = []  # ResonantPeak objects from last loaded measurement
         self._loaded_measurement = None          # full TapToneMeasurement, used for export filtering
-        # Mirrors Swift's @State var tapLocation/notes on TapToneAnalysisView.
+        # Mirrors Swift's @State var measurementName/notes on TapToneAnalysisView.
         # Live text the user types before saving; cleared after save; read by export PDF.
-        self._tap_location: str = ""
+        self._measurement_name: str = ""
         self._notes: str = ""
 
         from _version import __version_string__
@@ -3381,7 +3381,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def save_measurement(
         self,
-        tap_location: str | None = None,
+        measurement_name: str | None = None,
         notes: str | None = None,
     ) -> None:
         """Collect view-side state and delegate to the model to save a measurement.
@@ -3420,7 +3420,7 @@ class MainWindow(QtWidgets.QMainWindow):
         selected_flc_peak_id          = analyzer.effective_flc_peak_id          if mt.is_plate  else None
 
         analyzer.save_measurement(
-            tap_location=tap_location or None,
+            measurement_name=measurement_name or None,
             notes=notes or None,
             include_spectrum=True,
             selected_longitudinal_peak_id=selected_longitudinal_peak_id,
@@ -3439,33 +3439,33 @@ class MainWindow(QtWidgets.QMainWindow):
         """Show save dialog then persist the measurement.
 
         In comparison mode, routes to save_comparison() instead of save_measurement().
-        Mirrors Swift: Save Comparison button calls saveComparison(tapLocation:notes:)
+        Mirrors Swift: Save Comparison button calls saveComparison(measurementName:notes:)
         when displayMode == .comparison (TapToneAnalysisView+Export.swift).
 
-        For normal measurements mirrors Swift: the Save sheet receives tapLocation/notes
+        For normal measurements mirrors Swift: the Save sheet receives measurementName/notes
         as @Binding so it edits the view's live state directly.  Here we pre-populate
-        the dialog from self._tap_location / self._notes and write back on accept, then
-        clear them — exactly as Swift clears tapLocation = "" / notes = "" after
+        the dialog from self._measurement_name / self._notes and write back on accept, then
+        clear them — exactly as Swift clears measurementName = "" / notes = "" after
         saveMeasurement().
         """
         is_comparing = self.fft_canvas.is_comparing
 
         dlg = SMD.SaveMeasurementDialog(self)
         # Pre-populate from live state (mirrors Swift @Binding to the view's @State vars)
-        dlg.set_tap_location(self._tap_location)
+        dlg.set_measurement_name(self._measurement_name)
         dlg.set_notes(self._notes)
         if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
         # Write back into live state before saving (mirrors Swift binding update)
-        self._tap_location = dlg.tap_location
+        self._measurement_name = dlg.measurement_name
         self._notes = dlg.notes
 
         if is_comparing:
-            # Route to save_comparison() — mirrors Swift saveComparison(tapLocation:notes:).
+            # Route to save_comparison() — mirrors Swift saveComparison(measurementName:notes:).
             try:
                 self.fft_canvas.analyzer.save_comparison(
-                    tap_location=self._tap_location or None,
+                    measurement_name=self._measurement_name or None,
                     notes=self._notes or None,
                 )
             except OSError as exc:
@@ -3475,7 +3475,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             try:
                 self.save_measurement(
-                    tap_location=self._tap_location,
+                    measurement_name=self._measurement_name,
                     notes=self._notes,
                 )
             except OSError as exc:
@@ -3483,8 +3483,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     self, "Save Error", f"Could not save measurement:\n{exc}"
                 )
 
-        # Clear after saving — mirrors Swift: tapLocation = ""; notes = ""
-        self._tap_location = ""
+        # Clear after saving — mirrors Swift: measurementName = ""; notes = ""
+        self._measurement_name = ""
         self._notes = ""
 
     def _on_open_measurements(self) -> None:
@@ -3951,7 +3951,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # ── Chart title ───────────────────────────────────────────────────────
         # loadedMeasurementNameChanged signal emitted by _load_measurement_body()
         # drives canvas.set_loaded_measurement_name() reactively — no explicit call needed.
-        self._tap_location = ""
+        self._measurement_name = ""
         self._notes = ""
 
         # ── Auto-select the recorded microphone ───────────────────────────────
@@ -3973,9 +3973,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_export_spectrum(self) -> None:
         import time as _time
 
-        # Derive filename from tap_location → loaded_measurement_name → "spectrum".
+        # Derive filename from measurement_name → loaded_measurement_name → "spectrum".
         # Mirrors Swift exportCurrentSpectrum() label derivation.
-        _loc = self._tap_location.strip()
+        _loc = self._measurement_name.strip()
         if not _loc:
             _loc = (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
         if not _loc:
@@ -4018,7 +4018,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 max_freq = float(max(s.max_freq for s in snaps)) if snaps else 1000.0
                 min_db   = float(min(s.min_db   for s in snaps)) if snaps else -100.0
                 max_db   = float(max(s.max_db   for s in snaps)) if snaps else 0.0
-                _loc = (analyzer.loaded_measurement_name or self._tap_location or "").strip()
+                _loc = (analyzer.loaded_measurement_name or self._measurement_name or "").strip()
                 chart_title = f"Comparison \u2014 {_loc}" if _loc else "Comparison"
                 from datetime import datetime, timezone
                 date_label = datetime.now(timezone.utc).isoformat()
@@ -4208,9 +4208,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_export_comparison_pdf()
             return
 
-        # Derive filename from tap_location → loaded_measurement_name → "report".
-        # Mirrors Swift exportPDFReport() tapLocation / loadedMeasurementName fallback.
-        _pdf_loc = self._tap_location.strip()
+        # Derive filename from measurement_name → loaded_measurement_name → "report".
+        # Mirrors Swift exportPDFReport() measurementName / loadedMeasurementName fallback.
+        _pdf_loc = self._measurement_name.strip()
         if not _pdf_loc:
             _pdf_loc = (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
         if not _pdf_loc:
@@ -4240,8 +4240,8 @@ class MainWindow(QtWidgets.QMainWindow):
             mt       = TDS.measurement_type()
             is_guitar = mt.is_guitar
 
-            # ── tapLocation / notes — mirrors Swift: tapLocation.isEmpty ? tap.loadedMeasurementName : tapLocation ──
-            loc = self._tap_location if self._tap_location else None
+            # ── measurementName / notes — mirrors Swift: measurementName.isEmpty ? tap.loadedMeasurementName : measurementName ──
+            loc = self._measurement_name if self._measurement_name else None
             if loc is None:
                 loc = analyzer.loaded_measurement_name or None
             notes_val = self._notes if self._notes else None
@@ -4465,7 +4465,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # ── Build PDFReportData directly — mirrors Swift PDFReportData(...) init ─────────
             report_data = M.PDFReportData(
                 timestamp=date_label,
-                tap_location=loc,
+                measurement_name=loc,
                 notes=notes_val,
                 measurement_type_str=mt.value,
                 guitar_type_str=gt_str or TDS.guitar_type(),
@@ -4511,9 +4511,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         import time as _time
 
-        # Mirrors Swift: let label = tap.loadedMeasurementName ?? tapLocation
+        # Mirrors Swift: let label = tap.loadedMeasurementName ?? measurementName
         # basename is "report-<ts>" when label is empty, else "<label>-<ts>".
-        _label = (self.fft_canvas.analyzer.loaded_measurement_name or self._tap_location or "").strip()
+        _label = (self.fft_canvas.analyzer.loaded_measurement_name or self._measurement_name or "").strip()
         suggested_name = (
             (_label.replace(" ", "-").replace("/", "-").lower() + f"-{int(_time.time())}.pdf")
             if _label
@@ -4557,7 +4557,7 @@ class MainWindow(QtWidgets.QMainWindow):
             min_db   = float(min(s.min_db   for s in snaps)) if snaps else -100.0
             max_db   = float(max(s.max_db   for s in snaps)) if snaps else 0.0
 
-            loc = self._tap_location or None
+            loc = self._measurement_name or None
             if loc is None and analyzer.loaded_measurement_name:
                 loc = analyzer.loaded_measurement_name
             chart_title = f"Comparison — {loc}" if loc else "Comparison"
@@ -4620,7 +4620,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         import time as _time
 
-        _label = (self.fft_canvas.analyzer.loaded_measurement_name or self._tap_location or "").strip()
+        _label = (self.fft_canvas.analyzer.loaded_measurement_name or self._measurement_name or "").strip()
         suggested_name = (
             (_label.replace(" ", "-").replace("/", "-").lower() + f"-{int(_time.time())}.pdf")
             if _label
@@ -4681,7 +4681,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # ── Page 1: averaged result — mirrors Swift createAveragedSpectrumView() ──
             # Always reads frozen spectrum regardless of current display mode.
-            loc = self._tap_location if self._tap_location else None
+            loc = self._measurement_name if self._measurement_name else None
             if loc is None:
                 loc = analyzer.loaded_measurement_name or None
             notes_val = self._notes if self._notes else None
@@ -4822,7 +4822,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             averaged_data = M.PDFReportData(
                 timestamp=date_label,
-                tap_location=loc,
+                measurement_name=loc,
                 notes=notes_val,
                 measurement_type_str=mt.value,
                 guitar_type_str=gt_str or TDS.guitar_type(),
@@ -4879,7 +4879,7 @@ class MainWindow(QtWidgets.QMainWindow):
             cmp_min_db   = float(min(s.min_db   for s in snaps)) if snaps else min_db_val
             cmp_max_db   = float(max(s.max_db   for s in snaps)) if snaps else max_db_val
 
-            # Mirrors Swift: subtitle = tapLocation.isEmpty ? (tap.loadedMeasurementName ?? "Multi-Tap") : tapLocation
+            # Mirrors Swift: subtitle = measurementName.isEmpty ? (tap.loadedMeasurementName ?? "Multi-Tap") : measurementName
             _cmp_subtitle = loc or analyzer.loaded_measurement_name or "Multi-Tap"
             cmp_chart_title = f"Tap Comparison — {_cmp_subtitle}"
 

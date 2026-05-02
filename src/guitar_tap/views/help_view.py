@@ -185,7 +185,7 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Step 6 &mdash; Save",
-        "Click Save. Enter a location (e.g. &ldquo;Upper Bout&rdquo; or &ldquo;Treble Side&rdquo;) "
+        "Click Save. Enter a measurement name (e.g. &ldquo;Martin D-28&rdquo; or &ldquo;Ramirez 1075&rdquo;) "
         "and any notes. The measurement is stored with all peaks, the spectrum snapshot, "
         "and a chart image."
     ))
@@ -342,7 +342,7 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Save",
         "Saves the current measurement &mdash; enabled only when the spectrum is frozen "
-        "and peaks have been detected. Enter a location label and optional notes.",
+        "and peaks have been detected. Enter a measurement name and optional notes.",
         ["fa5.save"]
     ))
     parts.append(_row(
@@ -521,7 +521,7 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Comparing Guitar Measurements",
-        "Save a measurement for each build stage or tap location with a descriptive label. "
+        "Save a measurement for each build stage or measurement name with a descriptive label. "
         "Use the Measurements list Compare button to overlay 2&ndash;5 saved guitar "
         "measurements as colour-coded spectra on the main chart &mdash; ideal for tracking "
         "how bracing or finishing changes the resonant modes over time."

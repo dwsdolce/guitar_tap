@@ -7,7 +7,7 @@ Button layout (matches SwiftUI .cancellationAction / .primaryAction on macOS):
   Bottom-right : [Done]  (becomes [Cancel] while in compare mode)
 
 Row content (matches MeasurementRowView.swift):
-  Line 1 : location/"Measurement" (bold)  •  waveform icon (if snapshot)  •  HH:MM time
+  Line 1 : measurementName/"Measurement" (bold)  •  waveform icon (if snapshot)  •  HH:MM time
   Line 2 : N peaks  •  Ratio: X.XX (if available)  •  Decay: X.XXs (if available)
   Line 3 : notes, max 2 lines (if any)
 
@@ -271,8 +271,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
         """
         dlg = EMV.EditMeasurementView(index, m, self)
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            tap_location, notes = dlg.edited_values()
-            self._analyzer.update_measurement(index, tap_location, notes)
+            measurement_name, notes = dlg.edited_values()
+            self._analyzer.update_measurement(index, measurement_name, notes)
 
     def _load_from_detail(self, m: TapToneMeasurement) -> None:
         self.measurementSelected.emit(m)
@@ -491,7 +491,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
             comparison_data = M.ComparisonPDFReportData(
                 timestamp=datetime.now(timezone.utc).isoformat(),
-                comparison_label=m.tap_location or None,
+                comparison_label=m.measurement_name or None,
                 notes=m.notes or None,
                 spectrum_image_data=cmp_png_data,
                 # Pass cmp_entries so _build_comparison_story can derive the frequency range
@@ -510,7 +510,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         Mirrors Swift exportComparisonPDFReport(for:) in MeasurementsListView.
         """
-        label = m.tap_location or "measurement"
+        label = m.measurement_name or "measurement"
         from datetime import datetime as _dt
         try:
             ts = int(_dt.fromisoformat(m.timestamp).timestamp())
@@ -534,7 +534,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
     def _delete_measurement(self, index: int, m: TapToneMeasurement) -> None:
-        name = m.tap_location or "Measurement"
+        name = m.measurement_name or "Measurement"
         box = QtWidgets.QMessageBox(self)
         box.setWindowTitle("Delete Measurement?")
         box.setText(f'Are you sure you want to delete "{name}"? This cannot be undone.')

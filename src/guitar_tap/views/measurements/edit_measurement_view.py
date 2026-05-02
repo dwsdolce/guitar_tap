@@ -1,5 +1,5 @@
 """
-EditMeasurementView — modal dialog for editing tapLocation and notes of a
+EditMeasurementView — modal dialog for editing measurementName and notes of a
 saved TapToneMeasurement.
 
 Mirrors Swift EditMeasurementView.swift.
@@ -25,12 +25,12 @@ if TYPE_CHECKING:
 
 
 class EditMeasurementView(QtWidgets.QDialog):
-    """Modal dialog for editing the tapLocation and notes of a saved measurement.
+    """Modal dialog for editing the measurementName and notes of a saved measurement.
 
     Mirrors Swift ``EditMeasurementView``.
 
     Pre-populates fields from ``measurement``. Call ``edited_values()`` after
-    ``exec()`` returns ``Accepted`` to retrieve the new tap_location and notes.
+    ``exec()`` returns ``Accepted`` to retrieve the new measurement_name and notes.
     """
 
     def __init__(
@@ -79,10 +79,10 @@ class EditMeasurementView(QtWidgets.QDialog):
         loc_heading.setFont(loc_heading_font)
         loc_group.addWidget(loc_heading)
 
-        self._tap_location_edit = QtWidgets.QLineEdit()
-        self._tap_location_edit.setPlaceholderText("e.g. Martin 000-28, Spruce Top")
-        self._tap_location_edit.setText(self._measurement.tap_location or "")
-        loc_group.addWidget(self._tap_location_edit)
+        self._measurement_name_edit = QtWidgets.QLineEdit()
+        self._measurement_name_edit.setPlaceholderText("e.g. Martin 000-28, Spruce Top")
+        self._measurement_name_edit.setText(self._measurement.measurement_name or "")
+        loc_group.addWidget(self._measurement_name_edit)
 
         outer.addLayout(loc_group)
 
@@ -132,13 +132,13 @@ class EditMeasurementView(QtWidgets.QDialog):
     # MARK: - Result
 
     def edited_values(self) -> tuple[str | None, str | None]:
-        """Return (tap_location, notes) as entered by the user.
+        """Return (measurement_name, notes) as entered by the user.
 
-        Mirrors Swift save() reading self.tapLocation / self.notes before
-        calling analyzer.updateMeasurement(at:tapLocation:notes:).
+        Mirrors Swift save() reading self.measurementName / self.notes before
+        calling analyzer.updateMeasurement(at:measurementName:notes:).
         Empty strings are normalised to None (mirrors Swift's
-        ``tapLocation.isEmpty ? nil : tapLocation``).
+        ``measurementName.isEmpty ? nil : measurementName``).
         """
-        tap_location = self._tap_location_edit.text().strip() or None
+        measurement_name = self._measurement_name_edit.text().strip() or None
         notes = self._notes_edit.toPlainText().strip() or None
-        return tap_location, notes
+        return measurement_name, notes

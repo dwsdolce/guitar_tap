@@ -1,5 +1,5 @@
 """
-Modal dialog for entering tap location and notes before saving a measurement.
+Modal dialog for entering Measurement Name and notes before saving a measurement.
 Matches SaveMeasurementSheet.swift.
 """
 
@@ -7,7 +7,7 @@ from PySide6 import QtWidgets
 
 
 class SaveMeasurementDialog(QtWidgets.QDialog):
-    """Gather optional tap location and notes before saving. 450×250 minimum."""
+    """Gather optional measurement_name and notes before saving. 450×250 minimum."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -16,7 +16,7 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout(self)
 
-        # Tap location
+        # Measurement Name
         loc_group = QtWidgets.QGroupBox("Measurement Name")
         loc_layout = QtWidgets.QVBoxLayout(loc_group)
         self._location_edit = QtWidgets.QLineEdit()
@@ -47,15 +47,15 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         self._location_edit.setFocus()
 
     @property
-    def tap_location(self) -> str:
+    def measurement_name(self) -> str:
         return self._location_edit.text().strip()
 
     @property
     def notes(self) -> str:
         return self._notes_edit.toPlainText().strip()
 
-    def set_tap_location(self, value: str) -> None:
-        """Pre-populate the tap location field. Mirrors Swift @Binding pre-fill."""
+    def set_measurement_name(self, value: str) -> None:
+        """Pre-populate the measurement_name field. Mirrors Swift @Binding pre-fill."""
         self._location_edit.setText(value)
 
     def set_notes(self, value: str) -> None:

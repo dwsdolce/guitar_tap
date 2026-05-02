@@ -239,9 +239,9 @@ class TapToneMeasurement:
 
     # MARK: - User Metadata
 
-    # Descriptive label for the tap location, e.g. "Bridge", "Soundhole", "Upper Bout".
-    # Mirrors Swift TapToneMeasurement.tapLocation.
-    tap_location: str | None = None
+    # Descriptive name for the measurement, e.g. "Contreras", "Gore", "Ramirez".
+    # Mirrors Swift TapToneMeasurement.measurementName.
+    measurement_name: str | None = None
 
     # Free-form notes entered by the user at save time.
     # Mirrors Swift TapToneMeasurement.notes.
@@ -444,15 +444,15 @@ class TapToneMeasurement:
 
     @property
     def base_filename(self) -> str:
-        """Base filename (without extension) derived from the tap location and Unix timestamp.
+        """Base filename (without extension) derived from the measurement name and Unix timestamp.
 
-        Spaces and slashes in ``tap_location`` are replaced with hyphens and the string is
-        lowercased, producing a filesystem-safe component such as ``"bridge-1771351833"``.
-        Falls back to ``"measurement"`` when ``tap_location`` is ``None``.
+        Spaces and slashes in ``measurement_name`` are replaced with hyphens and the string is
+        lowercased, producing a filesystem-safe component such as ``"ramirez-1975-1771351833"``.
+        Falls back to ``"measurement"`` when ``measurement_name`` is ``None``.
 
         Mirrors Swift TapToneMeasurement.baseFilename.
         """
-        loc = (self.tap_location or "measurement").replace(" ", "-").replace("/", "-").lower()
+        loc = (self.measurement_name or "measurement").replace(" ", "-").replace("/", "-").lower()
         try:
             ts = int(datetime.fromisoformat(self.timestamp).timestamp())
         except Exception:
@@ -460,9 +460,9 @@ class TapToneMeasurement:
         return f"{loc}-{ts}"
 
     def display_name(self) -> str:
-        """Human-readable display name combining tap location and formatted timestamp.
+        """Human-readable display name combining measurement name and formatted timestamp.
 
-        Example: ``"Bridge — 2026-01-25 14:32"``
+        Example: ``"Contreras — 2026-01-25 14:32"``
 
         Python-only — no Swift equivalent.
         """
@@ -471,19 +471,19 @@ class TapToneMeasurement:
             time_str = dt.strftime("%Y-%m-%d %H:%M")
         except Exception:
             time_str = self.timestamp[:16] if len(self.timestamp) >= 16 else self.timestamp
-        if self.tap_location:
-            return f"{self.tap_location} — {time_str}"
+        if self.measurement_name:
+            return f"{self.measurement_name} — {time_str}"
         return time_str
 
-    def with_(self, tap_location: str | None, notes: str | None) -> "TapToneMeasurement":
-        """Return a copy of the measurement with only ``tap_location`` and ``notes`` replaced.
+    def with_(self, measurement_name: str | None, notes: str | None) -> "TapToneMeasurement":
+        """Return a copy of the measurement with only ``measurement_name`` and ``notes`` replaced.
 
         All other fields — including ``id`` and ``timestamp`` — are preserved exactly.
 
-        Mirrors Swift TapToneMeasurement.with(tapLocation:notes:).
+        Mirrors Swift TapToneMeasurement.with(measurementName:notes:).
         """
         import dataclasses
-        return dataclasses.replace(self, tap_location=tap_location, notes=notes)
+        return dataclasses.replace(self, measurement_name=measurement_name, notes=notes)
 
     # MARK: - Serialisation (Python-only)
 
@@ -503,8 +503,8 @@ class TapToneMeasurement:
         d["timestamp"] = self.timestamp
         if self.decay_time is not None:
             d["decayTime"] = self.decay_time
-        if self.tap_location:
-            d["tapLocation"] = self.tap_location
+        if self.measurement_name:
+            d["measurementName"] = self.measurement_name
         if self.notes:
             d["notes"] = self.notes
         if self.spectrum_snapshot is not None:
@@ -678,7 +678,8 @@ class TapToneMeasurement:
             timestamp=d.get("timestamp", _now_iso()),
             peaks=peaks,
             decay_time=d.get("decayTime"),
-            tap_location=d.get("tapLocation"),
+            # Fall back to legacy "tapLocation" key for files saved before the rename.
+            measurement_name=d.get("measurementName") or d.get("tapLocation"),
             notes=d.get("notes"),
             spectrum_snapshot=snapshot,
             annotation_offsets=ann_offsets,
@@ -709,7 +710,7 @@ class TapToneMeasurement:
     def create(
         peaks: list[ResonantPeak],
         decay_time: float | None = None,
-        tap_location: str | None = None,
+        measurement_name: str | None = None,
         notes: str | None = None,
         spectrum_snapshot: SpectrumSnapshot | None = None,
         annotation_offsets: dict[str, list[float]] | None = None,
@@ -741,6 +742,7 @@ class TapToneMeasurement:
         need to supply the fields relevant to their measurement type.
 
         Mirrors Swift TapToneMeasurement.init(...) with defaults.
+        ``measurement_name`` mirrors Swift ``measurementName``.
 
         Python-only — Swift uses a struct initialiser with default parameters.
         """
@@ -749,7 +751,7 @@ class TapToneMeasurement:
             timestamp=_now_iso(),
             peaks=peaks,
             decay_time=decay_time,
-            tap_location=tap_location or None,
+            measurement_name=measurement_name or None,
             notes=notes or None,
             spectrum_snapshot=spectrum_snapshot,
             annotation_offsets=annotation_offsets or None,

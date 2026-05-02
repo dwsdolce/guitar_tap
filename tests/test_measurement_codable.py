@@ -189,7 +189,7 @@ class TestTapToneMeasurementCodable:
         m = TapToneMeasurement.create(
             peaks=[peak],
             spectrum_snapshot=snap,
-            tap_location="Bridge",
+            measurement_name="Bridge",
             decay_time=0.45,
             number_of_taps=3,
         )
@@ -198,7 +198,7 @@ class TestTapToneMeasurementCodable:
         restored = TapToneMeasurement.from_dict(json.loads(raw_json))
 
         assert restored.id == m.id
-        assert restored.tap_location == "Bridge"
+        assert restored.measurement_name == "Bridge"
         assert abs(restored.decay_time - 0.45) < 0.001
         assert restored.number_of_taps == 3
         assert len(restored.peaks) == 1
@@ -547,21 +547,21 @@ class TestTapToneRatio:
 class TestWithMethod:
     """Mirrors Swift UpdateMeasurementTests."""
 
-    def test_with_updates_tap_location(self):
-        m = TapToneMeasurement.create(peaks=[], tap_location="Old")
-        updated = m.with_(tap_location="New", notes=None)
-        assert updated.tap_location == "New"
+    def test_with_updates_measurement_name(self):
+        m = TapToneMeasurement.create(peaks=[], measurement_name="Old")
+        updated = m.with_(measurement_name="New", notes=None)
+        assert updated.measurement_name == "New"
         assert updated.id == m.id          # ID preserved
 
     def test_with_updates_notes(self):
         m = TapToneMeasurement.create(peaks=[], notes="old notes")
-        updated = m.with_(tap_location=None, notes="new notes")
+        updated = m.with_(measurement_name=None, notes="new notes")
         assert updated.notes == "new notes"
 
-    def test_with_clears_tap_location_with_none(self):
-        m = TapToneMeasurement.create(peaks=[], tap_location="Bridge")
-        updated = m.with_(tap_location=None, notes=None)
-        assert updated.tap_location is None
+    def test_with_clears_measurement_name_with_none(self):
+        m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge")
+        updated = m.with_(measurement_name=None, notes=None)
+        assert updated.measurement_name is None
 
     def test_with_preserves_other_fields(self):
         peak = _make_peak()
@@ -570,9 +570,9 @@ class TestWithMethod:
             peaks=[peak],
             spectrum_snapshot=snap,
             decay_time=0.5,
-            tap_location="Bridge",
+            measurement_name="Bridge",
         )
-        updated = m.with_(tap_location="Neck", notes=None)
+        updated = m.with_(measurement_name="Neck", notes=None)
         assert updated.peaks == [peak]
         assert updated.spectrum_snapshot == snap
         assert updated.decay_time == 0.5
@@ -675,7 +675,7 @@ class TestComparisonEntryCodable:
         entry2 = self._make_entry(label="Neck")
         m = TapToneMeasurement.create(
             peaks=[],
-            tap_location="My Comparison",
+            measurement_name="My Comparison",
             comparison_entries=[entry1, entry2],
         )
         restored = _round_trip(m)

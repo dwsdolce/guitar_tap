@@ -145,10 +145,13 @@ class TestTapDetectionSlots:
         assert sut.tap_detected is False
 
     def test_finish_capture_transitions_state(self):
-        """_finish_capture (site 4) clears captured taps after processing.
+        """_finish_capture (site 4) processes taps and sets is_measurement_complete.
 
         We seed captured_taps with synthetic data so _finish_capture can
-        average them.  After the call the captured list must be cleared.
+        average them.  After the call is_measurement_complete must be True.
+        Note: production code deliberately does NOT clear captured_taps here —
+        mirrors Swift processMultipleTaps() which leaves capturedTaps intact
+        until resetForNewSequence()/reset() clears them.
         """
         import numpy as np
         sut = self._make()
@@ -156,16 +159,17 @@ class TestTapDetectionSlots:
         sut.current_tap_count = 1
 
         # Seed captured_taps with a minimal valid entry so averaging succeeds.
-        # Production code stores bare magnitude arrays (not tuples) — see
-        # tap_tone_analyzer_tap_detection.py captured_taps.append(mag_y_db.copy()).
-        mags = np.full(64, -60.0, dtype=np.float32)
-        sut.captured_taps = [mags]
+        # Production code stores (magnitudes, frequencies, captureTime) 3-tuples — mirrors Swift:
+        #   capturedTaps.append((magnitudes: magnitudes, frequencies: frequencies, captureTime: time))
+        import datetime
+        mags = np.full(64, -60.0, dtype=np.float64)
+        freqs = np.linspace(0, 2000, 64)
+        sut.captured_taps = [(mags, freqs, datetime.datetime.now())]
 
-        # _finish_capture calls _average_captured_taps then clears captured_taps.
         sut._finish_capture()
 
-        assert sut.captured_taps == [], (
-            "_finish_capture must clear captured_taps after averaging"
+        assert sut.is_measurement_complete is True, (
+            "_finish_capture must set is_measurement_complete True after averaging"
         )
 
 
@@ -205,7 +209,10 @@ class TestSpectrumCapturePhaseSlots:
 
     def test_do_start_flc_arms_flc_detection(self):
         """_do_start_flc (site 3) sets phase to CAPTURING_FLC and enables detection."""
+        from models.material_tap_phase import MaterialTapPhase
         sut = self._make()
+        # _do_start_flc has a guard: it only proceeds when phase == WAITING_FOR_FLC_TAP.
+        sut._set_material_tap_phase(MaterialTapPhase.WAITING_FOR_FLC_TAP)
 
         sut._do_start_flc()
 

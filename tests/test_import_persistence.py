@@ -45,7 +45,7 @@ def _make_sut():
 def _minimal_measurement_json() -> str:
     """Minimal valid JSON for a single-element [TapToneMeasurement] array."""
     from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
-    m = TapToneMeasurement.create(peaks=[], tap_location="Test")
+    m = TapToneMeasurement.create(peaks=[], measurement_name="Test")
     return json.dumps([m.to_dict()])
 
 

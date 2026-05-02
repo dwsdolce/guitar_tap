@@ -4,7 +4,7 @@ Single-row widget for the measurements list.
 Mirrors Swift's MeasurementRowView.swift — a full-width clickable widget
 that displays one TapToneMeasurement with three lines of metadata.
 
-  Line 1 : [bold location/"Measurement"] ··· [waveform?] [HH:MM] [›]
+  Line 1 : [bold measurementName/"Measurement"] ··· [waveform?] [HH:MM] [›]
   Line 2 : [N peaks] [• Ratio: X.XX] [• Decay: X.XXs]
   Line 3 : [notes, word-wrapped]   (optional)
 
@@ -104,11 +104,11 @@ class MeasurementRowView(QtWidgets.QWidget):
         content = QtWidgets.QVBoxLayout()
         content.setSpacing(3)
 
-        # Line 1: location + icon + time + chevron
+        # Line 1: measurement name + icon + time + chevron
         line1 = QtWidgets.QHBoxLayout()
         line1.setSpacing(6)
 
-        loc = QtWidgets.QLabel(m.tap_location or ("Comparison" if m.is_comparison else "Measurement"))
+        loc = QtWidgets.QLabel(m.measurement_name or ("Comparison" if m.is_comparison else "Measurement"))
         loc.setStyleSheet("font-weight: bold; font-size: 13px;")
         loc.setWordWrap(True)
         line1.addWidget(loc)

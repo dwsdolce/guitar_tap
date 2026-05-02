@@ -335,8 +335,8 @@ class TestAnnotationStateLive:
 # ---------------------------------------------------------------------------
 
 
-def _make_measurement(location=None, notes=None):
-    return TapToneMeasurement.create(peaks=[], tap_location=location, notes=notes)
+def _make_measurement(measurement_name=None, notes=None):
+    return TapToneMeasurement.create(peaks=[], measurement_name=measurement_name, notes=notes)
 
 
 def _make_analyzer_with_measurements(measurements):
@@ -353,51 +353,51 @@ class TestUpdateMeasurement:
     """
 
     def test_update_by_index_changes_only_targeted_entry(self):
-        """Updating by index changes only the targeted entry's location and notes."""
-        m0 = _make_measurement(location="Bridge", notes="First")
-        m1 = _make_measurement(location="Soundhole", notes="Second")
+        """Updating by index changes only the targeted entry's measurement_name and notes."""
+        m0 = _make_measurement(measurement_name="Bridge", notes="First")
+        m1 = _make_measurement(measurement_name="Soundhole", notes="Second")
         sut = _make_analyzer_with_measurements([m0, m1])
 
-        sut.update_measurement(at=0, tap_location="Upper Bout", notes="Edited")
+        sut.update_measurement(at=0, measurement_name="Upper Bout", notes="Edited")
 
-        assert sut.savedMeasurements[0].tap_location == "Upper Bout"
+        assert sut.savedMeasurements[0].measurement_name == "Upper Bout"
         assert sut.savedMeasurements[0].notes == "Edited"
-        assert sut.savedMeasurements[1].tap_location == "Soundhole", "Second entry must not be affected"
+        assert sut.savedMeasurements[1].measurement_name == "Soundhole", "Second entry must not be affected"
         assert sut.savedMeasurements[1].notes == "Second", "Second entry must not be affected"
 
     def test_update_duplicate_import_only_edited_index_changes(self):
         """Editing one of two duplicates (same id, different index) leaves the other unchanged."""
-        original = _make_measurement(location="Top", notes="Original")
+        original = _make_measurement(measurement_name="Top", notes="Original")
         # Simulate importing the same file twice — both entries share the same id.
         sut = _make_analyzer_with_measurements([original, original])
 
-        sut.update_measurement(at=1, tap_location="Back", notes="Copy")
+        sut.update_measurement(at=1, measurement_name="Back", notes="Copy")
 
-        assert sut.savedMeasurements[0].tap_location == "Top",  "First duplicate must not change"
+        assert sut.savedMeasurements[0].measurement_name == "Top",  "First duplicate must not change"
         assert sut.savedMeasurements[0].notes == "Original",    "First duplicate must not change"
-        assert sut.savedMeasurements[1].tap_location == "Back", "Second duplicate should be updated"
+        assert sut.savedMeasurements[1].measurement_name == "Back", "Second duplicate should be updated"
         assert sut.savedMeasurements[1].notes == "Copy",        "Second duplicate should be updated"
         assert sut.savedMeasurements[0].id == sut.savedMeasurements[1].id, \
             "id must be preserved through the update"
 
     def test_update_nil_values_clear_fields(self):
         """Passing None clears the fields."""
-        m = _make_measurement(location="Bridge", notes="Some notes")
+        m = _make_measurement(measurement_name="Bridge", notes="Some notes")
         sut = _make_analyzer_with_measurements([m])
 
-        sut.update_measurement(at=0, tap_location=None, notes=None)
+        sut.update_measurement(at=0, measurement_name=None, notes=None)
 
-        assert sut.savedMeasurements[0].tap_location is None
+        assert sut.savedMeasurements[0].measurement_name is None
         assert sut.savedMeasurements[0].notes is None
 
     def test_update_out_of_range_index_is_noop(self):
         """An out-of-range index is a no-op."""
-        m = _make_measurement(location="Bridge")
+        m = _make_measurement(measurement_name="Bridge")
         sut = _make_analyzer_with_measurements([m])
 
-        sut.update_measurement(at=99, tap_location="Changed", notes=None)
+        sut.update_measurement(at=99, measurement_name="Changed", notes=None)
 
-        assert sut.savedMeasurements[0].tap_location == "Bridge", "Out-of-range update must not modify array"
+        assert sut.savedMeasurements[0].measurement_name == "Bridge", "Out-of-range update must not modify array"
         assert len(sut.savedMeasurements) == 1
 
     def test_update_preserves_id_and_other_fields(self):
@@ -408,16 +408,16 @@ class TestUpdateMeasurement:
             frequency=195.0, magnitude=-22.0, quality=10.0, bandwidth=19.5,
         )
         m = TapToneMeasurement.create(
-            peaks=[peak], decay_time=0.5, tap_location="Old", notes="Old notes"
+            peaks=[peak], decay_time=0.5, measurement_name="Old", notes="Old notes"
         )
         original_id = m.id
         sut = _make_analyzer_with_measurements([m])
 
-        sut.update_measurement(at=0, tap_location="New", notes="New notes")
+        sut.update_measurement(at=0, measurement_name="New", notes="New notes")
 
         updated = sut.savedMeasurements[0]
         assert updated.id == original_id, "id must be preserved"
         assert len(updated.peaks) == 1,   "peaks must be preserved"
         assert updated.decay_time == 0.5, "decay_time must be preserved"
-        assert updated.tap_location == "New"
+        assert updated.measurement_name == "New"
         assert updated.notes == "New notes"

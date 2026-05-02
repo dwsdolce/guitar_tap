@@ -78,11 +78,17 @@ def _make_guitar_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
     return sut
 
 
-def _fake_spectrum(n: int = 256, peak_db: float = -30.0) -> np.ndarray:
-    """Return a spectrum with a single peak at bin n//4."""
+def _fake_spectrum(n: int = 256, peak_db: float = -30.0):
+    """Return a (magnitudes, frequencies, captureTime) tuple with a single peak at bin n//4.
+
+    Production code stores 3-tuples in captured_taps — mirrors Swift:
+      capturedTaps.append((magnitudes: magnitudes, frequencies: frequencies, captureTime: time))
+    """
+    import datetime
     mags = np.full(n, -80.0)
     mags[n // 4] = peak_db
-    return mags
+    freqs = np.linspace(0, 2000, n)
+    return (mags, freqs, datetime.datetime.now())
 
 
 def _pump_events() -> None:
@@ -136,7 +142,7 @@ class TestGuitarSingleTapCompletion:
         spectra_received: list[tuple] = []
         sut.spectrumUpdated.connect(lambda f, m: spectra_received.append((f, m)))
 
-        live_mag = _fake_spectrum(peak_db=-20.0)  # distinctly different from frozen
+        live_mag, _live_freqs, _live_ts = _fake_spectrum(peak_db=-20.0)  # distinctly different from frozen
         sut.on_fft_frame(
             mag_y_db=live_mag,
             mag_y=np.power(10.0, live_mag / 20.0),
@@ -277,7 +283,7 @@ class TestLoadMeasurementSetsComplete:
         # TapToneMeasurement.create() takes measurement_type as a str and
         # generates its own timestamp — no timestamp parameter needed.
         freqs = list(np.linspace(0, 2000, 64))
-        mags = list(_fake_spectrum(n=64))
+        mags = list(_fake_spectrum(n=64)[0])  # [0] extracts magnitudes array from the (mags, freqs, time) tuple
         snap = SpectrumSnapshot(
             frequencies=freqs,
             magnitudes=mags,

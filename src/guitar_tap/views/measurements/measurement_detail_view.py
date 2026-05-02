@@ -264,10 +264,10 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         info_layout.setHorizontalSpacing(16)
         info_layout.setVerticalSpacing(6)
 
-        if m.tap_location:
-            loc = QtWidgets.QLabel(m.tap_location)
+        if m.measurement_name:
+            loc = QtWidgets.QLabel(m.measurement_name)
             loc.setStyleSheet("font-weight: bold;")
-            info_layout.addRow("Location:", loc)
+            info_layout.addRow("Measurement Name:", loc)
 
         try:
             dt = datetime.fromisoformat(m.timestamp).astimezone()

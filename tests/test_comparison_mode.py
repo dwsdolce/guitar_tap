@@ -100,12 +100,12 @@ def _make_snapshot(
 
 
 def _make_measurement(
-    tap_location: str | None = None,
+    measurement_name: str | None = None,
     with_snapshot: bool = True,
 ) -> TapToneMeasurement:
     return TapToneMeasurement.create(
         peaks=[],
-        tap_location=tap_location,
+        measurement_name=measurement_name,
         spectrum_snapshot=_make_snapshot() if with_snapshot else None,
     )
 
@@ -120,24 +120,24 @@ class TestComparisonLoad:
     def test_CP_U1_two_measurements_produce_two_entries(self):
         """CP-U1: Loading 2 measurements populates _comparison_data with 2 entries."""
         sut = _StubAnalyzer()
-        m1 = _make_measurement(tap_location="Bridge")
-        m2 = _make_measurement(tap_location="Neck")
+        m1 = _make_measurement(measurement_name="Bridge")
+        m2 = _make_measurement(measurement_name="Neck")
         sut.load_comparison([m1, m2])
         assert len(sut._comparison_data) == 2
         assert sut._display_mode == AnalysisDisplayMode.COMPARISON
 
-    def test_CP_U2_label_uses_tap_location(self):
-        """CP-U2: Label uses tapLocation when present."""
+    def test_CP_U2_label_uses_measurement_name(self):
+        """CP-U2: Label uses measurementName when present."""
         sut = _StubAnalyzer()
-        m = _make_measurement(tap_location="Bridge Area")
+        m = _make_measurement(measurement_name="Bridge Area")
         sut.load_comparison([m])
         assert sut._comparison_data[0]["label"] == "Bridge Area"
 
     def test_CP_U3_skips_measurements_without_snapshot(self):
         """CP-U3: Measurements without a spectrum snapshot are silently filtered out."""
         sut = _StubAnalyzer()
-        with_snap    = _make_measurement(tap_location="With",    with_snapshot=True)
-        without_snap = _make_measurement(tap_location="Without", with_snapshot=False)
+        with_snap    = _make_measurement(measurement_name="With",    with_snapshot=True)
+        without_snap = _make_measurement(measurement_name="Without", with_snapshot=False)
         sut.load_comparison([with_snap, without_snap])
         assert len(sut._comparison_data) == 1
         assert sut._comparison_data[0]["label"] == "With"
@@ -145,7 +145,7 @@ class TestComparisonLoad:
     def test_CP_U4_palette_wraps_for_more_than_5_entries(self):
         """CP-U4: Colors cycle through the 5-color palette without crashing for >5 entries."""
         sut = _StubAnalyzer()
-        measurements = [_make_measurement(tap_location=f"M{i}") for i in range(1, 7)]
+        measurements = [_make_measurement(measurement_name=f"M{i}") for i in range(1, 7)]
         sut.load_comparison(measurements)   # must not raise
         assert len(sut._comparison_data) == 6
 
@@ -156,11 +156,11 @@ class TestComparisonLoad:
         sut.freqRangeChanged.connect(lambda lo, hi: axis_events.append((lo, hi)))
 
         m1 = TapToneMeasurement.create(
-            peaks=[], tap_location="A",
+            peaks=[], measurement_name="A",
             spectrum_snapshot=_make_snapshot(min_freq=50.0, max_freq=800.0),
         )
         m2 = TapToneMeasurement.create(
-            peaks=[], tap_location="B",
+            peaks=[], measurement_name="B",
             spectrum_snapshot=_make_snapshot(min_freq=100.0, max_freq=1200.0),
         )
         sut.load_comparison([m1, m2])
@@ -263,7 +263,7 @@ class _FullStubAnalyzer(_StubAnalyzer):
 
 
 def _make_measurement_with_peaks(
-    tap_location: str | None = "Bridge",
+    measurement_name: str | None = "Bridge",
     guitar_type: str | None = "Classical",
 ) -> "TapToneMeasurement":
     """Create a measurement carrying two peaks suitable for resolved_mode_peaks."""
@@ -288,7 +288,7 @@ def _make_measurement_with_peaks(
     )
     return TapToneMeasurement.create(
         peaks=[p_air, p_top],
-        tap_location=tap_location,
+        measurement_name=measurement_name,
         spectrum_snapshot=snap,
         guitar_type=guitar_type,
     )
@@ -347,7 +347,7 @@ class TestResolvedModePeaks:
     def test_comparison_data_carries_peaks_and_guitar_type(self):
         """After load_comparison, each _comparison_data entry has 'peaks' and 'guitar_type'."""
         sut = _FullStubAnalyzer()
-        m = _make_measurement_with_peaks(tap_location="Bridge", guitar_type="Classical")
+        m = _make_measurement_with_peaks(measurement_name="Bridge", guitar_type="Classical")
         sut.load_comparison([m])
         assert len(sut._comparison_data) == 1
         entry = sut._comparison_data[0]
@@ -366,10 +366,10 @@ class TestSaveComparison:
     def test_save_comparison_creates_record(self):
         """save_comparison() appends a measurement with is_comparison == True."""
         sut = _FullStubAnalyzer()
-        m1 = _make_measurement(tap_location="Bridge")
-        m2 = _make_measurement(tap_location="Neck")
+        m1 = _make_measurement(measurement_name="Bridge")
+        m2 = _make_measurement(measurement_name="Neck")
         sut.load_comparison([m1, m2])
-        sut.save_comparison(tap_location="My Comparison", notes=None)
+        sut.save_comparison(measurement_name="My Comparison", notes=None)
 
         assert len(sut.savedMeasurements) == 1
         saved = sut.savedMeasurements[0]
@@ -378,9 +378,9 @@ class TestSaveComparison:
     def test_save_comparison_entries_count_matches_comparison_data(self):
         """Entry count in the saved record matches the number of loaded spectra."""
         sut = _FullStubAnalyzer()
-        measurements = [_make_measurement(tap_location=f"M{i}") for i in range(3)]
+        measurements = [_make_measurement(measurement_name=f"M{i}") for i in range(3)]
         sut.load_comparison(measurements)
-        sut.save_comparison(tap_location="Triple", notes=None)
+        sut.save_comparison(measurement_name="Triple", notes=None)
 
         saved = sut.savedMeasurements[0]
         assert saved.comparison_entries is not None
@@ -389,16 +389,16 @@ class TestSaveComparison:
     def test_save_comparison_noop_when_no_comparison_data(self):
         """save_comparison() does nothing when _comparison_data is empty."""
         sut = _FullStubAnalyzer()
-        sut.save_comparison(tap_location="Empty", notes=None)
+        sut.save_comparison(measurement_name="Empty", notes=None)
         assert sut.savedMeasurements == []
 
-    def test_save_comparison_tap_location_stored(self):
-        """tap_location argument is stored on the saved measurement."""
+    def test_save_comparison_measurement_name_stored(self):
+        """measurement_name argument is stored on the saved measurement."""
         sut = _FullStubAnalyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
-        sut.save_comparison(tap_location="My Label", notes="Some notes")
+        sut.save_comparison(measurement_name="My Label", notes="Some notes")
         saved = sut.savedMeasurements[0]
-        assert saved.tap_location == "My Label"
+        assert saved.measurement_name == "My Label"
         assert saved.notes == "Some notes"
 
     def test_save_comparison_color_components_normalised(self):
@@ -418,9 +418,9 @@ class TestLoadComparisonRecord:
     def _make_saved_comparison(self, n: int = 2) -> "TapToneMeasurement":
         """Helper: create and save a comparison, return the saved record."""
         sut = _FullStubAnalyzer()
-        measurements = [_make_measurement(tap_location=f"M{i}") for i in range(n)]
+        measurements = [_make_measurement(measurement_name=f"M{i}") for i in range(n)]
         sut.load_comparison(measurements)
-        sut.save_comparison(tap_location="Saved Comparison")
+        sut.save_comparison(measurement_name="Saved Comparison")
         return sut.savedMeasurements[0]
 
     def test_load_comparison_record_sets_display_mode(self):
@@ -442,10 +442,10 @@ class TestLoadComparisonRecord:
     def test_load_comparison_record_restores_labels(self):
         """Labels in _comparison_data match the saved ComparisonEntry labels."""
         sut = _FullStubAnalyzer()
-        m1 = _make_measurement(tap_location="Bridge")
-        m2 = _make_measurement(tap_location="Neck")
+        m1 = _make_measurement(measurement_name="Bridge")
+        m2 = _make_measurement(measurement_name="Neck")
         sut.load_comparison([m1, m2])
-        sut.save_comparison(tap_location="Test")
+        sut.save_comparison(measurement_name="Test")
         record = sut.savedMeasurements[0]
 
         sut2 = _FullStubAnalyzer()
@@ -467,15 +467,15 @@ class TestLoadComparisonRecord:
         """Axis bounds are restored from the union of entry snapshots."""
         sut = _FullStubAnalyzer()
         m1 = TapToneMeasurement.create(
-            peaks=[], tap_location="A",
+            peaks=[], measurement_name="A",
             spectrum_snapshot=_make_snapshot(min_freq=50.0, max_freq=800.0),
         )
         m2 = TapToneMeasurement.create(
-            peaks=[], tap_location="B",
+            peaks=[], measurement_name="B",
             spectrum_snapshot=_make_snapshot(min_freq=100.0, max_freq=1200.0),
         )
         sut.load_comparison([m1, m2])
-        sut.save_comparison(tap_location="Axis Test")
+        sut.save_comparison(measurement_name="Axis Test")
         record = sut.savedMeasurements[0]
 
         sut2 = _FullStubAnalyzer()

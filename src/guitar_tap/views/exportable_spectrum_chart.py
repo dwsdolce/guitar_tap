@@ -1114,6 +1114,6 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         mode_overrides=m.peak_mode_overrides or {},
         material_spectra=material_spectra if material_spectra else None,
         date_label=str(m.timestamp) if m.timestamp else "",
-        chart_title=f"FFT Peaks — {m.tap_location or 'New'}",
+        chart_title=f"FFT Peaks — {m.measurement_name or 'New'}",
         guitar_type_str=snap.guitar_type,
     )

@@ -181,7 +181,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     def save_measurement(
         self,
-        tap_location: "str | None" = None,
+        measurement_name: "str | None" = None,
         notes: "str | None" = None,
         include_spectrum: bool = True,
         spectrum_snapshot=None,
@@ -309,7 +309,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         measurement = TapToneMeasurement.create(
             peaks=peaks,
             decay_time=decay_time,
-            tap_location=tap_location,
+            measurement_name=measurement_name,
             notes=notes,
             # measurement_type is NOT passed here — mirrors Swift which stores the
             # type only inside SpectrumSnapshot, not as a top-level measurement field.
@@ -451,21 +451,38 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.cross_peaks = []
         self.flc_peaks = []
 
-        # ── Restore frozen spectrum ───────────────────────────────────────────
+        # ── Restore frozen spectrum and material spectra ──────────────────────
         # Mirrors Swift: setFrozenSpectrum(frequencies:magnitudes:)
         if has_material_spectra:
             # Plate/brace: frozen spectrum not used; clear it.
             self.set_frozen_spectrum(np.array([]), np.array([]))
             from .material_tap_phase import MaterialTapPhase
             self.material_tap_phase = MaterialTapPhase.COMPLETE
-        elif measurement.spectrum_snapshot is not None:
-            snap = measurement.spectrum_snapshot
-            self.set_frozen_spectrum(
-                np.array(snap.frequencies, dtype=np.float64),
-                np.array(snap.magnitudes, dtype=np.float64),
-            )
+            # Build and publish the per-phase spectra so the canvas redraws.
+            # Format mirrors tap_tone_analyzer_spectrum_capture.py: (label, color, freqs, mags)
+            spectra = []
+            if self.longitudinal_spectrum is not None:
+                l_mags, l_freqs = self.longitudinal_spectrum
+                spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+            if self.cross_spectrum is not None:
+                c_mags, c_freqs = self.cross_spectrum
+                spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+            if self.flc_spectrum is not None:
+                f_mags, f_freqs = self.flc_spectrum
+                spectra.append(("FLC", (175, 82, 222), list(f_freqs), list(f_mags)))
+            self.set_material_spectra(spectra)
         else:
-            self.set_frozen_spectrum(np.array([]), np.array([]))
+            # Guitar (or no-snapshot) measurement: clear any stale material spectra
+            # from a previously loaded plate/brace measurement so the canvas redraws.
+            self.set_material_spectra([])
+            if measurement.spectrum_snapshot is not None:
+                snap = measurement.spectrum_snapshot
+                self.set_frozen_spectrum(
+                    np.array(snap.frequencies, dtype=np.float64),
+                    np.array(snap.magnitudes, dtype=np.float64),
+                )
+            else:
+                self.set_frozen_spectrum(np.array([]), np.array([]))
 
         # ── Restore display settings → AppSettings ────────────────────────────
         # Mirrors Swift's loaded* @Published properties + .onReceive handlers
@@ -517,9 +534,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
             gt_log("  ⚠️ No spectrum snapshot in measurement")
 
         # ── Store loaded-measurement metadata ─────────────────────────────────
-        # Mirrors Swift: loadedMeasurementName = measurement.tapLocation (nil if empty)
+        # Mirrors Swift: loadedMeasurementName = measurement.measurementName (nil if empty)
         #                sourceMeasurementTimestamp = measurement.timestamp
-        _name = measurement.tap_location
+        _name = measurement.measurement_name
         self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)
         self.source_measurement_timestamp = measurement.timestamp
         self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
@@ -830,25 +847,25 @@ class TapToneAnalyzerMeasurementManagementMixin:
     def update_measurement(
         self,
         at: int,
-        tap_location: "str | None",
+        measurement_name: "str | None",
         notes: "str | None",
     ) -> None:
-        """Update the tapLocation and notes of a saved measurement by index.
+        """Update the measurementName and notes of a saved measurement by index.
 
-        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.updateMeasurement(at:tapLocation:notes:)``.
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.updateMeasurement(at:measurementName:notes:)``.
 
         The index into ``savedMeasurements`` is used rather than id matching so
         that duplicate imports (which share the same id) are treated independently.
 
         Args:
-            at:           Position in ``savedMeasurements`` to update.
-            tap_location: New location label, or ``None`` to clear it.
-            notes:        New free-form notes, or ``None`` to clear them.
+            at:               Position in ``savedMeasurements`` to update.
+            measurement_name: New measurement name, or ``None`` to clear it.
+            notes:            New free-form notes, or ``None`` to clear them.
         """
         if not (0 <= at < len(self.savedMeasurements)):
             return
         self.savedMeasurements[at] = self.savedMeasurements[at].with_(
-            tap_location=tap_location,
+            measurement_name=measurement_name,
             notes=notes,
         )
         self._persist_measurements()
@@ -921,7 +938,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         with_snapshots = [m for m in measurements if m.spectrum_snapshot is not None]
 
         # Build base labels then disambiguate duplicates so the legend is unambiguous.
-        # Two measurements with the same tap_location (or both without one) would
+        # Two measurements with the same measurement_name (or both without one) would
         # otherwise produce identical legend entries.  Mirrors the duplicate-label
         # disambiguation added to Swift loadComparison(measurements:).
         base_labels = [self._comparison_label(m) for m in with_snapshots]
@@ -999,7 +1016,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     def save_comparison(
         self,
-        tap_location: "str | None" = None,
+        measurement_name: "str | None" = None,
         notes: "str | None" = None,
     ) -> None:
         """Save the current live comparison as a TapToneMeasurement with comparisonEntries.
@@ -1007,7 +1024,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         Creates a new TapToneMeasurement whose comparisonEntries hold a snapshot of the
         current comparison data, then appends it to savedMeasurements and persists.
 
-        Mirrors Swift TapToneAnalyzer.saveComparison(tapLocation:notes:)
+        Mirrors Swift TapToneAnalyzer.saveComparison(measurementName:notes:)
         (TapToneAnalyzer+MeasurementManagement.swift).
         """
         import uuid as _uuid
@@ -1033,7 +1050,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         m = TapToneMeasurement.create(
             peaks=[],
-            tap_location=tap_location,
+            measurement_name=measurement_name,
             notes=notes,
             comparison_entries=entries,
         )
@@ -1087,7 +1104,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 float(max(s.max_db  for s in snaps)),
             )
 
-        _name = measurement.tap_location
+        _name = measurement.measurement_name
         self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)
         self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
         self._display_mode = AnalysisDisplayMode.COMPARISON
@@ -1109,7 +1126,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
     def _comparison_label(m) -> str:
         """Short label for the comparison legend."""
         from datetime import datetime
-        loc = getattr(m, "tap_location", None)
+        loc = getattr(m, "measurement_name", None)
         if loc:
             return loc
         ts = getattr(m, "timestamp", "")

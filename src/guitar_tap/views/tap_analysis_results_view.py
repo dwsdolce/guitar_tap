@@ -254,7 +254,7 @@ class PDFReportData:
     """
     # Measurement metadata
     timestamp: str
-    tap_location: str | None
+    measurement_name: str | None
     notes: str | None
     measurement_type_str: str          # display string (e.g. "Classical Guitar")
     guitar_type_str: str               # raw value (e.g. "Classical")
@@ -455,7 +455,7 @@ def pdf_report_data_from_measurement(
 
     return PDFReportData(
         timestamp=m.timestamp,
-        tap_location=m.tap_location,
+        measurement_name=m.measurement_name,
         notes=m.notes,
         measurement_type_str=mt_str,
         guitar_type_str=gt_str,
@@ -780,8 +780,8 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     story.append(Spacer(1, 12))
 
     # --- METADATA ---------------------------------------------------------
-    if data.tap_location:
-        story.append(_TwoColRow("Location", data.tap_location, CONTENT_W))
+    if data.measurement_name:
+        story.append(_TwoColRow("Measurement Name", data.measurement_name, CONTENT_W))
         story.append(Spacer(1, 4))
     story.append(_TwoColRow("Type", mt_str, CONTENT_W))
     story.append(Spacer(1, 4))
@@ -1379,7 +1379,7 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
     min_db   = float(min(s.min_db   for s in snaps))
     max_db   = float(max(s.max_db   for s in snaps))
 
-    loc = measurement.tap_location
+    loc = measurement.measurement_name
     chart_title = f"Comparison — {loc}" if (loc and loc.strip()) else "Comparison"
     date_label = str(measurement.timestamp) if measurement.timestamp else ""
 
@@ -1436,8 +1436,8 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
     min_db   = float(min(s.min_db   for s in snaps))
     max_db   = float(max(s.max_db   for s in snaps))
 
-    loc = measurement.tap_location
-    # Mirrors Swift: "Tap Comparison — \(measurement.tapLocation ?? "Multi-Tap")"
+    loc = measurement.measurement_name
+    # Mirrors Swift: "Tap Comparison — \(measurement.measurementName ?? "Multi-Tap")"
     chart_title = f"Tap Comparison — {loc}" if (loc and loc.strip()) else "Tap Comparison — Multi-Tap"
     date_label = str(measurement.timestamp) if measurement.timestamp else ""
 
@@ -1471,7 +1471,7 @@ class ComparisonPDFReportData:
     # Mirrors Swift ComparisonPDFReportData.timestamp (Date).
     timestamp: str
 
-    # User-supplied name for the comparison (from tap_location), or None.
+    # User-supplied name for the comparison (from measurement_name), or None.
     # Mirrors Swift ComparisonPDFReportData.comparisonLabel.
     comparison_label: str | None
 
@@ -1534,7 +1534,7 @@ def comparison_pdf_report_data_from_measurement(
 
     return ComparisonPDFReportData(
         timestamp=timestamp,
-        comparison_label=measurement.tap_location or None,
+        comparison_label=measurement.measurement_name or None,
         notes=measurement.notes or None,
         spectrum_image_data=spectrum_image_data,
         entries=entries,
