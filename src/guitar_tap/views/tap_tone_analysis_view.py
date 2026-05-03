@@ -2936,8 +2936,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Swift TapAnalysisResultsView.swift:169. During multi-tap comparison the
         measurement type badge (e.g. "Classical") is shown instead.
         """
-        if (self.fft_canvas.display_mode == AnalysisDisplayMode.COMPARISON
-                and not self.fft_canvas.analyzer.showing_multi_tap_comparison):
+        if self.fft_canvas.analyzer.is_saved_measurement_comparison:
             self.measurement_type_badge.setText("Comparison")
             self.measurement_type_badge.setStyleSheet(
                 "background: rgba(160,32,240,0.20); border-radius: 4px; padding: 1px 6px;"
@@ -3448,7 +3447,16 @@ class MainWindow(QtWidgets.QMainWindow):
         clear them — exactly as Swift clears measurementName = "" / notes = "" after
         saveMeasurement().
         """
-        is_comparing = self.fft_canvas.is_comparing
+        # A multi-tap comparison also sets display_mode=COMPARISON, but it is still
+        # a guitar measurement — only route to save_comparison() for a saved-measurement
+        # comparison (displayMode == .comparison && !showingMultiTapComparison).
+        # Mirrors Swift saveMeasurement(): `if tap.displayMode == .comparison` would also
+        # mis-route, but in Swift the Save button is disabled (displayMode==.comparison &&
+        # currentPeaks.isEmpty) for saved comparisons; multi-tap keeps peaks populated.
+        # Multi-tap comparison also sets display_mode=COMPARISON but is still a guitar
+        # measurement — route to save_measurement(), not save_comparison().
+        # Mirrors Swift saveMeasurement(): tap.isSavedMeasurementComparison.
+        is_comparing = self.fft_canvas.analyzer.is_saved_measurement_comparison
 
         dlg = SMD.SaveMeasurementDialog(self)
         # Pre-populate from live state (mirrors Swift @Binding to the view's @State vars)
@@ -3515,8 +3523,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Mirrors Swift TapToneAnalysisView+Controls.swift:
         #   showingMultiTapComparison ? "Tap comparison — N taps + averaged"
         #                             : "Comparing N measurements"
-        _is_saved_comparison = is_comparing and not self.fft_canvas.analyzer.showing_multi_tap_comparison
-        _is_multi_tap_comparison = is_comparing and self.fft_canvas.analyzer.showing_multi_tap_comparison
+        _is_saved_comparison = self.fft_canvas.analyzer.is_saved_measurement_comparison
+        _is_multi_tap_comparison = is_comparing and not _is_saved_comparison
         self._sb_normal_wgt.setVisible(not is_comparing)
         self._sb_compare_wgt.setVisible(is_comparing)
         # Warning banner: suppress during saved-measurement comparison (the comparison panel
@@ -3562,18 +3570,26 @@ class MainWindow(QtWidgets.QMainWindow):
         # Mutual exclusivity: saved-measurement comparison and multi-tap comparison
         # cannot both be active at once.
         #
-        # When is_comparing=True is triggered by multi-tap overlays,
-        # showing_multi_tap_comparison is already True (set before emit).
-        # In that case we must NOT uncheck the multi-tap button.
-        # Only turn off multi-tap when a saved-measurement comparison is being
-        # entered (showing_multi_tap_comparison=False at entry time).
+        # The model's load_comparison() resets showing_multi_tap_comparison=False and
+        # tap_entries=[] directly (mirroring Swift) before emitting comparisonChanged(True),
+        # and sets _loading_saved_comparison=True for the duration of that emit.
+        # This lets us distinguish a saved-measurement load from a multi-tap activation
+        # (both emit comparisonChanged(True)), and drives the correct UI panel visibility.
         analyzer = self.fft_canvas.analyzer
-        _is_multi_tap_initiated = analyzer.showing_multi_tap_comparison
-        if is_comparing and not _is_multi_tap_initiated:
-            # Entering saved-measurement comparison — disable multi-tap if active.
+        _is_saved_measurement_load = analyzer._loading_saved_comparison
+        _is_multi_tap_initiated = analyzer.showing_multi_tap_comparison and not _is_saved_measurement_load
+        if is_comparing and _is_saved_measurement_load:
+            # Entering saved-measurement comparison — model already reset these, but
+            # also uncheck and hide the toggle button and ensure the multi-tap panel is hidden.
+            # Block signals on the button so setChecked(False) does NOT fire toggled(),
+            # which would call _on_multi_tap_toggled → apply_multi_tap_comparison_overlays(False)
+            # → comparisonChanged(False), undoing the saved-comparison state we just set up.
             analyzer.showing_multi_tap_comparison = False
+            self._multi_tap_toggle_btn.blockSignals(True)
             self._multi_tap_toggle_btn.setChecked(False)
+            self._multi_tap_toggle_btn.blockSignals(False)
             self._multi_tap_toggle_btn.setStyleSheet("")
+            self._multi_tap_toggle_btn.setVisible(False)
             self._multi_tap_results_view.setVisible(False)
 
         # saved-measurement comparison grid: visible only during saved comparison
@@ -4000,8 +4016,11 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             canvas = self.fft_canvas
 
-            # ── Comparison mode: render overlay chart from _comparison_data ───
-            if canvas.is_comparing:
+            # ── Saved-measurement comparison: render overlay chart from _comparison_data ───
+            # Multi-tap comparison also sets display_mode=COMPARISON but is still a guitar
+            # measurement — its frozen averaged spectrum should be exported, not the overlay.
+            # Mirrors Swift createExportableSpectrumView(): isSavedMeasurementComparison.
+            if canvas.analyzer.is_saved_measurement_comparison:
                 from views.exportable_spectrum_chart import make_exportable_spectrum_view as _mev
                 analyzer = canvas.analyzer
                 comparison_spectra = []
@@ -4202,9 +4221,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_export_multi_tap_pdf()
             return
 
-        # In comparison mode route to the comparison PDF export path.
-        # Mirrors Swift exportComparisonPDFReport() called when displayMode == .comparison.
-        if self.fft_canvas.is_comparing:
+        # In saved-measurement comparison mode route to the comparison PDF export path.
+        # Mirrors Swift exportPDFReport(): isSavedMeasurementComparison → exportComparisonPDFReport().
+        # Multi-tap comparison also sets display_mode=COMPARISON but is still a guitar measurement
+        # and was already handled above via tap_entries.
+        if self.fft_canvas.analyzer.is_saved_measurement_comparison:
             self._on_export_comparison_pdf()
             return
 

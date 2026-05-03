@@ -1309,17 +1309,22 @@ class FftCanvas(pg.PlotWidget):
 
         Delegates analysis to the analyzer, then creates PlotDataItem view curves.
         """
-        self.clear_comparison()
+        # Remove only the canvas curves — do NOT call self.clear_comparison() here,
+        # because that would call analyzer.clear_comparison() which emits
+        # comparisonChanged(False).  The model's load_comparison() resets
+        # showing_multi_tap_comparison and tap_entries directly (mirroring Swift),
+        # then emits a single coherent comparisonChanged(True).
+        self._clear_comparison_curves()
 
-        # Delegate to analyzer — populates _comparison_data / comparison_labels
+        # Delegate to analyzer — resets multi-tap state, populates _comparison_data /
+        # comparison_labels, sets _loading_saved_comparison=True around the emit,
+        # and emits comparisonChanged(True).
+        #
+        # _on_comparison_changed_from_analyzer fires during this call; it detects that
+        # _comparison_curves is empty and calls _render_comparison_curves() there.
+        # We must NOT call _render_comparison_curves() again after this returns, or
+        # we get duplicate curves.
         self.analyzer.load_comparison(measurements)
-
-        # Render the curves from analyzer state (shared with the restore path).
-        self._render_comparison_curves()
-
-        # comparisonChanged (and therefore _on_comparison_changed_from_analyzer)
-        # was already emitted by analyzer.load_comparison — visibility and axis
-        # ranges are applied there.
 
     def _render_comparison_curves(self) -> None:
         """Create PlotDataItem curves and legend from analyzer._comparison_data.
@@ -1375,8 +1380,13 @@ class FftCanvas(pg.PlotWidget):
 
         self._locked_series_index = 0
 
-    def clear_comparison(self) -> None:
-        """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
+    def _clear_comparison_curves(self) -> None:
+        """Remove canvas-side comparison curves and legend without touching model state.
+
+        Used by load_comparison() so it can clear old curves without emitting
+        comparisonChanged(False) — the model's load_comparison() resets its own
+        state and emits a single comparisonChanged(True).
+        """
         self._locked_series_index = 0
         for curve in self._comparison_curves:
             self.removeItem(curve)
@@ -1384,6 +1394,10 @@ class FftCanvas(pg.PlotWidget):
         if self._comparison_legend is not None:
             self._comparison_legend.deleteLater()
             self._comparison_legend = None
+
+    def clear_comparison(self) -> None:
+        """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
+        self._clear_comparison_curves()
         self.analyzer.clear_comparison()
         # comparisonChanged (and _on_comparison_changed_from_analyzer) is emitted
         # by analyzer.clear_comparison — visibility is applied there.

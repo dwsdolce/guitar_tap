@@ -486,3 +486,121 @@ class TestLoadComparisonRecord:
         lo, hi = axis_events[-1]
         assert lo <= 50
         assert hi >= 1200
+
+
+# ---------------------------------------------------------------------------
+# Multi-tap → saved comparison transition tests  (MT-SC-U1–MT-SC-U3)
+# ---------------------------------------------------------------------------
+#
+# Port of Swift MultiTapToSavedComparisonTransitionTests.
+#
+# The model's load_comparison() now mirrors Swift loadComparison(measurements:):
+# it resets showing_multi_tap_comparison and tap_entries directly (without
+# emitting comparisonChanged(False)), then emits a single coherent
+# comparisonChanged(True) with _loading_saved_comparison=True so the view
+# handler can distinguish a saved-measurement load from a multi-tap activation.
+
+class _MultiTapStubAnalyzer(_StubAnalyzer):
+    """Extends _StubAnalyzer with multi-tap comparison fields.
+
+    Mirrors the fields on TapToneAnalyzer that load_comparison() touches:
+      self.tap_entries, self.showing_multi_tap_comparison, self._loading_saved_comparison
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tap_entries: list = []
+        self.showing_multi_tap_comparison: bool = False
+        self._loading_saved_comparison: bool = False
+
+
+class TestMultiTapToSavedComparisonTransition:
+    """MT-SC-U1–MT-SC-U3: model invariants when transitioning from multi-tap to
+    saved-measurement comparison.  Mirrors Swift MultiTapToSavedComparisonTransitionTests."""
+
+    def test_MT_SC_U1_load_comparison_while_multi_tap_active_resets_multi_tap_state(self):
+        """MT-SC-U1: load_comparison while multi-tap comparison is active resets
+        showing_multi_tap_comparison and tap_entries.
+
+        Mirrors Swift loadComparison_whileMultiTapActive_resetsMultiTapState.
+        """
+        sut = _MultiTapStubAnalyzer()
+        # Simulate a completed multi-tap sequence.
+        sut.tap_entries = [object(), object()]   # two placeholder entries
+        sut.showing_multi_tap_comparison = True
+        sut._display_mode = AnalysisDisplayMode.COMPARISON
+        assert sut._display_mode == AnalysisDisplayMode.COMPARISON, "Precondition"
+        assert sut.showing_multi_tap_comparison is True, "Precondition"
+
+        sut.load_comparison([_make_measurement("A"), _make_measurement("B")])
+
+        assert sut.showing_multi_tap_comparison is False, (
+            "load_comparison should reset showing_multi_tap_comparison"
+        )
+        assert sut.tap_entries == [], (
+            "load_comparison should clear tap_entries"
+        )
+
+    def test_MT_SC_U2_load_comparison_while_multi_tap_active_sets_display_mode_and_data(self):
+        """MT-SC-U2: After load_comparison() while multi-tap was active, display mode
+        stays COMPARISON, _comparison_data has the loaded entries, and
+        _loading_saved_comparison is False after the call completes.
+
+        Mirrors Swift loadComparison_whileMultiTapActive_setsIsSavedMeasurementComparison.
+        """
+        sut = _MultiTapStubAnalyzer()
+        sut.tap_entries = [object(), object()]
+        sut.showing_multi_tap_comparison = True
+        sut._display_mode = AnalysisDisplayMode.COMPARISON
+
+        sut.load_comparison([_make_measurement("A"), _make_measurement("B")])
+
+        assert sut._display_mode == AnalysisDisplayMode.COMPARISON, (
+            "display mode should remain COMPARISON after saved-measurement load"
+        )
+        assert len(sut._comparison_data) == 2, (
+            "_comparison_data should contain the two loaded measurements"
+        )
+        assert sut._loading_saved_comparison is False, (
+            "_loading_saved_comparison must be reset to False after the call"
+        )
+
+    def test_MT_SC_U3_load_comparison_without_multi_tap_resets_are_no_op(self):
+        """MT-SC-U3: When multi-tap is NOT active, load_comparison leaves
+        showing_multi_tap_comparison False and populates comparison data normally.
+
+        Mirrors Swift loadComparison_withoutMultiTap_isSavedMeasurementComparison.
+        """
+        sut = _MultiTapStubAnalyzer()
+        assert sut.showing_multi_tap_comparison is False, "Precondition: no multi-tap active"
+
+        sut.load_comparison([_make_measurement("X")])
+
+        assert sut.showing_multi_tap_comparison is False
+        assert sut.tap_entries == []
+        assert sut._display_mode == AnalysisDisplayMode.COMPARISON
+        assert len(sut._comparison_data) == 1
+
+    def test_MT_SC_U4_loading_saved_comparison_flag_set_during_emit(self):
+        """MT-SC-U4: _loading_saved_comparison is True during comparisonChanged(True)
+        and False both before and after load_comparison().
+
+        This pins the contract that the view handler can read the flag at signal time
+        to distinguish a saved-measurement load from a multi-tap activation.
+        """
+        sut = _MultiTapStubAnalyzer()
+        sut.showing_multi_tap_comparison = True
+        sut._display_mode = AnalysisDisplayMode.COMPARISON
+
+        flag_during_emit: list[bool] = []
+        sut.comparisonChanged.connect(
+            lambda _: flag_during_emit.append(sut._loading_saved_comparison)
+        )
+
+        assert sut._loading_saved_comparison is False, "Precondition: flag starts False"
+        sut.load_comparison([_make_measurement("A"), _make_measurement("B")])
+        assert sut._loading_saved_comparison is False, "Flag must be reset after load_comparison()"
+        assert len(flag_during_emit) >= 1, "comparisonChanged must have fired"
+        assert flag_during_emit[-1] is True, (
+            "_loading_saved_comparison must be True during the comparisonChanged(True) emit"
+        )

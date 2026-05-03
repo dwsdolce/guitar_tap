@@ -920,8 +920,22 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         Returns list of (label, color, freq_arr, mag_arr) tuples for FftCanvas
         to create PlotDataItem curves.  Mirrors loadComparison(measurements:) in Swift.
+
+        Mirrors Swift: resets tap_entries and showing_multi_tap_comparison directly
+        (without emitting comparisonChanged(False)) so the model reaches a coherent
+        state before the single comparisonChanged(True) emit.  This avoids the
+        spurious intermediate comparisonChanged(False) that would otherwise fire
+        from clear_comparison() and confuse the view handler.
         """
         import numpy as np
+
+        # Mirror Swift loadComparison(measurements:) lines:
+        #   tapEntries = []
+        #   showingMultiTapComparison = false
+        # Reset directly — no signal emitted — so the view only ever sees one
+        # coherent state transition (comparisonChanged(True) at the end).
+        self.tap_entries = []
+        self.showing_multi_tap_comparison = False
 
         self._comparison_data.clear()
         self.comparison_labels.clear()
@@ -992,7 +1006,17 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 float(max(s.max_db  for s in snaps)),
             )
             self._display_mode = AnalysisDisplayMode.COMPARISON
-            self.comparisonChanged.emit(True)
+            # Mirror Swift loadComparison(measurements:): set the flag so the
+            # comparisonChanged handler can distinguish a saved-measurement load
+            # from a multi-tap activation (both emit comparisonChanged(True) and
+            # may have showing_multi_tap_comparison=True at call time).
+            # Reset immediately after emit, just as Swift resets its state
+            # properties before emitting via @Published.
+            self._loading_saved_comparison = True
+            try:
+                self.comparisonChanged.emit(True)
+            finally:
+                self._loading_saved_comparison = False
         else:
             # No snapshots → revert to live mode, mirroring Swift loadComparison behaviour
             # when the filtered list is empty (loadComparison([]) or all without snapshots).
