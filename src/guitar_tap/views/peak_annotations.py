@@ -12,11 +12,11 @@
 """
 
 from __future__ import annotations
+
 from typing import Any
 
 import pyqtgraph as pg
 from models import guitar_mode as gm
-
 from PySide6 import QtCore, QtGui, QtWidgets
 
 # Type alias for the annotation dict stored in FftAnnotations.annotations

@@ -22,12 +22,11 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from models.tap_tone_measurement import TapToneMeasurement
-from models.resonant_peak import ResonantPeak
-from models.spectrum_snapshot import SpectrumSnapshot
+
 from guitar_tap.utilities.logging import gt_log
 
 __all__ = [
@@ -58,12 +57,12 @@ __all__ = [
 from models.tap_tone_analyzer_measurement_management import (  # noqa: E402
     TapToneAnalyzerMeasurementManagementMixin as _AnalyzerMixin,
 )
+
 MULTI_TAP_PALETTE = _AnalyzerMixin._MULTI_TAP_PALETTE
 MULTI_TAP_AVG_COLOR = _AnalyzerMixin._MULTI_TAP_AVG_COLOR
 
 # Spectrum image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
 from views.exportable_spectrum_chart import render_spectrum_image_for_measurement  # noqa: E402
-
 
 # ── Export directory tracking ─────────────────────────────────────────────────
 # Mirrors MeasurementFileExporter.lastUsedDirectory in Swift: remembers the
@@ -336,14 +335,14 @@ def pdf_report_data_from_measurement(
                            classification are preserved.  Pass ``None`` (default)
                            when building from a saved measurement.
     """
-    from models import measurement_type as MT
     from models import guitar_mode as GM
     from models import guitar_type as GT_module
+    from models import measurement_type as MT
     from models import plate_stiffness_preset as PSP
     from models.material_properties import (
         MaterialDimensions,
-        calculate_plate_properties,
         calculate_brace_properties,
+        calculate_plate_properties,
     )
 
     m = measurement
@@ -494,33 +493,28 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     Mirrors Swift PDFReportContentView (PDFReportGenerator.swift).
     """
     import io as _io
-    from datetime import datetime as _dt, timezone as _tz
-    from _version import __version_string__ as _app_version
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
 
-    from reportlab.lib.pagesizes import letter
+    from _version import __version_string__ as _app_version
+    from models import guitar_mode as GM
+    from models import guitar_type as GT_module
+    from models import measurement_type as MT
+    from models import plate_stiffness_preset as PSP
+    from models.material_properties import calculate_gore_target_thickness
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_RIGHT
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.platypus import (
-        BaseDocTemplate,
-        PageTemplate,
-        Frame,
         Flowable,
+        Image,
+        Paragraph,
         Spacer,
         Table,
         TableStyle,
-        Image,
-        HRFlowable,
-        Paragraph,
-        KeepTogether,
     )
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
-    from reportlab.pdfbase.pdfmetrics import stringWidth
-
-    from models import measurement_type as MT
-    from models import guitar_mode as GM
-    from models import guitar_type as GT_module
-    from models import plate_stiffness_preset as PSP
-    from models.material_properties import calculate_gore_target_thickness
 
     # ── Unpack PDFReportData into local names used by the story builder ───
     mt_str           = data.measurement_type_str
@@ -593,8 +587,10 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     ACCENT = colors.Color(0.15, 0.35, 0.75)
     SECONDARY = colors.Color(0.45, 0.45, 0.45)
     GRID_GREY = colors.Color(0.75, 0.75, 0.75)
-    BG_GREY   = colors.Color(0, 0, 0, 0.07)       # gray opacity 0.07
-    BG_LIGHT  = colors.Color(0, 0, 0, 0.06)       # gray opacity 0.06 for sub-tables
+    # Mirrors Swift Color.gray.opacity(...). SwiftUI's Color.gray is approx
+    # RGB (0.5, 0.5, 0.5) at full opacity.
+    BG_GREY   = colors.Color(0.5, 0.5, 0.5, 0.07)       # gray opacity 0.07
+    BG_LIGHT  = colors.Color(0.5, 0.5, 0.5, 0.06)       # gray opacity 0.06 for sub-tables
     BG_ACCENT = colors.Color(0.15, 0.35, 0.75, 0.07)  # blue accent bg for Gore box
 
     # ── Style helpers ─────────────────────────────────────────────────────
@@ -610,7 +606,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     S_META_LBL = _style("meta_lbl", fontSize=11, fontName="Helvetica-Bold",  textColor=SECONDARY,  leading=13)
     S_META_VAL = _style("meta_val", fontSize=11, fontName="Helvetica",       textColor=colors.black, leading=13)
     S_SECTION  = _style("section",  fontSize=13, fontName="Helvetica-Bold",  textColor=colors.black, leading=16)
-    S_SUBSEC   = _style("subsec",   fontSize=12, fontName="Helvetica-Bold",  textColor=SECONDARY,  leading=14)
     S_BODY     = _style("body",     fontSize=10, fontName="Helvetica",       textColor=colors.black, leading=12)
     S_BODY_B   = _style("body_b",   fontSize=10, fontName="Helvetica-Bold",  textColor=colors.black, leading=12)
     S_SMALL    = _style("small",    fontSize=9,  fontName="Helvetica",       textColor=SECONDARY,  leading=11)
@@ -682,13 +677,13 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
         def draw(self):
             c = self.canv
-            # Label (semibold secondary)
-            c.setFont("Helvetica-Bold", 11)
-            c.setFillColor(SECONDARY)
+            # Label (semibold secondary) — uses S_META_LBL style
+            c.setFont(S_META_LBL.fontName, S_META_LBL.fontSize)
+            c.setFillColor(S_META_LBL.textColor)
             c.drawString(0, 0, self._label)
-            # Value (regular black)
-            c.setFont("Helvetica", 11)
-            c.setFillColor(colors.black)
+            # Value (regular black) — uses S_META_VAL style
+            c.setFont(S_META_VAL.fontName, S_META_VAL.fontSize)
+            c.setFillColor(S_META_VAL.textColor)
             c.drawString(106, 0, self._value)
 
         def wrap(self, avail_w, avail_h):
@@ -714,15 +709,16 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
         def draw(self):
             c = self.canv
-            # Background rounded rect
-            c.setFillColor(colors.Color(0.5, 0.5, 0.5, 0.07))
+            # Background rounded rect — uses BG_GREY (Swift Color.gray.opacity(0.07))
+            c.setFillColor(BG_GREY)
             c.roundRect(0, 0, self._w, self.height, 6, stroke=0, fill=1)
             # Left side: title → big value → subtitle
             c.setFont("Helvetica-Bold", 10)
             c.setFillColor(SECONDARY)
             c.drawString(10, self.height - 16, self._title)
-            c.setFont("Helvetica-Bold", 18)
-            c.setFillColor(colors.black)
+            # Big value — uses S_BIG_VAL style (18pt bold black)
+            c.setFont(S_BIG_VAL.fontName, S_BIG_VAL.fontSize)
+            c.setFillColor(S_BIG_VAL.textColor)
             c.drawString(10, self.height - 38, self._value)
             if self._subtitle:
                 c.setFont("Helvetica", 9)
@@ -927,7 +923,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         ]
         gore_tbl = Table([[gore_content]])
         gore_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.15, 0.35, 0.75, 0.07)),
+            ("BACKGROUND",    (0, 0), (-1, -1), BG_ACCENT),
             ("LEFTPADDING",   (0, 0), (-1, -1), 6),
             ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
             ("TOPPADDING",    (0, 0), (-1, -1), 6),
@@ -1011,7 +1007,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             ]]
             dims_tbl = Table(dims_rows, colWidths=[CONTENT_W/3]*3)
             dims_tbl.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.06)),
+                ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
                 ("LEFTPADDING",   (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
                 ("TOPPADDING",    (0, 0), (-1, -1), 4),
@@ -1125,7 +1121,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             )
         ]])
         oq_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.07)),
+            ("BACKGROUND",    (0, 0), (-1, -1), BG_GREY),
             ("LEFTPADDING",   (0, 0), (-1, -1), 8),
             ("TOPPADDING",    (0, 0), (-1, -1), 8),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
@@ -1153,7 +1149,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             ]]
             dims_tbl = Table(dims_rows, colWidths=[CONTENT_W/3]*3)
             dims_tbl.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.06)),
+                ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
                 ("LEFTPADDING",   (0, 0), (-1, -1), 6),
                 ("TOPPADDING",    (0, 0), (-1, -1), 4),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
@@ -1225,7 +1221,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             )
         ]])
         oq_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.07)),
+            ("BACKGROUND",    (0, 0), (-1, -1), BG_GREY),
             ("LEFTPADDING",   (0, 0), (-1, -1), 8),
             ("TOPPADDING",    (0, 0), (-1, -1), 8),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
@@ -1550,17 +1546,19 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
 
     Mirrors Swift ComparisonPDFReportContentView (PDFReportGenerator.swift).
     """
-    from io import BytesIO
 
+    from reportlab.graphics.shapes import Circle, Drawing
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.enums import TA_RIGHT
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import (
-        BaseDocTemplate, Frame, Image as RLImage, PageTemplate, Paragraph,
-        Spacer, Table, TableStyle,
+        Paragraph,
+        Spacer,
+        Table,
+        TableStyle,
     )
-    from reportlab.lib.colors import HexColor, Color as RLColor
 
     PAGE_W, PAGE_H = letter  # 612 × 792 pt
     MARGIN = 36
@@ -1671,8 +1669,9 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     if data.spectrum_image_data:
         story.append(Paragraph("Frequency Spectrum", S_SECTION))
         try:
-            from PIL import Image as _PILImage
             import io as _io
+
+            from PIL import Image as _PILImage
             _pil = _PILImage.open(_io.BytesIO(data.spectrum_image_data))
             _w_px, _h_px = _pil.size
             _aspect = _h_px / _w_px if _w_px > 0 else 0.5
@@ -1704,21 +1703,38 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
          Paragraph("Back", S_THEAD)],
     ]
 
+    # Inner-cell padding for the dot+label sub-table, so the parent table's
+    # padding settings still control the visible cell margins.
+    _dot_label_style = TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ])
+    # Reserve 13 pt for the circle column (8 pt circle + 5 pt spacing,
+    # mirrors Swift HStack(spacing: 5) { Circle().frame(width: 8, height: 8); Text(...) }).
+    _dot_col_w = 13.0
+
     for label, color_rgb, air_hz, top_hz, back_hz in data.mode_frequencies:
         def freq_cell(hz):
             if hz is None:
                 return Paragraph("\u2014", S_TCELL_DIM)
             return Paragraph(f"{hz:.1f} Hz", S_TCELL_R)
 
-        # Coloured dot approximation: use a tiny colored table cell prefix
-        # (reportlab doesn't support inline circles; use a colored character approach)
+        # Coloured dot mirrors Swift Circle().fill(row.color).frame(width: 8, height: 8).
         r8, g8, b8 = color_rgb
         dot_color = colors.Color(r8 / 255.0, g8 / 255.0, b8 / 255.0)
-        label_para = Paragraph(
-            f'<font color="#{r8:02x}{g8:02x}{b8:02x}">●</font> {label}',
-            S_TCELL,
+        dot = Drawing(8, 8)
+        dot.add(Circle(4, 4, 4, fillColor=dot_color, strokeColor=None))
+        label_para = Paragraph(label, S_TCELL)
+        # HStack equivalent: dot on the left, label on the right, in a borderless sub-table.
+        label_cell = Table(
+            [[dot, label_para]],
+            colWidths=[_dot_col_w, col_w_label - _dot_col_w],
         )
-        table_data.append([label_para, freq_cell(air_hz), freq_cell(top_hz), freq_cell(back_hz)])
+        label_cell.setStyle(_dot_label_style)
+        table_data.append([label_cell, freq_cell(air_hz), freq_cell(top_hz), freq_cell(back_hz)])
 
     mode_tbl = Table(
         table_data,

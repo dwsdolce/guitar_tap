@@ -44,10 +44,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
                             since tap detection is handled separately).
         """
         from .guitar_mode import GuitarMode
-        from .guitar_type import GuitarType
-        from .tap_display_settings import TapDisplaySettings
-
         from .measurement_type import MeasurementType
+        from .tap_display_settings import TapDisplaySettings
         m_type = TapDisplaySettings.measurement_type()
         uses_fast_tap_detection = (m_type == MeasurementType.PLATE or m_type == MeasurementType.BRACE)
 
@@ -114,7 +112,6 @@ class TapToneAnalyzerPeakAnalysisMixin:
         if getattr(self, "is_loading_measurement", False):
             return
 
-        import numpy as np
         frozen_mag = self.frozen_magnitudes
         frozen_freq = self.frozen_frequencies
         if (
@@ -179,8 +176,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 if "peak" in entry and "mode" in entry
             ]
             if not modes_by_freq:
-                from .guitar_mode import GuitarMode
                 from models.tap_display_settings import TapDisplaySettings as _tds_rfp
+
+                from .guitar_mode import GuitarMode
                 # Use classify_all (claiming algorithm) not GuitarMode.classify (simple
                 # range lookup per peak) — mirrors Swift GuitarMode.classifyAll(peaks).
                 _gt = _tds_rfp.guitar_type()
@@ -507,8 +505,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         Mirrors Swift ``applyFrozenPeakState(peaks:modesByFrequency:...)``.
         """
-        from .guitar_mode import GuitarMode
         from models.tap_display_settings import TapDisplaySettings as _tds_afps
+
+        from .guitar_mode import GuitarMode
 
         # Mirrors Swift applyFrozenPeakState: freshModeMap = GuitarMode.classifyAll(peaks)
         # Swift uses the claiming algorithm (all peaks together) not single-peak classify,
@@ -651,8 +650,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         Returns:
             Set of ``ResonantPeak.id`` strings for the auto-selected peaks.
         """
-        from .guitar_mode import GuitarMode
         from models.tap_display_settings import TapDisplaySettings as _tds_gms
+
+        from .guitar_mode import GuitarMode
 
         candidates = peaks if peaks is not None else self.current_peaks
         guitar_type = _tds_gms.guitar_type()
@@ -691,8 +691,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         Mirrors Swift ``reclassifyPeaks()``.
         """
-        from .guitar_mode import GuitarMode
         from models.tap_display_settings import TapDisplaySettings as _tds_rcp
+
+        from .guitar_mode import GuitarMode
 
         mode_map = GuitarMode.classify_all(self.current_peaks, _tds_rcp.guitar_type())
         self.identified_modes = [

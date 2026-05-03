@@ -35,6 +35,7 @@ Stored properties initialised in TapToneAnalyzer.__init__:
 from __future__ import annotations
 
 import time as _time
+
 from PySide6 import QtCore
 from PySide6.QtCore import Slot
 

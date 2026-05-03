@@ -15,6 +15,7 @@ Reference values (f_vs):
 """
 
 from __future__ import annotations
+
 from enum import Enum
 
 

@@ -8,9 +8,8 @@
 
 from __future__ import annotations
 
-from PySide6 import QtWidgets, QtCore, QtGui
 import qtawesome as qta
-
+from PySide6 import QtCore, QtWidgets
 
 # ---------------------------------------------------------------------------
 # Icon-to-HTML helpers

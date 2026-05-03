@@ -29,13 +29,13 @@ Analyser modules (NOT imported here — import directly to avoid circular deps):
 
 from .analysis_display_mode import AnalysisDisplayMode
 from .audio_device import AudioDevice
-from .guitar_type import GuitarType, ModeRanges, DecayThresholds
-from .guitar_mode import GuitarMode, get_bands, in_mode_range, classify_peak, mode_display_name
+from .guitar_mode import GuitarMode, classify_peak, get_bands, in_mode_range, mode_display_name
+from .guitar_type import DecayThresholds, GuitarType, ModeRanges
 from .material_tap_phase import MaterialTapPhase
 from .measurement_type import MeasurementType
+from .microphone_calibration import CalibrationStorage, MicrophoneCalibration
 from .pitch import Pitch
 from .plate_stiffness_preset import PlateStiffnessPreset
-from .microphone_calibration import MicrophoneCalibration, CalibrationStorage
 from .resonant_peak import ResonantPeak
 from .spectrum_snapshot import SpectrumSnapshot
 from .tap_tone_measurement import TapToneMeasurement

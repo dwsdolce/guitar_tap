@@ -293,9 +293,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             sample_rate: Hardware sample rate in Hz.
             phase:       MaterialTapPhase active at capture time.
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds
-        from models.measurement_type import MeasurementType as _MT
         from models.material_tap_phase import MaterialTapPhase as _MTP
+        from models.measurement_type import MeasurementType as _MT
+        from models.tap_display_settings import TapDisplaySettings as _tds
 
         # Compute Hann-windowed gated FFT.
         magnitudes, frequencies = self.mic.proc_thread.compute_gated_fft(samples, sample_rate)
@@ -455,8 +455,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         Returns:
             ResonantPeak or None if no candidates are found.
         """
-        from models.resonant_peak import ResonantPeak
         from typing import NamedTuple
+
+        from models.resonant_peak import ResonantPeak
 
         class _Candidate(NamedTuple):
             index: int
@@ -556,7 +557,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             best = current
 
         best_idx = best.index
-        best_mag = best.magnitude
         best_hps = best.hps_score
         best_q   = best.q_factor
 
@@ -590,9 +590,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         Mirrors Swift TapToneAnalyzer.handleLongitudinalGatedProgress(…).
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds
-        from models.measurement_type import MeasurementType as _MT
         from models.material_tap_phase import MaterialTapPhase as _MTP
+        from models.measurement_type import MeasurementType as _MT
+        from models.tap_display_settings import TapDisplaySettings as _tds
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
@@ -721,9 +721,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         Mirrors Swift TapToneAnalyzer.handleCrossGatedProgress(…).
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds
-        from models.material_tap_phase import MaterialTapPhase as _MTP
         import numpy as _np
+        from models.material_tap_phase import MaterialTapPhase as _MTP
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
@@ -780,8 +779,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         Mirrors Swift TapToneAnalyzer.handleFlcGatedProgress(…).
         """
-        from models.material_tap_phase import MaterialTapPhase as _MTP
         import numpy as _np
+        from models.material_tap_phase import MaterialTapPhase as _MTP
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
@@ -986,8 +985,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.loaded_measurement_peaks = None
         self.selected_peak_frequencies = []
 
-        from .guitar_mode import GuitarMode as _GM
         from models.tap_display_settings import TapDisplaySettings as _tds_sc
+
+        from .guitar_mode import GuitarMode as _GM
         _mode_map = _GM.classify_all(peaks, _tds_sc.guitar_type())
         self.identified_modes = [
             {"peak": p, "mode": _mode_map.get(p.id, _GM.UNKNOWN)}
@@ -1006,11 +1006,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Mirrors Swift processMultipleTaps() per-tap block.
         # Only built when there are 2+ taps (single-tap has nothing to compare).
         if tap_count > 1:
-            from .tap_tone_measurement import TapEntry
+            import uuid as _uuid2
+
             from .spectrum_snapshot import SpectrumSnapshot
             from .tap_display_settings import TapDisplaySettings as _tds2
-            from .measurement_type import MeasurementType as _MT2
-            import uuid as _uuid2
+            from .tap_tone_measurement import TapEntry
 
             _mt_str2 = _tds2.measurement_type().value
             _gt_str2 = _tds2.guitar_type().value

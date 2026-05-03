@@ -1,10 +1,10 @@
 """
 Measurement list and detail views — mirrors Swift Views/Measurements/.
 """
-from .measurements_list_view import MeasurementsDialog
+from .edit_measurement_view import EditMeasurementView
 from .measurement_detail_view import MeasurementDetailDialog
 from .measurement_row_view import MeasurementRowView
-from .edit_measurement_view import EditMeasurementView
+from .measurements_list_view import MeasurementsDialog
 
 __all__ = [
     "MeasurementsDialog",

@@ -4,17 +4,15 @@ Matches MeasurementDetailView.swift / CombinedPeakModeRowView.swift.
 """
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 
-from PySide6 import QtCore, QtGui, QtWidgets
 import qtawesome as qta
-
-from views import tap_analysis_results_view as M
-from models import TapToneMeasurement, ResonantPeak
+from models import ResonantPeak, TapToneMeasurement
 from models import guitar_mode as GM
-from models import pitch as P
 from models import guitar_type as GT
-
+from models import pitch as P
+from PySide6 import QtCore, QtGui, QtWidgets
+from views import tap_analysis_results_view as M
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

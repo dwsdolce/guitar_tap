@@ -18,14 +18,12 @@ import os
 
 import numpy as np
 import numpy.typing as npt
-
-from PySide6 import QtCore, QtGui, QtWidgets
 import qtawesome as qta
-
-from models import guitar_type as gt
 from models import guitar_mode as gm
-from views.shared import peaks_model as pm
+from models import guitar_type as gt
 from models import pitch as pitch_c
+from PySide6 import QtCore, QtGui, QtWidgets
+from views.shared import peaks_model as pm
 
 
 def _short_mode(mode: str) -> str:

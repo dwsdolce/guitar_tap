@@ -450,7 +450,8 @@ class ExportableSpectrumChart:
         # Capture chart → QImage (replaces ImageRenderer).
         # Export at CHART_W (2800px) from a WIDGET_W (1400px) scene — scale factor = 2.0 exactly.
         # This matches Swift's ImageRenderer(scale: 2.0) which renders a 1400pt view at 2x.
-        import tempfile, os as _os
+        import os as _os
+        import tempfile
         chart_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
         chart_tmp.close()
         exporter = ImageExporter(plot.getPlotItem())

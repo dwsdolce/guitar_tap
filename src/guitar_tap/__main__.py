@@ -5,8 +5,8 @@ All application logic lives in views/tap_tone_analysis_view.py.
 This file only contains the launcher code.
 """
 
-import sys
 import os
+import sys
 import traceback
 
 # Ensure models/ and views/ are importable as top-level packages when running
@@ -14,13 +14,13 @@ import traceback
 # os.path.dirname(__file__) is src/guitar_tap/.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6 import QtWidgets, QtGui
-
+from PySide6 import QtGui, QtWidgets
 from views.tap_tone_analysis_view import MainWindow, basedir
 
 if os.name == "nt":
-    import named_mutex as NM
     from ctypes import windll
+
+    import named_mutex as NM
     MY_APP_ID = "dolcesfogato.guitar-tap.guitar-tap.0.5"
     windll.shell32.SetCurrentProcessExplicitAppUserModelID(MY_APP_ID)
 

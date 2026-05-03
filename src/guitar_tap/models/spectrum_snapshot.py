@@ -24,7 +24,7 @@ sizes.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -187,7 +187,8 @@ class SpectrumSnapshot:
 
         Mirrors Swift SpectrumSnapshot.floatsToBase64(_:).
         """
-        import base64, struct
+        import base64
+        import struct
         data = struct.pack(f"<{len(floats)}f", *floats)
         return base64.b64encode(data).decode("ascii")
 
@@ -246,7 +247,8 @@ class SpectrumSnapshot:
 
         Python-only — Swift uses Codable.
         """
-        import base64, struct
+        import base64
+        import struct
 
         if "frequenciesData" in d:
             raw = base64.b64decode(d["frequenciesData"])

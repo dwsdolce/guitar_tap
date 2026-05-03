@@ -32,16 +32,15 @@ Interpolation Strategy:
   avoids introducing artefacts from extrapolation beyond the calibrated range.
 """
 
+import json as _json
 import re
 import uuid as _uuid
-import json as _json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import numpy as np
 import numpy.typing as npt
 from PySide6 import QtCore
-
 
 # MARK: - CalibrationFileParser (module-level helpers)
 # Mirrors Swift CalibrationFileParser struct.

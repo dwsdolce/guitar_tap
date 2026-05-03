@@ -3,7 +3,9 @@
 """
 
 from __future__ import annotations
+
 import os
+
 from PySide6 import QtCore
 
 
@@ -65,8 +67,8 @@ class AppSettings:
         so that view-layer callers (graph reset, settings UI) stay in sync automatically
         whenever the model-layer defaults change.
         """
+        from models.measurement_type import MeasurementType  # noqa: PLC0415
         from models.tap_display_settings import TapDisplaySettings  # noqa: PLC0415
-        from models.measurement_type import MeasurementType         # noqa: PLC0415
         if not isinstance(meas_type, MeasurementType):
             key_str = _meas_key(meas_type)
             meas_type = next((m for m in MeasurementType if m.storage_key == key_str), None)
@@ -81,8 +83,8 @@ class AppSettings:
         so that view-layer callers (graph reset, settings UI) stay in sync automatically
         whenever the model-layer defaults change.
         """
+        from models.measurement_type import MeasurementType  # noqa: PLC0415
         from models.tap_display_settings import TapDisplaySettings  # noqa: PLC0415
-        from models.measurement_type import MeasurementType         # noqa: PLC0415
         if not isinstance(meas_type, MeasurementType):
             key_str = _meas_key(meas_type)
             meas_type = next((m for m in MeasurementType if m.storage_key == key_str), None)

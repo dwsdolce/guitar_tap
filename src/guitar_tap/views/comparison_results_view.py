@@ -91,8 +91,8 @@ class ComparisonResultsView(QtWidgets.QWidget):
         layout.addWidget(self._table)
 
     def _rebuild(self, comparison_data: list[dict]) -> None:
-        from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
         from models.guitar_mode import GuitarMode
+        from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
 
         # Map column index → GuitarMode for the three columns
         mode_for_col = {

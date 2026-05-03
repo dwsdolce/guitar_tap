@@ -233,8 +233,8 @@ class TapToneAnalyzerControlMixin:
         from 2 s to absorb HALC/CoreAudio startup transients at ~2.5 s).
         """
         import numpy as np
-        from PySide6.QtCore import QTimer as _QTimer
         from models.analysis_display_mode import AnalysisDisplayMode as _ADM
+        from PySide6.QtCore import QTimer as _QTimer
 
         gt_log("🔄 TapToneAnalyzer: Handling route change restart - resetting detection state")
 
@@ -478,9 +478,10 @@ class TapToneAnalyzerControlMixin:
         - Clears previous peaks, spectra, and annotation offsets.
         """
         import numpy as np
+        from models.material_tap_phase import MaterialTapPhase as _MTP
         from models.measurement_type import MeasurementType as _MT
         from models.tap_display_settings import TapDisplaySettings as _tds
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+
         from .analysis_display_mode import AnalysisDisplayMode as _ADM
 
         meas_type = _tds.measurement_type()
@@ -689,6 +690,7 @@ class TapToneAnalyzerControlMixin:
         - statusMessage → "Tap the guitar to begin"
         """
         import numpy as np
+
         from .analysis_display_mode import AnalysisDisplayMode
         from .material_tap_phase import MaterialTapPhase as _MTP
 
@@ -745,10 +747,11 @@ class TapToneAnalyzerControlMixin:
         Called when the user presses Accept after reviewing a frozen spectrum.
         Mirrors Swift TapToneAnalyzer+Control.acceptCurrentPhase().
         """
+        import time as _time_mod
+
         import numpy as _np
         from models.material_tap_phase import MaterialTapPhase as _MTP
         from models.tap_display_settings import TapDisplaySettings as _tds
-        import time as _time_mod
 
         phase = self.material_tap_phase
 
@@ -794,9 +797,10 @@ class TapToneAnalyzerControlMixin:
         Only the current phase's data is cleared; earlier phases are preserved.
         Mirrors Swift TapToneAnalyzer+Control.redoCurrentPhase().
         """
+        import time as _time_mod
+
         import numpy as _np
         from models.material_tap_phase import MaterialTapPhase as _MTP
-        import time as _time_mod
 
         phase = self.material_tap_phase
 

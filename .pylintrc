@@ -416,7 +416,22 @@ disable=raw-checker-failed,
         useless-suppression,
         deprecated-pragma,
         use-symbolic-message-instead,
-	c-extension-no-member
+	c-extension-no-member,
+        import-outside-toplevel,
+        broad-exception-caught,
+        too-many-arguments,
+        too-many-positional-arguments,
+        too-many-locals,
+        too-many-branches,
+        too-many-statements,
+        too-many-instance-attributes,
+        too-many-public-methods,
+        too-few-public-methods,
+        multiple-statements,
+        protected-access,
+        missing-function-docstring,
+        missing-module-docstring,
+        missing-class-docstring
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option

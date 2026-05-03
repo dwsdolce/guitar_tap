@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 
 from guitar_tap.utilities.logging import gt_log
+
 from .analysis_display_mode import AnalysisDisplayMode
 
 
@@ -46,6 +47,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             ``False`` otherwise.
         """
         import json as _json
+
         from .tap_tone_measurement import TapToneMeasurement
 
         try:
@@ -73,6 +75,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             ValueError: If ``data`` cannot be decoded as valid measurement JSON.
         """
         import json as _json
+
         from .tap_tone_measurement import TapToneMeasurement
 
         try:
@@ -216,10 +219,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
         - ``annotation_offsets`` falls back to ``self.peak_annotation_offsets``
           when ``None``, matching Swift's ``annotationOffsets ?? peakAnnotationOffsets``.
         """
-        from .tap_tone_measurement import TapToneMeasurement
+        from .measurement_type import MeasurementType
         from .spectrum_snapshot import SpectrumSnapshot
         from .tap_display_settings import TapDisplaySettings as TDS
-        from .measurement_type import MeasurementType
+        from .tap_tone_measurement import TapToneMeasurement
 
         mt_str = TDS.measurement_type().value
         try:
@@ -355,10 +358,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
         drawing calls, and the mic auto-select block (which requires access to
         canvas and label widgets).
         """
-        import numpy as np
-        from .analysis_display_mode import AnalysisDisplayMode
-        from .measurement_type import MeasurementType
-        from .annotation_visibility_mode import AnnotationVisibilityMode
 
         # Suppress recalculate_frozen_peaks_if_needed() for the duration of the
         # load — mirrors Swift: isLoadingMeasurement = true / defer { = false }
@@ -371,9 +370,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
     def _load_measurement_body(self, measurement) -> None:
         """Inner implementation called by load_measurement(); guards isLoadingMeasurement."""
         import numpy as np
+
         from .analysis_display_mode import AnalysisDisplayMode
-        from .measurement_type import MeasurementType
         from .annotation_visibility_mode import AnnotationVisibilityMode
+        from .measurement_type import MeasurementType
 
         gt_log("🔄 Loading measurement...")
 
@@ -921,7 +921,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
         Returns list of (label, color, freq_arr, mag_arr) tuples for FftCanvas
         to create PlotDataItem curves.  Mirrors loadComparison(measurements:) in Swift.
         """
-        from datetime import datetime
         import numpy as np
 
         self._comparison_data.clear()
@@ -1028,7 +1027,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
         (TapToneAnalyzer+MeasurementManagement.swift).
         """
         import uuid as _uuid
-        from .tap_tone_measurement import TapToneMeasurement, ComparisonEntry
+
+        from .tap_tone_measurement import ComparisonEntry, TapToneMeasurement
 
         if not self._comparison_data:
             return

@@ -11,28 +11,25 @@ The class is split across several mixin-style logical sections (matching Swift
 
 import os
 
+import models.material_properties as PA
 import numpy as np
-from PySide6 import QtWidgets, QtGui, QtCore
-
-from models.analysis_display_mode import AnalysisDisplayMode
-from models.annotation_visibility_mode import AnnotationVisibilityMode
+import qtawesome as qta
 import views.shared.peak_card_widget as PT
-import views.utilities.tap_settings_view as AS
-from models.tap_display_settings import TapDisplaySettings as TDS
 import views.tap_analysis_results_view as M
-from views.exportable_spectrum_chart import make_exportable_spectrum_view
-from models import TapToneMeasurement, ResonantPeak
-from models import plate_stiffness_preset as PSP
+import views.utilities.tap_settings_view as AS
+from models import TapToneMeasurement
 from models import guitar_type as GT
 from models import measurement_type as MT
 from models import microphone_calibration as _mc_mod
-import models.material_properties as PA
-import views.utilities.gt_images as gt_i
-from views.shared.loading_overlay import LoadingOverlay
-
-import qtawesome as qta
+from models import plate_stiffness_preset as PSP
+from models.analysis_display_mode import AnalysisDisplayMode
+from models.annotation_visibility_mode import AnnotationVisibilityMode
+from models.tap_display_settings import TapDisplaySettings as TDS
+from PySide6 import QtCore, QtGui, QtWidgets
 from views.comparison_results_view import ComparisonResultsView
+from views.exportable_spectrum_chart import make_exportable_spectrum_view
 from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
+from views.shared.loading_overlay import LoadingOverlay
 
 # Heavy imports deferred to _deferred_canvas_init to reduce startup time:
 #   fft_canvas — pulls in pyqtgraph (~4 s) and sounddevice (~0.4 s)
@@ -1930,14 +1927,15 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             # Deferred heavy imports — pyqtgraph (~4 s) and sounddevice (~0.4 s)
             # load here, after the window is already visible.
-            import views.fft_canvas as fft_c
-            import views.measurements.measurements_list_view as MD
-            import views.save_measurement_sheet as SMD
-            import views.help_view as HD
-            import views.fft_analysis_metrics_view as FMV
             # Inject into the module namespace so all other methods can use them
             # as if they were top-level imports.
             import sys as _sys
+
+            import views.fft_analysis_metrics_view as FMV
+            import views.fft_canvas as fft_c
+            import views.help_view as HD
+            import views.measurements.measurements_list_view as MD
+            import views.save_measurement_sheet as SMD
             _m = _sys.modules[__name__]
             _m.fft_c = fft_c
             _m.MD = MD
@@ -4413,7 +4411,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
             chart_title = canvas.chart_title
 
-            from datetime import datetime, timezone as _tz
+            from datetime import datetime
+            from datetime import timezone as _tz
             # Mirrors Swift: tap.sourceMeasurementTimestamp ?? Date()
             # Use the original capture time when a saved measurement is loaded;
             # fall back to now for a live (unsaved) capture.
@@ -4540,7 +4539,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Render the comparison overlay chart image from live comparison data.
             from views.exportable_spectrum_chart import make_exportable_spectrum_view
-            import numpy as np
             comparison_spectra = []
             for entry in analyzer._comparison_data:
                 r, g, b = entry["color"]
@@ -4736,7 +4734,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
             chart_title = canvas.chart_title
 
-            from datetime import datetime, timezone as _tz
+            from datetime import datetime
+            from datetime import timezone as _tz
             _src_ts = getattr(analyzer, "source_measurement_timestamp", None)
             if _src_ts is not None:
                 try:
@@ -4893,11 +4892,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 chart_title=cmp_chart_title,
             )
 
+            import uuid as _uuid
+
             from models.guitar_mode import GuitarMode
+            from models.spectrum_snapshot import SpectrumSnapshot as _SpectrumSnapshot
             from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
             from models.tap_tone_measurement import ComparisonEntry
-            from models.spectrum_snapshot import SpectrumSnapshot as _SpectrumSnapshot
-            import uuid as _uuid
 
             # Step 1 — Build cmp_entries (mirrors Swift's [ComparisonEntry] build step).
             # Colors are stored as RGBA 0.0–1.0 inside ComparisonEntry, mirroring Swift's
@@ -5801,6 +5801,7 @@ class MainWindow(QtWidgets.QMainWindow):
         from models.audio_device import AudioDevice as _AudioDevice
         from models.audio_device import filter_input_devices as _filter_inputs
         input_devices: list[_AudioDevice] = []
+        default_input: dict | None = None
         try:
             default_input = sd.query_devices(kind="input")
             for dev in _filter_inputs(list(sd.query_devices())):
@@ -5808,6 +5809,11 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
+        # Auto-selection policy mirrors Swift loadAvailableInputDevicesMacOS:
+        #   1. Saved device by fingerprint (selectedInputDeviceUID match)
+        #   2. Saved device by name (legacy fallback for pre-fingerprint profiles)
+        #   3. System default input device (kAudioHardwarePropertyDefaultInputDevice)
+        #   4. First device in the enumerated list (Qt combo default at index 0)
         saved_fp = AS.AppSettings.audio_device_fingerprint()
         saved_name = AS.AppSettings.device_name()
         current_dev_idx = -1
@@ -5817,6 +5823,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_dev_idx < 0 and audio_dev.name == saved_name
             ):
                 current_dev_idx = list_idx
+        # Step 3: if neither saved fingerprint nor saved name matched, fall back
+        # to the system default input device.
+        if current_dev_idx < 0 and default_input is not None:
+            try:
+                default_fp = _AudioDevice.from_sounddevice_dict(default_input).fingerprint
+                for list_idx, audio_dev in enumerate(input_devices):
+                    if audio_dev.fingerprint == default_fp:
+                        current_dev_idx = list_idx
+                        break
+            except (KeyError, ValueError, TypeError):
+                pass
         if current_dev_idx >= 0:
             device_combo.setCurrentIndex(current_dev_idx)
             # _on_device_selected is not connected yet, so explicitly sync the engine

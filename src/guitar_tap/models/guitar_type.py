@@ -13,9 +13,9 @@ See Also: MeasurementType for the broader type that includes plate/brace measure
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-
 
 # MARK: - Supporting Data Classes
 

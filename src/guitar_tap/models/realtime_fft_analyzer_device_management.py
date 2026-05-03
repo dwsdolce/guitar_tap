@@ -38,8 +38,8 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-import sounddevice as sd
 import numpy as np
+import sounddevice as sd
 
 from guitar_tap.utilities.logging import gt_log
 
@@ -163,7 +163,6 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         if not devices:
             return
 
-        from .audio_device import AudioDevice as _AD
 
         # Priority 1: Previously persisted device fingerprint
         try:

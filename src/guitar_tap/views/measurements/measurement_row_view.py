@@ -17,12 +17,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6 import QtCore, QtGui, QtWidgets
-
 from models import TapToneMeasurement
 from models import guitar_mode as GM
 from models import guitar_type as GT
-
+from PySide6 import QtCore, QtGui, QtWidgets
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 

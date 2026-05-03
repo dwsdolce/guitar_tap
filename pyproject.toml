@@ -47,7 +47,13 @@ omit = ["tests/*", ".venv/*"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
+mypy_path = "src/guitar_tap"
+explicit_package_bases = true
+namespace_packages = true
 exclude = ["tests/", ".venv/", "build/", "dist/"]
+
+[tool.ruff]
+line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

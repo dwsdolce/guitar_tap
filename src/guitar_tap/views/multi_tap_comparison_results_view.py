@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 
 if TYPE_CHECKING:
-    from models.tap_tone_measurement import TapEntry
     from models.resonant_peak import ResonantPeak
+    from models.tap_tone_measurement import TapEntry
 
 
 # Comparison palette — mirrors TapToneAnalyzer.comparisonPalette (Swift: [.blue, .orange, .green, .purple, .teal]).
@@ -124,8 +124,8 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         averaged_peaks: list[ResonantPeak],
         guitar_type: str | None,
     ) -> None:
-        from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
         from models.guitar_mode import GuitarMode
+        from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
 
         mode_for_col = {
             1: GuitarMode.AIR,

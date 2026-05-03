@@ -18,7 +18,8 @@ Algorithm Overview:
 Reference: https://www.johndcook.com/blog/2016/02/10/musical-pitch-notation/
 """
 
-from math import log2, pow as mpow
+from math import log2
+from math import pow as mpow
 
 
 class Pitch:

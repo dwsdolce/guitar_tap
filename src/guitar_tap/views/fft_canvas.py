@@ -2,26 +2,19 @@
 """
 
 from datetime import datetime
-from typing import List
-import platform
 
-import pyqtgraph as pg
+import models.tap_tone_analyzer as td
 import numpy as np
 import numpy.typing as npt
-from PySide6 import QtCore, QtGui, QtWidgets
-
-from views import peak_annotations as fft_a
-import models.realtime_fft_analyzer as f_a
-from models import guitar_type as gt
-from models import guitar_mode as gm
-from models import measurement_type as mt_mod
-from models import microphone_calibration as _mc_mod
-from models.realtime_fft_analyzer import RealtimeFFTAnalyzer
-from models.analysis_display_mode import AnalysisDisplayMode
-import models.tap_tone_analyzer as td
-import models.tap_tone_analyzer as pc
+import pyqtgraph as pg
 import views.utilities.tap_settings_view as _as
+from models import guitar_mode as gm
+from models import guitar_type as gt
+from models import microphone_calibration as _mc_mod
+from models.analysis_display_mode import AnalysisDisplayMode
 from models.tap_display_settings import TapDisplaySettings as _tds
+from PySide6 import QtCore, QtGui, QtWidgets
+from views import peak_annotations as fft_a
 
 
 class _SceneMouseReleaseFilter(QtCore.QObject):
@@ -1036,10 +1029,6 @@ class FftCanvas(pg.PlotWidget):
         """Resume a paused tap detector."""
         self.analyzer.resume_tap_detection()
         # tapDetectionPaused signal is forwarded from analyzer
-
-    def cancel_tap_sequence(self) -> None:
-        """Cancel the in-progress multi-tap sequence and rearm for a fresh tap."""
-        self.analyzer.cancel_tap_sequence()
 
     def set_device(self, device) -> None:
         """Switch the audio input to the given AudioDevice and

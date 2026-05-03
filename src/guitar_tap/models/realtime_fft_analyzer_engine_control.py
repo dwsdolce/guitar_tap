@@ -174,14 +174,14 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-import sounddevice as sd
 import numpy as np
 import numpy.typing as npt
+import sounddevice as sd
 
 from guitar_tap.utilities.logging import gt_log
 
 if TYPE_CHECKING:
-    from typing import Callable
+    pass
 
 
 class RealtimeFFTAnalyzerEngineControlMixin:
@@ -232,8 +232,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 rate = self.rate
                 def _write() -> None:
                     try:
-                        import soundfile as _sf
                         import numpy as _np
+                        import soundfile as _sf
                         out_path = os.path.expanduser("~/Desktop/guitar_tap_raw_capture.wav")
                         pcm = _np.concatenate(chunks_snapshot)
                         _sf.write(out_path, pcm, rate, subtype="FLOAT")

@@ -15,7 +15,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from platformdirs import user_documents_dir, user_data_dir
+from platformdirs import user_data_dir, user_documents_dir
 
 _gt_log_enabled = True
 _tap_debug_enabled = True

@@ -29,10 +29,10 @@ Legacy Cases:
 """
 
 from __future__ import annotations
+
 from enum import Enum
 
 from .guitar_type import GuitarType
-
 
 # MARK: - Module-Level Helpers (Python-only, no direct Swift equivalent)
 

@@ -43,31 +43,27 @@ This file (tap_tone_analyzer.py) contains:
 
 from __future__ import annotations
 
-# ── TapToneAnalyzer mixin imports ─────────────────────────────────────────────
+# ── PySide6 ─────────────────────────────────────────────────────────────────────
+from PySide6 import QtCore
 
-from .tap_tone_analyzer_control import TapToneAnalyzerControlMixin
-from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
-from .tap_tone_analyzer_analysis_helpers import TapToneAnalyzerAnalysisHelpersMixin
-from .tap_tone_analyzer_tap_detection import TapToneAnalyzerTapDetectionHandlerMixin
-from .tap_tone_analyzer_decay_tracking import TapToneAnalyzerDecayTrackingMixin
-from .tap_tone_analyzer_annotation_management import TapToneAnalyzerAnnotationManagementMixin
-from .tap_tone_analyzer_measurement_management import TapToneAnalyzerMeasurementManagementMixin
-from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverrideManagementMixin
-from .tap_tone_analyzer_spectrum_capture import TapToneAnalyzerSpectrumCaptureMixin
+from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
 
 # ── AnalysisDisplayMode ───────────────────────────────────────────────────────
 # Mirrors Swift AnalysisDisplayMode enum defined in TapToneAnalyzer.swift.
 # Lives in analysis_display_mode.py so the mixin files can import it without
 # creating a circular dependency (they are imported by this file).
-
 from .analysis_display_mode import AnalysisDisplayMode
+from .tap_tone_analyzer_analysis_helpers import TapToneAnalyzerAnalysisHelpersMixin
+from .tap_tone_analyzer_annotation_management import TapToneAnalyzerAnnotationManagementMixin
 
-# ── PySide6 ─────────────────────────────────────────────────────────────────────
-
-from PySide6 import QtCore
-
-from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
-
+# ── TapToneAnalyzer mixin imports ─────────────────────────────────────────────
+from .tap_tone_analyzer_control import TapToneAnalyzerControlMixin
+from .tap_tone_analyzer_decay_tracking import TapToneAnalyzerDecayTrackingMixin
+from .tap_tone_analyzer_measurement_management import TapToneAnalyzerMeasurementManagementMixin
+from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverrideManagementMixin
+from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
+from .tap_tone_analyzer_spectrum_capture import TapToneAnalyzerSpectrumCaptureMixin
+from .tap_tone_analyzer_tap_detection import TapToneAnalyzerTapDetectionHandlerMixin
 
 # ── TapToneAnalyzer ───────────────────────────────────────────────────────────
 # Mirrors the top-level Swift TapToneAnalyzer class declaration and its stored
@@ -183,8 +179,8 @@ class TapToneAnalyzer(
         import numpy as np
         from models import guitar_mode as _gm
         from models import measurement_type as _mt_mod
-        from models.tap_display_settings import TapDisplaySettings as _tds
         from models.material_tap_phase import MaterialTapPhase as _MTP
+        from models.tap_display_settings import TapDisplaySettings as _tds
 
         # Qt's metaclass does not participate in Python's cooperative super()
         # chain, so the QObject base must be initialised explicitly.
@@ -430,10 +426,10 @@ class TapToneAnalyzer(
             audio_device:            AudioDevice to open, or None for the default.
             calibration_corrections: ndarray of per-bin dB corrections, or None.
         """
-        import sounddevice as _sd
         import numpy as np
-        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
+        import sounddevice as _sd
         from models import microphone_calibration as _mc_mod
+        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
 
         self._sd = _sd
         self._mc_mod = _mc_mod
@@ -743,8 +739,8 @@ class TapToneAnalyzer(
             return []
 
         # Filter unknown-mode peaks in guitar mode when the setting is off
-        from .tap_display_settings import TapDisplaySettings
         from .guitar_mode import GuitarMode
+        from .tap_display_settings import TapDisplaySettings
         measurement_type = TapDisplaySettings.measurement_type()
         if measurement_type.is_guitar and not TapDisplaySettings.show_unknown_modes():
             guitar_type = TapDisplaySettings.guitar_type()

@@ -203,6 +203,7 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
     (matching the behaviour of the original code at commit 3598b90).
     """
     import platform
+
     import sounddevice as _sd
 
     inputs = [d for d in raw if int(d["max_input_channels"]) > 0]

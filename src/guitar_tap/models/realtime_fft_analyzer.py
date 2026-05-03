@@ -73,39 +73,31 @@ NOTE — Python vs Swift architectural differences:
 
 from __future__ import annotations
 
+import atexit
+
+# ── RealtimeFFTAnalyzer / device management ───────────────────────────────────
+import platform
+import queue
+import threading
+import time
+from typing import Callable
+
+import numpy as np
+import numpy.typing as npt
+import sounddevice as sd
+from PySide6 import QtCore
+
+from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
+from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
+
 # ── FFT function re-exports (backward compatibility) ─────────────────────────
 # Existing code that does:
 #   import models.realtime_fft_analyzer as f_a
 #   f_a.dft_anal(...)
 # continues to work unchanged.
-
 from .realtime_fft_analyzer_fft_processing import (
-    is_power2,
     dft_anal,
-    peak_detection,
-    peak_interp,
-    peak_q_factor,
-    hps_peak_freq,
-    Float64_1D,
 )
-
-# ── RealtimeFFTAnalyzer / device management ───────────────────────────────────
-
-import platform
-import queue
-import threading
-import atexit
-import time
-from typing import Callable
-
-import sounddevice as sd
-import numpy as np
-import numpy.typing as npt
-from PySide6 import QtCore
-
-from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
-from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
-from guitar_tap.utilities.logging import gt_log
 
 if platform.system() == "Darwin":
     from views.utilities import platform_adapters as mac_access
@@ -506,7 +498,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             fft_size:                FFT window size (power of 2).
                                      Mirrors Swift RealtimeFFTAnalyzer.fftSize.
         """
-        from .audio_device import AudioDevice as _AudioDevice
 
         if platform.system() == "Darwin":
             mac_access.MacAccess(parent)

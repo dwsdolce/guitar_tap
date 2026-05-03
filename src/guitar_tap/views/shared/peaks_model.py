@@ -6,12 +6,10 @@ from enum import Enum
 
 import numpy as np
 import numpy.typing as npt
-from PySide6 import QtCore
-
-from models import pitch as pitch_c
-from models import guitar_type as gt
 from models import guitar_mode as gm
+from models import pitch as pitch_c
 from models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
+from PySide6 import QtCore
 
 
 class ColumnIndex(Enum):

@@ -1,8 +1,8 @@
 """
 Utility views and helpers — mirrors Swift Views/Utilities/.
 """
-from .tap_settings_view import AppSettings
 from .gt_images import GtImages
+from .tap_settings_view import AppSettings
 
 __all__ = [
     "AppSettings",
