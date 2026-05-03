@@ -185,7 +185,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
         Used by the card widget to show the correct label in
         "Reset to Auto-Detected (X)" — identical to Swift's
-        ``"Reset to Auto-Detected (\(mode.displayName))"``
+        ``"Reset to Auto-Detected (\\(mode.displayName))"``
         where ``mode`` is ``analyzer.peakMode(for: peak)``.
         """
         freq = self.freq_value(index)

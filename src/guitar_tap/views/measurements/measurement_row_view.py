@@ -90,6 +90,8 @@ class MeasurementRowView(QtWidgets.QWidget):
         top_hbox = QtWidgets.QHBoxLayout()
         top_hbox.setSpacing(8)
 
+        self._compare_circle: QtWidgets.QLabel | None = None
+        self._compare_eligible = compare_eligible
         if compare_mode:
             circle = QtWidgets.QLabel("●" if compare_selected else "○")
             color = "#3478f6" if compare_selected else (
@@ -98,6 +100,7 @@ class MeasurementRowView(QtWidgets.QWidget):
             circle.setStyleSheet(f"color: {color}; font-size: 18px;")
             circle.setFixedWidth(22)
             top_hbox.addWidget(circle)
+            self._compare_circle = circle
 
         content = QtWidgets.QVBoxLayout()
         content.setSpacing(3)
@@ -179,6 +182,16 @@ class MeasurementRowView(QtWidgets.QWidget):
             eff = QtWidgets.QGraphicsOpacityEffect(self)
             eff.setOpacity(0.4)
             self.setGraphicsEffect(eff)
+
+    def setCompareSelected(self, selected: bool) -> None:
+        """Update the compare-mode circle indicator in place (no rebuild)."""
+        if self._compare_circle is None:
+            return
+        self._compare_circle.setText("●" if selected else "○")
+        color = "#3478f6" if selected else (
+            "#888888" if self._compare_eligible else "#cccccc"
+        )
+        self._compare_circle.setStyleSheet(f"color: {color}; font-size: 18px;")
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:

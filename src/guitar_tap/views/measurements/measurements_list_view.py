@@ -225,10 +225,20 @@ class MeasurementsDialog(QtWidgets.QDialog):
             return
         if index in self._compare_indices:
             self._compare_indices.discard(index)
+            now_selected = False
         else:
             self._compare_indices.add(index)
+            now_selected = True
+
+        # In-place update: just refresh the affected row's circle and the
+        # Compare-button label/state. Avoids _rebuild_list(), which would
+        # clear the QListWidget and reset the scroll position.
+        item = self._list.item(index)
+        if item is not None:
+            row = self._list.itemWidget(item)
+            if isinstance(row, MeasurementRowView):
+                row.setCompareSelected(now_selected)
         self._update_compare_btn()
-        self._rebuild_list()
 
     def _open_comparison(self) -> None:
         """Emit comparisonRequested and close — mirrors the loadComparison() call path in Swift.
