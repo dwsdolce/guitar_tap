@@ -247,6 +247,15 @@ class TapToneAnalyzer(
         # Mirrors Swift @Published var statusMessage: String.
         self.status_message: str = "Tap the guitar to begin"
 
+        # MARK: - Input Clipping Detection
+        # When the mic input clips (samples reach |1.0| or RMS reaches 0 dBFS),
+        # we override the visible status message with a remediation warning.
+        # _latest_real_status preserves the analyzer-set message so it can be
+        # restored when clipping clears.  Mirrors Swift @Published var
+        # isClipping: Bool / latestRealStatus: String.
+        self.is_clipping: bool = False
+        self._latest_real_status: str = self.status_message
+
         # MARK: - Frozen Spectrum
         self.frozen_frequencies = np.array([])      # mirrors frozenFrequencies
         self.frozen_magnitudes = np.array([])       # mirrors frozenMagnitudes
@@ -408,6 +417,16 @@ class TapToneAnalyzer(
         self._gated_accum: list = []                # accumulated raw PCM samples
         self._mpm_sample_rate: float = 48000.0      # mirrors Swift mpmSampleRate (updated per audio buffer)
 
+        # Monotonic capture identity — incremented at every start_*_gated_capture
+        # call.  Each pending safety-timeout closure captures the ID at scheduling
+        # time and only flushes the accumulator if `_gated_capture_id` still
+        # matches.  Without this, a stale timeout from a previous capture can
+        # fire while the next capture is mid-fill, dispatch its partial buffer
+        # as if it were the new capture's complete result, and silently truncate
+        # the capture window from fft_size samples to whatever fragment was
+        # collected.  Mirrors Swift `gatedCaptureID`.
+        self._gated_capture_id: int = 0
+
     def start(
         self,
         parent_widget,
@@ -473,6 +492,13 @@ class TapToneAnalyzer(
         # finishGatedFFTCapture handler (from TapToneAnalyzerSpectrumCaptureMixin).
         # Mirrors Swift's Combine sink on fftAnalyzer.gatedCaptureComplete.
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
+
+        # ── Input-clipping signal ──────────────────────────────────────────
+        # Wire the processing thread's edge-triggered clippingChanged signal
+        # to _set_clipping, which overrides the visible status message with a
+        # remediation warning while clipping is active and restores the
+        # analyzer-set message when it clears.
+        self.mic.proc_thread.clippingChanged.connect(self._set_clipping)
 
         # ── Raw-sample handler ────────────────────────────────────────────
         # Set mic.raw_sample_handler so _FftProcessingThread.run() calls

@@ -149,6 +149,73 @@ def dft_anal(
     return magnitude, abs_fft
 
 
+# MARK: - perform_fft (mirrors Swift performFFT(on:) post-FFT block)
+
+def perform_fft(thread, samples: "npt.NDArray[np.float32]", fft_size: int):
+    """Run an FFT on *samples* and apply the per-frame post-processing.
+
+    Mirrors Swift ``RealtimeFFTAnalyzer.performFFT(on:)`` in
+    ``RealtimeFFTAnalyzer+FFTProcessing.swift`` — wraps the pure ``dft_anal``
+    DSP step with:
+      - per-bin calibration application (mirrors Swift's vDSP_vadd of
+        calibrationCorrections)
+      - 0-100-scale peak amp computation (mirrors Swift's peakMagnitude
+        publish)
+      - per-FFT-frame FILE_DEBUG trace (counter increment + log line; mirrors
+        the equivalent block in Swift performFFT)
+
+    Lives in this file (rather than as a method on _FftProcessingThread in
+    realtime_fft_analyzer.py) so the file split matches Swift, where
+    ``performFFT`` lives in ``RealtimeFFTAnalyzer+FFTProcessing.swift``.
+
+    Args:
+        thread:    The ``_FftProcessingThread`` instance — supplies the mic
+                   reference, the FILE_DEBUG counter state, and the
+                   calibration snapshot.  Mutates ``_fft_frame_counter`` and
+                   ``_samples_consumed``.
+        samples:   Exactly ``fft_size`` time-domain samples (float32).
+        fft_size:  FFT size, snapshot at call time.
+
+    Returns:
+        ``(mag_y_db, mag_y, fft_peak_amp)`` — the dB and linear magnitude
+        spectra (calibration-applied) plus the int-encoded peak amplitude
+        ready for the ``fftFrameReady`` signal.
+    """
+    from utilities.logging import TAP_DEBUG as _td
+
+    # Snapshot calibration under the thread's settings lock.  Mirrors Swift
+    # where calibrationCorrections is read inside performFFT.
+    with thread._settings_lock:
+        calibration = thread._calibration
+
+    mag_y_db, mag_y = dft_anal(samples, thread._mic.window_fcn, fft_size)
+    if calibration is not None:
+        mag_y_db = mag_y_db + calibration
+
+    fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+
+    # ── FILE_DEBUG: per-FFT-frame trace ─────────────────────────────────
+    # Records frame ordinal, file-time of frame start, peakMag, dominant-bin
+    # frequency, and whether the file-playback source is the active
+    # producer.  Mirrors Swift's equivalent TAP_DEBUG("fft_frame", ...)
+    # block in performFFT(on:).
+    thread._fft_frame_counter += 1
+    thread._samples_consumed += fft_size
+    peak_db = float(np.max(mag_y_db))
+    peak_bin = int(np.argmax(mag_y_db))
+    peak_freq_hz = peak_bin * float(thread._mic.rate) / fft_size
+    file_time_s = thread._samples_consumed / max(float(thread._mic.rate), 1.0)
+    _td("fft_frame",
+        f"#{thread._fft_frame_counter} "
+        f"fileTime={file_time_s:.3f}s "
+        f"peakMag={peak_db:.2f}dB "
+        f"peakFreq={peak_freq_hz:.1f}Hz "
+        f"isPlayingFile={thread._mic.is_playing_file}"
+    )
+
+    return mag_y_db, mag_y, fft_peak_amp
+
+
 # MARK: - Peak Detection (mirrors findPeaks in +FFTProcessing.swift)
 
 def peak_detection(

@@ -418,11 +418,7 @@ class FftCanvas(pg.PlotWidget):
 
         # Label opts: anchors are (x, y) where x=0 left-align, x=1 right-align;
         #             y=0 text below position, y=1 text above position.
-        _lbl_opts_peak    = {"position": 0.01, "color": (0, 200, 0),   "anchors": [(0, 1), (0, 1)]}
-        _lbl_opts_trigger = {"position": 0.99, "color": (220, 130, 0), "anchors": [(1, 1), (1, 1)]}
-        _lbl_opts_reset   = {"position": 0.01, "color": (220, 130, 0), "anchors": [(0, 0), (0, 0)]}
-        _dash = QtCore.Qt.PenStyle.DashLine
-        _dot  = QtCore.Qt.PenStyle.DotLine
+        _lbl_opts_peak = {"position": 0.01, "color": (0, 200, 0), "anchors": [(0, 1), (0, 1)]}
 
         # Peak-minimum line (green solid) — "Peak: x dB", left, above
         self.line_threshold = pg.InfiniteLine(
@@ -433,25 +429,19 @@ class FftCanvas(pg.PlotWidget):
         )
         self.addItem(self.line_threshold)
 
-        # Tap-trigger line (orange dashed) — "Trigger: x dB", right, above
+        # Tap-trigger / Reset lines removed — the threshold now compares
+        # against the time-domain RMS level, not against the FFT magnitude
+        # axis shown on this chart.  Drawing a horizontal line at the
+        # threshold dB value here was actively misleading because the
+        # captured FFT peaks regularly sit ~30 dB below the threshold even
+        # for clean taps.  The threshold's input-level relationship is now
+        # shown directly on the ThresholdSlider widget (level meter +
+        # peak-hold dot + clipping zone).
+        # State kept so set_tap_threshold / set_hysteresis_margin remain
+        # well-defined for the analyzer-side mirror, even though no chart
+        # element reflects them.
         self._tap_threshold_y: int = _tap_y
         self._hysteresis_margin: float = _hyst
-        self.line_tap_threshold = pg.InfiniteLine(
-            pos=_tap_y, angle=0,
-            pen=pg.mkPen(pg.mkColor(220, 130, 0), width=1, style=_dash),
-            label=f"Trigger: {_tap_y} dB",
-            labelOpts=_lbl_opts_trigger,
-        )
-        self.addItem(self.line_tap_threshold)
-
-        # Hysteresis reset line (orange dotted) — "Reset: x dB", left, below
-        self.line_reset_threshold = pg.InfiniteLine(
-            pos=_tap_y - _hyst, angle=0,
-            pen=pg.mkPen(pg.mkColor(220, 130, 0), width=1, style=_dot),
-            label=f"Reset: {_tap_y - _hyst} dB",
-            labelOpts=_lbl_opts_reset,
-        )
-        self.addItem(self.line_reset_threshold)
 
         # Mode band overlays
         self._mode_band_items: list = []
@@ -1001,24 +991,19 @@ class FftCanvas(pg.PlotWidget):
             self.setYRange(-100, 0, padding=0)
 
     def set_tap_threshold(self, value: int) -> None:
-        """Update the tap-detection threshold (0–100 scale)."""
+        """Update the tap-detection threshold (0–100 scale).
+
+        The chart no longer renders a Trigger / Reset line — feedback for
+        the threshold lives in the ThresholdSlider's level meter instead.
+        We still cache _tap_threshold_y for any downstream consumer.
+        """
         self._tap_threshold_y = value - 100
         self.analyzer.set_tap_threshold(value)
-        self.line_tap_threshold.setPos(self._tap_threshold_y)
-        self.line_tap_threshold.label.setText(f"Trigger: {self._tap_threshold_y} dB")
-        self._update_reset_line()
-
-    def _update_reset_line(self) -> None:
-        """Reposition the hysteresis reset line based on current tap threshold and margin."""
-        reset_y = self._tap_threshold_y - self._hysteresis_margin
-        self.line_reset_threshold.setPos(reset_y)
-        self.line_reset_threshold.label.setText(f"Reset: {reset_y} dB")
 
     def set_hysteresis_margin(self, value: float) -> None:
         """Update the tap-detection hysteresis margin (in dB, 1.0–10.0)."""
         self._hysteresis_margin = max(1.0, value)
         self.analyzer.set_hysteresis_margin(value)
-        self._update_reset_line()
 
     def pause_tap_detection(self) -> None:
         """Pause the tap detector; spectrum continues to update."""
@@ -1416,8 +1401,9 @@ class FftCanvas(pg.PlotWidget):
         self.selected_point.setVisible(showing)
         # Peak threshold line is guitar-only; hide during comparison regardless.
         self.line_threshold.setVisible(showing and self.analyzer._measurement_type.is_guitar)
-        self.line_tap_threshold.setVisible(showing)
-        self.line_reset_threshold.setVisible(showing)
+        # Tap-trigger / Reset lines no longer exist (the threshold is now
+        # an RMS-domain trigger displayed on the ThresholdSlider widget;
+        # rendering it on the FFT chart was misleading).
 
         if is_comparing:
             # On the restore path (loading a saved comparison record), the analyzer

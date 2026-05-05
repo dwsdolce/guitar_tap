@@ -78,6 +78,44 @@ def _log_stream_diagnostics(stream: "sd.InputStream", requested_rate: int) -> in
     return actual_rate
 
 
+# Patterns for identifying built-in / integrated microphones.  Used by the
+# auto-select priority to prefer external (USB / Bluetooth / measurement)
+# mics over the laptop's built-in mic when no user preference is persisted.
+# Mirrors Swift's `uid.contains("BuiltInMicrophone")` heuristic, expanded
+# to cover the Windows / Linux device-name conventions PortAudio reports.
+#
+# Patterns are chosen to be specific enough that legitimate USB/Bluetooth
+# mic names (UMIK-1, "USB Audio Device", brand-named mics) won't match.
+# False negatives (missing a built-in) are preferred over false positives
+# (rejecting the user's real mic).
+_BUILTIN_MIC_KEYWORDS = (
+    # macOS
+    "built-in",            # macOS / generic
+    "macbook",             # macOS legacy naming
+    # Windows
+    "internal",            # Windows / Linux generic
+    "microphone array",    # Windows generic built-in mic array
+    "intel smart sound",   # Windows on Intel laptops (DSP-fronted built-in)
+    "realtek",             # Common integrated audio codec (Windows + Linux)
+    # Linux (ALSA / PulseAudio / PipeWire device naming)
+    "hda intel",           # ALSA Intel HDA codec — the typical onboard chip
+    "hd-audio intel",      # ALSA alternate spelling
+    "hda generic",         # Generic HDA codec name
+    "hd-audio generic",    # Generic HDA codec, alternate spelling
+    "analog stereo",       # PulseAudio analog profile (built-in audio routes)
+)
+
+
+def _is_builtin_mic(name: str) -> bool:
+    """Heuristic: True when *name* matches a known built-in / integrated mic
+    pattern.  Used by ``_auto_select_initial_device`` to skip built-in mics
+    in favour of external measurement mics (UMIK-1, USB, Bluetooth, etc.)
+    when no user preference is persisted.
+    """
+    n = (name or "").lower()
+    return any(kw in n for kw in _BUILTIN_MIC_KEYWORDS)
+
+
 class RealtimeFFTAnalyzerDeviceManagementMixin:
     """Device management methods for RealtimeFFTAnalyzer.
 
@@ -157,17 +195,23 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
     def _auto_select_initial_device(self, devices: list) -> None:
         """Apply priority-based auto-selection on the first device enumeration.
 
-        Mirrors the ``previousDevices.isEmpty`` branch of Swift's
-        ``loadAvailableInputDevicesMacOS()``.
+        Priority order (mirrors Swift loadAvailableInputDevicesMacOS):
+          1. Previously persisted fingerprint (user's last explicit selection)
+          2. Any external mic (USB / Bluetooth / etc — anything that is NOT
+             a built-in / integrated / "Microphone Array" device).  This
+             prefers higher-quality measurement mics like the UMIK-1 over
+             the laptop's built-in mic when no preference is saved.
+          3. System default PortAudio input device.
+          4. First available device.
         """
         if not devices:
             return
 
-
-        # Priority 1: Previously persisted device fingerprint
+        # Priority 1: Previously persisted device fingerprint.
+        # Mirrors Swift UserDefaults "selectedInputDeviceUID".
         try:
-            from models.app_settings import AppSettings as _AS
-            saved_fp = _AS.load().selected_input_device_fingerprint
+            from views.utilities.tap_settings_view import AppSettings as _AS
+            saved_fp = _AS.selected_input_device_fingerprint()
             if saved_fp:
                 match = next(
                     (d for d in devices if d.fingerprint == saved_fp), None
@@ -178,16 +222,17 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         except Exception:
             pass
 
-        # Priority 2: Built-in microphone
-        builtins = [
-            d for d in devices
-            if "built-in" in d.name.lower() or "macbook" in d.name.lower()
-        ]
-        if builtins:
-            self.selected_input_device = builtins[0]
+        # Priority 2: Any external (non-built-in) microphone.  Prefer
+        # high-quality external measurement mics (UMIK-1 etc) over the
+        # laptop's built-in mic.  Mirrors Swift's `!uid.contains("BuiltInMicrophone")`.
+        external = next(
+            (d for d in devices if not _is_builtin_mic(d.name)), None
+        )
+        if external is not None:
+            self.selected_input_device = external
             return
 
-        # Priority 3: System default PortAudio input device
+        # Priority 3: System default PortAudio input device.
         try:
             default_index = sd.default.device[0]
             if default_index is not None and default_index >= 0:
@@ -200,7 +245,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         except Exception:
             pass
 
-        # Priority 4: First available device
+        # Priority 4: First available device.
         self.selected_input_device = devices[0]
 
     def _auto_select_on_hotplug(self, devices: list, previous: list) -> None:
@@ -242,31 +287,31 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                 ]
 
                 chosen = None
-                # Priority 1: current system default input (post-reinit)
-                try:
-                    default_index = sd.default.device[0]
-                    if default_index is not None and default_index >= 0:
-                        chosen = next(
-                            (d for d in real if d.index == default_index), None
-                        )
-                except Exception:
-                    pass
 
-                # Priority 2: built-in microphone by name
+                # Priority 1: any external (non-built-in) microphone.
+                # Mirrors the initial-load priority — when the user's selected
+                # device has disappeared, prefer another high-quality external
+                # mic over the laptop's built-in.
+                chosen = next(
+                    (d for d in real if not _is_builtin_mic(d.name)), None
+                )
+
+                # Priority 2: current system default input (post-reinit).
                 if chosen is None:
-                    builtins = [
-                        d for d in real
-                        if "built-in" in d.name.lower()
-                        or "macbook" in d.name.lower()
-                    ]
-                    if builtins:
-                        chosen = builtins[0]
+                    try:
+                        default_index = sd.default.device[0]
+                        if default_index is not None and default_index >= 0:
+                            chosen = next(
+                                (d for d in real if d.index == default_index), None
+                            )
+                    except Exception:
+                        pass
 
-                # Priority 3: first real device
+                # Priority 3: first real device.
                 if chosen is None and real:
                     chosen = real[0]
 
-                # Last resort: anything
+                # Last resort: anything.
                 if chosen is None and devices:
                     chosen = devices[0]
 
@@ -296,6 +341,15 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         self.device_index = device.index
         self.rate = int(device.sample_rate)
         self.selected_input_device = device
+
+        # Persist the user's selection so the next launch can restore it.
+        # Mirrors Swift's UserDefaults.standard.set(uid, forKey: "selectedInputDeviceUID")
+        # call in the equivalent device-switch path.
+        try:
+            from views.utilities.tap_settings_view import AppSettings as _AS
+            _AS.set_selected_input_device_fingerprint(device.fingerprint)
+        except Exception:
+            pass
         # Reset diagnostic counters so each device session is reported independently.
         self._diag_chunk_sizes_seen: set = set()
         self._diag_chunk_count: int = 0

@@ -30,9 +30,35 @@ class TapToneAnalyzerControlMixin:
         statusMessage: String whose every write auto-fires objectWillChange on
         TapToneAnalyzer, causing SwiftUI to re-render the Text(tap.statusMessage)
         label in TapToneAnalysisView+Controls.swift.
+
+        If the mic input is currently clipping, the displayed message is
+        overridden with a remediation warning while the analyzer's intended
+        message is preserved in _latest_real_status for restoration when the
+        clip clears.  Mirrors Swift's identical override pattern.
         """
-        self.status_message = message
-        self.statusMessageChanged.emit(message)
+        self._latest_real_status = message
+        if getattr(self, "is_clipping", False):
+            self.status_message = "⚠ Input clipping — reduce mic gain"
+        else:
+            self.status_message = message
+        self.statusMessageChanged.emit(self.status_message)
+
+    def _set_clipping(self, clipping: bool) -> None:
+        """Update the input-clipping state and re-render the status message.
+
+        Called from a slot connected to the FFT thread's clippingChanged signal.
+        On transition, swaps the displayed status between the clipping warning
+        and the most recent analyzer-set message (preserved in
+        _latest_real_status).  Mirrors Swift TapToneAnalyzer.setClipping(_:).
+        """
+        if clipping == getattr(self, "is_clipping", False):
+            return
+        self.is_clipping = clipping
+        if clipping:
+            self.status_message = "⚠ Input clipping — reduce mic gain"
+        else:
+            self.status_message = self._latest_real_status
+        self.statusMessageChanged.emit(self.status_message)
 
     # ------------------------------------------------------------------ #
     # Hot-plug (mirrors FftCanvas._on_devices_refreshed)
@@ -512,6 +538,17 @@ class TapToneAnalyzerControlMixin:
         self.tap_progress = 0.0
         self.tap_detected = False
         self.is_detection_paused = False
+
+        # Cancel any in-flight gated capture from a previous sequence and drop
+        # the pre-roll ring buffer.  Without this, a gated capture that was
+        # mid-fill when the new sequence starts will eventually complete and
+        # append a stale entry into the now-cleared captured_taps list, and the
+        # pre-roll buffer would carry stale audio from the previous run into
+        # the next gated capture's leading window.
+        with self._gated_lock:
+            self._gated_capture_active = False
+            self._gated_accum = []
+            self._pre_roll_buf = []
 
         # Seed the noise-floor estimate from the current ambient level so the first
         # relative-threshold calculation is accurate immediately.

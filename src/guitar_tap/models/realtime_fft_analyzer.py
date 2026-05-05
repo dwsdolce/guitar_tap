@@ -161,6 +161,12 @@ class _FftProcessingThread(QtCore.QThread):
     # Mirrors Swift RealtimeFFTAnalyzer @Published inputLevelDB.
     rmsLevelChanged: QtCore.Signal = QtCore.Signal(int)
 
+    # Edge-triggered clipping signal — fires only on transitions of the recent-
+    # clip-detected state (True when any chunk in the last ~hold seconds reached
+    # full scale, False after that hold elapses without further clips).
+    # Mirrors Swift @Published var isClipping: Bool.
+    clippingChanged: QtCore.Signal = QtCore.Signal(bool)
+
     # Emitted when a gated capture window fills: (samples: ndarray, sample_rate: float, phase: object).
     # Delivered to the main thread via Qt queued connection.
     # Mirrors Swift's DispatchQueue.main.async { finishGatedFFTCapture(samples:sampleRate:phase:) }.
@@ -210,6 +216,23 @@ class _FftProcessingThread(QtCore.QThread):
         self._recent_peak_window: float = 0.5      # rolling window in seconds
         self._recent_peak_history: list = []       # [(timestamp, level_db), ...]
 
+        # ── FILE_DEBUG instrumentation ────────────────────────────────────
+        # Counter so each FFT frame produced by run() has a unique ordinal.
+        # Used by FILE_DEBUG logs to correlate FFT frames with file-playback
+        # progress and tap detection.  Resets to 0 on each playback restart
+        # via reset_state().
+        self._fft_frame_counter: int = 0
+        self._samples_consumed: int = 0
+
+        # ── Input clipping detection ─────────────────────────────────────
+        # Hold any clip-detected chunk for _clip_hold_seconds before declaring
+        # the input "no longer clipping".  Without the hold, the indicator
+        # would flicker every chunk as the signal oscillates around full
+        # scale during a tap's attack.  Mirrors Swift's identical hold logic.
+        self._clip_hold_seconds: float = 1.5
+        self._last_clip_time: float | None = None
+        self._is_clipping_state: bool = False
+
         # NOTE: The pre-roll buffer and gated accumulator previously lived here.
         # They have been moved to TapToneAnalyzer (as _pre_roll_buf, _gated_accum,
         # etc.) and are maintained by TapToneAnalyzer._accumulate_gated_samples(),
@@ -232,9 +255,14 @@ class _FftProcessingThread(QtCore.QThread):
         level, and emits fftFrameReady for each FFT frame.
 
         Mirrors Swift's AVAudioEngine input tap callback + processAudioBuffer(_:)
-        accumulation logic.  Tap detection is performed on the main thread
-        inside TapToneAnalyzer.on_fft_frame().
+        accumulation logic.  Per-FFT-frame post-processing (calibration,
+        peak-amp, FILE_DEBUG trace) is delegated to ``perform_fft`` in
+        ``realtime_fft_analyzer_fft_processing.py``, mirroring Swift's
+        ``performFFT(on:)`` in ``RealtimeFFTAnalyzer+FFTProcessing.swift``.
+        Tap detection is performed on the main thread inside
+        TapToneAnalyzer.on_fft_frame().
         """
+        from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
         lastupdate = time.time()
         while not self._stop_event.is_set():
             try:
@@ -242,10 +270,8 @@ class _FftProcessingThread(QtCore.QThread):
             except queue.Empty:
                 continue
 
-            # Snapshot calibration under lock — avoid holding during DSP.
-            with self._settings_lock:
-                calibration = self._calibration
-
+            # Calibration is snapshotted inside perform_fft (under
+            # _settings_lock) so the snapshot is fresh per FFT frame.
             enter_now = time.time()
             chunk_f32 = chunk.astype(np.float32)
 
@@ -272,6 +298,24 @@ class _FftProcessingThread(QtCore.QThread):
             level_db = 20.0 * np.log10(max(rms, 1e-10))
             rms_amp = int(level_db + 100.0)
             self.rmsLevelChanged.emit(rms_amp)
+
+            # ── Input-clipping detection ─────────────────────────────
+            # Sample-domain check (peak |sample| ≥ 0.99) catches transient
+            # peaks; RMS check (>= 0 dBFS) catches sustained clipping.
+            # Either condition holds the clipping state True for
+            # _clip_hold_seconds before clearing.  Edge-triggered emit so
+            # the view's slot only fires on True↔False transitions.
+            peak_abs = float(np.max(np.abs(chunk.astype(np.float64))))
+            chunk_clipped = (peak_abs >= 0.99) or (level_db >= 0.0)
+            if chunk_clipped:
+                self._last_clip_time = enter_now
+            new_clip_state = (
+                self._last_clip_time is not None
+                and (enter_now - self._last_clip_time) < self._clip_hold_seconds
+            )
+            if new_clip_state != self._is_clipping_state:
+                self._is_clipping_state = new_clip_state
+                self.clippingChanged.emit(new_clip_state)
 
             # Update rolling recent-peak history — mirrors Swift fftAnalyzer.recentPeakLevelDB.
             # recentPeakLevelDB holds the rolling MAX over the last 0.5 s.  It is ONLY correct
@@ -313,18 +357,11 @@ class _FftProcessingThread(QtCore.QThread):
                 sample_dt = enter_now - lastupdate
                 lastupdate = enter_now
 
-                # FFT — mirrors Swift RealtimeFFTAnalyzer performFFT(on:).
-                mag_y_db, mag_y = dft_anal(
-                    samples, self._mic.window_fcn, fft_size
-                )
-                if calibration is not None:
-                    mag_y_db = mag_y_db + calibration
-
-                # FFT peak level — 0-100 scale (dBFS + 100).
-                # Mirrors Swift fftAnalyzer.peakMagnitude: the instantaneous FFT peak magnitude.
-                # Stored in TapToneAnalyzer._current_peak_magnitude_db for use by guitar-mode
-                # re-enable closure (mirrors Swift handleTapDetection re-enable reading peakMagnitude).
-                fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+                # FFT + post-processing — mirrors Swift performFFT(on:) in
+                # RealtimeFFTAnalyzer+FFTProcessing.swift.  perform_fft applies
+                # calibration, computes the int-encoded peak amplitude, and
+                # emits the per-FFT-frame FILE_DEBUG trace.
+                mag_y_db, mag_y, fft_peak_amp = _perform_fft(self, samples, fft_size)
 
                 exit_now = time.time()
                 processing_dt = exit_now - enter_now
@@ -352,6 +389,9 @@ class _FftProcessingThread(QtCore.QThread):
         with self._recent_peak_lock:
             self._recent_peak_db = -100.0
             self._recent_peak_history = []
+        # FILE_DEBUG: zero ordinals so a new file's frames start at #1.
+        self._fft_frame_counter = 0
+        self._samples_consumed = 0
 
     def set_calibration(self, arr: npt.NDArray | None) -> None:
         """Update the per-bin dB calibration correction array."""

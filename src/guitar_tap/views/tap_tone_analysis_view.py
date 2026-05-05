@@ -737,13 +737,25 @@ class MainWindow(QtWidgets.QMainWindow):
             current_val: int,   # canvas 0-100 scale
             default_val: int,   # canvas 0-100 scale
             tip: str,
+            with_level_meter: bool = False,
         ) -> tuple[QtWidgets.QSlider, QtWidgets.QLabel, QtWidgets.QToolButton]:
-            """Add label + slider + dB readout + reset button to hl; return (slider, readout, reset)."""
+            """Add label + slider + dB readout + reset button to hl; return (slider, readout, reset).
+
+            When ``with_level_meter`` is True the slider is a custom
+            ``ThresholdSlider`` that displays the live input RMS level inside
+            the groove with a peak-hold dot and clipping indicator.  Used for
+            the tap-detection threshold so the user can see the audio signal
+            relative to the threshold setting; mirrors Swift ThresholdSlider.
+            """
             hl.addWidget(_lbl(label))
-            slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+            if with_level_meter:
+                from views.shared.threshold_slider import ThresholdSlider as _TS
+                slider = _TS()
+            else:
+                slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
             slider.setRange(min_db, max_db)
             slider.setValue(current_val - 100)   # convert to dB
-            slider.setFixedWidth(80)
+            slider.setFixedWidth(160 if with_level_meter else 80)
             slider.setToolTip(tip)
             hl.addWidget(slider)
 
@@ -779,12 +791,17 @@ class MainWindow(QtWidgets.QMainWindow):
         hl.addWidget(_vsep())
 
         # ── Threshold (tap detection) ──────────────────────────────────────
+        # Uses ThresholdSlider with integrated level meter, peak-hold dot, and
+        # clipping indicator — wired to the live RMS signal below so the user
+        # can see the input level relative to the threshold setting.
         tap_thresh_val = AS.AppSettings.tap_threshold()   # 0-100 scale
         self.tap_threshold_slider, self.tap_threshold_readout, self.tap_threshold_reset_btn = \
             _db_slider_group(
                 "Threshold:", -80, -20, tap_thresh_val, 60,
-                "Signal level that triggers tap detection\n"
-                "(shown as orange dashed line on the spectrum)",
+                "Signal level that triggers tap detection.\n"
+                "Bar shows live input RMS level; amber dot is peak-hold;\n"
+                "right edge turns red when input is clipping.",
+                with_level_meter=True,
             )
         self.tap_threshold_reset_btn.clicked.connect(lambda: self.tap_threshold_slider.setValue(-40))
 
@@ -1779,6 +1796,17 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tap detection threshold slider (dB) ↔ canvas (0-100 scale)
         self.tap_threshold_slider.valueChanged.connect(self._on_tap_threshold_changed)
 
+        # Threshold-slider live level meter — wire RMS level + clipping signals
+        # so the slider's groove shows real-time input level, peak-hold, and
+        # clipping indicator alongside the threshold handle.  Uses
+        # hasattr() so the connection is a no-op if the slider is the stock
+        # QSlider (e.g. in tests that bypass the with_level_meter path).
+        proc_thread = canvas.analyzer.mic.proc_thread
+        if hasattr(self.tap_threshold_slider, "set_level_db"):
+            proc_thread.rmsLevelChanged.connect(self._on_rms_level_for_threshold_meter)
+        if hasattr(self.tap_threshold_slider, "set_clipping"):
+            proc_thread.clippingChanged.connect(self.tap_threshold_slider.set_clipping)
+
         # Pause / Cancel / tap-detection-paused
         self.pause_tap_btn.clicked.connect(self._on_pause_tap)
         self.cancel_tap_btn.clicked.connect(self._on_cancel_tap)
@@ -2459,6 +2487,17 @@ class MainWindow(QtWidgets.QMainWindow):
         AS.AppSettings.set_tap_threshold(db_val + 100)
         self.tap_threshold_readout.setText(f"{db_val} dB")
 
+    @QtCore.Slot(int)
+    def _on_rms_level_for_threshold_meter(self, rms_amp: int) -> None:
+        """Forward per-chunk RMS level to the threshold slider's level meter.
+
+        ``rms_amp`` is on the 0-100 scale (= ``levelDB + 100``).  The
+        slider expects dB, so we subtract 100 before forwarding.  Mirrors
+        Swift's `$inputLevelDB` binding to ThresholdSlider.level.
+        """
+        if hasattr(self.tap_threshold_slider, "set_level_db"):
+            self.tap_threshold_slider.set_level_db(float(rms_amp) - 100.0)
+
     def _on_tap_num_changed(self, n: int) -> None:
         self.fft_canvas.set_tap_num(n)
         # Update the cached total so _plate_step_label() uses the new denominator.
@@ -2654,8 +2693,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 analyzer.mic.proc_thread.reset_state()
 
             # Mirrors Swift openAudioFile(_:) which calls:
-            #   1. fft.startFromFile(url, completion:) — start engine, recompute freq bins
-            #   2. tapToneAnalyzer.startTapSequence(skipWarmup: true) — arm tap detection
+            #   1. tapToneAnalyzer.startTapSequence(skipWarmup: true) — arm tap detection
+            #   2. fft.startFromFile(url, completion:) — start engine, recompute freq bins
+            #
+            # IMPORTANT: startTapSequence runs BEFORE startFromFile so the analyzer
+            # state (captured_taps, is_measurement_complete, is_above_threshold,
+            # _gated_capture_active, _gated_accum, _pre_roll_buf, etc.) is fully
+            # reset before any audio flows.  If start_from_file ran first, the
+            # file-playback worker would begin pumping samples into the queue
+            # while is_measurement_complete from the previous session was still
+            # True (suppressing the live spectrum display) and the gated
+            # accumulator could complete a stale capture and append a phantom
+            # entry to captured_taps right after start_tap_sequence cleared it.
+            #
             # The completion closure in Swift releases security-scoped resource access.
             # It does NOT clear playingFileName — that stays set until stop() is called,
             # so the chart title continues showing the filename while the result is frozen.
@@ -2667,12 +2717,12 @@ class MainWindow(QtWidgets.QMainWindow):
             def _on_finished_clear_tint() -> None:
                 analyzer.playingFileNameChanged.emit(None)
 
-            analyzer.start_from_file(path, on_finished=_on_finished_clear_tint)
-
             # Arm tap detection with warmup skipped — the audio source is deterministic
             # so there is no mic startup noise, and the tap may appear in the first 0.5 s.
             # Mirrors Swift: tapToneAnalyzer.startTapSequence(skipWarmup: true)
             analyzer.start_tap_sequence(skip_warmup=True)
+
+            analyzer.start_from_file(path, on_finished=_on_finished_clear_tint)
 
             # Emit the playing filename AFTER start_tap_sequence so the title update
             # is last — start_tap_sequence emits loadedMeasurementNameChanged(None)

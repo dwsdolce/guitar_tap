@@ -125,6 +125,28 @@ class AppSettings:
         cls._set(key, v)
 
     # ------------------------------------------------------------------ #
+    # Selected input device (persistent across launches)
+    #
+    # Stores the AudioDevice.fingerprint (e.g. "UMIK-1:48000") of the user's
+    # last-selected input mic so that auto-selection on next launch can
+    # restore it.  Mirrors Swift UserDefaults key "selectedInputDeviceUID"
+    # (which stores AVAudioDevice.uid).
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def selected_input_device_fingerprint(cls) -> "str | None":
+        v = cls._get("audio/selected_input_device_fingerprint", None)
+        if v is None or v == "":
+            return None
+        return str(v)
+
+    @classmethod
+    def set_selected_input_device_fingerprint(cls, fingerprint: "str | None") -> None:
+        if fingerprint:
+            cls._set("audio/selected_input_device_fingerprint", str(fingerprint))
+        else:
+            cls._s().remove("audio/selected_input_device_fingerprint")
+
+    # ------------------------------------------------------------------ #
     # Display magnitude range (dB)
     # ------------------------------------------------------------------ #
     @classmethod

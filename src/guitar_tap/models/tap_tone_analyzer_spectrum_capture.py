@@ -199,6 +199,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         target_samples = int(rate * self.GATED_CAPTURE_DURATION)
         window_ms = int(self.GATED_CAPTURE_DURATION * 1000)
         with self._gated_lock:
+            # Bump capture identity — invalidates any pending safety-timeout
+            # from a previous capture so it cannot flush this capture's
+            # accumulator with a partial buffer.  See start_guitar_gated_capture
+            # for the full explanation of the race this prevents.
+            self._gated_capture_id += 1
+            my_capture_id = self._gated_capture_id
             # Seed accumulator with pre-roll (mirrors Swift: gatedAccumBuffer = preRollBuffer).
             self._gated_accum = list(self._pre_roll_buf)
             self._gated_capture_samples = target_samples
@@ -216,6 +222,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # QTimer.singleShot fires on the main thread.
         def _safety_timeout() -> None:
             with self._gated_lock:
+                # Identity guard — see start_guitar_gated_capture.
+                if self._gated_capture_id != my_capture_id:
+                    return
                 if not self._gated_capture_active:
                     return  # already completed normally
                 self._gated_capture_active = False
@@ -239,6 +248,163 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 self.re_enable_detection_for_next_plate_tap()
 
         QtCore.QTimer.singleShot(2000, _safety_timeout)
+
+    # ------------------------------------------------------------------ #
+    # start_guitar_gated_capture / finish_guitar_gated_capture
+    # Guitar-mode raw-PCM capture aligned to the tap onset.  Reuses the
+    # plate/brace pre-roll buffer + accumulator (single source of audio
+    # samples) but captures fft_size samples and applies the same
+    # rectangular window used by the live FFT, so the resulting spectrum
+    # is interchangeable with what on_fft_frame would have produced for
+    # a tap-aligned frame.  No Swift counterpart yet — this is the new
+    # design path.
+    # ------------------------------------------------------------------ #
+
+    def start_guitar_gated_capture(self) -> None:
+        """Open a raw-PCM capture window for guitar mode, aligned to tap onset.
+
+        Capture window size = mic.fft_size (matches live FFT frequency
+        resolution exactly).  Pre-roll comes from the existing ring buffer so
+        the impulse onset (which arrives ~one RMS chunk before the trigger
+        fires) is included.  When the window fills, _accumulate_gated_samples
+        emits gatedCaptureComplete with phase=None so finish_gated_fft_capture
+        routes the result through finish_guitar_gated_capture.
+        """
+        if self.mic is None:
+            return
+        rate = float(self._gated_sample_rate)
+        target_samples = int(self.mic.fft_size)
+        with self._gated_lock:
+            # Bump the capture identity so any pending safety-timeout from a
+            # previous capture is invalidated and won't flush THIS capture's
+            # accumulator with a partial buffer.  Without this guard, a stale
+            # timeout from tap N can fire while tap N+1 is mid-fill, dispatch
+            # tap N+1's partial accumulator as tap N's "completed" capture,
+            # and silently truncate captures from fft_size to whatever
+            # fragment was collected.  Mirrors Swift `gatedCaptureID`.
+            self._gated_capture_id += 1
+            my_capture_id = self._gated_capture_id
+            self._gated_accum = list(self._pre_roll_buf)
+            self._gated_capture_samples = target_samples
+            self._gated_capture_phase = None  # None = guitar mode marker
+            self._gated_capture_active = True
+
+        gt_log(
+            f"🎯 Guitar gated capture started — {target_samples}-sample window "
+            f"({target_samples / rate * 1000:.0f} ms at {int(rate)} Hz, "
+            f"pre-roll {len(self._gated_accum)} samples)"
+        )
+
+        # Safety timeout — if the file ends or the user stops before the
+        # capture window fills, flush whatever we have so the partial
+        # spectrum still gets appended.  Long enough to allow the full
+        # post-trigger portion at all supported sample rates.
+        target_ms = int((target_samples / max(rate, 1.0)) * 1000) + 500
+
+        def _safety_timeout() -> None:
+            with self._gated_lock:
+                # Identity guard: if a newer capture has started since this
+                # timeout was scheduled, this closure is stale — do nothing.
+                # (Without this, the stale timeout would steal the new
+                # capture's accumulator and dispatch it as a partial.)
+                if self._gated_capture_id != my_capture_id:
+                    return
+                if not self._gated_capture_active:
+                    return
+                self._gated_capture_active = False
+                partial = list(self._gated_accum)
+                self._gated_accum = []
+            if not partial:
+                gt_log("⚠️ Guitar gated capture timeout with no samples")
+                self._guitar_gated_capture_failed()
+                return
+            if self.mic is not None and hasattr(self.mic, "proc_thread"):
+                self.mic.proc_thread.gatedCaptureComplete.emit(
+                    np.array(partial, dtype=np.float32),
+                    self._gated_sample_rate,
+                    None,
+                )
+
+        QtCore.QTimer.singleShot(target_ms, _safety_timeout)
+
+    def _guitar_gated_capture_failed(self) -> None:
+        """Re-arm detection without storing a tap when guitar capture fails."""
+        self._set_status_message("No signal detected — tap again")
+        cooldown_ms = int(self.tap_cooldown * 1000)
+        QtCore.QTimer.singleShot(cooldown_ms, self._do_reenable_guitar)
+
+    def finish_guitar_gated_capture(self, samples, sample_rate: float) -> None:
+        """Compute FFT for a guitar gated capture and append to captured_taps.
+
+        Uses the same fft_size and rectangular window as the live FFT, so the
+        resulting (magnitudes, frequencies) tuple is shape-compatible with
+        what the previous code path appended directly from on_fft_frame.
+
+        After the spectrum is appended, advances the tap counter and either
+        schedules _finish_capture (all taps done) or _do_reenable_guitar
+        (next tap pending).
+        """
+        from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
+
+        if self.mic is None:
+            return
+
+        fft_size = int(self.mic.fft_size)
+
+        # Truncate or zero-pad to exactly fft_size.
+        if len(samples) >= fft_size:
+            chunk = samples[:fft_size].astype(np.float32)
+        else:
+            chunk = np.concatenate(
+                [samples.astype(np.float32),
+                 np.zeros(fft_size - len(samples), dtype=np.float32)]
+            )
+
+        window_fcn = self.mic.window_fcn  # rectangular (np.ones(fft_size))
+        magnitudes_db, _ = _dft_anal(chunk, window_fcn, fft_size)
+
+        # Apply per-bin calibration if present — mirrors what
+        # _FftProcessingThread.run does on every live FFT frame.
+        proc = self.mic.proc_thread
+        cal = None
+        if proc is not None:
+            with proc._settings_lock:
+                cal = proc._calibration
+        if cal is not None and len(cal) == len(magnitudes_db):
+            magnitudes_db = magnitudes_db + cal
+
+        # Build the matching frequency axis.  Use the same self.freq array
+        # the live path uses so downstream peak detection sees identical bins.
+        freqs = list(self.freq) if self.freq is not None else (
+            [i * float(sample_rate) / fft_size for i in range(fft_size // 2 + 1)]
+        )
+
+        import datetime as _dt
+        self.captured_taps.append((list(magnitudes_db), freqs, _dt.datetime.now()))
+
+        peak_db = float(np.max(magnitudes_db))
+        from utilities.logging import TAP_DEBUG as _td
+        _td("guitar_gated_capture",
+            f"FINISHED | newCount={len(self.captured_taps)}/{self.number_of_taps} "
+            f"capturedPeakMag={peak_db:.2f}dB samples={len(samples)}"
+        )
+
+        self.current_tap_count = len(self.captured_taps)
+        self.tap_progress = min(
+            1.0, float(self.current_tap_count) / max(self.number_of_taps, 1)
+        )
+        self.tapCountChanged.emit(self.current_tap_count, self.number_of_taps)
+
+        if self.current_tap_count < self.number_of_taps:
+            self._set_status_message(
+                f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
+            )
+            cooldown_ms = int(self.tap_cooldown * 1000)
+            QtCore.QTimer.singleShot(cooldown_ms, self._do_reenable_guitar)
+        else:
+            self._set_status_message("All taps captured. Processing...")
+            self.capture_timer_active = False
+            QtCore.QTimer.singleShot(int(self.capture_window * 1000), self._finish_capture)
 
     @Slot()
     def _do_start_flc(self) -> None:
@@ -278,6 +444,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     def finish_gated_fft_capture(self, samples, sample_rate: float, phase) -> None:
         """Process a captured PCM window and route to the appropriate phase handler.
 
+        Dispatches first by phase: guitar-mode captures (phase is None) go
+        through finish_guitar_gated_capture; plate/brace captures continue
+        below to the original Hann-windowed gated-FFT pipeline.
+
         Runs computeGatedFFT to produce a magnitude spectrum, then calls
         findDominantPeak to identify the strongest material resonance.
 
@@ -296,6 +466,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         from models.material_tap_phase import MaterialTapPhase as _MTP
         from models.measurement_type import MeasurementType as _MT
         from models.tap_display_settings import TapDisplaySettings as _tds
+
+        # Guitar-mode capture (phase is None) — uses a different FFT pipeline
+        # (rectangular window, full fft_size, no HPS / dominant-peak gate).
+        if phase is None:
+            self.finish_guitar_gated_capture(samples, sample_rate)
+            return
 
         # Compute Hann-windowed gated FFT.
         magnitudes, frequencies = self.mic.proc_thread.compute_gated_fft(samples, sample_rate)

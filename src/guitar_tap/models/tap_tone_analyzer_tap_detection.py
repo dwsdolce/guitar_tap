@@ -96,27 +96,17 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             )
 
         # Compute effective thresholds.
+        # NOTE: Per-chunk ABSOLUTE/RELATIVE/HYSTERESIS log lines were removed —
+        # they fired ~43 Hz and drowned out meaningful events.  Edge events
+        # (RISING / FALLING / SIGNAL SETTLED) and gated-capture events provide
+        # the diagnostic signal at the rate that actually matters.
         if use_relative:
             headroom = max(self.tap_detection_threshold - self.noise_floor_estimate, 10.0)
             effective_rising  = self.noise_floor_estimate + headroom
             effective_falling = self.noise_floor_estimate + max(headroom - self.hysteresis_margin, 4.0)
-            TAP_DEBUG("detectTap",
-                f"RELATIVE mode | peakMag={peak_magnitude:.2f} "
-                f"noiseFloor={self.noise_floor_estimate:.2f} "
-                f"headroom={headroom:.2f} "
-                f"risingThresh={effective_rising:.2f} "
-                f"fallingThresh={effective_falling:.2f} "
-                f"isAboveThreshold={self.is_above_threshold}"
-            )
         else:
             effective_rising  = self.tap_detection_threshold
             effective_falling = self.tap_detection_threshold - self.hysteresis_margin
-            TAP_DEBUG("detectTap",
-                f"ABSOLUTE mode | peakMag={peak_magnitude:.2f} "
-                f"risingThresh={effective_rising:.2f} "
-                f"fallingThresh={effective_falling:.2f} "
-                f"isAboveThreshold={self.is_above_threshold}"
-            )
 
         # Warmup period — suppress detection (mirrors Swift warmupPeriod check).
         if self.analyzer_start_time is not None:
@@ -167,12 +157,19 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         if self.last_tap_time is not None:
             cooldown_remaining = self.tap_cooldown - (now - self.last_tap_time)
             if cooldown_remaining > 0:
-                TAP_DEBUG("detectTap",
-                    f"COOLDOWN active | remaining={cooldown_remaining:.3f}s "
-                    f"peakMag={peak_magnitude:.2f}"
-                )
+                # Edge-triggered: log only the FIRST chunk in the cooldown window,
+                # not every chunk for the full 0.5 s.  ~43 Hz × 0.5 s = ~22 redundant
+                # lines per cooldown otherwise.
+                if not getattr(self, "_cooldown_logged", False):
+                    TAP_DEBUG("detectTap",
+                        f"COOLDOWN active | remaining={cooldown_remaining:.3f}s "
+                        f"peakMag={peak_magnitude:.2f}"
+                    )
+                    self._cooldown_logged = True
                 self.tap_detected = False
                 return
+            else:
+                self._cooldown_logged = False
 
         # Update status when ready and waiting for the first tap (mirrors Swift).
         if self.current_tap_count == 0 and "Initializing" in self.status_message:
@@ -190,13 +187,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             peak_magnitude > effective_falling
             if self.is_above_threshold
             else peak_magnitude > effective_rising
-        )
-
-        TAP_DEBUG("detectTap",
-            f"HYSTERESIS eval | peakMag={peak_magnitude:.2f} "
-            f"wasAbove={self.is_above_threshold} nowAbove={currently_above} "
-            f"risingThresh={effective_rising:.2f} fallingThresh={effective_falling:.2f} "
-            f"isDetecting={self.is_detecting} currentTapCount={self.current_tap_count}"
         )
 
         # Update status message when signal settles after a tap in multi-tap mode
@@ -286,50 +276,39 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self.handle_plate_tap_detection(mag_y_db, freq)
             return
 
-        # Guitar mode — store spectrum, start decay tracking, schedule finish.
-        # Store (magnitudes, frequencies, captureTime) tuple — mirrors Swift:
-        #   capturedTaps.append((magnitudes: magnitudes, frequencies: frequencies, captureTime: time))
-        import datetime as _dt_td
-        self.captured_taps.append((list(mag_y_db), list(freq), _dt_td.datetime.now()))
-        self.current_tap_count = len(self.captured_taps)
-        self.tap_progress = min(1.0, float(self.current_tap_count) / max(self.number_of_taps, 1))
-
+        # Guitar mode — start a gated raw-PCM capture aligned to the tap onset.
+        # Detection uses RMS-based edge (~23 ms resolution); the captured window
+        # is one full fft_size buffer that begins ~pre_roll_ms before the trigger.
+        # The FFT is computed inside finish_guitar_gated_capture once the window
+        # fills, then appended to captured_taps. This eliminates the variability
+        # caused by where a tap happens to fall within the live FFT framing.
         TAP_DEBUG("handleTapDetection",
-            f"GUITAR TAP STORED | "
-            f"currentTapCount={self.current_tap_count} numberOfTaps={self.number_of_taps} "
-            f"tapProgress={self.tap_progress:.2f}"
+            f"GUITAR — starting gated capture "
+            f"capturedTaps={len(self.captured_taps)}/{self.number_of_taps}"
         )
 
-        self.tapCountChanged.emit(self.current_tap_count, self.number_of_taps)
-
-        # Start decay tracking for ring-out time measurement
-        # (mirrors Swift startDecayTracking() call in handleTapDetection).
+        # Start decay tracking immediately (still uses RMS level, independent of
+        # spectrum capture). Mirrors Swift startDecayTracking() at tap-fire time.
         self.start_decay_tracking()
 
-        # Status message (mirrors Swift lines 282-286).
-        if self.current_tap_count < self.number_of_taps:
+        # Provisional status update — final status is emitted after gated capture
+        # completes and the captured_taps list grows.
+        provisional_count = len(self.captured_taps) + 1
+        if provisional_count < self.number_of_taps:
             self._set_status_message(
-                f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
+                f"Tap {provisional_count}/{self.number_of_taps} capturing..."
             )
         else:
             self._set_status_message("All taps captured. Processing...")
 
-        # Set capture_timer_active = True for every tap — mirrors Swift setting
-        # captureTimer on every tap (line 276: captureTimer?.invalidate(); captureTimer = Timer...)
-        # so that captureTimer != nil is true during the ring-out window after each tap.
-        # This allows analyze_magnitudes to keep running and show peaks during ring-out.
+        # capture_timer_active flag — leave True so analyze_magnitudes keeps
+        # rendering the live spectrum during the ring-out window.
         self.capture_timer_active = True
 
-        # If all taps collected: schedule processMultipleTaps after captureWindow.
-        # (mirrors Swift: captureTimer fires finishCapture(), then processMultipleTaps().)
-        # QTimer.singleShot fires on the main thread.
-        if self.current_tap_count >= self.number_of_taps:
-            QtCore.QTimer.singleShot(int(self.capture_window * 1000), self._finish_capture)
-        else:
-            # Re-enable detection after cooldown for next tap
-            # (mirrors Swift lines 294-322).
-            cooldown = self.tap_cooldown
-            QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_reenable_guitar)
+        # Open the guitar gated capture. _accumulate_gated_samples will fill the
+        # accumulator over the next fft_size samples and emit gatedCaptureComplete,
+        # which routes to finish_guitar_gated_capture (in spectrum_capture mixin).
+        self.start_guitar_gated_capture()
 
     # ------------------------------------------------------------------ #
     # _finish_capture — mirrors Swift finishCapture() + processMultipleTaps()
@@ -362,10 +341,11 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         the main thread.
         Mirrors Swift handleTapDetection re-enable closure dispatched with
         DispatchQueue.main.asyncAfter.
-        Uses _current_peak_magnitude_db (instantaneous FFT peak) — mirrors
-        Swift fftAnalyzer.peakMagnitude read in the re-enable closure.
+        Uses _current_input_level_db (per-chunk RMS, ~43 Hz) — guitar
+        detection now runs on RMS, so the seed for is_above_threshold must
+        come from the same source the rising-edge detector reads.
         """
-        current_level = self._current_peak_magnitude_db
+        current_level = self._current_input_level_db
         falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
         if current_level <= falling_threshold:
             self.is_above_threshold = False
@@ -588,13 +568,13 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         level_db = float(rms_amp) - 100.0
         self.track_decay_fast(level_db)
 
-        # Guitar-mode tap detection only — plate/brace is driven by
-        # _on_rms_level_changed at ~43 Hz via rmsLevelChanged signal.
-        # Mirrors Swift Combine routing: fftAnalyzer.$magnitudes → detectTap.
-        if self.is_detecting and not self.is_detection_paused and not self.is_measurement_complete:
-            meas_type = _tds.measurement_type()
-            if meas_type != _MT.PLATE and meas_type != _MT.BRACE:
-                self.detect_tap(float(fft_peak_amp) - 100.0, mag_y_db, self.freq)
+        # Tap detection for ALL modes is now driven by _on_rms_level_changed
+        # (~43 Hz, per-chunk RMS).  Earlier the guitar path detected via FFT
+        # peak here (~2.7 Hz), but that resolution was coarser than the
+        # inter-tap interval for closely-spaced taps and produced unreliable
+        # rising/falling edges. Spectrum capture is now triggered by RMS edges
+        # and the captured window is a full fft_size buffer aligned to the
+        # tap onset (see start_guitar_gated_capture).
 
         # Emit spectrum for the view to draw.
         if self._display_mode == AnalysisDisplayMode.LIVE:
@@ -626,17 +606,20 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
     @Slot(int)
     def _on_rms_level_changed(self, rms_amp: int) -> None:
-        """Plate/brace tap detection driven at ~43 Hz from per-chunk RMS level.
+        """Tap-detection driver for ALL modes at ~43 Hz from per-chunk RMS.
 
         Mirrors Swift's Combine sink on fftAnalyzer.$inputLevelDB which fires
-        every 1024 samples (~43 Hz).  Guitar-mode tap detection stays in
-        on_fft_frame (~2.7 Hz) because FFT-peak magnitude is required there.
+        every 1024 samples (~43 Hz).  Guitar mode now detects from RMS too —
+        previously it ran inside on_fft_frame at ~2.7 Hz which was coarser
+        than the inter-tap interval for files with closely-spaced taps.
+
+        For guitar mode the detected rising edge starts a gated raw-PCM
+        capture (start_guitar_gated_capture) that retroactively assembles
+        an fft_size-aligned spectrum starting just before the tap onset.
 
         Args:
             rms_amp: Per-chunk RMS level on 0-100 scale (dBFS + 100).
         """
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
 
         # Cache instantaneous level — mirrors Swift fftAnalyzer.inputLevelDB.
         # Must be stored before the early-return guards so _do_reenable_detection
@@ -644,9 +627,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self._current_input_level_db = float(rms_amp) - 100.0
 
         if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
-            return
-        meas_type = _tds.measurement_type()
-        if meas_type != _MT.PLATE and meas_type != _MT.BRACE:
             return
         peak_mag = self._current_input_level_db
         self.detect_tap(peak_mag, self._current_mag_y_db, self.freq)

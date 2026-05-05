@@ -304,6 +304,23 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         """
         import soundfile as _sf
 
+        # Cancel any in-flight previous playback worker BEFORE setting up a new one.
+        #
+        # Without this, two _playback_worker threads end up writing to self.queue
+        # concurrently when the user opens a second file before the first finishes
+        # (e.g. tap-count = 1, play, change tap-count = 5, play again).  Worse:
+        # when the OLD worker eventually exhausts its sample buffer it executes
+        # `self.is_playing_file = False`, which then breaks the NEW worker's loop
+        # condition and silently truncates the new playback mid-file.
+        #
+        # We tell the old worker to exit by clearing is_playing_file (its loop
+        # guard), then bounded-join so it actually exits before we proceed.
+        # Swift's AVAudioEngine handles this via engine.stop()/start() implicitly.
+        prev_worker = getattr(self, "_file_playback_thread", None)
+        if prev_worker is not None and prev_worker.is_alive():
+            self.is_playing_file = False
+            prev_worker.join(timeout=0.5)
+
         # Stop the PortAudio stream so new_frame() doesn't race with the file thread.
         with self._stop_lock:
             self.is_stopped = True
@@ -358,29 +375,54 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
         def _playback_worker() -> None:
             """Pace audio chunks into self.queue at real-time speed, then restart the mic."""
+            from utilities.logging import TAP_DEBUG as _td
             n_samples = len(mono)
             idx = 0
             chunk_duration = chunksize / file_rate  # seconds per chunk
+            expected_duration_s = n_samples / float(file_rate)
+            _td("file_playback",
+                f"START | path={self.playing_file_name} "
+                f"samples={n_samples} rate={int(file_rate)}Hz "
+                f"chunksize={chunksize} chunkDuration={chunk_duration*1000:.1f}ms "
+                f"expectedDuration={expected_duration_s:.3f}s "
+                f"fftSize={fft_size} expectedFftFrames={n_samples // fft_size}"
+            )
+            t0 = time.time()
+            chunks_pumped = 0
             while idx < n_samples:
                 if not self.is_playing_file:
+                    _td("file_playback",
+                        f"INTERRUPTED | idx={idx}/{n_samples} chunksPumped={chunks_pumped}"
+                    )
                     break
                 chunk = mono[idx: idx + chunksize]
                 if len(chunk) == 0:
                     break
                 self.queue.put(chunk)
                 idx += chunksize
+                chunks_pumped += 1
                 time.sleep(chunk_duration)
-            # Signal end-of-file.
-            self.is_playing_file = False
+            elapsed = time.time() - t0
+            _td("file_playback",
+                f"END | chunksPumped={chunks_pumped} samplesPumped={idx} "
+                f"elapsed={elapsed:.3f}s expected={expected_duration_s:.3f}s "
+                f"realtimeRatio={elapsed/max(expected_duration_s,1e-9):.3f}x"
+            )
 
             # Wait 0.3 s to let the last chunks drain through the FFT pipeline before
             # restarting the mic — mirrors Swift asyncAfter(fileDuration + 0.3s).
             time.sleep(0.3)
 
-            # Guard: if a new file was opened while we were sleeping, our thread is
-            # no longer the active one — skip the mic restart.
+            # Guard: if a new file was opened while we were sleeping (or pre-empted
+            # us), our thread is no longer the active one — skip the mic restart
+            # AND skip clearing is_playing_file so we don't break the new worker's
+            # loop condition.  Mirrors Swift's `let scheduledPlayer = player`
+            # identity guard.
             if self._file_playback_thread is not sentinel[0]:
                 return
+
+            # Only the active worker reaches here — safe to signal end-of-file.
+            self.is_playing_file = False
 
             # Force-flush any partial audio still in the processing thread's input buffer.
             #

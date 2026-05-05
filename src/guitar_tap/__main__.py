@@ -9,6 +9,13 @@ import os
 import sys
 import traceback
 
+# Catch C-level crashes (segfaults, abort, illegal instruction) and dump a
+# stack trace for ALL threads to stderr.  Without this, Qt/PySide6 segfaults
+# disappear silently and the app exits with no output.  Must be enabled
+# before any heavy imports so it's already armed when the crash happens.
+import faulthandler
+faulthandler.enable(file=sys.stderr, all_threads=True)
+
 # Ensure models/ and views/ are importable as top-level packages when running
 # as `python -m guitar_tap`. __file__ is src/guitar_tap/__main__.py so
 # os.path.dirname(__file__) is src/guitar_tap/.
