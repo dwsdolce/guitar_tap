@@ -546,10 +546,15 @@ class TapToneAnalyzer(
                 self._gated_capture_phase = None  # None = guitar mode
                 self._gated_capture_active = True
                 pre_roll_count = len(self._gated_accum)
+                # DIAG: hash first 16 samples of pre-roll to verify content identity
+                _diag_hash = sum(self._gated_accum[:16]) if pre_roll_count >= 16 else 0.0
+            # DIAG: total samples consumed by the processing thread
+            _diag_consumed = getattr(self.mic.proc_thread, '_diag_total_samples', 0)
             from guitar_tap.utilities.logging import TAP_DEBUG
             TAP_DEBUG("levelCrossing",
                 f"Gated capture started on audio queue | "
-                f"pre-roll {pre_roll_count} samples, target {fft_size}")
+                f"pre-roll {pre_roll_count} samples, target {fft_size}, "
+                f"fileSamplePos={_diag_consumed}, preRollHash={_diag_hash:.6f}")
 
         self.mic.proc_thread._level_crossing_handler = _level_crossing_handler
         self.mic.proc_thread._level_crossing_threshold = self.tap_detection_threshold

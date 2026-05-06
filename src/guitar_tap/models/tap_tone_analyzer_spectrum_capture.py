@@ -169,11 +169,25 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             phase = self._gated_capture_phase
             self._gated_accum = []
 
+        # DIAG: log capture completion details
+        _diag_consumed = 0
+        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+            _diag_consumed = getattr(self.mic.proc_thread, '_diag_total_samples', 0)
+        _cap_arr = np.array(captured, dtype=np.float32)
+        _diag_rms = float(np.sqrt(np.mean(_cap_arr ** 2))) if len(captured) > 0 else 0.0
+        _diag_hash = float(np.sum(_cap_arr[:16])) if len(captured) >= 16 else 0.0
+        from guitar_tap.utilities.logging import TAP_DEBUG as _td2
+        _td2("gatedAccum",
+             f"CAPTURE COMPLETE | samples={len(captured)} "
+             f"fileSamplePos={_diag_consumed} "
+             f"captureRMS={20*np.log10(max(_diag_rms,1e-10)):.2f}dB "
+             f"first16hash={_diag_hash:.6f}")
+
         # Emit on background thread; Qt queued connection delivers on main thread.
         # gatedCaptureComplete signal is still on proc_thread as a delivery mechanism.
         if self.mic is not None and hasattr(self.mic, "proc_thread"):
             self.mic.proc_thread.gatedCaptureComplete.emit(
-                np.array(captured, dtype=np.float32),
+                _cap_arr,
                 sample_rate,
                 phase,
             )
@@ -466,10 +480,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.captured_taps.append((list(magnitudes_db), freqs, _dt.datetime.now()))
 
         peak_db = float(np.max(magnitudes_db))
+        # DIAG: spectrum fingerprint — sum of first 100 magnitude bins
+        _diag_spec_hash = float(np.sum(magnitudes_db[:100]))
+        _diag_sample_hash = float(np.sum(samples[:16].astype(np.float64))) if len(samples) >= 16 else 0.0
         from utilities.logging import TAP_DEBUG as _td
         _td("guitar_gated_capture",
             f"FINISHED | newCount={len(self.captured_taps)}/{self.number_of_taps} "
-            f"capturedPeakMag={peak_db:.2f}dB samples={len(samples)}"
+            f"capturedPeakMag={peak_db:.2f}dB samples={len(samples)} "
+            f"specHash={_diag_spec_hash:.4f} sampleHash={_diag_sample_hash:.6f}"
         )
 
         self.current_tap_count = len(self.captured_taps)

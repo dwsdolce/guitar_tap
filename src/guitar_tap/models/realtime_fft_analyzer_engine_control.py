@@ -369,6 +369,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             proc._input_buffer_len = 0
             proc._fft_frame_counter = 0
             proc._samples_consumed = 0
+            proc._diag_total_samples = 0  # DIAG: reset sample counter for file playback
 
             # Release the processing thread so it resumes pulling from the queue.
             proc._drain_event.clear()

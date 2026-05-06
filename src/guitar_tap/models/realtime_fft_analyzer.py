@@ -304,6 +304,9 @@ class _FftProcessingThread(QtCore.QThread):
             enter_now = time.time()
             chunk_f32 = chunk.astype(np.float32)
 
+            # DIAG: running total of samples consumed from the audio source
+            self._diag_total_samples = getattr(self, '_diag_total_samples', 0) + len(chunk_f32)
+
             # Accumulate samples — mirrors Swift inputBuffer.append(contentsOf: samples).
             self._input_buffer.append(chunk_f32)
             self._input_buffer_len += len(chunk_f32)

@@ -497,20 +497,27 @@ class TapToneAnalyzerControlMixin:
 
         self.mic.start_from_file(path)
 
-        # Clear the pre-roll buffer now that mic.start_from_file() has stopped
-        # the PortAudio stream, drained the queue, and completed the drain
-        # barrier.  start_tap_sequence() already cleared _pre_roll_buf, but
-        # between that call and mic.start_from_file() the processing thread
+        # Pre-fill the pre-roll buffer with silence now that mic.start_from_file()
+        # has stopped the PortAudio stream, drained the queue, and completed
+        # the drain barrier.  start_tap_sequence() already cleared _pre_roll_buf,
+        # but between that call and mic.start_from_file() the processing thread
         # may have processed additional mic chunks that refilled the pre-roll
         # with stale mic audio.  Both calls run on the main thread — just like
         # Swift where startTapSequence() and startFromFile() run on the main
         # thread with audioProcessingQueue.sync{} as the drain barrier — so
         # clearing here after the drain is the same-thread guarantee that no
         # mic audio contaminates the pre-roll when file playback begins.
-        # Without this, tap 1 in a file with < 200 ms of silence before the
-        # first transient has its spectrum contaminated by residual mic noise.
+        #
+        # We pre-fill with zeros (silence) rather than leaving the buffer empty
+        # so that the first tap's level-crossing handler sees a full pre-roll
+        # window.  Without this, if the tap transient arrives in the very first
+        # chunk (1024 samples), the handler snapshots only 1024 pre-roll samples
+        # instead of the expected ~9600, producing a different capture window
+        # than subsequent taps.  The audio before the first tap in a file is
+        # silence, so zero-padding is the correct content.
         with self._gated_lock:
-            self._pre_roll_buf = []
+            pre_roll_count = int(self.mic.rate * self._pre_roll_seconds)
+            self._pre_roll_buf = [0.0] * pre_roll_count
 
         # Recompute the frequency axis now that mic.rate reflects the file's sample rate.
         # Mirrors Swift updateFrequencyBins() called synchronously inside startFromFile
