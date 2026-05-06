@@ -809,13 +809,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Peak Min ──────────────────────────────────────────────────────
         peak_min_val = AS.AppSettings.threshold()   # 0-100 scale
-        self.threshold_slider, self.peak_min_readout, self.peak_min_reset_btn = \
+        self.peak_min_slider, self.peak_min_readout, self.peak_min_reset_btn = \
             _db_slider_group(
                 "Peak Min:", -100, -20, peak_min_val, 40,
                 "Minimum magnitude a spectral peak must have to be reported\n"
                 "(shown as green line on the spectrum)",
             )
-        self.peak_min_reset_btn.clicked.connect(lambda: self.threshold_slider.setValue(-60))
+        self.peak_min_reset_btn.clicked.connect(lambda: self.peak_min_slider.setValue(-60))
 
         hl.addStretch()
 
@@ -1791,7 +1791,7 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas = self.fft_canvas
 
         # Peak Min slider (dB) ↔ canvas (0-100 scale)
-        self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
+        self.peak_min_slider.valueChanged.connect(self._on_peak_min_changed)
 
         # Tap detection threshold slider (dB) ↔ canvas (0-100 scale)
         self.tap_threshold_slider.valueChanged.connect(self._on_tap_threshold_changed)
@@ -2434,7 +2434,7 @@ class MainWindow(QtWidgets.QMainWindow):
     # Threshold / hysteresis
     # ================================================================
 
-    def _on_threshold_changed(self, db_val: int) -> None:
+    def _on_peak_min_changed(self, db_val: int) -> None:
         self.fft_canvas.set_threshold(db_val + 100)
         AS.AppSettings.set_threshold(db_val + 100)
         AS.AppSettings.set_peak_threshold(float(db_val))  # keep single source of truth in sync — mirrors Swift peakThreshold didSet
@@ -2915,7 +2915,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # back to the factory default if never explicitly saved by the user).
         self.fft_canvas._reset_both_to_saved()
         self.reset_auto_selection_btn.setVisible(mt.is_guitar)
-        self.threshold_slider.setEnabled(mt.is_guitar)
+        self.peak_min_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
         self.peak_min_reset_btn.setEnabled(mt.is_guitar)
         self.peak_widget.set_is_guitar(mt.is_guitar)
@@ -3459,7 +3459,7 @@ class MainWindow(QtWidgets.QMainWindow):
             min_db_val = float(_y_range[0])
             max_db_val = float(_y_range[1])
         except Exception:
-            min_db_val = float(self.threshold_slider.value())
+            min_db_val = float(self.peak_min_slider.value())
             max_db_val = 0.0
 
         # ── Device identity — mirrors Swift fft.selectedInputDevice?.name / fft.selectedInputDevice?.uid ──
@@ -3729,16 +3729,16 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         # ── Threshold / Peak Min controls ──────────────────────────────────────
-        # Disabled (and dimmed) during comparison — mirrors Swift:
-        #   .disabled(tap.displayMode == .comparison) on Threshold HStack
-        #   .disabled(!isGuitar || tap.displayMode == .comparison) on Peak Min HStack
-        _mt_is_guitar = TDS.measurement_type().is_guitar
-        _thresh_enabled = not is_comparing
-        _peak_min_enabled = _mt_is_guitar and not is_comparing
-        self.tap_threshold_slider.setEnabled(_thresh_enabled)
-        self.tap_threshold_readout.setEnabled(_thresh_enabled)
-        self.tap_threshold_reset_btn.setEnabled(_thresh_enabled)
-        self.threshold_slider.setEnabled(_peak_min_enabled)
+        # Threshold remains enabled during comparison so the user can adjust it
+        # for the next capture without leaving comparison first.
+        # Peak Min is disabled during comparison — adjusting it causes peak
+        # annotations to appear on the comparison overlay, which is confusing
+        # and has no meaningful effect on the saved spectra being compared.
+        # Mirrors Swift: no .disabled on Threshold HStack;
+        #   .disabled(!isGuitar || displayMode == .comparison) on Peak Min HStack.
+        mt = TDS.measurement_type()
+        _peak_min_enabled = mt.is_guitar and not is_comparing
+        self.peak_min_slider.setEnabled(_peak_min_enabled)
         self.peak_min_readout.setEnabled(_peak_min_enabled)
         self.peak_min_reset_btn.setEnabled(_peak_min_enabled)
 
@@ -3979,7 +3979,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # load_measurement() already wrote the model attrs; read them back to
         # drive the Qt widgets — mirrors Swift .onReceive on loaded* properties.
         self.tap_threshold_slider.setValue(int(analyzer.tap_detection_threshold))
-        self.threshold_slider.setValue(int(analyzer.peak_threshold))
+        self.peak_min_slider.setValue(int(analyzer.peak_threshold))
         self.tap_num_spin.setValue(analyzer.number_of_taps)
 
         # ── Configure material peak widget columns ────────────────────────────
@@ -4168,7 +4168,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 export_min_db = float(y_range[0])
                 export_max_db = float(y_range[1])
             except Exception:
-                export_min_db = float(self.threshold_slider.value())
+                export_min_db = float(self.peak_min_slider.value())
                 export_max_db = float(max(mags)) + 10.0 if mags else 0.0
 
             # Build material_spectra — mirrors Swift's materialSpectra computed property
@@ -4301,7 +4301,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 min_db_val = float(y_range[0])
                 max_db_val = float(y_range[1])
             except Exception:
-                min_db_val = float(self.threshold_slider.value())
+                min_db_val = float(self.peak_min_slider.value())
                 max_db_val = 0.0
 
             # ── Peaks — use stored ResonantPeak objects when available, fall back to live analyzer ─
@@ -4737,7 +4737,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 min_db_val = float(y_range[0])
                 max_db_val = float(y_range[1])
             except Exception:
-                min_db_val = float(self.threshold_slider.value())
+                min_db_val = float(self.peak_min_slider.value())
                 max_db_val = 0.0
 
             # Use frozen spectrum (display-mode-independent).
@@ -6325,8 +6325,8 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_peak_threshold(float(final_db))
             AS.AppSettings.set_threshold(final_db + 100)
             slider_val = max(-100, min(-20, final_db))
-            if self.threshold_slider.value() != slider_val:
-                self.threshold_slider.setValue(slider_val)
+            if self.peak_min_slider.value() != slider_val:
+                self.peak_min_slider.setValue(slider_val)
 
             # Max peaks
             try:
