@@ -6,9 +6,11 @@ Mirrors Swift UserAssignedMode (UserAssignedMode.swift).
 Controls whether a peak's displayed mode label comes from the automatic
 GuitarMode classifier (.auto) or from a user-supplied string (.assigned).
 
-The underlying GuitarMode classification — which governs the peak's colour,
-icon, and in-range indicator — is **never** altered by a UserAssignedMode
-override; only the text shown in the annotation and results table is changed.
+When the override label matches a predefined GuitarMode.display_name, the
+peak's colour, icon, and in-range indicator update to match the overridden
+mode.  When the label is freeform text that does not match any predefined
+mode, a distinct user-defined colour (GuitarMode.USER_DEFINED_COLOR) and
+icon (GuitarMode.USER_DEFINED_ICON) are used instead.
 
 Persistence:
   .auto     → {"type": "auto"}
@@ -30,8 +32,8 @@ from typing import Any
 class UserAssignedMode:
     """Represents whether a peak's mode label is auto-detected or manually overridden by the user.
 
-    The underlying ``GuitarMode`` classification (used for colour, icon, and frequency-range
-    checks) is never altered — only the displayed text string can be overridden.
+    When the label matches a predefined mode, the peak's colour and icon update to that mode.
+    Freeform labels use a distinct user-defined colour and icon.
 
     Mirrors Swift ``UserAssignedMode`` enum (UserAssignedMode.swift).
 

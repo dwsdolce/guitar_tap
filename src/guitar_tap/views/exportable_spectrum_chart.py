@@ -244,8 +244,16 @@ class ExportableSpectrumChart:
         """Mirrors ``private func peakColor(for peak: ResonantPeak) -> Color``."""
         from PySide6 import QtGui
         if self.is_guitar:
+            # Freeform user-defined label → distinct teal colour.
+            peak_id = getattr(peak, "id", None)
+            override_label = self.mode_overrides.get(peak_id)
+            if override_label and self._GuitarMode is not None:
+                resolved = self._GuitarMode.from_mode_string(override_label)
+                if resolved is self._GuitarMode.UNKNOWN and override_label != "Unknown":
+                    r, g, b = self._GuitarMode.USER_DEFINED_COLOR
+                    return QtGui.QColor(r, g, b)
             # _mode_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode].
-            mode = self._mode_map.get(getattr(peak, "id", None))
+            mode = self._mode_map.get(peak_id)
             if mode is not None and self._GuitarMode is not None:
                 r, g, b = mode.color
                 return QtGui.QColor(r, g, b)

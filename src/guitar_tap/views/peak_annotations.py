@@ -211,7 +211,11 @@ class FftAnnotations(QtCore.QObject):
     # ── item factories ────────────────────────────────────────────────────────
 
     def _mode_color(self, mode_str: str) -> tuple[int, int, int]:
-        return gm.GuitarMode.from_mode_string(mode_str).color
+        resolved = gm.GuitarMode.from_mode_string(mode_str)
+        if resolved is gm.GuitarMode.UNKNOWN and mode_str and mode_str != "Unknown":
+            # Freeform user-defined label → distinct teal color.
+            return gm.GuitarMode.USER_DEFINED_COLOR
+        return resolved.color
 
     def _make_text_item(
         self,
@@ -334,22 +338,6 @@ class FftAnnotations(QtCore.QObject):
         )
 
     # ── show / hide ───────────────────────────────────────────────────────────
-
-    def show_annotation(self, freq: float) -> None:
-        """Show a previously hidden annotation."""
-        idx = self.find_annotation_index(freq)
-        if idx >= 0:
-            ann_dict = self.annotations[idx]
-            if ann_dict["annotation"] is None:
-                ann, arrow_line = self.create_annotation(
-                    freq,
-                    ann_dict["mag"],
-                    ann_dict["html"],
-                    ann_dict["mode_str"],
-                    ann_dict["xytext"],
-                )
-                ann_dict["annotation"] = ann
-                ann_dict["arrow_line"] = arrow_line
 
     def hide_annotation(self, freq: float) -> None:
         """Hide the annotation for *freq* without removing it from the list."""

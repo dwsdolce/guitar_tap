@@ -272,12 +272,13 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         """Stop the audio stream.
 
         Mirrors Swift RealtimeFFTAnalyzer.stop() (+EngineControl.swift).
+        Uses abort() instead of stop() — see _close_stream_only() docstring.
         """
         with self._stop_lock:
             self.is_stopped = True
         self.is_playing_file = False
         self.playing_file_name = None  # Mirrors Swift stop(): self?.playingFileName = nil
-        self.stream.stop()
+        self.stream.abort()
 
     # MARK: - WAV File Playback (mirrors Swift startFromFile(_ url:))
 

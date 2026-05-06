@@ -37,7 +37,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
     clearAnnotations: QtCore.Signal = QtCore.Signal()
     hideAnnotations: QtCore.Signal = QtCore.Signal()
     hideAnnotation: QtCore.Signal = QtCore.Signal(float)
-    showAnnotation: QtCore.Signal = QtCore.Signal(float)
     userModifiedSelectionChanged: QtCore.Signal = QtCore.Signal(bool)
     modeColorsChanged: QtCore.Signal = QtCore.Signal(object)  # dict[float, tuple[int,int,int]]
 
@@ -110,6 +109,45 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._annotation_mode = mode
         if self._peaks:
             self.refresh_annotations()
+
+    # MARK: - Centralised annotation helpers
+    # Mirrors Swift's visiblePeaks computed property: a single place that
+    # decides whether a peak should have a visible annotation.
+
+    def _should_show_annotation(self, index: QtCore.QModelIndex) -> bool:
+        """Return True if *index* should have a visible annotation.
+
+        Centralises the visibility decision that was previously duplicated in
+        ``update_annotation``, ``refresh_annotations`` and
+        ``update_data_with_modes``.  The rule mirrors Swift's
+        ``visiblePeaks`` computed property:
+
+        * ``NONE``     → never show
+        * ``ALL``      → always show
+        * ``SELECTED`` → show only if the peak's show/selected flag is set
+        """
+        if self._annotation_mode == AVM.NONE:
+            return False
+        if self._annotation_mode == AVM.ALL:
+            return True
+        return self.show_value_bool(index)
+
+    def _emit_annotation(self, index: QtCore.QModelIndex) -> None:
+        """Emit the correct annotation signal for *index*.
+
+        If the peak should be visible (per ``_should_show_annotation``),
+        emits ``annotationUpdate``; otherwise emits ``hideAnnotation``.
+        """
+        freq = self.freq_value(index)
+        if self._should_show_annotation(index):
+            mag = self.magnitude_value(index)
+            mode = self.mode_value(index)
+            html = self.annotation_html(freq, mag, mode)
+            row = index.row()
+            peak_id = self._peaks[row].id if row < len(self._peaks) else ""
+            self.annotationUpdate.emit(peak_id, freq, mag, html, mode)
+        else:
+            self.hideAnnotation.emit(freq)
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the mode."""
@@ -278,9 +316,14 @@ class PeaksModel(QtCore.QAbstractTableModel):
             r, g, b = self._MATERIAL_MODE_COLORS[mode]
             rows.append(f'<b style="color:rgb({r},{g},{b});">{mode}</b>')
         else:
-            # Guitar: use GuitarMode classifier for colour and display name
+            # Guitar: use GuitarMode classifier for colour and display name.
+            # Freeform user-defined labels → distinct teal colour.
             guitar_mode = gm.GuitarMode.from_mode_string(mode)
-            r, g, b = guitar_mode.color
+            if (guitar_mode is gm.GuitarMode.UNKNOWN
+                    and mode and mode != "Unknown"):
+                r, g, b = gm.GuitarMode.USER_DEFINED_COLOR
+            else:
+                r, g, b = guitar_mode.color
             display = gm.mode_display_name(mode) or ""
             if display:
                 rows.append(f'<b style="color:rgb({r},{g},{b});">{display}</b>')
@@ -439,23 +482,19 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._emit_mode_colors()
         self.layoutChanged.emit()
 
-        # Refresh annotations based on current annotation_mode:
-        # NONE     → hide everything
-        # SELECTED → show peaks whose show_value_bool is True
-        # ALL      → show every peak regardless of selection
+        # Refresh annotations using the centralised visibility check.
         self.clearAnnotations.emit()
-        if self.annotation_mode == AVM.NONE:
-            return
-
         for row in range(self._data.shape[0]):
             idx = self.index(row, 0)
-            freq = self.freq_value(idx)
-            mag  = self.magnitude_value(idx)
-            mode = self.mode_value(idx)
-            peak_id = peaks[row].id if row < len(peaks) else ""
-            show = self.show_value_bool(idx)
-            if self.annotation_mode == AVM.ALL or show:
-                self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
+            if self._should_show_annotation(idx):
+                freq = self.freq_value(idx)
+                mag  = self.magnitude_value(idx)
+                mode = self.mode_value(idx)
+                peak_id = peaks[row].id if row < len(peaks) else ""
+                self.annotationUpdate.emit(
+                    peak_id, freq, mag,
+                    self.annotation_html(freq, mag, mode), mode,
+                )
         self.annotationsRefreshed.emit()
 
     def refresh_annotations(self) -> None:
@@ -465,32 +504,28 @@ class PeaksModel(QtCore.QAbstractTableModel):
         the underlying peak data, so the canvas re-renders annotations with
         updated text.  Mirrors Swift where mutating peakModeOverrides (@Published)
         invalidates visiblePeaks and causes the chart to re-render.
+
+        Uses ``_should_show_annotation`` so visibility logic is centralised.
         """
         if self._data is None or self._data.shape[0] == 0:
             return
         self.clearAnnotations.emit()
-        if self._annotation_mode == AVM.NONE:
-            return
         for row in range(self._data.shape[0]):
             idx = self.index(row, 0)
-            freq = self.freq_value(idx)
-            mag  = self.magnitude_value(idx)
-            mode = self.mode_value(idx)
-            peak_id = self._peaks[row].id if row < len(self._peaks) else ""
-            if self._annotation_mode == AVM.ALL or self.show_value_bool(idx):
-                self.annotationUpdate.emit(peak_id, freq, mag, self.annotation_html(freq, mag, mode), mode)
+            if self._should_show_annotation(idx):
+                freq = self.freq_value(idx)
+                mag  = self.magnitude_value(idx)
+                mode = self.mode_value(idx)
+                peak_id = self._peaks[row].id if row < len(self._peaks) else ""
+                self.annotationUpdate.emit(
+                    peak_id, freq, mag,
+                    self.annotation_html(freq, mag, mode), mode,
+                )
         self.annotationsRefreshed.emit()
 
     def clear_annotations(self) -> None:
         """Clear all annotations."""
         self.clearAnnotations.emit()
-
-    def show_annotations(self) -> None:
-        """Show annotations for peaks that are currently selected."""
-        for row in range(self._data.shape[0]):
-            idx = self.index(row, 0)
-            if self.show_value_bool(idx):
-                self.showAnnotation.emit(self.freq_value(idx))
 
     def select_all_peaks(self) -> None:
         """Set the show/selected flag on every peak and show its annotation."""
@@ -519,33 +554,13 @@ class PeaksModel(QtCore.QAbstractTableModel):
             self.user_has_modified_peak_selection = value
             self.userModifiedSelectionChanged.emit(value)
 
-    def show_all_annotations(self) -> None:
-        """Show annotations for every peak regardless of the show flag."""
-        for row in range(self.rowCount(QtCore.QModelIndex())):
-            idx = self.index(row, 0)
-            freq = self.freq_value(idx)
-            mag  = self.magnitude_value(idx)
-            mode = self.mode_value(idx)
-            html = self.annotation_html(freq, mag, mode)
-            peak_id = self._peaks[row].id if row < len(self._peaks) else ""
-            self.annotationUpdate.emit(peak_id, freq, mag, html, mode)
-
     def update_annotation(self, index: QtCore.QModelIndex) -> None:
-        """Update the annotation for the model index."""
-        freq = self.freq_value(index)
-        mag = self.magnitude_value(index)
-        show = self.show_value_bool(index)
-        mode = self.mode_value(index)
-        if show:
-            html = self.annotation_html(freq, mag, mode)
-            row = index.row()
-            peak_id = self._peaks[row].id if row < len(self._peaks) else ""
-            self.annotationUpdate.emit(peak_id, freq, mag, html, mode)
-            # print(f"PeaksModel: update_annotation: {annotation_text}")
-        else:
-            # Remove annotations
-            self.hideAnnotation.emit(freq)
-            # print(f"PeaksModel: update_annotation: remove")
+        """Update the annotation for a single peak at *index*.
+
+        Delegates to ``_emit_annotation`` which uses the centralised
+        ``_should_show_annotation`` visibility check.
+        """
+        self._emit_annotation(index)
 
     def setData(
         self,
@@ -570,7 +585,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
                         self._set_user_modified(True)
                     return True
                 case ColumnIndex.Modes.value:
-                    # print(f"PeaksModel: setData: Modes: index: {index.row()}, {index.column()}")
                     self.set_mode_value(index, value)
                     self.dataChanged.emit(
                         index, index, [QtCore.Qt.ItemDataRole.DisplayRole]

@@ -20,13 +20,26 @@ class TapToneAnalyzerAnalysisHelpersMixin:
     def peak_mode(self, peak) -> "GuitarMode":
         """Return the context-aware GuitarMode assigned to *peak*.
 
-        Looks the peak up in ``identified_modes`` (populated by
-        ``_apply_frozen_peak_state`` / classify pass).  Falls back to a
-        single-element ``GuitarMode.classify`` call for stale references.
+        If the user has overridden this peak's mode to a predefined GuitarMode,
+        return that mode so color/icon update everywhere.  Freeform labels that
+        do not match any predefined mode return UNKNOWN; views detect the
+        freeform case separately via has_manual_override + from_mode_string.
+
+        Falls back to ``identified_modes`` (populated by classify pass), then
+        to a single-element ``classify_all`` call for stale references.
 
         Mirrors Swift ``peakMode(for:)``.
         """
         from .guitar_mode import GuitarMode
+        # Check user override first.
+        override_label = self.peak_mode_overrides.get(peak.id)
+        if override_label:
+            overridden_mode = GuitarMode.from_mode_string(override_label)
+            if overridden_mode is not GuitarMode.UNKNOWN:
+                return overridden_mode
+            # Freeform label — return UNKNOWN; views use USER_DEFINED_COLOR.
+            return GuitarMode.UNKNOWN
+
         for entry in self.identified_modes:
             if entry.get("peak") and entry["peak"].id == peak.id:
                 return entry["mode"]

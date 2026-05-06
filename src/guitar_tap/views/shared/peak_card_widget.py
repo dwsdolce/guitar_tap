@@ -53,7 +53,12 @@ def _mag_color(mag_db: float) -> QtGui.QColor:
 
 
 def _mode_color(mode_str: str) -> QtGui.QColor:
-    r, g, b = gm.GuitarMode.from_mode_string(mode_str).color
+    resolved = gm.GuitarMode.from_mode_string(mode_str)
+    if resolved is gm.GuitarMode.UNKNOWN and mode_str and mode_str != "Unknown":
+        # Freeform user-defined label → distinct teal color.
+        r, g, b = gm.GuitarMode.USER_DEFINED_COLOR
+    else:
+        r, g, b = resolved.color
     return QtGui.QColor(r, g, b)
 
 
@@ -232,9 +237,14 @@ class PeakCardWidget(QtWidgets.QFrame):
         color = _mode_color(self._mode)
         r, g, b = color.red(), color.green(), color.blue()
 
-        # Mode icon chip
+        # Mode icon chip — freeform user-defined labels use a tag icon.
         guitar_mode = gm.GuitarMode.from_mode_string(self._mode)
-        pixmap = qta.icon(guitar_mode.icon, color=QtGui.QColor(r, g, b)).pixmap(
+        if (guitar_mode is gm.GuitarMode.UNKNOWN
+                and self._mode and self._mode != "Unknown"):
+            icon_name = gm.GuitarMode.USER_DEFINED_ICON
+        else:
+            icon_name = guitar_mode.icon
+        pixmap = qta.icon(icon_name, color=QtGui.QColor(r, g, b)).pixmap(
             QtCore.QSize(22, 22)
         )
         self._chip.setPixmap(pixmap)

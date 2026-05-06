@@ -276,9 +276,20 @@ class GuitarMode(Enum):
                 best_peak = next(p for p in peaks if p.id == best_id)
                 claimed_top_frequency = best_peak.frequency
 
+        # Classify unclaimed peaks.  Special case: if Top was already claimed,
+        # peaks in the Top/Back overlap zone above the claimed Top frequency
+        # should be classified as Back rather than Top.  The naive classify()
+        # checks Top before Back, so without this guard overlap-zone peaks
+        # always land on Top.
+        back_lo, back_hi = cls.BACK.mode_range(guitar_type)
         for peak in peaks:
             if peak.id not in result:
-                result[peak.id] = cls.classify(peak.frequency, guitar_type)
+                if (claimed_top_frequency is not None
+                        and peak.frequency > claimed_top_frequency
+                        and back_lo <= peak.frequency <= back_hi):
+                    result[peak.id] = cls.BACK
+                else:
+                    result[peak.id] = cls.classify(peak.frequency, guitar_type)
 
         return result
 
@@ -579,3 +590,12 @@ GuitarMode.additional_mode_labels = [
     "Helmholtz T(1,1)_1", "Top T(1,1)_2", "Back T(1,1)_3",
     "Cross Dipole T(2,1)", "Long Dipole T(1,2)", "Quadrapole T(2,2)", "Cross Tripole T(3,1)",
 ]
+
+# Display color for peaks with a freeform user-defined mode label
+# that does not match any predefined GuitarMode.
+# Mirrors Swift GuitarMode.userDefinedColor (.teal).
+GuitarMode.USER_DEFINED_COLOR = (0, 128, 128)
+
+# qtawesome icon for peaks with a freeform user-defined mode label.
+# Mirrors Swift GuitarMode.userDefinedIcon ("tag.fill").
+GuitarMode.USER_DEFINED_ICON = "fa5s.tag"

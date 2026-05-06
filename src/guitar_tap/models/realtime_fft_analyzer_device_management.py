@@ -423,11 +423,20 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
     # MARK: - Internal Helpers
 
     def _close_stream_only(self) -> None:
-        """Stop and close the audio stream without touching the hot-plug monitor."""
+        """Stop and close the audio stream without touching the hot-plug monitor.
+
+        Uses ``abort()`` (Pa_AbortStream) instead of ``stop()``
+        (Pa_StopStream) because Pa_StopStream waits for the audio I/O
+        callback to finish its current invocation.  On macOS, the
+        CoreAudio I/O thread can stall in native code, causing
+        Pa_StopStream to block the main thread indefinitely.
+        Pa_AbortStream terminates the stream immediately and avoids the
+        deadlock.
+        """
         with self._stop_lock:
             self.is_stopped = True
         try:
-            self.stream.stop()
+            self.stream.abort()
         except Exception:
             pass
         try:
