@@ -2411,6 +2411,12 @@ class MainWindow(QtWidgets.QMainWindow):
             "Click to cycle: Selected → None → All"
         )
         TDS.set_annotation_visibility_mode(next_mode)
+        # Mirrors Swift TapToneAnalyzer.cycleAnnotationVisibility() which
+        # sets `annotationVisibilityMode` on the analyzer.  Without this,
+        # `analyzer.visible_peaks` returns peaks under the init-time mode and
+        # the export paths render annotations that don't match the user's
+        # current toggle.
+        self.fft_canvas.analyzer.annotation_visibility_mode = next_mode
         self._apply_annotation_mode(next_mode)
 
     def _apply_annotation_mode(self, mode: AnnotationVisibilityMode) -> None:
@@ -4117,66 +4123,36 @@ class MainWindow(QtWidgets.QMainWindow):
             from datetime import datetime, timezone
             date_label = datetime.now(timezone.utc).isoformat()
 
-            peaks_list: list = []
-            # Selection/visibility parameters from the loaded measurement (if any).
-            _sel_long_id = None
-            _sel_cross_id = None
-            _sel_flc_id = None
-            _mode_overrides: dict = {}
-            _annotation_positions: dict = {}
-            try:
-                # Prefer the stored ResonantPeak objects (have full pitch data).
-                # Apply annotationVisibilityMode / selectedPeakIDs filtering
-                # exactly as render_spectrum_image_for_measurement does.
-                if self._loaded_resonant_peaks and self._loaded_measurement is not None:
-                    m_exp = self._loaded_measurement
-                    all_peaks = self._loaded_resonant_peaks
-                    visibility_mode = AnnotationVisibilityMode.from_string(
-                        m_exp.annotation_visibility_mode or "all"
-                    )
-                    selected_ids = set(
-                        m_exp.selected_peak_ids or [p.id for p in all_peaks]
-                    )
-                    if visibility_mode == AnnotationVisibilityMode.SELECTED:
-                        peaks_list = [p for p in all_peaks if p.id in selected_ids]
-                    elif visibility_mode == AnnotationVisibilityMode.NONE:
-                        peaks_list = []
-                    else:
-                        peaks_list = list(all_peaks)
-                    _sel_long_id = m_exp.selected_longitudinal_peak_id
-                    _sel_cross_id = m_exp.selected_cross_peak_id
-                    _sel_flc_id = m_exp.selected_flc_peak_id
-                    _mode_overrides = m_exp.peak_mode_overrides or {}
-                    # Always read annotation positions from the live analyzer state —
-                    # mirrors Swift createExportableSpectrumView() which always passes
-                    # tap.peakAnnotationOffsets (populated by loadMeasurement or by dragging).
-                    # _restore_measurement populates peak_annotation_offsets from the
-                    # measurement's saved offsets, so this is the single source of truth.
-                    # Pass as absolute data-space positions (annotation_positions) so the
-                    # export renderer can place cards precisely without a baseline-mismatch
-                    # between the live canvas default (14 dB above peak) and the export
-                    # chart default (ANNOT_OFFS_Y px above peak).
-                    _freq_to_id = {p.frequency: p.id for p in all_peaks}
-                    _annotation_positions: dict = {}
-                    for _freq, (_lx, _ly) in canvas.analyzer.peak_annotation_offsets.items():
-                        _pid = _freq_to_id.get(_freq)
-                        if _pid:
-                            _annotation_positions[_pid] = [float(_lx), float(_ly)]
-                elif self._loaded_resonant_peaks:
-                    peaks_list = list(self._loaded_resonant_peaks)
-                else:
-                    # Mirror Swift createExportableSpectrumView(): read live analyzer state.
-                    # tap.visiblePeaks → currentPeaks filtered by annotation visibility mode.
-                    _az = canvas.analyzer
-                    peaks_list = list(_az.current_peaks)
-                    _sel_long_id  = _az.effective_longitudinal_peak_id
-                    _sel_cross_id = _az.effective_cross_peak_id
-                    _sel_flc_id   = _az.effective_flc_peak_id
-                    _mode_overrides = dict(_az.peak_mode_overrides)
-                    for _pid, (_lx, _ly) in _az.peak_annotation_offsets.items():
-                        _annotation_positions[_pid] = [float(_lx), float(_ly)]
-            except Exception:
-                pass
+            # Mirror Swift createExportableSpectrumView() exactly:
+            #   peaks: isComparing ? [] : tap.visiblePeaks
+            #   annotationOffsets: isComparing ? [:] : tap.peakAnnotationOffsets
+            #   selectedLongitudinalPeakID: tap.effectiveLongitudinalPeakID
+            #   selectedCrossPeakID: tap.effectiveCrossPeakID
+            #   selectedFlcPeakID: tap.effectiveFlcPeakID
+            #   modeOverrides: tap.peakModeOverrides
+            # The analyzer's visible_peaks property already applies the
+            # annotation-visibility-mode + show-unknown-modes filters, and
+            # works for both fresh captures and loaded measurements (since
+            # _restore_measurement populates current_peaks, selected_peak_ids,
+            # and annotation_visibility_mode from the loaded measurement).
+            # The earlier inline re-implementation manually filtered peaks
+            # and was wrapped in `try / except: pass` that silently swallowed
+            # any error and fell through with peaks_list = [] (no annotations
+            # rendered).  It also mis-keyed annotation positions by frequency
+            # instead of peak-id.  All of that is replaced by the Swift-style
+            # direct property reads below.
+            _az = canvas.analyzer
+            _is_comparing = bool(_az.is_saved_measurement_comparison)
+            peaks_list: list = [] if _is_comparing else list(_az.visible_peaks)
+            _annotation_positions: dict = (
+                {} if _is_comparing
+                else {pid: [float(x), float(y)]
+                      for pid, (x, y) in _az.peak_annotation_offsets.items()}
+            )
+            _sel_long_id  = _az.effective_longitudinal_peak_id
+            _sel_cross_id = _az.effective_cross_peak_id
+            _sel_flc_id   = _az.effective_flc_peak_id
+            _mode_overrides = dict(_az.peak_mode_overrides)
 
             _gt = TDS.measurement_type().guitar_type
             gt_str = _gt.value if _gt else None
@@ -4432,16 +4408,13 @@ class MainWindow(QtWidgets.QMainWindow):
                      if hasattr(canvas.saved_mag_y_db, "tolist")
                      else list(canvas.saved_mag_y_db))
 
-            # Use the live annotation visibility mode from the view's cycle index.
-            # analyzer.annotation_visibility_mode is only set at init and is not updated
-            # when the user cycles the annotation button — _ann_mode_idx is authoritative.
-            visibility_mode = self._ANN_MODES[self._ann_mode_idx]
-            if visibility_mode == AnnotationVisibilityMode.SELECTED:
-                vis_peaks = [p for p in all_peaks if p.id in selected_ids]
-            elif visibility_mode == AnnotationVisibilityMode.NONE:
-                vis_peaks = []
-            else:
-                vis_peaks = list(all_peaks)
+            # Mirrors Swift exportPDFReport()'s embedded image, which calls
+            # createExportableSpectrumView() → uses tap.visiblePeaks.  The
+            # cycle-annotation button now syncs analyzer.annotation_visibility_mode
+            # so analyzer.visible_peaks is authoritative for both the live
+            # chart and the export.  Replaces the previous re-implementation
+            # that read from view-side _ann_mode_idx and filtered manually.
+            vis_peaks = list(analyzer.visible_peaks)
 
             # Build material_spectra — mirrors Swift's materialSpectra computed property
             # (TapToneAnalysisView+SpectrumViews.swift), which reads tap.longitudinalSpectrum,
@@ -4794,13 +4767,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 if "peak" in entry and "mode" in entry
             }
 
-            visibility_mode = self._ANN_MODES[self._ann_mode_idx]
-            if visibility_mode == AnnotationVisibilityMode.SELECTED:
-                vis_peaks = [p for p in all_peaks if p.id in selected_ids]
-            elif visibility_mode == AnnotationVisibilityMode.NONE:
-                vis_peaks = []
-            else:
-                vis_peaks = list(all_peaks)
+            # Mirrors Swift exportMultiTapPDFReport() page 1 (averaged), which
+            # uses tap.visiblePeaks for annotations.  See _on_export_pdf for
+            # the explanation of the cycle-mode sync that makes visible_peaks
+            # authoritative.
+            vis_peaks = list(analyzer.visible_peaks)
 
             _gt = TDS.measurement_type().guitar_type
             gt_str = _gt.value if _gt else None
