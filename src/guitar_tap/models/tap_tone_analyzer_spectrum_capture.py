@@ -179,6 +179,63 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             )
 
     # ------------------------------------------------------------------ #
+    # _flush_gated_capture_on_file_end
+    # Mirrors Swift TapToneAnalyzer.flushGatedCaptureOnFileEnd()
+    # ------------------------------------------------------------------ #
+
+    def _flush_gated_capture_on_file_end(self) -> None:
+        """Zero-pad and complete any active gated capture when file playback ends.
+
+        Called from _playback_worker (via _on_pre_mic_restart) after the input
+        buffer flush but BEFORE the mic stream restarts.  Without this, the mic
+        restarts instantly and mic noise fills the remaining gated capture window,
+        contaminating the last tap's spectrum.
+
+        Mirrors Swift TapToneAnalyzer.flushGatedCaptureOnFileEnd() which is
+        called from startFromFile's asyncAfter block.
+
+        The pattern is the same as the safety timeout flush: take whatever
+        samples have accumulated, zero-pad to the target window size, and
+        emit gatedCaptureComplete so the FFT runs on a clean (partial +
+        silence) buffer rather than partial + mic noise.
+        """
+        import numpy as np
+
+        with self._gated_lock:
+            if not self._gated_capture_active:
+                return
+            self._gated_capture_active = False
+            partial = list(self._gated_accum)
+            target = self._gated_capture_samples
+            phase = self._gated_capture_phase
+            self._gated_accum = []
+
+        if not partial:
+            return
+
+        sample_rate = self._mpm_sample_rate
+
+        # Zero-pad to target window size so the FFT receives an exactly-sized
+        # window.  The padded zeros lower the average level but don't distort
+        # the ring-out peaks — the file signal is in the leading portion.
+        if len(partial) < target:
+            partial.extend([0.0] * (target - len(partial)))
+        else:
+            partial = partial[:target]
+
+        gt_log(f"🎯 Gated capture flushed on file end — "
+               f"{len(partial)} samples (zero-padded to {target})")
+
+        # Emit on this thread (playback worker); Qt queued connection delivers
+        # on the main thread.
+        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+            self.mic.proc_thread.gatedCaptureComplete.emit(
+                np.array(partial, dtype=np.float32),
+                sample_rate,
+                phase,
+            )
+
+    # ------------------------------------------------------------------ #
     # start_gated_capture
     # Mirrors Swift TapToneAnalyzer.startGatedCapture(phase:)
     # ------------------------------------------------------------------ #
@@ -263,10 +320,23 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     def start_guitar_gated_capture(self) -> None:
         """Open a raw-PCM capture window for guitar mode, aligned to tap onset.
 
+        Two-layer architecture (mirrors Swift TapToneAnalyzer+SpectrumCapture):
+
+        Layer 1 — Audio-queue fast-start (level-crossing handler):
+          The level-crossing handler on the audio processing thread seeds
+          the gated accumulator and sets _gated_capture_active = True the
+          instant RMS crosses the detection threshold.  This eliminates the
+          main-thread Qt dispatch delay, keeping the pre-roll buffer aligned
+          with the tap attack transient.
+
+        Layer 2 — Main-thread fallback (this method):
+          Called from _handle_tap_detection on the main thread.  If the
+          fast-start already activated the capture, this method just sets up
+          the safety timeout and returns.  Otherwise (crossing handler missed
+          or not wired), it falls back to the original pre-roll seed path.
+
         Capture window size = mic.fft_size (matches live FFT frequency
-        resolution exactly).  Pre-roll comes from the existing ring buffer so
-        the impulse onset (which arrives ~one RMS chunk before the trigger
-        fires) is included.  When the window fills, _accumulate_gated_samples
+        resolution exactly).  When the window fills, _accumulate_gated_samples
         emits gatedCaptureComplete with phase=None so finish_gated_fft_capture
         routes the result through finish_guitar_gated_capture.
         """
@@ -274,33 +344,46 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             return
         rate = float(self._gated_sample_rate)
         target_samples = int(self.mic.fft_size)
-        with self._gated_lock:
-            # Bump the capture identity so any pending safety-timeout from a
-            # previous capture is invalidated and won't flush THIS capture's
-            # accumulator with a partial buffer.  Without this guard, a stale
-            # timeout from tap N can fire while tap N+1 is mid-fill, dispatch
-            # tap N+1's partial accumulator as tap N's "completed" capture,
-            # and silently truncate captures from fft_size to whatever
-            # fragment was collected.  Mirrors Swift `gatedCaptureID`.
-            self._gated_capture_id += 1
-            my_capture_id = self._gated_capture_id
-            self._gated_accum = list(self._pre_roll_buf)
-            self._gated_capture_samples = target_samples
-            self._gated_capture_phase = None  # None = guitar mode marker
-            self._gated_capture_active = True
 
-        gt_log(
-            f"🎯 Guitar gated capture started — {target_samples}-sample window "
-            f"({target_samples / rate * 1000:.0f} ms at {int(rate)} Hz, "
-            f"pre-roll {len(self._gated_accum)} samples)"
-        )
+        with self._gated_lock:
+            already_active = self._gated_capture_active
+            if already_active:
+                # Fast-start already seeded the accumulator on the audio queue.
+                # Just read the capture ID and current count for logging.
+                my_capture_id = self._gated_capture_id
+                current_count = len(self._gated_accum)
+            else:
+                # Fallback: seed from live pre-roll (crossing handler missed).
+                self._gated_capture_id += 1
+                my_capture_id = self._gated_capture_id
+                self._gated_accum = list(self._pre_roll_buf)
+                self._gated_capture_samples = target_samples
+                self._gated_capture_phase = None  # None = guitar mode marker
+                self._gated_capture_active = True
+                current_count = len(self._gated_accum)
+
+        target_ms = int((target_samples / max(rate, 1.0)) * 1000) + 500
+
+        if already_active:
+            gt_log(
+                f"🎯 Guitar gated capture (audio-queue fast-start) — "
+                f"{target_samples}-sample window "
+                f"({target_ms - 500} ms at {int(rate)} Hz, "
+                f"accum {current_count}/{target_samples}), "
+                f"timeout {target_ms} ms"
+            )
+        else:
+            gt_log(
+                f"🎯 Guitar gated capture (main-thread fallback) — "
+                f"{target_samples}-sample window "
+                f"({target_ms - 500} ms at {int(rate)} Hz, "
+                f"pre-roll {current_count} samples)"
+            )
 
         # Safety timeout — if the file ends or the user stops before the
         # capture window fills, flush whatever we have so the partial
         # spectrum still gets appended.  Long enough to allow the full
         # post-trigger portion at all supported sample rates.
-        target_ms = int((target_samples / max(rate, 1.0)) * 1000) + 500
-
         def _safety_timeout() -> None:
             with self._gated_lock:
                 # Identity guard: if a newer capture has started since this

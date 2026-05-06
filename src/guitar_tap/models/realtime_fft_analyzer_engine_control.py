@@ -321,7 +321,20 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self.is_playing_file = False
             prev_worker.join(timeout=0.5)
 
-        # Stop the PortAudio stream so new_frame() doesn't race with the file thread.
+        # ── Teardown: stop engine, drain queue, clear buffers ────────────
+        # Mirrors Swift startFromFile(_:) preamble:
+        #   1. audioEngine.stop()           → stop audio delivery
+        #   2. audioProcessingQueue.sync {} → drain in-flight processing
+        #   3. inputBuffer.removeAll()      → clear FFT accumulator
+        #   4. fftFrameCounter = 0          → reset frame counters
+        #
+        # The drain barrier (step 2) is critical: after stopping the mic,
+        # the processing thread may still be mid-way through processing a
+        # chunk it already dequeued.  Swift uses a synchronous dispatch on
+        # the serial audioProcessingQueue to block until that work finishes.
+        # Python mirrors this with a None sentinel + Event handshake.
+
+        # 1. Stop the PortAudio stream (mirrors audioEngine.stop()).
         with self._stop_lock:
             self.is_stopped = True
         try:
@@ -329,23 +342,35 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         except Exception:
             pass
 
-        # Drain the queue so the processing thread starts fresh.
+        # 2. Drain the queue of any pending chunks.
         while not self.queue.empty():
             try:
                 self.queue.get_nowait()
             except Exception:
                 break
 
-        # Clear the processing thread's input buffer so no stale mic samples
-        # are mixed into the first FFT frame from the file.
-        # Mirrors Swift: bufferAccessQueue.sync { inputBuffer.removeAll() }
-        # in RealtimeFFTAnalyzer+EngineControl.swift startFromFile(_:).
-        # Without this, leftover mic samples in _input_buffer combine with the
-        # first file chunks, producing a contaminated spectrum with spurious peaks.
+        # 3. Drain barrier — mirrors Swift audioProcessingQueue.sync {}.
+        #    Put a None sentinel so the processing thread finishes any
+        #    in-flight chunk, acknowledges via _drain_ack, then blocks
+        #    until we clear _drain_event.  This guarantees no stale
+        #    processing is in-flight when we clear _input_buffer below.
         proc = self.proc_thread
         if proc is not None:
+            proc._drain_ack.clear()
+            proc._drain_event.set()
+            self.queue.put(None)
+            proc._drain_ack.wait(timeout=0.5)
+
+            # 4. Clear the FFT accumulator and reset frame counters.
+            #    Mirrors Swift: bufferAccessQueue.sync { inputBuffer.removeAll() }
+            #    and fftFrameCounter = 0; samplesConsumed = 0.
             proc._input_buffer = []
             proc._input_buffer_len = 0
+            proc._fft_frame_counter = 0
+            proc._samples_consumed = 0
+
+            # Release the processing thread so it resumes pulling from the queue.
+            proc._drain_event.clear()
 
         # Read the file — soundfile returns (data, samplerate).
         # data shape: (frames,) for mono, (frames, channels) for multi-channel.
@@ -409,40 +434,31 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 f"realtimeRatio={elapsed/max(expected_duration_s,1e-9):.3f}x"
             )
 
-            # Wait 0.3 s to let the last chunks drain through the FFT pipeline before
-            # restarting the mic — mirrors Swift asyncAfter(fileDuration + 0.3s).
-            time.sleep(0.3)
+            # Drain barrier — wait for the processing thread to finish any
+            # in-flight chunk.  Mirrors Swift audioProcessingQueue.sync {}.
+            proc = self.proc_thread
+            if proc is not None:
+                proc._drain_ack.clear()
+                proc._drain_event.set()
+                self.queue.put(None)
+                proc._drain_ack.wait(timeout=0.5)
 
-            # Guard: if a new file was opened while we were sleeping (or pre-empted
-            # us), our thread is no longer the active one — skip the mic restart
-            # AND skip clearing is_playing_file so we don't break the new worker's
-            # loop condition.  Mirrors Swift's `let scheduledPlayer = player`
-            # identity guard.
+            # Guard: if a new file was opened while we were waiting, our
+            # thread is no longer the active one — skip the rest.
+            # Mirrors Swift guard self.playerNode === scheduledPlayer.
             if self._file_playback_thread is not sentinel[0]:
+                if proc is not None:
+                    proc._drain_event.clear()
                 return
 
             # Only the active worker reaches here — safe to signal end-of-file.
             self.is_playing_file = False
 
-            # Force-flush any partial audio still in the processing thread's input buffer.
-            #
-            # Mirrors Swift's end-of-file partial flush in startFromFile's asyncAfter block.
-            #
-            # The file may be shorter than one FFT window (fft_size samples, ~1.49 s at
-            # 44.1 kHz).  When that happens _FftProcessingThread.run() never accumulates
-            # fft_size new samples, so the FFT never fires — the file produces zero FFT
-            # frames and tap detection never fires during playback.
-            #
-            # Fix: take whatever is in inputBuffer, zero-pad to fft_size, force one FFT
-            # frame through fftFrameReady, then clear inputBuffer so the mic starts from
-            # a clean slate — exactly mirroring Swift's zero-pad + performFFT call followed
-            # by inputBuffer.removeAll().
-            proc = self.proc_thread
+            # Force-flush any partial audio still in the processing thread's
+            # input buffer.  Mirrors Swift audioProcessingQueue.sync { … }
+            # partial flush in startFromFile's asyncAfter block.
             if proc is not None:
-                # Import inside worker to avoid circular import at module level.
                 from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
-                # Flatten whatever partial samples are in the input buffer —
-                # mirrors Swift Array(inputBuffer.prefix(fftSize)) with zero-padding.
                 if proc._input_buffer:
                     partial = np.concatenate(proc._input_buffer)
                 else:
@@ -459,12 +475,21 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 if cal is not None:
                     mag_y_db = mag_y_db + cal
                 fft_peak_amp = int(np.max(mag_y_db) + 100.0)
-                # rms_amp: use 0 (silence) since the file has ended.
                 proc.fftFrameReady.emit(mag_y_db, mag_y, fft_peak_amp, 0, 0.0, 0.0, 0.0)
                 # Clear the input buffer so the mic begins from a clean slate.
                 # Mirrors Swift inputBuffer.removeAll() before start().
                 proc._input_buffer = []
                 proc._input_buffer_len = 0
+                # Release the processing thread so it resumes.
+                proc._drain_event.clear()
+
+            # Flush any active gated capture by zero-padding the remaining
+            # window.  Must happen BEFORE the mic restarts so mic noise cannot
+            # fill the remaining samples.  Mirrors Swift preMicRestartHandler
+            # in startFromFile's asyncAfter block.
+            pre_restart = self._on_pre_mic_restart
+            if pre_restart is not None:
+                pre_restart()
 
             # Restart the PortAudio stream so the mic is live again.
             # Mirrors Swift try? self.start() which recreates the AVAudioEngine on the mic.

@@ -7,7 +7,7 @@ TapDetector class in Swift; all state and logic lives directly on
 TapToneAnalyzer.  This mixin puts all of that state and every method on the
 Python TapToneAnalyzer exactly the same way.
 
-Guitar mode  — absolute threshold on the FFT peak magnitude.
+Guitar mode  — absolute threshold on the per-chunk RMS input level.
     risingThreshold  = tapDetectionThreshold
     fallingThreshold = tapDetectionThreshold − hysteresisMargin
 
@@ -68,13 +68,13 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         Mirrors Swift TapToneAnalyzer.detectTap(peakMagnitude:magnitudes:frequencies:).
 
-        Called from on_fft_frame() on the main thread, mirroring Swift's Combine
-        subscription to fftAnalyzer.$magnitudes (guitar, ~1 Hz) and
-        fftAnalyzer.$inputLevelDB (plate/brace, ~10 Hz).
+        Called from _on_rms_level_changed() on the main thread for all modes,
+        mirroring Swift's Combine subscription to fftAnalyzer.$inputLevelDB
+        (~43 Hz per-chunk RMS).
 
         Args:
-            peak_magnitude: Current peak dBFS level.  FFT peak for guitar;
-                            RMS inputLevelDB for plate/brace.
+            peak_magnitude: Current RMS input level in dBFS
+                            (fftAnalyzer.inputLevelDB, ~43 Hz).
             mag_y_db:       Current FFT magnitude spectrum (ndarray, dBFS).
             freq:           Frequency axis matching mag_y_db, in Hz.
         """
@@ -601,7 +601,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self.peakInfoChanged.emit(peak_freq, float(mag_y_db[peak_idx]))
 
     # ------------------------------------------------------------------ #
-    # _on_rms_level_changed — plate/brace tap detection at ~43 Hz
+    # _on_rms_level_changed — tap detection for all modes at ~43 Hz
     # ------------------------------------------------------------------ #
 
     @Slot(int)

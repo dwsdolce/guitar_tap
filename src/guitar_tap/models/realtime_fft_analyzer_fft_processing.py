@@ -170,9 +170,7 @@ def perform_fft(thread, samples: "npt.NDArray[np.float32]", fft_size: int):
 
     Args:
         thread:    The ``_FftProcessingThread`` instance — supplies the mic
-                   reference, the FILE_DEBUG counter state, and the
-                   calibration snapshot.  Mutates ``_fft_frame_counter`` and
-                   ``_samples_consumed``.
+                   reference and the calibration snapshot.
         samples:   Exactly ``fft_size`` time-domain samples (float32).
         fft_size:  FFT size, snapshot at call time.
 
@@ -181,8 +179,6 @@ def perform_fft(thread, samples: "npt.NDArray[np.float32]", fft_size: int):
         spectra (calibration-applied) plus the int-encoded peak amplitude
         ready for the ``fftFrameReady`` signal.
     """
-    from utilities.logging import TAP_DEBUG as _td
-
     # Snapshot calibration under the thread's settings lock.  Mirrors Swift
     # where calibrationCorrections is read inside performFFT.
     with thread._settings_lock:
@@ -193,25 +189,6 @@ def perform_fft(thread, samples: "npt.NDArray[np.float32]", fft_size: int):
         mag_y_db = mag_y_db + calibration
 
     fft_peak_amp = int(np.max(mag_y_db) + 100.0)
-
-    # ── FILE_DEBUG: per-FFT-frame trace ─────────────────────────────────
-    # Records frame ordinal, file-time of frame start, peakMag, dominant-bin
-    # frequency, and whether the file-playback source is the active
-    # producer.  Mirrors Swift's equivalent TAP_DEBUG("fft_frame", ...)
-    # block in performFFT(on:).
-    thread._fft_frame_counter += 1
-    thread._samples_consumed += fft_size
-    peak_db = float(np.max(mag_y_db))
-    peak_bin = int(np.argmax(mag_y_db))
-    peak_freq_hz = peak_bin * float(thread._mic.rate) / fft_size
-    file_time_s = thread._samples_consumed / max(float(thread._mic.rate), 1.0)
-    _td("fft_frame",
-        f"#{thread._fft_frame_counter} "
-        f"fileTime={file_time_s:.3f}s "
-        f"peakMag={peak_db:.2f}dB "
-        f"peakFreq={peak_freq_hz:.1f}Hz "
-        f"isPlayingFile={thread._mic.is_playing_file}"
-    )
 
     return mag_y_db, mag_y, fft_peak_amp
 

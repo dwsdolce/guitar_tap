@@ -2693,18 +2693,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 analyzer.mic.proc_thread.reset_state()
 
             # Mirrors Swift openAudioFile(_:) which calls:
-            #   1. tapToneAnalyzer.startTapSequence(skipWarmup: true) — arm tap detection
-            #   2. fft.startFromFile(url, completion:) — start engine, recompute freq bins
+            #   1. tapToneAnalyzer.startTapSequence(skipWarmup: true) — reset state, arm detection
+            #   2. fft.startFromFile(url, completion:) — stop engine, start file source
             #
-            # IMPORTANT: startTapSequence runs BEFORE startFromFile so the analyzer
-            # state (captured_taps, is_measurement_complete, is_above_threshold,
-            # _gated_capture_active, _gated_accum, _pre_roll_buf, etc.) is fully
-            # reset before any audio flows.  If start_from_file ran first, the
-            # file-playback worker would begin pumping samples into the queue
-            # while is_measurement_complete from the previous session was still
-            # True (suppressing the live spectrum display) and the gated
-            # accumulator could complete a stale capture and append a phantom
-            # entry to captured_taps right after start_tap_sequence cleared it.
+            # IMPORTANT: start_tap_sequence runs BEFORE start_from_file, matching
+            # Swift exactly.  This is safe because start_from_file performs a full
+            # engine teardown (stop PortAudio, drain processing queue, clear input
+            # buffer) before spawning the file playback thread — no audio flows
+            # until after start_from_file returns.  The crossing detector armed by
+            # start_tap_sequence cannot fire on stale mic noise because the drain
+            # barrier guarantees the processing thread has finished any in-flight
+            # chunk before the file source begins.
             #
             # The completion closure in Swift releases security-scoped resource access.
             # It does NOT clear playingFileName — that stays set until stop() is called,
@@ -2717,11 +2716,13 @@ class MainWindow(QtWidgets.QMainWindow):
             def _on_finished_clear_tint() -> None:
                 analyzer.playingFileNameChanged.emit(None)
 
-            # Arm tap detection with warmup skipped — the audio source is deterministic
-            # so there is no mic startup noise, and the tap may appear in the first 0.5 s.
+            # Reset analyzer state and arm the level-crossing detector FIRST.
             # Mirrors Swift: tapToneAnalyzer.startTapSequence(skipWarmup: true)
             analyzer.start_tap_sequence(skip_warmup=True)
 
+            # Stop the mic stream, drain the processing queue, clear input
+            # buffer, then set up the file source.  The drain barrier ensures
+            # no stale mic chunk processing is in-flight when file audio begins.
             analyzer.start_from_file(path, on_finished=_on_finished_clear_tint)
 
             # Emit the playing filename AFTER start_tap_sequence so the title update

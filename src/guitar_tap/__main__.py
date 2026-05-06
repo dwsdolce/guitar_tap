@@ -16,6 +16,13 @@ import traceback
 import faulthandler
 faulthandler.enable(file=sys.stderr, all_threads=True)
 
+# Register SIGUSR1 to dump all thread stacks on demand.  Qt/PySide6 blocks
+# SIGINT on the main thread so Ctrl+C doesn't work when the app is hung.
+# Use `kill -USR1 <pid>` from a terminal to get a thread dump to stderr.
+if sys.platform != "win32":
+    import signal
+    faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True)
+
 # Ensure models/ and views/ are importable as top-level packages when running
 # as `python -m guitar_tap`. __file__ is src/guitar_tap/__main__.py so
 # os.path.dirname(__file__) is src/guitar_tap/.

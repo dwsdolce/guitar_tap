@@ -190,6 +190,16 @@ class _FftProcessingThread(QtCore.QThread):
         self._mic = mic
         self._stop_event = threading.Event()
 
+        # Drain barrier — mirrors Swift audioProcessingQueue.sync {}.
+        # start_from_file() sets _drain_event after emptying the queue, then
+        # puts a None sentinel into mic.queue.  run() checks for the sentinel,
+        # sets _drain_ack when it has finished processing any in-flight chunk,
+        # and waits for _drain_event to be cleared before resuming.  This
+        # guarantees that no stale chunk processing is in-flight when
+        # start_from_file() clears _input_buffer.
+        self._drain_event = threading.Event()
+        self._drain_ack = threading.Event()
+
         # MARK: - Input Buffer State
         #
         # Growing accumulator — mirrors Swift's inputBuffer ([Float]) in
@@ -216,13 +226,19 @@ class _FftProcessingThread(QtCore.QThread):
         self._recent_peak_window: float = 0.5      # rolling window in seconds
         self._recent_peak_history: list = []       # [(timestamp, level_db), ...]
 
-        # ── FILE_DEBUG instrumentation ────────────────────────────────────
-        # Counter so each FFT frame produced by run() has a unique ordinal.
-        # Used by FILE_DEBUG logs to correlate FFT frames with file-playback
-        # progress and tap detection.  Resets to 0 on each playback restart
-        # via reset_state().
-        self._fft_frame_counter: int = 0
-        self._samples_consumed: int = 0
+        # ── Level-crossing detection (mirrors Swift RealtimeFFTAnalyzer) ──
+        # Audio-queue fast-start: fires a callback on the audio processing
+        # thread the instant RMS crosses the detection threshold from below.
+        # TapToneAnalyzer sets the handler to seed the gated accumulator and
+        # set _gated_capture_active = True immediately, eliminating the
+        # main-thread Qt dispatch delay that would otherwise cause the
+        # pre-roll buffer to shift past the tap attack transient.
+        # Mirrors Swift: levelCrossingHandler, levelCrossingThreshold,
+        #                levelCrossingArmed, previousLevelDB.
+        self._level_crossing_handler: "Callable[[], None] | None" = None
+        self._level_crossing_threshold: float = -100.0
+        self._level_crossing_armed: bool = False
+        self._previous_level_db: float = -100.0
 
         # ── Input clipping detection ─────────────────────────────────────
         # Hold any clip-detected chunk for _clip_hold_seconds before declaring
@@ -270,6 +286,19 @@ class _FftProcessingThread(QtCore.QThread):
             except queue.Empty:
                 continue
 
+            # Drain barrier — mirrors Swift audioProcessingQueue.sync {}.
+            # A None sentinel means "finish your current work, then wait".
+            # start_from_file() puts None after draining the queue so that
+            # this thread acknowledges it has finished any in-flight chunk
+            # before the caller clears _input_buffer.
+            if chunk is None:
+                self._drain_ack.set()
+                # Block until the caller clears _drain_event (after it has
+                # finished its reset work).
+                while self._drain_event.is_set() and not self._stop_event.is_set():
+                    time.sleep(0.001)
+                continue
+
             # Calibration is snapshotted inside perform_fft (under
             # _settings_lock) so the snapshot is fresh per FFT frame.
             enter_now = time.time()
@@ -298,6 +327,19 @@ class _FftProcessingThread(QtCore.QThread):
             level_db = 20.0 * np.log10(max(rms, 1e-10))
             rms_amp = int(level_db + 100.0)
             self.rmsLevelChanged.emit(rms_amp)
+
+            # ── Level-crossing detection (audio-queue fast-start) ────
+            # Fires BEFORE main-thread dispatch, on the audio processing
+            # thread.  Mirrors Swift RealtimeFFTAnalyzer+FFTProcessing.swift
+            # crossing check after rawSampleHandler and RMS calculation.
+            if (self._level_crossing_armed
+                    and level_db > self._level_crossing_threshold
+                    and self._previous_level_db <= self._level_crossing_threshold):
+                self._level_crossing_armed = False
+                handler = self._level_crossing_handler
+                if handler is not None:
+                    handler()
+            self._previous_level_db = level_db
 
             # ── Input-clipping detection ─────────────────────────────
             # Sample-domain check (peak |sample| ≥ 0.99) catches transient
@@ -389,9 +431,6 @@ class _FftProcessingThread(QtCore.QThread):
         with self._recent_peak_lock:
             self._recent_peak_db = -100.0
             self._recent_peak_history = []
-        # FILE_DEBUG: zero ordinals so a new file's frames start at #1.
-        self._fft_frame_counter = 0
-        self._samples_consumed = 0
 
     def set_calibration(self, arr: npt.NDArray | None) -> None:
         """Update the per-bin dB calibration correction array."""
@@ -599,6 +638,13 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # and the mic stream has been restarted.  Used by TapToneAnalyzer to clear the
         # chart title — mirrors Swift's completion closure in startFromFile(_:completion:).
         self._on_playback_finished: Callable[[], None] | None = None
+
+        # Optional callback invoked (from the playback thread) after the input buffer
+        # flush but BEFORE the mic stream is restarted.  Used by TapToneAnalyzer to
+        # zero-pad and complete any active gated capture so mic noise cannot fill the
+        # remaining window.  Mirrors Swift preMicRestartHandler in startFromFile's
+        # asyncAfter block.
+        self._on_pre_mic_restart: Callable[[], None] | None = None
 
         # MARK: - Device Lists (mirrors Swift RealtimeFFTAnalyzer @Published properties)
 

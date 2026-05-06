@@ -331,6 +331,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         strongest_per_mode: "dict" = {}     # GuitarMode → ResonantPeak
         strongest_bin_per_mode: "dict" = {} # GuitarMode → raw bin index of winner
         last_claimed_bin_idx: int = -1      # raw bin index of the last claimed peak
+        all_peaks: "list" = []
 
         for mode in known_modes:
             mode_range = mode.mode_range(guitar_type)
@@ -379,6 +380,14 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
                 peak = self._make_peak(i, magnitudes, frequencies)
 
+                # Add every above-threshold local maximum to the candidate
+                # pool so that non-strongest peaks within a mode range are
+                # still visible and selectable by the user.  The strongest
+                # peak per mode gets a guaranteed slot in step 3; the rest
+                # compete for remaining slots by magnitude alongside
+                # unknown (inter-mode) peaks.
+                all_peaks.append(peak)
+
                 # Track strongest peak for this mode (normalised key).
                 # Mirrors Swift: normalizedMode / strongestPeakPerMode.
                 norm_mode = mode.normalized if hasattr(mode, "normalized") else mode
@@ -413,7 +422,6 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # Pass 2: unknown/inter-mode peaks outside all known-mode ranges.
         # ---------------------------------------------------------------- #
         # Mirrors Swift Step 2: outer scan excluding isInKnownMode bins.
-        all_peaks: "list" = []
         outer_scan_start = start_idx + window_size
         outer_scan_end   = end_idx   - window_size
 
@@ -446,7 +454,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
                 all_peaks.append(self._make_peak(i, magnitudes, frequencies))
 
-        # Remove near-duplicates from Pass-2 results.
+        # Remove near-duplicates from Pass-1 and Pass-2 results.
         all_peaks = self.remove_duplicate_peaks(all_peaks)
 
         # ---------------------------------------------------------------- #

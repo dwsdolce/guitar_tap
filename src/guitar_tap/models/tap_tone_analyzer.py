@@ -238,7 +238,7 @@ class TapToneAnalyzer(
         self.average_magnitude: float = -100.0      # mirrors averageMagnitude
         self.tap_detection_level: float = -100.0    # mirrors tapDetectionLevel
         self.tap_detected: bool = False             # mirrors tapDetected
-        self.is_detecting: bool = False             # mirrors isDetecting
+        self._is_detecting: bool = False             # mirrors isDetecting
         self.is_detection_paused: bool = False      # mirrors isDetectionPaused
         self.is_ready_for_detection: bool = True    # mirrors isReadyForDetection
         self.current_tap_count: int = 0             # mirrors currentTapCount
@@ -427,6 +427,31 @@ class TapToneAnalyzer(
         # collected.  Mirrors Swift `gatedCaptureID`.
         self._gated_capture_id: int = 0
 
+    # ------------------------------------------------------------------ #
+    # is_detecting property — mirrors Swift @Published var isDetecting
+    # with didSet that arms/disarms the level-crossing detector.
+    # ------------------------------------------------------------------ #
+
+    @property
+    def is_detecting(self) -> bool:
+        return self._is_detecting
+
+    @is_detecting.setter
+    def is_detecting(self, value: bool) -> None:
+        old = self._is_detecting
+        self._is_detecting = value
+        # Mirrors Swift isDetecting.didSet — arm the audio-queue level-crossing
+        # detector on false→true transition; disarm on any transition to false.
+        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+            pt = self.mic.proc_thread
+            if value and not old:
+                # false → true: arm crossing and sync previous level.
+                pt._level_crossing_armed = True
+                pt._previous_level_db = -100.0
+            elif not value:
+                # → false: disarm crossing.
+                pt._level_crossing_armed = False
+
     def start(
         self,
         parent_widget,
@@ -505,6 +530,29 @@ class TapToneAnalyzer(
         # _accumulate_gated_samples on every audio chunk.
         # Mirrors Swift TapToneAnalyzer.start() registering rawSampleHandler.
         self.mic.raw_sample_handler = self._accumulate_gated_samples
+
+        # ── Level-crossing handler (audio-queue fast-start) ──────────────
+        # Fires on the audio processing thread the instant RMS crosses the
+        # tap detection threshold from below.  Seeds the gated accumulator
+        # with the pre-roll buffer and activates the capture immediately,
+        # eliminating the main-thread Qt dispatch delay.
+        # Mirrors Swift setupSubscriptions() levelCrossingHandler closure.
+        def _level_crossing_handler() -> None:
+            fft_size = self.mic.fft_size
+            with self._gated_lock:
+                self._gated_capture_id += 1
+                self._gated_accum = list(self._pre_roll_buf)
+                self._gated_capture_samples = fft_size
+                self._gated_capture_phase = None  # None = guitar mode
+                self._gated_capture_active = True
+                pre_roll_count = len(self._gated_accum)
+            from guitar_tap.utilities.logging import TAP_DEBUG
+            TAP_DEBUG("levelCrossing",
+                f"Gated capture started on audio queue | "
+                f"pre-roll {pre_roll_count} samples, target {fft_size}")
+
+        self.mic.proc_thread._level_crossing_handler = _level_crossing_handler
+        self.mic.proc_thread._level_crossing_threshold = self.tap_detection_threshold
 
         # ── Initial device enumeration ────────────────────────────────────
         # Mirrors Swift RealtimeFFTAnalyzer.init() calling loadAvailableInputDevices()
@@ -645,11 +693,17 @@ class TapToneAnalyzer(
         Python-only — Swift achieves equivalent reset via AVAudioEngine stop/start.
         """
         from .realtime_fft_analyzer import _FftProcessingThread as _FPT
+        # Preserve the level-crossing handler from the old thread before replacing it.
+        old_handler = getattr(self.mic.proc_thread, "_level_crossing_handler", None)
         self.mic.proc_thread = _FPT(mic=self.mic, parent=self)
         self.mic.proc_thread.set_calibration(self._calibration_corrections)
         # Reconnect the analyzer-owned signals on the new thread.
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
+        # Re-wire the level-crossing handler and threshold on the new thread.
+        if old_handler is not None:
+            self.mic.proc_thread._level_crossing_handler = old_handler
+            self.mic.proc_thread._level_crossing_threshold = self.tap_detection_threshold
         return self.mic.proc_thread
 
     # ------------------------------------------------------------------ #

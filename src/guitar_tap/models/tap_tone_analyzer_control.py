@@ -367,6 +367,10 @@ class TapToneAnalyzerControlMixin:
     def set_tap_threshold(self, value: int) -> None:
         """Update tap-trigger threshold (0-100 scale → dBFS)."""
         self.tap_detection_threshold = float(value - 100)
+        # Keep the audio-queue level-crossing threshold in sync.
+        # Mirrors Swift tapDetectionThreshold.didSet updating fftAnalyzer.levelCrossingThreshold.
+        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+            self.mic.proc_thread._level_crossing_threshold = self.tap_detection_threshold
         from models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_tap_detection_threshold(self.tap_detection_threshold)
         # Mirrors Swift tapDetectionThreshold.didSet: clear warning if user deviates from loaded value.
@@ -485,7 +489,28 @@ class TapToneAnalyzerControlMixin:
 
         self.mic._on_playback_finished = _on_finished_wrapper
 
+        # Wire the pre-mic-restart callback so any active gated capture is
+        # zero-padded and completed before mic noise can fill the remaining
+        # window.  Mirrors Swift preMicRestartHandler in startFromFile's
+        # asyncAfter block.
+        self.mic._on_pre_mic_restart = self._flush_gated_capture_on_file_end
+
         self.mic.start_from_file(path)
+
+        # Clear the pre-roll buffer now that mic.start_from_file() has stopped
+        # the PortAudio stream, drained the queue, and completed the drain
+        # barrier.  start_tap_sequence() already cleared _pre_roll_buf, but
+        # between that call and mic.start_from_file() the processing thread
+        # may have processed additional mic chunks that refilled the pre-roll
+        # with stale mic audio.  Both calls run on the main thread — just like
+        # Swift where startTapSequence() and startFromFile() run on the main
+        # thread with audioProcessingQueue.sync{} as the drain barrier — so
+        # clearing here after the drain is the same-thread guarantee that no
+        # mic audio contaminates the pre-roll when file playback begins.
+        # Without this, tap 1 in a file with < 200 ms of silence before the
+        # first transient has its spectrum contaminated by residual mic noise.
+        with self._gated_lock:
+            self._pre_roll_buf = []
 
         # Recompute the frequency axis now that mic.rate reflects the file's sample rate.
         # Mirrors Swift updateFrequencyBins() called synchronously inside startFromFile
