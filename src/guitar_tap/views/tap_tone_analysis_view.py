@@ -3574,12 +3574,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         canvas = self.fft_canvas
         n = canvas.comparison_count
-
         # ── Status bar: swap normal widgets ↔ comparison info ────────────────
         # Mirrors Swift TapToneAnalysisView+Controls.swift:
         #   showingMultiTapComparison ? "Tap comparison — N taps + averaged"
         #                             : "Comparing N measurements"
-        _is_saved_comparison = self.fft_canvas.analyzer.is_saved_measurement_comparison
+        _is_saved_comparison = canvas.analyzer.is_saved_measurement_comparison
         _is_multi_tap_comparison = is_comparing and not _is_saved_comparison
         self._sb_normal_wgt.setVisible(not is_comparing)
         self._sb_compare_wgt.setVisible(is_comparing)
@@ -3587,10 +3586,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # replaces this context entirely); keep visible during multi-tap comparison because
         # the loaded settings still apply to any new tap the user might take.
         # Mirrors Swift: isSavedComparison = displayMode == .comparison && !showingMultiTapComparison
-        _warn_active = self.fft_canvas.analyzer.show_loaded_settings_warning
+        _warn_active = canvas.analyzer.show_loaded_settings_warning
         self._sb_warning_wgt.setVisible(_warn_active and not _is_saved_comparison)
         if _is_multi_tap_comparison:
-            n_taps = len(self.fft_canvas.analyzer.tap_entries)
+            n_taps = len(canvas.analyzer.tap_entries)
             self._sb_compare_msg.setText(f"Tap comparison \u2014 {n_taps} taps + averaged")
             # Mirrors Swift: showingMultiTapComparison ? "Press 'Taps' to return to averaged view,
             # or 'New Tap' for a new measurement" — uses typographic quotes matching Swift \u{2018}/\u{2019}
@@ -3607,7 +3606,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if _is_saved_comparison:
             # Populate the Air/Top/Back grid from current comparison data.
             self._comparison_results_view.set_comparison_data(
-                self.fft_canvas.analyzer._comparison_data
+                canvas.analyzer._comparison_data
             )
             # Set the right panel minimum width from the table's actual column
             # widths now that set_comparison_data() has called
@@ -3624,17 +3623,13 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self._right_panel.setMinimumWidth(0)
         # Mutual exclusivity: saved-measurement comparison and multi-tap comparison
-        # cannot both be active at once.
-        #
-        # The model's load_comparison() resets showing_multi_tap_comparison=False and
-        # tap_entries=[] directly (mirroring Swift) before emitting comparisonChanged(True),
-        # and sets _loading_saved_comparison=True for the duration of that emit.
-        # This lets us distinguish a saved-measurement load from a multi-tap activation
-        # (both emit comparisonChanged(True)), and drives the correct UI panel visibility.
-        analyzer = self.fft_canvas.analyzer
-        _is_saved_measurement_load = analyzer._loading_saved_comparison
-        _is_multi_tap_initiated = analyzer.showing_multi_tap_comparison and not _is_saved_measurement_load
-        if is_comparing and _is_saved_measurement_load:
+        # cannot both be active at once.  Mirrors Swift where SwiftUI reactively
+        # observes isSavedMeasurementComparison (displayMode == .comparison &&
+        # !showingMultiTapComparison) and showingMultiTapComparison directly.
+        analyzer = canvas.analyzer
+        _is_saved_measurement = analyzer.is_saved_measurement_comparison
+        _is_multi_tap_initiated = analyzer.showing_multi_tap_comparison
+        if is_comparing and _is_saved_measurement:
             # Entering saved-measurement comparison — model already reset these, but
             # also uncheck and hide the toggle button and ensure the multi-tap panel is hidden.
             # Block signals on the button so setChecked(False) does NOT fire toggled(),
@@ -3675,7 +3670,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # `measurementType.isGuitar && (displayMode != .comparison || showingMultiTapComparison)` in Swift.
         # Show during multi-tap comparison (analyzer is in COMPARISON for chart purposes but
         # the summary still applies to the averaged result).
-        _showing_mt = self.fft_canvas.analyzer.showing_multi_tap_comparison
+        _showing_mt = analyzer.showing_multi_tap_comparison
         self._guitar_summary.setVisible(
             TDS.measurement_type().is_guitar and (not is_comparing or _showing_mt)
         )

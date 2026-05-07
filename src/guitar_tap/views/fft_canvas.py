@@ -1302,8 +1302,8 @@ class FftCanvas(pg.PlotWidget):
         self._clear_comparison_curves()
 
         # Delegate to analyzer — resets multi-tap state, populates _comparison_data /
-        # comparison_labels, sets _loading_saved_comparison=True around the emit,
-        # and emits comparisonChanged(True).
+        # comparison_labels, and emits comparisonChanged(True).
+        # Mirrors Swift loadComparison(measurements:).
         #
         # _on_comparison_changed_from_analyzer fires during this call; it detects that
         # _comparison_curves is empty and calls _render_comparison_curves() there.
@@ -1407,9 +1407,12 @@ class FftCanvas(pg.PlotWidget):
 
         if is_comparing:
             # On the restore path (loading a saved comparison record), the analyzer
-            # has populated _comparison_data but the canvas has no curves yet.
-            # Render them now before emitting outward.
-            if not self._comparison_curves and self.analyzer._comparison_data:
+            # has populated _comparison_data but the canvas may have stale curves
+            # from a previous multi-tap comparison.  Clear stale curves first,
+            # then render the new comparison curves.
+            if self.analyzer._comparison_data:
+                if self._comparison_curves:
+                    self._clear_comparison_curves()
                 self._render_comparison_curves()
             # Axis bounds are applied by _on_loaded_axis_range_changed, which fires
             # before this handler because set_loaded_axis_range() emits

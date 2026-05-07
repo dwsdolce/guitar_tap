@@ -354,11 +354,6 @@ class TapToneAnalyzer(
         # Reset to False when a new sequence starts.
         # Mirrors Swift TapToneAnalyzer.showingMultiTapComparison (Bool).
         self.showing_multi_tap_comparison: bool = False
-        # Set to True only during the comparisonChanged(True) emit inside load_comparison(),
-        # so _on_comparison_changed can distinguish a saved-measurement load from a
-        # multi-tap activation (both emit comparisonChanged(True) with potentially the same
-        # showing_multi_tap_comparison value).  Reset to False immediately after emit.
-        self._loading_saved_comparison: bool = False
 
         # ── Plate/brace phase state ───────────────────────────────────────
         self.material_tap_phase: "_MTP" = _MTP.NOT_STARTED
