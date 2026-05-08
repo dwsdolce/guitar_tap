@@ -749,8 +749,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             "Loaded measurement (frozen). Press \u2018New Tap\u2019 to start a new measurement."
         )
 
-        gt_log(f"✅ Loaded measurement with {len(self.current_peaks)} peaks (frozen)")
-
         # ── Restore multi-tap entries ─────────────────────────────────────────
         # Mirrors Swift: tapEntries = measurement.tapEntries ?? []
         #               showingMultiTapComparison = false
@@ -759,6 +757,18 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # reads tap_entries to decide whether to show the toggle button.
         self.tap_entries = list(measurement.tap_entries) if measurement.tap_entries else []
         self.showing_multi_tap_comparison = False
+
+        # Recompute per-tap peaks using the measurement's saved peak_threshold
+        # (already restored above).  The saved tap_entries may contain peaks that
+        # were detected at a different threshold than the one stored in the
+        # measurement (e.g. threshold was changed after capture but before save).
+        # Re-running find_peaks on each tap's snapshot with the saved threshold
+        # ensures the multi-tap comparison table is consistent with the averaged
+        # peaks display.  Mirrors Swift loadMeasurement → recalculateTapEntryPeaks().
+        if self.tap_entries:
+            self._recalculate_tap_entry_peaks()
+
+        gt_log(f"✅ Loaded measurement with {len(self.current_peaks)} peaks (frozen)")
         if self.tap_entries:
             gt_log(f"  📋 Restored {len(self.tap_entries)} per-tap entries for multi-tap comparison")
 

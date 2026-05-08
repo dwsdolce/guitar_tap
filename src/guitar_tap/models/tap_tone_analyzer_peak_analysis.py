@@ -198,6 +198,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 is_guitar=is_guitar,
                 tolerance=tolerance,
             )
+            if self.tap_entries:
+                self._recalculate_tap_entry_peaks()
             self.peaksChanged.emit(peaks)
             return
 
@@ -224,7 +226,30 @@ class TapToneAnalyzerPeakAnalysisMixin:
             is_guitar=is_guitar,
             tolerance=tolerance,
         )
+        # Recompute per-tap peaks so the multi-tap comparison table reflects
+        # the current Peak Min setting.  Mirrors Swift recalculateTapEntryPeaks().
+        if self.tap_entries:
+            self._recalculate_tap_entry_peaks()
         self.peaksChanged.emit(peaks)
+
+    # ------------------------------------------------------------------ #
+    # _recalculate_tap_entry_peaks
+    # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift recalculateTapEntryPeaks()
+    # ------------------------------------------------------------------ #
+
+    def _recalculate_tap_entry_peaks(self) -> None:
+        """Re-run peak detection on every stored TapEntry snapshot using the
+        current peak_threshold, then update tap_entries so the multi-tap
+        comparison table shows peaks consistent with the Peak Min slider.
+        """
+        for entry in self.tap_entries:
+            tap_peaks = self.find_peaks(
+                list(entry.snapshot.magnitudes),
+                list(entry.snapshot.frequencies),
+            )
+            mode_selected = self.guitar_mode_selected_peak_ids(tap_peaks)
+            entry.peaks = tap_peaks
+            entry.selected_peak_ids = list(mode_selected)
 
     # ------------------------------------------------------------------ #
     # reset_to_auto_selection

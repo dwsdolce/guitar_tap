@@ -230,6 +230,11 @@ class TapToneAnalyzerControlMixin:
         """
         self._calibration_device_name = device.name
         self.mic.set_device(device)
+        # Recompute self.freq from the new device's sample rate.
+        # Mirrors Swift start() calling updateFrequencyBins() after the engine
+        # restarts with the new device — ensures the frequency axis matches
+        # the actual hardware sample rate.
+        self._update_frequency_bins()
 
     def _on_mic_calibration_changed(self, cal) -> None:
         """Apply the calibration profile emitted by RealtimeFFTAnalyzer.set_device().

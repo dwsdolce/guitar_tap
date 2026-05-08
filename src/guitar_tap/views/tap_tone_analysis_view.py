@@ -1840,6 +1840,7 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peaksChanged.connect(self._on_peaks_changed_results)
         canvas.peaksChanged.connect(self._on_peaks_changed_ratios)
         canvas.peaksChanged.connect(self._material_peak_widget.update_peaks)
+        canvas.peaksChanged.connect(self._on_peaks_changed_multi_tap)
         canvas.peakSelected.connect(self.peak_widget.select_row)
         canvas.peakDeselected.connect(self.peak_widget.clear_selection)
         canvas.framerateUpdate.connect(self._on_framerate_update)
@@ -3680,9 +3681,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # suppress live updates — no need to touch is_measurement_complete here.
 
         # ── Annotations ───────────────────────────────────────────────────────
-        # Hide annotations during any comparison mode (saved or multi-tap).
-        # Mirrors Swift: when isComparing is true, SpectrumView receives peaks: nil
-        # and annotationPeaks: nil, so no annotations are rendered.
+        # Hide annotations during any comparison mode (saved-measurement or multi-tap).
+        # Mirrors Swift: isComparing = tap.displayMode == .comparison, so annotations
+        # are suppressed whenever comparison curves are displayed.
         if is_comparing:
             canvas.annotations.hide_annotations()
         else:
@@ -3789,6 +3790,19 @@ class MainWindow(QtWidgets.QMainWindow):
         # via comparisonChanged.emit — it handles all widget visibility updates.
         # Populate the multi-tap results view now with tap-entry data.
         if checked and analyzer.tap_entries:
+            self._populate_multi_tap_results_view()
+
+    def _on_peaks_changed_multi_tap(self, _peaks: object) -> None:
+        """Rebuild multi-tap comparison table when peaks change (e.g. Peak Min slider).
+
+        Per-tap peaks are recomputed in recalculate_frozen_peaks_if_needed() via
+        _recalculate_tap_entry_peaks().  This handler refreshes the view so the
+        table reflects the updated per-tap peaks.
+        """
+        if (
+            self._multi_tap_results_view.isVisible()
+            and self.fft_canvas.analyzer.tap_entries
+        ):
             self._populate_multi_tap_results_view()
 
     def _populate_multi_tap_results_view(self) -> None:
