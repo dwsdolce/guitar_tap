@@ -185,12 +185,16 @@ class TapToneAnalyzerControlMixin:
 
     def load_calibration(self, path: str) -> bool:
         """Load and interpolate a calibration file onto the FFT bin grid."""
+        import os
         import models.microphone_calibration as _mc
         try:
             cal_data = _mc.parse_cal_file(path)
             self._calibration_corrections = _mc.interpolate_to_bins(cal_data, self.freq)
             if self.mic.proc_thread is not None:
                 self.mic.proc_thread.set_calibration(self._calibration_corrections)
+            # Track the calibration name (file stem) so it is saved with
+            # measurements — mirrors load_calibration_from_profile().
+            self._active_calibration_name = os.path.splitext(os.path.basename(path))[0] or None
             return True
         except Exception:
             return False

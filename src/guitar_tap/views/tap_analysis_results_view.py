@@ -667,7 +667,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
     class _TwoColRow(Flowable):
         """Single key:value metadata row — mirrors Swift metaRow."""
-        LBL_W = 100              # 100 pt label column width (pt == 1 in reportlab)
+        LBL_W = 120              # 120 pt label column width — fits "Measurement Name:" on one line
 
         def __init__(self, label: str, value: str, content_w: float):
             super().__init__()
@@ -684,7 +684,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             # Value (regular black) — uses S_META_VAL style
             c.setFont(S_META_VAL.fontName, S_META_VAL.fontSize)
             c.setFillColor(S_META_VAL.textColor)
-            c.drawString(106, 0, self._value)
+            c.drawString(126, 0, self._value)
 
         def wrap(self, avail_w, avail_h):
             return (self._cw, 13)
@@ -784,9 +784,15 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     if data.notes:
         story.append(_TwoColRow("Notes", data.notes, CONTENT_W))
         story.append(Spacer(1, 4))
+    def _fmt_freq(f: float) -> str:
+        """Format frequency as Hz or kHz — mirrors Swift Float.formattedAsFrequency()."""
+        if f >= 1000:
+            return f"{f / 1000:.1f} kHz"
+        return f"{f:.1f} Hz"
+
     story.append(_TwoColRow(
         "Frequency Range",
-        f"{min_freq:.0f} Hz \u2013 {max_freq:.0f} Hz",
+        f"{_fmt_freq(min_freq)} \u2013 {_fmt_freq(max_freq)}",
         CONTENT_W,
     ))
     if data.microphone_name:

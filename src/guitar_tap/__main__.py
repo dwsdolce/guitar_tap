@@ -104,6 +104,7 @@ if __name__ == "__main__":
         app = MainWindow()
         app.setWindowIcon(QtGui.QIcon(os.path.join(basedir, "icons/guitar-tap.svg")))
         app.show()
+        app.apply_saved_geometry()
         app.activateWindow()
         app.raise_()
         qapp.exec()

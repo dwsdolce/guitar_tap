@@ -458,6 +458,7 @@ class TapToneAnalyzer(
         fft_size: int,
         audio_device,
         calibration_corrections,
+        calibration_name: "str | None" = None,
     ) -> None:
         """Wire up audio hardware and load persisted state.
 
@@ -473,6 +474,7 @@ class TapToneAnalyzer(
             fft_size:                FFT window size in samples (power of 2).
             audio_device:            AudioDevice to open, or None for the default.
             calibration_corrections: ndarray of per-bin dB corrections, or None.
+            calibration_name:        Human-readable calibration name, or None.
         """
         import numpy as np
         import sounddevice as _sd
@@ -509,6 +511,7 @@ class TapToneAnalyzer(
 
         # ── Calibration ───────────────────────────────────────────────────
         self._calibration_corrections = calibration_corrections
+        self._active_calibration_name = calibration_name
         self._calibration_device_name = audio_device.name if audio_device else ""
 
         # ── Gated-FFT capture signal ───────────────────────────────────────

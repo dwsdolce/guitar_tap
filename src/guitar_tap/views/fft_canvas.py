@@ -398,6 +398,7 @@ class FftCanvas(pg.PlotWidget):
         # can pass the corrections array in.  Try fingerprint key first, then
         # name-only fallback for profiles saved before fingerprints.
         _initial_calibration = None
+        _initial_calibration_name = None
         if _saved_audio_device is not None:
             _cal = _mc_mod.CalibrationStorage.calibration_for_device(
                 _saved_audio_device.fingerprint
@@ -410,6 +411,7 @@ class FftCanvas(pg.PlotWidget):
                 _x = np.arange(0, fft_size // 2 + 1)
                 _freq_tmp = _x * sampling_rate // fft_size
                 _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
+                _initial_calibration_name = _cal.name
 
         guitar_type_str = _as.AppSettings.guitar_type()
 
@@ -420,6 +422,7 @@ class FftCanvas(pg.PlotWidget):
             fft_size=fft_size,
             audio_device=_saved_audio_device,
             calibration_corrections=_initial_calibration,
+            calibration_name=_initial_calibration_name,
         )
         # Wire the analyzer into FftAnnotations so dragged positions are persisted
         # in the model and survive pan/zoom annotation rebuilds.

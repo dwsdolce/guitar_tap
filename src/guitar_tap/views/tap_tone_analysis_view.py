@@ -512,20 +512,11 @@ class MainWindow(QtWidgets.QMainWindow):
             about_action.triggered.connect(self._show_about)
             help_menu.addAction(about_action)
 
-        # Window geometry
-        geom = AS.AppSettings.window_geometry()
-        if geom:
-            self.restoreGeometry(geom)
-            screen = QtWidgets.QApplication.primaryScreen()
-            if screen:
-                available = screen.availableGeometry()
-                w = min(self.width(), available.width() - 40)
-                h = min(self.height(), available.height() - 40)
-                self.resize(w, h)
-                fg = self.frameGeometry()
-                if not available.contains(fg.topLeft()):
-                    self.move(available.center() - self.rect().center())
-        else:
+        # Window geometry — store for deferred restore after show().
+        # restoreGeometry must run after the window is visible so the layout
+        # system doesn't override the saved size with minimum-size hints.
+        self._saved_geometry = AS.AppSettings.window_geometry()
+        if not self._saved_geometry:
             self.resize(1200, 760)
 
         # Audio / FFT parameters
@@ -3083,10 +3074,18 @@ class MainWindow(QtWidgets.QMainWindow):
         # label the identified peak (e.g. "Longitudinal") rather than the generic "Peak".
         # Mirrors Swift: effectiveLongitudinalPeakID is a @Published-chain computed property
         # that SwiftUI propagates automatically; Python requires an explicit push here.
+        #
+        # For brace measurements the phase goes directly from CAPTURING_LONGITUDINAL
+        # to COMPLETE (no review phase), so we must also push IDs on COMPLETE —
+        # otherwise mode_value() never sees selected_longitudinal_peak_id and
+        # returns "Peak" instead of "Longitudinal".
         az = self.fft_canvas.analyzer
         phase = az.material_tap_phase
-        in_review = phase in (_MTP.REVIEWING_LONGITUDINAL, _MTP.REVIEWING_CROSS, _MTP.REVIEWING_FLC)
-        if in_review:
+        should_push = phase in (
+            _MTP.REVIEWING_LONGITUDINAL, _MTP.REVIEWING_CROSS, _MTP.REVIEWING_FLC,
+            _MTP.COMPLETE,
+        )
+        if should_push:
             pm = self.peak_widget.model
             pm.selected_longitudinal_peak_id = az.effective_longitudinal_peak_id
             pm.selected_cross_peak_id        = az.effective_cross_peak_id
@@ -6572,6 +6571,27 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
     # Window lifecycle
     # ================================================================
+
+    def apply_saved_geometry(self) -> None:
+        """Restore saved window geometry after the window is shown.
+
+        Called from __main__.py after show() so that the layout system has
+        already computed minimum sizes and won't override the restored geometry.
+        """
+        geom = self._saved_geometry
+        if not geom:
+            return
+        self.restoreGeometry(geom)
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen:
+            available = screen.availableGeometry()
+            w = min(self.width(), available.width() - 40)
+            h = min(self.height(), available.height() - 40)
+            self.resize(w, h)
+            fg = self.frameGeometry()
+            if not available.contains(fg.topLeft()):
+                self.move(available.center() - self.rect().center())
+        self._saved_geometry = None
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
         AS.AppSettings.set_window_geometry(self.saveGeometry())
