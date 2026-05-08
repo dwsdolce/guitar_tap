@@ -283,37 +283,108 @@ class FftCanvas(pg.PlotWidget):
 
         # Resolve the saved AudioDevice (fingerprint → live index).
         # Mirrors Swift RealtimeFFTAnalyzer selectedInputDevice restore logic.
+        #
+        # IMPORTANT (Windows): use filter_input_devices() to strip WDM-KS variants
+        # and Sound-Mapper / loopback pseudo-devices.  PortAudio happily opens a
+        # WDM-KS stream in shared mode and then delivers all-zero samples (-313
+        # dB) with no error — indistinguishable from a working device.  See the
+        # docstring on filter_input_devices() in models/audio_device.py for
+        # details.  Without this filter, persisted fingerprints (or the system
+        # default) can resolve to a WDM-KS entry and the mic appears dead.
         import sounddevice as sd  # deferred: ~0.4 s cold-import cost
         from models.audio_device import AudioDevice as _AudioDevice
+        from models.audio_device import filter_input_devices as _filter_inputs
+        from models.realtime_fft_analyzer_device_management import _is_builtin_mic
         _saved_audio_device: _AudioDevice | None = None
+        _filtered_devs: list[dict] = []
         try:
             _all_devs = list(sd.query_devices())
+            # Annotate each device dict with its host-API name so the filter
+            # doesn't need a second query_hostapis() call (which can fail
+            # mid-enumeration on Windows).
+            try:
+                _apis = list(sd.query_hostapis())
+                for _d in _all_devs:
+                    _ai = int(_d.get("hostapi", -1))
+                    if 0 <= _ai < len(_apis):
+                        _d["_hostapi_name"] = _apis[_ai].get("name", "")
+            except Exception:
+                pass
+            _filtered_devs = _filter_inputs(_all_devs)
+
             _saved_fp = _as.AppSettings.audio_device_fingerprint()
             if _saved_fp:
                 # Try fingerprint match first (name:sample_rate), then name-only fallback.
                 _proto = _AudioDevice.from_fingerprint(_saved_fp)
                 if _proto is not None:
-                    _saved_audio_device = _proto.resolve(_all_devs)
+                    _saved_audio_device = _proto.resolve(_filtered_devs)
                 if _saved_audio_device is None:
                     # Name-only fallback for settings saved before fingerprints.
                     _saved_name = _as.AppSettings.device_name()
-                    for _d in _all_devs:
+                    for _d in _filtered_devs:
                         if str(_d["name"]) == _saved_name and _d["max_input_channels"] > 0:
                             _saved_audio_device = _AudioDevice.from_sounddevice_dict(_d)
                             break
         except Exception:
             pass
 
-        # If the saved device wasn't found, fall back to the system default input
-        # and persist it so AppSettings reflects reality.
+        # ── Built-in-mic override ────────────────────────────────────────
+        # If the persisted device resolved to a built-in / integrated mic
+        # (Microphone Array, Intel Smart Sound, Realtek HDA, etc.), and an
+        # external mic is available, prefer the external.  This recovers from
+        # a bad fingerprint that got persisted via _on_device_lost when an
+        # external mic was momentarily unenumerated, and prevents Windows
+        # built-in mics that silently deliver zeros under WASAPI shared mode
+        # from being chosen at startup when a real mic is present.  Mirrors
+        # the existing _BUILTIN_MIC_KEYWORDS deny-list intent.
+        if _saved_audio_device is not None and _is_builtin_mic(_saved_audio_device.name):
+            _external = next(
+                (d for d in _filtered_devs if not _is_builtin_mic(d["name"])),
+                None,
+            )
+            if _external is not None:
+                _saved_audio_device = _AudioDevice.from_sounddevice_dict(_external)
+                # Heal the persistence so the next launch picks the right one.
+                try:
+                    _as.AppSettings.set_audio_device(_saved_audio_device)
+                except Exception:
+                    pass
+
+        # If the saved device wasn't found, fall back to the system default
+        # input — but only if it survives the WDM-KS / pseudo-device filter
+        # AND is not a built-in mic when an external is available.  Otherwise
+        # pick the first external mic, then the first filtered device.
         if _saved_audio_device is None:
             try:
                 _def_info = sd.query_devices(kind="input")
-                if _def_info is not None:
-                    _saved_audio_device = _AudioDevice.from_sounddevice_dict(_def_info)
-                    _as.AppSettings.set_audio_device(_saved_audio_device)
             except Exception:
-                pass
+                _def_info = None
+            _def_dev: _AudioDevice | None = None
+            if _def_info is not None:
+                _def_dev = _AudioDevice.from_sounddevice_dict(_def_info)
+                # Accept the system default only if it appears in the
+                # filtered list (i.e. is not a WDM-KS / pseudo-device).
+                if _filtered_devs and not any(
+                    int(_d["index"]) == _def_dev.index for _d in _filtered_devs
+                ):
+                    _def_dev = None
+            # Prefer first external mic over the system default if the
+            # default turns out to be a built-in.
+            if (_def_dev is None or _is_builtin_mic(_def_dev.name)) and _filtered_devs:
+                _ext = next(
+                    (d for d in _filtered_devs if not _is_builtin_mic(d["name"])),
+                    None,
+                )
+                if _ext is not None:
+                    _def_dev = _AudioDevice.from_sounddevice_dict(_ext)
+            if _def_dev is None and _filtered_devs:
+                _def_dev = _AudioDevice.from_sounddevice_dict(_filtered_devs[0])
+            if _def_dev is not None:
+                _saved_audio_device = _def_dev
+                try:
+                    _as.AppSettings.set_audio_device(_saved_audio_device)
+                except Exception:
+                    pass
 
         # Use the selected device's native sample rate if available.
         # AudioDevice already carries sample_rate so no extra OS query is needed.
