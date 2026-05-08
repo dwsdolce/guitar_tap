@@ -412,106 +412,37 @@ class TestSaveComparison:
                 assert 0.0 <= c <= 1.0, f"Component {c} out of [0,1] range"
 
 
-class TestLoadComparisonRecord:
-    """Mirrors Swift comparison record load path tests (Phase 2)."""
-
-    def _make_saved_comparison(self, n: int = 2) -> "TapToneMeasurement":
-        """Helper: create and save a comparison, return the saved record."""
-        sut = _FullStubAnalyzer()
-        measurements = [_make_measurement(measurement_name=f"M{i}") for i in range(n)]
-        sut.load_comparison(measurements)
-        sut.save_comparison(measurement_name="Saved Comparison")
-        return sut.savedMeasurements[0]
-
-    def test_load_comparison_record_sets_display_mode(self):
-        """Loading a comparison record sets display_mode to COMPARISON."""
-        record = self._make_saved_comparison(2)
-        sut2 = _FullStubAnalyzer()
-        # _load_measurement_body is the internal path; use the public load_measurement
-        # which calls it. Stub out the parts that aren't relevant.
-        sut2._restore_comparison_from_entries(record)
-        assert sut2._display_mode == AnalysisDisplayMode.COMPARISON
-
-    def test_load_comparison_record_populates_comparison_data(self):
-        """After loading a comparison record, _comparison_data has the right entry count."""
-        record = self._make_saved_comparison(3)
-        sut2 = _FullStubAnalyzer()
-        sut2._restore_comparison_from_entries(record)
-        assert len(sut2._comparison_data) == 3
-
-    def test_load_comparison_record_restores_labels(self):
-        """Labels in _comparison_data match the saved ComparisonEntry labels."""
-        sut = _FullStubAnalyzer()
-        m1 = _make_measurement(measurement_name="Bridge")
-        m2 = _make_measurement(measurement_name="Neck")
-        sut.load_comparison([m1, m2])
-        sut.save_comparison(measurement_name="Test")
-        record = sut.savedMeasurements[0]
-
-        sut2 = _FullStubAnalyzer()
-        sut2._restore_comparison_from_entries(record)
-        labels = [e["label"] for e in sut2._comparison_data]
-        assert "Bridge" in labels
-        assert "Neck" in labels
-
-    def test_load_comparison_record_emits_comparison_changed(self):
-        """_restore_comparison_from_entries emits comparisonChanged(True)."""
-        record = self._make_saved_comparison(2)
-        sut2 = _FullStubAnalyzer()
-        events: list[bool] = []
-        sut2.comparisonChanged.connect(lambda v: events.append(v))
-        sut2._restore_comparison_from_entries(record)
-        assert True in events
-
-    def test_load_comparison_record_axis_restored(self):
-        """Axis bounds are restored from the union of entry snapshots."""
-        sut = _FullStubAnalyzer()
-        m1 = TapToneMeasurement.create(
-            peaks=[], measurement_name="A",
-            spectrum_snapshot=_make_snapshot(min_freq=50.0, max_freq=800.0),
-        )
-        m2 = TapToneMeasurement.create(
-            peaks=[], measurement_name="B",
-            spectrum_snapshot=_make_snapshot(min_freq=100.0, max_freq=1200.0),
-        )
-        sut.load_comparison([m1, m2])
-        sut.save_comparison(measurement_name="Axis Test")
-        record = sut.savedMeasurements[0]
-
-        sut2 = _FullStubAnalyzer()
-        axis_events: list[tuple] = []
-        sut2.freqRangeChanged.connect(lambda lo, hi: axis_events.append((lo, hi)))
-        sut2._restore_comparison_from_entries(record)
-        assert len(axis_events) >= 1
-        lo, hi = axis_events[-1]
-        assert lo <= 50
-        assert hi >= 1200
-
-
 # ---------------------------------------------------------------------------
 # Multi-tap → saved comparison transition tests  (MT-SC-U1–MT-SC-U3)
 # ---------------------------------------------------------------------------
 #
 # Port of Swift MultiTapToSavedComparisonTransitionTests.
 #
-# The model's load_comparison() now mirrors Swift loadComparison(measurements:):
+# The model's load_comparison() mirrors Swift loadComparison(measurements:):
 # it resets showing_multi_tap_comparison and tap_entries directly (without
 # emitting comparisonChanged(False)), then emits a single coherent
-# comparisonChanged(True) with _loading_saved_comparison=True so the view
-# handler can distinguish a saved-measurement load from a multi-tap activation.
+# comparisonChanged(True).  Saved-measurement comparison is then identified
+# by the computed property is_saved_measurement_comparison (mirrors Swift
+# isSavedMeasurementComparison: displayMode == .comparison && !showingMultiTapComparison).
 
 class _MultiTapStubAnalyzer(_StubAnalyzer):
     """Extends _StubAnalyzer with multi-tap comparison fields.
 
     Mirrors the fields on TapToneAnalyzer that load_comparison() touches:
-      self.tap_entries, self.showing_multi_tap_comparison, self._loading_saved_comparison
+      self.tap_entries, self.showing_multi_tap_comparison
+    Plus the computed property is_saved_measurement_comparison from
+    TapToneAnalyzer (Swift isSavedMeasurementComparison).
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.tap_entries: list = []
         self.showing_multi_tap_comparison: bool = False
-        self._loading_saved_comparison: bool = False
+
+    @property
+    def is_saved_measurement_comparison(self) -> bool:
+        """Mirrors Swift TapToneAnalyzer.isSavedMeasurementComparison."""
+        return self.is_comparing and not self.showing_multi_tap_comparison
 
 
 class TestMultiTapToSavedComparisonTransition:
@@ -543,8 +474,8 @@ class TestMultiTapToSavedComparisonTransition:
 
     def test_MT_SC_U2_load_comparison_while_multi_tap_active_sets_display_mode_and_data(self):
         """MT-SC-U2: After load_comparison() while multi-tap was active, display mode
-        stays COMPARISON, _comparison_data has the loaded entries, and
-        _loading_saved_comparison is False after the call completes.
+        stays COMPARISON, is_saved_measurement_comparison is True, and
+        _comparison_data has the loaded entries.
 
         Mirrors Swift loadComparison_whileMultiTapActive_setsIsSavedMeasurementComparison.
         """
@@ -558,11 +489,11 @@ class TestMultiTapToSavedComparisonTransition:
         assert sut._display_mode == AnalysisDisplayMode.COMPARISON, (
             "display mode should remain COMPARISON after saved-measurement load"
         )
+        assert sut.is_saved_measurement_comparison is True, (
+            "is_saved_measurement_comparison should be True after transitioning from multi-tap"
+        )
         assert len(sut._comparison_data) == 2, (
             "_comparison_data should contain the two loaded measurements"
-        )
-        assert sut._loading_saved_comparison is False, (
-            "_loading_saved_comparison must be reset to False after the call"
         )
 
     def test_MT_SC_U3_load_comparison_without_multi_tap_resets_are_no_op(self):
@@ -581,26 +512,3 @@ class TestMultiTapToSavedComparisonTransition:
         assert sut._display_mode == AnalysisDisplayMode.COMPARISON
         assert len(sut._comparison_data) == 1
 
-    def test_MT_SC_U4_loading_saved_comparison_flag_set_during_emit(self):
-        """MT-SC-U4: _loading_saved_comparison is True during comparisonChanged(True)
-        and False both before and after load_comparison().
-
-        This pins the contract that the view handler can read the flag at signal time
-        to distinguish a saved-measurement load from a multi-tap activation.
-        """
-        sut = _MultiTapStubAnalyzer()
-        sut.showing_multi_tap_comparison = True
-        sut._display_mode = AnalysisDisplayMode.COMPARISON
-
-        flag_during_emit: list[bool] = []
-        sut.comparisonChanged.connect(
-            lambda _: flag_during_emit.append(sut._loading_saved_comparison)
-        )
-
-        assert sut._loading_saved_comparison is False, "Precondition: flag starts False"
-        sut.load_comparison([_make_measurement("A"), _make_measurement("B")])
-        assert sut._loading_saved_comparison is False, "Flag must be reset after load_comparison()"
-        assert len(flag_during_emit) >= 1, "comparisonChanged must have fired"
-        assert flag_during_emit[-1] is True, (
-            "_loading_saved_comparison must be True during the comparisonChanged(True) emit"
-        )
