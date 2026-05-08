@@ -181,10 +181,12 @@ class MeasurementsDialog(QtWidgets.QDialog):
                     lambda checked=False, i=idx, meas=m: self._toggle_compare(i, meas)
                 )
             else:
-                # Full-row click opens details (matches .contentShape(Rectangle()) in Swift)
+                # Single click does nothing in normal mode.
+                # Double-click loads the measurement and closes the dialog —
+                # mirrors Swift .onTapGesture(count: 2) { loadMeasurement; dismiss() }
                 m_captured = m
-                row.clicked.connect(
-                    lambda checked=False, m=m_captured: self._open_detail(m)
+                row.doubleClicked.connect(
+                    lambda checked=False, m=m_captured: self._load_and_close(m)
                 )
 
         self._update_compare_btn()
@@ -283,6 +285,17 @@ class MeasurementsDialog(QtWidgets.QDialog):
             self._analyzer.update_measurement(index, measurement_name, notes)
 
     def _load_from_detail(self, m: TapToneMeasurement) -> None:
+        self._load_and_close(m)
+
+    def _load_and_close(self, m: TapToneMeasurement) -> None:
+        """Close the dialog, then emit measurementSelected.
+
+        Mirrors Swift: dismiss first so the sheet is gone before
+        loadMeasurement() sets @Published properties (including
+        microphoneWarning).  The mic warning dialog then appears
+        on the main view, not on the closing measurements dialog.
+        """
+        self.accept()
         self.measurementSelected.emit(m)
 
     # ── Context menu ─────────────────────────────────────────────────────────
@@ -311,7 +324,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         action = menu.exec(self._list.mapToGlobal(pos))
 
         if action == load_act:
-            self.measurementSelected.emit(m)
+            self._load_and_close(m)
         elif action == details_act:
             self._open_detail(m)
         elif action == edit_act:
@@ -602,22 +615,19 @@ class MeasurementsDialog(QtWidgets.QDialog):
             return
 
         if len(imported) == 1:
-            # Auto-load single imported measurement (matches Swift importFromFile behaviour).
-            # Suppress the standalone microphone warning so we can fold it into the success
-            # message below — mirrors Swift's "Fold any microphone warning into the success
-            # message so only one alert fires" comment in importFromFile(url:).
-            main_view = self.parent()
-            if main_view is not None:
-                main_view._suppress_mic_warning = True
-                main_view._pending_mic_warning = None
+            # Auto-load single imported measurement (matches Swift importFromFile).
+            # Suppress the mic warning so we can fold it into the success message
+            # instead of showing two dialogs.  Read the warning directly from the
+            # analyzer after the synchronous signal chain completes, then clear it
+            # so the main view's handler doesn't fire a second dialog.
+            self._analyzer._suppress_mic_warning_signal = True
             self.measurementSelected.emit(imported[0])
-            if main_view is not None:
-                main_view._suppress_mic_warning = False
+            self._analyzer._suppress_mic_warning_signal = False
             msg = "Successfully imported and loaded 1 measurement."
             # Fold microphone warning into the success message (mirrors Swift).
-            if main_view is not None and main_view._pending_mic_warning:
-                msg += f"\n\n⚠️ {main_view._pending_mic_warning}"
-                main_view._pending_mic_warning = None
+            if self._analyzer.microphone_warning:
+                msg += f"\n\n⚠️ {self._analyzer.microphone_warning}"
+                self._analyzer.microphone_warning = None
             QtWidgets.QMessageBox.information(self, "Import Successful", msg)
         else:
             msg = f"Successfully imported {len(imported)} measurements."

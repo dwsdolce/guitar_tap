@@ -2518,15 +2518,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """Display or clear the mic-not-connected warning.
 
         Connected to canvas.microphoneWarningChanged — mirrors Swift
-        @Published var microphoneWarning driving an alert sheet.
+        @Published var microphoneWarning driving an alert on the main view.
         """
         if warning is None:
             return
-        if getattr(self, "_suppress_mic_warning", False):
-            self._pending_mic_warning = warning
-        else:
-            from PySide6 import QtWidgets
-            QtWidgets.QMessageBox.warning(self, "Microphone Not Connected", warning)
+        from PySide6 import QtWidgets
+        QtWidgets.QMessageBox.warning(self, "Microphone Not Connected", warning)
 
     def _on_tap_threshold_changed(self, db_val: int) -> None:
         self.fft_canvas.set_tap_threshold(db_val + 100)

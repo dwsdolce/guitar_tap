@@ -8,9 +8,10 @@ that displays one TapToneMeasurement with three lines of metadata.
   Line 2 : [N peaks] [• Ratio: X.XX] [• Decay: X.XXs]
   Line 3 : [notes, word-wrapped]   (optional)
 
-Shows PointingHandCursor on hover and emits clicked() on left-button release.
-In compare mode the chevron is replaced with a filled/empty circle that
-reflects the current selection state.
+Shows PointingHandCursor on hover.  Emits clicked() on left-button release
+and doubleClicked() on left-button double-click.  In normal mode the list
+view connects doubleClicked to load the measurement; in compare mode
+clicked toggles the selection circle.
 """
 
 from __future__ import annotations
@@ -67,6 +68,7 @@ class MeasurementRowView(QtWidgets.QWidget):
     """
 
     clicked: QtCore.Signal = QtCore.Signal()
+    doubleClicked: QtCore.Signal = QtCore.Signal()
 
     def __init__(
         self,
@@ -206,6 +208,11 @@ class MeasurementRowView(QtWidgets.QWidget):
         else:
             self._pressed = False
         super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(event)
 
     def enterEvent(self, event) -> None:
         self.setAutoFillBackground(True)

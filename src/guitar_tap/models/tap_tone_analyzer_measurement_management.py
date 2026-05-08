@@ -733,7 +733,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     f"settings for accurate analysis."
                 )
                 self.microphone_warning = warning
-                self.microphoneWarningChanged.emit(warning)
+                if not getattr(self, "_suppress_mic_warning_signal", False):
+                    self.microphoneWarningChanged.emit(warning)
 
         # ── Arm loaded-settings warning ───────────────────────────────────────
         # Mirrors Swift: showLoadedSettingsWarning = true (last statement in loadMeasurement)

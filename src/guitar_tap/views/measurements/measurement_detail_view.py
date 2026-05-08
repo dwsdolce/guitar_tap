@@ -405,8 +405,8 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             | QtWidgets.QMessageBox.StandardButton.Cancel,
         )
         if reply == QtWidgets.QMessageBox.StandardButton.Ok:
-            self.measurementSelected.emit(self._m)
             self.accept()
+            self.measurementSelected.emit(self._m)
 
     def _on_export_json(self) -> None:
         default_name = self._m.base_filename + ".json"

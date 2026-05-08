@@ -366,9 +366,11 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Measurements",
-        "Lists all saved measurements. Right-click a row to access: Load into View, "
-        "View Details, Export Measurement, Save Measurement to Disk, Export Spectrum, "
-        "Export PDF Report, or Delete. Use Import Measurement to load a file from disk. "
+        "Lists all saved measurements. Double-click a row to load the measurement "
+        "into the main view &mdash; the measurements window closes automatically after "
+        "loading. Right-click a row to access: Load into View, View Details, Export "
+        "Measurement, Save Measurement to Disk, Export Spectrum, Export PDF Report, or "
+        "Delete. Use Import Measurement to load a file from disk. "
         "Use Compare to enter multi-select mode and overlay 2&ndash;5 saved guitar "
         "measurements on the main chart for side-by-side comparison.",
         ["fa5s.clipboard-list"]
