@@ -893,6 +893,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addLayout(title_row)
 
+        # Microphone name — mirrors Swift fftAnalyzer.selectedInputDevice?.name
+        self._mic_name_label = QtWidgets.QLabel("")
+        self._mic_name_label.setFont(small_font)
+        self._mic_name_label.setStyleSheet("color: gray;")
+        vbox.addWidget(self._mic_name_label)
+
         # Row 2: "Showing …" (left) + Select All / Deselect All / Reset buttons (right)
         freq_row = QtWidgets.QHBoxLayout()
         self.freq_range_label = QtWidgets.QLabel(
@@ -1941,6 +1947,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.device_status_lbl.setText(device_name)
             _cal = _mc_mod.CalibrationStorage.calibration_for_device(device_name)
             self.set_calibration_status(_cal.name if _cal else "")
+        self._update_mic_name_label()
 
         self._start_analyzer()
 
@@ -2168,6 +2175,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # already updated, so the foregroundColor(.orange) modifier sees the correct
         # state.  In Python the signal order is serial, so we refresh here.
         self._sb_detect_msg.setStyleSheet("color: orange;" if checked else "")
+        self._update_mic_name_label()
 
         self.peak_widget.data_held(checked)
         mt = TDS.measurement_type()
@@ -2391,6 +2399,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.freq_range_label.setText(
             f"Showing {self.fft_canvas.minFreq} – {self.fft_canvas.maxFreq} Hz"
         )
+
+    def _update_mic_name_label(self) -> None:
+        """Update the microphone name label from the current device.
+
+        Mirrors Swift ``fftAnalyzer.selectedInputDevice?.name`` displayed
+        in the Analysis Results header.
+        """
+        name = getattr(self.fft_canvas.analyzer, "_calibration_device_name", "")
+        self._mic_name_label.setText(name or "")
 
     # ================================================================
     # Annotation visibility cycling
@@ -5061,6 +5078,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if _cal is None:
                 _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.name)
             self.set_calibration_status(_cal.name if _cal else "")
+            self._update_mic_name_label()
 
     def _on_device_lost(self, device_name: str) -> None:
         """Active device disconnected — sync the UI to the model's already-chosen fallback.
@@ -5083,6 +5101,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if _cal is None:
             _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.name)
         self.set_calibration_status(_cal.name if _cal else "")
+        self._update_mic_name_label()
 
     def import_calibration(self) -> None:
         start_dir = AS.AppSettings.calibration_path() or os.path.expanduser("~")
@@ -5922,6 +5941,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.fft_canvas.set_device(audio_dev)
                     AS.AppSettings.set_audio_device(audio_dev)
                     self.device_status_lbl.setText(audio_dev.name)
+                    self._update_mic_name_label()
                     _update_cal_display()
         device_combo.currentIndexChanged.connect(_on_device_selected)
 
