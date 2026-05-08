@@ -159,8 +159,27 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.modes.pop(self.freq_value(index), None)
 
     def _emit_mode_colors(self) -> None:
-        """Emit modeColorsChanged with the current freq→RGB color map."""
-        color_map = {freq: mode.color for freq, mode in self._auto_mode_map.items()}
+        """Emit modeColorsChanged with the current freq→RGB color map.
+
+        For guitar measurements, colours come from the auto-classified GuitarMode.
+        For plate/brace measurements, colours are determined by the selected
+        L/C/FLC peak IDs — matching Swift peakColor(for:) in SpectrumView.
+        """
+        if self.is_guitar:
+            color_map = {freq: mode.color for freq, mode in self._auto_mode_map.items()}
+        else:
+            color_map: dict[float, tuple[int, int, int]] = {}
+            mc = self._MATERIAL_MODE_COLORS
+            for i, peak in enumerate(self._peaks):
+                pid = peak.id
+                if pid == self.selected_longitudinal_peak_id:
+                    color_map[peak.frequency] = mc["Longitudinal"]
+                elif pid == self.selected_cross_peak_id:
+                    color_map[peak.frequency] = mc["Cross-grain"]
+                elif pid == self.selected_flc_peak_id:
+                    color_map[peak.frequency] = mc["FLC"]
+                else:
+                    color_map[peak.frequency] = mc["Peak"]
         self.modeColorsChanged.emit(color_map)
 
     def _recompute_auto_modes(self) -> None:
@@ -169,8 +188,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
         Mirrors Swift identifiedModes computed via GuitarMode.classifyAll —
         overlapping mode ranges resolve correctly because the claiming algorithm
         visits modes in ascending lower-bound order and marks each peak as used.
+
+        For plate/brace measurements (is_guitar=False), the mode map is cleared
+        — mirrors Swift PeakAnnotationsOverlay.peakModeMap:
+          guard measurementType.isGuitar else { return [:] }
         """
-        if self._data.shape[0] == 0:
+        if not self.is_guitar or self._data.shape[0] == 0:
             self._auto_mode_map = {}
             return
         peaks = [(float(self._data[i, 0]), float(self._data[i, 1]))

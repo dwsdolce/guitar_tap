@@ -1953,7 +1953,6 @@ class MainWindow(QtWidgets.QMainWindow):
         saved_gt = gt_from_mt.value if gt_from_mt is not None else AS.AppSettings.guitar_type()
         canvas.set_guitar_type_bands(saved_gt)
         self._update_measurement_badge()
-        self.reset_auto_selection_btn.setVisible(TDS.measurement_type().is_guitar)
 
         self.set_measurement_complete(False)
 
@@ -1967,6 +1966,13 @@ class MainWindow(QtWidgets.QMainWindow):
             _cal = _mc_mod.CalibrationStorage.calibration_for_device(device_name)
             self.set_calibration_status(_cal.name if _cal else "")
         self._update_mic_name_label()
+
+        # Apply measurement type to all UI elements on startup — mirrors Swift's
+        # onAppear / init that reads TapDisplaySettings.measurementType and
+        # configures every bound control.  Without this, starting in plate/brace
+        # mode leaves the UI in guitar-mode layout (missing instruction panel,
+        # wrong peak list widget, etc.).
+        self._apply_measurement_type_to_ui()
 
         self._start_analyzer()
 
@@ -2366,6 +2372,12 @@ class MainWindow(QtWidgets.QMainWindow):
         model installs the analyzer's identifiedModes directly without re-running
         classify_all.
 
+        For plate/brace measurements, guitar mode classification is skipped
+        entirely — mirrors Swift PeakAnnotationsOverlay.peakModeMap:
+          guard measurementType.isGuitar else { return [:] }
+        Plate/brace peaks are passed to update_data() (not update_data_with_modes)
+        so _auto_mode_map stays empty and mode_value() returns L/C/FLC labels.
+
         Swift sortedPeaksWithModes:
           measurementType.isGuitar
               ? (peak.frequency >= minFreq && peak.frequency <= maxFreq)
@@ -2375,25 +2387,29 @@ class MainWindow(QtWidgets.QMainWindow):
         if not peaks:
             self.peak_widget.update_data_with_modes([])
             return
-        fmin = self.fft_canvas.minFreq
-        fmax = self.fft_canvas.maxFreq
-        analyzer = self.fft_canvas.analyzer
-        from models.guitar_mode import GuitarMode
         mt = TDS.measurement_type()
-        show_unknown = AS.AppSettings.show_unknown_modes()
-        # Mirrors Swift: plate/brace bypasses the frequency range filter (`: true`).
-        # Guitar mode filters to the displayed viewport.
-        peaks_with_modes = [
-            (p, analyzer.peak_mode(p))
-            for p in peaks
-            if not mt.is_guitar or (fmin <= p.frequency <= fmax)
-        ]
-        if mt.is_guitar and not show_unknown:
+        analyzer = self.fft_canvas.analyzer
+
+        if not mt.is_guitar:
+            # Plate/brace: no guitar mode classification, no frequency filtering.
+            # Mirrors Swift where peakModeMap returns [:] for non-guitar types.
+            self.peak_widget.model.update_data(list(peaks))
+        else:
+            fmin = self.fft_canvas.minFreq
+            fmax = self.fft_canvas.maxFreq
+            from models.guitar_mode import GuitarMode
+            show_unknown = AS.AppSettings.show_unknown_modes()
             peaks_with_modes = [
-                (p, m) for p, m in peaks_with_modes
-                if m != GuitarMode.UNKNOWN
+                (p, analyzer.peak_mode(p))
+                for p in peaks
+                if fmin <= p.frequency <= fmax
             ]
-        self.peak_widget.update_data_with_modes(peaks_with_modes)
+            if not show_unknown:
+                peaks_with_modes = [
+                    (p, m) for p, m in peaks_with_modes
+                    if m != GuitarMode.UNKNOWN
+                ]
+            self.peak_widget.update_data_with_modes(peaks_with_modes)
 
         # For plate/brace: mirror Swift's live reactive MaterialPeakRowView binding:
         #   isLongitudinal: effectiveLongitudinalPeakID == item.peak.id

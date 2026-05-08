@@ -512,7 +512,11 @@ class AppSettings:
     @classmethod
     def window_geometry(cls) -> QtCore.QByteArray | None:
         v = cls._get("window/geometry", None)
-        return v if isinstance(v, QtCore.QByteArray) else None
+        if isinstance(v, QtCore.QByteArray):
+            return v
+        if isinstance(v, (bytes, bytearray)):
+            return QtCore.QByteArray(v)
+        return None
 
     @classmethod
     def set_window_geometry(cls, geom: QtCore.QByteArray) -> None:

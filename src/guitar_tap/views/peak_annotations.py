@@ -211,6 +211,12 @@ class FftAnnotations(QtCore.QObject):
     # ── item factories ────────────────────────────────────────────────────────
 
     def _mode_color(self, mode_str: str) -> tuple[int, int, int]:
+        # Plate/brace material labels — mirrors Swift DraggablePeakAnnotation.modeColor
+        # which checks measurementType.isGuitar before using guitar colours.
+        from views.shared.peaks_model import PeaksModel
+        mat = PeaksModel._MATERIAL_MODE_COLORS.get(mode_str)
+        if mat is not None:
+            return mat
         resolved = gm.GuitarMode.from_mode_string(mode_str)
         if resolved is gm.GuitarMode.UNKNOWN and mode_str and mode_str != "Unknown":
             # Freeform user-defined label → distinct teal color.

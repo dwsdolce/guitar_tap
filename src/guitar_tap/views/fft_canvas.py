@@ -1046,6 +1046,10 @@ class FftCanvas(pg.PlotWidget):
         for item in self._mode_band_items:
             item.setVisible(is_guitar and self._mode_bands_visible)
         self.line_threshold.setVisible(is_guitar and not self.is_comparing)
+        # Clear stale guitar mode colours when switching to plate/brace so
+        # _peak_brushes doesn't use leftover guitar colours on new peaks.
+        if not is_guitar:
+            self._mode_color_map = {}
 
     def start_plate_analysis(self) -> None:
         """Arm the plate capture state machine for the next tap(s)."""

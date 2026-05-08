@@ -190,6 +190,10 @@ class TapToneAnalyzer(
         self._gm = _gm
         self._tds = _tds
 
+        # Pitch calculator — mirrors Swift `let pitchCalculator = Pitch(a4: 440.0)`
+        from models.pitch import Pitch as _Pitch
+        self.pitch_calculator = _Pitch(a4=440.0)
+
         # ── fft_analyzer reference (mirrors Swift's fftAnalyzer property) ──
         # None when constructed without audio hardware (tests, import-time).
         # Populated by start() in the production path.
