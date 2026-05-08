@@ -148,8 +148,9 @@ def _build_help_html() -> str:
         "Coloured markers label each resonant peak with its mode, frequency, and pitch. "
         "In guitar mode, one peak per mode is auto-selected based on the strongest peak in "
         "each frequency range, working lowest-to-highest so overlapping ranges resolve in "
-        "favour of the lower mode. Use the Annotations button to cycle through "
-        "All / Selected / None label modes. The reset button in the Results panel resets "
+        "favour of the lower mode. Click a peak label to toggle its selection. "
+        "Use the Annotations button to cycle through "
+        "All / Selected / None label modes. In the Results panel, the wand button resets "
         "selections back to automatic if you have made manual changes."
     ))
     parts.append(_row(
@@ -300,15 +301,34 @@ def _build_help_html() -> str:
         ["mdi.gesture-tap"]
     ))
     parts.append(_row(
-        "Pause / Resume",
-        "Temporarily suspends tap detection while keeping the spectrum live. "
-        "Useful between taps in a multi-tap sequence.",
-        ["fa5.pause-circle", "fa5.play-circle"]
+        "Pause / Resume &bull; Accept (plate/brace review)",
+        "Pause temporarily suspends tap detection while keeping the spectrum live "
+        "&mdash; use it to let the ring-out decay between taps in a multi-tap "
+        "sequence, or to reposition a plate or brace before continuing. Resume "
+        "re-arms the detector.<br><br>"
+        "In plate and brace mode, after each phase is captured the spectrum freezes "
+        "for review. While in a review state the button changes to Accept. Click "
+        "Accept to confirm the captured spectrum and advance to the next phase "
+        "(or complete the measurement if it was the last phase).",
+        ["fa5.pause-circle", "fa5.play-circle", "fa5s.check-circle"]
     ))
     parts.append(_row(
-        "Cancel",
-        "Aborts a multi-tap or plate measurement sequence and discards the partial data.",
-        ["fa5.times-circle"]
+        "Cancel &bull; Redo (plate/brace review)",
+        "Cancel aborts the current measurement sequence and discards all partial data."
+        "<br><br>"
+        "In plate and brace mode, while reviewing a captured phase the button changes "
+        "to Redo. Click Redo to discard only the current phase&rsquo;s data and "
+        "re-capture it &mdash; earlier phases are preserved. The detector re-arms "
+        "immediately so you can tap again without clicking New Tap.",
+        ["fa5.times-circle", "fa5s.undo"]
+    ))
+    parts.append(_row(
+        "Results Panel",
+        "The analysis results panel is permanently visible on the right side of the "
+        "window. It shows the peak list, decay time, plate properties, quality rating, "
+        "and (for Plate mode) the Gore target thickness. The panel also contains "
+        "Export Spectrum and Export PDF Report buttons.",
+        ["fa5s.file-alt"]
     ))
     parts.append(_row(
         "Auto dB",
@@ -429,6 +449,16 @@ def _build_help_html() -> str:
         "Reset arrows",
         "Each slider has a small reset button that resets it to the factory default value."
     ))
+    parts.append(_row(
+        "Re-analyze Peaks",
+        "Shown in the results panel header next to the microphone name. Re-runs peak "
+        "detection on a loaded measurement&rsquo;s frozen spectrum using the current "
+        "algorithm. This is useful when loading measurements saved by older builds that "
+        "may have missed peaks due to earlier algorithm limitations. The button is only "
+        "enabled when viewing a loaded measurement. After re-analysis the peaks are "
+        "recalculated as if the measurement were freshly captured with the current software.",
+        ["fa5s.sync-alt"]
+    ))
 
     # ── Settings Reference ────────────────────────────────────────────────
     parts.append(_h2("fa5s.cog", "Settings Reference"))
@@ -458,7 +488,8 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Display Frequency Range",
         "Advanced &rarr; Display Settings. Sets the horizontal zoom of the spectrum chart. "
-        "Narrow the range to zoom in on a region of interest."
+        "Narrow the range to zoom in on a region of interest. Use Save Current View to "
+        "persist the current pan/zoom as the default."
     ))
     parts.append(_row(
         "Display Magnitude Range",

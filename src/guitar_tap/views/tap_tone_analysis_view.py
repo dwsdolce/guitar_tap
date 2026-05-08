@@ -893,11 +893,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addLayout(title_row)
 
-        # Microphone name — mirrors Swift fftAnalyzer.selectedInputDevice?.name
+        # Microphone name + Re-analyze button row
+        # Mirrors Swift HStack { deviceName  Spacer()  reanalyzeButton }
+        mic_row = QtWidgets.QHBoxLayout()
+        mic_row.setContentsMargins(0, 0, 0, 0)
         self._mic_name_label = QtWidgets.QLabel("")
         self._mic_name_label.setFont(small_font)
         self._mic_name_label.setStyleSheet("color: gray;")
-        vbox.addWidget(self._mic_name_label)
+        mic_row.addWidget(self._mic_name_label, stretch=1)
+
+        # Re-analyze: re-run find_peaks() on the frozen spectrum using the
+        # current algorithm.  Useful for upgrading measurements saved by older
+        # builds that missed peaks.  Mirrors Swift reanalyzePeaks() button.
+        self._reanalyze_btn = QtWidgets.QToolButton()
+        self._reanalyze_btn.setIcon(qta.icon("fa5s.sync-alt", color="gray"))
+        self._reanalyze_btn.setIconSize(QtCore.QSize(14, 14))
+        self._reanalyze_btn.setFixedSize(22, 22)
+        self._reanalyze_btn.setToolTip(
+            "Re-analyze peaks from spectrum using the current algorithm"
+        )
+        self._reanalyze_btn.setEnabled(False)
+        self._reanalyze_btn.clicked.connect(self._on_reanalyze_peaks)
+        mic_row.addWidget(self._reanalyze_btn)
+
+        vbox.addLayout(mic_row)
 
         # Row 2: "Showing …" (left) + Select All / Deselect All / Reset buttons (right)
         freq_row = QtWidgets.QHBoxLayout()
@@ -2198,6 +2217,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.reset_auto_selection_btn.setEnabled(
                 mt.is_guitar and self.peak_widget.model.user_has_modified_peak_selection
             )
+            self._reanalyze_btn.setEnabled(
+                self.fft_canvas.analyzer.loaded_measurement_peaks is not None
+            )
         else:
             self.save_measurement_btn.setEnabled(False)
             self.export_spectrum_btn.setEnabled(False)
@@ -2208,6 +2230,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.select_all_btn.setEnabled(False)
             self.deselect_all_btn.setEnabled(False)
             self.reset_auto_selection_btn.setEnabled(False)
+            self._reanalyze_btn.setEnabled(False)
             # Reset guitar summary to waiting state
             self._gs_ro_value.setText("Waiting\u2026")
             self._gs_ro_quality.setText("")
@@ -2889,6 +2912,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_auto_selection_btn.setEnabled(
             modified and self._is_measurement_complete
         )
+
+    def _on_reanalyze_peaks(self) -> None:
+        """Re-run peak detection on the frozen spectrum.
+
+        Mirrors Swift ``analyzer.reanalyzePeaks()`` button action.
+        After re-analysis, ``loaded_measurement_peaks`` is ``None`` so the
+        button disables itself.
+        """
+        analyzer = self.fft_canvas.analyzer
+        analyzer.reanalyze_peaks()
+        # loaded_measurement_peaks is now None — disable the button.
+        self._reanalyze_btn.setEnabled(False)
 
     # ================================================================
     # Peaks / ratios

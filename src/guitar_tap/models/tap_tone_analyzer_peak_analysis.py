@@ -252,6 +252,42 @@ class TapToneAnalyzerPeakAnalysisMixin:
             entry.selected_peak_ids = list(mode_selected)
 
     # ------------------------------------------------------------------ #
+    # reanalyze_peaks
+    # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift reanalyzePeaks()
+    # ------------------------------------------------------------------ #
+
+    def reanalyze_peaks(self) -> None:
+        """Re-run peak detection on the frozen spectrum using the current algorithm.
+
+        Useful for upgrading measurements saved by older builds that missed
+        peaks.  Clears ``loaded_measurement_peaks`` so that
+        ``recalculate_frozen_peaks_if_needed()`` falls through to the live-tap
+        path which calls ``find_peaks()`` on the frozen spectrum.
+
+        Mirrors Swift ``reanalyzePeaks()``.
+        """
+        if (
+            not self.is_measurement_complete
+            or not len(self.frozen_frequencies)
+            or not len(self.frozen_magnitudes)
+        ):
+            return
+
+        # Clear loadedMeasurementPeaks so recalculate_frozen_peaks_if_needed()
+        # falls through to the live-tap path, which calls find_peaks() on the
+        # frozen spectrum.
+        self.loaded_measurement_peaks = None
+        self.user_has_modified_peak_selection = False
+        self.selected_peak_frequencies = []
+        self.identified_modes = []
+
+        # Now re-run the full peak analysis pipeline.
+        self.recalculate_frozen_peaks_if_needed()
+        from .gt_log import gt_log
+        gt_log(f"\U0001f52c Re-analyzed peaks from frozen spectrum: "
+               f"{len(self.current_peaks)} peaks found")
+
+    # ------------------------------------------------------------------ #
     # reset_to_auto_selection
     # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift resetToAutoSelection()
     # ------------------------------------------------------------------ #
