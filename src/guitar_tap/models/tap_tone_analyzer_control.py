@@ -190,8 +190,15 @@ class TapToneAnalyzerControlMixin:
         try:
             cal_data = _mc.parse_cal_file(path)
             self._calibration_corrections = _mc.interpolate_to_bins(cal_data, self.freq)
+            # Try to build a MicrophoneCalibration profile for gated-FFT use.
+            try:
+                profile = _mc.MicrophoneCalibration.from_path(path)
+            except Exception:
+                profile = None
+            self._calibration_profile = profile
             if self.mic.proc_thread is not None:
-                self.mic.proc_thread.set_calibration(self._calibration_corrections)
+                self.mic.proc_thread.set_calibration(self._calibration_corrections,
+                                                      profile=profile)
             # Track the calibration name (file stem) so it is saved with
             # measurements — mirrors load_calibration_from_profile().
             self._active_calibration_name = os.path.splitext(os.path.basename(path))[0] or None
@@ -202,14 +209,17 @@ class TapToneAnalyzerControlMixin:
     def load_calibration_from_profile(self, cal) -> None:
         """Apply a pre-parsed MicrophoneCalibration profile to the FFT pipeline."""
         self._calibration_corrections = cal.interpolate_to_bins(self.freq)
+        self._calibration_profile = cal
         if self.mic.proc_thread is not None:
-            self.mic.proc_thread.set_calibration(self._calibration_corrections)
+            self.mic.proc_thread.set_calibration(self._calibration_corrections,
+                                                  profile=cal)
         # Track the name so _on_export_pdf can report it — mirrors Swift activeCalibration?.name.
         self._active_calibration_name = getattr(cal, "name", None)
 
     def clear_calibration(self) -> None:
         """Remove the active calibration."""
         self._calibration_corrections = None
+        self._calibration_profile = None
         self._active_calibration_name = None
         if self.mic.proc_thread is not None:
             self.mic.proc_thread.set_calibration(None)

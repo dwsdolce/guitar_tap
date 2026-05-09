@@ -206,6 +206,7 @@ class TapToneAnalyzer(
 
         # ── Calibration ────────────────────────────────────────────────────
         self._calibration_corrections = None
+        self._calibration_profile: object | None = None  # raw MicrophoneCalibration
         self._calibration_device_name: str = ""
         # Name of the currently active calibration profile (device-specific or
         # manually selected).  Mirrors Swift RealtimeFFTAnalyzer.activeCalibration?.name.
@@ -459,6 +460,7 @@ class TapToneAnalyzer(
         audio_device,
         calibration_corrections,
         calibration_name: "str | None" = None,
+        calibration_profile: object | None = None,
     ) -> None:
         """Wire up audio hardware and load persisted state.
 
@@ -511,6 +513,7 @@ class TapToneAnalyzer(
 
         # ── Calibration ───────────────────────────────────────────────────
         self._calibration_corrections = calibration_corrections
+        self._calibration_profile = calibration_profile
         self._active_calibration_name = calibration_name
         self._calibration_device_name = audio_device.name if audio_device else ""
 
@@ -703,7 +706,8 @@ class TapToneAnalyzer(
         # Preserve the level-crossing handler from the old thread before replacing it.
         old_handler = getattr(self.mic.proc_thread, "_level_crossing_handler", None)
         self.mic.proc_thread = _FPT(mic=self.mic, parent=self)
-        self.mic.proc_thread.set_calibration(self._calibration_corrections)
+        self.mic.proc_thread.set_calibration(self._calibration_corrections,
+                                              profile=self._calibration_profile)
         # Reconnect the analyzer-owned signals on the new thread.
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)

@@ -215,6 +215,10 @@ class _FftProcessingThread(QtCore.QThread):
         # Settings protected by a lock (written from main thread, read from run()).
         self._settings_lock = threading.Lock()
         self._calibration: npt.NDArray | None = None
+        # Raw MicrophoneCalibration profile — used by compute_gated_fft to
+        # interpolate corrections at the gated FFT's bin frequencies (which
+        # differ from the live FFT bins).  Mirrors Swift activeCalibration.
+        self._calibration_profile: object | None = None
 
         # MARK: - Recent Peak Level (mirrors Swift RealtimeFFTAnalyzer.recentPeakLevelDB)
 
@@ -435,10 +439,20 @@ class _FftProcessingThread(QtCore.QThread):
             self._recent_peak_db = -100.0
             self._recent_peak_history = []
 
-    def set_calibration(self, arr: npt.NDArray | None) -> None:
-        """Update the per-bin dB calibration correction array."""
+    def set_calibration(self, arr: npt.NDArray | None,
+                        profile: object | None = None) -> None:
+        """Update the per-bin dB calibration correction array.
+
+        Args:
+            arr:     Pre-interpolated dB corrections for the live FFT bins.
+            profile: Raw MicrophoneCalibration object (optional).  When provided,
+                     ``compute_gated_fft`` uses it to interpolate corrections at
+                     the gated FFT's own bin frequencies — mirroring Swift
+                     ``computeGatedFFT`` which calls ``activeCalibration.corrections(for:)``.
+        """
         with self._settings_lock:
             self._calibration = arr
+            self._calibration_profile = profile
 
     # MARK: - Gated FFT Compute (pure function; no gated state owned here)
 
@@ -452,7 +466,14 @@ class _FftProcessingThread(QtCore.QThread):
         Mirrors Swift RealtimeFFTAnalyzer.computeGatedFFT(samples:sampleRate:):
         - Zero-pads to the next power-of-two, capped at 32768 samples.
         - Applies a Hann window (suppresses sidelobes by ~31 dB vs rectangular).
+        - Normalises by 1/N (matching Swift's ``scale = 1.0 / Float(paddedSize)``).
         - Returns the one-sided magnitude spectrum (dBFS) and frequency axis (Hz).
+
+        Note: this does NOT call ``dft_anal`` because that function normalises the
+        window by ``sum(window)`` (≈ N/2 for Hann), which is correct for the live
+        rectangular-window path (where sum(ones) = N) but produces a ~6 dB offset
+        for the Hann-windowed gated path.  Instead we compute the FFT inline with
+        the same 1/N normalisation that Swift uses.
 
         Args:
             samples:     Raw PCM samples (mono, normalised to ±1.0, float32).
@@ -462,6 +483,8 @@ class _FftProcessingThread(QtCore.QThread):
             (magnitudes_db, frequencies) — both as list[float].
             Returns ([], []) if samples is empty.
         """
+        from numpy.fft import fft
+
         n = len(samples)
         if n == 0:
             return [], []
@@ -474,22 +497,57 @@ class _FftProcessingThread(QtCore.QThread):
             fft_size <<= 1
         fft_size = min(fft_size, MAX_FFT)
 
-        # Truncate if capture is longer than fft_size.
-        chunk = samples[:fft_size].astype(np.float32)
-        if len(chunk) < fft_size:
-            chunk = np.concatenate([chunk, np.zeros(fft_size - len(chunk), dtype=np.float32)])
+        # Zero-pad (or truncate) to fft_size.
+        # Mirrors Swift: var padded = [Float](repeating: 0, count: paddedSize)
+        padded = np.zeros(fft_size, dtype=np.float64)
+        copy_count = min(n, fft_size)
+        padded[:copy_count] = samples[:copy_count]
 
-        # Hann window — sidelobe suppression for accurate Q readings.
-        # numpy.hanning is identical to scipy.signal.get_window("hann", N).
-        window = np.hanning(fft_size).astype(np.float64)
+        # Apply Hann window directly (NOT normalised by sum(window)).
+        # Mirrors Swift: vDSP_hann_window + vDSP_vmul — raw window, no sum-normalisation.
+        window = np.hanning(fft_size)
+        padded *= window
 
-        mag_db, _ = dft_anal(chunk, window, fft_size)
+        # FFT
+        complex_fft = fft(padded)
+
+        # One-sided spectrum: bins 0 … N/2-1.
+        # Swift returns paddedSize/2 bins (excludes Nyquist); match that.
+        half_n = fft_size // 2
+        abs_fft = np.abs(complex_fft[:half_n])
+
+        # Normalise by N — mirrors Swift: scale = 1.0 / Float(paddedSize).
+        # Swift divides real and imaginary parts by N before computing magnitude,
+        # which is equivalent to dividing the magnitude by N.
+        abs_fft /= fft_size
+
+        # One-sided amplitude correction: all bins except DC (bin 0) are ×2.
+        # numpy.fft.fft returns a two-sided spectrum; taking only the positive-
+        # frequency half discards the mirror image, so interior bins hold half
+        # the signal power.  Multiplying by 2 restores the correct amplitude,
+        # matching the factor inherent in Swift's vDSP_DFT_zrop output.
+        # DC (bin 0) has no mirror — not doubled.  Nyquist (bin N/2) is
+        # excluded from the output (half_n = N/2, not N/2+1).
+        abs_fft[1:] *= 2.0
+
+        # Convert to dB (ref = 1.0, matching Swift vDSP_vdbcon with ref=1.0).
+        abs_fft[abs_fft < np.finfo(float).eps] = np.finfo(float).eps
+        mag_db = 20.0 * np.log10(abs_fft)
 
         # Build the one-sided frequency axis.
-        half_n = fft_size // 2 + 1
-        freqs = [float(i) * sample_rate / fft_size for i in range(half_n)]
+        freqs_arr = np.array([float(i) * sample_rate / fft_size
+                              for i in range(half_n)])
 
-        return list(mag_db), freqs
+        # Apply microphone calibration — mirrors Swift computeGatedFFT lines
+        # 437-441 which calls activeCalibration.corrections(for: freqs).
+        with self._settings_lock:
+            cal_profile = self._calibration_profile
+        if cal_profile is not None:
+            corrections = cal_profile.interpolate_to_bins(freqs_arr)
+            if len(corrections) == len(mag_db):
+                mag_db = mag_db + corrections
+
+        return list(mag_db), list(freqs_arr)
 
     @property
     def recent_peak_level_db(self) -> float:

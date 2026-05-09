@@ -423,6 +423,7 @@ class FftCanvas(pg.PlotWidget):
             audio_device=_saved_audio_device,
             calibration_corrections=_initial_calibration,
             calibration_name=_initial_calibration_name,
+            calibration_profile=_cal,
         )
         # Wire the analyzer into FftAnnotations so dragged positions are persisted
         # in the model and survive pan/zoom annotation rebuilds.
@@ -614,7 +615,9 @@ class FftCanvas(pg.PlotWidget):
         # (RealtimeFFTAnalyzer) and accessed via self.analyzer.mic.proc_thread.
         self._connect_proc_thread_signals()
         # Apply the initial calibration to the thread if one was loaded above.
-        self.analyzer.mic.proc_thread.set_calibration(self.analyzer._calibration_corrections)
+        self.analyzer.mic.proc_thread.set_calibration(
+            self.analyzer._calibration_corrections,
+            profile=self.analyzer._calibration_profile)
 
     # ------------------------------------------------------------------ #
     # Backward-compatibility properties — guitar_tap.py reads these directly
