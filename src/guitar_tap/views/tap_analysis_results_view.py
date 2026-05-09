@@ -665,6 +665,26 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         def wrap(self, avail_w, avail_h):
             return (self._w, self._t)
 
+    class _DotFlowable(Flowable):
+        """Small filled circle — mirrors Swift Circle().fill(color) in tapInstructionRow."""
+        _DOT_SIZE = 7  # 7 pt diameter, matching Swift
+
+        def __init__(self, hex_color: str):
+            super().__init__()
+            self._color = colors.HexColor(hex_color)
+
+        def draw(self):
+            r = self._DOT_SIZE / 2
+            self.canv.setFillColor(self._color)
+            self.canv.setStrokeColor(self._color)
+            # Position dot to align with title text baseline.
+            # wrap() returns height=_DOT_SIZE, VALIGN=TOP places origin at bottom of box.
+            # y=r puts center at mid-height; subtract 2pt for Swift .padding(.top, 2).
+            self.canv.circle(r, r - 2, r, fill=1, stroke=0)
+
+        def wrap(self, avail_w, avail_h):
+            return (self._DOT_SIZE, self._DOT_SIZE)
+
     class _TwoColRow(Flowable):
         """Single key:value metadata row — mirrors Swift metaRow."""
         LBL_W = 120              # 120 pt label column width — fits "Measurement Name:" on one line
@@ -823,6 +843,11 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     story.append(Spacer(1, 14))
 
     # --- PEAKS TABLE ------------------------------------------------------
+    # Role colors — mirrors Swift .blue / .orange / .purple
+    _ROLE_BLUE   = "#0077FF"
+    _ROLE_ORANGE = "#FF9500"
+    _ROLE_PURPLE = "#AF52DE"
+
     story.append(Paragraph("Detected Peaks", S_SECTION))
     story.append(Spacer(1, 6))
 
@@ -848,20 +873,21 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             mode = peak_modes.get(peak.id, GM.GuitarMode.UNKNOWN)
             return mode.display_name if hasattr(mode, "display_name") else str(mode), False
 
-        def _role_label(peak) -> str:
+        def _role_para(peak) -> Paragraph:
+            """Return a colored Paragraph for the Role column — mirrors Swift peakRoleCell."""
             if mt == MT.MeasurementType.PLATE:
                 if peak.id == data.selected_longitudinal_peak_id:
-                    return "Longitudinal (L)"
+                    return Paragraph(f"<font color='{_ROLE_BLUE}'>Longitudinal (L)</font>", S_BODY)
                 if peak.id == data.selected_cross_peak_id:
-                    return "Cross-grain (C)"
+                    return Paragraph(f"<font color='{_ROLE_ORANGE}'>Cross-grain (C)</font>", S_BODY)
                 if peak.id == data.selected_flc_peak_id:
-                    return "FLC (Diagonal)"
-                return "\u2013"
+                    return Paragraph(f"<font color='{_ROLE_PURPLE}'>FLC (Diagonal)</font>", S_BODY)
+                return Paragraph("\u2013", S_BODY)
             elif mt == MT.MeasurementType.BRACE:
                 if peak.id == data.selected_longitudinal_peak_id:
-                    return "fL (Longitudinal)"
-                return "\u2013"
-            return ""
+                    return Paragraph(f"<font color='{_ROLE_BLUE}'>fL (Longitudinal)</font>", S_BODY)
+                return Paragraph("\u2013", S_BODY)
+            return Paragraph("", S_BODY)
 
         # Build rows
         peak_rows: list[list] = [hdr_row]
@@ -881,8 +907,8 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 peak_rows.append([freq_str, mag_str, note_str, mode_para])
             else:
                 q_str   = f"{peak.quality:.1f}"
-                role_str = _role_label(peak)
-                peak_rows.append([freq_str, mag_str, note_str, q_str, role_str])
+                role_para = _role_para(peak)
+                peak_rows.append([freq_str, mag_str, note_str, q_str, role_para])
 
         peaks_tbl = Table(peak_rows, colWidths=col_w)
         hdr_style = [
@@ -917,14 +943,17 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             glc_line = f"GLC (Shear Modulus): {glc_pa/1e9:.3f} GPa"
         else:
             glc_line = "GLC assumed 0 \u2014 FLC tap not performed"
+        S_GORE_VAL = _style(
+            "gore_val", fontSize=16, fontName="Helvetica-Bold",
+            textColor=ACCENT, leading=20,
+        )
         gore_content = [
             Paragraph("Gore Target Thickness", S_SMALL),
             Spacer(1, 4),
-            Paragraph(
-                f"<b><font size='16' color='#2659C0'>{gore_thickness_mm:.2f} mm</font></b>",
-                S_BODY,
-            ),
+            Paragraph(f"{gore_thickness_mm:.2f} mm", S_GORE_VAL),
+            Spacer(1, 2),
             Paragraph(body_label, S_SMALL),
+            Spacer(1, 2),
             Paragraph(glc_line, S_SMALL_I),
         ]
         gore_tbl = Table([[gore_content]])
@@ -936,6 +965,9 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ]))
         story.append(gore_tbl)
+        story.append(Spacer(1, 14))
+        # Swift: sectionDivider + Spacer(14) between gore and plateSection
+        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
         story.append(Spacer(1, 14))
 
     # --- ANALYSIS RESULTS ------------------------------------------------
@@ -1002,34 +1034,43 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         # (mirrors Swift PDFReportContentView reading plateProperties.dimensions.*)
         dims = plate_props.dimensions
         if dims:
-            dims_rows = [[
-                Paragraph(f"<b>Length:</b> {dims.length_mm:.1f} mm" if dims.length_mm else "", S_BODY),
-                Paragraph(f"<b>Width:</b> {dims.width_mm:.1f} mm" if dims.width_mm else "", S_BODY),
-                Paragraph(f"<b>Thickness:</b> {dims.thickness_mm:.2f} mm" if dims.thickness_mm else "", S_BODY),
-            ], [
-                Paragraph(f"<b>Mass:</b> {dims.mass_g:.1f} g" if dims.mass_g else "", S_BODY),
-                Paragraph(f"<b>Density:</b> {plate_props.density_kg_m3/1000:.3f} g/cm\u00b3", S_BODY),
-                Paragraph("", S_BODY),
-            ]]
-            dims_tbl = Table(dims_rows, colWidths=[CONTENT_W/3]*3)
+            _cw3 = CONTENT_W / 3
+            dims_rows = [
+                [Paragraph("Sample Dimensions", S_SMALL), "", ""],
+                [
+                    Paragraph(f"<font color='#737373'>Length:</font>  <b>{dims.length_mm:.1f} mm</b>" if dims.length_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Width:</font>  <b>{dims.width_mm:.1f} mm</b>" if dims.width_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Thickness:</font>  <b>{dims.thickness_mm:.2f} mm</b>" if dims.thickness_mm else "", S_BODY),
+                ],
+                [
+                    Paragraph(f"<font color='#737373'>Mass:</font>  <b>{dims.mass_g:.1f} g</b>" if dims.mass_g else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{plate_props.density_kg_m3/1000:.3f} g/cm\u00b3</b>", S_BODY),
+                    "",
+                ],
+            ]
+            dims_tbl = Table(dims_rows, colWidths=[_cw3] * 3)
             dims_tbl.setStyle(TableStyle([
                 ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
+                ("SPAN",          (0, 0), (-1, 0)),            # title spans all columns
                 ("LEFTPADDING",   (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-                ("TOPPADDING",    (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                # Swift: VStack(spacing:4) + .padding(6) → 6pt top/bottom, 2pt padding
+                # per row edge so total inter-row gap = 2+2 = 4pt
+                ("TOPPADDING",    (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING",    (0, 0), (-1, 0), 6),        # extra top for title
+                ("BOTTOMPADDING", (0, -1), (-1, -1), 6),      # extra bottom for last row
+                ("ROUNDEDCORNERS", [4]),
             ]))
-            story.append(Paragraph("Sample Dimensions", S_SMALL))
-            story.append(Spacer(1, 4))
             story.append(dims_tbl)
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 10))
 
         # fL / fC / fLC frequencies row — mirrors Swift reading props.fundamentalFrequency*
         freq_cells = [
-            Paragraph(f"<b>fL:</b> {plate_props.f_long:.1f} Hz", S_BODY),
-            Paragraph(f"<b>fC:</b> {plate_props.f_cross:.1f} Hz", S_BODY),
+            Paragraph(f"<font color='#737373'>fL:</font>  <b>{plate_props.f_long:.1f} Hz</b>", S_BODY),
+            Paragraph(f"<font color='#737373'>fC:</font>  <b>{plate_props.f_cross:.1f} Hz</b>", S_BODY),
             Paragraph(
-                f"<b>fLC:</b> {plate_props.f_flc:.1f} Hz" if plate_props.f_flc else "",
+                f"<font color='#737373'>fLC:</font>  <b>{plate_props.f_flc:.1f} Hz</b>" if plate_props.f_flc else "",
                 S_BODY,
             ),
         ]
@@ -1037,12 +1078,13 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         freq_tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.06)),
             ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("TOPPADDING",    (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ("ROUNDEDCORNERS", [4]),
         ]))
         story.append(freq_tbl)
-        story.append(Spacer(1, 8))
+        story.append(Spacer(1, 10))
 
         # Two-column properties (mirrors Swift left/right VStack)
         def _pprow(label: str, value: str) -> Paragraph:
@@ -1079,51 +1121,57 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         props_tbl = Table([[left_col, right_col]], colWidths=[CONTENT_W/2]*2)
         props_tbl.setStyle(TableStyle([
             ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
             ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
             ("TOPPADDING",    (0, 0), (-1, -1), 0),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
         story.append(props_tbl)
-        story.append(Spacer(1, 8))
+        story.append(Spacer(1, 10))
 
-        # G_LC shear modulus
+        # G_LC shear modulus — bare Paragraph (no leftIndent, already aligned)
         if glc_pa is not None and glc_pa > 0:
             story.append(_pprow("GLC (Shear Modulus)", f"{glc_pa/1e9:.3f} GPa"))
         else:
             story.append(Paragraph("GLC assumed 0 \u2014 FLC tap not performed", S_SMALL_I))
-        story.append(Spacer(1, 8))
+        story.append(Spacer(1, 10))
 
         # Cross/Long and Long/Cross ratios
         ratio_tbl = Table([[
             [
                 _pprow("Cross/Long Ratio", f"{plate_props.cross_long_ratio:.3f}"),
+                Spacer(1, 2),
                 Paragraph("typical: 0.04 \u2013 0.08", S_SMALL_I),
             ],
             [
                 _pprow("Long/Cross Ratio", f"{plate_props.long_cross_ratio:.1f}"),
+                Spacer(1, 2),
                 Paragraph("typical: 12 \u2013 25", S_SMALL_I),
             ],
         ]], colWidths=[CONTENT_W/2]*2)
         ratio_tbl.setStyle(TableStyle([
             ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
             ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
             ("TOPPADDING",    (0, 0), (-1, -1), 0),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
         story.append(ratio_tbl)
-        story.append(Spacer(1, 8))
+        story.append(Spacer(1, 10))
 
         # Overall Quality box
         oq = plate_props.overall_quality
         oq_color = _quality_color(oq)
         oq_hex = f"#{int(oq_color.red*255):02x}{int(oq_color.green*255):02x}{int(oq_color.blue*255):02x}"
+        S_OQ = _style(
+            "oq", fontSize=10, fontName="Helvetica",
+            textColor=colors.black, leading=16,
+        )
         oq_tbl = Table([[
             Paragraph(
                 f"<font color='#737373'><b>Overall Quality:</b></font>  "
                 f"<b><font size='13' color='{oq_hex}'>{oq}</font></b>",
-                S_BODY,
+                S_OQ,
             )
         ]])
         oq_tbl.setStyle(TableStyle([
@@ -1144,42 +1192,51 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         # (mirrors Swift PDFReportContentView reading braceProperties.dimensions.*)
         dims = brace_props.dimensions
         if dims:
-            dims_rows = [[
-                Paragraph(f"<b>Length:</b> {dims.length_mm:.1f} mm" if dims.length_mm else "", S_BODY),
-                Paragraph(f"<b>Width:</b> {dims.width_mm:.1f} mm" if dims.width_mm else "", S_BODY),
-                Paragraph(f"<b>Thickness:</b> {dims.thickness_mm:.2f} mm" if dims.thickness_mm else "", S_BODY),
-            ], [
-                Paragraph(f"<b>Mass:</b> {dims.mass_g:.1f} g" if dims.mass_g else "", S_BODY),
-                Paragraph(f"<b>Density:</b> {brace_props.density_kg_m3/1000:.3f} g/cm\u00b3", S_BODY),
-                Paragraph("", S_BODY),
-            ]]
-            dims_tbl = Table(dims_rows, colWidths=[CONTENT_W/3]*3)
+            _cw3 = CONTENT_W / 3
+            dims_rows = [
+                [Paragraph("Sample Dimensions", S_SMALL), "", ""],
+                [
+                    Paragraph(f"<font color='#737373'>Length:</font>  <b>{dims.length_mm:.1f} mm</b>" if dims.length_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Width:</font>  <b>{dims.width_mm:.1f} mm</b>" if dims.width_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Thickness:</font>  <b>{dims.thickness_mm:.2f} mm</b>" if dims.thickness_mm else "", S_BODY),
+                ],
+                [
+                    Paragraph(f"<font color='#737373'>Mass:</font>  <b>{dims.mass_g:.1f} g</b>" if dims.mass_g else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{brace_props.density_kg_m3/1000:.3f} g/cm\u00b3</b>", S_BODY),
+                    "",
+                ],
+            ]
+            dims_tbl = Table(dims_rows, colWidths=[_cw3] * 3)
             dims_tbl.setStyle(TableStyle([
                 ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
+                ("SPAN",          (0, 0), (-1, 0)),
                 ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                ("TOPPADDING",    (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+                ("TOPPADDING",    (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING",    (0, 0), (-1, 0), 6),
+                ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
+                ("ROUNDEDCORNERS", [4]),
             ]))
-            story.append(Paragraph("Sample Dimensions", S_SMALL))
-            story.append(Spacer(1, 4))
             story.append(dims_tbl)
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 10))
 
         # fL row
         fl_tbl = Table([[
-            Paragraph(f"<b>fL:</b> {brace_props.f_long:.1f} Hz", S_BODY),
+            Paragraph(f"<font color='#737373'>fL:</font>  <b>{brace_props.f_long:.1f} Hz</b>", S_BODY),
             Paragraph("", S_BODY),
             Paragraph("", S_BODY),
         ]], colWidths=[CONTENT_W/3]*3)
         fl_tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.06)),
             ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("TOPPADDING",    (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ("ROUNDEDCORNERS", [4]),
         ]))
         story.append(fl_tbl)
-        story.append(Spacer(1, 8))
+        story.append(Spacer(1, 10))
 
         def _pprow(label, value):
             return Paragraph(f"<font color='#737373'>{label}:</font>  <b>{value}</b>", S_BODY)
@@ -1213,17 +1270,21 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
         story.append(props_tbl)
-        story.append(Spacer(1, 8))
+        story.append(Spacer(1, 10))
 
         # Overall Quality box
         oq = brace_props.quality
         oq_color = _quality_color(oq)
         oq_hex = f"#{int(oq_color.red*255):02x}{int(oq_color.green*255):02x}{int(oq_color.blue*255):02x}"
+        S_OQ = _style(
+            "oq", fontSize=10, fontName="Helvetica",
+            textColor=colors.black, leading=16,
+        )
         oq_tbl = Table([[
             Paragraph(
                 f"<font color='#737373'><b>Overall Quality:</b></font>  "
                 f"<b><font size='13' color='{oq_hex}'>{oq}</font></b>",
-                S_BODY,
+                S_OQ,
             )
         ]])
         oq_tbl.setStyle(TableStyle([
@@ -1236,48 +1297,84 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         story.append(oq_tbl)
 
     # --- TAP INSTRUCTIONS (plate / brace only, at end — mirrors live view ordering) ---
+    # Swift: VStack(spacing:6) containing sectionDivider, Spacer(6), title, rows, italic text
+    # Then Spacer(height:14) after the VStack.
+    # The tapInstructionsSection is flush (0 gap) against the preceding analysisSection.
     if mt == MT.MeasurementType.PLATE:
         has_flc = bool(data.selected_flc_peak_id)
         tap_title = "Three-Tap Measurement Process:" if has_flc else "Two-Tap Measurement Process:"
-        story.append(Spacer(1, 14))
+        # Swift: 0pt gap from OQ to sectionDivider (body VStack spacing:0)
         story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-        story.append(Spacer(1, 6))
+        # Swift: sectionDivider → Spacer(6) → title with VStack spacing:6 between each
+        # = 6 (spacing) + 6 (spacer height) + 6 (spacing) = 18pt total
+        story.append(Spacer(1, 18))
         story.append(Paragraph(tap_title, S_BODY_B))
-        story.append(Spacer(1, 4))
+        story.append(Spacer(1, 6))
 
-        def _instr_row(label: str, detail: str):
-            return Paragraph(f"<b>{label}</b>  {detail}", S_SMALL)
+        def _instr_row(dot_color: str, label: str, detail: str):
+            """Colored-dot instruction row — mirrors Swift tapInstructionRow."""
+            dot = _DotFlowable(dot_color)
+            text_col = [
+                Paragraph(f"<b>{label}</b>", S_BODY),
+                Spacer(1, 1),
+                Paragraph(detail, S_SMALL),
+            ]
+            tbl = Table([[dot, text_col]], colWidths=[13, CONTENT_W - 13])
+            tbl.setStyle(TableStyle([
+                ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+                ("TOPPADDING",    (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            return tbl
 
         story.append(_instr_row(
+            _ROLE_BLUE,
             "1. Longitudinal (L) Tap",
             "Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center.",
         ))
-        story.append(Spacer(1, 2))
+        story.append(Spacer(1, 6))
         story.append(_instr_row(
+            _ROLE_ORANGE,
             "2. Cross-grain (C) Tap",
             "Rotate 90\u00b0. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center.",
         ))
         if has_flc:
-            story.append(Spacer(1, 2))
+            story.append(Spacer(1, 6))
             story.append(_instr_row(
+                _ROLE_PURPLE,
                 "3. FLC (Diagonal) Tap",
                 "Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures shear stiffness.",
             ))
-        story.append(Spacer(1, 4))
+        story.append(Spacer(1, 6))
         story.append(Paragraph("The strongest peak from each tap is auto-selected.", S_SMALL_I))
+        story.append(Spacer(1, 14))
 
     elif mt == MT.MeasurementType.BRACE:
-        story.append(Spacer(1, 14))
+        # Swift: 0pt gap from OQ to sectionDivider
         story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-        story.append(Spacer(1, 6))
+        story.append(Spacer(1, 18))
         story.append(Paragraph("Single-Tap Measurement (fL only):", S_BODY_B))
-        story.append(Spacer(1, 4))
-        story.append(Paragraph(
-            "<b>1. Longitudinal (fL) Tap</b>  Hold brace at 22% from one end along the length. Tap center.",
-            S_SMALL,
-        ))
-        story.append(Spacer(1, 4))
+        story.append(Spacer(1, 6))
+        _brace_dot = _DotFlowable(_ROLE_BLUE)
+        _brace_text = [
+            Paragraph("<b>1. Longitudinal (fL) Tap</b>", S_BODY),
+            Spacer(1, 1),
+            Paragraph("Hold brace at 22% from one end along the length. Tap center.", S_SMALL),
+        ]
+        _brace_tbl = Table([[_brace_dot, _brace_text]], colWidths=[13, CONTENT_W - 13])
+        _brace_tbl.setStyle(TableStyle([
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.append(_brace_tbl)
+        story.append(Spacer(1, 6))
         story.append(Paragraph("The strongest peak is auto-selected.", S_SMALL_I))
+        story.append(Spacer(1, 14))
 
     # --- FOOTER -----------------------------------------------------------
     story.append(Spacer(1, 16))
