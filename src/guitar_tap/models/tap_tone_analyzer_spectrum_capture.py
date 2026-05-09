@@ -442,8 +442,28 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         (next tap pending).
         """
         from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
+        from models.measurement_type import MeasurementType as _MT
+        from models.tap_display_settings import TapDisplaySettings as _tds
 
         if self.mic is None:
+            return
+
+        # Orphan-capture guard.  In brace/plate mode the level-crossing handler
+        # may seed a phase=None (guitar) gated capture from a noise spike that
+        # never produces a confirming rising-edge — when its 65536-sample
+        # window fills (~1.36 s later) it lands here.  Without this guard we
+        # would append a silent spectrum to captured_taps, advance the tap
+        # counter, and overwrite the displayed frozen spectrum, masking the
+        # real brace/plate phase capture that runs in parallel.  Mirrors the
+        # equivalent guard in Swift TapToneAnalyzer+SpectrumCapture.swift
+        # finishGuitarGatedCapture.
+        if _tds.measurement_type() != _MT.GENERIC:
+            from utilities.logging import TAP_DEBUG as _td_orphan
+            _td_orphan(
+                "guitar_gated_capture",
+                f"ORPHAN — discarded (measurementType={_tds.measurement_type()}, "
+                f"samples={len(samples)})",
+            )
             return
 
         fft_size = int(self.mic.fft_size)
