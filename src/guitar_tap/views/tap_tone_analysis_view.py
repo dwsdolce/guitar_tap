@@ -2041,16 +2041,19 @@ class MainWindow(QtWidgets.QMainWindow):
         is_detecting = self.fft_canvas.analyzer.is_detecting
         is_plate_or_brace = not mt.is_guitar
         show = is_detecting and (is_plate_or_brace or captured > 0)
-        # For plate with numberOfTaps > 1 the tap counter is embedded in the phase label
-        # (mirrors Swift "Phase N/total · Tap p/q"), so hide the standalone tap count label.
-        embed_in_phase = show and not mt.is_brace and not mt.is_guitar and total > 1
+        # For plate mode the standalone tap count label is never shown.
+        # When numberOfTaps > 1 the tap counter is embedded in the phase label
+        # (mirrors Swift "Phase N/total · Tap p/q"); when numberOfTaps == 1 no
+        # tap count is displayed at all — matching Swift behaviour.
+        is_plate = not mt.is_brace and not mt.is_guitar
+        embed_in_phase = show and is_plate and total > 1
         if show:
             pct = int(min(captured, total) * 100 / max(total, 1))  # clamp — mirrors Swift min(1.0, ...)
             self._sb_progress.setValue(pct)
-            if not embed_in_phase:
+            if not is_plate:
                 self._sb_tap_count.setText(f"{captured}/{total}")
         self._sb_progress.setVisible(show)
-        self._sb_tap_count.setVisible(show and not embed_in_phase)
+        self._sb_tap_count.setVisible(show and not is_plate)
         # Refresh the phase label text to embed the updated tap count (when visible on plate).
         if self._sb_plate_step_lbl.isVisible() and embed_in_phase:
             self._update_plate_phase_ui()
@@ -2702,6 +2705,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_tap_detection_paused(self, paused: bool) -> None:
         self._is_paused = paused
+        if paused:
+            # Mirrors Swift: phase/tap labels are guarded by tap.isDetecting,
+            # which is False when paused → labels hidden.
+            self._sb_plate_step_lbl.setVisible(False)
+            self._sb_tap_count.setVisible(False)
+            # Mirrors Swift: Circle().fill(tap.isDetecting ? .green : .orange)
+            self._sb_detect_dot.setStyleSheet("color: orange;")
+        else:
+            # Resuming — restore phase/tap labels via set_tap_count which
+            # re-evaluates visibility using analyzer.is_detecting (now True).
+            self.set_tap_count(self._tap_count_captured, self._tap_count_total)
+            self._update_plate_phase_ui()
+            self._sb_detect_dot.setStyleSheet("color: green;")
+        self._apply_status_message_color()
         self._update_tap_buttons()
 
     # ================================================================
@@ -2827,12 +2844,18 @@ class MainWindow(QtWidgets.QMainWindow):
         During review phases isDetecting is False → orange.
         """
         self._sb_detect_msg.setText(msg)
-        # Mirrors Swift: .foregroundColor(tap.isDetecting ? .primary : .orange)
-        # isDetecting is False when: in a review phase, paused, or measurement complete (frozen).
-        in_review = self._is_in_review_phase()
-        is_not_detecting = in_review or self._is_paused or self._is_measurement_complete
+        self._apply_status_message_color()
+
+    def _apply_status_message_color(self) -> None:
+        """Set orange/default colour on the status-bar message label.
+
+        Mirrors Swift: .foregroundColor(tap.isDetecting ? .primary : .orange)
+        Uses the analyzer's is_detecting directly so the colour is correct
+        regardless of local signal ordering.
+        """
+        is_detecting = self.fft_canvas.analyzer.is_detecting
         self._sb_detect_msg.setStyleSheet(
-            "color: orange;" if is_not_detecting else ""
+            "" if is_detecting else "color: orange;"
         )
 
     def _on_tap_detected(self) -> None:

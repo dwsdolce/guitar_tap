@@ -36,6 +36,8 @@ Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import numpy.typing as npt
 from PySide6 import QtCore
@@ -594,6 +596,45 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.finish_guitar_gated_capture(samples, sample_rate)
             return
 
+        # ── WAV dump instrumentation ──────────────────────────────────────
+        # Enable by setting env var GUITAR_TAP_WAV_DUMP=1 before launch.
+        if os.environ.get("GUITAR_TAP_WAV_DUMP"):
+            # Writes the raw samples as a mono 32-bit float WAV to
+            # /tmp/pcm_dumps/ for comparison with the Swift capture.
+            try:
+                import struct
+                from datetime import datetime, timezone
+                dump_dir = "/tmp/pcm_dumps"
+                os.makedirs(dump_dir, exist_ok=True)
+                ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+                name = f"python_{phase.name}_{ts}.wav"
+                path = os.path.join(dump_dir, name)
+                pcm = samples.astype(np.float32).tobytes()
+                sr = int(sample_rate)
+                n_samples = len(samples)
+                bytes_per_sample = 4
+                data_size = n_samples * bytes_per_sample
+                # Write WAV with IEEE float format (format tag 3)
+                with open(path, "wb") as f:
+                    f.write(b"RIFF")
+                    f.write(struct.pack("<I", 36 + data_size))
+                    f.write(b"WAVE")
+                    f.write(b"fmt ")
+                    f.write(struct.pack("<I", 16))
+                    f.write(struct.pack("<H", 3))             # IEEE float
+                    f.write(struct.pack("<H", 1))             # mono
+                    f.write(struct.pack("<I", sr))
+                    f.write(struct.pack("<I", sr * bytes_per_sample))
+                    f.write(struct.pack("<H", bytes_per_sample))
+                    f.write(struct.pack("<H", 32))
+                    f.write(b"data")
+                    f.write(struct.pack("<I", data_size))
+                    f.write(pcm)
+                gt_log(f"📦 WAV dump: {name} ({n_samples} samples, {sr} Hz)")
+            except Exception as e:
+                gt_log(f"⚠️ WAV dump failed: {e}")
+        # ── end WAV dump ──────────────────────────────────────────────────
+
         # Compute Hann-windowed gated FFT.
         magnitudes, frequencies = self.mic.proc_thread.compute_gated_fft(samples, sample_rate)
 
@@ -1050,6 +1091,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             if pid is not None
         }
         self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
+        # Emit peaks BEFORE the phase transition so the view's peaks model has
+        # up-to-date data when plateStatusChanged triggers refresh_annotations().
+        # Mirrors the REVIEWING_LONGITUDINAL ordering.
+        self._emit_peaks_array(self.current_peaks)
         self._set_material_tap_phase(_MTP.REVIEWING_CROSS)
         self.is_detecting = False
         self._set_status_message(
@@ -1064,7 +1109,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         c_mags, c_freqs = self.cross_spectrum
         spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
         self.set_material_spectra(spectra)
-        self._emit_peaks_array(self.current_peaks)
 
     # ------------------------------------------------------------------ #
     # _handle_flc_gated_progress
@@ -1108,6 +1152,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.current_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
         self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
+        # Emit peaks BEFORE the phase transition so the view's peaks model has
+        # up-to-date data when plateStatusChanged triggers refresh_annotations().
+        # Mirrors the REVIEWING_LONGITUDINAL ordering.
+        self._emit_peaks_array(self.current_peaks)
         self._set_material_tap_phase(_MTP.REVIEWING_FLC)
         self.is_detecting = False
         self._set_status_message(
@@ -1125,7 +1173,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         f_mags, f_freqs = self.flc_spectrum
         spectra.append(("FLC", (175, 82, 222), list(f_freqs), list(f_mags)))
         self.set_material_spectra(spectra)
-        self._emit_peaks_array(self.current_peaks)
         # Mirrors Swift handleFlcGatedProgress terminal log:
         # gtLog("📊 FLC review: L=… C=… FLC=… Hz")
         gt_log(
