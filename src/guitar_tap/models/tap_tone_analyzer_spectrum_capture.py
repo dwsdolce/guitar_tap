@@ -664,13 +664,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 # fC: cross-grain bending mode of a free rectangular plate blank.
                 # Gore course data: ~57-194 Hz across tonewoods (Gore & Gilet Vol.1 §4.5).
                 # Upper bound 220 Hz covers outliers; lower bound 40 Hz excludes fL/fLC.
-                # When fL has already been identified, raise the floor above fL so the
-                # "prefer lowest significant" logic cannot re-select the longitudinal mode.
-                fL_freq = getattr(self.selected_longitudinal_peak, "frequency", None)
-                if fL_freq is not None and fL_freq > 40:
-                    hps_min_hz = fL_freq + 5.0
-                else:
-                    hps_min_hz = 40.0
+                hps_min_hz = 40.0
                 hps_max_hz = 220.0
             elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
                 # fLC: torsional (twist) mode of a free rectangular plate blank.
@@ -688,12 +682,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             hps_min_hz = 20.0
             hps_max_hz = 2000.0
 
-        # For all three plate phases prefer the lowest significant peak.
-        # Mirrors Swift: let preferLowest = (mType == .plate || phase == .capturingLongitudinal …)
+        # For fL and fLC plate phases prefer the lowest significant peak.
+        # For fC the strongest peak is correct — the cross-grain tap excites fC
+        # as the dominant resonance; preferring the lowest would risk re-selecting
+        # fL if it appears in the spectrum.
+        # Mirrors Swift: let preferLowest = (phase == .capturingLongitudinal || …)
         prefer_lowest = (
-            meas_type == _MT.PLATE
-            or phase == _MTP.CAPTURING_LONGITUDINAL
-            or phase == _MTP.CAPTURING_CROSS
+            phase == _MTP.CAPTURING_LONGITUDINAL
             or phase == _MTP.CAPTURING_FLC
             or phase == _MTP.WAITING_FOR_FLC_TAP
         )
