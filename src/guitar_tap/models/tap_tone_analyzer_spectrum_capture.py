@@ -998,6 +998,22 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
             ])
             self.plateAnalysisComplete.emit(dominant_peak.frequency, 0.0, 0.0)
+        elif self.mic.is_playing_file:
+            # File playback: auto-advance L → C without pausing at the review state.
+            # The file audio flows continuously, so pausing detection would miss
+            # the cross-grain taps that follow immediately.
+            self._emit_peaks_array(self.current_peaks)
+            self._set_material_tap_phase(_MTP.CAPTURING_CROSS)
+            self.set_frozen_spectrum(_np.array([]), _np.array([]))
+            self.is_above_threshold = False
+            self.is_detecting = True
+            self.tap_detected = False
+            self._set_status_message("File: L complete, capturing C...")
+            gt_log("📂 File playback: auto-advancing L → C")
+            l_mags, l_freqs = self.longitudinal_spectrum
+            self.set_material_spectra([
+                ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
+            ])
         else:
             # Plate: pause at review state — user must press Accept to continue or Redo to re-tap.
             # Emit longitudinal peaks now — mirrors Swift's single currentPeaks assignment.
@@ -1087,8 +1103,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         gt_log(f"🟠 Auto-selected cross-grain peak: {dominant_peak.frequency} Hz")
         self.captured_taps.clear()
 
-        # Pause at review state regardless of whether FLC is needed.
-        # accept_current_phase() will check measure_flc and route accordingly.
         self.current_peaks = self.combine_plate_peaks()
         # Only the identified (auto-selected) L and C peaks are selected — others are informational.
         # Mirrors Swift: selectedPeakIDs = Set([autoSelectedLongitudinalPeakID, autoSelectedCrossPeakID].compactMap { $0 })
@@ -1096,24 +1110,45 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             pid for pid in (self.auto_selected_longitudinal_peak_id, self.auto_selected_cross_peak_id)
             if pid is not None
         }
-        self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
         # Emit peaks BEFORE the phase transition so the view's peaks model has
         # up-to-date data when plateStatusChanged triggers refresh_annotations().
-        # Mirrors the REVIEWING_LONGITUDINAL ordering.
         self._emit_peaks_array(self.current_peaks)
-        self._set_material_tap_phase(_MTP.REVIEWING_CROSS)
-        self.is_detecting = False
-        self._set_status_message(
-            f"fC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
-        )
+
+        if self.mic.is_playing_file:
+            # File playback: auto-advance past the review state.
+            from models.tap_display_settings import TapDisplaySettings as _tds
+            if _tds.measure_flc():
+                # Skip reviewingCross AND tapCooldown — go straight to capturingFlc.
+                # The cooldown exists for user repositioning; irrelevant for file audio.
+                self._set_material_tap_phase(_MTP.CAPTURING_FLC)
+                self.set_frozen_spectrum(_np.array([]), _np.array([]))
+                self.is_above_threshold = False
+                self.is_detecting = True
+                self.tap_detected = False
+                self._set_status_message("File: C complete, capturing FLC...")
+                gt_log("📂 File playback: auto-advancing C → FLC")
+            else:
+                # No FLC: measurement complete. Reuse existing finalise helper.
+                self._finalise_plate_no_flc()
+                gt_log("📂 File playback: C complete, measurement done (no FLC)")
+        else:
+            # Pause at review state — user must press Accept to continue or Redo to re-tap.
+            self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
+            self._set_material_tap_phase(_MTP.REVIEWING_CROSS)
+            self.is_detecting = False
+            self._set_status_message(
+                f"fC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
+            )
+
         # Show longitudinal + cross overlays — mirrors Swift's @Published crossSpectrum
         # causing materialSpectra to return L + C series (SpectrumView replaces primary curve).
         spectra = []
         if self.longitudinal_spectrum:
             l_mags, l_freqs = self.longitudinal_spectrum
             spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
-        c_mags, c_freqs = self.cross_spectrum
-        spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+        if self.cross_spectrum:
+            c_mags, c_freqs = self.cross_spectrum
+            spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
         self.set_material_spectra(spectra)
 
     # ------------------------------------------------------------------ #
@@ -1148,8 +1183,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         gt_log(f"🟣 Auto-selected FLC peak: {dominant_peak.frequency} Hz")
         self.captured_taps.clear()
 
-        # Pause at review state — mirrors Swift: currentPeaks = resolvedPlatePeaks(includeCross:true,
-        # includeFlc:true, flcOverride: selectedFlcPeak ?? dominantPeak) before freezing.
         sel = self._resolved_plate_peaks(
             include_cross=True,
             include_flc=True,
@@ -1157,16 +1190,24 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
         self.current_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
-        self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
         # Emit peaks BEFORE the phase transition so the view's peaks model has
         # up-to-date data when plateStatusChanged triggers refresh_annotations().
-        # Mirrors the REVIEWING_LONGITUDINAL ordering.
         self._emit_peaks_array(self.current_peaks)
-        self._set_material_tap_phase(_MTP.REVIEWING_FLC)
-        self.is_detecting = False
-        self._set_status_message(
-            f"fLC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to complete or Redo to re-tap"
-        )
+
+        if self.mic.is_playing_file:
+            # File playback: auto-complete without pausing at the review state.
+            # Reuse existing finalise helper which resolves peaks, emits signals,
+            # sets .complete, and updates spectra overlays.
+            self._finalise_plate_with_flc()
+            gt_log("📂 File playback: FLC complete, measurement done")
+        else:
+            # Pause at review state — user must press Accept to complete or Redo to re-tap.
+            self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
+            self._set_material_tap_phase(_MTP.REVIEWING_FLC)
+            self.is_detecting = False
+            self._set_status_message(
+                f"fLC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to complete or Redo to re-tap"
+            )
         # Show longitudinal + cross + FLC overlays — mirrors Swift's @Published flcSpectrum
         # causing materialSpectra to return L + C + FLC series (replaces primary curve).
         spectra = []
