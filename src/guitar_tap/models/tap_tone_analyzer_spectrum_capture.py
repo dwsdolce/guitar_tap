@@ -100,6 +100,64 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         return float(self.mic.rate)
 
     # ------------------------------------------------------------------ #
+    # WAV dump helper
+    # ------------------------------------------------------------------ #
+
+    def _dump_capture_wav(self, samples, sample_rate: float, label: str) -> None:
+        """Write raw PCM samples to a mono 32-bit float WAV file.
+
+        Saves to ~/Documents/GuitarTap/ (macOS/Linux) or
+        Documents\\GuitarTap\\ (Windows) when the setting is enabled.
+        Shared by guitar, plate, and brace capture paths.
+
+        Mirrors Swift dumpCaptureWAV(samples:sampleRate:label:).
+        """
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        if not _tds.dump_capture_audio():
+            return
+        try:
+            import struct
+            import sys
+            from datetime import datetime, timezone
+            from pathlib import Path
+
+            if sys.platform == "win32":
+                docs = Path(os.environ.get("USERPROFILE", Path.home())) / "Documents"
+            else:
+                docs = Path.home() / "Documents"
+            dump_dir = docs / "GuitarTap"
+            dump_dir.mkdir(parents=True, exist_ok=True)
+
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+            name = f"python_{label}_{ts}.wav"
+            path = dump_dir / name
+
+            pcm = samples.astype(np.float32).tobytes()
+            sr = int(sample_rate)
+            n_samples = len(samples)
+            bytes_per_sample = 4
+            data_size = n_samples * bytes_per_sample
+
+            with open(path, "wb") as f:
+                f.write(b"RIFF")
+                f.write(struct.pack("<I", 36 + data_size))
+                f.write(b"WAVE")
+                f.write(b"fmt ")
+                f.write(struct.pack("<I", 16))
+                f.write(struct.pack("<H", 3))             # IEEE float
+                f.write(struct.pack("<H", 1))             # mono
+                f.write(struct.pack("<I", sr))
+                f.write(struct.pack("<I", sr * bytes_per_sample))
+                f.write(struct.pack("<H", bytes_per_sample))
+                f.write(struct.pack("<H", 32))
+                f.write(b"data")
+                f.write(struct.pack("<I", data_size))
+                f.write(pcm)
+            gt_log(f"📦 WAV dump: {path} ({n_samples} samples, {sr} Hz)")
+        except Exception as e:
+            gt_log(f"⚠️ WAV dump failed: {e}")
+
+    # ------------------------------------------------------------------ #
     # _set_material_tap_phase
     # ------------------------------------------------------------------ #
 
@@ -468,6 +526,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             )
             return
 
+        self._dump_capture_wav(samples, sample_rate, "guitar")
+
         fft_size = int(self.mic.fft_size)
 
         # Truncate or zero-pad to exactly fft_size.
@@ -596,44 +656,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.finish_guitar_gated_capture(samples, sample_rate)
             return
 
-        # ── WAV dump instrumentation ──────────────────────────────────────
-        # Enable by setting env var GUITAR_TAP_WAV_DUMP=1 before launch.
-        if os.environ.get("GUITAR_TAP_WAV_DUMP"):
-            # Writes the raw samples as a mono 32-bit float WAV to
-            # /tmp/pcm_dumps/ for comparison with the Swift capture.
-            try:
-                import struct
-                from datetime import datetime, timezone
-                dump_dir = "/tmp/pcm_dumps"
-                os.makedirs(dump_dir, exist_ok=True)
-                ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-                name = f"python_{phase.name}_{ts}.wav"
-                path = os.path.join(dump_dir, name)
-                pcm = samples.astype(np.float32).tobytes()
-                sr = int(sample_rate)
-                n_samples = len(samples)
-                bytes_per_sample = 4
-                data_size = n_samples * bytes_per_sample
-                # Write WAV with IEEE float format (format tag 3)
-                with open(path, "wb") as f:
-                    f.write(b"RIFF")
-                    f.write(struct.pack("<I", 36 + data_size))
-                    f.write(b"WAVE")
-                    f.write(b"fmt ")
-                    f.write(struct.pack("<I", 16))
-                    f.write(struct.pack("<H", 3))             # IEEE float
-                    f.write(struct.pack("<H", 1))             # mono
-                    f.write(struct.pack("<I", sr))
-                    f.write(struct.pack("<I", sr * bytes_per_sample))
-                    f.write(struct.pack("<H", bytes_per_sample))
-                    f.write(struct.pack("<H", 32))
-                    f.write(b"data")
-                    f.write(struct.pack("<I", data_size))
-                    f.write(pcm)
-                gt_log(f"📦 WAV dump: {name} ({n_samples} samples, {sr} Hz)")
-            except Exception as e:
-                gt_log(f"⚠️ WAV dump failed: {e}")
-        # ── end WAV dump ──────────────────────────────────────────────────
+        self._dump_capture_wav(samples, sample_rate, phase.value.replace(" ", "_"))
 
         # Compute Hann-windowed gated FFT.
         magnitudes, frequencies = self.mic.proc_thread.compute_gated_fft(samples, sample_rate)

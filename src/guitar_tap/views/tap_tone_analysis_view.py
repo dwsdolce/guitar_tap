@@ -5209,7 +5209,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_settings(self) -> None:  # noqa: C901
         """Modal settings dialog matching the Swift TapSettingsView structure."""
         dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("Settings")
+        dlg.setWindowTitle("Tap Settings")
         dlg.setMinimumWidth(460)
 
         # Top-level layout contains a QStackedWidget:
@@ -5260,13 +5260,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _show_settings_page() -> None:
             stack.setCurrentIndex(0)
-            dlg.setWindowTitle("Settings")
+            dlg.setWindowTitle("Tap Settings")
 
         back_btn.clicked.connect(_show_settings_page)
+
+        # Vertical gap between sub-section separators (mirrors Swift explicit
+        # Divider() spacing).  Adjust this single value to tune all gaps.
+        _SECTION_GAP = 12
 
         # Shared font helpers
         small = QtGui.QFont(dlg.font())
         small.setPointSize(max(8, dlg.font().pointSize() - 1))
+        caption = QtGui.QFont(dlg.font())
+        caption.setPointSize(max(8, dlg.font().pointSize() - 3))
         hdr_font = QtGui.QFont(small)
         hdr_font.setBold(True)
 
@@ -5290,7 +5296,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # =====================================================
         meas_group = QtWidgets.QGroupBox("")
         mg = QtWidgets.QVBoxLayout(meas_group)
-        mg.addWidget(_group_header("mdi.music", "Measurement Type"))
+        meas_header = _group_header("mdi.music", "Measurement Type")
 
         MEAS_TYPES = [mt.value for mt in MT.MeasurementType]
 
@@ -5317,11 +5323,13 @@ class MainWindow(QtWidgets.QMainWindow):
             le.setReadOnly(True)
         meas_type_row.addWidget(meas_type_combo)
         mg.addLayout(meas_type_row)
+        mg.addWidget(_hsep())
 
         meas_desc_lbl = QtWidgets.QLabel(MT.MeasurementType(cur_unified).description)
-        meas_desc_lbl.setFont(small)
+        meas_desc_lbl.setFont(caption)
         meas_desc_lbl.setWordWrap(True)
         mg.addWidget(meas_desc_lbl)
+        mg.addWidget(_hsep())
 
         # ---- Guitar-specific content ----
         guitar_widget = QtWidgets.QWidget()
@@ -5372,13 +5380,15 @@ class MainWindow(QtWidgets.QMainWindow):
         # ---- Plate-specific content ----
         plate_widget = QtWidgets.QWidget()
         plate_layout = QtWidgets.QVBoxLayout(plate_widget)
-        plate_layout.setContentsMargins(0, 4, 0, 0)
+        plate_layout.setContentsMargins(0, 0, 0, 0)
         plate_layout.setSpacing(4)
+        plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
         plate_layout.addWidget(_hsep())
 
         plate_dims_hdr = QtWidgets.QLabel("Sample Dimensions")
         plate_dims_hdr.setFont(hdr_font)
         plate_layout.addWidget(plate_dims_hdr)
+        plate_layout.addWidget(_hsep())
 
         def _dim_field(unit: str, value: float) -> QtWidgets.QLineEdit:
             """Text field for a dimension value — mirrors Swift TextField bound to a String."""
@@ -5410,12 +5420,19 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         plate_layout.addLayout(_dim_row("Length (along grain):", plate_length_field, "mm"))
+        plate_layout.addWidget(_hsep())
         plate_layout.addLayout(_dim_row("Width (cross grain):", plate_width_field, "mm"))
+        plate_layout.addWidget(_hsep())
         plate_layout.addLayout(_dim_row("Thickness:", plate_thick_field, "mm"))
+        plate_layout.addWidget(_hsep())
         plate_layout.addLayout(_dim_row("Mass:", plate_mass_field, "g"))
+        plate_layout.addWidget(_hsep())
 
         _density_row = QtWidgets.QHBoxLayout()
-        _density_row.addWidget(QtWidgets.QLabel("Calculated Density:"))
+        _plate_density_title = QtWidgets.QLabel("Calculated Density:")
+        _plate_density_title.setStyleSheet("color: palette(mid);")
+        plate_density_lbl.setStyleSheet("font-weight: 500;")
+        _density_row.addWidget(_plate_density_title)
         _density_row.addStretch()
         _density_row.addWidget(plate_density_lbl)
         plate_layout.addLayout(_density_row)
@@ -5442,6 +5459,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _update_plate_density()
 
         plate_layout.addWidget(_hsep())
+        plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
+        plate_layout.addWidget(_hsep())
 
         measure_flc_cb = QtWidgets.QCheckBox("Measure FLC (Diagonal Tap)")
         measure_flc_cb.setChecked(AS.AppSettings.measure_flc())
@@ -5449,10 +5468,12 @@ class MainWindow(QtWidgets.QMainWindow):
             "Add a 3rd tap: hold plate at midpoint of one long edge, tap near opposite corner. "
             "Measures shear stiffness for Gore target thickness."
         )
-        flc_desc.setFont(small)
+        flc_desc.setFont(caption)
         flc_desc.setWordWrap(True)
         plate_layout.addWidget(measure_flc_cb)
         plate_layout.addWidget(flc_desc)
+        plate_layout.addWidget(_hsep())
+        plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
         plate_layout.addWidget(_hsep())
 
         gore_hdr = QtWidgets.QLabel("Gore Target Thickness — Body Dimensions")
@@ -5461,19 +5482,24 @@ class MainWindow(QtWidgets.QMainWindow):
         gore_desc = QtWidgets.QLabel(
             "Finished guitar body dimensions used in Gore's Eq. 4.5-7 to calculate target plate thickness."
         )
-        gore_desc.setFont(small)
+        gore_desc.setFont(caption)
         gore_desc.setWordWrap(True)
         plate_layout.addWidget(gore_desc)
+        plate_layout.addWidget(_hsep())
 
         gore_body_len_field = _dim_field("mm", TDS.guitar_body_length())
         gore_body_wid_field = _dim_field("mm", TDS.guitar_body_width())
         plate_layout.addLayout(_dim_row("Body Length (a):", gore_body_len_field, "mm"))
+        plate_layout.addWidget(_hsep())
         plate_layout.addLayout(_dim_row("Lower Bout Width (b):", gore_body_wid_field, "mm"))
+        plate_layout.addWidget(_hsep())
+        plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
         plate_layout.addWidget(_hsep())
 
         fvs_hdr = QtWidgets.QLabel("Plate Vibrational Stiffness (f_vs)")
         fvs_hdr.setFont(hdr_font)
         plate_layout.addWidget(fvs_hdr)
+        plate_layout.addWidget(_hsep())
 
         PRESET_DISPLAY_NAMES = [p.short_name for p in PSP.PlateStiffnessPreset]
         PRESET_STORAGE_NAMES = [p._value_ for p in PSP.PlateStiffnessPreset]
@@ -5519,13 +5545,15 @@ class MainWindow(QtWidgets.QMainWindow):
         # ---- Brace-specific content ----
         brace_widget = QtWidgets.QWidget()
         brace_layout = QtWidgets.QVBoxLayout(brace_widget)
-        brace_layout.setContentsMargins(0, 4, 0, 0)
+        brace_layout.setContentsMargins(0, 0, 0, 0)
         brace_layout.setSpacing(4)
+        brace_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
         brace_layout.addWidget(_hsep())
 
         brace_dims_hdr = QtWidgets.QLabel("Brace Dimensions")
         brace_dims_hdr.setFont(hdr_font)
         brace_layout.addWidget(brace_dims_hdr)
+        brace_layout.addWidget(_hsep())
 
         brace_length_field = _dim_field("mm", TDS.brace_length())
         brace_width_field = _dim_field("mm", TDS.brace_width())
@@ -5539,20 +5567,35 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         brace_layout.addLayout(_dim_row("Length (along grain):", brace_length_field, "mm"))
+        brace_layout.addWidget(_hsep())
         brace_layout.addLayout(_dim_row("Width (breadth):", brace_width_field, "mm"))
-        brace_layout.addLayout(_dim_row("Height (tap direction):", brace_thick_field, "mm"))
-
+        brace_layout.addWidget(_hsep())
+        # Height row: title + description stacked on the left, field on the right
+        height_row = QtWidgets.QHBoxLayout()
+        height_left = QtWidgets.QVBoxLayout()
+        height_left.setSpacing(2)
+        height_title = QtWidgets.QLabel("Height (tap direction):")
+        height_left.addWidget(height_title)
         height_note = QtWidgets.QLabel(
             "Brace height when lying flat — this is the t dimension in the stiffness formula"
         )
-        height_note.setFont(small)
+        height_note.setFont(caption)
         height_note.setWordWrap(True)
-        brace_layout.addWidget(height_note)
+        height_left.addWidget(height_note)
+        height_row.addLayout(height_left, 1)
+        height_row.addWidget(brace_thick_field)
+        height_row.addWidget(QtWidgets.QLabel("mm"))
+        brace_layout.addLayout(height_row)
 
+        brace_layout.addWidget(_hsep())
         brace_layout.addLayout(_dim_row("Mass:", brace_mass_field, "g"))
+        brace_layout.addWidget(_hsep())
 
         _brace_density_row = QtWidgets.QHBoxLayout()
-        _brace_density_row.addWidget(QtWidgets.QLabel("Calculated Density:"))
+        _brace_density_title = QtWidgets.QLabel("Calculated Density:")
+        _brace_density_title.setStyleSheet("color: palette(mid);")
+        brace_density_lbl.setStyleSheet("font-weight: 500;")
+        _brace_density_row.addWidget(_brace_density_title)
         _brace_density_row.addStretch()
         _brace_density_row.addWidget(brace_density_lbl)
         brace_layout.addLayout(_brace_density_row)
@@ -5590,9 +5633,8 @@ class MainWindow(QtWidgets.QMainWindow):
         meas_footer_lbl = QtWidgets.QLabel(
             _GUITAR_FOOTER if _is_guitar_initial else _PLATE_FOOTER
         )
-        meas_footer_lbl.setFont(small)
+        meas_footer_lbl.setFont(caption)
         meas_footer_lbl.setWordWrap(True)
-        mg.addWidget(meas_footer_lbl)
 
         # ---- Mode ranges display ----
         def _update_mode_ranges(unified_type: str) -> None:
@@ -5629,7 +5671,7 @@ class MainWindow(QtWidgets.QMainWindow):
             guitar_widget.setVisible(is_guitar)
             plate_widget.setVisible(mt_val is MT.MeasurementType.PLATE)
             brace_widget.setVisible(mt_val is MT.MeasurementType.BRACE)
-            show_unknown_widget.setEnabled(is_guitar)
+            show_unknown_widget.setVisible(is_guitar)
             peak_thresh_widget.setEnabled(is_guitar)
             max_peaks_widget.setEnabled(is_guitar)
             if is_guitar:
@@ -5648,7 +5690,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # =====================================================
         disp_group = QtWidgets.QGroupBox("")
         dg = QtWidgets.QVBoxLayout(disp_group)
-        dg.addWidget(_group_header("mdi.chart-line", "Display Settings"))
+        disp_header = _group_header("mdi.chart-line", "Display Settings")
 
         def _range_block(
             layout: QtWidgets.QVBoxLayout,
@@ -5673,7 +5715,7 @@ class MainWindow(QtWidgets.QMainWindow):
             layout.addLayout(row)
 
             desc_lbl = QtWidgets.QLabel(description)
-            desc_lbl.setFont(small)
+            desc_lbl.setFont(caption)
             layout.addWidget(desc_lbl)
 
         # Local staging text fields — mirrors Swift's @State String vars
@@ -5713,6 +5755,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "Hz",
             "Frequency range shown in the spectrum chart",
         )
+        dg.addWidget(_hsep())
         _range_block(
             dg,
             "Magnitude Range",
@@ -5720,6 +5763,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "dB",
             "Magnitude range shown in the spectrum chart",
         )
+        dg.addWidget(_hsep())
 
         # All display range values applied on Done only (see _apply_settings)
 
@@ -5741,6 +5785,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         save_view_btn.clicked.connect(_save_current_view)
         dg.addWidget(save_view_btn)
+        dg.addWidget(_hsep())
 
         reset_disp_btn = QtWidgets.QPushButton("Reset to Defaults")
         reset_disp_btn.setToolTip("Restore factory display settings for the current measurement type")
@@ -5763,7 +5808,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # =====================================================
         analysis_group = QtWidgets.QGroupBox("")
         an = QtWidgets.QVBoxLayout(analysis_group)
-        an.addWidget(_group_header("mdi.pulse", "Analysis Settings"))
+        analysis_header = _group_header("mdi.pulse", "Analysis Settings")
 
         # Show Unknown Modes (guitar only) — first, matching Swift order
         show_unknown_widget = QtWidgets.QWidget()
@@ -5775,10 +5820,11 @@ class MainWindow(QtWidgets.QMainWindow):
         show_unknown_cb.setChecked(AS.AppSettings.show_unknown_modes())
         # show_unknown persisted on Apply only
         unknown_desc = QtWidgets.QLabel("Display peaks that don't fall within known mode ranges")
-        unknown_desc.setFont(small)
+        unknown_desc.setFont(caption)
         su_layout.addWidget(show_unknown_cb)
         su_layout.addWidget(unknown_desc)
         an.addWidget(show_unknown_widget)
+        an.addWidget(_hsep())
 
         # Analysis Frequency Range — text fields matching Swift TextField bound to analysisMinFreqInput
         an_f_min_field = QtWidgets.QLineEdit(str(int(AS.AppSettings.analysis_f_min())))
@@ -5798,6 +5844,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "Hz",
             "Frequency range used for peak detection",
         )
+        an.addWidget(_hsep())
 
         # Peak Detection Minimum
         peak_thresh_widget = QtWidgets.QWidget()
@@ -5816,11 +5863,12 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_row.addStretch()
         pt_layout.addLayout(pt_row)
         pt_desc = QtWidgets.QLabel("Minimum magnitude for peak detection. Typical range: -60 to -40 dB")
-        pt_desc.setFont(small)
+        pt_desc.setFont(caption)
         pt_desc.setWordWrap(True)
         pt_layout.addWidget(pt_desc)
         # peak_thresh persisted on Apply only
         an.addWidget(peak_thresh_widget)
+        an.addWidget(_hsep())
 
         # Maximum Peaks (guitar only)
         max_peaks_widget = QtWidgets.QWidget()
@@ -5843,9 +5891,11 @@ class MainWindow(QtWidgets.QMainWindow):
         mp_all_cb = QtWidgets.QCheckBox("Capture all peaks in analysis range")
         mp_all_cb.setChecked(saved_max_peaks == 0)
         mp_desc = QtWidgets.QLabel(
-            "Maximum number of peaks to detect. Set to 'All' to capture every peak above the threshold."
+            "Maximum number of peaks to detect. The strongest peak for each guitar "
+            "mode is always included, then remaining slots are filled by magnitude. "
+            "Set to 'All' to capture every peak above the threshold."
         )
-        mp_desc.setFont(small)
+        mp_desc.setFont(caption)
         mp_desc.setWordWrap(True)
         mp_layout.addWidget(mp_all_cb)
         mp_layout.addWidget(mp_desc)
@@ -5856,6 +5906,7 @@ class MainWindow(QtWidgets.QMainWindow):
         mp_all_cb.toggled.connect(_on_all_peaks_toggled)
         # mp_field persisted on Apply only
         an.addWidget(max_peaks_widget)
+        an.addWidget(_hsep())
 
         # Hysteresis Margin
         hyst_hdr = QtWidgets.QLabel("Hysteresis Margin")
@@ -5891,7 +5942,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "triggering multiple detections."
         )
         hyst_desc.setWordWrap(True)
-        hyst_desc.setFont(small)
+        hyst_desc.setFont(caption)
         an.addWidget(hyst_desc)
 
         def _on_hyst_changed(val: int) -> None:
@@ -5899,7 +5950,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hyst_slider.valueChanged.connect(_on_hyst_changed)
 
-        reset_analysis_btn = QtWidgets.QPushButton("Reset Analysis Settings")
+        # Separator above Dump Capture Audio (mirrors Swift Divider())
+        an.addWidget(_hsep())
+        an.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
+        an.addWidget(_hsep())
+
+        # Dump Capture Audio (diagnostics)
+        dump_audio_widget = QtWidgets.QWidget()
+        da_layout = QtWidgets.QVBoxLayout(dump_audio_widget)
+        da_layout.setContentsMargins(0, 4, 0, 0)
+        da_layout.setSpacing(2)
+        dump_audio_cb = QtWidgets.QCheckBox("Dump Capture Audio")
+        dump_audio_cb.setToolTip("Save each captured tap as a WAV file in Documents/GuitarTap")
+        dump_audio_cb.setChecked(AS.AppSettings.dump_capture_audio())
+        dump_audio_desc = QtWidgets.QLabel("Save each captured tap as a WAV file in Documents/GuitarTap")
+        dump_audio_desc.setFont(caption)
+        da_layout.addWidget(dump_audio_cb)
+        da_layout.addWidget(dump_audio_desc)
+        an.addWidget(dump_audio_widget)
+        an.addWidget(_hsep())
+
+        reset_analysis_btn = QtWidgets.QPushButton(qta.icon("mdi.undo"), "Reset Analysis Settings")
 
         def _reset_analysis_settings() -> None:
             an_f_min_field.setText("30")
@@ -5916,7 +5987,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # =====================================================
         audio_group = QtWidgets.QGroupBox("")
         aud = QtWidgets.QVBoxLayout(audio_group)
-        aud.addWidget(_group_header("mdi.microphone", "Audio Input & Calibration"))
+        audio_header = _group_header("mdi.microphone", "Audio Input & Calibration")
 
         dev_row = QtWidgets.QHBoxLayout()
         dev_row.addWidget(QtWidgets.QLabel("Audio Input Device:"))
@@ -5938,6 +6009,7 @@ class MainWindow(QtWidgets.QMainWindow):
             le.setReadOnly(True)
         dev_row.addWidget(device_combo)
         aud.addLayout(dev_row)
+        aud.addWidget(_hsep())
 
         import sounddevice as sd  # lazy: already warm by this point; explicit for clarity
         from models.audio_device import AudioDevice as _AudioDevice
@@ -6051,7 +6123,7 @@ class MainWindow(QtWidgets.QMainWindow):
             cur_idx = device_combo.currentIndex()
             if 0 <= cur_idx < len(input_devices):
                 restored_dev = input_devices[cur_idx]
-                engine_dev = self.fft_canvas.analyzer.selected_input_device
+                engine_dev = self.fft_canvas.analyzer.mic.selected_input_device
                 engine_fp = engine_dev.fingerprint if engine_dev is not None else ""
                 if restored_dev.fingerprint != engine_fp:
                     self.fft_canvas.set_device(restored_dev)
@@ -6060,6 +6132,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     _update_cal_display()
             _update_sr_lbl(device_combo.currentIndex())
 
+        aud.addWidget(_hsep())
+        aud.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
         aud.addWidget(_hsep())
 
         # Calibration picker
@@ -6081,6 +6155,7 @@ class MainWindow(QtWidgets.QMainWindow):
             le.setReadOnly(True)
         cal_row.addWidget(cal_combo)
         aud.addLayout(cal_row)
+        aud.addWidget(_hsep())
 
         def _rebuild_cal_combo() -> None:
             cal_combo.blockSignals(True)
@@ -6189,6 +6264,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cal_meta_layout.addWidget(cal_meta_range_lbl)
         cal_meta_widget.setVisible(False)
         aud.addWidget(cal_meta_widget)
+        aud.addWidget(_hsep())
 
         def _update_cal_meta() -> None:
             cal_id = cal_combo.itemData(cal_combo.currentIndex())
@@ -6253,16 +6329,15 @@ class MainWindow(QtWidgets.QMainWindow):
             "not affected by Cancel. Calibrations are automatically associated "
             "with each device."
         )
-        cal_footer.setFont(small)
+        cal_footer.setFont(caption)
         cal_footer.setWordWrap(True)
-        aud.addWidget(cal_footer)
 
         # =====================================================
         # 5. About & Help Section
         # =====================================================
         about_group = QtWidgets.QGroupBox("")
         ab = QtWidgets.QVBoxLayout(about_group)
-        ab.addWidget(_group_header("mdi.information", "About & Help"))
+        about_header = _group_header("mdi.information", "About & Help")
 
         from _version import __version_string__
         ver_row = QtWidgets.QHBoxLayout()
@@ -6274,25 +6349,47 @@ class MainWindow(QtWidgets.QMainWindow):
         ver_row.addWidget(ver_lbl)
         ver_row.addWidget(ver_val, stretch=1)
         ab.addLayout(ver_row)
+        ab.addWidget(_hsep())
 
         copyright_lbl = QtWidgets.QLabel(
             "Copyright \u00a9 2026 David W. Smith dba Dolce Sfogato"
         )
-        copyright_lbl.setFont(small)
+        copyright_lbl.setFont(caption)
         copyright_lbl.setWordWrap(True)
         ab.addWidget(copyright_lbl)
+        ab.addWidget(_hsep())
 
-        help_btn = QtWidgets.QPushButton("Help")
-        help_btn.clicked.connect(_show_help_page)
-        ab.addWidget(help_btn)
+        help_row = QtWidgets.QWidget()
+        help_row.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        hr_layout = QtWidgets.QHBoxLayout(help_row)
+        hr_layout.setContentsMargins(0, 4, 0, 4)
+        hr_icon = QtWidgets.QLabel()
+        hr_icon.setPixmap(qta.icon("mdi.help-circle-outline").pixmap(16, 16))
+        hr_layout.addWidget(hr_icon)
+        hr_layout.addWidget(QtWidgets.QLabel("Help"))
+        hr_layout.addStretch()
+        hr_chevron = QtWidgets.QLabel()
+        hr_chevron.setPixmap(qta.icon("mdi.chevron-right").pixmap(16, 16))
+        hr_layout.addWidget(hr_chevron)
+        help_row.mousePressEvent = lambda _ev: _show_help_page()
+        ab.addWidget(help_row)
 
         # =====================================================
         # Final layout — matches Swift TapSettingsView.body order:
         # audioInputSection, measurementTypeSection,
         # Advanced (collapsible: Display, Analysis), aboutSection
+        #
+        # Headers go ABOVE each QGroupBox (outside the gray background),
+        # footers go BELOW (outside the gray background), mirroring
+        # SwiftUI Section header:/footer: placement.
         # =====================================================
+        vbox.addWidget(audio_header)
         vbox.addWidget(audio_group)
+        vbox.addWidget(cal_footer)
+
+        vbox.addWidget(meas_header)
         vbox.addWidget(meas_group)
+        vbox.addWidget(meas_footer_lbl)
 
         # Advanced collapsible section header — flat QPushButton avoids QToolButton sizing issues
         adv_btn = QtWidgets.QPushButton("\u25b6  Advanced")
@@ -6308,7 +6405,9 @@ class MainWindow(QtWidgets.QMainWindow):
         adv_cl = QtWidgets.QVBoxLayout(adv_content)
         adv_cl.setContentsMargins(0, 0, 0, 0)
         adv_cl.setSpacing(8)
+        adv_cl.addWidget(disp_header)
         adv_cl.addWidget(disp_group)
+        adv_cl.addWidget(analysis_header)
         adv_cl.addWidget(analysis_group)
         adv_content.setVisible(False)
         vbox.addWidget(adv_content)
@@ -6319,6 +6418,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         adv_btn.toggled.connect(_toggle_advanced)
 
+        vbox.addWidget(about_header)
         vbox.addWidget(about_group)
 
         # Apply initial visibility
@@ -6413,6 +6513,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.fft_canvas.analyzer.peaksChanged.emit(
                 list(self.fft_canvas.analyzer.current_peaks)
             )
+
+            # Dump Capture Audio
+            AS.AppSettings.set_dump_capture_audio(dump_audio_cb.isChecked())
 
             # Peak threshold → AppSettings + main-window slider + graph
             try:

@@ -33,7 +33,10 @@ Recommendations from docs/DEVICE_MANAGEMENT_REFACTORING.md:
 
 from __future__ import annotations
 
+import atexit
+import os
 import platform
+import signal
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -42,6 +45,35 @@ import numpy as np
 import sounddevice as sd
 
 from guitar_tap.utilities.logging import gt_log
+
+# ── Timeout-protected PortAudio exit handler ──────────────────────────
+# sounddevice registers an atexit handler that calls Pa_Terminate().
+# On macOS, Pa_Terminate can deadlock when the CoreAudio I/O thread is
+# stuck.  Replace it with a version that uses SIGALRM to bail out after
+# a short timeout, then falls through to os._exit() so the process
+# doesn't hang.
+
+_original_sd_exit_handler = sd._exit_handler
+
+def _safe_exit_handler() -> None:
+    """Call sounddevice's exit handler with a timeout guard."""
+    def _alarm_handler(signum, frame):
+        gt_log("⚠️ PortAudio exit handler timed out — forcing exit")
+        os._exit(0)
+
+    try:
+        old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+        signal.alarm(3)  # 3 second deadline
+        _original_sd_exit_handler()
+        signal.alarm(0)  # cancel if completed in time
+        signal.signal(signal.SIGALRM, old_handler)
+    except Exception:
+        signal.alarm(0)
+
+atexit.unregister(sd._exit_handler)
+atexit.register(_safe_exit_handler)
+sd._exit_handler = _safe_exit_handler
+# ──────────────────────────────────────────────────────────────────────
 
 if TYPE_CHECKING:
     from .audio_device import AudioDevice
@@ -432,17 +464,33 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         Pa_StopStream to block the main thread indefinitely.
         Pa_AbortStream terminates the stream immediately and avoids the
         deadlock.
+
+        Even Pa_AbortStream can hang if the CoreAudio I/O thread is stuck
+        in native code, so we run the abort/close on a daemon thread with
+        a timeout.  If it doesn't complete in time we log and move on —
+        the OS reclaims PortAudio resources at process exit anyway.
         """
         with self._stop_lock:
             self.is_stopped = True
-        try:
-            self.stream.abort()
-        except Exception:
-            pass
-        try:
-            self.stream.close()
-        except Exception:
-            pass
+
+        stream = self.stream
+
+        def _do_close() -> None:
+            try:
+                stream.abort()
+            except Exception:
+                pass
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_do_close, daemon=True, name="StreamClose")
+        t.start()
+        t.join(timeout=2.0)
+        if t.is_alive():
+            gt_log("⚠️ _close_stream_only: abort/close timed out after 2 s — "
+                   "proceeding without waiting")
 
     # MARK: - Hot-plug Monitoring (mirrors registerMacOSHardwareListener / routeChangeNotification)
 

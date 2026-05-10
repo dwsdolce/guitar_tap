@@ -417,6 +417,20 @@ class TapDisplaySettings:
     def set_show_unknown_modes(cls, v: bool) -> None:
         _app_settings().set_show_unknown_modes(v)
 
+    # MARK: - Dump Capture Audio
+
+    @classmethod
+    def dump_capture_audio(cls) -> bool:
+        """Whether to dump captured audio buffers to WAV files.
+
+        Mirrors Swift TapDisplaySettings.dumpCaptureAudio.
+        """
+        return _app_settings().dump_capture_audio()
+
+    @classmethod
+    def set_dump_capture_audio(cls, v: bool) -> None:
+        _app_settings().set_dump_capture_audio(v)
+
     # MARK: - Annotation Visibility Mode
 
     @classmethod

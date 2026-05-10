@@ -261,6 +261,18 @@ class AppSettings:
         cls._set("analysis/show_unknown_modes", v)
 
     # ------------------------------------------------------------------ #
+    # Dump capture audio (diagnostics)
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def dump_capture_audio(cls) -> bool:
+        v = cls._get("analysis/dump_capture_audio", None)
+        return bool(v) if v is not None else False
+
+    @classmethod
+    def set_dump_capture_audio(cls, v: bool) -> None:
+        cls._set("analysis/dump_capture_audio", v)
+
+    # ------------------------------------------------------------------ #
     # Tap-detection threshold (0–100 scale, 60 → −40 dBFS)
     # ------------------------------------------------------------------ #
     @classmethod
