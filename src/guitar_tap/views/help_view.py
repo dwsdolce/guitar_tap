@@ -284,7 +284,10 @@ def _build_help_html() -> str:
         "Technique",
         "Hold the brace at one point 22% from one end along the length, near one edge in "
         "the width direction (not on the width nodal line). Tap the top face at the center. "
-        "The same one-point hold technique as Plate mode."
+        "The same one-point hold technique as Plate mode. Because braces are small and stiff, "
+        "their tap resonance is much quieter than a plate or guitar body &mdash; the app "
+        "automatically bypasses the magnitude threshold gate for brace taps and always picks "
+        "the strongest peak."
     ))
     parts.append(_row(
         "Results",
@@ -435,7 +438,9 @@ def _build_help_html() -> str:
         "Threshold (slider)",
         "The signal level that triggers tap detection. If taps are being missed, move the "
         "slider left (lower). If ambient noise triggers false detections, move it right "
-        "(higher). Displayed in dB."
+        "(higher). Displayed in dB. In Brace mode the slider is disabled &mdash; brace taps "
+        "are inherently quiet, so the app bypasses the magnitude gate and accepts any "
+        "detected tap."
     ))
     parts.append(_row(
         "Peak Min (slider)",

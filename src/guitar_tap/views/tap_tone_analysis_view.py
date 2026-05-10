@@ -2998,6 +2998,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_min_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
         self.peak_min_reset_btn.setEnabled(mt.is_guitar)
+        # Threshold slider has no effect in brace mode (magnitude gate is bypassed),
+        # so disable it to avoid confusing the user — mirrors Swift .disabled(isBrace).
+        self.tap_threshold_slider.setEnabled(not mt.is_brace)
+        self.tap_threshold_readout.setEnabled(not mt.is_brace)
+        self.tap_threshold_reset_btn.setEnabled(not mt.is_brace)
         self.peak_widget.set_is_guitar(mt.is_guitar)
         self._guitar_summary.setVisible(mt.is_guitar)
         self._material_section.setVisible(not mt.is_guitar and self._is_measurement_complete)
