@@ -1090,9 +1090,9 @@ class TapToneAnalyzerControlMixin:
 
     def set_threshold(self, threshold: int) -> None:
         """Set the peak-detection threshold (0-100 scale, stored as dBFS)."""
-        self.peak_threshold = float(threshold - 100)
+        self.peak_min_threshold = float(threshold - 100)
         from models.tap_display_settings import TapDisplaySettings as _tds
-        _tds.set_peak_threshold(self.peak_threshold)
+        _tds.set_peak_min_threshold(self.peak_min_threshold)
         # mirrors peakThreshold.didSet in Swift
         self.recalculate_frozen_peaks_if_needed()
 

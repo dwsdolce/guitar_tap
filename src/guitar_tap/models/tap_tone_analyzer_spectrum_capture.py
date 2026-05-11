@@ -1272,12 +1272,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         dominantPeak so its UUID identity is preserved for ID-based lookups.
 
         For plate/brace, uses the median of the full spectrum as an adaptive
-        noise-floor threshold instead of the guitar-mode peak_threshold.
+        noise-floor threshold instead of the guitar-mode peak_min_threshold.
         Mirrors Swift TapToneAnalyzer.buildAllPeaks(magnitudes:frequencies:dominantPeak:).
         """
         sorted_mags = sorted(magnitudes)
         median_threshold = sorted_mags[len(sorted_mags) // 2]
-        peaks = self.find_peaks(magnitudes, frequencies, threshold_override=median_threshold)
+        peaks = self.find_peaks(magnitudes, frequencies, peak_min_override=median_threshold)
         prox = self.PEAK_PROXIMITY_HZ
 
         idx = next(

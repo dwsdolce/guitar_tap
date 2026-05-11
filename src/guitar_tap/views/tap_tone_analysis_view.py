@@ -2488,7 +2488,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_peak_min_changed(self, db_val: int) -> None:
         self.fft_canvas.set_threshold(db_val + 100)
         AS.AppSettings.set_threshold(db_val + 100)
-        AS.AppSettings.set_peak_threshold(float(db_val))  # keep single source of truth in sync — mirrors Swift peakThreshold didSet
+        AS.AppSettings.set_peak_min_threshold(float(db_val))  # keep single source of truth in sync — mirrors Swift peakMinThreshold didSet
         self.peak_min_readout.setText(f"{db_val} dB")
 
     def _on_loaded_settings_warning_changed(self, active: bool) -> None:
@@ -2998,11 +2998,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_min_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
         self.peak_min_reset_btn.setEnabled(mt.is_guitar)
-        # Threshold slider has no effect in brace mode (magnitude gate is bypassed),
-        # so disable it to avoid confusing the user — mirrors Swift .disabled(isBrace).
-        self.tap_threshold_slider.setEnabled(not mt.is_brace)
-        self.tap_threshold_readout.setEnabled(not mt.is_brace)
-        self.tap_threshold_reset_btn.setEnabled(not mt.is_brace)
+        # Threshold slider controls the RMS rising-edge tap detection trigger
+        # and is active in all measurement modes (guitar, plate, brace).
+        self.tap_threshold_slider.setEnabled(True)
+        self.tap_threshold_readout.setEnabled(True)
+        self.tap_threshold_reset_btn.setEnabled(True)
         self.peak_widget.set_is_guitar(mt.is_guitar)
         self._guitar_summary.setVisible(mt.is_guitar)
         self._material_section.setVisible(not mt.is_guitar and self._is_measurement_complete)
@@ -4080,7 +4080,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # load_measurement() already wrote the model attrs; read them back to
         # drive the Qt widgets — mirrors Swift .onReceive on loaded* properties.
         self.tap_threshold_slider.setValue(int(analyzer.tap_detection_threshold))
-        self.peak_min_slider.setValue(int(analyzer.peak_threshold))
+        self.peak_min_slider.setValue(int(analyzer.peak_min_threshold))
         self.tap_num_spin.setValue(analyzer.number_of_taps)
 
         # ── Configure material peak widget columns ────────────────────────────
@@ -5860,7 +5860,7 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_hdr.setFont(hdr_font)
         pt_layout.addWidget(pt_hdr)
         pt_row = QtWidgets.QHBoxLayout()
-        peak_thresh_field = QtWidgets.QLineEdit(f"{AS.AppSettings.peak_threshold():.0f}")
+        peak_thresh_field = QtWidgets.QLineEdit(f"{AS.AppSettings.peak_min_threshold():.0f}")
         peak_thresh_field.setFixedWidth(_tf_width)
         peak_thresh_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         pt_row.addWidget(peak_thresh_field)
@@ -6526,10 +6526,10 @@ class MainWindow(QtWidgets.QMainWindow):
             try:
                 final_db = int(float(peak_thresh_field.text()))
             except ValueError:
-                final_db = int(AS.AppSettings.peak_threshold())
+                final_db = int(AS.AppSettings.peak_min_threshold())
             final_db = max(-120, min(0, final_db))
             peak_thresh_field.setText(str(final_db))
-            AS.AppSettings.set_peak_threshold(float(final_db))
+            AS.AppSettings.set_peak_min_threshold(float(final_db))
             AS.AppSettings.set_threshold(final_db + 100)
             slider_val = max(-100, min(-20, final_db))
             if self.peak_min_slider.value() != slider_val:

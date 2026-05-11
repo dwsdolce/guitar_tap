@@ -296,8 +296,8 @@ class TapToneMeasurement:
     number_of_taps: int | None = None
 
     # The minimum peak magnitude (dBFS) that the peak-finder accepted, at save time.
-    # Mirrors Swift TapToneMeasurement.peakThreshold.
-    peak_threshold: float | None = None
+    # Mirrors Swift TapToneMeasurement.peakMinThreshold.
+    peak_min_threshold: float | None = None
 
     # MARK: - Material Measurement Peak Selections
 
@@ -527,8 +527,8 @@ class TapToneMeasurement:
             d["hysteresisMargin"] = self.hysteresis_margin
         if self.number_of_taps is not None:
             d["numberOfTaps"] = self.number_of_taps
-        if self.peak_threshold is not None:
-            d["peakThreshold"] = self.peak_threshold
+        if self.peak_min_threshold is not None:
+            d["peakThreshold"] = self.peak_min_threshold
         if self.selected_longitudinal_peak_id:
             d["selectedLongitudinalPeakID"] = self.selected_longitudinal_peak_id
         if self.selected_cross_peak_id:
@@ -689,7 +689,7 @@ class TapToneMeasurement:
             tap_detection_threshold=d.get("tapDetectionThreshold"),
             hysteresis_margin=d.get("hysteresisMargin"),
             number_of_taps=d.get("numberOfTaps"),
-            peak_threshold=d.get("peakThreshold"),
+            peak_min_threshold=d.get("peakThreshold"),
             selected_longitudinal_peak_id=d.get("selectedLongitudinalPeakID"),
             selected_cross_peak_id=d.get("selectedCrossPeakID"),
             selected_flc_peak_id=d.get("selectedFlcPeakID"),
@@ -720,7 +720,7 @@ class TapToneMeasurement:
         tap_detection_threshold: float | None = None,
         hysteresis_margin: float | None = None,
         number_of_taps: int | None = None,
-        peak_threshold: float | None = None,
+        peak_min_threshold: float | None = None,
         selected_longitudinal_peak_id: str | None = None,
         selected_cross_peak_id: str | None = None,
         selected_flc_peak_id: str | None = None,
@@ -761,7 +761,7 @@ class TapToneMeasurement:
             tap_detection_threshold=tap_detection_threshold,
             hysteresis_margin=hysteresis_margin,
             number_of_taps=number_of_taps,
-            peak_threshold=peak_threshold,
+            peak_min_threshold=peak_min_threshold,
             selected_longitudinal_peak_id=selected_longitudinal_peak_id,
             selected_cross_peak_id=selected_cross_peak_id,
             selected_flc_peak_id=selected_flc_peak_id,

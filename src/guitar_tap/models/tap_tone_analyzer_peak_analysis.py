@@ -62,7 +62,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
             return
 
         # For plate/brace, use an adaptive noise-floor threshold (median of the
-        # analysis range) instead of the guitar-mode peak_threshold so the live peak list
+        # analysis range) instead of the guitar-mode peak_min_threshold so the live peak list
         # self-calibrates to each tap's actual signal level.
         live_threshold = None
         if uses_fast_tap_detection:
@@ -74,7 +74,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 search_mags = sorted(magnitudes[s_idx:e_idx])
                 live_threshold = search_mags[len(search_mags) // 2]
 
-        peaks = self.find_peaks(magnitudes, frequencies, threshold_override=live_threshold)
+        peaks = self.find_peaks(magnitudes, frequencies, peak_min_override=live_threshold)
         self.current_peaks = peaks
         # Auto-select all newly detected peaks so visibility mode «selected»
         # shows everything by default — mirrors Swift selectedPeakIDs = Set(peaks.map { $0.id }).
@@ -161,7 +161,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         if self.loaded_measurement_peaks is not None:
             peaks = [
                 p for p in self.loaded_measurement_peaks
-                if p.magnitude >= self.peak_threshold
+                if p.magnitude >= self.peak_min_threshold
             ]
             if not peaks:
                 self.current_peaks = []
@@ -239,7 +239,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
     def _recalculate_tap_entry_peaks(self) -> None:
         """Re-run peak detection on every stored TapEntry snapshot using the
-        current peak_threshold, then update tap_entries so the multi-tap
+        current peak_min_threshold, then update tap_entries so the multi-tap
         comparison table shows peaks consistent with the Peak Min slider.
         """
         for entry in self.tap_entries:
@@ -321,15 +321,15 @@ class TapToneAnalyzerPeakAnalysisMixin:
         frequencies: "list[float]",
         min_hz: "float | None" = None,
         max_hz: "float | None" = None,
-        threshold_override: "float | None" = None,
+        peak_min_override: "float | None" = None,
     ) -> "list":
         """Detect, interpolate, and deduplicate peaks above threshold.
 
         Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift findPeaks(magnitudes:
-        frequencies:minHz:maxHz:thresholdOverride:) using the same two-pass strategy:
+        frequencies:minHz:maxHz:peakMinOverride:) using the same two-pass strategy:
 
         Pass 1 — Known-mode ranges (sequential, low→high):
-            Scans each mode's band for local maxima that exceed peak_threshold.
+            Scans each mode's band for local maxima that exceed peak_min_threshold.
             The last-claimed-frequency cursor prevents the same physical peak
             from being claimed by two overlapping mode ranges.
 
@@ -348,8 +348,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
             frequencies:         Frequency axis matching magnitudes, in Hz.
             min_hz:              Lower bound (Hz). Defaults to self.min_frequency.
             max_hz:              Upper bound (Hz). Defaults to self.max_frequency.
-            threshold_override:  When set, used as the magnitude gate instead of
-                                 self.peak_threshold. Pass the median of the search
+            peak_min_override:   When set, used as the magnitude gate instead of
+                                 self.peak_min_threshold. Pass the median of the search
                                  range for plate/brace to get an adaptive noise floor.
 
         Returns:
@@ -371,9 +371,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         end_idx   = next((i for i, f in enumerate(frequencies) if f > hi_freq), n - 1)
 
         # For plate/brace the caller may supply an adaptive noise-floor threshold
-        # (median of the search range) instead of the guitar-mode peak_threshold.
-        # Mirrors Swift: effectiveThreshold = thresholdOverride ?? peakThreshold.
-        effective_threshold = threshold_override if threshold_override is not None else self.peak_threshold
+        # (median of the search range) instead of the guitar-mode peak_min_threshold.
+        # Mirrors Swift: effectiveThreshold = peakMinOverride ?? peakMinThreshold.
+        effective_threshold = peak_min_override if peak_min_override is not None else self.peak_min_threshold
 
         # Known modes sorted ascending by range lower bound.
         # Mirrors Swift knownModes sorted by modeRange.lowerBound.
@@ -909,7 +909,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         frequency range changes while a measurement is frozen/loaded.
         """
         assert self.loaded_measurement_peaks is not None
-        threshold_db = self.peak_threshold
+        threshold_db = self.peak_min_threshold
         filtered = [p for p in self.loaded_measurement_peaks if p.magnitude >= threshold_db]
 
         self.current_peaks = filtered

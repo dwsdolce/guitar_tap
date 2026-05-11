@@ -224,7 +224,7 @@ class TapToneAnalyzer(
         self.min_frequency: float = float(_tds.analysis_min_frequency())   # mirrors minFrequency
         self.max_frequency: float = float(_tds.analysis_max_frequency())   # mirrors maxFrequency
         self.max_peaks: int = _tds.max_peaks()                             # mirrors maxPeaks
-        self.peak_threshold: float = float(_tds.peak_threshold())          # mirrors peakThreshold
+        self.peak_min_threshold: float = float(_tds.peak_min_threshold())    # mirrors peakMinThreshold
         self.tap_detection_threshold: float = float(_tds.tap_detection_threshold())  # mirrors tapDetectionThreshold
         self.hysteresis_margin: float = float(_tds.hysteresis_margin())    # mirrors hysteresisMargin
         self.decay_threshold: float = 15.0                                 # mirrors decayThreshold

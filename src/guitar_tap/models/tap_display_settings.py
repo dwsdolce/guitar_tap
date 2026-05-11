@@ -597,16 +597,16 @@ class TapDisplaySettings:
     # MARK: - Peak Detection
 
     @classmethod
-    def peak_threshold(cls) -> float:
-        """Persisted peak threshold (dB).
+    def peak_min_threshold(cls) -> float:
+        """Persisted peak min threshold (dB).
 
-        Mirrors Swift TapDisplaySettings.peakThreshold.
+        Mirrors Swift TapDisplaySettings.peakMinThreshold.
         """
-        return _app_settings().peak_threshold()
+        return _app_settings().peak_min_threshold()
 
     @classmethod
-    def set_peak_threshold(cls, v: float) -> None:
-        _app_settings().set_peak_threshold(v)
+    def set_peak_min_threshold(cls, v: float) -> None:
+        _app_settings().set_peak_min_threshold(v)
 
     @classmethod
     def max_peaks(cls) -> int:

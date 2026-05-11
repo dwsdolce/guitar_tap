@@ -332,12 +332,12 @@ class AppSettings:
     # Peak detection threshold (dB, e.g. -60)
     # ------------------------------------------------------------------ #
     @classmethod
-    def peak_threshold(cls) -> float:
+    def peak_min_threshold(cls) -> float:
         v = cls._get("analysis/peak_threshold", None)
         return float(v) if v is not None else -60.0
 
     @classmethod
-    def set_peak_threshold(cls, v: float) -> None:
+    def set_peak_min_threshold(cls, v: float) -> None:
         cls._set("analysis/peak_threshold", v)
 
     # ------------------------------------------------------------------ #

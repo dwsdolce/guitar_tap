@@ -430,8 +430,8 @@ class FftCanvas(pg.PlotWidget):
         self.annotations._analyzer = self.analyzer
         # Display mode is initialised to AnalysisDisplayMode.LIVE in TapToneAnalyzer.__init__.
         # Set initial peak threshold on the analyzer.
-        # peak_threshold is stored as dBFS; threshold input is 0-100 scale.
-        self.analyzer.peak_threshold = float(threshold - 100)
+        # peak_min_threshold is stored as dBFS; threshold input is 0-100 scale.
+        self.analyzer.peak_min_threshold = float(threshold - 100)
         # analysis_min_frequency / analysis_max_frequency are initialised from AppSettings
         # in TapToneAnalyzer.__init__ and must not be overwritten with the display viewport.
 
@@ -1637,7 +1637,7 @@ class FftCanvas(pg.PlotWidget):
         """Set the threshold used to limit both the triggering of a sample
         and the threshold on finding peaks. The threshold value is always 0 to 100.
         """
-        self.analyzer.peak_threshold = float(threshold - 100)
+        self.analyzer.peak_min_threshold = float(threshold - 100)
 
         self.threshold_x = self.analyzer.mic.rate // 2
         self.threshold_y = threshold - 100

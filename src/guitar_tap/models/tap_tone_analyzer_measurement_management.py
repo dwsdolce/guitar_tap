@@ -329,7 +329,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             tap_detection_threshold=getattr(self, "tap_detection_threshold", None),
             hysteresis_margin=getattr(self, "hysteresis_margin", None),
             number_of_taps=getattr(self, "number_of_taps", None),
-            peak_threshold=getattr(self, "peak_threshold", None),
+            peak_min_threshold=getattr(self, "peak_min_threshold", None),
             # Plate/brace peak selections — mirrors Swift conditional nil assignments
             selected_longitudinal_peak_id=selected_longitudinal_peak_id if not mt.is_guitar else None,
             selected_cross_peak_id=selected_cross_peak_id if mt == MeasurementType.PLATE else None,
@@ -684,11 +684,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
             gt_log(f"  🔢 Publishing number of taps: {self.number_of_taps}")
         else:
             gt_log("  ⚠️ No number of taps in measurement")
-        if measurement.peak_threshold is not None:
-            val = float(measurement.peak_threshold)
+        if measurement.peak_min_threshold is not None:
+            val = float(measurement.peak_min_threshold)
             db = int(val) if val < 0 else int(val - 100)
-            self.peak_threshold = float(max(-100, min(-20, db)))
-            gt_log(f"  📊 Publishing peak threshold: {self.peak_threshold} dB")
+            self.peak_min_threshold = float(max(-100, min(-20, db)))
+            gt_log(f"  📊 Publishing peak min threshold: {self.peak_min_threshold} dB")
         else:
             gt_log("  ⚠️ No peak threshold in measurement")
 
@@ -759,7 +759,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.tap_entries = list(measurement.tap_entries) if measurement.tap_entries else []
         self.showing_multi_tap_comparison = False
 
-        # Recompute per-tap peaks using the measurement's saved peak_threshold
+        # Recompute per-tap peaks using the measurement's saved peak_min_threshold
         # (already restored above).  The saved tap_entries may contain peaks that
         # were detected at a different threshold than the one stored in the
         # measurement (e.g. threshold was changed after capture but before save).
