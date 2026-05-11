@@ -465,6 +465,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                     partial = np.concatenate(proc._input_buffer)
                 else:
                     partial = np.zeros(0, dtype=np.float32)
+                _td("file_playback", f"PARTIAL_FLUSH | partialSamples={len(partial)} fftSize={fft_size}")
                 if len(partial) < fft_size:
                     partial = np.concatenate(
                         [partial, np.zeros(fft_size - len(partial), dtype=np.float32)]
@@ -477,7 +478,9 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 if cal is not None:
                     mag_y_db = mag_y_db + cal
                 fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+                _td("file_playback", f"PARTIAL_FLUSH_EMIT | peakAmp={fft_peak_amp} peakMagDB={float(np.max(mag_y_db)):.2f}")
                 proc.fftFrameReady.emit(mag_y_db, mag_y, fft_peak_amp, 0, 0.0, 0.0, 0.0)
+                _td("file_playback", "PARTIAL_FLUSH_EMIT_DONE")
                 # Clear the input buffer so the mic begins from a clean slate.
                 # Mirrors Swift inputBuffer.removeAll() before start().
                 proc._input_buffer = []
@@ -490,19 +493,23 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             # fill the remaining samples.  Mirrors Swift preMicRestartHandler
             # in startFromFile's asyncAfter block.
             pre_restart = self._on_pre_mic_restart
+            _td("file_playback", f"PRE_MIC_RESTART | handler={'set' if pre_restart else 'None'}")
             if pre_restart is not None:
                 pre_restart()
+            _td("file_playback", "PRE_MIC_RESTART_DONE")
 
             # Restart the PortAudio stream so the mic is live again.
             # Mirrors Swift try? self.start() which recreates the AVAudioEngine on the mic.
             # TapToneAnalyzer's is_measurement_complete guard preserves frozen results
             # so New Tap stays enabled — same as Swift's auto-start guard.
+            _td("file_playback", "MIC_RESTART")
             try:
                 with self._stop_lock:
                     self.is_stopped = False
                 self.stream.start()
             except Exception:
                 pass
+            _td("file_playback", "MIC_RESTART_DONE")
 
             # Notify the caller (e.g. to restore freq axis after mic restart).
             # Mirrors Swift's completion?() call inside asyncAfter after start().

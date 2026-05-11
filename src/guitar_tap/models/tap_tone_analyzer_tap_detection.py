@@ -557,6 +557,11 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self._current_mag_y = mag_y
         self._current_mag_y_db = mag_y_db
 
+        # DIAG: log FFT frame receipt to trace file-playback ordering
+        if hasattr(self, 'mic') and self.mic is not None:
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td_fft
+            _td_fft("on_fft_frame", f"RECEIVED | peakAmp={fft_peak_amp} isPlayingFile={self.mic.is_playing_file} isMeasComplete={self.is_measurement_complete}")
+
         # Cache instantaneous FFT peak magnitude — mirrors Swift fftAnalyzer.peakMagnitude.
         # Updated here at the FFT frame rate (~2.7 Hz).  Used by guitar-mode _reenable()
         # to seed is_above_threshold, exactly as Swift handleTapDetection() does.
@@ -629,6 +634,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
             return
         peak_mag = self._current_input_level_db
+        if hasattr(self, 'mic') and self.mic is not None and self.mic.is_playing_file:
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td_rms
+            _td_rms("rmsLevelChanged", f"DETECT_TAP_CALL | levelDB={peak_mag:.2f} isPlayingFile=True")
         self.detect_tap(peak_mag, self._current_mag_y_db, self.freq)
 
     # ------------------------------------------------------------------ #

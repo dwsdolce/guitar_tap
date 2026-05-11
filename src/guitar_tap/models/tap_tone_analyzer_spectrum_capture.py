@@ -275,8 +275,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         """
         import numpy as np
 
+        from guitar_tap.utilities.logging import TAP_DEBUG as _td_flush
         with self._gated_lock:
+            _td_flush("file_playback", f"FLUSH_GATED_CHECK | active={self._gated_capture_active} accumLen={len(self._gated_accum)} phase={self._gated_capture_phase}")
             if not self._gated_capture_active:
+                _td_flush("file_playback", "FLUSH_GATED_SKIP | not active")
                 return
             self._gated_capture_active = False
             partial = list(self._gated_accum)
@@ -285,6 +288,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._gated_accum = []
 
         if not partial:
+            _td_flush("file_playback", "FLUSH_GATED_SKIP | empty partial")
             return
 
         sample_rate = self._mpm_sample_rate

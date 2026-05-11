@@ -543,6 +543,17 @@ class TapToneAnalyzer(
         # eliminating the main-thread Qt dispatch delay.
         # Mirrors Swift setupSubscriptions() levelCrossingHandler closure.
         def _level_crossing_handler() -> None:
+            # In plate/brace mode the gated capture is started by
+            # _handle_plate_tap_detection → start_gated_capture(phase) with
+            # the correct phase and 400 ms window.  The guitar-mode fast-start
+            # must NOT fire because it would claim the gated capture slot
+            # with phase=None / target=fft_size, producing an ORPHAN that
+            # discards the file audio.
+            from models.measurement_type import MeasurementType as _MT
+            from models.tap_display_settings import TapDisplaySettings as _tds
+            mt = _tds.measurement_type()
+            if mt == _MT.PLATE or mt == _MT.BRACE:
+                return
             fft_size = self.mic.fft_size
             with self._gated_lock:
                 self._gated_capture_id += 1
