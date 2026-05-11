@@ -87,6 +87,7 @@ import numpy.typing as npt
 import sounddevice as sd
 from PySide6 import QtCore
 
+from guitar_tap.utilities.logging import gt_log
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
 from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
 
@@ -717,12 +718,14 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # sd.query_devices() until Recommendation 2 is implemented.
         self.available_input_devices: list = []
 
-        # The currently selected input device.
+        # The currently selected input device (backing store for the property).
         # Mirrors Swift RealtimeFFTAnalyzer.selectedInputDevice (@Published).
-        # Set by set_device() / auto-selection logic in load_available_input_devices()
-        # once Recommendation 2 is implemented.
-        # Currently None; set externally by TapToneAnalyzerControlMixin.set_device().
-        self.selected_input_device: "AudioDevice | None" = device
+        # The @property setter mirrors Swift's didSet: persists the device
+        # fingerprint and auto-loads calibration on every assignment.
+        # Use _selected_input_device directly only during __init__ to avoid
+        # firing didSet logic before callbacks are wired (mirrors Swift where
+        # didSet does not fire during init).
+        self._selected_input_device: "AudioDevice | None" = device
 
         # Python-only: hot-plug monitoring threads
         self._on_devices_changed = on_devices_changed
@@ -731,8 +734,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._start_hotplug_monitor()
 
         # Calibration-change callback.
-        # Called by set_device() after looking up and loading the device-specific
-        # calibration from CalibrationStorage.
+        # Called by the selected_input_device setter after looking up the
+        # device-specific calibration from CalibrationStorage.
         # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
         self._on_calibration_changed: "Callable[[object | None], None] | None" = on_calibration_changed
 
@@ -753,6 +756,46 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self.proc_thread: _FftProcessingThread = _FftProcessingThread(mic=self)
 
         atexit.register(self.close)
+
+    # MARK: - Selected Input Device Property
+    # Mirrors Swift @Published var selectedInputDevice: AVAudioDevice? { didSet { ... } }
+    # The setter mirrors Swift's didSet: persists the device fingerprint and
+    # auto-loads the device-specific calibration on every assignment.
+
+    @property
+    def selected_input_device(self) -> "AudioDevice | None":
+        return self._selected_input_device
+
+    @selected_input_device.setter
+    def selected_input_device(self, device: "AudioDevice | None") -> None:
+        self._selected_input_device = device
+        if device is None:
+            return
+
+        # Persist the selected device fingerprint so it can be restored on next launch.
+        # Mirrors Swift: UserDefaults.standard.set(deviceUID, forKey: "selectedInputDeviceUID")
+        try:
+            from views.utilities.tap_settings_view import AppSettings as _AS
+            _AS.set_selected_input_device_fingerprint(device.fingerprint)
+        except Exception:
+            pass
+
+        # Automatically load device-specific calibration when device changes.
+        # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
+        on_cal = getattr(self, "_on_calibration_changed", None)
+        if on_cal is not None:
+            try:
+                from models.microphone_calibration import CalibrationStorage as _CS
+                cal = _CS.calibration_for_device(device.fingerprint)
+                if cal is None:
+                    cal = _CS.calibration_for_device(device.name)
+                if cal is not None:
+                    gt_log(f"📊 Auto-loaded calibration for device '{device.name}'")
+                else:
+                    gt_log(f"📊 No calibration for device '{device.name}' - using uncalibrated mode")
+                on_cal(cal)
+            except Exception:
+                pass
 
     # MARK: - Engine Control
     # All engine control methods live in realtime_fft_analyzer_engine_control.py

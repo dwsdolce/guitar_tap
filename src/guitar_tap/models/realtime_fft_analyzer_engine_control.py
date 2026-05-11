@@ -266,7 +266,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         Swift starts AVAudioEngine and installs the input tap after checking
         microphone permission; Python starts the PortAudio InputStream directly.
         """
+        gt_log("🎤 === Starting Audio Engine ===")
         self.stream.start()
+        gt_log("🎤 Audio engine started")
+        gt_log(f"🎤 Hardware sample rate: {self.rate} Hz, hardware channels: 1 (tap will use mono)")
+        gt_log("🎤 Audio tap installed")
 
     def stop(self) -> None:
         """Stop the audio stream.
@@ -274,6 +278,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         Mirrors Swift RealtimeFFTAnalyzer.stop() (+EngineControl.swift).
         Uses abort() instead of stop() — see _close_stream_only() docstring.
         """
+        gt_log("🎤 Stop requested")
         with self._stop_lock:
             self.is_stopped = True
         self.is_playing_file = False
@@ -304,6 +309,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             RuntimeError: if the file cannot be opened or has no audio channels.
         """
         import soundfile as _sf
+
+        gt_log(f"🎤 === Starting file playback (direct injection): {os.path.basename(path)} ===")
 
         # Cancel any in-flight previous playback worker BEFORE setting up a new one.
         #
@@ -379,6 +386,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         data, file_rate = _sf.read(path, dtype="float32", always_2d=True)
         # Downmix to mono by averaging channels — same as Swift's tap using mono format.
         mono = data.mean(axis=1).astype(np.float32)
+
+        gt_log(f"🎤 readAudioFileAsMonoFloat32: {len(mono)} frames, {data.shape[1]} ch, {int(file_rate)} Hz")
 
         # Update sample rate so _FftProcessingThread sees the file's native rate.
         # Mirrors Swift actualSampleRate = fileFormat.sampleRate.

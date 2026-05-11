@@ -64,6 +64,7 @@ from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverr
 from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
 from .tap_tone_analyzer_spectrum_capture import TapToneAnalyzerSpectrumCaptureMixin
 from .tap_tone_analyzer_tap_detection import TapToneAnalyzerTapDetectionHandlerMixin
+from guitar_tap.utilities.logging import gt_log
 
 # ── TapToneAnalyzer ───────────────────────────────────────────────────────────
 # Mirrors the top-level Swift TapToneAnalyzer class declaration and its stored
@@ -599,6 +600,10 @@ class TapToneAnalyzer(
         from views.tap_analysis_results_view import load_all_measurements as _load
         self.saved_measurements = _load()
         self.savedMeasurements = self.saved_measurements
+        if self.saved_measurements:
+            gt_log(f"📂 Loaded {len(self.saved_measurements)} persisted measurements")
+        else:
+            gt_log("📂 No persisted measurements file found")
 
         # ── Wire FFT frames directly to the analyzer ──────────────────────
         # Connect proc_thread.fftFrameReady → self.on_fft_frame here so the
@@ -619,8 +624,6 @@ class TapToneAnalyzer(
         # Mirrors Swift start() auto-start guard:
         #   if !isDetecting && !isMeasurementComplete && !isDetectionPaused
         #      && currentTapCount == 0 { startTapSequence() }
-        # Safe to call synchronously here because fftFrameReady is now
-        # connected above before this line executes.
         if (not self.is_detecting and not self.is_measurement_complete
                 and not self.is_detection_paused and self.current_tap_count == 0):
             self.start_tap_sequence()

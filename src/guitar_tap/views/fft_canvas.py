@@ -756,18 +756,19 @@ class FftCanvas(pg.PlotWidget):
     def start_analyzer(self) -> None:
         """Start the processing thread and hide the idle overlay.
 
-        Called on initial startup (thread not yet running).  Delegates all
-        model-state reset to analyzer.start_tap_sequence() — mirrors Swift
-        where startTapSequence() is a model method that owns
-        isMeasurementComplete, capturedTaps, etc.  Canvas is responsible only
-        for thread lifecycle and UI overlay.
+        Called on initial startup (thread not yet running).  The model-layer
+        auto-start (analyzer.start() → start_tap_sequence()) has already
+        run by this point, so this method only manages thread lifecycle
+        and UI overlay.
 
         For New Tap while the thread is already running, use
         restart_tap_sequence() instead, which keeps the thread alive
         (no audio dropout) — mirrors Swift's AVAudioEngine running continuously.
         """
         self._overlay_label.setVisible(False)
-        self.analyzer.start_tap_sequence()
+        # start_tap_sequence() is NOT called here — it was already called
+        # by analyzer.start() during init, matching Swift's start() which
+        # auto-starts a tap sequence via DispatchQueue.main.async.
         if self.analyzer.mic.proc_thread.isRunning():
             self.analyzer.mic.proc_thread.stop()
             self.analyzer.mic.proc_thread.wait(500)

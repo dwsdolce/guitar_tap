@@ -565,6 +565,11 @@ class TapToneAnalyzerControlMixin:
         is_plate = (meas_type == _MT.PLATE)
         is_brace = (meas_type == _MT.BRACE)
 
+        gt_log(f"🎬 Analyzer started - warm-up period: {self.warmup_period}s")
+        gt_log(f"🎬 Starting tap sequence: {self.number_of_taps} tap(s),"
+               f" plate mode: {is_plate}, brace mode: {is_brace},"
+               f" skip_warmup: {skip_warmup}")
+
         # Mirrors Swift startTapSequence() lines 140-143:
         #   self.comparisonSpectra = []
         #   self.displayMode = .live

@@ -213,6 +213,10 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             _AD.from_sounddevice_dict(d) for d in _filter(raw)
         ]
 
+        for d in devices:
+            gt_log(f"🎤 Found input device: {d.name} @ {d.sample_rate} Hz")
+        gt_log(f"🎤 Found {len(devices)} audio input device(s) total")
+
         previous = list(self.available_input_devices)
         self.available_input_devices = devices
 
@@ -235,6 +239,10 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
              the laptop's built-in mic when no preference is saved.
           3. System default PortAudio input device.
           4. First available device.
+
+        Assigning self.selected_input_device fires the property setter which
+        persists the fingerprint and auto-loads calibration — mirroring Swift's
+        selectedInputDevice.didSet.
         """
         if not devices:
             return
@@ -249,6 +257,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                     (d for d in devices if d.fingerprint == saved_fp), None
                 )
                 if match:
+                    gt_log(f"🎤 Restored previously selected mic: {match.name}")
                     self.selected_input_device = match
                     return
         except Exception:
@@ -261,6 +270,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             (d for d in devices if not _is_builtin_mic(d.name)), None
         )
         if external is not None:
+            gt_log(f"🎤 Auto-selected external mic: {external.name}")
             self.selected_input_device = external
             return
 
@@ -272,12 +282,14 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                     (d for d in devices if d.index == default_index), None
                 )
                 if match:
+                    gt_log(f"🎤 Auto-selected system default: {match.name}")
                     self.selected_input_device = match
                     return
         except Exception:
             pass
 
         # Priority 4: First available device.
+        gt_log(f"🎤 Auto-selected first device: {devices[0].name}")
         self.selected_input_device = devices[0]
 
     def _auto_select_on_hotplug(self, devices: list, previous: list) -> None:
@@ -301,6 +313,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         ]
 
         if real_new:
+            gt_log(f"🎤 New device connected, auto-selected: {real_new[0].name}")
             self.selected_input_device = real_new[0]
             return
 
@@ -347,41 +360,27 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                 if chosen is None and devices:
                     chosen = devices[0]
 
+                if chosen is not None:
+                    gt_log(f"🎤 '{current.name}' disconnected, switched to: {chosen.name}")
                 self.selected_input_device = chosen
 
     # MARK: - Device Switch (mirrors setInputDevice(_:))
 
     def set_device(self, device: "AudioDevice") -> None:
-        """Switch to a different input device and auto-load its calibration.
+        """Switch to a different input device and restart the audio stream.
 
-        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:) +
-        selectedInputDevice.didSet (+DeviceManagement.swift).
+        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:).
 
-        Swift (macOS): stops AVAudioEngine, assigns selectedInputDevice
-        (guarded by isApplyingDeviceSwitch to suppress didSet restart),
-        restarts the engine, then selectedInputDevice.didSet calls
-        setCalibrationWithoutSavingDeviceMapping(_:) to apply the
-        device-specific calibration without triggering activeCalibration.didSet.
-
-        Python: closes and reopens the sounddevice InputStream, then looks up
-        the device's calibration from CalibrationStorage and fires
-        self._on_calibration_changed(cal) so the TapToneAnalyzer can apply it.
-        No isApplyingDeviceSwitch / isLoadingDeviceCalibration guard is needed
-        because Python has no property observers.
+        Assigning self.selected_input_device fires the property setter which
+        persists the fingerprint and auto-loads calibration — mirroring Swift's
+        selectedInputDevice.didSet.
         """
         self._close_stream_only()
         self.device_index = device.index
         self.rate = int(device.sample_rate)
-        self.selected_input_device = device
+        self.selected_input_device = device  # property setter persists fingerprint + loads calibration
+        gt_log(f"🎤 Device index={device.index}, native SR={device.sample_rate} Hz — switching")
 
-        # Persist the user's selection so the next launch can restore it.
-        # Mirrors Swift's UserDefaults.standard.set(uid, forKey: "selectedInputDeviceUID")
-        # call in the equivalent device-switch path.
-        try:
-            from views.utilities.tap_settings_view import AppSettings as _AS
-            _AS.set_selected_input_device_fingerprint(device.fingerprint)
-        except Exception:
-            pass
         # Reset diagnostic counters so each device session is reported independently.
         self._diag_chunk_sizes_seen: set = set()
         self._diag_chunk_count: int = 0
@@ -396,23 +395,11 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             callback=self.new_frame,
         )
         self.stream.start()
+        gt_log(f"🎤 Audio engine started")
+        gt_log(f"🎤 Hardware sample rate: {self.rate} Hz, hardware channels: 1 (tap will use mono)")
 
         # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
         self.rate = _log_stream_diagnostics(self.stream, self.rate)
-
-        # Auto-load device-specific calibration.
-        # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
-        # Try fingerprint key first, then fall back to name-only key for profiles
-        # saved before fingerprints were introduced.
-        if self._on_calibration_changed is not None:
-            try:
-                from models.microphone_calibration import CalibrationStorage as _CS
-                cal = _CS.calibration_for_device(device.fingerprint)
-                if cal is None:
-                    cal = _CS.calibration_for_device(device.name)
-                self._on_calibration_changed(cal)
-            except Exception:
-                pass
 
     def reinitialize_portaudio(self) -> None:
         """Stop, reinitialize PortAudio (refreshes device list), then restart.
