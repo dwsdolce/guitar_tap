@@ -151,7 +151,7 @@ def dft_anal(
 
 # MARK: - perform_fft (mirrors Swift performFFT(on:) post-FFT block)
 
-def perform_fft(thread, samples: "npt.NDArray[np.float32]", fft_size: int):
+def perform_fft(analyzer, samples: "npt.NDArray[np.float32]", fft_size: int):
     """Run an FFT on *samples* and apply the per-frame post-processing.
 
     Mirrors Swift ``RealtimeFFTAnalyzer.performFFT(on:)`` in
@@ -164,13 +164,13 @@ def perform_fft(thread, samples: "npt.NDArray[np.float32]", fft_size: int):
       - per-FFT-frame FILE_DEBUG trace (counter increment + log line; mirrors
         the equivalent block in Swift performFFT)
 
-    Lives in this file (rather than as a method on _FftProcessingThread in
+    Lives in this file (rather than as a method on RealtimeFFTAnalyzer in
     realtime_fft_analyzer.py) so the file split matches Swift, where
     ``performFFT`` lives in ``RealtimeFFTAnalyzer+FFTProcessing.swift``.
 
     Args:
-        thread:    The ``_FftProcessingThread`` instance — supplies the mic
-                   reference and the calibration snapshot.
+        analyzer:  The ``RealtimeFFTAnalyzer`` instance — supplies FFT
+                   configuration and the calibration snapshot.
         samples:   Exactly ``fft_size`` time-domain samples (float32).
         fft_size:  FFT size, snapshot at call time.
 
@@ -179,12 +179,12 @@ def perform_fft(thread, samples: "npt.NDArray[np.float32]", fft_size: int):
         spectra (calibration-applied) plus the int-encoded peak amplitude
         ready for the ``fftFrameReady`` signal.
     """
-    # Snapshot calibration under the thread's settings lock.  Mirrors Swift
+    # Snapshot calibration under the analyzer's settings lock.  Mirrors Swift
     # where calibrationCorrections is read inside performFFT.
-    with thread._settings_lock:
-        calibration = thread._calibration
+    with analyzer._settings_lock:
+        calibration = analyzer._calibration
 
-    mag_y_db, mag_y = dft_anal(samples, thread._mic.window_fcn, fft_size)
+    mag_y_db, mag_y = dft_anal(samples, analyzer.window_fcn, fft_size)
     if calibration is not None:
         mag_y_db = mag_y_db + calibration
 

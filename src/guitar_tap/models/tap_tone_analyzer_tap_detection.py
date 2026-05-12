@@ -96,17 +96,30 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             )
 
         # Compute effective thresholds.
-        # NOTE: Per-chunk ABSOLUTE/RELATIVE/HYSTERESIS log lines were removed —
-        # they fired ~43 Hz and drowned out meaningful events.  Edge events
-        # (RISING / FALLING / SIGNAL SETTLED) and gated-capture events provide
-        # the diagnostic signal at the rate that actually matters.
+        # NOTE: Per-chunk log lines restored for file playback only to diagnose
+        # intermittent gated-capture failures.
+        _is_file = self.mic and getattr(self.mic, 'is_playing_file', False)
         if use_relative:
             headroom = max(self.tap_detection_threshold - self.noise_floor_estimate, 10.0)
             effective_rising  = self.noise_floor_estimate + headroom
             effective_falling = self.noise_floor_estimate + max(headroom - self.hysteresis_margin, 4.0)
+            if _is_file:
+                TAP_DEBUG("detectTap",
+                    f"FILE_CHUNK | peakMag={peak_magnitude:.2f} "
+                    f"noiseFloor={self.noise_floor_estimate:.2f} "
+                    f"headroom={headroom:.1f} "
+                    f"risingThresh={effective_rising:.2f} "
+                    f"isAbove={self.is_above_threshold}"
+                )
         else:
             effective_rising  = self.tap_detection_threshold
             effective_falling = self.tap_detection_threshold - self.hysteresis_margin
+            if _is_file:
+                TAP_DEBUG("detectTap",
+                    f"FILE_CHUNK | peakMag={peak_magnitude:.2f} "
+                    f"absThresh={effective_rising:.2f} "
+                    f"isAbove={self.is_above_threshold}"
+                )
 
         # Warmup period — suppress detection (mirrors Swift warmupPeriod check).
         if self.analyzer_start_time is not None:
@@ -220,8 +233,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             # _do_reenable_detection) which must use instantaneous level so a held peak
             # does not incorrectly latch is_above_threshold = True.
             # Fall back to peak_magnitude when mic is None (tests, no audio hardware).
-            if self.mic is not None and hasattr(self.mic, "proc_thread"):
-                self.tap_peak_level = self.mic.proc_thread.recent_peak_level_db
+            if self.mic is not None and hasattr(self.mic, "recent_peak_level_db"):
+                self.tap_peak_level = self.mic.recent_peak_level_db
             else:
                 self.tap_peak_level = peak_magnitude
             self._handle_tap_detection(mag_y_db, freq)
@@ -622,6 +635,13 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # always has a fresh value even when detection is paused/complete.
         self._current_input_level_db = float(rms_amp) - 100.0
 
+        if self.mic and getattr(self.mic, 'is_playing_file', False):
+            TAP_DEBUG("onRmsLevel",
+                f"FILE | levelDB={self._current_input_level_db:.2f} "
+                f"isDetecting={self.is_detecting} "
+                f"isPaused={self.is_detection_paused} "
+                f"isComplete={self.is_measurement_complete}"
+            )
         if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
             return
         peak_mag = self._current_input_level_db

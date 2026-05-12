@@ -168,14 +168,15 @@ class TapToneAnalyzer(
 
         Mirrors Swift ``TapToneAnalyzer(fftAnalyzer: RealtimeFFTAnalyzer)``.
 
-        No audio hardware is required.  Tests can construct a bare instance and
-        exercise all analysis methods directly.  Audio-hardware setup is deferred
-        to ``start()``, which the view layer calls after construction.
+        When ``fft_analyzer`` is provided, pipeline signals are wired
+        immediately (matching Swift's ``setupSubscriptions()`` called from
+        ``init``).  Audio-hardware lifecycle (start/stop) is still managed
+        by ``start()``, which the view layer calls after construction.
 
         Args:
-            fft_analyzer: Optional RealtimeFFTAnalyzer.  None-safe — tests never
-                          pass one.  When provided (production path) the mic is
-                          wired up inside ``start()`` rather than here.
+            fft_analyzer: Optional RealtimeFFTAnalyzer.  None-safe — bare
+                          instances (no mic) can be constructed for direct
+                          analysis method testing.
         """
         import numpy as np
         from models import guitar_mode as _gm
@@ -196,14 +197,16 @@ class TapToneAnalyzer(
         self.pitch_calculator = _Pitch(a4=440.0)
 
         # ── fft_analyzer reference (mirrors Swift's fftAnalyzer property) ──
-        # None when constructed without audio hardware (tests, import-time).
-        # Populated by start() in the production path.
+        # Both production and test paths provide a mic at construction time,
+        # matching Swift where init(fftAnalyzer:) always receives one.
         self.mic = fft_analyzer  # type: ignore[assignment]
 
         # ── FFT configuration ──────────────────────────────────────────────
-        # freq is populated by start(); n_fmin / n_fmax read from self.mic
-        # which is None-safe guarded in their computed properties.
-        self.freq = np.array([])
+        if self.mic is not None:
+            x_axis = np.arange(0, self.mic.h_fft_size + 1)
+            self.freq = x_axis * self.mic.rate / self.mic.fft_size
+        else:
+            self.freq = np.array([])
 
         # ── Calibration ────────────────────────────────────────────────────
         self._calibration_corrections = None
@@ -428,6 +431,188 @@ class TapToneAnalyzer(
         # collected.  Mirrors Swift `gatedCaptureID`.
         self._gated_capture_id: int = 0
 
+        # ── Pipeline signal wiring ────────────────────────────────────────
+        # Wire all signal/callback connections when the FFT analyzer is
+        # provided.  Mirrors Swift init calling setupSubscriptions().
+        if self.mic is not None:
+            self._wire_pipeline_signals()
+
+    # ------------------------------------------------------------------ #
+    # for_testing — mirrors Swift TapToneAnalyzer.forTesting(fftSize:)
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def for_testing(cls, fft_size: int = 16384, sample_rate: int = 48000) -> "TapToneAnalyzer":
+        """Create a TapToneAnalyzer wired for file-playback testing.
+
+        The returned instance has the full pipeline connected (signal wiring,
+        raw-sample handler, level-crossing handler) but no audio hardware.
+        Use ``play_file_for_testing(path, measurement_type, number_of_taps)``
+        to feed a WAV file through the pipeline.
+
+        Mirrors Swift ``TapToneAnalyzer.forTesting(fftSize:)``.
+
+        Args:
+            fft_size:    FFT window size (power of 2). Default 16384.
+            sample_rate: Sample rate in Hz. Default 48000.
+        """
+        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
+
+        # 1. Create the hardware-free FFT engine.
+        mic = _Mic.for_testing(fft_size=fft_size, sample_rate=sample_rate)
+
+        # 2. Construct the analyzer — __init__ sets all state defaults,
+        #    computes the frequency axis, and wires pipeline signals.
+        return cls(fft_analyzer=mic)
+
+    # ------------------------------------------------------------------ #
+    # play_file_for_testing — mirrors Swift playFileForTesting(url:…)
+    # ------------------------------------------------------------------ #
+
+    def play_file_for_testing(
+        self,
+        path: str,
+        measurement_type: "MeasurementType",
+        number_of_taps: int = 1,
+    ) -> None:
+        """Feed a WAV file through the full analysis pipeline for testing.
+
+        This is the test-only equivalent of the view-layer ``_open_audio_file``.
+        It configures the measurement type, starts a tap sequence with warmup
+        skipped, and processes all audio through ``process_file_data`` inline.
+
+        No background thread, no Qt event loop, no QApplication needed.
+        ``process_file_data`` calls ``process_raw_samples`` inline, which
+        calls the direct callbacks (``rms_level_handler``, ``fft_frame_handler``)
+        wired by ``_wire_pipeline_signals``.  This is the same processing path
+        as live audio — matching Swift where ``playFileForTesting`` calls
+        ``processFileData`` which calls ``processRawSamples`` identically.
+
+        Mirrors Swift ``TapToneAnalyzer.playFileForTesting(url:measurementType:numberOfTaps:)``.
+
+        Args:
+            path:             Filesystem path to the audio file.
+            measurement_type: The MeasurementType to configure before playback.
+            number_of_taps:   Number of taps to detect (guitar mode). Default 1.
+        """
+        import os as _os
+
+        import numpy as np
+        import soundfile as _sf
+
+        from models.tap_display_settings import TapDisplaySettings as _tds
+
+        # 1. Configure measurement type and tap count.
+        _tds.set_measurement_type(measurement_type)
+        self.number_of_taps = number_of_taps
+
+        # 2. Start the tap sequence with warmup skipped (deterministic file audio).
+        self.start_tap_sequence(skip_warmup=True)
+
+        # 3. Read the audio file.
+        data, file_rate = _sf.read(path, dtype="float32", always_2d=True)
+        mono = data.mean(axis=1).astype(np.float32)
+        file_name = _os.path.splitext(_os.path.basename(path))[0]
+
+        # 4. Set the sample rate so gated_capture_samples is computed correctly.
+        self._mpm_sample_rate = float(file_rate)
+
+        # 5. Process all audio inline — no thread, no queue, no event loop.
+        #    process_file_data calls process_raw_samples which calls our
+        #    direct callbacks (rms_level_handler, fft_frame_handler).
+        self.mic.process_file_data(mono, int(file_rate), file_name)
+
+    # ------------------------------------------------------------------ #
+    # _wire_pipeline_signals — shared by start() and for_testing()
+    # ------------------------------------------------------------------ #
+
+    def _wire_pipeline_signals(self) -> None:
+        """Connect pipeline signals and direct callbacks to this analyzer.
+
+        This wires both the direct callback properties (for file playback
+        where there is no Qt event loop) and the Qt signal connections (for
+        live mic UI updates).
+
+        Mirrors Swift ``TapToneAnalyzer.setupSubscriptions()``.
+        """
+        # ── Direct callbacks (work without Qt event loop) ────────────────
+        # These are the primary delivery path for pipeline-critical events.
+        # Mirrors Swift's direct handler closures on RealtimeFFTAnalyzer.
+        self.mic.rms_level_handler = self._on_rms_level_changed_direct
+        self.mic.fft_frame_handler = self.on_fft_frame
+
+        # ── Gated-FFT capture signal (Qt — for cross-thread delivery) ────
+        self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
+
+        # ── Input-clipping signal (Qt — UI only) ────────────────────────
+        self.mic.proc_thread.clippingChanged.connect(self._set_clipping)
+
+        # ── Raw-sample handler ───────────────────────────────────────────
+        self.mic.raw_sample_handler = self._accumulate_gated_samples
+
+        # ── Level-crossing handler (audio-queue fast-start) ──────────────
+        def _level_crossing_handler() -> None:
+            from models.measurement_type import MeasurementType as _MT
+            from models.tap_display_settings import TapDisplaySettings as _tds
+            mt = _tds.measurement_type()
+            if mt == _MT.PLATE or mt == _MT.BRACE:
+                return
+            fft_size = self.mic.fft_size
+            with self._gated_lock:
+                self._gated_capture_id += 1
+                self._gated_accum = list(self._pre_roll_buf)
+                self._gated_capture_samples = fft_size
+                self._gated_capture_phase = None  # None = guitar mode
+                self._gated_capture_active = True
+                pre_roll_count = len(self._gated_accum)
+                _diag_hash = sum(self._gated_accum[:16]) if pre_roll_count >= 16 else 0.0
+            _diag_consumed = getattr(self.mic, '_diag_total_samples', 0)
+            from guitar_tap.utilities.logging import TAP_DEBUG
+            TAP_DEBUG("levelCrossing",
+                f"Gated capture started on audio queue | "
+                f"pre-roll {pre_roll_count} samples, target {fft_size}, "
+                f"fileSamplePos={_diag_consumed}, preRollHash={_diag_hash:.6f}")
+
+        self.mic._level_crossing_handler = _level_crossing_handler
+        self.mic._level_crossing_threshold = self.tap_detection_threshold
+
+        # ── Pre-mic-restart handler ─────────────────────────────────────
+        self.mic._on_pre_mic_restart = self._flush_gated_capture_on_file_end
+
+        # ── Post-engine-stop handler ──────────────────────────────────
+        def _clear_pre_roll():
+            with self._gated_lock:
+                self._pre_roll_buf = []
+        self.mic._on_post_engine_stop = _clear_pre_roll
+
+        # ── Qt signal connections (for UI — live mic path) ───────────────
+        # These are secondary to the direct callbacks above.  They exist
+        # for the UI layer (fft_canvas, tap_tone_analysis_view) which
+        # connects to these Qt signals for chart updates and level meters.
+        self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
+        self.mic.proc_thread.rmsLevelChanged.connect(self._on_rms_level_changed)
+
+    # ------------------------------------------------------------------ #
+    # _on_rms_level_changed_direct — direct callback version of _on_rms_level_changed
+    # ------------------------------------------------------------------ #
+
+    def _on_rms_level_changed_direct(self, level_db: float) -> None:
+        """Direct-callback RMS handler — called by process_raw_samples.
+
+        Same logic as ``_on_rms_level_changed(rms_amp)`` but takes
+        ``level_db: float`` directly instead of the 0-100 scaled int.
+        This works without a Qt event loop (file playback, tests).
+
+        Mirrors Swift's Combine sink on fftAnalyzer.$inputLevelDB.
+        """
+        rms_amp = int(level_db + 100.0)
+        self._on_rms_level_changed(rms_amp)
+
+    # _initialize_pre_roll was removed — pre-filling the pre-roll with
+    # zeros diluted the gated capture signal by ~50%, suppressing spectral
+    # magnitude by ~6 dB.  The pre-roll buffer now starts empty (cleared by
+    # start_tap_sequence) and fills naturally with real audio as chunks arrive.
+
     # ------------------------------------------------------------------ #
     # is_detecting property — mirrors Swift @Published var isDetecting
     # with didSet that arms/disarms the level-crossing detector.
@@ -443,138 +628,70 @@ class TapToneAnalyzer(
         self._is_detecting = value
         # Mirrors Swift isDetecting.didSet — arm the audio-queue level-crossing
         # detector on false→true transition; disarm on any transition to false.
-        if self.mic is not None and hasattr(self.mic, "proc_thread"):
-            pt = self.mic.proc_thread
+        if self.mic is not None:
             if value and not old:
                 # false → true: arm crossing and sync previous level.
-                pt._level_crossing_armed = True
-                pt._previous_level_db = -100.0
+                self.mic._level_crossing_armed = True
+                self.mic._previous_level_db = -100.0
             elif not value:
                 # → false: disarm crossing.
-                pt._level_crossing_armed = False
+                self.mic._level_crossing_armed = False
 
     def start(
         self,
         parent_widget,
-        sample_rate: int,
-        fft_size: int,
-        audio_device,
-        calibration_corrections,
+        calibration_corrections=None,
         calibration_name: "str | None" = None,
         calibration_profile: object | None = None,
     ) -> None:
-        """Wire up audio hardware and load persisted state.
+        """Complete view-layer wiring and load persisted state.
 
-        Called by the view layer (FftCanvas) after construction.  Tests never
-        call this — they work with the bare defaults set by ``__init__``.
+        Called by FftCanvas after construction.  The RealtimeFFTAnalyzer
+        (self.mic) and pipeline signals are already wired by ``__init__``.
+        This method handles the remaining view-layer integration that
+        requires the parent widget:
+          - QObject re-parenting
+          - Hotplug signal wiring
+          - Calibration state
+          - Device enumeration
+          - Saved measurements
+          - Auto-start tap sequence
 
-        This is the Python equivalent of Swift's audio-engine setup that lives
-        in ``RealtimeFFTAnalyzer`` and is called from the view layer.
+        Tests never call this — ``for_testing()`` provides everything
+        ``__init__`` needs.
 
         Args:
             parent_widget:           The FftCanvas (QObject parent).
-            sample_rate:             Hardware sample rate in Hz.
-            fft_size:                FFT window size in samples (power of 2).
-            audio_device:            AudioDevice to open, or None for the default.
             calibration_corrections: ndarray of per-bin dB corrections, or None.
             calibration_name:        Human-readable calibration name, or None.
+            calibration_profile:     Full CalibrationProfile object, or None.
         """
-        import numpy as np
         import sounddevice as _sd
         from models import microphone_calibration as _mc_mod
-        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
 
         self._sd = _sd
         self._mc_mod = _mc_mod
 
         # Re-parent this QObject to the view widget now that we have it.
         self.setParent(parent_widget)
+        self.mic.proc_thread.setParent(self)
 
         # Wire the hotplug signal now that the Qt object hierarchy is valid.
         self._devicesRefreshed.connect(self._on_devices_refreshed)
 
-        # ── Audio engine ──────────────────────────────────────────────────
-        # Mirrors Swift: RealtimeFFTAnalyzer owns fftSize and targetSampleRate directly.
-        self.mic = _Mic(
-            parent_widget,
-            rate=sample_rate,
-            chunksize=1024,
-            device=audio_device,
-            on_devices_changed=self._devicesRefreshed.emit,
-            on_calibration_changed=self._on_mic_calibration_changed,
-            fft_size=fft_size,
-        )
-        self.mic.proc_thread.setParent(self)
-
-        # ── FFT configuration ─────────────────────────────────────────────
-        # Read the actual hardware rate from mic (may differ from requested rate).
-        # Mirrors Swift: TapToneAnalyzer reads fftAnalyzer.targetSampleRate / fftSize.
-        x_axis = np.arange(0, self.mic.h_fft_size + 1)
-        self.freq = x_axis * self.mic.rate / self.mic.fft_size
+        # Wire device-change and calibration-change callbacks on the mic.
+        # These were deferred from mic construction (passed as None) because
+        # self._devicesRefreshed and self._on_mic_calibration_changed require
+        # the Qt signal system to be wired, which needs setParent() first.
+        self.mic._on_devices_changed = self._devicesRefreshed.emit
+        self.mic._on_calibration_changed = self._on_mic_calibration_changed
 
         # ── Calibration ───────────────────────────────────────────────────
         self._calibration_corrections = calibration_corrections
         self._calibration_profile = calibration_profile
         self._active_calibration_name = calibration_name
+        audio_device = self.mic._selected_input_device
         self._calibration_device_name = audio_device.name if audio_device else ""
-
-        # ── Gated-FFT capture signal ───────────────────────────────────────
-        # Wire the processing thread's gatedCaptureComplete signal to the
-        # finishGatedFFTCapture handler (from TapToneAnalyzerSpectrumCaptureMixin).
-        # Mirrors Swift's Combine sink on fftAnalyzer.gatedCaptureComplete.
-        self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
-
-        # ── Input-clipping signal ──────────────────────────────────────────
-        # Wire the processing thread's edge-triggered clippingChanged signal
-        # to _set_clipping, which overrides the visible status message with a
-        # remediation warning while clipping is active and restores the
-        # analyzer-set message when it clears.
-        self.mic.proc_thread.clippingChanged.connect(self._set_clipping)
-
-        # ── Raw-sample handler ────────────────────────────────────────────
-        # Set mic.raw_sample_handler so _FftProcessingThread.run() calls
-        # _accumulate_gated_samples on every audio chunk.
-        # Mirrors Swift TapToneAnalyzer.start() registering rawSampleHandler.
-        self.mic.raw_sample_handler = self._accumulate_gated_samples
-
-        # ── Level-crossing handler (audio-queue fast-start) ──────────────
-        # Fires on the audio processing thread the instant RMS crosses the
-        # tap detection threshold from below.  Seeds the gated accumulator
-        # with the pre-roll buffer and activates the capture immediately,
-        # eliminating the main-thread Qt dispatch delay.
-        # Mirrors Swift setupSubscriptions() levelCrossingHandler closure.
-        def _level_crossing_handler() -> None:
-            # In plate/brace mode the gated capture is started by
-            # _handle_plate_tap_detection → start_gated_capture(phase) with
-            # the correct phase and 400 ms window.  The guitar-mode fast-start
-            # must NOT fire because it would claim the gated capture slot
-            # with phase=None / target=fft_size, producing an ORPHAN that
-            # discards the file audio.
-            from models.measurement_type import MeasurementType as _MT
-            from models.tap_display_settings import TapDisplaySettings as _tds
-            mt = _tds.measurement_type()
-            if mt == _MT.PLATE or mt == _MT.BRACE:
-                return
-            fft_size = self.mic.fft_size
-            with self._gated_lock:
-                self._gated_capture_id += 1
-                self._gated_accum = list(self._pre_roll_buf)
-                self._gated_capture_samples = fft_size
-                self._gated_capture_phase = None  # None = guitar mode
-                self._gated_capture_active = True
-                pre_roll_count = len(self._gated_accum)
-                # DIAG: hash first 16 samples of pre-roll to verify content identity
-                _diag_hash = sum(self._gated_accum[:16]) if pre_roll_count >= 16 else 0.0
-            # DIAG: total samples consumed by the processing thread
-            _diag_consumed = getattr(self.mic.proc_thread, '_diag_total_samples', 0)
-            from guitar_tap.utilities.logging import TAP_DEBUG
-            TAP_DEBUG("levelCrossing",
-                f"Gated capture started on audio queue | "
-                f"pre-roll {pre_roll_count} samples, target {fft_size}, "
-                f"fileSamplePos={_diag_consumed}, preRollHash={_diag_hash:.6f}")
-
-        self.mic.proc_thread._level_crossing_handler = _level_crossing_handler
-        self.mic.proc_thread._level_crossing_threshold = self.tap_detection_threshold
 
         # ── Initial device enumeration ────────────────────────────────────
         # Mirrors Swift RealtimeFFTAnalyzer.init() calling loadAvailableInputDevices()
@@ -604,21 +721,6 @@ class TapToneAnalyzer(
             gt_log(f"📂 Loaded {len(self.saved_measurements)} persisted measurements")
         else:
             gt_log("📂 No persisted measurements file found")
-
-        # ── Wire FFT frames directly to the analyzer ──────────────────────
-        # Connect proc_thread.fftFrameReady → self.on_fft_frame here so the
-        # analyzer owns its own audio-frame wiring (mirrors Swift's direct
-        # RealtimeFFTAnalyzer.$magnitudes → TapToneAnalyzer subscription).
-        # FftCanvas._connect_proc_thread_signals() handles only rmsLevelChanged
-        # and finished — not fftFrameReady.
-        self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
-
-        # ── Wire per-chunk RMS level for plate/brace tap detection ────────
-        # Connect proc_thread.rmsLevelChanged → self._on_rms_level_changed so
-        # plate/brace tap detection fires at ~43 Hz (every 1024 samples) rather
-        # than at the FFT-frame rate (~2.7 Hz).  Mirrors Swift's Combine sink on
-        # fftAnalyzer.$inputLevelDB used for plate/brace detectTap calls.
-        self.mic.proc_thread.rmsLevelChanged.connect(self._on_rms_level_changed)
 
         # ── Auto-start tap sequence on first launch ────────────────────────
         # Mirrors Swift start() auto-start guard:
@@ -706,7 +808,7 @@ class TapToneAnalyzer(
     def recreate_proc_thread(self):
         """Destroy the current processing thread and create a fresh one.
 
-        Applies the current calibration to the new thread.
+        Applies the current calibration to the analyzer.
         FftCanvas calls this when it needs to reset all processing state
         (e.g. after the analyzer was already running and the user presses Start
         again).
@@ -717,18 +819,12 @@ class TapToneAnalyzer(
         Python-only — Swift achieves equivalent reset via AVAudioEngine stop/start.
         """
         from .realtime_fft_analyzer import _FftProcessingThread as _FPT
-        # Preserve the level-crossing handler from the old thread before replacing it.
-        old_handler = getattr(self.mic.proc_thread, "_level_crossing_handler", None)
         self.mic.proc_thread = _FPT(mic=self.mic, parent=self)
-        self.mic.proc_thread.set_calibration(self._calibration_corrections,
-                                              profile=self._calibration_profile)
-        # Reconnect the analyzer-owned signals on the new thread.
+        self.mic.set_calibration(self._calibration_corrections,
+                                 profile=self._calibration_profile)
+        # Reconnect the Qt signals on the new thread for UI delivery.
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
-        # Re-wire the level-crossing handler and threshold on the new thread.
-        if old_handler is not None:
-            self.mic.proc_thread._level_crossing_handler = old_handler
-            self.mic.proc_thread._level_crossing_threshold = self.tap_detection_threshold
         return self.mic.proc_thread
 
     # ------------------------------------------------------------------ #

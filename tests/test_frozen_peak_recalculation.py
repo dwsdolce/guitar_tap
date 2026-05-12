@@ -191,7 +191,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         sut.frozen_frequencies = freqs
         sut.frozen_magnitudes = mag
         sut.is_measurement_complete = True
-        sut.peak_threshold = -60.0
+        sut.peak_min_threshold = -60.0
         sut.min_frequency = 80.0
         sut.max_frequency = 1200.0
         sut.loaded_measurement_peaks = None
@@ -223,7 +223,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         sut.loaded_measurement_peaks = None
 
         # Low threshold: peak should be detected.
-        sut.peak_threshold = -60.0
+        sut.peak_min_threshold = -60.0
         sut.recalculate_frozen_peaks_if_needed()
         detected_low = [p.frequency for p in sut.current_peaks]
         assert any(abs(f - 200.0) < 20.0 for f in detected_low), (
@@ -231,7 +231,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         )
 
         # Raised threshold: weak peak should be removed.
-        sut.peak_threshold = -40.0
+        sut.peak_min_threshold = -40.0
         sut.recalculate_frozen_peaks_if_needed()
         detected_high = [p.frequency for p in sut.current_peaks]
         assert not any(abs(f - 200.0) < 20.0 for f in detected_high), (
@@ -256,7 +256,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
             ResonantPeak(frequency=200.0, magnitude=-25.0, quality=10.0),  # above threshold
             ResonantPeak(frequency=400.0, magnitude=-65.0, quality=8.0),   # below threshold
         ]
-        sut.peak_threshold = -60.0
+        sut.peak_min_threshold = -60.0
 
         sut.recalculate_frozen_peaks_if_needed()
 
@@ -278,7 +278,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
             ResonantPeak(frequency=200.0, magnitude=-70.0, quality=10.0),
             ResonantPeak(frequency=400.0, magnitude=-65.0, quality=8.0),
         ]
-        sut.peak_threshold = -60.0
+        sut.peak_min_threshold = -60.0
 
         sut.recalculate_frozen_peaks_if_needed()
 
@@ -292,7 +292,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         sut.freq = np.array([])
         sut.frozen_magnitudes = np.array([])
         sut.loaded_measurement_peaks = None
-        sut.peak_threshold = -60.0
+        sut.peak_min_threshold = -60.0
 
         sut.recalculate_frozen_peaks_if_needed()   # must not raise
 

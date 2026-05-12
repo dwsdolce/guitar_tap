@@ -196,9 +196,8 @@ class TapToneAnalyzerControlMixin:
             except Exception:
                 profile = None
             self._calibration_profile = profile
-            if self.mic.proc_thread is not None:
-                self.mic.proc_thread.set_calibration(self._calibration_corrections,
-                                                      profile=profile)
+            self.mic.set_calibration(self._calibration_corrections,
+                                     profile=profile)
             # Track the calibration name (file stem) so it is saved with
             # measurements — mirrors load_calibration_from_profile().
             self._active_calibration_name = os.path.splitext(os.path.basename(path))[0] or None
@@ -210,9 +209,8 @@ class TapToneAnalyzerControlMixin:
         """Apply a pre-parsed MicrophoneCalibration profile to the FFT pipeline."""
         self._calibration_corrections = cal.interpolate_to_bins(self.freq)
         self._calibration_profile = cal
-        if self.mic.proc_thread is not None:
-            self.mic.proc_thread.set_calibration(self._calibration_corrections,
-                                                  profile=cal)
+        self.mic.set_calibration(self._calibration_corrections,
+                                 profile=cal)
         # Track the name so _on_export_pdf can report it — mirrors Swift activeCalibration?.name.
         self._active_calibration_name = getattr(cal, "name", None)
 
@@ -221,8 +219,7 @@ class TapToneAnalyzerControlMixin:
         self._calibration_corrections = None
         self._calibration_profile = None
         self._active_calibration_name = None
-        if self.mic.proc_thread is not None:
-            self.mic.proc_thread.set_calibration(None)
+        self.mic.set_calibration(None)
 
     def current_calibration_device(self) -> str:
         """Device name the active calibration is associated with."""
@@ -388,8 +385,8 @@ class TapToneAnalyzerControlMixin:
         self.tap_detection_threshold = float(value - 100)
         # Keep the audio-queue level-crossing threshold in sync.
         # Mirrors Swift tapDetectionThreshold.didSet updating fftAnalyzer.levelCrossingThreshold.
-        if self.mic is not None and hasattr(self.mic, "proc_thread"):
-            self.mic.proc_thread._level_crossing_threshold = self.tap_detection_threshold
+        if self.mic is not None:
+            self.mic._level_crossing_threshold = self.tap_detection_threshold
         from models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_tap_detection_threshold(self.tap_detection_threshold)
         # Mirrors Swift tapDetectionThreshold.didSet: clear warning if user deviates from loaded value.
@@ -508,35 +505,18 @@ class TapToneAnalyzerControlMixin:
 
         self.mic._on_playback_finished = _on_finished_wrapper
 
-        # Wire the pre-mic-restart callback so any active gated capture is
+        # _on_pre_mic_restart is already wired by _wire_pipeline_signals()
+        # (called from __init__ or start()), so any active gated capture is
         # zero-padded and completed before mic noise can fill the remaining
-        # window.  Mirrors Swift preMicRestartHandler in startFromFile's
-        # asyncAfter block.
-        self.mic._on_pre_mic_restart = self._flush_gated_capture_on_file_end
+        # window.  Mirrors Swift preMicRestartHandler wired in setupSubscriptions().
 
         self.mic.start_from_file(path)
 
-        # Pre-fill the pre-roll buffer with silence now that mic.start_from_file()
-        # has stopped the PortAudio stream, drained the queue, and completed
-        # the drain barrier.  start_tap_sequence() already cleared _pre_roll_buf,
-        # but between that call and mic.start_from_file() the processing thread
-        # may have processed additional mic chunks that refilled the pre-roll
-        # with stale mic audio.  Both calls run on the main thread — just like
-        # Swift where startTapSequence() and startFromFile() run on the main
-        # thread with audioProcessingQueue.sync{} as the drain barrier — so
-        # clearing here after the drain is the same-thread guarantee that no
-        # mic audio contaminates the pre-roll when file playback begins.
-        #
-        # We pre-fill with zeros (silence) rather than leaving the buffer empty
-        # so that the first tap's level-crossing handler sees a full pre-roll
-        # window.  Without this, if the tap transient arrives in the very first
-        # chunk (1024 samples), the handler snapshots only 1024 pre-roll samples
-        # instead of the expected ~9600, producing a different capture window
-        # than subsequent taps.  The audio before the first tap in a file is
-        # silence, so zero-padding is the correct content.
-        with self._gated_lock:
-            pre_roll_count = int(self.mic.rate * self._pre_roll_seconds)
-            self._pre_roll_buf = [0.0] * pre_roll_count
+        # Pre-roll is cleared (not zero-filled) inside start_from_file via
+        # the _on_post_engine_stop callback (wired by _wire_pipeline_signals),
+        # matching Swift where postEngineStopHandler clears preRollBuffer
+        # after the engine stops.  The buffer fills naturally with real
+        # audio as file chunks arrive.
 
         # Recompute the frequency axis now that mic.rate reflects the file's sample rate.
         # Mirrors Swift updateFrequencyBins() called synchronously inside startFromFile
@@ -606,14 +586,14 @@ class TapToneAnalyzerControlMixin:
             self._gated_accum = []
             self._pre_roll_buf = []
 
-        # Seed the noise-floor estimate from the current ambient level so the first
-        # relative-threshold calculation is accurate immediately.
-        # Mirrors Swift TapToneAnalyzer+Control.swift:
-        #   self.noiseFloorEstimate = self.fftAnalyzer.inputLevelDB  (instantaneous RMS)
-        # Use _current_input_level_db which caches fftAnalyzer.inputLevelDB at ~43 Hz
-        # via _on_rms_level_changed — NOT recent_peak_level_db (0.5 s peak-hold /
-        # fftAnalyzer.recentPeakLevelDB), which would inflate the initial noise estimate.
-        self.noise_floor_estimate = self._current_input_level_db
+        # Seed the noise-floor estimate so the first relative-threshold
+        # calculation has a reasonable baseline.
+        # For file playback (skip_warmup), use -100 dB (silence) so the
+        # file's audio — even a quiet ring-out — will cross the rising
+        # threshold.  Mic ambient noise must not influence file playback.
+        # For live mic, seed from the current ambient level.
+        # Mirrors Swift TapToneAnalyzer+Control.swift noiseFloorEstimate.
+        self.noise_floor_estimate = -100.0 if skip_warmup else self._current_input_level_db
 
         self.current_decay_time = None
         self.peak_magnitude_history = []
@@ -629,10 +609,18 @@ class TapToneAnalyzerControlMixin:
         # Clear frozen spectrum so live FFT is shown while waiting for taps.
         self.set_frozen_spectrum(np.array([]), np.array([]))
 
-        # Always start with is_above_threshold = False so the first real tap produces
-        # a genuine rising edge.  The warm-up period suppresses detections for the
-        # first warmup_period seconds.
-        self.is_above_threshold = False
+        # For live mic: start with is_above_threshold = False so the first real tap
+        # produces a genuine rising edge.  The warm-up period suppresses detections
+        # for the first warmup_period seconds.
+        #
+        # For file playback (skip_warmup): start with is_above_threshold = True so
+        # the detector requires a falling edge (signal drops below threshold) before
+        # any rising edge can fire.  This prevents the file's opening audio — which
+        # may be mid-decay from a prior tap and already above threshold — from
+        # immediately triggering a false first tap that captures garbage.
+        # The decay will naturally fall below threshold, then the real first tap
+        # attack will produce the genuine rising edge.
+        self.is_above_threshold = skip_warmup
         self.just_exited_warmup = False  # Will be set True as warm-up ends.
 
         # Reset the warm-up timer for this new sequence.

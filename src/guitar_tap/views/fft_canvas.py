@@ -415,12 +415,22 @@ class FftCanvas(pg.PlotWidget):
 
         guitar_type_str = _as.AppSettings.guitar_type()
 
-        self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer()
+        # Create the FFT engine first, then pass it to TapToneAnalyzer.
+        # Mirrors Swift: view creates RealtimeFFTAnalyzer, then passes it to
+        # TapToneAnalyzer(fftAnalyzer:) so signals wire at construction time.
+        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
+        _mic = _Mic(
+            self,
+            rate=sampling_rate,
+            chunksize=1024,
+            device=_saved_audio_device,
+            on_devices_changed=None,       # wired by start() below
+            on_calibration_changed=None,   # wired by start() below
+            fft_size=fft_size,
+        )
+        self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(fft_analyzer=_mic)
         self.analyzer.start(
             parent_widget=self,
-            sample_rate=sampling_rate,
-            fft_size=fft_size,
-            audio_device=_saved_audio_device,
             calibration_corrections=_initial_calibration,
             calibration_name=_initial_calibration_name,
             calibration_profile=_cal,
@@ -614,8 +624,8 @@ class FftCanvas(pg.PlotWidget):
         # Connect processing thread signals.  The thread is owned by the mic
         # (RealtimeFFTAnalyzer) and accessed via self.analyzer.mic.proc_thread.
         self._connect_proc_thread_signals()
-        # Apply the initial calibration to the thread if one was loaded above.
-        self.analyzer.mic.proc_thread.set_calibration(
+        # Apply the initial calibration to the analyzer if one was loaded above.
+        self.analyzer.mic.set_calibration(
             self.analyzer._calibration_corrections,
             profile=self.analyzer._calibration_profile)
 

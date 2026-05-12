@@ -155,7 +155,7 @@ class TestD4SetHysteresisMarginPersists:
 # ---------------------------------------------------------------------------
 
 class TestD5SetThresholdPersists:
-    """D5: set_threshold() must call TapDisplaySettings.set_peak_threshold
+    """D5: set_threshold() must call TapDisplaySettings.set_peak_min_threshold
     with the converted dBFS value."""
 
     def test_persists_converted_value(self):
@@ -163,7 +163,7 @@ class TestD5SetThresholdPersists:
         sut = _make_sut()
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_peak_threshold"
+            "models.tap_display_settings.TapDisplaySettings.set_peak_min_threshold"
         ) as mock_set:
             sut.set_threshold(60)
             mock_set.assert_called_once_with(-40.0)
@@ -173,7 +173,7 @@ class TestD5SetThresholdPersists:
         sut = _make_sut()
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_peak_threshold"
+            "models.tap_display_settings.TapDisplaySettings.set_peak_min_threshold"
         ) as mock_set:
             sut.set_threshold(100)
             mock_set.assert_called_once_with(0.0)

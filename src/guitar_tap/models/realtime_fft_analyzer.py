@@ -124,53 +124,34 @@ if platform.system() == "Darwin":
 # The gatedCaptureComplete Qt signal remains here as the delivery mechanism.
 
 class _FftProcessingThread(QtCore.QThread):
-    """Audio processing thread — continuous FFT and raw-sample delivery.
+    """Queue-draining thread for live mic audio.
 
-    Drains mic.queue chunk-by-chunk, maintains the ring buffer, computes the
-    FFT and per-chunk RMS level, calls mic.raw_sample_handler on every chunk,
-    and emits results to the main thread via Qt signals.
-    Tap detection, decay tracking, and gated capture are NOT performed here.
+    In the live mic path, PortAudio callbacks must return immediately, so
+    chunks are queued and this thread drains them and calls
+    ``mic.process_raw_samples(chunk)`` — the single processing method shared
+    by both live and file paths.
 
-    Mirrors the audio delivery pipeline in Swift's RealtimeFFTAnalyzer:
-    - Ring buffer           ↔ Swift's inputBuffer accumulation in processAudioBuffer(_:)
-    - dft_anal call         ↔ Swift performFFT(on:) via AVAudioEngine FFT node
-    - fftFrameReady         ↔ Swift @Published magnitudes / inputLevelDB publishers
-    - recent_peak_level_db  ↔ Swift recentPeakLevelDB rolling-max property
-    - raw_sample_handler    ↔ Swift rawSampleHandler callback (delivered per-chunk)
-    - gatedCaptureComplete  ↔ delivery signal for finishGatedFFTCapture (emitted by
-                               TapToneAnalyzer._accumulate_gated_samples when window fills)
+    For file playback, ``process_file_data`` calls ``process_raw_samples``
+    inline without using this thread or the queue.
 
     Python-only: Swift uses AVAudioEngine taps on the main audio graph rather
     than a separate QThread.
     """
 
-    # MARK: - Signals
+    # MARK: - Signals (kept on the QThread for Qt signal delivery)
 
     # (mag_y_db, mag_y, fft_peak_amp, rms_amp, fps, sample_dt, processing_dt)
-    # fft_peak_amp: FFT peak level on 0-100 scale (dBFS + 100).
-    #               Mirrors Swift fftAnalyzer.peakMagnitude (instantaneous FFT peak, ~2.7 Hz).
-    #               Used by guitar-mode tap detection and guitar-mode re-enable closure.
-    # rms_amp:      Per-chunk RMS level on 0-100 scale (dBFS + 100).
-    #               Mirrors Swift fftAnalyzer.inputLevelDB (instantaneous RMS, ~43 Hz).
-    #               Used by plate/brace tap detection, decay tracking, and re-enable closures.
-    # NOTE: rms_amp is NOT fftAnalyzer.recentPeakLevelDB (0.5 s peak-hold).  See rmsLevelChanged.
     fftFrameReady: QtCore.Signal = QtCore.Signal(
         np.ndarray, np.ndarray, int, int, float, float, float
     )
 
-    # Per-chunk RMS level (0-100 scale) emitted every audio chunk (not just per-FFT).
-    # Mirrors Swift RealtimeFFTAnalyzer @Published inputLevelDB.
+    # Per-chunk RMS level (0-100 scale) emitted every audio chunk.
     rmsLevelChanged: QtCore.Signal = QtCore.Signal(int)
 
-    # Edge-triggered clipping signal — fires only on transitions of the recent-
-    # clip-detected state (True when any chunk in the last ~hold seconds reached
-    # full scale, False after that hold elapses without further clips).
-    # Mirrors Swift @Published var isClipping: Bool.
+    # Edge-triggered clipping signal.
     clippingChanged: QtCore.Signal = QtCore.Signal(bool)
 
-    # Emitted when a gated capture window fills: (samples: ndarray, sample_rate: float, phase: object).
-    # Delivered to the main thread via Qt queued connection.
-    # Mirrors Swift's DispatchQueue.main.async { finishGatedFFTCapture(samples:sampleRate:phase:) }.
+    # Emitted when a gated capture window fills.
     gatedCaptureComplete: QtCore.Signal = QtCore.Signal(object, float, object)
 
     # MARK: - Initialization
@@ -180,247 +161,37 @@ class _FftProcessingThread(QtCore.QThread):
         mic: "RealtimeFFTAnalyzer",
         parent: QtCore.QObject | None = None,
     ) -> None:
-        """
-        Args:
-            mic:    RealtimeFFTAnalyzer — supplies audio via mic.queue and owns
-                    FFT configuration (mic.fft_size, mic.window_fcn, mic.m_t).
-            parent: Qt parent object (TapToneAnalyzer).
-        """
         super().__init__(parent)
 
         self._mic = mic
         self._stop_event = threading.Event()
 
         # Drain barrier — mirrors Swift audioProcessingQueue.sync {}.
-        # start_from_file() sets _drain_event after emptying the queue, then
-        # puts a None sentinel into mic.queue.  run() checks for the sentinel,
-        # sets _drain_ack when it has finished processing any in-flight chunk,
-        # and waits for _drain_event to be cleared before resuming.  This
-        # guarantees that no stale chunk processing is in-flight when
-        # start_from_file() clears _input_buffer.
         self._drain_event = threading.Event()
         self._drain_ack = threading.Event()
 
-        # MARK: - Input Buffer State
-        #
-        # Growing accumulator — mirrors Swift's inputBuffer ([Float]) in
-        # processAudioBuffer(_:).  Samples are appended each chunk; when
-        # count >= fft_size an FFT fires on the first fft_size samples, then
-        # those samples are removed (hop = fft_size, 0 % overlap), exactly
-        # matching Swift's inputBuffer.removeFirst(hopSize) pattern.
-        self._input_buffer: list[npt.NDArray[np.float32]] = []
-        self._input_buffer_len: int = 0  # running total of samples stored
-
-        # MARK: - Thread-Safe Settings
-
-        # Settings protected by a lock (written from main thread, read from run()).
-        self._settings_lock = threading.Lock()
-        self._calibration: npt.NDArray | None = None
-        # Raw MicrophoneCalibration profile — used by compute_gated_fft to
-        # interpolate corrections at the gated FFT's bin frequencies (which
-        # differ from the live FFT bins).  Mirrors Swift activeCalibration.
-        self._calibration_profile: object | None = None
-
-        # MARK: - Recent Peak Level (mirrors Swift RealtimeFFTAnalyzer.recentPeakLevelDB)
-
-        # Rolling maximum RMS level over the last 0.5 s, protected by a dedicated lock.
-        # Mirrors Swift recentPeakLevelDB which holds the max level over the last 0.5 s
-        # so that tapPeakLevel captures the actual tap peak even when FFT detection is delayed.
-        self._recent_peak_lock = threading.Lock()
-        self._recent_peak_db: float = -100.0       # current rolling max (dBFS)
-        self._recent_peak_window: float = 0.5      # rolling window in seconds
-        self._recent_peak_history: list = []       # [(timestamp, level_db), ...]
-
-        # ── Level-crossing detection (mirrors Swift RealtimeFFTAnalyzer) ──
-        # Audio-queue fast-start: fires a callback on the audio processing
-        # thread the instant RMS crosses the detection threshold from below.
-        # TapToneAnalyzer sets the handler to seed the gated accumulator and
-        # set _gated_capture_active = True immediately, eliminating the
-        # main-thread Qt dispatch delay that would otherwise cause the
-        # pre-roll buffer to shift past the tap attack transient.
-        # Mirrors Swift: levelCrossingHandler, levelCrossingThreshold,
-        #                levelCrossingArmed, previousLevelDB.
-        self._level_crossing_handler: "Callable[[], None] | None" = None
-        self._level_crossing_threshold: float = -100.0
-        self._level_crossing_armed: bool = False
-        self._previous_level_db: float = -100.0
-
-        # ── Input clipping detection ─────────────────────────────────────
-        # Hold any clip-detected chunk for _clip_hold_seconds before declaring
-        # the input "no longer clipping".  Without the hold, the indicator
-        # would flicker every chunk as the signal oscillates around full
-        # scale during a tap's attack.  Mirrors Swift's identical hold logic.
-        self._clip_hold_seconds: float = 1.5
-        self._last_clip_time: float | None = None
-        self._is_clipping_state: bool = False
-
-        # NOTE: The pre-roll buffer and gated accumulator previously lived here.
-        # They have been moved to TapToneAnalyzer (as _pre_roll_buf, _gated_accum,
-        # etc.) and are maintained by TapToneAnalyzer._accumulate_gated_samples(),
-        # which is called via mic.raw_sample_handler on every audio chunk.
-        # This matches Swift where TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:)
-        # owns the buffers rather than RealtimeFFTAnalyzer.
-        #
-        # gatedCaptureComplete signal remains here as the delivery mechanism —
-        # _accumulate_gated_samples emits it when the window fills so that the
-        # queued Qt connection delivers finishGatedFFTCapture on the main thread.
-
-        # (gatedCaptureComplete is declared as a class-level Qt Signal above)
-
-    # MARK: - QThread.run() — the processing loop
+    # MARK: - QThread.run() — thin queue drainer
 
     def run(self) -> None:
-        """Main processing loop — runs on the background thread.
+        """Drain mic.queue and call mic.process_raw_samples on each chunk.
 
-        Drains mic.queue, maintains the ring buffer, computes per-chunk RMS
-        level, and emits fftFrameReady for each FFT frame.
-
-        Mirrors Swift's AVAudioEngine input tap callback + processAudioBuffer(_:)
-        accumulation logic.  Per-FFT-frame post-processing (calibration,
-        peak-amp, FILE_DEBUG trace) is delegated to ``perform_fft`` in
-        ``realtime_fft_analyzer_fft_processing.py``, mirroring Swift's
-        ``performFFT(on:)`` in ``RealtimeFFTAnalyzer+FFTProcessing.swift``.
-        Tap detection is performed on the main thread inside
-        TapToneAnalyzer.on_fft_frame().
+        All DSP logic lives in RealtimeFFTAnalyzer.process_raw_samples,
+        matching Swift where processRawSamples is on RealtimeFFTAnalyzer.
         """
-        from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
-        lastupdate = time.time()
         while not self._stop_event.is_set():
             try:
                 chunk = self._mic.queue.get(timeout=0.1)
             except queue.Empty:
                 continue
 
-            # Drain barrier — mirrors Swift audioProcessingQueue.sync {}.
-            # A None sentinel means "finish your current work, then wait".
-            # start_from_file() puts None after draining the queue so that
-            # this thread acknowledges it has finished any in-flight chunk
-            # before the caller clears _input_buffer.
+            # Drain barrier — None sentinel means "finish current work, then wait".
             if chunk is None:
                 self._drain_ack.set()
-                # Block until the caller clears _drain_event (after it has
-                # finished its reset work).
                 while self._drain_event.is_set() and not self._stop_event.is_set():
                     time.sleep(0.001)
                 continue
 
-            # Calibration is snapshotted inside perform_fft (under
-            # _settings_lock) so the snapshot is fresh per FFT frame.
-            enter_now = time.time()
-            chunk_f32 = chunk.astype(np.float32)
-
-            # DIAG: running total of samples consumed from the audio source
-            self._diag_total_samples = getattr(self, '_diag_total_samples', 0) + len(chunk_f32)
-
-            # Accumulate samples — mirrors Swift inputBuffer.append(contentsOf: samples).
-            self._input_buffer.append(chunk_f32)
-            self._input_buffer_len += len(chunk_f32)
-
-            # Deliver every raw audio chunk to the raw_sample_handler if set.
-            # Mirrors Swift RealtimeFFTAnalyzer calling rawSampleHandler on every
-            # audio buffer on audioProcessingQueue.
-            # TapToneAnalyzer sets this to _accumulate_gated_samples so it can
-            # own the pre-roll buffer and gated accumulator directly.
-            handler = self._mic.raw_sample_handler
-            if handler is not None:
-                handler(chunk_f32, float(self._mic.rate))
-
-            # Per-chunk RMS level — mirrors Swift fftAnalyzer.inputLevelDB.
-            # This is the INSTANTANEOUS RMS level for the current 1024-sample chunk, ~43 Hz.
-            # Stored in TapToneAnalyzer._current_input_level_db via _on_rms_level_changed.
-            # Used by: plate/brace detectTap(), re-enable closures (_do_reenable_detection,
-            # _start_cross, _start_flc), noise_floor_estimate seed, and decay tracking.
-            # NOT the same as recentPeakLevelDB (0.5 s peak-hold) — see block below.
-            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-            level_db = 20.0 * np.log10(max(rms, 1e-10))
-            rms_amp = int(level_db + 100.0)
-            self.rmsLevelChanged.emit(rms_amp)
-
-            # ── Level-crossing detection (audio-queue fast-start) ────
-            # Fires BEFORE main-thread dispatch, on the audio processing
-            # thread.  Mirrors Swift RealtimeFFTAnalyzer+FFTProcessing.swift
-            # crossing check after rawSampleHandler and RMS calculation.
-            if (self._level_crossing_armed
-                    and level_db > self._level_crossing_threshold
-                    and self._previous_level_db <= self._level_crossing_threshold):
-                self._level_crossing_armed = False
-                handler = self._level_crossing_handler
-                if handler is not None:
-                    handler()
-            self._previous_level_db = level_db
-
-            # ── Input-clipping detection ─────────────────────────────
-            # Sample-domain check (peak |sample| ≥ 0.99) catches transient
-            # peaks; RMS check (>= 0 dBFS) catches sustained clipping.
-            # Either condition holds the clipping state True for
-            # _clip_hold_seconds before clearing.  Edge-triggered emit so
-            # the view's slot only fires on True↔False transitions.
-            peak_abs = float(np.max(np.abs(chunk.astype(np.float64))))
-            chunk_clipped = (peak_abs >= 0.99) or (level_db >= 0.0)
-            if chunk_clipped:
-                self._last_clip_time = enter_now
-            new_clip_state = (
-                self._last_clip_time is not None
-                and (enter_now - self._last_clip_time) < self._clip_hold_seconds
-            )
-            if new_clip_state != self._is_clipping_state:
-                self._is_clipping_state = new_clip_state
-                self.clippingChanged.emit(new_clip_state)
-
-            # Update rolling recent-peak history — mirrors Swift fftAnalyzer.recentPeakLevelDB.
-            # recentPeakLevelDB holds the rolling MAX over the last 0.5 s.  It is ONLY correct
-            # to use at tap-fire time (tapPeakLevel = fftAnalyzer.recentPeakLevelDB) so the
-            # peak-hold captures the tap transient.  Re-enable closures must NOT use this.
-            # Trim entries older than the window, then update the rolling max.
-            with self._recent_peak_lock:
-                cutoff = enter_now - self._recent_peak_window
-                self._recent_peak_history = [
-                    (t, v) for t, v in self._recent_peak_history if t > cutoff
-                ]
-                self._recent_peak_history.append((enter_now, level_db))
-                self._recent_peak_db = max(
-                    (v for _, v in self._recent_peak_history), default=-100.0
-                )
-
-            # Fire an FFT for each complete fft_size-sample chunk available,
-            # consuming hop = fft_size samples each time (0 % overlap).
-            # Mirrors Swift:
-            #   while inputBuffer.count >= fftSize {
-            #       chunk = Array(inputBuffer.prefix(fftSize))
-            #       inputBuffer.removeFirst(hopSize)
-            #       performFFT(on: chunk)
-            #   }
-            fft_size = self._mic.fft_size
-            while self._input_buffer_len >= fft_size:
-                # Flatten buffered chunks into one contiguous array.
-                flat = np.concatenate(self._input_buffer)
-
-                # Extract exactly fft_size samples (prefix) — mirrors Swift prefix(fftSize).
-                samples = flat[:fft_size]
-
-                # Remove hop (= fft_size) samples from the front —
-                # mirrors Swift inputBuffer.removeFirst(hopSize).
-                remainder = flat[fft_size:]
-                self._input_buffer = [remainder] if len(remainder) else []
-                self._input_buffer_len = len(remainder)
-
-                sample_dt = enter_now - lastupdate
-                lastupdate = enter_now
-
-                # FFT + post-processing — mirrors Swift performFFT(on:) in
-                # RealtimeFFTAnalyzer+FFTProcessing.swift.  perform_fft applies
-                # calibration, computes the int-encoded peak amplitude, and
-                # emits the per-FFT-frame FILE_DEBUG trace.
-                mag_y_db, mag_y, fft_peak_amp = _perform_fft(self, samples, fft_size)
-
-                exit_now = time.time()
-                processing_dt = exit_now - enter_now
-
-                fps = 1.0 / max(sample_dt, 1e-12)
-                self.fftFrameReady.emit(
-                    mag_y_db, mag_y, fft_peak_amp, rms_amp,
-                    fps, sample_dt, processing_dt,
-                )
+            self._mic.process_raw_samples(chunk)
 
     # MARK: - Public API (safe to call from main thread)
 
@@ -429,139 +200,16 @@ class _FftProcessingThread(QtCore.QThread):
         self._stop_event.set()
 
     def reset_state(self) -> None:
-        """Reset input buffer state; call before start().
+        """Reset state; call before start().
 
         Mirrors Swift inputBuffer.removeAll() + related resets in startFromFile.
         """
-        self._input_buffer = []
-        self._input_buffer_len = 0
+        self._mic._input_buffer = []
+        self._mic._input_buffer_len = 0
         self._stop_event.clear()
-        with self._recent_peak_lock:
-            self._recent_peak_db = -100.0
-            self._recent_peak_history = []
-
-    def set_calibration(self, arr: npt.NDArray | None,
-                        profile: object | None = None) -> None:
-        """Update the per-bin dB calibration correction array.
-
-        Args:
-            arr:     Pre-interpolated dB corrections for the live FFT bins.
-            profile: Raw MicrophoneCalibration object (optional).  When provided,
-                     ``compute_gated_fft`` uses it to interpolate corrections at
-                     the gated FFT's own bin frequencies — mirroring Swift
-                     ``computeGatedFFT`` which calls ``activeCalibration.corrections(for:)``.
-        """
-        with self._settings_lock:
-            self._calibration = arr
-            self._calibration_profile = profile
-
-    # MARK: - Gated FFT Compute (pure function; no gated state owned here)
-
-    def compute_gated_fft(
-        self,
-        samples: "npt.NDArray[np.float32]",
-        sample_rate: float,
-    ) -> "tuple[list[float], list[float]]":
-        """Compute a Hann-windowed FFT from a gated PCM capture.
-
-        Mirrors Swift RealtimeFFTAnalyzer.computeGatedFFT(samples:sampleRate:):
-        - Zero-pads to the next power-of-two, capped at 32768 samples.
-        - Applies a Hann window (suppresses sidelobes by ~31 dB vs rectangular).
-        - Normalises by 1/N (matching Swift's ``scale = 1.0 / Float(paddedSize)``).
-        - Returns the one-sided magnitude spectrum (dBFS) and frequency axis (Hz).
-
-        Note: this does NOT call ``dft_anal`` because that function normalises the
-        window by ``sum(window)`` (≈ N/2 for Hann), which is correct for the live
-        rectangular-window path (where sum(ones) = N) but produces a ~6 dB offset
-        for the Hann-windowed gated path.  Instead we compute the FFT inline with
-        the same 1/N normalisation that Swift uses.
-
-        Args:
-            samples:     Raw PCM samples (mono, normalised to ±1.0, float32).
-            sample_rate: Hardware sample rate in Hz.
-
-        Returns:
-            (magnitudes_db, frequencies) — both as list[float].
-            Returns ([], []) if samples is empty.
-        """
-        from numpy.fft import fft
-
-        n = len(samples)
-        if n == 0:
-            return [], []
-
-        # Zero-pad to the next power-of-two, capped at 32768.
-        # Mirrors Swift nextPowerOfTwo(_:) with max cap.
-        MAX_FFT = 32768
-        fft_size = 1
-        while fft_size < n:
-            fft_size <<= 1
-        fft_size = min(fft_size, MAX_FFT)
-
-        # Zero-pad (or truncate) to fft_size.
-        # Mirrors Swift: var padded = [Float](repeating: 0, count: paddedSize)
-        padded = np.zeros(fft_size, dtype=np.float64)
-        copy_count = min(n, fft_size)
-        padded[:copy_count] = samples[:copy_count]
-
-        # Apply Hann window directly (NOT normalised by sum(window)).
-        # Mirrors Swift: vDSP_hann_window + vDSP_vmul — raw window, no sum-normalisation.
-        window = np.hanning(fft_size)
-        padded *= window
-
-        # FFT
-        complex_fft = fft(padded)
-
-        # One-sided spectrum: bins 0 … N/2-1.
-        # Swift returns paddedSize/2 bins (excludes Nyquist); match that.
-        half_n = fft_size // 2
-        abs_fft = np.abs(complex_fft[:half_n])
-
-        # Normalise by N — mirrors Swift: scale = 1.0 / Float(paddedSize).
-        # Swift divides real and imaginary parts by N before computing magnitude,
-        # which is equivalent to dividing the magnitude by N.
-        abs_fft /= fft_size
-
-        # One-sided amplitude correction: all bins except DC (bin 0) are ×2.
-        # numpy.fft.fft returns a two-sided spectrum; taking only the positive-
-        # frequency half discards the mirror image, so interior bins hold half
-        # the signal power.  Multiplying by 2 restores the correct amplitude,
-        # matching the factor inherent in Swift's vDSP_DFT_zrop output.
-        # DC (bin 0) has no mirror — not doubled.  Nyquist (bin N/2) is
-        # excluded from the output (half_n = N/2, not N/2+1).
-        abs_fft[1:] *= 2.0
-
-        # Convert to dB (ref = 1.0, matching Swift vDSP_vdbcon with ref=1.0).
-        abs_fft[abs_fft < np.finfo(float).eps] = np.finfo(float).eps
-        mag_db = 20.0 * np.log10(abs_fft)
-
-        # Build the one-sided frequency axis.
-        freqs_arr = np.array([float(i) * sample_rate / fft_size
-                              for i in range(half_n)])
-
-        # Apply microphone calibration — mirrors Swift computeGatedFFT lines
-        # 437-441 which calls activeCalibration.corrections(for: freqs).
-        with self._settings_lock:
-            cal_profile = self._calibration_profile
-        if cal_profile is not None:
-            corrections = cal_profile.interpolate_to_bins(freqs_arr)
-            if len(corrections) == len(mag_db):
-                mag_db = mag_db + corrections
-
-        return list(mag_db), list(freqs_arr)
-
-    @property
-    def recent_peak_level_db(self) -> float:
-        """Rolling maximum RMS level over the last 0.5 s, in dBFS.
-
-        Thread-safe: safe to read from the main thread while run() updates it
-        on the background thread.
-
-        Mirrors Swift RealtimeFFTAnalyzer.recentPeakLevelDB used by
-        detectTap() to set tapPeakLevel at the moment of a confirmed tap.
-        """
-        with self._recent_peak_lock:
-            return self._recent_peak_db
+        with self._mic._recent_peak_lock:
+            self._mic._recent_peak_db = -100.0
+            self._mic._recent_peak_history = []
 
 
 class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnalyzerDeviceManagementMixin):
@@ -610,18 +258,57 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
       firstBufferReceived, fftCount, engineStartTime
     """
 
+    # MARK: - Testing Support
+
+    ## When ``True``, the analyzer was created via ``for_testing()`` and has no
+    ## audio hardware wired.  Checked by ``close()`` to skip hardware teardown.
+    ## Mirrors Swift ``RealtimeFFTAnalyzer.isForTesting``.
+    is_for_testing: bool = False
+
+    @classmethod
+    def for_testing(
+        cls,
+        fft_size: int = 16384,
+        sample_rate: int = 48000,
+    ) -> "RealtimeFFTAnalyzer":
+        """Create a ``RealtimeFFTAnalyzer`` suitable for unit testing.
+
+        The returned instance has a fully functional FFT pipeline (window,
+        buffers, processing thread) but **no audio hardware**: no PortAudio
+        stream, no device enumeration, no hot-plug monitor.
+        Use ``process_file_data()`` to feed audio.
+
+        Mirrors Swift ``RealtimeFFTAnalyzer.forTesting(fftSize:)``.
+
+        Args:
+            fft_size:    FFT window size (power of 2). Default 16384.
+            sample_rate: Sample rate in Hz. Default 48000.
+        """
+        return cls(
+            parent=None,
+            rate=sample_rate,
+            chunksize=1024,
+            device=None,
+            fft_size=fft_size,
+            for_testing=True,
+        )
+
     # MARK: - Initialization
 
     def __init__(self, parent, rate: int = 44100, chunksize: int = 16384,
                  device: "AudioDevice | None" = None,
                  on_devices_changed: Callable[[], None] | None = None,
                  on_calibration_changed: "Callable[[object | None], None] | None" = None,
-                 fft_size: int = 16384):
-        """Create a new real-time FFT analyser and open the audio stream.
+                 fft_size: int = 16384,
+                 for_testing: bool = False):
+        """Create a new real-time FFT analyser.
 
-        Mirrors Swift RealtimeFFTAnalyzer.init(fftSize:).
-        The Swift initialiser creates the AVAudioEngine and registers device listeners;
-        this Python initialiser opens a sounddevice InputStream and starts the hot-plug monitor.
+        Mirrors Swift ``RealtimeFFTAnalyzer.init(fftSize:forTesting:)``.
+
+        When ``for_testing`` is True, the initialiser sets up the FFT pipeline
+        (window, buffers, processing thread) but skips all audio hardware:
+        no PortAudio stream, no device enumeration, no hot-plug monitor.
+        This mirrors Swift's ``guard !forTesting else { return }`` pattern.
 
         Args:
             parent:                  Parent QObject (used to anchor a MacAccess helper on macOS).
@@ -638,15 +325,16 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
                                      setCalibrationWithoutSavingDeviceMapping(_:).
             fft_size:                FFT window size (power of 2).
                                      Mirrors Swift RealtimeFFTAnalyzer.fftSize.
+            for_testing:             When True, skip all audio hardware setup.
+                                     Mirrors Swift ``init(fftSize:forTesting:)``.
         """
-
-        if platform.system() == "Darwin":
-            mac_access.MacAccess(parent)
+        self.is_for_testing = for_testing
 
         # Python-only: PortAudio session state
         self.rate: int = int(device.sample_rate) if device else rate
         self.chunksize: int = chunksize
         self.device_index: int | None = device.index if device else None
+
         # MARK: - FFT Configuration (mirrors Swift RealtimeFFTAnalyzer)
 
         # FFT window size — must be a power of 2.
@@ -668,18 +356,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # numpy.ones is identical to scipy.signal.get_window("boxcar", N).
         self.window_fcn = np.ones(fft_size)
 
-        # Open the sounddevice stream; Swift opens AVAudioEngine in start()
-        self.stream: sd.InputStream = sd.InputStream(
-            device=self.device_index,
-            channels=1,
-            samplerate=self.rate,
-            dtype=np.float32,
-            blocksize=self.chunksize,
-            callback=self.new_frame)
-
-        # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
-        from .realtime_fft_analyzer_device_management import _log_stream_diagnostics
-        self.rate = _log_stream_diagnostics(self.stream, self.rate)
         # Python-only: audio chunk delivery via Queue
         # Swift delivers audio via rawSampleHandler callback + inputBuffer accumulation
         self._stop_lock: threading.Lock = threading.Lock()
@@ -708,52 +384,111 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # asyncAfter block.
         self._on_pre_mic_restart: Callable[[], None] | None = None
 
+        # Optional callback invoked after the audio engine stops and the queue is
+        # drained, but BEFORE file chunks are pumped.  Used by TapToneAnalyzer to
+        # re-initialize the pre-roll buffer with silence so stale mic audio from
+        # between startTapSequence and engine-stop does not leak into the gated
+        # capture's pre-roll seed.  Mirrors Swift postEngineStopHandler.
+        self._on_post_engine_stop: Callable[[], None] | None = None
+
         # MARK: - Device Lists (mirrors Swift RealtimeFFTAnalyzer @Published properties)
 
         # Live list of available input devices.
         # Mirrors Swift RealtimeFFTAnalyzer.availableInputDevices (@Published).
-        # Populated by load_available_input_devices() (see
-        # realtime_fft_analyzer_device_management.py — Recommendation 2 to implement).
-        # Currently empty at construction; the view layer populates it via
-        # sd.query_devices() until Recommendation 2 is implemented.
         self.available_input_devices: list = []
 
         # The currently selected input device (backing store for the property).
         # Mirrors Swift RealtimeFFTAnalyzer.selectedInputDevice (@Published).
-        # The @property setter mirrors Swift's didSet: persists the device
-        # fingerprint and auto-loads calibration on every assignment.
-        # Use _selected_input_device directly only during __init__ to avoid
-        # firing didSet logic before callbacks are wired (mirrors Swift where
-        # didSet does not fire during init).
+        # Use _selected_input_device directly only during init to avoid
+        # firing didSet logic before callbacks are wired.
         self._selected_input_device: "AudioDevice | None" = device
 
         # Python-only: hot-plug monitoring threads
         self._on_devices_changed = on_devices_changed
         self._monitor_stop = threading.Event()
         self._monitor_thread: threading.Thread | None = None
-        self._start_hotplug_monitor()
 
         # Calibration-change callback.
-        # Called by the selected_input_device setter after looking up the
-        # device-specific calibration from CalibrationStorage.
-        # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
         self._on_calibration_changed: "Callable[[object | None], None] | None" = on_calibration_changed
 
         # Raw-sample handler callback.
-        # Mirrors Swift RealtimeFFTAnalyzer.rawSampleHandler: (([Float], Double) -> Void)?
-        # Set by TapToneAnalyzer.start() to self._accumulate_gated_samples so that
-        # TapToneAnalyzer owns the pre-roll buffer and gated accumulator directly,
-        # matching Swift where TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:)
-        # is the handler.
+        # Mirrors Swift RealtimeFFTAnalyzer.rawSampleHandler.
+        # Set by TapToneAnalyzer._wire_pipeline_signals() to _accumulate_gated_samples.
         self.raw_sample_handler: "Callable[[np.ndarray, float], None] | None" = None
 
-        # Python-only: off-main-thread DSP worker.
-        # Mirrors Swift's AVAudioEngine audio processing queue that delivers
-        # performFFT results on a background thread before publishing @Published
-        # properties on the main thread.  Created here so that TapToneAnalyzer
-        # (which owns the analyzer) can access proc_thread immediately after init.
-        # The parent QObject is set by TapToneAnalyzer after construction.
+        # MARK: - Direct callback properties (mirrors Swift handlers)
+        # These are called directly by process_raw_samples — no Qt signal dispatch.
+        # For file playback this is the only delivery path (no event loop).
+        # For live mic the Qt signals are emitted in parallel for UI updates.
+        self.rms_level_handler: "Callable[[float], None] | None" = None
+        self.fft_frame_handler: "Callable[..., None] | None" = None
+
+        # MARK: - Processing State (formerly on _FftProcessingThread)
+        # Moved here so process_raw_samples can access them directly.
+        # Mirrors Swift processRawSamples state on RealtimeFFTAnalyzer.
+
+        # Input buffer — growing accumulator for FFT.
+        self._input_buffer: list[npt.NDArray[np.float32]] = []
+        self._input_buffer_len: int = 0
+
+        # Thread-safe settings (calibration).
+        self._settings_lock = threading.Lock()
+        self._calibration: npt.NDArray | None = None
+        self._calibration_profile: object | None = None
+
+        # Recent peak level (rolling max over 0.5 s).
+        self._recent_peak_lock = threading.Lock()
+        self._recent_peak_db: float = -100.0
+        self._recent_peak_window: float = 0.5
+        self._recent_peak_history: list = []
+
+        # Level-crossing detection.
+        self._level_crossing_handler: "Callable[[], None] | None" = None
+        self._level_crossing_threshold: float = -100.0
+        self._level_crossing_armed: bool = False
+        self._previous_level_db: float = -100.0
+
+        # Input clipping detection.
+        self._clip_hold_seconds: float = 1.5
+        self._last_clip_time: float | None = None
+        self._is_clipping_state: bool = False
+
+        # Diagnostic counters.
+        self._fft_frame_counter: int = 0
+        self._samples_consumed: int = 0
+        self._diag_total_samples: int = 0
+
+        # Timing for FFT frame rate.
+        self._last_fft_time: float = time.time()
+
+        # Python-only: off-main-thread DSP worker (for live mic queue draining).
+        # Mirrors Swift's AVAudioEngine audio processing queue.
         self.proc_thread: _FftProcessingThread = _FftProcessingThread(mic=self)
+
+        # ── Guard: skip hardware setup for testing ───────────────────────
+        # Mirrors Swift: guard !forTesting else { return }
+        if for_testing:
+            self.stream = None  # type: ignore[assignment]
+            return
+
+        if platform.system() == "Darwin":
+            mac_access.MacAccess(parent)
+
+        # Open the sounddevice stream; Swift opens AVAudioEngine in start()
+        self.stream: sd.InputStream = sd.InputStream(
+            device=self.device_index,
+            channels=1,
+            samplerate=self.rate,
+            dtype=np.float32,
+            blocksize=self.chunksize,
+            callback=self.new_frame)
+
+        # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
+        from .realtime_fft_analyzer_device_management import _log_stream_diagnostics
+        self.rate = _log_stream_diagnostics(self.stream, self.rate)
+
+        # Start the hot-plug device monitor.
+        self._start_hotplug_monitor()
 
         atexit.register(self.close)
 
@@ -796,6 +531,193 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
                 on_cal(cal)
             except Exception:
                 pass
+
+    # MARK: - process_raw_samples (mirrors Swift processRawSamples)
+
+    def process_raw_samples(self, chunk: npt.NDArray) -> None:
+        """Process a single audio chunk through the full DSP pipeline.
+
+        This is the single processing method for ALL audio — live mic and
+        file playback both call this identically.  Mirrors Swift
+        ``processRawSamples(_ samples: [Float])`` in
+        ``RealtimeFFTAnalyzer+FFTProcessing.swift``.
+
+        Steps:
+        1. float32 cast, diagnostic counter
+        2. raw_sample_handler (gated sample delivery)
+        3. RMS → rms_level_handler callback + rmsLevelChanged Qt signal
+        4. Level-crossing detection → _level_crossing_handler callback
+        5. Clipping detection → clippingChanged Qt signal
+        6. Recent peak history update
+        7. Input buffer accumulation → FFT → fft_frame_handler callback + fftFrameReady Qt signal
+        """
+        from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
+
+        enter_now = time.time()
+        chunk_f32 = chunk.astype(np.float32)
+
+        # DIAG: running total of samples consumed from the audio source
+        self._diag_total_samples += len(chunk_f32)
+
+        # Deliver every raw audio chunk to the raw_sample_handler if set.
+        # Mirrors Swift rawSampleHandler callback.
+        handler = self.raw_sample_handler
+        if handler is not None:
+            handler(chunk_f32, float(self.rate))
+
+        # Accumulate samples — mirrors Swift inputBuffer.append(contentsOf: samples).
+        self._input_buffer.append(chunk_f32)
+        self._input_buffer_len += len(chunk_f32)
+
+        # Per-chunk RMS level — mirrors Swift fftAnalyzer.inputLevelDB.
+        rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+        level_db = 20.0 * np.log10(max(rms, 1e-10))
+        rms_amp = int(level_db + 100.0)
+
+        # Direct callback (works without Qt event loop — for file playback and tests).
+        rms_handler = self.rms_level_handler
+        if rms_handler is not None:
+            rms_handler(level_db)
+
+        # Qt signal (for UI updates via event loop — live mic path).
+        self.proc_thread.rmsLevelChanged.emit(rms_amp)
+
+        # ── Level-crossing detection (audio-queue fast-start) ────
+        if (self._level_crossing_armed
+                and level_db > self._level_crossing_threshold
+                and self._previous_level_db <= self._level_crossing_threshold):
+            self._level_crossing_armed = False
+            lc_handler = self._level_crossing_handler
+            if lc_handler is not None:
+                lc_handler()
+        self._previous_level_db = level_db
+
+        # ── Input-clipping detection ─────────────────────────────
+        peak_abs = float(np.max(np.abs(chunk.astype(np.float64))))
+        chunk_clipped = (peak_abs >= 0.99) or (level_db >= 0.0)
+        if chunk_clipped:
+            self._last_clip_time = enter_now
+        new_clip_state = (
+            self._last_clip_time is not None
+            and (enter_now - self._last_clip_time) < self._clip_hold_seconds
+        )
+        if new_clip_state != self._is_clipping_state:
+            self._is_clipping_state = new_clip_state
+            self.proc_thread.clippingChanged.emit(new_clip_state)
+
+        # Update rolling recent-peak history.
+        with self._recent_peak_lock:
+            cutoff = enter_now - self._recent_peak_window
+            self._recent_peak_history = [
+                (t, v) for t, v in self._recent_peak_history if t > cutoff
+            ]
+            self._recent_peak_history.append((enter_now, level_db))
+            self._recent_peak_db = max(
+                (v for _, v in self._recent_peak_history), default=-100.0
+            )
+
+        # Fire an FFT for each complete fft_size-sample chunk available.
+        fft_size = self.fft_size
+        while self._input_buffer_len >= fft_size:
+            flat = np.concatenate(self._input_buffer)
+            samples = flat[:fft_size]
+            remainder = flat[fft_size:]
+            self._input_buffer = [remainder] if len(remainder) else []
+            self._input_buffer_len = len(remainder)
+
+            sample_dt = enter_now - self._last_fft_time
+            self._last_fft_time = enter_now
+
+            # FFT + post-processing — perform_fft now reads calibration
+            # from self (the analyzer) instead of the thread.
+            mag_y_db, mag_y, fft_peak_amp = _perform_fft(self, samples, fft_size)
+
+            exit_now = time.time()
+            processing_dt = exit_now - enter_now
+            fps = 1.0 / max(sample_dt, 1e-12)
+
+            # Direct callback (works without Qt event loop).
+            fft_handler = self.fft_frame_handler
+            if fft_handler is not None:
+                fft_handler(mag_y_db, mag_y, fft_peak_amp, rms_amp,
+                            fps, sample_dt, processing_dt)
+
+            # Qt signal (for UI updates).
+            self.proc_thread.fftFrameReady.emit(
+                mag_y_db, mag_y, fft_peak_amp, rms_amp,
+                fps, sample_dt, processing_dt,
+            )
+
+    # MARK: - Calibration (formerly on _FftProcessingThread)
+
+    def set_calibration(self, arr: npt.NDArray | None,
+                        profile: object | None = None) -> None:
+        """Update the per-bin dB calibration correction array.
+
+        Args:
+            arr:     Pre-interpolated dB corrections for the live FFT bins.
+            profile: Raw MicrophoneCalibration object (optional).
+        """
+        with self._settings_lock:
+            self._calibration = arr
+            self._calibration_profile = profile
+
+    # MARK: - Gated FFT Compute
+
+    def compute_gated_fft(
+        self,
+        samples: "npt.NDArray[np.float32]",
+        sample_rate: float,
+    ) -> "tuple[list[float], list[float]]":
+        """Compute a Hann-windowed FFT from a gated PCM capture.
+
+        Mirrors Swift RealtimeFFTAnalyzer.computeGatedFFT(samples:sampleRate:).
+        """
+        from numpy.fft import fft
+
+        n = len(samples)
+        if n == 0:
+            return [], []
+
+        MAX_FFT = 32768
+        fft_size = 1
+        while fft_size < n:
+            fft_size <<= 1
+        fft_size = min(fft_size, MAX_FFT)
+
+        padded = np.zeros(fft_size, dtype=np.float64)
+        copy_count = min(n, fft_size)
+        padded[:copy_count] = samples[:copy_count]
+
+        window = np.hanning(fft_size)
+        padded *= window
+
+        complex_fft = fft(padded)
+        half_n = fft_size // 2
+        abs_fft = np.abs(complex_fft[:half_n])
+        abs_fft /= fft_size
+        abs_fft[1:] *= 2.0
+
+        abs_fft[abs_fft < np.finfo(float).eps] = np.finfo(float).eps
+        mag_db = 20.0 * np.log10(abs_fft)
+
+        freqs_arr = np.array([float(i) * sample_rate / fft_size
+                              for i in range(half_n)])
+
+        with self._settings_lock:
+            cal_profile = self._calibration_profile
+        if cal_profile is not None:
+            corrections = cal_profile.interpolate_to_bins(freqs_arr)
+            if len(corrections) == len(mag_db):
+                mag_db = mag_db + corrections
+
+        return list(mag_db), list(freqs_arr)
+
+    @property
+    def recent_peak_level_db(self) -> float:
+        """Rolling maximum RMS level over the last 0.5 s, in dBFS."""
+        with self._recent_peak_lock:
+            return self._recent_peak_db
 
     # MARK: - Engine Control
     # All engine control methods live in realtime_fft_analyzer_engine_control.py

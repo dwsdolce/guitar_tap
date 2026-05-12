@@ -287,6 +287,105 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
     # MARK: - WAV File Playback (mirrors Swift startFromFile(_ url:))
 
+    def process_file_data(
+        self,
+        samples: "npt.NDArray[np.float32]",
+        sample_rate: int,
+        file_name: str,
+    ) -> None:
+        """Process pre-read mono audio through the FFT pipeline.
+
+        Data-processing core of ``start_from_file``, factored out so tests
+        can drive the pipeline without audio hardware.  The chunk-pacing
+        loop, partial flush, and ``_on_pre_mic_restart`` call are included.
+        Mic stop/restart and UI state management are NOT.
+
+        Mirrors Swift ``RealtimeFFTAnalyzer.processFileData(samples:sampleRate:fileName:)``.
+
+        Args:
+            samples:     Mono float32 PCM array.
+            sample_rate: Sample rate in Hz.
+            file_name:   Display name for logging.
+        """
+        from utilities.logging import TAP_DEBUG as _td
+        from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
+
+        n_samples = len(samples)
+        self.rate = sample_rate
+        self.is_playing_file = True
+        self.playing_file_name = file_name
+        self.is_stopped = False
+
+        chunksize = self.chunksize
+        fft_size = self.fft_size
+        chunk_duration = chunksize / sample_rate
+        expected_duration_s = n_samples / float(sample_rate)
+
+        _td("file_playback",
+            f"START | path={file_name} "
+            f"samples={n_samples} rate={int(sample_rate)}Hz "
+            f"chunksize={chunksize} chunkDuration={chunk_duration*1000:.1f}ms "
+            f"expectedDuration={expected_duration_s:.3f}s "
+            f"fftSize={fft_size} expectedFftFrames={n_samples // fft_size}"
+        )
+        t0 = time.time()
+        idx = 0
+        chunks_pumped = 0
+        while idx < n_samples:
+            if not self.is_playing_file:
+                _td("file_playback",
+                    f"INTERRUPTED | idx={idx}/{n_samples} chunksPumped={chunks_pumped}"
+                )
+                break
+            chunk = samples[idx: idx + chunksize]
+            if len(chunk) == 0:
+                break
+            # Inline processing — no queue, no thread.
+            # Mirrors Swift processFileData calling processRawSamples directly.
+            self.process_raw_samples(chunk)
+            idx += chunksize
+            chunks_pumped += 1
+            time.sleep(chunk_duration)
+        elapsed = time.time() - t0
+        _td("file_playback",
+            f"END | chunksPumped={chunks_pumped} samplesPumped={idx} "
+            f"elapsed={elapsed:.3f}s expected={expected_duration_s:.3f}s "
+            f"realtimeRatio={elapsed/max(expected_duration_s,1e-9):.3f}x"
+        )
+
+        self.is_playing_file = False
+
+        # Force-flush any partial audio still in the input buffer.
+        # Mirrors Swift processFileData partial flush.
+        if self._input_buffer:
+            partial = np.concatenate(self._input_buffer)
+        else:
+            partial = np.zeros(0, dtype=np.float32)
+        _td("file_playback", f"PARTIAL_FLUSH | partialSamples={len(partial)} fftSize={fft_size}")
+        if len(partial) > 0:
+            if len(partial) < fft_size:
+                partial = np.concatenate(
+                    [partial, np.zeros(fft_size - len(partial), dtype=np.float32)]
+                )
+            else:
+                partial = partial[:fft_size]
+            # Process the zero-padded partial through process_raw_samples
+            # so both direct callbacks and Qt signals fire.
+            self.process_raw_samples(partial)
+            _td("file_playback", "PARTIAL_FLUSH_DONE")
+        # Clear the input buffer so the caller starts from a clean slate.
+        self._input_buffer = []
+        self._input_buffer_len = 0
+
+        # Flush any active gated capture by zero-padding the remaining
+        # window.  Must happen BEFORE the mic restarts.
+        # Mirrors Swift processFileData preMicRestartHandler call.
+        pre_restart = self._on_pre_mic_restart
+        _td("file_playback", f"PRE_MIC_RESTART | handler={'set' if pre_restart else 'None'}")
+        if pre_restart is not None:
+            pre_restart()
+        _td("file_playback", "PRE_MIC_RESTART_DONE")
+
     def start_from_file(self, path: str) -> None:
         """Feed a WAV (or other audio) file through the same queue as the microphone.
 
@@ -372,14 +471,22 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             # 4. Clear the FFT accumulator and reset frame counters.
             #    Mirrors Swift: bufferAccessQueue.sync { inputBuffer.removeAll() }
             #    and fftFrameCounter = 0; samplesConsumed = 0.
-            proc._input_buffer = []
-            proc._input_buffer_len = 0
-            proc._fft_frame_counter = 0
-            proc._samples_consumed = 0
-            proc._diag_total_samples = 0  # DIAG: reset sample counter for file playback
+            self._input_buffer = []
+            self._input_buffer_len = 0
+            self._fft_frame_counter = 0
+            self._samples_consumed = 0
+            self._diag_total_samples = 0  # DIAG: reset sample counter for file playback
 
             # Release the processing thread so it resumes pulling from the queue.
             proc._drain_event.clear()
+
+        # Notify TapToneAnalyzer that the engine has stopped and the queue is
+        # drained.  Used to re-initialize the pre-roll buffer with silence so
+        # stale mic audio does not leak into the gated capture's pre-roll seed.
+        # Mirrors Swift: postEngineStopHandler?() called after engine stop.
+        post_stop = self._on_post_engine_stop
+        if post_stop is not None:
+            post_stop()
 
         # Read the file — soundfile returns (data, samplerate).
         # data shape: (frames,) for mono, (frames, channels) for multi-channel.
@@ -389,128 +496,28 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
         gt_log(f"🎤 readAudioFileAsMonoFloat32: {len(mono)} frames, {data.shape[1]} ch, {int(file_rate)} Hz")
 
-        # Update sample rate so _FftProcessingThread sees the file's native rate.
-        # Mirrors Swift actualSampleRate = fileFormat.sampleRate.
-        self.rate = int(file_rate)
-
-        chunksize = self.chunksize
-        self.is_playing_file = True
-        self.is_stopped = False  # allow queue.put without the stop guard
-
-        # Store the filename (without extension) for chart title use.
-        # Mirrors Swift: playingFileName = url.deletingPathExtension().lastPathComponent
         import os as _os
-        self.playing_file_name = _os.path.splitext(_os.path.basename(path))[0]
+        file_name = _os.path.splitext(_os.path.basename(path))[0]
 
         # Use a mutable sentinel so _playback_worker can verify it is still the
-        # active playback thread when the post-playback 0.3 s delay completes.
-        # Mirrors Swift's `let scheduledPlayer = player` identity guard.
+        # active playback thread when the post-playback delay completes.
+        # Mirrors Swift's filePlaybackGeneration identity guard.
         sentinel: list[threading.Thread | None] = [None]
 
-        fft_size = self.fft_size  # capture for use inside worker
-
         def _playback_worker() -> None:
-            """Pace audio chunks into self.queue at real-time speed, then restart the mic."""
+            """Call process_file_data, then restart the mic."""
             from utilities.logging import TAP_DEBUG as _td
-            n_samples = len(mono)
-            idx = 0
-            chunk_duration = chunksize / file_rate  # seconds per chunk
-            expected_duration_s = n_samples / float(file_rate)
-            _td("file_playback",
-                f"START | path={self.playing_file_name} "
-                f"samples={n_samples} rate={int(file_rate)}Hz "
-                f"chunksize={chunksize} chunkDuration={chunk_duration*1000:.1f}ms "
-                f"expectedDuration={expected_duration_s:.3f}s "
-                f"fftSize={fft_size} expectedFftFrames={n_samples // fft_size}"
-            )
-            t0 = time.time()
-            chunks_pumped = 0
-            while idx < n_samples:
-                if not self.is_playing_file:
-                    _td("file_playback",
-                        f"INTERRUPTED | idx={idx}/{n_samples} chunksPumped={chunks_pumped}"
-                    )
-                    break
-                chunk = mono[idx: idx + chunksize]
-                if len(chunk) == 0:
-                    break
-                self.queue.put(chunk)
-                idx += chunksize
-                chunks_pumped += 1
-                time.sleep(chunk_duration)
-            elapsed = time.time() - t0
-            _td("file_playback",
-                f"END | chunksPumped={chunks_pumped} samplesPumped={idx} "
-                f"elapsed={elapsed:.3f}s expected={expected_duration_s:.3f}s "
-                f"realtimeRatio={elapsed/max(expected_duration_s,1e-9):.3f}x"
-            )
 
-            # Drain barrier — wait for the processing thread to finish any
-            # in-flight chunk.  Mirrors Swift audioProcessingQueue.sync {}.
-            proc = self.proc_thread
-            if proc is not None:
-                proc._drain_ack.clear()
-                proc._drain_event.set()
-                self.queue.put(None)
-                proc._drain_ack.wait(timeout=0.5)
+            self.process_file_data(mono, int(file_rate), file_name)
 
-            # Guard: if a new file was opened while we were waiting, our
+            # Guard: if a new file was opened while we were processing, our
             # thread is no longer the active one — skip the rest.
-            # Mirrors Swift guard self.playerNode === scheduledPlayer.
+            # Mirrors Swift guard self.filePlaybackGeneration == myGeneration.
             if self._file_playback_thread is not sentinel[0]:
-                if proc is not None:
-                    proc._drain_event.clear()
                 return
 
-            # Only the active worker reaches here — safe to signal end-of-file.
-            self.is_playing_file = False
-
-            # Force-flush any partial audio still in the processing thread's
-            # input buffer.  Mirrors Swift audioProcessingQueue.sync { … }
-            # partial flush in startFromFile's asyncAfter block.
-            if proc is not None:
-                from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
-                if proc._input_buffer:
-                    partial = np.concatenate(proc._input_buffer)
-                else:
-                    partial = np.zeros(0, dtype=np.float32)
-                _td("file_playback", f"PARTIAL_FLUSH | partialSamples={len(partial)} fftSize={fft_size}")
-                if len(partial) < fft_size:
-                    partial = np.concatenate(
-                        [partial, np.zeros(fft_size - len(partial), dtype=np.float32)]
-                    )
-                else:
-                    partial = partial[:fft_size]
-                mag_y_db, mag_y = _dft_anal(partial, self.window_fcn, fft_size)
-                with proc._settings_lock:
-                    cal = proc._calibration
-                if cal is not None:
-                    mag_y_db = mag_y_db + cal
-                fft_peak_amp = int(np.max(mag_y_db) + 100.0)
-                _td("file_playback", f"PARTIAL_FLUSH_EMIT | peakAmp={fft_peak_amp} peakMagDB={float(np.max(mag_y_db)):.2f}")
-                proc.fftFrameReady.emit(mag_y_db, mag_y, fft_peak_amp, 0, 0.0, 0.0, 0.0)
-                _td("file_playback", "PARTIAL_FLUSH_EMIT_DONE")
-                # Clear the input buffer so the mic begins from a clean slate.
-                # Mirrors Swift inputBuffer.removeAll() before start().
-                proc._input_buffer = []
-                proc._input_buffer_len = 0
-                # Release the processing thread so it resumes.
-                proc._drain_event.clear()
-
-            # Flush any active gated capture by zero-padding the remaining
-            # window.  Must happen BEFORE the mic restarts so mic noise cannot
-            # fill the remaining samples.  Mirrors Swift preMicRestartHandler
-            # in startFromFile's asyncAfter block.
-            pre_restart = self._on_pre_mic_restart
-            _td("file_playback", f"PRE_MIC_RESTART | handler={'set' if pre_restart else 'None'}")
-            if pre_restart is not None:
-                pre_restart()
-            _td("file_playback", "PRE_MIC_RESTART_DONE")
-
             # Restart the PortAudio stream so the mic is live again.
-            # Mirrors Swift try? self.start() which recreates the AVAudioEngine on the mic.
-            # TapToneAnalyzer's is_measurement_complete guard preserves frozen results
-            # so New Tap stays enabled — same as Swift's auto-start guard.
+            # Mirrors Swift try? self.start() in startFromFile's main.async block.
             _td("file_playback", "MIC_RESTART")
             try:
                 with self._stop_lock:
@@ -521,10 +528,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             _td("file_playback", "MIC_RESTART_DONE")
 
             # Notify the caller (e.g. to restore freq axis after mic restart).
-            # Mirrors Swift's completion?() call inside asyncAfter after start().
-            # Swift does NOT clear playingFileName here — it stays set until stop() is
-            # called (see stop(): playingFileName = nil on main thread).  Python matches
-            # that: playing_file_name is cleared only by stop(), not here.
+            # Mirrors Swift's completion?() call.
             cb = self._on_playback_finished
             if cb is not None:
                 cb()
@@ -539,5 +543,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
         Mirrors Swift RealtimeFFTAnalyzer.deinit.
         """
+        if self.is_for_testing:
+            return
         self._stop_hotplug_monitor()
         self._close_stream_only()

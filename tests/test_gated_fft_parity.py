@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from guitar_tap.models.realtime_fft_analyzer import _FftProcessingThread
+from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 
 
 # ---------------------------------------------------------------------------
@@ -60,15 +60,13 @@ def _magnitude_at_frequency(
 
 
 def _make_proc_thread():
-    """Create a minimal _FftProcessingThread for calling compute_gated_fft."""
-    # compute_gated_fft is an instance method on _FftProcessingThread.
-    # It only uses self._settings_lock and self._calibration_profile,
-    # so we can construct a minimal instance.
-    import threading
-    pt = _FftProcessingThread.__new__(_FftProcessingThread)
-    pt._settings_lock = threading.Lock()
-    pt._calibration_profile = None
-    return pt
+    """Create a minimal RealtimeFFTAnalyzer for calling compute_gated_fft.
+
+    compute_gated_fft now lives on RealtimeFFTAnalyzer (not _FftProcessingThread).
+    It only uses self._settings_lock and self._calibration_profile.
+    """
+    mic = RealtimeFFTAnalyzer.for_testing(fft_size=16384, sample_rate=48000)
+    return mic
 
 
 # ---------------------------------------------------------------------------

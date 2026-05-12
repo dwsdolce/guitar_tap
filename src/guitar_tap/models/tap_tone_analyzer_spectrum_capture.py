@@ -231,8 +231,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         # DIAG: log capture completion details
         _diag_consumed = 0
-        if self.mic is not None and hasattr(self.mic, "proc_thread"):
-            _diag_consumed = getattr(self.mic.proc_thread, '_diag_total_samples', 0)
+        if self.mic is not None:
+            _diag_consumed = getattr(self.mic, '_diag_total_samples', 0)
         _cap_arr = np.array(captured, dtype=np.float32)
         _diag_rms = float(np.sqrt(np.mean(_cap_arr ** 2))) if len(captured) > 0 else 0.0
         _diag_hash = float(np.sum(_cap_arr[:16])) if len(captured) >= 16 else 0.0
@@ -245,7 +245,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         # Emit on background thread; Qt queued connection delivers on main thread.
         # gatedCaptureComplete signal is still on proc_thread as a delivery mechanism.
-        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+        if self.mic is not None and self.mic.proc_thread is not None:
             self.mic.proc_thread.gatedCaptureComplete.emit(
                 _cap_arr,
                 sample_rate,
@@ -306,7 +306,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         # Emit on this thread (playback worker); Qt queued connection delivers
         # on the main thread.
-        if self.mic is not None and hasattr(self.mic, "proc_thread"):
+        if self.mic is not None and self.mic.proc_thread is not None:
             self.mic.proc_thread.gatedCaptureComplete.emit(
                 np.array(partial, dtype=np.float32),
                 sample_rate,
@@ -368,7 +368,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             if partial:
                 # Reuse the existing queued-connection delivery path: emit on the
                 # background thread; Qt delivers finish_gated_fft_capture on main.
-                if self.mic is not None and hasattr(self.mic, "proc_thread"):
+                if self.mic is not None and self.mic.proc_thread is not None:
                     self.mic.proc_thread.gatedCaptureComplete.emit(
                         np.array(partial, dtype=np.float32),
                         self._gated_sample_rate,
@@ -479,7 +479,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 gt_log("⚠️ Guitar gated capture timeout with no samples")
                 self._guitar_gated_capture_failed()
                 return
-            if self.mic is not None and hasattr(self.mic, "proc_thread"):
+            if self.mic is not None and self.mic.proc_thread is not None:
                 self.mic.proc_thread.gatedCaptureComplete.emit(
                     np.array(partial, dtype=np.float32),
                     self._gated_sample_rate,
@@ -547,12 +547,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         magnitudes_db, _ = _dft_anal(chunk, window_fcn, fft_size)
 
         # Apply per-bin calibration if present — mirrors what
-        # _FftProcessingThread.run does on every live FFT frame.
-        proc = self.mic.proc_thread
+        # process_raw_samples does on every live FFT frame.
         cal = None
-        if proc is not None:
-            with proc._settings_lock:
-                cal = proc._calibration
+        with self.mic._settings_lock:
+            cal = self.mic._calibration
         if cal is not None and len(cal) == len(magnitudes_db):
             magnitudes_db = magnitudes_db + cal
 
@@ -663,7 +661,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self._dump_capture_wav(samples, sample_rate, phase.value.replace(" ", "_"))
 
         # Compute Hann-windowed gated FFT.
-        magnitudes, frequencies = self.mic.proc_thread.compute_gated_fft(samples, sample_rate)
+        magnitudes, frequencies = self.mic.compute_gated_fft(samples, sample_rate)
 
         if not magnitudes:
             gt_log("⚠️ Gated FFT returned empty spectrum — tap again")
