@@ -1,4 +1,9 @@
-# Auto detect text files and perform LF normalization
-*.wav -text -diff -merge
-* text=auto
-* text eol=lf
+# Never touch line endings on anything
+* -text
+
+# Explicitly mark binary files (no diff, no merge either)
+*.wav binary
+*.mp3 binary
+*.png binary
+*.jpg binary
+*.gif binary
