@@ -500,15 +500,18 @@ class MeasurementsDialog(QtWidgets.QDialog):
             for cmp_entry in cmp_entries:
                 c = cmp_entry.color_components
                 color = (round(c[0] * 255), round(c[1] * 255), round(c[2] * 255))
-                mode_freqs = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+                mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
                     cmp_entry.peaks, cmp_entry.guitar_type
                 )
+                air = mode_peaks.get(GuitarMode.AIR)
+                top = mode_peaks.get(GuitarMode.TOP)
+                back = mode_peaks.get(GuitarMode.BACK)
                 mode_frequencies.append((
                     cmp_entry.label,
                     color,
-                    mode_freqs.get(GuitarMode.AIR),
-                    mode_freqs.get(GuitarMode.TOP),
-                    mode_freqs.get(GuitarMode.BACK),
+                    air.frequency if air is not None else None,
+                    top.frequency if top is not None else None,
+                    back.frequency if back is not None else None,
                 ))
 
             comparison_data = M.ComparisonPDFReportData(

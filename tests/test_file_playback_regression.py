@@ -317,9 +317,8 @@ class TestFilePlaybackRegression:
             f"±{MAG_TOLERANCE}, got {back_peak.magnitude}"
         )
 
-        # 3. Per-tap peaks — mirror MultiTapComparisonResultsView:
-        #    filter entry.peaks by selected_peak_ids, then resolve modes via
-        #    classify_all (same code paths as the UI).
+        # 3. Per-tap peaks — uses TapEntry.resolved_mode_peaks(), the same
+        #    code path as MultiTapComparisonResultsView and PDF export.
         for index, entry in enumerate(sut.tap_entries):
             exp = GUITAR_PER_TAP[index]
             exp_air_freq, exp_air_mag = exp[0], exp[1]
@@ -327,22 +326,7 @@ class TestFilePlaybackRegression:
             exp_back_freq, exp_back_mag = exp[4], exp[5]
             tap_label = f"Tap {index + 1}"
 
-            selected_ids = set(entry.selected_peak_ids)
-            selected_peaks = [p for p in entry.peaks if p.id in selected_ids]
-
-            # classify_all gives us id → GuitarMode
-            mode_map = GuitarMode.classify_all(selected_peaks)
-
-            # Build mode → peak (highest magnitude per mode)
-            mode_peaks: dict = {}
-            for peak in selected_peaks:
-                mode = mode_map.get(peak.id)
-                if mode is None or mode == GuitarMode.UNKNOWN:
-                    continue
-                existing = mode_peaks.get(mode)
-                if existing is not None and peak.magnitude <= existing.magnitude:
-                    continue
-                mode_peaks[mode] = peak
+            mode_peaks = entry.resolved_mode_peaks()
 
             # Air
             air = mode_peaks.get(GuitarMode.AIR)

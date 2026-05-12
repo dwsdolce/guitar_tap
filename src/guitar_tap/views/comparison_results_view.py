@@ -108,7 +108,7 @@ class ComparisonResultsView(QtWidgets.QWidget):
             peaks = entry.get("peaks", [])
             guitar_type = entry.get("guitar_type")
 
-            mode_freqs = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+            mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
                 peaks, guitar_type
             )
 
@@ -121,7 +121,8 @@ class ComparisonResultsView(QtWidgets.QWidget):
 
             # Columns 1–3: Air / Top / Back frequencies
             for col, mode in mode_for_col.items():
-                freq = mode_freqs.get(mode)
+                peak = mode_peaks.get(mode)
+                freq = peak.frequency if peak is not None else None
                 text = self._freq_text(freq)
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setTextAlignment(

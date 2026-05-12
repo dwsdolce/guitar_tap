@@ -106,6 +106,20 @@ class TapEntry:
             selected_peak_ids=d.get("selectedPeakIDs", []),
         )
 
+    def resolved_mode_peaks(self, guitar_type=None):
+        """Filter selected peaks and resolve guitar modes — returns {GuitarMode: ResonantPeak}.
+
+        Bundles the selectedPeakIDs filtering + classification into a single call.
+        Mirrors Swift TapEntry.resolvedModePeaks().
+        """
+        from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
+
+        selected_ids = set(self.selected_peak_ids)
+        selected = [p for p in self.peaks if p.id in selected_ids]
+        return TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+            selected, guitar_type or self.snapshot.guitar_type
+        )
+
 
 @dataclass
 class ComparisonEntry:

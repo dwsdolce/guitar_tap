@@ -324,7 +324,7 @@ class TestResolvedModePeaks:
             [peak], guitar_type="Classical"
         )
         assert GuitarMode.AIR in result
-        assert abs(result[GuitarMode.AIR] - 100.0) < 1e-6
+        assert abs(result[GuitarMode.AIR].frequency - 100.0) < 1e-6
 
     def test_highest_magnitude_peak_wins_per_mode(self):
         """When two peaks fall in the same mode band, the higher-magnitude one wins."""
@@ -342,7 +342,7 @@ class TestResolvedModePeaks:
         )
         # p2 has higher magnitude — should win
         if GuitarMode.AIR in result:
-            assert abs(result[GuitarMode.AIR] - 105.0) < 1e-6
+            assert abs(result[GuitarMode.AIR].frequency - 105.0) < 1e-6
 
     def test_comparison_data_carries_peaks_and_guitar_type(self):
         """After load_comparison, each _comparison_data entry has 'peaks' and 'guitar_type'."""

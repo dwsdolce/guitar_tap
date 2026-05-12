@@ -1614,18 +1614,21 @@ def comparison_pdf_report_data_from_measurement(
 
     mode_frequencies = []
     for entry in entries:
-        mode_freqs = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+        mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
             entry.peaks, entry.guitar_type
         )
         comps = (entry.color_components + [1.0])[:4]
         r, g, b, _a = comps
         color_rgb = (int(r * 255), int(g * 255), int(b * 255))
+        air = mode_peaks.get(GuitarMode.AIR)
+        top = mode_peaks.get(GuitarMode.TOP)
+        back = mode_peaks.get(GuitarMode.BACK)
         mode_frequencies.append((
             entry.label,
             color_rgb,
-            mode_freqs.get(GuitarMode.AIR),
-            mode_freqs.get(GuitarMode.TOP),
-            mode_freqs.get(GuitarMode.BACK),
+            air.frequency if air is not None else None,
+            top.frequency if top is not None else None,
+            back.frequency if back is not None else None,
         ))
 
     from datetime import datetime, timezone

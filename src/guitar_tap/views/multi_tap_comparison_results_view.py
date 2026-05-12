@@ -142,26 +142,14 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
             color_rgb = _PALETTE[row % len(_PALETTE)]
             label = f"Tap {entry.tap_index}"
 
-            # Resolve peaks: filter entry.peaks to those in entry.selected_peak_ids.
-            # Mirrors Swift: entry.peaks.filter { selectedIDs.contains($0.id) }
-            selected_ids = set(entry.selected_peak_ids)
-            selected_peaks = [p for p in entry.peaks if p.id in selected_ids]
-
-            # Guitar type: entry's snapshot type takes priority, then fall back to analyzer type.
-            # Mirrors Swift: entry.snapshot.guitarType ?? guitarType
-            tap_guitar_type = (
-                entry.snapshot.guitar_type if entry.snapshot.guitar_type else guitar_type
-            )
-
-            mode_freqs = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-                selected_peaks, tap_guitar_type
-            )
+            mode_peaks = entry.resolved_mode_peaks(guitar_type=guitar_type)
 
             label_widget = self._make_label_cell(label, color_rgb, bold=False)
             self._table.setCellWidget(row, 0, label_widget)
 
             for col, mode in mode_for_col.items():
-                freq = mode_freqs.get(mode)
+                peak = mode_peaks.get(mode)
+                freq = peak.frequency if peak is not None else None
                 item = QtWidgets.QTableWidgetItem(self._freq_text(freq))
                 item.setTextAlignment(int(QtCore.Qt.AlignmentFlag.AlignCenter))
                 if freq is None:
@@ -171,14 +159,15 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         # Averaged row — bold yellow indicator + semibold text.
         # Mirrors Swift: bold yellow Rectangle() + "Averaged" + semibold font weight.
         avg_row = len(tap_entries)
-        avg_mode_freqs = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+        avg_mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
             averaged_peaks, guitar_type
         )
         avg_label_widget = self._make_label_cell("Averaged", _AVERAGED_COLOR, bold=True)
         self._table.setCellWidget(avg_row, 0, avg_label_widget)
 
         for col, mode in mode_for_col.items():
-            freq = avg_mode_freqs.get(mode)
+            peak = avg_mode_peaks.get(mode)
+            freq = peak.frequency if peak is not None else None
             item = QtWidgets.QTableWidgetItem(self._freq_text(freq))
             item.setTextAlignment(int(QtCore.Qt.AlignmentFlag.AlignCenter))
             if freq is None:
