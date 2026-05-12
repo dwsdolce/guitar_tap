@@ -65,7 +65,7 @@ def _make_proc_thread():
     compute_gated_fft now lives on RealtimeFFTAnalyzer (not _FftProcessingThread).
     It only uses self._settings_lock and self._calibration_profile.
     """
-    mic = RealtimeFFTAnalyzer.for_testing(fft_size=16384, sample_rate=48000)
+    mic = RealtimeFFTAnalyzer.for_testing(sample_rate=48000)
     return mic
 
 

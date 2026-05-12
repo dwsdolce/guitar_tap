@@ -285,6 +285,34 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self.playing_file_name = None  # Mirrors Swift stop(): self?.playingFileName = nil
         self.stream.abort()
 
+    # MARK: - Event-loop pump helper
+
+    @staticmethod
+    def _pump_events_if_available() -> None:
+        """Pump the Qt event loop if called from the main thread.
+
+        Called between chunks in ``process_file_data`` so that
+        ``QTimer.singleShot`` callbacks (scheduled by ``_main_async_after``)
+        fire during file playback.
+
+        Only pumps when the caller is on the main thread (the test path,
+        where ``play_file_for_testing`` calls ``process_file_data`` inline).
+        When called from a background thread (the live UI's FilePlayback
+        worker), pumping is neither needed nor safe — the main thread's
+        event loop (``QApplication.exec()``) is already running and will
+        deliver QueuedConnection signals naturally.  Calling
+        ``processEvents()`` from a non-main thread races with the main
+        thread's timer infrastructure and causes a bus error.
+        """
+        try:
+            from PySide6 import QtWidgets, QtCore
+            app = QtWidgets.QApplication.instance()
+            if app is not None:
+                if QtCore.QThread.currentThread() is app.thread():
+                    app.processEvents()
+        except ImportError:
+            pass
+
     # MARK: - WAV File Playback (mirrors Swift startFromFile(_ url:))
 
     def process_file_data(
@@ -308,7 +336,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             file_name:   Display name for logging.
         """
         from utilities.logging import TAP_DEBUG as _td
-        from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
+        from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
 
         n_samples = len(samples)
         self.rate = sample_rate
@@ -345,7 +373,15 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self.process_raw_samples(chunk)
             idx += chunksize
             chunks_pumped += 1
+            # Sleep + pump the Qt event loop so QTimer.singleShot callbacks
+            # fire between chunks.  Mirrors Swift processFileData which uses
+            # Thread.sleep (blocking the background thread) while the main
+            # RunLoop concurrently pumps asyncAfter callbacks.
+            # When called from the main thread (tests), we must pump here;
+            # when called from a background thread (live UI), the main thread
+            # event loop pumps on its own.
             time.sleep(chunk_duration)
+            self._pump_events_if_available()
         elapsed = time.time() - t0
         _td("file_playback",
             f"END | chunksPumped={chunks_pumped} samplesPumped={idx} "
@@ -369,9 +405,24 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 )
             else:
                 partial = partial[:fft_size]
-            # Process the zero-padded partial through process_raw_samples
-            # so both direct callbacks and Qt signals fire.
-            self.process_raw_samples(partial)
+            # Emit the final FFT frame via perform_fft ONLY — do NOT call
+            # process_raw_samples.  Mirrors Swift processFileData which calls
+            # performFFT(on: partial), NOT processRawSamples.  This is critical
+            # because process_raw_samples would feed the zero-padded partial
+            # into raw_sample_handler → _accumulate_gated_samples, corrupting
+            # any active gated capture with duplicate/zero data.  The gated
+            # capture is flushed separately by _on_pre_mic_restart below.
+            _td("file_playback", f"PARTIAL_FLUSH_EMIT | emitting FFT frame with {len(partial)} samples")
+            mag_y_db, mag_y, fft_peak_amp = _perform_fft(self, partial, fft_size)
+
+            # Publish via direct callback and Qt signal — mirrors Swift
+            # performFFT(on:) which publishes magnitudes on main thread.
+            fft_handler = self.fft_frame_handler
+            if fft_handler is not None:
+                fft_handler(mag_y_db, mag_y, fft_peak_amp, 0.0, 0.0, 0.0, 0.0)
+            self.proc_thread.fftFrameReady.emit(
+                mag_y_db, mag_y, fft_peak_amp, 0.0, 0.0, 0.0, 0.0,
+            )
             _td("file_playback", "PARTIAL_FLUSH_DONE")
         # Clear the input buffer so the caller starts from a clean slate.
         self._input_buffer = []

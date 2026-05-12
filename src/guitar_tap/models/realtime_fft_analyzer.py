@@ -268,7 +268,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
     @classmethod
     def for_testing(
         cls,
-        fft_size: int = 16384,
         sample_rate: int = 48000,
     ) -> "RealtimeFFTAnalyzer":
         """Create a ``RealtimeFFTAnalyzer`` suitable for unit testing.
@@ -278,10 +277,12 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         stream, no device enumeration, no hot-plug monitor.
         Use ``process_file_data()`` to feed audio.
 
-        Mirrors Swift ``RealtimeFFTAnalyzer.forTesting(fftSize:)``.
+        The FFT size is a class-level constant (65 536); it is not
+        configurable per-instance.
+
+        Mirrors Swift ``RealtimeFFTAnalyzer.forTesting()``.
 
         Args:
-            fft_size:    FFT window size (power of 2). Default 16384.
             sample_rate: Sample rate in Hz. Default 48000.
         """
         return cls(
@@ -289,7 +290,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             rate=sample_rate,
             chunksize=1024,
             device=None,
-            fft_size=fft_size,
             for_testing=True,
         )
 
@@ -299,11 +299,13 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
                  device: "AudioDevice | None" = None,
                  on_devices_changed: Callable[[], None] | None = None,
                  on_calibration_changed: "Callable[[object | None], None] | None" = None,
-                 fft_size: int = 16384,
                  for_testing: bool = False):
         """Create a new real-time FFT analyser.
 
-        Mirrors Swift ``RealtimeFFTAnalyzer.init(fftSize:forTesting:)``.
+        The FFT size is a class-level constant (65 536) and cannot be
+        overridden.  At 48 kHz this gives ≈0.73 Hz/bin resolution.
+
+        Mirrors Swift ``RealtimeFFTAnalyzer.init(forTesting:)``.
 
         When ``for_testing`` is True, the initialiser sets up the FFT pipeline
         (window, buffers, processing thread) but skips all audio hardware:
@@ -323,10 +325,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
                                      exists for the new device.
                                      Mirrors Swift selectedInputDevice.didSet calling
                                      setCalibrationWithoutSavingDeviceMapping(_:).
-            fft_size:                FFT window size (power of 2).
-                                     Mirrors Swift RealtimeFFTAnalyzer.fftSize.
             for_testing:             When True, skip all audio hardware setup.
-                                     Mirrors Swift ``init(fftSize:forTesting:)``.
+                                     Mirrors Swift ``init(forTesting:)``.
         """
         self.is_for_testing = for_testing
 
@@ -337,8 +337,13 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
         # MARK: - FFT Configuration (mirrors Swift RealtimeFFTAnalyzer)
 
-        # FFT window size — must be a power of 2.
-        # Mirrors Swift RealtimeFFTAnalyzer.fftSize.
+        # FFT window size — compile-time constant (65 536 points).
+        # At 48 kHz the window spans ≈1.36 s with ≈0.73 Hz/bin resolution.
+        # Both the continuous display path and the guitar gated-capture path
+        # use this value.  The plate/brace gated path (compute_gated_fft)
+        # computes its own size independently.
+        # Mirrors Swift ``RealtimeFFTAnalyzer.fftSize``.
+        fft_size = 65536
         self.fft_size: int = fft_size
 
         # Ring-buffer length in samples — identical to fft_size, matching Swift's
@@ -542,14 +547,15 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         ``processRawSamples(_ samples: [Float])`` in
         ``RealtimeFFTAnalyzer+FFTProcessing.swift``.
 
-        Steps:
+        Steps (matches Swift processRawSamples ordering):
         1. float32 cast, diagnostic counter
         2. raw_sample_handler (gated sample delivery)
-        3. RMS → rms_level_handler callback + rmsLevelChanged Qt signal
+        3. RMS calculation
         4. Level-crossing detection → _level_crossing_handler callback
-        5. Clipping detection → clippingChanged Qt signal
-        6. Recent peak history update
-        7. Input buffer accumulation → FFT → fft_frame_handler callback + fftFrameReady Qt signal
+        5. rms_level_handler callback + rmsLevelChanged Qt signal
+        6. Clipping detection → clippingChanged Qt signal
+        7. Recent peak history update
+        8. Input buffer accumulation → FFT → fft_frame_handler callback + fftFrameReady Qt signal
         """
         from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
 
@@ -560,21 +566,47 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._diag_total_samples += len(chunk_f32)
 
         # Deliver every raw audio chunk to the raw_sample_handler if set.
-        # Mirrors Swift rawSampleHandler callback.
+        # Mirrors Swift rawSampleHandler?(samples, actualSampleRate)
         handler = self.raw_sample_handler
         if handler is not None:
             handler(chunk_f32, float(self.rate))
 
-        # Accumulate samples — mirrors Swift inputBuffer.append(contentsOf: samples).
-        self._input_buffer.append(chunk_f32)
-        self._input_buffer_len += len(chunk_f32)
-
-        # Per-chunk RMS level — mirrors Swift fftAnalyzer.inputLevelDB.
+        # Per-chunk RMS level — mirrors Swift vDSP_rmsqv → levelDB calculation.
         rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
         level_db = 20.0 * np.log10(max(rms, 1e-10))
         rms_amp = int(level_db + 100.0)
 
+        # ── Level-crossing detection (audio-queue fast-start) ────
+        # MUST run BEFORE rms_level_handler.  Mirrors Swift processRawSamples
+        # where the level-crossing check (line 150) fires before
+        # rmsLevelHandler (line 167).  The rms_level_handler callback triggers
+        # tap detection → start_guitar_gated_capture which disarms the
+        # level-crossing.  If rms_level_handler fires first, the crossing
+        # never gets a chance to fire and the gated capture starts via the
+        # slower main-thread fallback path with fewer pre-roll samples.
+        if self.is_playing_file:
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc
+            _td_lc("processRawSamples",
+                   f"LEVEL_CHECK | armed={self._level_crossing_armed} "
+                   f"levelDB={level_db:.1f} threshold={self._level_crossing_threshold:.1f} "
+                   f"prevDB={self._previous_level_db:.1f} chunkLen={len(chunk_f32)} "
+                   f"fileSamplePos={self._diag_total_samples}")
+        if (self._level_crossing_armed
+                and level_db > self._level_crossing_threshold
+                and self._previous_level_db <= self._level_crossing_threshold):
+            self._level_crossing_armed = False
+            if self.is_playing_file:
+                from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc2
+                _td_lc2("processRawSamples",
+                        f"LEVEL_CROSSING_FIRED | rmsDB={level_db:.1f} prevDB={self._previous_level_db:.1f}")
+            lc_handler = self._level_crossing_handler
+            if lc_handler is not None:
+                lc_handler()
+        self._previous_level_db = level_db
+
+        # ── RMS level callbacks (tap detection runs from here) ────
         # Direct callback (works without Qt event loop — for file playback and tests).
+        # Mirrors Swift rmsLevelHandler?(levelDB)
         rms_handler = self.rms_level_handler
         if rms_handler is not None:
             rms_handler(level_db)
@@ -582,15 +614,10 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # Qt signal (for UI updates via event loop — live mic path).
         self.proc_thread.rmsLevelChanged.emit(rms_amp)
 
-        # ── Level-crossing detection (audio-queue fast-start) ────
-        if (self._level_crossing_armed
-                and level_db > self._level_crossing_threshold
-                and self._previous_level_db <= self._level_crossing_threshold):
-            self._level_crossing_armed = False
-            lc_handler = self._level_crossing_handler
-            if lc_handler is not None:
-                lc_handler()
-        self._previous_level_db = level_db
+        # Accumulate samples — mirrors Swift bufferAccessQueue.sync { inputBuffer.append }.
+        # In Swift this comes after the level-crossing and rmsLevelHandler blocks.
+        self._input_buffer.append(chunk_f32)
+        self._input_buffer_len += len(chunk_f32)
 
         # ── Input-clipping detection ─────────────────────────────
         peak_abs = float(np.max(np.abs(chunk.astype(np.float64))))

@@ -521,10 +521,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Audio / FFT parameters
         self.threshold: int = AS.AppSettings.threshold()
-        self._fft_settings: dict[str, int] = {
-            "sampling_rate": 48000,
-            "fft_size": 4 * 16384,
-        }
+        self._sampling_rate: int = 48000
         self._f_range: dict[str, int] = {
             "f_min": AS.AppSettings.f_min(),
             "f_max": AS.AppSettings.f_max(),
@@ -538,7 +535,7 @@ class MainWindow(QtWidgets.QMainWindow):
         root.setContentsMargins(2, 2, 2, 2)
 
         root.addWidget(self._build_toolbar())
-        root.addWidget(self._build_controls_bar(self._fft_settings))
+        root.addWidget(self._build_controls_bar())
 
         # Content row: canvas (stretch) + divider + results panel (content-sized, always visible)
         content = QtWidgets.QWidget()
@@ -701,7 +698,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return bar
 
-    def _build_controls_bar(self, fft_settings: dict[str, int]) -> QtWidgets.QWidget:
+    def _build_controls_bar(self) -> QtWidgets.QWidget:
         """Controls bar: Taps | Threshold | Hysteresis | Peak Min || New Tap | Pause | Cancel"""
         bar = QtWidgets.QWidget()
         bar.setObjectName("controls_bar")
@@ -1997,8 +1994,7 @@ class MainWindow(QtWidgets.QMainWindow):
             _m.FMV = FMV
 
             self.fft_canvas = fft_c.FftCanvas(
-                self._fft_settings["fft_size"],
-                self._fft_settings["sampling_rate"],
+                self._sampling_rate,
                 self._f_range,
                 self.threshold,
             )

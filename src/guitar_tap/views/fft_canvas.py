@@ -225,7 +225,6 @@ class FftCanvas(pg.PlotWidget):
 
     def __init__(
         self,
-        fft_size: int,
         sampling_rate: int,
         frange: dict[str, int],
         threshold: int,
@@ -408,8 +407,10 @@ class FftCanvas(pg.PlotWidget):
                     _saved_audio_device.name
                 )
             if _cal is not None:
-                _x = np.arange(0, fft_size // 2 + 1)
-                _freq_tmp = _x * sampling_rate // fft_size
+                # FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
+                _fft_size = 65536
+                _x = np.arange(0, _fft_size // 2 + 1)
+                _freq_tmp = _x * sampling_rate // _fft_size
                 _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
                 _initial_calibration_name = _cal.name
 
@@ -426,7 +427,6 @@ class FftCanvas(pg.PlotWidget):
             device=_saved_audio_device,
             on_devices_changed=None,       # wired by start() below
             on_calibration_changed=None,   # wired by start() below
-            fft_size=fft_size,
         )
         self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(fft_analyzer=_mic)
         self.analyzer.start(

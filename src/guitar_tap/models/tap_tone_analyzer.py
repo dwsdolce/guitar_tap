@@ -162,6 +162,11 @@ class TapToneAnalyzer(
     requestDeviceSwitch: QtCore.Signal = QtCore.Signal(object)
     # Internal: fired from hotplug monitor thread → main thread (no-arg).
     _devicesRefreshed: QtCore.Signal = QtCore.Signal()
+    # Internal: cross-thread DispatchQueue.main.asyncAfter equivalent.
+    # Emitted from any thread; Qt QueuedConnection delivers the slot on the
+    # main thread.  Payload: (delay_ms: int, callable: object).
+    # Mirrors Swift DispatchQueue.main.asyncAfter(deadline:execute:).
+    _mainAsyncAfterRequest: QtCore.Signal = QtCore.Signal(int, object)
 
     def __init__(self, fft_analyzer=None) -> None:
         """Create a TapToneAnalyzer with all state at sensible defaults.
@@ -187,6 +192,17 @@ class TapToneAnalyzer(
         # Qt's metaclass does not participate in Python's cooperative super()
         # chain, so the QObject base must be initialised explicitly.
         QtCore.QObject.__init__(self, None)
+
+        # Wire the cross-thread asyncAfter signal.  AutoConnection means:
+        #   - Same thread (test path): DirectConnection → slot fires inline
+        #   - Different thread (FilePlayback worker): QueuedConnection → slot
+        #     fires on the main thread when the event loop pumps.
+        # The slot calls QTimer.singleShot to apply the delay, which is safe
+        # because it always runs on the main thread (either already there, or
+        # delivered there by QueuedConnection).
+        self._mainAsyncAfterRequest.connect(
+            self._on_main_async_after_request,
+        )
 
         self._np = np
         self._gm = _gm
@@ -438,11 +454,46 @@ class TapToneAnalyzer(
             self._wire_pipeline_signals()
 
     # ------------------------------------------------------------------ #
-    # for_testing — mirrors Swift TapToneAnalyzer.forTesting(fftSize:)
+    # _main_async_after — mirrors Swift DispatchQueue.main.asyncAfter
+    # ------------------------------------------------------------------ #
+
+    def _main_async_after(self, delay_ms: int, callback) -> None:
+        """Schedule *callback* to run on the main thread after *delay_ms*.
+
+        Thread-safe — can be called from any thread (audio processing,
+        FilePlayback worker, main thread).  The implementation emits a Qt
+        signal with QueuedConnection, so the slot always executes on the
+        main thread.  The slot then calls ``QTimer.singleShot`` (which is
+        safe because it now runs on the main thread) to apply the delay.
+
+        This is the Python/Qt equivalent of Swift's
+        ``DispatchQueue.main.asyncAfter(deadline: .now() + delay)``.
+
+        Using one unconditional mechanism for all audio sources (live mic,
+        UI file playback, test file playback) eliminates the divergent code
+        paths that previously existed between live and test modes.
+
+        Args:
+            delay_ms: Delay in milliseconds before the callback fires.
+            callback: Zero-argument callable to invoke on the main thread.
+        """
+        self._mainAsyncAfterRequest.emit(delay_ms, callback)
+
+    @QtCore.Slot(int, object)
+    def _on_main_async_after_request(self, delay_ms: int, callback) -> None:
+        """Main-thread slot: apply the delay via QTimer.singleShot.
+
+        Always runs on the main thread (QueuedConnection).  Mirrors the
+        main-thread dispatch that Swift's asyncAfter performs implicitly.
+        """
+        QtCore.QTimer.singleShot(delay_ms, callback)
+
+    # ------------------------------------------------------------------ #
+    # for_testing — mirrors Swift TapToneAnalyzer.forTesting()
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def for_testing(cls, fft_size: int = 16384, sample_rate: int = 48000) -> "TapToneAnalyzer":
+    def for_testing(cls, sample_rate: int = 48000) -> "TapToneAnalyzer":
         """Create a TapToneAnalyzer wired for file-playback testing.
 
         The returned instance has the full pipeline connected (signal wiring,
@@ -450,16 +501,18 @@ class TapToneAnalyzer(
         Use ``play_file_for_testing(path, measurement_type, number_of_taps)``
         to feed a WAV file through the pipeline.
 
-        Mirrors Swift ``TapToneAnalyzer.forTesting(fftSize:)``.
+        The FFT size is a constant inside ``RealtimeFFTAnalyzer`` (65 536);
+        it is not configurable per-instance.
+
+        Mirrors Swift ``TapToneAnalyzer.forTesting()``.
 
         Args:
-            fft_size:    FFT window size (power of 2). Default 16384.
             sample_rate: Sample rate in Hz. Default 48000.
         """
         from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
 
         # 1. Create the hardware-free FFT engine.
-        mic = _Mic.for_testing(fft_size=fft_size, sample_rate=sample_rate)
+        mic = _Mic.for_testing(sample_rate=sample_rate)
 
         # 2. Construct the analyzer — __init__ sets all state defaults,
         #    computes the frequency axis, and wires pipeline signals.
@@ -481,12 +534,13 @@ class TapToneAnalyzer(
         It configures the measurement type, starts a tap sequence with warmup
         skipped, and processes all audio through ``process_file_data`` inline.
 
-        No background thread, no Qt event loop, no QApplication needed.
-        ``process_file_data`` calls ``process_raw_samples`` inline, which
-        calls the direct callbacks (``rms_level_handler``, ``fft_frame_handler``)
-        wired by ``_wire_pipeline_signals``.  This is the same processing path
-        as live audio — matching Swift where ``playFileForTesting`` calls
-        ``processFileData`` which calls ``processRawSamples`` identically.
+        A QCoreApplication is created if one does not already exist, and the
+        Qt event loop is pumped between audio chunks so that
+        ``_main_async_after`` callbacks (cooldown re-enables, finish
+        processing, safety timeouts) fire during playback — exactly as
+        Swift's ``playFileForTesting`` pumps ``RunLoop.main.run(until:)``
+        to drain ``DispatchQueue.main.asyncAfter`` callbacks.  This means
+        the test exercises the *exact same* code paths as the live app.
 
         Mirrors Swift ``TapToneAnalyzer.playFileForTesting(url:measurementType:numberOfTaps:)``.
 
@@ -517,10 +571,37 @@ class TapToneAnalyzer(
         # 4. Set the sample rate so gated_capture_samples is computed correctly.
         self._mpm_sample_rate = float(file_rate)
 
-        # 5. Process all audio inline — no thread, no queue, no event loop.
-        #    process_file_data calls process_raw_samples which calls our
-        #    direct callbacks (rms_level_handler, fft_frame_handler).
+        # 5. Process all audio inline, pumping the Qt event loop between
+        #    chunks so that _main_async_after callbacks (delivered via
+        #    QueuedConnection signal → QTimer.singleShot) fire during
+        #    playback — exactly as Swift's playFileForTesting pumps
+        #    RunLoop.main.run(until:) to drain asyncAfter callbacks.
+        #
+        #    A QCoreApplication is required for event-loop pumping.  The
+        #    test harness creates one via the qapp fixture (or we create a
+        #    transient one here if none exists).
+        from PySide6 import QtWidgets
+        app = QtWidgets.QApplication.instance()
+        owns_app = False
+        if app is None:
+            app = QtWidgets.QApplication([])
+            owns_app = True
+
         self.mic.process_file_data(mono, int(file_rate), file_name)
+
+        # Continue pumping the Qt event loop until the measurement completes.
+        # _finish_capture (and thus process_multiple_taps) is scheduled via
+        # QTimer.singleShot with a delay of capture_window (200 ms), so we
+        # must keep processing events until it fires and sets
+        # is_measurement_complete = True.
+        import time as _time
+        _deadline = _time.monotonic() + 5.0
+        while not self.is_measurement_complete and _time.monotonic() < _deadline:
+            app.processEvents()
+            _time.sleep(0.01)
+
+        if owns_app:
+            app.shutdown()
 
     # ------------------------------------------------------------------ #
     # _wire_pipeline_signals — shared by start() and for_testing()

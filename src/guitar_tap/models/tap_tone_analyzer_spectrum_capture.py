@@ -218,6 +218,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             count = len(self._gated_accum)
         # Lock released — mirrors Swift mpmLock.unlock() before count check.
 
+        if self.mic is not None and self.mic.is_playing_file:
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td_ga
+            _td_ga("gatedAccum",
+                   f"CHUNK | +{len(samples)} running={count} "
+                   f"target={self._gated_capture_samples} "
+                   f"phase={self._gated_capture_phase}")
+
         if count < self._gated_capture_samples:
             return
 
@@ -354,7 +361,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Safety timeout: if the buffer still has audio after 2 s, flush it;
         # if empty, ask the user to tap again.
         # Mirrors Swift DispatchQueue.main.asyncAfter(deadline: .now() + 2.0).
-        # QTimer.singleShot fires on the main thread.
         def _safety_timeout() -> None:
             with self._gated_lock:
                 # Identity guard — see start_guitar_gated_capture.
@@ -366,8 +372,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 partial = list(self._gated_accum)
                 self._gated_accum = []
             if partial:
-                # Reuse the existing queued-connection delivery path: emit on the
-                # background thread; Qt delivers finish_gated_fft_capture on main.
                 if self.mic is not None and self.mic.proc_thread is not None:
                     self.mic.proc_thread.gatedCaptureComplete.emit(
                         np.array(partial, dtype=np.float32),
@@ -375,14 +379,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                         phase,
                     )
             else:
-                # QTimer.singleShot(2000, ...) already fires on the main thread,
-                # so call directly — mirrors Swift closure calling statusMessage and
-                # reEnableDetectionForNextPlateTap() directly in the timeout closure.
                 gt_log("⚠️ Gated capture timeout with no samples — tap again")
                 self._set_status_message("No signal detected — tap again")
                 self.re_enable_detection_for_next_plate_tap()
 
-        QtCore.QTimer.singleShot(2000, _safety_timeout)
+        self._main_async_after(2000, _safety_timeout)
 
     # ------------------------------------------------------------------ #
     # start_guitar_gated_capture / finish_guitar_gated_capture
@@ -486,13 +487,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                     None,
                 )
 
-        QtCore.QTimer.singleShot(target_ms, _safety_timeout)
+        self._main_async_after(target_ms, _safety_timeout)
 
     def _guitar_gated_capture_failed(self) -> None:
         """Re-arm detection without storing a tap when guitar capture fails."""
         self._set_status_message("No signal detected — tap again")
         cooldown_ms = int(self.tap_cooldown * 1000)
-        QtCore.QTimer.singleShot(cooldown_ms, self._do_reenable_guitar)
+        self._main_async_after(cooldown_ms, self._do_reenable_guitar)
 
     def finish_guitar_gated_capture(self, samples, sample_rate: float) -> None:
         """Compute FFT for a guitar gated capture and append to captured_taps.
@@ -585,17 +586,17 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
             )
             cooldown_ms = int(self.tap_cooldown * 1000)
-            QtCore.QTimer.singleShot(cooldown_ms, self._do_reenable_guitar)
+            self._main_async_after(cooldown_ms, self._do_reenable_guitar)
         else:
             self._set_status_message("All taps captured. Processing...")
             self.capture_timer_active = False
-            QtCore.QTimer.singleShot(int(self.capture_window * 1000), self._finish_capture)
+            self._main_async_after(int(self.capture_window * 1000), self._finish_capture)
 
     @Slot()
     def _do_start_flc(self) -> None:
         """Main-thread slot: arm detection for the FLC tap phase.
 
-        Invoked via QTimer.singleShot from _handle_cross_gated_progress,
+        Invoked via _main_async_after from accept_current_phase,
         so this always runs on the main thread.
 
         Mirrors Swift handleCrossGatedProgress() FLC-transition closure:

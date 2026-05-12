@@ -460,7 +460,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         )
 
         cooldown = self.tap_cooldown
-        QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_reenable_detection)
+        self._main_async_after(int(cooldown * 1000), self._do_reenable_detection)
 
     @Slot()
     def _do_reenable_detection(self) -> None:

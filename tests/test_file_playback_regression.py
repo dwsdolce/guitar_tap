@@ -14,7 +14,7 @@ and recording the displayed peak frequency and magnitude values.
 Both Swift and Python test suites use the same WAV files and expected
 values so that passing both suites guarantees cross-platform parity.
 
-Test plan coverage: REG-B1
+Test plan coverage: REG-G1, REG-B1, REG-G2
 """
 
 from __future__ import annotations
@@ -54,6 +54,51 @@ BRACE_WAV = os.path.join(
     "brace-umik-1-python-mac-1778452289.wav",
 )
 
+# ---------------------------------------------------------------------------
+# Recording 5.wav — Generic guitar, single-tap, 48 kHz.
+# Reference values from the Recording 5.guitartap file (Tests/O'Brien/).
+# Settings: peak_min_threshold = -76, tap_detection_threshold = -40,
+#           measurement_type = GENERIC, number_of_taps = 1.
+#           FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
+# ---------------------------------------------------------------------------
+
+G1_WAV = os.path.join(os.path.dirname(__file__), "Recording 5.wav")
+G1_PEAK_MIN_THRESHOLD = -76.0   # dB
+G1_TAP_THRESHOLD = -40.0        # dB
+
+G1_AIR_FREQ = 87.30731;    G1_AIR_MAG = -45.351357
+G1_TOP_FREQ = 164.09756;   G1_TOP_MAG = -36.67097
+G1_BACK_FREQ = 240.5668;   G1_BACK_MAG = -54.567883
+
+# ---------------------------------------------------------------------------
+# Recording.wav — Generic guitar, 8-tap multi-tap, 48 kHz.
+# Reference values from the Recording.guitartap file (Tests/O'Brien/).
+# Settings: peak_min_threshold = -76, tap_detection_threshold = -40,
+#           measurement_type = GENERIC, number_of_taps = 8.
+#           FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
+# ---------------------------------------------------------------------------
+
+GUITAR_WAV = os.path.join(os.path.dirname(__file__), "Recording.wav")
+GUITAR_PEAK_MIN_THRESHOLD = -76.0   # dB
+GUITAR_TAP_THRESHOLD = -40.0        # dB
+
+# Average peaks
+GUITAR_AVG_AIR_FREQ = 87.233154;   GUITAR_AVG_AIR_MAG = -44.34529
+GUITAR_AVG_TOP_FREQ = 164.04662;   GUITAR_AVG_TOP_MAG = -35.105385
+GUITAR_AVG_BACK_FREQ = 240.57095;  GUITAR_AVG_BACK_MAG = -55.152287
+
+# Per-tap expected values: (air_freq, air_mag, top_freq, top_mag, back_freq, back_mag)
+GUITAR_PER_TAP = [
+    (87.20365, -46.083164, 164.15787, -37.15723,  296.5797,  -57.117817),  # Tap 1
+    (87.22049, -43.714653, 163.98953, -34.96168,  240.6308,  -54.930405),  # Tap 2
+    (87.21567, -44.400375, 164.00642, -36.064285, 240.54478, -56.384575),  # Tap 3
+    (87.23355, -43.930878, 164.02281, -34.72927,  240.58727, -55.048416),  # Tap 4
+    (87.23911, -44.447514, 164.09766, -36.650166, 240.52957, -54.569893),  # Tap 5
+    (87.258545,-44.08946,  164.05678, -34.239933, 240.63478, -54.847008),  # Tap 6
+    (87.2434,  -43.969948, 164.05476, -33.775253, 296.5151,  -54.0257),    # Tap 7
+    (87.24372, -44.523045, 164.0366,  -34.412136, 240.49031, -54.849174),  # Tap 8
+]
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -63,15 +108,94 @@ BRACE_WAV = os.path.join(
 def brace_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
     from models.tap_tone_analyzer import TapToneAnalyzer
-    return TapToneAnalyzer.for_testing(fft_size=16384, sample_rate=48000)
+    return TapToneAnalyzer.for_testing(sample_rate=48000)
+
+
+@pytest.fixture
+def g1_analyzer():
+    """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
+    from models.tap_tone_analyzer import TapToneAnalyzer
+    return TapToneAnalyzer.for_testing(sample_rate=48000)
+
+
+@pytest.fixture
+def guitar_analyzer():
+    """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
+    from models.tap_tone_analyzer import TapToneAnalyzer
+    return TapToneAnalyzer.for_testing(sample_rate=48000)
 
 
 # ---------------------------------------------------------------------------
-# Tests  (REG-B1)
+# Tests  (REG-G1, REG-B1, REG-G2)
 # ---------------------------------------------------------------------------
 
 class TestFilePlaybackRegression:
     """Full-pipeline file playback regression tests."""
+
+    def test_REG_G1_generic_guitar_single_tap_produces_expected_peaks(
+        self, g1_analyzer
+    ):
+        """Generic guitar single-tap — validates Air/Top/Back peaks.
+
+        Loads a single-tap generic guitar recording and plays it through the
+        full pipeline.  Verifies that:
+          1. The pipeline completes with 1 tap entry
+          2. Air, Top, Back frequencies and magnitudes match reference ± 1
+        """
+        from models.guitar_mode import GuitarMode
+
+        assert os.path.exists(G1_WAV), f"Test WAV not found: {G1_WAV}"
+
+        sut = g1_analyzer
+        sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
+        sut.tap_detection_threshold = G1_TAP_THRESHOLD
+        sut.play_file_for_testing(
+            path=G1_WAV,
+            measurement_type=MeasurementType.GENERIC,
+            number_of_taps=1,
+        )
+
+        # 1. Pipeline should complete with 1 captured tap.
+        #    (tap_entries is only populated for multi-tap sessions; single-tap
+        #     uses captured_taps directly.)
+        assert sut.is_measurement_complete, "is_measurement_complete should be True"
+        assert len(sut.captured_taps) == 1, (
+            f"Expected 1 captured tap, got {len(sut.captured_taps)}"
+        )
+
+        # 2. Peaks — use get_peak(), the same API the Results panel uses.
+        air_peak = sut.get_peak(GuitarMode.AIR)
+        assert air_peak is not None, "No Air peak found"
+        assert abs(air_peak.frequency - G1_AIR_FREQ) < FREQ_TOLERANCE, (
+            f"Air freq: expected {G1_AIR_FREQ} "
+            f"±{FREQ_TOLERANCE}, got {air_peak.frequency}"
+        )
+        assert abs(air_peak.magnitude - G1_AIR_MAG) < MAG_TOLERANCE, (
+            f"Air mag: expected {G1_AIR_MAG} "
+            f"±{MAG_TOLERANCE}, got {air_peak.magnitude}"
+        )
+
+        top_peak = sut.get_peak(GuitarMode.TOP)
+        assert top_peak is not None, "No Top peak found"
+        assert abs(top_peak.frequency - G1_TOP_FREQ) < FREQ_TOLERANCE, (
+            f"Top freq: expected {G1_TOP_FREQ} "
+            f"±{FREQ_TOLERANCE}, got {top_peak.frequency}"
+        )
+        assert abs(top_peak.magnitude - G1_TOP_MAG) < MAG_TOLERANCE, (
+            f"Top mag: expected {G1_TOP_MAG} "
+            f"±{MAG_TOLERANCE}, got {top_peak.magnitude}"
+        )
+
+        back_peak = sut.get_peak(GuitarMode.BACK)
+        assert back_peak is not None, "No Back peak found"
+        assert abs(back_peak.frequency - G1_BACK_FREQ) < FREQ_TOLERANCE, (
+            f"Back freq: expected {G1_BACK_FREQ} "
+            f"±{FREQ_TOLERANCE}, got {back_peak.frequency}"
+        )
+        assert abs(back_peak.magnitude - G1_BACK_MAG) < MAG_TOLERANCE, (
+            f"Back mag: expected {G1_BACK_MAG} "
+            f"±{MAG_TOLERANCE}, got {back_peak.magnitude}"
+        )
 
     def test_REG_B1_brace_single_tap_produces_expected_peak(
         self, brace_analyzer
@@ -127,3 +251,131 @@ class TestFilePlaybackRegression:
             f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB "
             f"(delta {mag_delta:.2f})"
         )
+
+    def test_REG_G2_generic_guitar_8tap_produces_expected_peaks(
+        self, guitar_analyzer
+    ):
+        """Generic guitar 8-tap — validates averaged and per-tap Air/Top/Back.
+
+        Loads a live 8-tap generic guitar recording and plays it through the
+        full pipeline.  Verifies that:
+          1. The pipeline completes with 8 tap entries
+          2. Averaged Air, Top, Back frequencies and magnitudes match reference ± 1
+          3. All 8 individual taps' Air, Top, Back freq+mag match reference ± 1
+        """
+        from models.guitar_mode import GuitarMode
+        from models.tap_tone_analyzer import TapToneAnalyzer
+
+        assert os.path.exists(GUITAR_WAV), f"Test WAV not found: {GUITAR_WAV}"
+
+        sut = guitar_analyzer
+        sut.peak_min_threshold = GUITAR_PEAK_MIN_THRESHOLD
+        sut.tap_detection_threshold = GUITAR_TAP_THRESHOLD
+        sut.play_file_for_testing(
+            path=GUITAR_WAV,
+            measurement_type=MeasurementType.GENERIC,
+            number_of_taps=8,
+        )
+
+        # 1. Pipeline should complete with 8 tap entries.
+        assert sut.is_measurement_complete, "is_measurement_complete should be True"
+        assert len(sut.tap_entries) == 8, (
+            f"Expected 8 tap entries, got {len(sut.tap_entries)}"
+        )
+
+        # 2. Averaged peaks — use get_peak(), the same API the Results panel uses.
+        air_peak = sut.get_peak(GuitarMode.AIR)
+        assert air_peak is not None, "No averaged Air peak found"
+        assert abs(air_peak.frequency - GUITAR_AVG_AIR_FREQ) < FREQ_TOLERANCE, (
+            f"Avg Air freq: expected {GUITAR_AVG_AIR_FREQ} "
+            f"±{FREQ_TOLERANCE}, got {air_peak.frequency}"
+        )
+        assert abs(air_peak.magnitude - GUITAR_AVG_AIR_MAG) < MAG_TOLERANCE, (
+            f"Avg Air mag: expected {GUITAR_AVG_AIR_MAG} "
+            f"±{MAG_TOLERANCE}, got {air_peak.magnitude}"
+        )
+
+        top_peak = sut.get_peak(GuitarMode.TOP)
+        assert top_peak is not None, "No averaged Top peak found"
+        assert abs(top_peak.frequency - GUITAR_AVG_TOP_FREQ) < FREQ_TOLERANCE, (
+            f"Avg Top freq: expected {GUITAR_AVG_TOP_FREQ} "
+            f"±{FREQ_TOLERANCE}, got {top_peak.frequency}"
+        )
+        assert abs(top_peak.magnitude - GUITAR_AVG_TOP_MAG) < MAG_TOLERANCE, (
+            f"Avg Top mag: expected {GUITAR_AVG_TOP_MAG} "
+            f"±{MAG_TOLERANCE}, got {top_peak.magnitude}"
+        )
+
+        back_peak = sut.get_peak(GuitarMode.BACK)
+        assert back_peak is not None, "No averaged Back peak found"
+        assert abs(back_peak.frequency - GUITAR_AVG_BACK_FREQ) < FREQ_TOLERANCE, (
+            f"Avg Back freq: expected {GUITAR_AVG_BACK_FREQ} "
+            f"±{FREQ_TOLERANCE}, got {back_peak.frequency}"
+        )
+        assert abs(back_peak.magnitude - GUITAR_AVG_BACK_MAG) < MAG_TOLERANCE, (
+            f"Avg Back mag: expected {GUITAR_AVG_BACK_MAG} "
+            f"±{MAG_TOLERANCE}, got {back_peak.magnitude}"
+        )
+
+        # 3. Per-tap peaks — mirror MultiTapComparisonResultsView:
+        #    filter entry.peaks by selected_peak_ids, then resolve modes via
+        #    classify_all (same code paths as the UI).
+        for index, entry in enumerate(sut.tap_entries):
+            exp = GUITAR_PER_TAP[index]
+            exp_air_freq, exp_air_mag = exp[0], exp[1]
+            exp_top_freq, exp_top_mag = exp[2], exp[3]
+            exp_back_freq, exp_back_mag = exp[4], exp[5]
+            tap_label = f"Tap {index + 1}"
+
+            selected_ids = set(entry.selected_peak_ids)
+            selected_peaks = [p for p in entry.peaks if p.id in selected_ids]
+
+            # classify_all gives us id → GuitarMode
+            mode_map = GuitarMode.classify_all(selected_peaks)
+
+            # Build mode → peak (highest magnitude per mode)
+            mode_peaks: dict = {}
+            for peak in selected_peaks:
+                mode = mode_map.get(peak.id)
+                if mode is None or mode == GuitarMode.UNKNOWN:
+                    continue
+                existing = mode_peaks.get(mode)
+                if existing is not None and peak.magnitude <= existing.magnitude:
+                    continue
+                mode_peaks[mode] = peak
+
+            # Air
+            air = mode_peaks.get(GuitarMode.AIR)
+            assert air is not None, f"{tap_label}: no Air peak in selected peaks"
+            assert abs(air.frequency - exp_air_freq) < FREQ_TOLERANCE, (
+                f"{tap_label} Air freq: expected {exp_air_freq} "
+                f"±{FREQ_TOLERANCE}, got {air.frequency}"
+            )
+            assert abs(air.magnitude - exp_air_mag) < MAG_TOLERANCE, (
+                f"{tap_label} Air mag: expected {exp_air_mag} "
+                f"±{MAG_TOLERANCE}, got {air.magnitude}"
+            )
+
+            # Top
+            top = mode_peaks.get(GuitarMode.TOP)
+            assert top is not None, f"{tap_label}: no Top peak in selected peaks"
+            assert abs(top.frequency - exp_top_freq) < FREQ_TOLERANCE, (
+                f"{tap_label} Top freq: expected {exp_top_freq} "
+                f"±{FREQ_TOLERANCE}, got {top.frequency}"
+            )
+            assert abs(top.magnitude - exp_top_mag) < MAG_TOLERANCE, (
+                f"{tap_label} Top mag: expected {exp_top_mag} "
+                f"±{MAG_TOLERANCE}, got {top.magnitude}"
+            )
+
+            # Back
+            back = mode_peaks.get(GuitarMode.BACK)
+            assert back is not None, f"{tap_label}: no Back peak in selected peaks"
+            assert abs(back.frequency - exp_back_freq) < FREQ_TOLERANCE, (
+                f"{tap_label} Back freq: expected {exp_back_freq} "
+                f"±{FREQ_TOLERANCE}, got {back.frequency}"
+            )
+            assert abs(back.magnitude - exp_back_mag) < MAG_TOLERANCE, (
+                f"{tap_label} Back mag: expected {exp_back_mag} "
+                f"±{MAG_TOLERANCE}, got {back.magnitude}"
+            )

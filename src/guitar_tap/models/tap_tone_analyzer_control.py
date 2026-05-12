@@ -317,7 +317,7 @@ class TapToneAnalyzerControlMixin:
         # (~1.36 s for 65 536 samples at 48 kHz).  Use 3 s to absorb HALC/CoreAudio
         # startup transients that can arrive at ~2.5 s on the engine-recovery path.
         # Mirrors Swift: fftSettleTime = 3.0 / DispatchQueue.main.asyncAfter.
-        _QTimer.singleShot(
+        self._main_async_after(
             3000,
             lambda: self._restore_detection_after_route_change(was_detecting, was_live),
         )
@@ -328,7 +328,7 @@ class TapToneAnalyzerControlMixin:
         This method is the structural equivalent of the combined
         DispatchQueue.main.asyncAfter + $magnitudes.dropFirst().first() sink
         closure in Swift's handleRouteChangeRestart().  It is a named method
-        rather than an inline lambda only because QTimer.singleShot requires a
+        rather than an inline lambda only because _main_async_after requires a
         callable — it should not be called from anywhere else.
 
         Mirrors Swift's inner sink:
@@ -498,8 +498,7 @@ class TapToneAnalyzerControlMixin:
             # Mirrors Swift's start() → updateFrequencyBins() inside the asyncAfter block.
             # Must run on the main thread — _update_frequency_bins writes self.freq which
             # on_fft_frame reads on the main thread (no lock).
-            from PySide6.QtCore import QTimer as _QTimer
-            _QTimer.singleShot(0, self._update_frequency_bins)
+            self._main_async_after(0, self._update_frequency_bins)
             if on_finished is not None:
                 on_finished()
 
@@ -858,8 +857,7 @@ class TapToneAnalyzerControlMixin:
                 self._set_material_tap_phase(_MTP.WAITING_FOR_FLC_TAP)
                 self._set_status_message("Set up for FLC tap, then tap")
                 cooldown = self.tap_cooldown
-                from PySide6 import QtCore
-                QtCore.QTimer.singleShot(int(cooldown * 1000), self._do_start_flc)
+                self._main_async_after(int(cooldown * 1000), self._do_start_flc)
             else:
                 # No FLC — finalise measurement now.
                 self._finalise_plate_no_flc()
