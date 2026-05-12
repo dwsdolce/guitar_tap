@@ -89,7 +89,6 @@ if __name__ == "__main__":
     if os.name == "nt":
         mutex = NM.NamedMutex("guitar-tap-running", True)
 
-    os.environ["QT_LOGGING_TO_CONSOLE"] = "1"
     qapp = QtWidgets.QApplication(sys.argv)
 
     # Install an unhandled-exception hook so background thread crashes also

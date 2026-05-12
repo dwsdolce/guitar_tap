@@ -46,33 +46,36 @@ import sounddevice as sd
 
 from guitar_tap.utilities.logging import gt_log
 
-# ── Timeout-protected PortAudio exit handler ──────────────────────────
+# ── Timeout-protected PortAudio exit handler (POSIX only) ─────────────
 # sounddevice registers an atexit handler that calls Pa_Terminate().
 # On macOS, Pa_Terminate can deadlock when the CoreAudio I/O thread is
 # stuck.  Replace it with a version that uses SIGALRM to bail out after
 # a short timeout, then falls through to os._exit() so the process
-# doesn't hang.
+# doesn't hang.  SIGALRM is POSIX so the same guard works on Linux;
+# we enable it everywhere except Windows, which has neither SIGALRM
+# nor an equivalent Pa_Terminate deadlock pattern.
 
-_original_sd_exit_handler = sd._exit_handler
+if platform.system() != "Windows":
+    _original_sd_exit_handler = sd._exit_handler
 
-def _safe_exit_handler() -> None:
-    """Call sounddevice's exit handler with a timeout guard."""
-    def _alarm_handler(signum, frame):
-        gt_log("⚠️ PortAudio exit handler timed out — forcing exit")
-        os._exit(0)
+    def _safe_exit_handler() -> None:
+        """Call sounddevice's exit handler with a timeout guard."""
+        def _alarm_handler(signum, frame):
+            gt_log("⚠️ PortAudio exit handler timed out — forcing exit")
+            os._exit(0)
 
-    try:
-        old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-        signal.alarm(3)  # 3 second deadline
-        _original_sd_exit_handler()
-        signal.alarm(0)  # cancel if completed in time
-        signal.signal(signal.SIGALRM, old_handler)
-    except Exception:
-        signal.alarm(0)
+        try:
+            old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+            signal.alarm(3)  # 3 second deadline
+            _original_sd_exit_handler()
+            signal.alarm(0)  # cancel if completed in time
+            signal.signal(signal.SIGALRM, old_handler)
+        except Exception:
+            signal.alarm(0)
 
-atexit.unregister(sd._exit_handler)
-atexit.register(_safe_exit_handler)
-sd._exit_handler = _safe_exit_handler
+    atexit.unregister(sd._exit_handler)
+    atexit.register(_safe_exit_handler)
+    sd._exit_handler = _safe_exit_handler
 # ──────────────────────────────────────────────────────────────────────
 
 if TYPE_CHECKING:

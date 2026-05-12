@@ -661,9 +661,18 @@ class TapToneAnalyzer(
         self.mic._on_pre_mic_restart = self._flush_gated_capture_on_file_end
 
         # ── Post-engine-stop handler ──────────────────────────────────
+        # Wipe both the pre-roll ring buffer AND any in-flight gated
+        # capture.  Without resetting _gated_accum/_gated_capture_active,
+        # a level-crossing that fired on live-mic noise just before the
+        # source switch would persist, causing file chunks to be appended
+        # onto a buffer already seeded with mic samples — the captured
+        # window then mixes mic noise into the FFT input.
         def _clear_pre_roll():
             with self._gated_lock:
                 self._pre_roll_buf = []
+                self._gated_accum = []
+                self._gated_capture_active = False
+                self._gated_capture_phase = None
         self.mic._on_post_engine_stop = _clear_pre_roll
 
         # ── Qt signal connections (for UI — live mic path) ───────────────

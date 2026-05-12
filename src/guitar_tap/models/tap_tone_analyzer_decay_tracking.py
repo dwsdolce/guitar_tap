@@ -70,14 +70,31 @@ class TapToneAnalyzerDecayTrackingMixin:
         # Enable decay tracking.
         self.is_tracking_decay = True
 
-        # Cancel any existing timer before starting a new one.
-        # Mirrors Swift: decayTrackingTimer?.invalidate()
+        # Timer manipulation must happen on the main thread — the QTimer
+        # carries the thread affinity of whichever thread creates it, and
+        # stop()/destruction from a different thread triggers Qt's
+        # "Timers cannot be stopped from another thread" warning.  In the
+        # live UI this method runs from proc_thread (live mic) or the
+        # FilePlayback worker (file playback), so we route the actual
+        # create/start through a slot.  AutoConnection executes
+        # synchronously when already on the main thread (tests, direct
+        # UI calls) and queued otherwise.
+        QtCore.QMetaObject.invokeMethod(
+            self,
+            "_arm_decay_tracking_timer",
+            QtCore.Qt.ConnectionType.AutoConnection,
+        )
+
+    @Slot()
+    def _arm_decay_tracking_timer(self) -> None:
+        """Main-thread slot: stop any prior timer and arm a fresh 3-s one.
+
+        Called via QMetaObject.invokeMethod from start_decay_tracking so the
+        QTimer is always created on the main thread regardless of which
+        thread detected the tap.
+        """
         if self._decay_tracking_timer is not None:
             self._decay_tracking_timer.stop()
-
-        # Stop decay tracking after 3 seconds.
-        # Mirrors Swift: Timer.scheduledTimer(withTimeInterval: 3.0, ...) which fires
-        # on the main RunLoop.  QTimer.singleShot fires on the main thread directly.
         self._decay_tracking_timer = QtCore.QTimer()
         self._decay_tracking_timer.setSingleShot(True)
         self._decay_tracking_timer.timeout.connect(self.stop_decay_tracking)
@@ -102,6 +119,16 @@ class TapToneAnalyzerDecayTrackingMixin:
         QTimer.singleShot from start_decay_tracking.
         """
         self.is_tracking_decay = False
+        # Timer stop must run on the main thread (see _arm_decay_tracking_timer).
+        QtCore.QMetaObject.invokeMethod(
+            self,
+            "_disarm_decay_tracking_timer",
+            QtCore.Qt.ConnectionType.AutoConnection,
+        )
+
+    @Slot()
+    def _disarm_decay_tracking_timer(self) -> None:
+        """Main-thread slot: stop the timer and clear the reference."""
         if self._decay_tracking_timer is not None:
             self._decay_tracking_timer.stop()
             self._decay_tracking_timer = None
