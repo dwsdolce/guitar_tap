@@ -1,12 +1,10 @@
 """
 Utility views and helpers — mirrors Swift Views/Utilities/.
 """
-from .gt_images import GtImages
 from .tap_settings_view import AppSettings
 
 __all__ = [
     "AppSettings",
-    "GtImages",
 ]
 
 # NamedMutex is Windows-only; it lives at the project root (named_mutex.py)
