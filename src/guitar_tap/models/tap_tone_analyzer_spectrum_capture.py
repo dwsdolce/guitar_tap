@@ -738,26 +738,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.re_enable_detection_for_next_plate_tap()
             return
 
-        # Reject captures where the dominant peak is below the tap detection threshold.
-        #
-        # Exceptions (skip the magnitude gate):
-        #   - fLC (torsional mode): inherently 20–30 dB weaker than fL/fC.
-        #   - Brace mode: braces are small and stiff — their tap resonance is
-        #     inherently much quieter than a guitar top or plate, producing
-        #     dominant peaks that routinely fall below the plate/guitar threshold.
-        # In both cases the rising-edge tap trigger already proved a real strike
-        # occurred, so there is no benefit in applying an additional spectral gate.
-        is_flc_phase = phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP)
-        is_brace_mode = _tds.measurement_type() == _MT.BRACE
-        if not is_flc_phase and not is_brace_mode and dominant_peak.magnitude < self.tap_detection_threshold:
-            gt_log(
-                f"⚠️ Gated FFT: dominant peak {dominant_peak.frequency:.1f} Hz @ "
-                f"{dominant_peak.magnitude:.1f} dB is below tap detection threshold "
-                f"({self.tap_detection_threshold:.0f} dB) — tap again"
-            )
-            self._set_status_message("Signal too quiet — tap harder")
-            self.re_enable_detection_for_next_plate_tap()
-            return
+        # The FFT magnitude gate was removed because the rising-edge RMS tap
+        # trigger has already confirmed a real physical strike before the gated
+        # FFT capture runs.  The threshold slider's VU meter shows time-domain
+        # RMS, but FFT bin magnitudes at a single frequency are a fundamentally
+        # different (and typically lower) quantity — comparing them against the
+        # same threshold caused valid taps to be rejected even when the VU meter
+        # showed the tap well above the slider.  FLC and brace modes already
+        # skipped this gate for the same reason; now all modes are consistent.
 
         gt_log(
             f"📊 Gated FFT complete: {len(magnitudes)} bins, "
@@ -811,7 +799,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
           Step 2 — Selection:
                    - Filter candidates with Q < 3 (impact thuds / broadband noise).
                    - If prefer_lowest_significant: pick the lowest-frequency candidate
-                     within 15 dB of the strongest.
+                     within 6 dB of the strongest.
                    - Otherwise: strongest wins unless a lower-frequency candidate is
                      within 6 dB and has a comparable HPS score (within one order of
                      magnitude).
@@ -824,7 +812,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             min_hz:                    Lower search bound in Hz.
             max_hz:                    Upper search bound in Hz.
             prefer_lowest_significant: When True, pick the lowest-frequency candidate
-                                       within 15 dB of the peak.
+                                       within 6 dB of the peak.
 
         Returns:
             ResonantPeak or None if no candidates are found.
@@ -913,8 +901,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         strongest = by_magnitude[0]
 
         if prefer_lowest_significant:
-            # Mirrors Swift: thresholdDB = strongest.magnitude - 15; pick lowest-index significant.
-            threshold_db = strongest.magnitude - 15.0
+            # Mirrors Swift: pick lowest-frequency candidate within 6 dB of strongest.
+            # 6 dB (not 15) rejects spurious low-frequency peaks (impact artifacts,
+            # environmental noise) that can pass the Q >= 3 filter.
+            threshold_db = strongest.magnitude - 6.0
             significant = [c for c in pool if c.magnitude >= threshold_db]
             best = min(significant, key=lambda c: c.index)
         else:
