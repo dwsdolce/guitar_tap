@@ -356,6 +356,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         """
         current_level = self._current_input_level_db
         falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
+        with self._gated_lock:
+            self._last_level_crossing_capture_id = -1
         if current_level <= falling_threshold:
             self.is_above_threshold = False
             self.is_detecting = True
@@ -480,6 +482,11 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.is_above_threshold = current_level > falling_threshold
         self.is_detecting = True
         self.tap_detected = False
+        # Clear stale fast-start marker so the next tap's main-thread
+        # start_gated_capture correctly falls back to pre-roll seeding
+        # if the audio-queue level crossing doesn't fire in time.
+        with self._gated_lock:
+            self._last_level_crossing_capture_id = -1
         TAP_DEBUG(
             "reEnableDetectionForNextPlateTap",
             f"Re-enabled | currentLevel={current_level:.2f} "

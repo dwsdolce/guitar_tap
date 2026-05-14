@@ -446,6 +446,22 @@ class TapToneAnalyzer(
         # the capture window from fft_size samples to whatever fragment was
         # collected.  Mirrors Swift `gatedCaptureID`.
         self._gated_capture_id: int = 0
+        # The _gated_capture_id set by the most recent audio-queue
+        # level-crossing fast-start.  start_gated_capture() and
+        # start_guitar_gated_capture() check this: if it matches
+        # _gated_capture_id, the fast-start handled this tap (whether
+        # still running or already completed) — skip re-seeding.
+        self._last_level_crossing_capture_id: int = -1
+
+        # Pre-roll snapshot captured by the level-crossing handler on the
+        # audio thread when it fires during file playback but a previous
+        # capture's completion is still pending on the main thread.  In this
+        # "deferred" case the handler does NOT start _gated_capture_active
+        # (which would cascade), but snapshots the pre-roll so the main-
+        # thread start_gated_capture can seed from the correct audio position.
+        # Cleared by start_gated_capture after consumption.
+        # Mirrors Swift pendingLevelCrossingPreRoll.
+        self._pending_level_crossing_pre_roll: list | None = None
 
         # ── Pipeline signal wiring ────────────────────────────────────────
         # Wire all signal/callback connections when the FFT analyzer is
@@ -527,6 +543,7 @@ class TapToneAnalyzer(
         path: str,
         measurement_type: "MeasurementType",
         number_of_taps: int = 1,
+        calibration_path: str | None = None,
     ) -> None:
         """Feed a WAV file through the full analysis pipeline for testing.
 
@@ -542,12 +559,14 @@ class TapToneAnalyzer(
         to drain ``DispatchQueue.main.asyncAfter`` callbacks.  This means
         the test exercises the *exact same* code paths as the live app.
 
-        Mirrors Swift ``TapToneAnalyzer.playFileForTesting(url:measurementType:numberOfTaps:)``.
+        Mirrors Swift ``TapToneAnalyzer.playFileForTesting(url:measurementType:numberOfTaps:calibrationURL:)``.
 
         Args:
-            path:             Filesystem path to the audio file.
-            measurement_type: The MeasurementType to configure before playback.
-            number_of_taps:   Number of taps to detect (guitar mode). Default 1.
+            path:              Filesystem path to the audio file.
+            measurement_type:  The MeasurementType to configure before playback.
+            number_of_taps:    Number of taps to detect (guitar mode). Default 1.
+            calibration_path:  Optional path to a microphone calibration file
+                               (.txt, .cal) to apply during playback.
         """
         import os as _os
 
@@ -559,6 +578,13 @@ class TapToneAnalyzer(
         # 1. Configure measurement type and tap count.
         _tds.set_measurement_type(measurement_type)
         self.number_of_taps = number_of_taps
+
+        # 1b. If a calibration file was provided, parse it and temporarily
+        #     override the active calibration on the analyzer.
+        if calibration_path is not None:
+            from models import microphone_calibration as _mc
+            cal = _mc.MicrophoneCalibration.from_path(calibration_path)
+            self.set_temporary_calibration(cal)
 
         # 2. Start the tap sequence with warmup skipped (deterministic file audio).
         self.start_tap_sequence(skip_warmup=True)
@@ -635,24 +661,70 @@ class TapToneAnalyzer(
         def _level_crossing_handler() -> None:
             from models.measurement_type import MeasurementType as _MT
             from models.tap_display_settings import TapDisplaySettings as _tds
-            mt = _tds.measurement_type()
-            if mt == _MT.PLATE or mt == _MT.BRACE:
-                return
-            fft_size = self.mic.fft_size
-            with self._gated_lock:
-                self._gated_capture_id += 1
-                self._gated_accum = list(self._pre_roll_buf)
-                self._gated_capture_samples = fft_size
-                self._gated_capture_phase = None  # None = guitar mode
-                self._gated_capture_active = True
-                pre_roll_count = len(self._gated_accum)
-                _diag_hash = sum(self._gated_accum[:16]) if pre_roll_count >= 16 else 0.0
-            _diag_consumed = getattr(self.mic, '_diag_total_samples', 0)
             from guitar_tap.utilities.logging import TAP_DEBUG
+            import math
+            mt = _tds.measurement_type()
+            with self._gated_lock:
+                if mt == _MT.PLATE or mt == _MT.BRACE:
+                    # Guard: only start a capture when we're actually in a
+                    # capturing phase.  Before file playback starts the phase
+                    # is still NOT_STARTED — mic audio can trigger a spurious
+                    # level crossing in that window.  After playback ends the
+                    # phase is COMPLETE — mic restart can trigger another.
+                    phase = self.material_tap_phase
+                    if not phase.is_capturing:
+                        TAP_DEBUG("levelCrossing",
+                            f"SKIPPED — phase {phase} is not capturing")
+                        return
+
+                    # File-playback deferred path: if a previous capture has
+                    # completed on the audio thread and its finish_gated_fft_capture
+                    # dispatch is still pending on the main thread, starting a
+                    # new _gated_capture_active here would cascade — the new capture
+                    # fills before the main thread can advance the phase, so it
+                    # runs under the stale phase.  Instead, just snapshot the
+                    # pre-roll so the main-thread start_gated_capture can seed
+                    # from the correct audio position when it eventually runs.
+                    # Mirrors Swift levelCrossingHandler deferred path.
+                    if (self.mic is not None
+                            and self.mic.is_playing_file
+                            and self._pending_level_crossing_pre_roll is None
+                            and not self._gated_capture_active
+                            and self._last_level_crossing_capture_id == self._gated_capture_id):
+                        self._pending_level_crossing_pre_roll = list(self._pre_roll_buf)
+                        pre_roll_count = len(self._pre_roll_buf)
+                        TAP_DEBUG("levelCrossing",
+                            f"DEFERRED — snapshot pre-roll ({pre_roll_count} samples) "
+                            f"for main-thread start_gated_capture")
+                        return
+
+                self._gated_capture_id += 1
+                self._last_level_crossing_capture_id = self._gated_capture_id
+                self._gated_accum = list(self._pre_roll_buf)
+                if mt == _MT.PLATE or mt == _MT.BRACE:
+                    # Plate/brace: use the current phase and 400 ms window.
+                    self._gated_capture_phase = self.material_tap_phase
+                    self._gated_capture_samples = int(
+                        float(self._gated_sample_rate) * self.GATED_CAPTURE_DURATION
+                    )
+                    # Keep the pre-roll even when it contains digital silence
+                    # (e.g. inter-tap gaps in a concatenated playback file).
+                    # The pre-roll positions the tap transient at ~sample 9600
+                    # of the 32768-sample Hann window, matching the live-capture
+                    # weighting.  Discarding it shifts the transient to sample 0
+                    # where the Hann weight is ~0, distorting magnitudes by
+                    # several dB.
+                else:
+                    # Guitar: None phase sentinel, fft_size window.
+                    self._gated_capture_phase = None
+                    self._gated_capture_samples = self.mic.fft_size
+                self._gated_capture_active = True
+                self._pending_level_crossing_pre_roll = None  # consumed by direct start
+                pre_roll_count = len(self._gated_accum)
+                target = self._gated_capture_samples
             TAP_DEBUG("levelCrossing",
                 f"Gated capture started on audio queue | "
-                f"pre-roll {pre_roll_count} samples, target {fft_size}, "
-                f"fileSamplePos={_diag_consumed}, preRollHash={_diag_hash:.6f}")
+                f"mode={mt} pre-roll {pre_roll_count} samples, target {target}")
 
         self.mic._level_crossing_handler = _level_crossing_handler
         self.mic._level_crossing_threshold = self.tap_detection_threshold
@@ -673,6 +745,13 @@ class TapToneAnalyzer(
                 self._gated_accum = []
                 self._gated_capture_active = False
                 self._gated_capture_phase = None
+                # Reset capture IDs so the deferred level-crossing guard
+                # (_last_level_crossing_capture_id == _gated_capture_id) won't
+                # match on the first file tap due to stale IDs from a prior
+                # live capture.  Mirrors Swift postEngineStopHandler.
+                self._last_level_crossing_capture_id = -1
+                self._gated_capture_id = 0
+                self._pending_level_crossing_pre_roll = None
         self.mic._on_post_engine_stop = _clear_pre_roll
 
         # ── Qt signal connections (for UI — live mic path) ───────────────
@@ -722,10 +801,22 @@ class TapToneAnalyzer(
             if value and not old:
                 # false → true: arm crossing and sync previous level.
                 self.mic._level_crossing_armed = True
-                self.mic._previous_level_db = -100.0
+                # During file playback the audio queue is already tracking
+                # _previous_level_db naturally.  Resetting it to -100 would
+                # create a false rising-edge on the next chunk if the
+                # previous tap's ring-out tail is still above threshold,
+                # causing a spurious capture of silence/decay instead of
+                # waiting for the real next tap's attack.
+                if not self.mic.is_playing_file:
+                    self.mic._previous_level_db = -100.0
             elif not value:
                 # → false: disarm crossing.
-                self.mic._level_crossing_armed = False
+                # During file playback, the audio queue manages its own
+                # re-arming cycle (_accumulate_gated_samples re-arms after
+                # each capture completes).  Disarming here would undo that
+                # re-arm before the next tap's audio arrives on the queue.
+                if not self.mic.is_playing_file:
+                    self.mic._level_crossing_armed = False
 
     def start(
         self,

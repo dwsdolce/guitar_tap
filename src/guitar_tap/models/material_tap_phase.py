@@ -114,6 +114,18 @@ class MaterialTapPhase(Enum):
         )
 
     @property
+    def is_capturing(self) -> bool:
+        """Whether the phase is actively capturing gated FFT samples.
+
+        Mirrors Swift MaterialTapPhase.isCapturing.
+        """
+        return self in (
+            MaterialTapPhase.CAPTURING_LONGITUDINAL,
+            MaterialTapPhase.CAPTURING_CROSS,
+            MaterialTapPhase.CAPTURING_FLC,
+        )
+
+    @property
     def instruction(self) -> str:
         """Full instructional text appropriate for the current phase.
 

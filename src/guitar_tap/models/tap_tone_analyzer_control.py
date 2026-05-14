@@ -214,6 +214,24 @@ class TapToneAnalyzerControlMixin:
         # Track the name so _on_export_pdf can report it — mirrors Swift activeCalibration?.name.
         self._active_calibration_name = getattr(cal, "name", None)
 
+    def set_temporary_calibration(self, cal) -> None:
+        """Apply calibration for file playback without persisting to storage.
+
+        Unlike ``load_calibration_from_profile``, this does not save the
+        calibration to ``CalibrationStorage`` or associate it with a device.
+        Mirrors Swift ``RealtimeFFTAnalyzer.setTemporaryCalibration(_:)``.
+        """
+        if cal is not None:
+            self._calibration_corrections = cal.interpolate_to_bins(self.freq)
+            self._calibration_profile = cal
+            self.mic.set_calibration(self._calibration_corrections, profile=cal)
+            self._active_calibration_name = getattr(cal, "name", None)
+        else:
+            self._calibration_corrections = None
+            self._calibration_profile = None
+            self._active_calibration_name = None
+            self.mic.set_calibration(None)
+
     def clear_calibration(self) -> None:
         """Remove the active calibration."""
         self._calibration_corrections = None

@@ -54,6 +54,24 @@ BRACE_WAV = os.path.join(
     "brace-umik-1-python-mac-1778452289.wav",
 )
 
+# UMIK-1 calibration file — used for brace and plate measurements.
+CALIBRATION_FILE = os.path.join(os.path.dirname(__file__), "7108913.txt")
+
+# Plate longitudinal (L) capture WAV — saved gated capture from interactive
+# measurement.  19200 frames (400 ms) at 48000 Hz, IEEE float 32-bit mono.
+# Reference values from the interactive measurement session:
+#   fL frequency: 66.6 Hz
+#   fL magnitude: -58.4 dB
+#   fL Q factor:  15.0
+PLATE_L_WAV = os.path.join(
+    os.path.dirname(__file__),
+    "swift_Capturing_Longitudinal_2026-05-13T17-35-52Z.wav",
+)
+PLATE_L_EXPECTED_FREQ = 66.6   # Hz
+PLATE_L_EXPECTED_MAG = -58.4   # dB
+PLATE_L_EXPECTED_Q = 15.0
+Q_TOLERANCE = 1.0              # dimensionless
+
 # ---------------------------------------------------------------------------
 # Recording 5.wav — Generic guitar, single-tap, 48 kHz.
 # Reference values from the Recording 5.guitartap file (Tests/O'Brien/).
@@ -125,8 +143,15 @@ def guitar_analyzer():
     return TapToneAnalyzer.for_testing(sample_rate=48000)
 
 
+@pytest.fixture
+def plate_analyzer():
+    """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
+    from models.tap_tone_analyzer import TapToneAnalyzer
+    return TapToneAnalyzer.for_testing(sample_rate=48000)
+
+
 # ---------------------------------------------------------------------------
-# Tests  (REG-G1, REG-B1, REG-G2)
+# Tests  (REG-G1, REG-B1, REG-G2, REG-P1)
 # ---------------------------------------------------------------------------
 
 class TestFilePlaybackRegression:
@@ -218,6 +243,7 @@ class TestFilePlaybackRegression:
         sut.play_file_for_testing(
             path=BRACE_WAV,
             measurement_type=MeasurementType.BRACE,
+            calibration_path=CALIBRATION_FILE,
         )
 
         # 1. Pipeline should reach COMPLETE for brace (single-tap mode).
@@ -363,3 +389,70 @@ class TestFilePlaybackRegression:
                 f"{tap_label} Back mag: expected {exp_back_mag} "
                 f"±{MAG_TOLERANCE}, got {back.magnitude}"
             )
+
+    def test_REG_P1_plate_longitudinal_single_tap_produces_expected_peak(
+        self, plate_analyzer
+    ):
+        """Plate longitudinal single-tap — known WAV produces expected fL peak.
+
+        Loads a saved plate longitudinal capture WAV (400 ms, 48 kHz) and plays
+        it through the full pipeline with measurement_type = PLATE.  Verifies:
+          1. The pipeline auto-advances past L
+          2. At least one longitudinal peak is detected
+          3. The dominant peak frequency matches the reference ± 1 Hz
+          4. The dominant peak magnitude matches the reference ± 1 dB
+          5. The Q factor matches the reference ± 1
+        """
+        assert os.path.exists(PLATE_L_WAV), (
+            f"Test WAV not found: {PLATE_L_WAV}"
+        )
+
+        sut = plate_analyzer
+        sut.tap_detection_threshold = -62.0
+        sut.play_file_for_testing(
+            path=PLATE_L_WAV,
+            measurement_type=MeasurementType.PLATE,
+            calibration_path=CALIBRATION_FILE,
+        )
+
+        # 1. Pipeline should auto-advance past L.
+        phase = sut.material_tap_phase
+        assert phase != MaterialTapPhase.CAPTURING_LONGITUDINAL, (
+            f"material_tap_phase should have advanced past L, got {phase}"
+        )
+        assert phase != MaterialTapPhase.NOT_STARTED, (
+            f"material_tap_phase should have advanced past NOT_STARTED, got {phase}"
+        )
+
+        # 2. Longitudinal peaks should be populated.
+        assert len(sut.longitudinal_peaks) > 0, (
+            "longitudinal_peaks should not be empty"
+        )
+
+        # 3. Verify the auto-selected longitudinal peak.
+        dominant = sut.selected_longitudinal_peak
+        assert dominant is not None, "selected_longitudinal_peak is None"
+
+        # 4. Verify frequency.
+        freq_delta = abs(dominant.frequency - PLATE_L_EXPECTED_FREQ)
+        assert freq_delta < FREQ_TOLERANCE, (
+            f"fL frequency: expected {PLATE_L_EXPECTED_FREQ} Hz "
+            f"±{FREQ_TOLERANCE}, got {dominant.frequency} Hz "
+            f"(delta {freq_delta:.2f})"
+        )
+
+        # 5. Verify magnitude.
+        mag_delta = abs(dominant.magnitude - PLATE_L_EXPECTED_MAG)
+        assert mag_delta < MAG_TOLERANCE, (
+            f"fL magnitude: expected {PLATE_L_EXPECTED_MAG} dB "
+            f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB "
+            f"(delta {mag_delta:.2f})"
+        )
+
+        # 6. Verify Q factor.
+        q_delta = abs(dominant.quality - PLATE_L_EXPECTED_Q)
+        assert q_delta < Q_TOLERANCE, (
+            f"fL Q factor: expected {PLATE_L_EXPECTED_Q} "
+            f"±{Q_TOLERANCE}, got {dominant.quality} "
+            f"(delta {q_delta:.2f})"
+        )

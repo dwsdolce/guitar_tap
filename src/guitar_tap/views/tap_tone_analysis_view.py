@@ -2727,25 +2727,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fft_canvas.start_analyzer()
 
     def _open_audio_file(self) -> None:
-        """Open a file picker and feed the chosen audio file through the FFT pipeline.
+        """Show a dialog for selecting an audio file and optional calibration,
+        then feed the audio through the FFT pipeline.
 
         Uses the same audio-processing queue as the microphone so the FFT, tap
         detection, and peak analysis are completely unchanged.  This allows
         apples-to-apples comparison between platforms using the same recording.
 
-        Mirrors Swift TapToneAnalysisView+Actions.openAudioFile(_:) / openWAVFile().
+        Mirrors Swift TapToneAnalysisView+Actions.openAudioFile(_:calibrationURL:).
         """
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Open Audio File",
-            M.last_export_dir(),
-            "Audio files (*.wav *.aif *.aiff *.flac *.ogg);;All files (*)",
-        )
+        dlg = _PlayFileDialog(self)
+        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        path = dlg.audio_path()
+        cal_path = dlg.calibration_path()
         if not path:
             return
         M.update_export_dir(path)
 
         analyzer = self.fft_canvas.analyzer
+
+        # If a calibration file was provided, parse it and temporarily override
+        # the active calibration.  Save the previous state so we can restore it.
+        previous_cal_profile = analyzer._calibration_profile
+        previous_cal_corrections = analyzer._calibration_corrections
+        previous_cal_name = analyzer._active_calibration_name
+        did_override_calibration = False
+
+        if cal_path:
+            try:
+                cal = _mc_mod.MicrophoneCalibration.from_path(cal_path)
+                analyzer.set_temporary_calibration(cal)
+                did_override_calibration = True
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(
+                    self, "Calibration Error",
+                    f"Could not parse calibration file:\n{cal_path}\n\n{exc}",
+                )
 
         try:
             # Start the processing thread if it isn't running yet (first use).
@@ -2755,7 +2774,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 # Thread already running — reset ring-buffer state for the new source.
                 analyzer.mic.proc_thread.reset_state()
 
-            # Mirrors Swift openAudioFile(_:) which calls:
+            # Mirrors Swift openAudioFile(_:calibrationURL:) which calls:
             #   1. tapToneAnalyzer.startTapSequence(skipWarmup: true) — reset state, arm detection
             #   2. fft.startFromFile(url, completion:) — stop engine, start file source
             #
@@ -2778,6 +2797,17 @@ class MainWindow(QtWidgets.QMainWindow):
             # (not the signal value), so the title is unaffected by the None emission.
             def _on_finished_clear_tint() -> None:
                 analyzer.playingFileNameChanged.emit(None)
+                # Restore previous calibration after playback completes.
+                if did_override_calibration:
+                    analyzer._calibration_profile = previous_cal_profile
+                    analyzer._calibration_corrections = previous_cal_corrections
+                    analyzer._active_calibration_name = previous_cal_name
+                    if previous_cal_corrections is not None:
+                        analyzer.mic.set_calibration(
+                            previous_cal_corrections, profile=previous_cal_profile
+                        )
+                    else:
+                        analyzer.mic.set_calibration(None)
 
             # Reset analyzer state and arm the level-crossing detector FIRST.
             # Mirrors Swift: tapToneAnalyzer.startTapSequence(skipWarmup: true)
@@ -2797,6 +2827,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self._is_running = True
             self.set_running(True)
         except Exception as exc:
+            # Restore calibration on error path too.
+            if did_override_calibration:
+                analyzer._calibration_profile = previous_cal_profile
+                analyzer._calibration_corrections = previous_cal_corrections
+                analyzer._active_calibration_name = previous_cal_name
+                if previous_cal_corrections is not None:
+                    analyzer.mic.set_calibration(
+                        previous_cal_corrections, profile=previous_cal_profile
+                    )
+                else:
+                    analyzer.mic.set_calibration(None)
             QtWidgets.QMessageBox.warning(
                 self, "Could not play audio file", str(exc)
             )
@@ -6736,3 +6777,115 @@ class MainWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
 
+# ---------------------------------------------------------------------------
+# Play File Dialog — audio file + optional calibration selection
+# ---------------------------------------------------------------------------
+
+class _PlayFileDialog(QtWidgets.QDialog):
+    """Modal dialog for selecting an audio file and an optional calibration file.
+
+    Mirrors Swift ``PlayFileSheet``.  The user must select an audio file and
+    may optionally provide a calibration file (.txt, .cal) that was active
+    when the recording was made.
+
+    Layout:
+        Audio File:        [path display] [Browse...]
+        Calibration File:  [path display] [Browse...] [Clear]
+        [OK] [Cancel]
+    """
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Play Audio File")
+        self.setMinimumWidth(500)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # --- Audio file row ---
+        audio_group = QtWidgets.QGroupBox("Audio File")
+        audio_layout = QtWidgets.QHBoxLayout(audio_group)
+        self._audio_edit = QtWidgets.QLineEdit()
+        self._audio_edit.setReadOnly(True)
+        self._audio_edit.setPlaceholderText("No file selected")
+        audio_layout.addWidget(self._audio_edit, 1)
+        audio_browse = QtWidgets.QPushButton("Browse\u2026")
+        audio_browse.clicked.connect(self._browse_audio)
+        audio_layout.addWidget(audio_browse)
+        layout.addWidget(audio_group)
+
+        # --- Calibration file row ---
+        cal_group = QtWidgets.QGroupBox("Calibration File (Optional)")
+        cal_layout = QtWidgets.QHBoxLayout(cal_group)
+        self._cal_edit = QtWidgets.QLineEdit()
+        self._cal_edit.setReadOnly(True)
+        self._cal_edit.setPlaceholderText("None")
+        cal_layout.addWidget(self._cal_edit, 1)
+        cal_browse = QtWidgets.QPushButton("Browse\u2026")
+        cal_browse.clicked.connect(self._browse_calibration)
+        cal_layout.addWidget(cal_browse)
+        self._cal_clear = QtWidgets.QPushButton("Clear")
+        self._cal_clear.clicked.connect(self._clear_calibration)
+        self._cal_clear.setEnabled(False)
+        cal_layout.addWidget(self._cal_clear)
+        layout.addWidget(cal_group)
+
+        hint = QtWidgets.QLabel(
+            "Select the calibration file that was active when the recording was made"
+        )
+        hint.setStyleSheet("color: gray; font-size: 11px;")
+        layout.addWidget(hint)
+
+        # --- Button box ---
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        self._ok_btn = buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Ok)
+        self._ok_btn.setText("Play")
+        self._ok_btn.setEnabled(False)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self._audio_path: str = ""
+        self._cal_path: str = ""
+
+    # -- Public accessors --
+
+    def audio_path(self) -> str:
+        return self._audio_path
+
+    def calibration_path(self) -> str:
+        return self._cal_path
+
+    # -- Browse handlers --
+
+    def _browse_audio(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open Audio File",
+            M.last_export_dir(),
+            "Audio files (*.wav *.aif *.aiff *.flac *.ogg);;All files (*)",
+        )
+        if path:
+            self._audio_path = path
+            self._audio_edit.setText(os.path.basename(path))
+            self._ok_btn.setEnabled(True)
+
+    def _browse_calibration(self) -> None:
+        start_dir = AS.AppSettings.calibration_path() or os.path.expanduser("~")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open Calibration File",
+            start_dir,
+            "Calibration files (*.cal *.txt);;All files (*)",
+        )
+        if path:
+            self._cal_path = path
+            self._cal_edit.setText(os.path.basename(path))
+            self._cal_clear.setEnabled(True)
+
+    def _clear_calibration(self) -> None:
+        self._cal_path = ""
+        self._cal_edit.clear()
+        self._cal_clear.setEnabled(False)
