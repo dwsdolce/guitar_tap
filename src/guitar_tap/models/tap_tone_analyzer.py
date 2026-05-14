@@ -544,6 +544,7 @@ class TapToneAnalyzer(
         measurement_type: "MeasurementType",
         number_of_taps: int = 1,
         calibration_path: str | None = None,
+        plate_tap_phase=None,
     ) -> None:
         """Feed a WAV file through the full analysis pipeline for testing.
 
@@ -567,6 +568,10 @@ class TapToneAnalyzer(
             number_of_taps:    Number of taps to detect (guitar mode). Default 1.
             calibration_path:  Optional path to a microphone calibration file
                                (.txt, .cal) to apply during playback.
+            plate_tap_phase:   Optional MaterialTapPhase to start in (e.g.
+                               CAPTURING_CROSS or CAPTURING_FLC) for
+                               phase-targeted plate testing.  Passed through
+                               to start_tap_sequence as initial_phase.
         """
         import os as _os
 
@@ -587,7 +592,7 @@ class TapToneAnalyzer(
             self.set_temporary_calibration(cal)
 
         # 2. Start the tap sequence with warmup skipped (deterministic file audio).
-        self.start_tap_sequence(skip_warmup=True)
+        self.start_tap_sequence(skip_warmup=True, initial_phase=plate_tap_phase)
 
         # 3. Read the audio file.
         data, file_rate = _sf.read(path, dtype="float32", always_2d=True)

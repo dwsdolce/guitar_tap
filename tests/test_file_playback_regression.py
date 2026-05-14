@@ -14,7 +14,7 @@ and recording the displayed peak frequency and magnitude values.
 Both Swift and Python test suites use the same WAV files and expected
 values so that passing both suites guarantees cross-platform parity.
 
-Test plan coverage: REG-G1, REG-B1, REG-G2
+Test plan coverage: REG-G1, REG-B1, REG-G2, REG-P1, REG-P2, REG-P3
 """
 
 from __future__ import annotations
@@ -71,6 +71,34 @@ PLATE_L_EXPECTED_FREQ = 66.6   # Hz
 PLATE_L_EXPECTED_MAG = -58.4   # dB
 PLATE_L_EXPECTED_Q = 15.0
 Q_TOLERANCE = 1.0              # dimensionless
+
+# Plate cross-grain (C) capture WAV — saved gated capture from interactive
+# measurement.  19200 frames (400 ms) at 48000 Hz, IEEE float 32-bit mono.
+# Reference values from the interactive measurement session:
+#   fC frequency: 117.5 Hz
+#   fC magnitude: -51.3 dB
+#   fC Q factor:  26.7
+PLATE_C_WAV = os.path.join(
+    os.path.dirname(__file__),
+    "swift_Capturing_Cross-grain_2026-05-13T17-36-18Z.wav",
+)
+PLATE_C_EXPECTED_FREQ = 117.5  # Hz
+PLATE_C_EXPECTED_MAG = -51.3   # dB
+PLATE_C_EXPECTED_Q = 26.7
+
+# Plate FLC (diagonal) capture WAV — saved gated capture from interactive
+# measurement.  19200 frames (400 ms) at 48000 Hz, IEEE float 32-bit mono.
+# Reference values from the interactive measurement session:
+#   fLC frequency: 33.6 Hz
+#   fLC magnitude: -59.0 dB
+#   fLC Q factor:  5.75
+PLATE_FLC_WAV = os.path.join(
+    os.path.dirname(__file__),
+    "swift_Capturing_FLC_2026-05-13T17-36-29Z.wav",
+)
+PLATE_FLC_EXPECTED_FREQ = 33.6   # Hz
+PLATE_FLC_EXPECTED_MAG = -59.0   # dB
+PLATE_FLC_EXPECTED_Q = 5.75
 
 # ---------------------------------------------------------------------------
 # Recording 5.wav — Generic guitar, single-tap, 48 kHz.
@@ -151,7 +179,7 @@ def plate_analyzer():
 
 
 # ---------------------------------------------------------------------------
-# Tests  (REG-G1, REG-B1, REG-G2, REG-P1)
+# Tests  (REG-G1, REG-B1, REG-G2, REG-P1, REG-P2, REG-P3)
 # ---------------------------------------------------------------------------
 
 class TestFilePlaybackRegression:
@@ -453,6 +481,144 @@ class TestFilePlaybackRegression:
         q_delta = abs(dominant.quality - PLATE_L_EXPECTED_Q)
         assert q_delta < Q_TOLERANCE, (
             f"fL Q factor: expected {PLATE_L_EXPECTED_Q} "
+            f"±{Q_TOLERANCE}, got {dominant.quality} "
+            f"(delta {q_delta:.2f})"
+        )
+
+    def test_REG_P2_plate_cross_single_tap_produces_expected_peak(
+        self, plate_analyzer
+    ):
+        """Plate cross-grain single-tap — known WAV produces expected fC peak.
+
+        Loads a saved plate cross-grain capture WAV (400 ms, 48 kHz) and plays
+        it through the full pipeline with measurement_type = PLATE and
+        plate_tap_phase = CAPTURING_CROSS.  Verifies:
+          1. The pipeline auto-advances past C
+          2. At least one cross-grain peak is detected
+          3. The dominant peak frequency matches the reference ± 1 Hz
+          4. The dominant peak magnitude matches the reference ± 1 dB
+          5. The Q factor matches the reference ± 1
+        """
+        assert os.path.exists(PLATE_C_WAV), (
+            f"Test WAV not found: {PLATE_C_WAV}"
+        )
+
+        sut = plate_analyzer
+        sut.tap_detection_threshold = -62.0
+        sut.play_file_for_testing(
+            path=PLATE_C_WAV,
+            measurement_type=MeasurementType.PLATE,
+            calibration_path=CALIBRATION_FILE,
+            plate_tap_phase=MaterialTapPhase.CAPTURING_CROSS,
+        )
+
+        # 1. Pipeline should auto-advance past C.
+        phase = sut.material_tap_phase
+        assert phase != MaterialTapPhase.CAPTURING_CROSS, (
+            f"material_tap_phase should have advanced past C, got {phase}"
+        )
+        assert phase != MaterialTapPhase.NOT_STARTED, (
+            f"material_tap_phase should have advanced past NOT_STARTED, got {phase}"
+        )
+
+        # 2. Cross-grain peaks should be populated.
+        assert len(sut.cross_peaks) > 0, (
+            "cross_peaks should not be empty"
+        )
+
+        # 3. Verify the auto-selected cross-grain peak.
+        dominant = sut.selected_cross_peak
+        assert dominant is not None, "selected_cross_peak is None"
+
+        # 4. Verify frequency.
+        freq_delta = abs(dominant.frequency - PLATE_C_EXPECTED_FREQ)
+        assert freq_delta < FREQ_TOLERANCE, (
+            f"fC frequency: expected {PLATE_C_EXPECTED_FREQ} Hz "
+            f"±{FREQ_TOLERANCE}, got {dominant.frequency} Hz "
+            f"(delta {freq_delta:.2f})"
+        )
+
+        # 5. Verify magnitude.
+        mag_delta = abs(dominant.magnitude - PLATE_C_EXPECTED_MAG)
+        assert mag_delta < MAG_TOLERANCE, (
+            f"fC magnitude: expected {PLATE_C_EXPECTED_MAG} dB "
+            f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB "
+            f"(delta {mag_delta:.2f})"
+        )
+
+        # 6. Verify Q factor.
+        q_delta = abs(dominant.quality - PLATE_C_EXPECTED_Q)
+        assert q_delta < Q_TOLERANCE, (
+            f"fC Q factor: expected {PLATE_C_EXPECTED_Q} "
+            f"±{Q_TOLERANCE}, got {dominant.quality} "
+            f"(delta {q_delta:.2f})"
+        )
+
+    def test_REG_P3_plate_flc_single_tap_produces_expected_peak(
+        self, plate_analyzer
+    ):
+        """Plate FLC (diagonal) single-tap — known WAV produces expected fLC peak.
+
+        Loads a saved plate FLC capture WAV (400 ms, 48 kHz) and plays it
+        through the full pipeline with measurement_type = PLATE and
+        plate_tap_phase = CAPTURING_FLC.  Verifies:
+          1. The pipeline auto-advances past FLC
+          2. At least one FLC peak is detected
+          3. The dominant peak frequency matches the reference ± 1 Hz
+          4. The dominant peak magnitude matches the reference ± 1 dB
+          5. The Q factor matches the reference ± 1
+        """
+        assert os.path.exists(PLATE_FLC_WAV), (
+            f"Test WAV not found: {PLATE_FLC_WAV}"
+        )
+
+        sut = plate_analyzer
+        sut.tap_detection_threshold = -62.0
+        sut.play_file_for_testing(
+            path=PLATE_FLC_WAV,
+            measurement_type=MeasurementType.PLATE,
+            calibration_path=CALIBRATION_FILE,
+            plate_tap_phase=MaterialTapPhase.CAPTURING_FLC,
+        )
+
+        # 1. Pipeline should auto-advance past FLC.
+        phase = sut.material_tap_phase
+        assert phase != MaterialTapPhase.CAPTURING_FLC, (
+            f"material_tap_phase should have advanced past FLC, got {phase}"
+        )
+        assert phase != MaterialTapPhase.NOT_STARTED, (
+            f"material_tap_phase should have advanced past NOT_STARTED, got {phase}"
+        )
+
+        # 2. FLC peaks should be populated.
+        assert len(sut.flc_peaks) > 0, (
+            "flc_peaks should not be empty"
+        )
+
+        # 3. Verify the auto-selected FLC peak.
+        dominant = sut.selected_flc_peak
+        assert dominant is not None, "selected_flc_peak is None"
+
+        # 4. Verify frequency.
+        freq_delta = abs(dominant.frequency - PLATE_FLC_EXPECTED_FREQ)
+        assert freq_delta < FREQ_TOLERANCE, (
+            f"fLC frequency: expected {PLATE_FLC_EXPECTED_FREQ} Hz "
+            f"±{FREQ_TOLERANCE}, got {dominant.frequency} Hz "
+            f"(delta {freq_delta:.2f})"
+        )
+
+        # 5. Verify magnitude.
+        mag_delta = abs(dominant.magnitude - PLATE_FLC_EXPECTED_MAG)
+        assert mag_delta < MAG_TOLERANCE, (
+            f"fLC magnitude: expected {PLATE_FLC_EXPECTED_MAG} dB "
+            f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB "
+            f"(delta {mag_delta:.2f})"
+        )
+
+        # 6. Verify Q factor.
+        q_delta = abs(dominant.quality - PLATE_FLC_EXPECTED_Q)
+        assert q_delta < Q_TOLERANCE, (
+            f"fLC Q factor: expected {PLATE_FLC_EXPECTED_Q} "
             f"±{Q_TOLERANCE}, got {dominant.quality} "
             f"(delta {q_delta:.2f})"
         )

@@ -540,7 +540,7 @@ class TapToneAnalyzerControlMixin:
         # before the main-thread async block sets isPlayingFile / playingFileName.
         self._update_frequency_bins()
 
-    def start_tap_sequence(self, skip_warmup: bool = False) -> None:
+    def start_tap_sequence(self, skip_warmup: bool = False, initial_phase=None) -> None:
         """Begin a new tap detection sequence, resetting all per-sequence state.
 
         Mirrors Swift startTapSequence() including:
@@ -617,7 +617,12 @@ class TapToneAnalyzerControlMixin:
         self._reset_decay_tracking()
 
         # Initialise plate/brace phase state (mirrors Swift resetMaterialPhaseState(to: newPhase)).
-        new_phase = _MTP.CAPTURING_LONGITUDINAL if (is_plate or is_brace) else _MTP.NOT_STARTED
+        # If initial_phase is provided (used by playFileForTesting for phase-targeted
+        # plate testing), use it instead of the default .capturingLongitudinal.
+        if is_plate or is_brace:
+            new_phase = initial_phase if initial_phase is not None else _MTP.CAPTURING_LONGITUDINAL
+        else:
+            new_phase = _MTP.NOT_STARTED
         self._reset_material_phase_state(to=new_phase)
 
         # Clear annotation offsets so dragged positions reset for the new measurement.
