@@ -2,7 +2,7 @@
 
 ---
 
-## Version 1.0 · Build 366
+## Version 1.0 · Build 367
 ### What's New Since Build 263
 
 ---
@@ -93,8 +93,8 @@
 ### Settings
 
 - The settings layout has been tidied so related controls are grouped together.
-- Switching guitar type (e.g. Generic → Classical) now reclassifies the displayed peaks automatically rather than requiring a fresh tap sequence.
-- Switching across the guitar / material boundary (guitar ↔ plate / brace) correctly restarts the tap sequence and resets the chart title.
+- Switching guitar type (for example, Generic to Classical) now reclassifies the displayed peaks automatically rather than requiring a fresh tap sequence.
+- Switching across the guitar / material boundary (between guitar and plate / brace) correctly restarts the tap sequence and resets the chart title.
 
 ### Installation
 
