@@ -44,7 +44,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # scipy was replaced with numpy throughout the codebase
+    # (commit c1de197).  Exclude it explicitly so a stray transitive
+    # install never sneaks ~70 MB of unused code back into the bundle.
+    excludes=['scipy'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
