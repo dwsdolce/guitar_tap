@@ -5721,7 +5721,6 @@ class MainWindow(QtWidgets.QMainWindow):
             brace_widget.setVisible(mt_val is MT.MeasurementType.BRACE)
             show_unknown_widget.setVisible(is_guitar)
             peak_thresh_widget.setEnabled(is_guitar)
-            max_peaks_widget.setEnabled(is_guitar)
             if is_guitar:
                 _update_mode_ranges(unified)
             # Reload the frequency text fields from the stored values for the newly
@@ -5916,87 +5915,6 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_layout.addWidget(pt_desc)
         # peak_thresh persisted on Apply only
         an.addWidget(peak_thresh_widget)
-        an.addWidget(_hsep())
-
-        # Maximum Peaks (guitar only)
-        max_peaks_widget = QtWidgets.QWidget()
-        mp_layout = QtWidgets.QVBoxLayout(max_peaks_widget)
-        mp_layout.setContentsMargins(0, 4, 0, 0)
-        mp_layout.setSpacing(4)
-        mp_hdr = QtWidgets.QLabel("Maximum Peaks")
-        mp_hdr.setFont(hdr_font)
-        mp_layout.addWidget(mp_hdr)
-        mp_row = QtWidgets.QHBoxLayout()
-        saved_max_peaks = AS.AppSettings.max_peaks()
-        mp_field = QtWidgets.QLineEdit(str(saved_max_peaks if saved_max_peaks > 0 else 10))
-        mp_field.setFixedWidth(_tf_width)
-        mp_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        mp_field.setEnabled(saved_max_peaks != 0)
-        mp_row.addWidget(mp_field)
-        mp_row.addWidget(QtWidgets.QLabel("peaks"))
-        mp_row.addStretch()
-        mp_layout.addLayout(mp_row)
-        mp_all_cb = QtWidgets.QCheckBox("Capture all peaks in analysis range")
-        mp_all_cb.setChecked(saved_max_peaks == 0)
-        mp_desc = QtWidgets.QLabel(
-            "Maximum number of peaks to detect. The strongest peak for each guitar "
-            "mode is always included, then remaining slots are filled by magnitude. "
-            "Set to 'All' to capture every peak above the threshold."
-        )
-        mp_desc.setFont(caption)
-        mp_desc.setWordWrap(True)
-        mp_layout.addWidget(mp_all_cb)
-        mp_layout.addWidget(mp_desc)
-
-        def _on_all_peaks_toggled(checked: bool) -> None:
-            mp_field.setEnabled(not checked)  # UI only — persisted on Apply
-
-        mp_all_cb.toggled.connect(_on_all_peaks_toggled)
-        # mp_field persisted on Apply only
-        an.addWidget(max_peaks_widget)
-        an.addWidget(_hsep())
-
-        # Hysteresis Margin
-        hyst_hdr = QtWidgets.QLabel("Hysteresis Margin")
-        hyst_hdr.setFont(hdr_font)
-        an.addWidget(hyst_hdr)
-        hyst_row = QtWidgets.QHBoxLayout()
-        hyst_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        # Steps of 0.5 dB over 1.0–10.0 dB range: slider range 2–20, value = steps * 0.5
-        hyst_slider.setRange(2, 20)
-        saved_hyst = AS.AppSettings.hysteresis_margin()
-        hyst_slider.setValue(int(saved_hyst * 2))
-        hyst_slider.setToolTip(
-            "How far the signal must drop below the threshold before the\n"
-            "detector resets and is ready for the next tap"
-        )
-        hyst_row.addWidget(hyst_slider)
-        hyst_readout = QtWidgets.QLabel(f"{saved_hyst:.1f} dB")
-        hyst_readout.setMinimumWidth(50)
-        hyst_readout.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
-        )
-        hyst_row.addWidget(hyst_readout)
-        hyst_reset = QtWidgets.QToolButton()
-        hyst_reset.setIcon(qta.icon("mdi.undo"))
-        hyst_reset.setStyleSheet("border: none")
-        hyst_reset.setToolTip("Reset to default (3.0 dB)")
-        hyst_reset.clicked.connect(lambda: hyst_slider.setValue(6))  # 6 steps × 0.5 = 3.0 dB
-        hyst_row.addWidget(hyst_reset)
-        an.addLayout(hyst_row)
-        hyst_desc = QtWidgets.QLabel(
-            "How far the signal must drop below the detection threshold before the detector resets "
-            "and is ready for the next tap. A higher value prevents a single loud tap from "
-            "triggering multiple detections."
-        )
-        hyst_desc.setWordWrap(True)
-        hyst_desc.setFont(caption)
-        an.addWidget(hyst_desc)
-
-        def _on_hyst_changed(val: int) -> None:
-            hyst_readout.setText(f"{val * 0.5:.1f} dB")  # UI only — persisted on Apply
-
-        hyst_slider.valueChanged.connect(_on_hyst_changed)
 
         # Separator above Dump Capture Audio (mirrors Swift Divider())
         an.addWidget(_hsep())
@@ -6024,8 +5942,6 @@ class MainWindow(QtWidgets.QMainWindow):
             an_f_min_field.setText("30")
             an_f_max_field.setText("2000")
             peak_thresh_field.setText("-60")
-            mp_all_cb.setChecked(True)
-            hyst_slider.setValue(6)  # 6 steps × 0.5 = 3.0 dB default
 
         reset_analysis_btn.clicked.connect(_reset_analysis_settings)
         an.addWidget(reset_analysis_btn)
@@ -6578,24 +6494,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.peak_min_slider.value() != slider_val:
                 self.peak_min_slider.setValue(slider_val)
 
-            # Max peaks
-            try:
-                _mp_val = int(mp_field.text())
-            except ValueError:
-                _mp_val = 10
-            new_max_peaks = 0 if mp_all_cb.isChecked() else max(1, _mp_val)
-            AS.AppSettings.set_max_peaks(new_max_peaks)
-            # Apply immediately to analyzer, mirroring Swift's @Published didSet on maxPeaks.
-            self.fft_canvas.analyzer.max_peaks = new_max_peaks
-
-            # Recalculate peaks with the new analysis window and max_peaks, mirroring
+            # Recalculate peaks with the new analysis window, mirroring
             # Swift's recalculateFrozenPeaksIfNeeded() calls in applySettings().
             self.fft_canvas.analyzer.recalculate_frozen_peaks_if_needed()
-
-            # Hysteresis margin
-            hyst_db = hyst_slider.value() * 0.5
-            self.fft_canvas.set_hysteresis_margin(hyst_db)
-            AS.AppSettings.set_hysteresis_margin(hyst_db)
 
             # Plate / brace / gore / f_vs dimensions — parse text fields, mirrors Swift
             # applySettings() which parses plateLengthInput etc. with Float(input) ?? 0.

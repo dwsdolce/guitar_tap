@@ -301,10 +301,6 @@ class TapToneMeasurement:
     # Mirrors Swift TapToneMeasurement.tapDetectionThreshold.
     tap_detection_threshold: float | None = None
 
-    # The hysteresis margin (dB) used to prevent re-triggering after a tap, at save time.
-    # Mirrors Swift TapToneMeasurement.hysteresisMargin.
-    hysteresis_margin: float | None = None
-
     # The number of taps that were averaged to produce the final spectrum.
     # Mirrors Swift TapToneMeasurement.numberOfTaps.
     number_of_taps: int | None = None
@@ -537,8 +533,6 @@ class TapToneMeasurement:
             d["peakAnnotationOffsets"] = []
         if self.tap_detection_threshold is not None:
             d["tapDetectionThreshold"] = self.tap_detection_threshold
-        if self.hysteresis_margin is not None:
-            d["hysteresisMargin"] = self.hysteresis_margin
         if self.number_of_taps is not None:
             d["numberOfTaps"] = self.number_of_taps
         if self.peak_min_threshold is not None:
@@ -701,7 +695,6 @@ class TapToneMeasurement:
             selected_peak_frequencies=d.get("selectedPeakFrequencies"),
             annotation_visibility_mode=d.get("annotationVisibilityMode"),
             tap_detection_threshold=d.get("tapDetectionThreshold"),
-            hysteresis_margin=d.get("hysteresisMargin"),
             number_of_taps=d.get("numberOfTaps"),
             peak_min_threshold=d.get("peakThreshold"),
             selected_longitudinal_peak_id=d.get("selectedLongitudinalPeakID"),
@@ -732,7 +725,6 @@ class TapToneMeasurement:
         selected_peak_frequencies: list[float] | None = None,
         annotation_visibility_mode: str | None = None,
         tap_detection_threshold: float | None = None,
-        hysteresis_margin: float | None = None,
         number_of_taps: int | None = None,
         peak_min_threshold: float | None = None,
         selected_longitudinal_peak_id: str | None = None,
@@ -773,7 +765,6 @@ class TapToneMeasurement:
             selected_peak_frequencies=selected_peak_frequencies or None,
             annotation_visibility_mode=annotation_visibility_mode,
             tap_detection_threshold=tap_detection_threshold,
-            hysteresis_margin=hysteresis_margin,
             number_of_taps=number_of_taps,
             peak_min_threshold=peak_min_threshold,
             selected_longitudinal_peak_id=selected_longitudinal_peak_id,

@@ -1,5 +1,5 @@
 """
-WI-1 — Settings persistence tests (D2, D3, D4, D5).
+WI-1 — Settings persistence tests (D2, D3, D5).
 
 Verifies that each setter on TapToneAnalyzer / TapToneAnalyzerControlMixin
 calls the corresponding TapDisplaySettings classmethod so that the new value
@@ -11,7 +11,6 @@ file is written during the test run.
 Mirrors the WI-1 fix in:
   - models/tap_tone_analyzer.py          cycle_annotation_visibility (D2)
   - models/tap_tone_analyzer_control.py  set_tap_threshold  (D3)
-                                         set_hysteresis_margin (D4)
                                          set_threshold      (D5)
 """
 
@@ -120,34 +119,6 @@ class TestD3SetTapThresholdPersists:
         ) as mock_set:
             sut.set_tap_threshold(0)
             mock_set.assert_called_once_with(-100.0)
-
-
-# ---------------------------------------------------------------------------
-# D4 — set_hysteresis_margin persists hysteresis_margin
-# ---------------------------------------------------------------------------
-
-class TestD4SetHysteresisMarginPersists:
-    """D4: set_hysteresis_margin() must call TapDisplaySettings.set_hysteresis_margin
-    with the new value."""
-
-    def test_persists_value(self):
-        sut = _make_sut()
-
-        with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_hysteresis_margin"
-        ) as mock_set:
-            sut.set_hysteresis_margin(8.0)
-            mock_set.assert_called_once_with(8.0)
-
-    def test_persists_float_coercion(self):
-        """Integer argument is coerced to float before persisting."""
-        sut = _make_sut()
-
-        with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_hysteresis_margin"
-        ) as mock_set:
-            sut.set_hysteresis_margin(6)
-            mock_set.assert_called_once_with(6.0)
 
 
 # ---------------------------------------------------------------------------

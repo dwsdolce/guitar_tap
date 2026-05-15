@@ -339,9 +339,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         Assembly:
             The strongest peak from each mode occupies a guaranteed slot.
-            Remaining slots (up to max_peaks, 0 = unlimited) are filled from
-            Pass-2 peaks by magnitude.  Final list is sorted by magnitude
-            descending.
+            All remaining Pass-2 peaks are then appended in descending
+            magnitude order.  Final list is sorted by magnitude descending.
 
         Args:
             magnitudes:          dBFS magnitude spectrum, one value per FFT bin.
@@ -528,23 +527,13 @@ class TapToneAnalyzerPeakAnalysisMixin:
         final_peaks: "list" = list(guaranteed_peaks)
         included_ids: "set[str]" = {p.id for p in final_peaks}
 
-        if self.max_peaks == 0:
-            # No limit — add all Pass-2 peaks sorted by magnitude descending.
-            others = sorted(
-                [p for p in all_peaks if p.id not in included_ids],
-                key=lambda p: p.magnitude,
-                reverse=True,
-            )
-            final_peaks.extend(others)
-        else:
-            remaining_slots = self.max_peaks - len(final_peaks)
-            if remaining_slots > 0:
-                others = sorted(
-                    [p for p in all_peaks if p.id not in included_ids],
-                    key=lambda p: p.magnitude,
-                    reverse=True,
-                )[:remaining_slots]
-                final_peaks.extend(others)
+        # No limit — append all Pass-2 peaks sorted by magnitude descending.
+        others = sorted(
+            [p for p in all_peaks if p.id not in included_ids],
+            key=lambda p: p.magnitude,
+            reverse=True,
+        )
+        final_peaks.extend(others)
 
         # Sort final result by magnitude descending — mirrors Swift.
         final_peaks = sorted(final_peaks, key=lambda p: p.magnitude, reverse=True)

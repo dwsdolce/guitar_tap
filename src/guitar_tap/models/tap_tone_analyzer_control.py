@@ -414,13 +414,6 @@ class TapToneAnalyzerControlMixin:
             self.show_loaded_settings_warning = False
             self.showLoadedSettingsWarningChanged.emit(False)
 
-    def set_hysteresis_margin(self, value: float) -> None:
-        """Update the hysteresis margin (dB)."""
-        self.hysteresis_margin = float(value)
-        from models.tap_display_settings import TapDisplaySettings as _tds
-        _tds.set_hysteresis_margin(self.hysteresis_margin)
-        # mirrors hysteresisMargin.didSet in Swift
-
     def pause_tap_detection(self) -> None:
         """Pause tap detection mid-sequence without losing the current tap count.
 

@@ -608,18 +608,6 @@ class TapDisplaySettings:
     def set_peak_min_threshold(cls, v: float) -> None:
         _app_settings().set_peak_min_threshold(v)
 
-    @classmethod
-    def max_peaks(cls) -> int:
-        """Persisted maximum number of peaks to detect and store (0 = all).
-
-        Mirrors Swift TapDisplaySettings.maxPeaks.
-        """
-        return _app_settings().max_peaks()
-
-    @classmethod
-    def set_max_peaks(cls, v: int) -> None:
-        _app_settings().set_max_peaks(v)
-
     # MARK: - Tap Detection
 
     @classmethod
@@ -638,18 +626,6 @@ class TapDisplaySettings:
     def set_tap_detection_threshold(cls, v: float) -> None:
         # AppSettings stores on the 0–100 scale; convert dBFS back to slider integer.
         _app_settings().set_tap_threshold(int(v + 100.0))
-
-    @classmethod
-    def hysteresis_margin(cls) -> float:
-        """Persisted hysteresis margin (dB).
-
-        Mirrors Swift TapDisplaySettings.hysteresisMargin.
-        """
-        return _app_settings().hysteresis_margin()
-
-    @classmethod
-    def set_hysteresis_margin(cls, v: float) -> None:
-        _app_settings().set_hysteresis_margin(v)
 
     @classmethod
     def measure_flc(cls) -> bool:

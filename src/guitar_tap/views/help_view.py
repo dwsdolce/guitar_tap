@@ -516,19 +516,6 @@ def _build_help_html() -> str:
         "selections. In brace/plate mode it only affects what is annotated on the live chart. "
         "Typical useful range: &minus;60 to &minus;40 dB."
     ))
-    parts.append(_row(
-        "Hysteresis Margin",
-        "Advanced &rarr; Analysis Settings. How far the signal must drop below the detection "
-        "threshold before the detector resets and is ready for the next tap. A higher value "
-        "prevents a single loud tap from triggering multiple detections. "
-        "Range: 1&ndash;10 dB; default is 6 dB."
-    ))
-    parts.append(_row(
-        "Maximum Peaks",
-        "Advanced &rarr; Analysis Settings. Caps the number of peaks reported. Set to All "
-        "to include every peak above the threshold. Fewer peaks reduces visual clutter when "
-        "testing assembled guitars."
-    ))
     # ── Tips & Technique ─────────────────────────────────────────────────
     parts.append(_h2("mdi.lightbulb-outline", "Tips &amp; Technique"))
     parts.append(_row(

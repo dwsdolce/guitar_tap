@@ -100,11 +100,6 @@ class SpectrumSnapshot:
     # Mirrors Swift SpectrumSnapshot.measurementType.
     measurement_type: str | None = None
 
-    # Maximum number of peaks that the analyzer was configured to detect and annotate.
-    # None in older snapshots without this field.
-    # Mirrors Swift SpectrumSnapshot.maxPeaks.
-    max_peaks: int | None = None
-
     # MARK: - Plate Measurement Settings
 
     # Plate length along the grain direction, in mm.
@@ -218,8 +213,6 @@ class SpectrumSnapshot:
             d["guitarType"] = self.guitar_type
         if self.measurement_type is not None:
             d["measurementType"] = self.measurement_type
-        if self.max_peaks is not None:
-            d["maxPeaks"] = self.max_peaks
         if self.plate_length         is not None: d["plateLength"]           = self.plate_length
         if self.plate_width          is not None: d["plateWidth"]            = self.plate_width
         if self.plate_thickness      is not None: d["plateThickness"]        = self.plate_thickness
@@ -275,7 +268,6 @@ class SpectrumSnapshot:
             show_unknown_modes=d.get("showUnknownModes"),
             guitar_type=d.get("guitarType"),
             measurement_type=d.get("measurementType"),
-            max_peaks=d.get("maxPeaks"),
             plate_length=d.get("plateLength"),
             plate_width=d.get("plateWidth"),
             plate_thickness=d.get("plateThickness"),

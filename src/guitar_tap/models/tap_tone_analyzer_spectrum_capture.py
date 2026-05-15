@@ -1868,7 +1868,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                     show_unknown_modes=_show_unk2,
                     guitar_type=_gt_str2,
                     measurement_type=_mt_str2,
-                    max_peaks=self.max_peaks,
                 )
                 tap_entries_built.append(TapEntry(
                     id=str(_uuid2.uuid4()),

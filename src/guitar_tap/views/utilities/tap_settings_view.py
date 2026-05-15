@@ -284,18 +284,6 @@ class AppSettings:
         cls._set("analysis/tap_threshold", v)
 
     # ------------------------------------------------------------------ #
-    # Tap-detection hysteresis margin (dB, 1–10)
-    # ------------------------------------------------------------------ #
-    @classmethod
-    def hysteresis_margin(cls) -> float:
-        v = cls._get("analysis/hysteresis_margin", None)
-        return float(v) if v is not None else 3.0
-
-    @classmethod
-    def set_hysteresis_margin(cls, v: float) -> None:
-        cls._set("analysis/hysteresis_margin", v)
-
-    # ------------------------------------------------------------------ #
     # Analysis frequency range
     # ------------------------------------------------------------------ #
     @classmethod
@@ -339,18 +327,6 @@ class AppSettings:
     @classmethod
     def set_peak_min_threshold(cls, v: float) -> None:
         cls._set("analysis/peak_threshold", v)
-
-    # ------------------------------------------------------------------ #
-    # Maximum peaks (0 = all)
-    # ------------------------------------------------------------------ #
-    @classmethod
-    def max_peaks(cls) -> int:
-        v = cls._get("analysis/max_peaks", None)
-        return int(v) if v is not None else 0
-
-    @classmethod
-    def set_max_peaks(cls, v: int) -> None:
-        cls._set("analysis/max_peaks", max(0, v))
 
     # ------------------------------------------------------------------ #
     # Plate dimensions (mm / g)

@@ -166,7 +166,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             show_unknown_modes=TDS.show_unknown_modes(),
             guitar_type=TDS.guitar_type().value,
             measurement_type=measurement_type.value,
-            max_peaks=getattr(self, "max_peaks", None),
             plate_length=TDS.plate_length() if measurement_type.is_plate else None,
             plate_width=TDS.plate_width() if measurement_type.is_plate else None,
             plate_thickness=TDS.plate_thickness() if measurement_type.is_plate else None,
@@ -257,7 +256,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     show_unknown_modes=TDS.show_unknown_modes(),
                     guitar_type=TDS.guitar_type().value,
                     measurement_type=mt_str,
-                    max_peaks=getattr(self, "max_peaks", None),
                 )
 
         # ── Build per-phase snapshots internally ──────────────────────────────
@@ -327,7 +325,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             selected_peak_frequencies=sel_freqs,
             annotation_visibility_mode=ann_vis_str,
             tap_detection_threshold=getattr(self, "tap_detection_threshold", None),
-            hysteresis_margin=getattr(self, "hysteresis_margin", None),
             number_of_taps=getattr(self, "number_of_taps", None),
             peak_min_threshold=getattr(self, "peak_min_threshold", None),
             # Plate/brace peak selections — mirrors Swift conditional nil assignments
@@ -674,11 +671,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             gt_log(f"  🎯 Publishing tap threshold: {self.tap_detection_threshold} dB")
         else:
             gt_log("  ⚠️ No tap threshold in measurement")
-        if measurement.hysteresis_margin is not None:
-            self.hysteresis_margin = float(measurement.hysteresis_margin)
-            gt_log(f"  🔄 Publishing hysteresis: {self.hysteresis_margin} dB")
-        else:
-            gt_log("  ⚠️ No hysteresis in measurement")
         if measurement.number_of_taps is not None:
             self.number_of_taps = int(measurement.number_of_taps)
             gt_log(f"  🔢 Publishing number of taps: {self.number_of_taps}")
@@ -867,7 +859,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 show_unknown_modes=_tds3.show_unknown_modes(),
                 guitar_type=_tds3.guitar_type().value,
                 measurement_type=_tds3.measurement_type().value,
-                max_peaks=getattr(self, "max_peaks", None),
             )
             # Selected (mode-identified) averaged peaks only.
             avg_sel_peaks = [

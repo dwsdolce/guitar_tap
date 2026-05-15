@@ -499,7 +499,9 @@ class FftCanvas(pg.PlotWidget):
         # Threshold lines — use InfiniteLine so labels stay in view when panned
         _peak_y: int = self.threshold_y
         _tap_y: int  = _as.AppSettings.tap_threshold() - 100
-        _hyst: float = _as.AppSettings.hysteresis_margin()
+        # Hysteresis margin is a hardcoded constant (3.0 dB) — no longer
+        # user-configurable.
+        _hyst: float = 3.0
 
         # Label opts: anchors are (x, y) where x=0 left-align, x=1 right-align;
         #             y=0 text below position, y=1 text above position.
@@ -522,9 +524,8 @@ class FftCanvas(pg.PlotWidget):
         # for clean taps.  The threshold's input-level relationship is now
         # shown directly on the ThresholdSlider widget (level meter +
         # peak-hold dot + clipping zone).
-        # State kept so set_tap_threshold / set_hysteresis_margin remain
-        # well-defined for the analyzer-side mirror, even though no chart
-        # element reflects them.
+        # State kept so set_tap_threshold remains well-defined for the
+        # analyzer-side mirror, even though no chart element reflects it.
         self._tap_threshold_y: int = _tap_y
         self._hysteresis_margin: float = _hyst
 
@@ -1091,11 +1092,6 @@ class FftCanvas(pg.PlotWidget):
         """
         self._tap_threshold_y = value - 100
         self.analyzer.set_tap_threshold(value)
-
-    def set_hysteresis_margin(self, value: float) -> None:
-        """Update the tap-detection hysteresis margin (in dB, 1.0–10.0)."""
-        self._hysteresis_margin = max(1.0, value)
-        self.analyzer.set_hysteresis_margin(value)
 
     def pause_tap_detection(self) -> None:
         """Pause the tap detector; spectrum continues to update."""

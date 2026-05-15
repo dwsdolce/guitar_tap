@@ -243,7 +243,6 @@ class TapToneAnalyzer(
         # MARK: - Configuration (mirrors Swift @Published vars)
         self.min_frequency: float = float(_tds.analysis_min_frequency())   # mirrors minFrequency
         self.max_frequency: float = float(_tds.analysis_max_frequency())   # mirrors maxFrequency
-        self.max_peaks: int = _tds.max_peaks()                             # mirrors maxPeaks
         self.peak_min_threshold: float = float(_tds.peak_min_threshold())    # mirrors peakMinThreshold
         # Backing store for the ``tap_detection_threshold`` property.  The
         # property setter mirrors Swift's ``didSet`` on ``tapDetectionThreshold``:
@@ -254,7 +253,8 @@ class TapToneAnalyzer(
         # threshold stuck at its default, causing the audio-queue to fire
         # on signals the main thread would correctly reject (or vice versa).
         self._tap_detection_threshold: float = float(_tds.tap_detection_threshold())
-        self.hysteresis_margin: float = float(_tds.hysteresis_margin())    # mirrors hysteresisMargin
+        # Hardcoded constant — no longer user-configurable (mirrors Swift).
+        self.hysteresis_margin: float = 3.0
         self.decay_threshold: float = 15.0                                 # mirrors decayThreshold
         self.number_of_taps: int = 1                                       # mirrors numberOfTaps
         self.capture_window: float = 0.2                                   # mirrors captureWindow
