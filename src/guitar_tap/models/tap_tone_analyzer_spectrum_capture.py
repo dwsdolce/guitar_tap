@@ -6,19 +6,24 @@ Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
 
 ## Gated FFT Architecture
 
-The continuous FFT operates on a fixed long window (~400 ms at gatedCaptureDuration).
+The continuous FFT operates on a fixed long window (~400 ms at GATED_FFT_WINDOW_DURATION).
 For guitar measurements this is fine because the tap-detection threshold ensures we
 see the ring-out.  For plate and brace measurements the ring-out is much shorter and
 the transient tap energy is spread across the full window, reducing the apparent peak
 magnitude by up to ~15 dB.
 
 The gated approach captures *raw PCM samples* starting just before the tap onset
-(via the pre-roll buffer) and running until the window fills:
+(via the pre-roll buffer) and running until the window fills.  The captured
+buffer is 500 ms (GATED_CAPTURE_DURATION), and after the level crossing fires we
+align the buffer to the sample-level onset (align_capture_to_onset) and extract a
+400 ms FFT input window (GATED_FFT_WINDOW_DURATION).  The 100 ms slack lets the
+aligner extract a full sample-aligned window without zero-padding even when the
+pre-roll ring buffer was only partially filled:
 
-    ┌────────────────────────────────────┐
-    │  200 ms pre-roll  │  400 ms gate   │
-    │  (ring buffer)    │  (new samples) │
-    └────────────────────────────────────┘
+    ┌──────────────────────────────────────────────┐
+    │  200 ms pre-roll  │  500 ms gated capture    │
+    │  (ring buffer)    │  → 400 ms aligned FFT in │
+    └──────────────────────────────────────────────┘
                   ↑ tap onset
 
 ## Dominant Peak Selection — HPS + Q filter
@@ -68,9 +73,55 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.captured_taps: list[tuple]
     """
 
-    # Gated capture window duration in seconds.
+    # Target duration of the gated capture *buffer*, in seconds.
+    #
+    # 500 ms is intentionally longer than GATED_FFT_WINDOW_DURATION so that
+    # align_capture_to_onset always has at least 400 ms of audio available
+    # to extract a sample-aligned window — regardless of how full the
+    # pre-roll ring buffer happens to be when the level crossing fires.
+    # Without this slack, a partially-filled pre-roll (e.g. when the user
+    # taps quickly after pressing Accept) would yield a captured buffer
+    # where the onset is too close to the end, forcing the aligner to
+    # zero-pad and producing FFT input that differs between live and
+    # playback even though the underlying audio is identical.
+    #
     # Mirrors Swift TapToneAnalyzer.gatedCaptureDuration.
-    GATED_CAPTURE_DURATION: float = 0.4  # 400 ms
+    GATED_CAPTURE_DURATION: float = 0.500  # 500 ms
+
+    # Duration of the aligned FFT input window, in seconds.
+    #
+    # 400 ms captures the full plate ring-out while rejecting post-decay
+    # noise.  Shorter than GATED_CAPTURE_DURATION to leave alignment
+    # headroom — see that constant's docstring for the rationale.
+    #
+    # Mirrors Swift TapToneAnalyzer.gatedFFTWindowDuration.
+    GATED_FFT_WINDOW_DURATION: float = 0.400  # 400 ms
+
+    # ── Onset-alignment constants ─────────────────────────────────────
+    # Used by align_capture_to_onset to anchor the capture window to the
+    # sample-level tap onset rather than a chunk boundary.
+
+    # Duration of pre-onset silence to include in the aligned capture
+    # window.  100 ms places the transient where the Hann window
+    # weight is near maximum.
+    PRE_ONSET_DURATION: float = 0.100
+
+    # Number of samples at the buffer start used to estimate the noise
+    # floor for onset detection.
+    ONSET_NOISE_ESTIMATE_SAMPLES: int = 2048
+
+    # Onset threshold multiplier relative to noise-floor RMS.  10×
+    # (20 dB above noise) rejects ambient noise while catching even
+    # a quiet tap transient.
+    ONSET_THRESHOLD_MULTIPLIER: float = 10.0
+
+    # Minimum absolute onset threshold when the noise floor is near
+    # digital silence.
+    ONSET_MIN_THRESHOLD: float = 0.001
+
+    # Number of samples to back up from the detected onset to ensure
+    # the very beginning of the transient is captured.
+    ONSET_BACKUP_SAMPLES: int = 32
 
     @property
     def _pre_roll_samples(self) -> int:
@@ -158,6 +209,89 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             gt_log(f"⚠️ WAV dump failed: {e}")
 
     # ------------------------------------------------------------------ #
+    # finish_session_recording
+    # Mirrors Swift TapToneAnalyzer.finishSessionRecording(label:)
+    # ------------------------------------------------------------------ #
+
+    def finish_session_recording(self, label: str) -> None:
+        """Stop session recording and save the accumulated buffer as a WAV.
+
+        Called when a measurement completes (all phases accepted, or
+        guitar/brace tap sequence finished).  The resulting WAV captures the
+        full audio stream that was active during detection — excluding paused
+        segments and rejected phases — so that replaying it through the
+        pipeline reproduces the original results.
+
+        Mirrors Swift TapToneAnalyzer.finishSessionRecording(label:).
+
+        Args:
+            label: Short string identifying the measurement type (e.g.
+                   "Plate_LC", "Guitar_8tap", "Brace").
+        """
+        import numpy as np
+
+        with self._gated_lock:
+            self._is_session_recording = False
+            samples = self._session_recording_buffer
+            sample_rate = self._session_recording_sample_rate
+            self._session_recording_buffer = []
+            self._session_checkpoints = []
+
+        if not samples:
+            return
+        self._dump_capture_wav(
+            np.asarray(samples, dtype=np.float32),
+            sample_rate,
+            f"session_{label}",
+        )
+
+    # ------------------------------------------------------------------ #
+    # capture_window_profile
+    # Mirrors Swift TapToneAnalyzer.captureWindowProfile(_:label:segmentSize:)
+    # ------------------------------------------------------------------ #
+
+    def capture_window_profile(self, samples, label: str, segment_size: int = 1024) -> str:
+        """Return a per-segment RMS / peak breakdown of a sample buffer.
+
+        Each segment is ``segment_size`` samples (default 1024).  Used by
+        diagnostic TAP_DEBUG log lines (SEED, CAPTURE COMPLETE,
+        FASTSTART_PREROLL, DEFERRED_PREROLL, CAPTURED_WINDOW) so the energy
+        distribution within the capture window is visible.
+
+        Mirrors Swift TapToneAnalyzer.captureWindowProfile(_:label:segmentSize:).
+        """
+        import math
+
+        count = len(samples)
+        if count == 0:
+            return f"{label}: (empty)"
+
+        lines = [f"{label}: {count} samples ({count}/{segment_size} segments)"]
+        seg = 0
+        offset = 0
+        while offset < count:
+            end = min(offset + segment_size, count)
+            slice_ = samples[offset:end]
+            sum_sq = 0.0
+            peak_abs = 0.0
+            for s in slice_:
+                f = float(s)
+                sum_sq += f * f
+                a = abs(f)
+                if a > peak_abs:
+                    peak_abs = a
+            n = end - offset
+            rms = math.sqrt(sum_sq / n) if n else 0.0
+            rms_db = 20.0 * math.log10(max(rms, 1e-10))
+            lines.append(
+                f"  seg[{seg:2d}] samples[{offset:5d}:{end:5d}] "
+                f"RMS={rms_db:7.1f} dB  peak={peak_abs:.6f}"
+            )
+            seg += 1
+            offset = end
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------ #
     # _set_material_tap_phase
     # ------------------------------------------------------------------ #
 
@@ -211,14 +345,31 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             if len(self._pre_roll_buf) > self._pre_roll_samples:
                 self._pre_roll_buf = self._pre_roll_buf[-self._pre_roll_samples:]
 
+            # Session recording: append every chunk that flows through the
+            # audio pipeline while recording is active.  This produces a
+            # continuous WAV of the measurement session (minus paused
+            # segments and rejected phases) that can be replayed to reproduce
+            # the original results.  Mirrors Swift accumulateGatedSamples.
+            if self._is_session_recording:
+                self._session_recording_buffer.extend(samples)
+
             if not self._gated_capture_active:
                 # Deferred level-crossing path: keep accumulating audio into
                 # the pending buffer so startGatedCapture gets pre-roll + all
                 # post-crossing chunks (the actual tap energy), not just the
                 # pre-roll snapshot (silence).
+                # Cap at the gated-capture target so we don't run away.
                 # Mirrors Swift accumulateGatedSamples deferred accumulation.
                 if self._pending_level_crossing_pre_roll is not None:
-                    self._pending_level_crossing_pre_roll.extend(samples)
+                    target = int(self._mpm_sample_rate * self.GATED_CAPTURE_DURATION)
+                    before_count = len(self._pending_level_crossing_pre_roll)
+                    if before_count < target:
+                        self._pending_level_crossing_pre_roll.extend(samples)
+                        from guitar_tap.utilities.logging import TAP_DEBUG as _td_def
+                        _td_def("gatedAccum",
+                                f"DEFERRED_ACCUM | +{len(samples)} "
+                                f"running={len(self._pending_level_crossing_pre_roll)} "
+                                f"cap={target}")
                 return
 
             self._gated_accum.extend(samples)
@@ -258,6 +409,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             and phase is not None
         )
         if is_file_plate_brace:
+            # Reset the consecutive-above counter so the next tap's
+            # rising edge starts a fresh confirmation run — mirrors
+            # the Swift didSet on ``levelCrossingArmed``.
+            self.mic._level_crossing_consecutive_above = 0
             self.mic._level_crossing_armed = True
 
         # DIAG: log capture completion details
@@ -267,12 +422,15 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         _cap_arr = np.array(captured, dtype=np.float32)
         _diag_rms = float(np.sqrt(np.mean(_cap_arr ** 2))) if len(captured) > 0 else 0.0
         _diag_hash = float(np.sum(_cap_arr[:16])) if len(captured) >= 16 else 0.0
+        _complete_profile = self.capture_window_profile(
+            captured, label=f"ACCUM_COMPLETE({phase})"
+        )
         from guitar_tap.utilities.logging import TAP_DEBUG as _td2
         _td2("gatedAccum",
              f"CAPTURE COMPLETE | samples={len(captured)} "
              f"fileSamplePos={_diag_consumed} "
              f"captureRMS={20*np.log10(max(_diag_rms,1e-10)):.2f}dB "
-             f"first16hash={_diag_hash:.6f}")
+             f"first16hash={_diag_hash:.6f}\n{_complete_profile}")
 
         # Emit on background thread; Qt queued connection delivers on main thread.
         # gatedCaptureComplete signal is still on proc_thread as a delivery mechanism.
@@ -414,6 +572,15 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 f"🎯 Gated FFT capture started for phase {phase} — "
                 f"{target_samples}-sample window ({window_ms} ms at {int(rate)} Hz)"
             )
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td_seed
+            seed_label = "deferred" if deferred_pre_roll is not None else "preroll"
+            seed_profile = self.capture_window_profile(
+                seed_buffer, label=f"SEED_BUFFER({seed_label})"
+            )
+            _td_seed("gatedCapture",
+                     f"SEED | preRollSamples={current_count} "
+                     f"target={target_samples} rate={int(rate)} "
+                     f"deferred={deferred_pre_roll is not None}\n{seed_profile}")
 
         # Safety timeout: if the buffer still has audio after 2 s, flush it;
         # if empty, ask the user to tap again.
@@ -685,6 +852,116 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
 
     # ------------------------------------------------------------------ #
+    # align_capture_to_onset
+    # Mirrors Swift TapToneAnalyzer.alignCaptureToOnset(_:windowSize:preOnsetSamples:)
+    # ------------------------------------------------------------------ #
+
+    def align_capture_to_onset(
+        self,
+        samples,
+        window_size: int,
+        pre_onset_samples: int,
+    ):
+        """Align a captured sample buffer so the tap onset is at a fixed position.
+
+        The level-crossing detector fires at chunk granularity (typically
+        1024 samples).  Different chunk alignment (live mic vs file playback
+        vs different hardware buffer sizes) shifts the capture window by up
+        to several thousand samples.  This method finds the actual
+        sample-level tap onset and extracts a window anchored to it,
+        producing identical output regardless of chunk boundaries.
+
+        Mirrors Swift TapToneAnalyzer.alignCaptureToOnset(_:windowSize:preOnsetSamples:).
+
+        Args:
+            samples:           The raw captured buffer (pre-roll + post-crossing).
+            window_size:       Desired output length (e.g. 19200 for plate at 48 kHz).
+            pre_onset_samples: Number of silence samples to include before the onset.
+
+        Returns:
+            A ``window_size``-length list[float] (or ndarray, same as input) with
+            the onset at index ``pre_onset_samples``, or the original buffer
+            unchanged if onset detection fails.
+        """
+        import math
+        import numpy as np
+
+        from guitar_tap.utilities.logging import TAP_DEBUG as _td_align
+
+        arr = np.asarray(samples, dtype=np.float32)
+        n = int(arr.shape[0])
+
+        if n < self.ONSET_NOISE_ESTIMATE_SAMPLES:
+            return samples  # buffer too short for noise estimation
+
+        # 1. Estimate noise floor from the first N samples (pre-onset silence).
+        noise_region = arr[: self.ONSET_NOISE_ESTIMATE_SAMPLES]
+        noise_rms = float(math.sqrt(float(np.mean(noise_region.astype(np.float64) ** 2))))
+
+        # 2. Onset threshold: 10× noise RMS, floored at ONSET_MIN_THRESHOLD.
+        threshold = max(
+            noise_rms * self.ONSET_THRESHOLD_MULTIPLIER,
+            self.ONSET_MIN_THRESHOLD,
+        )
+
+        # 3. Scan forward for the first sample exceeding the threshold.
+        abs_arr = np.abs(arr)
+        above = np.where(abs_arr > threshold)[0]
+        if above.size == 0:
+            # No onset found (noise-only capture) — return unchanged.
+            _td_align(
+                "onsetAlign",
+                f"NO_ONSET | noiseRMS={noise_rms:.6f} "
+                f"threshold={threshold:.6f} len={n}",
+            )
+            return samples
+
+        onset = int(above[0])
+
+        # 4. Back up slightly to catch the very start of the transient.
+        onset = max(0, onset - self.ONSET_BACKUP_SAMPLES)
+
+        # 5. Extract a window of `window_size` with the onset at `pre_onset_samples`.
+        extract_start = onset - pre_onset_samples
+
+        if extract_start >= 0 and extract_start + window_size <= n:
+            # Happy path: window fits entirely within the buffer.
+            result = arr[extract_start : extract_start + window_size]
+        elif extract_start < 0:
+            # Onset too close to buffer start — zero-pad the front.
+            pad_count = -extract_start
+            available = min(window_size - pad_count, n)
+            result = np.concatenate([
+                np.zeros(pad_count, dtype=np.float32),
+                arr[:available],
+            ])
+            if result.shape[0] < window_size:
+                result = np.concatenate([
+                    result,
+                    np.zeros(window_size - result.shape[0], dtype=np.float32),
+                ])
+        else:
+            # Onset too close to buffer end — take what we can, zero-pad the back.
+            tail = arr[extract_start:n]
+            if tail.shape[0] < window_size:
+                result = np.concatenate([
+                    tail,
+                    np.zeros(window_size - tail.shape[0], dtype=np.float32),
+                ])
+            else:
+                result = tail[:window_size]
+            result = result[:window_size]
+
+        _td_align(
+            "onsetAlign",
+            f"ALIGNED | onset={onset} extractStart={extract_start} "
+            f"preOnset={pre_onset_samples} noiseRMS={noise_rms:.6f} "
+            f"threshold={threshold:.6f} inLen={n} outLen={int(result.shape[0])}",
+        )
+
+        return result
+
+    # ------------------------------------------------------------------ #
     # finish_gated_fft_capture
     # Mirrors Swift TapToneAnalyzer.finishGatedFFTCapture(samples:sampleRate:phase:)
     # ------------------------------------------------------------------ #
@@ -738,10 +1015,55 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                        f"(materialTapPhase={current}), skipping capture")
                 return
 
-        self._dump_capture_wav(samples, sample_rate, phase.value.replace(" ", "_"))
+        # Per-phase WAV dump intentionally omitted: the session WAV written by
+        # finish_session_recording already contains every accepted phase's tap
+        # and pre-roll, so dumping per-phase 400 ms windows here would just
+        # produce redundant files alongside it.  Mirrors Swift
+        # finishGatedFFTCapture which also removed this dump.
 
-        # Compute Hann-windowed gated FFT.
-        magnitudes, frequencies = self.mic.compute_gated_fft(samples, sample_rate)
+        # CAPTURED_WINDOW diagnostic: log per-segment RMS of the raw window
+        # before onset alignment, so the energy distribution is visible.
+        import numpy as np
+        _samples_arr = np.asarray(samples, dtype=np.float32)
+        _non_zero = int(np.count_nonzero(_samples_arr))
+        _peak_sample = float(np.max(np.abs(_samples_arr))) if _samples_arr.size else 0.0
+        _rms_all = (
+            20.0 * float(np.log10(max(
+                float(np.sqrt(np.mean(_samples_arr.astype(np.float64) ** 2))) if _samples_arr.size else 0.0,
+                1e-10,
+            )))
+            if _samples_arr.size else 0.0
+        )
+        _captured_profile = self.capture_window_profile(
+            list(_samples_arr), label=f"CAPTURED_WINDOW({phase})"
+        )
+        from guitar_tap.utilities.logging import TAP_DEBUG as _td_finish
+        _td_finish(
+            "gatedFFT",
+            f"FINISH | total={int(_samples_arr.shape[0])} nonZero={_non_zero} "
+            f"peak={_peak_sample:.6f} rms={_rms_all:.2f}dB "
+            f"rate={int(sample_rate)} phase={phase}\n{_captured_profile}",
+        )
+
+        # Align the capture window to the sample-level tap onset so the
+        # Hann-windowed FFT produces identical results regardless of the
+        # chunk boundaries that triggered the level crossing.
+        #
+        # The captured buffer is intentionally larger than the FFT window
+        # (GATED_CAPTURE_DURATION > GATED_FFT_WINDOW_DURATION) so the aligner
+        # has enough post-onset audio to extract a full window without
+        # zero-padding, even when the pre-roll was partially filled at
+        # the moment the level crossing fired.
+        fft_window_size = int(sample_rate * self.GATED_FFT_WINDOW_DURATION)
+        pre_onset_samples = int(sample_rate * self.PRE_ONSET_DURATION)
+        aligned = self.align_capture_to_onset(
+            samples,
+            window_size=fft_window_size,
+            pre_onset_samples=pre_onset_samples,
+        )
+
+        # Compute Hann-windowed gated FFT on the aligned window.
+        magnitudes, frequencies = self.mic.compute_gated_fft(aligned, sample_rate)
 
         if not magnitudes:
             gt_log("⚠️ Gated FFT returned empty spectrum — tap again")
@@ -1079,6 +1401,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.set_frozen_spectrum(_np.array([]), _np.array([]))
             self._set_material_tap_phase(_MTP.COMPLETE)
             self.set_measurement_complete(True)
+            # Save the session WAV — mirrors Swift finishSessionRecording(label: "Brace").
+            self.finish_session_recording(label="Brace")
             # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
             if self.show_loaded_settings_warning:
                 self.show_loaded_settings_warning = False
@@ -1104,7 +1428,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._emit_peaks_array(self.current_peaks)
             self._set_material_tap_phase(_MTP.CAPTURING_CROSS)
             self.set_frozen_spectrum(_np.array([]), _np.array([]))
-            self.is_above_threshold = False
+            # is_above_threshold = True forces a falling-edge wait before the
+            # next rising edge.  Without this, the L tap's ring-out — which is
+            # still well above the rising threshold when the gated window
+            # closes — would immediately fire a bogus C "rising edge" on
+            # the decay, capturing 67 Hz L content instead of the real C tap.
+            # Matches the skipWarmup=True initial setup in start_tap_sequence.
+            self.is_above_threshold = True
             self.is_detecting = True
             self.tap_detected = False
             # Clear stale fast-start marker so the C tap's main-thread
@@ -1226,7 +1556,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 # The cooldown exists for user repositioning; irrelevant for file audio.
                 self._set_material_tap_phase(_MTP.CAPTURING_FLC)
                 self.set_frozen_spectrum(_np.array([]), _np.array([]))
-                self.is_above_threshold = False
+                # is_above_threshold = True forces a falling-edge wait before
+                # the next rising edge — see the L→C handler for the full
+                # rationale.  Without this the C tap's ring-out fires a
+                # bogus FLC "rising edge" on the decaying tail.
+                self.is_above_threshold = True
                 self.is_detecting = True
                 self.tap_detected = False
                 with self._gated_lock:
@@ -1461,6 +1795,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # cycle; Python signals fire immediately, so the emit must come after all state
         # is ready to avoid the view seeing an incomplete snapshot.
         self.is_measurement_complete = True
+        # Save the session WAV — mirrors Swift finishSessionRecording(label: "Guitar_Ntap").
+        self.finish_session_recording(label=f"Guitar_{len(self.captured_taps)}tap")
         # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
         if self.show_loaded_settings_warning:
             self.show_loaded_settings_warning = False

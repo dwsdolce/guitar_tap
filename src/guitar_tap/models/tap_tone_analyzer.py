@@ -245,7 +245,15 @@ class TapToneAnalyzer(
         self.max_frequency: float = float(_tds.analysis_max_frequency())   # mirrors maxFrequency
         self.max_peaks: int = _tds.max_peaks()                             # mirrors maxPeaks
         self.peak_min_threshold: float = float(_tds.peak_min_threshold())    # mirrors peakMinThreshold
-        self.tap_detection_threshold: float = float(_tds.tap_detection_threshold())  # mirrors tapDetectionThreshold
+        # Backing store for the ``tap_detection_threshold`` property.  The
+        # property setter mirrors Swift's ``didSet`` on ``tapDetectionThreshold``:
+        # it syncs ``mic._level_crossing_threshold`` so the audio-queue
+        # fast-path uses the same rising threshold as the main-thread
+        # detector.  Without this sync, callers that change the threshold
+        # after construction (e.g. unit tests) leave the level-crossing
+        # threshold stuck at its default, causing the audio-queue to fire
+        # on signals the main thread would correctly reject (or vice versa).
+        self._tap_detection_threshold: float = float(_tds.tap_detection_threshold())
         self.hysteresis_margin: float = float(_tds.hysteresis_margin())    # mirrors hysteresisMargin
         self.decay_threshold: float = 15.0                                 # mirrors decayThreshold
         self.number_of_taps: int = 1                                       # mirrors numberOfTaps
@@ -400,6 +408,29 @@ class TapToneAnalyzer(
 
         # ── Tap detection state (mirrors Swift TapToneAnalyzer stored properties)
         self.is_above_threshold: bool = False
+        # Running count of consecutive above-rising-threshold chunks within
+        # the current candidate rising-edge run for the main-thread tap
+        # detector.  Reset to 0 whenever the signal falls back below the
+        # rising threshold before reaching
+        # ``RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS``.  Once
+        # the counter reaches the target, ``is_above_threshold`` latches to
+        # True and the rising-edge actions run.  Mirrors Swift
+        # ``TapToneAnalyzer.detectTapConsecutiveAbove`` — both rising-edge
+        # paths must apply the same confirmation logic or a bump that's
+        # rejected by the audio queue can still fire here and start a
+        # bogus gated capture.
+        self.detect_tap_consecutive_above: int = 0
+        # Last audio-source sample position processed by ``_on_rms_level_changed``.
+        # Python wires _on_rms_level_changed via TWO paths — a direct callback
+        # from process_raw_samples and the Qt rmsLevelChanged signal — so the
+        # handler runs twice per chunk.  Without this dedupe, the per-call
+        # increment in detect_tap_consecutive_above doubles the counter and
+        # any "N consecutive chunks above threshold" gate effectively fires
+        # at N/2 chunks.  Tracking the mic's running sample count lets us
+        # skip the second call for the same chunk (where the position hasn't
+        # advanced).  Swift doesn't need this — its Combine sink delivers a
+        # single event per chunk.
+        self._last_rms_chunk_pos: int = -1
         self.just_exited_warmup: bool = False
         self.analyzer_start_time: "float | None" = None
         self.last_tap_time: "float | None" = None
@@ -436,6 +467,19 @@ class TapToneAnalyzer(
         self._gated_capture_phase: object = None    # MaterialTapPhase at capture start
         self._gated_accum: list = []                # accumulated raw PCM samples
         self._mpm_sample_rate: float = 48000.0      # mirrors Swift mpmSampleRate (updated per audio buffer)
+
+        # ── Session recording ─────────────────────────────────────────────
+        # A continuous audio buffer that accumulates raw mic samples while tap
+        # detection is active, producing one WAV per measurement that replays
+        # identically through the pipeline.  Mirrors Swift TapToneAnalyzer
+        # sessionRecordingBuffer / isSessionRecording / sessionCheckpoints /
+        # sessionRecordingSampleRate.
+        #
+        # Access is protected by _gated_lock (shared with the gated-capture state).
+        self._session_recording_buffer: list = []
+        self._is_session_recording: bool = False
+        self._session_checkpoints: list = []
+        self._session_recording_sample_rate: float = 48000.0
 
         # Monotonic capture identity — incremented at every start_*_gated_capture
         # call.  Each pending safety-timeout closure captures the ID at scheduling
@@ -698,16 +742,22 @@ class TapToneAnalyzer(
                             and self._last_level_crossing_capture_id == self._gated_capture_id):
                         self._pending_level_crossing_pre_roll = list(self._pre_roll_buf)
                         pre_roll_count = len(self._pre_roll_buf)
+                        deferred_profile = self.capture_window_profile(
+                            self._pre_roll_buf, label="DEFERRED_PREROLL"
+                        )
                         TAP_DEBUG("levelCrossing",
                             f"DEFERRED — snapshot pre-roll ({pre_roll_count} samples) "
-                            f"for main-thread start_gated_capture")
+                            f"for main-thread start_gated_capture\n{deferred_profile}")
                         return
 
                 self._gated_capture_id += 1
                 self._last_level_crossing_capture_id = self._gated_capture_id
                 self._gated_accum = list(self._pre_roll_buf)
                 if mt == _MT.PLATE or mt == _MT.BRACE:
-                    # Plate/brace: use the current phase and 400 ms window.
+                    # Plate/brace: use the current phase and 500 ms capture
+                    # window (with a 400 ms FFT input extracted from it after
+                    # onset alignment — see GATED_CAPTURE_DURATION /
+                    # GATED_FFT_WINDOW_DURATION).
                     self._gated_capture_phase = self.material_tap_phase
                     self._gated_capture_samples = int(
                         float(self._gated_sample_rate) * self.GATED_CAPTURE_DURATION
@@ -727,9 +777,13 @@ class TapToneAnalyzer(
                 self._pending_level_crossing_pre_roll = None  # consumed by direct start
                 pre_roll_count = len(self._gated_accum)
                 target = self._gated_capture_samples
+                faststart_profile = self.capture_window_profile(
+                    self._gated_accum, label="FASTSTART_PREROLL"
+                )
             TAP_DEBUG("levelCrossing",
                 f"Gated capture started on audio queue | "
-                f"mode={mt} pre-roll {pre_roll_count} samples, target {target}")
+                f"mode={mt} pre-roll {pre_roll_count} samples, target {target}\n"
+                f"{faststart_profile}")
 
         self.mic._level_crossing_handler = _level_crossing_handler
         self.mic._level_crossing_threshold = self.tap_detection_threshold
@@ -793,6 +847,27 @@ class TapToneAnalyzer(
     # ------------------------------------------------------------------ #
 
     @property
+    def tap_detection_threshold(self) -> float:
+        """Rising-edge threshold (dBFS) for the main-thread tap detector.
+
+        Mirrors Swift ``TapToneAnalyzer.tapDetectionThreshold``.  Setting
+        this property syncs ``mic._level_crossing_threshold`` so the
+        audio-queue fast-path fires at the same threshold — Swift handles
+        this with a ``didSet`` observer.
+        """
+        return self._tap_detection_threshold
+
+    @tap_detection_threshold.setter
+    def tap_detection_threshold(self, value: float) -> None:
+        self._tap_detection_threshold = float(value)
+        # Keep the audio-queue level-crossing threshold in sync with the
+        # main-thread detection threshold, so both rising-edge detectors
+        # see the same signal as "above threshold".  Mirrors Swift's
+        # ``didSet`` on ``tapDetectionThreshold`` (TapToneAnalyzer.swift).
+        if self.mic is not None:
+            self.mic._level_crossing_threshold = self._tap_detection_threshold
+
+    @property
     def is_detecting(self) -> bool:
         return self._is_detecting
 
@@ -805,6 +880,10 @@ class TapToneAnalyzer(
         if self.mic is not None:
             if value and not old:
                 # false → true: arm crossing and sync previous level.
+                # Reset the consecutive-above counter so arming starts a
+                # fresh candidate run — mirrors Swift didSet on
+                # ``levelCrossingArmed`` (see RealtimeFFTAnalyzer.swift).
+                self.mic._level_crossing_consecutive_above = 0
                 self.mic._level_crossing_armed = True
                 # During file playback the audio queue is already tracking
                 # _previous_level_db naturally.  Resetting it to -100 would
@@ -821,6 +900,7 @@ class TapToneAnalyzer(
                 # each capture completes).  Disarming here would undo that
                 # re-arm before the next tap's audio arrives on the queue.
                 if not self.mic.is_playing_file:
+                    self.mic._level_crossing_consecutive_above = 0
                     self.mic._level_crossing_armed = False
 
     def start(

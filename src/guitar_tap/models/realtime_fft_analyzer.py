@@ -293,6 +293,49 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             for_testing=True,
         )
 
+    # MARK: - Level-Crossing Confirmation
+    #
+    # Number of consecutive above-threshold audio chunks required to
+    # confirm a level crossing before ``_level_crossing_handler`` fires.
+    #
+    # At a 1024-sample chunk and 48 kHz sample rate each chunk is ~21 ms,
+    # so the default of ``2`` requires ~43 ms of sustained signal above
+    # the threshold.  This rejects brief 1-chunk broadband bumps — for
+    # example handling noise between plate-mode phases — while still
+    # firing reliably on real taps, including high-Q brace ring-outs that
+    # may only spend ~2 chunks above the rising threshold before the
+    # per-chunk RMS decays below it.
+    #
+    # **Why 2 and not 3:** the brace test fixture
+    # (brace-umik-1-swift-mac-1778816093.wav) has a real tap whose
+    # per-chunk RMS drops below threshold after only the second chunk:
+    #   chunk 1: RMS -47.76 dB (above)
+    #   chunk 2: RMS -52.48 dB (above)
+    #   chunk 3: RMS -54.80 dB (below)
+    # A confirmation requirement of 3 would reject this real tap.  The
+    # observed plate-mode bump in plate-umik-1-swift-mac-1778816330.wav
+    # is a single-chunk excursion (RMS -46.78 dB then -53.55 dB), so 2
+    # already rejects it.
+    #
+    # The trade-off vs ``1`` (legacy fire-on-first-crossing):
+    # - Pros: filters single-chunk noise events that previously triggered
+    #   bogus gated captures — especially during file playback, which
+    #   has no human review-time gap between phases.
+    # - Cons: trigger fires ``LEVEL_CROSSING_CONFIRMATION_CHUNKS - 1``
+    #   chunks later than before.  ``align_capture_to_onset`` compensates
+    #   by anchoring the FFT window to the sample-precise tap onset, so
+    #   the FFT input is unchanged.  A bump spanning 2+ chunks could
+    #   still slip through; a higher value would start cutting into
+    #   weak marginal taps like the brace example above.
+    #
+    # This constant is also consulted by the main-thread tap detector
+    # (``TapToneAnalyzer.detect_tap``) so both rising-edge paths apply
+    # the same confirmation logic — otherwise a bump rejected here can
+    # still fire the main-thread detector and start a bogus capture.
+    #
+    # Mirrors Swift ``RealtimeFFTAnalyzer.levelCrossingConfirmationChunks``.
+    LEVEL_CROSSING_CONFIRMATION_CHUNKS: int = 2
+
     # MARK: - Initialization
 
     def __init__(self, parent, rate: int = 44100, chunksize: int = 16384,
@@ -452,6 +495,13 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._level_crossing_threshold: float = -100.0
         self._level_crossing_armed: bool = False
         self._previous_level_db: float = -100.0
+        # Running count of consecutive above-threshold chunks in the
+        # current candidate rising-edge run.  Reset to 0 when arming
+        # changes (handled at the assignment sites) or when the level
+        # falls back below threshold.  Once it reaches
+        # LEVEL_CROSSING_CONFIRMATION_CHUNKS the handler fires and the
+        # level crossing is disarmed.
+        self._level_crossing_consecutive_above: int = 0
 
         # Input clipping detection.
         self._clip_hold_seconds: float = 1.5
@@ -578,12 +628,21 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
         # ── Level-crossing detection (audio-queue fast-start) ────
         # MUST run BEFORE rms_level_handler.  Mirrors Swift processRawSamples
-        # where the level-crossing check (line 150) fires before
-        # rmsLevelHandler (line 167).  The rms_level_handler callback triggers
-        # tap detection → start_guitar_gated_capture which disarms the
-        # level-crossing.  If rms_level_handler fires first, the crossing
-        # never gets a chance to fire and the gated capture starts via the
-        # slower main-thread fallback path with fewer pre-roll samples.
+        # where the level-crossing check fires before rmsLevelHandler.  The
+        # rms_level_handler callback triggers tap detection →
+        # start_guitar_gated_capture which disarms the level-crossing.  If
+        # rms_level_handler fires first, the crossing never gets a chance
+        # to fire and the gated capture starts via the slower main-thread
+        # fallback path with fewer pre-roll samples.
+        #
+        # Requires ``LEVEL_CROSSING_CONFIRMATION_CHUNKS`` consecutive
+        # above-threshold chunks (default 2 = ~43 ms) before firing.  This
+        # rejects brief noise bumps that would otherwise consume a phase's
+        # gated capture window — especially during file playback where
+        # there is no human review-time gap between phases.
+        # ``align_capture_to_onset`` re-anchors the FFT window to the
+        # sample-precise onset, so the few chunks of trigger delay
+        # introduced here are invisible downstream.
         if self.is_playing_file:
             from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc
             _td_lc("processRawSamples",
@@ -591,17 +650,47 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
                    f"levelDB={level_db:.1f} threshold={self._level_crossing_threshold:.1f} "
                    f"prevDB={self._previous_level_db:.1f} chunkLen={len(chunk_f32)} "
                    f"fileSamplePos={self._diag_total_samples}")
-        if (self._level_crossing_armed
-                and level_db > self._level_crossing_threshold
-                and self._previous_level_db <= self._level_crossing_threshold):
-            self._level_crossing_armed = False
-            if self.is_playing_file:
-                from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc2
-                _td_lc2("processRawSamples",
-                        f"LEVEL_CROSSING_FIRED | rmsDB={level_db:.1f} prevDB={self._previous_level_db:.1f}")
-            lc_handler = self._level_crossing_handler
-            if lc_handler is not None:
-                lc_handler()
+        if self._level_crossing_armed:
+            above_threshold = level_db > self._level_crossing_threshold
+            prev_above_threshold = self._previous_level_db > self._level_crossing_threshold
+            confirm_target = self.LEVEL_CROSSING_CONFIRMATION_CHUNKS
+            if above_threshold:
+                if self._level_crossing_consecutive_above > 0:
+                    # Already counting — extend the run.
+                    self._level_crossing_consecutive_above += 1
+                elif not prev_above_threshold:
+                    # Fresh rising edge — start a new candidate run.
+                    self._level_crossing_consecutive_above = 1
+                    if self.is_playing_file and confirm_target > 1:
+                        from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc_pend
+                        _td_lc_pend("processRawSamples",
+                                    f"LEVEL_CROSSING_PENDING | rmsDB={level_db:.1f} "
+                                    f"prevDB={self._previous_level_db:.1f} "
+                                    f"need={confirm_target - 1} more")
+                # If above && counter == 0 && prev_above, signal was
+                # already above when arming happened — wait for a fall
+                # + rise (handled when the level drops then climbs).
+                if self._level_crossing_consecutive_above >= confirm_target:
+                    self._level_crossing_armed = False
+                    self._level_crossing_consecutive_above = 0
+                    if self.is_playing_file:
+                        from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc2
+                        _td_lc2("processRawSamples",
+                                f"LEVEL_CROSSING_FIRED | rmsDB={level_db:.1f} "
+                                f"prevDB={self._previous_level_db:.1f} "
+                                f"confirmedBy={confirm_target}")
+                    lc_handler = self._level_crossing_handler
+                    if lc_handler is not None:
+                        lc_handler()
+            else:
+                # Below threshold — abort any in-progress candidate run.
+                if self._level_crossing_consecutive_above > 0 and self.is_playing_file:
+                    from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc_cancel
+                    _td_lc_cancel("processRawSamples",
+                                  f"LEVEL_CROSSING_CANCELED | rmsDB={level_db:.1f} "
+                                  f"(signal fell below after "
+                                  f"{self._level_crossing_consecutive_above}/{confirm_target} chunks)")
+                self._level_crossing_consecutive_above = 0
         self._previous_level_db = level_db
 
         # ── RMS level callbacks (tap detection runs from here) ────

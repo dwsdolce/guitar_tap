@@ -32,6 +32,7 @@ from utilities.logging import TAP_DEBUG
 from guitar_tap.utilities.logging import gt_log
 
 from .analysis_display_mode import AnalysisDisplayMode
+from .realtime_fft_analyzer import RealtimeFFTAnalyzer
 
 
 class TapToneAnalyzerTapDetectionHandlerMixin:
@@ -191,64 +192,92 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # Update detection-level indicator (mirrors Swift tapDetectionLevel).
         self.tap_detection_level = effective_rising
 
-        # Hysteresis evaluation (mirrors Swift currentlyAboveThreshold logic).
-        currently_above = (
-            peak_magnitude > effective_falling
-            if self.is_above_threshold
-            else peak_magnitude > effective_rising
+        # Hysteresis: rising edge ALSO requires N consecutive chunks above
+        # the rising threshold to confirm — mirrors the audio-queue level
+        # crossing detector in RealtimeFFTAnalyzer.  Without confirmation
+        # here, a brief noise bump that the audio-queue rejected can still
+        # fire the main-thread rising-edge detector and start a bogus
+        # gated capture (see test failure on
+        # plate-umik-1-swift-mac-1778816330 where the FLC bump at
+        # -46.78 dB was rejected by the audio queue but caught here,
+        # capturing 26.4 Hz @ -78.9 dB instead of the real 35.4 Hz FLC
+        # tap that arrived a few seconds later).
+        confirm_target = RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS
+        is_file_playback = (
+            self.mic is not None and getattr(self.mic, "is_playing_file", False)
         )
 
-        # Update status message when signal settles after a tap in multi-tap mode
-        # (mirrors Swift detectTap lines 196-200).
-        if currently_above != self.is_above_threshold:
-            if (
-                not currently_above and self.is_above_threshold
-                and self.current_tap_count > 0
-                and self.current_tap_count < self.number_of_taps
-            ):
+        if self.is_above_threshold:
+            # Currently latched above — apply falling-threshold hysteresis.
+            if peak_magnitude <= effective_falling:
+                # Falling edge.
+                if (
+                    self.current_tap_count > 0
+                    and self.current_tap_count < self.number_of_taps
+                ):
+                    TAP_DEBUG("detectTap",
+                        f"SIGNAL SETTLED | tap {self.current_tap_count}/{self.number_of_taps}"
+                        f" — signal dropped below falling threshold"
+                    )
+                    self._set_status_message(
+                        f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
+                    )
                 TAP_DEBUG("detectTap",
-                    f"SIGNAL SETTLED | tap {self.current_tap_count}/{self.number_of_taps}"
-                    f" — signal dropped below falling threshold"
+                    f"FALLING EDGE | peakMag={peak_magnitude:.2f} "
+                    f"fallingThresh={effective_falling:.2f} — signal settled, ready for next tap"
                 )
-                self._set_status_message(
-                    f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
-                )
-
-        if currently_above and not self.is_above_threshold:
-            # Rising edge (mirrors Swift: tapDetected = true; handleTapDetection).
-            TAP_DEBUG("detectTap",
-                f"RISING EDGE FIRED | peakMag={peak_magnitude:.2f} "
-                f"risingThresh={effective_rising:.2f} "
-                f"tapCount={self.current_tap_count + 1}/{self.number_of_taps}"
-            )
-            self.tap_detected = True
-            self.last_tap_time = now
-            # Capture the recent peak input level for decay tracking reference.
-            # Mirrors Swift TapToneAnalyzer+TapDetection.swift:
-            #   tapPeakLevel = fftAnalyzer.recentPeakLevelDB  (0.5 s rolling max)
-            # This is the CORRECT intentional use of recentPeakLevelDB: at tap-fire time
-            # the peak-hold captures the actual tap transient even though FFT detection
-            # lags by up to one FFT frame.
-            # CONTRAST with re-enable closures (_reenable, _start_cross, _start_flc,
-            # _do_reenable_detection) which must use instantaneous level so a held peak
-            # does not incorrectly latch is_above_threshold = True.
-            # Fall back to peak_magnitude when mic is None (tests, no audio hardware).
-            if self.mic is not None and hasattr(self.mic, "recent_peak_level_db"):
-                self.tap_peak_level = self.mic.recent_peak_level_db
-            else:
-                self.tap_peak_level = peak_magnitude
-            self._handle_tap_detection(mag_y_db, freq)
-        elif not currently_above and self.is_above_threshold:
-            TAP_DEBUG("detectTap",
-                f"FALLING EDGE | peakMag={peak_magnitude:.2f} "
-                f"fallingThresh={effective_falling:.2f} — signal settled, ready for next tap"
-            )
+                self.is_above_threshold = False
+                self.detect_tap_consecutive_above = 0
             self.tap_detected = False
         else:
-            self.tap_detected = False
-
-        # Update hysteresis state for next frame (mirrors Swift isAboveThreshold = currentlyAboveThreshold).
-        self.is_above_threshold = currently_above
+            # Currently latched below — apply rising-threshold gate with
+            # N-chunk confirmation.
+            if peak_magnitude > effective_rising:
+                self.detect_tap_consecutive_above += 1
+                if self.detect_tap_consecutive_above >= confirm_target:
+                    # Confirmed rising edge — fire the tap-detection event.
+                    TAP_DEBUG("detectTap",
+                        f"RISING EDGE FIRED | peakMag={peak_magnitude:.2f} "
+                        f"risingThresh={effective_rising:.2f} "
+                        f"tapCount={self.current_tap_count + 1}/{self.number_of_taps} "
+                        f"confirmedBy={confirm_target}"
+                    )
+                    self.is_above_threshold = True
+                    self.detect_tap_consecutive_above = 0
+                    self.tap_detected = True
+                    self.last_tap_time = now
+                    # Capture the recent peak input level for decay tracking
+                    # reference.  Mirrors Swift TapToneAnalyzer+TapDetection.swift:
+                    #   tapPeakLevel = fftAnalyzer.recentPeakLevelDB
+                    # (0.5 s rolling max).  This is the CORRECT intentional use
+                    # of recentPeakLevelDB: at tap-fire time the peak-hold
+                    # captures the actual tap transient even though FFT
+                    # detection lags by up to one FFT frame.  Fall back to
+                    # peak_magnitude when mic is None (tests, no audio hardware).
+                    if self.mic is not None and hasattr(self.mic, "recent_peak_level_db"):
+                        self.tap_peak_level = self.mic.recent_peak_level_db
+                    else:
+                        self.tap_peak_level = peak_magnitude
+                    self._handle_tap_detection(mag_y_db, freq)
+                else:
+                    # Pending — waiting for more above-threshold chunks.
+                    if is_file_playback and self.detect_tap_consecutive_above == 1:
+                        TAP_DEBUG("detectTap",
+                            f"RISING EDGE PENDING | peakMag={peak_magnitude:.2f} "
+                            f"risingThresh={effective_rising:.2f} "
+                            f"need={confirm_target - 1} more"
+                        )
+                    self.tap_detected = False
+            else:
+                # Below rising threshold.
+                if self.detect_tap_consecutive_above > 0 and is_file_playback:
+                    TAP_DEBUG("detectTap",
+                        f"RISING EDGE CANCELED | peakMag={peak_magnitude:.2f} "
+                        f"(signal fell below after "
+                        f"{self.detect_tap_consecutive_above}/{confirm_target} chunks)"
+                    )
+                self.detect_tap_consecutive_above = 0
+                self.tap_detected = False
 
     # ------------------------------------------------------------------ #
     # _handle_tap_detection — mirrors Swift handleTapDetection(magnitudes:frequencies:time:)
@@ -651,6 +680,20 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             )
         if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
             return
+        # Dedupe: this method is called twice per chunk in Python because
+        # the direct rms_level_handler callback AND the Qt rmsLevelChanged
+        # signal both route here.  Without skipping the duplicate call,
+        # detect_tap's N-chunk confirmation counter increments twice per
+        # chunk and the gate effectively fires at N/2.  Use the mic's
+        # running sample count as a chunk identity — when the position
+        # hasn't advanced since the last call, this is the duplicate.
+        # See _last_rms_chunk_pos doc-comment in __init__.
+        if self.mic is not None:
+            current_pos = getattr(self.mic, '_diag_total_samples', None)
+            if current_pos is not None and current_pos == self._last_rms_chunk_pos:
+                return
+            if current_pos is not None:
+                self._last_rms_chunk_pos = current_pos
         peak_mag = self._current_input_level_db
         self.detect_tap(peak_mag, self._current_mag_y_db, self.freq)
 

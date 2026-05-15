@@ -38,6 +38,7 @@ def qt_app():
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
 from guitar_tap.models.measurement_type import MeasurementType
+from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +89,10 @@ class TestRisingEdge:
         sut.is_detecting = True
         sut.is_above_threshold = False
 
-        sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        # Rising edge fires after RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS
+        # consecutive above-rising-threshold calls — see TapToneAnalyzer.detect_tap.
+        for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
+            sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         assert sut.tap_detected is True, "tap_detected should be True after crossing rising threshold"
 
@@ -100,7 +104,8 @@ class TestRisingEdge:
         sut.is_above_threshold = False
 
         before = _t.monotonic()
-        sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
+            sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
         after = _t.monotonic()
 
         assert sut.last_tap_time is not None, "last_tap_time should be set on detection"
@@ -180,9 +185,11 @@ class TestHysteresis:
         sut = _make_sut(threshold=-40, hysteresis=5)
         sut.is_detecting = True
 
-        # First call: rising edge fires the tap
+        # First sequence: rising-edge confirmation requires N consecutive
+        # above-rising-threshold calls before firing — feed enough to latch.
         sut.is_above_threshold = False
-        sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
+            sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
         # tap_detected == True, is_above_threshold == True
 
         # Advance last_tap_time past cooldown so next call isn't blocked
@@ -259,9 +266,11 @@ class TestPlateMode:
             # Set a controlled noise floor estimate.
             # headroom = max(-40 - (-70), 10) = 30 dB
             # effective_rising_threshold = -70 + 30 = -40 dB
-            # So a signal at -35 dB should fire.
+            # So a signal at -35 dB should fire after N consecutive
+            # above-threshold calls.
             sut.noise_floor_estimate = -70.0
-            sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+            for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
+                sut.detect_tap(peak_magnitude=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
             assert sut.tap_detected is True, \
                 "Plate mode: signal above noise floor + headroom should fire"

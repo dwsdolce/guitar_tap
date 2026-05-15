@@ -431,6 +431,8 @@ class TapToneAnalyzerControlMixin:
             return
         self.is_detecting = False
         self.is_detection_paused = True
+        # Stop accumulating audio during pause — mirrors Swift pauseTapDetection.
+        self._is_session_recording = False
         self._set_status_message("Detection paused – tap freely, then resume")
         self.tapDetectionPaused.emit(True)
 
@@ -454,6 +456,8 @@ class TapToneAnalyzerControlMixin:
         self.analyzer_start_time = _time.monotonic()
         self.is_above_threshold = False
 
+        # Resume accumulating audio after pause — mirrors Swift resumeTapDetection.
+        self._is_session_recording = True
         self.is_detecting = True
 
         # Restore a context-appropriate prompt (mirrors Swift resumeTapDetection).
@@ -598,10 +602,23 @@ class TapToneAnalyzerControlMixin:
         # append a stale entry into the now-cleared captured_taps list, and the
         # pre-roll buffer would carry stale audio from the previous run into
         # the next gated capture's leading window.
+        #
+        # Session recording: clear the buffer and begin recording.  The buffer
+        # accumulates raw audio while detection is active, producing a single
+        # WAV per measurement for replay.  Seed checkpoints with [0] so the
+        # first phase has a truncation anchor — without it, redoing the first
+        # phase (or the same phase repeatedly) would leave the rejected tap's
+        # audio in the saved WAV.  See accept_current_phase / redo_current_phase.
         with self._gated_lock:
             self._gated_capture_active = False
             self._gated_accum = []
             self._pre_roll_buf = []
+            self._session_recording_buffer = []
+            self._session_checkpoints = [0]
+            self._is_session_recording = True
+            self._session_recording_sample_rate = (
+                self._mpm_sample_rate if self._mpm_sample_rate > 0 else 48000.0
+            )
 
         # Seed the noise-floor estimate so the first relative-threshold
         # calculation has a reasonable baseline.
@@ -755,6 +772,13 @@ class TapToneAnalyzerControlMixin:
         self.is_detecting = False
         self.capture_timer_active = False  # mirrors Swift captureTimer?.invalidate(); captureTimer = nil
 
+        # Session recording: discard the buffer on cancel — mirrors Swift
+        # cancelTapSequence which clears sessionRecordingBuffer / checkpoints.
+        with self._gated_lock:
+            self._is_session_recording = False
+            self._session_recording_buffer = []
+            self._session_checkpoints = []
+
         # Mark as complete so New Tap is re-enabled after cancel.
         # Use set_measurement_complete() to emit the measurementComplete signal
         # so the view's set_measurement_complete() handler fires and updates the
@@ -856,6 +880,12 @@ class TapToneAnalyzerControlMixin:
         from models.material_tap_phase import MaterialTapPhase as _MTP
         from models.tap_display_settings import TapDisplaySettings as _tds
 
+        # Session recording: checkpoint the current buffer position so that
+        # if a subsequent phase is redone, we can truncate back to here.
+        # Mirrors Swift acceptCurrentPhase checkpoint append.
+        with self._gated_lock:
+            self._session_checkpoints.append(len(self._session_recording_buffer))
+
         phase = self.material_tap_phase
 
         if phase == _MTP.REVIEWING_LONGITUDINAL:
@@ -903,6 +933,17 @@ class TapToneAnalyzerControlMixin:
 
         import numpy as _np
         from models.material_tap_phase import MaterialTapPhase as _MTP
+
+        # Session recording: truncate back to the start of the current phase
+        # so the rejected tap's audio is excluded from the saved WAV.
+        # Peek (don't pop) — the anchor must remain in place so that a second
+        # redo of the same phase truncates to the same position, not to the
+        # start of the *previous* accepted phase.  Mirrors Swift redoCurrentPhase.
+        with self._gated_lock:
+            if self._session_checkpoints:
+                phase_start = self._session_checkpoints[-1]
+                if len(self._session_recording_buffer) > phase_start:
+                    del self._session_recording_buffer[phase_start:]
 
         phase = self.material_tap_phase
 
@@ -1012,6 +1053,8 @@ class TapToneAnalyzerControlMixin:
         from models.material_tap_phase import MaterialTapPhase as _MTP
         self._set_material_tap_phase(_MTP.COMPLETE)
         self.set_measurement_complete(True)
+        # Save the session WAV — mirrors Swift finishSessionRecording(label: "Plate_LC").
+        self.finish_session_recording(label="Plate_LC")
         # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
         if self.show_loaded_settings_warning:
             self.show_loaded_settings_warning = False
@@ -1064,6 +1107,8 @@ class TapToneAnalyzerControlMixin:
         from models.material_tap_phase import MaterialTapPhase as _MTP
         self._set_material_tap_phase(_MTP.COMPLETE)
         self.set_measurement_complete(True)
+        # Save the session WAV — mirrors Swift finishSessionRecording(label: "Plate_LCF").
+        self.finish_session_recording(label="Plate_LCF")
         # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
         if self.show_loaded_settings_warning:
             self.show_loaded_settings_warning = False
