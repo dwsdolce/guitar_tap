@@ -10,18 +10,52 @@ import sys
 import traceback
 
 # Catch C-level crashes (segfaults, abort, illegal instruction) and dump a
-# stack trace for ALL threads to stderr.  Without this, Qt/PySide6 segfaults
-# disappear silently and the app exits with no output.  Must be enabled
-# before any heavy imports so it's already armed when the crash happens.
+# stack trace for ALL threads.  Without this, Qt/PySide6 segfaults disappear
+# silently and the app exits with no output.  Must be enabled before any
+# heavy imports so it's already armed when the crash happens.
+#
+# Output target: prefer sys.stderr when it's available (developer/console
+# runs).  In a pyinstaller windowed build on Windows, sys.stderr is None
+# because there is no console attached — passing None to faulthandler.enable
+# raises RuntimeError before anything else runs.  In that case open a log
+# file under the same directory as the crash log so a C-level crash leaves
+# a diagnosable trace.
 import faulthandler
-faulthandler.enable(file=sys.stderr, all_threads=True)
+
+def _faulthandler_target():
+    """Return a writable file object for faulthandler output.
+
+    sys.stderr in the developer/console case; a fresh log file under the
+    user's app-data directory in the pyinstaller-windowed case where stderr
+    has been detached.
+    """
+    if sys.stderr is not None:
+        return sys.stderr
+    # Mirror _crash_log_path() layout but use a separate filename so the
+    # C-crash trace doesn't overwrite the Python-exception crash log.
+    if os.name == "nt":
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+        path = os.path.join(base, "guitar-tap", "faulthandler.log")
+    elif sys.platform == "darwin":
+        path = os.path.expanduser("~/Library/Logs/GuitarTap/faulthandler.log")
+    else:
+        path = os.path.expanduser("~/.local/share/GuitarTap/faulthandler.log")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return open(path, "w", encoding="utf-8", buffering=1)
+    except OSError:
+        return None
+
+_fh_target = _faulthandler_target()
+if _fh_target is not None:
+    faulthandler.enable(file=_fh_target, all_threads=True)
 
 # Register SIGUSR1 to dump all thread stacks on demand.  Qt/PySide6 blocks
 # SIGINT on the main thread so Ctrl+C doesn't work when the app is hung.
-# Use `kill -USR1 <pid>` from a terminal to get a thread dump to stderr.
-if sys.platform != "win32":
+# Use `kill -USR1 <pid>` from a terminal to get a thread dump.
+if sys.platform != "win32" and _fh_target is not None:
     import signal
-    faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True)
+    faulthandler.register(signal.SIGUSR1, file=_fh_target, all_threads=True)
 
 # Ensure models/ and views/ are importable as top-level packages when running
 # as `python -m guitar_tap`. __file__ is src/guitar_tap/__main__.py so

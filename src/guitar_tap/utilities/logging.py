@@ -11,6 +11,7 @@ Both write to the platform user-data directory alongside saved measurements:
   Linux:         ~/.local/share/GuitarTap/guitar_tap-debug.log
 """
 
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,12 +56,18 @@ _file_logger = _FileLogger()
 
 def gt_log(message: str) -> None:
     if _gt_log_enabled:
-        print(message)
+        # sys.stdout is None in pyinstaller windowed builds (no console
+        # attached).  print() would crash with AttributeError on the missing
+        # .write attribute, so skip it in that case — the file logger below
+        # still captures the message.
+        if sys.stdout is not None:
+            print(message)
         _file_logger._write(message)
 
 
 def TAP_DEBUG(category: str, message: str) -> None:
     if _tap_debug_enabled:
         msg = f"TAP_DEBUG {category}: {message}"
-        print(msg)
+        if sys.stdout is not None:
+            print(msg)
         _file_logger._write(msg)
