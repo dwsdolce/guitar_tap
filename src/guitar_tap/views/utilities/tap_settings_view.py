@@ -55,6 +55,22 @@ class AppSettings:
     def _set(cls, key: str, value) -> None:
         cls._s().setValue(key, value)
 
+    @classmethod
+    def _get_bool(cls, key: str, default: bool) -> bool:
+        """Read a boolean setting safely across platforms.
+
+        QSettings on Windows persists booleans as the strings "true"/"false"
+        in the registry; reading them back returns a string, and Python's
+        bool("false") is True (non-empty string is truthy).  This helper
+        normalises both Python bools and the stringified forms.
+        """
+        v = cls._get(key, None)
+        if v is None:
+            return default
+        if isinstance(v, bool):
+            return v
+        return str(v).strip().lower() == "true"
+
     # ------------------------------------------------------------------ #
     # Display frequency range (per-measurement-type keys)
     # ------------------------------------------------------------------ #
@@ -253,8 +269,7 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def show_unknown_modes(cls) -> bool:
-        v = cls._get("analysis/show_unknown_modes", None)
-        return bool(v) if v is not None else True
+        return cls._get_bool("analysis/show_unknown_modes", True)
 
     @classmethod
     def set_show_unknown_modes(cls, v: bool) -> None:
@@ -265,8 +280,7 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def dump_capture_audio(cls) -> bool:
-        v = cls._get("analysis/dump_capture_audio", None)
-        return bool(v) if v is not None else False
+        return cls._get_bool("analysis/dump_capture_audio", False)
 
     @classmethod
     def set_dump_capture_audio(cls, v: bool) -> None:
@@ -413,8 +427,7 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def measure_flc(cls) -> bool:
-        v = cls._get("plate/measure_flc", None)
-        return str(v).lower() == "true" if v is not None else False
+        return cls._get_bool("plate/measure_flc", False)
 
     @classmethod
     def set_measure_flc(cls, v: bool) -> None:
@@ -471,6 +484,22 @@ class AppSettings:
     @classmethod
     def set_calibration_path(cls, path: str) -> None:
         cls._set("calibration/last_path", path)
+
+    # ------------------------------------------------------------------ #
+    # Audio playback — last-used directory for the Play File dialog's
+    # Browse button.  Mirrors macOS NSOpenPanel's per-content-type
+    # auto-remember behaviour, which Swift gets for free via SwiftUI
+    # .fileImporter.  Qt has no such automatic per-button tracking, so
+    # we persist the directory explicitly.
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def audio_path(cls) -> str:
+        """Last directory used for opening an audio file in the Play File dialog."""
+        return str(cls._get("audio/last_path", ""))
+
+    @classmethod
+    def set_audio_path(cls, path: str) -> None:
+        cls._set("audio/last_path", path)
 
     @classmethod
     def calibration_for_device(cls, device_name: str) -> str:

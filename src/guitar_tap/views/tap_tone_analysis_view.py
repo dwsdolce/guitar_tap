@@ -6762,16 +6762,21 @@ class _PlayFileDialog(QtWidgets.QDialog):
     # -- Browse handlers --
 
     def _browse_audio(self) -> None:
+        # Open at the last directory an audio file was picked from (per-button
+        # last-used dir).  Mirrors macOS NSOpenPanel's automatic per-content-type
+        # memory in the Swift fileImporter equivalent.
+        start_dir = AS.AppSettings.audio_path() or os.path.expanduser("~")
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Open Audio File",
-            M.last_export_dir(),
+            start_dir,
             "Audio files (*.wav *.aif *.aiff *.flac *.ogg);;All files (*)",
         )
         if path:
             self._audio_path = path
             self._audio_edit.setText(os.path.basename(path))
             self._ok_btn.setEnabled(True)
+            AS.AppSettings.set_audio_path(os.path.dirname(path))
 
     def _browse_calibration(self) -> None:
         start_dir = AS.AppSettings.calibration_path() or os.path.expanduser("~")
@@ -6785,6 +6790,10 @@ class _PlayFileDialog(QtWidgets.QDialog):
             self._cal_path = path
             self._cal_edit.setText(os.path.basename(path))
             self._cal_clear.setEnabled(True)
+            # Persist the directory so the next browse — here or via Import
+            # Calibration — opens at the same place.  Mirrors the
+            # Import-Calibration code path which already does this.
+            AS.AppSettings.set_calibration_path(os.path.dirname(path))
 
     def _clear_calibration(self) -> None:
         self._cal_path = ""

@@ -750,8 +750,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # counter, and overwrite the displayed frozen spectrum, masking the
         # real brace/plate phase capture that runs in parallel.  Mirrors the
         # equivalent guard in Swift TapToneAnalyzer+SpectrumCapture.swift
-        # finishGuitarGatedCapture.
-        if _tds.measurement_type() != _MT.GENERIC:
+        # finishGuitarGatedCapture.  Accepts any guitar measurement type
+        # (GENERIC, ACOUSTIC, CLASSICAL, FLAMENCO); only rejects plate/brace.
+        if not _tds.measurement_type().is_guitar:
             from utilities.logging import TAP_DEBUG as _td_orphan
             _td_orphan(
                 "guitar_gated_capture",

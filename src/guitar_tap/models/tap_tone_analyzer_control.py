@@ -700,6 +700,20 @@ class TapToneAnalyzerControlMixin:
         self.source_measurement_timestamp = None
         self.loadedMeasurementNameChanged.emit(None)
 
+        # Also clear the played-file name so the chart title reverts to "New"
+        # when the user starts a fresh tap sequence (e.g. by changing
+        # measurement type across the guitar/material boundary).  Without
+        # this, chart_title — computed as
+        #   fft.playing_file_name ?? tap.loaded_measurement_name ?? "New"
+        # — keeps showing the previously-played filename even though the new
+        # sequence is unrelated to that file.  For the file-playback path
+        # (start_from_file) this is harmless because process_file_data
+        # re-assigns playing_file_name immediately after start_tap_sequence
+        # returns.
+        if self.mic is not None and getattr(self.mic, "playing_file_name", None) is not None:
+            self.mic.playing_file_name = None
+            self.playingFileNameChanged.emit(None)
+
         self.tapCountChanged.emit(0, self.number_of_taps)
 
     def set_tap_num(self, n: int) -> None:
