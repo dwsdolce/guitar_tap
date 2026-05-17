@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Guitar Tap
+Comment=Spectrum and peak analysis from audio input
+Exec=guitar-tap
+Icon=guitar-tap
+Categories=AudioVideo;Audio;
+Terminal=false

@@ -11,30 +11,63 @@
  the earlier systems
  
  ## To run this software from source:
- * Download the source code or clone the repository from https://github.com/dwsdolce/guitar_tap
- * Install Python 3.14 or later from https://www.python.org/
- * Open a terminal (or cmd/PowerShell on Windows)
 
- **NOTE:** On MAC, install portaudio first:
-	- brew install portaudio
+ ### 1. Prerequisites
+ * Install Python 3.14 or later from https://www.python.org/ (`python3` / `pip3` on macOS and most Linux distros).
+ * Install Git and clone the repository:
+	- `git clone https://github.com/dwsdolce/guitar_tap`
+	- `cd guitar_tap`
 
- **NOTE:** On Linux, install system dependencies first:
-	- sudo apt update
-	- sudo apt install portaudio19-dev
-	- sudo apt-get install -y libxcb-cursor-dev
+ ### 2. System dependencies
 
- * For Windows and Linux — from the repository root:
-	- pip install -e .
-	- python guitar_tap.py
+ **macOS:**
+	- `brew install portaudio`
 
- * For MAC — from the repository root:
-	- pip install -e ".[macos]"
-	- python guitar_tap.py
+ **Linux (Debian/Ubuntu):**
+	- `sudo apt update`
+	- `sudo apt install portaudio19-dev libxcb-cursor-dev`
 
- **NOTE:** You may have to use `python3` and `pip3` on your system (MAC requires this).
+ **Windows:** no extra system packages required.
 
- * To build an installer you need to:
-	- pip install pyinstaller
-	- build_{linux, mac, win}
+ ### 3. Create a virtual environment (recommended)
+	- `python3.14 -m venv .venv`
+	- Activate it:
+	  - Linux/macOS: `source .venv/bin/activate`
+	  - Windows (PowerShell): `.\.venv\Scripts\Activate.ps1`
+	  - Windows (Cygwin bash): `source .venv/Scripts/activate` (note: `Scripts`, not `bin`, even from bash)
 
- **NOTE:**  For Windows and MACOS there are additional packages required for signing the installer. See the scripts.
+ ### 4. Install the project
+ All dependencies (runtime + optional extras) are declared in [pyproject.toml](pyproject.toml).
+
+ * Run-only install:
+	- Linux/Windows: `pip install -e .`
+	- macOS: `pip install -e ".[macos]"`
+
+ * Developer install (adds pytest, mypy, ruff, weasyprint):
+	- `pip install -e ".[dev]"` (add `,macos` on macOS)
+
+ * Launch the app:
+	- `python -m guitar_tap`
+
+ ## Building installers
+
+ Install the packaging extras (adds PyInstaller):
+	- `pip install -e ".[packaging]"` (combine extras as needed, e.g. `".[dev,packaging]"`)
+
+ Then run the platform script from the repository root:
+	- Linux:   `./packaging/build_linux`
+	- macOS:   `./packaging/build_mac`
+	- Windows: `packaging\build_win.bat`
+
+ ### Platform-specific tooling
+
+ **Linux (AppImage):** the build script invokes `appimagetool`. Install it once:
+	- `wget -O ~/bin/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage`
+	- `chmod +x ~/bin/appimagetool`
+	- If `appimagetool` is elsewhere, set `APPIMAGETOOL=/path/to/appimagetool` before running `build_linux`.
+	- On Ubuntu 22.04+ you may also need `sudo apt install libfuse2` for `appimagetool` to run.
+	- For broadest compatibility, build inside a container running the oldest glibc you want to support (e.g. Ubuntu 22.04 LTS).
+
+ **Windows:** the installer step uses [Inno Setup](https://jrsoftware.org/isinfo.php) — install it and ensure `iscc.exe` is on `PATH`. Code signing requires the signing certificate referenced in the script.
+
+ **macOS:** code signing and notarization require an Apple Developer ID. The spec file ([packaging/guitar-tap.spec](packaging/guitar-tap.spec)) references the certificate identity — adjust it for your own developer account.

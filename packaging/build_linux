@@ -34,3 +34,48 @@ if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"
     exit 1
 fi
+
+#===============================================
+# Assemble AppDir
+#===============================================
+APPDIR=dist/AppDir
+rm -rf "$APPDIR"
+mkdir -p "$APPDIR/usr/bin" \
+         "$APPDIR/usr/share/applications" \
+         "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+
+# Payload: the PyInstaller bundle directory.
+cp -r dist/guitar-tap "$APPDIR/usr/bin/"
+
+# Desktop entry — appimagetool requires it at both AppDir root and usr/share/applications.
+cp packaging/guitar-tap.desktop "$APPDIR/"
+cp packaging/guitar-tap.desktop "$APPDIR/usr/share/applications/"
+
+# Icon — 256x256 PNG at AppDir root (as guitar-tap.png, matching the desktop Icon= name)
+# and in the hicolor theme.
+cp src/guitar_tap/icons/guitar-tap-256.png "$APPDIR/guitar-tap.png"
+cp src/guitar_tap/icons/guitar-tap-256.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/guitar-tap.png"
+
+# AppRun launcher.
+cp packaging/AppRun "$APPDIR/AppRun"
+chmod +x "$APPDIR/AppRun"
+
+#===============================================
+# Build the AppImage
+#===============================================
+APPIMAGETOOL="${APPIMAGETOOL:-$HOME/bin/appimagetool}"
+if [ ! -x "$APPIMAGETOOL" ]; then
+    echo "appimagetool not found at $APPIMAGETOOL"
+    echo "Download it from https://github.com/AppImage/AppImageKit/releases"
+    echo "or set APPIMAGETOOL=/path/to/appimagetool"
+    exit 1
+fi
+
+ARCH=$(uname -m)
+OUT="dist/guitar-tap-${VERSION}-${ARCH}.AppImage"
+ARCH=$ARCH "$APPIMAGETOOL" "$APPDIR" "$OUT"
+if [ $? -ne 0 ]; then
+    echo "appimagetool failed"
+    exit 1
+fi
+echo "Built $OUT"
