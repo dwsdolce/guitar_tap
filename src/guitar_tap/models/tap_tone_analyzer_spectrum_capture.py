@@ -761,6 +761,19 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             )
             return
 
+        # A capture has been confirmed.  Clear is_detecting so the analyzer
+        # reflects "tap acknowledged" regardless of which path triggered the
+        # capture.  The RMS path (handle_tap_detection) clears it earlier;
+        # the audio-queue path (_level_crossing_handler) does not touch
+        # is_detecting, so without this line a tap that came in via the
+        # audio queue would leave is_detecting=True through the capture and
+        # into process_multiple_taps, producing the impossible
+        # (is_detecting && is_measurement_complete) state.  Mirrors Swift
+        # TapToneAnalyzer+SpectrumCapture finishGuitarGatedCapture.  For
+        # multi-tap sequences, _schedule_guitar_re_enable below sets
+        # is_detecting=True again after the cooldown.
+        self.is_detecting = False
+
         self._dump_capture_wav(samples, sample_rate, "guitar")
 
         fft_size = int(self.mic.fft_size)
