@@ -7,13 +7,13 @@ Button layout (matches SwiftUI .cancellationAction / .primaryAction on macOS):
   Bottom-right : [Done]  (becomes [Cancel] while in compare mode)
 
 Row content (matches MeasurementRowView.swift):
-  Line 1 : measurementName/"Measurement" (bold)  •  waveform icon (if snapshot)  •  HH:MM time
+  Line 1 : measurementName/"Measurement" (bold)  •  waveform icon (if snapshot)  •  locale-aware short date+time
   Line 2 : N peaks  •  Ratio: X.XX (if available)  •  Decay: X.XXs (if available)
   Line 3 : notes, max 2 lines (if any)
 
 Click a row    → opens MeasurementDetailDialog
-Right-click    → context menu: Load into View | View Details | Export Measurement |
-                 Export Spectrum | Export PDF Report | Delete
+Right-click    → context menu: Load into View | View Details | Edit Name & Notes |
+                 Export Measurement | Export Spectrum | Export PDF Report | Delete
 """
 
 import os
@@ -314,10 +314,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
         load_act        = menu.addAction("Load into View")
         menu.addSeparator()
         details_act     = menu.addAction("View Details")
-        edit_act        = menu.addAction("Edit…")
-        export_act      = menu.addAction("Export Measurement…")
-        export_spec_act = menu.addAction("Export Spectrum…")
-        export_pdf_act  = menu.addAction("Export PDF Report…")
+        edit_act        = menu.addAction("Edit Name & Notes")
+        export_act      = menu.addAction("Export Measurement")
+        export_spec_act = menu.addAction("Export Spectrum")
+        export_pdf_act  = menu.addAction("Export PDF Report")
         menu.addSeparator()
         delete_act      = menu.addAction("Delete")
 

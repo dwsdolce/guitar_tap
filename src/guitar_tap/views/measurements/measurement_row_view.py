@@ -107,7 +107,7 @@ class MeasurementRowView(QtWidgets.QWidget):
         content = QtWidgets.QVBoxLayout()
         content.setSpacing(3)
 
-        # Line 1: measurement name + icon + time + chevron
+        # Line 1: measurement name + icon + date/time + chevron
         line1 = QtWidgets.QHBoxLayout()
         line1.setSpacing(6)
 
@@ -131,9 +131,14 @@ class MeasurementRowView(QtWidgets.QWidget):
 
         try:
             dt = datetime.fromisoformat(m.timestamp).astimezone()
-            time_str = dt.strftime("%H:%M")
+            # Locale-aware short date + time, matching Swift's
+            # .formatted(date: .abbreviated, time: .shortened).
+            qdt = QtCore.QDateTime(dt)
+            time_str = QtCore.QLocale().toString(qdt, QtCore.QLocale.FormatType.ShortFormat)
         except Exception:
-            time_str = m.timestamp[11:16] if len(m.timestamp) >= 16 else ""
+            # Fall back to the date+time portion of an ISO-8601 timestamp
+            # (YYYY-MM-DDTHH:MM... → "YYYY-MM-DD HH:MM").
+            time_str = (m.timestamp[:10] + " " + m.timestamp[11:16]) if len(m.timestamp) >= 16 else ""
         time_lbl = QtWidgets.QLabel(time_str)
         time_lbl.setStyleSheet("color: #888888; font-size: 10px;")
         line1.addWidget(time_lbl)

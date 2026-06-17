@@ -221,10 +221,11 @@ class _PeakRow(QtWidgets.QFrame):
 
 class MeasurementDetailDialog(QtWidgets.QDialog):
     """
-    Shows measurement info, detected peaks, and Load / Export / PDF buttons.
-    Matches MeasurementDetailView.swift.
+    Read-only detail dialog.  Shows measurement info and detected peaks.
 
-    Emits measurementSelected(m) when the user confirms Load.
+    Load / Export / Export PDF Report are reached from the popup menu on
+    the row in the Measurements list (see MeasurementsListView); only the
+    Close button remains here.  Matches MeasurementDetailView.swift.
     """
 
     measurementSelected: QtCore.Signal = QtCore.Signal(object)
@@ -360,20 +361,11 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         vbox.addStretch()
 
         # ── Button row ───────────────────────────────────────────────────────
+        # The detail view is read-only.  Load / Export / Export PDF Report
+        # are all available from the row's popup menu in the Measurements
+        # list (see MeasurementsListView), so no duplicate controls are
+        # presented here.  Only the Close button remains.
         btn_row = QtWidgets.QHBoxLayout()
-
-        load_btn = QtWidgets.QPushButton("Load into View")
-        load_btn.clicked.connect(self._on_load)
-        btn_row.addWidget(load_btn)
-
-        export_btn = QtWidgets.QPushButton("Export JSON…")
-        export_btn.clicked.connect(self._on_export_json)
-        btn_row.addWidget(export_btn)
-
-        export_pdf_btn = QtWidgets.QPushButton("Export PDF Report…")
-        export_pdf_btn.clicked.connect(self._on_export_pdf)
-        btn_row.addWidget(export_pdf_btn)
-
         btn_row.addStretch()
 
         close_btn = QtWidgets.QPushButton("Close")
