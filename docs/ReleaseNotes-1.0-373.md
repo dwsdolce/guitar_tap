@@ -23,7 +23,7 @@
 
 ### Smaller macOS Bundle
 
-- The macOS bundle is now considerably smaller (≈70 MB, down from previous builds). Download time and disk footprint are correspondingly reduced.
+- The macOS bundle is now considerably smaller (about 70 MB, down from previous builds). Download time and disk footprint are correspondingly reduced.
 
 ### Measurement Detail View
 
