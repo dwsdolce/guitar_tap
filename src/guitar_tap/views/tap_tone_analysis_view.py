@@ -499,11 +499,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # -- Help menu --
         help_menu = mb.addMenu("Help")
-        help_action = QtGui.QAction("Guitar Tap Help", self)
+        help_action = QtGui.QAction("Quick Start Guide", self)
         help_action.setShortcut(QtGui.QKeySequence(QtGui.QKeySequence.StandardKey.HelpContents))
         help_action.setMenuRole(QtGui.QAction.MenuRole.NoRole)
         help_action.triggered.connect(self._show_help)
         help_menu.addAction(help_action)
+
+        user_manual_action = QtGui.QAction("User Manual", self)
+        user_manual_action.setMenuRole(QtGui.QAction.MenuRole.NoRole)
+        user_manual_action.triggered.connect(self._open_user_manual)
+        help_menu.addAction(user_manual_action)
 
         if _sys.platform != "darwin":
             # Windows/Linux: About belongs in the Help menu (standard placement).
@@ -6330,13 +6335,28 @@ class MainWindow(QtWidgets.QMainWindow):
         hr_icon = QtWidgets.QLabel()
         hr_icon.setPixmap(qta.icon("mdi.help-circle-outline").pixmap(16, 16))
         hr_layout.addWidget(hr_icon)
-        hr_layout.addWidget(QtWidgets.QLabel("Help"))
+        hr_layout.addWidget(QtWidgets.QLabel("Quick Start Guide"))
         hr_layout.addStretch()
         hr_chevron = QtWidgets.QLabel()
         hr_chevron.setPixmap(qta.icon("mdi.chevron-right").pixmap(16, 16))
         hr_layout.addWidget(hr_chevron)
         help_row.mousePressEvent = lambda _ev: _show_help_page()
         ab.addWidget(help_row)
+
+        user_manual_row = QtWidgets.QWidget()
+        user_manual_row.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        um_layout = QtWidgets.QHBoxLayout(user_manual_row)
+        um_layout.setContentsMargins(0, 4, 0, 4)
+        um_icon = QtWidgets.QLabel()
+        um_icon.setPixmap(qta.icon("mdi.book-open-variant").pixmap(16, 16))
+        um_layout.addWidget(um_icon)
+        um_layout.addWidget(QtWidgets.QLabel("User Manual"))
+        um_layout.addStretch()
+        um_chevron = QtWidgets.QLabel()
+        um_chevron.setPixmap(qta.icon("mdi.open-in-new").pixmap(16, 16))
+        um_layout.addWidget(um_chevron)
+        user_manual_row.mousePressEvent = lambda _ev: self._open_user_manual()
+        ab.addWidget(user_manual_row)
 
         # =====================================================
         # Final layout — matches Swift TapSettingsView.body order:
@@ -6642,6 +6662,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self._help_dialog.show()
         self._help_dialog.raise_()
         self._help_dialog.activateWindow()
+
+    def _open_user_manual(self) -> None:
+        """Open the published User Manual in the system default browser.
+
+        The filename embeds the app's marketing version so the link stays
+        accurate across version bumps without code changes.
+        """
+        import webbrowser
+        from _version import __version__
+        url = (
+            "https://www.dolcesfogato.com/guitar_tap/manual/"
+            f"GuitarTap-User-Manual-{__version__}.html"
+        )
+        webbrowser.open(url)
 
     # ================================================================
     # Window lifecycle

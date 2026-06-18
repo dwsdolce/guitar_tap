@@ -100,10 +100,10 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Choose a Measurement Type",
         "In Settings, the Measurement Type section is directly below Audio Input. "
-        "Pick Generic Guitar (the default, with broad ranges covering all types), "
-        "Classical Guitar, Flamenco, Steel String, Material (Plate), or Material (Brace). "
-        "The right choice determines which mode-frequency ranges are used and which "
-        "measurements are calculated."
+        "Pick Generic Guitar (the default, with broad ranges that work for any guitar), "
+        "Classical, Flamenco, Acoustic / Steel String, Material (Plate), or "
+        "Material (Brace). The right choice determines which mode-frequency ranges are "
+        "used and which measurements are calculated."
     ))
     parts.append(_row(
         "Advanced Settings",
@@ -128,10 +128,10 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Step 1 &mdash; Configure",
-        "In Settings choose the guitar type (Generic Guitar by default, or Classical, "
-        "Flamenco, Acoustic/Steel String) in the Measurement Type section. Each type has "
-        "calibrated frequency windows for each mode, shown there. Generic Guitar uses broad "
-        "ranges that cover all guitar types. The Show Unknown Modes toggle is in the Advanced section."
+        "In Settings choose the guitar type in the Measurement Type section. Generic "
+        "Guitar (the default) uses broad ranges that work for any guitar; Classical, "
+        "Flamenco, and Acoustic / Steel String use narrower calibrated windows shown in "
+        "the same section. The Show Unknown Modes toggle is in the Advanced section."
     ))
     parts.append(_row(
         "Step 2 &mdash; Position the Microphone",
@@ -326,12 +326,23 @@ def _build_help_html() -> str:
         ["fa5.times-circle", "fa5s.undo"]
     ))
     parts.append(_row(
-        "Results Panel",
-        "The analysis results panel is permanently visible on the right side of the "
-        "window. It shows the peak list, decay time, plate properties, quality rating, "
-        "and (for Plate mode) the Gore target thickness. The panel also contains "
-        "Export Spectrum and Export PDF Report buttons.",
+        "Analysis Results",
+        "The Analysis Results panel shows the peak list, decay time, plate properties, "
+        "quality rating, and (for Plate mode) the Gore target thickness. It also "
+        "contains Export Spectrum and Export PDF Report buttons. On iPhone, tap the "
+        "Results button (doc icon) in the toolbar to open the panel as a sheet. On iPad "
+        "and desktop, the panel is permanently visible on the right side of the window.",
         ["fa5s.file-alt"]
+    ))
+    parts.append(_row(
+        "Re-analyze Peaks",
+        "Shown in the results panel header next to the microphone name. Re-runs peak "
+        "detection on a loaded measurement&rsquo;s frozen spectrum using the current "
+        "algorithm. This is useful when loading measurements saved by older builds that "
+        "may have missed peaks due to earlier algorithm limitations. The button is only "
+        "enabled when viewing a loaded measurement. After re-analysis the peaks are "
+        "recalculated as if the measurement were freshly captured with the current software.",
+        ["fa5s.sync-alt"]
     ))
     parts.append(_row(
         "Auto dB",
@@ -371,11 +382,14 @@ def _build_help_html() -> str:
         "Measurements",
         "Lists all saved measurements. Double-click a row to load the measurement "
         "into the main view &mdash; the measurements window closes automatically after "
-        "loading. Right-click a row to access: Load into View, View Details, Export "
-        "Measurement, Save Measurement to Disk, Export Spectrum, Export PDF Report, or "
-        "Delete. Use Import Measurement to load a file from disk. "
-        "Use Compare to enter multi-select mode and overlay 2&ndash;5 saved guitar "
-        "measurements on the main chart for side-by-side comparison.",
+        "loading. Right-click a row to access: Load into View, View Details, Edit Name "
+        "&amp; Notes, Export Measurement (saves the .guitartap file via a save dialog), "
+        "Export Spectrum (saves the chart image), Export PDF Report, or Delete. Use "
+        "Import Measurement to load a .guitartap file from disk or another device. Use "
+        "Compare to enter multi-select mode and overlay 2&ndash;5 saved guitar "
+        "measurements on the main chart for side-by-side comparison. The measurement "
+        "name and notes can also be edited from the Edit button in the Measurement "
+        "Details dialog.",
         ["fa5s.clipboard-list"]
     ))
     parts.append(_row(
@@ -383,8 +397,17 @@ def _build_help_html() -> str:
         "In the Measurements list, click Compare to enter selection mode. "
         "Select 2&ndash;5 saved guitar measurements (plate and brace measurements cannot "
         "be compared). Click Compare Selected to overlay all selected spectra on the main "
-        "chart as colour-coded curves with a legend. Press New Tap to exit comparison and "
-        "return to single-measurement mode.",
+        "chart as colour-coded curves with a legend. The chart, cursor, zoom, and pan all "
+        "work normally. Press New Tap to exit comparison and return to single-measurement "
+        "mode.<br><br>"
+        "While comparing: Annotations is disabled; Threshold and Peak Min sliders are "
+        "disabled. <b>Export Spectrum</b> produces an overlay image with all curves, "
+        "their colours, and a legend. <b>Export PDF Report</b> generates a comparison "
+        "report showing the spectrum image and an Air / Top / Back peak frequency table "
+        "for each spectrum. <b>Save</b> stores the entire comparison as a single record "
+        "in the Measurements list &mdash; it can be reloaded later to restore the overlay "
+        "view exactly as it was, and can itself be exported as a PDF or spectrum image "
+        "from the list.",
         ["mdi.waveform"]
     ))
     parts.append(_row(
@@ -413,7 +436,17 @@ def _build_help_html() -> str:
         "&bull; <b>Show Metrics</b> &mdash; Ctrl+M &mdash; opens the FFT diagnostics panel<br>"
         "&bull; <b>Show Measurements</b> &mdash; Ctrl+L &mdash; opens the saved measurements browser<br><br>"
         "<b>Help menu:</b><br>"
-        "&bull; <b>Guitar Tap Help</b> &mdash; F1 (⌘? on macOS) &mdash; opens this window"
+        "&bull; <b>Quick Start Guide</b> &mdash; F1 (⌘? on macOS) &mdash; opens this window<br>"
+        "&bull; <b>User Manual</b> &mdash; opens the full User Manual at "
+        "dolcesfogato.com in your default browser"
+    ))
+    parts.append(_row(
+        "User Manual (online)",
+        "For a complete reference &mdash; every measurement mode walked through in detail, "
+        "full settings and controls reference, troubleshooting, glossary, and file-format "
+        "specs &mdash; see the User Manual, hosted at dolcesfogato.com. Open it from the "
+        "Help menu, or from the Settings &rarr; About &amp; Help section.",
+        ["mdi.book-open-variant"]
     ))
     parts.append(_row(
         "Zoom &amp; Pan Help",
@@ -455,16 +488,6 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Reset arrows",
         "Each slider has a small reset button that resets it to the factory default value."
-    ))
-    parts.append(_row(
-        "Re-analyze Peaks",
-        "Shown in the results panel header next to the microphone name. Re-runs peak "
-        "detection on a loaded measurement&rsquo;s frozen spectrum using the current "
-        "algorithm. This is useful when loading measurements saved by older builds that "
-        "may have missed peaks due to earlier algorithm limitations. The button is only "
-        "enabled when viewing a loaded measurement. After re-analysis the peaks are "
-        "recalculated as if the measurement were freshly captured with the current software.",
-        ["fa5s.sync-alt"]
     ))
 
     # ── Settings Reference ────────────────────────────────────────────────
@@ -554,7 +577,11 @@ def _build_help_html() -> str:
         "PDF Reports",
         "Each saved measurement can generate a PDF report containing the spectrum chart, "
         "peak table, and analysis summary. Open Measurements, select a measurement, then "
-        "use the PDF export button."
+        "use the PDF export button. Saved comparison records generate a comparison PDF "
+        "showing the overlay spectrum and an Air / Top / Back frequency table for each "
+        "spectrum. A comparison PDF can also be exported directly from the main view "
+        "while a live comparison is active, using Export PDF Report in the Analysis "
+        "Results panel."
     ))
     parts.append(_row(
         "Zooming the Spectrum",
@@ -571,7 +598,7 @@ def _build_help_html() -> str:
     parts.append(_h2("mdi.book-open-outline", "Glossary"))
     parts.append(_row("Air (Helmholtz) mode",
         "The resonance of the air mass in the sound hole, analogous to blowing across a "
-        "bottle. Typically 80&ndash;130&nbsp;Hz for classical guitar."))
+        "bottle. Typically 80&ndash;110&nbsp;Hz for classical guitar."))
     parts.append(_row("Top / Back mode",
         "The fundamental bending resonance of the top or back plate. The relationship "
         "between these and the Air mode strongly influences the low-frequency response "
@@ -638,7 +665,7 @@ class HelpDialog(QtWidgets.QDialog):
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent, QtCore.Qt.WindowType.Tool)
-        self.setWindowTitle("Guitar Tap Help")
+        self.setWindowTitle("Quick Start Guide")
         self.resize(640, 700)
 
         layout = QtWidgets.QVBoxLayout(self)
