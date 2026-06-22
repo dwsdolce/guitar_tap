@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from guitar_tap.utilities.json_float import f32
+
 
 @dataclass
 class SpectrumSnapshot:
@@ -198,13 +200,15 @@ class SpectrumSnapshot:
         Mirrors Swift SpectrumSnapshot.encode(to:).
         Python-only — Swift uses Codable with a custom encoder.
         """
+        # minFreq/maxFreq/minDB/maxDB and all plate/brace/guitar-body dimensions
+        # are Swift `Float` -> quantise to float32 so the JSON matches Swift.
         d: dict = {
             "frequenciesData": self._floats_to_base64(self.frequencies),
             "magnitudesData":  self._floats_to_base64(self.magnitudes),
-            "minFreq": self.min_freq,
-            "maxFreq": self.max_freq,
-            "minDB": self.min_db,
-            "maxDB": self.max_db,
+            "minFreq": f32(self.min_freq),
+            "maxFreq": f32(self.max_freq),
+            "minDB": f32(self.min_db),
+            "maxDB": f32(self.max_db),
             "isLogarithmic": self.is_logarithmic,
         }
         if self.show_unknown_modes is not None:
@@ -213,19 +217,19 @@ class SpectrumSnapshot:
             d["guitarType"] = self.guitar_type
         if self.measurement_type is not None:
             d["measurementType"] = self.measurement_type
-        if self.plate_length         is not None: d["plateLength"]           = self.plate_length
-        if self.plate_width          is not None: d["plateWidth"]            = self.plate_width
-        if self.plate_thickness      is not None: d["plateThickness"]        = self.plate_thickness
-        if self.plate_mass           is not None: d["plateMass"]             = self.plate_mass
-        if self.guitar_body_length   is not None: d["guitarBodyLength"]      = self.guitar_body_length
-        if self.guitar_body_width    is not None: d["guitarBodyWidth"]       = self.guitar_body_width
+        if self.plate_length         is not None: d["plateLength"]           = f32(self.plate_length)
+        if self.plate_width          is not None: d["plateWidth"]            = f32(self.plate_width)
+        if self.plate_thickness      is not None: d["plateThickness"]        = f32(self.plate_thickness)
+        if self.plate_mass           is not None: d["plateMass"]             = f32(self.plate_mass)
+        if self.guitar_body_length   is not None: d["guitarBodyLength"]      = f32(self.guitar_body_length)
+        if self.guitar_body_width    is not None: d["guitarBodyWidth"]       = f32(self.guitar_body_width)
         if self.plate_stiffness_preset  is not None: d["plateStiffnessPreset"]  = self.plate_stiffness_preset
-        if self.custom_plate_stiffness  is not None: d["customPlateStiffness"]  = self.custom_plate_stiffness
+        if self.custom_plate_stiffness  is not None: d["customPlateStiffness"]  = f32(self.custom_plate_stiffness)
         if self.measure_flc          is not None: d["measureFlc"]            = self.measure_flc
-        if self.brace_length         is not None: d["braceLength"]           = self.brace_length
-        if self.brace_width          is not None: d["braceWidth"]            = self.brace_width
-        if self.brace_thickness      is not None: d["braceThickness"]        = self.brace_thickness
-        if self.brace_mass           is not None: d["braceMass"]             = self.brace_mass
+        if self.brace_length         is not None: d["braceLength"]           = f32(self.brace_length)
+        if self.brace_width          is not None: d["braceWidth"]            = f32(self.brace_width)
+        if self.brace_thickness      is not None: d["braceThickness"]        = f32(self.brace_thickness)
+        if self.brace_mass           is not None: d["braceMass"]             = f32(self.brace_mass)
         return d
 
     @staticmethod

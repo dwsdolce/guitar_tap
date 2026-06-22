@@ -16,6 +16,8 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from guitar_tap.utilities.json_float import f32
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -122,7 +124,7 @@ class ResonantPeak:
 
     # MARK: - Serialisation (Python-only)
 
-    def to_dict(self) -> dict:
+    def to_dict(self, include_mode_label: bool = True) -> dict:
         """Encode this peak as a JSON-compatible dict using Swift field names.
 
         Keys are written in the same order as Swift's PeakExportCodingKeys loop
@@ -131,14 +133,23 @@ class ResonantPeak:
           pitchNote (if present), pitchCents (if present),
           pitchFrequency (if present), modeLabel
 
+        ``modeLabel`` is an export-only convenience that Swift injects *only* for
+        the top-level ``peaks`` array.  Peaks nested inside ``tapEntries`` and
+        ``comparisonEntries`` are encoded by Swift's plain ``ResonantPeak``
+        Codable, which has no ``modeLabel``.  Pass ``include_mode_label=False``
+        from those nested encoders to match Swift exactly.
+
         Python-only — Swift uses Codable.
         """
+        # frequency/magnitude/quality/bandwidth are Swift `Float` -> quantise to
+        # float32 so the JSON matches Swift exactly.  pitchCents/pitchFrequency
+        # are Swift `Double` and are left at full float64 precision.
         d: dict = {
             "id": self.id,
-            "frequency": self.frequency,
-            "magnitude": self.magnitude,
-            "quality": self.quality,
-            "bandwidth": self.bandwidth,
+            "frequency": f32(self.frequency),
+            "magnitude": f32(self.magnitude),
+            "quality": f32(self.quality),
+            "bandwidth": f32(self.bandwidth),
             "timestamp": self.timestamp,
         }
         if self.pitch_note is not None:
@@ -147,7 +158,8 @@ class ResonantPeak:
             d["pitchCents"] = self.pitch_cents
         if self.pitch_frequency is not None:
             d["pitchFrequency"] = self.pitch_frequency
-        d["modeLabel"] = self.mode_label
+        if include_mode_label:
+            d["modeLabel"] = self.mode_label
         return d
 
     @staticmethod

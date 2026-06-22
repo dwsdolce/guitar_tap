@@ -5,7 +5,7 @@ the output magnitudes match the expected values.  The companion Swift test
 systematic difference between the two implementations will show up as a
 failing test on one side only.
 
-Test plan coverage: GFFT1–GFFT4
+Test plan coverage: GFFT1–GFFT5
 """
 
 from __future__ import annotations
@@ -74,11 +74,15 @@ def _make_proc_thread():
 # ---------------------------------------------------------------------------
 
 class TestGatedFFTParity:
-    """Mirrors Swift GatedFFTParityTests (GFFT1–GFFT4)."""
+    """Mirrors Swift GatedFFTParityTests (GFFT1–GFFT5).
+
+    Expected magnitudes are pinned to the exact same values asserted by the Swift
+    suite (within 1 dB), so any systematic divergence between the two FFT
+    implementations surfaces as a one-sided failure rather than passing loosely.
+    """
 
     def test_GFFT1_single_tone_100Hz_magnitude_is_reasonable(self):
-        """GFFT1: A single 100 Hz sine at amplitude 0.5 produces a peak
-        well above the noise floor."""
+        """GFFT1: A single 100 Hz sine at amplitude 0.5.  Swift pins -15.72 dB."""
         sample_rate = 48000.0
         signal = _make_two_tone_signal(
             sample_rate=sample_rate, duration=0.4,
@@ -91,7 +95,8 @@ class TestGatedFFTParity:
         mag100 = _magnitude_at_frequency(100, mags, freqs)
         assert mag100 is not None, "Should find bin near 100 Hz"
         print(f"GFFT1 Python: 100 Hz magnitude = {mag100:.2f} dB")
-        assert mag100 > -30, f"100 Hz peak should be above -30 dB, got {mag100:.2f}"
+        assert abs(mag100 - (-15.72)) < 1.0, \
+            f"100 Hz: Python={mag100:.2f} dB, Swift=-15.72 dB — difference > 1 dB"
 
     def test_GFFT2_two_tone_67Hz_and_117Hz_magnitudes_match(self):
         """GFFT2: Two tones at 67 Hz and 117 Hz with known amplitudes.
@@ -113,8 +118,13 @@ class TestGatedFFTParity:
         print(f"GFFT2 Python: 67 Hz = {mag67:.2f} dB, 117 Hz = {mag117:.2f} dB")
         delta = mag117 - mag67
         print(f"GFFT2 Python: delta (117 - 67) = {delta:.2f} dB")
-        assert delta > 15, f"117 Hz should be ≥15 dB above 67 Hz, got {delta:.2f}"
-        assert delta < 25, f"117 Hz should be ≤25 dB above 67 Hz, got {delta:.2f}"
+        # Swift pins: 67 Hz = -49.74 dB, 117 Hz = -29.55 dB, delta = 20.19 dB.
+        assert abs(mag67 - (-49.74)) < 1.0, \
+            f"67 Hz: Python={mag67:.2f} dB, Swift=-49.74 dB — difference > 1 dB"
+        assert abs(mag117 - (-29.55)) < 1.0, \
+            f"117 Hz: Python={mag117:.2f} dB, Swift=-29.55 dB — difference > 1 dB"
+        assert abs(delta - 20.19) < 1.0, \
+            f"Delta: Python={delta:.2f} dB, Swift=20.19 dB — difference > 1 dB"
 
     def test_GFFT3_bin_centred_tones_exact_magnitudes(self):
         """GFFT3: Exact bin-centred tones to eliminate spectral leakage.
@@ -144,9 +154,13 @@ class TestGatedFFTParity:
         delta = mag2 - mag1
         print(f"GFFT3 Python: delta = {delta:.2f} dB")
 
-        assert mag1 > -80, f"Bin-centred tone at {freq1} Hz should be above -80 dB"
-        assert mag2 > -60, f"Bin-centred tone at {freq2} Hz should be above -60 dB"
-        assert abs(delta - 20) < 3, f"Expected ~20 dB delta, got {delta:.2f}"
+        # Swift pins: 67.3828 Hz = -49.70 dB, 117.1875 Hz = -29.51 dB, delta = 20.19 dB.
+        assert abs(mag1 - (-49.70)) < 1.0, \
+            f"{freq1:.4f} Hz: Python={mag1:.2f} dB, Swift=-49.70 dB — difference > 1 dB"
+        assert abs(mag2 - (-29.51)) < 1.0, \
+            f"{freq2:.4f} Hz: Python={mag2:.2f} dB, Swift=-29.51 dB — difference > 1 dB"
+        assert abs(delta - 20.19) < 1.0, \
+            f"Delta: Python={delta:.2f} dB, Swift=20.19 dB — difference > 1 dB"
 
     def test_GFFT4_silence_all_bins_below_noise_floor(self):
         """GFFT4: Silence should produce all bins near noise floor (< -100 dB)."""
@@ -160,3 +174,28 @@ class TestGatedFFTParity:
         print(f"GFFT4 Python: max magnitude for silence = {max_mag:.2f} dB")
         assert max_mag < -100, \
             f"All bins should be below -100 dB for silence, max = {max_mag:.2f}"
+
+    def test_GFFT5_after_fix_bin_centred_matches_swift(self):
+        """GFFT5: Hann-window normalization (DENORM, unit-peak) parity.
+
+        A bin-centred tone (bin 46, amplitude 0.01) must read -49.70 dB.  This
+        pins the window-normalization convention: the wrong (NORM) window would
+        inflate the value by ~4.26 dB.  Mirrors Swift
+        GatedFFTParityTests.afterFix_binCentred_matchesPython."""
+        sample_rate = 48000.0
+        n = 32768
+        target_bin = 46
+        amplitude = 0.01
+        sample_count = int(sample_rate * 0.4)
+        freq = target_bin * sample_rate / n
+
+        t = np.arange(sample_count) / sample_rate
+        signal = (amplitude * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+
+        pt = _make_proc_thread()
+        mags, freqs = pt.compute_gated_fft(signal, sample_rate)
+        py_db = _magnitude_at_frequency(freq, mags, freqs)
+
+        print(f"GFFT5 Python: bin {target_bin} ({freq:.4f} Hz) = {py_db:.2f} dB")
+        assert abs(py_db - (-49.70)) < 1.0, \
+            f"bin 46: Python={py_db:.2f} dB, Swift=-49.70 dB — difference > 1 dB"

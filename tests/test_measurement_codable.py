@@ -218,12 +218,27 @@ class TestTapToneMeasurementCodable:
         assert abs(stored[1] - (-45.0)) < 0.01
 
     def test_empty_annotation_offsets_round_trip(self):
-        """Empty annotation_offsets encodes as [] and decodes to None."""
+        """None annotation_offsets omits the key (matches Swift encodeIfPresent(nil))
+        and decodes back to None."""
         m = TapToneMeasurement.create(peaks=[], annotation_offsets=None)
         d = m.to_dict()
-        assert d["peakAnnotationOffsets"] == []
+        assert "peakAnnotationOffsets" not in d
         restored = TapToneMeasurement.from_dict(d)
         assert restored.annotation_offsets is None
+
+    def test_explicit_empty_annotation_offsets_preserved(self):
+        """A Swift file with an explicit empty [] (non-nil empty [UUID: …]) decodes
+        to {} and re-encodes to [], preserving Swift's nil-vs-empty distinction."""
+        src = {
+            "id": "00000000-0000-0000-0000-0000000000EE",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "peaks": [],
+            "peakAnnotationOffsets": [],
+        }
+        m = TapToneMeasurement.from_dict(src)
+        assert m.annotation_offsets == {}
+        d = m.to_dict()
+        assert d["peakAnnotationOffsets"] == []
 
     def test_mode_overrides_round_trip(self):
         """per-peak mode overrides survive a JSON round-trip."""

@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from guitar_tap.utilities.json_float import f32, f32_list
 from .resonant_peak import ResonantPeak
 from .spectrum_snapshot import SpectrumSnapshot
 
@@ -85,7 +86,8 @@ class TapEntry:
             "id": self.id,
             "tapIndex": self.tap_index,
             "snapshot": self.snapshot.to_dict(),
-            "peaks": [p.to_dict() for p in self.peaks],
+            # Swift encodes TapEntry.peaks with plain ResonantPeak Codable — no modeLabel.
+            "peaks": [p.to_dict(include_mode_label=False) for p in self.peaks],
             "selectedPeakIDs": self.selected_peak_ids,
         }
 
@@ -176,7 +178,8 @@ class ComparisonEntry:
             "label": self.label,
             "colorComponents": self.color_components,
             "snapshot": self.snapshot.to_dict(),
-            "peaks": [p.to_dict() for p in self.peaks],
+            # Swift encodes ComparisonEntry.peaks with plain ResonantPeak Codable — no modeLabel.
+            "peaks": [p.to_dict(include_mode_label=False) for p in self.peaks],
         }
         if self.guitar_type is not None:
             d["guitarType"] = self.guitar_type
@@ -512,31 +515,33 @@ class TapToneMeasurement:
         d["id"] = self.id
         d["timestamp"] = self.timestamp
         if self.decay_time is not None:
-            d["decayTime"] = self.decay_time
+            d["decayTime"] = f32(self.decay_time)
         if self.measurement_name:
             d["measurementName"] = self.measurement_name
         if self.notes:
             d["notes"] = self.notes
         if self.spectrum_snapshot is not None:
             d["spectrumSnapshot"] = self.spectrum_snapshot.to_dict()
-        # Always written — mirrors Swift encodeIfPresent(namedOffsets, forKey: .peakAnnotationOffsets).
-        # Swift encodes [UUID: PeakAnnotationOffset] as a flat array of alternating UUID-string /
-        # offset-object pairs (because UUID is not a JSON string key).  Empty dict → empty array [].
-        # Values are absolute data-space label-center positions: absFreqHz, absDB.
-        if self.annotation_offsets:
-            offsets_array = []
+        # Mirrors Swift encodeIfPresent(namedOffsets, forKey: .peakAnnotationOffsets):
+        # nil -> key omitted; non-nil -> flat array of alternating UUID-string /
+        # offset-object pairs (because UUID is not a JSON string key), which is the
+        # empty array [] for a non-nil empty dict.  Values are absolute data-space
+        # label-center positions: absFreqHz, absDB.
+        if self.annotation_offsets is not None:
+            offsets_array: list[Any] = []
             for k, v in self.annotation_offsets.items():
                 offsets_array.append(k)
                 offsets_array.append({"absFreqHz": v[0], "absDB": v[1]})
             d["peakAnnotationOffsets"] = offsets_array
-        else:
-            d["peakAnnotationOffsets"] = []
         if self.tap_detection_threshold is not None:
-            d["tapDetectionThreshold"] = self.tap_detection_threshold
+            d["tapDetectionThreshold"] = f32(self.tap_detection_threshold)
         if self.number_of_taps is not None:
             d["numberOfTaps"] = self.number_of_taps
         if self.peak_min_threshold is not None:
-            d["peakThreshold"] = self.peak_min_threshold
+            # Canonical key is "peakMinThreshold" (matches Swift encode(to:) and the
+            # user manual, App. B).  The legacy "peakThreshold" key is read on import
+            # for backward compatibility but no longer written.
+            d["peakMinThreshold"] = f32(self.peak_min_threshold)
         if self.selected_longitudinal_peak_id:
             d["selectedLongitudinalPeakID"] = self.selected_longitudinal_peak_id
         if self.selected_cross_peak_id:
@@ -552,15 +557,22 @@ class TapToneMeasurement:
         if self.selected_peak_ids:
             d["selectedPeakIDs"] = self.selected_peak_ids
         if self.selected_peak_frequencies:
-            d["selectedPeakFrequencies"] = self.selected_peak_frequencies
+            # Swift [Float] -> quantise each to float32.
+            d["selectedPeakFrequencies"] = f32_list(self.selected_peak_frequencies)
         if self.annotation_visibility_mode:
             d["annotationVisibilityMode"] = self.annotation_visibility_mode
         if self.peak_mode_overrides:
-            # Swift format: {uuid: {"type": "assigned", "label": "mode_string"}}
-            d["peakModeOverrides"] = {
-                uid: {"type": "assigned", "label": label}
-                for uid, label in self.peak_mode_overrides.items()
-            }
+            # Swift encodes [UUID: UserAssignedMode] as a flat array of alternating
+            # UUID-string / mode-object pairs (UUID is not a JSON string key), exactly
+            # like peakAnnotationOffsets above.  Each mode object is
+            # {"type": "assigned", "label": "<mode_string>"}.  Python only ever stores
+            # assigned overrides (the model is {uuid: label}); ".auto" entries are
+            # semantically equivalent to "no entry" and are simply omitted.
+            overrides_array: list[Any] = []
+            for uid, label in self.peak_mode_overrides.items():
+                overrides_array.append(uid)
+                overrides_array.append({"type": "assigned", "label": label})
+            d["peakModeOverrides"] = overrides_array
         if self.microphone_name:
             d["microphoneName"] = self.microphone_name
         if self.microphone_uid:
@@ -626,9 +638,12 @@ class TapToneMeasurement:
         # Swift encodes as a flat array: [uuid_str, {"absFreqHz": x, "absDB": y}, ...]
         # Legacy files may have {"hzOffset": x, "dbOffset": y} (old delta format) — those
         # are dropped (labels fall back to default positions) since the values are incompatible.
+        # Preserve Swift's nil-vs-empty distinction: an absent/null key -> None
+        # (Swift wrote nil), an empty array [] -> empty dict {} (Swift wrote a
+        # non-nil empty dict), so re-serialisation reproduces Swift's output.
         ann_raw = d.get("peakAnnotationOffsets")
-        ann_offsets: dict[str, list[float]] | None = None
-        if ann_raw and isinstance(ann_raw, list):
+        ann_offsets: dict[str, list[float]] | None
+        if isinstance(ann_raw, list):
             # Swift flat-array format: alternating uuid / offset-object pairs.
             ann_offsets = {}
             it = iter(ann_raw)
@@ -641,8 +656,9 @@ class TapToneMeasurement:
                             float(v["absDB"]),
                         ]
                     # Old hzOffset/dbOffset entries are silently dropped.
-            ann_offsets = ann_offsets or None
-        elif ann_raw and isinstance(ann_raw, dict):
+        elif isinstance(ann_raw, dict):
+            # Legacy {uuid: offset} object form.  Swift drops an all-legacy map to
+            # nil, so collapse an empty result to None here.
             ann_offsets = {}
             for k, v in ann_raw.items():
                 if isinstance(v, dict) and "absFreqHz" in v and "absDB" in v:
@@ -651,19 +667,32 @@ class TapToneMeasurement:
                         float(v["absDB"]),
                     ]
             ann_offsets = ann_offsets or None
+        else:
+            ann_offsets = None
 
-        # Mode overrides — {uuid: {"type": "assigned", "label": "mode_string"}}
-        # type == "auto" entries have no override and are skipped.
+        # Mode overrides.  Each value is a UserAssignedMode object
+        # {"type": "assigned", "label": "mode_string"}; "auto" entries carry no
+        # override and are skipped.  Canonical (Swift) encoding is a flat array of
+        # alternating uuid / mode-object pairs.  A legacy {uuid: mode-object} object
+        # form was written by GuitarTap Python 1.0.x — accepted here on import for
+        # backward compatibility.
         mode_raw = d.get("peakModeOverrides")
-        peak_mode_overrides: dict[str, str] | None = None
-        if isinstance(mode_raw, dict) and mode_raw:
-            overrides: dict[str, str] = {}
+        overrides: dict[str, str] = {}
+        if isinstance(mode_raw, list):
+            it = iter(mode_raw)
+            for k in it:
+                v = next(it, None)
+                if isinstance(k, str) and isinstance(v, dict) and v.get("type") == "assigned":
+                    label = v.get("label", "")
+                    if label:
+                        overrides[k] = label
+        elif isinstance(mode_raw, dict):
             for uid, val in mode_raw.items():
                 if isinstance(val, dict) and val.get("type") == "assigned":
                     label = val.get("label", "")
                     if label:
                         overrides[str(uid)] = label
-            peak_mode_overrides = overrides if overrides else None
+        peak_mode_overrides: dict[str, str] | None = overrides or None
 
         # Comparison entries — None when absent (backward-compatible).
         comp_entries_raw = d.get("comparisonEntries")
@@ -696,7 +725,14 @@ class TapToneMeasurement:
             annotation_visibility_mode=d.get("annotationVisibilityMode"),
             tap_detection_threshold=d.get("tapDetectionThreshold"),
             number_of_taps=d.get("numberOfTaps"),
-            peak_min_threshold=d.get("peakThreshold"),
+            # Canonical key is "peakMinThreshold"; fall back to the legacy
+            # "peakThreshold" key for files written before the rename (and by
+            # GuitarTap Python 1.0.x).
+            peak_min_threshold=(
+                d["peakMinThreshold"]
+                if d.get("peakMinThreshold") is not None
+                else d.get("peakThreshold")
+            ),
             selected_longitudinal_peak_id=d.get("selectedLongitudinalPeakID"),
             selected_cross_peak_id=d.get("selectedCrossPeakID"),
             selected_flc_peak_id=d.get("selectedFlcPeakID"),

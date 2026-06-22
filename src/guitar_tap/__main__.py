@@ -62,7 +62,7 @@ if sys.platform != "win32" and _fh_target is not None:
 # os.path.dirname(__file__) is src/guitar_tap/.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6 import QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 from views.tap_tone_analysis_view import MainWindow, basedir
 
 if os.name == "nt":
@@ -124,6 +124,20 @@ if __name__ == "__main__":
         mutex = NM.NamedMutex("guitar-tap-running", True)
 
     qapp = QtWidgets.QApplication(sys.argv)
+
+    # Pin the application name so QStandardPaths.AppDataLocation is the SAME on
+    # every platform and every launch method.  Use "guitar-tap" — the executable
+    # name the released Windows and Linux builds already derive their data folder
+    # from — so existing Windows/Linux beta users keep their saved measurements
+    # with no migration.  Without this, macOS derives "Guitar Tap" from the bundle
+    # name and a run-from-source build uses "Python".  Resolves saved measurements
+    # to a consistent per-platform path:
+    #   macOS:   ~/Library/Application Support/guitar-tap/saved_measurements.json
+    #   Windows: %APPDATA%\guitar-tap\saved_measurements.json
+    #   Linux:   ~/.local/share/guitar-tap/saved_measurements.json
+    # Deliberately NOT calling setOrganizationName: on macOS that inserts an extra
+    # "<org>/" path component, and all QSettings call sites already pass org/app.
+    QtCore.QCoreApplication.setApplicationName("guitar-tap")
 
     # Install an unhandled-exception hook so background thread crashes also
     # get logged rather than silently swallowed on Windows (console=False build).
