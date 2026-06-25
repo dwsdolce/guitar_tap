@@ -382,7 +382,7 @@ def _build_help_html() -> str:
         "Measurements",
         "Lists all saved measurements. Double-click a row to load the measurement "
         "into the main view &mdash; the measurements window closes automatically after "
-        "loading. Right-click a row to access: Load into View, View Details, Edit Name "
+        "loading. Click a row&rsquo;s &#8943; button or right-click it to access: Load into View, View Details, Edit Name "
         "&amp; Notes, Export Measurement (saves the .guitartap file via a save dialog), "
         "Export Spectrum (saves the chart image), Export PDF Report, or Delete. Use "
         "Import Measurement to load a .guitartap file from disk or another device. Use "
@@ -449,13 +449,24 @@ def _build_help_html() -> str:
         ["mdi.book-open-variant"]
     ))
     parts.append(_row(
+        "Chart Options (&#8943;)",
+        "The ellipsis (&#8943;) button in the top-right corner of the spectrum opens the "
+        "Chart Options menu. From here you can reset either or both axes to the values you "
+        "last saved in Settings (&ldquo;Reset to Saved&rdquo;), or restore the factory "
+        "defaults (&ldquo;Reset to Defaults&rdquo;). If peak labels have been dragged from "
+        "their auto-positions, &ldquo;Reset Labels&rdquo; moves them back. Right-clicking "
+        "the chart opens the same menu.",
+        ["mdi.dots-horizontal"]
+    ))
+    parts.append(_row(
         "Zoom &amp; Pan Help",
         "Scroll over the chart to zoom &mdash; the axis depends on where the pointer is: "
         "over the plot area it zooms both axes; over the frequency axis (bottom) it zooms "
         "frequency only; over the magnitude axis (left) it zooms magnitude only. "
         "Drag to pan the same way. Modifier keys: Shift+Scroll &mdash; pan frequency; "
         "Alt+Scroll &mdash; pan magnitude; Cmd/Ctrl+Scroll &mdash; zoom both axes. "
-        "To reset the axes, right-click anywhere inside the chart.",
+        "To reset the axes, click the &#8943; Chart Options button (top-right) or "
+        "right-click anywhere inside the chart.",
         ["mdi.information"]
     ))
 
@@ -590,7 +601,8 @@ def _build_help_html() -> str:
         "frequency only; over the magnitude axis (left) it zooms magnitude only. "
         "Drag to pan the same way. Modifier keys: Shift+Scroll &mdash; pan frequency; "
         "Alt+Scroll &mdash; pan magnitude; Cmd/Ctrl+Scroll &mdash; zoom both axes. "
-        "To reset the axes, right-click anywhere inside the chart.",
+        "To reset the axes, click the &#8943; Chart Options button (top-right) or "
+        "right-click anywhere inside the chart.",
         ["mdi.information"]
     ))
 

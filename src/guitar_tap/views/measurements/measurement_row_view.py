@@ -23,6 +23,10 @@ from models import guitar_mode as GM
 from models import guitar_type as GT
 from PySide6 import QtCore, QtGui, QtWidgets
 
+# "⋯" actions button: transparent text when idle, grey on hover (no layout shift).
+_ELLIPSIS_IDLE_QSS = "QToolButton { color: rgba(136,136,136,0); border: none; font-size: 11px; padding: 0 2px; }"
+_ELLIPSIS_HOVER_QSS = "QToolButton { color: rgba(136,136,136,255); border: none; font-size: 11px; padding: 0 2px; }"
+
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def _resolve_guitar_type(s: str | None) -> GT.GuitarType:
@@ -69,6 +73,9 @@ class MeasurementRowView(QtWidgets.QWidget):
 
     clicked: QtCore.Signal = QtCore.Signal()
     doubleClicked: QtCore.Signal = QtCore.Signal()
+    # Emitted with a global QPoint when the "⋯" button is clicked, so the list view can
+    # show the per-row action menu there (same menu as right-click).
+    menuRequested: QtCore.Signal = QtCore.Signal(QtCore.QPoint)
 
     def __init__(
         self,
@@ -152,11 +159,18 @@ class MeasurementRowView(QtWidgets.QWidget):
             # Ellipsis hint — transparent when idle, visible on hover to signal RMB menu
             # Matches Image(systemName: "ellipsis.circle").opacity(isHovered ? 1 : 0) in Swift
             # Always occupies space (no layout shift) — only color alpha changes.
-            self._ellipsis_lbl = QtWidgets.QLabel("⋯")
-            self._ellipsis_lbl.setStyleSheet("color: rgba(136,136,136,0); font-size: 11px;")
-            line1.addWidget(self._ellipsis_lbl)
+            # Clicking it opens the per-row action menu (the web/touch affordance);
+            # right-click on the row still works too.
+            self._ellipsis_btn = QtWidgets.QToolButton()
+            self._ellipsis_btn.setText("⋯")
+            self._ellipsis_btn.setAutoRaise(True)
+            self._ellipsis_btn.setToolTip("Actions")
+            self._ellipsis_btn.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+            self._ellipsis_btn.setStyleSheet(_ELLIPSIS_IDLE_QSS)
+            self._ellipsis_btn.clicked.connect(self._on_ellipsis_clicked)
+            line1.addWidget(self._ellipsis_btn)
         else:
-            self._ellipsis_lbl = None
+            self._ellipsis_btn = None
 
         content.addLayout(line1)
 
@@ -219,18 +233,24 @@ class MeasurementRowView(QtWidgets.QWidget):
             self.doubleClicked.emit()
         super().mouseDoubleClickEvent(event)
 
+    def _on_ellipsis_clicked(self) -> None:
+        """Open the per-row action menu just below the ⋯ button (same menu as RMB)."""
+        btn = self._ellipsis_btn
+        if btn is not None:
+            self.menuRequested.emit(btn.mapToGlobal(btn.rect().bottomLeft()))
+
     def enterEvent(self, event) -> None:
         self.setAutoFillBackground(True)
         p = self.palette()
         p.setColor(self.backgroundRole(), QtGui.QColor(0, 0, 0, 10))
         self.setPalette(p)
-        if self._ellipsis_lbl is not None:
-            self._ellipsis_lbl.setStyleSheet("color: rgba(136,136,136,255); font-size: 11px;")
+        if self._ellipsis_btn is not None:
+            self._ellipsis_btn.setStyleSheet(_ELLIPSIS_HOVER_QSS)
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
         self._pressed = False
         self.setAutoFillBackground(False)
-        if self._ellipsis_lbl is not None:
-            self._ellipsis_lbl.setStyleSheet("color: rgba(136,136,136,0); font-size: 11px;")
+        if self._ellipsis_btn is not None:
+            self._ellipsis_btn.setStyleSheet(_ELLIPSIS_IDLE_QSS)
         super().leaveEvent(event)

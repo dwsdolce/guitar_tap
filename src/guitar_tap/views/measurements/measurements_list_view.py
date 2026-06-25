@@ -18,8 +18,9 @@ Right-click    → context menu: Load into View | View Details | Edit Name & Not
 
 import os
 
+import qtawesome as qta
 from models import TapToneMeasurement
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 from views import tap_analysis_results_view as M
 from views.measurements import edit_measurement_view as EMV
 from views.measurements import measurement_detail_view as MDD
@@ -188,6 +189,11 @@ class MeasurementsDialog(QtWidgets.QDialog):
                 row.doubleClicked.connect(
                     lambda checked=False, m=m_captured: self._load_and_close(m)
                 )
+                # The "⋯" button opens the same per-row menu as right-click — the
+                # web/touch affordance; right-click still works via the list menu.
+                row.menuRequested.connect(
+                    lambda gp, m=m_captured, r=idx: self._show_row_menu(m, r, gp)
+                )
 
         self._update_compare_btn()
 
@@ -307,21 +313,32 @@ class MeasurementsDialog(QtWidgets.QDialog):
         row = self._list.row(item)
         if row < 0 or row >= len(self._measurements):
             return
-        m = self._measurements[row]
+        self._show_row_menu(self._measurements[row], row, self._list.mapToGlobal(pos))
 
+    def _show_row_menu(self, m: TapToneMeasurement, row: int, global_pos: QtCore.QPoint) -> None:
+        """Build and exec the per-row action menu at ``global_pos``. Shared by the
+        right-click handler and the row's ``⋯`` button (see MeasurementRowView)."""
         menu = QtWidgets.QMenu(self)
 
-        load_act        = menu.addAction("Load into View")
-        menu.addSeparator()
-        details_act     = menu.addAction("View Details")
-        edit_act        = menu.addAction("Edit Name & Notes")
-        export_act      = menu.addAction("Export Measurement")
-        export_spec_act = menu.addAction("Export Spectrum")
-        export_pdf_act  = menu.addAction("Export PDF Report")
-        menu.addSeparator()
-        delete_act      = menu.addAction("Delete")
+        # Tint the qtawesome glyphs with the palette text colour so they read in light and
+        # dark themes. Icons mirror the Swift SF Symbols on the same actions.
+        c = self.palette().color(QtGui.QPalette.ColorRole.WindowText)
 
-        action = menu.exec(self._list.mapToGlobal(pos))
+        def _ico(name: str) -> QtGui.QIcon:
+            return qta.icon(name, color=c)
+
+        load_act        = menu.addAction(_ico("mdi.file-download-outline"), "Load into View")
+        menu.addSeparator()
+        details_act     = menu.addAction(_ico("mdi.eye-outline"), "View Details")
+        # "&&" so Qt renders a literal ampersand instead of consuming it as a mnemonic.
+        edit_act        = menu.addAction(_ico("mdi.pencil-outline"), "Edit Name && Notes")
+        export_act      = menu.addAction(_ico("mdi.file-export-outline"), "Export Measurement")
+        export_spec_act = menu.addAction(_ico("mdi.chart-line"), "Export Spectrum")
+        export_pdf_act  = menu.addAction(_ico("mdi.file-pdf-box"), "Export PDF Report")
+        menu.addSeparator()
+        delete_act      = menu.addAction(_ico("mdi.trash-can-outline"), "Delete")
+
+        action = menu.exec(global_pos)
 
         if action == load_act:
             self._load_and_close(m)

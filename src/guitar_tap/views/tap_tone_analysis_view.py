@@ -3603,6 +3603,9 @@ class MainWindow(QtWidgets.QMainWindow):
         mic_name: str | None = getattr(_sel_dev, "name", None) or None
         mic_uid: str | None = getattr(_sel_dev, "fingerprint", None) or None
         cal_name: str | None = getattr(analyzer, "_active_calibration_name", None) or None
+        # Capture sample rate for provenance — mirrors Swift fft.actualSampleRate.
+        _mic_rate = getattr(getattr(analyzer, "mic", None), "rate", None)
+        sample_rate_val: float | None = float(_mic_rate) if _mic_rate else None
 
         # ── Plate/brace peak role selections — mirrors Swift tap.effectiveLongitudinalPeakID ──
         selected_longitudinal_peak_id = analyzer.effective_longitudinal_peak_id if not mt.is_guitar else None
@@ -3619,6 +3622,7 @@ class MainWindow(QtWidgets.QMainWindow):
             microphone_name=mic_name,
             microphone_uid=mic_uid,
             calibration_name=cal_name,
+            sample_rate=sample_rate_val,
             min_freq=min_freq_val,
             max_freq=max_freq_val,
             min_db=min_db_val,

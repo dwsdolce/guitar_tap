@@ -595,6 +595,21 @@ class FftCanvas(pg.PlotWidget):
         self._info_btn.setToolTip("Zoom & Pan Controls")
         self._info_btn.clicked.connect(self._show_zoom_help)
         self._zoom_popup = _ZoomPanPopup(self)
+
+        # ⋯ Chart Options button — opens the same reset menu as right-click (the
+        # web/touch affordance; matches the ⋯ in the Swift/web chart's upper-right).
+        self._options_btn = QtWidgets.QToolButton(self)
+        self._options_btn.setText("⋯")
+        self._options_btn.setFixedSize(22, 22)
+        self._options_btn.setStyleSheet(
+            "QToolButton { border: none; background: transparent;"
+            " color: rgba(120,120,120,180); font-size: 15px; }"
+            "QToolButton:hover { color: rgba(60,60,60,220); }"
+        )
+        self._options_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._options_btn.setToolTip("Chart options")
+        self._options_btn.clicked.connect(self._show_chart_options)
+
         # Defer initial position until the widget has been laid out
         QtCore.QTimer.singleShot(0, self._reposition_info_btn)
 
@@ -1151,6 +1166,10 @@ class FftCanvas(pg.PlotWidget):
             return
         btn.move(self.width() - btn.width() - 4, 4)
         btn.raise_()
+        opts = getattr(self, "_options_btn", None)
+        if opts is not None:
+            opts.move(btn.x() - opts.width() - 2, 4)
+            opts.raise_()
 
     def _reposition_comparison_legend(self) -> None:
         leg = getattr(self, "_comparison_legend", None)
@@ -1236,30 +1255,30 @@ class FftCanvas(pg.PlotWidget):
 
     # ── context menu (replaces pyqtgraph default) ─────────────────────────────
 
-    def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
-        """Right-click menu matching the Swift SpectrumView context menu."""
+    def _build_reset_menu(self) -> QtWidgets.QMenu:
+        """The chart reset / options menu, shared by right-click and the ⋯ button."""
         menu = QtWidgets.QMenu(self)
-
-        # ── Reset to Saved (persisted AppSettings values) ─────────────────
-        menu.addAction("Reset Both Axes to Saved",    self._reset_both_to_saved)
+        menu.addAction("Reset Both Axes to Saved", self._reset_both_to_saved)
         menu.addAction("Reset Frequency Axis to Saved", self._reset_freq_to_saved)
         menu.addAction("Reset Magnitude Axis to Saved", self._reset_mag_to_saved)
-
         menu.addSeparator()
-
-        # ── Reset to Defaults (factory hard-coded values) ─────────────────
-        menu.addAction("Reset Both Axes to Defaults",    self._reset_both_to_defaults)
+        menu.addAction("Reset Both Axes to Defaults", self._reset_both_to_defaults)
         menu.addAction("Reset Frequency Axis to Defaults", self._reset_freq_to_defaults)
         menu.addAction("Reset Magnitude Axis to Defaults", self._reset_mag_to_defaults)
-
         menu.addSeparator()
-
-        # ── Reset Labels ──────────────────────────────────────────────────
         act = menu.addAction("Reset Labels", self.annotations.reset_all_positions)
         act.setEnabled(self.annotations.has_moved_annotations)
+        return menu
 
-        menu.exec(event.globalPos())
+    def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
+        """Right-click menu matching the Swift SpectrumView context menu."""
+        self._build_reset_menu().exec(event.globalPos())
         event.accept()
+
+    def _show_chart_options(self) -> None:
+        """Open the reset/options menu under the ⋯ button (same items as right-click)."""
+        btn = self._options_btn
+        self._build_reset_menu().exec(btn.mapToGlobal(btn.rect().bottomLeft()))
 
     # ── Axis Reset Helpers ────────────────────────────────────────────────────
     #

@@ -194,6 +194,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         microphone_name: "str | None" = None,
         microphone_uid: "str | None" = None,
         calibration_name: "str | None" = None,
+        sample_rate: "float | None" = None,
         min_freq: "float | None" = None,
         max_freq: "float | None" = None,
         min_db: "float | None" = None,
@@ -335,6 +336,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             microphone_name=microphone_name,
             microphone_uid=microphone_uid,
             calibration_name=calibration_name,
+            sample_rate=sample_rate,
             tap_entries=tap_entries_to_save,
         )
         self.savedMeasurements.append(measurement)
@@ -511,6 +513,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # Guitar (or no-snapshot) measurement: clear any stale material spectra
             # from a previously loaded plate/brace measurement so the canvas redraws.
             self.set_material_spectra([])
+            # A loaded measurement is complete. Mark the phase complete (mirrors the
+            # Swift fix) so the display guard (frozen empty & phase != complete) doesn't
+            # blank a guitar spectrum loaded while the previous type was plate/brace.
+            from .material_tap_phase import MaterialTapPhase
+            self.material_tap_phase = MaterialTapPhase.COMPLETE
             if measurement.spectrum_snapshot is not None:
                 snap = measurement.spectrum_snapshot
                 self.set_frozen_spectrum(
@@ -716,8 +723,25 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 if self._calibration_device_name != match.name:
                     self.requestDeviceSwitch.emit(match)
                     gt_log(f"🎤 Auto-selected microphone '{label}' for loaded measurement")
-                self.microphone_warning = None
-                self.microphoneWarningChanged.emit(None)
+                # Same microphone — flag calibration / sample-rate differences (mirrors
+                # the Swift tiered warning): a new tap would then not match this measurement.
+                diffs: list[str] = []
+                if measurement.calibration_name != getattr(self, "_active_calibration_name", None):
+                    diffs.append("calibration")
+                rec_rate = measurement.sample_rate
+                cur_rate = getattr(mic, "rate", None)
+                if rec_rate is not None and cur_rate is not None and round(rec_rate) != round(cur_rate):
+                    diffs.append("sample rate")
+                if diffs:
+                    _warn = (
+                        f"This measurement was recorded with a different {' and '.join(diffs)}. "
+                        f"A newly captured tap may not match the saved result."
+                    )
+                    self.microphone_warning = _warn
+                    self.microphoneWarningChanged.emit(_warn)
+                else:
+                    self.microphone_warning = None
+                    self.microphoneWarningChanged.emit(None)
             else:
                 warning = (
                     f"This measurement was recorded with '{label}', which is not "

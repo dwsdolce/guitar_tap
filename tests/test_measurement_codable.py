@@ -192,6 +192,7 @@ class TestTapToneMeasurementCodable:
             measurement_name="Bridge",
             decay_time=0.45,
             number_of_taps=3,
+            sample_rate=48000,
         )
         d = m.to_dict()
         raw_json = json.dumps(d)
@@ -203,6 +204,17 @@ class TestTapToneMeasurementCodable:
         assert restored.number_of_taps == 3
         assert len(restored.peaks) == 1
         assert abs(restored.peaks[0].frequency - 200.0) < 0.001
+        assert restored.sample_rate == 48000
+
+    def test_missing_sample_rate_decodes_as_none(self):
+        """A nil sample_rate is omitted from JSON; a file with no sampleRate key
+        (saved before the field existed) decodes to None — backward compatible.
+        Mirrors Swift missingSampleRate_decodesAsNil."""
+        m = TapToneMeasurement.create(peaks=[_make_peak()])  # sample_rate defaults to None
+        d = m.to_dict()
+        assert "sampleRate" not in d, "None sample_rate must be omitted from JSON"
+        restored = TapToneMeasurement.from_dict(json.loads(json.dumps(d)))
+        assert restored.sample_rate is None
 
     def test_annotation_offsets_round_trip(self):
         """Annotation offsets survive a JSON round-trip using the Swift flat-array format."""
@@ -749,3 +761,61 @@ class TestFixtureLoading:
                 assert 0 < peak.frequency < 20000, (
                     f"Peak frequency {peak.frequency} Hz out of valid audio range"
                 )
+
+    @staticmethod
+    def _load_raw() -> list:
+        """Load the Contreras fixture array, or skip when it is not present."""
+        fixture_name = "contreras-classical-1774731564.guitartap"
+        here = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(here, fixture_name)
+        if not os.path.exists(path):
+            pytest.skip(f"Fixture '{fixture_name}' not found; skipping fixture test")
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_contreras_round_trip_preserves_fields(self):
+        """Decode -> re-encode -> re-decode preserves every modeled field, mapping the
+        legacy keys on the way in. Pinned identically in the Swift FixtureLoadingTests
+        and the GuitarTapWeb g5-measurement-codable suite so the three writers can't
+        drift. The Contreras file is an OLD save, so it also exercises legacy decode."""
+        raw = self._load_raw()
+        m = TapToneMeasurement.from_dict(raw[0])
+
+        # Field + legacy-decode assertions.
+        assert len(m.peaks) == 44
+        assert raw[0].get("peakThreshold") == -78 and "peakMinThreshold" not in raw[0]
+        assert m.peak_min_threshold == -78          # legacy peakThreshold -> peak_min_threshold
+        assert m.sample_rate is None                 # absent -> unknown
+        assert m.measurement_name == "Contreras Classical"
+        assert m.number_of_taps == 10
+        s = m.spectrum_snapshot
+        assert s.measurement_type == "Classical Guitar"
+        assert s.guitar_type == "Classical"
+        assert (s.min_freq, s.max_freq, s.min_db, s.max_db) == (75, 350, -100, 0)
+        assert len(s.frequencies) == len(s.magnitudes) > 0
+        p0 = m.peaks[0]
+        assert p0.id == "95037FB0-44FE-4163-9937-CBCD57BC1469"
+        assert abs(p0.frequency - 212.24847) < 1e-3
+        assert p0.pitch_note == "G#3"
+
+        # Semantic round-trip: decode(encode(decode(file))) preserves the fields.
+        again = TapToneMeasurement.from_dict(json.loads(json.dumps(m.to_dict())))
+        assert len(again.peaks) == len(m.peaks)
+        assert again.peak_min_threshold == m.peak_min_threshold
+        assert again.sample_rate == m.sample_rate
+        assert again.spectrum_snapshot.frequencies == m.spectrum_snapshot.frequencies
+        assert again.spectrum_snapshot.magnitudes == m.spectrum_snapshot.magnitudes
+        assert [p.frequency for p in again.peaks] == [p.frequency for p in m.peaks]
+
+    def test_contreras_writer_emits_canonical_keys_only(self):
+        """to_dict writes only current keys, never legacy ones (writer = minimal
+        canonical; the reader owns backward compatibility)."""
+        m = TapToneMeasurement.from_dict(self._load_raw()[0])
+        d = m.to_dict()
+        assert d["peakMinThreshold"] == -78
+        assert "peakThreshold" not in d              # legacy key never written
+        assert "hysteresisMargin" not in d           # unknown field dropped
+        assert "maxPeaks" not in d["spectrumSnapshot"]
+        assert d["measurementType"] == "Classical Guitar"
+        assert d["guitarType"] == "Classical"
+        assert d["peaks"][0]["modeLabel"] == "Top"   # convenience label, top-level peaks

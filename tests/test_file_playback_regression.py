@@ -137,32 +137,40 @@ GUITAR_PER_TAP = [
 # Fixtures
 # ---------------------------------------------------------------------------
 
+def _wav_rate(path: str) -> int:
+    """Sample rate of a WAV fixture. The harness derives the analyzer rate from the
+    file itself rather than hardcoding 48 kHz, so a future non-48 kHz fixture stays
+    consistent (mirrors Swift forTesting() taking the rate from the played file)."""
+    import soundfile as sf
+    return int(sf.info(path).samplerate)
+
+
 @pytest.fixture
 def brace_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
     from models.tap_tone_analyzer import TapToneAnalyzer
-    return TapToneAnalyzer.for_testing(sample_rate=48000)
+    return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(BRACE_WAV))
 
 
 @pytest.fixture
 def g1_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
     from models.tap_tone_analyzer import TapToneAnalyzer
-    return TapToneAnalyzer.for_testing(sample_rate=48000)
+    return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(G1_WAV))
 
 
 @pytest.fixture
 def guitar_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
     from models.tap_tone_analyzer import TapToneAnalyzer
-    return TapToneAnalyzer.for_testing(sample_rate=48000)
+    return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(GUITAR_WAV))
 
 
 @pytest.fixture
 def plate_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
     from models.tap_tone_analyzer import TapToneAnalyzer
-    return TapToneAnalyzer.for_testing(sample_rate=48000)
+    return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(PLATE_WAV))
 
 
 # ---------------------------------------------------------------------------

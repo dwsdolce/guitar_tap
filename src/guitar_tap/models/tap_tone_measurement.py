@@ -367,6 +367,11 @@ class TapToneMeasurement:
     # Mirrors Swift TapToneMeasurement.calibrationName.
     calibration_name: str | None = None
 
+    # Effective capture sample rate (Hz) used for this measurement, for reload
+    # provenance checks. None for older files saved before this field existed.
+    # Mirrors Swift TapToneMeasurement.sampleRate.
+    sample_rate: float | None = None
+
     # Convenience top-level fields written to JSON for external consumers.
     # Mirrors Swift TapToneMeasurement encode(to:) convenience fields.
     measurement_type: str | None = None
@@ -579,6 +584,8 @@ class TapToneMeasurement:
             d["microphoneUID"] = self.microphone_uid
         if self.calibration_name:
             d["calibrationName"] = self.calibration_name
+        if self.sample_rate is not None:
+            d["sampleRate"] = self.sample_rate
 
         # Convenience top-level fields for external consumers.
         # Mirrors Swift encode(to:): resolved from the snapshot, not from stored fields.
@@ -743,6 +750,7 @@ class TapToneMeasurement:
             microphone_name=d.get("microphoneName"),
             microphone_uid=d.get("microphoneUID"),
             calibration_name=d.get("calibrationName"),
+            sample_rate=d.get("sampleRate"),
             measurement_type=d.get("measurementType"),
             guitar_type=d.get("guitarType"),
             comparison_entries=comparison_entries,
@@ -773,6 +781,7 @@ class TapToneMeasurement:
         microphone_name: str | None = None,
         microphone_uid: str | None = None,
         calibration_name: str | None = None,
+        sample_rate: float | None = None,
         measurement_type: str | None = None,
         guitar_type: str | None = None,
         comparison_entries: list[ComparisonEntry] | None = None,
@@ -813,6 +822,7 @@ class TapToneMeasurement:
             microphone_name=microphone_name,
             microphone_uid=microphone_uid,
             calibration_name=calibration_name,
+            sample_rate=sample_rate,
             measurement_type=measurement_type,
             guitar_type=guitar_type,
             comparison_entries=comparison_entries,
