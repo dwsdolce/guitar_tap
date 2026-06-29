@@ -15,6 +15,7 @@ import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TextIO
 
 from platformdirs import user_data_dir, user_documents_dir
 
@@ -25,12 +26,10 @@ _tap_debug_enabled = False
 
 class _FileLogger:
     def __init__(self) -> None:
-        log_path = self._log_file_path()
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._file = open(log_path, "a", encoding="utf-8", buffering=1)  # line-buffered
+        # Defer opening the file until the first write, so a run with logging
+        # disabled never creates or touches the log file.
+        self._file: "TextIO | None" = None
         self._lock = threading.Lock()
-        banner = f"=== GuitarTap session started {datetime.now(timezone.utc).isoformat()} ===\n"
-        self._write(banner)
 
     @staticmethod
     def _log_file_path() -> Path:
@@ -41,13 +40,25 @@ class _FileLogger:
             base = Path(user_documents_dir()) / "GuitarTap"
         return base / "guitar_tap-debug.log"
 
+    def _ensure_open(self) -> TextIO:
+        """Open the log file and write the session banner on first use."""
+        f = self._file
+        if f is None:
+            log_path = self._log_file_path()
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            f = open(log_path, "a", encoding="utf-8", buffering=1)  # line-buffered
+            f.write(f"=== GuitarTap session started {datetime.now(timezone.utc).isoformat()} ===\n")
+            self._file = f
+        return f
+
     def _write(self, message: str) -> None:
         line = message if message.endswith("\n") else message + "\n"
         with self._lock:
-            self._file.write(line)
+            self._ensure_open().write(line)
 
     def __del__(self) -> None:
-        self._file.close()
+        if self._file is not None:
+            self._file.close()
 
 
 _file_logger = _FileLogger()
