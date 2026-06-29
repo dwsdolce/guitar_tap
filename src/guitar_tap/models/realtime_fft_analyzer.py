@@ -209,7 +209,7 @@ class _FftProcessingThread(QtCore.QThread):
         self._stop_event.clear()
         with self._mic._recent_peak_lock:
             self._mic._recent_peak_db = -100.0
-            self._mic._recent_peak_history = []
+            self._mic._recent_peak_time = 0.0
 
 
 class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnalyzerDeviceManagementMixin):
@@ -484,11 +484,13 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._calibration: npt.NDArray | None = None
         self._calibration_profile: object | None = None
 
-        # Recent peak level (rolling max over 0.5 s).
+        # Recent peak level — Swift recentPeakLevelDB: latch the running max, release to the current
+        # level only after `_recent_peak_window` seconds without a higher peak (peak-hold, NOT a sliding
+        # window). Window = Swift peakHoldDuration (2.0 s); the old 0.5 s came from a stale Swift comment.
         self._recent_peak_lock = threading.Lock()
         self._recent_peak_db: float = -100.0
-        self._recent_peak_window: float = 0.5
-        self._recent_peak_history: list = []
+        self._recent_peak_window: float = 2.0
+        self._recent_peak_time: float = 0.0
 
         # Level-crossing detection.
         self._level_crossing_handler: "Callable[[], None] | None" = None
@@ -721,16 +723,15 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             self._is_clipping_state = new_clip_state
             self.proc_thread.clippingChanged.emit(new_clip_state)
 
-        # Update rolling recent-peak history.
+        # Update recent peak (Swift recentPeakLevelDB): latch the max; release to the current level
+        # only after `_recent_peak_window` (2.0 s) without a higher peak.
         with self._recent_peak_lock:
-            cutoff = enter_now - self._recent_peak_window
-            self._recent_peak_history = [
-                (t, v) for t, v in self._recent_peak_history if t > cutoff
-            ]
-            self._recent_peak_history.append((enter_now, level_db))
-            self._recent_peak_db = max(
-                (v for _, v in self._recent_peak_history), default=-100.0
-            )
+            if (
+                level_db > self._recent_peak_db
+                or (enter_now - self._recent_peak_time) > self._recent_peak_window
+            ):
+                self._recent_peak_db = level_db
+                self._recent_peak_time = enter_now
 
         # Fire an FFT for each complete fft_size-sample chunk available.
         fft_size = self.fft_size

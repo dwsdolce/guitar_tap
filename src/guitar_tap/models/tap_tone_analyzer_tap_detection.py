@@ -249,7 +249,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     # Capture the recent peak input level for decay tracking
                     # reference.  Mirrors Swift TapToneAnalyzer+TapDetection.swift:
                     #   tapPeakLevel = fftAnalyzer.recentPeakLevelDB
-                    # (0.5 s rolling max).  This is the CORRECT intentional use
+                    # (2.0 s peak-hold).  This is the CORRECT intentional use
                     # of recentPeakLevelDB: at tap-fire time the peak-hold
                     # captures the actual tap transient even though FFT
                     # detection lags by up to one FFT frame.  Fall back to
@@ -502,7 +502,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         Mirrors Swift: DispatchQueue.main.asyncAfter { ... } in reEnableDetectionForNextPlateTap().
         """
         # Use instantaneous level — mirrors Swift fftAnalyzer.inputLevelDB.
-        # recent_peak_level_db holds a 0.5 s rolling max and stays elevated after
+        # recent_peak_level_db holds a 2.0 s peak-hold max and stays elevated after
         # a tap, which would incorrectly latch is_above_threshold = True and block
         # the next tap.  _current_input_level_db is updated at ~43 Hz by
         # _on_rms_level_changed and reflects the current signal level, not the peak.
@@ -608,10 +608,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # Distinct from _current_input_level_db (fftAnalyzer.inputLevelDB / RMS, ~43 Hz).
         self._current_peak_magnitude_db = float(fft_peak_amp) - 100.0
 
-        # Fast path: decay tracking uses per-buffer RMS level at ~10 Hz.
-        # Mirrors Swift fftAnalyzer.$inputLevelDB → trackDecayFast(inputLevel:).
-        level_db = float(rms_amp) - 100.0
-        self.track_decay_fast(level_db)
+        # NOTE: decay tracking is NOT driven here. on_fft_frame fires at the FFT frame rate (~2.7 Hz),
+        # far too coarse for ring-out timing. It now runs in _on_rms_level_changed at the per-chunk
+        # RMS rate (~43 Hz), matching Swift fftAnalyzer.$inputLevelDB → trackDecayFast(inputLevel:).
 
         # Tap detection for ALL modes is now driven by _on_rms_level_changed
         # (~43 Hz, per-chunk RMS).  Earlier the guitar path detected via FFT
@@ -671,6 +670,22 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # always has a fresh value even when detection is paused/complete.
         self._current_input_level_db = float(rms_amp) - 100.0
 
+        # Chunk-identity dedupe, hoisted ABOVE the detection guards + decay so both run exactly once
+        # per chunk. This method is called twice per chunk (direct rms_level_handler callback AND the
+        # Qt rmsLevelChanged signal); the mic's running sample count identifies the duplicate.
+        if self.mic is not None:
+            _pos = getattr(self.mic, '_diag_total_samples', None)
+            if _pos is not None and _pos == self._last_rms_chunk_pos:
+                return
+            if _pos is not None:
+                self._last_rms_chunk_pos = _pos
+
+        # Fast path: decay tracking at the per-chunk RMS rate (~43 Hz), run regardless of detection
+        # state (its own is_tracking_decay guard gates it, and the post-tap window must keep updating
+        # even once the measurement is complete). Mirrors Swift fftAnalyzer.$inputLevelDB ->
+        # trackDecayFast. Moved here from on_fft_frame (~2.7 Hz, too coarse for ring-out timing).
+        self.track_decay_fast(self._current_input_level_db)
+
         if self.mic and getattr(self.mic, 'is_playing_file', False):
             TAP_DEBUG("onRmsLevel",
                 f"FILE | levelDB={self._current_input_level_db:.2f} "
@@ -680,20 +695,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             )
         if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
             return
-        # Dedupe: this method is called twice per chunk in Python because
-        # the direct rms_level_handler callback AND the Qt rmsLevelChanged
-        # signal both route here.  Without skipping the duplicate call,
-        # detect_tap's N-chunk confirmation counter increments twice per
-        # chunk and the gate effectively fires at N/2.  Use the mic's
-        # running sample count as a chunk identity — when the position
-        # hasn't advanced since the last call, this is the duplicate.
-        # See _last_rms_chunk_pos doc-comment in __init__.
-        if self.mic is not None:
-            current_pos = getattr(self.mic, '_diag_total_samples', None)
-            if current_pos is not None and current_pos == self._last_rms_chunk_pos:
-                return
-            if current_pos is not None:
-                self._last_rms_chunk_pos = current_pos
         peak_mag = self._current_input_level_db
         self.detect_tap(peak_mag, self._current_mag_y_db, self.freq)
 
