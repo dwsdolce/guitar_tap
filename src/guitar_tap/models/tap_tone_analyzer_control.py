@@ -606,6 +606,18 @@ class TapToneAnalyzerControlMixin:
             self._gated_capture_active = False
             self._gated_accum = []
             self._pre_roll_buf = []
+            # Clear the audio-queue fast-start markers so the first tap of this
+            # sequence cannot mistake a stale "already handled" equality
+            # (_gated_capture_id == _last_level_crossing_capture_id) for a real
+            # fast-start capture.  A material (plate/brace) completion leaves
+            # these two IDs equal — unlike the guitar re-enable paths, it never
+            # resets them — so a material→guitar switch would otherwise make
+            # start_guitar_gated_capture bail out (accum 0 samples) without
+            # capturing or completing, stranding the analyzer with all tap
+            # controls disabled.  Mirrors _on_post_engine_stop /
+            # re_enable_detection_for_next_plate_tap.
+            self._gated_capture_id = 0
+            self._last_level_crossing_capture_id = -1
             self._session_recording_buffer = []
             self._session_checkpoints = [0]
             self._is_session_recording = True
