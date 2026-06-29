@@ -774,7 +774,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # is_detecting=True again after the cooldown.
         self.is_detecting = False
 
-        self._dump_capture_wav(samples, sample_rate, "guitar")
+        # NOTE: no per-tap WAV dump here. The "Dump Capture Audio" diagnostic writes only ONE
+        # continuous session WAV per measurement (finish_session_recording), which already contains
+        # every approved tap/phase in order — the per-tap intermediate dumps were redundant.
 
         fft_size = int(self.mic.fft_size)
 
