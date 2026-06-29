@@ -979,6 +979,15 @@ class TapToneAnalyzer(
         import time as _time_mod
         self._devices_refresh_last_t = _time_mod.monotonic()
 
+        # Register the hot-plug monitor now that _on_devices_changed is wired.  The
+        # mic's __init__ already called _start_hotplug_monitor(), but at that point
+        # the callback was still None (deferred from mic construction), so it bailed
+        # at the `if self._on_devices_changed is None: return` guard and the OS
+        # listener was never installed.  Registering here — once, after wiring — is
+        # what actually enables device connect/disconnect detection on macOS,
+        # Windows, and Linux.
+        self.mic._start_hotplug_monitor()
+
         # ── Saved measurements (view-layer import deferred until here) ────
         from views.tap_analysis_results_view import load_all_measurements as _load
         self.saved_measurements = _load()

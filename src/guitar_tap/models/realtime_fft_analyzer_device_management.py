@@ -378,6 +378,19 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         persists the fingerprint and auto-loads calibration — mirroring Swift's
         selectedInputDevice.didSet.
         """
+        # No-op if we're already on this device with a live stream.  set_device is
+        # called redundantly (e.g. _show_settings syncs the saved device on every
+        # open, and the device-combo selection signal also fires), and each call
+        # tears the stream down and reopens it.  Rapid open/close churns the CoreAudio
+        # AUHAL into -10851 (InvalidPropertyValue) / Pa -9986 on some mics (e.g. the
+        # UMIK-1), so skip the rebuild when nothing actually changed.
+        if (
+            device.index == getattr(self, "device_index", None)
+            and getattr(self, "stream", None) is not None
+            and not self.is_stopped
+        ):
+            return
+
         self._close_stream_only()
         self.device_index = device.index
         self.rate = int(device.sample_rate)
@@ -389,15 +402,22 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         self._diag_chunk_count: int = 0
         with self._stop_lock:
             self.is_stopped = False
-        self.stream = sd.InputStream(
-            device=self.device_index,
-            channels=1,
-            samplerate=self.rate,
-            dtype=np.float32,
-            blocksize=self.chunksize,
-            callback=self.new_frame,
-        )
-        self.stream.start()
+        try:
+            self.stream = sd.InputStream(
+                device=self.device_index,
+                channels=1,
+                samplerate=self.rate,
+                dtype=np.float32,
+                blocksize=self.chunksize,
+                callback=self.new_frame,
+            )
+            self.stream.start()
+        except sd.PortAudioError as exc:
+            # Don't raise into the UI action; leave the stream closed and log.  The
+            # hot-plug refresh or the next valid selection recovers.
+            gt_log(f"Could not open '{device.name}' ({exc}); stream left closed")
+            self.stream = None
+            return
         gt_log(f"🎤 Audio engine started")
         gt_log(f"🎤 Hardware sample rate: {self.rate} Hz, hardware channels: 1 (tap will use mono)")
 

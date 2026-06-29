@@ -6109,6 +6109,18 @@ class MainWindow(QtWidgets.QMainWindow):
                     _update_cal_display()
             _update_sr_lbl(device_combo.currentIndex())
 
+        # Live-update the device combo while Settings is open: the hot-plug monitor
+        # emits devicesChanged on connect/disconnect, so rebuild the list in place.
+        # Disconnect when the dialog closes so the slot can't fire on a destroyed combo.
+        self.fft_canvas.devicesChanged.connect(_rebuild_device_combo)
+
+        def _disconnect_device_signal(_result: int) -> None:
+            try:
+                self.fft_canvas.devicesChanged.disconnect(_rebuild_device_combo)
+            except (TypeError, RuntimeError):
+                pass
+        dlg.finished.connect(_disconnect_device_signal)
+
         aud.addWidget(_hsep())
         aud.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
         aud.addWidget(_hsep())
