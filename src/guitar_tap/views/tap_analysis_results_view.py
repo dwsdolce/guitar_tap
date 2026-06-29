@@ -32,6 +32,8 @@ from guitar_tap.utilities.logging import gt_log
 __all__ = [
     "load_all_measurements",
     "save_all_measurements",
+    "measurements_to_json",
+    "measurements_from_json",
     "export_measurement_json",
     "import_measurements_from_json",
     "export_pdf",
@@ -132,106 +134,72 @@ def measurements_file() -> str:
 # ── Persistence API ───────────────────────────────────────────────────────────
 
 def load_all_measurements() -> list[TapToneMeasurement]:
-    """Load all measurements from saved_measurements.json."""
+    """Load all measurements from saved_measurements.json.
+
+    Reads through the single ``measurements_from_json`` decoder so that loading
+    the persisted library and importing a shared ``.guitartap`` file are the same
+    code path (mirrors Swift's one decodeMeasurements)."""
     path = measurements_file()
     if not os.path.exists(path):
         return []
     try:
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            return [TapToneMeasurement.from_dict(d) for d in data]
-        return [TapToneMeasurement.from_dict(data)]
+            return measurements_from_json(f.read())
     except Exception as exc:
         gt_log(f"Failed to load measurements: {exc}")
         return []
+
+
+def measurements_to_json(measurements: "list[TapToneMeasurement]") -> str:
+    """The on-disk library form (saved_measurements.json) — a `.guitartap` JSON array.
+    Shared by the internal persistence and by Export All, so a backup IS the library file."""
+    return json.dumps([m.to_dict() for m in measurements], indent=2, ensure_ascii=False, sort_keys=True)
 
 
 def save_all_measurements(measurements: list[TapToneMeasurement]) -> None:
     """Write the full measurements list to disk atomically."""
     path = measurements_file()
     try:
-        data = [m.to_dict() for m in measurements]
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
+            f.write(measurements_to_json(measurements))
         os.replace(tmp, path)
     except OSError as exc:
         gt_log(f"Failed to save measurements: {exc}")
 
 
 def export_measurement_json(m: TapToneMeasurement) -> str:
-    """Return pretty-printed JSON for a single measurement.
+    """Return the canonical `.guitartap` JSON for a single measurement.
 
-    Mirrors Swift TapToneMeasurement.encode(to:) by injecting a resolved
-    ``modeLabel`` into each peak entry.  For guitar measurements the label is
-    determined by GuitarMode.classify_all (with any user override applied);
-    for plate/brace it is the role name (Longitudinal, Cross-grain, FLC, Peak).
+    A single-element library file — identical bytes to what persistence and
+    Export All write for the same measurement, because they all serialize through
+    ``measurements_to_json`` / ``TapToneMeasurement.to_dict`` (which resolves each
+    peak's modeLabel exactly as Swift's single encode(to:) does).  Mirrors Swift:
+    a one-measurement export is just the one encoder applied to a one-element array.
     """
-    d = m.to_dict()
-
-    # Resolve measurement type and guitar type from the snapshot — mirrors Swift:
-    #   let resolvedMeasurementType = spectrumSnapshot?.measurementType
-    #                               ?? longitudinalSnapshot?.measurementType
-    snap = m.spectrum_snapshot or m.longitudinal_snapshot
-    resolved_mt = (snap.measurement_type if snap else None) or m.measurement_type
-    resolved_gt = (snap.guitar_type if snap else None) or m.guitar_type
-
-    is_guitar = True
-    if resolved_mt:
-        try:
-            from models import measurement_type as _mt_mod
-            mt_obj = _mt_mod.MeasurementType(resolved_mt)
-            is_guitar = mt_obj.is_guitar
-        except Exception:
-            pass
-
-    # Build the mode-label map for peaks — mirrors Swift PeakExportCodingKeys loop.
-    if is_guitar and m.peaks:
-        try:
-            from models.guitar_mode import GuitarMode
-            from models.guitar_type import GuitarType
-            gt_enum = GuitarType(resolved_gt) if resolved_gt else GuitarType.CLASSICAL
-            mode_map = GuitarMode.classify_all(m.peaks, gt_enum)
-        except Exception:
-            mode_map = {}
-
-        overrides = m.peak_mode_overrides or {}
-        for i, peak_d in enumerate(d["peaks"]):
-            peak = m.peaks[i]
-            override = overrides.get(peak.id)
-            if override:
-                label = override
-            else:
-                mode = mode_map.get(peak.id)
-                label = mode.display_name if mode else "Unknown"
-            peak_d["modeLabel"] = label
-    else:
-        # Plate / brace: label by which selected-peak-id matches.
-        for i, peak_d in enumerate(d["peaks"]):
-            peak = m.peaks[i]
-            if peak.id == m.selected_longitudinal_peak_id:
-                label = "Longitudinal"
-            elif peak.id == m.selected_cross_peak_id:
-                label = "Cross-grain"
-            elif peak.id == m.selected_flc_peak_id:
-                label = "FLC"
-            else:
-                label = "Peak"
-            peak_d["modeLabel"] = label
-
-    return json.dumps([d], indent=2, ensure_ascii=False, sort_keys=True)
+    return measurements_to_json([m])
 
 
-def import_measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]:
-    """
-    Parse JSON from a .guitartap or .json file.
-    Accepts a JSON array or a single measurement object.
+def measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]:
+    """Decode canonical `.guitartap` JSON into measurements.
+
+    Accepts a JSON array or a single measurement object.  THE deserializer:
+    both persistence load (load_all_measurements) and file import go through it,
+    so reading saved_measurements.json and importing a shared file are one path
+    (mirrors Swift's single TapToneAnalyzer.decodeMeasurements).
     """
     raw = json.loads(data)
     if isinstance(raw, list):
         return [TapToneMeasurement.from_dict(d) for d in raw]
     return [TapToneMeasurement.from_dict(raw)]
+
+
+def import_measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]:
+    """Import measurements from a .guitartap or .json file (array or single object).
+
+    Thin alias kept for the import UI; delegates to the shared
+    ``measurements_from_json`` decoder."""
+    return measurements_from_json(data)
 
 
 # ── PDF Report Data ───────────────────────────────────────────────────────────
@@ -494,7 +462,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     """
     import io as _io
     from datetime import datetime as _dt
-    from datetime import timezone as _tz
 
     from _version import __version_string__ as _app_version
     from models import guitar_mode as GM
@@ -560,17 +527,9 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     except ValueError:
         _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
 
-    # Timestamp — mirrors Swift Date().formatted() which displays in local time.
-    try:
-        ts = _dt.fromisoformat(data.timestamp)
-        if ts.tzinfo is not None:
-            ts = ts.astimezone()   # convert UTC (or any tz-aware) to local time
-    except Exception:
-        ts = _dt.now(_tz.utc).astimezone()
-    date_str = f"{ts.strftime('%B')} {ts.day}, {ts.year}"
-    _hour = ts.hour % 12 or 12
-    _ampm = "AM" if ts.hour < 12 else "PM"
-    time_str = f"{_hour}:{ts.strftime('%M')} {_ampm}"
+    # Measurement timestamp — unified locale-aware display (local time).
+    from utilities.date_format import format_display_datetime
+    datetime_str = format_display_datetime(data.timestamp)
 
     # Visible (selected) peaks, sorted by frequency
     visible_peaks = sorted(
@@ -775,8 +734,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         Paragraph("Tap Tone Analysis Report",   S_SUBTITLE),
     ]
     header_right = [
-        Paragraph(date_str, S_DATE),
-        Paragraph(time_str, S_DATE),
+        Paragraph(datetime_str, S_DATE),
     ]
     header_tbl = Table(
         [[header_left, header_right]],
@@ -1382,10 +1340,8 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     story.append(Spacer(1, 8))
 
     version_str = _app_version
-    _now = _dt.now()
-    _now_hour = _now.hour % 12 or 12
-    _now_ampm = "AM" if _now.hour < 12 else "PM"
-    now_str = f"{_now.strftime('%b')} {_now.day}, {_now.year}, {_now_hour}:{_now.strftime('%M')} {_now_ampm}"
+    from utilities.date_format import format_display_datetime
+    now_str = format_display_datetime(_dt.now())  # PDF generation time (local)
     footer_tbl = Table(
         [[
             Paragraph(f"Generated by GuitarTap {version_str}", S_FOOTER),
@@ -1870,7 +1826,8 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     story.append(footer_div)
     story.append(Spacer(1, 8))
 
-    now_str = data.timestamp[:16].replace("T", " ")
+    from utilities.date_format import format_display_datetime
+    now_str = format_display_datetime(data.timestamp)
     footer_tbl = Table(
         [[Paragraph("Generated by GuitarTap", S_FOOTER),
           Paragraph(now_str, _style("footer_r", fontSize=9, fontName="Helvetica",

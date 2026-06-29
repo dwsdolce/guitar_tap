@@ -17,6 +17,7 @@ from typing import Any
 
 import pyqtgraph as pg
 from models import guitar_mode as gm
+from models.analysis_display_mode import AnalysisDisplayMode
 from PySide6 import QtCore, QtGui, QtWidgets
 
 # Type alias for the annotation dict stored in FftAnnotations.annotations
@@ -281,6 +282,11 @@ class FftAnnotations(QtCore.QObject):
         self, peak_id: str, freq: float, mag: float, html: str, mode_str: str
     ) -> None:
         """Create a new annotation or update an existing one for *freq*."""
+        # Reactively suppress annotations while a comparison overlay is shown — mirrors
+        # Swift `annotationPeaks: isComparing ? nil`. Gating at the source (rather than a
+        # one-shot hide_annotations) keeps labels gone regardless of which signal re-emits.
+        if self._analyzer is not None and self._analyzer.display_mode == AnalysisDisplayMode.COMPARISON:
+            return
         idx = self.find_annotation_index(freq)
         color = self._mode_color(mode_str)
 

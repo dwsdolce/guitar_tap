@@ -1,7 +1,6 @@
 """ Samples audio signal and finds the peaks of the guitar tap resonances
 """
 
-from datetime import datetime
 
 import models.tap_tone_analyzer as td
 import numpy as np
@@ -1389,12 +1388,8 @@ class FftCanvas(pg.PlotWidget):
         loc = getattr(m, "measurement_name", None)
         if loc:
             return loc
-        ts = getattr(m, "timestamp", "")
-        try:
-            dt = datetime.fromisoformat(ts)
-            return f"{dt.strftime('%b')} {dt.day} {dt.strftime('%H:%M')}"
-        except Exception:
-            return ts[:16]
+        from utilities.date_format import format_display_datetime_compact
+        return format_display_datetime_compact(getattr(m, "timestamp", ""))
 
     def load_comparison(self, measurements: list) -> None:
         """Load guitar measurements as comparison overlays.

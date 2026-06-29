@@ -1151,13 +1151,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
     @staticmethod
     def _comparison_label(m) -> str:
         """Short label for the comparison legend."""
-        from datetime import datetime
+        from utilities.date_format import format_display_datetime_compact
         loc = getattr(m, "measurement_name", None)
         if loc:
             return loc
-        ts = getattr(m, "timestamp", "")
-        try:
-            dt = datetime.fromisoformat(ts)
-            return f"{dt.strftime('%b')} {dt.day} {dt.strftime('%H:%M')}"
-        except Exception:
-            return ts[:16]
+        return format_display_datetime_compact(getattr(m, "timestamp", ""))

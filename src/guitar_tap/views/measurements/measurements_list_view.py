@@ -104,9 +104,16 @@ class MeasurementsDialog(QtWidgets.QDialog):
         btn_row.addWidget(self._compare_btn)
 
         self._import_btn = QtWidgets.QPushButton("Import…")
-        self._import_btn.setToolTip("Import a .json or .guitartap measurement file")
+        self._import_btn.setToolTip("Import measurements from a .json or .guitartap file (one or many)")
         self._import_btn.clicked.connect(self._on_import)
         btn_row.addWidget(self._import_btn)
+
+        self._export_all_btn = QtWidgets.QPushButton("Export All")
+        self._export_all_btn.setToolTip(
+            "Export the whole library as one .guitartap file (backup / move to another machine)"
+        )
+        self._export_all_btn.clicked.connect(self._export_all)
+        btn_row.addWidget(self._export_all_btn)
 
         self._delete_all_btn = QtWidgets.QPushButton("Delete All")
         self._delete_all_btn.setToolTip("Delete all saved measurements")
@@ -149,6 +156,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             comparable >= 2 if not self._compare_mode else True
         )
         self._import_btn.setEnabled(not self._compare_mode)
+        self._export_all_btn.setEnabled(has and not self._compare_mode)
         self._delete_all_btn.setEnabled(has and not self._compare_mode)
 
         # Done ↔ Cancel
@@ -372,6 +380,30 @@ class MeasurementsDialog(QtWidgets.QDialog):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
         except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
+
+    def _export_all(self) -> None:
+        """Export the whole library to a chosen `.guitartap` file — the same content as the
+        internal saved_measurements.json, just written to an arbitrary location."""
+        if not self._measurements:
+            return
+        import time
+        default = os.path.join(
+            M.last_export_dir(), f"guitartap-library-{int(time.time())}.guitartap"
+        )
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export All Measurements",
+            default,
+            "GuitarTap files (*.guitartap);;JSON files (*.json);;All files (*)",
+        )
+        if not path:
+            return
+        M.update_export_dir(path)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(M.measurements_to_json(self._measurements))
+        except OSError as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
     def _export_spectrum(self, m: TapToneMeasurement) -> None:

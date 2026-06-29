@@ -484,11 +484,8 @@ class TapToneMeasurement:
 
         Python-only — no Swift equivalent.
         """
-        try:
-            dt = datetime.fromisoformat(self.timestamp)
-            time_str = dt.strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            time_str = self.timestamp[:16] if len(self.timestamp) >= 16 else self.timestamp
+        from utilities.date_format import format_display_datetime
+        time_str = format_display_datetime(self.timestamp)
         if self.measurement_name:
             return f"{self.measurement_name} — {time_str}"
         return time_str
@@ -505,13 +502,67 @@ class TapToneMeasurement:
 
     # MARK: - Serialisation (Python-only)
 
+    def _resolve_peak_mode_labels(
+        self, resolved_mt: "str | None", resolved_gt: "str | None"
+    ) -> "list[str]":
+        """Resolved human-readable mode label for each top-level peak, in order.
+
+        Mirrors Swift TapToneMeasurement.encode(to:)'s PeakExportCodingKeys loop:
+        guitar peaks are classified by GuitarMode (with any user override applied);
+        plate/brace peaks get their role name (Longitudinal / Cross-grain / FLC / Peak).
+        Called only from to_dict() so persistence, single export, and Export All all
+        share this one resolution path — exactly like Swift's single encoder.
+        """
+        is_guitar = True
+        if resolved_mt:
+            try:
+                from .measurement_type import MeasurementType
+                is_guitar = MeasurementType(resolved_mt).is_guitar
+            except Exception:
+                pass
+
+        if is_guitar and self.peaks:
+            try:
+                from .guitar_mode import GuitarMode
+                from .guitar_type import GuitarType
+                gt_enum = GuitarType(resolved_gt) if resolved_gt else GuitarType.CLASSICAL
+                mode_map = GuitarMode.classify_all(self.peaks, gt_enum)
+            except Exception:
+                mode_map = {}
+            overrides = self.peak_mode_overrides or {}
+            guitar_labels: list[str] = []
+            for peak in self.peaks:
+                override = overrides.get(peak.id)
+                if override:
+                    guitar_labels.append(override)
+                else:
+                    mode = mode_map.get(peak.id)
+                    guitar_labels.append(mode.display_name if mode else "Unknown")
+            return guitar_labels
+
+        # Plate / brace: label by which selected-peak role each peak fills.
+        role_labels: list[str] = []
+        for peak in self.peaks:
+            if peak.id == self.selected_longitudinal_peak_id:
+                role_labels.append("Longitudinal")
+            elif peak.id == self.selected_cross_peak_id:
+                role_labels.append("Cross-grain")
+            elif peak.id == self.selected_flc_peak_id:
+                role_labels.append("FLC")
+            else:
+                role_labels.append("Peak")
+        return role_labels
+
     def to_dict(self) -> dict[str, Any]:
         """Encode this measurement as a JSON-compatible dict using Swift field names.
 
         Keys are written in the same order as Swift's custom encode(to:) so that
         files produced by Python and Swift are directly comparable line-by-line.
 
-        Mirrors Swift TapToneMeasurement.encode(to:).
+        Mirrors Swift TapToneMeasurement.encode(to:).  This is THE measurement
+        serializer: persistence (saved_measurements.json), single-measurement
+        export, and whole-library Export All all go through it, so every written
+        `.guitartap` file is byte-identical regardless of which path produced it.
         Python-only — Swift uses Codable with a custom encoder.
         """
         d: dict[str, Any] = {}
@@ -605,11 +656,17 @@ class TapToneMeasurement:
         if _resolved_gt:
             d["guitarType"] = _resolved_gt
 
-        # Peaks written last, with modeLabel injected per entry — mirrors Swift
-        # encode(to:) PeakExportCodingKeys loop.  Note: export_measurement_json()
-        # overwrites modeLabel with the resolved classification; to_dict() emits
-        # whatever is already stored in peak.mode_label.
-        d["peaks"] = [p.to_dict() for p in self.peaks]
+        # Peaks written last, each with a *resolved* modeLabel — mirrors Swift's
+        # single encode(to:) (PeakExportCodingKeys loop), which always classifies
+        # rather than emitting a stored label.  Resolving here (not in a separate
+        # export-only function) is what makes persistence and every export path
+        # byte-identical, matching Swift's one-encoder design.
+        peak_dicts = [p.to_dict() for p in self.peaks]
+        for peak_d, label in zip(
+            peak_dicts, self._resolve_peak_mode_labels(_resolved_mt, _resolved_gt)
+        ):
+            peak_d["modeLabel"] = label
+        d["peaks"] = peak_dicts
 
         # Comparison entries — omitted (encodeIfPresent) when None.
         # Mirrors Swift TapToneMeasurement.encode(to:) comparisonEntries.

@@ -15,6 +15,7 @@ dependencies = [
     "reportlab>=4.4",
     "soundfile>=0.10.3",
     "platformdirs>=4.0",
+    "babel>=2.12",
 ]
 
 [project.optional-dependencies]

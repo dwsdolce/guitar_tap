@@ -3821,7 +3821,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # ── Annotations ───────────────────────────────────────────────────────
         # Hide annotations during any comparison mode (saved-measurement or multi-tap).
         # Mirrors Swift: isComparing = tap.displayMode == .comparison, so annotations
-        # are suppressed whenever comparison curves are displayed.
+        # are suppressed whenever comparison curves are displayed. The button is also
+        # disabled (mirrors Swift `.disabled(isComparing)`) so a stray cycle can't
+        # re-emit annotation signals; FftAnnotations.update_annotation additionally
+        # no-ops in COMPARISON mode so the suppression is reactive, not one-shot.
+        self.annotations_btn.setEnabled(not is_comparing)
         if is_comparing:
             canvas.annotations.hide_annotations()
         else:

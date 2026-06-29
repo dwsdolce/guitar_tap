@@ -803,25 +803,8 @@ def make_exportable_spectrum_view(
 
         Uses portable strftime codes (no %-d / %#d platform differences).
         """
-        from datetime import datetime
-        for fmt in (
-            "%Y-%m-%dT%H:%M:%S.%f%z",
-            "%Y-%m-%dT%H:%M:%S%z",
-            "%Y-%m-%d %H:%M:%S.%f%z",
-            "%Y-%m-%d %H:%M:%S%z",
-            "%Y-%m-%d %H:%M:%S.%f",
-            "%Y-%m-%d %H:%M",
-        ):
-            try:
-                dt = datetime.strptime(raw, fmt)
-                if dt.tzinfo is not None:
-                    dt = dt.astimezone()           # convert to local time
-                hour = int(dt.strftime("%I"))      # strip leading zero portably
-                ampm = dt.strftime("%p")
-                return f"{dt.month}/{dt.day}/{dt.year}, {hour}:{dt.minute:02d} {ampm}"
-            except ValueError:
-                continue
-        return raw                                 # already formatted or unrecognised
+        from utilities.date_format import format_display_datetime
+        return format_display_datetime(raw)
 
     # ── Header — mirrors makeExportableSpectrumView VStack(alignment:.leading) header block ──
     title_font = QtGui.QFont()

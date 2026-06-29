@@ -4,7 +4,6 @@ Matches MeasurementDetailView.swift / CombinedPeakModeRowView.swift.
 """
 
 import os
-from datetime import datetime
 
 import qtawesome as qta
 from models import ResonantPeak, TapToneMeasurement
@@ -12,6 +11,7 @@ from models import guitar_mode as GM
 from models import guitar_type as GT
 from models import pitch as P
 from PySide6 import QtCore, QtGui, QtWidgets
+from utilities.date_format import format_display_datetime
 from views import tap_analysis_results_view as M
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -56,15 +56,40 @@ def _resolve_guitar_type(guitar_type_str: str | None) -> GT.GuitarType:
     return GT.GuitarType.CLASSICAL
 
 
+def _type_name(m) -> str:
+    """Single Settings-vocabulary type word for the Details pane."""
+    if m.is_comparison:
+        return "Comparison"
+    from models.measurement_type import MeasurementType
+    try:
+        return MeasurementType(m.measurement_type).short_name
+    except (ValueError, TypeError):
+        return m.guitar_type or m.measurement_type or "\u2014"
+
+
+def _comparison_data(m) -> "list[dict]":
+    """Build ComparisonResultsView rows from a saved comparison's entries."""
+    data = []
+    for e in (m.comparison_entries or []):
+        comps = list(e.color_components or [])[:3]
+        while len(comps) < 3:
+            comps.append(0.0)
+        rgb = tuple(int(c * 255) for c in comps)
+        data.append(
+            {"label": e.label, "color": rgb, "peaks": e.peaks, "guitar_type": e.guitar_type}
+        )
+    return data
+
+
 # ── Peak row widget (matches CombinedPeakModeRowView read-only mode) ──────────
 
 class _PeakRow(QtWidgets.QFrame):
     """
-    Displays one peak matching CombinedPeakModeRowView layout:
+    Displays one peak (read-only) matching CombinedPeakModeRowView layout:
 
-      [★]  [icon]  [mode label    freq Hz]
-                   [♪ pitch note + cents ]
-                   [Q: x.x  BW: x.x Hz   mag dB]
+      [icon]  [mode label    freq Hz]
+              [♪ pitch note + cents ]
+              [Q: x.x  BW: x.x Hz   mag dB]
     """
 
     def __init__(
@@ -72,51 +97,44 @@ class _PeakRow(QtWidgets.QFrame):
         peak: ResonantPeak,
         mode: GM.GuitarMode,
         effective_label: str,
-        is_selected: bool,
         guitar_type: GT.GuitarType,
         parent=None,
+        label_color: "QtGui.QColor | None" = None,
     ) -> None:
         super().__init__(parent)
 
-        color = _mode_qcolor(mode)
-        r, g, b = mode.color
+        # Material peaks pass an explicit L/C/FLC colour; guitar peaks use the mode colour.
+        color = label_color if label_color is not None else _mode_qcolor(mode)
+        r, g, b = color.red(), color.green(), color.blue()
 
-        # Tinted background (mode color at 5% opacity)
+        # Tinted background (label colour at ~5% opacity)
         self.setAutoFillBackground(True)
         pal = self.palette()
-        bg = QtGui.QColor(r, g, b, 13)  # ~5% opacity
-        pal.setColor(QtGui.QPalette.ColorRole.Window, bg)
+        pal.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor(r, g, b, 13))
         self.setPalette(pal)
         self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Plain)
-
-        opacity = 1.0 if is_selected else 0.4
 
         root = QtWidgets.QHBoxLayout(self)
         root.setContentsMargins(6, 4, 6, 4)
         root.setSpacing(8)
 
-        # ── Star ──────────────────────────────────────────────────────────────
-        star_label = QtWidgets.QLabel("★" if is_selected else "☆")
-        star_label.setStyleSheet(
-            f"color: {'#3478f6' if is_selected else '#888888'}; font-size: 14px;"
-        )
-        star_label.setFixedWidth(18)
-        root.addWidget(star_label)
-
-        # ── Mode icon ─────────────────────────────────────────────────────────
-        try:
-            icon_lbl = QtWidgets.QLabel()
-            icon_pixmap = qta.icon(mode.icon, color=color).pixmap(24, 24)
-            icon_lbl.setPixmap(icon_pixmap)
-        except Exception:
-            icon_lbl = QtWidgets.QLabel("◆")
-            icon_lbl.setStyleSheet(f"color: rgb({r},{g},{b}); font-size: 16px;")
+        # Mode icon (guitar) or colour dot (material).
+        if label_color is not None:
+            icon_lbl = QtWidgets.QLabel("●")
+            icon_lbl.setStyleSheet(f"color: rgb({r},{g},{b}); font-size: 14px;")
+        else:
+            try:
+                icon_lbl = QtWidgets.QLabel()
+                icon_lbl.setPixmap(qta.icon(mode.icon, color=color).pixmap(24, 24))
+            except Exception:
+                icon_lbl = QtWidgets.QLabel("◆")
+                icon_lbl.setStyleSheet(f"color: rgb({r},{g},{b}); font-size: 16px;")
         icon_lbl.setFixedWidth(28)
         root.addWidget(icon_lbl)
 
-        # ── In-range badge ────────────────────────────────────────────────────
-        if mode not in (GM.GuitarMode.UNKNOWN, GM.GuitarMode.UPPER_MODES):
+        # In-range badge (guitar modes only).
+        if label_color is None and mode not in (GM.GuitarMode.UNKNOWN, GM.GuitarMode.UPPER_MODES):
             lo, hi = mode.mode_range(guitar_type)
             in_range = lo <= peak.frequency <= hi
             badge = QtWidgets.QLabel("✔" if in_range else "⚠")
@@ -136,21 +154,19 @@ class _PeakRow(QtWidgets.QFrame):
             spacer.setFixedWidth(14)
             root.addWidget(spacer)
 
-        # ── Info column ───────────────────────────────────────────────────────
+        # Info column.
         info_col = QtWidgets.QVBoxLayout()
         info_col.setSpacing(2)
 
         # Row 1: mode label + frequency
         row1 = QtWidgets.QHBoxLayout()
         row1.setSpacing(4)
-
         mode_lbl = QtWidgets.QLabel(effective_label)
         mode_lbl.setStyleSheet(
             f"font-weight: bold; font-size: 13px; color: rgb({r},{g},{b});"
         )
         row1.addWidget(mode_lbl)
         row1.addStretch()
-
         freq_lbl = QtWidgets.QLabel(f"{peak.frequency:.1f} Hz")
         freq_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
         row1.addWidget(freq_lbl)
@@ -180,7 +196,6 @@ class _PeakRow(QtWidgets.QFrame):
         # Row 3: Q / BW / magnitude
         row3 = QtWidgets.QHBoxLayout()
         row3.setSpacing(10)
-
         if peak.quality:
             q_lbl = QtWidgets.QLabel(
                 f"<span style='color:grey;font-size:10px;'>Q:</span> "
@@ -188,7 +203,6 @@ class _PeakRow(QtWidgets.QFrame):
             )
             q_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
             row3.addWidget(q_lbl)
-
         if peak.bandwidth:
             bw_lbl = QtWidgets.QLabel(
                 f"<span style='color:grey;font-size:10px;'>BW:</span> "
@@ -196,9 +210,7 @@ class _PeakRow(QtWidgets.QFrame):
             )
             bw_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
             row3.addWidget(bw_lbl)
-
         row3.addStretch()
-
         mag_color = _mag_color(peak.magnitude)
         mag_lbl = QtWidgets.QLabel(f"{peak.magnitude:.1f} dB")
         mag_lbl.setStyleSheet(
@@ -209,12 +221,6 @@ class _PeakRow(QtWidgets.QFrame):
         info_col.addLayout(row3)
 
         root.addLayout(info_col)
-
-        # Apply opacity to unselected peaks
-        if not is_selected:
-            effect = QtWidgets.QGraphicsOpacityEffect(self)
-            effect.setOpacity(opacity)
-            self.setGraphicsEffect(effect)
 
 
 # ── Detail dialog ─────────────────────────────────────────────────────────────
@@ -268,34 +274,9 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             loc.setStyleSheet("font-weight: bold;")
             info_layout.addRow("Measurement Name:", loc)
 
-        try:
-            dt = datetime.fromisoformat(m.timestamp).astimezone()
-            date_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            date_str = m.timestamp
-        info_layout.addRow("Date:", QtWidgets.QLabel(date_str))
+        info_layout.addRow("Date:", QtWidgets.QLabel(format_display_datetime(m.timestamp)))
 
-        if m.decay_time is not None:
-            info_layout.addRow(
-                "Ring-Out:", QtWidgets.QLabel(f"{m.decay_time:.2f} s")
-            )
-
-        # Tap tone ratio (fTop/fAir)
-        ratio = self._compute_tap_tone_ratio()
-        if ratio is not None:
-            ratio_lbl = QtWidgets.QLabel(f"{ratio:.2f} : 1")
-            ratio_lbl.setStyleSheet("font-weight: bold;")
-            ratio_lbl.setToolTip(
-                "fTop / fAir ratio — ideal ≈ 2.0 (Top one octave above Air)"
-            )
-            info_layout.addRow("Tap Tone Ratio:", ratio_lbl)
-
-        if m.measurement_type:
-            info_layout.addRow(
-                "Measurement Type:", QtWidgets.QLabel(m.measurement_type)
-            )
-        if m.guitar_type:
-            info_layout.addRow("Guitar Type:", QtWidgets.QLabel(m.guitar_type))
+        info_layout.addRow("Measurement Type:", QtWidgets.QLabel(_type_name(m)))
         if m.number_of_taps is not None:
             info_layout.addRow(
                 "Number of Taps:", QtWidgets.QLabel(str(m.number_of_taps))
@@ -315,49 +296,68 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
 
         vbox.addWidget(info_group)
 
-        # ── Detected Peaks ───────────────────────────────────────────────────
-        selected_ids = set(
-            m.selected_peak_ids if m.selected_peak_ids is not None
-            else [p.id for p in m.peaks]
-        )
-        sorted_peaks = sorted(m.peaks, key=lambda p: p.frequency)
-        sel_count = sum(1 for p in sorted_peaks if p.id in selected_ids)
-        unsel_count = len(sorted_peaks) - sel_count
-
-        group_title = f"Detected Peaks ({sel_count} selected"
-        if unsel_count:
-            group_title += f", {unsel_count} unselected"
-        group_title += ")"
-        peaks_group = QtWidgets.QGroupBox(group_title)
-        peaks_vbox = QtWidgets.QVBoxLayout(peaks_group)
-        peaks_vbox.setSpacing(4)
-
-        if not sorted_peaks:
-            peaks_vbox.addWidget(QtWidgets.QLabel("No peaks detected"))
+        # Comparison records show the per-spectrum Air/Top/Back table; everything
+        # else shows the identified (selected) peaks only.
+        if m.is_comparison:
+            from views.comparison_results_view import ComparisonResultsView
+            cmp_group = QtWidgets.QGroupBox(
+                f"Compared Spectra ({len(m.comparison_entries or [])})"
+            )
+            cmp_vbox = QtWidgets.QVBoxLayout(cmp_group)
+            cmp_view = ComparisonResultsView()
+            cmp_view.set_comparison_data(_comparison_data(m))
+            cmp_vbox.addWidget(cmp_view)
+            vbox.addWidget(cmp_group)
         else:
-            gt = _resolve_guitar_type(m.guitar_type)
-            # Classify all peaks with context-aware mode map — id_map mirrors Swift [UUID: GuitarMode]
-            id_map = GM.GuitarMode.classify_all(sorted_peaks, gt)
+            selected_ids = set(
+                m.selected_peak_ids if m.selected_peak_ids is not None
+                else [p.id for p in m.peaks]
+            )
+            shown = sorted(
+                (p for p in m.peaks if p.id in selected_ids),
+                key=lambda p: p.frequency,
+            )
+            peaks_group = QtWidgets.QGroupBox("Identified Peaks")
+            peaks_vbox = QtWidgets.QVBoxLayout(peaks_group)
+            peaks_vbox.setSpacing(4)
 
-            for i, peak in enumerate(sorted_peaks):
-                mode = id_map.get(peak.id, GM.GuitarMode.UNKNOWN)
-                # Effective label: mode override > stored mode_label > auto mode
-                override = (
-                    m.peak_mode_overrides.get(peak.id)
-                    if m.peak_mode_overrides else None
+            if not shown:
+                peaks_vbox.addWidget(QtWidgets.QLabel("No identified peaks"))
+            else:
+                from views.shared.peaks_model import PeaksModel
+                mat_colors = PeaksModel._MATERIAL_MODE_COLORS
+                gt = _resolve_guitar_type(m.guitar_type)
+                is_material = (
+                    m.longitudinal_snapshot is not None
+                    or m.selected_longitudinal_peak_id is not None
                 )
-                if override:
-                    label = override
-                elif peak.mode_label:
-                    label = peak.mode_label
-                else:
-                    label = mode.display_name
+                id_map = {} if is_material else GM.GuitarMode.classify_all(shown, gt)
+                for peak in shown:
+                    if is_material:
+                        if peak.id == m.selected_longitudinal_peak_id:
+                            label = "Longitudinal"
+                        elif peak.id == m.selected_cross_peak_id:
+                            label = "Cross-grain"
+                        elif peak.id == m.selected_flc_peak_id:
+                            label = "FLC"
+                        else:
+                            label = "Peak"
+                        rgb = mat_colors.get(label, (150, 150, 150))
+                        row = _PeakRow(
+                            peak, GM.GuitarMode.UNKNOWN, label, gt,
+                            label_color=QtGui.QColor(*rgb),
+                        )
+                    else:
+                        mode = id_map.get(peak.id, GM.GuitarMode.UNKNOWN)
+                        override = (
+                            m.peak_mode_overrides.get(peak.id)
+                            if m.peak_mode_overrides else None
+                        )
+                        label = override or peak.mode_label or mode.display_name
+                        row = _PeakRow(peak, mode, label, gt)
+                    peaks_vbox.addWidget(row)
 
-                is_selected = peak.id in selected_ids
-                row = _PeakRow(peak, mode, label, is_selected, gt)
-                peaks_vbox.addWidget(row)
-
-        vbox.addWidget(peaks_group)
+            vbox.addWidget(peaks_group)
         vbox.addStretch()
 
         # ── Button row ───────────────────────────────────────────────────────

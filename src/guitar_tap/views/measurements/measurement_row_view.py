@@ -16,12 +16,12 @@ clicked toggles the selection circle.
 
 from __future__ import annotations
 
-from datetime import datetime
 
 from models import TapToneMeasurement
 from models import guitar_mode as GM
 from models import guitar_type as GT
 from PySide6 import QtCore, QtGui, QtWidgets
+from utilities.date_format import format_display_datetime
 
 # "⋯" actions button: transparent text when idle, grey on hover (no layout shift).
 _ELLIPSIS_IDLE_QSS = "QToolButton { color: rgba(136,136,136,0); border: none; font-size: 11px; padding: 0 2px; }"
@@ -136,17 +136,7 @@ class MeasurementRowView(QtWidgets.QWidget):
             wave.setToolTip("Has spectrum snapshot")
             line1.addWidget(wave)
 
-        try:
-            dt = datetime.fromisoformat(m.timestamp).astimezone()
-            # Locale-aware short date + time, matching Swift's
-            # .formatted(date: .abbreviated, time: .shortened).
-            qdt = QtCore.QDateTime(dt)
-            time_str = QtCore.QLocale().toString(qdt, QtCore.QLocale.FormatType.ShortFormat)
-        except Exception:
-            # Fall back to the date+time portion of an ISO-8601 timestamp
-            # (YYYY-MM-DDTHH:MM... → "YYYY-MM-DD HH:MM").
-            time_str = (m.timestamp[:10] + " " + m.timestamp[11:16]) if len(m.timestamp) >= 16 else ""
-        time_lbl = QtWidgets.QLabel(time_str)
+        time_lbl = QtWidgets.QLabel(format_display_datetime(m.timestamp))
         time_lbl.setStyleSheet("color: #888888; font-size: 10px;")
         line1.addWidget(time_lbl)
 
