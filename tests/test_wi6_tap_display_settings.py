@@ -211,3 +211,54 @@ class TestD19ValidateMagnitudeRange:
         assert lo == pytest.approx(-60.0)
         assert hi == pytest.approx(-50.0)
 
+
+
+# ---------------------------------------------------------------------------
+# Per-measurement-type display frequency ranges (6h)
+#
+# Parity test (paired): mirrors Swift GuitarTapTests/DisplayRangeTests.swift and
+# web test/settings-display-range.test.ts. Each MeasurementType has its own
+# default display range, and a value persisted for one type must not affect
+# another's.
+# ---------------------------------------------------------------------------
+
+class TestPerTypeDisplayRanges:
+    # Import via the bare `models.` path so MeasurementType is the SAME module
+    # object the source's default_*_frequency imports internally — otherwise the
+    # dual sys.path (src + src/guitar_tap) yields two distinct enum classes and the
+    # source's isinstance() check silently falls through to the guitar default.
+    def _cls(self):
+        _get_app()
+        from models.tap_display_settings import TapDisplaySettings
+        return TapDisplaySettings
+
+    def test_per_type_defaults_match_canonical(self):
+        """Canonical per-type defaults, identical across Swift/Python/web:
+        guitar (all subtypes) 75-350, plate 20-200, brace 30-1000."""
+        tds = self._cls()
+        from models.measurement_type import MeasurementType as MT
+
+        for t in (MT.GENERIC, MT.ACOUSTIC, MT.CLASSICAL, MT.FLAMENCO):
+            assert tds.default_min_frequency(t) == 75.0
+            assert tds.default_max_frequency(t) == 350.0
+        assert tds.default_min_frequency(MT.PLATE) == 20.0
+        assert tds.default_max_frequency(MT.PLATE) == 200.0
+        assert tds.default_min_frequency(MT.BRACE) == 30.0
+        assert tds.default_max_frequency(MT.BRACE) == 1000.0
+
+    def test_set_one_type_does_not_clobber_another(self):
+        """Persisting a display range for one type must not change another's
+        (the keys are per-type), and each type reads back its own value."""
+        tds = self._cls()
+        from models.measurement_type import MeasurementType as MT
+
+        orig_plate = tds.min_frequency_for(MT.PLATE)
+        orig_brace = tds.min_frequency_for(MT.BRACE)
+        try:
+            tds.set_min_frequency_for(18.0, MT.PLATE)
+            tds.set_min_frequency_for(40.0, MT.BRACE)
+            assert tds.min_frequency_for(MT.PLATE) == 18.0
+            assert tds.min_frequency_for(MT.BRACE) == 40.0
+        finally:
+            tds.set_min_frequency_for(orig_plate, MT.PLATE)
+            tds.set_min_frequency_for(orig_brace, MT.BRACE)
