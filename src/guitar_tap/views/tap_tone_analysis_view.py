@@ -919,12 +919,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.freq_range_label.setFont(small_font)
         freq_row.addWidget(self.freq_range_label, stretch=1)
 
-        style = self.style()
+        # qtawesome icons (not Qt's SP_Dialog* standard pixmaps — those render blank on the
+        # macOS style, leaving the buttons invisible). Mirrors Swift checkmark.circle / xmark.circle.
         self.select_all_btn = QtWidgets.QToolButton()
-        self.select_all_btn.setIcon(
-            style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogApplyButton)
-            if style else QtGui.QIcon()
-        )
+        self.select_all_btn.setIcon(qta.icon("fa5s.check-circle", color="gray"))
         self.select_all_btn.setIconSize(QtCore.QSize(14, 14))
         self.select_all_btn.setFixedSize(22, 22)
         self.select_all_btn.setToolTip("Select all peaks")
@@ -932,10 +930,7 @@ class MainWindow(QtWidgets.QMainWindow):
         freq_row.addWidget(self.select_all_btn)
 
         self.deselect_all_btn = QtWidgets.QToolButton()
-        self.deselect_all_btn.setIcon(
-            style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton)
-            if style else QtGui.QIcon()
-        )
+        self.deselect_all_btn.setIcon(qta.icon("fa5s.times-circle", color="gray"))
         self.deselect_all_btn.setIconSize(QtCore.QSize(14, 14))
         self.deselect_all_btn.setFixedSize(22, 22)
         self.deselect_all_btn.setToolTip("Deselect all peaks")
@@ -1468,7 +1463,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_spectrum_btn.setToolTip("Export the current spectrum as a PNG image")
         _footer_row.addWidget(self.export_spectrum_btn)
 
-        self.export_pdf_btn = QtWidgets.QPushButton("Export PDF Report")
+        self.export_pdf_btn = QtWidgets.QPushButton("Export PDF")
         self.export_pdf_btn.setEnabled(False)
         self.export_pdf_btn.setToolTip("Export the current measurement to a PDF report")
         _footer_row.addWidget(self.export_pdf_btn)

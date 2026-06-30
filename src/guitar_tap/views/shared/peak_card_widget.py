@@ -287,7 +287,7 @@ class PeakCardWidget(QtWidgets.QFrame):
     def _refresh_qbw(self) -> None:
         if self._q > 0:
             bw = self._freq / self._q
-            self._qbw_lbl.setText(f"Q: {self._q:.0f}  BW: {bw:.1f} Hz")
+            self._qbw_lbl.setText(f"Q: {self._q:.1f}  BW: {bw:.1f} Hz")
         else:
             self._qbw_lbl.setText("")
 

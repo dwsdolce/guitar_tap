@@ -283,7 +283,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         # Now re-run the full peak analysis pipeline.
         self.recalculate_frozen_peaks_if_needed()
-        from .gt_log import gt_log
+        from guitar_tap.utilities.logging import gt_log
         gt_log(f"\U0001f52c Re-analyzed peaks from frozen spectrum: "
                f"{len(self.current_peaks)} peaks found")
 
