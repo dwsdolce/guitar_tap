@@ -88,6 +88,28 @@ PLATE_TAP_THRESHOLD = -53.33838     # dB — matches .guitartap reference
 Q_TOLERANCE = 1.0                    # dimensionless
 
 # ---------------------------------------------------------------------------
+# plate-umik-1-web-mac-3-taps.wav — Plate, UMIK-1 mic, 48 kHz, recorded by the WEB app (Chrome)
+# with number_of_taps = 3, i.e. 3 taps PER PHASE (9 taps total). Replaying it at number_of_taps=3
+# averages each phase (L/C/FLC) and reads the dominant peak OFF THE AVERAGED spectrum (like guitar).
+# Expected values are the averaged-spectrum peaks (the web .guitartap, same recording). NB: Swift/Python
+# historically read material peaks off the LAST tap (a buildAllPeaks UUID-hack side-effect) — a latent
+# bug fixed alongside this so all three read the averaged peak (fLC -63.6008, not the last tap's -60.98).
+PLATE_3TAP_WAV = os.path.join(
+    os.path.dirname(__file__),
+    "plate-umik-1-web-mac-3-taps.wav",
+)
+PLATE_3TAP_THRESHOLD = -40.0          # dB — matches the .guitartap reference
+PLATE_3TAP_L_FREQ, PLATE_3TAP_L_MAG, PLATE_3TAP_L_Q = 68.2587, -71.5858, 15.667
+PLATE_3TAP_C_FREQ, PLATE_3TAP_C_MAG, PLATE_3TAP_C_Q = 117.4681, -56.5436, 26.667
+PLATE_3TAP_FLC_FREQ, PLATE_3TAP_FLC_MAG, PLATE_3TAP_FLC_Q = 35.3011, -63.6008, 6.000
+# REG-P2 uses a tighter magnitude tolerance than the generic ±1.0 dB.  The
+# averaged values are deterministic across platforms, so they agree far more
+# closely than a single tap would; ±0.5 dB still leaves headroom for FFT-library
+# differences while reliably catching a regression to last-tap selection (the
+# masked deltas were fL 0.94, fC 0.81, fLC 2.62 dB — all caught at 0.5).
+PLATE_3TAP_MAG_TOLERANCE = 0.5         # dB
+
+# ---------------------------------------------------------------------------
 # Recording 5.wav — Generic guitar, single-tap, 48 kHz.
 # Reference values from the Recording 5.guitartap file (Tests/O'Brien/).
 # Settings: peak_min_threshold = -76, tap_detection_threshold = -40,
@@ -536,3 +558,55 @@ class TestFilePlaybackRegression:
             f"±{Q_TOLERANCE}, got {flc_peak.quality} "
             f"(delta {flc_q_delta:.2f})"
         )
+
+    def test_REG_P2_plate_three_taps_per_phase_averages(self, plate_analyzer):
+        """Plate at number_of_taps=3 — each phase (L/C/FLC) averages 3 taps.
+
+        plate-umik-1-web-mac-3-taps.wav is a 3-taps-per-phase plate session
+        recorded by the web app (Chrome, UMIK-1).  Replaying it at
+        number_of_taps=3 must average each phase and reproduce the companion
+        .guitartap peaks.  Exercises the multi-tap-per-phase path (mirrors
+        Swift handleLongitudinalGatedProgress: collect number_of_taps, then
+        averageSpectra).  Same fixture + expected values as the web REG-P2.
+        """
+        from models.tap_display_settings import TapDisplaySettings
+
+        assert os.path.exists(PLATE_3TAP_WAV), f"Test WAV not found: {PLATE_3TAP_WAV}"
+
+        original_measure_flc = TapDisplaySettings.measure_flc()
+        TapDisplaySettings.set_measure_flc(True)
+        try:
+            sut = plate_analyzer
+            sut.tap_detection_threshold = PLATE_3TAP_THRESHOLD
+            sut.play_file_for_testing(
+                path=PLATE_3TAP_WAV,
+                measurement_type=MeasurementType.PLATE,
+                number_of_taps=3,
+                calibration_path=CALIBRATION_FILE,
+            )
+        finally:
+            TapDisplaySettings.set_measure_flc(original_measure_flc)
+
+        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE, (
+            f"material_tap_phase should be COMPLETE, got {sut.material_tap_phase}"
+        )
+        assert sut.is_measurement_complete, "is_measurement_complete should be True"
+
+        for name, peak, ef, em, eq in (
+            ("fL", sut.selected_longitudinal_peak,
+             PLATE_3TAP_L_FREQ, PLATE_3TAP_L_MAG, PLATE_3TAP_L_Q),
+            ("fC", sut.selected_cross_peak,
+             PLATE_3TAP_C_FREQ, PLATE_3TAP_C_MAG, PLATE_3TAP_C_Q),
+            ("fLC", sut.selected_flc_peak,
+             PLATE_3TAP_FLC_FREQ, PLATE_3TAP_FLC_MAG, PLATE_3TAP_FLC_Q),
+        ):
+            assert peak is not None, f"{name} peak is None"
+            assert abs(peak.frequency - ef) < FREQ_TOLERANCE, (
+                f"{name} freq: expected {ef} Hz ±{FREQ_TOLERANCE}, got {peak.frequency}"
+            )
+            assert abs(peak.magnitude - em) < PLATE_3TAP_MAG_TOLERANCE, (
+                f"{name} mag: expected {em} dB ±{PLATE_3TAP_MAG_TOLERANCE}, got {peak.magnitude}"
+            )
+            assert abs(peak.quality - eq) < Q_TOLERANCE, (
+                f"{name} Q: expected {eq} ±{Q_TOLERANCE}, got {peak.quality}"
+            )

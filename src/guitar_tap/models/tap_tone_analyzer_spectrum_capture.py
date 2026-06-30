@@ -1185,11 +1185,20 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Route to the phase-specific handler.
         # Mirrors Swift switch phase { case .capturingLongitudinal: … }
         if phase == _MTP.CAPTURING_LONGITUDINAL:
-            self._handle_longitudinal_gated_progress(magnitudes, frequencies, dominant_peak)
+            self._handle_longitudinal_gated_progress(
+                magnitudes, frequencies, dominant_peak,
+                hps_min_hz, hps_max_hz, prefer_lowest,
+            )
         elif phase == _MTP.CAPTURING_CROSS:
-            self._handle_cross_gated_progress(magnitudes, frequencies, dominant_peak)
+            self._handle_cross_gated_progress(
+                magnitudes, frequencies, dominant_peak,
+                hps_min_hz, hps_max_hz, prefer_lowest,
+            )
         elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
-            self._handle_flc_gated_progress(magnitudes, frequencies, dominant_peak)
+            self._handle_flc_gated_progress(
+                magnitudes, frequencies, dominant_peak,
+                hps_min_hz, hps_max_hz, prefer_lowest,
+            )
         else:
             # Covers .notStarted, .complete, .reviewingLongitudinal, .reviewingCross, .reviewingFlc
             # — mirrors Swift's combined default case.
@@ -1366,7 +1375,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # Mirrors Swift handleLongitudinalGatedProgress(magnitudes:frequencies:dominantPeak:)
     # ------------------------------------------------------------------ #
 
-    def _handle_longitudinal_gated_progress(self, magnitudes, frequencies, dominant_peak) -> None:
+    def _handle_longitudinal_gated_progress(
+        self, magnitudes, frequencies, dominant_peak,
+        min_hz=0.0, max_hz=0.0, prefer_lowest=False,
+    ) -> None:
         """Handle a longitudinal gated-FFT tap result.
 
         Mirrors Swift TapToneAnalyzer.handleLongitudinalGatedProgress(…).
@@ -1388,18 +1400,29 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         avg_mags, avg_freqs = self.average_spectra(from_taps=self.captured_taps)
         self.longitudinal_spectrum = (avg_mags, avg_freqs)
 
+        # Re-find the dominant peak on the AVERAGED spectrum so the auto-selected
+        # peak reflects all taps, not just the last one (see module note; mirrors
+        # the guitar multi-tap path and the Swift/web ports).
+        avg_peak = self.find_dominant_peak(
+            magnitudes=avg_mags,
+            frequencies=avg_freqs,
+            min_hz=min_hz,
+            max_hz=max_hz,
+            prefer_lowest_significant=prefer_lowest,
+        ) or dominant_peak
+
         # Build the full peak list for display/manual override.
-        self.longitudinal_peaks = self._build_all_peaks(avg_mags, avg_freqs, dominant_peak)
-        self.auto_selected_longitudinal_peak_id = dominant_peak.id
+        self.longitudinal_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
+        self.auto_selected_longitudinal_peak_id = avg_peak.id
         self.selected_longitudinal_peak = (
-            next((p for p in self.longitudinal_peaks if p.id == dominant_peak.id), dominant_peak)
+            next((p for p in self.longitudinal_peaks if p.id == avg_peak.id), avg_peak)
         )
-        gt_log(f"🔵 Auto-selected longitudinal peak: {dominant_peak.frequency} Hz")
+        gt_log(f"🔵 Auto-selected longitudinal peak: {avg_peak.frequency} Hz")
 
         self.current_peaks = self.longitudinal_peaks
         # Only the identified (auto-selected) peak is selected — others are informational.
-        # Mirrors Swift: selectedPeakIDs = Set([dominantPeak.id])
-        self.selected_peak_ids = {dominant_peak.id}
+        # Mirrors Swift: selectedPeakIDs = Set([avgPeak.id])
+        self.selected_peak_ids = {avg_peak.id}
         self.captured_taps.clear()
 
         # Update displayed spectrum — mirrors Swift setFrozenSpectrum (empty for plate transitions).
@@ -1410,8 +1433,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         if is_brace:
             # Brace: only longitudinal tap — measurement complete.
             sel_peak = next(
-                (p for p in self.longitudinal_peaks if p.id == dominant_peak.id),
-                dominant_peak
+                (p for p in self.longitudinal_peaks if p.id == avg_peak.id),
+                avg_peak
             )
             self.current_peaks = [sel_peak]
             self.set_frozen_spectrum(_np.array([]), _np.array([]))
@@ -1425,7 +1448,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 self.showLoadedSettingsWarningChanged.emit(False)
             self.tap_progress = 1.0
             self._set_status_message("Complete - check Results")
-            gt_log(f"✅ Brace measurement complete: fL={dominant_peak.frequency} Hz")
+            gt_log(f"✅ Brace measurement complete: fL={avg_peak.frequency} Hz")
             # Emit final peaks.
             self._emit_peaks_array(self.current_peaks)
             # Emit the longitudinal spectrum for display — mirrors Swift's @Published
@@ -1436,7 +1459,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.set_material_spectra([
                 ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
             ])
-            self.plateAnalysisComplete.emit(dominant_peak.frequency, 0.0, 0.0)
+            self.plateAnalysisComplete.emit(avg_peak.frequency, 0.0, 0.0)
         elif self.mic.is_playing_file:
             # File playback: auto-advance L → C without pausing at the review state.
             # The file audio flows continuously, so pausing detection would miss
@@ -1471,7 +1494,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_material_tap_phase(_MTP.REVIEWING_LONGITUDINAL)
             self.is_detecting = False
             self._set_status_message(
-                f"fL: {dominant_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
+                f"fL: {avg_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
             )
             # Show longitudinal overlay — mirrors Swift's @Published longitudinalSpectrum
             # causing materialSpectra to return [("Longitudinal (L)", .blue, ...)] which
@@ -1526,7 +1549,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # Mirrors Swift handleCrossGatedProgress(magnitudes:frequencies:dominantPeak:)
     # ------------------------------------------------------------------ #
 
-    def _handle_cross_gated_progress(self, magnitudes, frequencies, dominant_peak) -> None:
+    def _handle_cross_gated_progress(
+        self, magnitudes, frequencies, dominant_peak,
+        min_hz=0.0, max_hz=0.0, prefer_lowest=False,
+    ) -> None:
         """Handle a cross-grain gated-FFT tap result.
 
         Mirrors Swift TapToneAnalyzer.handleCrossGatedProgress(…).
@@ -1545,12 +1571,21 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         avg_mags, avg_freqs = self.average_spectra(from_taps=self.captured_taps)
         self.cross_spectrum = (avg_mags, avg_freqs)
-        self.cross_peaks = self._build_all_peaks(avg_mags, avg_freqs, dominant_peak)
-        self.auto_selected_cross_peak_id = dominant_peak.id
+        # Re-find the dominant peak on the AVERAGED spectrum (see the longitudinal
+        # handler) so the auto-selected cross peak reflects all taps, not the last.
+        avg_peak = self.find_dominant_peak(
+            magnitudes=avg_mags,
+            frequencies=avg_freqs,
+            min_hz=min_hz,
+            max_hz=max_hz,
+            prefer_lowest_significant=prefer_lowest,
+        ) or dominant_peak
+        self.cross_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
+        self.auto_selected_cross_peak_id = avg_peak.id
         self.selected_cross_peak = (
-            next((p for p in self.cross_peaks if p.id == dominant_peak.id), dominant_peak)
+            next((p for p in self.cross_peaks if p.id == avg_peak.id), avg_peak)
         )
-        gt_log(f"🟠 Auto-selected cross-grain peak: {dominant_peak.frequency} Hz")
+        gt_log(f"🟠 Auto-selected cross-grain peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 
         self.current_peaks = self.combine_plate_peaks()
@@ -1593,7 +1628,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_material_tap_phase(_MTP.REVIEWING_CROSS)
             self.is_detecting = False
             self._set_status_message(
-                f"fC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
+                f"fC: {avg_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
             )
 
         # Show longitudinal + cross overlays — mirrors Swift's @Published crossSpectrum
@@ -1612,7 +1647,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # Mirrors Swift handleFlcGatedProgress(magnitudes:frequencies:dominantPeak:)
     # ------------------------------------------------------------------ #
 
-    def _handle_flc_gated_progress(self, magnitudes, frequencies, dominant_peak) -> None:
+    def _handle_flc_gated_progress(
+        self, magnitudes, frequencies, dominant_peak,
+        min_hz=0.0, max_hz=0.0, prefer_lowest=False,
+    ) -> None:
         """Handle an FLC (shear/diagonal) gated-FFT tap result.
 
         Mirrors Swift TapToneAnalyzer.handleFlcGatedProgress(…).
@@ -1631,18 +1669,27 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         avg_mags, avg_freqs = self.average_spectra(from_taps=self.captured_taps)
         self.flc_spectrum = (avg_mags, avg_freqs)
-        self.flc_peaks = self._build_all_peaks(avg_mags, avg_freqs, dominant_peak)
-        self.auto_selected_flc_peak_id = dominant_peak.id
+        # Re-find the dominant peak on the AVERAGED spectrum (see the longitudinal
+        # handler) so the auto-selected FLC peak reflects all taps, not the last.
+        avg_peak = self.find_dominant_peak(
+            magnitudes=avg_mags,
+            frequencies=avg_freqs,
+            min_hz=min_hz,
+            max_hz=max_hz,
+            prefer_lowest_significant=prefer_lowest,
+        ) or dominant_peak
+        self.flc_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
+        self.auto_selected_flc_peak_id = avg_peak.id
         self.selected_flc_peak = (
-            next((p for p in self.flc_peaks if p.id == dominant_peak.id), dominant_peak)
+            next((p for p in self.flc_peaks if p.id == avg_peak.id), avg_peak)
         )
-        gt_log(f"🟣 Auto-selected FLC peak: {dominant_peak.frequency} Hz")
+        gt_log(f"🟣 Auto-selected FLC peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 
         sel = self._resolved_plate_peaks(
             include_cross=True,
             include_flc=True,
-            flc_override=self.selected_flc_peak or dominant_peak,
+            flc_override=self.selected_flc_peak or avg_peak,
         )
         self.current_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
@@ -1662,7 +1709,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_material_tap_phase(_MTP.REVIEWING_FLC)
             self.is_detecting = False
             self._set_status_message(
-                f"fLC: {dominant_peak.frequency:.1f} Hz \u2014 Accept to complete or Redo to re-tap"
+                f"fLC: {avg_peak.frequency:.1f} Hz \u2014 Accept to complete or Redo to re-tap"
             )
         # Show longitudinal + cross + FLC overlays — mirrors Swift's @Published flcSpectrum
         # causing materialSpectra to return L + C + FLC series (replaces primary curve).
