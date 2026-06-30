@@ -205,6 +205,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         with self._stop_lock:
             if self.is_stopped:
                 raise sd.CallbackStop
+        self._last_buffer_time = time.monotonic()  # watchdog liveness stamp (audio thread)
         chunk = data[:, 0].copy()  # copy before queuing — PortAudio reuses the buffer
         self.queue.put(chunk)
 
@@ -271,6 +272,10 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         gt_log("🎤 Audio engine started")
         gt_log(f"🎤 Hardware sample rate: {self.rate} Hz, hardware channels: 1 (tap will use mono)")
         gt_log("🎤 Audio tap installed")
+        # (Re)arm the buffer-delivery watchdog for the live-mic stream. Not armed for
+        # file playback (the file path feeds self.queue synthetically, not via new_frame).
+        if not self.is_playing_file:
+            self.start_buffer_watchdog()
 
     def stop(self) -> None:
         """Stop the audio stream.
@@ -279,6 +284,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         Uses abort() instead of stop() — see _close_stream_only() docstring.
         """
         gt_log("🎤 Stop requested")
+        # Stop the watchdog so it can't fire a recovery during an intentional stop.
+        self.stop_buffer_watchdog()
         with self._stop_lock:
             self.is_stopped = True
         self.is_playing_file = False
@@ -598,3 +605,78 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             return
         self._stop_hotplug_monitor()
         self._close_stream_only()
+
+    # MARK: - Buffer-delivery Watchdog (mirrors RealtimeFFTAnalyzer+Watchdog.swift)
+    #
+    # Recovers from a silently-wedged stream: the PortAudio callback (new_frame)
+    # stops firing with no error (mic contention, device reconfiguration, sleep/wake).
+    # A 1 Hz QTimer detects the silence and re-opens the stream with bounded backoff.
+
+    _WATCHDOG_BACKOFFS = (0.5, 1.0, 2.0, 4.0)
+
+    def start_buffer_watchdog(self) -> None:
+        """(Re)start the buffer-delivery watchdog (main-thread QTimer)."""
+        if getattr(self, "is_for_testing", False):
+            return
+        from PySide6 import QtCore
+        self.stop_buffer_watchdog()
+        self._watchdog_engine_start_time = time.monotonic()
+        self._last_buffer_time = time.monotonic()
+        timer = QtCore.QTimer()
+        timer.setInterval(1000)
+        timer.timeout.connect(self._check_buffer_watchdog)
+        timer.start()
+        self._watchdog_timer = timer
+
+    def stop_buffer_watchdog(self) -> None:
+        """Stop the watchdog (intentional stop / before each recovery restart)."""
+        timer = self._watchdog_timer
+        if timer is not None:
+            timer.stop()
+            self._watchdog_timer = None
+
+    def _check_buffer_watchdog(self) -> None:
+        """One tick: recover if the live stream has gone silent past the threshold."""
+        if self.is_stopped or self.is_playing_file or self._is_recovering:
+            return
+        started = self._watchdog_engine_start_time
+        if started is None or (time.monotonic() - started) <= 4.0:
+            return  # startup grace — let a freshly-(re)started stream deliver its first buffer
+        silent_for = time.monotonic() - self._last_buffer_time
+        if silent_for <= self._watchdog_silence_threshold:
+            if self._watchdog_recovery_attempts != 0:
+                self._watchdog_recovery_attempts = 0  # healthy — clear the streak
+            return
+        gt_log(f"⏱️ Buffer watchdog: no audio for {silent_for:.1f}s while running — I/O appears wedged")
+        self._is_recovering = True
+        self._attempt_watchdog_recovery()
+
+    def _attempt_watchdog_recovery(self) -> None:
+        """Schedule one bounded, backed-off recovery restart."""
+        from PySide6 import QtCore
+        self._watchdog_recovery_attempts += 1
+        if self._watchdog_recovery_attempts > self._watchdog_max_attempts:
+            gt_log(f"❌ Buffer watchdog: giving up after {self._watchdog_max_attempts} failed restarts")
+            self._is_recovering = False
+            self.stop_buffer_watchdog()
+            return
+        idx = min(self._watchdog_recovery_attempts - 1, len(self._WATCHDOG_BACKOFFS) - 1)
+        backoff = self._WATCHDOG_BACKOFFS[idx]
+        gt_log(f"🔄 Buffer watchdog: recovery attempt "
+               f"{self._watchdog_recovery_attempts}/{self._watchdog_max_attempts} in {backoff}s")
+        QtCore.QTimer.singleShot(int(backoff * 1000), self._do_watchdog_restart)
+
+    def _do_watchdog_restart(self) -> None:
+        """Re-open the stream via the proven device-refresh path, then re-arm.
+
+        ``reinitialize_portaudio`` (close + reinit PortAudio + recreate InputStream +
+        start) swallows errors and leaves the stream closed on failure, so if buffers
+        still don't flow the next watchdog tick retries (bounded by max attempts).
+        """
+        try:
+            self.reinitialize_portaudio()
+            gt_log(f"✅ Buffer watchdog: stream restarted (attempt {self._watchdog_recovery_attempts})")
+        except Exception as e:  # noqa: BLE001 — last-resort recovery, never raise
+            gt_log(f"⚠️ Buffer watchdog: restart failed ({e})")
+        self._is_recovering = False
+        self.start_buffer_watchdog()  # re-arm; a healthy buffer clears the streak

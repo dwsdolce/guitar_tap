@@ -410,6 +410,18 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self.is_stopped: bool = False
         self.queue: queue.Queue[npt.NDArray[np.float32]] = queue.Queue()
 
+        # MARK: - Buffer-delivery watchdog (mirrors Swift RealtimeFFTAnalyzer+Watchdog).
+        # Recovers from a silently-wedged stream (the PortAudio callback stops firing
+        # with no error — e.g. mic contention / device reconfiguration). A QTimer
+        # detects the silence and re-opens the stream with bounded backoff.
+        self._last_buffer_time: float = 0.0
+        self._watchdog_timer = None  # QtCore.QTimer | None
+        self._is_recovering: bool = False
+        self._watchdog_recovery_attempts: int = 0
+        self._watchdog_engine_start_time: float | None = None
+        self._watchdog_silence_threshold: float = 2.5  # s with no buffer → wedged
+        self._watchdog_max_attempts: int = 6
+
         # MARK: - WAV File Playback (mirrors Swift RealtimeFFTAnalyzer.isPlayingFile)
         # True while a background thread is feeding a WAV file into self.queue.
         # Set to False by stop() or when the file thread finishes.
