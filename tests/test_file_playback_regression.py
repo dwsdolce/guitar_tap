@@ -610,3 +610,27 @@ class TestFilePlaybackRegression:
             assert abs(peak.quality - eq) < Q_TOLERANCE, (
                 f"{name} Q: expected {eq} ±{Q_TOLERANCE}, got {peak.quality}"
             )
+
+
+# REG-G ring-out (decay) — Recording 5.wav post-tap level decays to peak-15 dB. Shared
+# cross-platform golden (web g4d-decay + Swift FilePlaybackRegression assert the same value):
+# 0.0853 s ± 0.03 s. The web is audio-clock-deterministic; Python's wall-clock decay reaches the
+# same crossing because file playback runs at real-time pace (wall-clock ≈ audio time 1:1). The
+# loose tolerance covers per-platform chunk-granularity + clock jitter (web 0.0853, Python ~0.091).
+G1_RING_OUT_SEC = 0.0853
+RING_OUT_TOLERANCE = 0.03
+
+
+def test_REG_G_generic_guitar_ringout(g1_analyzer):
+    """Ring-out time for Recording 5.wav matches the cross-platform golden."""
+    sut = g1_analyzer
+    sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
+    sut.tap_detection_threshold = G1_TAP_THRESHOLD
+    sut.play_file_for_testing(
+        path=G1_WAV, measurement_type=MeasurementType.GENERIC, number_of_taps=1
+    )
+    assert sut.current_decay_time is not None, "No ring-out measured"
+    assert abs(sut.current_decay_time - G1_RING_OUT_SEC) < RING_OUT_TOLERANCE, (
+        f"Ring-out: expected {G1_RING_OUT_SEC} ±{RING_OUT_TOLERANCE}, "
+        f"got {sut.current_decay_time}"
+    )
