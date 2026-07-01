@@ -896,14 +896,14 @@ class MainWindow(QtWidgets.QMainWindow):
         mic_row.addWidget(self._mic_name_label, stretch=1)
 
         # Re-analyze: re-run find_peaks() on the frozen spectrum using the
-        # current algorithm.  Useful for upgrading measurements saved by older
-        # builds that missed peaks.  Mirrors Swift reanalyzePeaks() button.
+        # current analysis settings (Peak Min, analysis range, guitar type) — lets
+        # the user retune a saved measurement without re-tapping.  Mirrors reanalyzePeaks().
         self._reanalyze_btn = QtWidgets.QToolButton()
         self._reanalyze_btn.setIcon(qta.icon("fa5s.sync-alt", color="gray"))
         self._reanalyze_btn.setIconSize(QtCore.QSize(14, 14))
         self._reanalyze_btn.setFixedSize(22, 22)
         self._reanalyze_btn.setToolTip(
-            "Re-analyze peaks from spectrum using the current algorithm"
+            "Re-analyze peaks from the spectrum using the current settings"
         )
         self._reanalyze_btn.setEnabled(False)
         self._reanalyze_btn.clicked.connect(self._on_reanalyze_peaks)

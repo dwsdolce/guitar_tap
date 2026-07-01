@@ -257,10 +257,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
     # ------------------------------------------------------------------ #
 
     def reanalyze_peaks(self) -> None:
-        """Re-run peak detection on the frozen spectrum using the current algorithm.
+        """Re-run peak detection on the frozen spectrum using the current analysis settings.
 
-        Useful for upgrading measurements saved by older builds that missed
-        peaks.  Clears ``loaded_measurement_peaks`` so that
+        Lets the user retune a saved measurement (Peak Min, analysis range, guitar
+        type) without re-tapping.  Clears ``loaded_measurement_peaks`` so that
         ``recalculate_frozen_peaks_if_needed()`` falls through to the live-tap
         path which calls ``find_peaks()`` on the frozen spectrum.
 

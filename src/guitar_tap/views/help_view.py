@@ -337,11 +337,10 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Re-analyze Peaks",
         "Shown in the results panel header next to the microphone name. Re-runs peak "
-        "detection on a loaded measurement&rsquo;s frozen spectrum using the current "
-        "algorithm. This is useful when loading measurements saved by older builds that "
-        "may have missed peaks due to earlier algorithm limitations. The button is only "
-        "enabled when viewing a loaded measurement. After re-analysis the peaks are "
-        "recalculated as if the measurement were freshly captured with the current software.",
+        "detection on a loaded measurement&rsquo;s stored spectrum using the current "
+        "analysis settings &mdash; useful for trying a different Peak Min, analysis range, "
+        "or guitar type on a saved measurement without re-tapping. The button is enabled "
+        "only when viewing a loaded measurement.",
         ["fa5s.sync-alt"]
     ))
     parts.append(_row(
