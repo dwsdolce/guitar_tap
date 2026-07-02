@@ -1,3 +1,4 @@
+# @parity test/peaks
 """
 Port of PeakFindingTests.swift — peak detection, deduplication, spectrum averaging.
 

@@ -1,3 +1,4 @@
+# @parity view/spectrum-chart
 """ Samples audio signal and finds the peaks of the guitar tap resonances
 """
 

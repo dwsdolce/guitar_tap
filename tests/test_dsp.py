@@ -1,3 +1,4 @@
+# @parity test/dsp
 """
 Port of DSPTests.swift — parabolic interpolation and Q-factor tests.
 

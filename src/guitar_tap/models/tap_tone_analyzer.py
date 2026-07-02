@@ -1,3 +1,4 @@
+# @parity audio/tap-analyzer tests=test/tap-decisions
 """
 Tap-tone analysis coordinator — mirrors Swift TapToneAnalyzer.swift.
 

@@ -1,3 +1,4 @@
+# @parity test/start-tap-race
 """
 Regression tests for the same race the Swift fix (TapToneAnalyzer+Control.swift
 line 304) addressed.

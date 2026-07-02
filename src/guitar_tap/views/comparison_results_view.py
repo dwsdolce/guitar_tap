@@ -1,3 +1,4 @@
+# @parity view/comparison-results
 """
 ComparisonResultsView — Air / Top / Back peak frequency grid for comparison mode.
 

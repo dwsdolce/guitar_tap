@@ -1,3 +1,4 @@
+# @parity test/file-playback
 """
 Full-pipeline file playback regression tests.
 

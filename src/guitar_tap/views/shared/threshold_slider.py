@@ -1,3 +1,4 @@
+# @parity view/threshold-slider
 """
 ThresholdSlider — QSlider subclass that displays a level meter in the groove.
 

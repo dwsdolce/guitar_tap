@@ -1,3 +1,4 @@
+# @parity test/tap-decisions
 """
 Port of TapDetectionTests.swift — hysteresis, warmup, cooldown, EMA.
 

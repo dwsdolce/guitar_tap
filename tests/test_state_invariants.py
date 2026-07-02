@@ -1,3 +1,4 @@
+# @parity test/state-invariants
 """
 State-machine invariants for TapToneAnalyzer.
 

@@ -1,3 +1,4 @@
+# @parity test/gated-fft
 """
 Parity tests for compute_gated_fft: feed identical synthetic signals and verify
 the output magnitudes match the expected values.  The companion Swift test

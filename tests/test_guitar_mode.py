@@ -1,3 +1,4 @@
+# @parity test/classify
 """
 Port of GuitarModeTests.swift — guitar resonance mode classification.
 

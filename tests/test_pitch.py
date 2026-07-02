@@ -1,3 +1,4 @@
+# @parity test/pitch
 """
 Port of PitchTests.swift — equal-temperament pitch calculations.
 

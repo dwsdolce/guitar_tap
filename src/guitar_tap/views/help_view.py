@@ -1,3 +1,4 @@
+# @parity view/help
 """
     Help window — QDialog with QTextBrowser showing HTML reference content.
 

@@ -1,3 +1,4 @@
+# @parity audio/realtime-analyzer
 """
 Real-time FFT audio analyser — mirrors Swift RealtimeFFTAnalyzer.swift.
 

@@ -1,3 +1,4 @@
+# @parity view/peak-card
 """
 Combined peak row widget with inline mode selector.
 

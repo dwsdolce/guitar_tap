@@ -1,3 +1,6 @@
+# @parity model/mode-colors
+# @parity model/guitar-mode-classify tests=test/classify
+# @parity dsp/guitar-modes
 """
 Guitar resonance mode classification.
 

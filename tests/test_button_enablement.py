@@ -1,3 +1,4 @@
+# @parity test/button-enablement
 """
 Truth-table tests for Pause / New Tap / Cancel button enablement rules.
 

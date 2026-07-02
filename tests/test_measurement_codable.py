@@ -1,3 +1,4 @@
+# @parity test/measurement-codable
 """
 Port of MeasurementCodableTests.swift — JSON round-trip, snapshot encoding,
 tapToneRatio, export labels.

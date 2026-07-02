@@ -1,3 +1,4 @@
+# @parity view/spectrum-gestures
 """
 Spectrum chart gesture handlers.
 

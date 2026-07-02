@@ -1,3 +1,4 @@
+# @parity test/import-persistence
 """
 Port of ImportPersistenceTests.swift — IP1–IP3.
 

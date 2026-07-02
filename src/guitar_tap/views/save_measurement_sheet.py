@@ -1,3 +1,4 @@
+# @parity view/save-sheet
 """
 Modal dialog for entering Measurement Name and notes before saving a measurement.
 Matches SaveMeasurementSheet.swift.

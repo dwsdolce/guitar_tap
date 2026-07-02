@@ -1,3 +1,4 @@
+# @parity dsp/calibration
 """
 Microphone calibration support — mirrors Swift MicrophoneCalibration.swift.
 

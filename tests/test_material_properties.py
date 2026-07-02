@@ -1,3 +1,5 @@
+# @parity test/plate
+# @parity test/brace
 """Tests for models/material_properties.py.
 
 Mirrors GuitarTapTests/PlatePropertiesTests.swift and BracePropertiesTests.swift.

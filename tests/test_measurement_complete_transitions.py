@@ -1,3 +1,4 @@
+# @parity test/measurement-complete
 """
 Tests for is_measurement_complete state transitions.
 

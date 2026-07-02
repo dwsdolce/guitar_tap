@@ -1,3 +1,4 @@
+# @parity dsp/pitch tests=test/pitch
 """
 Equal-temperament pitch analysis — mirrors Swift Pitch.swift.
 

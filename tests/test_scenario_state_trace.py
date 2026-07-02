@@ -1,3 +1,4 @@
+# @parity test/scenario-trace
 """
 Scenario state-trace tests for TapToneAnalyzer.
 

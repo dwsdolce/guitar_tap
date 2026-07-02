@@ -1,3 +1,4 @@
+# @parity test/annotation-state
 """
 Port of AnnotationStateTests.swift — live TapToneAnalyzer state:
 annotation offsets, peak selection, visibility filtering, mode overrides,

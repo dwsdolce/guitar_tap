@@ -1,3 +1,4 @@
+# @parity test/decay-tracking
 """
 Port of DecayTrackingTests.swift — measureDecayTime edge cases and
 trackDecayFast guard behaviour.

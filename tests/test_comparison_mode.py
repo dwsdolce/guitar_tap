@@ -1,3 +1,4 @@
+# @parity test/comparison
 """
 Port of ComparisonModeTests.swift — comparison overlay loading and clearing.
 

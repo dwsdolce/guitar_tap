@@ -1,3 +1,4 @@
+# @parity view/main
 """
 Main window class for Guitar Tap.
 
@@ -878,7 +879,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._multi_tap_toggle_btn.setCheckable(True)
         self._multi_tap_toggle_btn.setChecked(False)
         self._multi_tap_toggle_btn.setFont(small_font)
-        self._multi_tap_toggle_btn.setVisible(False)
+        # Shown in the guitar context, enabled only when functional (see
+        # _update_multi_tap_toggle_state); starts visible-but-disabled (guitar is the
+        # default type). Corrected on the first badge / completion refresh.
+        self._multi_tap_toggle_btn.setVisible(True)
+        self._multi_tap_toggle_btn.setEnabled(False)
         self._multi_tap_toggle_btn.setIcon(qta.icon("fa5s.layer-group", color="gray"))
         title_row.addWidget(self._multi_tap_toggle_btn)
 
@@ -2245,14 +2250,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Mirrors Swift TapAnalysisResultsView lines 138–165.
         analyzer = self.fft_canvas.analyzer
         _mt = TDS.measurement_type()
-        _in_saved_comparison = (
-            self.fft_canvas.display_mode == AnalysisDisplayMode.COMPARISON
-        )
         _has_tap_entries = _mt.is_guitar and len(analyzer.tap_entries) > 0
-        _show_btn = _has_tap_entries and (
-            analyzer.showing_multi_tap_comparison
-            or not _in_saved_comparison
-        )
         if not checked:
             # Reset toggle silently (block signals to avoid triggering the
             # toggled handler which would call apply_multi_tap_comparison_overlays).
@@ -2271,7 +2269,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if self._multi_tap_results_view.isVisible():
                 self._multi_tap_results_view.setVisible(False)
                 self.peak_widget.setVisible(True)
-        self._multi_tap_toggle_btn.setVisible(checked and _show_btn)
+        self._update_multi_tap_toggle_state()
 
         # If the multi-tap table is still visible when a new measurement completes
         # (the user didn't manually toggle it off between runs), repopulate it with
@@ -3114,6 +3112,8 @@ class MainWindow(QtWidgets.QMainWindow):
         Swift TapAnalysisResultsView.swift:169. During multi-tap comparison the
         measurement type badge (e.g. "Classical") is shown instead.
         """
+        # Keep the multi-tap toggle in sync on every header refresh (type/comparison change).
+        self._update_multi_tap_toggle_state()
         if self.fft_canvas.analyzer.is_saved_measurement_comparison:
             self.measurement_type_badge.setText("Comparison")
             self.measurement_type_badge.setStyleSheet(
@@ -3876,6 +3876,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_min_reset_btn.setEnabled(_peak_min_enabled)
 
         self._update_tap_buttons()
+
+    def _update_multi_tap_toggle_state(self) -> None:
+        """Show the Taps toggle whenever it could ever be useful (guitar context),
+        enabling it only when functional: a completed >1-tap sequence to compare, or
+        the multi-tap comparison is already open. Hidden in material / saved-measurement
+        comparison, where it can never do anything -- so it enables/disables in place
+        instead of appearing and disappearing. Mirrors Swift/Web (option 2)."""
+        analyzer = self.fft_canvas.analyzer
+        guitar_context = (
+            TDS.measurement_type().is_guitar
+            and not analyzer.is_saved_measurement_comparison
+        )
+        functional = (
+            (analyzer.is_measurement_complete and len(analyzer.tap_entries) > 0)
+            or analyzer.showing_multi_tap_comparison
+        )
+        self._multi_tap_toggle_btn.setVisible(guitar_context)
+        self._multi_tap_toggle_btn.setEnabled(guitar_context and functional)
 
     def _on_multi_tap_toggled(self, checked: bool) -> None:
         """Handle the multi-tap comparison toggle button.

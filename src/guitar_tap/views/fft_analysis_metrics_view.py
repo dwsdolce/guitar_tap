@@ -1,3 +1,4 @@
+# @parity view/analysis-metrics
 """
 FFTAnalysisMetricsView — full-detail FFT analysis metrics and performance
 diagnostics panel.

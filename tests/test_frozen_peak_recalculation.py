@@ -1,3 +1,4 @@
+# @parity test/frozen-peak-recalc
 """
 Port of FrozenPeakRecalculationTests.swift — threshold filter, offset remap,
 override remap, and selection carry-forward on peak recalculation.

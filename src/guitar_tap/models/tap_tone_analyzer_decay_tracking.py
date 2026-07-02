@@ -1,3 +1,4 @@
+# @parity dsp/decay tests=test/decay-tracking
 """
 TapToneAnalyzer+DecayTracking — ring-out time measurement after a tap.
 

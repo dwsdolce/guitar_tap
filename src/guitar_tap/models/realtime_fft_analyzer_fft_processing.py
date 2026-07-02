@@ -1,3 +1,5 @@
+# @parity dsp/guitar-fft
+# @parity dsp/fft
 """
 FFT computation functions — mirrors Swift RealtimeFFTAnalyzer+FFTProcessing.swift.
 

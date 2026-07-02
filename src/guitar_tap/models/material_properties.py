@@ -1,3 +1,4 @@
+# @parity dsp/material-properties tests=test/brace,test/plate
 """
 Plate and brace acoustic material-property calculations.
 

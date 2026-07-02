@@ -1,3 +1,4 @@
+# @parity dsp/find-peaks tests=test/peaks
 """
 Detected spectral peak — mirrors Swift ResonantPeak.swift.
 

@@ -1,3 +1,4 @@
+# @parity view/settings
 """
     Persistent application settings backed by QSettings.
 """

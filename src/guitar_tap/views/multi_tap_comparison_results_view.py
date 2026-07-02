@@ -1,3 +1,4 @@
+# @parity view/multi-tap-results
 """
 MultiTapComparisonResultsView — Air / Top / Back peak frequency grid for multi-tap comparison.
 
