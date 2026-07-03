@@ -10,9 +10,9 @@ Python TapToneAnalyzer exactly the same way.
 Architecture:
     The continuous FFT operates on a long window (≈ 400 ms), delivering
     only about 1 update per second — too coarse for accurate decay timing.
-    Decay tracking uses per-chunk RMS level (track_decay_fast), which is
-    called at ~10 Hz from on_fft_frame(), mirroring Swift's
-    recentPeakLevelDB polling subscription.
+    Decay tracking uses the per-chunk RMS level: track_decay_fast() is
+    called from _on_rms_level_changed() once per audio chunk (~43 Hz,
+    every ~23 ms), mirroring Swift's per-buffer $inputLevelDB subscription.
 
 Ring-Out Definition:
     Ring-out time is measured as the elapsed time from the post-tap peak
