@@ -123,4 +123,6 @@ measurement mode, the settings and controls reference, troubleshooting, and a gl
 
 ## License
 
-See [LICENSE](LICENSE).
+Copyright © 2026 Dolce Sfogato (David Smith).
+
+Licensed under the GNU General Public License v3.0 — see [LICENSE](LICENSE).
