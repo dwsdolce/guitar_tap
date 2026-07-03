@@ -39,7 +39,7 @@ and call `f_a.dft_anal(...)` continue to work unchanged.
 
 NOTE — Python vs Swift implementation differences:
   Swift uses vDSP_DFT_zrop (Accelerate framework) via deinterleaved split-complex format;
-  Python uses scipy.fft.fft on a zero-phase-shifted buffer (fftbuffer rotation trick).
+  Python uses numpy.fft.fft on a zero-phase-shifted buffer (fftbuffer rotation trick).
   Both implementations apply the same window choice and the same window size (fft_size /
   fftSize), so neither implementation uses zero-padding in the continuous path:
     - Rectangular (all ones) window of fftSize samples for the live display path
@@ -94,7 +94,7 @@ def dft_anal(
         (magnitude_db, abs_fft) — dB-scale magnitude and linear-scale magnitude,
         each of length N/2 + 1 (the one-sided spectrum).
 
-    Mirrors Swift performFFT(on:) (rectangular-window continuous path) and
+    Mirrors Swift computeFFT(on:) (rectangular-window continuous path) and
     computeGatedFFT(samples:sampleRate:) (Hann-window plate/brace capture path).
 
     Design note — window choice:
