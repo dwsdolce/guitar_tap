@@ -133,21 +133,19 @@ class CalibrationFileParser:
             if not line:
                 continue
             if line.startswith('"') or line.startswith("*"):
-                # Extract optional sensitivity factor: "Sens Factor = -18.39dB"
-                if sensitivity is None:
-                    m = _SENS.search(line)
-                    if m:
-                        sensitivity = float(m.group(1))
-                # Extract optional reference SPL (UMIK-1): "SESSION REF=94.0dBSPL"
-                if reference is None:
-                    m2 = _REF.search(line)
-                    if m2:
-                        reference = float(m2.group(1))
-                    else:
-                        # REW format: "SPL xxxx dB"
-                        m3 = _SPL.search(line)
-                        if m3:
-                            reference = float(m3.group(1))
+                # Extract optional Sens Factor / reference SPL. Mirrors Swift: each match
+                # OVERWRITES (last occurrence wins; on a line carrying both SESSION REF and
+                # SPL, SPL wins) — no "first-only" guard.
+                m = _SENS.search(line)
+                if m:
+                    sensitivity = float(m.group(1))
+                # SESSION REF (UMIK-1), then SPL (REW) which overwrites if both are present.
+                m2 = _REF.search(line)
+                if m2:
+                    reference = float(m2.group(1))
+                m3 = _SPL.search(line)
+                if m3:
+                    reference = float(m3.group(1))
                 continue
             # Data line: parse frequency and correction.
             # Accept tab, space, or comma separators (mirrors Swift).
