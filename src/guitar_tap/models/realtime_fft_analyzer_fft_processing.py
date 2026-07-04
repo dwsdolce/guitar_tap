@@ -161,10 +161,12 @@ def perform_fft(analyzer, samples: "npt.NDArray[np.float32]", fft_size: int):
     DSP step with:
       - per-bin calibration application (mirrors Swift's vDSP_vadd of
         calibrationCorrections)
-      - 0-100-scale peak amp computation (mirrors Swift's peakMagnitude
-        publish)
-      - per-FFT-frame FILE_DEBUG trace (counter increment + log line; mirrors
-        the equivalent block in Swift performFFT)
+      - peak amplitude int-encoded as ``max(dB) + 100`` for the int-typed Qt
+        ``fftFrameReady`` signal.  Swift publishes the raw dB via the
+        ``peakMagnitude`` @Published Float instead — same peak value, different
+        transport encoding (Qt int signal vs Swift Float).
+    (Per-frame counters and any debug tracing live in the caller,
+    _FftProcessingThread.run(), not here.)
 
     Lives in this file (rather than as a method on RealtimeFFTAnalyzer in
     realtime_fft_analyzer.py) so the file split matches Swift, where

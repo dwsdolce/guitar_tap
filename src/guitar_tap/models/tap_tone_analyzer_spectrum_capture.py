@@ -9,9 +9,9 @@ Mirrors Swift TapToneAnalyzer+SpectrumCapture.swift.
 
 ## Gated FFT Architecture
 
-The continuous FFT operates on a fixed long window (~400 ms at GATED_FFT_WINDOW_DURATION).
-For guitar measurements this is fine because the tap-detection threshold ensures we
-see the ring-out.  For plate and brace measurements the ring-out is much shorter and
+The live/continuous FFT operates on a fixed long window (fft_size = 65536 samples,
+≈ 1.36 s at 48 kHz).  For guitar measurements this is fine because the tap-detection
+threshold ensures we see the ring-out.  For plate and brace measurements the ring-out is much shorter and
 the transient tap energy is spread across the full window, reducing the apparent peak
 magnitude by up to ~15 dB.
 
@@ -23,11 +23,11 @@ align the buffer to the sample-level onset (align_capture_to_onset) and extract 
 aligner extract a full sample-aligned window without zero-padding even when the
 pre-roll ring buffer was only partially filled:
 
-    ┌──────────────────────────────────────────────┐
-    │  200 ms pre-roll  │  500 ms gated capture    │
-    │  (ring buffer)    │  → 400 ms aligned FFT in │
-    └──────────────────────────────────────────────┘
-                  ↑ tap onset
+    ┌──────────────────┬────────────────────────┐
+    │  200 ms pre-roll │  ~300 ms new samples   │
+    │  (ring buffer)   │  (accumulated live)    │
+    └──────────────────┴────────────────────────┘
+             ↑ tap onset          (500 ms total)
 
 ## Dominant Peak Selection — HPS + Q filter
 
@@ -435,6 +435,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
              f"captureRMS={20*np.log10(max(_diag_rms,1e-10)):.2f}dB "
              f"first16hash={_diag_hash:.6f}\n{_complete_profile}")
 
+        # PLATFORM PLUMBING — deliberately different from Swift; do NOT "unify".
+        # A Qt signal is our thread-hop and it delivers data to a SINGLE slot
+        # (finish_gated_fft_capture), so we emit ONCE here and let that slot branch
+        # guitar (phase is None) vs plate/brace.  Swift instead hops via a GCD closure,
+        # which can hold logic, so it branches to finishGatedFFTCapture /
+        # finishGuitarGatedCapture at the source.  Same inputs → same handler → same
+        # result; only the branch LOCATION differs, because the concurrency primitive
+        # differs (Qt signal/slot vs GCD closure).
         # Emit on background thread; Qt queued connection delivers on main thread.
         # gatedCaptureComplete signal is still on proc_thread as a delivery mechanism.
         # For file-playback plate/brace, pass a sentinel so finish_gated_fft_capture
@@ -520,7 +528,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         The audio-queue level-crossing handler may have already started
         (and possibly already completed) the gated capture for this tap.
         Check _last_level_crossing_capture_id rather than _gated_capture_active,
-        because during file playback the 400 ms window can fill and complete
+        because during file playback the 500 ms window can fill and complete
         on the audio queue before this main-thread call runs.
 
         Mirrors Swift TapToneAnalyzer.startGatedCapture(phase:).
@@ -619,8 +627,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # samples) but captures fft_size samples and applies the same
     # rectangular window used by the live FFT, so the resulting spectrum
     # is interchangeable with what on_fft_frame would have produced for
-    # a tap-aligned frame.  No Swift counterpart yet — this is the new
-    # design path.
+    # a tap-aligned frame.  Mirrors Swift startGuitarGatedCapture /
+    # finishGuitarGatedCapture.
     # ------------------------------------------------------------------ #
 
     def start_guitar_gated_capture(self) -> None:
@@ -1013,6 +1021,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         # Guitar-mode capture (phase is None) — uses a different FFT pipeline
         # (rectangular window, full fft_size, no HPS / dominant-peak gate).
+        # The guitar/plate branch Swift does at its dispatch site happens HERE
+        # instead, because the Qt signal that delivered us has a single slot
+        # (see _accumulate_gated_samples).
         if phase is None:
             self.finish_guitar_gated_capture(samples, sample_rate)
             return
