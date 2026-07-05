@@ -799,7 +799,31 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         samples: "npt.NDArray[np.float32]",
         sample_rate: float,
     ) -> "tuple[list[float], list[float]]":
-        """Compute a Hann-windowed FFT from a gated PCM capture.
+        """Run a one-shot Hann-windowed FFT on a pre-captured buffer; return dB
+        magnitudes and a matching frequency axis.
+
+        Unlike the live per-frame path (rectangular window) this method:
+          - Accepts an arbitrary-length buffer (zero-padded to the next power of
+            two, capped at 32768 samples for ~1.35 Hz/bin resolution at 44.1 kHz).
+          - Applies a Hann window (np.hanning): its ~31 dB sidelobe suppression
+            vs a rectangular window gives sharper, cleaner peaks and therefore
+            more accurate frequency/Q readings. Edge roll-off is harmless because
+            a gated capture starts and ends near silence
+            (pre-roll → tap → ring → silence).
+          - Returns raw dB values (not published), one-sided with interior bins
+            doubled and normalised by 1/fft_size.
+          - Applies microphone calibration at the bin frequencies.
+
+        np.hanning is the unit-peak window w[n] = 0.5·(1 − cos(2πn/N)),
+        matching Swift's vDSP_HANN_DENORM (not HANN_NORM, which would inflate
+        magnitudes by +4.26 dB via the √(8/3) energy normalisation).
+
+        Args:
+            samples:     PCM samples captured after tap detection.
+            sample_rate: Hardware sample rate at capture time, in Hz.
+
+        Returns:
+            (magnitudes, frequencies) in dB and Hz.
 
         Mirrors Swift RealtimeFFTAnalyzer.computeGatedFFT(samples:sampleRate:).
         """

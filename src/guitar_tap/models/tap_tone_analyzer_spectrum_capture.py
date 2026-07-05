@@ -1393,7 +1393,18 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self, magnitudes, frequencies, dominant_peak,
         min_hz=0.0, max_hz=0.0, prefer_lowest=False,
     ) -> None:
-        """Handle a longitudinal gated-FFT tap result.
+        """Handle a longitudinal (fL) gated-FFT tap result.
+
+        Accumulates longitudinal taps until number_of_taps are collected,
+        averages the captured spectra, re-finds the dominant peak on the average,
+        then either completes (brace — single phase) or moves toward cross-grain:
+        pausing at REVIEWING_LONGITUDINAL for Accept/Redo during live capture, or
+        auto-advancing to CAPTURING_CROSS during file playback.
+
+        Args:
+            magnitudes:    Current gated-FFT magnitude spectrum (dBFS).
+            frequencies:   Frequency axis matching magnitudes, in Hz.
+            dominant_peak: The pre-selected dominant peak from this tap.
 
         Mirrors Swift TapToneAnalyzer.handleLongitudinalGatedProgress(…).
         """
@@ -1567,7 +1578,17 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self, magnitudes, frequencies, dominant_peak,
         min_hz=0.0, max_hz=0.0, prefer_lowest=False,
     ) -> None:
-        """Handle a cross-grain gated-FFT tap result.
+        """Handle a cross-grain (fC) gated-FFT tap result.
+
+        Averages the captured spectra, auto-selects the best cross-grain peak,
+        then pauses at REVIEWING_CROSS for Accept/Redo (live) or, during file
+        playback, auto-advances to CAPTURING_FLC (FLC enabled) or finalises
+        (no FLC).
+
+        Args:
+            magnitudes:    Current gated-FFT magnitude spectrum (dBFS).
+            frequencies:   Frequency axis matching magnitudes, in Hz.
+            dominant_peak: The pre-selected dominant peak from this tap.
 
         Mirrors Swift TapToneAnalyzer.handleCrossGatedProgress(…).
         """
@@ -1665,7 +1686,16 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self, magnitudes, frequencies, dominant_peak,
         min_hz=0.0, max_hz=0.0, prefer_lowest=False,
     ) -> None:
-        """Handle an FLC (shear/diagonal) gated-FFT tap result.
+        """Handle an FLC (torsional/twist) gated-FFT tap result.
+
+        Averages the captured spectra, auto-selects the best FLC peak, then
+        pauses at REVIEWING_FLC for Accept/Redo (live) or, during file playback,
+        finalises the measurement with all three phase peaks populated.
+
+        Args:
+            magnitudes:    Current gated-FFT magnitude spectrum (dBFS).
+            frequencies:   Frequency axis matching magnitudes, in Hz.
+            dominant_peak: The pre-selected dominant peak from this tap.
 
         Mirrors Swift TapToneAnalyzer.handleFlcGatedProgress(…).
         """
@@ -1784,6 +1814,16 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     def average_spectra(self, from_taps: "list[tuple]") -> "tuple[list[float], list[float]]":
         """Average multiple tap spectra using frequency-domain power averaging.
 
+        Averaging in the frequency domain after discarding phase is the correct
+        approach for non-periodic impulse responses: there is no meaningful
+        inter-tap phase relationship to preserve, and power averaging reduces
+        random noise while keeping consistent resonance peaks.
+
+        Per-bin formula:
+            p_i    = 10 ** (dB_i / 10)     # dB → linear power, per tap
+            avg_p  = (1/N) Σ p_i           # average power across N taps
+            dB_avg = 10 * log10(avg_p)     # back to dB
+
         Mirrors Swift TapToneAnalyzer.averageSpectra(from:).
 
         Each entry in from_taps is a (magnitudes, frequencies, captureTime) tuple
@@ -1793,9 +1833,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             from_taps: List of (magnitudes, frequencies, captureTime) tuples.
 
         Returns:
-            (magnitudes, frequencies) of the averaged spectrum.
-            Returns ([], []) if from_taps is empty, returns the single tap's
-            data unchanged if len == 1, returns first tap's data if lengths differ.
+            (magnitudes, frequencies) of the averaged spectrum. ([], []) if empty;
+            the single tap's data unchanged if len == 1; the first tap's data if
+            lengths differ.
         """
         import math
 
