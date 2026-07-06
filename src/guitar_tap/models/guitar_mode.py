@@ -14,14 +14,16 @@ GuitarType.ModeRanges.
 
 Mode Map (approximate detection ranges, guitar-type-dependent):
 
-  Mode        Classical    Flamenco     Acoustic     Physical description
-  ----        ---------    --------     --------     --------------------
-  Air         80–110 Hz    85–115 Hz    90–120 Hz    Helmholtz air resonance of the sound-hole cavity
-  Top         170–230 Hz   190–250 Hz   150–210 Hz   Main monopole resonance of the top plate
-  Back        190–280 Hz   180–240 Hz   210–290 Hz   Main monopole resonance of the back plate
-  Dipole      330–430 Hz   350–450 Hz   360–460 Hz   T(1,2) anti-symmetric bending mode
-  Ring Mode   580–820 Hz   600–850 Hz   620–880 Hz   Higher structural mode
-  Upper       820+ Hz      850+ Hz      880+ Hz      Cluster of higher-order modes
+  Mode        Generic      Classical    Flamenco     Acoustic     Physical description
+  ----        -------      ---------    --------     --------     --------------------
+  Air         70–135 Hz    80–110 Hz    85–115 Hz    90–120 Hz    Helmholtz air resonance of the sound-hole cavity
+  Top         140–260 Hz   170–230 Hz   190–250 Hz   150–210 Hz   Main monopole resonance of the top plate
+  Back        180–300 Hz   190–280 Hz   180–240 Hz   210–290 Hz   Main monopole resonance of the back plate
+  Dipole      310–460 Hz   330–430 Hz   350–450 Hz   360–460 Hz   T(1,2) anti-symmetric bending mode
+  Ring Mode   580–880 Hz   580–820 Hz   600–850 Hz   620–880 Hz   Higher structural mode
+  Upper       880+ Hz      820+ Hz      850+ Hz      880+ Hz      Cluster of higher-order modes
+
+  (Generic is the default guitar type — the union of the three, widened to catch outliers.)
 
 Exact boundaries are defined in GuitarType.mode_ranges.
 
@@ -230,11 +232,13 @@ class GuitarMode(Enum):
            lower-bound of their frequency range for the given guitar type.
         2. For each mode in that order, picks the highest-magnitude unclaimed peak whose
            frequency lies within the mode's range, then marks that peak as claimed.
+           Back is additionally constrained to lie strictly above the claimed Top
+           frequency (the back plate resonance is always higher than the top plate's),
+           so an overlapping Back range cannot claim a peak below Top.
         3. Any remaining unclaimed peaks are classified via the per-frequency classify()
-           lookup.  Peaks outside all mode ranges resolve to UNKNOWN.
-
-        Mirrors Swift ``GuitarMode.classifyAll(_:guitarType:)`` exactly:
-        Swift uses only a Set of claimed UUIDs — no frequency cursor or 2 Hz guard.
+           lookup — except that a peak above the claimed Top frequency and within the
+           Back range resolves to BACK (not the earlier/lower mode), preserving the
+           Top-below-Back ordering.  Peaks outside all mode ranges resolve to UNKNOWN.
 
         - Parameters:
           - peaks: List of objects with ``.id``, ``.frequency``, and ``.magnitude``.
@@ -340,9 +344,18 @@ class GuitarMode(Enum):
             if mode is cls.TOP:
                 claimed_top_frequency = peaks[best_i][0]
 
+        # Same Top/Back overlap guard as classify_all: a peak above the claimed
+        # Top frequency and within the Back range resolves to BACK rather than the
+        # earlier/lower mode classify() would pick.
+        back_lo, back_hi = cls.BACK.mode_range(guitar_type)
         for i, (freq, _) in enumerate(peaks):
             if i not in result:
-                result[i] = cls.classify(freq, guitar_type)
+                if (claimed_top_frequency is not None
+                        and freq > claimed_top_frequency
+                        and back_lo <= freq <= back_hi):
+                    result[i] = cls.BACK
+                else:
+                    result[i] = cls.classify(freq, guitar_type)
 
         return result
 
