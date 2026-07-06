@@ -705,7 +705,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return bar
 
     def _build_controls_bar(self) -> QtWidgets.QWidget:
-        """Controls bar: Taps | Threshold | Hysteresis | Peak Min || New Tap | Pause | Cancel"""
+        """Controls bar: Taps | Threshold | Peak Min || New Tap | Pause | Cancel"""
         bar = QtWidgets.QWidget()
         bar.setObjectName("controls_bar")
         bar.setStyleSheet(

@@ -11,8 +11,6 @@ comparison palette, the tap label ("Tap 1", "Tap 2", …), and the resolved Air,
 Top, and Back peak frequencies.  A '—' is shown when no peak was found for a mode.
 
 Shown in TapAnalysisResultsView when analyzer.showing_multi_tap_comparison is True.
-
-Mirrors Swift MultiTapComparisonResultsView (MultiTapComparisonResultsView.swift).
 """
 
 from __future__ import annotations
@@ -26,7 +24,7 @@ if TYPE_CHECKING:
     from models.tap_tone_measurement import TapEntry
 
 
-# Comparison palette — mirrors TapToneAnalyzer.comparisonPalette (Swift: [.blue, .orange, .green, .purple, .teal]).
+# Comparison palette — mirrors TapToneAnalyzer.multiTapPalette (Swift: [.blue, .orange, .green, .purple, .teal]).
 # RGB tuples in 0–255 range.
 _PALETTE: list[tuple[int, int, int]] = [
     (0,   122, 255),   # .blue
