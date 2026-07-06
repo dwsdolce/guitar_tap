@@ -339,7 +339,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
     # MARK: - Initialization
 
-    def __init__(self, parent, rate: int = 44100, chunksize: int = 16384,
+    def __init__(self, parent, rate: int = 44100, chunksize: int = 1024,
                  device: "AudioDevice | None" = None,
                  on_devices_changed: Callable[[], None] | None = None,
                  on_calibration_changed: "Callable[[object | None], None] | None" = None,
@@ -869,7 +869,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
     @property
     def recent_peak_level_db(self) -> float:
-        """Rolling maximum RMS level over the last 0.5 s, in dBFS."""
+        """Rolling maximum RMS level over the last 2.0 s, in dBFS."""
         with self._recent_peak_lock:
             return self._recent_peak_db
 

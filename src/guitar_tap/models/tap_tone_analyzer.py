@@ -254,10 +254,19 @@ class TapToneAnalyzer(
         # threshold stuck at its default, causing the audio-queue to fire
         # on signals the main thread would correctly reject (or vice versa).
         self._tap_detection_threshold: float = float(_tds.tap_detection_threshold())
-        # Hardcoded constant — no longer user-configurable (mirrors Swift).
+        # Hysteresis margin, in dB. After a tap, the signal must fall at least this far
+        # below the detection threshold before the next tap can register — prevents
+        # re-triggering during a single tap's ring-out. Hardcoded constant, no longer
+        # user-configurable. Mirrors Swift hysteresisMargin.
         self.hysteresis_margin: float = 3.0
+        # Minimum decay level below the tap peak for ring-out measurement, in dB.
+        # Ring-out is measured from the peak to the first moment the signal drops
+        # more than this below it; 15 dB works well against room noise floors.
         self.decay_threshold: float = 15.0                                 # mirrors decayThreshold
         self.number_of_taps: int = 1                                       # mirrors numberOfTaps
+        # Duration of the spectrum-capture window after each tap, in seconds. The
+        # snapshot is taken this long after the tap; 200 ms captures the early decay
+        # while avoiding the noise floor.
         self.capture_window: float = 0.2                                   # mirrors captureWindow
         self.capture_timer_active: bool = False                            # mirrors captureTimer != nil
 
@@ -269,7 +278,12 @@ class TapToneAnalyzer(
         self.savedMeasurements = self.saved_measurements                   # legacy alias
 
         # MARK: - Detection State
+        # Most recent average FFT magnitude, in dBFS. Used by the hysteresis detector
+        # and exposed for the level-meter view.
         self.average_magnitude: float = -100.0      # mirrors averageMagnitude
+        # Computed detection-threshold level shown on the chart, in dBFS. For plate/
+        # brace it is noise_floor_estimate + headroom; for guitar it equals
+        # tap_detection_threshold.
         self.tap_detection_level: float = -100.0    # mirrors tapDetectionLevel
         self.tap_detected: bool = False             # mirrors tapDetected
         self._is_detecting: bool = False             # mirrors isDetecting
@@ -390,13 +404,28 @@ class TapToneAnalyzer(
         self.showing_multi_tap_comparison: bool = False
 
         # ── Plate/brace phase state ───────────────────────────────────────
+        # Current phase of the multi-tap material sequence: NOT_STARTED ->
+        # CAPTURING_LONGITUDINAL -> REVIEWING_LONGITUDINAL -> CAPTURING_CROSS ->
+        # REVIEWING_CROSS -> (optional FLC phases) -> COMPLETE. Mirrors materialTapPhase.
         self.material_tap_phase: "_MTP" = _MTP.NOT_STARTED
+        # Averaged FFT spectrum from each material tap, once its phase completes (None
+        # before). Mirrors longitudinalSpectrum / crossSpectrum / flcSpectrum.
         self.longitudinal_spectrum = None
         self.cross_spectrum = None
         self.flc_spectrum = None
+        # All candidate peaks detected from each material tap (not just the dominant).
+        # Mirrors longitudinalPeaks / crossPeaks / flcPeaks.
         self.longitudinal_peaks: list = []
         self.cross_peaks: list = []
         self.flc_peaks: list = []
+        # Three-layer peak selection (priority: user_selected > selected > auto_selected):
+        #   1. auto_selected_* — intermediate UUID from HPS analysis, set before the
+        #      phase finalises.
+        #   2. selected_*      — the dominant peak stored when the phase finalises
+        #      (used when there is no user override).
+        #   3. user_selected_* — explicit override set when the user taps a peak row
+        #      in the results panel (highest priority).
+        # Mirrors Swift autoSelected*/selected*/userSelected* three-layer selection.
         self.auto_selected_longitudinal_peak_id = None
         self.auto_selected_cross_peak_id = None
         self.auto_selected_flc_peak_id = None
@@ -408,6 +437,9 @@ class TapToneAnalyzer(
         self.user_selected_flc_peak_id = None
 
         # ── Tap detection state (mirrors Swift TapToneAnalyzer stored properties)
+        # State bit of the hysteresis state machine: True while the signal is above the
+        # detection threshold. A tap registers only on a rising edge (False->True)
+        # confirmed by LEVEL_CROSSING_CONFIRMATION_CHUNKS chunks. Mirrors isAboveThreshold.
         self.is_above_threshold: bool = False
         # Running count of consecutive above-rising-threshold chunks within
         # the current candidate rising-edge run for the main-thread tap
@@ -432,13 +464,33 @@ class TapToneAnalyzer(
         # advanced).  Swift doesn't need this — its Combine sink delivers a
         # single event per chunk.
         self._last_rms_chunk_pos: int = -1
+        # True for the single FFT frame right after warm-up ends, so is_above_threshold
+        # can be re-anchored to the real signal level without firing a spurious tap.
+        # Mirrors justExitedWarmup.
         self.just_exited_warmup: bool = False
+        # Wall-clock time when start()/start_tap_sequence() was called; used to enforce
+        # the warm-up period. Mirrors analyzerStartTime.
         self.analyzer_start_time: "float | None" = None
+        # Wall-clock time of the most recent detected tap. Mirrors lastTapTime.
         self.last_tap_time: "float | None" = None
+        # Exponential moving average of the input level, used as the ambient noise-floor
+        # estimate for relative tap detection in plate/brace modes. Updated only when
+        # the signal is below threshold (between taps) so tap energy does not
+        # contaminate it. Mirrors noiseFloorEstimate.
         self.noise_floor_estimate: float = -60.0
+        # EMA smoothing factor for noise-floor tracking. At ~23 ms audio-buffer updates
+        # (1024 samples at 44.1 kHz), alpha = 0.05 gives a time constant tau ~= 450 ms
+        # (alpha ~= 1 - exp(-dt/tau)) — slow enough that brief transients (handling /
+        # room-noise spikes) do not drive the estimate up. Mirrors noiseFloorAlpha.
         self.noise_floor_alpha: float = 0.05
+        # Warm-up duration, in seconds, during which all taps are suppressed; lets the
+        # audio engine and FFT pipeline settle after a cold start. Mirrors warmupPeriod.
         self.warmup_period: float = 0.5
+        # Minimum inter-tap interval to prevent double-trigger artefacts, in seconds.
+        # Mirrors tapCooldown.
         self.tap_cooldown: float = 0.5
+        # Input level (dBFS) at the moment the most recent tap was detected; the
+        # reference magnitude for ring-out time computation. Mirrors tapPeakLevel.
         self.tap_peak_level: float = -100.0
 
         # ── Decay tracking state (mirrors Swift TapToneAnalyzer stored properties)
@@ -765,7 +817,7 @@ class TapToneAnalyzer(
                     )
                     # Keep the pre-roll even when it contains digital silence
                     # (e.g. inter-tap gaps in a concatenated playback file).
-                    # The pre-roll positions the tap transient at ~sample 9600
+                    # The pre-roll positions the tap transient at ~sample 4800
                     # of the 32768-sample Hann window, matching the live-capture
                     # weighting.  Discarding it shifts the transient to sample 0
                     # where the Hann weight is ~0, distorting magnitudes by
