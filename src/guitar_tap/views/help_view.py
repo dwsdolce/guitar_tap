@@ -102,7 +102,7 @@ def _build_help_html() -> str:
         "Choose a Measurement Type",
         "In Settings, the Measurement Type section is directly below Audio Input. "
         "Pick Generic Guitar (the default, with broad ranges that work for any guitar), "
-        "Classical, Flamenco, Acoustic / Steel String, Material (Plate), or "
+        "Acoustic / Steel String, Classical, Flamenco, Material (Plate), or "
         "Material (Brace). The right choice determines which mode-frequency ranges are "
         "used and which measurements are calculated."
     ))
@@ -130,8 +130,8 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Step 1 &mdash; Configure",
         "In Settings choose the guitar type in the Measurement Type section. Generic "
-        "Guitar (the default) uses broad ranges that work for any guitar; Classical, "
-        "Flamenco, and Acoustic / Steel String use narrower calibrated windows shown in "
+        "Guitar (the default) uses broad ranges that work for any guitar; Acoustic / "
+        "Steel String, Classical, and Flamenco use narrower calibrated windows shown in "
         "the same section. The Show Unknown Modes toggle is in the Advanced section."
     ))
     parts.append(_row(
@@ -515,8 +515,8 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Measurement Type",
-        "Shown below Audio Input. Choose Generic Guitar (the default), Classical Guitar, "
-        "Flamenco, Acoustic/Steel String, Material (Plate), or Material (Brace). "
+        "Shown below Audio Input. Choose Generic Guitar (the default), Acoustic/Steel "
+        "String, Classical, Flamenco, Material (Plate), or Material (Brace). "
         "Determines which mode frequency windows are applied and which calculations appear in Results."
     ))
     parts.append(_row(
