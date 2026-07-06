@@ -569,6 +569,11 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
     @property
     def selected_input_device(self) -> "AudioDevice | None":
+        """The active audio input device, or None.
+
+        Assigning it persists the device fingerprint and auto-loads that device's
+        calibration. Mirrors Swift `selectedInputDevice`.
+        """
         return self._selected_input_device
 
     @selected_input_device.setter

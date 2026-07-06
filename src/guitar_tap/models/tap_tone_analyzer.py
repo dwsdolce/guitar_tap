@@ -922,6 +922,11 @@ class TapToneAnalyzer(
 
     @property
     def is_detecting(self) -> bool:
+        """Whether the analyzer is actively listening for taps.
+
+        Setting it arms (false→true) or disarms (→false) the audio-queue
+        level-crossing detector. Mirrors Swift `isDetecting`.
+        """
         return self._is_detecting
 
     @is_detecting.setter
@@ -1085,6 +1090,11 @@ class TapToneAnalyzer(
 
     @property
     def display_mode(self):
+        """Current spectrum display mode (live vs. captured/frozen).
+
+        Kept in sync with `FftCanvas.display_mode`; the setter emits
+        `displayModeChanged`. Mirrors Swift `displayMode`.
+        """
         return self._display_mode
 
     @display_mode.setter
