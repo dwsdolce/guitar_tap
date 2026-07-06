@@ -6,7 +6,8 @@ diagnostics panel.
 Mirrors Swift's FFTAnalysisMetricsView.swift.
 
 Presented as a non-modal QDialog on demand from the Metrics toolbar button
-in MainWindow. Organised into four QGroupBox sections:
+in MainWindow. Organised into three QGroupBox sections plus a running/stopped
+status indicator:
 
 | Section               | Metrics                                              |
 |-----------------------|------------------------------------------------------|
@@ -20,8 +21,6 @@ in MainWindow. Organised into four QGroupBox sections:
 All dynamic values are updated via update() which is called from the
 framerateUpdate signal emitted by FftCanvas (mirrors @ObservedObject binding
 that keeps the SwiftUI view live while the analyzer is running).
-
-- SeeAlso: ``CompactFFTMetricsOverlay`` (Swift-only Preview helper, not ported)
 """
 
 from __future__ import annotations
@@ -255,9 +254,9 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         if ratio < 0.5:
             return "green"
         if ratio < 0.8:
-            return "orange"
+            return "yellow"
         if ratio < 0.95:
-            return "darkorange"
+            return "orange"
         return "red"
 
     def _cpu_usage_color(self, usage: float) -> str:
@@ -268,9 +267,9 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         if usage < 50:
             return "green"
         if usage < 80:
-            return "orange"
+            return "yellow"
         if usage < 95:
-            return "darkorange"
+            return "orange"
         return "red"
 
     # MARK: - Reactive Update

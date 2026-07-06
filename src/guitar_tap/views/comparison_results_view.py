@@ -114,10 +114,7 @@ class ComparisonResultsView(QtWidgets.QWidget):
             )
 
             # Column 0: coloured dot + label
-            # bold=True entries use a filled rectangle (not circle) — mirrors Swift's
-            # Rectangle().fill(color) vs Circle().fill(color) for the averaged row.
-            bold = entry.get("bold", False)
-            label_widget = self._make_label_cell(label, color_rgb, bold=bold)
+            label_widget = self._make_label_cell(label, color_rgb)
             self._table.setCellWidget(row, 0, label_widget)
 
             # Columns 1–3: Air / Top / Back frequencies
@@ -131,10 +128,6 @@ class ComparisonResultsView(QtWidgets.QWidget):
                 )
                 if freq is None:
                     item.setForeground(QtGui.QColor(150, 150, 150))
-                if bold:
-                    _f = item.font()
-                    _f.setBold(True)
-                    item.setFont(_f)
                 self._table.setItem(row, col, item)
 
         self._table.resizeRowsToContents()
@@ -155,27 +148,22 @@ class ComparisonResultsView(QtWidgets.QWidget):
         self._table.setColumnWidth(0, _col0_w)
 
     @staticmethod
-    def _make_label_cell(
-        label: str, color_rgb: tuple, bold: bool = False
-    ) -> QtWidgets.QWidget:
-        """Build a widget with a small coloured indicator and the spectrum label.
+    def _make_label_cell(label: str, color_rgb: tuple) -> QtWidgets.QWidget:
+        """Build a widget with a small coloured dot and the spectrum label.
 
-        Regular rows use a circle; bold (averaged) rows use a filled rectangle —
-        mirrors Swift's Circle() vs Rectangle() shape for the averaged row.
+        Mirrors Swift ComparisonResultsView's Circle().fill(color) + label.
         """
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(widget)
         layout.setContentsMargins(6, 2, 4, 2)
         layout.setSpacing(6)
 
-        # Coloured indicator — circle for normal rows, rectangle for bold/averaged row.
-        # Mirrors Swift: Circle().fill(color) vs Rectangle().fill(color).
+        # Coloured dot — mirrors Swift Circle().fill(color).
         dot = QtWidgets.QLabel()
         dot.setFixedSize(10, 10)
         r, g, b = color_rgb
-        border_radius = "0px" if bold else "5px"
         dot.setStyleSheet(
-            f"background-color: rgb({r},{g},{b}); border-radius: {border_radius};"
+            f"background-color: rgb({r},{g},{b}); border-radius: 5px;"
         )
 
         # Label text — elide at tail when the column is too narrow to show the
@@ -190,8 +178,6 @@ class ComparisonResultsView(QtWidgets.QWidget):
         )
         caption_font = text_label.font()
         caption_font.setPointSize(10)
-        if bold:
-            caption_font.setBold(True)
         text_label.setFont(caption_font)
 
         layout.addWidget(dot)
