@@ -651,6 +651,7 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def display_mode(self) -> AnalysisDisplayMode:
+        """Current spectrum display mode (delegates to the analyzer)."""
         return self.analyzer.display_mode
 
     @display_mode.setter
@@ -659,6 +660,7 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def is_measurement_complete(self) -> bool:
+        """Whether a measurement is frozen/complete (delegates to the analyzer)."""
         return self.analyzer.is_measurement_complete
 
     @is_measurement_complete.setter
@@ -667,6 +669,7 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def saved_peaks(self) -> npt.NDArray:
+        """The frozen measurement's saved peak array."""
         return self._saved_peaks_array
 
     @saved_peaks.setter
@@ -675,6 +678,7 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def saved_mag_y_db(self):
+        """The frozen measurement's magnitude spectrum, in dB."""
         return self.analyzer.frozen_magnitudes
 
     @saved_mag_y_db.setter
@@ -690,6 +694,7 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def minFreq(self) -> int:
+        """Display x-axis minimum frequency, in Hz."""
         return int(self._minFreq)
 
     @minFreq.setter
@@ -698,6 +703,7 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def maxFreq(self) -> int:
+        """Display x-axis maximum frequency, in Hz."""
         return int(self._maxFreq)
 
     @maxFreq.setter
@@ -706,6 +712,7 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def comparison_labels(self):
+        """Labels for the active comparison overlays (delegates to the analyzer)."""
         return self.analyzer.comparison_labels
 
     @comparison_labels.setter
@@ -714,6 +721,7 @@ class FftCanvas(pg.PlotWidget):
 
     @property
     def freq(self):
+        """Current live FFT frequency bins (delegates to the analyzer)."""
         return self.analyzer.freq
 
     @freq.setter
@@ -1189,6 +1197,7 @@ class FftCanvas(pg.PlotWidget):
         leg.raise_()
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        """Reposition the info button and comparison legend when the canvas resizes."""
         super().resizeEvent(event)
         self._reposition_info_btn()
         self._reposition_comparison_legend()
