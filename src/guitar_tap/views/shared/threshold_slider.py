@@ -158,6 +158,12 @@ class ThresholdSlider(QtWidgets.QSlider):
     # ------------------------------------------------------------------ #
 
     def paintEvent(self, _event: QtGui.QPaintEvent) -> None:  # noqa: N802 (Qt API)
+        """Custom-paint the groove, level fill, clip zone, 10 dB ticks, peak dot, and handle.
+
+        Mirrors the Swift `ThresholdSlider` body: draws the background groove, the
+        cyan→blue level fill up to the current level, the red clipping zone, the
+        green tick marks, the amber peak-hold dot, then the standard slider handle.
+        """
         qp = QtWidgets.QStylePainter(self)
         opt = QtWidgets.QStyleOptionSlider()
         self.initStyleOption(opt)
