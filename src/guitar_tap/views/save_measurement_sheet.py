@@ -49,10 +49,12 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
 
     @property
     def measurement_name(self) -> str:
+        """The entered measurement name, trimmed of surrounding whitespace."""
         return self._location_edit.text().strip()
 
     @property
     def notes(self) -> str:
+        """The entered notes, trimmed of surrounding whitespace."""
         return self._notes_edit.toPlainText().strip()
 
     def set_measurement_name(self, value: str) -> None:
