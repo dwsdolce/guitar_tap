@@ -5280,8 +5280,16 @@ class MainWindow(QtWidgets.QMainWindow):
     # Settings dialog
     # ================================================================
 
+    # @parity view/settings
     def _show_settings(self) -> None:  # noqa: C901
-        """Modal settings dialog matching the Swift TapSettingsView structure."""
+        """Modal settings dialog matching the Swift TapSettingsView structure.
+
+        This is the Python member of view/settings — a faithful port of Swift's
+        TapSettingsView (+Sections/+Actions/+LayoutHelpers). It lives inline here
+        pending the monolith split (the tap_settings_view_*.py stubs mark the
+        planned extraction). The tap_settings_view.py `AppSettings` class is the
+        settings STORE (mirror of Swift TapDisplaySettings), not this UI.
+        """
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("Tap Settings")
         dlg.setMinimumWidth(460)
