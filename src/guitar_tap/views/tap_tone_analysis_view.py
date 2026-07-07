@@ -1377,6 +1377,8 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(_hsep())
 
         # ── Guitar compact summary (guitar only) — matches Swift guitarAnalysisSummary ──
+        # @parity view/guitar-summary — Ring-Out + Tap-Ratio bar (built inline in the monolith;
+        # update logic in set_ring_out / update_tap_tone_ratio / _decay_quality / _tap_ratio_quality).
         self._guitar_summary = QtWidgets.QFrame()
         self._guitar_summary.setObjectName("guitar_summary")
         self._guitar_summary.setStyleSheet(
@@ -2174,8 +2176,8 @@ class MainWindow(QtWidgets.QMainWindow):
             vs, sh, mo, go = 0.15, 0.35, 0.60, 1.0
         elif "Flamenco" in gt_text:
             vs, sh, mo, go = 0.08, 0.20, 0.35, 0.55
-        else:                         # acoustic / default
-            vs, sh, mo, go = 0.10, 0.25, 0.45, 0.70
+        else:                         # acoustic / generic (default)
+            vs, sh, mo, go = 0.10, 0.25, 0.45, 0.75  # good=0.75 matches Swift GuitarType.decayThresholds
         if time_s < vs: return "Very Short", "#9E9E9E"
         if time_s < sh: return "Short",      "#FF9800"
         if time_s < mo: return "Moderate",   "#FFC107"
