@@ -13,6 +13,10 @@ Each detected peak is displayed as a card with:
 
 from __future__ import annotations
 
+# @parity view/peak-card
+# (The `combined_peak_mode_row_view.py` shim re-exports these under the Swift-aligned
+#  name; this module is the real implementation and carries the parity tag.)
+
 import csv
 import os
 
@@ -256,8 +260,11 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._chip.setPixmap(pixmap)
         self._chip.setStyleSheet("")
 
-        # Mode button label
+        # Mode button label — a pencil glyph marks a manual override, mirroring
+        # Swift's pencil.circle.fill on the label (web appends the same ✎ glyph).
         display = _short_mode(self._mode)
+        if self._is_manual:
+            display = f"{display} ✎"
         italic = "italic" if self._is_manual else "normal"
         self._mode_btn.setText(display)
         self._mode_btn.setStyleSheet(
@@ -266,9 +273,12 @@ class PeakCardWidget(QtWidgets.QFrame):
         )
         self._mode_btn.setEnabled(self._is_held)
 
-        # Range badge
-        if self._mode:
-            in_range = gm.in_mode_range(self._freq, self._mode, self._guitar_type)
+        # Range badge — mirrors Swift, which shows it only for a classified mode that
+        # is neither Unknown nor Upper Modes, and keys it off the AUTO-classified mode
+        # (analyzer.peakMode(for:) -> self._auto_mode), NOT any manual override label.
+        auto_gmode = gm.GuitarMode.from_mode_string(self._auto_mode)
+        if auto_gmode not in (gm.GuitarMode.UNKNOWN, gm.GuitarMode.UPPER_MODES):
+            in_range = gm.in_mode_range(self._freq, self._auto_mode, self._guitar_type)
             self._badge.setText("✓" if in_range else "⚠")
             self._badge.setStyleSheet(
                 "color: rgb(40,160,40);" if in_range else "color: rgb(200,120,30);"
@@ -381,6 +391,7 @@ class PeakCardWidget(QtWidgets.QFrame):
             self.modeChanged.emit(self._freq, new_mode)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        """Emit ``cardClicked`` on a left mouse press (row selection)."""
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.cardClicked.emit(self._freq)
         super().mousePressEvent(event)
@@ -388,10 +399,12 @@ class PeakCardWidget(QtWidgets.QFrame):
     # ── public setters ────────────────────────────────────────────────────────
 
     def set_show(self, value: str) -> None:
+        """Set the star (annotation-visibility) state ("on"/"off") and refresh the star."""
         self._show = value
         self._refresh_star()
 
     def set_mode(self, mode: str, auto_mode: str | None = None, is_manual: bool = False) -> None:
+        """Set the effective mode label (with optional auto label + manual flag) and refresh."""
         self._mode = mode
         if auto_mode is not None:
             self._auto_mode = auto_mode
@@ -400,20 +413,24 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._refresh_bg()
 
     def set_held(self, held: bool) -> None:
+        """Set whether captured data is held (enables the star/menu) and refresh."""
         self._is_held = held
         self._refresh_star()
         self._refresh_mode()
 
     def set_selected(self, selected: bool) -> None:
+        """Set the selected state (highlighted border) and refresh the background."""
         self._is_selected = selected
         self._refresh_bg()
 
     def set_guitar_type(self, guitar_type: gt.GuitarType) -> None:
+        """Change the guitar type used for mode-range classification and refresh."""
         self._guitar_type = guitar_type
         self._refresh_mode()
 
     @property
     def freq(self) -> float:
+        """This card's peak frequency, in Hz."""
         return self._freq
 
 
@@ -486,6 +503,7 @@ class PeakListWidget(QtWidgets.QWidget):
         self.model.layoutChanged.connect(self._on_model_layout_changed)
 
     def sizeHint(self) -> QtCore.QSize:
+        """Preferred size — width grows slightly with content but stays readable."""
         # Preferred width grows slightly with content but stays readable
         card_count = len(self._cards)
         w = max(240, 260 if card_count > 0 else 240)
@@ -661,6 +679,7 @@ class PeakListWidget(QtWidgets.QWidget):
             self._rebuild_cards(self._last_data)
 
     def update_data(self, peaks: list) -> bool:  # list[ResonantPeak]
+        """Rebuild the cards from a new list of peaks (auto-classified modes)."""
         self._last_peaks = peaks
         if peaks:
             data = np.array(
@@ -701,6 +720,7 @@ class PeakListWidget(QtWidgets.QWidget):
         return True
 
     def save_peaks(self) -> None:
+        """Prompt for a path and write the peak table to a CSV file."""
         if not self._saved_path:
             self._saved_path = os.path.expanduser("~/Documents/GuitarTap")
         filename, sel_filter = QtWidgets.QFileDialog.getSaveFileName(
@@ -737,9 +757,11 @@ class PeakListWidget(QtWidgets.QWidget):
             )
 
     def restore_focus(self) -> None:
+        """Give keyboard focus back to the list."""
         self.setFocus()
 
     def select_row(self, freq: float) -> None:
+        """Select the card for *freq*, scrolling it into view."""
         # Deselect current
         if self.selected_freq and self.selected_freq != freq:
             old = self._card_for_freq(self.selected_freq)
@@ -770,6 +792,7 @@ class PeakListWidget(QtWidgets.QWidget):
         return None
 
     def clear_selection(self) -> None:
+        """Deselect the current card (no signal emitted)."""
         if self.selected_freq:
             card = self._card_for_freq(self.selected_freq)
             if card:
@@ -778,15 +801,18 @@ class PeakListWidget(QtWidgets.QWidget):
         self.selected_freq_index = -1
 
     def data_held(self, held: bool) -> None:
+        """Set the held state on every card (enables stars/menus when held)."""
         self._is_held = held
         for card in self._cards:
             card.set_held(held)
         self.model.data_held(held)
 
     def new_data(self, held: bool) -> None:
+        """Reset the model for a fresh capture and clear the selection."""
         self.model.new_data(held)
         self.clear_selected_peak()
 
     def clear_selected_peak(self) -> None:
+        """Clear the selected-peak state."""
         self.selected_freq = 0.0
         self.selected_freq_index = -1
