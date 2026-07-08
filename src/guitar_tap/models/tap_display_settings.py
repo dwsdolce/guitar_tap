@@ -15,7 +15,7 @@ Settings are grouped by function:
 - Display frequency range — per-measurement-type min/max Hz for the chart.
 - dB range — min/max dB for the vertical axis.
 - Analysis frequency range — band within which peaks are searched.
-- Peak detection — threshold, maximum peak count, hysteresis margin.
+- Peak detection — peak-min threshold and tap-detection threshold.
 - Tap sequencing — FLC tap inclusion (measure_flc).
 
 Python-only: storage is delegated to AppSettings (tap_settings_view.py).
@@ -23,6 +23,8 @@ Swift uses UserDefaults directly; Python uses QSettings via AppSettings.
 
 SeeAlso: TapSettingsView, TapToneAnalyzer, SpectrumView
 """
+
+# @parity state/settings-store
 
 from __future__ import annotations
 
@@ -104,14 +106,8 @@ class TapDisplaySettings:
     # Default minimum magnitude threshold for peak detection (dB)
     DEFAULT_PEAK_THRESHOLD: float = -60.0
 
-    # Default maximum number of peaks to detect and store (0 = all peaks)
-    DEFAULT_MAX_PEAKS: int = 0
-
     # Default tap detection threshold in dB
     DEFAULT_TAP_DETECTION_THRESHOLD: float = -40.0
-
-    # Default hysteresis margin in dB
-    DEFAULT_HYSTERESIS_MARGIN: float = 3.0
 
     # MARK: - Default Dimension Constants (mirrors Swift inline defaults in each getter)
     # Swift getters return `value > 0 ? value : <default>` — Python mirrors this pattern.
