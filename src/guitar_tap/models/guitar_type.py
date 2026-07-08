@@ -122,6 +122,8 @@ class GuitarType(Enum):
         }[self]
 
     # MARK: - Decay Thresholds
+    # @parity dsp/analysis-quality — decay-quality thresholds + labels/colors
+    #   (tap-ratio quality is inline in the two views: _ratio_quality)
 
     @property
     def decay_thresholds(self) -> DecayThresholds:
