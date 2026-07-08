@@ -76,6 +76,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._show_cross: bool  = True   # False for brace
         self._show_flc:   bool  = False
         self._selected:   set[float] = set()
+        self._complete:   bool = False   # final (all-peaks) layout vs live slot rows
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -95,6 +96,12 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._show_cross = show_cross
         self._show_flc   = show_flc
         self._rebuild_rows()
+
+    def set_complete(self, complete: bool) -> None:
+        """Live capture shows fixed dashed slot rows; complete/loaded shows the final layout."""
+        if complete != self._complete:
+            self._complete = complete
+            self._rebuild_rows()
 
     def update_peaks(self, peaks) -> None:
         """Refresh from a list[ResonantPeak]."""
@@ -137,9 +144,23 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
             item = self._peak_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        for freq, mag in sorted(self._peaks, key=lambda x: x[0]):
-            row = self._make_row(freq, mag)
-            self._peak_layout.insertWidget(self._peak_layout.count() - 1, row)
+        if self._complete:
+            # Final layout: one row per captured peak, sorted by frequency (unchanged).
+            for freq, mag in sorted(self._peaks, key=lambda x: x[0]):
+                row = self._make_row(freq, mag)
+                self._peak_layout.insertWidget(self._peak_layout.count() - 1, row)
+        else:
+            # Live capture: fixed per-phase slot rows (L, C, [FLC] for plate; fL for brace) —
+            # the layout matches the final display, but a slot shows a dash + unselected bubble
+            # until its phase's peak is captured. See MATERIAL-RESULTS-PHASED-DISPLAY.md.
+            slots: list[tuple[str, float]] = [("L", self._long_freq)]
+            if self._show_cross:
+                slots.append(("C", self._cross_freq))
+            if self._show_flc:
+                slots.append(("FLC", self._flc_freq))
+            for role, freq in slots:
+                row = self._make_slot_row(role, freq)
+                self._peak_layout.insertWidget(self._peak_layout.count() - 1, row)
 
     def _make_row(self, freq: float, mag: float) -> QtWidgets.QWidget:
         w  = QtWidgets.QWidget()
@@ -193,6 +214,49 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
             is_flc = (freq == self._flc_freq)
             hl.addWidget(self._mode_btn("FLC", is_flc, "#7B1FA2", width=42))
 
+        return w
+
+    def _make_slot_row(self, role: str, freq: float) -> QtWidgets.QWidget:
+        found = freq > 0.0
+        mag = next((m for f, m in self._peaks if f == freq), None) if found else None
+        w  = QtWidgets.QWidget()
+        hl = QtWidgets.QHBoxLayout(w)
+        hl.setContentsMargins(0, 2, 0, 2)
+        hl.setSpacing(8)
+
+        # Star — filled once this phase's peak is captured, outline while pending.
+        star = QtWidgets.QLabel("\u2605" if found else "\u2606")
+        star.setFixedSize(24, 24)
+        star.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        _sf = QtGui.QFont(); _sf.setPointSize(14)
+        star.setFont(_sf)
+        star.setStyleSheet(f"color: {'rgb(30,120,255)' if found else 'rgb(160,160,160)'};")
+        hl.addWidget(star)
+
+        # Frequency + magnitude — dashes until captured.
+        txt = QtWidgets.QWidget()
+        tv  = QtWidgets.QVBoxLayout(txt)
+        tv.setContentsMargins(0, 0, 0, 0)
+        tv.setSpacing(0)
+        f_lbl = QtWidgets.QLabel(f"{freq:.1f} Hz" if found else "\u2014")
+        _f = QtGui.QFont(); _f.setBold(True); _f.setPointSize(11)
+        f_lbl.setFont(_f)
+        if not found:
+            f_lbl.setStyleSheet("color: palette(shadow);")
+        tv.addWidget(f_lbl)
+        m_lbl = QtWidgets.QLabel(f"{mag:.1f} dB" if mag is not None else "\u2014")
+        _m = QtGui.QFont(); _m.setPointSize(9)
+        m_lbl.setFont(_m)
+        m_lbl.setStyleSheet("color: palette(shadow);")
+        tv.addWidget(m_lbl)
+        hl.addWidget(txt, stretch=1)
+
+        # Phase badges — this row's bubble is active only once its peak is found.
+        hl.addWidget(self._mode_btn("L", role == "L" and found, "#1976D2"))
+        if self._show_cross:
+            hl.addWidget(self._mode_btn("C", role == "C" and found, "#E65100"))
+        if self._show_flc:
+            hl.addWidget(self._mode_btn("FLC", role == "FLC" and found, "#7B1FA2", width=42))
         return w
 
     @staticmethod
@@ -326,7 +390,7 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
                 "Hold brace at 22% from one end along the length. Tap center.",
             ))
         self._instr_footer.setText(
-            "The strongest peak is auto-selected. Adjust if needed."
+            "The strongest peak is auto-selected. Redo if needed."
         )
 
 
@@ -2187,6 +2251,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_measurement_complete(self, checked: bool) -> None:
         self._is_measurement_complete = checked
+        self._material_peak_widget.set_complete(checked)
         self.fft_canvas.set_measurement_complete(checked)
         # loadedMeasurementName is cleared by start_tap_sequence() / reset(), not here.
         # showLoadedSettingsWarning is cleared by the model via showLoadedSettingsWarningChanged signal.
@@ -3331,13 +3396,13 @@ class MainWindow(QtWidgets.QMainWindow):
             if is_brace:
                 body = (
                     "fL captured! Review the fL (blue) peak selection in the Results panel. "
-                    "Adjust if the auto-selection isn\u2019t correct."
+                    "Redo if the auto-selection isn\u2019t correct."
                 )
             else:
                 flc_part = ", and FLC (purple)" if measure_flc else ""
                 body = (
                     f"All modes captured! Review the L (blue), C (orange){flc_part} peak "
-                    "selections in the Results panel. Adjust if the auto-selection isn\u2019t correct."
+                    "selections in the Results panel. Redo if the auto-selection isn\u2019t correct."
                 )
             self._sb_plate_step_lbl.setVisible(False)
 
