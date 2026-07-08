@@ -977,6 +977,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_peak_widget = MaterialPeakListWidget()
 
         # ── Material Properties section (plate/brace only) ───────────────────
+        # @parity view/material-results
         self._material_section = QtWidgets.QWidget()
         ms_vbox = QtWidgets.QVBoxLayout(self._material_section)
         ms_vbox.setContentsMargins(0, 0, 0, 0)
@@ -3184,6 +3185,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return f"{base}\u00a0\u00b7\u00a0Tap\u00a0{tap_in_phase}/{tap_num}"
         return base
 
+    # @parity view/material-instructions
     def _update_plate_phase_ui(self, status: str = "") -> None:
         """Sync the material instructions panel and status bar to the current PlateCapture state.
 

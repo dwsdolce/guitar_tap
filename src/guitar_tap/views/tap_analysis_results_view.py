@@ -962,7 +962,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 subtitle="Top / Air",
                 detail=ratio_label,
                 detail_color=ratio_color,
-                hint="Ideal: 1.9 \u2013 2.1",
+                hint="Ideal: 1.9\u20132.1",
                 width=box_w,
             ))
 
@@ -1099,12 +1099,12 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             [
                 _pprow("Cross/Long Ratio", f"{plate_props.cross_long_ratio:.3f}"),
                 Spacer(1, 2),
-                Paragraph("typical: 0.04 \u2013 0.08", S_SMALL_I),
+                Paragraph("typical: 0.04\u20130.08", S_SMALL_I),
             ],
             [
                 _pprow("Long/Cross Ratio", f"{plate_props.long_cross_ratio:.1f}"),
                 Spacer(1, 2),
-                Paragraph("typical: 12 \u2013 25", S_SMALL_I),
+                Paragraph("typical: 12\u201325", S_SMALL_I),
             ],
         ]], colWidths=[CONTENT_W/2]*2)
         ratio_tbl.setStyle(TableStyle([

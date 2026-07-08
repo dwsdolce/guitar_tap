@@ -14,6 +14,8 @@ view connects doubleClicked to load the measurement; in compare mode
 clicked toggles the selection circle.
 """
 
+# @parity view/measurements-list
+
 from __future__ import annotations
 
 

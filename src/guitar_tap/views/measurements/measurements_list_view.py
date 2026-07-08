@@ -16,6 +16,8 @@ Right-click    → context menu: Load into View | View Details | Edit Name & Not
                  Export Measurement | Export Spectrum | Export PDF Report | Delete
 """
 
+# @parity view/measurements-list
+
 import os
 
 import qtawesome as qta
@@ -283,7 +285,6 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
     def _open_detail(self, m: TapToneMeasurement) -> None:
         dlg = MDD.MeasurementDetailDialog(m, self)
-        dlg.measurementSelected.connect(self._load_from_detail)
         dlg.exec()
 
     def _open_edit(self, index: int, m: TapToneMeasurement) -> None:
@@ -297,9 +298,6 @@ class MeasurementsDialog(QtWidgets.QDialog):
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             measurement_name, notes = dlg.edited_values()
             self._analyzer.update_measurement(index, measurement_name, notes)
-
-    def _load_from_detail(self, m: TapToneMeasurement) -> None:
-        self._load_and_close(m)
 
     def _load_and_close(self, m: TapToneMeasurement) -> None:
         """Close the dialog, then emit measurementSelected.

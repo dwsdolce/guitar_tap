@@ -3,7 +3,7 @@ Detail dialog for a single saved TapToneMeasurement.
 Matches MeasurementDetailView.swift / CombinedPeakModeRowView.swift.
 """
 
-import os
+# @parity view/measurement-detail
 
 import qtawesome as qta
 from models import ResonantPeak, TapToneMeasurement
@@ -12,7 +12,6 @@ from models import guitar_type as GT
 from models import pitch as P
 from PySide6 import QtCore, QtGui, QtWidgets
 from utilities.date_format import format_display_datetime
-from views import tap_analysis_results_view as M
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -234,8 +233,6 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
     Close button remains here.  Matches MeasurementDetailView.swift.
     """
 
-    measurementSelected: QtCore.Signal = QtCore.Signal(object)
-
     def __init__(
         self,
         measurement: TapToneMeasurement,
@@ -373,69 +370,3 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         btn_row.addWidget(close_btn)
 
         root.addLayout(btn_row)
-
-    # ── Helpers ───────────────────────────────────────────────────────────────
-
-    def _compute_tap_tone_ratio(self) -> float | None:
-        """Return fTop/fAir ratio for the measurement.
-
-        Delegates to TapToneMeasurement.tap_tone_ratio (the computed property),
-        which uses GuitarMode.classify_all on the stored peaks.
-        Mirrors measurement_detail_view reading m.tap_tone_ratio first, per §4.
-        """
-        return self._m.tap_tone_ratio
-
-    # ── Slots ─────────────────────────────────────────────────────────────────
-
-    def _on_load(self) -> None:
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            "Load Measurement",
-            "This will replace the current analysis view with this measurement's "
-            "data, including peaks and spectrum. Continue?",
-            QtWidgets.QMessageBox.StandardButton.Ok
-            | QtWidgets.QMessageBox.StandardButton.Cancel,
-        )
-        if reply == QtWidgets.QMessageBox.StandardButton.Ok:
-            self.accept()
-            self.measurementSelected.emit(self._m)
-
-    def _on_export_json(self) -> None:
-        default_name = self._m.base_filename + ".json"
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self,
-            "Export Measurement",
-            os.path.join(M.last_export_dir(), default_name),
-            "JSON files (*.json *.guitartap);;All files (*)",
-        )
-        if not path:
-            return
-        M.update_export_dir(path)
-        try:
-            text = M.export_measurement_json(self._m)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(text)
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(
-                self, "Export Error", f"Could not export:\n{exc}"
-            )
-
-    def _on_export_pdf(self) -> None:
-        default_name = self._m.base_filename + ".pdf"
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self,
-            "Export PDF Report",
-            os.path.join(M.last_export_dir(), default_name),
-            "PDF files (*.pdf)",
-        )
-        if not path:
-            return
-        M.update_export_dir(path)
-        try:
-            # Mirrors Swift: PDFReportData.from(measurement:) → PDFReportGenerator.generate(data:)
-            report_data = M.pdf_report_data_from_measurement(self._m)
-            M.export_pdf(report_data, path)
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(
-                self, "Export Error", f"Could not export PDF:\n{exc}"
-            )
