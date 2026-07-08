@@ -444,6 +444,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             pre_restart()
         _td("file_playback", "PRE_MIC_RESTART_DONE")
 
+    # @parity dsp/wav
     def start_from_file(self, path: str) -> None:
         """Feed a WAV (or other audio) file through the same queue as the microphone.
 

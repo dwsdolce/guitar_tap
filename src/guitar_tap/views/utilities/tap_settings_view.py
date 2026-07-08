@@ -1,7 +1,7 @@
-# NOTE: This file is the settings STORE (QSettings-backed `AppSettings`), the mirror of
-# Swift `TapDisplaySettings` — NOT the settings UI. The view/settings @parity slug belongs to
-# the TapSettingsView UI (Python: `_show_settings()` in tap_tone_analysis_view.py). This store
-# awaits its own settings-store @parity slug (with Swift TapDisplaySettings + web settings.ts).
+# NOTE: This file is the settings STORE (QSettings-backed `AppSettings`) — the Python backing for
+# `TapDisplaySettings` (models/tap_display_settings.py, tagged `state/settings-store`), NOT the settings
+# UI (that is `_show_settings()` in tap_tone_analysis_view.py, view/settings). AppSettings is Python-only
+# QSettings plumbing (Swift uses UserDefaults / web localStorage directly), so it carries no parity tag.
 """
     Persistent application settings backed by QSettings.
 """

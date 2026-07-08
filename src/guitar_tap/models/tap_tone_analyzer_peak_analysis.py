@@ -5,6 +5,8 @@ and mode-priority assembly.
 Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift.
 """
 
+# @parity dsp/peak-analysis
+
 from __future__ import annotations
 
 
