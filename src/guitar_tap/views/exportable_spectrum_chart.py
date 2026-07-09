@@ -97,7 +97,6 @@ class ExportableSpectrumChart:
         max_freq: float,             # Maximum frequency (Hz) of the visible chart range.
         min_db: float,               # Minimum magnitude (dBFS) of the visible chart range.
         max_db: float,               # Maximum magnitude (dBFS) of the visible chart range.
-        is_logarithmic: bool = False,           # When True, the frequency axis uses a logarithmic scale.
         peaks: list | None = None,              # Peaks to annotate. Pass None to suppress all peak annotations.
         show_mode_boundaries: bool = True,      # Whether to draw guitar mode boundary lines.
         # Absolute label-center positions in data-space ({uuid: [abs_freq_hz, abs_db]}).
@@ -121,7 +120,6 @@ class ExportableSpectrumChart:
         self.max_freq = max_freq
         self.min_db = min_db
         self.max_db = max_db
-        self.is_logarithmic = is_logarithmic
         self.peaks = peaks or []
         self.show_mode_boundaries = show_mode_boundaries
         self.annotation_positions = annotation_positions or {}

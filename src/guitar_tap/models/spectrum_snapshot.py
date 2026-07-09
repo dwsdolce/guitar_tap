@@ -80,7 +80,8 @@ class SpectrumSnapshot:
     # Mirrors Swift SpectrumSnapshot.maxDB.
     max_db: float = -20.0
 
-    # True when the frequency axis was displayed on a logarithmic scale.
+    # Legacy field retained for .guitartap format compatibility; always False.
+    # The frequency axis is linear on all platforms (log-axis support was removed).
     # Mirrors Swift SpectrumSnapshot.isLogarithmic.
     is_logarithmic: bool = False
 
