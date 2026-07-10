@@ -2644,6 +2644,7 @@ class MainWindow(QtWidgets.QMainWindow):
             _MTP.REVIEWING_FLC,
         ) and not TDS.measurement_type().is_guitar
 
+    # @parity state/button-enablement
     def _update_tap_buttons(self) -> None:
         """Refresh enabled/disabled state of New Tap, Pause, Cancel, and tap count spinner."""
         tap_num = self.tap_num_spin.value()

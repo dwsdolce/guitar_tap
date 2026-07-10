@@ -293,6 +293,7 @@ class TapToneAnalyzer(
         self.tap_progress: float = 0.0              # mirrors tapProgress
         # All writes must go through _set_status_message() to emit statusMessageChanged.
         # Mirrors Swift @Published var statusMessage: String.
+        # @parity state/status-message
         self.status_message: str = "Tap the guitar to begin"
 
         # MARK: - Input Clipping Detection
