@@ -537,7 +537,7 @@ class TapToneAnalyzerControlMixin:
         # before the main-thread async block sets isPlayingFile / playingFileName.
         self._update_frequency_bins()
 
-    # @parity state/tap-session
+    # @parity state/tap-tone-analyzer
     def start_tap_sequence(self, skip_warmup: bool = False, initial_phase=None) -> None:
         """Begin a new tap detection sequence, resetting all per-sequence state.
 
