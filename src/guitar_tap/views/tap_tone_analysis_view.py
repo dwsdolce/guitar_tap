@@ -3203,19 +3203,22 @@ class MainWindow(QtWidgets.QMainWindow):
             pm.refresh_annotations()
 
     def _plate_step_label(self, phase_step: int, total: int) -> str:
-        """Return the status bar phase label, appending tap count when numberOfTaps > 1 on plate.
+        """Return the status bar phase label (brace uses the guitar-style "Tap X/N" counter).
 
         Mirrors Swift:
           tap.numberOfTaps > 1
             ? "Phase N/total · Tap p/q"
             : "Phase N/total"
-        For brace there is no per-phase tap averaging display (single phase), so
-        the bare "Phase N/M" string is returned regardless of tap count.
+        For brace (single phase, shown like a guitar measurement) it returns
+        "Tap currentTapCount/numberOfTaps" rather than "Phase 1/1".
         """
-        base = f"Phase\u00a0{phase_step}/{total}"
         mt = TDS.measurement_type()
         tap_num = self._tap_count_total
-        if not mt.is_brace and tap_num > 1:
+        if mt.is_brace:
+            # Brace uses the guitar-style tap counter (Swift phaseLabel = "Tap X/N"), not "Phase 1/1".
+            return f"Tap\u00a0{self._tap_count_captured}/{tap_num}"
+        base = f"Phase\u00a0{phase_step}/{total}"
+        if tap_num > 1:
             # Mirrors Swift: max(0, tap.currentTapCount - (materialPhaseStep - 1) * tap.numberOfTaps)
             tap_in_phase = max(0, self._tap_count_captured - (phase_step - 1) * tap_num)
             return f"{base}\u00a0\u00b7\u00a0Tap\u00a0{tap_in_phase}/{tap_num}"
