@@ -195,6 +195,8 @@ class TestScenarioStateTrace:
         assert trace == expected, f"trace mismatch:\n  got: {trace}\n  exp: {expected}"
 
     def test_S4_multi_tap_cancel(self):
+        # Cancel is a restart — cancel_tap_sequence re-arms a fresh sequence (== New Tap):
+        # is_detecting=True, is_measurement_complete=False, counts reset to 0.
         sut = _make_sut(number_of_taps=3)
         trace = []
         trace.append(_snap("init", sut))
@@ -216,6 +218,6 @@ class TestScenarioStateTrace:
             StateSnapshot("init",       False, False, False, 0, 0),
             StateSnapshot("postStart",  True,  False, False, 0, 0),
             StateSnapshot("postTap1",   True,  False, False, 1, 1),
-            StateSnapshot("postCancel", False, False, True,  0, 0),
+            StateSnapshot("postCancel", True,  False, False, 0, 0),
         ]
         assert trace == expected, f"trace mismatch:\n  got: {trace}\n  exp: {expected}"

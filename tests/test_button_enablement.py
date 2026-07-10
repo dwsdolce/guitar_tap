@@ -65,6 +65,20 @@ def button_rule(s: ButtonState) -> ButtonOutput:
         and not is_guitar
     )
 
+    # New Tap starts a fresh measurement, so it's enabled only once one is complete (every
+    # type-switch auto-arms into capturing — no disarmed idle state). Cancel restarts,
+    # offered during a review phase (as "Redo") or an active multi-step sequence
+    # (multi-tap or multi-phase = plate). Pause/Resume: review, detecting, or paused.
+    if is_guitar:
+        active = s.is_detecting or s.is_detection_paused
+    else:
+        active = (
+            s.material_tap_phase != MaterialTapPhase.NOT_STARTED
+            and not s.is_measurement_complete
+        )
+    multi_step = s.number_of_taps > 1 or s.measurement_type == MeasurementType.PLATE
+    in_active_multi_step = active and multi_step
+
     if is_in_review_phase:
         pause_enabled = True
     else:
@@ -74,27 +88,10 @@ def button_rule(s: ButtonState) -> ButtonOutput:
         new_tap_disabled = False
     elif not (s.fft_is_running and s.is_ready_for_detection):
         new_tap_disabled = True
-    elif not is_guitar:
-        new_tap_disabled = False
-    elif s.is_detecting:
-        new_tap_disabled = True
-    elif not s.is_measurement_complete:
-        new_tap_disabled = True
     else:
-        new_tap_disabled = False
+        new_tap_disabled = not s.is_measurement_complete
 
-    if is_in_review_phase:
-        cancel_enabled = True
-    elif not s.is_detecting:
-        cancel_enabled = False
-    elif not is_guitar:
-        cancel_enabled = True
-    elif s.number_of_taps <= 1:
-        cancel_enabled = False
-    elif s.current_tap_count >= s.number_of_taps:
-        cancel_enabled = False
-    else:
-        cancel_enabled = True
+    cancel_enabled = is_in_review_phase or in_active_multi_step
 
     return ButtonOutput(
         pause_enabled=pause_enabled,
@@ -112,7 +109,7 @@ class TestButtonEnablement:
             pause_enabled=False, new_tap_disabled=True, cancel_enabled=False
         )
 
-    def test_B2_guitar_mid_single_tap(self):
+    def test_B2_guitar_single_tap_listening_pause_only(self):
         s = ButtonState(is_detecting=True, is_detection_paused=False, is_measurement_complete=False,
                         number_of_taps=1)
         assert button_rule(s) == ButtonOutput(
@@ -126,12 +123,14 @@ class TestButtonEnablement:
             pause_enabled=False, new_tap_disabled=False, cancel_enabled=False
         )
 
-    def test_B4_guitar_impossible_state_shows_detecting_buttons(self):
-        """Bug-witness: documents what the rule WOULD do if the invariant were violated."""
+    def test_B4_guitar_impossible_state_lights_both_new_tap_and_pause(self):
+        """StateInvariants forbids (detecting && complete); New Tap keys off complete and
+        Pause off detecting, so this contradictory state lights up BOTH."""
         s = ButtonState(is_detecting=True, is_detection_paused=False, is_measurement_complete=True)
         out = button_rule(s)
-        assert out.pause_enabled is True, "Bug witness: Pause enabled despite complete"
-        assert out.new_tap_disabled is True, "Bug witness: New Tap disabled despite complete"
+        assert out.new_tap_disabled is False  # complete -> New Tap enabled
+        assert out.pause_enabled is True       # detecting -> Pause enabled
+        assert out.cancel_enabled is False
 
     def test_B5_guitar_mid_multi_tap(self):
         s = ButtonState(is_detecting=True, is_detection_paused=False, is_measurement_complete=False,
@@ -140,27 +139,27 @@ class TestButtonEnablement:
             pause_enabled=True, new_tap_disabled=True, cancel_enabled=True
         )
 
-    def test_B6_guitar_paused_pause_still_enabled(self):
+    def test_B6_guitar_multi_tap_paused_cancel_still_enabled(self):
         s = ButtonState(is_detecting=False, is_detection_paused=True, is_measurement_complete=False,
                         current_tap_count=1, number_of_taps=3)
         assert button_rule(s) == ButtonOutput(
-            pause_enabled=True, new_tap_disabled=True, cancel_enabled=False
+            pause_enabled=True, new_tap_disabled=True, cancel_enabled=True
         )
 
-    def test_B7_plate_review_all_enabled(self):
+    def test_B7_plate_review_new_tap_disabled_cancel_pause_enabled(self):
         s = ButtonState(is_detecting=False, is_detection_paused=False, is_measurement_complete=False,
                         measurement_type=MeasurementType.PLATE,
                         material_tap_phase=MaterialTapPhase.REVIEWING_LONGITUDINAL)
         assert button_rule(s) == ButtonOutput(
-            pause_enabled=True, new_tap_disabled=False, cancel_enabled=True
+            pause_enabled=True, new_tap_disabled=True, cancel_enabled=True
         )
 
-    def test_B8_plate_capturing(self):
+    def test_B8_plate_capturing_new_tap_disabled_cancel_pause_enabled(self):
         s = ButtonState(is_detecting=True, is_detection_paused=False, is_measurement_complete=False,
                         measurement_type=MeasurementType.PLATE,
                         material_tap_phase=MaterialTapPhase.CAPTURING_LONGITUDINAL)
         assert button_rule(s) == ButtonOutput(
-            pause_enabled=True, new_tap_disabled=False, cancel_enabled=True
+            pause_enabled=True, new_tap_disabled=True, cancel_enabled=True
         )
 
     def test_B9_fft_not_running_new_tap_disabled(self):
@@ -172,3 +171,24 @@ class TestButtonEnablement:
         s = ButtonState(is_detecting=False, is_detection_paused=False, is_measurement_complete=False,
                         display_mode_is_comparison=True)
         assert button_rule(s).new_tap_disabled is False
+
+    def test_B11_brace_single_tap_capturing_pause_only(self):
+        # Brace is single-phase; a 1-tap brace is not multi-step (like single-tap guitar):
+        # not complete -> New Tap disabled; Pause on (threshold-setting); Cancel disabled.
+        s = ButtonState(is_detecting=True, is_detection_paused=False, is_measurement_complete=False,
+                        measurement_type=MeasurementType.BRACE,
+                        material_tap_phase=MaterialTapPhase.CAPTURING_LONGITUDINAL,
+                        number_of_taps=1)
+        assert button_rule(s) == ButtonOutput(
+            pause_enabled=True, new_tap_disabled=True, cancel_enabled=False
+        )
+
+    def test_B12_brace_multi_tap_capturing_cancel_enabled(self):
+        # Multi-tap makes a brace multi-step: New Tap disabled, Cancel (restart) enabled.
+        s = ButtonState(is_detecting=True, is_detection_paused=False, is_measurement_complete=False,
+                        measurement_type=MeasurementType.BRACE,
+                        material_tap_phase=MaterialTapPhase.CAPTURING_LONGITUDINAL,
+                        number_of_taps=3)
+        assert button_rule(s) == ButtonOutput(
+            pause_enabled=True, new_tap_disabled=True, cancel_enabled=True
+        )

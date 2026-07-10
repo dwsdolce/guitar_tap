@@ -213,17 +213,13 @@ class TestStartTapSequenceResetsComplete:
 # Path 4: cancel_tap_sequence clears frozen spectrum (is_measurement_complete stays True)
 # ---------------------------------------------------------------------------
 
-class TestCancelTapSequenceResetsComplete:
-    """cancel_tap_sequence clears the frozen spectrum (mirrors Swift cancelTapSequence).
-
-    NOTE: cancel does NOT set is_measurement_complete = False — this matches Swift,
-    where cancelTapSequence() only calls setFrozenSpectrum([], []) and leaves
-    isMeasurementComplete as-is.  The display shows nothing because both frozen
-    arrays are empty; the flag is cleared on the next startTapSequence() call.
+class TestCancelTapSequenceReArms:
+    """cancel_tap_sequence re-arms a fresh sequence (== New Tap): it clears the frozen
+    spectrum, resets is_measurement_complete to False, and re-arms detection.
+    Mirrors Swift cancelTapSequence(), which delegates to startTapSequence().
     """
 
-    def test_cancel_clears_frozen_spectrum(self):
-        """cancel_tap_sequence must clear frozen arrays (mirrors Swift line 289)."""
+    def test_cancel_re_arms_and_clears_frozen(self):
         sut = _make_guitar_sut(number_of_taps=1)
         sut.captured_taps = [_fake_spectrum()]
         sut._finish_capture()
@@ -232,6 +228,8 @@ class TestCancelTapSequenceResetsComplete:
         sut.cancel_tap_sequence()
         assert len(sut.frozen_magnitudes) == 0
         assert len(sut.frozen_frequencies) == 0
+        assert sut.is_measurement_complete is False  # re-armed -> not complete
+        assert sut.is_detecting is True              # re-armed detection
 
 
 # ---------------------------------------------------------------------------

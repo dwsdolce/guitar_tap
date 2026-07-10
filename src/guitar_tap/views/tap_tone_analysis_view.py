@@ -2655,28 +2655,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tap_num_spin.setEnabled(
             not (self._tap_count_captured > 0 and not self._is_measurement_complete)
         )
-        is_plate = not mt.is_guitar
         # Mirrors Swift isDetecting: False when paused (pauseTapDetection sets isDetecting=false)
         is_detecting = self._is_running and not self._is_measurement_complete and not self._is_paused
         is_comparing = self.fft_canvas.is_comparing
         in_review = self._is_in_review_phase()
 
-        if in_review:
-            # Review phase: New Tap always available (start over), Accept and Redo enabled.
-            # Mirrors Swift: newTapButtonDisabled always False for plate/brace,
-            # pauseResumeButtonEnabled / cancelButtonEnabled return True in review.
-            self.new_tap_btn.setEnabled(self._is_running)
-            self.pause_tap_btn.setEnabled(True)
-            self.cancel_tap_btn.setEnabled(True)
+        # ── Enablement (finalized rule; mirrors Swift buttonRule / test_button_enablement) ──
+        from models.measurement_type import MeasurementType as _MT
+        # multi-step = multi-tap OR multi-phase (plate; brace is single-phase).
+        multi_step = tap_num > 1 or mt == _MT.PLATE
+        # active = a sequence is running (detecting or paused).
+        active = is_detecting or self._is_paused
+        cancel_enabled = in_review or (active and multi_step)
+        # New Tap only lights up once a measurement is complete (or comparing) — every
+        # type-switch auto-arms into capturing, so there is no disarmed idle state.
+        self.new_tap_btn.setEnabled(self._is_measurement_complete or is_comparing)
+        # Pause/Resume ("Accept" in review): review, detecting, or paused — works even
+        # single-tap, for setting the threshold without doing a capture.
+        self.pause_tap_btn.setEnabled(in_review or is_detecting or self._is_paused)
+        # Cancel ("Redo" in review) restarts: a review phase, or an active multi-step sequence.
+        self.cancel_tap_btn.setEnabled(cancel_enabled)
 
-            # Relabel Pause → Accept with green tint.
-            # Mirrors Swift: .tint(isInReviewPhase ? .green : nil)
+        if in_review:
+            # Relabel Pause → Accept (green) and Cancel → Redo <phase> (orange).
             self.pause_tap_btn.setText("Accept")
             self.pause_tap_btn.setIcon(qta.icon("fa5.check-circle", color="green"))
             self.pause_tap_btn.setStyleSheet("color: green;")
 
-            # Relabel Cancel → Redo <phase> with orange foreground.
-            # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? .orange : .gray)
             from models.material_tap_phase import MaterialTapPhase as _MTP
             phase = self.fft_canvas.analyzer.material_tap_phase
             redo_labels = {
@@ -2688,7 +2693,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cancel_tap_btn.setIcon(qta.icon("fa5s.undo", color="orange"))
             self.cancel_tap_btn.setStyleSheet("color: orange;")
         else:
-            # Normal (non-review) state — restore standard labels first.
+            # Standard labels.
             if self._is_paused:
                 self.pause_tap_btn.setText("Resume")
                 self.pause_tap_btn.setIcon(qta.icon("fa5.play-circle"))
@@ -2697,41 +2702,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.pause_tap_btn.setIcon(qta.icon("fa5.pause-circle"))
             self.pause_tap_btn.setStyleSheet("")
             self.cancel_tap_btn.setText("Cancel")
-
-            # New Tap: always enabled for plate/brace when running or when a
-            # measurement is loaded (complete state); for guitar it requires a
-            # complete or comparison state.
-            # Mirrors Swift newTapButtonDisabled: disabled only when fft.isRunning
-            # is false (audio not yet started) AND no measurement has been loaded.
-            # In the Python app _is_running is False when a measurement is loaded
-            # before the analyzer is started, so we treat _is_measurement_complete
-            # as an additional "ready" condition — the user can always start a new
-            # tap from a loaded/frozen measurement even before starting audio.
-            if is_plate:
-                self.new_tap_btn.setEnabled(
-                    self._is_running or self._is_measurement_complete or is_comparing
-                )
-            else:
-                self.new_tap_btn.setEnabled(
-                    self._is_measurement_complete or is_comparing
-                )
-
-            self.pause_tap_btn.setEnabled(is_detecting or self._is_paused)
-
-            # Mirrors Swift cancelButtonEnabled:
-            #   plate/brace: True whenever isDetecting (cancel = abort the sequence)
-            #   guitar: True only in multi-tap mode before all taps captured
-            # Swift: isDetecting && numberOfTaps > 1 && currentTapCount < numberOfTaps
-            # No lower-bound on currentTapCount — Cancel is enabled from the moment
-            # the sequence starts (before the first tap), matching Swift behaviour.
-            if is_plate:
-                cancel_enabled = is_detecting
-            else:
-                cancel_enabled = (
-                    is_detecting and tap_num > 1
-                    and self._tap_count_captured < tap_num
-                )
-            self.cancel_tap_btn.setEnabled(cancel_enabled)
             # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? .orange : .gray)
             self.cancel_tap_btn.setStyleSheet(
                 "color: orange;" if cancel_enabled else "color: gray;"

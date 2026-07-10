@@ -772,50 +772,26 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
 
     def cancel_tap_sequence(self) -> None:
-        """Cancel the current tap sequence and wait for the user to press New Tap.
+        """Cancel the current tap sequence by restarting it.
 
-        Sets is_detecting = False and is_measurement_complete = True so the
-        New Tap button is re-enabled.  Mirrors Swift cancelTapSequence().
+        Cancel is a **restart**: it returns to the exact state that New Tap
+        produces — a fresh, re-armed sequence waiting for the first tap — rather
+        than completing the measurement.  (Previously this set
+        is_measurement_complete = True purely to re-enable the New Tap button;
+        that button-gating hack is gone now that the button rule keys off
+        is_measurement_complete.)  Cancel is only offered while a multi-step
+        (multi-tap or multi-phase) sequence is in progress.  Mirrors Swift
+        cancelTapSequence().
         """
-        import numpy as np
-        from models.material_tap_phase import MaterialTapPhase as _MTP
-
-        self.captured_taps.clear()
-        self.tap_entries = []
-        self.showing_multi_tap_comparison = False
-        self.current_tap_count = 0
-        self.tap_progress = 0.0
-        self.tap_detected = False
-        self.last_tap_time = None
-        self.is_detection_paused = False
-        self.is_detecting = False
-        self.capture_timer_active = False  # mirrors Swift captureTimer?.invalidate(); captureTimer = nil
-
-        # Session recording: discard the buffer on cancel — mirrors Swift
-        # cancelTapSequence which clears sessionRecordingBuffer / checkpoints.
-        with self._gated_lock:
-            self._is_session_recording = False
-            self._session_recording_buffer = []
-            self._session_checkpoints = []
-
-        # Mark as complete so New Tap is re-enabled after cancel.
-        # Use set_measurement_complete() to emit the measurementComplete signal
-        # so the view's set_measurement_complete() handler fires and updates the
-        # Taps button visibility and New Tap button enabled state.
-        self.set_measurement_complete(True)
-
-        self._reset_material_phase_state(to=_MTP.NOT_STARTED)
-        self._reset_decay_tracking()
-
-        # Clear frozen spectrum (mirrors Swift setFrozenSpectrum(frequencies: [], magnitudes: [])).
-        self.set_frozen_spectrum(np.array([]), np.array([]))
-
-        self.analyzer_start_time = _time.monotonic()
-        self.is_above_threshold = False
-
-        self._set_status_message("Cancelled — press New Tap to start again")
-
-        self.tapCountChanged.emit(0, self.number_of_taps)
+        gt_log("❌ Tap sequence cancelled — restarting")
+        # A pending capture-completion timer from the abandoned sequence must not
+        # fire into the fresh one (mirrors Swift captureTimer?.invalidate()).
+        self.capture_timer_active = False
+        # Re-arm a fresh sequence — identical to pressing New Tap. start_tap_sequence
+        # clears captured taps / counts / frozen spectrum, resets the material phase,
+        # restarts session recording, sets is_detecting = True with the correct status,
+        # and emits tapCountChanged / measurementComplete(False).
+        self.start_tap_sequence()
 
     # ------------------------------------------------------------------ #
     # Phase Review — Accept / Redo
