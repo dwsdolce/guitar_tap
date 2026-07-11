@@ -300,8 +300,10 @@ def _build_help_html() -> str:
     parts.append(_h2("mdi.gesture-tap", "Controls Reference"))
     parts.append(_row(
         "New Tap",
-        "Arms the detector for the next tap (or begins a plate measurement sequence). "
-        "A green indicator shows when a tap has been registered.",
+        "Starts a fresh measurement &mdash; arms the detector (or begins a plate/brace "
+        "sequence). Enabled only once the current measurement is complete; during a "
+        "measurement it is disabled (use Cancel to start over). A green indicator shows "
+        "when a tap has been registered.",
         ["mdi.gesture-tap"]
     ))
     parts.append(_row(
@@ -318,12 +320,13 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Cancel &bull; Redo (plate/brace review)",
-        "Cancel aborts the current measurement sequence and discards all partial data."
-        "<br><br>"
+        "Cancel restarts the measurement &mdash; it discards all partial data and "
+        "immediately re-arms a fresh sequence, so you can tap again without clicking "
+        "New Tap. Cancel is available while a measurement is in progress.<br><br>"
         "In plate and brace mode, while reviewing a captured phase the button changes "
         "to Redo. Click Redo to discard only the current phase&rsquo;s data and "
-        "re-capture it &mdash; earlier phases are preserved. The detector re-arms "
-        "immediately so you can tap again without clicking New Tap.",
+        "re-capture it, preserving earlier phases. Either way the detector re-arms "
+        "immediately.",
         ["fa5.times-circle", "fa5s.undo"]
     ))
     parts.append(_row(
