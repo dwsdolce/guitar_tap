@@ -505,12 +505,14 @@ class FftCanvas(pg.PlotWidget):
 
         # Label opts: anchors are (x, y) where x=0 left-align, x=1 right-align;
         #             y=0 text below position, y=1 text above position.
-        _lbl_opts_peak = {"position": 0.01, "color": (0, 200, 0), "anchors": [(0, 1), (0, 1)]}
+        # Right-aligned, above the line, at the right edge — matches Swift's .trailing/.top.
+        _lbl_opts_peak = {"position": 0.99, "color": (0, 200, 0), "anchors": [(1, 1), (1, 1)]}
 
-        # Peak-minimum line (green solid) — "Peak: x dB", left, above
+        # Peak-minimum line (green dashed) — "Peak: x dB", right, above (matches Swift's
+        # thresholdLinesContent RuleMark: green, width 1.5, dash [8, 3], label .top/.trailing).
         self.line_threshold = pg.InfiniteLine(
             pos=_peak_y, angle=0,
-            pen=pg.mkPen("g", width=1),
+            pen=pg.mkPen("g", width=1, dash=[8, 3]),
             label=f"Peak: {_peak_y} dB",
             labelOpts=_lbl_opts_peak,
         )
