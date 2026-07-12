@@ -7,10 +7,14 @@ an idle change does nothing.  Python's set_tap_num mirrors Swift numberOfTaps.di
 strings; only the per-platform trigger differs (Swift property didSet, Python/web a
 setter method).
 
-NOTE: the reduce-count-to-at-or-below-captured branch is intentionally NOT pinned
-here — it is not part of the web's tap-count-change slug, and it diverges from Swift:
-Swift sets "All taps captured. Processing..." and defers processing, whereas Python's
-set_tap_num calls process_multiple_taps synchronously.  Tracked separately (6-TEST 4c).
+OUT-5: the "reduce the count mid-sequence -> finalise with the taps already captured"
+branch has been REMOVED from Swift and Python (the web never had it).  The Taps stepper
+is disabled from the first captured tap (currentTapCount > 0 && !isMeasurementComplete)
+on every platform, so the count cannot change mid-sequence -- you cancel first.  The
+branch was therefore unreachable, and being unreachable it had drifted three ways: Swift
+deferred processing by captureWindow and averaged ALL captured taps; Python finalised
+synchronously and TRUNCATED to the new count; the web did nothing.  Removed rather than
+reconciled.  TestNoImplicitFinalise below pins the removal.
 """
 
 from __future__ import annotations
@@ -89,3 +93,51 @@ class TestTapCountChange:
         before = sut.status_message
         sut.set_tap_num(5)
         assert sut.status_message == before
+
+class TestNoImplicitFinalise:
+    """OUT-5 — a count change with taps already in hand must NOT finalise the measurement.
+
+    Guards the removal of the unreachable reduce-mid-sequence branch (see the module docstring).
+    Before the removal, set_tap_num truncated captured_taps to the new count and called
+    process_multiple_taps() synchronously; Swift deferred and averaged ALL of them.
+    """
+
+    def setup_method(self):
+        TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+
+    def _armed_with_taps(self, total: int, taps: int) -> TapToneAnalyzer:
+        import datetime as _dt
+        sut = _make_sut(total)
+        mags = np.full(64, -60.0, dtype=np.float64)
+        freqs = np.linspace(0, 2000, 64)
+        sut.captured_taps = [(mags, freqs, _dt.datetime.now()) for _ in range(taps)]
+        sut.current_tap_count = taps
+        sut.is_detecting = True
+        return sut
+
+    def test_lowering_to_the_captured_count_does_not_complete(self):
+        sut = self._armed_with_taps(4, 2)  # 2 of 4 captured
+
+        sut.set_tap_num(2)  # count == captured — the old branch finalised here
+
+        assert sut.is_measurement_complete is False
+        assert sut.is_detecting is True
+        assert len(sut.captured_taps) == 2  # not truncated, not averaged away
+
+    def test_lowering_below_the_captured_count_does_not_complete_or_truncate(self):
+        sut = self._armed_with_taps(4, 3)
+
+        sut.set_tap_num(1)  # captured (3) > new total (1)
+
+        assert sut.is_measurement_complete is False
+        assert sut.is_detecting is True
+        assert len(sut.captured_taps) == 3, "set_tap_num used to `del captured_taps[new_num:]`"
+
+    def test_raising_the_count_keeps_captured_taps(self):
+        sut = self._armed_with_taps(3, 2)
+
+        sut.set_tap_num(5)
+
+        assert sut.is_measurement_complete is False
+        assert len(sut.captured_taps) == 2
+        assert sut.number_of_taps == 5

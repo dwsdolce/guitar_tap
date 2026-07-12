@@ -743,28 +743,25 @@ class TapToneAnalyzerControlMixin:
     def set_tap_num(self, n: int) -> None:
         """Set how many taps to accumulate before freezing.
 
-        Mirrors Swift numberOfTaps.didSet: if the user reduces the tap count
-        to at or below what has already been captured mid-sequence, process
-        immediately rather than waiting for more taps.
+        Mirrors Swift numberOfTaps.didSet.
 
-        Note: the "process immediately" path only applies to guitar mode.  In
-        plate/brace mode the tap count spinner is disabled once any tap is
-        captured, so this branch is unreachable in that mode during normal use.
+        NOTE: there is deliberately NO "reduce the count mid-sequence -> finalise with the taps
+        already captured" branch.  The tap-count spinner is disabled the moment a sequence has a
+        tap -- ``setEnabled(not (captured > 0 and not complete))``, matching Swift's
+        ``.disabled(currentTapCount > 0 && !isMeasurementComplete)`` -- so the count simply cannot
+        change mid-sequence; to change it you cancel first.  The branch that used to live here was
+        therefore unreachable, and being unreachable it had silently drifted three ways: Swift
+        deferred processing by ``captureWindow`` and averaged ALL captured taps, this method
+        finalised synchronously and TRUNCATED to the new count, and the web never implemented it at
+        all.  Removed rather than reconciled (OUT-5) -- reachable behaviour is unchanged.
+
+        If a mid-sequence count change is ever wanted, unlock the spinner and define the semantics
+        deliberately -- do not resurrect an implicit finalise.
         """
-        new_num = max(1, n)
-        captured = len(self.captured_taps)
-        is_guitar = getattr(self._measurement_type, "is_guitar", True)
-        if is_guitar and captured >= new_num and captured > 0:
-            # Already have enough — process now (mirrors Swift numberOfTaps.didSet).
-            # Truncate to new_num taps then delegate to process_multiple_taps() so
-            # that tap_entries is built and all signals are emitted consistently.
-            self.number_of_taps = new_num
-            del self.captured_taps[new_num:]
-            self.process_multiple_taps()
-        else:
-            self.number_of_taps = new_num
-            # Don't clear spectra when count is raised mid-sequence — keep what
-            # was already captured (mirrors Swift which never clears capturedTaps here).
+        self.number_of_taps = max(1, n)
+        # Raising the count mid-sequence does NOT clear what was already captured (mirrors Swift,
+        # which never clears capturedTaps here) -- though the spinner lock means this cannot be
+        # reached from the UI either.
         # Mirrors Swift numberOfTaps.didSet: clear warning if user deviates from loaded value.
         if (self.show_loaded_settings_warning
                 and self.loaded_number_of_taps is not None
