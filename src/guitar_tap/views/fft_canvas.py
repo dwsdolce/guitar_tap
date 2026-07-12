@@ -197,6 +197,7 @@ class FftCanvas(pg.PlotWidget):
     tapDetected: QtCore.Signal = QtCore.Signal()
     ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
     tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)  # (captured, total)
+    detectionStateChanged: QtCore.Signal = QtCore.Signal(bool)  # is_detecting flipped
     devicesChanged: QtCore.Signal = QtCore.Signal(list)       # new device-name list
     currentDeviceLost: QtCore.Signal = QtCore.Signal(str)     # lost device name
     plateStatusChanged: QtCore.Signal = QtCore.Signal(str)    # plate capture status
@@ -455,6 +456,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.newSample.connect(self.newSample)
         self.analyzer.tapDetectedSignal.connect(self._on_tap_detected_from_analyzer)
         self.analyzer.tapCountChanged.connect(self.tapCountChanged)
+        self.analyzer.detectionStateChanged.connect(self.detectionStateChanged)
         self.analyzer.ringOutMeasured.connect(self.ringOutMeasured)
         self.analyzer.devicesChanged.connect(self.devicesChanged)
         self.analyzer.currentDeviceLost.connect(self.currentDeviceLost)

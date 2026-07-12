@@ -1184,9 +1184,18 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         # Store spectrum and advance tap counter.
         # Mirrors Swift: materialCapturedTaps.append(...); currentTapCount += 1; tapProgress = ...
+        #
+        # The counter is INCREMENTED, never derived from len(captured_taps) — the two are different
+        # things and Swift keeps them apart. `captured_taps` is the WITHIN-PHASE buffer (cleared at each
+        # phase completion so the next phase can average its own taps); `current_tap_count` is the
+        # CUMULATIVE count across L → C → FLC (0 … total_plate_taps), which is what tap_progress and the
+        # "Tap p/q" label are built from. Deriving it from len(captured_taps) made it restart at 0 on
+        # every phase change: the status-bar progress bar reset each phase, and the plate label's
+        # `max(0, captured - (step - 1) * number_of_taps)` went negative → clamped → "Tap 0/N".
+        # Redo rebases this counter explicitly (control.py: l_count / lc_count), so += stays correct.
         import datetime as _dt
         self.captured_taps.append((magnitudes, frequencies, _dt.datetime.now()))
-        self.current_tap_count = len(self.captured_taps)
+        self.current_tap_count += 1
         self.tap_progress = min(1.0, float(self.current_tap_count) / float(self.total_plate_taps))
 
         # Mirrors Swift: currentTapCount (@Published) → drives tap progress label in view.

@@ -41,6 +41,29 @@ basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 
+# Apple systemBlue — the shared cross-platform accent for the tap/phase progress bar and its label.
+#
+# Pinned explicitly on all three platforms (Swift `.tint(.blue)`, here, and the web's `--system-blue`)
+# because each toolkit otherwise inherits a DIFFERENT colour and they can never agree: Swift's untinted
+# ProgressView took the user's macOS *accent* setting, Qt took `palette(highlight)`, and the web used
+# its own `--accent`. Python was even inconsistent with itself — the bar used `palette(highlight)` (a
+# light blue) while the labels beside it were a hardcoded `rgb(40,100,210)` (a dark blue).
+#
+# systemBlue is light/dark adaptive on Apple's side; mirror that adaptivity here.
+#
+# THEME TOKEN: the Light/Dark/System theme work owns swapping these — that is why they are named
+# constants resolved through `_system_blue()`, not literals at the use sites. See
+# GuitarTapWeb/Development/THEME-SPEC.md.
+SYSTEM_BLUE_LIGHT = "#007AFF"
+SYSTEM_BLUE_DARK = "#0A84FF"
+
+
+def _system_blue(widget: QtWidgets.QWidget) -> str:
+    """systemBlue for the widget's CURRENT appearance (dark vs light)."""
+    window = widget.palette().color(QtGui.QPalette.ColorRole.Window)
+    return SYSTEM_BLUE_DARK if window.lightness() < 128 else SYSTEM_BLUE_LIGHT
+
+
 def _vsep() -> QtWidgets.QFrame:
     """Thin vertical separator for horizontal toolbars."""
     sep = QtWidgets.QFrame()
@@ -1559,10 +1582,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_progress.setRange(0, 100)
         self._sb_progress.setFixedHeight(6)
         self._sb_progress.setTextVisible(False)
+        # chunk = systemBlue, NOT palette(highlight) — the theme's highlight is a different blue on
+        # every platform/theme and matched neither Swift's bar nor the labels beside it. The track
+        # stays palette(mid).
         self._sb_progress.setStyleSheet(
             "QProgressBar { border: none; border-radius: 3px;"
             " background: palette(mid); }"
-            "QProgressBar::chunk { background: palette(highlight);"
+            "QProgressBar::chunk { background: " + _system_blue(self) + ";"
             " border-radius: 3px; }"
         )
         self._sb_progress.setVisible(False)
@@ -1664,7 +1690,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Peak info
         self._sb_peak_lbl = QtWidgets.QLabel("")
         self._sb_peak_lbl.setFont(caption)
-        self._sb_peak_lbl.setStyleSheet("color: rgb(40,100,210);")
+        self._sb_peak_lbl.setStyleSheet(f"color: {_system_blue(self)};")
         _norm_hl.addWidget(self._sb_peak_lbl)
 
         # Detection state dot
@@ -1682,7 +1708,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tap count (hidden by default)
         self._sb_tap_count = QtWidgets.QLabel("")
         self._sb_tap_count.setFont(caption)
-        self._sb_tap_count.setStyleSheet("color: rgb(40,100,210); font-weight: bold;")
+        self._sb_tap_count.setStyleSheet(f"color: {_system_blue(self)}; font-weight: bold;")
         self._sb_tap_count.setVisible(False)
         _norm_hl.addWidget(self._sb_tap_count)
 
@@ -1690,7 +1716,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Wide enough to fit "Phase 1/2 · Tap 3/5" when numberOfTaps > 1.
         self._sb_plate_step_lbl = QtWidgets.QLabel("")
         self._sb_plate_step_lbl.setFont(caption)
-        self._sb_plate_step_lbl.setStyleSheet("color: rgb(40,100,210); font-weight: bold;")
+        self._sb_plate_step_lbl.setStyleSheet(f"color: {_system_blue(self)}; font-weight: bold;")
         self._sb_plate_step_lbl.setVisible(False)
         _norm_hl.addWidget(self._sb_plate_step_lbl)
 
@@ -1977,6 +2003,11 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.ringOutMeasured.connect(self.set_ring_out)
         canvas.ringOutMeasured.connect(self._on_ring_out_measured)
         canvas.tapCountChanged.connect(self.set_tap_count)
+        # Re-evaluate the status-bar tap count / progress whenever detection arms or disarms.
+        # Swift gets this free (isDetecting is @Published, so the status bar re-renders); Python
+        # must re-run the slot explicitly, or a detection-state change alone never refreshes the
+        # bar's visibility or the label's text — they go stale mid-sequence.
+        canvas.detectionStateChanged.connect(self._on_detection_state_changed)
         canvas.devicesChanged.connect(self._on_devices_changed)
         canvas.currentDeviceLost.connect(self._on_device_lost)
         try:
@@ -2107,15 +2138,34 @@ class MainWindow(QtWidgets.QMainWindow):
             self._is_paused = False
         self._update_tap_buttons()
 
+    def _on_detection_state_changed(self, _is_detecting: bool) -> None:
+        """Detection armed/disarmed → re-evaluate the status-bar tap count + progress.
+
+        Mirrors Swift, where the status bar is bound to the @Published `isDetecting` and re-renders
+        on every change. Re-runs set_tap_count with the CURRENT counts so the label's visibility and
+        text track the detection state instead of freezing at whatever they were on the last
+        tapCountChanged.
+        """
+        self.set_tap_count(self._tap_count_captured, self._tap_count_total)
+
     def set_tap_count(self, captured: int, total: int) -> None:
         self._tap_count_captured = captured
         self._tap_count_total = total
-        # Mirror Swift exactly:
-        #   tap.isDetecting && (isPlate || tap.currentTapCount > 0)
-        # isDetecting becomes False at the approve/redo step — hiding the count during review.
+        # The BAR and the tap-count LABEL have DIFFERENT gates — this mirrors Swift's macOS
+        # `fullStatusBar`, which deliberately splits them:
+        #     bar:   `if tap.currentTapCount > 0`                                    (NO isDetecting)
+        #     label: `if tap.isDetecting && (isPlateOrBrace || currentTapCount > 0)` (WITH isDetecting)
+        # We previously used the LABEL's gate for the bar too — copied from Swift's *iOS*
+        # `compactStatusBar`, which shares one `if` for both. That is wrong for a desktop app, and it
+        # made the bar flicker: `is_detecting` goes False for the 0.5 s per-tap cooldown, and because
+        # this slot only runs on tapCountChanged, the re-arm that flips it back True never re-evaluates
+        # visibility — so the bar hid on a tap and STAYED hidden. Keying the bar on the tap count alone
+        # is both correct and self-refreshing: the count only changes via tapCountChanged (and Cancel /
+        # New Tap emit (0, N), which clears it).
         mt = TDS.measurement_type()
         is_detecting = self.fft_canvas.analyzer.is_detecting
         is_plate_or_brace = not mt.is_guitar
+        show_bar = captured > 0
         show = is_detecting and (is_plate_or_brace or captured > 0)
         # For plate mode the standalone tap count label is never shown.
         # When numberOfTaps > 1 the tap counter is embedded in the phase label
@@ -2123,12 +2173,20 @@ class MainWindow(QtWidgets.QMainWindow):
         # tap count is displayed at all — matching Swift behaviour.
         is_plate = not mt.is_brace and not mt.is_guitar
         embed_in_phase = show and is_plate and total > 1
-        if show:
-            pct = int(min(captured, total) * 100 / max(total, 1))  # clamp — mirrors Swift min(1.0, ...)
-            self._sb_progress.setValue(pct)
-            if not is_plate:
-                self._sb_tap_count.setText(f"{captured}/{total}")
-        self._sb_progress.setVisible(show)
+        if show_bar:
+            # Mirrors Swift `ProgressView(value: tap.tapProgress)` — render the ANALYZER's tap_progress
+            # rather than recomputing a percentage here. For material, current_tap_count is CUMULATIVE
+            # across phases and tap_progress divides it by total_plate_taps (n × 2, or × 3 with FLC);
+            # dividing by number_of_taps instead pinned the bar at 100% from the end of phase L onward,
+            # because min(captured, total) clamped every later phase. The model already clamps to 1.0.
+            self._sb_progress.setValue(int(round(self.fft_canvas.analyzer.tap_progress * 100)))
+        # Always refresh the TEXT; only the VISIBILITY is gated. Swift computes `phaseLabel` from the
+        # current values and merely wraps it in an `if` — so its text can never be stale. Writing the
+        # text only when `show` was true froze this label at its armed value ("0/3") for the whole
+        # sequence, because `show` samples is_detecting, which is False at every tap-completion.
+        if not is_plate:
+            self._sb_tap_count.setText(f"{captured}/{total}")
+        self._sb_progress.setVisible(show_bar)
         self._sb_tap_count.setVisible(show and not is_plate)
         # Refresh the phase label text to embed the updated tap count (when visible on plate).
         if self._sb_plate_step_lbl.isVisible() and embed_in_phase:

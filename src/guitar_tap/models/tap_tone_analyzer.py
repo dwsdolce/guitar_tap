@@ -101,6 +101,10 @@ class TapToneAnalyzer(
     tapDetectedSignal: QtCore.Signal = QtCore.Signal()
     # Live tap count update: (captured, total).
     tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)
+
+    # Emitted whenever is_detecting flips. Stands in for Swift's @Published isDetecting, which the
+    # status bar binds to directly; without it the view cannot re-evaluate on a detection-state change.
+    detectionStateChanged: QtCore.Signal = QtCore.Signal(bool)
     # Ring-out time measured by DecayTracker (seconds).
     ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
     # Input level 0-100 scale (dBFS + 100).
@@ -961,6 +965,14 @@ class TapToneAnalyzer(
                 if not self.mic.is_playing_file:
                     self.mic._level_crossing_consecutive_above = 0
                     self.mic._level_crossing_armed = False
+
+        # Swift's `isDetecting` is @Published, so every view bound to it re-evaluates on ANY
+        # change — that is how the status bar's tap-count label tracks it. Python has no such
+        # binding: without this signal the view could only sample is_detecting inside some other
+        # slot (set_tap_count, driven by tapCountChanged), which meant a change to is_detecting
+        # alone never refreshed anything — the label's visibility and text both went stale.
+        if value != old:
+            self.detectionStateChanged.emit(value)
 
     def start(
         self,
