@@ -1,3 +1,6 @@
+# @parity none — Qt QTimer.singleShot thread-delivery / slot mechanics, a PySide6-specific
+# unit test with no cross-platform contract (Swift uses DispatchQueue.main.asyncAfter, tested
+# via the behavioural suites). Justified platform-only.
 """
 WI-10 — QTimer.singleShot thread-delivery and slot-correctness tests.
 
