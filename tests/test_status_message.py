@@ -8,13 +8,12 @@ The three suites assert identical strings; only the per-platform driving differs
 
 SCOPE: the state-reachable strings only.  Two families are intentionally NOT pinned:
 
-1. Material phase-guidance — "Ready for L tap", "Rotate 90° and tap for C",
-   "Set up for FLC tap, then tap", redo "Ready for L/C/FLC tap — tap again" — is
-   SET but then overwritten by the per-phase warm-up restart
-   (analyzer_start_time = monotonic()), so the user never sees it.  That divergence
-   + its tests ride PLATFORM-PARITY-GAPS OUT-1 (Option B), lock-step with the fix.
-   A headless test would falsely green on these (warm-up never runs with no frames
-   fed), so they are excluded.
+1. Material phase-guidance — "Ready for L tap", "Rotate 90° and tap for C" — is now
+   VISIBLE (OUT-1 fixed by the status state-machine alignment: the warm-up is silent).
+   Pinned below by the "survives the warm-up" cases, which feed a warm-up frame and
+   assert the guidance persists (these FAILED before the alignment — the warm-up
+   overwrote them with "Initializing…"). The redo / FLC phase strings follow the same
+   mechanism and are covered by the material accept/redo transitions.
 
 2. Per-tap capture PROGRESS transients — "Tap n/N capturing...",
    "Tap n/N captured. Tap again...", "All taps captured. Processing...", the material
@@ -90,12 +89,12 @@ def _fake_spectrum(n: int = 256, peak_db: float = -30.0):
 
 
 def _settle(sut: TapToneAnalyzer, level: float = -80.0) -> None:
-    """Drive the detection loop's warm-up exit to set the *settled* resting prompt.
-    Arming does NOT set "Tap the guitar..." — that string is written by detect_tap's
-    warm-up exit, not the arm.  Force past warm-up and feed one below-threshold frame
-    (level stays under the -40 dB threshold so no tap fires), exactly what the running
-    app does once audio flows.
+    """Arm the analyzer to its settled resting prompt.  start_tap_sequence now sets the
+    guitar prompt (the warm-up is silent — it no longer writes status); the below-threshold
+    warm-up frame then confirms the prompt persists through the warm-up.  Mirrors the Swift
+    armAndSettle helper.  (level stays under the -40 dB threshold so no tap fires.)
     """
+    sut.start_tap_sequence()
     sut.analyzer_start_time = time.monotonic() - 2.0
     sut.just_exited_warmup = True
     sut.detect_tap(level, np.full(len(sut.freq), -80.0), sut.freq)
@@ -221,3 +220,26 @@ class TestStatusMessage:
         sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_FLC)
         sut.accept_current_phase()  # → _finalise_plate_with_flc
         assert sut.status_message == "Complete - check Results"  # ASCII hyphen
+
+    # ── OUT-1 fixed: material phase-guidance survives the (now silent) warm-up ──
+    # Each phase-arm restarts the warm-up; feed a warm-up frame and assert the guidance
+    # persists. These FAILED before the state-machine alignment (the warm-up overwrote
+    # them with "Initializing…" → "Tap the guitar…").
+    def test_material_arm_ready_for_l_tap_survives_warmup(self):
+        sut = _make_sut(1, MeasurementType.PLATE)
+        sut.start_tap_sequence()  # plate → "Ready for L tap"
+        assert sut.status_message == "Ready for L tap"
+        sut.analyzer_start_time = time.monotonic()  # warm-up active
+        sut.just_exited_warmup = False
+        sut.detect_tap(-80.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
+        assert sut.status_message == "Ready for L tap"
+
+    def test_accept_l_rotate90_survives_warmup(self):
+        sut = _make_sut(1, MeasurementType.PLATE)
+        sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_LONGITUDINAL)
+        sut.accept_current_phase()  # → "Rotate 90° and tap for C" + warm-up restart
+        assert sut.status_message == "Rotate 90° and tap for C"
+        sut.analyzer_start_time = time.monotonic()  # warm-up active
+        sut.just_exited_warmup = False
+        sut.detect_tap(-80.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
+        assert sut.status_message == "Rotate 90° and tap for C"

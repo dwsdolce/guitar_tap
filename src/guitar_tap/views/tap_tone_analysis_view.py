@@ -1955,6 +1955,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tap events
         canvas.tapDetected.connect(self._on_tap_detected)
         canvas.statusMessageChanged.connect(self._on_status_message_changed)
+        # Initial pull: the signal fires only on CHANGE, so seed the label from the analyzer's
+        # current status_message now (else the QLabel keeps its "Stopped" init string).
+        self._on_status_message_changed(canvas.analyzer.status_message)
         # Mirrors Swift @Published var isMeasurementComplete driving view updates reactively.
         canvas.measurementComplete.connect(self.set_measurement_complete)
         # Mirrors Swift SpectrumView body reading tap.loadedMeasurementName ?? "New" reactively.
@@ -2090,8 +2093,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_running(self, running: bool) -> None:
         if running:
             self._sb_detect_dot.setStyleSheet("color: green;")
-            self._sb_detect_msg.setText("Listening for tap…")
-            self._sb_detect_msg.setStyleSheet("")
+            # SYNC the status-bar message to the analyzer's CURRENT status_message.
+            # statusMessageChanged fires only on CHANGE, so if the arm prompt was set before
+            # the view connected the signal (app startup), the label would keep its init
+            # "Stopped".  Pull it here — single-sourced from analyzer.status_message like Swift
+            # Text(tap.statusMessage), NOT a hardcoded "Listening for tap…".
+            self._sb_detect_msg.setText(self.fft_canvas.analyzer.status_message)
+            self._apply_status_message_color()
         else:
             self._sb_detect_dot.setStyleSheet("color: orange;")
             self._sb_detect_msg.setText("Stopped")
@@ -3406,14 +3414,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._mip_body_lbl.setText(body)
 
         # ── Status bar detect message (left side) ───────────────────────
-        # Mirrors Swift: Text(tap.statusMessage).foregroundColor(tap.isDetecting ? .primary : .orange)
-        # During REVIEWING phases isDetecting is False, so the message is orange.
-        if status:
-            self._sb_detect_msg.setText(status)
-            in_review = state in (State.REVIEWING_L, State.REVIEWING_C, State.REVIEWING_FLC)
-            self._sb_detect_msg.setStyleSheet(
-                "color: orange;" if in_review else ""
-            )
+        # Single-sourced from analyzer.status_message via _on_status_message_changed +
+        # _apply_status_message_color (mirrors Swift Text(tap.statusMessage) with the
+        # isDetecting colour).  This method no longer writes the message — passing the phase
+        # value here (e.g. "Capturing FLC") would clobber the analyzer's "Set up for FLC tap…".
+        # (`status` param kept for call-site compatibility.)
 
     def _on_plate_analysis_complete(self, f_long: float, f_cross: float, f_flc: float) -> None:
         """Auto-compute material properties and display in results panel."""

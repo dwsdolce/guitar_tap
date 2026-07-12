@@ -126,10 +126,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         if self.analyzer_start_time is not None:
             elapsed = now - self.analyzer_start_time
             if elapsed < self.warmup_period:
-                remaining = self.warmup_period - elapsed
+                # SILENT warm-up: suppress detection but never write status_message, so the
+                # prompt set at the transition (arm/accept/redo/resume) survives — mirrors the
+                # web's counter-based warm-up. (Was: overwrote status with "Initializing… (Xs)".)
                 self.tap_detected = False
-                # Mirrors Swift: statusMessage = "Initializing... (Xs)"
-                self._set_status_message(f"Initializing... ({remaining:.1f}s)")
                 self.just_exited_warmup = True
                 return
 
@@ -154,13 +154,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     f"risingThresh={effective_rising:.2f} "
                     f"isAboveThreshold={self.is_above_threshold}"
                 )
+            # (The noise-floor re-anchor above stays; only the status write is gone — silent warm-up.)
             self.tap_detected = False
-            # Mirrors Swift: statusMessage = "Tap the guitar..." / "Tap N times..."
-            self._set_status_message(
-                "Tap the guitar..."
-                if self.number_of_taps == 1
-                else f"Tap the guitar {self.number_of_taps} times..."
-            )
             return
 
         # Cooldown check (mirrors Swift tapCooldown).
@@ -180,14 +175,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 return
             else:
                 self._cooldown_logged = False
-
-        # Update status when ready and waiting for the first tap (mirrors Swift).
-        if self.current_tap_count == 0 and "Initializing" in self.status_message:
-            self._set_status_message(
-                "Tap the guitar..."
-                if self.number_of_taps == 1
-                else f"Tap the guitar {self.number_of_taps} times..."
-            )
 
         # Update detection-level indicator (mirrors Swift tapDetectionLevel).
         self.tap_detection_level = effective_rising
@@ -219,9 +206,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                         f"SIGNAL SETTLED | tap {self.current_tap_count}/{self.number_of_taps}"
                         f" — signal dropped below falling threshold"
                     )
-                    self._set_status_message(
-                        f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
-                    )
+                    self._set_status_message(self._guitar_loop_status(capturing=False))
                 TAP_DEBUG("detectTap",
                     f"FALLING EDGE | peakMag={peak_magnitude:.2f} "
                     f"fallingThresh={effective_falling:.2f} — signal settled, ready for next tap"
@@ -330,14 +315,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.start_decay_tracking()
 
         # Provisional status update — final status is emitted after gated capture
-        # completes and the captured_taps list grows.
-        provisional_count = len(self.captured_taps) + 1
-        if provisional_count < self.number_of_taps:
-            self._set_status_message(
-                f"Tap {provisional_count}/{self.number_of_taps} capturing..."
-            )
-        else:
-            self._set_status_message("All taps captured. Processing...")
+        # completes and the captured_taps list grows.  (current_tap_count == len(captured_taps)
+        # here, so _guitar_loop_status's provisional +1 == the old len(captured_taps) + 1.)
+        self._set_status_message(self._guitar_loop_status(capturing=True))
 
         # capture_timer_active flag — leave True so analyze_magnitudes keeps
         # rendering the live spectrum during the ring-out window.
@@ -391,9 +371,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self.is_above_threshold = False
             self.is_detecting = True
             self.tap_detected = False
-            self._set_status_message(
-                f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
-            )
+            self._set_status_message(self._guitar_loop_status(capturing=False))
         else:
             self.is_above_threshold = True
             self.is_detecting = True

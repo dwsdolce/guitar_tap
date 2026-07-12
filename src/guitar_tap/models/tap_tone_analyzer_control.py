@@ -43,6 +43,28 @@ class TapToneAnalyzerControlMixin:
             self.status_message = message
         self.statusMessageChanged.emit(self.status_message)
 
+    # ---- Status derivation (mirrors the web state->string machine) ---- #
+
+    def _tap_prompt(self) -> str:
+        """The guitar resting prompt (post-warmup steady state) — the single source for the
+        'Tap the guitar…' / 'Tap the guitar N times…' strings.  Mirrors Swift tapPrompt()."""
+        return ("Tap the guitar..." if self.number_of_taps == 1
+                else f"Tap the guitar {self.number_of_taps} times...")
+
+    def _guitar_loop_status(self, capturing: bool) -> str:
+        """Guitar detection-loop status derived from state — the analyzer's equivalent of the
+        web setGuitarStatus(engineState).  capturing=False -> resting prompt (count 0) or the
+        between-taps '…captured. Tap again…'; capturing=True -> 'Tap n/N capturing…' or, on the
+        final tap, 'All taps captured. Processing…'.  (guitar mode keeps current_tap_count ==
+        len(captured_taps), so the provisional +1 matches the old len(captured_taps) + 1.)
+        Mirrors Swift guitarLoopStatus(capturing:)."""
+        if capturing:
+            prov = min(self.current_tap_count + 1, self.number_of_taps)
+            return (f"Tap {prov}/{self.number_of_taps} capturing..." if prov < self.number_of_taps
+                    else "All taps captured. Processing...")
+        return (self._tap_prompt() if self.current_tap_count == 0
+                else f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again...")
+
     def _set_clipping(self, clipping: bool) -> None:
         """Update the input-clipping state and re-render the status message.
 
@@ -382,10 +404,7 @@ class TapToneAnalyzerControlMixin:
         # Mirrors Swift: isDetecting / statusMessage restore block.
         if was_detecting:
             self.is_detecting = True
-            self._set_status_message(
-                "Tap the guitar..." if self.number_of_taps == 1
-                else f"Tap the guitar {self.number_of_taps} times..."
-            )
+            self._set_status_message(self._tap_prompt())
         else:
             self._set_status_message("Ready")
 
@@ -467,11 +486,7 @@ class TapToneAnalyzerControlMixin:
             else:
                 self._set_status_message("Ready for C tap")
         elif self.current_tap_count == 0:
-            self._set_status_message(
-                "Tap the guitar..."
-                if self.number_of_taps == 1
-                else f"Tap the guitar {self.number_of_taps} times..."
-            )
+            self._set_status_message(self._tap_prompt())
         else:
             self._set_status_message(
                 f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
@@ -698,11 +713,7 @@ class TapToneAnalyzerControlMixin:
             else:
                 self._set_status_message("Ready for L tap")
         else:
-            self._set_status_message(
-                "Tap the guitar..."
-                if self.number_of_taps == 1
-                else f"Tap the guitar {self.number_of_taps} times..."
-            )
+            self._set_status_message(self._tap_prompt())
 
         # Clear previous results so the chart shows a clean slate while waiting.
         self.current_peaks = []
@@ -763,10 +774,7 @@ class TapToneAnalyzerControlMixin:
         # Mirrors Swift numberOfTaps.didSet: update status message when waiting
         # for the first tap (isDetecting=True, currentTapCount=0).
         if self.is_detecting and len(self.captured_taps) == 0:
-            self._set_status_message(
-                "Tap the guitar..." if self.number_of_taps == 1
-                else f"Tap the guitar {self.number_of_taps} times..."
-            )
+            self._set_status_message(self._tap_prompt())
 
     # ------------------------------------------------------------------ #
     # Cancel

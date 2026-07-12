@@ -838,9 +838,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.tapCountChanged.emit(self.current_tap_count, self.number_of_taps)
 
         if self.current_tap_count < self.number_of_taps:
-            self._set_status_message(
-                f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
-            )
+            self._set_status_message(self._guitar_loop_status(capturing=False))
             cooldown_ms = int(self.tap_cooldown * 1000)
             self._main_async_after(cooldown_ms, self._do_reenable_guitar)
         else:
