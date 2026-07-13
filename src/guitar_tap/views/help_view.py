@@ -372,7 +372,14 @@ def _build_help_html() -> str:
         "detection fires automatically, peaks are found, and results appear in the panel. "
         "The chart title shows the filename while the file plays. After playback the "
         "microphone restarts automatically. Access via File menu &rarr; "
-        "Play Audio File&hellip; (Ctrl+Alt+O).",
+        "Play Audio File&hellip; (Ctrl+Alt+O).<br>"
+        "&#9888;&#65039; <b>Plate and brace files need half a second of room tone before the "
+        "first tap.</b> Those modes measure the room&rsquo;s noise floor from the audio ahead of "
+        "the tap and detect relative to it, so the file must actually contain that lead-in. "
+        "Recordings made by Guitar Tap always do. A file recorded elsewhere may not: if its first "
+        "tap falls inside that opening half-second the tap is treated as part of the settling "
+        "period, is not detected, and nothing is captured &mdash; re-record with a moment of "
+        "silence in front of the first tap. Guitar files are unaffected.",
         ["fa5.play-circle"]
     ))
     parts.append(_row(
