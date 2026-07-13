@@ -693,8 +693,26 @@ class TapToneAnalyzer(
             cal = _mc.MicrophoneCalibration.from_path(calibration_path)
             self.set_temporary_calibration(cal)
 
-        # 2. Start the tap sequence with warmup skipped (deterministic file audio).
-        self.start_tap_sequence(skip_warmup=True, initial_phase=plate_tap_phase)
+        # 2. Start the tap sequence.  The MEASUREMENT TYPE decides whether to skip the warm-up.
+        #
+        #    Guitar: SKIP it.  The guitar fixtures are externally recorded files (not session dumps)
+        #    with only 0.15-0.26 s before the tap, so a 0.5 s warm-up would suppress the transient.
+        #    Guitar detects against the ABSOLUTE threshold and never reads the noise floor.
+        #
+        #    Material (plate/brace): RUN it.  Material is the ONLY mode that uses the relative
+        #    noise-floor detector, and the warm-up is what establishes that floor (it feeds the EMA and
+        #    fires the re-anchor at exit).  Skipping it also pinned noise_floor_estimate = -100, which
+        #    makes `rising` compute to exactly tap_detection_threshold -- i.e. it silently DEGRADED
+        #    relative detection to absolute, so playback never exercised the path live users take.
+        #    A saved session WAV always contains its warm-up by construction, and every material fixture
+        #    carries 2.3-2.9 s of lead-in.
+        #
+        #    Playback must run the LIVE detection path -- otherwise it cannot tell us whether live and
+        #    playback agree, which is the whole point of the file-playback regression.
+        #    See GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md.
+        from models.measurement_type import MeasurementType as _MTp
+        _is_material = measurement_type in (_MTp.PLATE, _MTp.BRACE)
+        self.start_tap_sequence(skip_warmup=not _is_material, initial_phase=plate_tap_phase)
 
         # 3. Read the audio file.
         data, file_rate = _sf.read(path, dtype="float32", always_2d=True)

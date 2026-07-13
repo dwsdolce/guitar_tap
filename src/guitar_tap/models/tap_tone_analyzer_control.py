@@ -642,11 +642,18 @@ class TapToneAnalyzerControlMixin:
             )
 
         # Seed the noise-floor estimate so the first relative-threshold
-        # calculation has a reasonable baseline.
-        # For file playback (skip_warmup), use -100 dB (silence) so the
-        # file's audio — even a quiet ring-out — will cross the rising
-        # threshold.  Mic ambient noise must not influence file playback.
-        # For live mic, seed from the current ambient level.
+        # calculation has a reasonable baseline.  Seed from the current input level; the warm-up's EMA
+        # then converges it, and the warm-up-exit re-anchor snaps it to the real floor.
+        #
+        # The -100 case now only arises when the warm-up is skipped, which -- since callers key
+        # skip_warmup on the MEASUREMENT TYPE -- means GUITAR, where the estimate is never read (guitar
+        # uses the absolute threshold).  It must not be reached for material: -100 makes
+        #     headroom = max(threshold - (-100), 10) = threshold + 100
+        #     rising   = -100 + headroom             = threshold
+        # i.e. the relative rule collapses onto the absolute one, silently disabling the very model it
+        # is meant to implement.  That is what used to happen on EVERY file playback, which is why the
+        # relative detector was never exercised by any regression test on any platform.
+        # See GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md.
         # Mirrors Swift TapToneAnalyzer+Control.swift noiseFloorEstimate.
         self.noise_floor_estimate = -100.0 if skip_warmup else self._current_input_level_db
 

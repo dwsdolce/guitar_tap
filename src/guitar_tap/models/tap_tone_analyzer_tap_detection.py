@@ -64,18 +64,26 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     # detect_tap — mirrors Swift detectTap(peakMagnitude:magnitudes:frequencies:)
     # ------------------------------------------------------------------ #
 
-    def detect_tap(self, peak_magnitude: float, mag_y_db, freq) -> None:
+    def detect_tap(self, level: float, mag_y_db, freq) -> None:
         """Evaluate the current signal level and fire a tap on a rising edge.
 
-        Mirrors Swift TapToneAnalyzer.detectTap(peakMagnitude:magnitudes:frequencies:).
+        Mirrors Swift TapToneAnalyzer.detectTap(level:magnitudes:frequencies:).
 
         Called from _on_rms_level_changed() on the main thread for all modes,
         mirroring Swift's Combine subscription to fftAnalyzer.$inputLevelDB
         (~43 Hz per-chunk RMS).
 
         Args:
-            peak_magnitude: Current RMS input level in dBFS
+            level: Current RMS input level in dBFS
                             (fftAnalyzer.inputLevelDB, ~43 Hz).
+
+                            This was previously named ``peak_magnitude``, which was wrong and actively
+                            misleading: it is the broadband RMS chunk level, never an FFT peak-bin
+                            magnitude.  (A genuine FFT peak does exist -- see ``on_fft_frame`` /
+                            ``analyze_magnitudes`` -- but it drives peak ANALYSIS, not tap detection.)
+                            The old name cost real time during the OUT-4 investigation: it looked as
+                            though Swift and the web were detecting on entirely different signals.
+                            They are not -- all three platforms detect on the per-chunk RMS level.
             mag_y_db:       Current FFT magnitude spectrum (ndarray, dBFS).
             freq:           Frequency axis matching mag_y_db, in Hz.
         """
@@ -92,7 +100,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # accurate noise floor since no taps have occurred yet.
         if use_relative and not self.is_above_threshold:
             self.noise_floor_estimate = (
-                self.noise_floor_alpha * peak_magnitude
+                self.noise_floor_alpha * level
                 + (1.0 - self.noise_floor_alpha) * self.noise_floor_estimate
             )
 
@@ -106,7 +114,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             effective_falling = self.noise_floor_estimate + max(headroom - self.hysteresis_margin, 4.0)
             if _is_file:
                 TAP_DEBUG("detectTap",
-                    f"FILE_CHUNK | peakMag={peak_magnitude:.2f} "
+                    f"FILE_CHUNK | peakMag={level:.2f} "
                     f"noiseFloor={self.noise_floor_estimate:.2f} "
                     f"headroom={headroom:.1f} "
                     f"risingThresh={effective_rising:.2f} "
@@ -117,7 +125,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             effective_falling = self.tap_detection_threshold - self.hysteresis_margin
             if _is_file:
                 TAP_DEBUG("detectTap",
-                    f"FILE_CHUNK | peakMag={peak_magnitude:.2f} "
+                    f"FILE_CHUNK | peakMag={level:.2f} "
                     f"absThresh={effective_rising:.2f} "
                     f"isAbove={self.is_above_threshold}"
                 )
@@ -137,20 +145,20 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         if self.just_exited_warmup:
             self.just_exited_warmup = False
             if use_relative:
-                self.noise_floor_estimate = peak_magnitude
+                self.noise_floor_estimate = level
                 h = max(self.tap_detection_threshold - self.noise_floor_estimate, 10.0)
                 rising_anchored = self.noise_floor_estimate + h
-                self.is_above_threshold = peak_magnitude > rising_anchored
+                self.is_above_threshold = level > rising_anchored
                 TAP_DEBUG("detectTap",
-                    f"WARMUP EXIT (relative) | peakMag={peak_magnitude:.2f} "
+                    f"WARMUP EXIT (relative) | peakMag={level:.2f} "
                     f"noiseFloorAnchored={self.noise_floor_estimate:.2f} "
                     f"risingAnchored={rising_anchored:.2f} "
                     f"isAboveThreshold={self.is_above_threshold}"
                 )
             else:
-                self.is_above_threshold = peak_magnitude > effective_rising
+                self.is_above_threshold = level > effective_rising
                 TAP_DEBUG("detectTap",
-                    f"WARMUP EXIT (absolute) | peakMag={peak_magnitude:.2f} "
+                    f"WARMUP EXIT (absolute) | peakMag={level:.2f} "
                     f"risingThresh={effective_rising:.2f} "
                     f"isAboveThreshold={self.is_above_threshold}"
                 )
@@ -168,7 +176,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 if not getattr(self, "_cooldown_logged", False):
                     TAP_DEBUG("detectTap",
                         f"COOLDOWN active | remaining={cooldown_remaining:.3f}s "
-                        f"peakMag={peak_magnitude:.2f}"
+                        f"peakMag={level:.2f}"
                     )
                     self._cooldown_logged = True
                 self.tap_detected = False
@@ -196,7 +204,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         if self.is_above_threshold:
             # Currently latched above — apply falling-threshold hysteresis.
-            if peak_magnitude <= effective_falling:
+            if level <= effective_falling:
                 # Falling edge.
                 if (
                     self.current_tap_count > 0
@@ -208,7 +216,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     )
                     self._set_status_message(self._guitar_loop_status(capturing=False))
                 TAP_DEBUG("detectTap",
-                    f"FALLING EDGE | peakMag={peak_magnitude:.2f} "
+                    f"FALLING EDGE | peakMag={level:.2f} "
                     f"fallingThresh={effective_falling:.2f} — signal settled, ready for next tap"
                 )
                 self.is_above_threshold = False
@@ -217,12 +225,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         else:
             # Currently latched below — apply rising-threshold gate with
             # N-chunk confirmation.
-            if peak_magnitude > effective_rising:
+            if level > effective_rising:
                 self.detect_tap_consecutive_above += 1
                 if self.detect_tap_consecutive_above >= confirm_target:
                     # Confirmed rising edge — fire the tap-detection event.
                     TAP_DEBUG("detectTap",
-                        f"RISING EDGE FIRED | peakMag={peak_magnitude:.2f} "
+                        f"RISING EDGE FIRED | peakMag={level:.2f} "
                         f"risingThresh={effective_rising:.2f} "
                         f"tapCount={self.current_tap_count + 1}/{self.number_of_taps} "
                         f"confirmedBy={confirm_target}"
@@ -238,17 +246,17 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     # of recentPeakLevelDB: at tap-fire time the peak-hold
                     # captures the actual tap transient even though FFT
                     # detection lags by up to one FFT frame.  Fall back to
-                    # peak_magnitude when mic is None (tests, no audio hardware).
+                    # level when mic is None (tests, no audio hardware).
                     if self.mic is not None and hasattr(self.mic, "recent_peak_level_db"):
                         self.tap_peak_level = self.mic.recent_peak_level_db
                     else:
-                        self.tap_peak_level = peak_magnitude
+                        self.tap_peak_level = level
                     self._handle_tap_detection(mag_y_db, freq)
                 else:
                     # Pending — waiting for more above-threshold chunks.
                     if is_file_playback and self.detect_tap_consecutive_above == 1:
                         TAP_DEBUG("detectTap",
-                            f"RISING EDGE PENDING | peakMag={peak_magnitude:.2f} "
+                            f"RISING EDGE PENDING | peakMag={level:.2f} "
                             f"risingThresh={effective_rising:.2f} "
                             f"need={confirm_target - 1} more"
                         )
@@ -257,7 +265,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 # Below rising threshold.
                 if self.detect_tap_consecutive_above > 0 and is_file_playback:
                     TAP_DEBUG("detectTap",
-                        f"RISING EDGE CANCELED | peakMag={peak_magnitude:.2f} "
+                        f"RISING EDGE CANCELED | peakMag={level:.2f} "
                         f"(signal fell below after "
                         f"{self.detect_tap_consecutive_above}/{confirm_target} chunks)"
                     )
@@ -673,8 +681,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             )
         if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
             return
-        peak_mag = self._current_input_level_db
-        self.detect_tap(peak_mag, self._current_mag_y_db, self.freq)
+        level = self._current_input_level_db
+        self.detect_tap(level, self._current_mag_y_db, self.freq)
 
     # ------------------------------------------------------------------ #
     # reset_tap_detector — mirrors Swift analyzerStartTime = Date() reset

@@ -2913,8 +2913,18 @@ class MainWindow(QtWidgets.QMainWindow):
                         analyzer.mic.set_calibration(None)
 
             # Reset analyzer state and arm the level-crossing detector FIRST.
-            # Mirrors Swift: tapToneAnalyzer.startTapSequence(skipWarmup: true)
-            analyzer.start_tap_sequence(skip_warmup=True)
+            #
+            # skip_warmup is decided by the MEASUREMENT TYPE, not by "is this a file".
+            # Guitar: skip it (an externally recorded file may put the tap inside the first 0.5 s, and
+            # guitar uses the absolute threshold, so the noise floor is never read).
+            # Material (plate/brace): RUN the warm-up -- it is the only mode that uses the relative
+            # noise-floor detector, and the warm-up is what establishes that floor.  Skipping it pinned
+            # noise_floor_estimate = -100, collapsing `rising` onto tap_detection_threshold and silently
+            # degrading relative detection to absolute -- so replaying a session did NOT reproduce what
+            # the live session did.  A saved session WAV always contains its warm-up by construction.
+            # Mirrors Swift TapToneAnalysisView+Actions.  See GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md.
+            _is_material_playback = not TDS.measurement_type().is_guitar
+            analyzer.start_tap_sequence(skip_warmup=not _is_material_playback)
 
             # Stop the mic stream, drain the processing queue, clear input
             # buffer, then set up the file source.  The drain barrier ensures
