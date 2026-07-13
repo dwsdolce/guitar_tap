@@ -475,7 +475,14 @@ class TapToneAnalyzer(
         self.just_exited_warmup: bool = False
         # Wall-clock time when start()/start_tap_sequence() was called; used to enforce
         # the warm-up period. Mirrors analyzerStartTime.
-        self.analyzer_start_time: "float | None" = None
+        # Value of the engine's AUDIO clock (mic.audio_elapsed) when a sequence was last armed.
+        # Used to enforce the warm-up. Deliberately the AUDIO clock, not the wall clock: the warm-up
+        # must cover the first `warmup_period` of AUDIO. Live the two coincide; in FILE PLAYBACK they
+        # do not (setup happens between arming and the first chunk), and a wall-clock warm-up can
+        # expire before any audio arrives — the warm-up never runs, the noise-floor re-anchor never
+        # fires, and the EMA latches at its seed, silently disabling relative detection.
+        # See GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md.
+        self.warmup_start_audio_time: "float | None" = None
         # Wall-clock time of the most recent detected tap. Mirrors lastTapTime.
         self.last_tap_time: "float | None" = None
         # Exponential moving average of the input level, used as the ambient noise-floor
@@ -900,7 +907,7 @@ class TapToneAnalyzer(
     # _on_rms_level_changed_direct — direct callback version of _on_rms_level_changed
     # ------------------------------------------------------------------ #
 
-    def _on_rms_level_changed_direct(self, level_db: float) -> None:
+    def _on_rms_level_changed_direct(self, level_db: float, audio_time: float) -> None:
         """Direct-callback RMS handler — called by process_raw_samples.
 
         Same logic as ``_on_rms_level_changed(rms_amp)`` but takes
@@ -910,7 +917,7 @@ class TapToneAnalyzer(
         Mirrors Swift's Combine sink on fftAnalyzer.$inputLevelDB.
         """
         rms_amp = int(level_db + 100.0)
-        self._on_rms_level_changed(rms_amp)
+        self._on_rms_level_changed(rms_amp, audio_time)
 
     # _initialize_pre_roll was removed — pre-filling the pre-roll with
     # zeros diluted the gated capture signal by ~50%, suppressing spectral

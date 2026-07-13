@@ -147,7 +147,7 @@ class _FftProcessingThread(QtCore.QThread):
     )
 
     # Per-chunk RMS level (0-100 scale) emitted every audio chunk.
-    rmsLevelChanged: QtCore.Signal = QtCore.Signal(int)
+    rmsLevelChanged: QtCore.Signal = QtCore.Signal(int, float)  # (rms_amp, audio_time)
 
     # Edge-triggered clipping signal.
     clippingChanged: QtCore.Signal = QtCore.Signal(bool)
@@ -481,7 +481,12 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # These are called directly by process_raw_samples — no Qt signal dispatch.
         # For file playback this is the only delivery path (no event loop).
         # For live mic the Qt signals are emitted in parallel for UI updates.
-        self.rms_level_handler: "Callable[[float], None] | None" = None
+        # (level_db, audio_time) — audio_time is audio_elapsed AT THE MOMENT THIS CHUNK WAS
+        # PROCESSED. It travels WITH the sample rather than being read later by the consumer:
+        # the handler may be delivered across a thread hop, and the audio side races ahead, so
+        # reading audio_elapsed at the consumer would give the CURRENT audio time, not this
+        # chunk's — which silently skips the detection warm-up. Mirrors Swift rmsLevelHandler.
+        self.rms_level_handler: "Callable[[float, float], None] | None" = None
         self.fft_frame_handler: "Callable[..., None] | None" = None
 
         # MARK: - Processing State (formerly on _FftProcessingThread)
@@ -526,6 +531,11 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # Diagnostic counters.
         self._fft_frame_counter: int = 0
         self._samples_consumed: int = 0
+
+        # Seconds of AUDIO processed — the audio clock. The detection warm-up is measured against
+        # this, not the wall clock: the warm-up must cover the first 0.5 s of AUDIO, however long
+        # the setup before the first chunk took. Mirrors Swift RealtimeFFTAnalyzer.audio_elapsed.
+        self.audio_elapsed: float = 0.0
         self._diag_total_samples: int = 0
 
         # Timing for FFT frame rate.
@@ -641,6 +651,12 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         if handler is not None:
             handler(chunk_f32, float(self.rate))
 
+        # Advance the AUDIO clock — seconds of audio processed, not wall-clock seconds. The detection
+        # warm-up is measured against this so it always covers the first 0.5 s of AUDIO, however long
+        # the setup before the first chunk took. Mirrors Swift processRawSamples.
+        if self.rate > 0:
+            self.audio_elapsed += len(chunk_f32) / float(self.rate)
+
         # Per-chunk RMS level — mirrors Swift vDSP_rmsqv → levelDB calculation.
         rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
         level_db = 20.0 * np.log10(max(rms, 1e-10))
@@ -718,10 +734,10 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # Mirrors Swift rmsLevelHandler?(levelDB)
         rms_handler = self.rms_level_handler
         if rms_handler is not None:
-            rms_handler(level_db)
+            rms_handler(level_db, self.audio_elapsed)
 
         # Qt signal (for UI updates via event loop — live mic path).
-        self.proc_thread.rmsLevelChanged.emit(rms_amp)
+        self.proc_thread.rmsLevelChanged.emit(rms_amp, self.audio_elapsed)
 
         # Accumulate samples — mirrors Swift bufferAccessQueue.sync { inputBuffer.append }.
         # In Swift this comes after the level-crossing and rmsLevelHandler blocks.

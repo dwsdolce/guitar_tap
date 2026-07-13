@@ -329,7 +329,7 @@ class TapToneAnalyzerControlMixin:
 
         # Reset the warmup timer so the new engine session starts cleanly.
         # Mirrors Swift: analyzerStartTime = Date().
-        self.analyzer_start_time = _time.monotonic()
+        self.warmup_start_audio_time = self._audio_now()
 
         # Pre-set is_above_threshold = True so the first FFT frame does not fire a
         # false rising edge.  The actual value is corrected after the settle delay.
@@ -465,7 +465,7 @@ class TapToneAnalyzerControlMixin:
 
         # Reset warm-up timer to prevent an immediate false trigger on the first frame.
         # Mirrors Swift: analyzerStartTime = Date(); isAboveThreshold = false
-        self.analyzer_start_time = _time.monotonic()
+        self.warmup_start_audio_time = self._audio_now()
         self.is_above_threshold = False
 
         # Resume accumulating audio after pause — mirrors Swift resumeTapDetection.
@@ -697,9 +697,10 @@ class TapToneAnalyzerControlMixin:
         # arrives.  The audio source is deterministic, so no startup-noise suppression
         # is needed, and the tap transient may appear within the first 0.5 s of the file.
         if skip_warmup:
-            self.analyzer_start_time = _time.monotonic() - (self.warmup_period + 0.1)
+            # AUDIO clock — backdate so the window has already elapsed at the first chunk.
+            self.warmup_start_audio_time = self._audio_now() - (self.warmup_period + 0.1)
         else:
-            self.analyzer_start_time = _time.monotonic()
+            self.warmup_start_audio_time = self._audio_now()
 
         self.is_detecting = True
 
@@ -839,7 +840,7 @@ class TapToneAnalyzerControlMixin:
             level = self._current_input_level_db
             falling = self.tap_detection_threshold - self.hysteresis_margin
             self.is_above_threshold = level > falling
-            self.analyzer_start_time = _time_mod.monotonic()
+            self.warmup_start_audio_time = self._audio_now()
             self.is_detecting = True
             self.tap_detected = False
             self._set_status_message("Rotate 90° and tap for C")
@@ -970,7 +971,7 @@ class TapToneAnalyzerControlMixin:
         level = self._current_input_level_db
         falling = self.tap_detection_threshold - self.hysteresis_margin
         self.is_above_threshold = level > falling
-        self.analyzer_start_time = _time_mod.monotonic()
+        self.warmup_start_audio_time = self._audio_now()
         self.is_detecting = True
         self.tap_detected = False
 

@@ -71,7 +71,7 @@ def _make_sut(number_of_taps: int = 1,
     sut.number_of_taps = number_of_taps
     sut.tap_detection_threshold = -40.0
     sut.hysteresis_margin = 5.0
-    sut.analyzer_start_time = time.monotonic() - 2.0  # past the warm-up window
+    sut.warmup_start_audio_time = -2.0  # past the warm-up window
     sut.just_exited_warmup = False
     TapDisplaySettings.set_measurement_type(measurement_type)
     sut.is_detecting = True
@@ -95,9 +95,9 @@ def _settle(sut: TapToneAnalyzer, level: float = -80.0) -> None:
     armAndSettle helper.  (level stays under the -40 dB threshold so no tap fires.)
     """
     sut.start_tap_sequence()
-    sut.analyzer_start_time = time.monotonic() - 2.0
+    sut.warmup_start_audio_time = -2.0
     sut.just_exited_warmup = True
-    sut.detect_tap(level, np.full(len(sut.freq), -80.0), sut.freq)
+    sut.detect_tap(level, 0.0, np.full(len(sut.freq), -80.0), sut.freq)
 
 
 def _peak(freq: float, mag: float = -40.0) -> ResonantPeak:
@@ -229,9 +229,9 @@ class TestStatusMessage:
         sut = _make_sut(1, MeasurementType.PLATE)
         sut.start_tap_sequence()  # plate → "Ready for L tap"
         assert sut.status_message == "Ready for L tap"
-        sut.analyzer_start_time = time.monotonic()  # warm-up active
+        sut.warmup_start_audio_time = 0.0  # warm-up active
         sut.just_exited_warmup = False
-        sut.detect_tap(-80.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
+        sut.detect_tap(-80.0, 0.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
         assert sut.status_message == "Ready for L tap"
 
     def test_accept_l_rotate90_survives_warmup(self):
@@ -239,7 +239,7 @@ class TestStatusMessage:
         sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_LONGITUDINAL)
         sut.accept_current_phase()  # → "Rotate 90° and tap for C" + warm-up restart
         assert sut.status_message == "Rotate 90° and tap for C"
-        sut.analyzer_start_time = time.monotonic()  # warm-up active
+        sut.warmup_start_audio_time = 0.0  # warm-up active
         sut.just_exited_warmup = False
-        sut.detect_tap(-80.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
+        sut.detect_tap(-80.0, 0.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
         assert sut.status_message == "Rotate 90° and tap for C"

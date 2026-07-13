@@ -17,8 +17,9 @@ Plate/Brace mode — EMA-relative threshold on the RMS input level.
     risingThreshold  = noiseFloor + headroom
     fallingThreshold = noiseFloor + max(headroom − hysteresisMargin, 4 dB)
 
-Warmup and cooldown are measured in real time (seconds) so that
-behaviour is independent of the audio block size or call rate.
+Warmup is measured on the AUDIO clock (seconds of audio processed), not the wall clock, so it always
+covers the first `warmup_period` of AUDIO however long the setup before the first chunk took, and
+behaves identically whether playback is real-time paced or not.  Cooldown remains on the wall clock.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     Stored properties initialised in TapToneAnalyzer.__init__:
         self.is_above_threshold: bool
         self.just_exited_warmup: bool
-        self.analyzer_start_time: float | None   (monotonic clock, not Date)
+        self.warmup_start_audio_time: float | None   (AUDIO clock, not wall clock)
         self.last_tap_time: float | None          (monotonic clock)
         self.noise_floor_estimate: float          (dBFS)
         self.noise_floor_alpha: float             (EMA coefficient = 0.05)
@@ -61,10 +62,19 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     """
 
     # ------------------------------------------------------------------ #
-    # detect_tap — mirrors Swift detectTap(peakMagnitude:magnitudes:frequencies:)
+    # detect_tap — mirrors Swift detectTap(level:audioTime:magnitudes:frequencies:)
     # ------------------------------------------------------------------ #
 
-    def detect_tap(self, level: float, mag_y_db, freq) -> None:
+    def _audio_now(self) -> float:
+        """Current value of the engine's AUDIO clock (seconds of audio processed).
+
+        0.0 when there is no engine (unit tests that drive detect_tap directly).  Mirrors Swift
+        `fftAnalyzer.audioElapsed`.
+        """
+        mic = getattr(self, "mic", None)
+        return float(getattr(mic, "audio_elapsed", 0.0)) if mic is not None else 0.0
+
+    def detect_tap(self, level: float, audio_time: float, mag_y_db, freq) -> None:
         """Evaluate the current signal level and fire a tap on a rising edge.
 
         Mirrors Swift TapToneAnalyzer.detectTap(level:magnitudes:frequencies:).
@@ -84,6 +94,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                             The old name cost real time during the OUT-4 investigation: it looked as
                             though Swift and the web were detecting on entirely different signals.
                             They are not -- all three platforms detect on the per-chunk RMS level.
+            audio_time:     The AUDIO clock value for THIS chunk (mic.audio_elapsed at the moment
+                            the chunk was processed).  It travels WITH the sample rather than being
+                            read here: the handler can be delivered across a thread hop and the audio
+                            side races ahead, so reading mic.audio_elapsed here would give a LATER
+                            time than this chunk's — which silently skips the warm-up.  Mirrors Swift
+                            detectTap(audioTime:).
             mag_y_db:       Current FFT magnitude spectrum (ndarray, dBFS).
             freq:           Frequency axis matching mag_y_db, in Hz.
         """
@@ -131,8 +147,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 )
 
         # Warmup period — suppress detection (mirrors Swift warmupPeriod check).
-        if self.analyzer_start_time is not None:
-            elapsed = now - self.analyzer_start_time
+        # Measured on the AUDIO clock, against THIS chunk's timestamp (see `audio_time`).
+        if self.warmup_start_audio_time is not None:
+            elapsed = audio_time - self.warmup_start_audio_time
             if elapsed < self.warmup_period:
                 # SILENT warm-up: suppress detection but never write status_message, so the
                 # prompt set at the transition (arm/accept/redo/resume) survives — mirrors the
@@ -468,7 +485,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         an accurate state.
 
         Mirrors Swift reEnableDetectionForNextPlateTap().
-        Does NOT reset analyzer_start_time — doing so would restart warmup and
+        Does NOT reset warmup_start_audio_time — doing so would restart warmup and
         destabilise is_above_threshold via the just_exited_warmup sync path.
         """
         TAP_DEBUG(
@@ -635,7 +652,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     # ------------------------------------------------------------------ #
 
     @Slot(int)
-    def _on_rms_level_changed(self, rms_amp: int) -> None:
+    def _on_rms_level_changed(self, rms_amp: int, audio_time: float) -> None:
         """Tap-detection driver for ALL modes at ~43 Hz from per-chunk RMS.
 
         Mirrors Swift's Combine sink on fftAnalyzer.$inputLevelDB which fires
@@ -648,7 +665,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         an fft_size-aligned spectrum starting just before the tap onset.
 
         Args:
-            rms_amp: Per-chunk RMS level on 0-100 scale (dBFS + 100).
+            rms_amp:    Per-chunk RMS level on 0-100 scale (dBFS + 100).
+            audio_time: The AUDIO clock value for THIS chunk (see detect_tap).
         """
 
         # Cache instantaneous level — mirrors Swift fftAnalyzer.inputLevelDB.
@@ -682,7 +700,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         if not self.is_detecting or self.is_detection_paused or self.is_measurement_complete:
             return
         level = self._current_input_level_db
-        self.detect_tap(level, self._current_mag_y_db, self.freq)
+        self.detect_tap(level, audio_time, self._current_mag_y_db, self.freq)
 
     # ------------------------------------------------------------------ #
     # reset_tap_detector — mirrors Swift analyzerStartTime = Date() reset
@@ -697,6 +715,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         """
         self.is_above_threshold = False
         self.just_exited_warmup = True
-        self.analyzer_start_time = _time.monotonic()
+        self.warmup_start_audio_time = self._audio_now()
         self.last_tap_time = None
         TAP_DEBUG("reset_tap_detector", "reset_tap_detector called — warmup restarted")

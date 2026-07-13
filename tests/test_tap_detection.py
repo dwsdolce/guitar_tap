@@ -5,7 +5,7 @@ Port of TapDetectionTests.swift — hysteresis, warmup, cooldown, EMA.
 Mirrors Swift TapDetectionTests test suite (T1–T9).
 
 Strategy: detectTap() is a method on TapToneAnalyzer.  We manipulate its
-internal guard state (analyzer_start_time, is_above_threshold, last_tap_time)
+internal guard state (warmup_start_audio_time, is_above_threshold, last_tap_time)
 directly so the method exercises pure logic without a real audio engine.
 TapToneAnalyzer() is now constructible without audio hardware (Part 5).
 """
@@ -69,7 +69,7 @@ def _make_sut(
     # Defeat the warmup guard by setting the start time 2 s in the past.
     # Mirrors Swift: sut.analyzerStartTime = Date(timeIntervalSinceNow: -2)
     import time as _t
-    sut.analyzer_start_time = _t.monotonic() - 2.0
+    sut.warmup_start_audio_time = -2.0  # audio-seconds in the past
     # Defeat the post-warmup sync frame.
     sut.just_exited_warmup = False
     # Guitar mode (absolute threshold) — ensure measurement_type is acoustic.
@@ -93,7 +93,7 @@ class TestRisingEdge:
         # Rising edge fires after RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS
         # consecutive above-rising-threshold calls — see TapToneAnalyzer.detect_tap.
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
-            sut.detect_tap(level=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+            sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         assert sut.tap_detected is True, "tap_detected should be True after crossing rising threshold"
 
@@ -106,7 +106,7 @@ class TestRisingEdge:
 
         before = _t.monotonic()
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
-            sut.detect_tap(level=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+            sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
         after = _t.monotonic()
 
         assert sut.last_tap_time is not None, "last_tap_time should be set on detection"
@@ -126,7 +126,7 @@ class TestBelowThreshold:
         sut.is_detecting = True
         sut.is_above_threshold = False
 
-        sut.detect_tap(level=-50, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        sut.detect_tap(level=-50, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         assert sut.tap_detected is False, "Signal below threshold must not trigger detection"
 
@@ -145,9 +145,9 @@ class TestWarmup:
         sut.is_detecting = True
         sut.is_above_threshold = False
         # Set start time to 'now' so warmup is still active.
-        sut.analyzer_start_time = _t.monotonic()
+        sut.warmup_start_audio_time = 0.0  # audio clock: warm-up starts now
 
-        sut.detect_tap(level=-20, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        sut.detect_tap(level=-20, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         assert sut.tap_detected is False, "Should not detect during warm-up"
 
@@ -168,7 +168,7 @@ class TestCooldown:
         # Simulate that a tap was just recorded 0.1 s ago.
         sut.last_tap_time = _t.monotonic() - 0.1
 
-        sut.detect_tap(level=-30, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        sut.detect_tap(level=-30, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         assert sut.tap_detected is False, "Should not fire while in cooldown window"
 
@@ -190,7 +190,7 @@ class TestHysteresis:
         # above-rising-threshold calls before firing — feed enough to latch.
         sut.is_above_threshold = False
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
-            sut.detect_tap(level=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+            sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
         # tap_detected == True, is_above_threshold == True
 
         # Advance last_tap_time past cooldown so next call isn't blocked
@@ -199,7 +199,7 @@ class TestHysteresis:
         # Second call: signal at -43 dB — between falling_threshold (-45) and
         # rising_threshold (-40). Should stay "above" and not fire a new tap.
         sut.tap_detected = False
-        sut.detect_tap(level=-43, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        sut.detect_tap(level=-43, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         assert sut.is_above_threshold is True, \
             "Signal above falling_threshold should keep is_above_threshold = True"
@@ -213,7 +213,7 @@ class TestHysteresis:
         sut.is_above_threshold = True   # currently above
 
         # Signal drops below falling_threshold (-45)
-        sut.detect_tap(level=-50, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        sut.detect_tap(level=-50, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         assert sut.is_above_threshold is False, \
             "Signal below falling_threshold should set is_above_threshold = False"
@@ -231,9 +231,9 @@ class TestPostWarmupSync:
         sut = _make_sut(threshold=-40)
         sut.is_detecting = True
         sut.just_exited_warmup = True
-        # analyzer_start_time is 2 s ago → warmup check passes
+        # warmup_start_audio_time is 2 audio-seconds ago → warm-up check passes
 
-        sut.detect_tap(level=-30, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        sut.detect_tap(level=-30, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         # tap_detected must NOT fire on the sync frame
         assert sut.tap_detected is False, \
@@ -259,7 +259,7 @@ class TestPlateMode:
             sut.tap_detection_threshold = -40.0
             sut.hysteresis_margin = 5.0
             sut.number_of_taps = 1
-            sut.analyzer_start_time = _t.monotonic() - 2.0
+            sut.warmup_start_audio_time = -2.0  # audio-seconds in the past
             sut.just_exited_warmup = False
             sut.is_detecting = True
             sut.is_above_threshold = False
@@ -271,7 +271,7 @@ class TestPlateMode:
             # above-threshold calls.
             sut.noise_floor_estimate = -70.0
             for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
-                sut.detect_tap(level=-35, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+                sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
             assert sut.tap_detected is True, \
                 "Plate mode: signal above noise floor + headroom should fire"
@@ -294,7 +294,7 @@ class TestEMAConvergence:
             sut = TapToneAnalyzer()
             sut.tap_detection_threshold = -40.0
             sut.hysteresis_margin = 5.0
-            sut.analyzer_start_time = _t.monotonic() - 2.0
+            sut.warmup_start_audio_time = -2.0  # audio-seconds in the past
             sut.just_exited_warmup = False
             sut.is_above_threshold = False   # stays below threshold
 
@@ -303,7 +303,7 @@ class TestEMAConvergence:
 
             # Feed 50 frames at -55 dB (below threshold → EMA updates)
             for _ in range(50):
-                sut.detect_tap(level=target, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+                sut.detect_tap(level=target, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
             # EMA with α=0.05, 50 steps from -60 toward -55:
             # After 50 steps: estimate ≈ -57.4; should be > -58

@@ -67,7 +67,7 @@ def _make_guitar_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
     sut.tap_detection_threshold = -40.0
     sut.hysteresis_margin = 5.0
     # Defeat warm-up guard
-    sut.analyzer_start_time = time.monotonic() - 2.0
+    sut.warmup_start_audio_time = -2.0
     sut.just_exited_warmup = False
     TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
     # Arm detection

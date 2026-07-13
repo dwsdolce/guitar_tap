@@ -86,6 +86,37 @@ PLATE_FLC_EXPECTED_MAG = -58.28925  # dB
 PLATE_FLC_EXPECTED_Q = 6.000
 
 PLATE_TAP_THRESHOLD = -53.33838     # dB — matches .guitartap reference
+
+# ---------------------------------------------------------------------------
+# plate-umik-1-noisy-52.wav — OUT-4: the ONE fixture that separates the two
+# detection models.  It is PLATE_WAV with broadband noise mixed in to raise its
+# noise floor from -77 dBFS to -52 dBFS, i.e. ABOVE the -53.34 dB tap threshold.
+#
+# Swift/Python detect material taps against an EMA-tracked noise floor; the web
+# port uses a fixed absolute dBFS threshold.  The relative rule reduces to
+#     rising = max(tap_detection_threshold, noise_floor + 10 dB)
+# so the two are the SAME FUNCTION until the floor climbs within 10 dB of the
+# threshold.  Every other fixture sits at -64..-69 dBFS, far below that — which
+# is why no test has ever been able to separate them.
+#
+# At a -52 floor the ABSOLUTE detector SATURATES: the level never drops below the
+# threshold, so no rising edge can ever be confirmed and it captures NOTHING.
+# The RELATIVE detector floats its threshold to floor+10 = -42 dB and still finds
+# every tap (they peak at -24..-27 dBFS chunk-RMS).  That is precisely the failure
+# the relative model exists to prevent: "keeps detection working when ambient
+# noise is elevated".
+#
+# Assert the PHASE COUNT, not peak values: the added noise sums into the gated FFT,
+# so fL/fC/fLC shift slightly.  A tight peak assertion here would be measuring the
+# noise, not the detector.  The clean fixtures keep the strict peak assertions.
+#
+# Regenerate: python3 GuitarTapWeb/tooling/make-noisy-fixture.py (deterministic).
+# Analysis:   GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md
+# ---------------------------------------------------------------------------
+PLATE_NOISY_WAV = os.path.join(
+    os.path.dirname(__file__),
+    "plate-umik-1-noisy-52.wav",
+)
 Q_TOLERANCE = 1.0                    # dimensionless
 
 # ---------------------------------------------------------------------------
@@ -611,6 +642,64 @@ class TestFilePlaybackRegression:
             assert abs(peak.quality - eq) < Q_TOLERANCE, (
                 f"{name} Q: expected {eq} ±{Q_TOLERANCE}, got {peak.quality}"
             )
+
+    def test_OUT4_noisy_plate_relative_noise_floor_still_captures_all_phases(
+        self, plate_analyzer
+    ):
+        """OUT-4 — the relative noise-floor detector survives an elevated ambient floor.
+
+        The same plate session with its noise floor raised to -52 dBFS, ABOVE the -53.34 dB
+        tap-detection threshold.  An ABSOLUTE-threshold detector saturates here and captures
+        nothing (the web port does exactly that — this is its failing counterpart test).  The
+        noise-floor-RELATIVE detector floats its threshold to floor+10 and still captures all
+        three phases.
+
+        This test only became possible once file playback stopped pinning
+        noise_floor_estimate = -100 (which collapsed `rising` onto the absolute threshold and
+        silently disabled the relative model in playback on every platform).
+
+        Asserts the PHASE COUNT, not peak values — the noise shifts the peaks slightly, and a
+        tight peak assertion would be measuring the noise rather than the detector.
+        """
+        from models.tap_display_settings import TapDisplaySettings
+
+        assert os.path.exists(PLATE_NOISY_WAV), f"Test WAV not found: {PLATE_NOISY_WAV}"
+
+        original_measure_flc = TapDisplaySettings.measure_flc()
+        TapDisplaySettings.set_measure_flc(True)
+        try:
+            sut = plate_analyzer
+            sut.tap_detection_threshold = PLATE_TAP_THRESHOLD
+            sut.play_file_for_testing(
+                path=PLATE_NOISY_WAV,
+                measurement_type=MeasurementType.PLATE,
+                calibration_path=CALIBRATION_FILE,
+            )
+        finally:
+            TapDisplaySettings.set_measure_flc(original_measure_flc)
+
+        captured = [
+            name
+            for name, spec in (
+                ("L", sut.longitudinal_spectrum),
+                ("C", sut.cross_spectrum),
+                ("FLC", sut.flc_spectrum),
+            )
+            if spec is not None
+        ]
+        assert len(captured) == 3, (
+            "absolute-threshold detection saturates on an elevated noise floor and captures "
+            "nothing; the noise-floor-relative detector must still find all three taps. "
+            f"Captured: {captured}, noise_floor_estimate={sut.noise_floor_estimate:.1f} dBFS"
+        )
+
+        # The floor must have actually CONVERGED to the noisy ambient — if it is still pinned
+        # near -100 the relative model has silently degraded to the absolute one and this test
+        # would be passing for the wrong reason.
+        assert -60.0 < sut.noise_floor_estimate < -40.0, (
+            "noise_floor_estimate should have converged to the fixture's ~-52 dBFS floor; "
+            f"got {sut.noise_floor_estimate:.1f} (pinned at -100 means relative detection is OFF)"
+        )
 
 
 # REG-G ring-out (decay) — Recording 5.wav post-tap level decays to peak-15 dB. Shared
