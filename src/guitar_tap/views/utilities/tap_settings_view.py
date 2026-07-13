@@ -438,6 +438,60 @@ class AppSettings:
         cls._set("plate/measure_flc", v)
 
     # ------------------------------------------------------------------ #
+    # Update check (Python edition only — see models/update_checker.py)
+    #
+    # Opt-out: the startup check is on by default and can be turned off here.
+    # last_update_check throttles it to once a day; skipped_update_version
+    # suppresses the banner for a release the user chose to skip.
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def check_updates_at_startup(cls) -> bool:
+        return cls._get_bool("updates/check_at_startup", True)
+
+    @classmethod
+    def set_check_updates_at_startup(cls, v: bool) -> None:
+        cls._set("updates/check_at_startup", v)
+
+    @classmethod
+    def last_update_check(cls) -> str:
+        """ISO-8601 timestamp of the last completed check ("" if never)."""
+        return str(cls._get("updates/last_check_iso", "") or "")
+
+    @classmethod
+    def set_last_update_check(cls, iso: str) -> None:
+        cls._set("updates/last_check_iso", iso)
+
+    @classmethod
+    def skipped_update_version(cls) -> str:
+        """Release tag the user chose to skip ("" if none)."""
+        return str(cls._get("updates/skipped_version", "") or "")
+
+    @classmethod
+    def set_skipped_update_version(cls, version: str) -> None:
+        cls._set("updates/skipped_version", version)
+
+    # The most recent release we know to be newer than the running version.
+    # Cached so the banner can reappear on every launch while the update is
+    # still outstanding, without a network request on each start (the network
+    # check itself stays throttled by last_update_check).  Cleared as soon as a
+    # check reports we are up to date.
+    @classmethod
+    def available_update_version(cls) -> str:
+        return str(cls._get("updates/available_version", "") or "")
+
+    @classmethod
+    def set_available_update_version(cls, version: str) -> None:
+        cls._set("updates/available_version", version)
+
+    @classmethod
+    def available_update_url(cls) -> str:
+        return str(cls._get("updates/available_url", "") or "")
+
+    @classmethod
+    def set_available_update_url(cls, url: str) -> None:
+        cls._set("updates/available_url", url)
+
+    # ------------------------------------------------------------------ #
     # Brace dimensions (mm / g)
     # ------------------------------------------------------------------ #
     @classmethod

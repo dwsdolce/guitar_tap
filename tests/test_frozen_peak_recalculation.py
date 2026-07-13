@@ -66,6 +66,8 @@ def qt_app():
 
 
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+from guitar_tap.models.measurement_type import MeasurementType
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
 
 
 # ---------------------------------------------------------------------------
@@ -474,3 +476,104 @@ class TestEmptyPeaksGuard:
         assert remapped == {}
 
 
+# ---------------------------------------------------------------------------
+# PR8: can_reanalyze — when the Re-analyze button is offered
+# ---------------------------------------------------------------------------
+#
+# Re-analyze is a RESET, not a dirty-flag indicator: it is offered whenever it COULD do
+# something, not only when we can prove it WILL. What can leave the displayed analysis
+# differing from a clean re-derivation is open-ended (peaks came from a file; mode
+# assignments carried forward across Peak Min moves instead of being re-claimed; the
+# analysis range moved; selections were hand-edited), and the two failure modes are not
+# symmetric — a wrongly-DISABLED button is a dead end, a wrongly-ENABLED one costs a
+# pointless click. So: any complete guitar measurement with a frozen spectrum; never
+# material.
+#
+# This replaces `loaded_measurement_peaks is not None`, a proxy for "the peaks are stale"
+# that was wrong in both directions — it disabled itself after one press, and never lit up
+# for a live capture whose mode assignments had drifted.
+#
+# Mirrors Swift FrozenPeakRecalculation_CanReanalyzeTests.
+
+class TestPR8CanReanalyze:
+    """PR8: can_reanalyze — the Re-analyze button's enabled state."""
+
+    @pytest.fixture(autouse=True)
+    def _restore_measurement_type(self):
+        """The measurement type is global app state — put it back after each test."""
+        saved = TapDisplaySettings.measurement_type()
+        yield
+        TapDisplaySettings.set_measurement_type(saved)
+
+    def _frozen(self, mtype: MeasurementType) -> TapToneAnalyzer:
+        TapDisplaySettings.set_measurement_type(mtype)
+        sut = TapToneAnalyzer()
+        sut.frozen_frequencies = np.array([i * HZ_PER_BIN for i in range(N_BINS)])
+        sut.frozen_magnitudes = _flat_spectrum()
+        sut.is_measurement_complete = True
+        return sut
+
+    def test_PR8a_live_frozen_capture_can_reanalyze(self, qt_app):
+        """A never-loaded frozen capture CAN be re-analyzed.
+
+        It is the only route back to a clean mode classification once the assignments
+        have drifted across Peak Min moves.
+        """
+        sut = self._frozen(MeasurementType.CLASSICAL)
+        sut.current_peaks = [_peak(200.0)]
+        sut.loaded_measurement_peaks = None      # never loaded — a fresh capture
+
+        assert sut.can_reanalyze is True
+
+    def test_PR8b_loaded_measurement_can_reanalyze(self, qt_app):
+        """A loaded measurement can be re-analyzed — its saved peaks were never derived here."""
+        sut = self._frozen(MeasurementType.CLASSICAL)
+        saved_peaks = [_peak(200.0)]
+        sut.current_peaks = saved_peaks
+        sut.loaded_measurement_peaks = saved_peaks
+
+        assert sut.can_reanalyze is True
+
+    def test_PR8c_reanalyze_is_not_a_one_shot(self, qt_app):
+        """THE ONE-SHOT REGRESSION.
+
+        reanalyze_peaks() clears loaded_measurement_peaks, which used to be the button's
+        ONLY enabling condition — so a single press disabled it forever.
+        """
+        sut = self._frozen(MeasurementType.CLASSICAL)
+        saved_peaks = [_peak(200.0)]
+        sut.current_peaks = saved_peaks
+        sut.loaded_measurement_peaks = saved_peaks
+        assert sut.can_reanalyze is True
+
+        sut.reanalyze_peaks()
+
+        assert sut.loaded_measurement_peaks is None, "Re-analyze drops the saved peaks"
+        assert sut.can_reanalyze is True, (
+            "Re-analyze must remain available after a press — it is a reset, not a one-shot"
+        )
+
+    def test_PR8d_material_can_never_reanalyze(self, qt_app):
+        """Material peaks come from the per-phase captures; find_peaks would destroy them.
+
+        This previously held only by accident (a loaded material measurement leaves the
+        frozen spectrum empty), so it is pinned explicitly.
+        """
+        for mtype in (MeasurementType.PLATE, MeasurementType.BRACE):
+            sut = self._frozen(mtype)                      # even WITH a frozen spectrum…
+            sut.loaded_measurement_peaks = [_peak(200.0)]  # …and loaded peaks
+            assert sut.can_reanalyze is False, (
+                f"Re-analyze is meaningless for {mtype} and must never be offered"
+            )
+
+    def test_PR8e_incomplete_or_no_frozen_spectrum_cannot_reanalyze(self, qt_app):
+        """Nothing to re-analyze without a completed measurement and a frozen spectrum."""
+        TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+
+        no_spectrum = TapToneAnalyzer()
+        no_spectrum.is_measurement_complete = True
+        assert no_spectrum.can_reanalyze is False, "No frozen spectrum — nothing to re-analyze from"
+
+        incomplete = self._frozen(MeasurementType.CLASSICAL)
+        incomplete.is_measurement_complete = False
+        assert incomplete.can_reanalyze is False, "Measurement still in progress"

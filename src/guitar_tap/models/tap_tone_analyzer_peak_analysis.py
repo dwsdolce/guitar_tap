@@ -254,6 +254,51 @@ class TapToneAnalyzerPeakAnalysisMixin:
             entry.selected_peak_ids = list(mode_selected)
 
     # ------------------------------------------------------------------ #
+    # can_reanalyze
+    # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift canReanalyze
+    # ------------------------------------------------------------------ #
+
+    @property
+    def can_reanalyze(self) -> bool:
+        """Whether the Re-analyze button is offered.
+
+        **Any complete guitar measurement with a frozen spectrum**, and never a
+        plate/brace one.
+
+        Re-analyze is a **reset**, not a dirty-flag indicator.  It is offered whenever
+        it *could* do something, not only when we can prove it *will* — deliberately.
+        What can leave the displayed analysis differing from a clean re-derivation is
+        open-ended: the peaks came from a file; mode assignments were carried forward
+        across Peak Min moves rather than re-claimed (``_apply_frozen_peak_state``); the
+        analysis range moved; selections were hand-edited.  Proving "it will definitely
+        change something" would mean enumerating all of those correctly, forever, with
+        nothing to tell us when we got it wrong.  The two failure modes are not
+        symmetric: a wrongly-DISABLED button is a dead end (the user cannot force the
+        recomputation they want, and has no other route to it), while a wrongly-ENABLED
+        one costs a click that recomputes the same answer.
+
+        (The previous rule, ``loaded_measurement_peaks is not None``, was a proxy for
+        "the peaks are stale" and was wrong in both directions: it disabled itself after
+        a single press, and never lit up for a live capture whose mode assignments had
+        drifted.)
+
+        Never for plate/brace: material peaks come from the per-phase captures, and
+        running ``find_peaks`` over them would destroy the saved L / C / FLC peaks.
+        Material used to be disabled only *by accident* — a loaded material measurement
+        leaves the frozen spectrum empty — so the intent is now stated.
+
+        Mirrors Swift ``canReanalyze``.
+        """
+        from models.tap_display_settings import TapDisplaySettings as _tds_cr
+
+        return (
+            _tds_cr.measurement_type().is_guitar
+            and self.is_measurement_complete
+            and bool(len(self.frozen_frequencies))
+            and bool(len(self.frozen_magnitudes))
+        )
+
+    # ------------------------------------------------------------------ #
     # reanalyze_peaks
     # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift reanalyzePeaks()
     # ------------------------------------------------------------------ #
@@ -265,6 +310,16 @@ class TapToneAnalyzerPeakAnalysisMixin:
         type) without re-tapping.  Clears ``loaded_measurement_peaks`` so that
         ``recalculate_frozen_peaks_if_needed()`` falls through to the live-tap
         path which calls ``find_peaks()`` on the frozen spectrum.
+
+        Also re-claims the mode assignments from scratch: ``identified_modes`` is
+        cleared, so the carry-forward in ``_apply_frozen_peak_state`` has nothing to
+        match and every peak is classified afresh.  This is the only route back to a
+        clean classification once assignments have drifted across Peak Min moves.
+
+        What survives: user mode **overrides** (remapped onto the new peak ids by ±5 Hz
+        frequency proximity) and annotation offsets.  What does not: the manual
+        **selection** — auto-selection re-runs, so a hand-selected peak is deselected
+        (its override is still attached; re-select it and the custom label returns).
 
         Mirrors Swift ``reanalyzePeaks()``.
         """

@@ -475,8 +475,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # ── Menu structure by platform ────────────────────────────────────────
         #
         # macOS:
-        #   App menu (auto):  About Guitar Tap…  /  Settings… (⌘,)  /  Quit
-        #                     Qt moves AboutRole + PreferencesRole here automatically.
+        #   App menu (auto):  About Guitar Tap…  /  Check for Updates…  /  Settings… (⌘,)  /  Quit
+        #                     Qt moves AboutRole + ApplicationSpecificRole +
+        #                     PreferencesRole here automatically.
         #   File:             Close (⌘W)  |  Save  |  Export…  /  Export PDF…
         #   View:             Auto dB  /  Cycle Annotations  |  Show Metrics  /  Show Measurements
         #   Help:             Guitar Tap Help
@@ -484,12 +485,16 @@ class MainWindow(QtWidgets.QMainWindow):
         # Windows:
         #   File:             Save  |  Export…  /  Export PDF…  |  Settings…  |  Exit
         #   View:             (same as macOS)
-        #   Help:             Guitar Tap Help  |  About Guitar Tap…
+        #   Help:             Guitar Tap Help  |  Check for Updates…  /  About Guitar Tap…
         #
         # Linux:
         #   File:             Save  |  Export…  /  Export PDF…  |  Settings…  |  Quit
         #   View:             (same as macOS)
-        #   Help:             Guitar Tap Help  |  About Guitar Tap…
+        #   Help:             Guitar Tap Help  |  Check for Updates…  /  About Guitar Tap…
+        #
+        # "Check for Updates…" is the ACTION only; the recurring "check at startup"
+        # preference lives in Settings → About & Help (menus hold actions, not
+        # persistent preferences).  Swift/Apple edition has no update check at all.
         # ─────────────────────────────────────────────────────────────────────
 
         # macOS only: GuitarTap app menu — Qt automatically moves AboutRole and
@@ -500,6 +505,16 @@ class MainWindow(QtWidgets.QMainWindow):
             about_action_mac.setMenuRole(QtGui.QAction.MenuRole.AboutRole)
             about_action_mac.triggered.connect(self._show_about)
             app_menu.addAction(about_action_mac)
+            # ApplicationSpecificRole moves this into the system Application menu
+            # (the macOS convention: About / Check for Updates… / Settings…).
+            # The recurring "check at startup" preference deliberately stays in
+            # Settings — a menu is for actions, not for persistent preferences.
+            updates_action_mac = QtGui.QAction("Check for Updates…", self)
+            updates_action_mac.setMenuRole(
+                QtGui.QAction.MenuRole.ApplicationSpecificRole
+            )
+            updates_action_mac.triggered.connect(self._check_for_updates_from_menu)
+            app_menu.addAction(updates_action_mac)
             settings_action_mac = QtGui.QAction("Settings…", self)
             settings_action_mac.setShortcut(QtGui.QKeySequence("Ctrl+,"))
             settings_action_mac.setMenuRole(QtGui.QAction.MenuRole.PreferencesRole)
@@ -599,8 +614,15 @@ class MainWindow(QtWidgets.QMainWindow):
         help_menu.addAction(user_manual_action)
 
         if _sys.platform != "darwin":
-            # Windows/Linux: About belongs in the Help menu (standard placement).
+            # Windows/Linux: Check for Updates… and About belong in the Help menu
+            # (standard placement).  On macOS both are relocated by Qt into the
+            # system Application menu instead, so they are not added here.
             help_menu.addSeparator()
+            updates_action = QtGui.QAction("Check for Updates…", self)
+            updates_action.setMenuRole(QtGui.QAction.MenuRole.NoRole)
+            updates_action.triggered.connect(self._check_for_updates_from_menu)
+            help_menu.addAction(updates_action)
+
             about_action = QtGui.QAction("About Guitar Tap…", self)
             about_action.triggered.connect(self._show_about)
             help_menu.addAction(about_action)
@@ -626,6 +648,11 @@ class MainWindow(QtWidgets.QMainWindow):
         root = QtWidgets.QVBoxLayout(main_widget)
         root.setSpacing(0)
         root.setContentsMargins(2, 2, 2, 2)
+
+        # Update-available banner — hidden until a newer GitHub release is found.
+        # Non-modal by design: it must never interrupt a tap sequence.
+        self._update_banner = self._build_update_banner()
+        root.addWidget(self._update_banner)
 
         root.addWidget(self._build_toolbar())
         root.addWidget(self._build_controls_bar())
@@ -680,6 +707,148 @@ class MainWindow(QtWidgets.QMainWindow):
         # after the window is shown so the user sees the UI immediately.
         # Mirrors Swift's .task { } modifier which runs after first render.
         QtCore.QTimer.singleShot(0, self._deferred_canvas_init)
+
+        # Update check — deferred well past canvas init so it can never delay the
+        # UI or the audio engine.  Silent, throttled to once a day, and opt-out;
+        # a newer release only ever surfaces as the banner above.
+        self._update_checker = None
+        self._pending_update_version = ""
+        self._pending_update_url = ""
+        QtCore.QTimer.singleShot(3000, self._start_update_check)
+
+    # ================================================================
+    # Update check (Python edition only — see models/update_checker.py)
+    # ================================================================
+
+    def _build_update_banner(self) -> QtWidgets.QWidget:
+        """Build the (initially hidden) 'update available' banner.
+
+        Deliberately non-modal and dismissible: a modal dialog at startup would
+        interrupt a tap sequence, so the update is offered rather than imposed.
+        """
+        banner = QtWidgets.QFrame()
+        banner.setObjectName("updateBanner")
+        banner.setStyleSheet(
+            "#updateBanner {"
+            "  background-color: rgba(10, 132, 255, 0.12);"
+            "  border: 1px solid rgba(10, 132, 255, 0.45);"
+            "  border-radius: 6px;"
+            "}"
+        )
+        row = QtWidgets.QHBoxLayout(banner)
+        row.setContentsMargins(10, 6, 8, 6)
+        row.setSpacing(8)
+
+        icon = QtWidgets.QLabel()
+        icon.setPixmap(qta.icon("mdi.arrow-up-bold-circle-outline").pixmap(16, 16))
+        row.addWidget(icon)
+
+        self._update_banner_label = QtWidgets.QLabel("")
+        row.addWidget(self._update_banner_label)
+        row.addStretch(1)
+
+        view_btn = QtWidgets.QPushButton("View Release")
+        view_btn.clicked.connect(self._open_update_url)
+        row.addWidget(view_btn)
+
+        skip_btn = QtWidgets.QPushButton("Skip This Version")
+        skip_btn.clicked.connect(self._skip_update_version)
+        row.addWidget(skip_btn)
+
+        later_btn = QtWidgets.QPushButton("Later")
+        later_btn.clicked.connect(banner.hide)
+        row.addWidget(later_btn)
+
+        banner.hide()
+        return banner
+
+    def _ensure_update_checker(self):
+        """Lazily build the UpdateChecker and wire its 'available' signal."""
+        if self._update_checker is None:
+            from models.update_checker import UpdateChecker  # noqa: PLC0415
+            self._update_checker = UpdateChecker(self)
+            self._update_checker.updateAvailable.connect(self._on_update_available)
+        return self._update_checker
+
+    def _start_update_check(self) -> None:
+        """Automatic startup check — silent unless a newer release exists.
+
+        Wrapped defensively: an update check must never be able to break
+        startup, so any failure here is swallowed (the checker itself already
+        logs and reports failures on its checkFailed signal).
+        """
+        try:
+            checker = self._ensure_update_checker()
+            # Show an update we already know about, before any network call.
+            # Without this the banner would vanish on the next launch: the
+            # once-a-day throttle would skip the check even though the update
+            # is still outstanding.
+            pending = checker.pending_update()
+            if pending is not None:
+                self._on_update_available(pending[0], pending[1], "")
+            # Then refresh over the network (a no-op while throttled).
+            checker.check(force=False)
+        except Exception:  # noqa: BLE001 — never fatal
+            pass
+
+    def _on_update_available(self, version: str, url: str, _notes: str) -> None:
+        """Show the banner for a newly published release.
+
+        Reads the running version straight from _version rather than through
+        self._update_checker, so the banner cannot depend on the checker having
+        been constructed (it is built lazily).
+        """
+        from _version import __version__  # noqa: PLC0415
+        self._pending_update_version = version
+        self._pending_update_url = url
+        self._update_banner_label.setText(
+            f"<b>Guitar Tap {version}</b> is available — you are running {__version__}."
+        )
+        self._update_banner.show()
+
+    def _check_for_updates_from_menu(self) -> None:
+        """The 'Check for Updates…' menu item.
+
+        User-initiated, so unlike the silent startup path it always reports an
+        outcome: a newer release surfaces as the banner (already wired to
+        updateAvailable), while "up to date" and failures get a message box —
+        a menu click that appeared to do nothing would read as broken.
+
+        force=True also bypasses the once-a-day throttle and any previously
+        skipped version, because the user explicitly asked.
+        """
+        checker = self._ensure_update_checker()
+
+        def _on_current(v: str) -> None:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Check for Updates",
+                f"You are running the latest version ({v}).",
+            )
+
+        def _on_failed(reason: str) -> None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Check for Updates",
+                f"Could not check for updates.\n\n{reason}",
+            )
+
+        # Single-shot so repeated menu invocations don't stack handlers.
+        single = QtCore.Qt.ConnectionType.SingleShotConnection
+        checker.upToDate.connect(_on_current, single)
+        checker.checkFailed.connect(_on_failed, single)
+        checker.check(force=True)
+
+    def _open_update_url(self) -> None:
+        """Open the release page in the user's default browser."""
+        if self._pending_update_url:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(self._pending_update_url))
+
+    def _skip_update_version(self) -> None:
+        """Suppress the banner for this release until a newer one appears."""
+        if self._pending_update_version:
+            AS.AppSettings.set_skipped_update_version(self._pending_update_version)
+        self._update_banner.hide()
 
     # ================================================================
     # Layout builders
@@ -2352,9 +2521,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.reset_auto_selection_btn.setEnabled(
                 mt.is_guitar and self.peak_widget.model.user_has_modified_peak_selection
             )
-            self._reanalyze_btn.setEnabled(
-                self.fft_canvas.analyzer.loaded_measurement_peaks is not None
-            )
+            # Enabled exactly when the peaks on screen are NOT the auto-found peaks for the
+            # current settings — the analyzer owns that rule (can_reanalyze) so all three
+            # platforms answer it identically. Covers both "peaks came from a file" and
+            # "the guitar type changed since find_peaks last ran".
+            self._reanalyze_btn.setEnabled(self.fft_canvas.analyzer.can_reanalyze)
         else:
             self.save_measurement_btn.setEnabled(False)
             self.export_spectrum_btn.setEnabled(False)
@@ -6475,6 +6646,60 @@ class MainWindow(QtWidgets.QMainWindow):
         ver_row.addWidget(ver_lbl)
         ver_row.addWidget(ver_val, stretch=1)
         ab.addLayout(ver_row)
+        ab.addWidget(_hsep())
+
+        # ---- Update check (Python edition only) ----
+        # Opt-out: on by default.  The check contacts GitHub's public release
+        # API only; it sends no personal or measurement data.  See the Network
+        # use section of the privacy policy.
+        upd_chk = QtWidgets.QCheckBox("Check for updates at startup")
+        upd_chk.setChecked(AS.AppSettings.check_updates_at_startup())
+        upd_chk.toggled.connect(AS.AppSettings.set_check_updates_at_startup)
+        ab.addWidget(upd_chk)
+
+        upd_row = QtWidgets.QHBoxLayout()
+        upd_now_btn = QtWidgets.QPushButton("Check Now")
+        upd_status = QtWidgets.QLabel("")
+        upd_status.setFont(caption)
+        upd_status.setWordWrap(True)
+
+        def _check_now() -> None:
+            """Explicit user-initiated check — bypasses the once-a-day throttle.
+
+            Unlike the silent startup path, this reports the outcome inline
+            either way, because the user explicitly asked.
+            """
+            checker = self._ensure_update_checker()
+            upd_now_btn.setEnabled(False)
+            upd_status.setText("Checking…")
+
+            def _done() -> None:
+                upd_now_btn.setEnabled(True)
+
+            def _on_current(v: str) -> None:
+                _done()
+                upd_status.setText(f"You are running the latest version ({v}).")
+
+            def _on_failed(reason: str) -> None:
+                _done()
+                upd_status.setText(f"Could not check for updates: {reason}")
+
+            def _on_available(v: str, _url: str, _notes: str) -> None:
+                _done()
+                upd_status.setText(f"Guitar Tap {v} is available.")
+
+            # Single-shot connections so repeated presses don't stack handlers.
+            checker.upToDate.connect(_on_current, QtCore.Qt.ConnectionType.SingleShotConnection)
+            checker.checkFailed.connect(_on_failed, QtCore.Qt.ConnectionType.SingleShotConnection)
+            checker.updateAvailable.connect(
+                _on_available, QtCore.Qt.ConnectionType.SingleShotConnection
+            )
+            checker.check(force=True)
+
+        upd_now_btn.clicked.connect(_check_now)
+        upd_row.addWidget(upd_now_btn)
+        upd_row.addWidget(upd_status, stretch=1)
+        ab.addLayout(upd_row)
         ab.addWidget(_hsep())
 
         copyright_lbl = QtWidgets.QLabel(

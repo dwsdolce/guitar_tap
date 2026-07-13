@@ -121,6 +121,15 @@ Then run the platform script from the repository root:
 The full [User Manual](https://www.dolcesfogato.com/guitar_tap/manual/) covers every
 measurement mode, the settings and controls reference, troubleshooting, and a glossary.
 
+## Update check
+
+On startup Guitar Tap checks this repository's public
+[releases](https://github.com/dwsdolce/guitar_tap/releases) for a newer version and shows a
+dismissible banner when one is available. The request reads GitHub's public release list and
+sends no personal data, no audio, and no measurements. It runs at most once a day, and you can
+turn it off in **Settings → About & Help → Check for updates at startup**. See the
+[privacy policy](https://www.dolcesfogato.com/guitar_tap/privacy.html) for details.
+
 ## License
 
 Copyright © 2026 Dolce Sfogato (David Smith).
