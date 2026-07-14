@@ -4496,15 +4496,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_export_spectrum(self) -> None:
         import time as _time
 
-        # Derive filename from measurement_name → loaded_measurement_name → "spectrum".
-        # Mirrors Swift exportCurrentSpectrum() label derivation.
-        _loc = self._measurement_name.strip()
-        if not _loc:
-            _loc = (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
-        if not _loc:
-            _loc = "spectrum"
-        _stem = _loc.replace(" ", "-").replace("/", "-").lower()
-        suggested_name = f"{_stem}-{int(_time.time())}.png"
+        # Name: live name → loaded name → "spectrum" default (§2b). Mirrors Swift exportCurrentSpectrum().
+        from models.export_filename import export_stem
+        _name = self._measurement_name.strip() or (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
+        suggested_name = f"{export_stem(_name, int(_time.time()), 'spectrum')}.png"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -4706,15 +4701,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_export_comparison_pdf()
             return
 
-        # Derive filename from measurement_name → loaded_measurement_name → "report".
-        # Mirrors Swift exportPDFReport() measurementName / loadedMeasurementName fallback.
-        _pdf_loc = self._measurement_name.strip()
-        if not _pdf_loc:
-            _pdf_loc = (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
-        if not _pdf_loc:
-            _pdf_loc = "report"
-        _pdf_stem = _pdf_loc.replace(" ", "-").replace("/", "-").lower()
-        suggested_name = f"{_pdf_stem}-{int(_time.time())}.pdf"
+        # Name: live name → loaded name → "report" default (§2b). Mirrors Swift exportPDFReport().
+        from models.export_filename import export_stem
+        _name = self._measurement_name.strip() or (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
+        suggested_name = f"{export_stem(_name, int(_time.time()), 'report')}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -5007,14 +4997,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         import time as _time
 
-        # Mirrors Swift: let label = tap.loadedMeasurementName ?? measurementName
-        # basename is "report-<ts>" when label is empty, else "<label>-<ts>".
-        _label = (self.fft_canvas.analyzer.loaded_measurement_name or self._measurement_name or "").strip()
-        suggested_name = (
-            (_label.replace(" ", "-").replace("/", "-").lower() + f"-{int(_time.time())}.pdf")
-            if _label
-            else f"report-{int(_time.time())}.pdf"
-        )
+        # A comparison report is just a report (§2b). Name: loaded name → live name → "report".
+        # Mirrors Swift: label = tap.loadedMeasurementName ?? measurementName.
+        from models.export_filename import export_stem
+        _name = (self.fft_canvas.analyzer.loaded_measurement_name or self._measurement_name or "").strip()
+        suggested_name = f"{export_stem(_name, int(_time.time()), 'report')}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(

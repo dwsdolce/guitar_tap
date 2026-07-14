@@ -413,7 +413,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Spectrum",
-            os.path.join(M.last_export_dir(), m.base_filename + ".png"),
+            os.path.join(M.last_export_dir(), m.export_stem_for("spectrum") + ".png"),
             "PNG images (*.png)",
         )
         if not path:
@@ -451,7 +451,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             path, _ = QtWidgets.QFileDialog.getSaveFileName(
                 self,
                 "Export PDF Report",
-                os.path.join(M.last_export_dir(), m.base_filename + ".pdf"),
+                os.path.join(M.last_export_dir(), m.export_stem_for("report") + ".pdf"),
                 "PDF files (*.pdf)",
             )
             if not path:
@@ -478,7 +478,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Multi-Tap PDF Report",
-            os.path.join(M.last_export_dir(), m.base_filename + ".pdf"),
+            os.path.join(M.last_export_dir(), m.export_stem_for("report") + ".pdf"),
             "PDF files (*.pdf)",
         )
         if not path:
@@ -582,13 +582,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         Mirrors Swift exportComparisonPDFReport(for:) in MeasurementsListView.
         """
-        label = m.measurement_name or "measurement"
-        from datetime import datetime as _dt
-        try:
-            ts = int(_dt.fromisoformat(m.timestamp).timestamp())
-        except Exception:
-            ts = 0
-        basename = label.replace(" ", "-").lower() + f"-{ts}"
+        # A comparison report is just a report (§2b): "report" default, not "measurement".
+        basename = m.export_stem_for("report")
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Comparison PDF Report",

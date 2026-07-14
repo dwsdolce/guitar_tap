@@ -470,12 +470,24 @@ class TapToneMeasurement:
 
         Mirrors Swift TapToneMeasurement.baseFilename.
         """
-        loc = (self.measurement_name or "measurement").replace(" ", "-").replace("/", "-").lower()
+        return self.export_stem_for("measurement")
+
+    def export_stem_for(self, unnamed: str) -> str:
+        """The export filename stem with a per-artifact default word (``"measurement"`` /
+        ``"report"`` / ``"spectrum"``).
+
+        Thin **Python-only adapter** over the shared ``export_filename.export_stem`` — it exists
+        solely because this model stores ``timestamp`` as an ISO-8601 string that must be parsed to
+        integer seconds, whereas Swift's ``Date`` converts for free and its call sites invoke
+        ``ExportFilename.stem`` directly. No divergent logic: the rule lives in ``export_stem``.
+        See FILE-PATHS-AND-NAMES-SPEC §2b.
+        """
+        from .export_filename import export_stem
         try:
             ts = int(datetime.fromisoformat(self.timestamp).timestamp())
         except Exception:
             ts = 0
-        return f"{loc}-{ts}"
+        return export_stem(self.measurement_name, ts, unnamed)
 
     def display_name(self) -> str:
         """Human-readable display name combining measurement name and formatted timestamp.
