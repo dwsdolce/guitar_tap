@@ -6247,10 +6247,13 @@ class MainWindow(QtWidgets.QMainWindow):
         da_layout = QtWidgets.QVBoxLayout(dump_audio_widget)
         da_layout.setContentsMargins(0, 4, 0, 0)
         da_layout.setSpacing(2)
+        # One WAV per measurement, not one per tap (per-tap dumps were dropped for a single session
+        # recording). Names no folder here — the folder becomes its own settable field
+        # (FILE-PATHS-AND-NAMES-SPEC §4b).
         dump_audio_cb = QtWidgets.QCheckBox("Dump Capture Audio")
-        dump_audio_cb.setToolTip("Save each captured tap as a WAV file in Documents/GuitarTap")
+        dump_audio_cb.setToolTip("Save the captured audio of each measurement as a WAV file")
         dump_audio_cb.setChecked(AS.AppSettings.dump_capture_audio())
-        dump_audio_desc = QtWidgets.QLabel("Save each captured tap as a WAV file in Documents/GuitarTap")
+        dump_audio_desc = QtWidgets.QLabel("Save the captured audio of each measurement as a WAV file")
         dump_audio_desc.setFont(caption)
         da_layout.addWidget(dump_audio_cb)
         da_layout.addWidget(dump_audio_desc)

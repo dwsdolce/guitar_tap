@@ -7,10 +7,11 @@ Data model classes live in the models/ package:
   models.tap_tone_measurement → TapToneMeasurement
 
 JSON format:
-  - Single saved_measurements.json in the platform Application Support dir:
-      macOS:   ~/Library/Application Support/GuitarTap/
-      Windows: %APPDATA%\\GuitarTap\\
-      Linux:   ~/.local/share/GuitarTap/
+  - Single saved_measurements.json in the platform app-data dir. The app name is pinned to
+    "guitar-tap" (QCoreApplication.setApplicationName in __main__.py), so:
+      macOS:   ~/Library/Application Support/guitar-tap/
+      Windows: %APPDATA%\\guitar-tap\\
+      Linux:   ~/.local/share/guitar-tap/
   - Each measurement identified by UUID, ISO-8601 timestamp
   - Peaks have UUIDs; mode overrides, selected IDs, annotation offsets
     are keyed by peak UUID
