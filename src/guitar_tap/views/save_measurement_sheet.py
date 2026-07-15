@@ -45,7 +45,17 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
 
+        # A name must be entered before Save is allowed (§3). The rule lives on the model so all
+        # three platforms agree; the view only binds the button's enabled state to it.
+        self._save_btn = btns.button(QtWidgets.QDialogButtonBox.StandardButton.Save)
+        self._location_edit.textChanged.connect(self._update_save_enabled)
+        self._update_save_enabled()
+
         self._location_edit.setFocus()
+
+    def _update_save_enabled(self) -> None:
+        from models.tap_tone_measurement import TapToneMeasurement
+        self._save_btn.setEnabled(TapToneMeasurement.is_valid_name(self._location_edit.text()))
 
     @property
     def measurement_name(self) -> str:
@@ -58,7 +68,8 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         return self._notes_edit.toPlainText().strip()
 
     def set_measurement_name(self, value: str) -> None:
-        """Pre-populate the measurement_name field. Mirrors Swift @Binding pre-fill."""
+        """Pre-populate the measurement_name field (loaded name on re-save, else empty). Mirrors
+        Swift SaveMeasurementSheet defaultName."""
         self._location_edit.setText(value)
 
     def set_notes(self, value: str) -> None:

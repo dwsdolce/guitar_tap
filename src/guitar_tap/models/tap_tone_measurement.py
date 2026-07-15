@@ -489,6 +489,28 @@ class TapToneMeasurement:
             ts = 0
         return export_stem(self.measurement_name, ts, unnamed)
 
+    # ── Name validation (FILE-PATHS-AND-NAMES-SPEC §3) ──────────────────────
+    # @parity model/measurement-name tests=test/measurement-name
+
+    @staticmethod
+    def is_valid_name(name: str) -> bool:
+        """Whether ``name`` is acceptable to save: non-empty after trimming whitespace.
+
+        The Save action is disabled until this holds. Single source of truth so all three
+        platforms — and their tests — agree; a view must bind its Save button to this, never
+        re-implement it. Mirrors Swift ``TapToneMeasurement.isValidName``.
+        """
+        return bool(name.strip())
+
+    @staticmethod
+    def normalized_name(name: str) -> "str | None":
+        """The name to store: trimmed, or ``None`` if blank. Blank is prevented at the UI by
+        ``is_valid_name``, but the model stays tolerant so nameless files from older builds still
+        read (the format keeps ``measurement_name`` optional). Mirrors Swift ``normalizedName``.
+        """
+        trimmed = name.strip()
+        return trimmed or None
+
     def display_name(self) -> str:
         """Human-readable display name combining measurement name and formatted timestamp.
 

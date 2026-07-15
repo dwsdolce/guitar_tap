@@ -3936,8 +3936,11 @@ class MainWindow(QtWidgets.QMainWindow):
         is_comparing = self.fft_canvas.analyzer.is_saved_measurement_comparison
 
         dlg = SMD.SaveMeasurementDialog(self)
-        # Pre-populate from live state (mirrors Swift @Binding to the view's @State vars)
-        dlg.set_measurement_name(self._measurement_name)
+        # Pre-populate: live name, else the loaded measurement's name when re-saving one (§3).
+        # Mirrors Swift SaveMeasurementSheet defaultName = tap.loadedMeasurementName ?? "".
+        dlg.set_measurement_name(
+            self._measurement_name or (self.fft_canvas.analyzer.loaded_measurement_name or "")
+        )
         dlg.set_notes(self._notes)
         if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
