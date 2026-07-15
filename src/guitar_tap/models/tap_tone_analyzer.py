@@ -546,6 +546,12 @@ class TapToneAnalyzer(
         self._session_checkpoints: list = []
         self._session_recording_sample_rate: float = 48000.0
 
+        # Bounded pre-roll for the session WAV (FILE-PATHS-AND-NAMES-SPEC §6). True from
+        # start_tap_sequence until the first gated capture begins, then False for the rest of the
+        # session. While True, the session buffer keeps only the last SESSION_PRE_ROLL_DURATION of
+        # audio; after the first tap it grows straight through. Mirrors Swift sessionPreRollActive.
+        self._session_pre_roll_active: bool = False
+
         # Monotonic capture identity — incremented at every start_*_gated_capture
         # call.  Each pending safety-timeout closure captures the ID at scheduling
         # time and only flushes the accumulator if `_gated_capture_id` still

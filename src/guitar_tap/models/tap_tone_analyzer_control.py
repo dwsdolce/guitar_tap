@@ -637,6 +637,7 @@ class TapToneAnalyzerControlMixin:
             self._session_recording_buffer = []
             self._session_checkpoints = [0]
             self._is_session_recording = True
+            self._session_pre_roll_active = True  # bound the pre-first-tap audio to ~2 s (§6)
             self._session_recording_sample_rate = (
                 self._mpm_sample_rate if self._mpm_sample_rate > 0 else 48000.0
             )
@@ -888,6 +889,10 @@ class TapToneAnalyzerControlMixin:
                 phase_start = self._session_checkpoints[-1]
                 if len(self._session_recording_buffer) > phase_start:
                     del self._session_recording_buffer[phase_start:]
+                    # Redoing the FIRST phase empties the buffer back to the pre-first-tap state,
+                    # so re-arm the bounded pre-roll (§6). Later phases keep the latch frozen.
+                    if phase_start == 0:
+                        self._session_pre_roll_active = True
 
         phase = self.material_tap_phase
 

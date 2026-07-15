@@ -212,6 +212,45 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             gt_log(f"⚠️ WAV dump failed: {e}")
 
     # ------------------------------------------------------------------ #
+    # _maintain_session_recording — bounded pre-roll (§6)
+    # Mirrors Swift TapToneAnalyzer.maintainSessionRecording(appending:)
+    # ------------------------------------------------------------------ #
+
+    #: Seconds of audio retained before the first tap (>= the 0.5 s warm-up, with margin).
+    SESSION_PRE_ROLL_DURATION: float = 2.0
+
+    @property
+    def session_pre_roll_samples(self) -> int:
+        """SESSION_PRE_ROLL_DURATION in samples at the current session rate."""
+        return int(self._session_recording_sample_rate * self.SESSION_PRE_ROLL_DURATION)
+
+    def _maintain_session_recording(self, samples) -> None:
+        """Append one audio chunk to the session WAV buffer and maintain the bounded pre-roll (§6).
+        Caller holds _gated_lock.
+
+        Extracted so the rule is unit-testable independently of the gated-capture pipeline:
+        - Before the first tap (_session_pre_roll_active): keep only the last
+          session_pre_roll_samples (~2 s). The tap is always in the tail, so trimming the head never
+          eats it — this just discards accumulated idle.
+        - The first tap (_gated_capture_active True): freeze — the latch drops to False for the rest
+          of the session.
+        - Everything after (subsequent taps, plate phases C/FLC, the gaps between them): completely
+          live — the trim is skipped, so every tap, phase and redo checkpoint is preserved. Only
+          redo of the *first* phase re-arms the latch. Mirrors Swift maintainSessionRecording.
+        """
+        if not self._is_session_recording:
+            return
+        self._session_recording_buffer.extend(samples)
+        if not self._session_pre_roll_active:
+            return  # frozen after the first tap -> fully live
+        if self._gated_capture_active:
+            self._session_pre_roll_active = False  # first tap started -> freeze the pre-roll
+        else:
+            excess = len(self._session_recording_buffer) - self.session_pre_roll_samples
+            if excess > 0:
+                del self._session_recording_buffer[:excess]
+
+    # ------------------------------------------------------------------ #
     # finish_session_recording
     # Mirrors Swift TapToneAnalyzer.finishSessionRecording(label:)
     # ------------------------------------------------------------------ #
@@ -348,13 +387,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             if len(self._pre_roll_buf) > self._pre_roll_samples:
                 self._pre_roll_buf = self._pre_roll_buf[-self._pre_roll_samples:]
 
-            # Session recording: append every chunk that flows through the
-            # audio pipeline while recording is active.  This produces a
-            # continuous WAV of the measurement session (minus paused
-            # segments and rejected phases) that can be replayed to reproduce
-            # the original results.  Mirrors Swift accumulateGatedSamples.
-            if self._is_session_recording:
-                self._session_recording_buffer.extend(samples)
+            # Session recording: append every chunk while recording, maintaining the bounded
+            # pre-roll (§6). Mirrors Swift accumulateGatedSamples -> maintainSessionRecording.
+            self._maintain_session_recording(samples)
 
             if not self._gated_capture_active:
                 # Deferred level-crossing path: keep accumulating audio into
