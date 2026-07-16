@@ -12,7 +12,10 @@ Architecture:
     only about 1 update per second — too coarse for accurate decay timing.
     Decay tracking uses the per-chunk RMS level: track_decay_fast() is
     called from _on_rms_level_changed() once per audio chunk (~43 Hz,
-    every ~23 ms), mirroring Swift's per-buffer $inputLevelDB subscription.
+    every ~23 ms) — the SAME audio-thread RMS path that drives tap detection,
+    which carries each chunk's audio-clock timestamp. The ring-out is therefore
+    measured in audio time and does not drift when the main thread is starved
+    under load (mirrors Swift, which routes decay through rmsLevelHandler).
 
 Ring-Out Definition:
     Ring-out time is measured as the elapsed time from the post-tap peak
@@ -26,7 +29,9 @@ Tracking Window:
 
 Stored properties initialised in TapToneAnalyzer.__init__:
     self.peak_magnitude_history: list[tuple[float, float]]
-        List of (monotonic_time, magnitude_dBFS) pairs.
+        List of (audio_time, magnitude_dBFS) pairs (audio clock, seconds).
+    self.decay_tap_audio_time: float | None
+        Audio-clock time of the tap that started the current decay window.
     self.is_tracking_decay: bool
     self.current_decay_time: float | None   (seconds)
     self.decay_threshold: float             (dB, default 15.0)
@@ -34,8 +39,6 @@ Stored properties initialised in TapToneAnalyzer.__init__:
 """
 
 from __future__ import annotations
-
-import time as _time
 
 from PySide6 import QtCore
 from PySide6.QtCore import Slot
@@ -52,20 +55,23 @@ class TapToneAnalyzerDecayTrackingMixin:
     # Mirrors Swift startDecayTracking()
     # ------------------------------------------------------------------ #
 
-    def start_decay_tracking(self) -> None:
+    def start_decay_tracking(self, tap_audio_time: float) -> None:
         """Initialise decay tracking immediately after a tap is detected.
 
-        Clears the magnitude history, seeds it with tap_peak_level as the
-        time-zero reference, and starts a 3-second timer that calls
-        stop_decay_tracking() when it fires.
+        Clears the magnitude history, seeds it with tap_peak_level at the tap's AUDIO time as the
+        time-zero reference, and starts a 3-second timer that calls stop_decay_tracking() when it
+        fires.
 
-        Mirrors Swift startDecayTracking().
+        Mirrors Swift startDecayTracking(tapAudioTime:).
+
+        Args:
+            tap_audio_time: Audio-clock time (seconds since engine start) of the tap onset, carried
+                from the audio thread so the ring-out is measured in audio time (load-invariant).
         """
-        now = _time.monotonic()
-
-        # Clear previous decay history and seed with the tap peak level.
-        # Mirrors Swift: peakMagnitudeHistory = [(time: now, magnitude: tapPeakLevel)]
-        self.peak_magnitude_history = [(now, self.tap_peak_level)]
+        # Clear previous decay history and seed with the tap peak level at the tap's AUDIO time.
+        # Mirrors Swift: peakMagnitudeHistory = [(time: tapAudioTime, magnitude: tapPeakLevel)]
+        self.peak_magnitude_history = [(tap_audio_time, self.tap_peak_level)]
+        self.decay_tap_audio_time = tap_audio_time
         self.current_decay_time = None
 
         # Enable decay tracking.
@@ -139,44 +145,46 @@ class TapToneAnalyzerDecayTrackingMixin:
     # Mirrors Swift trackDecayFast(inputLevel:)
     # ------------------------------------------------------------------ #
 
-    def track_decay_fast(self, input_level: float) -> None:
-        """Fast-path decay tracker called at ~10 Hz from on_fft_frame().
+    def track_decay_fast(self, input_level: float, audio_time: float) -> None:
+        """Fast-path decay tracker called once per audio chunk (~43 Hz) from
+        _on_rms_level_changed().
 
-        Appends the current input_level to peak_magnitude_history and trims
-        entries older than 5 seconds.  When enough history is present it
-        calls measure_decay_time() to update current_decay_time.
+        Appends the current input_level to peak_magnitude_history (stamped with the chunk's AUDIO
+        time) and trims entries older than 5 seconds.  When enough history is present it calls
+        measure_decay_time() to update current_decay_time.
 
-        Mirrors Swift trackDecayFast(inputLevel:).
+        Mirrors Swift trackDecayFast(inputLevel:audioTime:).
 
         Args:
-            input_level: Current instantaneous input level in dBFS,
-                         sourced from per-chunk RMS at ~10 Hz.
+            input_level: Current instantaneous input level in dBFS, sourced from per-chunk RMS.
+            audio_time: THIS chunk's audio-clock timestamp (seconds since engine start), carried
+                from the audio thread. Stamping with this instead of a wall clock makes the ring-out
+                invariant to when the main thread actually runs.
         """
         # Only track decay history if actively tracking after a tap.
         # Mirrors Swift: guard isTrackingDecay else { return }
         if not self.is_tracking_decay:
             return
 
-        now = _time.monotonic()
-        self.peak_magnitude_history.append((now, input_level))
+        self.peak_magnitude_history.append((audio_time, input_level))
 
-        # Keep only recent history (5-second window).
-        # Mirrors Swift: peakMagnitudeHistory.filter { now.timeIntervalSince($0.time) < 5.0 }
+        # Keep only recent history (audio-time 5-second window).
+        # Mirrors Swift: peakMagnitudeHistory.filter { audioTime - $0.time < 5.0 }
         decay_history_window_seconds: float = 5.0
         self.peak_magnitude_history = [
             (t, m)
             for (t, m) in self.peak_magnitude_history
-            if (now - t) < decay_history_window_seconds
+            if (audio_time - t) < decay_history_window_seconds
         ]
 
         # Calculate decay time if we have a tap time and enough history.
-        # Mirrors Swift: if let tapTime = lastTapTime, peakMagnitudeHistory.count > 10
+        # Mirrors Swift: if let tapTime = decayTapAudioTime, peakMagnitudeHistory.count > 10
         minimum_decay_history_count = 10
         if (
-            self.last_tap_time is not None
+            self.decay_tap_audio_time is not None
             and len(self.peak_magnitude_history) > minimum_decay_history_count
         ):
-            self.current_decay_time = self.measure_decay_time(self.last_tap_time)
+            self.current_decay_time = self.measure_decay_time(self.decay_tap_audio_time)
 
     # ------------------------------------------------------------------ #
     # measure_decay_time
@@ -196,7 +204,7 @@ class TapToneAnalyzerDecayTrackingMixin:
         Mirrors Swift measureDecayTime(tapTime:).
 
         Args:
-            tap_time: Monotonic timestamp of the tap onset.
+            tap_time: Audio-clock time (seconds since engine start) of the tap onset.
 
         Returns:
             Elapsed ring-out time in seconds, or None if the signal did not

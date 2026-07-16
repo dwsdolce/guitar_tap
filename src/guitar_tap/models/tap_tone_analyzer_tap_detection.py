@@ -268,7 +268,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                         self.tap_peak_level = self.mic.recent_peak_level_db
                     else:
                         self.tap_peak_level = level
-                    self._handle_tap_detection(mag_y_db, freq)
+                    self._handle_tap_detection(mag_y_db, freq, audio_time)
                 else:
                     # Pending — waiting for more above-threshold chunks.
                     if is_file_playback and self.detect_tap_consecutive_above == 1:
@@ -293,10 +293,11 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     # _handle_tap_detection — mirrors Swift handleTapDetection(magnitudes:frequencies:time:)
     # ------------------------------------------------------------------ #
 
-    def _handle_tap_detection(self, mag_y_db, freq) -> None:
+    def _handle_tap_detection(self, mag_y_db, freq, audio_time: float) -> None:
         """Dispatch a confirmed tap to the appropriate capture handler.
 
-        Mirrors Swift handleTapDetection(magnitudes:frequencies:time:).
+        Mirrors Swift handleTapDetection(magnitudes:frequencies:time:audioTime:). audio_time (the
+        tap's audio-clock time) seeds ring-out decay tracking so it is measured in audio time.
         Guitar mode: accumulates spectra, starts decay tracking, starts capture-window timer.
         Plate/brace mode: delegates to handle_plate_tap_detection().
         """
@@ -336,8 +337,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         )
 
         # Start decay tracking immediately (still uses RMS level, independent of
-        # spectrum capture). Mirrors Swift startDecayTracking() at tap-fire time.
-        self.start_decay_tracking()
+        # spectrum capture). Mirrors Swift startDecayTracking(tapAudioTime:) at tap-fire time.
+        self.start_decay_tracking(tap_audio_time=audio_time)
 
         # Provisional status update — final status is emitted after gated capture
         # completes and the captured_taps list grows.  (current_tap_count == len(captured_taps)
@@ -686,9 +687,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         # Fast path: decay tracking at the per-chunk RMS rate (~43 Hz), run regardless of detection
         # state (its own is_tracking_decay guard gates it, and the post-tap window must keep updating
-        # even once the measurement is complete). Mirrors Swift fftAnalyzer.$inputLevelDB ->
-        # trackDecayFast. Moved here from on_fft_frame (~2.7 Hz, too coarse for ring-out timing).
-        self.track_decay_fast(self._current_input_level_db)
+        # even once the measurement is complete). Stamped with THIS chunk's audio_time so the ring-out
+        # is measured in audio time (load-invariant). Mirrors Swift rmsLevelHandler -> trackDecayFast.
+        self.track_decay_fast(self._current_input_level_db, audio_time)
 
         if self.mic and getattr(self.mic, 'is_playing_file', False):
             TAP_DEBUG("onRmsLevel",

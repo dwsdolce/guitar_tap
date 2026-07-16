@@ -234,7 +234,7 @@ class TestDecayTrackingTimerSlot:
         """start_decay_tracking creates a QTimer (not threading.Timer)."""
         sut = _make_sut()
         sut.tap_peak_level = -30.0
-        sut.start_decay_tracking()
+        sut.start_decay_tracking(100.0)
 
         assert sut._decay_tracking_timer is not None
         assert isinstance(sut._decay_tracking_timer, QtCore.QTimer), (
@@ -250,11 +250,11 @@ class TestDecayTrackingTimerSlot:
         """Calling start_decay_tracking twice stops the first QTimer."""
         sut = _make_sut()
         sut.tap_peak_level = -30.0
-        sut.start_decay_tracking()
+        sut.start_decay_tracking(100.0)
         first_timer = sut._decay_tracking_timer
 
         sut.tap_peak_level = -25.0
-        sut.start_decay_tracking()
+        sut.start_decay_tracking(100.0)
         second_timer = sut._decay_tracking_timer
 
         # The first timer must have been stopped (isActive() == False).
@@ -269,7 +269,7 @@ class TestDecayTrackingTimerSlot:
         """stop_decay_tracking stops the QTimer and clears the reference."""
         sut = _make_sut()
         sut.tap_peak_level = -30.0
-        sut.start_decay_tracking()
+        sut.start_decay_tracking(100.0)
         timer = sut._decay_tracking_timer
 
         sut.stop_decay_tracking()
@@ -282,7 +282,7 @@ class TestDecayTrackingTimerSlot:
         """Timer signal → stop_decay_tracking via processEvents."""
         sut = _make_sut()
         sut.tap_peak_level = -30.0
-        sut.start_decay_tracking()
+        sut.start_decay_tracking(100.0)
 
         # Override the timer interval so we don't wait 3 s in the test.
         sut._decay_tracking_timer.stop()

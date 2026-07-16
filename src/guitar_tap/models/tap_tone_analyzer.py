@@ -506,7 +506,13 @@ class TapToneAnalyzer(
         self.tap_peak_level: float = -100.0
 
         # ── Decay tracking state (mirrors Swift TapToneAnalyzer stored properties)
+        # peak_magnitude_history holds (audio_time, magnitude_dBFS) pairs — the AUDIO clock
+        # (seconds since engine start), carried with each sample, NOT wall-clock. This makes the
+        # ring-out invariant to main-thread scheduling jitter under load (OUT-4 lesson).
         self.peak_magnitude_history: list = []
+        # Audio-clock time of the tap that started the current decay window — the time-zero
+        # reference for measure_decay_time (separate from last_tap_time, the wall-clock cooldown gate).
+        self.decay_tap_audio_time: "float | None" = None
         self.is_tracking_decay: bool = False
         self._decay_tracking_timer = None
 
@@ -1100,12 +1106,20 @@ class TapToneAnalyzer(
             gt_log("📂 No persisted measurements file found")
 
         # ── Auto-start tap sequence on first launch ────────────────────────
-        # Mirrors Swift start() auto-start guard:
-        #   if !isDetecting && !isMeasurementComplete && !isDetectionPaused
-        #      && currentTapCount == 0 { startTapSequence() }
+        # Mirrors Swift start() auto-start guard + requestStartTapSequence (§4b decision 1b): if Dump
+        # Capture Audio is on but its folder is unreachable, DON'T arm — set a flag the view checks at
+        # startup to prompt (Change Location / Turn Off Saving / Cancel), same as New Tap. A Qt signal
+        # can't be used here: this runs inside analyzer.start() during init, BEFORE the view connects
+        # its signals (fft_canvas connects after .start()), so the emit would be lost.
+        self.pending_dump_folder_prompt = False
         if (not self.is_detecting and not self.is_measurement_complete
                 and not self.is_detection_paused and self.current_tap_count == 0):
-            self.start_tap_sequence()
+            from models.tap_display_settings import TapDisplaySettings
+            from models.wav_dump_folder import WavDumpFolder
+            if TapDisplaySettings.dump_capture_audio() and not WavDumpFolder.is_reachable():
+                self.pending_dump_folder_prompt = True
+            else:
+                self.start_tap_sequence()
 
     # ------------------------------------------------------------------ #
     # FFT frequency axis

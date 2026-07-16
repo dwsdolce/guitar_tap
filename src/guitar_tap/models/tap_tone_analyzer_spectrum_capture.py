@@ -169,17 +169,19 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         from models.tap_display_settings import TapDisplaySettings as _tds
         if not _tds.dump_capture_audio():
             return
+        from models.wav_dump_folder import WavDumpFolder
+        # The user-settable dump folder (§4b): the custom folder or the default. Reachability was
+        # checked at arm time; if the custom folder vanished mid-measurement, skip rather than
+        # silently write elsewhere. release() is a no-op (not sandboxed).
+        acquired = WavDumpFolder.acquire_dump_folder()
+        if acquired is None:
+            gt_log("⚠️ WAV dump skipped — the chosen folder is no longer reachable")
+            return
+        dump_dir, release_folder = acquired
         try:
             import struct
-            import sys
             from datetime import datetime, timezone
-            from pathlib import Path
 
-            if sys.platform == "win32":
-                docs = Path(os.environ.get("USERPROFILE", Path.home())) / "Documents"
-            else:
-                docs = Path.home() / "Documents"
-            dump_dir = docs / "GuitarTap"
             dump_dir.mkdir(parents=True, exist_ok=True)
 
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
@@ -210,6 +212,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             gt_log(f"📦 WAV dump: {path} ({n_samples} samples, {sr} Hz)")
         except Exception as e:
             gt_log(f"⚠️ WAV dump failed: {e}")
+        finally:
+            release_folder()
 
     # ------------------------------------------------------------------ #
     # _maintain_session_recording — bounded pre-roll (§6)

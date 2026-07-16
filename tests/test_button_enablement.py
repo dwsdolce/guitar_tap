@@ -65,19 +65,22 @@ def button_rule(s: ButtonState) -> ButtonOutput:
         and not is_guitar
     )
 
-    # New Tap starts a fresh measurement, so it's enabled only once one is complete (every
-    # type-switch auto-arms into capturing — no disarmed idle state). Cancel restarts,
-    # offered during a review phase (as "Redo") or an active multi-step sequence
-    # (multi-tap or multi-phase = plate). Pause/Resume: review, detecting, or paused.
+    # A sequence is "in flight" when the analyzer is working toward a measurement: for
+    # guitar, detecting or paused; for material, past NOT_STARTED and not complete. New Tap
+    # is disabled while in flight and enabled otherwise (idle OR complete) — the honest
+    # predicate, replacing the old `not is_measurement_complete` proxy that wrongly locked
+    # New Tap in the disarmed-idle state the Dump Capture Audio folder guard can produce (§4b).
+    # Cancel restarts, offered during a review phase (as "Redo") or an active multi-step
+    # sequence (multi-tap or multi-phase = plate). Pause/Resume: review, detecting, or paused.
     if is_guitar:
-        active = s.is_detecting or s.is_detection_paused
+        sequence_active = s.is_detecting or s.is_detection_paused
     else:
-        active = (
+        sequence_active = (
             s.material_tap_phase != MaterialTapPhase.NOT_STARTED
             and not s.is_measurement_complete
         )
     multi_step = s.number_of_taps > 1 or s.measurement_type == MeasurementType.PLATE
-    in_active_multi_step = active and multi_step
+    in_active_multi_step = sequence_active and multi_step
 
     if is_in_review_phase:
         pause_enabled = True
@@ -89,7 +92,7 @@ def button_rule(s: ButtonState) -> ButtonOutput:
     elif not (s.fft_is_running and s.is_ready_for_detection):
         new_tap_disabled = True
     else:
-        new_tap_disabled = not s.is_measurement_complete
+        new_tap_disabled = sequence_active
 
     cancel_enabled = is_in_review_phase or in_active_multi_step
 
@@ -103,10 +106,13 @@ def button_rule(s: ButtonState) -> ButtonOutput:
 class TestButtonEnablement:
     """Python parity for Swift ButtonEnablementTests."""
 
-    def test_B1_guitar_idle_all_disabled(self):
+    def test_B1_guitar_disarmed_idle_new_tap_enabled(self):
+        # Disarmed-idle guitar — nothing complete, nothing in flight (the Dump Capture Audio
+        # folder guard declined to arm, §4b, or the sub-frame before launch auto-arm). New
+        # Tap is ENABLED so the user can re-arm; Pause and Cancel stay disabled.
         s = ButtonState(is_detecting=False, is_detection_paused=False, is_measurement_complete=False)
         assert button_rule(s) == ButtonOutput(
-            pause_enabled=False, new_tap_disabled=True, cancel_enabled=False
+            pause_enabled=False, new_tap_disabled=False, cancel_enabled=False
         )
 
     def test_B2_guitar_single_tap_listening_pause_only(self):
@@ -123,12 +129,13 @@ class TestButtonEnablement:
             pause_enabled=False, new_tap_disabled=False, cancel_enabled=False
         )
 
-    def test_B4_guitar_impossible_state_lights_both_new_tap_and_pause(self):
-        """StateInvariants forbids (detecting && complete); New Tap keys off complete and
-        Pause off detecting, so this contradictory state lights up BOTH."""
+    def test_B4_guitar_impossible_state_new_tap_disabled_pause_on(self):
+        """StateInvariants forbids (detecting && complete). New Tap now keys off "sequence in
+        flight" (detecting||paused) rather than "complete", so this contradictory state
+        disables New Tap (detecting) while Pause is on — no longer lighting up both."""
         s = ButtonState(is_detecting=True, is_detection_paused=False, is_measurement_complete=True)
         out = button_rule(s)
-        assert out.new_tap_disabled is False  # complete -> New Tap enabled
+        assert out.new_tap_disabled is True   # in flight (detecting) -> New Tap disabled
         assert out.pause_enabled is True       # detecting -> Pause enabled
         assert out.cancel_enabled is False
 
@@ -160,6 +167,17 @@ class TestButtonEnablement:
                         material_tap_phase=MaterialTapPhase.CAPTURING_LONGITUDINAL)
         assert button_rule(s) == ButtonOutput(
             pause_enabled=True, new_tap_disabled=True, cancel_enabled=True
+        )
+
+    def test_B13_plate_disarmed_idle_new_tap_enabled(self):
+        # Disarmed-idle material (plate at launch, folder guard declined to arm) — phase
+        # NOT_STARTED, nothing complete, nothing in flight. New Tap ENABLED to re-arm;
+        # Pause/Cancel disabled. The material counterpart of B1.
+        s = ButtonState(is_detecting=False, is_detection_paused=False, is_measurement_complete=False,
+                        measurement_type=MeasurementType.PLATE,
+                        material_tap_phase=MaterialTapPhase.NOT_STARTED)
+        assert button_rule(s) == ButtonOutput(
+            pause_enabled=False, new_tap_disabled=False, cancel_enabled=False
         )
 
     def test_B9_fft_not_running_new_tap_disabled(self):

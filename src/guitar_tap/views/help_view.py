@@ -384,8 +384,9 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Save",
-        "Saves the current measurement &mdash; enabled only when the spectrum is frozen "
-        "and peaks have been detected. Enter a measurement name and optional notes.",
+        "Saves the current measurement &mdash; enabled when the spectrum is frozen, peaks "
+        "have been detected, and you have entered a measurement name (the name is required; "
+        "notes are optional).",
         ["fa5.save"]
     ))
     parts.append(_row(

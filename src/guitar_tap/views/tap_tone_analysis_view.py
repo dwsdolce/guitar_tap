@@ -2883,34 +2883,58 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # @parity state/button-enablement
     def _update_tap_buttons(self) -> None:
-        """Refresh enabled/disabled state of New Tap, Pause, Cancel, and tap count spinner."""
+        """Refresh enabled/disabled state of New Tap, Pause, Cancel, and tap count spinner.
+
+        Reads the analyzer's real state flags — is_detecting, is_detection_paused,
+        is_measurement_complete, material_tap_phase, is_ready_for_detection — so the rule is
+        the same one Swift computes in TapToneAnalysisView, with no derived shadow. Mirrors
+        Swift buttonRule / test_button_enablement.
+        """
+        from models.measurement_type import MeasurementType as _MT
+        from models.material_tap_phase import MaterialTapPhase as _MTP
+
         tap_num = self.tap_num_spin.value()
         mt = TDS.measurement_type()
+        analyzer = self.fft_canvas.analyzer
+
+        is_detecting = analyzer.is_detecting
+        is_paused = analyzer.is_detection_paused
+        is_complete = analyzer.is_measurement_complete
+        phase = analyzer.material_tap_phase
+        is_comparing = self.fft_canvas.is_comparing
+        in_review = self._is_in_review_phase()
+        # fft running + past the post-tap/route-change reinit window. `_is_running` is the
+        # audio-engine-running flag (the analog of Swift fft.isRunning); is_ready_for_detection
+        # mirrors Swift isReadyForDetection. Together == Swift `fft.isRunning && isReadyForDetection`.
+        ready = self._is_running and analyzer.is_ready_for_detection
 
         # Mirrors Swift: .disabled(tap.currentTapCount > 0 && !tap.isMeasurementComplete)
         # Lock the tap count spinner once any tap has been detected in the current sequence,
         # so the total can't change mid-measurement. Re-enables when measurement completes.
         self.tap_num_spin.setEnabled(
-            not (self._tap_count_captured > 0 and not self._is_measurement_complete)
+            not (self._tap_count_captured > 0 and not is_complete)
         )
-        # Mirrors Swift isDetecting: False when paused (pauseTapDetection sets isDetecting=false)
-        is_detecting = self._is_running and not self._is_measurement_complete and not self._is_paused
-        is_comparing = self.fft_canvas.is_comparing
-        in_review = self._is_in_review_phase()
 
-        # ── Enablement (finalized rule; mirrors Swift buttonRule / test_button_enablement) ──
-        from models.measurement_type import MeasurementType as _MT
+        # ── Enablement (mirrors Swift buttonRule / test_button_enablement) ──
+        # A sequence is "in flight" when the analyzer is working toward a measurement: for
+        # guitar, detecting or paused; for material, past NOT_STARTED and not complete. New
+        # Tap is disabled while in flight and enabled otherwise (idle OR complete) — the
+        # honest predicate, replacing the old "complete only" proxy that wrongly locked New
+        # Tap in the disarmed-idle state the Dump Capture Audio folder guard can produce (§4b).
+        if mt.is_guitar:
+            sequence_active = is_detecting or is_paused
+        else:
+            sequence_active = phase != _MTP.NOT_STARTED and not is_complete
         # multi-step = multi-tap OR multi-phase (plate; brace is single-phase).
         multi_step = tap_num > 1 or mt == _MT.PLATE
-        # active = a sequence is running (detecting or paused).
-        active = is_detecting or self._is_paused
-        cancel_enabled = in_review or (active and multi_step)
-        # New Tap only lights up once a measurement is complete (or comparing) — every
-        # type-switch auto-arms into capturing, so there is no disarmed idle state.
-        self.new_tap_btn.setEnabled(self._is_measurement_complete or is_comparing)
+        cancel_enabled = in_review or (sequence_active and multi_step)
+
+        # New Tap: comparison overrides; else needs fft running + ready, then enabled when
+        # idle (no sequence in flight) — including the disarmed-idle state, so the user can re-arm.
+        self.new_tap_btn.setEnabled(is_comparing or (ready and not sequence_active))
         # Pause/Resume ("Accept" in review): review, detecting, or paused — works even
         # single-tap, for setting the threshold without doing a capture.
-        self.pause_tap_btn.setEnabled(in_review or is_detecting or self._is_paused)
+        self.pause_tap_btn.setEnabled(in_review or is_detecting or is_paused)
         # Cancel ("Redo" in review) restarts: a review phase, or an active multi-step sequence.
         self.cancel_tap_btn.setEnabled(cancel_enabled)
 
@@ -2932,7 +2956,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cancel_tap_btn.setStyleSheet("color: orange;")
         else:
             # Standard labels.
-            if self._is_paused:
+            if is_paused:
                 self.pause_tap_btn.setText("Resume")
                 self.pause_tap_btn.setIcon(qta.icon("fa5.play-circle"))
             else:
@@ -2999,6 +3023,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_running = True
         self.set_running(True)
         self.fft_canvas.start_analyzer()
+        # Launch auto-arm was deferred by the model because Dump Capture Audio is on but its folder is
+        # unreachable (§4b decision 1b) — prompt now, same as New Tap, and arm only if resolved. This
+        # runs after the model's start()/auto-arm, so the flag is reliably set (a signal would race).
+        if getattr(self.fft_canvas.analyzer, "pending_dump_folder_prompt", False):
+            self.fft_canvas.analyzer.pending_dump_folder_prompt = False
+            if self._ensure_dump_folder_reachable():
+                self.fft_canvas.restart_tap_sequence()
 
     def _open_audio_file(self) -> None:
         """Show a dialog for selecting an audio file and optional calibration,
@@ -3201,6 +3232,11 @@ class MainWindow(QtWidgets.QMainWindow):
         restarts the audio processing thread (equivalent to Swift's AVAudioEngine restart
         that occurs when startTapSequence re-arms the audio pipeline).
         """
+        # Arm-time guard (§4b decision 1b): Dump Capture Audio on but its folder unreachable →
+        # prompt before capturing rather than losing the write at completion. Mirrors Swift's
+        # dumpFolderUnreachable alert (the reachability predicate lives on the shared model).
+        if not self._ensure_dump_folder_reachable():
+            return
         # Exit comparison mode first — required when _is_measurement_complete is False
         # (e.g. user entered comparison from live-detecting state).
         if self.fft_canvas.is_comparing:
@@ -3222,6 +3258,38 @@ class MainWindow(QtWidgets.QMainWindow):
         # For plate/brace, start_tap_sequence() already transitions material_tap_phase
         # to CAPTURING_LONGITUDINAL — no separate start_plate_analysis() call needed.
         self.fft_canvas.restart_tap_sequence()
+
+    def _ensure_dump_folder_reachable(self) -> bool:
+        """If Dump Capture Audio is on but its folder can't be reached, prompt the user (Change
+        Location / Turn Off Saving / Cancel) and return whether to proceed with arming. Mirrors the
+        Swift ``dumpFolderUnreachable`` alert (§4b decision 1b)."""
+        from models.tap_display_settings import TapDisplaySettings
+        from models.wav_dump_folder import WavDumpFolder
+
+        if not TapDisplaySettings.dump_capture_audio() or WavDumpFolder.is_reachable():
+            return True
+
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        box.setWindowTitle("Capture Audio Folder Unavailable")
+        box.setText(
+            "The folder you chose for saving captured audio isn't there:\n"
+            f"{WavDumpFolder.current_folder()}\n\n"
+            "It may have been renamed, moved, or removed. Choose the folder again, or turn off "
+            "audio saving, before starting the measurement."
+        )
+        change_btn = box.addButton("Change Location…", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+        off_btn = box.addButton("Turn Off Saving", QtWidgets.QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.StandardButton.Cancel)
+        box.exec()
+        clicked = box.clickedButton()
+
+        if clicked is change_btn:
+            return WavDumpFolder.choose_folder(self) and WavDumpFolder.is_reachable()
+        if clicked is off_btn:
+            TapDisplaySettings.set_dump_capture_audio(False)
+            return True
+        return False  # Cancel
 
     def _on_ring_out_measured(self, time_s: float) -> None:
         self._ring_out_s = time_s
@@ -6247,6 +6315,56 @@ class MainWindow(QtWidgets.QMainWindow):
         dump_audio_desc.setFont(caption)
         da_layout.addWidget(dump_audio_cb)
         da_layout.addWidget(dump_audio_desc)
+
+        # WAV-dump folder (§4b): where recordings go, with Open / Change… / Use Default.
+        # Mirrors the Swift Settings folder row. Visible only while Dump Capture Audio is on.
+        from models.wav_dump_folder import WavDumpFolder as _WDF
+
+        dump_folder_widget = QtWidgets.QWidget()
+        df_layout = QtWidgets.QVBoxLayout(dump_folder_widget)
+        df_layout.setContentsMargins(16, 2, 0, 0)
+        df_layout.setSpacing(2)
+
+        df_path_lbl = QtWidgets.QLabel()
+        df_path_lbl.setFont(caption)
+        df_path_lbl.setWordWrap(True)
+        df_path_lbl.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        df_open_btn = QtWidgets.QPushButton("Open Folder")
+        df_change_btn = QtWidgets.QPushButton("Change…")
+        df_use_default_btn = QtWidgets.QPushButton("Use Default")
+
+        def _refresh_df_path() -> None:
+            df_path_lbl.setText(f"Saved to: {_WDF.current_folder()}")
+            # Disabled (not removed) when already on the default — button-visibility principle.
+            df_use_default_btn.setEnabled(_WDF.has_custom_folder())
+
+        df_open_btn.clicked.connect(_WDF.reveal_in_finder)
+
+        def _change_df() -> None:
+            if _WDF.choose_folder(self):
+                _refresh_df_path()
+
+        df_change_btn.clicked.connect(_change_df)
+
+        def _use_default_df() -> None:
+            _WDF.use_default_folder()
+            _refresh_df_path()
+
+        df_use_default_btn.clicked.connect(_use_default_df)
+
+        df_btn_row = QtWidgets.QHBoxLayout()
+        df_btn_row.addWidget(df_open_btn)
+        df_btn_row.addWidget(df_change_btn)
+        df_btn_row.addWidget(df_use_default_btn)
+        df_btn_row.addStretch()
+        df_layout.addWidget(df_path_lbl)
+        df_layout.addLayout(df_btn_row)
+        _refresh_df_path()
+        dump_folder_widget.setVisible(AS.AppSettings.dump_capture_audio())
+        dump_audio_cb.toggled.connect(dump_folder_widget.setVisible)
+        da_layout.addWidget(dump_folder_widget)
+
         an.addWidget(dump_audio_widget)
         an.addWidget(_hsep())
 

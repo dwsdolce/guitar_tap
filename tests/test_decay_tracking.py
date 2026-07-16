@@ -9,14 +9,14 @@ All tests operate directly on TapToneAnalyzer's state; no audio hardware
 or real timing is involved.  TapToneAnalyzer() is constructible without
 audio hardware (Part 5).
 
-NOTE: Python uses monotonic float timestamps (time.monotonic()) instead of
-      Swift's Date objects.  History tuples are (float, float) → (time, magnitude).
+NOTE: timestamps are the AUDIO clock (seconds since engine start) — plain floats carried with each
+      sample, matching Swift. History tuples are (audio_time, magnitude). Fixed constants (100.0)
+      stand in for real times so the tests are deterministic.
 """
 
 from __future__ import annotations
 
 import sys, os
-import time
 
 import pytest
 
@@ -56,10 +56,10 @@ def _make_history(
     magnitudes: list[float],
     interval_seconds: float = 0.1,
 ) -> list[tuple[float, float]]:
-    """Build a history list of (monotonic_time, magnitude) tuples.
+    """Build a history list of (audio_time, magnitude) tuples.
 
     Mirrors Swift makeHistory(startingAt:intervalSeconds:magnitudes:).
-    Samples are spaced interval_seconds apart starting at starting_at.
+    Samples are spaced interval_seconds apart starting at starting_at (audio-clock seconds).
     """
     return [
         (starting_at + i * interval_seconds, mag)
@@ -78,14 +78,14 @@ class TestDecayTracking:
         """DK1: Empty history → None (no samples to analyse)."""
         sut = _make_sut()
         sut.peak_magnitude_history = []
-        tap_time = time.monotonic()
+        tap_time = 100.0
         result = sut.measure_decay_time(tap_time)
         assert result is None, "Expected None for empty history"
 
     def test_DK2_all_samples_before_tap_returns_none(self):
         """DK2: All samples are before tap_time → post_tap_history is empty → None."""
         sut = _make_sut()
-        tap_time = time.monotonic()
+        tap_time = 100.0
         # Place all samples 1 s before the tap
         sut.peak_magnitude_history = _make_history(
             starting_at=tap_time - 1.0,
@@ -98,7 +98,7 @@ class TestDecayTracking:
         """DK3: Signal never decays by decay_threshold → None (threshold not crossed)."""
         sut = _make_sut()
         sut.decay_threshold = 30.0  # require 30 dB drop
-        tap_time = time.monotonic()
+        tap_time = 100.0
         # Peak at -20 dB; subsequent samples only drop to -25 dB (5 dB, not 30)
         sut.peak_magnitude_history = _make_history(
             starting_at=tap_time,
@@ -111,7 +111,7 @@ class TestDecayTracking:
         """DK4: Signal decays past threshold → returns positive elapsed time."""
         sut = _make_sut()
         sut.decay_threshold = 20.0  # require 20 dB drop
-        tap_time = time.monotonic()
+        tap_time = 100.0
         # Peak at index 0 = -10 dB; target = -30 dB; crossing at index 5 = -31 dB
         # Time between index 0 and index 5 = 5 × 0.1 s = 0.5 s
         sut.peak_magnitude_history = _make_history(
@@ -128,7 +128,7 @@ class TestDecayTracking:
         """DK5: Decay crossing immediately after the peak → very short but positive time."""
         sut = _make_sut()
         sut.decay_threshold = 10.0
-        tap_time = time.monotonic()
+        tap_time = 100.0
         # Peak at -10 dB; second sample at -21 dB already crosses (target = -20 dB)
         sut.peak_magnitude_history = _make_history(
             starting_at=tap_time,
@@ -148,21 +148,21 @@ class TestDecayTracking:
         sut = _make_sut()
         sut.is_tracking_decay = False
         initial_count = len(sut.peak_magnitude_history)
-        sut.track_decay_fast(-20.0)
+        sut.track_decay_fast(-20.0, 100.0)
         assert len(sut.peak_magnitude_history) == initial_count, \
             "History must not grow when is_tracking_decay is False"
 
     def test_DK7_tracking_no_tap_time_accumulates(self):
-        """DK7: When is_tracking_decay is True but last_tap_time is None,
+        """DK7: When is_tracking_decay is True but decay_tap_audio_time is None,
         samples accumulate but current_decay_time stays None.
         """
         sut = _make_sut()
         sut.is_tracking_decay = True
-        sut.last_tap_time = None
+        sut.decay_tap_audio_time = None
         sut.current_decay_time = None
         before = len(sut.peak_magnitude_history)
-        sut.track_decay_fast(-30.0)
+        sut.track_decay_fast(-30.0, 100.0)
         assert len(sut.peak_magnitude_history) == before + 1, \
             "Sample should be appended when tracking is active"
         assert sut.current_decay_time is None, \
-            "current_decay_time stays None when last_tap_time is not set"
+            "current_decay_time stays None when decay_tap_audio_time is not set"
