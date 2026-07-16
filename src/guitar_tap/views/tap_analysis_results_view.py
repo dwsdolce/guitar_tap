@@ -453,6 +453,64 @@ def pdf_report_data_from_measurement(
     )
 
 
+# Spectrum-image matte (pt). Mirrors Swift PDFReportGenerator.swift:405-410 —
+# `.background(Color(white: 0.05)).cornerRadius(6)` behind the chart image.
+_SPECTRUM_MATTE_PT = 5
+_SPECTRUM_CORNER_PT = 6
+
+
+def _spectrum_image_matte(image_data: bytes, content_w: float):
+    """The spectrum image inside a dark rounded matte, as a single flowable.
+
+    The matte makes it obvious where the captured spectrum ends and the report begins.
+
+    Mirrors Swift (PDFReportGenerator.swift:405-410)::
+
+        reportImage(from: imageData)
+            .resizable().aspectRatio(contentMode: .fit)
+            .frame(width: contentWidth)
+            .background(Color(white: 0.05))
+            .cornerRadius(6)
+
+    On Swift the frame is not a stroke: its chart PNG carries transparent padding (hence the
+    DeviceGray alpha mask in its PDF) and the near-black background shows *through* it. Our chart
+    image is opaque, so the same look is drawn deliberately — a near-black rounded cell with the
+    image inset by ``_SPECTRUM_MATTE_PT``.
+
+    Shared by both story builders (`_build_averaged_story` / `_build_comparison_story`), which each
+    embedded a bare ``Image`` with no matte. Swift has it at BOTH of its sites (:405 and :1261).
+
+    Args:
+        image_data: PNG bytes of the rendered spectrum.
+        content_w: Full content width (pt); the image is inset within it.
+
+    Returns:
+        A reportlab ``Table`` flowable wrapping the image.
+    """
+    import io as _io
+
+    from PIL import Image as _PILImage
+    from reportlab.lib import colors
+    from reportlab.platypus import Image as _RLImg, Table, TableStyle
+
+    _pil = _PILImage.open(_io.BytesIO(image_data))
+    w_px, h_px = _pil.size
+    aspect = h_px / w_px if w_px > 0 else 0.5
+    inner_w = content_w - _SPECTRUM_MATTE_PT * 2
+    img = _RLImg(_io.BytesIO(image_data), width=inner_w, height=inner_w * aspect)
+
+    cell = Table([[img]], colWidths=[content_w])
+    cell.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.05, 0.05, 0.05)),
+        ("LEFTPADDING",   (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
+        ("TOPPADDING",    (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
+        ("ROUNDEDCORNERS", [_SPECTRUM_CORNER_PT] * 4),
+    ]))
+    return cell
+
+
 def _build_averaged_story(data: "PDFReportData") -> list:
     """Build and return the reportlab story list for an averaged-result report.
 
@@ -783,18 +841,10 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
     # --- SPECTRUM IMAGE ---------------------------------------------------
     if spectrum_image_data:
-        from PIL import Image as PILImage
-        pil_img = PILImage.open(_io.BytesIO(spectrum_image_data))
-        img_w_px, img_h_px = pil_img.size
-        aspect = img_h_px / img_w_px if img_w_px > 0 else 0.5
-        img_h_pt = CONTENT_W * aspect  # natural height — mirrors Swift .aspectRatio(.fit)
         story.append(Paragraph("Frequency Spectrum", S_SPEC_HDR))
         story.append(Spacer(1, 6))
-        story.append(Image(
-            _io.BytesIO(spectrum_image_data),
-            width=CONTENT_W,
-            height=img_h_pt,
-        ))
+        # Dark rounded matte around the image — mirrors Swift .background(white:0.05).cornerRadius(6).
+        story.append(_spectrum_image_matte(spectrum_image_data, CONTENT_W))
         story.append(Spacer(1, 14))
 
     # --- SECTION DIVIDER --------------------------------------------------
@@ -1732,15 +1782,9 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     if data.spectrum_image_data:
         story.append(Paragraph("Frequency Spectrum", S_SECTION))
         try:
-            import io as _io
-
-            from PIL import Image as _PILImage
-            _pil = _PILImage.open(_io.BytesIO(data.spectrum_image_data))
-            _w_px, _h_px = _pil.size
-            _aspect = _h_px / _w_px if _w_px > 0 else 0.5
-            _img_h = CONTENT_W * _aspect
-            from reportlab.platypus import Image as _RLImg
-            story.append(_RLImg(_io.BytesIO(data.spectrum_image_data), width=CONTENT_W, height=_img_h))
+            # Dark rounded matte around the image — mirrors Swift, which applies it at BOTH of its
+            # sites (PDFReportGenerator.swift:405 and :1261).
+            story.append(_spectrum_image_matte(data.spectrum_image_data, CONTENT_W))
         except Exception:
             pass
         story.append(Spacer(1, 14))

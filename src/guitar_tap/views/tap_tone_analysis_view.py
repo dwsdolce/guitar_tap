@@ -2714,8 +2714,23 @@ class MainWindow(QtWidgets.QMainWindow):
             long_id  = analyzer.effective_longitudinal_peak_id
             cross_id = analyzer.effective_cross_peak_id
             flc_id   = analyzer.effective_flc_peak_id
-            # Resolve UUIDs to frequencies via the current peak list.
-            peak_by_id = {p.id: p for p in peaks}
+            # Resolve each phase id → frequency against the PERSISTENT per-phase peak lists, not the
+            # transient current_peaks. Mirrors Swift TapAnalysisResultsView.swift:421
+            #   analyzer.longitudinalPeaks.first { $0.id == effectiveLongitudinalPeakID }
+            # current_peaks holds only the CURRENT phase's peaks, so a completed phase's peak vanishes
+            # from it the instant the next phase begins — which cleared the L/C/FLC row one event after
+            # it was set (set-then-cleared; the row only "caught up" at each phase completion when
+            # combine_plate_peaks() briefly re-unioned all phases). longitudinal_peaks/cross_peaks/
+            # flc_peaks persist across phases (reset only on redo/reset/load), so they carry completed
+            # phases forward. current_peaks is still included so a LOADED measurement — whose per-phase
+            # lists are emptied by _load_measurement_body — resolves from its restored peaks.
+            peak_by_id = {
+                p.id: p
+                for p in (list(peaks)
+                          + (analyzer.longitudinal_peaks or [])
+                          + (analyzer.cross_peaks or [])
+                          + (analyzer.flc_peaks or []))
+            }
             long_freq  = float(peak_by_id[long_id].frequency)  if long_id  and long_id  in peak_by_id else 0.0
             cross_freq = float(peak_by_id[cross_id].frequency) if cross_id and cross_id in peak_by_id else 0.0
             flc_freq   = float(peak_by_id[flc_id].frequency)   if flc_id   and flc_id   in peak_by_id else 0.0

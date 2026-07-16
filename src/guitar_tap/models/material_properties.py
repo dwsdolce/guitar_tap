@@ -1,4 +1,8 @@
 # @parity dsp/material-properties tests=test/brace,test/plate
+# @parity model/quality-colors — `WoodQuality.color` only. Mirrors the guitar_mode.py pattern, where
+# the colour concern is its own slug (`model/mode-colors`) because the web extracts it into its
+# presentation layer (`src/presentation/qualityColors.ts`). See that file: hanging a colour off the
+# model enum is a layer violation the natives should shed when the theme work lands.
 """
 Plate and brace acoustic material-property calculations.
 

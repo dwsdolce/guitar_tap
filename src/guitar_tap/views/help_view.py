@@ -301,9 +301,9 @@ def _build_help_html() -> str:
     parts.append(_row(
         "New Tap",
         "Starts a fresh measurement &mdash; arms the detector (or begins a plate/brace "
-        "sequence). Enabled only once the current measurement is complete; during a "
-        "measurement it is disabled (use Cancel to start over). A green indicator shows "
-        "when a tap has been registered.",
+        "sequence). Disabled only while a measurement is being captured; enabled at all "
+        "other times, including after a measurement completes (use Cancel to abandon one "
+        "in progress). A green indicator shows when a tap has been registered.",
         ["mdi.gesture-tap"]
     ))
     parts.append(_row(

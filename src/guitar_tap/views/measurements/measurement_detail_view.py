@@ -56,14 +56,31 @@ def _resolve_guitar_type(guitar_type_str: str | None) -> GT.GuitarType:
 
 
 def _type_name(m) -> str:
-    """Single Settings-vocabulary type word for the Details pane."""
+    """Single Settings-vocabulary type word for the Details pane.
+
+    Resolves the type from the SNAPSHOT, mirroring Swift
+    MeasurementDetailView.measurementTypeName:
+
+        let mt = measurement.spectrumSnapshot?.measurementType
+            ?? measurement.longitudinalSnapshot?.measurementType
+        return mt?.shortName ?? "\u2014"
+
+    The snapshot is the only place the type is stored \u2014 the top-level
+    ``measurement_type`` field is deliberately NOT set when a measurement is created
+    (see tap_tone_analyzer_measurement_management.create(...); ``to_dict`` resolves it
+    from the snapshot at save time so the JSON matches Swift's format).  Reading that
+    top-level field here therefore showed "\u2014" for every measurement saved in the
+    current session, and only rendered correctly after an app restart re-read the file
+    via ``from_dict``.  That session-scoped behaviour is why no test caught it.
+    """
     if m.is_comparison:
         return "Comparison"
     from models.measurement_type import MeasurementType
+    snapshot = m.spectrum_snapshot or m.longitudinal_snapshot
     try:
-        return MeasurementType(m.measurement_type).short_name
-    except (ValueError, TypeError):
-        return m.guitar_type or m.measurement_type or "\u2014"
+        return MeasurementType(snapshot.measurement_type).short_name
+    except (ValueError, TypeError, AttributeError):
+        return "\u2014"
 
 
 def _comparison_data(m) -> "list[dict]":

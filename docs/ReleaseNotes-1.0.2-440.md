@@ -2,7 +2,7 @@
 
 ---
 
-## Version 1.0.2 · Build 434
+## Version 1.0.2 · Build 440
 ### What's New Since Build 378
 
 ---
@@ -35,7 +35,7 @@
 
 ### Tap Sequence Controls
 
-- **Cancel** now restarts the tap sequence rather than leaving it half-finished, and **New Tap** is offered only once a measurement is complete.
+- **Cancel** now restarts the tap sequence rather than leaving it half-finished, and **New Tap** is available whenever a measurement isn't actively being captured, so you can always start a fresh one.
 - The **Taps** (multi-tap comparison) toggle is now enabled and disabled in place instead of appearing and disappearing.
 - The **Adjust** button is now labelled **Redo**, which is clearer about what it does.
 
@@ -60,13 +60,22 @@
 - Dates and times are displayed consistently throughout the app.
 - The display frequency range is now remembered **per measurement type**, so guitar, plate and brace each keep their own view.
 
+### Saving
+
+- Saving a measurement now **requires a name**, so every measurement is identifiable at a glance in the list and in exports. The **Save** button stays disabled until you enter one; notes remain optional.
+
 ### Recording
 
 - **Dump Capture Audio** previously wrote both a WAV for every tap and a continuous recording of the whole session. It now writes only the continuous session recording, which already contains every approved tap in capture order — the per-tap files were redundant.
+- With **Dump Capture Audio** on, you can now see and change **where** the WAV files are saved. A folder row appears with **Open Folder / Change… / Use Default**; the default is your **Documents** folder plus `GuitarTap` (honouring a redirected or OneDrive Documents location). If you rename, move, or delete that folder, Guitar Tap asks you to fix it (Change Location / Turn Off Saving / Cancel) before the measurement starts, so a capture is never written to a missing folder.
+
+### Exporting
+
+- Exported file names are now **consistent across macOS, the Python build, and the web**, and names with accented or non-Latin characters (for example *Ramírez*) are preserved correctly instead of being stripped.
 
 ### Documentation
 
-- Help now covers Export All, resetting peak selection to automatic, the Cancel-as-restart behaviour, and the lead-in a recording needs before the first tap when playing a Plate or Brace measurement from a file.
+- Help now covers Export All, resetting peak selection to automatic, the Cancel-as-restart behaviour, the required measurement name, the settable capture-audio folder, when New Tap is available, and the lead-in a recording needs before the first tap when playing a Plate or Brace measurement from a file.
 
 ---
 
@@ -77,7 +86,8 @@
 - **Brace measurements** labelled the status "Phase 1/1"; they now read "Tap X/N" like every other measurement.
 - **Microphone hot-plugging** was not detected, and switching input devices could crash the app.
 - Switching from a material measurement back to a guitar measurement could leave the capture stranded in the previous state.
-- Ring-out (decay time) was measured on the wrong cadence, and the "Good" threshold was wrong for acoustic and generic guitars.
+- **New Tap could get stuck disabled.** If you cancelled the capture-folder prompt — or launched with a chosen folder that was no longer reachable — the app could end up with every tap control disabled and no way to start. New Tap is now available whenever the detector is idle, so you can always begin again.
+- **Ring-out (decay time) could be misreported.** It was sampled on too coarse a cadence and timed with the wall clock, so a busy computer could skew the number; the "Good" threshold was also wrong for acoustic and generic guitars. It is now sampled once per audio chunk and timed on the audio clock — staying accurate under load — with the correct thresholds.
 - Material peak selection used the last tap rather than the averaged spectrum of the phase.
 - Microphone **calibration files** were not reading the reference-SPL / sensitivity-factor precedence the same way as the other editions, which could shift the level.
 - **Playing a measurement from a file** did not detect taps the same way a live measurement does. It used a fixed threshold rather than tracking the noise floor, and its warm-up was timed on the clock rather than on the audio, so the warm-up expired before any audio had arrived. File playback now behaves exactly like a live measurement — which also means a recording needs a short lead-in before its first tap (see Help).
