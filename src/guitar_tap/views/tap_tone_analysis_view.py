@@ -2687,6 +2687,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # Plate/brace: no guitar mode classification, no frequency filtering.
             # Mirrors Swift where peakModeMap returns [:] for non-guitar types.
             self.peak_widget.model.update_data(list(peaks))
+            # update_data() (unlike the guitar update_data_with_modes) does NOT emit annotations, so
+            # the material L/C/FLC labels wouldn't appear on the chart until a manual visibility cycle.
+            # Emit them here so annotations update live per FFT frame, matching guitar. (RESPIN-1.0.2, fix R.)
+            self.peak_widget.model.refresh_annotations()
         else:
             fmin = self.fft_canvas.minFreq
             fmax = self.fft_canvas.maxFreq

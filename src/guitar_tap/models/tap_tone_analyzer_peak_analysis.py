@@ -98,7 +98,12 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         # Notify observers — mirrors Swift @Published var currentPeaks which
         # automatically publishes to all subscribers including the peaks display.
-        self.peaksChanged.emit(peaks)
+        # Material (plate/brace): do NOT emit on every live FFT frame. The identified L/C/FLC change
+        # only at phase completion (driven by the gated-phase handlers via _emit_peaks_array); emitting
+        # per frame would re-run the results refresh + annotation rebuild, flickering the table and
+        # repainting the whole live spectrum as "Peak". Guitar emits live per frame. (RESPIN-1.0.2, fix R.)
+        if m_type.is_guitar:
+            self.peaksChanged.emit(peaks)
 
     # ------------------------------------------------------------------ #
     # recalculate_frozen_peaks_if_needed / _apply_frozen_peak_state

@@ -2072,5 +2072,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         the gated path which bypasses find_peaks for current_peaks assignment.
         """
         self.current_peaks = peaks
-        self.peaksChanged.emit(peaks)  # list[ResonantPeak] — mirrors Swift currentPeaks
+        # Material (plate/brace): the live chart annotates the accumulated identified L/C/FLC (stable,
+        # persistent), matching the web — NOT the raw current_peaks (87→126→3 during capture).
+        # current_peaks itself is unchanged (kept for the model/results); only the emitted payload that
+        # feeds the chart scatter + annotations is the identified set. Guitar emits current_peaks
+        # unchanged. Mirrors Swift's view reading materialIdentifiedPeaks. (RESPIN-1.0.2, fix R.)
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        emit_peaks = peaks if _tds.measurement_type().is_guitar else self.material_identified_peaks
+        self.peaksChanged.emit(emit_peaks)  # list[ResonantPeak] — mirrors Swift currentPeaks
 

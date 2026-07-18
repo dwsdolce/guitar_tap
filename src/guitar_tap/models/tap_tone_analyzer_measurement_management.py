@@ -289,9 +289,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # selectedPeakIDs / selectedPeakFrequencies
         # Mirrors Swift: selectedPeakIDs.isEmpty ? nil : Array(selectedPeakIDs)
         # and currentPeaks.filter { selectedPeakIDs.contains($0.id) }.map { $0.frequency }
-        sel_ids = list(self.selected_peak_ids) if self.selected_peak_ids else None
+        # Material (plate/brace) has no per-peak selection: persist the FULL identified peak set,
+        # never the live selected_peak_ids aggregate (which can be corrupted by the phase-transition
+        # glitch). Guitar persists the user's selection. Mirrors Swift/web (RESPIN-1.0.2).
+        persisted_ids = set(self.selected_peak_ids) if mt.is_guitar else {p.id for p in peaks}
+        sel_ids = list(persisted_ids) if persisted_ids else None
         sel_freqs = (
-            [p.frequency for p in peaks if p.id in self.selected_peak_ids]
+            [p.frequency for p in peaks if p.id in persisted_ids]
             if sel_ids else None
         )
 
@@ -635,7 +639,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         # ── Restore selected peak IDs ─────────────────────────────────────────
         # Mirrors Swift: selectedPeakIDs = saved ?? all; userHasModifiedPeakSelection = true
-        if measurement.selected_peak_ids is not None:
+        # Material (plate/brace) has no per-peak selection: always restore ALL peaks, ignoring the
+        # saved aggregate (which can be corrupted). Heals existing corrupt files on load. Guitar
+        # restores the user's saved selection. Mirrors Swift/web (RESPIN-1.0.2).
+        if measurement.is_material:
+            self.selected_peak_ids = {p.id for p in self.current_peaks}
+        elif measurement.selected_peak_ids is not None:
             self.selected_peak_ids = set(measurement.selected_peak_ids)
         else:
             self.selected_peak_ids = {p.id for p in self.current_peaks}
@@ -1040,7 +1049,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
             label = unique_labels[idx]
             # Filter to selected peaks only (mirrors Swift loadComparison selectedPeakIDs logic).
-            selected_ids: set = set(m.selected_peak_ids or [p.id for p in (m.peaks or [])])
+            selected_ids: set = m.effective_selected_peak_ids
             selected_peaks = [p for p in (m.peaks or []) if p.id in selected_ids]
             self.comparison_labels.append((label, color))
             self._comparison_data.append({

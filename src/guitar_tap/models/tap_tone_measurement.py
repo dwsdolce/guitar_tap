@@ -404,6 +404,50 @@ class TapToneMeasurement:
         return self.comparison_entries is not None
 
     @property
+    def resolved_measurement_type(self) -> str | None:
+        """Measurement type resolved from the stored snapshots (mirrors ``to_dict``);
+        None for legacy files that predate the top-level type.
+
+        Mirrors Swift ``TapToneMeasurement.resolvedMeasurementType``.
+        """
+        snap = self.spectrum_snapshot or self.longitudinal_snapshot
+        return (snap.measurement_type if snap else None) or self.measurement_type
+
+    @property
+    def is_material(self) -> bool:
+        """True for a plate/brace (material) measurement, which has **no per-peak selection**
+        — the identified L/C/FLC in ``peaks`` are the peaks.
+
+        Falls back to material-only fields for legacy files whose snapshot type is unresolved.
+        Mirrors Swift ``TapToneMeasurement.isMaterial``.
+        """
+        from .measurement_type import MeasurementType
+        mt_str = self.resolved_measurement_type
+        if mt_str is not None:
+            try:
+                return not MeasurementType(mt_str).is_guitar
+            except ValueError:
+                pass
+        return (self.longitudinal_snapshot is not None
+                or self.selected_longitudinal_peak_id is not None)
+
+    @property
+    def effective_selected_peak_ids(self) -> set[str]:
+        """Peak IDs to render, annotate, and export for this measurement.
+
+        - Guitar: the saved selection (``selected_peak_ids``), or all ``peaks`` when none saved.
+        - Material: **always all of ``peaks``.** Plate/brace have no per-peak selection, and the
+          saved aggregate can be corrupted by an intermittent phase-transition write (an iPad-only
+          Swift glitch), so it is ignored on read. Heals existing corrupt files at render time —
+          the same rule Swift and the web apply.
+
+        Mirrors Swift ``TapToneMeasurement.effectiveSelectedPeakIDs``.
+        """
+        if self.is_material:
+            return {p.id for p in self.peaks}
+        return set(self.selected_peak_ids or [p.id for p in self.peaks])
+
+    @property
     def tap_tone_ratio(self) -> float | None:
         """The Top-to-Air frequency ratio, a key quality indicator for guitar tap-tone analysis.
 

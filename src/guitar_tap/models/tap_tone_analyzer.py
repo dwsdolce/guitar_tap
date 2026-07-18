@@ -1345,6 +1345,14 @@ class TapToneAnalyzer(
         Mirrors Swift ``visiblePeaks: [ResonantPeak]``.
         """
         from .annotation_visibility_mode import AnnotationVisibilityMode
+        from .tap_display_settings import TapDisplaySettings as _tds_vp
+        # Material (plate/brace): annotate the accumulated identified L/C/FLC (stable, persistent),
+        # matching the web — NOT current_peaks, which churns through 87→126→3 raw peaks during
+        # capture. No per-peak selection, so ALL/SELECTED are equivalent. (RESPIN-1.0.2, fix R.)
+        if not _tds_vp.measurement_type().is_guitar:
+            if self.annotation_visibility_mode == AnnotationVisibilityMode.NONE:
+                return []
+            return self.material_identified_peaks
         mode = self.annotation_visibility_mode
         if mode == AnnotationVisibilityMode.ALL:
             candidates = list(self.current_peaks)
@@ -1362,3 +1370,17 @@ class TapToneAnalyzer(
             guitar_type = TapDisplaySettings.guitar_type()
             candidates = [p for p in candidates if GuitarMode.is_known(p.frequency, guitar_type)]
         return candidates
+
+    @property
+    def material_identified_peaks(self) -> list:
+        """The identified per-phase peaks (L, then C, then FLC) found so far in a material
+        measurement, in phase order. Stable and PERSISTENT across phases — the material analog of the
+        guitar "selected" set, mirroring the web's matPeaks. Empty for guitar. Used as the live-chart
+        annotation source so annotations grow 1→2→3 cleanly instead of following current_peaks (which
+        churns through all raw peaks during capture). Mirrors Swift materialIdentifiedPeaks (RESPIN-1.0.2, fix R).
+        """
+        from .tap_display_settings import TapDisplaySettings
+        if TapDisplaySettings.measurement_type().is_guitar:
+            return []
+        return [p for p in (self.selected_longitudinal_peak, self.selected_cross_peak,
+                            self.selected_flc_peak) if p is not None]
