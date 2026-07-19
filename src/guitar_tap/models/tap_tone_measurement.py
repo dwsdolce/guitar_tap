@@ -431,6 +431,7 @@ class TapToneMeasurement:
         return (self.longitudinal_snapshot is not None
                 or self.selected_longitudinal_peak_id is not None)
 
+    # @parity model/material-selection tests=test/material-selection
     @property
     def effective_selected_peak_ids(self) -> set[str]:
         """Peak IDs to render, annotate, and export for this measurement.
