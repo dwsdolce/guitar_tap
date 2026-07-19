@@ -2,7 +2,7 @@
 
 ---
 
-## Version 1.0.2 · Build 440
+## Version 1.0.2 · Build 443
 ### What's New Since Build 378
 
 ---
@@ -91,6 +91,7 @@
 - Material peak selection used the last tap rather than the averaged spectrum of the phase.
 - Microphone **calibration files** were not reading the reference-SPL / sensitivity-factor precedence the same way as the other editions, which could shift the level.
 - **Playing a measurement from a file** did not detect taps the same way a live measurement does. It used a fixed threshold rather than tracking the noise floor, and its warm-up was timed on the clock rather than on the audio, so the warm-up expired before any audio had arrived. File playback now behaves exactly like a live measurement — which also means a recording needs a short lead-in before its first tap (see Help).
+- During a plate capture, the identified peaks were not annotated on the chart until the whole measurement finished. They now appear at the completion of each phase (Longitudinal, then Cross, then FLC).
 
 ---
 
