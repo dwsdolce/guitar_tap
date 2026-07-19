@@ -66,6 +66,7 @@ MULTI_TAP_AVG_COLOR = _AnalyzerMixin._MULTI_TAP_AVG_COLOR
 
 # Spectrum image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
 from views.exportable_spectrum_chart import render_spectrum_image_for_measurement  # noqa: E402
+from views.utilities import extensions as _ext  # noqa: E402
 
 # ── Export directory tracking ─────────────────────────────────────────────────
 # Mirrors MeasurementFileExporter.lastUsedDirectory in Swift: remembers the
@@ -642,17 +643,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         from models.material_properties import WoodQuality as _WQ
         return colors.HexColor(_WQ(label).color)
 
-    def _ratio_quality(ratio: float) -> tuple[str, colors.Color]:
-        if ratio < 1.7:
-            return "Low",          colors.Color(0.957, 0.263, 0.212)
-        if ratio < 1.9:
-            return "Below Target", colors.Color(1.0, 0.596, 0.0)
-        if ratio <= 2.1:
-            return "Ideal",        colors.Color(0.298, 0.686, 0.314)
-        if ratio < 2.3:
-            return "Above Target", colors.Color(1.0, 0.596, 0.0)
-        return "High",             colors.Color(0.957, 0.263, 0.212)
-
     def _mode_color(mode: GM.GuitarMode) -> colors.Color:
         norm = mode.normalized if hasattr(mode, "normalized") else mode
         map_ = {
@@ -989,8 +979,8 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
         if data.decay_time is not None:
             try:
-                decay_label = gt.decay_quality_label(data.decay_time)
-                dc = colors.HexColor(gt.decay_quality_color(data.decay_time))
+                decay_label = _ext.decay_quality_label(data.decay_time, gt)
+                dc = colors.HexColor(_ext.decay_quality_color(data.decay_time, gt))
             except Exception:
                 decay_label = ""
                 dc = colors.Color(0.45, 0.45, 0.45)
@@ -1006,7 +996,8 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
         ratio = data.tap_tone_ratio
         if ratio is not None:
-            ratio_label, ratio_color = _ratio_quality(ratio)
+            ratio_label = _ext.tap_tone_ratio_quality_label(ratio)
+            ratio_color = colors.HexColor(_ext.tap_tone_ratio_quality_color(ratio))
             boxes.append(_AnalysisBox(
                 title="Tap Tone Ratio",
                 value=f"{ratio:.2f} : 1",

@@ -31,6 +31,8 @@ from views.comparison_results_view import ComparisonResultsView
 from views.exportable_spectrum_chart import make_exportable_spectrum_view
 from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
 from views.shared.loading_overlay import LoadingOverlay
+from views.utilities import extensions as _ext
+from models.guitar_type import GuitarType as _GTy
 
 # Heavy imports deferred to _deferred_canvas_init to reduce startup time:
 #   fft_canvas — pulls in pyqtgraph (~4 s) and sounddevice (~0.4 s)
@@ -1635,7 +1637,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Guitar compact summary (guitar only) — matches Swift guitarAnalysisSummary ──
         # @parity view/guitar-summary — Ring-Out + Tap-Ratio bar (built inline in the monolith;
-        # update logic in set_ring_out / update_tap_tone_ratio / _decay_quality / _tap_ratio_quality).
+        # update logic in set_ring_out / update_tap_tone_ratio; quality labels/colors come from
+        # views/utilities/extensions.py (decay_quality_* / tap_tone_ratio_quality_*)).
         self._guitar_summary = QtWidgets.QFrame()
         self._guitar_summary.setObjectName("guitar_summary")
         self._guitar_summary.setStyleSheet(
@@ -2364,9 +2367,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_ring_out(self, time_s: float) -> None:
         self._gs_ro_value.setText(f"{time_s:.2f}s")
-        quality, color = self._decay_quality(time_s)
-        self._gs_ro_quality.setText(quality)
-        self._gs_ro_quality.setStyleSheet(f"color: {color};")
+        gt = TDS.measurement_type().guitar_type or _GTy.GENERIC
+        self._gs_ro_quality.setText(_ext.decay_quality_label(time_s, gt))
+        self._gs_ro_quality.setStyleSheet(f"color: {_ext.decay_quality_color(time_s, gt)};")
 
     def set_calibration_status(self, name: str) -> None:
         if name:
@@ -2448,41 +2451,13 @@ class MainWindow(QtWidgets.QMainWindow):
         Mirrors TapAnalysisResultsView.swift:550,620.
         """
         if ratio is not None:
-            quality, color = self._tap_ratio_quality(ratio)
             self._gs_ratio_value.setText(f"{ratio:.2f}:1")
-            self._gs_ratio_quality.setText(quality)
-            self._gs_ratio_quality.setStyleSheet(f"color: {color};")
+            self._gs_ratio_quality.setText(_ext.tap_tone_ratio_quality_label(ratio))
+            self._gs_ratio_quality.setStyleSheet(
+                f"color: {_ext.tap_tone_ratio_quality_color(ratio)};")
         else:
             self._gs_ratio_value.setText("Need Air & Top")
             self._gs_ratio_quality.setText("")
-
-    @staticmethod
-    def _tap_ratio_quality(ratio: float) -> tuple[str, str]:
-        """Return (label, hex-color) for a Top/Air tap-tone ratio. Mirrors Swift."""
-        if ratio < 1.7:
-            return "Low",          "#F44336"
-        if ratio < 1.9:
-            return "Below Target", "#FF9800"
-        if ratio <= 2.1:
-            return "Ideal",        "#4CAF50"
-        if ratio < 2.3:
-            return "Above Target", "#FF9800"
-        return "High",             "#F44336"
-
-    def _decay_quality(self, time_s: float) -> tuple[str, str]:
-        """Return (label, hex-color) for a ring-out time. Mirrors Swift decayQuality."""
-        gt_text = TDS.measurement_type().guitar_type.value if TDS.measurement_type().guitar_type else ""
-        if "Classical" in gt_text:
-            vs, sh, mo, go = 0.15, 0.35, 0.60, 1.0
-        elif "Flamenco" in gt_text:
-            vs, sh, mo, go = 0.08, 0.20, 0.35, 0.55
-        else:                         # acoustic / generic (default)
-            vs, sh, mo, go = 0.10, 0.25, 0.45, 0.75  # good=0.75 matches Swift GuitarType.decayThresholds
-        if time_s < vs: return "Very Short", "#9E9E9E"
-        if time_s < sh: return "Short",      "#FF9800"
-        if time_s < mo: return "Moderate",   "#FFC107"
-        if time_s < go: return "Good",       "#4CAF50"
-        return "Excellent",                  "#2196F3"
 
     def set_measurement_complete(self, checked: bool) -> None:
         self._is_measurement_complete = checked

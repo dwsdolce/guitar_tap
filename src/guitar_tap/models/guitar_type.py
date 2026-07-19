@@ -122,8 +122,9 @@ class GuitarType(Enum):
         }[self]
 
     # MARK: - Decay Thresholds
-    # @parity dsp/analysis-quality — decay-quality thresholds + labels/colors
-    #   (tap-ratio quality is inline in the two views: _ratio_quality)
+    # The ring-out threshold DATA (mirrors Swift GuitarType.decayThresholds). The quality
+    # LABELS/COLORS that read these live with the rest of the analysis-quality helpers in
+    # views/utilities/extensions.py (mirroring Swift's Float extensions in Extensions.swift).
 
     @property
     def decay_thresholds(self) -> DecayThresholds:
@@ -162,36 +163,3 @@ class GuitarType(Enum):
                 good=0.75,
             ),
         }[self]
-
-    def decay_quality_label(self, decay_time: float) -> str:
-        """Return a human-readable quality label for a measured ring-out time.
-
-        Mirrors Swift Float.decayQuality(for:) extension.
-        """
-        t = self.decay_thresholds
-        if decay_time < t.very_short:
-            return "Very Short"
-        if decay_time < t.short:
-            return "Short"
-        if decay_time < t.moderate:
-            return "Moderate"
-        if decay_time < t.good:
-            return "Good"
-        return "Excellent"
-
-    def decay_quality_color(self, decay_time: float) -> str:
-        """Return a hex color string for a measured ring-out time.
-
-        Mirrors Swift Float.decayQualityColor(for:) extension in Extensions.swift.
-        Colors: gray (very short) → orange → yellow → green → blue (excellent).
-        """
-        t = self.decay_thresholds
-        if decay_time < t.very_short:
-            return "#8E8E93"   # SwiftUI .gray
-        if decay_time < t.short:
-            return "#FF9500"   # SwiftUI .orange
-        if decay_time < t.moderate:
-            return "#FFCC00"   # SwiftUI .yellow
-        if decay_time < t.good:
-            return "#34C759"   # SwiftUI .green
-        return "#007AFF"       # SwiftUI .blue
