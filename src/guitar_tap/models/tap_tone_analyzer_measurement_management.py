@@ -121,9 +121,16 @@ class TapToneAnalyzerMeasurementManagementMixin:
                         missing_names.append(label)
         if missing_names:
             joined = ", ".join(missing_names)
+            # Report UNKNOWN, not "unplugged": a no-match can equally mean the device is
+            # attached under a different name on this platform (the same UMIK-1 is
+            # "Umik-1  Gain: 18dB" on macOS and "Microphone (Umik-1  Gain: 18dB)" here).
+            # Impact stated so the reader can judge — frequencies are essentially
+            # mic-independent; levels, trigger and faint peaks are not. Mirrors Swift + web.
             self.microphone_warning = (
-                f"Recorded with {joined}, which is not currently connected. "
-                f"Attach it and select it in the microphone settings for accurate analysis."
+                f"Recorded with {joined}. No connected microphone matches that name — it may be "
+                f"unplugged, or attached under a different name on this platform. Peak frequencies "
+                f"should still be comparable; input levels, the tap threshold, and faint peaks "
+                f"(such as FLC) may differ."
             )
 
         return measurements
@@ -752,10 +759,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     self.microphone_warning = None
                     self.microphoneWarningChanged.emit(None)
             else:
+                # See the note at the missing_names warning above: a no-match cannot distinguish
+                # "unplugged" from "attached under a different name on this platform".
                 warning = (
-                    f"This measurement was recorded with '{label}', which is not "
-                    f"currently connected. Attach it and select it in the microphone "
-                    f"settings for accurate analysis."
+                    f"Recorded with '{label}'. No connected microphone matches that name — it may "
+                    f"be unplugged, or attached under a different name on this platform. Peak "
+                    f"frequencies should still be comparable; input levels, the tap threshold, and "
+                    f"faint peaks (such as FLC) may differ."
                 )
                 self.microphone_warning = warning
                 if not getattr(self, "_suppress_mic_warning_signal", False):
