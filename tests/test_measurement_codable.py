@@ -808,6 +808,36 @@ class TestFixtureLoading:
         assert again.spectrum_snapshot.magnitudes == m.spectrum_snapshot.magnitudes
         assert [p.frequency for p in again.peaks] == [p.frequency for p in m.peaks]
 
+    def test_legacy_tap_location_key_decodes_as_measurement_name(self):
+        """Old files naming the measurement with the pre-rename "tapLocation" key still decode.
+
+        Covered only by ACCIDENT until 2026-07-21: this repo's copy of the contreras fixture
+        still carried "tapLocation" while the Swift and web copies had been updated to
+        "measurementName", so the three platforms' "same" parity test silently exercised
+        different branches. The fixture is now byte-identical everywhere and the fallback is
+        pinned deliberately, here and in the Swift/web twins.
+        """
+        legacy = {
+            "id": "6B29FC40-CA47-1067-B31D-00DD010662DA",
+            "timestamp": 1774731564,
+            "peaks": [],
+            "tapLocation": "Contreras Classical",
+        }
+        m = TapToneMeasurement.from_dict(legacy)
+        assert m.measurement_name == "Contreras Classical"
+
+    def test_legacy_tap_location_key_is_never_written_back(self):
+        """Reader is tolerant, writer is minimal-canonical — the legacy key is never re-emitted."""
+        legacy = {
+            "id": "6B29FC40-CA47-1067-B31D-00DD010662DA",
+            "timestamp": 1774731564,
+            "peaks": [],
+            "tapLocation": "Contreras Classical",
+        }
+        d = TapToneMeasurement.from_dict(legacy).to_dict()
+        assert "tapLocation" not in d
+        assert d["measurementName"] == "Contreras Classical"
+
     def test_contreras_writer_emits_canonical_keys_only(self):
         """to_dict writes only current keys, never legacy ones (writer = minimal
         canonical; the reader owns backward compatibility)."""

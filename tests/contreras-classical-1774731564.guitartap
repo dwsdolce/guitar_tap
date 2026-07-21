@@ -574,7 +574,7 @@
       "showUnknownModes" : true
     },
     "tapDetectionThreshold" : -64,
-    "tapLocation" : "Contreras Classical",
+    "measurementName" : "Contreras Classical",
     "timestamp" : "2026-03-28T20:59:24Z"
   }
 ]
