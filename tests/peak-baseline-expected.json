@@ -1,0 +1,1174 @@
+{
+  "dws-2024-umik-1-python-mac-1784225140.guitartap": {
+    "note": "Expected findPeaks output AFTER the duplicate fix: the step-2 baseline with the spurious twin removed. Modes are canonical tokens.",
+    "options": {
+      "guitarType": "generic",
+      "maxHz": 2000,
+      "minHz": 30,
+      "peakMinThreshold": -77
+    },
+    "peakCount": 45,
+    "peaks": [
+      {
+        "bandwidth": 9.521484,
+        "frequency": 197.896957,
+        "magnitude": -45.343933,
+        "mode": "top",
+        "quality": 20.76923,
+        "selected": true
+      },
+      {
+        "bandwidth": 13.916016,
+        "frequency": 409.546356,
+        "magnitude": -55.416256,
+        "mode": "dipole",
+        "quality": 29.421053,
+        "selected": true
+      },
+      {
+        "bandwidth": 9.521484,
+        "frequency": 240.105545,
+        "magnitude": -58.198185,
+        "mode": "back",
+        "quality": 25.23077,
+        "selected": true
+      },
+      {
+        "bandwidth": 66.650391,
+        "frequency": 173.555756,
+        "magnitude": -58.357063,
+        "mode": "top",
+        "quality": 2.604396,
+        "selected": false
+      },
+      {
+        "bandwidth": 67.382813,
+        "frequency": 233.660599,
+        "magnitude": -58.801151,
+        "mode": "back",
+        "quality": 3.467391,
+        "selected": false
+      },
+      {
+        "bandwidth": 13.183594,
+        "frequency": 623.798401,
+        "magnitude": -60.97905,
+        "mode": "ring",
+        "quality": 47.333332,
+        "selected": true
+      },
+      {
+        "bandwidth": 9.521484,
+        "frequency": 434.034149,
+        "magnitude": -61.091686,
+        "mode": "dipole",
+        "quality": 45.615383,
+        "selected": false
+      },
+      {
+        "bandwidth": 7.324219,
+        "frequency": 372.234039,
+        "magnitude": -61.418148,
+        "mode": "dipole",
+        "quality": 50.799999,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.015625,
+        "frequency": 297.628967,
+        "magnitude": -62.19751,
+        "mode": "back",
+        "quality": 7.25,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.804688,
+        "frequency": 309.831055,
+        "magnitude": -62.819267,
+        "mode": "unknown",
+        "quality": 6.220588,
+        "selected": false
+      },
+      {
+        "bandwidth": 52.734375,
+        "frequency": 285.816132,
+        "magnitude": -63.410995,
+        "mode": "back",
+        "quality": 5.416667,
+        "selected": false
+      },
+      {
+        "bandwidth": 52.734375,
+        "frequency": 290.271393,
+        "magnitude": -63.47187,
+        "mode": "back",
+        "quality": 5.5,
+        "selected": false
+      },
+      {
+        "bandwidth": 71.777344,
+        "frequency": 393.600067,
+        "magnitude": -63.621975,
+        "mode": "dipole",
+        "quality": 5.479592,
+        "selected": false
+      },
+      {
+        "bandwidth": 54.199219,
+        "frequency": 279.584167,
+        "magnitude": -63.748756,
+        "mode": "back",
+        "quality": 5.162162,
+        "selected": false
+      },
+      {
+        "bandwidth": 72.509766,
+        "frequency": 386.81073,
+        "magnitude": -63.827473,
+        "mode": "dipole",
+        "quality": 5.333333,
+        "selected": false
+      },
+      {
+        "bandwidth": 16.113281,
+        "frequency": 332.703613,
+        "magnitude": -64.163101,
+        "mode": "dipole",
+        "quality": 20.636364,
+        "selected": false
+      },
+      {
+        "bandwidth": 8.056641,
+        "frequency": 97.223251,
+        "magnitude": -64.234596,
+        "mode": "air",
+        "quality": 12.090909,
+        "selected": true
+      },
+      {
+        "bandwidth": 56.396484,
+        "frequency": 320.303802,
+        "magnitude": -64.457642,
+        "mode": "dipole",
+        "quality": 5.675324,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.072266,
+        "frequency": 444.705322,
+        "magnitude": -65.04599,
+        "mode": "dipole",
+        "quality": 9.059702,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.804688,
+        "frequency": 450.989868,
+        "magnitude": -65.253288,
+        "mode": "dipole",
+        "quality": 9.058824,
+        "selected": false
+      },
+      {
+        "bandwidth": 184.570313,
+        "frequency": 155.866425,
+        "magnitude": -65.477783,
+        "mode": "top",
+        "quality": 0.845238,
+        "selected": false
+      },
+      {
+        "bandwidth": 125.976563,
+        "frequency": 485.729309,
+        "magnitude": -65.6166,
+        "mode": "unknown",
+        "quality": 3.854651,
+        "selected": false
+      },
+      {
+        "bandwidth": 27.099609,
+        "frequency": 354.155731,
+        "magnitude": -65.854469,
+        "mode": "dipole",
+        "quality": 13.081081,
+        "selected": false
+      },
+      {
+        "bandwidth": 43.212891,
+        "frequency": 606.367615,
+        "magnitude": -65.941673,
+        "mode": "ring",
+        "quality": 14.033898,
+        "selected": false
+      },
+      {
+        "bandwidth": 126.708984,
+        "frequency": 465.627899,
+        "magnitude": -65.972099,
+        "mode": "unknown",
+        "quality": 3.676301,
+        "selected": false
+      },
+      {
+        "bandwidth": 128.173828,
+        "frequency": 475.183441,
+        "magnitude": -66.356178,
+        "mode": "unknown",
+        "quality": 3.708571,
+        "selected": false
+      },
+      {
+        "bandwidth": 14.648438,
+        "frequency": 575.960266,
+        "magnitude": -66.961273,
+        "mode": "unknown",
+        "quality": 39.299999,
+        "selected": false
+      },
+      {
+        "bandwidth": 227.050781,
+        "frequency": 137.729813,
+        "magnitude": -67.820381,
+        "mode": "unknown",
+        "quality": 0.606452,
+        "selected": false
+      },
+      {
+        "bandwidth": 267.333984,
+        "frequency": 124.962929,
+        "magnitude": -68.017693,
+        "mode": "air",
+        "quality": 0.468493,
+        "selected": false
+      },
+      {
+        "bandwidth": 13.183594,
+        "frequency": 778.684326,
+        "magnitude": -68.188698,
+        "mode": "ring",
+        "quality": 59.055557,
+        "selected": false
+      },
+      {
+        "bandwidth": 268.798828,
+        "frequency": 112.779091,
+        "magnitude": -69.450111,
+        "mode": "air",
+        "quality": 0.419619,
+        "selected": false
+      },
+      {
+        "bandwidth": 8.056641,
+        "frequency": 718.716187,
+        "magnitude": -70.40036,
+        "mode": "ring",
+        "quality": 89.181816,
+        "selected": false
+      },
+      {
+        "bandwidth": 26.367188,
+        "frequency": 679.132813,
+        "magnitude": -71.991135,
+        "mode": "ring",
+        "quality": 25.75,
+        "selected": false
+      },
+      {
+        "bandwidth": 18.310547,
+        "frequency": 733.971436,
+        "magnitude": -72.776848,
+        "mode": "ring",
+        "quality": 40.080002,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 509.826538,
+        "magnitude": -73.263351,
+        "mode": "unknown",
+        "quality": 1.553571,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 668.886169,
+        "magnitude": -73.366837,
+        "mode": "ring",
+        "quality": 2.037946,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 664.500427,
+        "magnitude": -73.413872,
+        "mode": "ring",
+        "quality": 2.024554,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 529.180786,
+        "magnitude": -73.450005,
+        "mode": "unknown",
+        "quality": 1.613839,
+        "selected": false
+      },
+      {
+        "bandwidth": 20.507813,
+        "frequency": 740.392761,
+        "magnitude": -73.670593,
+        "mode": "ring",
+        "quality": 36.107143,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 540.237305,
+        "magnitude": -73.704422,
+        "mode": "unknown",
+        "quality": 1.647321,
+        "selected": false
+      },
+      {
+        "bandwidth": 17.578125,
+        "frequency": 812.257141,
+        "magnitude": -74.028229,
+        "mode": "ring",
+        "quality": 46.208332,
+        "selected": false
+      },
+      {
+        "bandwidth": 21.972656,
+        "frequency": 822.451111,
+        "magnitude": -74.79158,
+        "mode": "ring",
+        "quality": 37.433334,
+        "selected": false
+      },
+      {
+        "bandwidth": 37.353516,
+        "frequency": 1180.605347,
+        "magnitude": -76.640007,
+        "mode": "upper",
+        "quality": 31.607843,
+        "selected": true
+      },
+      {
+        "bandwidth": 18.310547,
+        "frequency": 892.637024,
+        "magnitude": -76.973076,
+        "mode": "upper",
+        "quality": 48.759998,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.748047,
+        "frequency": 834.939087,
+        "magnitude": -76.980324,
+        "mode": "ring",
+        "quality": 20,
+        "selected": false
+      }
+    ]
+  },
+  "dws-2024-umik-1-swift-mac-1784225155.guitartap": {
+    "note": "Expected findPeaks output AFTER the duplicate fix: the step-2 baseline with the spurious twin removed. Modes are canonical tokens.",
+    "options": {
+      "guitarType": "generic",
+      "maxHz": 2000,
+      "minHz": 30,
+      "peakMinThreshold": -78
+    },
+    "peakCount": 49,
+    "peaks": [
+      {
+        "bandwidth": 9.521484,
+        "frequency": 197.902985,
+        "magnitude": -45.342503,
+        "mode": "top",
+        "quality": 20.76923,
+        "selected": true
+      },
+      {
+        "bandwidth": 13.916016,
+        "frequency": 409.535736,
+        "magnitude": -55.417377,
+        "mode": "dipole",
+        "quality": 29.421053,
+        "selected": true
+      },
+      {
+        "bandwidth": 9.521484,
+        "frequency": 240.1017,
+        "magnitude": -58.205612,
+        "mode": "back",
+        "quality": 25.23077,
+        "selected": true
+      },
+      {
+        "bandwidth": 66.650391,
+        "frequency": 173.580811,
+        "magnitude": -58.355175,
+        "mode": "top",
+        "quality": 2.604396,
+        "selected": false
+      },
+      {
+        "bandwidth": 67.382813,
+        "frequency": 233.65004,
+        "magnitude": -58.789757,
+        "mode": "back",
+        "quality": 3.467391,
+        "selected": false
+      },
+      {
+        "bandwidth": 13.183594,
+        "frequency": 623.823425,
+        "magnitude": -60.975613,
+        "mode": "ring",
+        "quality": 47.333332,
+        "selected": true
+      },
+      {
+        "bandwidth": 9.521484,
+        "frequency": 434.03537,
+        "magnitude": -61.081303,
+        "mode": "dipole",
+        "quality": 45.615383,
+        "selected": false
+      },
+      {
+        "bandwidth": 7.324219,
+        "frequency": 372.24234,
+        "magnitude": -61.421261,
+        "mode": "dipole",
+        "quality": 50.799999,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.015625,
+        "frequency": 297.617737,
+        "magnitude": -62.188641,
+        "mode": "back",
+        "quality": 7.25,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.804688,
+        "frequency": 309.834076,
+        "magnitude": -62.818684,
+        "mode": "unknown",
+        "quality": 6.220588,
+        "selected": false
+      },
+      {
+        "bandwidth": 52.734375,
+        "frequency": 285.829315,
+        "magnitude": -63.413532,
+        "mode": "back",
+        "quality": 5.416667,
+        "selected": false
+      },
+      {
+        "bandwidth": 52.734375,
+        "frequency": 290.29718,
+        "magnitude": -63.468975,
+        "mode": "back",
+        "quality": 5.5,
+        "selected": false
+      },
+      {
+        "bandwidth": 71.777344,
+        "frequency": 393.612366,
+        "magnitude": -63.614391,
+        "mode": "dipole",
+        "quality": 5.479592,
+        "selected": false
+      },
+      {
+        "bandwidth": 54.931641,
+        "frequency": 279.598999,
+        "magnitude": -63.760941,
+        "mode": "back",
+        "quality": 5.093333,
+        "selected": false
+      },
+      {
+        "bandwidth": 72.509766,
+        "frequency": 386.767303,
+        "magnitude": -63.807663,
+        "mode": "dipole",
+        "quality": 5.333333,
+        "selected": false
+      },
+      {
+        "bandwidth": 16.113281,
+        "frequency": 332.700195,
+        "magnitude": -64.197861,
+        "mode": "dipole",
+        "quality": 20.636364,
+        "selected": false
+      },
+      {
+        "bandwidth": 8.056641,
+        "frequency": 97.262047,
+        "magnitude": -64.208061,
+        "mode": "air",
+        "quality": 12.090909,
+        "selected": true
+      },
+      {
+        "bandwidth": 56.396484,
+        "frequency": 320.332092,
+        "magnitude": -64.446915,
+        "mode": "dipole",
+        "quality": 5.675324,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.072266,
+        "frequency": 444.70694,
+        "magnitude": -65.042862,
+        "mode": "dipole",
+        "quality": 9.059702,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.804688,
+        "frequency": 450.985565,
+        "magnitude": -65.24453,
+        "mode": "dipole",
+        "quality": 9.058824,
+        "selected": false
+      },
+      {
+        "bandwidth": 184.570313,
+        "frequency": 155.809906,
+        "magnitude": -65.50573,
+        "mode": "top",
+        "quality": 0.845238,
+        "selected": false
+      },
+      {
+        "bandwidth": 125.976563,
+        "frequency": 485.762482,
+        "magnitude": -65.609131,
+        "mode": "unknown",
+        "quality": 3.854651,
+        "selected": false
+      },
+      {
+        "bandwidth": 27.099609,
+        "frequency": 354.162872,
+        "magnitude": -65.844673,
+        "mode": "dipole",
+        "quality": 13.081081,
+        "selected": false
+      },
+      {
+        "bandwidth": 43.212891,
+        "frequency": 606.369507,
+        "magnitude": -65.936966,
+        "mode": "ring",
+        "quality": 14.033898,
+        "selected": false
+      },
+      {
+        "bandwidth": 126.708984,
+        "frequency": 465.613342,
+        "magnitude": -65.969475,
+        "mode": "unknown",
+        "quality": 3.676301,
+        "selected": false
+      },
+      {
+        "bandwidth": 128.173828,
+        "frequency": 475.183746,
+        "magnitude": -66.354843,
+        "mode": "unknown",
+        "quality": 3.708571,
+        "selected": false
+      },
+      {
+        "bandwidth": 14.648438,
+        "frequency": 575.950989,
+        "magnitude": -66.957214,
+        "mode": "unknown",
+        "quality": 39.299999,
+        "selected": false
+      },
+      {
+        "bandwidth": 227.050781,
+        "frequency": 137.802734,
+        "magnitude": -67.813751,
+        "mode": "unknown",
+        "quality": 0.606452,
+        "selected": false
+      },
+      {
+        "bandwidth": 267.333984,
+        "frequency": 125.066765,
+        "magnitude": -68.090538,
+        "mode": "air",
+        "quality": 0.468493,
+        "selected": false
+      },
+      {
+        "bandwidth": 13.183594,
+        "frequency": 778.660706,
+        "magnitude": -68.18409,
+        "mode": "ring",
+        "quality": 59.055557,
+        "selected": false
+      },
+      {
+        "bandwidth": 268.798828,
+        "frequency": 112.786659,
+        "magnitude": -69.435654,
+        "mode": "air",
+        "quality": 0.419619,
+        "selected": false
+      },
+      {
+        "bandwidth": 8.056641,
+        "frequency": 718.725647,
+        "magnitude": -70.398788,
+        "mode": "ring",
+        "quality": 89.181816,
+        "selected": false
+      },
+      {
+        "bandwidth": 26.367188,
+        "frequency": 679.130249,
+        "magnitude": -72.00338,
+        "mode": "ring",
+        "quality": 25.75,
+        "selected": false
+      },
+      {
+        "bandwidth": 18.310547,
+        "frequency": 733.945435,
+        "magnitude": -72.783035,
+        "mode": "ring",
+        "quality": 40.080002,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 509.800049,
+        "magnitude": -73.249023,
+        "mode": "unknown",
+        "quality": 1.553571,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 668.864929,
+        "magnitude": -73.366997,
+        "mode": "ring",
+        "quality": 2.037946,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 664.544495,
+        "magnitude": -73.408447,
+        "mode": "ring",
+        "quality": 2.024554,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 529.233093,
+        "magnitude": -73.467331,
+        "mode": "unknown",
+        "quality": 1.613839,
+        "selected": false
+      },
+      {
+        "bandwidth": 20.507813,
+        "frequency": 740.349487,
+        "magnitude": -73.686707,
+        "mode": "ring",
+        "quality": 36.107143,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 540.27301,
+        "magnitude": -73.699707,
+        "mode": "unknown",
+        "quality": 1.647321,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 520.513672,
+        "magnitude": -73.804863,
+        "mode": "unknown",
+        "quality": 1.587054,
+        "selected": false
+      },
+      {
+        "bandwidth": 17.578125,
+        "frequency": 812.197632,
+        "magnitude": -74.005127,
+        "mode": "ring",
+        "quality": 46.208332,
+        "selected": false
+      },
+      {
+        "bandwidth": 21.972656,
+        "frequency": 822.453247,
+        "magnitude": -74.807793,
+        "mode": "ring",
+        "quality": 37.433334,
+        "selected": false
+      },
+      {
+        "bandwidth": 37.353516,
+        "frequency": 1180.674805,
+        "magnitude": -76.638748,
+        "mode": "upper",
+        "quality": 31.607843,
+        "selected": true
+      },
+      {
+        "bandwidth": 41.748047,
+        "frequency": 834.913086,
+        "magnitude": -76.965538,
+        "mode": "ring",
+        "quality": 20,
+        "selected": false
+      },
+      {
+        "bandwidth": 18.310547,
+        "frequency": 892.682129,
+        "magnitude": -76.982018,
+        "mode": "upper",
+        "quality": 48.759998,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.748047,
+        "frequency": 1166.031006,
+        "magnitude": -77.527054,
+        "mode": "upper",
+        "quality": 27.929825,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.748047,
+        "frequency": 1159.675049,
+        "magnitude": -77.596436,
+        "mode": "upper",
+        "quality": 27.771931,
+        "selected": false
+      },
+      {
+        "bandwidth": 15.380859,
+        "frequency": 914.35144,
+        "magnitude": -77.908783,
+        "mode": "upper",
+        "quality": 59.42857,
+        "selected": false
+      }
+    ]
+  },
+  "dws-2024-umik-1-web-mac-1784225174.guitartap": {
+    "note": "Expected findPeaks output AFTER the duplicate fix: the step-2 baseline with the spurious twin removed. Modes are canonical tokens.",
+    "options": {
+      "guitarType": "generic",
+      "maxHz": 2000,
+      "minHz": 30,
+      "peakMinThreshold": -78
+    },
+    "peakCount": 48,
+    "peaks": [
+      {
+        "bandwidth": 9.521484,
+        "frequency": 197.896942,
+        "magnitude": -45.343891,
+        "mode": "top",
+        "quality": 20.76923,
+        "selected": true
+      },
+      {
+        "bandwidth": 13.916016,
+        "frequency": 409.546234,
+        "magnitude": -55.416363,
+        "mode": "dipole",
+        "quality": 29.421053,
+        "selected": true
+      },
+      {
+        "bandwidth": 9.521484,
+        "frequency": 240.105881,
+        "magnitude": -58.198185,
+        "mode": "back",
+        "quality": 25.23077,
+        "selected": true
+      },
+      {
+        "bandwidth": 66.650391,
+        "frequency": 173.555695,
+        "magnitude": -58.357246,
+        "mode": "top",
+        "quality": 2.604396,
+        "selected": false
+      },
+      {
+        "bandwidth": 67.382813,
+        "frequency": 233.660751,
+        "magnitude": -58.801296,
+        "mode": "back",
+        "quality": 3.467391,
+        "selected": false
+      },
+      {
+        "bandwidth": 13.183594,
+        "frequency": 623.798889,
+        "magnitude": -60.97884,
+        "mode": "ring",
+        "quality": 47.333332,
+        "selected": true
+      },
+      {
+        "bandwidth": 9.521484,
+        "frequency": 434.033722,
+        "magnitude": -61.091614,
+        "mode": "dipole",
+        "quality": 45.615383,
+        "selected": false
+      },
+      {
+        "bandwidth": 7.324219,
+        "frequency": 372.233459,
+        "magnitude": -61.418209,
+        "mode": "dipole",
+        "quality": 50.799999,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.015625,
+        "frequency": 297.628815,
+        "magnitude": -62.197247,
+        "mode": "back",
+        "quality": 7.25,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.804688,
+        "frequency": 309.829224,
+        "magnitude": -62.819313,
+        "mode": "unknown",
+        "quality": 6.220588,
+        "selected": false
+      },
+      {
+        "bandwidth": 52.734375,
+        "frequency": 285.816406,
+        "magnitude": -63.410721,
+        "mode": "back",
+        "quality": 5.416667,
+        "selected": false
+      },
+      {
+        "bandwidth": 52.734375,
+        "frequency": 290.273743,
+        "magnitude": -63.471931,
+        "mode": "back",
+        "quality": 5.5,
+        "selected": false
+      },
+      {
+        "bandwidth": 71.777344,
+        "frequency": 393.599487,
+        "magnitude": -63.622143,
+        "mode": "dipole",
+        "quality": 5.479592,
+        "selected": false
+      },
+      {
+        "bandwidth": 54.199219,
+        "frequency": 279.585144,
+        "magnitude": -63.74865,
+        "mode": "back",
+        "quality": 5.162162,
+        "selected": false
+      },
+      {
+        "bandwidth": 72.509766,
+        "frequency": 386.809845,
+        "magnitude": -63.82719,
+        "mode": "dipole",
+        "quality": 5.333333,
+        "selected": false
+      },
+      {
+        "bandwidth": 16.113281,
+        "frequency": 332.703491,
+        "magnitude": -64.163345,
+        "mode": "dipole",
+        "quality": 20.636364,
+        "selected": false
+      },
+      {
+        "bandwidth": 8.056641,
+        "frequency": 97.223755,
+        "magnitude": -64.234833,
+        "mode": "air",
+        "quality": 12.090909,
+        "selected": true
+      },
+      {
+        "bandwidth": 56.396484,
+        "frequency": 320.303009,
+        "magnitude": -64.457474,
+        "mode": "dipole",
+        "quality": 5.675324,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.072266,
+        "frequency": 444.704987,
+        "magnitude": -65.045937,
+        "mode": "dipole",
+        "quality": 9.059702,
+        "selected": false
+      },
+      {
+        "bandwidth": 49.804688,
+        "frequency": 450.989502,
+        "magnitude": -65.25367,
+        "mode": "dipole",
+        "quality": 9.058824,
+        "selected": false
+      },
+      {
+        "bandwidth": 184.570313,
+        "frequency": 155.865845,
+        "magnitude": -65.478004,
+        "mode": "top",
+        "quality": 0.845238,
+        "selected": false
+      },
+      {
+        "bandwidth": 125.976563,
+        "frequency": 485.728699,
+        "magnitude": -65.616249,
+        "mode": "unknown",
+        "quality": 3.854651,
+        "selected": false
+      },
+      {
+        "bandwidth": 27.099609,
+        "frequency": 354.155487,
+        "magnitude": -65.854874,
+        "mode": "dipole",
+        "quality": 13.081081,
+        "selected": false
+      },
+      {
+        "bandwidth": 43.212891,
+        "frequency": 606.369324,
+        "magnitude": -65.94175,
+        "mode": "ring",
+        "quality": 14.033898,
+        "selected": false
+      },
+      {
+        "bandwidth": 126.708984,
+        "frequency": 465.625946,
+        "magnitude": -65.972229,
+        "mode": "unknown",
+        "quality": 3.676301,
+        "selected": false
+      },
+      {
+        "bandwidth": 128.173828,
+        "frequency": 475.182739,
+        "magnitude": -66.355835,
+        "mode": "unknown",
+        "quality": 3.708571,
+        "selected": false
+      },
+      {
+        "bandwidth": 14.648438,
+        "frequency": 575.959045,
+        "magnitude": -66.961403,
+        "mode": "unknown",
+        "quality": 39.299999,
+        "selected": false
+      },
+      {
+        "bandwidth": 227.050781,
+        "frequency": 137.729095,
+        "magnitude": -67.819946,
+        "mode": "unknown",
+        "quality": 0.606452,
+        "selected": false
+      },
+      {
+        "bandwidth": 267.333984,
+        "frequency": 124.963921,
+        "magnitude": -68.017464,
+        "mode": "air",
+        "quality": 0.468493,
+        "selected": false
+      },
+      {
+        "bandwidth": 13.183594,
+        "frequency": 778.684387,
+        "magnitude": -68.189232,
+        "mode": "ring",
+        "quality": 59.055557,
+        "selected": false
+      },
+      {
+        "bandwidth": 268.798828,
+        "frequency": 112.779564,
+        "magnitude": -69.450668,
+        "mode": "air",
+        "quality": 0.419619,
+        "selected": false
+      },
+      {
+        "bandwidth": 8.056641,
+        "frequency": 718.717285,
+        "magnitude": -70.400826,
+        "mode": "ring",
+        "quality": 89.181816,
+        "selected": false
+      },
+      {
+        "bandwidth": 26.367188,
+        "frequency": 679.134338,
+        "magnitude": -71.990486,
+        "mode": "ring",
+        "quality": 25.75,
+        "selected": false
+      },
+      {
+        "bandwidth": 18.310547,
+        "frequency": 733.970947,
+        "magnitude": -72.777725,
+        "mode": "ring",
+        "quality": 40.080002,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 509.826263,
+        "magnitude": -73.264313,
+        "mode": "unknown",
+        "quality": 1.553571,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 668.88562,
+        "magnitude": -73.365898,
+        "mode": "ring",
+        "quality": 2.037946,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 664.492981,
+        "magnitude": -73.413826,
+        "mode": "ring",
+        "quality": 2.024554,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 529.183167,
+        "magnitude": -73.44912,
+        "mode": "unknown",
+        "quality": 1.613839,
+        "selected": false
+      },
+      {
+        "bandwidth": 20.507813,
+        "frequency": 740.394714,
+        "magnitude": -73.671135,
+        "mode": "ring",
+        "quality": 36.107143,
+        "selected": false
+      },
+      {
+        "bandwidth": 328.125,
+        "frequency": 540.238892,
+        "magnitude": -73.703629,
+        "mode": "unknown",
+        "quality": 1.647321,
+        "selected": false
+      },
+      {
+        "bandwidth": 17.578125,
+        "frequency": 812.255188,
+        "magnitude": -74.029137,
+        "mode": "ring",
+        "quality": 46.208332,
+        "selected": false
+      },
+      {
+        "bandwidth": 21.972656,
+        "frequency": 822.449707,
+        "magnitude": -74.792099,
+        "mode": "ring",
+        "quality": 37.433334,
+        "selected": false
+      },
+      {
+        "bandwidth": 37.353516,
+        "frequency": 1180.605591,
+        "magnitude": -76.638626,
+        "mode": "upper",
+        "quality": 31.607843,
+        "selected": true
+      },
+      {
+        "bandwidth": 18.310547,
+        "frequency": 892.641785,
+        "magnitude": -76.972824,
+        "mode": "upper",
+        "quality": 48.759998,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.748047,
+        "frequency": 834.942322,
+        "magnitude": -76.981544,
+        "mode": "ring",
+        "quality": 20,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.748047,
+        "frequency": 1166.025513,
+        "magnitude": -77.51075,
+        "mode": "upper",
+        "quality": 27.929825,
+        "selected": false
+      },
+      {
+        "bandwidth": 41.748047,
+        "frequency": 1159.706055,
+        "magnitude": -77.620766,
+        "mode": "upper",
+        "quality": 27.771931,
+        "selected": false
+      },
+      {
+        "bandwidth": 15.380859,
+        "frequency": 914.3703,
+        "magnitude": -77.906296,
+        "mode": "upper",
+        "quality": 59.42857,
+        "selected": false
+      }
+    ]
+  }
+}

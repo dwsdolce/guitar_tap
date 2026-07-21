@@ -373,10 +373,6 @@ class TapToneAnalyzerPeakAnalysisMixin:
         self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
 
     # ------------------------------------------------------------------ #
-    # find_peaks
-    # Mirrors Swift findPeaks(magnitudes:frequencies:minHz:maxHz:)
-    # ------------------------------------------------------------------ #
-
     def find_peaks(
         self,
         magnitudes: "list[float]",
@@ -385,24 +381,29 @@ class TapToneAnalyzerPeakAnalysisMixin:
         max_hz: "float | None" = None,
         peak_min_override: "float | None" = None,
     ) -> "list":
-        """Detect, interpolate, and deduplicate peaks above threshold.
+        """Detect every significant spectral peak within the configured range.
+
+        **Detection only — this function knows nothing about guitar modes.**
+
+        A single sweep over the spectrum in ascending frequency order. Each bin is
+        visited exactly once and mints at most one ResonantPeak, so two peaks can
+        never describe the same spectral feature.
+
+        This is deliberate and load-bearing. The previous implementation iterated the
+        mode ranges as its outer loop and the bins as its inner loop; because Top and
+        Back overlap on every guitar type, a bin inside the overlap was scanned by two
+        mode passes and _make_peak was called on it twice, minting two peaks with two
+        ids and otherwise identical values. The assembly step then reconciled two
+        independently deduplicated lists **by id** and let the twin survive, so every
+        guitar capture on every platform saved one duplicated peak. See
+        Development/PEAK-FINDING-DUPLICATE-PEAKS.md in the GuitarTapWeb repo.
+
+        Classification and mode claiming belong to GuitarMode.classify_all(), which
+        operates on the returned peak *list* — where each peak has one identity and can
+        be claimed exactly once. Do not reintroduce mode-range awareness here.
 
         Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift findPeaks(magnitudes:
-        frequencies:minHz:maxHz:peakMinOverride:) using the same two-pass strategy:
-
-        Pass 1 — Known-mode ranges (sequential, low→high):
-            Scans each mode's band for local maxima that exceed peak_min_threshold.
-            The last-claimed-frequency cursor prevents the same physical peak
-            from being claimed by two overlapping mode ranges.
-
-        Pass 2 — Unknown/inter-mode peaks:
-            Scans the full analysis window for local maxima outside every
-            known-mode range.
-
-        Assembly:
-            The strongest peak from each mode occupies a guaranteed slot.
-            All remaining Pass-2 peaks are then appended in descending
-            magnitude order.  Final list is sorted by magnitude descending.
+        frequencies:minHz:maxHz:peakMinOverride:).
 
         Args:
             magnitudes:          dBFS magnitude spectrum, one value per FFT bin.
@@ -416,8 +417,6 @@ class TapToneAnalyzerPeakAnalysisMixin:
         Returns:
             list[ResonantPeak] sorted by magnitude descending.
         """
-        from models.guitar_mode import GuitarMode
-
         if len(magnitudes) != len(frequencies):
             return []
 
@@ -436,175 +435,39 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # Mirrors Swift: effectiveThreshold = peakMinOverride ?? peakMinThreshold.
         effective_threshold = peak_min_override if peak_min_override is not None else self.peak_min_threshold
 
-        # Known modes sorted ascending by range lower bound.
-        # Mirrors Swift knownModes sorted by modeRange.lowerBound.
-        from models.tap_display_settings import TapDisplaySettings as _tds_am
-        guitar_type = _tds_am.guitar_type()
-        known_modes = sorted(
-            [GuitarMode.AIR, GuitarMode.TOP, GuitarMode.BACK,
-             GuitarMode.DIPOLE, GuitarMode.RING_MODE, GuitarMode.UPPER_MODES],
-            key=lambda m: m.mode_range(guitar_type)[0],
-        )
+        # The ±window_size local-maximum test needs that many neighbours on each side.
+        scan_start = start_idx + window_size
+        scan_end   = end_idx - window_size
+        if scan_start >= scan_end:
+            return []
 
-        # ---------------------------------------------------------------- #
-        # Pass 1: scan each known-mode range for the strongest peak.
-        # ---------------------------------------------------------------- #
-        # Mirrors Swift Step 1: strongestPeakPerMode, lastClaimedFrequency.
-        strongest_per_mode: "dict" = {}     # GuitarMode → ResonantPeak
-        strongest_bin_per_mode: "dict" = {} # GuitarMode → raw bin index of winner
-        last_claimed_bin_idx: int = -1      # raw bin index of the last claimed peak
-        all_peaks: "list" = []
+        peaks: "list" = []
 
-        for mode in known_modes:
-            mode_range = mode.mode_range(guitar_type)
-            lo, hi = float(mode_range[0]), float(mode_range[1])
-
-            # Index boundaries for this mode, clamped to analysis window.
-            mode_start_idx = next(
-                (i for i, f in enumerate(frequencies) if f >= lo), start_idx
-            )
-            mode_start_idx = max(mode_start_idx, start_idx)
-            mode_end_idx = next(
-                (i for i, f in enumerate(frequencies) if f > hi), end_idx
-            )
-            mode_end_idx = min(mode_end_idx, end_idx)
-            if mode_start_idx >= mode_end_idx:
+        for i in range(scan_start, scan_end):
+            magnitude = magnitudes[i]
+            if magnitude <= effective_threshold:
                 continue
 
-            # Advance scan start past the raw bin of the last claimed peak.
-            # Using the raw bin index (not the interpolated frequency) ensures
-            # the next mode's scan cannot revisit the same physical peak bin,
-            # even when parabolic interpolation pulls the reported frequency
-            # below the bin's own center frequency.
-            claimed_idx = (last_claimed_bin_idx + 1) if last_claimed_bin_idx >= 0 else start_idx
-            effective_start = max(mode_start_idx, claimed_idx)
-
-            scan_start = max(effective_start, start_idx + window_size)
-            scan_end   = min(mode_end_idx,   end_idx   - window_size)
-            if scan_start >= scan_end:
+            # Local maximum check
+            is_local_max = True
+            for offset in range(-window_size, window_size + 1):
+                if offset == 0:
+                    continue
+                if magnitudes[i + offset] >= magnitude:
+                    is_local_max = False
+                    break
+            if not is_local_max:
                 continue
 
-            for i in range(scan_start, scan_end):
-                mag = magnitudes[i]
-                if mag <= effective_threshold:
-                    continue
+            peaks.append(self._make_peak(i, magnitudes, frequencies))
 
-                # Local maximum check — mirrors Swift ±windowSize loop.
-                is_local_max = True
-                for offset in range(-window_size, window_size + 1):
-                    if offset == 0:
-                        continue
-                    if magnitudes[i + offset] >= mag:
-                        is_local_max = False
-                        break
-                if not is_local_max:
-                    continue
-
-                peak = self._make_peak(i, magnitudes, frequencies)
-
-                # Add every above-threshold local maximum to the candidate
-                # pool so that non-strongest peaks within a mode range are
-                # still visible and selectable by the user.  The strongest
-                # peak per mode gets a guaranteed slot in step 3; the rest
-                # compete for remaining slots by magnitude alongside
-                # unknown (inter-mode) peaks.
-                all_peaks.append(peak)
-
-                # Track strongest peak for this mode (normalised key).
-                # Mirrors Swift: normalizedMode / strongestPeakPerMode.
-                norm_mode = mode.normalized if hasattr(mode, "normalized") else mode
-                existing = strongest_per_mode.get(norm_mode)
-                if existing is None or mag > existing.magnitude:
-                    strongest_per_mode[norm_mode] = peak
-                    strongest_bin_per_mode[norm_mode] = i  # raw bin of winner
-
-            # Advance claimed-bin cursor.
-            # Mirrors Swift: isDuplicate check + lastClaimedFrequency update.
-            # We use the raw bin index (not interpolated frequency) to advance
-            # the cursor so parabolic interpolation cannot pull the boundary
-            # below the actual peak bin, causing the next mode to re-scan it.
-            norm_for_cursor = mode.normalized if hasattr(mode, "normalized") else mode
-            claimed = strongest_per_mode.get(norm_for_cursor)
-            if claimed is not None:
-                # 2 Hz duplicate guard: discard if another mode already claimed
-                # a peak at essentially the same frequency.
-                is_dup = any(
-                    abs(other.frequency - claimed.frequency) < self.PEAK_PROXIMITY_HZ
-                    for key, other in strongest_per_mode.items()
-                    if key != norm_for_cursor
-                )
-                if is_dup:
-                    del strongest_per_mode[norm_for_cursor]
-                    strongest_bin_per_mode.pop(norm_for_cursor, None)
-                else:
-                    claimed_bin = strongest_bin_per_mode.get(norm_for_cursor, -1)
-                    last_claimed_bin_idx = max(last_claimed_bin_idx, claimed_bin)
-
-        # ---------------------------------------------------------------- #
-        # Pass 2: unknown/inter-mode peaks outside all known-mode ranges.
-        # ---------------------------------------------------------------- #
-        # Mirrors Swift Step 2: outer scan excluding isInKnownMode bins.
-        outer_scan_start = start_idx + window_size
-        outer_scan_end   = end_idx   - window_size
-
-        if outer_scan_start < outer_scan_end:
-            for i in range(outer_scan_start, outer_scan_end):
-                mag = magnitudes[i]
-                freq = frequencies[i]
-
-                if mag <= effective_threshold:
-                    continue
-
-                # Skip bins inside a known-mode range.
-                in_known = any(
-                    float(m.mode_range(guitar_type)[0]) <= freq <= float(m.mode_range(guitar_type)[1])
-                    for m in known_modes
-                )
-                if in_known:
-                    continue
-
-                # Local maximum check.
-                is_local_max = True
-                for offset in range(-window_size, window_size + 1):
-                    if offset == 0:
-                        continue
-                    if magnitudes[i + offset] >= mag:
-                        is_local_max = False
-                        break
-                if not is_local_max:
-                    continue
-
-                all_peaks.append(self._make_peak(i, magnitudes, frequencies))
-
-        # Remove near-duplicates from Pass-1 and Pass-2 results.
-        all_peaks = self.remove_duplicate_peaks(all_peaks)
-
-        # ---------------------------------------------------------------- #
-        # Assembly: guaranteed slots first, then fill by magnitude.
-        # ---------------------------------------------------------------- #
-        # Mirrors Swift Step 3: finalPeaks, includedPeakIDs.
-        guaranteed_peaks = self.remove_duplicate_peaks(
-            list(strongest_per_mode.values())
-        )
-        final_peaks: "list" = list(guaranteed_peaks)
-        included_ids: "set[str]" = {p.id for p in final_peaks}
-
-        # No limit — append all Pass-2 peaks sorted by magnitude descending.
-        others = sorted(
-            [p for p in all_peaks if p.id not in included_ids],
+        # Two adjacent bins can still resolve to interpolated vertices within
+        # peak_proximity_hz of one another; collapse those, keeping the louder.
+        return sorted(
+            self.remove_duplicate_peaks(peaks),
             key=lambda p: p.magnitude,
             reverse=True,
         )
-        final_peaks.extend(others)
-
-        # Sort final result by magnitude descending — mirrors Swift.
-        final_peaks = sorted(final_peaks, key=lambda p: p.magnitude, reverse=True)
-
-        # Pure computation — return only.  Mirrors Swift findPeaks() which returns
-        # the array and leaves store + publish to the caller (analyzeMagnitudes,
-        # recalculateFrozenPeaksIfNeeded, etc.).  Each call site owns its own
-        # self.current_peaks = … / self.peaksChanged.emit(…) block.
-        return final_peaks
 
     # ------------------------------------------------------------------ #
     # _apply_frozen_peak_state  (private helper)

@@ -1105,6 +1105,18 @@ class TapToneAnalyzer(
         else:
             gt_log("📂 No persisted measurements file found")
 
+        # Files written before the find_peaks duplicate fix carry one bit-identical twin per
+        # capture; decoding repairs them in memory. The library is ours, so write the corrected
+        # form back immediately — one save, once, and the corruption is gone. A .guitartap
+        # opened from disk is NOT rewritten this way; it is healed on every read until the user
+        # chooses to save it. Mirrors Swift loadPersistedMeasurements().
+        healed_count = sum(1 for m in self.saved_measurements if getattr(m, "was_healed", False))
+        if healed_count:
+            gt_log(
+                f"🩹 Healed duplicate peaks in {healed_count} saved measurement(s) — forcing a save"
+            )
+            self._persist_measurements()
+
         # ── Auto-start tap sequence on first launch ────────────────────────
         # Mirrors Swift start() auto-start guard + requestStartTapSequence (§4b decision 1b): if Dump
         # Capture Audio is on but its folder is unreachable, DON'T arm — set a flag the view checks at

@@ -24,8 +24,21 @@ class ModeRanges:
     """Frequency classification bands for each guitar body mode, in Hz.
 
     Used by GuitarMode.classify_all() to assign a mode label to each
-    detected peak.  Bands are non-overlapping and cover the full audible
-    spectrum via upper_modes.
+    detected peak.  The bands cover the full audible spectrum via upper_modes.
+
+    **Bands overlap, by design.** Top and Back overlap on every guitar type — 40 Hz
+    on classical, 50 on flamenco, 80 on generic — because a real instrument's top and
+    back resonances are not separable by frequency alone. A single frequency can
+    therefore fall in more than one band, and no code may assume otherwise.
+
+    Resolving that ambiguity is classify_all()'s job: it claims the strongest peak per
+    mode in ascending range order and constrains Back to sit above the claimed Top.
+    Detection must not consult these bands at all — a detector that iterates them
+    visits overlap bins more than once, which is what produced the duplicate-peak
+    defect (Development/PEAK-FINDING-DUPLICATE-PEAKS.md in GuitarTapWeb).
+
+    The values are approximations; GENERIC deliberately spans them all and is the more
+    useful setting in practice.
 
     Mirrors Swift GuitarType.ModeRanges.
     """
@@ -105,8 +118,8 @@ class GuitarType(Enum):
             ),
             GuitarType.FLAMENCO: ModeRanges(
                 air=(85, 115),          # Slightly higher due to shallower body
-                top=(190, 250),         # Higher due to thinner, lighter top
-                back=(180, 240),        # Cypress back, lighter construction
+                top=(180, 220),         # Modern flamenco tops are built closer to classical
+                back=(200, 250),        # Cypress back sits above the top, as on every guitar type
                 dipole=(350, 450),      # Dipole mode
                 ring_mode=(600, 850),   # Ring mode
                 upper_modes=(850, 20000),

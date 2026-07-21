@@ -111,6 +111,8 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._pitch = pitch_obj
         self._show_pitch = show_pitch
         self._is_selected = False
+        # Identity of the peak this card represents; frequency is not unique.
+        self.peak_id: str = ""
         self._is_manual = False
 
         self.setObjectName("PeakCard")
@@ -534,7 +536,12 @@ class PeakListWidget(QtWidgets.QWidget):
             mag_db = float(data[i, 1])
             q      = float(data[i, 2]) if data.shape[1] > 2 else 0.0
 
-            src_idx = self.model.index(int(self.model.freq_index(freq)), 0)
+            # Resolve by ROW, never by frequency. `i` from argsort IS the model row, so this
+            # is peak identity. Going through model.freq_index(freq) was a defect: it returns
+            # -1 for a non-unique frequency, and -1 is a VALID Python index, so both cards of a
+            # duplicated peak silently read _peaks[-1] — an unrelated resonance — and showed its
+            # star, mode label and pitch. See Development/PEAK-FINDING-DUPLICATE-PEAKS.md §3d.
+            src_idx = self.model.index(int(i), 0)
             mode = self.model.mode_value(src_idx)
             auto_mode = self.model.peak_mode(src_idx)
             show = self.model.show_value(src_idx)
@@ -554,6 +561,10 @@ class PeakListWidget(QtWidgets.QWidget):
                 parent=self._container,
             )
             card._is_manual = is_manual
+            # Identity for later syncs — frequency is not unique.
+            card.peak_id = (
+                self.model._peaks[int(i)].id if int(i) < len(self.model._peaks) else ""
+            )
             card.showChanged.connect(self._on_show_changed)
             card.modeChanged.connect(self._on_mode_changed)
             card.modeReset.connect(self._on_mode_reset)
@@ -565,8 +576,21 @@ class PeakListWidget(QtWidgets.QWidget):
         self.updateGeometry()
 
     def _card_for_freq(self, freq: float) -> PeakCardWidget | None:
+        """First card at this frequency.
+
+        Frequency is NOT unique, so prefer _card_for_peak_id wherever an id is available.
+        """
         for card in self._cards:
             if card.freq == freq:
+                return card
+        return None
+
+    def _card_for_peak_id(self, peak_id: str) -> PeakCardWidget | None:
+        """The card for this peak, matched on identity rather than frequency."""
+        if not peak_id:
+            return None
+        for card in self._cards:
+            if getattr(card, "peak_id", "") == peak_id:
                 return card
         return None
 
@@ -582,7 +606,10 @@ class PeakListWidget(QtWidgets.QWidget):
         for row in range(top_left.row(), bottom_right.row() + 1):
             src_idx = self.model.index(row, 0)
             freq = self.model.freq_value(src_idx)
-            card = self._card_for_freq(freq)
+            peak_id = self.model._peaks[row].id if row < len(self.model._peaks) else ""
+            # Match on identity: two peaks can share a frequency, and _card_for_freq would
+            # return the first of them for both rows.
+            card = self._card_for_peak_id(peak_id) or self._card_for_freq(freq)
             if card is None:
                 continue
             col = top_left.column()
@@ -597,9 +624,14 @@ class PeakListWidget(QtWidgets.QWidget):
         """Refresh mode displays when guitar_type changes."""
         from models.tap_display_settings import TapDisplaySettings as _tds
         _gt = _tds.guitar_type()
+        rows_by_id = {p.id: r for r, p in enumerate(self.model._peaks)}
         for card in self._cards:
             card.set_guitar_type(_gt)
-            row = int(self.model.freq_index(card.freq))
+            row = rows_by_id.get(getattr(card, "peak_id", ""), -1)
+            if row < 0:
+                # No identity recorded (or the peak is gone) — fall back to frequency, which
+                # is only ambiguous when duplicates exist.
+                row = int(self.model.freq_index(card.freq))
             if row < 0:
                 continue
             src_idx = self.model.index(row, 0)

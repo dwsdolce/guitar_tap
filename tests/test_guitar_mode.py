@@ -71,14 +71,37 @@ class TestGuitarModeClassification:
     def test_flamenco_air_100Hz(self):
         assert GuitarMode.classify(100.0, GuitarType.FLAMENCO) == GuitarMode.AIR
 
-    def test_flamenco_top_220Hz(self):
-        assert GuitarMode.classify(220.0, GuitarType.FLAMENCO) == GuitarMode.TOP
+    def test_flamenco_top_190Hz(self):
+        # Flamenco top=(180, 220). Corrected 2026-07-19: the old bands had top=(190, 250)
+        # and back=(180, 240), i.e. the back range sitting BELOW the top range, which
+        # inverted Top/Back classification for flamenco only. See section 7c of
+        # Development/PEAK-FINDING-DUPLICATE-PEAKS.md (GuitarTapWeb).
+        assert GuitarMode.classify(190.0, GuitarType.FLAMENCO) == GuitarMode.TOP
 
-    def test_flamenco_back_210Hz(self):
-        # Flamenco back=(180, 240), top=(190, 250): 210 overlaps both
-        mode = GuitarMode.classify(210.0, GuitarType.FLAMENCO)
-        # classify() just returns the first matching band; should be TOP (comes before BACK)
-        assert mode in (GuitarMode.TOP, GuitarMode.BACK)
+    def test_flamenco_back_240Hz(self):
+        # Flamenco back=(200, 250) — 240 Hz is above the 200–220 overlap, so unambiguously Back.
+        assert GuitarMode.classify(240.0, GuitarType.FLAMENCO) == GuitarMode.BACK
+
+    def test_flamenco_top_is_claimed_below_back(self):
+        # Regression guard for the inverted bands (section 7c of
+        # Development/PEAK-FINDING-DUPLICATE-PEAKS.md). Two peaks straddling the overlap must
+        # resolve Top-below-Back, as on every other guitar type. Under the old bands
+        # (top=(190,250), back=(180,240)) Back sorted first, so the "Back above Top" guard in
+        # classify_all never fired and the STRONGEST peak was labelled Back.
+        from guitar_tap.models.resonant_peak import ResonantPeak
+
+        low = ResonantPeak(frequency=190.0, magnitude=-40.0)   # strongest
+        high = ResonantPeak(frequency=230.0, magnitude=-50.0)
+        modes = GuitarMode.classify_all([low, high], GuitarType.FLAMENCO)
+        assert modes[low.id] == GuitarMode.TOP
+        assert modes[high.id] == GuitarMode.BACK
+
+    def test_flamenco_overlap_210Hz_resolves_to_top_by_lookup_order(self):
+        # top=(180, 220) and back=(200, 250) overlap on 200–220. classify() is the naive
+        # single-frequency lookup and returns the first matching band in fixed air->upper
+        # order, so the overlap resolves to TOP. classify_all() is what disambiguates
+        # properly using magnitude and the Back-above-Top constraint.
+        assert GuitarMode.classify(210.0, GuitarType.FLAMENCO) == GuitarMode.TOP
 
     # --- Acoustic guitar ---
 

@@ -75,7 +75,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._programmatic_update: bool = False
         # Current annotation visibility mode.
         self._annotation_mode: AVM = AVM.SELECTED
-        self._auto_mode_map: dict[float, gm.GuitarMode] = {}  # freq → mode, from classify_all
+        # peak id → mode, from classify_all. Keyed by IDENTITY, never by frequency: two peaks
+        # can share a frequency, and a frequency-keyed map silently collapses them so the last
+        # one's label wins for both. See Development/PEAK-FINDING-DUPLICATE-PEAKS.md section 3d.
+        self._auto_mode_map: dict[str, gm.GuitarMode] = {}
         # Selected L/C/FLC peak IDs for plate/brace measurements.
         # Mirrors Swift selectedLongitudinalPeakID / selectedCrossPeakID / selectedFlcPeakID
         # passed as parameters to PeakAnnotationsOverlay / DraggablePeakAnnotation.
@@ -166,7 +169,13 @@ class PeaksModel(QtCore.QAbstractTableModel):
         L/C/FLC peak IDs — matching Swift peakColor(for:) in SpectrumView.
         """
         if self.is_guitar:
-            color_map = {freq: mode.color for freq, mode in self._auto_mode_map.items()}
+            # The signal's contract is frequency-keyed; build it from the id-keyed map so the
+            # storage is identity-based while consumers are unchanged.
+            color_map = {
+                p.frequency: self._auto_mode_map[p.id].color
+                for p in self._peaks
+                if p.id in self._auto_mode_map
+            }
         else:
             color_map: dict[float, tuple[int, int, int]] = {}
             mc = self._MATERIAL_MODE_COLORS
@@ -199,7 +208,16 @@ class PeaksModel(QtCore.QAbstractTableModel):
         peaks = [(float(self._data[i, 0]), float(self._data[i, 1]))
                  for i in range(self._data.shape[0])]
         idx_map = gm.GuitarMode._classify_all_tuples(peaks)
-        self._auto_mode_map = {peaks[i][0]: mode for i, mode in idx_map.items()}
+        self._auto_mode_map = {
+            self._peaks[i].id: mode
+            for i, mode in idx_map.items()
+            if i < len(self._peaks)
+        }
+
+    def _peak_id_at(self, index: QtCore.QModelIndex) -> str:
+        """Peak id for a row, or "" when out of range. The key for every per-peak lookup."""
+        row = index.row()
+        return self._peaks[row].id if 0 <= row < len(self._peaks) else ""
 
     def mode_value(self, index: QtCore.QModelIndex) -> str:
         """Return mode: manual override if set, else resolved by measurement type.
@@ -225,7 +243,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 if peak_id == self.selected_flc_peak_id:
                     return "FLC"
             return "Peak"
-        mode = self._auto_mode_map.get(freq)
+        mode = self._auto_mode_map.get(self._peak_id_at(index))
         if mode is not None:
             return mode.display_name
         # Fallback: _auto_mode_map should always be populated for every current peak,
@@ -254,7 +272,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             # Plate/brace: auto-label is the phase-assigned role, same as mode_value
             # (there are no user overrides for plate/brace in the card menu).
             return self.mode_value(index)
-        mode = self._auto_mode_map.get(freq)
+        mode = self._auto_mode_map.get(self._peak_id_at(index))
         if mode is not None:
             return mode.display_name
         # Fallback — same as mode_value fallback but always ignores overrides.
@@ -499,9 +517,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         else:
             self._data = np.zeros((0, 3), dtype=np.float64)
         # Install the caller-supplied mode map directly — bypasses classify_all.
-        self._auto_mode_map = {
-            p.frequency: mode for p, mode in peaks_with_modes
-        }
+        self._auto_mode_map = {p.id: mode for p, mode in peaks_with_modes}
         self._emit_mode_colors()
         self.layoutChanged.emit()
 
@@ -715,7 +731,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         for row in range(rows):
             idx = self.index(row, 0)
             freq = self.freq_value(idx)
-            mode = self._auto_mode_map.get(freq)
+            mode = self._auto_mode_map.get(self._peak_id_at(idx))
             if mode is None or mode not in named_modes:
                 continue
             mag = self.magnitude_value(idx)

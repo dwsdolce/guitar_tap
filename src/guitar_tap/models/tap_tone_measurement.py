@@ -393,6 +393,15 @@ class TapToneMeasurement:
     # Mirrors Swift TapToneMeasurement.tapEntries ([TapEntry]?).
     tap_entries: list[TapEntry] | None = None
 
+    # True when from_dict() repaired duplicate peaks in this measurement.
+    #
+    # Transient and deliberately NOT serialised: it describes what happened during one
+    # decode, not a property of the file. The saved-measurements store reads it to force a
+    # save so the library repairs itself; a .guitartap opened from disk is healed in memory
+    # and written in corrected form only if the user saves it.
+    # Mirrors Swift TapToneMeasurement.wasHealed.
+    was_healed: bool = False
+
     # MARK: - Computed Properties
 
     @property
@@ -759,6 +768,63 @@ class TapToneMeasurement:
 
         return d
 
+    # MARK: - Duplicate-Peak Heal
+
+    PEAK_PROXIMITY_HZ: float = 2.0
+
+    @staticmethod
+    def heal_duplicate_peaks(
+        peaks: list, selected_ids: set
+    ) -> tuple[list, set]:
+        """Collapse peaks that describe the same spectral feature.
+
+        Files written before the find_peaks duplicate fix contain one bit-identical twin per
+        capture (and one per tap entry in multi-tap files): the detector visited overlap bins
+        once per overlapping mode range and minted a peak each time. Loaded peaks are
+        authoritative and are never re-derived, so without this every existing file would show
+        a phantom Analysis Results row forever. See
+        Development/PEAK-FINDING-DUPLICATE-PEAKS.md in the GuitarTapWeb repo.
+
+        Keeps, in order of preference: the peak in ``selected_ids`` (the claimed mode winner),
+        then the louder, then the first seen. find_peaks guarantees legitimately saved peaks
+        are at least PEAK_PROXIMITY_HZ apart, so any closer pair is corruption by definition.
+
+        Mirrors Swift TapToneMeasurement.healDuplicatePeaks(_:selectedIDs:).
+
+        Returns:
+            (healed peaks, ids that were dropped) — the id set is empty when nothing changed.
+        """
+        kept: list = []
+        removed: set = set()
+
+        for peak in peaks:
+            idx = next(
+                (
+                    i
+                    for i, k in enumerate(kept)
+                    if abs(k.frequency - peak.frequency)
+                    < TapToneMeasurement.PEAK_PROXIMITY_HZ
+                ),
+                None,
+            )
+            if idx is None:
+                kept.append(peak)
+                continue
+
+            incumbent = kept[idx]
+            if (peak.id in selected_ids) != (incumbent.id in selected_ids):
+                prefer_incoming = peak.id in selected_ids
+            else:
+                prefer_incoming = peak.magnitude > incumbent.magnitude
+
+            if prefer_incoming:
+                removed.add(incumbent.id)
+                kept[idx] = peak
+            else:
+                removed.add(peak.id)
+
+        return kept, removed
+
     @staticmethod
     def from_dict(d: dict) -> "TapToneMeasurement":
         """Decode a Swift-format TapToneMeasurement JSON object.
@@ -853,6 +919,40 @@ class TapToneMeasurement:
             else None
         )
 
+        # --- Heal duplicate peaks written by the pre-fix find_peaks ---
+        # Every read path reaches from_dict(): .guitartap import and the saved-measurements
+        # store both build measurements through it.
+        healed = False
+        selected_ids_raw = d.get("selectedPeakIDs")
+        sel_set = set(selected_ids_raw or [])
+        peaks, removed_ids = TapToneMeasurement.heal_duplicate_peaks(peaks, sel_set)
+        if removed_ids:
+            healed = True
+            # Drop dangling references so nothing points at a peak that no longer exists.
+            if selected_ids_raw is not None:
+                selected_ids_raw = [i for i in selected_ids_raw if i not in removed_ids]
+            if ann_offsets:
+                ann_offsets = {k: v for k, v in ann_offsets.items() if k not in removed_ids}
+            if peak_mode_overrides:
+                peak_mode_overrides = {
+                    k: v for k, v in peak_mode_overrides.items() if k not in removed_ids
+                }
+
+        # Multi-tap files carry a duplicate inside every tap entry as well; the Taps view and
+        # the multi-tap PDF read those, so they need the same repair.
+        if tap_entries:
+            for te in tap_entries:
+                te_peaks, te_removed = TapToneMeasurement.heal_duplicate_peaks(
+                    te.peaks, set(te.selected_peak_ids or [])
+                )
+                if not te_removed:
+                    continue
+                te.peaks = te_peaks
+                te.selected_peak_ids = [
+                    i for i in (te.selected_peak_ids or []) if i not in te_removed
+                ]
+                healed = True
+
         return TapToneMeasurement(
             id=d.get("id", str(uuid.uuid4())),
             timestamp=d.get("timestamp", _now_iso()),
@@ -863,7 +963,7 @@ class TapToneMeasurement:
             notes=d.get("notes"),
             spectrum_snapshot=snapshot,
             annotation_offsets=ann_offsets,
-            selected_peak_ids=d.get("selectedPeakIDs"),
+            selected_peak_ids=selected_ids_raw,
             selected_peak_frequencies=d.get("selectedPeakFrequencies"),
             annotation_visibility_mode=d.get("annotationVisibilityMode"),
             tap_detection_threshold=d.get("tapDetectionThreshold"),
@@ -891,6 +991,7 @@ class TapToneMeasurement:
             guitar_type=d.get("guitarType"),
             comparison_entries=comparison_entries,
             tap_entries=tap_entries,
+            was_healed=healed,
         )
 
     @staticmethod
