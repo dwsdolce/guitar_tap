@@ -828,13 +828,31 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         Mirrors Swift recalculateFrozenPeaksIfNeeded — applied when threshold or
         frequency range changes while a measurement is frozen/loaded.
+
+        **Guitar only.**  Peak Min is a guitar-mode control: plate/brace capture uses its own
+        adaptive per-phase noise floor, and the identified L / C / FLC peaks ARE the material
+        result — they must never be filtered out from under it.  A loaded plate whose fL sits
+        below the saved Peak Min (e.g. fL at -62.4 dB with Peak Min -60) otherwise loses that
+        peak from both the peak table and the chart annotations.
+
+        Swift reaches the same outcome, but only by accident: recalculateFrozenPeaksIfNeeded
+        guards on a non-empty frozen spectrum, and a loaded material measurement leaves the
+        frozen spectrum empty, so its equivalent filter is never reached.  We state the intent
+        instead of relying on that.  Python's own capture path already branches this way --
+        see tap_tone_analyzer_spectrum_capture.py (emit_peaks = ... if is_guitar else
+        material_identified_peaks).
         """
         assert self.loaded_measurement_peaks is not None
-        threshold_db = self.peak_min_threshold
-        filtered = [p for p in self.loaded_measurement_peaks if p.magnitude >= threshold_db]
+        from .tap_display_settings import TapDisplaySettings as _tds
 
-        self.current_peaks = filtered
-        self.peaksChanged.emit(filtered)
+        if not _tds.measurement_type().is_guitar:
+            peaks = list(self.loaded_measurement_peaks)
+        else:
+            threshold_db = self.peak_min_threshold
+            peaks = [p for p in self.loaded_measurement_peaks if p.magnitude >= threshold_db]
+
+        self.current_peaks = peaks
+        self.peaksChanged.emit(peaks)
 
     @staticmethod
     def resolved_mode_peaks(

@@ -388,6 +388,47 @@ class GuitarMode(Enum):
             r.upper_modes[0] <= freq <= r.upper_modes[1]
         )
 
+    @staticmethod
+    def peaks_in_display_range(
+        peaks: list,
+        min_freq: float,
+        max_freq: float,
+        is_guitar: bool,
+        show_unknown_modes: bool,
+        guitar_type: "GuitarType | None" = None,
+    ) -> list:
+        """The peaks the chart draws a DOT for: every peak inside the visible frequency
+        range, INDEPENDENT of annotation-visibility mode and of peak selection.
+
+        This is the "dot list" (the always-visible layer), deliberately NOT the annotation
+        list: visible_peaks narrows by AnnotationVisibilityMode (ALL / SELECTED / NONE) and
+        drives the badges, while every peak in range keeps its dot regardless.  Gating dots
+        on the annotation mode is a bug -- it shipped on the web once, where dots followed
+        the selection -- which is why this rule now carries a paired 3-platform test.
+
+        The unknown-mode filter uses is_known() (*frequency falls in a band*) rather than the
+        mode assigned by classify_all().  The two agree for auto-classified peaks --
+        classify_all() gives every in-band peak a band mode -- and differ only under a user
+        override; the positional test is the one that belongs on a chart layer.
+
+        Callers pass the DISPLAY/viewport range, which follows pan and zoom -- not the
+        analysis range used by find_peaks.
+
+        - Parameters:
+          - peaks: Candidate peaks (typically the current/frozen peak set).
+          - min_freq: Low edge of the visible frequency range, in Hz (inclusive).
+          - max_freq: High edge of the visible frequency range, in Hz (inclusive).
+          - is_guitar: Whether this is a guitar measurement; material skips the unknown filter.
+          - show_unknown_modes: When True, in-range peaks outside every band are kept.
+          - guitar_type: The guitar type whose mode-range bands are used.
+
+        Mirrors Swift GuitarMode.peaksInDisplayRange(_:minFreq:maxFreq:isGuitar:showUnknownModes:guitarType:).
+        """
+        in_range = [p for p in peaks if min_freq <= p.frequency <= max_freq]
+        if not is_guitar or show_unknown_modes:
+            return in_range
+        return [p for p in in_range if GuitarMode.is_known(p.frequency, guitar_type)]
+
     # MARK: - Frequency Ranges
 
     def mode_range(self, guitar_type: "GuitarType | None" = None) -> tuple[float, float]:

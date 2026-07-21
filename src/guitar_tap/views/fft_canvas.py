@@ -1716,19 +1716,35 @@ class FftCanvas(pg.PlotWidget):
         mirrors how Swift's SpectrumView.allPeaksInRange reactively re-filters
         currentPeaks on every render rather than keeping a separate state.
 
-        In guitar mode, unknown-mode peaks are excluded when show_unknown_modes
-        is False, mirroring Swift's SpectrumView.allPeaksInRange filter.
+        The dot set is the shared rule GuitarMode.peaks_in_display_range() -- visible
+        frequency range, then the unknown-mode filter for guitar -- so Swift, Python and the
+        web share one testable definition (@parity view/dot-layer).  It is deliberately
+        annotation-INDEPENDENT: visible_peaks (the badges) narrows by ALL/SELECTED/NONE, the
+        dots never do.
+
+        The range used is the canvas viewport (_minFreq/_maxFreq), which follows pan and
+        zoom -- _refresh_peaks_for_viewport re-emits peaksChanged on sigXRangeChanged, so
+        this handler re-runs and the dots track the visible window.  Previously no range
+        filter was applied here at all and pyqtgraph merely clipped the drawing, which left
+        out-of-range peaks in _current_peaks (the click hit-test set) unlike Swift.
         """
         if peaks:
-            # Filter unknown peaks in guitar mode when the setting is off
             mt = _as.AppSettings.measurement_type()
-            if mt.is_guitar and not _as.AppSettings.show_unknown_modes():
-                guitar_type_str = _as.AppSettings.guitar_type()
-                try:
-                    guitar_type = gt.GuitarType(guitar_type_str)
-                except ValueError:
-                    guitar_type = gt.GuitarType.CLASSICAL
-                peaks = [p for p in peaks if gm.GuitarMode.is_known(p.frequency, guitar_type)]
+            guitar_type_str = _as.AppSettings.guitar_type()
+            try:
+                guitar_type = gt.GuitarType(guitar_type_str)
+            except ValueError:
+                guitar_type = gt.GuitarType.CLASSICAL
+            peaks = gm.GuitarMode.peaks_in_display_range(
+                peaks,
+                self._minFreq,
+                self._maxFreq,
+                mt.is_guitar,
+                _as.AppSettings.show_unknown_modes(),
+                guitar_type,
+            )
+            # _current_peaks MUST stay index-aligned with the setData arrays below --
+            # point_picked() maps a clicked scatter index back through it.
             self._current_peaks = peaks
             freqs = [p.frequency for p in peaks]
             mags  = [p.magnitude for p in peaks]
