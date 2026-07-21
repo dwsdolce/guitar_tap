@@ -27,6 +27,10 @@
 - The Analysis Results panel now fills in **as you tap**. The Long / Cross / (FLC) rows appear straight away as dashed placeholders and are completed as each phase finishes; the calculated properties appear only once the whole measurement is done. Previously the panel stayed empty until the very end, which gave no sense of progress.
 - Peak selection for each material phase now uses the **averaged** spectrum of that phase's taps rather than the last tap alone.
 
+### Peak Min
+
+- A saved guitar measurement now keeps **every detected peak down to −100 dB** (the lowest Peak Min can be set), not only those above the Peak Min in effect when it was saved. Lowering Peak Min on a loaded measurement now reveals fainter peaks — including a low Air resonance — exactly as it does during a live measurement. Measurements saved before this update keep only the peaks that were above their Peak Min at the time; use **Re-analyze** to re-derive the full set from the spectrum, then Save.
+
 ### Re-analyze
 
 - **Re-analyze** is now offered for any completed guitar measurement, not only one loaded from a file, and it no longer disables itself after a single press.

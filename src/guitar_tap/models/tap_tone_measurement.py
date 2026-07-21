@@ -292,6 +292,13 @@ class TapToneMeasurement:
     # Mirrors Swift TapToneMeasurement.selectedPeakFrequencies.
     selected_peak_frequencies: list[float] | None = None
 
+    # Whether the saved peak selection was hand-modified (vs the automatic mode-priority selection).
+    # Restored on load so a loaded measurement behaves like a live one: an AUTOMATIC selection
+    # re-runs auto-selection when Peak Min changes; a MANUAL one is carried forward. None in files
+    # saved before this field — those default to True (manual), preserving prior behaviour.
+    # Never touches peak_mode_overrides (user-assigned mode labels). Mirrors Swift userModifiedSelection.
+    user_modified_selection: bool | None = None
+
     # The annotation visibility mode (show all / show selected / hide all) that was active
     # when the measurement was saved. Stored as a raw string in Python;
     # Swift uses AnnotationVisibilityMode enum.
@@ -703,6 +710,8 @@ class TapToneMeasurement:
         if self.selected_peak_frequencies:
             # Swift [Float] -> quantise each to float32.
             d["selectedPeakFrequencies"] = f32_list(self.selected_peak_frequencies)
+        if self.user_modified_selection is not None:
+            d["userModifiedSelection"] = self.user_modified_selection
         if self.annotation_visibility_mode:
             d["annotationVisibilityMode"] = self.annotation_visibility_mode
         if self.peak_mode_overrides:
@@ -965,6 +974,7 @@ class TapToneMeasurement:
             annotation_offsets=ann_offsets,
             selected_peak_ids=selected_ids_raw,
             selected_peak_frequencies=d.get("selectedPeakFrequencies"),
+            user_modified_selection=d.get("userModifiedSelection"),
             annotation_visibility_mode=d.get("annotationVisibilityMode"),
             tap_detection_threshold=d.get("tapDetectionThreshold"),
             number_of_taps=d.get("numberOfTaps"),
@@ -1004,6 +1014,7 @@ class TapToneMeasurement:
         annotation_offsets: dict[str, list[float]] | None = None,
         selected_peak_ids: list[str] | None = None,
         selected_peak_frequencies: list[float] | None = None,
+        user_modified_selection: bool | None = None,
         annotation_visibility_mode: str | None = None,
         tap_detection_threshold: float | None = None,
         number_of_taps: int | None = None,
@@ -1045,6 +1056,7 @@ class TapToneMeasurement:
             annotation_offsets=annotation_offsets or None,
             selected_peak_ids=selected_peak_ids or None,
             selected_peak_frequencies=selected_peak_frequencies or None,
+            user_modified_selection=user_modified_selection,
             annotation_visibility_mode=annotation_visibility_mode,
             tap_detection_threshold=tap_detection_threshold,
             number_of_taps=number_of_taps,

@@ -351,3 +351,68 @@ class TestFindPeaksDuplicates:
 
         ids = {p.id for p in peaks}
         assert selected <= ids, "selected peak ids contain ids absent from the peak list"
+
+# ---------------------------------------------------------------------------
+# Full-set save  (Option 4 — PEAK-MIN-SEMANTICS.md, GuitarTapWeb)
+#
+# A freshly captured guitar measurement persists every peak down to the -100 dB
+# floor, not just those above the current Peak Min, so a reloaded measurement can
+# reveal peaks below the capture-time Peak Min exactly as the live one can.
+# ---------------------------------------------------------------------------
+
+
+class TestGuitarFullSavePeaks:
+    """Mirrors Swift GuitarFullSavePeaksTests — uses the real swift-mac capture.
+
+    Its Air resonance is at 97.26 Hz / -64.21 dB, so a Peak Min of -60 reproduces the exact
+    original defect (Air excluded from what was saved). The full set must recover it.
+    """
+
+    _STEM = "dws-2024-umik-1-swift-mac-1784225155"
+
+    def _fixture_spectrum(self):
+        import base64 as _b64
+        import json as _json
+        import os as _os
+        import numpy as _np
+        path = _os.path.join(_os.path.dirname(__file__), self._STEM + ".guitartap")
+        sn = _json.load(open(path))[0]["spectrumSnapshot"]
+        mags = _np.frombuffer(_b64.b64decode(sn["magnitudesData"]), dtype="<f4").astype(float).tolist()
+        freqs = _np.frombuffer(_b64.b64decode(sn["frequenciesData"]), dtype="<f4").astype(float).tolist()
+        return mags, freqs
+
+    def _prep(self, sut):
+        TDS.set_guitar_type("Generic")
+        mags, freqs = self._fixture_spectrum()
+        sut.set_frozen_spectrum(freqs, mags)
+        sut.is_measurement_complete = True
+        sut.min_frequency = 30
+        sut.max_frequency = 2000
+        sut.peak_min_threshold = -60   # above the real Air peak (-64.21 dB)
+        displayed = sut.find_peaks(mags, freqs)
+        sut.current_peaks = displayed
+        return displayed
+
+    @staticmethod
+    def _is_air(p):
+        return abs(p.frequency - 97.26) < 1
+
+    def test_fresh_capture_saves_full_set_recovering_sub_peakmin_air(self):
+        sut = make_sut()
+        displayed = self._prep(sut)
+        sut.loaded_measurement_peaks = None
+        assert not any(self._is_air(p) for p in displayed), (
+            "the real Air peak (-64.21 dB) should be excluded from the displayed set at Peak Min -60"
+        )
+        saved = sut.guitar_full_save_peaks()
+        assert any(self._is_air(p) for p in saved), "saved full set must recover the sub-Peak-Min Air peak"
+        assert len(saved) > len(displayed), "saved full set has more peaks than the displayed set"
+        assert {p.id for p in displayed} <= {p.id for p in saved}, "displayed peaks kept verbatim (same ids)"
+
+    def test_loaded_measurement_is_not_upgraded(self):
+        sut = make_sut()
+        displayed = self._prep(sut)
+        sut.loaded_measurement_peaks = displayed  # simulate a still-loaded measurement
+        saved = sut.guitar_full_save_peaks()
+        assert len(saved) == len(displayed), "a loaded measurement is saved as-is (Re-analyze regenerates)"
+        assert not any(self._is_air(p) for p in saved), "no full-set upgrade for a loaded measurement"

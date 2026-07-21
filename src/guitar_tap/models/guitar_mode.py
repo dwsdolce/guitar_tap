@@ -17,8 +17,8 @@ Mode Map (approximate detection ranges, guitar-type-dependent):
   Mode        Generic      Classical    Flamenco     Acoustic     Physical description
   ----        -------      ---------    --------     --------     --------------------
   Air         70–135 Hz    80–110 Hz    85–115 Hz    90–120 Hz    Helmholtz air resonance of the sound-hole cavity
-  Top         140–260 Hz   170–230 Hz   190–250 Hz   150–210 Hz   Main monopole resonance of the top plate
-  Back        180–300 Hz   190–280 Hz   180–240 Hz   210–290 Hz   Main monopole resonance of the back plate
+  Top         140–260 Hz   170–230 Hz   180–220 Hz   150–210 Hz   Main monopole resonance of the top plate
+  Back        180–300 Hz   190–280 Hz   200–250 Hz   210–290 Hz   Main monopole resonance of the back plate
   Dipole      310–460 Hz   330–430 Hz   350–450 Hz   360–460 Hz   T(1,2) anti-symmetric bending mode
   Ring Mode   580–880 Hz   580–820 Hz   600–850 Hz   620–880 Hz   Higher structural mode
   Upper       880+ Hz      820+ Hz      850+ Hz      880+ Hz      Cluster of higher-order modes

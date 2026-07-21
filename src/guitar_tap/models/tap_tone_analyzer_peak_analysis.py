@@ -20,6 +20,13 @@ class TapToneAnalyzerPeakAnalysisMixin:
     # Mirrors Swift TapToneAnalyzer.peakProximityHz.
     PEAK_PROXIMITY_HZ: float = 2.0
 
+    # Absolute magnitude floor (dBFS) for the peak set persisted with a guitar measurement.
+    # A saved measurement records every peak down to this floor, not just those above the current
+    # Peak Min, so a reloaded measurement can reveal peaks below the capture-time Peak Min exactly
+    # as the live one can. -100 dB is the chart floor and the Peak Min slider's lower bound — below
+    # it a peak can neither be drawn nor admitted. See PEAK-MIN-SEMANTICS.md (GuitarTapWeb).
+    PEAK_DETECTION_FLOOR: float = -100.0
+
     # ------------------------------------------------------------------ #
     # analyze_magnitudes
     # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift analyzeMagnitudes(_:frequencies:peakMagnitude:)

@@ -81,6 +81,7 @@ import platform
 import queue
 import threading
 import time
+import weakref
 from typing import Callable
 
 import numpy as np
@@ -164,7 +165,15 @@ class _FftProcessingThread(QtCore.QThread):
     ) -> None:
         super().__init__(parent)
 
-        self._mic = mic
+        # Weak back-reference to the owning analyzer.  A strong ref here would
+        # form a QObject reference cycle (analyzer.proc_thread → thread._mic →
+        # analyzer) collectable only by Python's *cyclic* GC, whose
+        # non-deterministic timing intermittently freed the analyzer's C++
+        # object mid-use and raised "Internal C++ object already deleted".
+        # The analyzer owns this thread and always outlives it (stop()+wait()
+        # precede its release), so the weakref is always live while run() runs.
+        # Python-only: no Swift counterpart (Swift uses AVAudioEngine taps).
+        self._mic_ref = weakref.ref(mic)
         self._stop_event = threading.Event()
 
         # Drain barrier — mirrors Swift audioProcessingQueue.sync {}.
@@ -180,8 +189,11 @@ class _FftProcessingThread(QtCore.QThread):
         matching Swift where processRawSamples is on RealtimeFFTAnalyzer.
         """
         while not self._stop_event.is_set():
+            mic = self._mic_ref()
+            if mic is None:
+                break  # analyzer gone — nothing to drain into.
             try:
-                chunk = self._mic.queue.get(timeout=0.1)
+                chunk = mic.queue.get(timeout=0.1)
             except queue.Empty:
                 continue
 
@@ -192,7 +204,7 @@ class _FftProcessingThread(QtCore.QThread):
                     time.sleep(0.001)
                 continue
 
-            self._mic.process_raw_samples(chunk)
+            mic.process_raw_samples(chunk)
 
     # MARK: - Public API (safe to call from main thread)
 
@@ -205,12 +217,15 @@ class _FftProcessingThread(QtCore.QThread):
 
         Mirrors Swift inputBuffer.removeAll() + related resets in startFromFile.
         """
-        self._mic._input_buffer = []
-        self._mic._input_buffer_len = 0
         self._stop_event.clear()
-        with self._mic._recent_peak_lock:
-            self._mic._recent_peak_db = -100.0
-            self._mic._recent_peak_time = 0.0
+        mic = self._mic_ref()
+        if mic is None:
+            return  # analyzer gone — nothing to reset.
+        mic._input_buffer = []
+        mic._input_buffer_len = 0
+        with mic._recent_peak_lock:
+            mic._recent_peak_db = -100.0
+            mic._recent_peak_time = 0.0
 
 
 class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnalyzerDeviceManagementMixin):

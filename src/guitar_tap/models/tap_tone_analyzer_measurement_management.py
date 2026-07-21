@@ -188,6 +188,39 @@ class TapToneAnalyzerMeasurementManagementMixin:
             brace_mass=TDS.brace_mass() if measurement_type.is_brace else None,
         )
 
+    def guitar_full_save_peaks(self) -> list:
+        """Guitar peak set to persist: the FULL set down to the -100 dB display floor, not just
+        those above the current Peak Min (Option 4; see PEAK-MIN-SEMANTICS.md in the GuitarTapWeb
+        repo).
+
+        Filtering the saved full set by Peak Min gives the same result as the live path re-detecting
+        at that Peak Min (the local-maximum test is threshold-independent), so a reloaded measurement
+        reveals peaks below its capture-time Peak Min exactly as the live one does. ``current_peaks``
+        (>= Peak Min, carrying their ids / selection / modes / annotations) are kept as-is; only the
+        sub-Peak-Min peaks are appended.
+
+        Applies to freshly captured guitar measurements only — a loaded measurement keeps its
+        authoritative saved peaks (Re-analyze regenerates them), and material has no full-set concept.
+
+        Mirrors Swift ``guitarFullSavePeaks()``.
+        """
+        from .tap_display_settings import TapDisplaySettings as _TDS
+        if (
+            not _TDS.measurement_type().is_guitar
+            or getattr(self, "loaded_measurement_peaks", None) is not None
+            or not getattr(self, "is_measurement_complete", False)
+            or len(self.frozen_magnitudes) == 0
+            or len(self.frozen_magnitudes) != len(self.frozen_frequencies)
+        ):
+            return list(self.current_peaks)
+        full = self.find_peaks(
+            list(self.frozen_magnitudes),
+            list(self.frozen_frequencies),
+            peak_min_override=self.PEAK_DETECTION_FLOOR,
+        )
+        below = [p for p in full if p.magnitude < self.peak_min_threshold]
+        return list(self.current_peaks) + below
+
     def save_measurement(
         self,
         measurement_name: "str | None" = None,
@@ -285,7 +318,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 flc_snapshot = self._make_phase_snapshot(_mags, _freqs, **_kw)
 
         # ── Read model state directly — mirrors Swift currentPeaks etc. ───────
-        peaks = list(self.current_peaks)
+        peaks = self.guitar_full_save_peaks()
         decay_time = getattr(self, "current_decay_time", None)
 
         # annotation_offsets: passed value or self.peak_annotation_offsets
@@ -335,6 +368,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
             annotation_offsets=offsets or None,
             selected_peak_ids=sel_ids or None,
             selected_peak_frequencies=sel_freqs,
+            # Persist whether the guitar selection was hand-modified, so a reloaded measurement
+            # re-runs auto-selection on Peak Min change (like live) when automatic, or carries it
+            # forward when manual. Guitar only. Mirrors Swift.
+            user_modified_selection=(self.user_has_modified_peak_selection if mt.is_guitar else None),
             annotation_visibility_mode=ann_vis_str,
             tap_detection_threshold=getattr(self, "tap_detection_threshold", None),
             number_of_taps=getattr(self, "number_of_taps", None),
@@ -655,7 +692,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.selected_peak_ids = set(measurement.selected_peak_ids)
         else:
             self.selected_peak_ids = {p.id for p in self.current_peaks}
-        self.user_has_modified_peak_selection = True
+        # Restore whether the selection was user-modified (default True for legacy files, which
+        # preserves prior behaviour). An automatic selection re-runs auto-selection on Peak Min
+        # change; a manual one carries forward. Mirrors Swift.
+        _ums = getattr(measurement, "user_modified_selection", None)
+        self.user_has_modified_peak_selection = True if _ums is None else _ums
         # Seed stable frequency cache — mirrors Swift selectedPeakFrequencies assignment
         self.selected_peak_frequencies = [
             p.frequency for p in self.current_peaks
