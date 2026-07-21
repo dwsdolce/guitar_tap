@@ -81,6 +81,9 @@
 
 ## Bug Fixes
 
+- **A duplicate peak could appear in the analysis results.** Every guitar measurement quietly included one extra peak — a duplicate of a real resonance in the Top/Back overlap region — which showed as a repeated row in the Analysis Results and in the exported spectrum. It is no longer produced, and any existing measurement is corrected automatically when it is opened.
+- **Flamenco:** the Top and Back resonances could be identified in reverse. The frequency windows for the two flamenco modes were set the wrong way round, so the stronger, lower resonance could be labelled Back and the higher one Top. The windows are corrected, so both modes are now identified correctly.
+
 - **The microphone could silently stop delivering audio** — most often because another app took it, or the device reconfigured itself — and Guitar Tap would sit there looking like it was listening while receiving nothing. It now detects this and restarts the input automatically.
 - **Status bar:** during a plate or brace measurement the tap count restarted at each phase, the progress bar blinked in and out, and the label could freeze at 0/N. The bar now appears with the first tap and stays for the whole sequence, counting every tap across all phases.
 - **Brace measurements** labelled the status "Phase 1/1"; they now read "Tap X/N" like every other measurement.
