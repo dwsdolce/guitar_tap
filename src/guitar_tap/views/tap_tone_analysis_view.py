@@ -2108,6 +2108,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.select_all_btn.clicked.connect(self._on_select_all_peaks)
         self.deselect_all_btn.clicked.connect(self._on_deselect_all_peaks)
         self.reset_auto_selection_btn.clicked.connect(self._on_reset_auto_selection)
+        # Route a user per-peak toggle through the analyzer (Phase 2 C) — mirrors Swift
+        # onToggleSelection -> analyzer.togglePeakSelection.
+        self.peak_widget.model.selectionToggled.connect(self._on_peak_selection_toggled)
         self.peak_widget.model.userModifiedSelectionChanged.connect(
             self._on_user_modified_selection_changed
         )
@@ -3293,10 +3296,26 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _on_select_all_peaks(self) -> None:
-        self.peak_widget.model.select_all_peaks()
+        # Route through the analyzer (Phase 2 C); the push-over syncs the widget model.
+        analyzer = self.fft_canvas.analyzer
+        analyzer.select_all_peaks()
+        analyzer.peaksChanged.emit(list(analyzer.current_peaks))
 
     def _on_deselect_all_peaks(self) -> None:
-        self.peak_widget.model.deselect_all_peaks()
+        analyzer = self.fft_canvas.analyzer
+        analyzer.select_no_peaks()
+        analyzer.peaksChanged.emit(list(analyzer.current_peaks))
+
+    def _on_peak_selection_toggled(self, peak_id: str) -> None:
+        """Route a user per-peak toggle to the analyzer (Phase 2 C).
+
+        Mirrors Swift's row ``onToggleSelection: { analyzer.togglePeakSelection(id) }``.
+        The subsequent peaksChanged re-emits so the scatter annotations update and the
+        push-over syncs the widget model's selected_peak_ids back from the analyzer.
+        """
+        analyzer = self.fft_canvas.analyzer
+        analyzer.toggle_peak_selection(peak_id)
+        analyzer.peaksChanged.emit(list(analyzer.current_peaks))
 
     def _on_reset_auto_selection(self) -> None:
         # Swift Fix 3: do NOT clear _loaded_measurement_peaks here.

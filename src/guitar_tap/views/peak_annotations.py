@@ -49,6 +49,8 @@ class DraggableTextItem(pg.TextItem):
         self._peak_freq: float = 0.0
         self._peak_mag: float = 0.0
         self._default_pos: QtCore.QPointF | None = None
+        self._peak_id: str = ""
+        self._analyzer = None
 
     def paint(
         self,
@@ -114,12 +116,21 @@ class DraggableTextItem(pg.TextItem):
         freq: float,
         mag: float,
         default_pos: tuple[float, float],
+        peak_id: str = "",
+        analyzer=None,
     ) -> None:
-        """Associate the dashed connection line and record the default position."""
+        """Associate the dashed connection line and record the TRUE default position.
+
+        `default_pos` is the computed default (70pt-above-peak equivalent), IGNORING any stored
+        offset — mirrors Swift `calculateChartPosition()`. `peak_id`/`analyzer` let "Reset
+        Position" clear the stored offset (Swift `resetAnnotationOffset(for:)`).
+        """
         self._arrow_line  = line
         self._peak_freq   = freq
         self._peak_mag    = mag
         self._default_pos = QtCore.QPointF(default_pos[0], default_pos[1])
+        self._peak_id     = peak_id
+        self._analyzer    = analyzer
 
     def _update_arrow(self) -> None:
         if self._arrow_line is None:
@@ -136,7 +147,13 @@ class DraggableTextItem(pg.TextItem):
         return super().itemChange(change, value)
 
     def _show_context_menu(self, screen_pos: QtCore.QPoint) -> None:
-        """RMB menu — matches Swift DraggablePeakAnnotation context menu."""
+        """RMB menu — matches Swift DraggablePeakAnnotation context menu.
+
+        "moved" = the label sits off its TRUE default (`_default_pos` is the computed default,
+        ignoring any stored offset — mirrors Swift `isMoved` / `calculateChartPosition`). Reset
+        clears the stored offset via the analyzer (Swift `resetAnnotationOffset(for:)`) so it
+        also survives the next annotation rebuild.
+        """
         has_moved = (
             self._default_pos is not None
             and (
@@ -149,6 +166,8 @@ class DraggableTextItem(pg.TextItem):
         reset_action.setEnabled(has_moved)
         chosen = menu.exec(screen_pos)
         if chosen is reset_action and self._default_pos is not None:
+            if self._analyzer is not None and self._peak_id:
+                self._analyzer.reset_annotation_offset(self._peak_id)
             self.setPos(self._default_pos)
             self._update_arrow()
 
@@ -268,6 +287,7 @@ class FftAnnotations(QtCore.QObject):
         html: str,
         mode_str: str,
         xy_text: tuple[float, float],
+        peak_id: str = "",
     ) -> tuple[DraggableTextItem, pg.PlotDataItem]:
         """Create and add annotation items to the plot; return (text_item, arrow_line)."""
         color = self._mode_color(mode_str)
@@ -275,7 +295,11 @@ class FftAnnotations(QtCore.QObject):
         arrow_line = self._make_arrow_line(freq, mag, xy_text, color)
         self.plot_item.addItem(arrow_line)
         self.plot_item.addItem(text_item)
-        text_item.connect_arrow(arrow_line, freq, mag, xy_text)
+        # `_default_pos` is the TRUE default (computed from the peak), IGNORING any stored offset —
+        # mirrors Swift calculateChartPosition. The label is positioned at xy_text (saved offset or
+        # default), but "Reset Position" must return to the true default, not the saved offset.
+        default_pos = (freq, mag + self._LABEL_OFFSET_DB)
+        text_item.connect_arrow(arrow_line, freq, mag, default_pos, peak_id, self._analyzer)
         return text_item, arrow_line
 
     def update_annotation(
@@ -299,7 +323,7 @@ class FftAnnotations(QtCore.QObject):
             if ann_dict["annotation"] is None:
                 xy_text = ann_dict["xytext"]
                 ann, arrow_line = self.create_annotation(
-                    freq, mag, html, mode_str, xy_text
+                    freq, mag, html, mode_str, xy_text, peak_id
                 )
                 ann_dict["annotation"] = ann
                 ann_dict["arrow_line"] = arrow_line
@@ -321,7 +345,7 @@ class FftAnnotations(QtCore.QObject):
             )
             xy_text = saved if saved is not None else (freq, mag + self._LABEL_OFFSET_DB)
             ann, arrow_line = self.create_annotation(
-                freq, mag, html, mode_str, xy_text
+                freq, mag, html, mode_str, xy_text, peak_id
             )
             self.annotations.append(
                 {

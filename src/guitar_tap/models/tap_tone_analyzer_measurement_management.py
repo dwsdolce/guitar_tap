@@ -189,37 +189,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
         )
 
     def guitar_full_save_peaks(self) -> list:
-        """Guitar peak set to persist: the FULL set down to the -100 dB display floor, not just
-        those above the current Peak Min (Option 4; see PEAK-MIN-SEMANTICS.md in the GuitarTapWeb
-        repo).
-
-        Filtering the saved full set by Peak Min gives the same result as the live path re-detecting
-        at that Peak Min (the local-maximum test is threshold-independent), so a reloaded measurement
-        reveals peaks below its capture-time Peak Min exactly as the live one does. ``current_peaks``
-        (>= Peak Min, carrying their ids / selection / modes / annotations) are kept as-is; only the
-        sub-Peak-Min peaks are appended.
-
-        Applies to freshly captured guitar measurements only — a loaded measurement keeps its
-        authoritative saved peaks (Re-analyze regenerates them), and material has no full-set concept.
-
-        Mirrors Swift ``guitarFullSavePeaks()``.
+        """Peak set to persist: the durable full set. Now that ``all_peaks`` IS the full set
+        (found at the -100 dB floor at capture, or the authoritative saved set on a loaded
+        measurement), this is simply that set — the old re-detect-and-append dance is gone.
+        Mirrors Swift ``guitarFullSavePeaks() { allPeaks }``. See PEAK-MIN-SEMANTICS.md in the
+        GuitarTapWeb repo.
         """
-        from .tap_display_settings import TapDisplaySettings as _TDS
-        if (
-            not _TDS.measurement_type().is_guitar
-            or getattr(self, "loaded_measurement_peaks", None) is not None
-            or not getattr(self, "is_measurement_complete", False)
-            or len(self.frozen_magnitudes) == 0
-            or len(self.frozen_magnitudes) != len(self.frozen_frequencies)
-        ):
-            return list(self.current_peaks)
-        full = self.find_peaks(
-            list(self.frozen_magnitudes),
-            list(self.frozen_frequencies),
-            peak_min_override=self.PEAK_DETECTION_FLOOR,
-        )
-        below = [p for p in full if p.magnitude < self.peak_min_threshold]
-        return list(self.current_peaks) + below
+        return list(self.all_peaks)
 
     def save_measurement(
         self,
@@ -487,8 +463,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self._display_mode = AnalysisDisplayMode.FROZEN
 
         # ── Restore peaks ─────────────────────────────────────────────────────
-        # Mirrors Swift: currentPeaks = measurement.peaks
-        self.current_peaks = list(measurement.peaks) if measurement.peaks else []
+        # Mirrors Swift: allPeaks = measurement.peaks (the durable full set).
+        # current_peaks becomes its Peak-Min projection via the all_peaks setter.
+        self.all_peaks = list(measurement.peaks) if measurement.peaks else []
 
         # ── Restore decay time ────────────────────────────────────────────────
         self.current_decay_time = measurement.decay_time

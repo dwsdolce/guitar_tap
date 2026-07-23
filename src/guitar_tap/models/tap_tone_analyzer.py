@@ -248,7 +248,7 @@ class TapToneAnalyzer(
         # MARK: - Configuration (mirrors Swift @Published vars)
         self.min_frequency: float = float(_tds.analysis_min_frequency())   # mirrors minFrequency
         self.max_frequency: float = float(_tds.analysis_max_frequency())   # mirrors maxFrequency
-        self.peak_min_threshold: float = float(_tds.peak_min_threshold())    # mirrors peakMinThreshold
+        self._peak_min_threshold: float = float(_tds.peak_min_threshold())   # backing store for the peak_min_threshold property (mirrors peakMinThreshold)
         # Backing store for the ``tap_detection_threshold`` property.  The
         # property setter mirrors Swift's ``didSet`` on ``tapDetectionThreshold``:
         # it syncs ``mic._level_crossing_threshold`` so the audio-queue
@@ -275,7 +275,12 @@ class TapToneAnalyzer(
         self.capture_timer_active: bool = False                            # mirrors captureTimer != nil
 
         # MARK: - Results
-        self.current_peaks: list = []                                      # mirrors currentPeaks
+        # The DURABLE full peak set (found at the -100 dB floor at capture). Source of
+        # truth for peak identity; current_peaks is its Peak-Min display projection.
+        # Mirrors Swift allPeaks. Assign via the all_peaks property so the projection
+        # refreshes (Swift allPeaks.didSet). See PEAK-LIFECYCLE-SPEC.md (GuitarTapWeb).
+        self._all_peaks: list = []                                         # mirrors allPeaks (durable)
+        self.current_peaks: list = []                                      # mirrors currentPeaks (display projection of all_peaks)
         self.identified_modes: list = []                                   # mirrors identifiedModes
         self.current_decay_time: "float | None" = None                    # mirrors currentDecayTime
         self.saved_measurements: list = []                                 # mirrors savedMeasurements
@@ -961,6 +966,60 @@ class TapToneAnalyzer(
         # ``didSet`` on ``tapDetectionThreshold`` (TapToneAnalyzer.swift).
         if self.mic is not None:
             self.mic._level_crossing_threshold = self._tap_detection_threshold
+
+    # ── Durable peak set + display projection (Phase 1) ──────────────────────
+    @property
+    def all_peaks(self) -> list:
+        """The DURABLE full peak set — the source of truth for peak identity.
+
+        Peak identity lives here and changes ONLY when the spectrum changes (a new
+        tap, freeze, or an explicit Re-analyze) — never because the display changed.
+        Per-peak state (selection, mode overrides, annotation offsets) is keyed to
+        these identities, which is what makes it durable across a Peak Min move.
+        Mirrors Swift `allPeaks` (@Published; didSet -> refreshDisplayedPeaks()).
+        See Development/PEAK-LIFECYCLE-SPEC.md in the GuitarTapWeb repo.
+        """
+        return self._all_peaks
+
+    @all_peaks.setter
+    def all_peaks(self, value: list) -> None:
+        self._all_peaks = value
+        # Mirrors Swift allPeaks.didSet — re-project the display set. Assigning
+        # all_peaks is the ONLY way current_peaks should change.
+        self.refresh_displayed_peaks()
+
+    def refresh_displayed_peaks(self) -> None:
+        """Recompute `current_peaks` (the Peak-Min display projection) from
+        `all_peaks`. Called when the peak set or Peak Min changes — a cheap filter,
+        no detection. Hands back the SAME peak objects, so filtering can never
+        disturb identity. Peak Min is guitar-only, so material shows all_peaks
+        unfiltered. Mirrors Swift `refreshDisplayedPeaks()`.
+        """
+        if self._tds.measurement_type().is_guitar:
+            self.current_peaks = [
+                p for p in self._all_peaks if p.magnitude >= self.peak_min_threshold
+            ]
+        else:
+            self.current_peaks = list(self._all_peaks)
+
+    @property
+    def peak_min_threshold(self) -> float:
+        """Minimum magnitude (dBFS) for a peak to be displayed.
+
+        A DISPLAY control: assigning it re-projects `current_peaks` from the durable
+        `all_peaks` and nothing else — no re-detection, no re-classification. Mirrors Swift
+        `@Published var peakMinThreshold { didSet { refreshDisplayedPeaks() } }`. Persistence
+        and the view's `peaksChanged` emit stay at the call sites: Python's `current_peaks` is
+        not signal-backed like Swift's `@Published peaksAbovePeakMin`, so emitting here would
+        fire prematurely during capture/load.
+        """
+        return self._peak_min_threshold
+
+    @peak_min_threshold.setter
+    def peak_min_threshold(self, value: float) -> None:
+        self._peak_min_threshold = value
+        # Mirrors Swift peakMinThreshold.didSet -> refreshDisplayedPeaks(). Re-project only.
+        self.refresh_displayed_peaks()
 
     @property
     def is_detecting(self) -> bool:

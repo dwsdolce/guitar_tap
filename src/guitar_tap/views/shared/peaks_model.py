@@ -38,6 +38,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
     hideAnnotations: QtCore.Signal = QtCore.Signal()
     hideAnnotation: QtCore.Signal = QtCore.Signal(float)
     userModifiedSelectionChanged: QtCore.Signal = QtCore.Signal(bool)
+    # A USER per-peak show/selection toggle, carrying the peak id, so the view can route it to
+    # the analyzer (mirrors Swift onToggleSelection -> togglePeakSelection). NOT emitted for
+    # programmatic bulk updates (select_all/deselect_all).
+    selectionToggled: QtCore.Signal = QtCore.Signal(str)
     modeColorsChanged: QtCore.Signal = QtCore.Signal(object)  # dict[float, tuple[int,int,int]]
 
     mode_strings: list[str] = [
@@ -291,6 +295,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
             self.selected_peak_ids.add(peak_id)
         else:
             self.selected_peak_ids.discard(peak_id)
+        # Route a USER toggle to the analyzer (the view connects selectionToggled ->
+        # analyzer.toggle_peak_selection); skip programmatic bulk updates.
+        if not getattr(self, "_programmatic_update", False):
+            self.selectionToggled.emit(peak_id)
 
     def show_value_bool(self, index: QtCore.QModelIndex) -> bool:
         """Return whether this peak is shown/selected.

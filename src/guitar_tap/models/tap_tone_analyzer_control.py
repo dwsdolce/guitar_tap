@@ -346,7 +346,7 @@ class TapToneAnalyzerControlMixin:
         if was_live:
             self.set_frozen_spectrum(np.array([]), np.array([]))
             self.display_mode = _ADM.FROZEN
-            self.current_peaks = []
+            self.all_peaks = []
             self.identified_modes = []
             self.peaksChanged.emit([])
 
@@ -725,7 +725,7 @@ class TapToneAnalyzerControlMixin:
             self._set_status_message(self._tap_prompt())
 
         # Clear previous results so the chart shows a clean slate while waiting.
-        self.current_peaks = []
+        self.all_peaks = []
         self.identified_modes = []
 
         # Mirrors Swift startTapSequence: loadedMeasurementName = nil
@@ -994,7 +994,7 @@ class TapToneAnalyzerControlMixin:
         sel = self._resolved_plate_peaks(
             cross_override=self.selected_cross_peak or (self.cross_peaks[0] if self.cross_peaks else None)
         )
-        self.current_peaks = sel
+        self.all_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
         self.selected_peak_frequencies = [p.frequency for p in sel]
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
@@ -1048,7 +1048,7 @@ class TapToneAnalyzerControlMixin:
             include_flc=True,
             flc_override=self.selected_flc_peak or (self.flc_peaks[0] if self.flc_peaks else None),
         )
-        self.current_peaks = sel
+        self.all_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
         self.selected_peak_frequencies = [p.frequency for p in sel]
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
@@ -1098,11 +1098,12 @@ class TapToneAnalyzerControlMixin:
 
     def set_threshold(self, threshold: int) -> None:
         """Set the peak-detection threshold (0-100 scale, stored as dBFS)."""
+        # Assigning peak_min_threshold re-projects (the property setter, mirroring Swift didSet).
         self.peak_min_threshold = float(threshold - 100)
         from models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_peak_min_threshold(self.peak_min_threshold)
-        # mirrors peakThreshold.didSet in Swift
-        self.recalculate_frozen_peaks_if_needed()
+        # Notify the view the projection changed (current_peaks is a plain attr, not @Published).
+        self.peaksChanged.emit(list(self.current_peaks))
 
     def set_fmin(self, fmin: int) -> None:
         self.update_axis(fmin, int(self.max_frequency))

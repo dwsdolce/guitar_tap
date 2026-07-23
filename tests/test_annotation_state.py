@@ -165,7 +165,8 @@ class TestAnnotationStateLive:
         # Two peaks in the acoustic Air range (90–120 Hz); louder one should win.
         quiet_air = _make_peak_live(freq=98.0, mag=-50.0)
         loud_air = _make_peak_live(freq=105.0, mag=-30.0)
-        sut.current_peaks = [quiet_air, loud_air]
+        # Auto-selection reads the DURABLE set now — seed all_peaks (projects to current_peaks).
+        sut.all_peaks = [quiet_air, loud_air]
         sut.user_has_modified_peak_selection = True
         sut.selected_peak_ids = set()
 

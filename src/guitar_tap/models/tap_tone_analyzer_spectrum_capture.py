@@ -1490,7 +1490,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
         gt_log(f"🔵 Auto-selected longitudinal peak: {avg_peak.frequency} Hz")
 
-        self.current_peaks = self.longitudinal_peaks
+        self.all_peaks = self.longitudinal_peaks
         # Only the identified (auto-selected) peak is selected — others are informational.
         # Mirrors Swift: selectedPeakIDs = Set([avgPeak.id])
         self.selected_peak_ids = {avg_peak.id}
@@ -1507,7 +1507,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 (p for p in self.longitudinal_peaks if p.id == avg_peak.id),
                 avg_peak
             )
-            self.current_peaks = [sel_peak]
+            self.all_peaks = [sel_peak]
             self.set_frozen_spectrum(_np.array([]), _np.array([]))
             self._set_material_tap_phase(_MTP.COMPLETE)
             self.set_measurement_complete(True)
@@ -1669,7 +1669,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         gt_log(f"🟠 Auto-selected cross-grain peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 
-        self.current_peaks = self.combine_plate_peaks()
+        self.all_peaks = self.combine_plate_peaks()
         # Only the identified (auto-selected) L and C peaks are selected — others are informational.
         # Mirrors Swift: selectedPeakIDs = Set([autoSelectedLongitudinalPeakID, autoSelectedCrossPeakID].compactMap { $0 })
         self.selected_peak_ids = {
@@ -1781,7 +1781,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             include_flc=True,
             flc_override=self.selected_flc_peak or avg_peak,
         )
-        self.current_peaks = sel
+        self.all_peaks = sel
         self.selected_peak_ids = {p.id for p in sel}
         # Emit peaks BEFORE the phase transition so the view's peaks model has
         # up-to-date data when plateStatusChanged triggers refresh_annotations().
@@ -1966,16 +1966,20 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.showLoadedSettingsWarningChanged.emit(False)
         gt_log(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
 
-        peaks = self.find_peaks(avg_mags, avg_freqs)
+        # Mirrors Swift findPeaks(avg…, peakMinOverride: peakDetectionFloor) — detect the
+        # FULL averaged set at the -100 floor; current_peaks is its Peak-Min projection.
+        peaks = self.find_peaks(
+            avg_mags, avg_freqs, peak_min_override=self.PEAK_DETECTION_FLOOR
+        )
 
         # Mirrors Swift processMultipleTaps() property-assignment sequence (lines 817-824):
-        #   currentPeaks = peaks
+        #   allPeaks = peaks
         #   selectedPeakIDs = guitarModeSelectedPeakIDs(from: peaks)
         #   userHasModifiedPeakSelection = false
         #   loadedMeasurementPeaks = nil
         #   selectedPeakFrequencies = []
         #   identifiedModes = …
-        self.current_peaks = peaks
+        self.all_peaks = peaks
         self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
         self.user_has_modified_peak_selection = False
         self.loaded_measurement_peaks = None

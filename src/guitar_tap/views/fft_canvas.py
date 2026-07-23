@@ -1364,11 +1364,26 @@ class FftCanvas(pg.PlotWidget):
                 self.analyzer.recalculate_frozen_peaks_if_needed()
 
     def _refresh_peaks_for_viewport(self, _vb=None, x_range=None) -> None:
-        """Re-emit filtered peaks and update the freq-range label whenever the
+        """Re-emit the existing peaks and update the freq-range label whenever the
         viewport x-range changes (pan, zoom, or explicit wheel-scroll gestures).
 
         Connected to ViewBox.sigXRangeChanged and also called directly from
         wheelEvent after Shift+scroll pan and Ctrl+scroll zoom.
+
+        Panning/zooming is a DISPLAY change: it re-filters what is shown, it does not
+        re-analyse.  So this re-emits ``current_peaks`` unchanged and lets the range-dependent
+        consumers of ``peaksChanged`` (the scatter, results panel, ratios, material widget)
+        re-filter themselves against the new ``_minFreq``/``_maxFreq``.
+
+        It deliberately does NOT call ``recalculate_frozen_peaks_if_needed()``.  That is a
+        RE-ANALYSIS, and on the live/frozen path it re-runs ``find_peaks`` and mints NEW peak
+        UUIDs, after which ``_apply_frozen_peak_state`` has to re-match annotation offsets, mode
+        overrides and selection back onto the new ids by frequency (±5 Hz).  Doing that on every
+        pan/zoom frame is pure waste — the analysis window (``min_frequency``/``max_frequency``)
+        is independent of the canvas viewport, so detection cannot change — and it needlessly
+        churns identity in the state we most want stable while the user is inspecting a result.
+        Swift calls its equivalent from exactly two places, the ``peakMinThreshold`` observer and
+        an explicit Re-analyze; never from zoom or pan.
         """
         vb = self.getPlotItem().vb
         x0, x1 = vb.viewRange()[0]
@@ -1379,7 +1394,7 @@ class FftCanvas(pg.PlotWidget):
         self._minFreq = float(fmin)
         self._maxFreq = float(fmax)
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
-            self.analyzer.recalculate_frozen_peaks_if_needed()
+            self.analyzer.peaksChanged.emit(self.analyzer.current_peaks)
         self.freqRangeChanged.emit(fmin, fmax)
 
     # ------------------------------------------------------------------ #
@@ -1680,7 +1695,11 @@ class FftCanvas(pg.PlotWidget):
         self.line_threshold.setPos(self.threshold_y)
         self.line_threshold.label.setText(f"Peak: {self.threshold_y} dB")
 
-        self.analyzer.recalculate_frozen_peaks_if_needed()
+        # The projection updated when peak_min_threshold was assigned at the top of this method
+        # (property setter, mirroring Swift peakMinThreshold.didSet). current_peaks is a plain
+        # attr, not @Published, so the view must be told explicitly. Safe here: display-only,
+        # all other state already set (unlike the capture path).
+        self.analyzer.peaksChanged.emit(list(self.analyzer.current_peaks))
 
         self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()

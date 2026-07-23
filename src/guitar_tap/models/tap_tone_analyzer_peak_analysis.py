@@ -84,7 +84,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 live_threshold = search_mags[len(search_mags) // 2]
 
         peaks = self.find_peaks(magnitudes, frequencies, peak_min_override=live_threshold)
-        self.current_peaks = peaks
+        # Mirrors Swift allPeaks = peaks — store the durable set; current_peaks is its
+        # Peak-Min projection (refreshed by the all_peaks setter).
+        self.all_peaks = peaks
         # Auto-select all newly detected peaks so visibility mode «selected»
         # shows everything by default — mirrors Swift selectedPeakIDs = Set(peaks.map { $0.id }).
         # In plate/brace mode, selection is managed exclusively by the phase-completion handlers
@@ -141,16 +143,19 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # Snapshot frequency-keyed state BEFORE UUIDs change.
         offsets_by_freq = []
         for uid, offset in list(self.peak_annotation_offsets.items()):
+            # Resolve against the DURABLE set, not the display projection — a peak hidden
+            # by Peak Min still owns its dragged label. Mirrors Swift (reads allPeaks).
             match = next(
-                (p for p in self.current_peaks if p.id == uid), None
+                (p for p in self.all_peaks if p.id == uid), None
             )
             if match is not None:
                 offsets_by_freq.append((match.frequency, offset))
 
         overrides_by_freq = []
         for uid, label in list(self.peak_mode_overrides.items()):
+            # Durable set — a hidden peak keeps its custom mode name. Mirrors Swift (allPeaks).
             match = next(
-                (p for p in self.current_peaks if p.id == uid), None
+                (p for p in self.all_peaks if p.id == uid), None
             )
             if match is not None:
                 overrides_by_freq.append((match.frequency, label))
@@ -168,22 +173,20 @@ class TapToneAnalyzerPeakAnalysisMixin:
             else:
                 previously_selected_freqs = [
                     p.frequency
-                    for p in self.current_peaks
+                    for p in self.all_peaks
                     if p.id in self.selected_peak_ids
                 ]
 
         if self.loaded_measurement_peaks is not None:
-            peaks = [
-                p for p in self.loaded_measurement_peaks
-                if p.magnitude >= self.peak_min_threshold
-            ]
+            # Mirrors Swift: allPeaks = savedPeaks (the FULL saved set — never a filtered
+            # view). current_peaks is its Peak-Min projection via the all_peaks setter.
+            self.all_peaks = list(self.loaded_measurement_peaks)
+            peaks = self.all_peaks
             if not peaks:
-                self.current_peaks = []
                 self.identified_modes = []
                 self.peaksChanged.emit([])
                 return
 
-            self.current_peaks = peaks
             modes_by_freq = [
                 (entry["peak"].frequency, entry["mode"])
                 for entry in self.identified_modes
@@ -214,7 +217,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
             )
             if self.tap_entries:
                 self._recalculate_tap_entry_peaks()
-            self.peaksChanged.emit(peaks)
+            self.peaksChanged.emit(self.current_peaks)
             return
 
         modes_by_freq = [
@@ -223,14 +226,18 @@ class TapToneAnalyzerPeakAnalysisMixin:
             if "peak" in entry and "mode" in entry
         ]
 
-        peaks = self.find_peaks(list(frozen_mag), list(frozen_freq))
+        # Mirrors Swift: allPeaks = findPeaks(frozen…, peakMinOverride: peakDetectionFloor)
+        # — detect the FULL set at the -100 floor; current_peaks is its Peak-Min projection.
+        self.all_peaks = self.find_peaks(
+            list(frozen_mag), list(frozen_freq),
+            peak_min_override=self.PEAK_DETECTION_FLOOR,
+        )
+        peaks = self.all_peaks
         if not peaks:
-            self.current_peaks = []
             self.identified_modes = []
             self.peaksChanged.emit([])
             return
 
-        self.current_peaks = peaks
         self._apply_frozen_peak_state(
             peaks=peaks,
             modes_by_freq=modes_by_freq,
@@ -244,7 +251,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # the current Peak Min setting.  Mirrors Swift recalculateTapEntryPeaks().
         if self.tap_entries:
             self._recalculate_tap_entry_peaks()
-        self.peaksChanged.emit(peaks)
+        self.peaksChanged.emit(self.current_peaks)
 
     # ------------------------------------------------------------------ #
     # _recalculate_tap_entry_peaks
@@ -365,11 +372,13 @@ class TapToneAnalyzerPeakAnalysisMixin:
         """Clear the manual-modification flag and re-run auto-selection.
 
         Mirrors Swift ``resetToAutoSelection()``.
-        Does nothing if ``current_peaks`` is empty.
+        Does nothing if ``all_peaks`` is empty.
         """
         self.user_has_modified_peak_selection = False
         self.selected_peak_frequencies = []
-        peaks = self.current_peaks
+        # Auto-selection runs over the DURABLE set, never the display projection — a
+        # selected peak may legitimately sit below Peak Min. Mirrors Swift `let peaks = allPeaks`.
+        peaks = self.all_peaks
         if not peaks:
             return
         # Re-run guitar mode auto-selection.
@@ -644,7 +653,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         from .guitar_mode import GuitarMode
 
-        candidates = peaks if peaks is not None else self.current_peaks
+        candidates = peaks if peaks is not None else self.all_peaks
         guitar_type = _tds_gms.guitar_type()
 
         # Use classify_all (claiming algorithm) — mirrors Swift guitarModeSelectedPeakIDs(from:)
@@ -685,10 +694,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         from .guitar_mode import GuitarMode
 
-        mode_map = GuitarMode.classify_all(self.current_peaks, _tds_rcp.guitar_type())
+        mode_map = GuitarMode.classify_all(self.all_peaks, _tds_rcp.guitar_type())
         self.identified_modes = [
             {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
-            for p in self.current_peaks
+            for p in self.all_peaks
         ]
         # Unlike Swift where @Published identified_modes auto-notifies subscribers,
         # Python requires an explicit signal emission so the scatter plot and results
@@ -843,16 +852,11 @@ class TapToneAnalyzerPeakAnalysisMixin:
         material_identified_peaks).
         """
         assert self.loaded_measurement_peaks is not None
-        from .tap_display_settings import TapDisplaySettings as _tds
-
-        if not _tds.measurement_type().is_guitar:
-            peaks = list(self.loaded_measurement_peaks)
-        else:
-            threshold_db = self.peak_min_threshold
-            peaks = [p for p in self.loaded_measurement_peaks if p.magnitude >= threshold_db]
-
-        self.current_peaks = peaks
-        self.peaksChanged.emit(peaks)
+        # Mirrors Swift: store the FULL loaded set as the durable all_peaks; current_peaks is
+        # its Peak-Min projection (guitar filters; material passes through). Emitting the
+        # projection keeps the view filtered without all_peaks ever holding a filtered view.
+        self.all_peaks = list(self.loaded_measurement_peaks)
+        self.peaksChanged.emit(self.current_peaks)
 
     @staticmethod
     def resolved_mode_peaks(

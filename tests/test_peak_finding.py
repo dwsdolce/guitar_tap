@@ -389,9 +389,12 @@ class TestGuitarFullSavePeaks:
         sut.min_frequency = 30
         sut.max_frequency = 2000
         sut.peak_min_threshold = -60   # above the real Air peak (-64.21 dB)
-        displayed = sut.find_peaks(mags, freqs)
-        sut.current_peaks = displayed
-        return displayed
+        # Fresh capture stores the FULL set (found at the -100 floor) as the durable
+        # all_peaks; current_peaks is its Peak-Min projection. Mirrors Swift capture.
+        sut.all_peaks = sut.find_peaks(
+            mags, freqs, peak_min_override=sut.PEAK_DETECTION_FLOOR
+        )
+        return list(sut.current_peaks)
 
     @staticmethod
     def _is_air(p):
@@ -412,7 +415,11 @@ class TestGuitarFullSavePeaks:
     def test_loaded_measurement_is_not_upgraded(self):
         sut = make_sut()
         displayed = self._prep(sut)
-        sut.loaded_measurement_peaks = displayed  # simulate a still-loaded measurement
+        # Simulate a loaded measurement whose durable set IS its saved peaks (an old file
+        # saved without the full set): guitar_full_save_peaks returns them as-is, never
+        # re-detecting/upgrading. Mirrors Swift loadedMeasurementIsNotUpgraded.
+        sut.loaded_measurement_peaks = displayed
+        sut.all_peaks = displayed
         saved = sut.guitar_full_save_peaks()
         assert len(saved) == len(displayed), "a loaded measurement is saved as-is (Re-analyze regenerates)"
         assert not any(self._is_air(p) for p in saved), "no full-set upgrade for a loaded measurement"

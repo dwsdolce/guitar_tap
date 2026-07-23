@@ -270,8 +270,12 @@ class TestRecalculateFrozenPeaksIfNeeded:
             "The surviving peak should be at 200 Hz"
         )
 
-    def test_PRA4_loaded_measurement_all_below_threshold_yields_empty(self, qt_app):
-        """PR-A4: All loaded peaks below threshold → current_peaks is empty list."""
+    def test_PRA4_loaded_all_below_threshold_clears_display_keeps_durable_set(self, qt_app):
+        """PR-A4 (Phase 1/2 model): all loaded peaks below Peak Min → the DISPLAY projection
+        (current_peaks) empties, but the DURABLE set (all_peaks) and classification survive.
+        A display filter must never shrink the durable set. Mirrors Swift
+        loadedPeaks_allBelowThreshold_clearsDisplayButKeepsClassification.
+        """
         from models.resonant_peak import ResonantPeak
         sut = TapToneAnalyzer()
         sut.frozen_frequencies = np.array([100.0, 200.0, 400.0])
@@ -286,7 +290,10 @@ class TestRecalculateFrozenPeaksIfNeeded:
         sut.recalculate_frozen_peaks_if_needed()
 
         assert len(sut.current_peaks) == 0, (
-            "No peaks should remain when all are below threshold"
+            "the display projection empties when all peaks are below Peak Min"
+        )
+        assert len(sut.all_peaks) == 2, (
+            "the durable set survives — a display filter must never shrink all_peaks"
         )
 
     def test_PRA5_empty_frozen_magnitudes_yields_no_peaks(self, qt_app):
@@ -577,3 +584,78 @@ class TestPR8CanReanalyze:
         incomplete = self._frozen(MeasurementType.CLASSICAL)
         incomplete.is_measurement_complete = False
         assert incomplete.can_reanalyze is False, "Measurement still in progress"
+
+
+class TestPeakMinDurability:
+    """Mirrors Swift PeakMinDurabilityTests — THE point of the peak-lifecycle work.
+
+    Drive the REAL user path (assign peak_min_threshold, which the property setter re-projects,
+    exactly as the slider does) and sweep a peak out of view and back: its identity, selection,
+    mode override and dragged annotation position must all survive.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_measurement_type(self):
+        saved = TapDisplaySettings.measurement_type()
+        yield
+        TapDisplaySettings.set_measurement_type(saved)
+
+    def _frozen_guitar(self) -> TapToneAnalyzer:
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut = TapToneAnalyzer()
+        sut.is_measurement_complete = True
+        sut.frozen_frequencies = np.array([0.0, 100.0, 200.0, 300.0, 400.0, 500.0])
+        sut.frozen_magnitudes = np.array([-100.0] * 6)
+        return sut
+
+    def test_peak_min_sweep_preserves_identity_selection_override_and_offset(self, qt_app):
+        sut = self._frozen_guitar()
+        loud = _peak(200.0, -20.0)
+        quiet = _peak(300.0, -50.0)   # the one we will hide
+        sut.all_peaks = [loud, quiet]
+        sut.peak_min_threshold = -60.0   # both displayed
+
+        # User state, all on the peak that is about to be hidden.
+        sut.selected_peak_ids = {quiet.id}
+        sut.set_mode_override("Wolf note", quiet.id)
+        sut.update_annotation_offset(quiet.id, (12.0, 34.0))
+
+        # Raise Peak Min above the quiet peak — it vanishes from the DISPLAY only.
+        sut.peak_min_threshold = -40.0
+        assert not any(p.id == quiet.id for p in sut.current_peaks), "quiet peak should be hidden"
+        assert any(p.id == quiet.id for p in sut.all_peaks), (
+            "...but it must remain in the durable set — hidden, not destroyed"
+        )
+
+        # Lower it again.
+        sut.peak_min_threshold = -60.0
+        assert any(p.id == quiet.id for p in sut.current_peaks), (
+            "the SAME peak identity must come back, not a new one"
+        )
+        assert quiet.id in sut.selected_peak_ids, "selection must survive a Peak Min sweep"
+        assert sut.has_manual_override(quiet.id), "custom mode label must survive a Peak Min sweep"
+        assert sut.peak_annotation_offsets.get(quiet.id) == (12.0, 34.0), (
+            "dragged annotation position must survive a Peak Min sweep"
+        )
+
+    def test_deselect_survives_peak_min_sweep(self, qt_app):
+        """PEAK-SELECTION-SURVIVES-SLIDER.md: deselect a peak, sweep Peak Min — it stays
+        deselected. The decoupling means the slider never re-runs the carry-forward.
+        """
+        sut = self._frozen_guitar()
+        a = _peak(200.0, -20.0)
+        b = _peak(300.0, -25.0)
+        sut.all_peaks = [a, b]
+        sut.peak_min_threshold = -60.0
+        sut.selected_peak_ids = {a.id, b.id}
+
+        sut.toggle_peak_selection(b.id)
+        assert b.id not in sut.selected_peak_ids, "b just deselected"
+
+        sut.peak_min_threshold = -30.0
+        sut.peak_min_threshold = -60.0
+
+        assert b.id not in sut.selected_peak_ids, (
+            "a deselected peak must NOT re-select on a Peak Min sweep"
+        )
+        assert a.id in sut.selected_peak_ids, "the still-selected peak stays selected"
