@@ -74,7 +74,7 @@ def _air_after_lowering(m):
     sut.load_measurement(m)
     sut.peak_min_threshold = -70
     sut.recalculate_frozen_peaks_if_needed()
-    air = next((p for p in sut.current_peaks if abs(p.frequency - 97.26) < 1), None)
+    air = next((p for p in sut.peaks_above_peak_min if abs(p.frequency - 97.26) < 1), None)
     selected = air is not None and air.id in set(sut.selected_peak_ids)
     return air is not None, selected
 

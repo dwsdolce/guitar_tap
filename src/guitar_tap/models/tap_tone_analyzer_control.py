@@ -1022,7 +1022,7 @@ class TapToneAnalyzerControlMixin:
             f"Complete \u2014 fL: {fl_str} Hz, fC: {fc_str} Hz"
         )
 
-        self._emit_peaks_array(self.current_peaks)
+        self._emit_peaks_array(self.peaks_above_peak_min)
 
         l_mags, l_freqs = self.longitudinal_spectrum
         c_mags, c_freqs = self.cross_spectrum
@@ -1065,7 +1065,7 @@ class TapToneAnalyzerControlMixin:
         self.tap_progress = 1.0
         self._set_status_message("Complete - check Results")
 
-        self._emit_peaks_array(self.current_peaks)
+        self._emit_peaks_array(self.peaks_above_peak_min)
 
         l_mags, l_freqs = self.longitudinal_spectrum
         c_mags, c_freqs = self.cross_spectrum
@@ -1102,8 +1102,8 @@ class TapToneAnalyzerControlMixin:
         self.peak_min_threshold = float(threshold - 100)
         from models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_peak_min_threshold(self.peak_min_threshold)
-        # Notify the view the projection changed (current_peaks is a plain attr, not @Published).
-        self.peaksChanged.emit(list(self.current_peaks))
+        # Notify the view the projection changed (peaks_above_peak_min is a plain attr, not @Published).
+        self.peaksChanged.emit(list(self.peaks_above_peak_min))
 
     def set_fmin(self, fmin: int) -> None:
         self.update_axis(fmin, int(self.max_frequency))

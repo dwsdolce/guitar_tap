@@ -629,11 +629,11 @@ class FftCanvas(pg.PlotWidget):
         # Last viewport-filtered peaks received via peaksChanged signal.
         # Tracks the emitted slice so point_picked and update_mode_colors
         # don't need to re-derive it from saved_peaks + index fields.
-        self._current_peaks: list = []  # list[ResonantPeak]
+        self._all_peaks_in_range: list = []  # list[ResonantPeak]
 
         # Legacy numpy array of shape (N, 3) — [frequency, magnitude, quality].
         # Used by plate-mode consumers that do column-slice arithmetic.
-        # Decoupled from analyzer.current_peaks (list[ResonantPeak]) to avoid
+        # Decoupled from analyzer.peaks_above_peak_min (list[ResonantPeak]) to avoid
         # corrupting the typed peak list with raw arrays.
         import numpy as _np
         self._saved_peaks_array: "npt.NDArray" = _np.zeros((0, 3), dtype=_np.float64)
@@ -1143,12 +1143,27 @@ class FftCanvas(pg.PlotWidget):
     # ------------------------------------------------------------------ #
 
     def select_peak(self, freq: float) -> None:
-        """Select the peak (scatter point) with the specified frequency"""
-        if self.is_measurement_complete:
-            row = np.where(self.saved_peaks[:, 0] == freq)
-            magdb = self.saved_peaks[row][0][1]
-            self.selected_point.setData(x=[freq], y=[magdb])
-            self.analyzer.selected_peak = freq
+        """Select the peak (scatter point) with the specified frequency."""
+        if not self.is_measurement_complete:
+            return
+        # Resolve the magnitude to draw the highlight point. Prefer the dot set
+        # (_all_peaks_in_range) — populated for BOTH live and loaded measurements and the set the
+        # click originates from; fall back to saved_peaks (loaded-only, but holds every saved peak so
+        # a results-panel selection outside the current viewport still resolves). Guard the no-match
+        # case: saved_peaks is empty after a LIVE capture, and looking freq up there previously
+        # crashed with an IndexError on the very first click.
+        magdb = None
+        peak = next((p for p in self._all_peaks_in_range if p.frequency == freq), None)
+        if peak is not None:
+            magdb = peak.magnitude
+        elif self.saved_peaks.shape[0] > 0:
+            row = np.where(self.saved_peaks[:, 0] == freq)[0]
+            if len(row) > 0:
+                magdb = self.saved_peaks[row[0]][1]
+        if magdb is None:
+            return
+        self.selected_point.setData(x=[freq], y=[magdb])
+        self.analyzer.selected_peak = freq
 
     def deselect_peak(self, _freq: float) -> None:
         """Deselect the peak (scatter point) with the specified frequency"""
@@ -1166,8 +1181,8 @@ class FftCanvas(pg.PlotWidget):
             if self.annotations.select_annotation(scatter):
                 return
             index0 = points[0].index()
-            if self._current_peaks and index0 < len(self._current_peaks):
-                freq = float(self._current_peaks[index0].frequency)
+            if self._all_peaks_in_range and index0 < len(self._all_peaks_in_range):
+                freq = float(self._all_peaks_in_range[index0].frequency)
                 self.peakSelected.emit(freq)
 
     # ── info button & zoom/pan help ───────────────────────────────────────────
@@ -1371,7 +1386,7 @@ class FftCanvas(pg.PlotWidget):
         wheelEvent after Shift+scroll pan and Ctrl+scroll zoom.
 
         Panning/zooming is a DISPLAY change: it re-filters what is shown, it does not
-        re-analyse.  So this re-emits ``current_peaks`` unchanged and lets the range-dependent
+        re-analyse.  So this re-emits ``peaks_above_peak_min`` unchanged and lets the range-dependent
         consumers of ``peaksChanged`` (the scatter, results panel, ratios, material widget)
         re-filter themselves against the new ``_minFreq``/``_maxFreq``.
 
@@ -1394,7 +1409,7 @@ class FftCanvas(pg.PlotWidget):
         self._minFreq = float(fmin)
         self._maxFreq = float(fmax)
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
-            self.analyzer.peaksChanged.emit(self.analyzer.current_peaks)
+            self.analyzer.peaksChanged.emit(self.analyzer.peaks_above_peak_min)
         self.freqRangeChanged.emit(fmin, fmax)
 
     # ------------------------------------------------------------------ #
@@ -1696,15 +1711,15 @@ class FftCanvas(pg.PlotWidget):
         self.line_threshold.label.setText(f"Peak: {self.threshold_y} dB")
 
         # The projection updated when peak_min_threshold was assigned at the top of this method
-        # (property setter, mirroring Swift peakMinThreshold.didSet). current_peaks is a plain
+        # (property setter, mirroring Swift peakMinThreshold.didSet). peaks_above_peak_min is a plain
         # attr, not @Published, so the view must be told explicitly. Safe here: display-only,
         # all other state already set (unlike the capture path).
-        self.analyzer.peaksChanged.emit(list(self.analyzer.current_peaks))
+        self.analyzer.peaksChanged.emit(list(self.analyzer.peaks_above_peak_min))
 
         self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()
-        if self._current_peaks and self.analyzer.selected_peak > 0:
-            if self.analyzer.selected_peak in [p.frequency for p in self._current_peaks]:
+        if self._all_peaks_in_range and self.analyzer.selected_peak > 0:
+            if self.analyzer.selected_peak in [p.frequency for p in self._all_peaks_in_range]:
                 self.peakSelected.emit(self.analyzer.selected_peak)
 
     def _peak_brushes(self, freqs) -> list:
@@ -1718,9 +1733,9 @@ class FftCanvas(pg.PlotWidget):
     def update_mode_colors(self, color_map: dict) -> None:
         """Update the per-peak mode colour map and redraw scatter points."""
         self._mode_color_map = color_map
-        if self._current_peaks:
-            freqs = [p.frequency for p in self._current_peaks]
-            mags  = [p.magnitude for p in self._current_peaks]
+        if self._all_peaks_in_range:
+            freqs = [p.frequency for p in self._all_peaks_in_range]
+            mags  = [p.magnitude for p in self._all_peaks_in_range]
             self.points.setData(
                 x=freqs, y=mags,
                 brush=self._peak_brushes(freqs),
@@ -1745,7 +1760,7 @@ class FftCanvas(pg.PlotWidget):
         zoom -- _refresh_peaks_for_viewport re-emits peaksChanged on sigXRangeChanged, so
         this handler re-runs and the dots track the visible window.  Previously no range
         filter was applied here at all and pyqtgraph merely clipped the drawing, which left
-        out-of-range peaks in _current_peaks (the click hit-test set) unlike Swift.
+        out-of-range peaks in _all_peaks_in_range (the click hit-test set) unlike Swift.
         """
         if peaks:
             mt = _as.AppSettings.measurement_type()
@@ -1763,14 +1778,14 @@ class FftCanvas(pg.PlotWidget):
                 self.analyzer.overridden_peak_ids,
                 guitar_type,
             )
-            # _current_peaks MUST stay index-aligned with the setData arrays below --
+            # _all_peaks_in_range MUST stay index-aligned with the setData arrays below --
             # point_picked() maps a clicked scatter index back through it.
-            self._current_peaks = peaks
+            self._all_peaks_in_range = peaks
             freqs = [p.frequency for p in peaks]
             mags  = [p.magnitude for p in peaks]
             self.points.setData(x=freqs, y=mags, brush=self._peak_brushes(freqs))
         else:
-            self._current_peaks = []
+            self._all_peaks_in_range = []
             self.points.setData(x=[], y=[])
 
     def set_draw_data(self, mag_db, freqs=None) -> None:

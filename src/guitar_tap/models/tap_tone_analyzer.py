@@ -276,11 +276,18 @@ class TapToneAnalyzer(
 
         # MARK: - Results
         # The DURABLE full peak set (found at the -100 dB floor at capture). Source of
-        # truth for peak identity; current_peaks is its Peak-Min display projection.
+        # truth for peak identity; peaks_above_peak_min is its Peak-Min display projection.
         # Mirrors Swift allPeaks. Assign via the all_peaks property so the projection
         # refreshes (Swift allPeaks.didSet). See PEAK-LIFECYCLE-SPEC.md (GuitarTapWeb).
         self._all_peaks: list = []                                         # mirrors allPeaks (durable)
-        self.current_peaks: list = []                                      # mirrors currentPeaks (display projection of all_peaks)
+        # `peaks_above_peak_min` (mirrors Swift `peaksAbovePeakMin`) is the Peak-Min projection of
+        # `all_peaks` — NOT "the peaks". Three distinct scopes exist; this is the MIDDLE one:
+        #   all_peaks                        = the MEASUREMENT (capture / explicit Re-analyze)
+        #   peaks_above_peak_min             = a SETTING       (the Peak Min slider)
+        #   fft_canvas._all_peaks_in_range   = the VIEWPORT    (pan / zoom / a different chart)
+        # Anything asking a question ABOUT THE MEASUREMENT — save, selection, classification,
+        # per-peak state carry-forward, whether a measurement exists — reads `all_peaks`, never this.
+        self.peaks_above_peak_min: list = []
         self.identified_modes: list = []                                   # mirrors identifiedModes
         self.current_decay_time: "float | None" = None                    # mirrors currentDecayTime
         self.saved_measurements: list = []                                 # mirrors savedMeasurements
@@ -985,29 +992,29 @@ class TapToneAnalyzer(
     def all_peaks(self, value: list) -> None:
         self._all_peaks = value
         # Mirrors Swift allPeaks.didSet — re-project the display set. Assigning
-        # all_peaks is the ONLY way current_peaks should change.
+        # all_peaks is the ONLY way peaks_above_peak_min should change.
         self.refresh_displayed_peaks()
 
     def refresh_displayed_peaks(self) -> None:
-        """Recompute `current_peaks` (the Peak-Min display projection) from
+        """Recompute `peaks_above_peak_min` (the Peak-Min display projection) from
         `all_peaks`. Called when the peak set or Peak Min changes — a cheap filter,
         no detection. Hands back the SAME peak objects, so filtering can never
         disturb identity. Peak Min is guitar-only, so material shows all_peaks
         unfiltered. Mirrors Swift `refreshDisplayedPeaks()`.
         """
         if self._tds.measurement_type().is_guitar:
-            self.current_peaks = [
+            self.peaks_above_peak_min = [
                 p for p in self._all_peaks if p.magnitude >= self.peak_min_threshold
             ]
         else:
-            self.current_peaks = list(self._all_peaks)
+            self.peaks_above_peak_min = list(self._all_peaks)
 
     @property
     def selected_peaks(self) -> list:
         """The user's selected peaks, resolved over the DURABLE set — mirrors Swift
         `selectedPeaks { allPeaks.filter { selectedPeakIDs.contains($0.id) } }`. Selection is a
         fact about the measurement, not about what is on screen: a selected peak may legitimately
-        sit below Peak Min, so resolving over `current_peaks` (the display projection) would
+        sit below Peak Min, so resolving over `peaks_above_peak_min` (the display projection) would
         silently drop it from every derived value (e.g. the multi-tap averaged Air/Top/Back row).
         """
         return [p for p in self._all_peaks if p.id in self.selected_peak_ids]
@@ -1016,10 +1023,10 @@ class TapToneAnalyzer(
     def peak_min_threshold(self) -> float:
         """Minimum magnitude (dBFS) for a peak to be displayed.
 
-        A DISPLAY control: assigning it re-projects `current_peaks` from the durable
+        A DISPLAY control: assigning it re-projects `peaks_above_peak_min` from the durable
         `all_peaks` and nothing else — no re-detection, no re-classification. Mirrors Swift
         `@Published var peakMinThreshold { didSet { refreshDisplayedPeaks() } }`. Persistence
-        and the view's `peaksChanged` emit stay at the call sites: Python's `current_peaks` is
+        and the view's `peaksChanged` emit stay at the call sites: Python's `peaks_above_peak_min` is
         not signal-backed like Swift's `@Published peaksAbovePeakMin`, so emitting here would
         fire prematurely during capture/load.
         """
@@ -1411,11 +1418,12 @@ class TapToneAnalyzer(
         self.user_has_modified_peak_selection = True
 
     def select_all_peaks(self) -> None:
-        """Mark all current peaks as selected.
+        """Mark all peaks as selected.
 
-        Mirrors Swift ``selectAllPeaks()``.
+        "All" means all — over the durable set, not the Peak-Min projection (Swift Phase 4a).
+        Mirrors Swift ``selectAllPeaks()``. (Removed in Phase 5.)
         """
-        self.selected_peak_ids = {p.id for p in self.current_peaks}
+        self.selected_peak_ids = {p.id for p in self.all_peaks}
         self.user_has_modified_peak_selection = True
 
     def select_no_peaks(self) -> None:
@@ -1452,7 +1460,7 @@ class TapToneAnalyzer(
 
     @property
     def visible_peaks(self) -> list:
-        """Subset of current_peaks to render given annotation_visibility_mode.
+        """Subset of peaks_above_peak_min to render given annotation_visibility_mode.
 
         In guitar mode, peaks classified as Unknown are excluded when
         ``TapDisplaySettings.show_unknown_modes`` is False, keeping the chart
@@ -1463,7 +1471,7 @@ class TapToneAnalyzer(
         from .annotation_visibility_mode import AnnotationVisibilityMode
         from .tap_display_settings import TapDisplaySettings as _tds_vp
         # Material (plate/brace): annotate the accumulated identified L/C/FLC (stable, persistent),
-        # matching the web — NOT current_peaks, which churns through 87→126→3 raw peaks during
+        # matching the web — NOT peaks_above_peak_min, which churns through 87→126→3 raw peaks during
         # capture. No per-peak selection, so ALL/SELECTED are equivalent. (RESPIN-1.0.2, fix R.)
         if not _tds_vp.measurement_type().is_guitar:
             if self.annotation_visibility_mode == AnnotationVisibilityMode.NONE:
@@ -1471,9 +1479,9 @@ class TapToneAnalyzer(
             return self.material_identified_peaks
         mode = self.annotation_visibility_mode
         if mode == AnnotationVisibilityMode.ALL:
-            candidates = list(self.current_peaks)
+            candidates = list(self.peaks_above_peak_min)
         elif mode == AnnotationVisibilityMode.SELECTED:
-            candidates = [p for p in self.current_peaks if p.id in self.selected_peak_ids]
+            candidates = [p for p in self.peaks_above_peak_min if p.id in self.selected_peak_ids]
         else:
             # NONE
             return []
@@ -1493,7 +1501,7 @@ class TapToneAnalyzer(
         """The identified per-phase peaks (L, then C, then FLC) found so far in a material
         measurement, in phase order. Stable and PERSISTENT across phases — the material analog of the
         guitar "selected" set, mirroring the web's matPeaks. Empty for guitar. Used as the live-chart
-        annotation source so annotations grow 1→2→3 cleanly instead of following current_peaks (which
+        annotation source so annotations grow 1→2→3 cleanly instead of following peaks_above_peak_min (which
         churns through all raw peaks during capture). Mirrors Swift materialIdentifiedPeaks (RESPIN-1.0.2, fix R).
         """
         from .tap_display_settings import TapDisplaySettings

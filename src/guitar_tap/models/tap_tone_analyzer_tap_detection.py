@@ -632,7 +632,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 # Delegate to analyze_magnitudes — mirrors Swift setupSubscriptions()
                 # Combine sink at TapToneAnalyzer.swift:876 which calls
                 # self?.analyzeMagnitudes(magnitudes, frequencies:, peakMagnitude:).
-                # analyze_magnitudes updates current_peaks, selected_peak_ids,
+                # analyze_magnitudes updates peaks_above_peak_min, selected_peak_ids,
                 # identified_modes, and emits peaksChanged via its internal logic.
                 peak_mag = float(fft_peak_amp) - 100.0
                 self.analyze_magnitudes(list(mag_y_db), list(self.freq), peak_mag)

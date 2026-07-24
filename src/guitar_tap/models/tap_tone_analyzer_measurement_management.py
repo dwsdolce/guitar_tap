@@ -464,7 +464,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         # ── Restore peaks ─────────────────────────────────────────────────────
         # Mirrors Swift: allPeaks = measurement.peaks (the durable full set).
-        # current_peaks becomes its Peak-Min projection via the all_peaks setter.
+        # peaks_above_peak_min becomes its Peak-Min projection via the all_peaks setter.
         self.all_peaks = list(measurement.peaks) if measurement.peaks else []
 
         # ── Restore decay time ────────────────────────────────────────────────
@@ -612,7 +612,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # ── Restore plate/brace peak selections ───────────────────────────────
         # Mirrors Swift: selectedLongitudinalPeak = measurement.selectedLongitudinalPeakID
         #     .flatMap { id in currentPeaks.first(where: { $0.id == id }) }
-        _peak_by_id = {(p.id or "").upper(): p for p in self.current_peaks}
+        _peak_by_id = {(p.id or "").upper(): p for p in self.peaks_above_peak_min}
         self.selected_longitudinal_peak = (
             _peak_by_id.get((measurement.selected_longitudinal_peak_id or "").upper())
         )
@@ -663,20 +663,24 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # Material (plate/brace) has no per-peak selection: always restore ALL peaks, ignoring the
         # saved aggregate (which can be corrupted). Heals existing corrupt files on load. Guitar
         # restores the user's saved selection. Mirrors Swift/web (RESPIN-1.0.2).
+        # Resolved over the DURABLE set (`all_peaks`), not the Peak-Min projection: which peaks ARE
+        # selected is a fact about the measurement, so a peak below the saved Peak Min is still
+        # restored as selected. Mirrors Swift Phase 4a (currentPeaks -> allPeaks).
         if measurement.is_material:
-            self.selected_peak_ids = {p.id for p in self.current_peaks}
+            self.selected_peak_ids = {p.id for p in self.all_peaks}
         elif measurement.selected_peak_ids is not None:
             self.selected_peak_ids = set(measurement.selected_peak_ids)
         else:
-            self.selected_peak_ids = {p.id for p in self.current_peaks}
+            self.selected_peak_ids = {p.id for p in self.all_peaks}
         # Restore whether the selection was user-modified (default True for legacy files, which
         # preserves prior behaviour). An automatic selection re-runs auto-selection on Peak Min
         # change; a manual one carries forward. Mirrors Swift.
         _ums = getattr(measurement, "user_modified_selection", None)
         self.user_has_modified_peak_selection = True if _ums is None else _ums
-        # Seed stable frequency cache — mirrors Swift selectedPeakFrequencies assignment
+        # Seed stable frequency cache — mirrors Swift selectedPeakFrequencies assignment. Over the
+        # DURABLE set so a selected sub-Peak-Min peak's frequency reaches the cache (Phase 4a).
         self.selected_peak_frequencies = [
-            p.frequency for p in self.current_peaks
+            p.frequency for p in self.all_peaks
             if p.id in self.selected_peak_ids
         ]
         gt_log(f"  ⭐ Restored {len(self.selected_peak_ids)} selected peaks")
@@ -817,7 +821,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # project_loaded_peaks_authoritative and truncated the saved set whenever Peak Min was
         # raised. A reloaded multi-tap measurement now agrees with a fresh capture.)
 
-        gt_log(f"✅ Loaded measurement with {len(self.current_peaks)} peaks (frozen)")
+        gt_log(f"✅ Loaded measurement with {len(self.peaks_above_peak_min)} peaks (frozen)")
         if self.tap_entries:
             gt_log(f"  📋 Restored {len(self.tap_entries)} per-tap entries for multi-tap comparison")
 
@@ -916,11 +920,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 guitar_type=_tds3.guitar_type().value,
                 measurement_type=_tds3.measurement_type().value,
             )
-            # Selected (mode-identified) averaged peaks only.
-            avg_sel_peaks = [
-                p for p in self.current_peaks
-                if p.id in self.selected_peak_ids
-            ]
+            # Selected (mode-identified) averaged peaks only — resolved over the durable set via the
+            # shared `selected_peaks` property, the same rule the on-screen table and PDF use, so the
+            # overlay does not lose a selected peak when Peak Min rises above it (Swift Phase 4a fix).
+            avg_sel_peaks = list(self.selected_peaks)
             entries.append({
                 "label":      avg_label,
                 "color":      avg_color,

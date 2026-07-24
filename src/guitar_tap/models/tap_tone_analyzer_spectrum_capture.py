@@ -1521,7 +1521,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_status_message("Complete - check Results")
             gt_log(f"✅ Brace measurement complete: fL={avg_peak.frequency} Hz")
             # Emit final peaks.
-            self._emit_peaks_array(self.current_peaks)
+            self._emit_peaks_array(self.peaks_above_peak_min)
             # Emit the longitudinal spectrum for display — mirrors Swift's @Published
             # longitudinalSpectrum being set, which causes TapToneAnalysisView.materialSpectra
             # (a computed property) to return [("Longitudinal (L)", blue, ...)] and
@@ -1535,7 +1535,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             # File playback: auto-advance L → C without pausing at the review state.
             # The file audio flows continuously, so pausing detection would miss
             # the cross-grain taps that follow immediately.
-            self._emit_peaks_array(self.current_peaks)
+            self._emit_peaks_array(self.peaks_above_peak_min)
             self._set_material_tap_phase(_MTP.CAPTURING_CROSS)
             self.set_frozen_spectrum(_np.array([]), _np.array([]))
             # is_above_threshold = True forces a falling-edge wait before the
@@ -1561,7 +1561,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         else:
             # Plate: pause at review state — user must press Accept to continue or Redo to re-tap.
             # Emit longitudinal peaks now — mirrors Swift's single currentPeaks assignment.
-            self._emit_peaks_array(self.current_peaks)
+            self._emit_peaks_array(self.peaks_above_peak_min)
             self._set_material_tap_phase(_MTP.REVIEWING_LONGITUDINAL)
             self.is_detecting = False
             self._set_status_message(
@@ -1678,7 +1678,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         }
         # Emit peaks BEFORE the phase transition so the view's peaks model has
         # up-to-date data when plateStatusChanged triggers refresh_annotations().
-        self._emit_peaks_array(self.current_peaks)
+        self._emit_peaks_array(self.peaks_above_peak_min)
 
         if self.mic.is_playing_file:
             # File playback: auto-advance past the review state.
@@ -1785,7 +1785,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.selected_peak_ids = {p.id for p in sel}
         # Emit peaks BEFORE the phase transition so the view's peaks model has
         # up-to-date data when plateStatusChanged triggers refresh_annotations().
-        self._emit_peaks_array(self.current_peaks)
+        self._emit_peaks_array(self.peaks_above_peak_min)
 
         if self.mic.is_playing_file:
             # File playback: auto-complete without pausing at the review state.
@@ -1967,7 +1967,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         gt_log(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
 
         # Mirrors Swift findPeaks(avg…, peakMinOverride: peakDetectionFloor) — detect the
-        # FULL averaged set at the -100 floor; current_peaks is its Peak-Min projection.
+        # FULL averaged set at the -100 floor; peaks_above_peak_min is its Peak-Min projection.
         peaks = self.find_peaks(
             avg_mags, avg_freqs, peak_min_override=self.PEAK_DETECTION_FLOOR
         )
@@ -2074,17 +2074,17 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     def _emit_peaks_array(self, peaks: "list") -> None:
         """Emit peaksChanged with the list[ResonantPeak] — objects all the way through.
 
-        Called after gated-FFT phase handlers update current_peaks, so the
+        Called after gated-FFT phase handlers update peaks_above_peak_min, so the
         spectrum view can annotate the live display.
 
         This mirrors the store+emit block at the end of find_peaks but for
-        the gated path which bypasses find_peaks for current_peaks assignment.
+        the gated path which bypasses find_peaks for peaks_above_peak_min assignment.
         """
-        self.current_peaks = peaks
+        self.peaks_above_peak_min = peaks
         # Material (plate/brace): the live chart annotates the accumulated identified L/C/FLC (stable,
-        # persistent), matching the web — NOT the raw current_peaks (87→126→3 during capture).
-        # current_peaks itself is unchanged (kept for the model/results); only the emitted payload that
-        # feeds the chart scatter + annotations is the identified set. Guitar emits current_peaks
+        # persistent), matching the web — NOT the raw peaks_above_peak_min (87→126→3 during capture).
+        # peaks_above_peak_min itself is unchanged (kept for the model/results); only the emitted payload that
+        # feeds the chart scatter + annotations is the identified set. Guitar emits peaks_above_peak_min
         # unchanged. Mirrors Swift's view reading materialIdentifiedPeaks. (RESPIN-1.0.2, fix R.)
         from models.tap_display_settings import TapDisplaySettings as _tds
         emit_peaks = peaks if _tds.measurement_type().is_guitar else self.material_identified_peaks

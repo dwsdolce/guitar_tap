@@ -118,11 +118,12 @@ class TestAnnotationStateLive:
         sut.toggle_peak_selection(pid)
         assert pid not in sut.selected_peak_ids, "After second toggle peak should be deselected"
 
-    def test_D3_select_all_peaks_selects_all_current_peaks(self):
-        """selectAllPeaks populates selected_peak_ids with all current_peaks IDs."""
+    def test_D3_select_all_peaks_selects_all_peaks(self):
+        """select_all_peaks populates selected_peak_ids with all durable (all_peaks) IDs — "all"
+        means all, over the durable set, not the Peak-Min projection (Phase 4a)."""
         sut = _make_sut()
         peaks = [_make_peak_live(100), _make_peak_live(200), _make_peak_live(300)]
-        sut.current_peaks = peaks
+        sut.all_peaks = peaks
         sut.select_all_peaks()
         for p in peaks:
             assert p.id in sut.selected_peak_ids, (
@@ -132,8 +133,11 @@ class TestAnnotationStateLive:
     def test_D3_select_no_peaks_clears_all(self):
         """selectNoPeaks clears all selections."""
         sut = _make_sut()
-        sut.current_peaks = [_make_peak_live(100), _make_peak_live(200)]
-        sut.select_all_peaks()
+        peaks = [_make_peak_live(100), _make_peak_live(200)]
+        sut.peaks_above_peak_min = peaks
+        # Select explicitly, NOT via select_all_peaks — that feature is removed in Phase 5 and this
+        # test must not depend on it (mirrors Swift Phase 4a).
+        sut.selected_peak_ids = {p.id for p in peaks}
         sut.select_no_peaks()
         assert len(sut.selected_peak_ids) == 0
 
@@ -149,7 +153,7 @@ class TestAnnotationStateLive:
     def test_D3b_select_all_peaks_sets_modified_flag(self):
         """select_all_peaks sets user_has_modified_peak_selection."""
         sut = _make_sut()
-        sut.current_peaks = [_make_peak_live()]
+        sut.all_peaks = [_make_peak_live()]
         sut.select_all_peaks()
         assert sut.user_has_modified_peak_selection
 
@@ -165,7 +169,7 @@ class TestAnnotationStateLive:
         # Two peaks in the acoustic Air range (90–120 Hz); louder one should win.
         quiet_air = _make_peak_live(freq=98.0, mag=-50.0)
         loud_air = _make_peak_live(freq=105.0, mag=-30.0)
-        # Auto-selection reads the DURABLE set now — seed all_peaks (projects to current_peaks).
+        # Auto-selection reads the DURABLE set now — seed all_peaks (projects to peaks_above_peak_min).
         sut.all_peaks = [quiet_air, loud_air]
         sut.user_has_modified_peak_selection = True
         sut.selected_peak_ids = set()
@@ -183,7 +187,7 @@ class TestAnnotationStateLive:
         )
 
     def test_D3b_reset_to_auto_selection_empty_peaks_is_noop(self):
-        """reset_to_auto_selection on empty current_peaks is a no-op (no crash)."""
+        """reset_to_auto_selection on empty peaks_above_peak_min is a no-op (no crash)."""
         sut = _make_sut()
         sut.user_has_modified_peak_selection = True
         sut.reset_to_auto_selection()
@@ -192,12 +196,12 @@ class TestAnnotationStateLive:
 
     # ── D4–D6: visible_peaks ──────────────────────────────────────────────
 
-    def test_D4_all_mode_returns_all_current_peaks(self):
-        """D4: annotation_visibility_mode='all' → visible_peaks == current_peaks."""
+    def test_D4_all_mode_returns_all_peaks_above_peak_min(self):
+        """D4: annotation_visibility_mode='all' → visible_peaks == peaks_above_peak_min."""
         sut = _make_sut()
         sut.annotation_visibility_mode = "all"
         peaks = [_make_peak_live(100), _make_peak_live(200), _make_peak_live(300)]
-        sut.current_peaks = peaks
+        sut.peaks_above_peak_min = peaks
         assert len(sut.visible_peaks) == 3
 
     def test_D5_selected_mode_filters_to_selected_peaks(self):
@@ -207,7 +211,7 @@ class TestAnnotationStateLive:
         p1 = _make_peak_live(100)
         p2 = _make_peak_live(200)
         p3 = _make_peak_live(300)
-        sut.current_peaks = [p1, p2, p3]
+        sut.peaks_above_peak_min = [p1, p2, p3]
         sut.selected_peak_ids = {p1.id, p3.id}
 
         visible = sut.visible_peaks
@@ -220,8 +224,10 @@ class TestAnnotationStateLive:
         """D6: annotation_visibility_mode='none' → visible_peaks is empty."""
         sut = _make_sut()
         sut.annotation_visibility_mode = "none"
-        sut.current_peaks = [_make_peak_live(), _make_peak_live(300)]
-        sut.select_all_peaks()
+        peaks = [_make_peak_live(), _make_peak_live(300)]
+        sut.peaks_above_peak_min = peaks
+        # Select explicitly, NOT via select_all_peaks (removed in Phase 5) — mirrors Swift Phase 4a.
+        sut.selected_peak_ids = {p.id for p in peaks}
         assert sut.visible_peaks == []
 
     # ── D7–D8: Mode overrides ─────────────────────────────────────────────

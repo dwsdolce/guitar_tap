@@ -390,11 +390,11 @@ class TestGuitarFullSavePeaks:
         sut.max_frequency = 2000
         sut.peak_min_threshold = -60   # above the real Air peak (-64.21 dB)
         # Fresh capture stores the FULL set (found at the -100 floor) as the durable
-        # all_peaks; current_peaks is its Peak-Min projection. Mirrors Swift capture.
+        # all_peaks; peaks_above_peak_min is its Peak-Min projection. Mirrors Swift capture.
         sut.all_peaks = sut.find_peaks(
             mags, freqs, peak_min_override=sut.PEAK_DETECTION_FLOOR
         )
-        return list(sut.current_peaks)
+        return list(sut.peaks_above_peak_min)
 
     @staticmethod
     def _is_air(p):

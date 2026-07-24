@@ -41,7 +41,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         """Update live peaks from a new FFT frame.
 
         Called on each FFT output frame while detection is active. Finds peaks,
-        updates ``current_peaks``, auto-selects all new peaks, and classifies modes.
+        updates ``peaks_above_peak_min``, auto-selects all new peaks, and classifies modes.
 
         Mirrors Swift ``analyzeMagnitudes(_:frequencies:peakMagnitude:)``.
 
@@ -84,7 +84,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 live_threshold = search_mags[len(search_mags) // 2]
 
         peaks = self.find_peaks(magnitudes, frequencies, peak_min_override=live_threshold)
-        # Mirrors Swift allPeaks = peaks — store the durable set; current_peaks is its
+        # Mirrors Swift allPeaks = peaks — store the durable set; peaks_above_peak_min is its
         # Peak-Min projection (refreshed by the all_peaks setter).
         self.all_peaks = peaks
         # Auto-select all newly detected peaks so visibility mode «selected»
@@ -179,7 +179,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         if self.loaded_measurement_peaks is not None:
             # Mirrors Swift: allPeaks = savedPeaks (the FULL saved set — never a filtered
-            # view). current_peaks is its Peak-Min projection via the all_peaks setter.
+            # view). peaks_above_peak_min is its Peak-Min projection via the all_peaks setter.
             self.all_peaks = list(self.loaded_measurement_peaks)
             peaks = self.all_peaks
             if not peaks:
@@ -217,7 +217,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
             )
             # (Phase 3: the per-tap recompute here was deleted — TapEntry peaks are computed once
             # at capture and are durable; a display recalc must never re-derive them.)
-            self.peaksChanged.emit(self.current_peaks)
+            self.peaksChanged.emit(self.peaks_above_peak_min)
             return
 
         modes_by_freq = [
@@ -227,7 +227,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         ]
 
         # Mirrors Swift: allPeaks = findPeaks(frozen…, peakMinOverride: peakDetectionFloor)
-        # — detect the FULL set at the -100 floor; current_peaks is its Peak-Min projection.
+        # — detect the FULL set at the -100 floor; peaks_above_peak_min is its Peak-Min projection.
         self.all_peaks = self.find_peaks(
             list(frozen_mag), list(frozen_freq),
             peak_min_override=self.PEAK_DETECTION_FLOOR,
@@ -249,7 +249,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         )
         # (Phase 3: the per-tap recompute here was deleted — TapEntry peaks are computed once at
         # capture and are durable; a display recalc must never re-derive them.)
-        self.peaksChanged.emit(self.current_peaks)
+        self.peaksChanged.emit(self.peaks_above_peak_min)
 
     # _recalculate_tap_entry_peaks was DELETED in Phase 3 (mirrors Swift 11689b6). It re-ran
     # find_peaks over every TapEntry snapshot at the CURRENT Peak Min, from both recalc branches and
@@ -349,7 +349,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         self.recalculate_frozen_peaks_if_needed()
         from guitar_tap.utilities.logging import gt_log
         gt_log(f"\U0001f52c Re-analyzed peaks from frozen spectrum: "
-               f"{len(self.current_peaks)} peaks found")
+               f"{len(self.peaks_above_peak_min)} peaks found")
 
     # ------------------------------------------------------------------ #
     # reset_to_auto_selection
@@ -632,7 +632,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
         ``guitarModeSelectedPeakIDs(from:)``.
 
         Args:
-            peaks: Peaks to evaluate; defaults to ``self.current_peaks``.
+            peaks: Peaks to evaluate; defaults to ``self.all_peaks`` (the durable set —
+                   auto-selection is a fact about the measurement, not the display).
 
         Returns:
             Set of ``ResonantPeak.id`` strings for the auto-selected peaks.
@@ -691,7 +692,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # Python requires an explicit signal emission so the scatter plot and results
         # panel receive the reclassified peaks.  Mirrors the pattern used in
         # recalculate_frozen_peaks_if_needed() and analyze_magnitudes().
-        self.peaksChanged.emit(list(self.current_peaks))
+        self.peaksChanged.emit(list(self.peaks_above_peak_min))
 
     # ------------------------------------------------------------------ #
     # remove_duplicate_peaks
@@ -840,11 +841,11 @@ class TapToneAnalyzerPeakAnalysisMixin:
         material_identified_peaks).
         """
         assert self.loaded_measurement_peaks is not None
-        # Mirrors Swift: store the FULL loaded set as the durable all_peaks; current_peaks is
+        # Mirrors Swift: store the FULL loaded set as the durable all_peaks; peaks_above_peak_min is
         # its Peak-Min projection (guitar filters; material passes through). Emitting the
         # projection keeps the view filtered without all_peaks ever holding a filtered view.
         self.all_peaks = list(self.loaded_measurement_peaks)
-        self.peaksChanged.emit(self.current_peaks)
+        self.peaksChanged.emit(self.peaks_above_peak_min)
 
     @staticmethod
     def resolved_mode_peaks(

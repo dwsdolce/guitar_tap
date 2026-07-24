@@ -109,6 +109,43 @@ def _add_tone(mag: np.ndarray, freq_hz: float, peak_db: float, width: int = 4) -
     return center
 
 
+def _gaussian_spectrum(bumps, lo: float = 50.0, hi: float = 500.0, floor: float = -100.0):
+    """A synthetic spectrum with a Gaussian bump at each requested frequency, on a -100 dB floor.
+
+    The flat spectrum installed by the minimal freeze helpers makes find_peaks detect nothing, so any
+    test that drives the live/frozen recalc through it passes vacuously -- a trap this suite has
+    fallen into before. This fixture gives real detection something to work on.
+
+    Mirrors Swift ``gaussianSpectrum``.
+    """
+    sigma = 3.0
+    freqs: list = []
+    mags: list = []
+    f = lo
+    while f <= hi:
+        m = floor
+        for bf, bmag in bumps:
+            d = f - bf
+            m = max(m, floor + (bmag - floor) * float(np.exp(-(d * d) / (2 * sigma * sigma))))
+        freqs.append(f)
+        mags.append(m)
+        f += 1.0
+    return np.array(freqs), np.array(mags)
+
+
+def _freeze_on_real_spectrum(sut, bumps) -> None:
+    """Freeze the SUT on a real (Gaussian) spectrum so the live/frozen recalc branch actually
+    detects. Mirrors Swift ``freezeOnRealSpectrum``.
+    """
+    freqs, mags = _gaussian_spectrum(bumps)
+    sut.min_frequency = 50.0
+    sut.max_frequency = 500.0
+    sut.is_measurement_complete = True
+    sut.frozen_frequencies = freqs
+    sut.frozen_magnitudes = mags
+    sut.all_peaks = sut.find_peaks(mags, freqs, peak_min_override=sut.PEAK_DETECTION_FLOOR)
+
+
 def _detect_peaks(mag: np.ndarray, threshold_db: float):
     """Run the full peak detection pipeline and return (freqs_hz, mags_db)."""
     ploc = peak_detection(mag, threshold=int(threshold_db))
@@ -201,10 +238,10 @@ class TestRecalculateFrozenPeaksIfNeeded:
 
         sut.recalculate_frozen_peaks_if_needed()
 
-        assert len(sut.current_peaks) >= 1, (
+        assert len(sut.peaks_above_peak_min) >= 1, (
             "frozen-spectrum path should detect the 200 Hz peak"
         )
-        detected_freqs = [p.frequency for p in sut.current_peaks]
+        detected_freqs = [p.frequency for p in sut.peaks_above_peak_min]
         assert any(abs(f - 200.0) < 20.0 for f in detected_freqs), (
             f"Expected peak near 200 Hz; got {[f'{f:.1f}' for f in detected_freqs]}"
         )
@@ -228,7 +265,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         # Low threshold: peak should be detected.
         sut.peak_min_threshold = -60.0
         sut.recalculate_frozen_peaks_if_needed()
-        detected_low = [p.frequency for p in sut.current_peaks]
+        detected_low = [p.frequency for p in sut.peaks_above_peak_min]
         assert any(abs(f - 200.0) < 20.0 for f in detected_low), (
             "Peak should be detected at low threshold"
         )
@@ -236,7 +273,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         # Raised threshold: weak peak should be removed.
         sut.peak_min_threshold = -40.0
         sut.recalculate_frozen_peaks_if_needed()
-        detected_high = [p.frequency for p in sut.current_peaks]
+        detected_high = [p.frequency for p in sut.peaks_above_peak_min]
         assert not any(abs(f - 200.0) < 20.0 for f in detected_high), (
             "Weak peak should be absent after raising threshold"
         )
@@ -245,7 +282,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         """PR-A3: When loaded_measurement_peaks is set, threshold is applied to it.
 
         Mirrors Swift recalculateFrozenPeaksIfNeeded — loaded path filters
-        loaded_measurement_peaks by peak_threshold and stores in current_peaks.
+        loaded_measurement_peaks by peak_threshold and stores in peaks_above_peak_min.
         """
         from models.resonant_peak import ResonantPeak
         sut = TapToneAnalyzer()
@@ -263,16 +300,16 @@ class TestRecalculateFrozenPeaksIfNeeded:
 
         sut.recalculate_frozen_peaks_if_needed()
 
-        assert len(sut.current_peaks) == 1, (
+        assert len(sut.peaks_above_peak_min) == 1, (
             "Only the above-threshold peak should remain"
         )
-        assert abs(sut.current_peaks[0].frequency - 200.0) < 1.0, (
+        assert abs(sut.peaks_above_peak_min[0].frequency - 200.0) < 1.0, (
             "The surviving peak should be at 200 Hz"
         )
 
     def test_PRA4_loaded_all_below_threshold_clears_display_keeps_durable_set(self, qt_app):
         """PR-A4 (Phase 1/2 model): all loaded peaks below Peak Min → the DISPLAY projection
-        (current_peaks) empties, but the DURABLE set (all_peaks) and classification survive.
+        (peaks_above_peak_min) empties, but the DURABLE set (all_peaks) and classification survive.
         A display filter must never shrink the durable set. Mirrors Swift
         loadedPeaks_allBelowThreshold_clearsDisplayButKeepsClassification.
         """
@@ -289,7 +326,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
 
         sut.recalculate_frozen_peaks_if_needed()
 
-        assert len(sut.current_peaks) == 0, (
+        assert len(sut.peaks_above_peak_min) == 0, (
             "the display projection empties when all peaks are below Peak Min"
         )
         assert len(sut.all_peaks) == 2, (
@@ -297,7 +334,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         )
 
     def test_PRA5_empty_frozen_magnitudes_yields_no_peaks(self, qt_app):
-        """PR-A5: Empty frozen_magnitudes does not crash; current_peaks stays empty."""
+        """PR-A5: Empty frozen_magnitudes does not crash; peaks_above_peak_min stays empty."""
         sut = TapToneAnalyzer()
         sut.freq = np.array([])
         sut.frozen_magnitudes = np.array([])
@@ -306,7 +343,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
 
         sut.recalculate_frozen_peaks_if_needed()   # must not raise
 
-        assert len(sut.current_peaks) == 0
+        assert len(sut.peaks_above_peak_min) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -527,7 +564,7 @@ class TestPR8CanReanalyze:
         have drifted across Peak Min moves.
         """
         sut = self._frozen(MeasurementType.CLASSICAL)
-        sut.current_peaks = [_peak(200.0)]
+        sut.peaks_above_peak_min = [_peak(200.0)]
         sut.loaded_measurement_peaks = None      # never loaded — a fresh capture
 
         assert sut.can_reanalyze is True
@@ -536,7 +573,7 @@ class TestPR8CanReanalyze:
         """A loaded measurement can be re-analyzed — its saved peaks were never derived here."""
         sut = self._frozen(MeasurementType.CLASSICAL)
         saved_peaks = [_peak(200.0)]
-        sut.current_peaks = saved_peaks
+        sut.peaks_above_peak_min = saved_peaks
         sut.loaded_measurement_peaks = saved_peaks
 
         assert sut.can_reanalyze is True
@@ -549,7 +586,7 @@ class TestPR8CanReanalyze:
         """
         sut = self._frozen(MeasurementType.CLASSICAL)
         saved_peaks = [_peak(200.0)]
-        sut.current_peaks = saved_peaks
+        sut.peaks_above_peak_min = saved_peaks
         sut.loaded_measurement_peaks = saved_peaks
         assert sut.can_reanalyze is True
 
@@ -608,6 +645,41 @@ class TestPeakMinDurability:
         sut.frozen_magnitudes = np.array([-100.0] * 6)
         return sut
 
+    def test_reanalyze_preserves_state_of_peaks_hidden_by_peak_min(self, qt_app):
+        """Re-analyze re-detects from the frozen spectrum, and a peak HIDDEN by Peak Min keeps its
+        dragged annotation offset and its custom mode name — the carry-forward snapshot resolves
+        UUIDs over the durable ``all_peaks``, not the Peak-Min projection (Phase 4a). Mirrors Swift
+        ``reanalyzePreservesStateOfPeaksHiddenByPeakMin``. Asserts its own preconditions so it cannot
+        rot into a vacuous pass through the flat-spectrum trap.
+        """
+        sut = TapToneAnalyzer()
+        # A loud 200 Hz peak and a quiet 400 Hz peak, detected on a real spectrum.
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0), (400.0, -55.0)])
+        # Peak Min hides the quiet 400 Hz peak; the durable set keeps it.
+        sut.peak_min_threshold = -40.0
+        sut.refresh_displayed_peaks()
+
+        hidden = next(p for p in sut.all_peaks if abs(p.frequency - 400.0) < 5.0)
+        # Preconditions — so the test cannot pass vacuously:
+        assert hidden.id not in {p.id for p in sut.peaks_above_peak_min}, \
+            "precondition: 400 Hz peak must be hidden by Peak Min"
+        assert any(abs(p.frequency - 200.0) < 5.0 for p in sut.peaks_above_peak_min), \
+            "precondition: 200 Hz peak must be visible"
+
+        # Drag a label and assign a custom mode on the HIDDEN peak.
+        sut.peak_annotation_offsets[hidden.id] = [400.0, -60.0]
+        sut.peak_mode_overrides[hidden.id] = "Wolf note"
+
+        sut.reanalyze_peaks()
+
+        # After re-detection (fresh UUIDs) the 400 Hz peak still exists in the durable set...
+        new_hidden = next(p for p in sut.all_peaks if abs(p.frequency - 400.0) < 5.0)
+        # ...and both its dragged offset and its custom name carried forward to the new id.
+        assert new_hidden.id in sut.peak_annotation_offsets, \
+            "dragged annotation offset must survive Re-analyze on a Peak-Min-hidden peak"
+        assert sut.peak_mode_overrides.get(new_hidden.id) == "Wolf note", \
+            "custom mode name must survive Re-analyze on a Peak-Min-hidden peak"
+
     def test_peak_min_sweep_preserves_identity_selection_override_and_offset(self, qt_app):
         sut = self._frozen_guitar()
         loud = _peak(200.0, -20.0)
@@ -622,14 +694,14 @@ class TestPeakMinDurability:
 
         # Raise Peak Min above the quiet peak — it vanishes from the DISPLAY only.
         sut.peak_min_threshold = -40.0
-        assert not any(p.id == quiet.id for p in sut.current_peaks), "quiet peak should be hidden"
+        assert not any(p.id == quiet.id for p in sut.peaks_above_peak_min), "quiet peak should be hidden"
         assert any(p.id == quiet.id for p in sut.all_peaks), (
             "...but it must remain in the durable set — hidden, not destroyed"
         )
 
         # Lower it again.
         sut.peak_min_threshold = -60.0
-        assert any(p.id == quiet.id for p in sut.current_peaks), (
+        assert any(p.id == quiet.id for p in sut.peaks_above_peak_min), (
             "the SAME peak identity must come back, not a new one"
         )
         assert quiet.id in sut.selected_peak_ids, "selection must survive a Peak Min sweep"
@@ -737,7 +809,7 @@ class TestPeakMinDurability:
 
         sut.peak_min_threshold = -40.0   # hides `quiet` from the display
 
-        assert not any(p.id == quiet.id for p in sut.current_peaks), (
+        assert not any(p.id == quiet.id for p in sut.peaks_above_peak_min), (
             "precondition: the quiet peak is hidden from the display"
         )
         resolved = {p.id for p in sut.selected_peaks}

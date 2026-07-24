@@ -104,7 +104,7 @@ def dots_with_overrides(sut, show_unknown_modes: bool = False):
     Mirrors Swift ``dotsWithOverrides``.
     """
     return dots(
-        sut.current_peaks,
+        sut.peaks_above_peak_min,
         show_unknown_modes=show_unknown_modes,
         overridden_peak_ids=sut.overridden_peak_ids,
     )
@@ -161,14 +161,14 @@ class TestDotLayerVsAnnotationList:
         """
         sut = _make_sut()
         p1, p2, p3 = _make_peak_live(100), _make_peak_live(200), _make_peak_live(250)
-        sut.current_peaks = [p1, p2, p3]
+        sut.peaks_above_peak_min = [p1, p2, p3]
         sut.selected_peak_ids = {p2.id}              # only ONE peak selected
 
         expected_dots = [100, 200, 250]
 
         for mode in ("all", "selected", "none"):
             sut.annotation_visibility_mode = mode
-            assert dots(sut.current_peaks) == expected_dots, (
+            assert dots(sut.peaks_above_peak_min) == expected_dots, (
                 f"Dot list must not change with annotation mode {mode!r}"
             )
 
@@ -191,7 +191,7 @@ class TestDotLayerVsAnnotationList:
         """
         sut = _make_sut()
         p = _make_peak_live(200.0)                   # squarely inside top/back
-        sut.current_peaks = [p]
+        sut.peaks_above_peak_min = [p]
         sut.set_mode_override("My Custom Label", p.id)
 
         # The override takes effect on the assigned label...
@@ -227,7 +227,7 @@ class TestDotLayerUserNamedPeaks:
         saved_mt = TapDisplaySettings.measurement_type()
         saved_pm = TapDisplaySettings.peak_min_threshold()
         TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-        # Pin Peak Min low so the test peaks project through current_peaks deterministically
+        # Pin Peak Min low so the test peaks project through peaks_above_peak_min deterministically
         # (Swift relies on the default; QSettings state is less predictable under pytest).
         TapDisplaySettings.set_peak_min_threshold(-100.0)
         try:

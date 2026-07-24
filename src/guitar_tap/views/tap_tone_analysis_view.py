@@ -2122,7 +2122,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # peaksChanged carries ALL peaks (mirrors Swift currentPeaks).
         # _on_peaks_changed_results applies the viewport filter (fmin/fmax) before
         # forwarding to the widget — matching Swift sortedPeaksWithModes in TapAnalysisResultsView.
-        self._current_peaks_all = None  # cache of last all-peaks array
+        self._peaks_above_peak_min = None  # cache of last Peak-Min projection emitted to results
         canvas.peaksChanged.connect(self._on_peaks_changed_results)
         canvas.peaksChanged.connect(self._on_peaks_changed_ratios)
         canvas.peaksChanged.connect(self._material_peak_widget.update_peaks)
@@ -2571,7 +2571,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Mirrors Swift TapAnalysisResultsView.sortedPeaksWithModes which filters
         analyzer.currentPeaks by minFreq/maxFreq at display time.
         """
-        self._current_peaks_all = peaks if isinstance(peaks, list) else []
+        self._peaks_above_peak_min = peaks if isinstance(peaks, list) else []
 
         # Rule 5a: propagate selection state when peaks change on a frozen measurement.
         #
@@ -2654,7 +2654,7 @@ class MainWindow(QtWidgets.QMainWindow):
               ? (peak.frequency >= minFreq && peak.frequency <= maxFreq)
               : true    // plate/brace: never filter by display range
         """
-        peaks = self._current_peaks_all
+        peaks = self._peaks_above_peak_min
         if not peaks:
             self.peak_widget.update_data_with_modes([])
             return
@@ -2699,14 +2699,14 @@ class MainWindow(QtWidgets.QMainWindow):
             cross_id = analyzer.effective_cross_peak_id
             flc_id   = analyzer.effective_flc_peak_id
             # Resolve each phase id → frequency against the PERSISTENT per-phase peak lists, not the
-            # transient current_peaks. Mirrors Swift TapAnalysisResultsView.swift:421
+            # transient peaks_above_peak_min. Mirrors Swift TapAnalysisResultsView.swift:421
             #   analyzer.longitudinalPeaks.first { $0.id == effectiveLongitudinalPeakID }
-            # current_peaks holds only the CURRENT phase's peaks, so a completed phase's peak vanishes
+            # peaks_above_peak_min holds only the CURRENT phase's peaks, so a completed phase's peak vanishes
             # from it the instant the next phase begins — which cleared the L/C/FLC row one event after
             # it was set (set-then-cleared; the row only "caught up" at each phase completion when
             # combine_plate_peaks() briefly re-unioned all phases). longitudinal_peaks/cross_peaks/
             # flc_peaks persist across phases (reset only on redo/reset/load), so they carry completed
-            # phases forward. current_peaks is still included so a LOADED measurement — whose per-phase
+            # phases forward. peaks_above_peak_min is still included so a LOADED measurement — whose per-phase
             # lists are emptied by _load_measurement_body — resolves from its restored peaks.
             peak_by_id = {
                 p.id: p
@@ -3301,12 +3301,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # Route through the analyzer (Phase 2 C); the push-over syncs the widget model.
         analyzer = self.fft_canvas.analyzer
         analyzer.select_all_peaks()
-        analyzer.peaksChanged.emit(list(analyzer.current_peaks))
+        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_deselect_all_peaks(self) -> None:
         analyzer = self.fft_canvas.analyzer
         analyzer.select_no_peaks()
-        analyzer.peaksChanged.emit(list(analyzer.current_peaks))
+        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_peak_selection_toggled(self, peak_id: str) -> None:
         """Route a user per-peak toggle to the analyzer (Phase 2 C).
@@ -3317,7 +3317,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         analyzer = self.fft_canvas.analyzer
         analyzer.toggle_peak_selection(peak_id)
-        analyzer.peaksChanged.emit(list(analyzer.current_peaks))
+        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_reset_auto_selection(self) -> None:
         # Swift Fix 3: do NOT clear _loaded_measurement_peaks here.
@@ -3327,7 +3327,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # measurement — only unfreezing (returning to live capture) clears them.
         #
         # Delegate to the analyzer (mirrors Swift resetToAutoSelection()), which
-        # runs against ALL current_peaks regardless of the display viewport.
+        # runs against ALL peaks_above_peak_min regardless of the display viewport.
         # The previous approach called peak_widget.model.auto_select_peaks_by_mode()
         # which only saw viewport-filtered peaks, causing out-of-range peaks
         # (e.g. Dipole at 438 Hz when the display is zoomed to 75–350 Hz) to be
@@ -3337,7 +3337,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Emit peaksChanged: updates the scatter plot annotations AND triggers
         # _on_peaks_changed_results which propagates selected_peak_ids to the
         # model directly — mirrors Swift @Published selectedPeakIDs propagation.
-        analyzer.peaksChanged.emit(list(analyzer.current_peaks))
+        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_user_modified_selection_changed(self, modified: bool) -> None:
         self.reset_auto_selection_btn.setEnabled(
@@ -3471,7 +3471,7 @@ class MainWindow(QtWidgets.QMainWindow):
             analyzer.reset_to_auto_selection()
             # Emit peaksChanged: triggers _on_peaks_changed_results which propagates
             # selected_peak_ids to the model — mirrors Swift @Published propagation.
-            analyzer.peaksChanged.emit(list(analyzer.current_peaks))
+            analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _update_measurement_badge(self) -> None:
         """Refresh the badge in the Analysis Results panel.
@@ -4311,8 +4311,8 @@ class MainWindow(QtWidgets.QMainWindow):
             frozen_mags  = analyzer.frozen_magnitudes
             if frozen_freqs is not None and len(frozen_freqs):
                 self.fft_canvas.set_draw_data(frozen_mags, freqs=frozen_freqs)
-            if analyzer.current_peaks:
-                analyzer.peaksChanged.emit(analyzer.current_peaks)
+            if analyzer.peaks_above_peak_min:
+                analyzer.peaksChanged.emit(analyzer.peaks_above_peak_min)
 
         # _on_comparison_changed will fire from apply_multi_tap_comparison_overlays
         # via comparisonChanged.emit — it handles all widget visibility updates.
@@ -4684,7 +4684,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # The analyzer's visible_peaks property already applies the
             # annotation-visibility-mode + show-unknown-modes filters, and
             # works for both fresh captures and loaded measurements (since
-            # _restore_measurement populates current_peaks, selected_peak_ids,
+            # _restore_measurement populates peaks_above_peak_min, selected_peak_ids,
             # and annotation_visibility_mode from the loaded measurement).
             # The earlier inline re-implementation manually filtered peaks
             # and was wrapped in `try / except: pass` that silently swallowed
@@ -4875,7 +4875,7 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 # Mirror Swift: read tap.currentPeaks and tap.selectedPeakIDs directly
                 # from the live analyzer — do NOT reconstruct peaks from the table model.
-                all_peaks = list(analyzer.current_peaks)
+                all_peaks = list(analyzer.peaks_above_peak_min)
                 selected_ids = set(analyzer.selected_peak_ids)
                 sel_long_id  = analyzer.effective_longitudinal_peak_id
                 sel_cross_id = analyzer.effective_cross_peak_id
@@ -5293,7 +5293,7 @@ class MainWindow(QtWidgets.QMainWindow):
                      if hasattr(canvas.saved_mag_y_db, "tolist")
                      else list(canvas.saved_mag_y_db))
 
-            all_peaks: list = list(analyzer.current_peaks)
+            all_peaks: list = list(analyzer.peaks_above_peak_min)
             selected_ids = set(analyzer.selected_peak_ids)
             sel_long_id  = analyzer.effective_longitudinal_peak_id
             sel_cross_id = analyzer.effective_cross_peak_id
@@ -7025,7 +7025,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # filtered list through _on_peaks_changed_scatter and _on_peaks_changed_results.
             AS.AppSettings.set_show_unknown_modes(show_unknown_cb.isChecked())
             self.fft_canvas.analyzer.peaksChanged.emit(
-                list(self.fft_canvas.analyzer.current_peaks)
+                list(self.fft_canvas.analyzer.peaks_above_peak_min)
             )
 
             # Dump Capture Audio
@@ -7098,7 +7098,7 @@ class MainWindow(QtWidgets.QMainWindow):
             #
             # Python has no reactive computed properties, so we mirror the Swift computed
             # property directly: read effective peak IDs from the analyzer, look up peak
-            # objects from the phase-specific lists (live) or current_peaks (restored),
+            # objects from the phase-specific lists (live) or peaks_above_peak_min (restored),
             # read fresh dimensions from AppSettings, then repopulate the section.
             if (mt_val is MT.MeasurementType.BRACE or mt_val is MT.MeasurementType.PLATE) \
                     and self._is_measurement_complete:
@@ -7109,7 +7109,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     # sortedPeaksWithModes / currentPeaks (saved measurement).
                     _long_peak = (
                         next((p for p in _az.longitudinal_peaks if p.id == _long_id), None)
-                        or next((p for p in _az.current_peaks if p.id == _long_id), None)
+                        or next((p for p in _az.peaks_above_peak_min if p.id == _long_id), None)
                     )
                     if _long_peak:
                         _dims = self._get_current_dims()
@@ -7125,12 +7125,12 @@ class MainWindow(QtWidgets.QMainWindow):
                                     _cross_id = _az.effective_cross_peak_id
                                     _cross_peak = (
                                         next((p for p in _az.cross_peaks if p.id == _cross_id), None)
-                                        or next((p for p in _az.current_peaks if p.id == _cross_id), None)
+                                        or next((p for p in _az.peaks_above_peak_min if p.id == _cross_id), None)
                                     ) if _cross_id else None
                                     _flc_id = _az.effective_flc_peak_id
                                     _flc_peak = (
                                         next((p for p in _az.flc_peaks if p.id == _flc_id), None)
-                                        or next((p for p in _az.current_peaks if p.id == _flc_id), None)
+                                        or next((p for p in _az.peaks_above_peak_min if p.id == _flc_id), None)
                                     ) if _flc_id else None
                                     if _cross_peak:
                                         self._populate_plate_section(
