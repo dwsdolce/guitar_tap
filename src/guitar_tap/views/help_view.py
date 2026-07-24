@@ -108,7 +108,7 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Advanced Settings",
-        "Display range, analysis range, and FFT processing options are grouped under the "
+        "Display range and FFT processing options are grouped under the "
         "Advanced section at the bottom of Settings. These rarely need changing after "
         "initial setup &mdash; expand the section by clicking the Advanced row."
     ))
@@ -343,10 +343,12 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Re-analyze Peaks",
         "Shown in the results panel header next to the microphone name. Re-runs peak "
-        "detection on a loaded measurement&rsquo;s stored spectrum using the current "
-        "analysis settings &mdash; useful for trying a different Peak Min, analysis range, "
-        "or guitar type on a saved measurement without re-tapping. The button is enabled "
-        "only when viewing a loaded measurement.",
+        "detection on the frozen spectrum of any completed guitar measurement &mdash; live "
+        "or loaded &mdash; re-classifies the modes from scratch, and returns peak selection "
+        "to automatic. Custom mode names you have assigned are kept, though the peak carrying "
+        "one may end up deselected. Useful for trying a different guitar type without "
+        "re-tapping, or for a clean classification after manual changes. It no longer disables "
+        "itself after one press, and does not apply to Plate or Brace measurements.",
         ["fa5s.sync-alt"]
     ))
     parts.append(_row(
@@ -506,13 +508,14 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Peak Min (slider)",
-        "Minimum magnitude a spectral peak must reach to be annotated on the spectrum chart. "
-        "In guitar mode, a peak must also clear this threshold to be reported; adjusting it "
-        "on a frozen spectrum re-runs peak finding and updates auto-selections (or carries "
-        "forward manual selections if you have changed them). In brace/plate mode, the tap "
-        "capture uses its own adaptive noise floor &mdash; Peak Min only affects what is "
-        "visible on the chart, not which peaks are selected. Move the slider left to show "
-        "quieter peaks; right to suppress noise. Displayed in dB."
+        "Minimum magnitude a peak must reach to be shown &mdash; in the results list and "
+        "annotated on the chart. Peak Min is a display filter over the measurement&rsquo;s "
+        "stored peaks: moving it shows or hides peaks but never re-detects them, changes which "
+        "are selected, or how they are classified &mdash; so a peak hidden then revealed "
+        "returns exactly as it was. (Every detected peak is kept with the saved measurement "
+        "regardless of Peak Min.) In brace/plate mode the tap capture uses its own adaptive "
+        "noise floor, and Peak Min affects only what is visible on the chart. Move the slider "
+        "left to show quieter peaks; right to suppress noise. Displayed in dB."
     ))
     parts.append(_row(
         "Reset arrows",
@@ -558,10 +561,10 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Peak Min",
         "Advanced &rarr; Analysis Settings. Sets the minimum magnitude (dB) for a peak to "
-        "be annotated on the spectrum chart. In guitar mode this also gates which peaks are "
-        "reported; adjusting it on a frozen spectrum re-runs peak finding and updates "
-        "selections. In brace/plate mode it only affects what is annotated on the live chart. "
-        "Typical useful range: &minus;60 to &minus;40 dB."
+        "be shown in the results and annotated on the chart. It is a display filter over the "
+        "measurement&rsquo;s stored peaks &mdash; it does not re-detect peaks or change which "
+        "are selected or classified. In brace/plate mode it affects only what is annotated on "
+        "the live chart. Typical useful range: &minus;60 to &minus;40 dB."
     ))
     # ── Tips & Technique ─────────────────────────────────────────────────
     parts.append(_h2("mdi.lightbulb-outline", "Tips &amp; Technique"))

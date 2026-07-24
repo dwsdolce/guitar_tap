@@ -29,7 +29,18 @@
 
 ### Peak Min
 
-- A saved guitar measurement now keeps **every detected peak down to −100 dB** (the lowest Peak Min can be set), not only those above the Peak Min in effect when it was saved. Lowering Peak Min on a loaded measurement now reveals fainter peaks — including a low Air resonance — exactly as it does during a live measurement. Measurements saved before this update keep only the peaks that were above their Peak Min at the time; use **Re-analyze** to re-derive the full set from the spectrum, then Save.
+- A saved guitar measurement now keeps **every detected peak down to -100 dB** (the lowest Peak Min can be set), not only those above the Peak Min in effect when it was saved. Lowering Peak Min on a loaded measurement now reveals fainter peaks — including a low Air resonance — exactly as it does during a live measurement. Measurements saved before this update keep only the peaks that were above their Peak Min at the time; use **Re-analyze** to re-derive the full set from the spectrum, then Save.
+- Peak Min is now purely a **display** control: raising or lowering it only shows or hides peaks — it never changes which peaks are selected, how they are classified, or the identified modes. Those are properties of the measurement itself.
+
+### Peaks & Modes
+
+- **Naming a peak identifies it.** Giving a peak a mode name now marks it as a known, identified mode — it is no longer treated as an unknown peak once you have named it.
+- **One definitive Air, Top, and Back.** Each of these modes now resolves to a single definitive peak — the selected peak whose (possibly overridden) mode matches. The **Select All Peaks** control has been removed; selection is per-peak, and the identified modes follow from it.
+- **Derived values follow your selection and overrides.** The tap-tone ratio and other derived figures are now computed from the definitive peaks, so they reflect your peak selection and any mode overrides you have applied rather than the raw strongest peak.
+- **Multi-tap Taps table honours overrides.** When you override a mode in a multi-tap measurement, the averaged **Taps** table row now shows the peak you chose (marked in *italics with an asterisk*), matching page 1 of the PDF report, instead of the algorithm's automatic pick.
+- **Comparisons are self-describing.** Saved comparison measurements now record which peak carries each mode, so a reloaded comparison — its table and PDF — reflects the mode overrides that were in effect when it was saved.
+- **Changing guitar type is a clean slate.** Changing the guitar type on a measurement re-runs classification and peak selection and clears any manual mode overrides, so the identified modes match the new type. (A display-only settings change — Peak Min or the display ranges — leaves peaks, modes, and selection untouched.)
+- **A new tap sequence starts clean.** Starting a fresh measurement now clears any peak selection, mode overrides, and moved annotations from the previous one.
 
 ### Re-analyze
 
@@ -50,7 +61,7 @@
 
 ### Analysis Results Panel
 
-- The **Select All** and **Select None** buttons now show their icons. They were present and working, but drawing blank on macOS.
+- The **Select None** button now shows its icon. It was present and working, but drawing blank on macOS.
 - Peak **Q factor** is shown to one decimal place, matching the other editions.
 - The **Export PDF Report** button is now simply **Export PDF**.
 
@@ -63,6 +74,7 @@
 - The **Measurement Details** pane now shows the same information in the same order across every edition of Guitar Tap.
 - Dates and times are displayed consistently throughout the app.
 - The display frequency range is now remembered **per measurement type**, so guitar, plate and brace each keep their own view.
+- The **Analysis Frequency Range** setting has been removed from Settings; the analysis range is now a fixed 30–2000 Hz. The separate *display* range you pan and zoom on the chart is unaffected.
 
 ### Saving
 
