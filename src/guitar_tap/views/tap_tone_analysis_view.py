@@ -4319,11 +4319,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._populate_multi_tap_results_view()
 
     def _on_peaks_changed_multi_tap(self, _peaks: object) -> None:
-        """Rebuild multi-tap comparison table when peaks change (e.g. Peak Min slider).
+        """Refresh the multi-tap comparison table on peaksChanged.
 
-        Per-tap peaks are recomputed in recalculate_frozen_peaks_if_needed() via
-        _recalculate_tap_entry_peaks().  This handler refreshes the view so the
-        table reflects the updated per-tap peaks.
+        Per-tap rows are durable — computed once at capture over the full -100 set and never
+        re-derived (Phase 3 deleted the per-tap recompute). This handler still earns its keep for
+        the **Averaged** row, which resolves selection over the durable set (`selected_peaks`) and
+        so updates when the user changes the selection; it no longer changes with the Peak Min
+        slider. (No Swift counterpart: SwiftUI re-renders the results view from @Published
+        tap_entries automatically; Qt needs this explicit refresh.)
         """
         if (
             self._multi_tap_results_view.isVisible()
@@ -4341,11 +4344,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         analyzer = self.fft_canvas.analyzer
 
-        # Averaged peaks: all peaks selected in the averaged (frozen) spectrum.
-        avg_sel_peaks = [
-            p for p in analyzer.current_peaks
-            if p.id in analyzer.selected_peak_ids
-        ]
+        # Averaged peaks: the definitive selected peaks, resolved over the DURABLE set — a selected
+        # peak below Peak Min must still appear in the averaged row. Mirrors Swift
+        # `averagedPeaks: analyzer.selectedPeaks`. Same property the PDF uses, so they cannot drift.
+        avg_sel_peaks = analyzer.selected_peaks
 
         self._multi_tap_results_view.set_tap_data(
             tap_entries=analyzer.tap_entries,
@@ -4372,6 +4374,23 @@ class MainWindow(QtWidgets.QMainWindow):
         # of Swift's loaded* @Published + .onReceive → TapDisplaySettings writes),
         # and emits measurementComplete(True) + the status message.
         analyzer.load_measurement(m)
+
+        # Reset any stale multi-tap comparison VIEW left from the previous measurement.
+        # load_measurement() cleared showing_multi_tap_comparison (mirrors Swift
+        # +MeasurementManagement:856) and SwiftUI would hide the Taps table reactively —
+        # but Qt won't, so do it explicitly, AFTER load so it is the final word regardless
+        # of what the measurementComplete handlers touched. Unconditional (no isVisible()
+        # guard) because a stale-but-not-effectively-visible widget must be cleared too.
+        # Same reset as _on_multi_tap_toggled's `if not checked:` branch.
+        if not analyzer.showing_multi_tap_comparison:
+            import qtawesome as _qta
+            self._multi_tap_toggle_btn.blockSignals(True)
+            self._multi_tap_toggle_btn.setChecked(False)
+            self._multi_tap_toggle_btn.blockSignals(False)
+            self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="gray"))
+            self._multi_tap_toggle_btn.setStyleSheet("")
+            self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
+            self._multi_tap_results_view.setVisible(False)
 
         # ── Store view-side references used by export / peak model ────────────
         self._loaded_resonant_peaks = list(m.peaks) if m.peaks else []
@@ -5489,7 +5508,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # Averaged entry — mirrors Swift's avgSnap build from frozenFrequencies/frozenMagnitudes.
             avg_r, avg_g, avg_b = _AVERAGED_COLOR
             avg_color_components = [avg_r / 255.0, avg_g / 255.0, avg_b / 255.0, 1.0]
-            avg_sel_peaks = [p for p in all_peaks if p.id in selected_ids]
+            # Averaged row: the definitive selected peaks over the DURABLE set (same property the
+            # on-screen table uses), so the PDF cannot disagree and neither changes with Peak Min.
+            # Mirrors Swift `avgSelectedPeaks = tap.selectedPeaks`.
+            avg_sel_peaks = analyzer.selected_peaks
             avg_snap = _SpectrumSnapshot(
                 frequencies=freqs,
                 magnitudes=mags,

@@ -215,8 +215,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 is_guitar=is_guitar,
                 tolerance=tolerance,
             )
-            if self.tap_entries:
-                self._recalculate_tap_entry_peaks()
+            # (Phase 3: the per-tap recompute here was deleted — TapEntry peaks are computed once
+            # at capture and are durable; a display recalc must never re-derive them.)
             self.peaksChanged.emit(self.current_peaks)
             return
 
@@ -247,30 +247,18 @@ class TapToneAnalyzerPeakAnalysisMixin:
             is_guitar=is_guitar,
             tolerance=tolerance,
         )
-        # Recompute per-tap peaks so the multi-tap comparison table reflects
-        # the current Peak Min setting.  Mirrors Swift recalculateTapEntryPeaks().
-        if self.tap_entries:
-            self._recalculate_tap_entry_peaks()
+        # (Phase 3: the per-tap recompute here was deleted — TapEntry peaks are computed once at
+        # capture and are durable; a display recalc must never re-derive them.)
         self.peaksChanged.emit(self.current_peaks)
 
-    # ------------------------------------------------------------------ #
-    # _recalculate_tap_entry_peaks
-    # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift recalculateTapEntryPeaks()
-    # ------------------------------------------------------------------ #
-
-    def _recalculate_tap_entry_peaks(self) -> None:
-        """Re-run peak detection on every stored TapEntry snapshot using the
-        current peak_min_threshold, then update tap_entries so the multi-tap
-        comparison table shows peaks consistent with the Peak Min slider.
-        """
-        for entry in self.tap_entries:
-            tap_peaks = self.find_peaks(
-                list(entry.snapshot.magnitudes),
-                list(entry.snapshot.frequencies),
-            )
-            mode_selected = self.guitar_mode_selected_peak_ids(tap_peaks)
-            entry.peaks = tap_peaks
-            entry.selected_peak_ids = list(mode_selected)
+    # _recalculate_tap_entry_peaks was DELETED in Phase 3 (mirrors Swift 11689b6). It re-ran
+    # find_peaks over every TapEntry snapshot at the CURRENT Peak Min, from both recalc branches and
+    # loadMeasurement — overwriting each entry's durable -100 dB set with a filtered one, minting
+    # fresh UUIDs and rebuilding selected_peak_ids. Since tap_entries is PERSISTED, that truncated
+    # the saved per-tap set (load with Peak Min raised, save -> permanent loss) and made a reloaded
+    # multi-tap measurement disagree with a fresh one. A TapEntry is now computed ONCE, at capture,
+    # over the full set (see the per-tap block in tap_tone_analyzer_spectrum_capture.py) and is never
+    # re-derived — least of all by a display control.
 
     # ------------------------------------------------------------------ #
     # can_reanalyze

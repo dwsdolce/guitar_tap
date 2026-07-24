@@ -1003,6 +1003,16 @@ class TapToneAnalyzer(
             self.current_peaks = list(self._all_peaks)
 
     @property
+    def selected_peaks(self) -> list:
+        """The user's selected peaks, resolved over the DURABLE set — mirrors Swift
+        `selectedPeaks { allPeaks.filter { selectedPeakIDs.contains($0.id) } }`. Selection is a
+        fact about the measurement, not about what is on screen: a selected peak may legitimately
+        sit below Peak Min, so resolving over `current_peaks` (the display projection) would
+        silently drop it from every derived value (e.g. the multi-tap averaged Air/Top/Back row).
+        """
+        return [p for p in self._all_peaks if p.id in self.selected_peak_ids]
+
+    @property
     def peak_min_threshold(self) -> float:
         """Minimum magnitude (dBFS) for a peak to be displayed.
 

@@ -2022,7 +2022,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             tap_entries_built = []
             for idx, tap_mags in enumerate(tap_tuples):
                 t_mags, t_freqs, _ = tap_mags
-                t_peaks = self.find_peaks(t_mags, t_freqs)
+                # Each TapEntry stores the FULL set found at the -100 dB floor, so the per-tap table
+                # is durable and independent of Peak Min. Mirrors Swift processMultipleTaps
+                # (+SpectrumCapture.swift:1664, peakMinOverride: peakDetectionFloor).
+                t_peaks = self.find_peaks(
+                    t_mags, t_freqs, peak_min_override=self.PEAK_DETECTION_FLOOR
+                )
                 t_sel_ids = self.guitar_mode_selected_peak_ids(t_peaks)
                 snap = SpectrumSnapshot(
                     frequencies=list(t_freqs),

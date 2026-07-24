@@ -812,15 +812,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.tap_entries = list(measurement.tap_entries) if measurement.tap_entries else []
         self.showing_multi_tap_comparison = False
 
-        # Recompute per-tap peaks using the measurement's saved peak_min_threshold
-        # (already restored above).  The saved tap_entries may contain peaks that
-        # were detected at a different threshold than the one stored in the
-        # measurement (e.g. threshold was changed after capture but before save).
-        # Re-running find_peaks on each tap's snapshot with the saved threshold
-        # ensures the multi-tap comparison table is consistent with the averaged
-        # peaks display.  Mirrors Swift loadMeasurement → recalculateTapEntryPeaks().
-        if self.tap_entries:
-            self._recalculate_tap_entry_peaks()
+        # (Phase 3: the per-tap recompute on load was deleted, with its stale justification —
+        # loaded TapEntry peaks are the AUTHORITATIVE saved set; re-detecting them fought
+        # project_loaded_peaks_authoritative and truncated the saved set whenever Peak Min was
+        # raised. A reloaded multi-tap measurement now agrees with a fresh capture.)
 
         gt_log(f"✅ Loaded measurement with {len(self.current_peaks)} peaks (frozen)")
         if self.tap_entries:

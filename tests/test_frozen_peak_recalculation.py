@@ -659,3 +659,88 @@ class TestPeakMinDurability:
             "a deselected peak must NOT re-select on a Peak Min sweep"
         )
         assert a.id in sut.selected_peak_ids, "the still-selected peak stays selected"
+
+    # ── Phase 3: per-tap entries computed once, at capture (mirrors Swift 11689b6) ──────────
+
+    def _tap_entry(self, tap_index, peaks, selected):
+        from models.spectrum_snapshot import SpectrumSnapshot
+        from models.tap_tone_measurement import TapEntry
+        snap = SpectrumSnapshot(
+            frequencies=[100.0, 200.0, 300.0, 400.0],
+            magnitudes=[-40.0, -20.0, -50.0, -60.0],
+        )
+        return TapEntry(
+            id=str(uuid.uuid4()),
+            tap_index=tap_index,
+            snapshot=snap,
+            peaks=list(peaks),
+            selected_peak_ids=list(selected),
+        )
+
+    def test_peak_min_sweep_leaves_tap_entries_untouched(self, qt_app):
+        """Mirrors Swift peakMinSweep_leavesTapEntriesUntouched — drive the real slider path."""
+        sut = self._frozen_guitar()
+        loud = _peak(200.0, -20.0)
+        quiet = _peak(300.0, -50.0)
+        sut.all_peaks = [loud, quiet]
+        sut.peak_min_threshold = -60.0
+        sut.tap_entries = [self._tap_entry(1, [loud, quiet], [quiet.id])]
+        before_ids = [[p.id for p in e.peaks] for e in sut.tap_entries]
+        before_sel = [list(e.selected_peak_ids) for e in sut.tap_entries]
+
+        sut.peak_min_threshold = -40.0   # hides `quiet` from the DISPLAY
+        sut.peak_min_threshold = -60.0   # and back
+
+        assert [[p.id for p in e.peaks] for e in sut.tap_entries] == before_ids, (
+            "per-tap peak identities must not change when Peak Min moves"
+        )
+        assert [list(e.selected_peak_ids) for e in sut.tap_entries] == before_sel, (
+            "per-tap selection must not be rebuilt when Peak Min moves"
+        )
+        assert len(sut.tap_entries[0].peaks) == 2, (
+            "the sub-Peak-Min peak stays in the durable per-tap set — hidden, not destroyed"
+        )
+
+    def test_recalculate_frozen_peaks_leaves_tap_entries_untouched(self, qt_app):
+        """Mirrors Swift recalculateFrozenPeaks_leavesTapEntriesUntouched — the direct guard
+        against the deleted per-tap recompute being reintroduced, on BOTH recalc branches."""
+        loud = _peak(200.0, -20.0)
+        quiet = _peak(300.0, -50.0)
+        for loaded in (True, False):
+            sut = self._frozen_guitar()
+            sut.all_peaks = [loud, quiet]
+            if loaded:
+                sut.loaded_measurement_peaks = [loud, quiet]
+            sut.peak_min_threshold = -40.0   # above `quiet`, so a re-detect would drop it
+            sut.tap_entries = [self._tap_entry(1, [loud, quiet], [quiet.id])]
+            before_ids = [[p.id for p in e.peaks] for e in sut.tap_entries]
+            before_sel = [list(e.selected_peak_ids) for e in sut.tap_entries]
+
+            sut.recalculate_frozen_peaks_if_needed()
+
+            assert [[p.id for p in e.peaks] for e in sut.tap_entries] == before_ids, (
+                f"recalc must not re-detect per-tap peaks (loaded={loaded})"
+            )
+            assert [list(e.selected_peak_ids) for e in sut.tap_entries] == before_sel, (
+                f"recalc must not rebuild per-tap selection (loaded={loaded})"
+            )
+
+    def test_selected_peaks_resolve_over_durable_set(self, qt_app):
+        """Mirrors Swift selectedPeaks_resolveOverDurableSet_notTheDisplayProjection — the
+        averaged-row source. A selected peak below Peak Min must stay in `selected_peaks`."""
+        sut = self._frozen_guitar()
+        loud = _peak(200.0, -20.0)
+        quiet = _peak(300.0, -50.0)
+        sut.all_peaks = [loud, quiet]
+        sut.peak_min_threshold = -60.0
+        sut.selected_peak_ids = {loud.id, quiet.id}
+
+        sut.peak_min_threshold = -40.0   # hides `quiet` from the display
+
+        assert not any(p.id == quiet.id for p in sut.current_peaks), (
+            "precondition: the quiet peak is hidden from the display"
+        )
+        resolved = {p.id for p in sut.selected_peaks}
+        assert resolved == {loud.id, quiet.id}, (
+            "a selected peak below Peak Min is still selected — derived values must include it"
+        )
