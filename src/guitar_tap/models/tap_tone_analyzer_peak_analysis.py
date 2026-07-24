@@ -850,22 +850,29 @@ class TapToneAnalyzerPeakAnalysisMixin:
     @staticmethod
     def resolved_mode_peaks(
         peaks: list,
+        overrides: "dict | None" = None,
         guitar_type: "str | None" = None,
     ) -> dict:
-        """Return {GuitarMode: ResonantPeak} for the highest-magnitude peak per mode.
+        """Return {GuitarMode: ResonantPeak} for the highest-magnitude peak per EFFECTIVE mode.
 
         Runs GuitarMode.classify_all on ``peaks`` using ``guitar_type`` for mode-range
-        boundaries, then returns a map from each identified GuitarMode to the strongest
-        ResonantPeak classified into that mode.
+        boundaries, then — override-aware, so a relabelled peak resolves to the mode the user
+        assigned — returns a map from each identified GuitarMode to the strongest ResonantPeak
+        whose effective mode is that mode.
+
+        ``overrides`` is ``{peak id: label str}`` (the measurement's ``peak_mode_overrides``);
+        ``{}``/``None`` reproduces the old override-blind behaviour.
 
         Callers that only need the frequency can use ``peak.frequency``; tests can
         access both ``.frequency`` and ``.magnitude`` directly.
 
-        Mirrors Swift TapToneAnalyzer.resolvedModePeaks(peaks:guitarType:)
+        Mirrors Swift TapToneAnalyzer.resolvedModePeaks(peaks:overrides:guitarType:)
         (TapToneAnalyzer+PeakAnalysis.swift).
         """
         from .guitar_mode import GuitarMode
         from .guitar_type import GuitarType
+
+        ovr = overrides or {}
 
         # Resolve guitar_type string to enum value, falling back to Classical.
         gt: "GuitarType | None" = None
@@ -879,8 +886,12 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         result: dict = {}
         for peak in peaks:
-            mode = mode_map.get(peak.id)
-            if mode is None or mode == GuitarMode.UNKNOWN:
+            # Override-aware, so a relabelled peak resolves to the mode the user assigned — the
+            # same rule the analyzer and the ratio use.
+            mode = GuitarMode.effective_mode(
+                ovr.get(peak.id), mode_map.get(peak.id, GuitarMode.UNKNOWN)
+            )
+            if mode == GuitarMode.UNKNOWN:
                 continue
             existing = result.get(mode)
             if existing is not None and peak.magnitude <= existing.magnitude:

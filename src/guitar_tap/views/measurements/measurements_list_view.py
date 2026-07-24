@@ -542,13 +542,29 @@ class MeasurementsDialog(QtWidgets.QDialog):
                 ))
 
             # Step 2 — Map cmp_entries → mode_frequencies tuples (mirrors Swift's map step).
-            # Colors are converted back to (r, g, b) 0–255 integers for the PDF renderer.
+            # Per-tap rows show each tap's OWN auto-classification; the Averaged row uses the
+            # DEFINITIVE (override-aware) modes and tags any overridden value. Mirrors Swift
+            # MeasurementsListView multi-tap PDF (measurement.definitiveModeInfo()).
+            avg_info = m.definitive_mode_info()
             mode_frequencies = []
             for cmp_entry in cmp_entries:
                 c = cmp_entry.color_components
                 color = (round(c[0] * 255), round(c[1] * 255), round(c[2] * 255))
+                if cmp_entry.label == "Averaged":
+                    air_t = avg_info.get(GuitarMode.AIR)
+                    top_t = avg_info.get(GuitarMode.TOP)
+                    back_t = avg_info.get(GuitarMode.BACK)
+                    override_modes = {mode for mode, (_f, ov) in avg_info.items() if ov}
+                    mode_frequencies.append((
+                        cmp_entry.label, color,
+                        air_t[0] if air_t is not None else None,
+                        top_t[0] if top_t is not None else None,
+                        back_t[0] if back_t is not None else None,
+                        override_modes,
+                    ))
+                    continue
                 mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-                    cmp_entry.peaks, cmp_entry.guitar_type
+                    cmp_entry.peaks, guitar_type=cmp_entry.guitar_type
                 )
                 air = mode_peaks.get(GuitarMode.AIR)
                 top = mode_peaks.get(GuitarMode.TOP)
@@ -559,6 +575,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
                     air.frequency if air is not None else None,
                     top.frequency if top is not None else None,
                     back.frequency if back is not None else None,
+                    set(),
                 ))
 
             comparison_data = M.ComparisonPDFReportData(

@@ -118,8 +118,10 @@ class TapEntry:
 
         selected_ids = set(self.selected_peak_ids)
         selected = [p for p in self.peaks if p.id in selected_ids]
+        # A tap's own auto-classification — no overrides (per-tap rows are unrelated to the
+        # averaged override). guitar_type keyworded now that `overrides` is the 2nd positional.
         return TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-            selected, guitar_type or self.snapshot.guitar_type
+            selected, guitar_type=guitar_type or self.snapshot.guitar_type
         )
 
 
@@ -167,6 +169,52 @@ class ComparisonEntry:
     # Mirrors Swift ComparisonEntry.sourceMeasurementID (UUID?).
     source_measurement_id: str | None = None
 
+    # The DEFINITIVE Air/Top/Back for this overlaid spectrum, resolved once from the source
+    # measurement's own selection AND overrides, and stored as {canonical mode name: peak UUID}
+    # (the UUID references one of this entry's own `peaks`). Makes a saved comparison
+    # self-describing: a reader reproduces the displayed table by looking each ID up in `peaks` —
+    # no need to re-run classify_all, and no need for the source's override data (absent from this
+    # file). `None` on files written before Phase 6b; those are healed on decode and re-saved.
+    # Mirrors Swift ComparisonEntry.modePeakIDs ([String: UUID]?). (Phase 6b)
+    mode_peak_ids: dict[str, str] | None = None
+
+    @staticmethod
+    def mode_id_map(resolved: dict) -> dict[str, str]:
+        """Build the {mode name: peak id} map for the three ratio-bearing modes from a resolved
+        mode→peak dictionary. Keyed by GuitarMode raw value so Swift/web read it directly.
+
+        Mirrors Swift ComparisonEntry.modeIDMap(from:).
+        """
+        from . import guitar_mode as gm
+
+        out: dict[str, str] = {}
+        for mode in (gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK):
+            p = resolved.get(mode)
+            if p is not None:
+                out[mode.value] = p.id
+        return out
+
+    def mode_frequency(self, mode) -> float | None:
+        """The frequency of this entry's definitive peak for *mode*, from ``mode_peak_ids`` when
+        present (self-describing), else re-derived positionally from ``peaks`` (legacy / in-memory
+        fallback).
+
+        Mirrors Swift ComparisonEntry.modeFrequency(_:).
+        """
+        from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
+
+        if self.mode_peak_ids is not None:
+            pid = self.mode_peak_ids.get(mode.value)
+            if pid is not None:
+                for p in self.peaks:
+                    if p.id == pid:
+                        return p.frequency
+        resolved = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+            self.peaks, guitar_type=self.guitar_type
+        )
+        p = resolved.get(mode)
+        return p.frequency if p is not None else None
+
     def to_dict(self) -> dict[str, Any]:
         """Encode as a JSON-compatible dict using Swift camelCase field names.
 
@@ -185,6 +233,8 @@ class ComparisonEntry:
             d["guitarType"] = self.guitar_type
         if self.source_measurement_id is not None:
             d["sourceMeasurementID"] = self.source_measurement_id
+        if self.mode_peak_ids is not None:
+            d["modePeakIDs"] = self.mode_peak_ids
         return d
 
     @classmethod
@@ -204,6 +254,7 @@ class ComparisonEntry:
             peaks=peaks,
             guitar_type=d.get("guitarType"),
             source_measurement_id=d.get("sourceMeasurementID"),
+            mode_peak_ids=d.get("modePeakIDs"),
         )
 
 
@@ -485,41 +536,64 @@ class TapToneMeasurement:
           Python falls back to the guitar_type stored on this measurement, or "Classical".
         """
         from . import guitar_mode as gm
+        # Definitive Air/Top: the SELECTED peak whose OVERRIDE-AWARE (effective) mode is that mode.
+        # Mirrors Swift tapToneRatio → definitivePeak(for:). Replaces the old selection-aware but
+        # override-BLIND classify — renaming the Top peak must remove the ratio, as it does on every
+        # display surface.
+        air = self.definitive_peak(gm.GuitarMode.AIR)
+        top = self.definitive_peak(gm.GuitarMode.TOP)
+        if air is None or top is None or air.frequency <= 0:
+            return None
+        return top.frequency / air.frequency
+
+    def definitive_peak(self, mode) -> "ResonantPeak | None":
+        """The **definitive** peak for *mode*: the **selected** peak whose **override-aware**
+        (effective) mode is *mode*.
+
+        Selection uses ``effective_selected_peak_ids`` (guitar: the saved selection, or all peaks when
+        none; material: all). By the Phase 5 invariant there is at most one definitive Air/Top/Back;
+        ``max`` guards the legacy case. Mirrors Swift ``TapToneMeasurement.definitivePeak(for:)``.
+        """
+        from . import guitar_mode as gm
         from . import guitar_type as gt_module
         if not self.peaks:
             return None
-        gt_str = self.guitar_type or "Classical"
         try:
-            gt = gt_module.GuitarType(gt_str)
+            gt = gt_module.GuitarType(self.guitar_type or "Classical")
         except Exception:
             gt = gt_module.GuitarType.CLASSICAL
-        # Mirrors Swift calculateTapToneRatio() which reads from identifiedModes —
-        # identifiedModes is built from currentPeaks (the selected peaks only).
-        # Run classify_all on selected peaks only; fall back to all peaks when
-        # no selection is recorded (e.g. legacy measurements without selectedPeakIDs).
-        selected_ids: set[str] = set(self.selected_peak_ids or [])
-        peaks_for_ratio = (
-            [p for p in self.peaks if p.id in selected_ids]
-            if selected_ids else self.peaks
-        )
-        try:
-            id_map = gm.GuitarMode.classify_all(peaks_for_ratio, gt)
-        except Exception:
+        selected = self.effective_selected_peak_ids
+        overrides = self.peak_mode_overrides or {}
+        auto_map = gm.GuitarMode.classify_all(self.peaks, gt)
+        candidates = [
+            p for p in self.peaks
+            if p.id in selected
+            and gm.GuitarMode.effective_mode(
+                overrides.get(p.id), auto_map.get(p.id, gm.GuitarMode.UNKNOWN)
+            ).normalized == mode.normalized
+        ]
+        if not candidates:
             return None
-        # id_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode]
-        air_freq = next(
-            (p.frequency for p in peaks_for_ratio
-             if id_map.get(p.id, gm.GuitarMode.UNKNOWN).normalized == gm.GuitarMode.AIR),
-            None,
-        )
-        top_freq = next(
-            (p.frequency for p in peaks_for_ratio
-             if id_map.get(p.id, gm.GuitarMode.UNKNOWN).normalized == gm.GuitarMode.TOP),
-            None,
-        )
-        if air_freq and top_freq and air_freq > 0:
-            return top_freq / air_freq
-        return None
+        return max(candidates, key=lambda p: p.magnitude)
+
+    def definitive_mode_info(self) -> dict:
+        """The definitive Air/Top/Back for this measurement, each with a flag for whether it is the
+        user's manual override — for the multi-tap Averaged row (on screen and in the PDF), where an
+        overridden value must be marked so it is not read as the averaged spectrum's auto peak.
+
+        Returns ``{GuitarMode: (frequency: float, is_override: bool)}``. Mirrors Swift
+        ``TapToneMeasurement.definitiveModeInfo()``. Python stores only *assigned* overrides in
+        ``peak_mode_overrides`` (id → label), so membership is the override test.
+        """
+        from . import guitar_mode as gm
+        overrides = self.peak_mode_overrides or {}
+        out: dict = {}
+        for mode in (gm.GuitarMode.AIR, gm.GuitarMode.TOP, gm.GuitarMode.BACK):
+            p = self.definitive_peak(mode)
+            if p is None:
+                continue
+            out[mode] = (p.frequency, p.id in overrides)
+        return out
 
     @property
     def base_filename(self) -> str:
@@ -961,6 +1035,83 @@ class TapToneMeasurement:
                     i for i in (te.selected_peak_ids or []) if i not in te_removed
                 ]
                 healed = True
+
+        # --- Phase 6b: heal legacy comparison entries — fill the definitive mode→peak map ---
+        # Pre-6b saved comparisons stored no `modePeakIDs`, so their Air/Top/Back was re-derived
+        # positionally at render — and could not reflect a source measurement's override. Compute it
+        # once now from each entry's own selected peaks. Override-BLIND (an old file never wrote the
+        # source's overrides, so nothing better is recoverable), but it freezes what the old app
+        # showed and makes the file self-describing from here on. Mirrors Swift init(from:).
+        if comparison_entries:
+            from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin as _PA
+            for _e in comparison_entries:
+                if _e.mode_peak_ids is None:
+                    _resolved = _PA.resolved_mode_peaks(_e.peaks, guitar_type=_e.guitar_type)
+                    _e.mode_peak_ids = ComparisonEntry.mode_id_map(_resolved)
+                    healed = True
+
+        # --- Phase 6: heal the guitar DEFINITIVE selection (Air/Top/Back at most one each) ---
+        # Guitar only. A file with no saved selection is auto-selected (strongest per mode via the
+        # EFFECTIVE mode); a pre-Phase-5 file with >1 selected in a single-holder mode is pruned to the
+        # strongest. Same `healed` re-save contract as the duplicate heal. Mirrors Swift init(from:).
+        _mt_raw = d.get("measurementType")
+        if _mt_raw:
+            try:
+                from .measurement_type import MeasurementType as _MT
+                _is_material_at_decode = not _MT.from_string(_mt_raw).is_guitar
+            except Exception:
+                _is_material_at_decode = long_snap is not None
+        else:
+            _is_material_at_decode = long_snap is not None
+        if not _is_material_at_decode and peaks:
+            from . import guitar_mode as _gm
+            from . import guitar_type as _gt_mod
+            try:
+                _gt = _gt_mod.GuitarType(d.get("guitarType") or "Classical")
+            except Exception:
+                _gt = _gt_mod.GuitarType.CLASSICAL
+            _auto = _gm.GuitarMode.classify_all(peaks, _gt)
+            _ovr = peak_mode_overrides or {}
+            _single = {_gm.GuitarMode.AIR, _gm.GuitarMode.TOP, _gm.GuitarMode.BACK}
+
+            def _eff(p):
+                return _gm.GuitarMode.effective_mode(
+                    _ovr.get(p.id), _auto.get(p.id, _gm.GuitarMode.UNKNOWN)
+                ).normalized
+
+            if selected_ids_raw is None:
+                # Auto-select the strongest peak per (effective) mode.
+                _chosen: dict = {}
+                for p in peaks:
+                    m = _eff(p)
+                    if m == _gm.GuitarMode.UNKNOWN:
+                        continue
+                    if _chosen.get(m) is None or p.magnitude > _chosen[m].magnitude:
+                        _chosen[m] = p
+                selected_ids_raw = [p.id for p in _chosen.values()]
+                healed = True
+            else:
+                # Prune each single-holder mode with >1 selected down to its strongest.
+                _sel = set(selected_ids_raw)
+                _winners: dict = {}
+                for p in peaks:
+                    if p.id not in _sel:
+                        continue
+                    m = _eff(p)
+                    if m not in _single:
+                        continue
+                    if _winners.get(m) is None or p.magnitude > _winners[m].magnitude:
+                        _winners[m] = p
+                _winner_ids = {p.id for p in _winners.values()}
+                _by_id = {p.id: p for p in peaks}
+                _pruned = [
+                    i for i in selected_ids_raw
+                    if (_p := _by_id.get(i)) is not None
+                    and (_eff(_p) not in _single or i in _winner_ids)
+                ]
+                if len(_pruned) != len(selected_ids_raw):
+                    selected_ids_raw = _pruned
+                    healed = True
 
         return TapToneMeasurement(
             id=d.get("id", str(uuid.uuid4())),

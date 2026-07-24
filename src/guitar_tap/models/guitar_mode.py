@@ -630,6 +630,21 @@ class GuitarMode(Enum):
         # Fall back to the legacy Python string mapping
         return _PYTHON_STR_TO_MODE.get(mode_str, cls.UNKNOWN)
 
+    @staticmethod
+    def effective_mode(override: "str | None", auto: "GuitarMode") -> "GuitarMode":
+        """The **effective** mode of a peak: a user override wins over auto-classification.
+
+        The single definition of "what mode is this peak, really." A resolvable override label (one
+        that ``from_mode_string`` recognises) yields that mode; a freeform label yields ``UNKNOWN``
+        (the user named it something that is not a mode); with no override the auto-classified ``auto``
+        value stands. Every surface that answers "which peak is the Air / Top / Back" routes through
+        this so they cannot disagree — ``peak_mode``, the saved measurement's ratio, and the static
+        ``resolved_mode_peaks``. Mirrors Swift ``GuitarMode.effectiveMode(override:auto:)``.
+        """
+        if override:
+            return GuitarMode.from_mode_string(override)  # returns UNKNOWN for a freeform label
+        return auto
+
 
 # Mapping from PeaksModel mode strings to GuitarMode cases.
 # Defined after the class so enum members are available.

@@ -1585,9 +1585,11 @@ class ComparisonPDFReportData:
     entries: list   # list[ComparisonEntry]
 
     # Resolved Air/Top/Back frequencies per entry.
-    # Each tuple: (label, color_rgb, air_hz, top_hz, back_hz) where *_hz may be None.
-    # Mirrors Swift ComparisonPDFReportData.modeFrequencies.
-    mode_frequencies: list  # list[tuple[str, tuple, float|None, float|None, float|None]]
+    # Each tuple: (label, color_rgb, air_hz, top_hz, back_hz, override_modes) where *_hz may be None
+    # and override_modes is a set of GuitarMode whose value is a user override (marked "*"/italic in
+    # the table — only the multi-tap Averaged row ever sets it). Mirrors Swift
+    # ComparisonPDFReportData.modeFrequencies (…, overrideModes: Set<GuitarMode>).
+    mode_frequencies: list
 
 
 def comparison_pdf_report_data_from_measurement(
@@ -1603,7 +1605,6 @@ def comparison_pdf_report_data_from_measurement(
     (TapToneAnalysisView+Export.swift).
     """
     from models.guitar_mode import GuitarMode
-    from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
 
     entries = measurement.comparison_entries or []
 
@@ -1612,21 +1613,20 @@ def comparison_pdf_report_data_from_measurement(
 
     mode_frequencies = []
     for entry in entries:
-        mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-            entry.peaks, entry.guitar_type
-        )
         comps = (entry.color_components + [1.0])[:4]
         r, g, b, _a = comps
         color_rgb = (int(r * 255), int(g * 255), int(b * 255))
-        air = mode_peaks.get(GuitarMode.AIR)
-        top = mode_peaks.get(GuitarMode.TOP)
-        back = mode_peaks.get(GuitarMode.BACK)
+        # Values come from the entry's stored definitive modes (self-describing, override-correct);
+        # `mode_frequency` falls back to a positional re-derive only for a map-less entry. No override
+        # tag on comparison rows (that marking is the multi-tap Averaged row's concern). Mirrors Swift
+        # exportComparisonPDFReport's `freq(mode, entry)`.
         mode_frequencies.append((
             entry.label,
             color_rgb,
-            air.frequency if air is not None else None,
-            top.frequency if top is not None else None,
-            back.frequency if back is not None else None,
+            entry.mode_frequency(GuitarMode.AIR),
+            entry.mode_frequency(GuitarMode.TOP),
+            entry.mode_frequency(GuitarMode.BACK),
+            set(),
         ))
 
     from datetime import datetime, timezone
@@ -1697,6 +1697,10 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
                          textColor=SECONDARY, leading=12, alignment=TA_RIGHT)
     S_TCELL_R  = _style("tcell_r",  fontSize=10, fontName="Helvetica",
                         textColor=DARK,     leading=12, alignment=TA_RIGHT)
+    # Overridden Averaged value: italic + " *" suffix — mirrors Swift PDFReportGenerator marking an
+    # overrideModes cell with `.italic()` and " *".
+    S_TCELL_R_I = _style("tcell_r_i", fontSize=10, fontName="Helvetica-Oblique",
+                         textColor=DARK, leading=12, alignment=TA_RIGHT)
     S_FOOTER   = _style("footer",   fontSize=9,  fontName="Helvetica",
                         textColor=SECONDARY, leading=11)
 
@@ -1814,10 +1818,18 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     # mirrors Swift HStack(spacing: 5) { Circle().frame(width: 8, height: 8); Text(...) }).
     _dot_col_w = 13.0
 
-    for label, color_rgb, air_hz, top_hz, back_hz in data.mode_frequencies:
-        def freq_cell(hz):
+    from models.guitar_mode import GuitarMode as _GM_pdf
+    for row in data.mode_frequencies:
+        # Tuples are 6-wide (\u2026, override_modes); tolerate legacy 5-wide callers with an empty set.
+        label, color_rgb, air_hz, top_hz, back_hz = row[:5]
+        override_modes = row[5] if len(row) > 5 else set()
+
+        def freq_cell(hz, is_override):
             if hz is None:
                 return Paragraph("\u2014", S_TCELL_DIM)
+            # Overridden Averaged value: italic + " *" (mirrors Swift's overrideModes marking).
+            if is_override:
+                return Paragraph(f"{hz:.1f} Hz *", S_TCELL_R_I)
             return Paragraph(f"{hz:.1f} Hz", S_TCELL_R)
 
         # Coloured dot mirrors Swift Circle().fill(row.color).frame(width: 8, height: 8).
@@ -1832,7 +1844,12 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
             colWidths=[_dot_col_w, col_w_label - _dot_col_w],
         )
         label_cell.setStyle(_dot_label_style)
-        table_data.append([label_cell, freq_cell(air_hz), freq_cell(top_hz), freq_cell(back_hz)])
+        table_data.append([
+            label_cell,
+            freq_cell(air_hz,  _GM_pdf.AIR in override_modes),
+            freq_cell(top_hz,  _GM_pdf.TOP in override_modes),
+            freq_cell(back_hz, _GM_pdf.BACK in override_modes),
+        ])
 
     mode_tbl = Table(
         table_data,

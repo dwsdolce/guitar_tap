@@ -4351,14 +4351,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         analyzer = self.fft_canvas.analyzer
 
-        # Averaged peaks: the definitive selected peaks, resolved over the DURABLE set — a selected
-        # peak below Peak Min must still appear in the averaged row. Mirrors Swift
-        # `averagedPeaks: analyzer.selectedPeaks`. Same property the PDF uses, so they cannot drift.
-        avg_sel_peaks = analyzer.selected_peaks
-
+        # Averaged row: the DEFINITIVE Air/Top/Back (override-aware), each flagged if overridden —
+        # the same rule the main panel and the ratio use. Mirrors Swift `averagedModes:
+        # analyzer.definitiveModeInfo()`. NOT the per-tap classification (a tap's peaks carry
+        # different UUIDs), so an override on the averaged spectrum shows only on the Averaged row.
         self._multi_tap_results_view.set_tap_data(
             tap_entries=analyzer.tap_entries,
-            averaged_peaks=avg_sel_peaks,
+            averaged_modes=analyzer.definitive_mode_info(),
             guitar_type=TDS.guitar_type().value,
         )
 
@@ -5167,21 +5166,37 @@ class MainWindow(QtWidgets.QMainWindow):
             from models.guitar_mode import GuitarMode
             from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
 
+            def _cmp_freq(mode, entry):
+                # Read the stored definitive mode→peak map (override-correct, self-describing); fall
+                # back to a positional re-derive only for a map-less entry. Mirrors Swift
+                # exportComparisonPDFReport's `freq(mode, entry)`.
+                mode_ids = entry.get("mode_ids") or {}
+                peaks = entry.get("peaks", [])
+                pid = mode_ids.get(mode.value)
+                if pid is not None:
+                    for p in peaks:
+                        if p.id == pid:
+                            return p.frequency
+                    return None
+                if mode_ids:
+                    return None
+                mp = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+                    peaks, guitar_type=entry.get("guitar_type")
+                )
+                p = mp.get(mode)
+                return p.frequency if p is not None else None
+
             mode_frequencies = []
             for entry in analyzer._comparison_data:
-                mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-                    entry.get("peaks", []), entry.get("guitar_type")
-                )
                 r, g, b = entry["color"]
-                air = mode_peaks.get(GuitarMode.AIR)
-                top = mode_peaks.get(GuitarMode.TOP)
-                back = mode_peaks.get(GuitarMode.BACK)
+                # Comparison rows: no override tag (that marking is the multi-tap Averaged row's).
                 mode_frequencies.append((
                     entry["label"],
                     (r, g, b),
-                    air.frequency if air is not None else None,
-                    top.frequency if top is not None else None,
-                    back.frequency if back is not None else None,
+                    _cmp_freq(GuitarMode.AIR, entry),
+                    _cmp_freq(GuitarMode.TOP, entry),
+                    _cmp_freq(GuitarMode.BACK, entry),
+                    set(),
                 ))
 
             from datetime import datetime, timezone
@@ -5540,13 +5555,29 @@ class MainWindow(QtWidgets.QMainWindow):
             ))
 
             # Step 2 — Map cmp_entries → mode_frequencies tuples (mirrors Swift's map step).
-            # Colors are converted back to (r, g, b) 0–255 integers for the PDF renderer.
+            # Per-tap rows show each tap's OWN auto-classification; the Averaged row uses the
+            # DEFINITIVE (override-aware) modes and tags any overridden value — the multi-tap taps
+            # table's rule. Mirrors Swift exportMultiTapPDFReport (+Export.swift).
+            avg_info = analyzer.definitive_mode_info()
             mode_frequencies = []
             for cmp_entry in cmp_entries:
                 c = cmp_entry.color_components
                 color = (round(c[0] * 255), round(c[1] * 255), round(c[2] * 255))
+                if cmp_entry.label == "Averaged":
+                    air_t = avg_info.get(GuitarMode.AIR)
+                    top_t = avg_info.get(GuitarMode.TOP)
+                    back_t = avg_info.get(GuitarMode.BACK)
+                    override_modes = {m for m, (_f, ov) in avg_info.items() if ov}
+                    mode_frequencies.append((
+                        cmp_entry.label, color,
+                        air_t[0] if air_t is not None else None,
+                        top_t[0] if top_t is not None else None,
+                        back_t[0] if back_t is not None else None,
+                        override_modes,
+                    ))
+                    continue
                 mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-                    cmp_entry.peaks, cmp_entry.guitar_type
+                    cmp_entry.peaks, guitar_type=cmp_entry.guitar_type
                 )
                 air = mode_peaks.get(GuitarMode.AIR)
                 top = mode_peaks.get(GuitarMode.TOP)
@@ -5557,6 +5588,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     air.frequency if air is not None else None,
                     top.frequency if top is not None else None,
                     back.frequency if back is not None else None,
+                    set(),
                 ))
 
             comparison_data = M.ComparisonPDFReportData(

@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 
 if TYPE_CHECKING:
-    from models.resonant_peak import ResonantPeak
     from models.tap_tone_measurement import TapEntry
 
 
@@ -59,27 +58,29 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
     def set_tap_data(
         self,
         tap_entries: list[TapEntry],
-        averaged_peaks: list[ResonantPeak],
+        averaged_modes: dict,
         guitar_type: str | None,
     ) -> None:
-        """Rebuild the grid from per-tap entries and the averaged peaks.
+        """Rebuild the grid from per-tap entries and the averaged row's definitive modes.
 
         Parameters
         ----------
         tap_entries:
             Ordered list of TapEntry objects from the most recent (or loaded)
             multi-tap guitar sequence.
-        averaged_peaks:
-            The analyzer's current peaks, which represent the averaged spectrum.
-            Used to populate the final "Averaged" row.
+        averaged_modes:
+            ``analyzer.definitive_mode_info()`` — ``{GuitarMode: (frequency, is_override)}`` for the
+            final "Averaged" row: the DEFINITIVE (override-aware) Air/Top/Back, each flagged if it is
+            a user override. NOT the per-tap classification (a tap's peaks carry different UUIDs), so
+            an override made on the averaged spectrum shows only here, tagged with " *"/italic.
         guitar_type:
             Active guitar type string (e.g. "steel_string") used for mode
             classification when a tap entry does not carry its own guitar type.
 
-        Mirrors the SwiftUI view's ``tapEntries``, ``averagedPeaks``, and
+        Mirrors the SwiftUI view's ``tapEntries``, ``averagedModes``, and
         ``guitarType`` inputs.
         """
-        self._rebuild(tap_entries, averaged_peaks, guitar_type)
+        self._rebuild(tap_entries, averaged_modes, guitar_type)
 
     # ------------------------------------------------------------------ #
     # Private helpers
@@ -120,12 +121,10 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
     def _rebuild(
         self,
         tap_entries: list[TapEntry],
-        averaged_peaks: list[ResonantPeak],
+        averaged_modes: dict,
         guitar_type: str | None,
     ) -> None:
         from models.guitar_mode import GuitarMode
-        from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
-
         mode_for_col = {
             1: GuitarMode.AIR,
             2: GuitarMode.TOP,
@@ -157,22 +156,27 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
 
         # Averaged row — bold yellow indicator + semibold text.
         # Mirrors Swift: bold yellow Rectangle() + "Averaged" + semibold font weight.
+        # Values are the DEFINITIVE (override-aware) modes; an overridden value is shown italic with
+        # a " *" suffix — the same convention the peak table uses — so it is not read as the averaged
+        # spectrum's auto-detected peak. Mirrors Swift MultiTapComparisonResultsView Averaged row.
         avg_row = len(tap_entries)
-        avg_mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-            averaged_peaks, guitar_type
-        )
         avg_label_widget = self._make_label_cell("Averaged", _AVERAGED_COLOR, bold=True)
         self._table.setCellWidget(avg_row, 0, avg_label_widget)
 
         for col, mode in mode_for_col.items():
-            peak = avg_mode_peaks.get(mode)
-            freq = peak.frequency if peak is not None else None
-            item = QtWidgets.QTableWidgetItem(self._freq_text(freq))
+            info = averaged_modes.get(mode)
+            freq = info[0] if info is not None else None
+            is_override = bool(info[1]) if info is not None else False
+            text = self._freq_text(freq)
+            if freq is not None and is_override:
+                text = f"{text} *"
+            item = QtWidgets.QTableWidgetItem(text)
             item.setTextAlignment(int(QtCore.Qt.AlignmentFlag.AlignCenter))
             if freq is None:
                 item.setForeground(QtGui.QColor(150, 150, 150))
             _f = item.font()
             _f.setBold(True)
+            _f.setItalic(is_override)
             item.setFont(_f)
             self._table.setItem(avg_row, col, item)
 

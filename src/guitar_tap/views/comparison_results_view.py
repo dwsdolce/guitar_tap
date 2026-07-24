@@ -108,10 +108,24 @@ class ComparisonResultsView(QtWidgets.QWidget):
             color_rgb = entry.get("color", (0, 122, 255))  # (r, g, b) 0–255
             peaks = entry.get("peaks", [])
             guitar_type = entry.get("guitar_type")
+            mode_ids = entry.get("mode_ids") or {}
 
-            mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-                peaks, guitar_type
-            )
+            # Read the stored definitive mode→peak map (self-describing, override-correct); fall
+            # back to a positional re-derive only for an in-memory entry that carries no map.
+            # Mirrors Swift ComparisonResultsView.modeFreqs(for:).
+            if mode_ids:
+                by_id = {p.id: p for p in peaks}
+                mode_freqs = {}
+                for m in mode_for_col.values():
+                    pid = mode_ids.get(m.value)
+                    p = by_id.get(pid) if pid is not None else None
+                    if p is not None:
+                        mode_freqs[m] = p.frequency
+            else:
+                mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+                    peaks, guitar_type=guitar_type
+                )
+                mode_freqs = {m: p.frequency for m, p in mode_peaks.items()}
 
             # Column 0: coloured dot + label
             label_widget = self._make_label_cell(label, color_rgb)
@@ -119,8 +133,7 @@ class ComparisonResultsView(QtWidgets.QWidget):
 
             # Columns 1–3: Air / Top / Back frequencies
             for col, mode in mode_for_col.items():
-                peak = mode_peaks.get(mode)
-                freq = peak.frequency if peak is not None else None
+                freq = mode_freqs.get(mode)
                 text = self._freq_text(freq)
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setTextAlignment(

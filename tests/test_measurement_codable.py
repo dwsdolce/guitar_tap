@@ -850,3 +850,74 @@ class TestFixtureLoading:
         assert d["measurementType"] == "Classical Guitar"
         assert d["guitarType"] == "Classical"
         assert d["peaks"][0]["modeLabel"] == "Top"   # convenience label, top-level peaks
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — definitive tap-tone ratio + guitar decode heal
+# ---------------------------------------------------------------------------
+
+from guitar_tap.models.guitar_mode import GuitarMode as _GM6
+
+
+def _rp6(freq, mag=-20.0, pid=None):
+    return ResonantPeak(id=pid or str(uuid.uuid4()), frequency=freq, magnitude=mag,
+                        quality=10.0, bandwidth=freq / 10.0)
+
+
+def _guitar_measurement6(peaks, selected_ids, overrides=None):
+    return TapToneMeasurement(
+        id=str(uuid.uuid4()),
+        timestamp="2026-01-01T00:00:00Z",
+        peaks=peaks,
+        selected_peak_ids=selected_ids,
+        peak_mode_overrides=overrides,
+        guitar_type="Generic",
+        measurement_type="Generic",
+    )
+
+
+class TestPhase6StructRatio:
+    """TapToneMeasurement.tap_tone_ratio reads the definitive (selected + override-aware) peak."""
+
+    def test_tap_tone_ratio_freeform_override_on_top_returns_nil(self):
+        air, top = _rp6(100), _rp6(150)
+        m = _guitar_measurement6([air, top], [air.id, top.id], {top.id: "Wolf note"})
+        assert m.tap_tone_ratio is None
+
+    def test_tap_tone_ratio_override_retargets_top(self):
+        air, other = _rp6(100), _rp6(320)   # 320 = dipole band, not Top
+        m = _guitar_measurement6([air, other], [air.id, other.id], {other.id: _GM6.TOP.display_name})
+        r = m.tap_tone_ratio
+        assert r is not None and abs(r - (320.0 / 100.0)) < 1e-6
+
+    def test_tap_tone_ratio_deselected_top_returns_nil(self):
+        air, top = _rp6(100), _rp6(150)
+        m = _guitar_measurement6([air, top], [air.id])   # Top not selected
+        assert m.tap_tone_ratio is None
+
+
+class TestPhase6DecodeHeal:
+    """from_dict heals the guitar definitive selection (auto-select nil; prune duplicate holders)."""
+
+    def test_nil_selection_is_healed_to_definitive_set(self):
+        air, top = _rp6(100), _rp6(150)
+        d = _guitar_measurement6([air, top], None).to_dict()
+        d.pop("selectedPeakIDs", None)
+        healed = TapToneMeasurement.from_dict(d)
+        assert healed.was_healed
+        assert set(healed.selected_peak_ids or []) == {air.id, top.id}
+
+    def test_two_selected_tops_pruned_to_the_stronger(self):
+        air, weak_top, loud_top = _rp6(100), _rp6(150, -35), _rp6(170, -20)
+        d = _guitar_measurement6([air, weak_top, loud_top],
+                                 [air.id, weak_top.id, loud_top.id]).to_dict()
+        healed = TapToneMeasurement.from_dict(d)
+        assert healed.was_healed
+        sel = set(healed.selected_peak_ids or [])
+        assert loud_top.id in sel and weak_top.id not in sel and air.id in sel
+
+    def test_valid_selection_is_not_healed(self):
+        air, top = _rp6(100), _rp6(150)
+        d = _guitar_measurement6([air, top], [air.id, top.id]).to_dict()
+        healed = TapToneMeasurement.from_dict(d)
+        assert not healed.was_healed

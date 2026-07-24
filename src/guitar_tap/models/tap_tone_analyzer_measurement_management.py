@@ -427,6 +427,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     "snapshot": snap,
                     "peaks": entry.peaks,
                     "guitar_type": entry.guitar_type,
+                    # The stored definitive Air/Top/Back (healed on decode when absent); the on-screen
+                    # comparison table reads this instead of re-deriving. Mirrors Swift
+                    # loadMeasurement restoring `modeIDs: entry.modePeakIDs ?? [:]`.
+                    "mode_ids": entry.mode_peak_ids or {},
                 })
                 self.comparison_labels.append((entry.label, color))
                 self.comparison_snapshots.append(snap)
@@ -1077,6 +1081,16 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # Filter to selected peaks only (mirrors Swift loadComparison selectedPeakIDs logic).
             selected_ids: set = m.effective_selected_peak_ids
             selected_peaks = [p for p in (m.peaks or []) if p.id in selected_ids]
+            # Resolve the definitive Air/Top/Back from the SOURCE measurement — its selection AND its
+            # overrides — and store it as {mode name: peak id} so the comparison shows what that
+            # measurement shows, self-describing across save/load. Mirrors Swift addComparison's
+            # per-source `modeIDs` build via `measurement.definitivePeak(for:)`.
+            from .guitar_mode import GuitarMode as _GM
+            mode_ids: dict = {}
+            for _mode in (_GM.AIR, _GM.TOP, _GM.BACK):
+                _p = m.definitive_peak(_mode)
+                if _p is not None:
+                    mode_ids[_mode.value] = _p.id
             self.comparison_labels.append((label, color))
             self._comparison_data.append({
                 "label": label, "color": color,
@@ -1084,6 +1098,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 "snapshot": snap,
                 "peaks": selected_peaks,
                 "guitar_type": snap.guitar_type,
+                "mode_ids": mode_ids,
             })
             self.comparison_snapshots.append(snap)   # mirrors Swift comparisonSnapshots = spectraAndSnapshots.map(\.snapshot)
             result.append((label, color, freq_arr, mag_arr))
@@ -1159,6 +1174,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 peaks=entry.get("peaks", []),
                 guitar_type=entry.get("guitar_type"),
                 source_measurement_id=None,
+                # Persist the definitive modes — self-describing file. Mirrors Swift saveComparison
+                # `modePeakIDs: entry.modeIDs`.
+                mode_peak_ids=(entry.get("mode_ids") or None),
             )
             entries.append(ce)
 

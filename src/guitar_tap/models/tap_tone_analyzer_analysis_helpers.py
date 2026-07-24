@@ -31,43 +31,35 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         Mirrors Swift ``peakMode(for:)``.
         """
         from .guitar_mode import GuitarMode
-        # Check user override first.
-        override_label = self.peak_mode_overrides.get(peak.id)
-        if override_label:
-            overridden_mode = GuitarMode.from_mode_string(override_label)
-            if overridden_mode is not GuitarMode.UNKNOWN:
-                return overridden_mode
-            # Freeform label — return UNKNOWN; views use USER_DEFINED_COLOR.
-            return GuitarMode.UNKNOWN
-
+        # AUTO classification (override-blind): identified_modes (populated by the classify pass),
+        # falling back to a single-element classify_all for stale references. Mirrors Swift's
+        # peakMode auto resolution.
+        auto = GuitarMode.UNKNOWN
         for entry in self.identified_modes:
             if entry.get("peak") and entry["peak"].id == peak.id:
-                return entry["mode"]
-        # Fall back: use classify_all (claiming algorithm) not GuitarMode.classify
-        # (simple range lookup) — mirrors Swift peakMode(for:) which uses classifyAll.
-        from models.tap_display_settings import TapDisplaySettings as _tds_pm
-        mode_map = GuitarMode.classify_all([peak], _tds_pm.guitar_type())
-        return mode_map.get(peak.id, GuitarMode.UNKNOWN)
+                auto = entry["mode"]
+                break
+        else:
+            from models.tap_display_settings import TapDisplaySettings as _tds_pm
+            auto = GuitarMode.classify_all([peak], _tds_pm.guitar_type()).get(peak.id, GuitarMode.UNKNOWN)
+        # Effective = the ONE shared resolver — an override wins over auto (freeform → UNKNOWN).
+        # Mirrors Swift peakMode delegating to GuitarMode.effectiveMode.
+        return GuitarMode.effective_mode(self.peak_mode_overrides.get(peak.id), auto)
 
     def get_peak(self, mode: "GuitarMode") -> "ResonantPeak | None":
-        """Return the highest-magnitude peak classified as *mode*.
+        """Return the **definitive** peak for *mode*: the **selected** peak whose **override-aware**
+        mode is *mode*.
 
-        Mode comparison uses ``GuitarMode.normalized`` so legacy aliases
-        (e.g. ``.helmholtz``) resolve correctly.
-
-        Mirrors Swift ``getPeak(for:)``.
-
-        Returns:
-            The strongest ``ResonantPeak`` classified as *mode*, or ``None``
-            if no such peak exists in ``identified_modes``.
+        Not the strongest auto-classified peak — the one the user (or auto-selection) chose AND whose
+        effective mode is *mode*. So renaming the Top peak removes it from the ratio just as it
+        removes it from every display surface. By the Phase 5 invariant there is at most one
+        definitive Air/Top/Back; ``max`` guards the legacy case. Mode comparison uses ``normalized``
+        so legacy aliases resolve. Mirrors Swift ``getPeak(for:)``.
         """
         candidates = [
-            entry["peak"]
-            for entry in self.identified_modes
-            if (
-                "peak" in entry and "mode" in entry
-                and entry["mode"].normalized == mode.normalized
-            )
+            p for p in self.all_peaks
+            if p.id in self.selected_peak_ids
+            and self.peak_mode(p).normalized == mode.normalized
         ]
         if not candidates:
             return None
@@ -93,4 +85,22 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         if air_peak.frequency == 0:
             return None
         return top_peak.frequency / air_peak.frequency
+
+    def definitive_mode_info(self) -> "dict":
+        """The definitive Air/Top/Back, each flagged if it is the user's manual override — the
+        source for the multi-tap Averaged row.
+
+        Returns ``{GuitarMode: (frequency: float, is_override: bool)}``. Uses the same definitive
+        rule as ``get_peak`` and the ratio, so the Averaged row agrees with the main panel; the flag
+        lets the view mark an overridden value so it is not confused with the averaged spectrum's
+        auto-detected peak. Mirrors Swift ``TapToneAnalyzer.definitiveModeInfo()``.
+        """
+        from .guitar_mode import GuitarMode
+        out: dict = {}
+        for mode in (GuitarMode.AIR, GuitarMode.TOP, GuitarMode.BACK):
+            p = self.get_peak(mode)
+            if p is None:
+                continue
+            out[mode] = (p.frequency, self.has_manual_override(p.id))
+        return out
 

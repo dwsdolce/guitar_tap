@@ -513,3 +513,136 @@ class TestMultiTapToSavedComparisonTransition:
         assert sut._display_mode == AnalysisDisplayMode.COMPARISON
         assert len(sut._comparison_data) == 1
 
+
+# ---------------------------------------------------------------------------
+# Phase 6b — definitive modes persisted in a comparison (mode_peak_ids)
+# ---------------------------------------------------------------------------
+#
+# A comparison MEASUREMENT aggregates other measurements, so their override context is not otherwise
+# in this file. Each ComparisonEntry stores the resolved definitive Air/Top/Back as {mode name: peak
+# id}, computed from the source's selection AND overrides, so the saved file is self-describing: a
+# reader reproduces the table by peak-ID lookup, without re-running classify_all and without the
+# source's overrides (absent from the file). Mirrors Swift ComparisonModePersistenceTests.
+
+def _rp_cmp(freq, mag=-20.0):
+    from guitar_tap.models.resonant_peak import ResonantPeak
+    return ResonantPeak(frequency=freq, magnitude=mag, quality=10.0,
+                        bandwidth=freq / 10.0, id=str(uuid.uuid4()))
+
+
+def _cmp_entry(peaks, mode_peak_ids=None, guitar_type="Classical"):
+    from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+    return ComparisonEntry(
+        id=str(uuid.uuid4()), label="e",
+        color_components=[0.0, 0.0, 1.0, 1.0],
+        snapshot=_make_snapshot(),
+        peaks=peaks, guitar_type=guitar_type,
+        source_measurement_id=None,
+        mode_peak_ids=mode_peak_ids,
+    )
+
+
+def _cmp_round_trip(m):
+    import json
+    return TapToneMeasurement.from_dict(json.loads(json.dumps(m.to_dict())))
+
+
+class TestComparisonDefinitiveModes:
+    """Phase 6b: ComparisonEntry.mode_peak_ids — the definitive Air/Top/Back stored as a
+    self-describing {mode name: peak id} map. Mirrors Swift ComparisonModePersistenceTests."""
+
+    def test_comparison_reflects_source_override(self):
+        # End-to-end: a source measurement whose Top is user-overridden onto a peak that is NOT the
+        # auto Top must have the comparison store THAT peak as Top (definitive: selection + override).
+        from guitar_tap.models.guitar_mode import GuitarMode
+        air = _rp_cmp(95, -28)
+        auto_top = _rp_cmp(210, -20)   # classical Top by position
+        far = _rp_cmp(400, -22)        # not Top by position
+        snap = SpectrumSnapshot(
+            frequencies=[100.0, 200.0], magnitudes=[-40.0, -35.0],
+            min_freq=50.0, max_freq=500.0, min_db=-100.0, max_db=0.0,
+            guitar_type="Classical",
+        )
+        source = TapToneMeasurement.create(
+            peaks=[air, auto_top, far],
+            spectrum_snapshot=snap,
+            selected_peak_ids=[air.id, far.id],            # far selected, auto_top NOT
+            peak_mode_overrides={far.id: GuitarMode.TOP.display_name},  # far renamed to Top
+            guitar_type="Classical",
+        )
+        sut = _StubAnalyzer()
+        sut.load_comparison([source])
+
+        mode_ids = sut._comparison_data[0].get("mode_ids") or {}
+        assert mode_ids.get(GuitarMode.TOP.value) == far.id, (
+            "the comparison's Top must be the user's overridden+selected peak, not the auto Top"
+        )
+        assert mode_ids.get(GuitarMode.AIR.value) == air.id
+
+    def test_saved_comparison_persists_and_round_trips_mode_ids(self):
+        # load → save → reload keeps the definitive map (self-describing file).
+        from guitar_tap.models.guitar_mode import GuitarMode
+        air = _rp_cmp(95, -28)
+        top = _rp_cmp(210, -20)
+        snap = SpectrumSnapshot(
+            frequencies=[100.0, 200.0], magnitudes=[-40.0, -35.0],
+            min_freq=50.0, max_freq=500.0, min_db=-100.0, max_db=0.0,
+            guitar_type="Classical",
+        )
+        source = TapToneMeasurement.create(
+            peaks=[air, top], spectrum_snapshot=snap,
+            selected_peak_ids=[air.id, top.id], guitar_type="Classical",
+        )
+        sut = _FullStubAnalyzer()
+        sut.load_comparison([source])
+        sut.save_comparison(measurement_name="C")
+        restored = _cmp_round_trip(sut.savedMeasurements[0])
+        e = restored.comparison_entries[0]
+        assert e.mode_peak_ids[GuitarMode.AIR.value] == air.id
+        assert e.mode_peak_ids[GuitarMode.TOP.value] == top.id
+
+    def test_mode_frequency_reads_stored_map_not_classification(self):
+        # The stored map is authoritative: mode_frequency reads it, NOT a re-classification. Point
+        # Top deliberately at the AIR peak and expect Air's frequency back.
+        from guitar_tap.models.guitar_mode import GuitarMode
+        air = _rp_cmp(95, -28)
+        real_top = _rp_cmp(210, -20)   # classify_all would pick THIS as Top
+        entry = _cmp_entry([air, real_top], {GuitarMode.TOP.value: air.id})
+        assert entry.mode_frequency(GuitarMode.TOP) == 95.0, (
+            "the stored map wins — the file is authoritative, not re-classified at render"
+        )
+
+    def test_mode_peak_ids_round_trip(self):
+        from guitar_tap.models.guitar_mode import GuitarMode
+        air = _rp_cmp(95, -28)
+        top = _rp_cmp(210, -20)
+        entry = _cmp_entry([air, top], {GuitarMode.AIR.value: air.id, GuitarMode.TOP.value: top.id})
+        m = TapToneMeasurement.create(peaks=[], comparison_entries=[entry])
+        e = _cmp_round_trip(m).comparison_entries[0]
+        assert e.mode_peak_ids[GuitarMode.AIR.value] == air.id
+        assert e.mode_peak_ids[GuitarMode.TOP.value] == top.id
+
+    def test_mode_peak_ids_written_to_dict(self):
+        from guitar_tap.models.guitar_mode import GuitarMode
+        air = _rp_cmp(95, -28)
+        entry = _cmp_entry([air], {GuitarMode.AIR.value: air.id})
+        assert entry.to_dict()["modePeakIDs"][GuitarMode.AIR.value] == air.id
+
+    def test_none_mode_peak_ids_omitted_from_dict(self):
+        entry = _cmp_entry([_rp_cmp(100)], mode_peak_ids=None)
+        assert "modePeakIDs" not in entry.to_dict()
+
+    def test_legacy_comparison_entry_is_healed_on_decode(self):
+        # A pre-6b saved comparison (no modePeakIDs) is healed positionally on decode and flagged
+        # for re-save. air 95 → Air, top 210 → Top under Classical bands.
+        from guitar_tap.models.guitar_mode import GuitarMode
+        air = _rp_cmp(95, -28)
+        top = _rp_cmp(210, -20)
+        legacy = _cmp_entry([air, top], mode_peak_ids=None)
+        m = TapToneMeasurement.create(peaks=[], comparison_entries=[legacy])
+        restored = _cmp_round_trip(m)
+        assert restored.was_healed, "a legacy comparison entry must flag for re-save"
+        e = restored.comparison_entries[0]
+        assert e.mode_peak_ids[GuitarMode.AIR.value] == air.id, "healed Air (positional)"
+        assert e.mode_peak_ids[GuitarMode.TOP.value] == top.id, "healed Top (positional)"
+

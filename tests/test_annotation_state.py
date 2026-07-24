@@ -551,3 +551,110 @@ class TestAutoDetectedMode:
         assert sut.auto_detected_mode(air).normalized == GuitarMode.AIR, (
             "auto_detected_mode ignores the override — it names the reset target"
         )
+
+
+class TestDefinitivePeakAndRatio:
+    """Phase 6: get_peak / calculate_tap_tone_ratio read the DEFINITIVE peak — the SELECTED peak whose
+    override-aware mode is that mode. Mirrors Swift AnnotationStateTests Phase 6."""
+
+    @pytest.fixture(autouse=True)
+    def _generic(self):
+        saved = TapDisplaySettings.measurement_type()
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        yield
+        TapDisplaySettings.set_measurement_type(saved)
+
+    def test_get_peak_returns_selected_holder_not_strongest(self):
+        sut = _make_sut()
+        weak_top = _make_peak_live(150, -35)
+        loud_top = _make_peak_live(170, -20)
+        sut.all_peaks = [weak_top, loud_top]
+        sut.reclassify_peaks()
+        sut.toggle_peak_selection(weak_top.id)   # select the WEAKER
+        got = sut.get_peak(GuitarMode.TOP)
+        assert got is not None and got.id == weak_top.id, (
+            "get_peak returns the SELECTED holder, not the strongest auto-classified peak"
+        )
+
+    def test_renaming_the_top_peak_drops_the_ratio(self):
+        sut = _make_sut()
+        air = _make_peak_live(100, -25)
+        top = _make_peak_live(150, -20)
+        sut.all_peaks = [air, top]
+        sut.reclassify_peaks()
+        sut.toggle_peak_selection(air.id)
+        sut.toggle_peak_selection(top.id)
+        assert sut.calculate_tap_tone_ratio() is not None, "precondition: ratio exists"
+        sut.set_mode_override("Wolf note", top.id)   # freeform → no definitive Top
+        assert sut.calculate_tap_tone_ratio() is None, "no definitive Top → no ratio"
+
+    def test_deselecting_the_top_peak_drops_the_ratio(self):
+        sut = _make_sut()
+        air = _make_peak_live(100, -25)
+        top = _make_peak_live(150, -20)
+        sut.all_peaks = [air, top]
+        sut.reclassify_peaks()
+        sut.toggle_peak_selection(air.id)
+        sut.toggle_peak_selection(top.id)
+        assert sut.calculate_tap_tone_ratio() is not None
+        sut.toggle_peak_selection(top.id)            # deselect Top
+        assert sut.calculate_tap_tone_ratio() is None
+
+    def test_overriding_a_peak_to_top_makes_it_definitive(self):
+        sut = _make_sut()
+        air = _make_peak_live(100, -25)
+        other = _make_peak_live(320, -20)            # dipole band, not Top
+        sut.all_peaks = [air, other]
+        sut.reclassify_peaks()
+        sut.toggle_peak_selection(other.id)
+        sut.set_mode_override(GuitarMode.TOP.display_name, other.id)
+        got = sut.get_peak(GuitarMode.TOP)
+        assert got is not None and got.id == other.id, (
+            "overriding a selected peak to Top makes it the definitive Top"
+        )
+
+
+class TestDefinitiveModeInfo:
+    """Phase 6b: definitive_mode_info() — the multi-tap Averaged row source. get_peak per mode plus
+    an override flag; the DEFINITIVE selected peak, NOT a strongest-per-mode re-classification.
+    Mirrors Swift AnnotationStateTests D21/D22."""
+
+    @pytest.fixture(autouse=True)
+    def _generic(self):
+        saved = TapDisplaySettings.measurement_type()
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        yield
+        TapDisplaySettings.set_measurement_type(saved)
+
+    def test_D21_uses_overridden_definitive_top_and_flags_it(self):
+        # An out-of-band peak overridden to Top is the Top, tagged; the louder in-band 233 (which
+        # would win a strongest-per-mode re-classification) does not usurp it because it is not
+        # selected. This is the 233-as-Top / empty-Back bug the definitive rule closes.
+        sut = _make_sut()
+        air = _make_peak_live(100, -25)
+        below_top = _make_peak_live(138, -30)   # below the Top band → unknown by position
+        louder = _make_peak_live(233, -18)       # louder, in the Top band by position
+        sut.all_peaks = [air, below_top, louder]
+        sut.reclassify_peaks()
+        sut.toggle_peak_selection(air.id)
+        sut.toggle_peak_selection(below_top.id)
+        sut.set_mode_override(GuitarMode.TOP.display_name, below_top.id)   # 138 → Top
+
+        info = sut.definitive_mode_info()
+        assert info[GuitarMode.TOP][0] == 138, (
+            "Top is the overridden+selected peak — not the louder 233, which is not selected"
+        )
+        assert info[GuitarMode.TOP][1] is True, "flagged as an override so the Averaged row can tag it"
+        assert info[GuitarMode.AIR][1] is False, "Air here is auto — not tagged"
+
+    def test_D22_omits_deselected_mode(self):
+        sut = _make_sut()
+        air = _make_peak_live(100, -25)
+        top = _make_peak_live(150, -20)
+        sut.all_peaks = [air, top]
+        sut.reclassify_peaks()
+        sut.toggle_peak_selection(air.id)        # Top left unselected
+
+        info = sut.definitive_mode_info()
+        assert GuitarMode.TOP not in info, "an unselected Top is not the definitive Top"
+        assert info[GuitarMode.AIR][0] == 100
