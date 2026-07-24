@@ -1760,6 +1760,7 @@ class FftCanvas(pg.PlotWidget):
                 self._maxFreq,
                 mt.is_guitar,
                 _as.AppSettings.show_unknown_modes(),
+                self.analyzer.overridden_peak_ids,
                 guitar_type,
             )
             # _current_peaks MUST stay index-aligned with the setData arrays below --

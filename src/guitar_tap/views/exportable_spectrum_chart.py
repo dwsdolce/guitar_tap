@@ -212,20 +212,30 @@ class ExportableSpectrumChart:
 
     @property
     def visible_peaks(self) -> list:
-        """Mirrors ``private var visiblePeaks: [ResonantPeak]``."""
-        filtered = [p for p in self.peaks if self.min_freq <= p.frequency <= self.max_freq]
-        if not self.is_guitar:
-            return filtered
+        """Mirrors ``private var visiblePeaks: [ResonantPeak]``.
+
+        Routed through the one shared predicate (``peaks_in_display_range``) so a peak the user has
+        NAMED keeps its annotation here exactly as it keeps its dot and its results row.
+        ``overridden_peak_ids`` is derived from the ``mode_overrides`` this chart was handed — mirrors
+        Swift ``SpectrumView.visiblePeaks``, which derives the set from the ``modeOverrides`` it
+        receives.
+        """
         # show_unknown_modes mirrors showUnknownModes ?? TapDisplaySettings.showUnknownModes
         show_unknown = self.show_unknown_modes
         if show_unknown is None:
             show_unknown = True   # default — mirrors TapDisplaySettings default
-        if show_unknown:
-            return filtered
         GuitarMode = self._GuitarMode
         if GuitarMode is None:
-            return filtered
-        return [p for p in filtered if GuitarMode.is_known(p.frequency)]
+            # Import unavailable — fall back to a plain range filter (no mode classification).
+            return [p for p in self.peaks if self.min_freq <= p.frequency <= self.max_freq]
+        return GuitarMode.peaks_in_display_range(
+            self.peaks,
+            self.min_freq,
+            self.max_freq,
+            self.is_guitar,
+            show_unknown,
+            set(self.mode_overrides.keys()),
+        )
 
     @property
     def peak_mode_map(self) -> dict:

@@ -2672,7 +2672,6 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             fmin = self.fft_canvas.minFreq
             fmax = self.fft_canvas.maxFreq
-            from models.guitar_mode import GuitarMode
             show_unknown = AS.AppSettings.show_unknown_modes()
             peaks_with_modes = [
                 (p, analyzer.peak_mode(p))
@@ -2680,9 +2679,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 if fmin <= p.frequency <= fmax
             ]
             if not show_unknown:
+                # One shared predicate for all three surfaces — a peak the user has NAMED keeps its
+                # results row here exactly as it keeps its dot and its badge. Mirrors Swift
+                # TapAnalysisResultsView's filter → `!analyzer.isUnknown(item.peak)`.
                 peaks_with_modes = [
                     (p, m) for p, m in peaks_with_modes
-                    if m != GuitarMode.UNKNOWN
+                    if not analyzer.is_unknown(p)
                 ]
             self.peak_widget.update_data_with_modes(peaks_with_modes)
 

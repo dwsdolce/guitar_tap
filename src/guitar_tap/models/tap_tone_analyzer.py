@@ -1352,6 +1352,41 @@ class TapToneAnalyzer(
         """
         return peak_id in self.peak_mode_overrides
 
+    @property
+    def overridden_peak_ids(self) -> set:
+        """The ids of every peak the user has given a manual mode label.
+
+        Passed to ``GuitarMode.peaks_in_display_range`` so a static, pure function can apply the
+        same unknown-mode rule the analyzer uses, without an analyzer reference at the call site.
+        Python's ``peak_mode_overrides`` stores only user-assigned label strings (every entry IS an
+        assignment), so this is the equivalent of Swift's ``.assigned``-case ``compactMap`` — and the
+        same set ``has_manual_override`` tests membership in.
+
+        Mirrors Swift ``TapToneAnalyzer.overriddenPeakIDs``.
+        """
+        return set(self.peak_mode_overrides.keys())
+
+    def is_unknown(self, peak) -> bool:
+        """Whether *peak* counts as **unknown** for the Show Unknown Modes filter.
+
+        The single rule behind all three display surfaces — the results panel, the chart dot layer
+        and the annotation badges. A peak is unknown only when auto-classification failed to place it
+        in any mode band **and** the user has not named it. **Naming a peak makes it known**: a user
+        who labels a peak "Wolf note" has identified it, and hiding it would discard their own work.
+
+        Equivalent to the old positional test ``GuitarMode.is_known(frequency)`` for every peak
+        *without* an override, because ``GuitarMode.classify_all`` falls back to a per-frequency
+        lookup for peaks its one-per-mode claiming pass did not take. The two differ only under a user
+        override — which is exactly the case this predicate exists to fix.
+
+        Mirrors Swift ``TapToneAnalyzer.isUnknown(_:)``.
+        """
+        from .guitar_mode import GuitarMode
+        return (
+            self.peak_mode(peak).normalized == GuitarMode.UNKNOWN
+            and not self.has_manual_override(peak.id)
+        )
+
     # ------------------------------------------------------------------ #
     # Guitar Peak Selection
     # Mirrors Swift TapToneAnalyzer.swift (not in any extension file):
@@ -1443,13 +1478,14 @@ class TapToneAnalyzer(
             # NONE
             return []
 
-        # Filter unknown-mode peaks in guitar mode when the setting is off
-        from .guitar_mode import GuitarMode
+        # Filter unknown-mode peaks in guitar mode when the setting is off. One rule for all three
+        # display surfaces — see `is_unknown()`. Note the annotation layer carries an extra gate the
+        # results panel and the dot layer do not: the visibility mode above. `ALL` means all
+        # *identified* peaks, selected or not.
         from .tap_display_settings import TapDisplaySettings
         measurement_type = TapDisplaySettings.measurement_type()
         if measurement_type.is_guitar and not TapDisplaySettings.show_unknown_modes():
-            guitar_type = TapDisplaySettings.guitar_type()
-            candidates = [p for p in candidates if GuitarMode.is_known(p.frequency, guitar_type)]
+            candidates = [p for p in candidates if not self.is_unknown(p)]
         return candidates
 
     @property

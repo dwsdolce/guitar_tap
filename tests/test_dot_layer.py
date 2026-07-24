@@ -30,7 +30,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from guitar_tap.models.guitar_mode import GuitarMode
 from guitar_tap.models.guitar_type import GuitarType
+from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.resonant_peak import ResonantPeak
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
 
 
 _APP_LIVE: "QtWidgets.QApplication | None" = None
@@ -83,14 +85,29 @@ def peak(freq: float, mag: float = -30.0) -> ResonantPeak:
     return ResonantPeak(frequency=freq, magnitude=mag)
 
 
-def dots(peaks, is_guitar: bool = True, show_unknown_modes: bool = False):
+def dots(peaks, is_guitar: bool = True, show_unknown_modes: bool = False,
+         overridden_peak_ids=frozenset()):
     """Frequencies of the peaks that get a dot."""
     return [
         p.frequency
         for p in GuitarMode.peaks_in_display_range(
-            peaks, MIN_FREQ, MAX_FREQ, is_guitar, show_unknown_modes, GuitarType.GENERIC
+            peaks, MIN_FREQ, MAX_FREQ, is_guitar, show_unknown_modes,
+            overridden_peak_ids, GuitarType.GENERIC
         )
     ]
+
+
+def dots_with_overrides(sut, show_unknown_modes: bool = False):
+    """The dot list as the chart actually computes it — the analyzer's peaks plus the analyzer's
+    user-assigned labels, which is what fft_canvas passes through.
+
+    Mirrors Swift ``dotsWithOverrides``.
+    """
+    return dots(
+        sut.current_peaks,
+        show_unknown_modes=show_unknown_modes,
+        overridden_peak_ids=sut.overridden_peak_ids,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -165,12 +182,12 @@ class TestDotLayerVsAnnotationList:
         assert sut.visible_peaks == [], "none -> no annotations"
 
     def test_dl7_dot_list_ignores_mode_overrides(self):
-        """DL7: the dot list is POSITIONAL.
+        """DL7: a freeform mode override makes peak_mode() report UNKNOWN, but the peak keeps its
+        dot.
 
-        It asks "is this frequency in a band?", not "what mode did the classifier assign?".
-        A freeform override makes the assigned mode UNKNOWN, but the peak keeps its dot
-        because its frequency is still in a band.  This is the distinction the web got wrong
-        (it filtered dots by assigned mode).
+        The assertion predates Phase 4 and still holds — the REASON changed. It used to hold
+        because the dot layer was purely positional and 200 Hz is in a band; it now holds because a
+        user-named peak is known by definition. DL8 is the case that separates the two rules.
         """
         sut = _make_sut()
         p = _make_peak_live(200.0)                   # squarely inside top/back
@@ -181,7 +198,110 @@ class TestDotLayerVsAnnotationList:
         assert sut.effective_mode_label(p) == "My Custom Label"
         assert sut.has_manual_override(p.id)
 
-        # ...but the dot layer still dots it, because 200 Hz is in a band.
-        assert dots(sut.current_peaks) == [200], (
+        # ...but the peak keeps its dot.
+        assert dots_with_overrides(sut) == [200], (
             "A freeform override must not remove the peak's dot"
         )
+
+
+# ---------------------------------------------------------------------------
+# Naming a peak makes it known (DL8-DL10) -- Phase 4
+# ---------------------------------------------------------------------------
+#
+# One predicate now governs all three display surfaces: the results panel row, the chart dot, and
+# the annotation badge. A peak is unknown only when auto-classification placed it in no band AND the
+# user has not named it. Before Phase 4 the three surfaces disagreed -- the panel used the assigned
+# mode while the dot layer and the badges used the positional test -- so a peak the user had
+# explicitly labelled could lose its row while keeping its dot, or lose everything if it happened to
+# sit outside every band.
+
+# Generic bands leave 305 Hz in NO band (back ends at 300, dipole starts at 310).
+_OUT_OF_BAND = 305.0
+
+
+class TestDotLayerUserNamedPeaks:
+    def test_dl8_freeform_label_makes_out_of_band_peak_known(self):
+        """DL8: THE Phase 4 change. An out-of-band peak is hidden -- until the user names it, at
+        which point it is known and appears. Pre-Phase-4 it stayed hidden no matter the label.
+        """
+        saved_mt = TapDisplaySettings.measurement_type()
+        saved_pm = TapDisplaySettings.peak_min_threshold()
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        # Pin Peak Min low so the test peaks project through current_peaks deterministically
+        # (Swift relies on the default; QSettings state is less predictable under pytest).
+        TapDisplaySettings.set_peak_min_threshold(-100.0)
+        try:
+            sut = _make_sut()
+            named = _make_peak_live(_OUT_OF_BAND)
+            sut.all_peaks = [_make_peak_live(100.0), named]
+
+            assert dots_with_overrides(sut) == [100], (
+                "precondition: an unnamed out-of-band peak is hidden"
+            )
+            assert sut.is_unknown(named), "precondition: it is unknown before being named"
+
+            sut.set_mode_override("Wolf note", named.id)
+
+            assert not sut.is_unknown(named), "naming a peak makes it known"
+            assert dots_with_overrides(sut) == [100, 305], (
+                "a user-named peak must be dotted even outside every band"
+            )
+        finally:
+            TapDisplaySettings.set_measurement_type(saved_mt)
+            TapDisplaySettings.set_peak_min_threshold(saved_pm)
+
+    def test_dl9_known_mode_relabel_makes_out_of_band_peak_known(self):
+        """DL9: relabelling an out-of-band peak to a REAL mode name is the same story by the other
+        route -- peak_mode() resolves the label to that mode, so it is not unknown.
+        """
+        saved_mt = TapDisplaySettings.measurement_type()
+        saved_pm = TapDisplaySettings.peak_min_threshold()
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        TapDisplaySettings.set_peak_min_threshold(-100.0)
+        try:
+            sut = _make_sut()
+            named = _make_peak_live(_OUT_OF_BAND)
+            sut.all_peaks = [named]
+            sut.set_mode_override(GuitarMode.TOP.display_name, named.id)
+
+            assert not sut.is_unknown(named), (
+                "a peak relabelled to a real mode is known regardless of its frequency"
+            )
+            assert dots_with_overrides(sut) == [305]
+        finally:
+            TapDisplaySettings.set_measurement_type(saved_mt)
+            TapDisplaySettings.set_peak_min_threshold(saved_pm)
+
+    def test_dl10_table_dot_and_annotation_agree_on_a_user_named_peak(self):
+        """DL10: all three surfaces agree. This is the whole point of the phase -- before it, the
+        panel and the dot layer applied different criteria to the same peak.
+        """
+        saved_mt = TapDisplaySettings.measurement_type()
+        saved_pm = TapDisplaySettings.peak_min_threshold()
+        saved_unknown = TapDisplaySettings.show_unknown_modes()
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        TapDisplaySettings.set_peak_min_threshold(-100.0)
+        TapDisplaySettings.set_show_unknown_modes(False)
+        try:
+            sut = _make_sut()
+            named = _make_peak_live(_OUT_OF_BAND)
+            sut.all_peaks = [named]
+            sut.selected_peak_ids = {named.id}
+            sut.annotation_visibility_mode = "all"
+            sut.set_mode_override("Wolf note", named.id)
+
+            # Dot layer.
+            assert dots_with_overrides(sut) == [305], "dot: user-named peak is shown"
+            # Annotation badges -- `all` admits every identified peak.
+            assert [p.frequency for p in sut.visible_peaks] == [305], (
+                "badge: user-named peak is annotated"
+            )
+            # The panel's criterion is `not analyzer.is_unknown(peak)`; assert the predicate
+            # directly rather than reconstructing the view's filter.
+            assert not sut.is_unknown(named), (
+                "table: user-named peak is not filtered out as unknown"
+            )
+        finally:
+            TapDisplaySettings.set_measurement_type(saved_mt)
+            TapDisplaySettings.set_peak_min_threshold(saved_pm)
+            TapDisplaySettings.set_show_unknown_modes(saved_unknown)
