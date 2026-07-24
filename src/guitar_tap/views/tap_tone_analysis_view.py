@@ -3450,34 +3450,35 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self._apply_measurement_type_to_ui()
 
-    def _on_measurement_type_changed(self, _: str, crosses_boundary: bool = True) -> None:
+    def _on_measurement_type_changed(
+        self, _: str, crosses_boundary: bool = True, guitar_type_changed: bool = False
+    ) -> None:
         """Handle a measurement-type change that originated from the settings UI.
 
-        Mirrors Swift's onApply?(measurementChanged) callback in TapSettingsView:
-        updates the UI for the new type.  Only restarts the tap sequence when the
-        change crosses the guitar/material boundary (guitar ↔ plate/brace) — a
-        guitar-to-guitar switch (e.g. Generic → Classical) preserves the current
-        tap sequence so peaks remain visible without unfreezing the spectrum.
-
-        Mirrors Swift TapSettingsView+Actions.swift: measurementChanged is only True
-        when crossesBoundary (previousType.isGuitar != selectedType.isGuitar).
+        Mirrors Swift's ``onApply(measurementChanged:guitarTypeChanged:)`` callback (Phase 7),
+        branching identically:
+        - **measurement changed** (``crosses_boundary`` — the guitar/material boundary flipped): restart
+          the tap sequence (guitar ↔ plate/brace need a fresh capture).
+        - **guitar type changed** (``guitar_type_changed`` — a guitar→guitar subtype switch, e.g.
+          Generic → Classical): a **clean-slate** re-derivation for the new type — the mode bands
+          changed, so reclassify, clear manual overrides, and re-auto-select via
+          ``reclassify_for_guitar_type_change``. NOT the wand (which preserves labels).
+        - **else** (display-only Apply, or a material→material switch): leave peaks, modes and
+          selection alone.
         """
         self._apply_measurement_type_to_ui()
-        # Only restart when crossing the guitar/material boundary.
-        # Guitar-to-guitar switches reclassify peaks with the new ranges instead.
         if self._is_running and crosses_boundary:
             self.fft_canvas.restart_tap_sequence()
-        elif not crosses_boundary:
-            # Guitar-to-guitar switch: re-run mode classification with the new
-            # guitar type's frequency bands and reset to auto peak selection.
-            # Mirrors Swift TapSettingsView+Actions.swift onApply:
-            #   tapToneAnalyzer.reclassifyPeaks()
-            #   tapToneAnalyzer.resetToAutoSelection()
+        elif guitar_type_changed:
             analyzer = self.fft_canvas.analyzer
-            analyzer.reclassify_peaks()
-            analyzer.reset_to_auto_selection()
+            analyzer.reclassify_for_guitar_type_change()
+            # Clear the VIEW-side override map too: Qt has no @Published auto-refresh, so mirror the
+            # analyzer's cleared peak_mode_overrides here or the reclassified modes would still show
+            # the stale manual labels (the Phase 5 view-sync gap). The new auto classification is
+            # rebuilt by _refresh_results_peaks off the peaksChanged below.
+            self.peak_widget.model.modes = {}
             # Emit peaksChanged: triggers _on_peaks_changed_results which propagates
-            # selected_peak_ids to the model — mirrors Swift @Published propagation.
+            # selected_peak_ids to the model — the Qt push Swift gets free via @Published.
             analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _update_measurement_badge(self) -> None:
@@ -6326,25 +6327,9 @@ class MainWindow(QtWidgets.QMainWindow):
         an.addWidget(show_unknown_widget)
         an.addWidget(_hsep())
 
-        # Analysis Frequency Range — text fields matching Swift TextField bound to analysisMinFreqInput
-        an_f_min_field = QtWidgets.QLineEdit(str(int(AS.AppSettings.analysis_f_min())))
-        an_f_min_field.setFixedWidth(_tf_width)
-        an_f_min_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-
-        an_f_max_field = QtWidgets.QLineEdit(str(int(AS.AppSettings.analysis_f_max())))
-        an_f_max_field.setFixedWidth(_tf_width)
-        an_f_max_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-
-        # analysis range persisted on Apply only
-
-        _range_block(
-            an,
-            "Analysis Frequency Range",
-            an_f_min_field, an_f_max_field,
-            "Hz",
-            "Frequency range used for peak detection",
-        )
-        an.addWidget(_hsep())
+        # The Analysis Frequency Range setting was removed in Phase 7 — it is now a fixed 30–2000 Hz
+        # constant (TapDisplaySettings.analysis_min/max_frequency). Detection is still bounded by it;
+        # only the knob is gone. The display/pan-zoom range above stays user-controllable.
 
         # Peak Detection Minimum
         peak_thresh_widget = QtWidgets.QWidget()
@@ -6445,8 +6430,6 @@ class MainWindow(QtWidgets.QMainWindow):
         reset_analysis_btn = QtWidgets.QPushButton(qta.icon("mdi.undo"), "Reset Analysis Settings")
 
         def _reset_analysis_settings() -> None:
-            an_f_min_field.setText("30")
-            an_f_max_field.setText("2000")
             peak_thresh_field.setText("-60")
 
         reset_analysis_btn.clicked.connect(_reset_analysis_settings)
@@ -7037,24 +7020,9 @@ class MainWindow(QtWidgets.QMainWindow):
             disp_db_max_field.setText(f"{new_db_max:.1f}")
             self.fft_canvas.setYRange(new_db_min, new_db_max, padding=0)
 
-            # Analysis frequency range — parse text fields, mirrors Swift applySettings()
-            # validating analysisMinFreqInput/analysisMaxFreqInput Strings.
-            try:
-                new_an_f_min = float(an_f_min_field.text())
-                new_an_f_max = float(an_f_max_field.text())
-            except ValueError:
-                new_an_f_min = AS.AppSettings.analysis_f_min()
-                new_an_f_max = AS.AppSettings.analysis_f_max()
-            new_an_f_min = max(0.0, min(new_an_f_min, new_an_f_max - 1))
-            new_an_f_max = max(new_an_f_min + 1, new_an_f_max)
-            AS.AppSettings.set_analysis_f_min(new_an_f_min)
-            AS.AppSettings.set_analysis_f_max(new_an_f_max)
-            an_f_min_field.setText(str(int(new_an_f_min)))
-            an_f_max_field.setText(str(int(new_an_f_max)))
-            # Apply immediately to analyzer — mirrors Swift's @Published didSet on
-            # minFrequency/maxFrequency which makes the new analysis window active at once.
-            self.fft_canvas.analyzer.min_frequency = new_an_f_min
-            self.fft_canvas.analyzer.max_frequency = new_an_f_max
+            # Analysis frequency range — no longer a setting (Phase 7). It is a fixed 30–2000 Hz
+            # constant; the analyzer's min_frequency/max_frequency are seeded from it at init and
+            # detection stays bounded by it. Nothing to apply here.
 
             # Show Unknown Modes — save and immediately refresh chart + results panel.
             # Unlike Swift where computed properties re-read the setting on every render,
@@ -7112,13 +7080,22 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_brace_mass(_pf(brace_mass_field, TDS.brace_mass()))
 
             # Fire _on_measurement_type_changed exactly once after all settings are
-            # persisted — mirrors Swift's onApply?(measurementChanged) callback which
-            # runs after applySettings() completes.
-            # Only crosses the guitar/material boundary when isGuitar changes —
-            # a guitar-to-guitar switch (e.g. Generic → Classical) preserves the tap sequence.
+            # persisted — mirrors Swift's onApply(measurementChanged:guitarTypeChanged:) callback
+            # which runs after applySettings() completes (Phase 7).
+            #   measurement_changed = crosses the guitar/material boundary (isGuitar flipped).
+            #   guitar_type_changed = a guitar→guitar subtype change (e.g. Generic → Classical) — the
+            #     mode bands change, so it is a clean-slate re-derivation for the new type.
+            # A display-only Apply (same type) never reaches here (gated on _type_changed/_flc_changed).
             if _type_changed or _flc_changed:
-                _crosses_boundary = _current_mt.is_guitar != mt_val.is_guitar
-                self._on_measurement_type_changed(mt_val.short_name, crosses_boundary=_crosses_boundary)
+                _measurement_changed = _current_mt.is_guitar != mt_val.is_guitar
+                _guitar_type_changed = (
+                    _type_changed and not _measurement_changed and mt_val.is_guitar
+                )
+                self._on_measurement_type_changed(
+                    mt_val.short_name,
+                    crosses_boundary=_measurement_changed,
+                    guitar_type_changed=_guitar_type_changed,
+                )
 
             # Restart the plate/brace capture state machine after all settings are
             # saved so the new phase count (2 vs 3) is immediately active.

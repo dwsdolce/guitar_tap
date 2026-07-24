@@ -658,3 +658,54 @@ class TestDefinitiveModeInfo:
         info = sut.definitive_mode_info()
         assert GuitarMode.TOP not in info, "an unselected Top is not the definitive Top"
         assert info[GuitarMode.AIR][0] == 100
+
+
+class TestPhase7Triggers:
+    """Phase 7: clean-slate guitar-type change + a new tap sequence clears ALL per-peak state.
+    Paired with Swift AnnotationStateTests (same behaviours pinned on both platforms)."""
+
+    @pytest.fixture(autouse=True)
+    def _generic(self):
+        saved = TapDisplaySettings.measurement_type()
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        yield
+        TapDisplaySettings.set_measurement_type(saved)
+
+    def test_reclassify_for_guitar_type_change_is_a_clean_slate(self):
+        # A guitar-type change re-derives for the new type: manual overrides cleared, selection reset
+        # to auto, peaks reclassified. NOT the wand (which keeps labels).
+        sut = _make_sut()
+        air = _make_peak_live(100, -25)
+        top = _make_peak_live(150, -20)
+        sut.all_peaks = [air, top]
+        sut.reclassify_peaks()
+        sut.toggle_peak_selection(air.id)
+        sut.set_mode_override("Wolf note", top.id)     # a manual label made under the OLD type
+        assert sut.has_manual_override(top.id), "precondition: override in effect"
+
+        sut.reclassify_for_guitar_type_change()
+
+        assert sut.peak_mode_overrides == {}, "clean slate clears manual overrides"
+        assert not sut.user_has_modified_peak_selection, "selection reset to auto (not user-modified)"
+        assert sut.selected_peak_ids == set(sut.guitar_mode_selected_peak_ids(sut.all_peaks)), (
+            "selection is the fresh auto-selection for the new type"
+        )
+
+    def test_start_tap_sequence_clears_all_per_peak_state(self):
+        # A new sequence must leave nothing from the previous measurement to leak into the next file.
+        sut = _make_sut()
+        air = _make_peak_live(100, -25)
+        top = _make_peak_live(150, -20)
+        sut.all_peaks = [air, top]
+        sut.reclassify_peaks()
+        sut.toggle_peak_selection(air.id)
+        sut.set_mode_override("Wolf note", top.id)
+        sut.selected_peak_frequencies = [100.0]
+        assert sut.selected_peak_ids and sut.peak_mode_overrides, "precondition: state present"
+
+        sut.start_tap_sequence()
+
+        assert sut.selected_peak_ids == set()
+        assert sut.selected_peak_frequencies == []
+        assert sut.user_has_modified_peak_selection is False
+        assert sut.peak_mode_overrides == {}

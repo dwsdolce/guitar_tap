@@ -356,6 +356,24 @@ class TapToneAnalyzerPeakAnalysisMixin:
     # Mirrors Swift TapToneAnalyzer+PeakAnalysis.swift resetToAutoSelection()
     # ------------------------------------------------------------------ #
 
+    def reclassify_for_guitar_type_change(self) -> None:
+        """Apply a guitar-subtype change (e.g. Classical → Flamenco) as a **clean slate** for the new
+        type (Phase 7, Option 1, decided with the user).
+
+        The guitar type changes what "Top" *means* (the mode bands), so classification and selection
+        are re-derived for the new type, and manual mode labels — made against the OLD bands' meaning —
+        are cleared. Peak identities and dragged-label positions are untouched (this does not
+        re-detect; ``reclassify_peaks`` only recomputes modes). Contract: *"Changing the guitar type
+        re-analyses every peak for the new type; manual labels and selections are cleared."*
+
+        Deliberately NOT the wand (``reset_to_auto_selection``), which preserves the labels — the wand
+        is the user's "clear my selection, give me pure auto" action and must stay reachable. Mirrors
+        Swift ``reclassifyForGuitarTypeChange()``.
+        """
+        self.peak_mode_overrides = {}
+        self.reclassify_peaks()
+        self.reset_to_auto_selection()
+
     def reset_to_auto_selection(self) -> None:
         """Clear the manual-modification flag and re-run auto-selection.
 

@@ -568,27 +568,23 @@ class TapDisplaySettings:
 
     @classmethod
     def analysis_min_frequency(cls) -> float:
-        """Persisted minimum frequency for analysis (Hz).
+        """The analysis frequency range minimum (Hz) — a **fixed** 30 Hz (Phase 7).
 
+        A real bound on where useful modes live (30 Hz reaches the material fLC). It was once a
+        user-editable Settings knob, but the range never needs changing, so the control was removed
+        and the value is a constant; ``find_peaks`` still restricts detection to this range — the
+        concept stays, only the knob is gone. Distinct from the display/pan-zoom range, which stays
+        user-controllable. Any old ``analysis/analysis_f_min`` QSettings value is now ignored.
         Mirrors Swift TapDisplaySettings.analysisMinFrequency.
         """
-        return _app_settings().analysis_f_min()
-
-    @classmethod
-    def set_analysis_min_frequency(cls, v: float) -> None:
-        _app_settings().set_analysis_f_min(v)
+        return cls.DEFAULT_ANALYSIS_MIN_FREQUENCY
 
     @classmethod
     def analysis_max_frequency(cls) -> float:
-        """Persisted maximum frequency for analysis (Hz).
-
-        Mirrors Swift TapDisplaySettings.analysisMaxFrequency.
-        """
-        return _app_settings().analysis_f_max()
-
-    @classmethod
-    def set_analysis_max_frequency(cls, v: float) -> None:
-        _app_settings().set_analysis_f_max(v)
+        """The analysis frequency range maximum (Hz) — a **fixed** 2000 Hz (Phase 7). Nothing useful
+        sits above 2000 Hz. See ``analysis_min_frequency``. Mirrors Swift
+        TapDisplaySettings.analysisMaxFrequency."""
+        return cls.DEFAULT_ANALYSIS_MAX_FREQUENCY
 
     # MARK: - Peak Detection
 

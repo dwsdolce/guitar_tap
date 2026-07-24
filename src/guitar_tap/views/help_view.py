@@ -556,11 +556,6 @@ def _build_help_html() -> str:
         "the main view for a quick fit, or set explicit Min/Max here."
     ))
     parts.append(_row(
-        "Analysis Frequency Range",
-        "Advanced &rarr; Analysis Settings. Peaks outside this window are ignored during "
-        "detection. Narrow it to exclude spurious low-frequency rumble or high-frequency noise."
-    ))
-    parts.append(_row(
         "Peak Min",
         "Advanced &rarr; Analysis Settings. Sets the minimum magnitude (dB) for a peak to "
         "be annotated on the spectrum chart. In guitar mode this also gates which peaks are "

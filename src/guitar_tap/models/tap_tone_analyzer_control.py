@@ -674,6 +674,15 @@ class TapToneAnalyzerControlMixin:
         # Clear annotation offsets so dragged positions reset for the new measurement.
         self.reset_all_annotation_offsets()
 
+        # Clear ALL per-peak state from the PREVIOUS measurement (Phase 7). These are keyed by the old
+        # peaks' UUIDs, so once the peaks are replaced they are invisible on screen — but they would
+        # otherwise be written verbatim into the NEXT measurement's saved file. A new sequence starts
+        # with no selection, no manual labels and no dragged offsets. Mirrors Swift startTapSequence.
+        self.selected_peak_ids = set()
+        self.selected_peak_frequencies = []
+        self.user_has_modified_peak_selection = False
+        self.peak_mode_overrides = {}
+
         # Clear frozen spectrum so live FFT is shown while waiting for taps.
         self.set_frozen_spectrum(np.array([]), np.array([]))
 
