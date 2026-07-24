@@ -158,7 +158,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if self._should_show_annotation(index):
             mag = self.magnitude_value(index)
             mode = self.mode_value(index)
-            html = self.annotation_html(freq, mag, mode)
+            html = self.annotation_html(freq, mag, mode, is_override=(freq in self.modes))
             row = index.row()
             peak_id = self._peaks[row].id if row < len(self._peaks) else ""
             self.annotationUpdate.emit(peak_id, freq, mag, html, mode)
@@ -365,14 +365,18 @@ class PeaksModel(QtCore.QAbstractTableModel):
         "Peak":         (150, 150, 150),   # secondary grey
     }
 
-    def annotation_html(self, freq: float, mag: float, mode: str) -> str:
+    def annotation_html(self, freq: float, mag: float, mode: str,
+                        is_override: bool = False) -> str:
         """Build the HTML label for an annotation, matching Swift PeakAnnotationLabel.
 
         Layout (top to bottom):
-          • Mode name  — bold, mode colour
+          • Mode name  — bold, mode colour (italic + trailing " *" when manually overridden)
           • Pitch / cents  — purple  (guitar only)
           • Frequency (Hz) — dark
           • Magnitude (dB) — grey
+
+        ``is_override`` marks the mode as a user override — shown italic with a trailing " *",
+        the one convention used everywhere (list, annotation, PDF, tables). Mirrors Swift/web.
         """
         rows: list[str] = []
 
@@ -391,7 +395,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 r, g, b = guitar_mode.color
             display = gm.mode_display_name(mode) or ""
             if display:
-                rows.append(f'<b style="color:rgb({r},{g},{b});">{display}</b>')
+                if is_override:
+                    rows.append(
+                        f'<b style="color:rgb({r},{g},{b});"><i>{display} *</i></b>'
+                    )
+                else:
+                    rows.append(f'<b style="color:rgb({r},{g},{b});">{display}</b>')
             note  = self.pitch.note(freq)
             cents = self.pitch.cents(freq)
             rows.append(
@@ -556,7 +565,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 peak_id = peaks[row].id if row < len(peaks) else ""
                 self.annotationUpdate.emit(
                     peak_id, freq, mag,
-                    self.annotation_html(freq, mag, mode), mode,
+                    self.annotation_html(freq, mag, mode, is_override=(freq in self.modes)),
+                    mode,
                 )
         self.annotationsRefreshed.emit()
 
@@ -582,7 +592,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 peak_id = self._peaks[row].id if row < len(self._peaks) else ""
                 self.annotationUpdate.emit(
                     peak_id, freq, mag,
-                    self.annotation_html(freq, mag, mode), mode,
+                    self.annotation_html(freq, mag, mode, is_override=(freq in self.modes)),
+                    mode,
                 )
         self.annotationsRefreshed.emit()
 

@@ -252,7 +252,9 @@ class ExportableSpectrumChart:
         """Mirrors ``private func peakColor(for peak: ResonantPeak) -> Color``."""
         from PySide6 import QtGui
         if self.is_guitar:
-            # Freeform user-defined label → distinct teal colour.
+            # Override wins for colour (like the label): a predefined override → THAT mode's colour;
+            # a freeform label → distinct user-defined teal. Was falling through to the auto colour
+            # for a standard-mode override — the reported bug. Mirrors Swift peakColor.
             peak_id = getattr(peak, "id", None)
             override_label = self.mode_overrides.get(peak_id)
             if override_label and self._GuitarMode is not None:
@@ -260,6 +262,8 @@ class ExportableSpectrumChart:
                 if resolved is self._GuitarMode.UNKNOWN and override_label != "Unknown":
                     r, g, b = self._GuitarMode.USER_DEFINED_COLOR
                     return QtGui.QColor(r, g, b)
+                r, g, b = resolved.color
+                return QtGui.QColor(r, g, b)
             # _mode_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode].
             mode = self._mode_map.get(peak_id)
             if mode is not None and self._GuitarMode is not None:
@@ -274,11 +278,19 @@ class ExportableSpectrumChart:
                 return QtGui.QColor(130, 60, 200)
         return QtGui.QColor(130, 130, 130)
 
+    def is_override(self, peak) -> bool:
+        """True when *peak* carries a manual (user-assigned) mode override — for the italic + " *"
+        marker (the one convention used everywhere). Mirrors Swift ``isManualOverride``."""
+        return getattr(peak, "id", None) in self.mode_overrides
+
     def peak_mode_label(self, peak, idx: int) -> str:
-        """Mirrors ``private func peakModeLabel(for peak: ResonantPeak) -> String``."""
+        """Mirrors ``private func peakModeLabel(for peak: ResonantPeak) -> String``.
+
+        A manual override is shown with a trailing " *" (and italic at the draw site) — the one
+        convention used everywhere (list, live annotation, PDF, tables, export image)."""
         override = self.mode_overrides.get(getattr(peak, "id", None))
         if override:
-            return override
+            return f"{override} *"
         if self.is_guitar:
             # _mode_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode].
             mode = self._mode_map.get(getattr(peak, "id", None))
@@ -623,8 +635,11 @@ class ExportableSpectrumChart:
 
             row_y = card_y + int(4 * SCALE)
 
-            # Mode label — mirrors Text(peakModeLabel(for:)).font(.system(size:16,weight:.bold))
-            painter.setFont(annot_font_mode)
+            # Mode label — mirrors Text(peakModeLabel(for:)).font(.system(size:16,weight:.bold)).
+            # Italic when overridden (label already carries the trailing " *").
+            mode_lbl_font = QtGui.QFont(annot_font_mode)
+            mode_lbl_font.setItalic(self.is_override(peak))
+            painter.setFont(mode_lbl_font)
             painter.setPen(color)
             painter.drawText(
                 card_x, row_y, ANNOT_W, int(28 * SCALE),
@@ -952,9 +967,12 @@ def make_exportable_spectrum_view(
                 QtCore.Qt.AlignmentFlag.AlignCenter, f"{peak.frequency:.1f} Hz",
             )
 
-            # Swift: Text(mode.displayName).font(.caption2).foregroundColor(mode.color)
+            # Swift: Text(peakModeLabel(for:)).font(.caption2).foregroundColor(peakColor(for:)).
+            # Override-aware label + color (peak_mode_label / peak_color read mode_overrides),
+            # italic + trailing " *" when overridden — matches the on-graph annotation and the list.
             mode_font = QtGui.QFont()
             mode_font.setPixelSize(9 * SCALE)  # mirrors .font(.caption2)
+            mode_font.setItalic(chart.is_override(peak))
             painter.setFont(mode_font)
             painter.drawText(
                 x_card + 4 * SCALE, y + 24 * SCALE, card_w - 8 * SCALE, 18 * SCALE,

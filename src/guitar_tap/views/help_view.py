@@ -182,7 +182,9 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Overriding Mode Classification",
         "If a peak is labelled Unknown, or misclassified, click it in the Results list "
-        "and assign the correct mode manually. Your override is saved with the measurement."
+        "and assign the correct mode manually. An overridden mode is shown in italics with a "
+        "trailing asterisk (*) so it stands out from the automatic classification. "
+        "Your override is saved with the measurement."
     ))
     parts.append(_row(
         "Step 6 &mdash; Save",

@@ -896,8 +896,19 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             mag_str  = f"{peak.magnitude:.1f} dB"
             if is_guitar:
                 label, is_ovr = _effective_mode_label(peak)
-                mode  = peak_modes.get(peak.id, GM.GuitarMode.UNKNOWN)
-                mc    = _mode_color(mode)
+                # Color is override-aware too (matching the label): a predefined override → that
+                # mode's color; a freeform label → user-defined teal; else the auto mode. Was using
+                # the auto mode unconditionally — the reported bug.
+                _ovr = peak_mode_overrides.get(peak.id)
+                if _ovr:
+                    _resolved = GM.GuitarMode.from_mode_string(_ovr)
+                    if _resolved is GM.GuitarMode.UNKNOWN and _ovr != "Unknown":
+                        _uc = GM.GuitarMode.USER_DEFINED_COLOR
+                        mc = colors.Color(_uc[0] / 255.0, _uc[1] / 255.0, _uc[2] / 255.0)
+                    else:
+                        mc = _mode_color(_resolved)
+                else:
+                    mc = _mode_color(peak_modes.get(peak.id, GM.GuitarMode.UNKNOWN))
                 mode_para = Paragraph(
                     f"<font color='#{int(mc.red*255):02x}{int(mc.green*255):02x}{int(mc.blue*255):02x}'>"
                     f"{'<i>' if is_ovr else ''}{label}{'</i>' if is_ovr else ''}</font>",

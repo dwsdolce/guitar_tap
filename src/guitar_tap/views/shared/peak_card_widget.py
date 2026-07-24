@@ -262,11 +262,12 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._chip.setPixmap(pixmap)
         self._chip.setStyleSheet("")
 
-        # Mode button label — a pencil glyph marks a manual override, mirroring
-        # Swift's pencil.circle.fill on the label (web appends the same ✎ glyph).
+        # Mode button label — a manual override is shown italic with a trailing " *",
+        # the one convention used everywhere (list, annotation, PDF, tables). No glyph:
+        # at label size it was unreadable. Mirrors Swift/web.
         display = _short_mode(self._mode)
         if self._is_manual:
-            display = f"{display} ✎"
+            display = f"{display} *"
         italic = "italic" if self._is_manual else "normal"
         self._mode_btn.setText(display)
         self._mode_btn.setStyleSheet(
