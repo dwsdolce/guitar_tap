@@ -42,6 +42,11 @@ class PeaksModel(QtCore.QAbstractTableModel):
     # the analyzer (mirrors Swift onToggleSelection -> togglePeakSelection). NOT emitted for
     # programmatic bulk updates (select_all/deselect_all).
     selectionToggled: QtCore.Signal = QtCore.Signal(str)
+    # A USER mode-override change carrying (peak_id, new_label); "" = reset to auto. The view routes
+    # it to analyzer.set_mode_override (mirrors selectionToggled -> toggle_peak_selection), so the
+    # definitive-mode uniqueness enforcement runs. Qt is imperative: SwiftUI binds the change to
+    # setModeOverride reactively; Python must forward it. NOT emitted for programmatic/bulk updates.
+    modeOverrideChanged: QtCore.Signal = QtCore.Signal(str, str)
     modeColorsChanged: QtCore.Signal = QtCore.Signal(object)  # dict[float, tuple[int,int,int]]
 
     mode_strings: list[str] = [
@@ -67,6 +72,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
     def __init__(self, data: npt.NDArray) -> None:
         super().__init__()
         self._peaks: list = []  # list[ResonantPeak] — authoritative peak objects
+        # Optional back-reference to the analyzer, set by the view (as it does for the annotation
+        # layer). Used ONLY to resolve the override-BLIND auto mode for the "Reset to Auto-Detected"
+        # label via analyzer.auto_detected_mode — the model source of truth (mirrors Swift).
+        self._analyzer = None
         self._data: npt.NDArray = data
         self.pitch: pitch_c.Pitch = pitch_c.Pitch(440)
         self.modes_width: int = len(max(self.mode_strings, key=len))
@@ -158,12 +167,20 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Sets the value of the mode."""
-        # print("PeaksModel: set_mode_value")
         self.modes[self.freq_value(index)] = value
+        # Route a USER mode change to the analyzer (Qt vs SwiftUI) so enforce runs; skip programmatic.
+        if not getattr(self, "_programmatic_update", False):
+            peak_id = self._peak_id_at(index)
+            if peak_id:
+                self.modeOverrideChanged.emit(peak_id, value)
 
     def reset_mode_value(self, index: QtCore.QModelIndex) -> None:
         """Remove any manual mode override, reverting to auto-classification."""
         self.modes.pop(self.freq_value(index), None)
+        if not getattr(self, "_programmatic_update", False):
+            peak_id = self._peak_id_at(index)
+            if peak_id:
+                self.modeOverrideChanged.emit(peak_id, "")  # "" = reset to auto
 
     def _emit_mode_colors(self) -> None:
         """Emit modeColorsChanged with the current freq→RGB color map.
@@ -260,28 +277,27 @@ class PeaksModel(QtCore.QAbstractTableModel):
         return _mode.display_name
 
     def peak_mode(self, index: QtCore.QModelIndex) -> str:
-        """Return the auto-classified mode string for a peak, ignoring any user override.
+        """Return the AUTO-detected mode string for a peak — **override-blind** — for the
+        "Reset to Auto-Detected (X)" menu label (the target of the reset, not the current label).
 
-        Mirrors Swift ``analyzer.peakMode(for:)`` — reads from ``identifiedModes``
-        (computed via ``classifyAll`` with full peak context) and never uses the
-        simple single-frequency range lookup.
-
-        Used by the card widget to show the correct label in
-        "Reset to Auto-Detected (X)" — identical to Swift's
-        ``"Reset to Auto-Detected (\\(mode.displayName))"``
-        where ``mode`` is ``analyzer.peakMode(for: peak)``.
+        Delegates to the analyzer's ``auto_detected_mode`` — the model source of truth — mirroring
+        Swift where the reset row consumes ``analyzer.autoDetectedMode(for:)``. **Must NOT read
+        ``_auto_mode_map``**: that map is populated from the override-AWARE ``analyzer.peak_mode`` (it
+        drives mode colours), so reading it here showed the *current* label, not the auto one — the
+        exact bug Swift Phase 5 fixed. Falls back to an override-blind ``classify_all`` only when no
+        analyzer is wired (isolated model tests).
         """
-        freq = self.freq_value(index)
         if not self.is_guitar:
             # Plate/brace: auto-label is the phase-assigned role, same as mode_value
             # (there are no user overrides for plate/brace in the card menu).
             return self.mode_value(index)
-        mode = self._auto_mode_map.get(self._peak_id_at(index))
-        if mode is not None:
-            return mode.display_name
-        # Fallback — same as mode_value fallback but always ignores overrides.
+        row = index.row()
+        peak = self._peaks[row] if 0 <= row < len(self._peaks) else None
+        if peak is not None and self._analyzer is not None:
+            return self._analyzer.auto_detected_mode(peak).display_name
+        # Fallback (no analyzer wired): override-blind classify_all on the frequency.
         from models.resonant_peak import ResonantPeak as _RP
-        _fake = _RP(frequency=freq, magnitude=0.0, quality=1.0)
+        _fake = _RP(frequency=self.freq_value(index), magnitude=0.0, quality=1.0)
         _mode = gm.GuitarMode.classify_all([_fake]).get(_fake.id, gm.GuitarMode.UNKNOWN)
         return _mode.display_name
 

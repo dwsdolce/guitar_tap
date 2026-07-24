@@ -1339,6 +1339,24 @@ class TapToneAnalyzer(
         # Mirrors Swift .auto case: peakMode(for: peak).displayName
         return self.peak_mode(peak).display_name
 
+    def auto_detected_mode(self, peak) -> "GuitarMode":
+        """The mode this peak would carry with **no** override — the mode a "Reset to Auto-Detected"
+        would restore it to.
+
+        Deliberately override-BLIND: it reads the auto-classification (``identified_modes``, falling
+        back to ``GuitarMode.classify_all``) and never consults ``peak_mode_overrides``. This is
+        exactly the value the reset menu item should name — the target of the reset, not the current
+        label. ``UNKNOWN`` is a legitimate result (a peak in no band) and is shown as such.
+
+        Mirrors Swift ``autoDetectedMode(for:)``.
+        """
+        from .guitar_mode import GuitarMode
+        for entry in self.identified_modes:
+            if entry.get("peak") and entry["peak"].id == peak.id:
+                return entry["mode"]
+        from models.tap_display_settings import TapDisplaySettings as _tds
+        return GuitarMode.classify_all([peak], _tds.guitar_type()).get(peak.id, GuitarMode.UNKNOWN)
+
     def set_mode_override(self, mode: "str | None", peak_id: str) -> None:
         """Set or clear a mode-label override for a specific peak.
 
@@ -1351,6 +1369,10 @@ class TapToneAnalyzer(
             self.peak_mode_overrides.pop(peak_id, None)
         else:
             self.peak_mode_overrides[peak_id] = mode
+        # A mode change on an ALREADY-SELECTED peak can leave two definitive peaks in one mode; that
+        # is the only way an override touches selection. Relabelling an unselected peak just adds a
+        # candidate (enforce early-returns for it). Mirrors Swift setModeOverride.
+        self.enforce_definitive_mode_uniqueness(preferring=peak_id)
 
     def has_manual_override(self, peak_id: str) -> bool:
         """Return ``True`` when the peak has a manually-assigned (non-auto) mode label.
@@ -1410,21 +1432,60 @@ class TapToneAnalyzer(
             peak_id: ``ResonantPeak.id`` (UUID string).
         """
         current = set(self.selected_peak_ids)
-        if peak_id in current:
+        was_selected = peak_id in current
+        if was_selected:
             current.discard(peak_id)
         else:
             current.add(peak_id)
         self.selected_peak_ids = current
+        if not was_selected:
+            # Selecting a peak whose mode already has a definitive holder deselects the previous one.
+            self.enforce_definitive_mode_uniqueness(preferring=peak_id)
         self.user_has_modified_peak_selection = True
 
-    def select_all_peaks(self) -> None:
-        """Mark all peaks as selected.
+    @property
+    def single_holder_modes(self) -> set:
+        """The modes that can have at most one **definitive** (selected) peak.
 
-        "All" means all — over the durable set, not the Peak-Min projection (Swift Phase 4a).
-        Mirrors Swift ``selectAllPeaks()``. (Removed in Phase 5.)
+        Air, Top and Back are single physical resonances, so exactly one peak can be *the* Air, Top or
+        Back. Dipole, Ring and Upper Modes are clusters — several selected peaks are meaningful there,
+        so they are deliberately unconstrained. Mirrors Swift ``TapToneAnalyzer.singleHolderModes``.
         """
-        self.selected_peak_ids = {p.id for p in self.all_peaks}
-        self.user_has_modified_peak_selection = True
+        from .guitar_mode import GuitarMode
+        return {GuitarMode.AIR, GuitarMode.TOP, GuitarMode.BACK}
+
+    def enforce_definitive_mode_uniqueness(self, preferring: str) -> None:
+        """Keep the selection invariant: **at most one selected peak per Air / Top / Back**.
+
+        The selected peak *is* the definitive Air/Top/Back; every other peak of that mode remains a
+        candidate. Deselecting a peak does **not** relabel it — classification is band membership and
+        is untouched by selection. This only ever removes other peaks from the selection; it never
+        reclassifies and never promotes a replacement. Called from the two things that can break the
+        invariant: ``toggle_peak_selection`` (select branch) and ``set_mode_override``. Overriding an
+        *unselected* peak changes no selection; overriding the definitive Top away leaves Top with no
+        definitive peak, deliberately (nothing auto-promotes). Guitar only.
+
+        Mirrors Swift ``enforceDefinitiveModeUniqueness(preferring:)``.
+        """
+        from .tap_display_settings import TapDisplaySettings
+        if not TapDisplaySettings.measurement_type().is_guitar:
+            return
+        if preferring not in self.selected_peak_ids:
+            return
+        winner = next((p for p in self.all_peaks if p.id == preferring), None)
+        if winner is None:
+            return
+        # Resolve through peak_mode() — the OVERRIDE-AWARE path. identified_modes is built from
+        # classify_all alone and never consults overrides, so using it here would silently ignore a
+        # mode the user assigned by hand. (See Phase 6.)
+        mode = self.peak_mode(winner).normalized
+        if mode not in self.single_holder_modes:
+            return
+        for other in self.all_peaks:
+            if (other.id != preferring
+                    and other.id in self.selected_peak_ids
+                    and self.peak_mode(other).normalized == mode):
+                self.selected_peak_ids.discard(other.id)
 
     def select_no_peaks(self) -> None:
         """Clear all peak selections.

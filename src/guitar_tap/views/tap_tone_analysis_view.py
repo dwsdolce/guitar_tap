@@ -1174,7 +1174,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addLayout(mic_row)
 
-        # Row 2: "Showing …" (left) + Select All / Deselect All / Reset buttons (right)
+        # Row 2: "Showing …" (left) + Deselect All / Reset buttons (right). No Select All (Phase 5).
         freq_row = QtWidgets.QHBoxLayout()
         self.freq_range_label = QtWidgets.QLabel(
             f"Showing {f_range['f_min']} – {f_range['f_max']} Hz"
@@ -1182,16 +1182,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.freq_range_label.setFont(small_font)
         freq_row.addWidget(self.freq_range_label, stretch=1)
 
-        # qtawesome icons (not Qt's SP_Dialog* standard pixmaps — those render blank on the
-        # macOS style, leaving the buttons invisible). Mirrors Swift checkmark.circle / xmark.circle.
-        self.select_all_btn = QtWidgets.QToolButton()
-        self.select_all_btn.setIcon(qta.icon("fa5s.check-circle", color="gray"))
-        self.select_all_btn.setIconSize(QtCore.QSize(14, 14))
-        self.select_all_btn.setFixedSize(22, 22)
-        self.select_all_btn.setToolTip("Select all peaks")
-        self.select_all_btn.setEnabled(False)
-        freq_row.addWidget(self.select_all_btn)
-
+        # qtawesome icons (not Qt's SP_Dialog* standard pixmaps — those render blank on the macOS
+        # style, leaving the buttons invisible). Mirrors Swift xmark.circle (Select None). There is
+        # deliberately no "Select All": Air, Top and Back can each have at most ONE definitive peak,
+        # so selecting "all" is meaningless (Phase 5).
         self.deselect_all_btn = QtWidgets.QToolButton()
         self.deselect_all_btn.setIcon(qta.icon("fa5s.times-circle", color="gray"))
         self.deselect_all_btn.setIconSize(QtCore.QSize(14, 14))
@@ -2105,12 +2099,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.annotations_btn.clicked.connect(self._on_cycle_annotation_mode)
 
         # Select / deselect / reset-auto all peaks
-        self.select_all_btn.clicked.connect(self._on_select_all_peaks)
         self.deselect_all_btn.clicked.connect(self._on_deselect_all_peaks)
         self.reset_auto_selection_btn.clicked.connect(self._on_reset_auto_selection)
         # Route a user per-peak toggle through the analyzer (Phase 2 C) — mirrors Swift
         # onToggleSelection -> analyzer.togglePeakSelection.
+        # Give the model a back-reference to the analyzer so the "Reset to Auto-Detected" label can
+        # resolve the override-BLIND auto mode via analyzer.auto_detected_mode (Phase 5; mirrors
+        # Swift's row consuming analyzer.autoDetectedMode).
+        self.peak_widget.model._analyzer = self.fft_canvas.analyzer
         self.peak_widget.model.selectionToggled.connect(self._on_peak_selection_toggled)
+        self.peak_widget.model.modeOverrideChanged.connect(self._on_mode_override_changed)
         self.peak_widget.model.userModifiedSelectionChanged.connect(
             self._on_user_modified_selection_changed
         )
@@ -2128,6 +2126,10 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peaksChanged.connect(self._material_peak_widget.update_peaks)
         canvas.peaksChanged.connect(self._on_peaks_changed_multi_tap)
         canvas.peakSelected.connect(self.peak_widget.select_row)
+        # A dot click must also draw the graph's red-star highlight, exactly as a table click does.
+        # Without this the canvas signal only reached select_row (table row), never _on_peak_selected
+        # (which calls fft_canvas.select_peak) — so clicking a dot updated the table but not the star.
+        canvas.peakSelected.connect(self._on_peak_selected)
         canvas.peakDeselected.connect(self.peak_widget.clear_selection)
         canvas.framerateUpdate.connect(self._on_framerate_update)
         canvas.levelChanged.connect(self._on_level_changed)
@@ -2494,7 +2496,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._menu_save_action.setEnabled(True)
             self._menu_export_spectrum_action.setEnabled(True)
             self._menu_export_pdf_action.setEnabled(True)
-            self.select_all_btn.setEnabled(mt.is_guitar)
             self.deselect_all_btn.setEnabled(mt.is_guitar)
             self.reset_auto_selection_btn.setEnabled(
                 mt.is_guitar and self.peak_widget.model.user_has_modified_peak_selection
@@ -2511,7 +2512,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._menu_save_action.setEnabled(False)
             self._menu_export_spectrum_action.setEnabled(False)
             self._menu_export_pdf_action.setEnabled(False)
-            self.select_all_btn.setEnabled(False)
             self.deselect_all_btn.setEnabled(False)
             self.reset_auto_selection_btn.setEnabled(False)
             self._reanalyze_btn.setEnabled(False)
@@ -3297,12 +3297,6 @@ class MainWindow(QtWidgets.QMainWindow):
     # Peak select / deselect all
     # ================================================================
 
-    def _on_select_all_peaks(self) -> None:
-        # Route through the analyzer (Phase 2 C); the push-over syncs the widget model.
-        analyzer = self.fft_canvas.analyzer
-        analyzer.select_all_peaks()
-        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
-
     def _on_deselect_all_peaks(self) -> None:
         analyzer = self.fft_canvas.analyzer
         analyzer.select_no_peaks()
@@ -3317,6 +3311,19 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         analyzer = self.fft_canvas.analyzer
         analyzer.toggle_peak_selection(peak_id)
+        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
+
+    def _on_mode_override_changed(self, peak_id: str, label: str) -> None:
+        """Route a user mode-override change to the analyzer (Phase 5; Qt vs SwiftUI).
+
+        ``set_mode_override`` runs ``enforce_definitive_mode_uniqueness``, so relabelling a selected
+        peak into Air/Top/Back displaces the previous definitive holder. Mirrors Swift, where the mode
+        picker binds to ``analyzer.setModeOverride``. The subsequent ``peaksChanged`` re-emits so the
+        displaced peak's deselection and the new classification propagate to the widget and chart.
+        An empty label means "reset to auto".
+        """
+        analyzer = self.fft_canvas.analyzer
+        analyzer.set_mode_override(label if label else None, peak_id)
         analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_reset_auto_selection(self) -> None:
@@ -4168,7 +4175,6 @@ class MainWindow(QtWidgets.QMainWindow):
             and not _is_multi_tap_initiated
             and self.peak_widget.model.rowCount(QtCore.QModelIndex()) > 0
         )
-        self.select_all_btn.setVisible(_has_peaks)
         self.deselect_all_btn.setVisible(_has_peaks)
         self.reset_auto_selection_btn.setVisible(
             _has_peaks and TDS.measurement_type().is_guitar
@@ -4228,7 +4234,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Peak-selection buttons ─────────────────────────────────────────────
         can_select = self._is_measurement_complete and not is_comparing and TDS.measurement_type().is_guitar
-        self.select_all_btn.setEnabled(can_select)
         self.deselect_all_btn.setEnabled(can_select)
         self.reset_auto_selection_btn.setEnabled(
             can_select and self.peak_widget.model.user_has_modified_peak_selection
