@@ -34,7 +34,7 @@
 
 ### Peaks & Modes
 
-- **Naming a peak identifies it.** Giving a peak a mode name now marks it as a known, identified mode — it is no longer treated as an unknown peak once you have named it.
+- **Reclassifying an unknown peak.** A peak classified as unknown — one in no known mode range — that you manually reclassify as another mode (an existing mode or a user-defined one) is no longer unknown, so Show Unknown Modes no longer hides it.
 - **One definitive Air, Top, and Back.** Each of these modes now resolves to a single definitive peak — the selected peak whose (possibly overridden) mode matches. The **Select All Peaks** control has been removed; selection is per-peak, and the identified modes follow from it.
 - **Derived values follow your selection and overrides.** The tap-tone ratio and other derived figures are now computed from the definitive peaks, so they reflect your peak selection and any mode overrides you have applied rather than the raw strongest peak.
 - **Multi-tap Taps table honours overrides.** When you override a mode in a multi-tap measurement, the averaged **Taps** table row now shows the peak you chose (marked in *italics with an asterisk*), matching page 1 of the PDF report, instead of the algorithm's automatic pick.

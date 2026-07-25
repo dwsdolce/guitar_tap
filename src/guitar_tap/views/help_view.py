@@ -184,7 +184,9 @@ def _build_help_html() -> str:
         "If a peak is labelled Unknown, or misclassified, click it in the Results list "
         "and assign the correct mode manually. An overridden mode is shown in italics with a "
         "trailing asterisk (*) so it stands out from the automatic classification. "
-        "Your override is saved with the measurement."
+        "Your override is saved with the measurement. Reclassifying a peak from "
+        "unknown to another mode &mdash; an existing mode or a user-defined one &mdash; "
+        "means the Show Unknown Modes setting no longer hides it."
     ))
     parts.append(_row(
         "Step 6 &mdash; Save",
@@ -545,7 +547,9 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Show Unknown Modes",
         "Guitar mode only &mdash; found in Advanced &rarr; Analysis Settings. When off, "
-        "peaks outside the known mode frequency windows are hidden, reducing clutter."
+        "peaks outside the known mode frequency windows are hidden, reducing clutter. "
+        "A peak you have manually reclassified from unknown to another mode &mdash; an "
+        "existing mode or a user-defined one &mdash; is no longer unknown and stays visible."
     ))
     parts.append(_row(
         "Display Frequency Range",
