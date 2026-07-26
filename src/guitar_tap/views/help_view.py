@@ -152,7 +152,10 @@ def _build_help_html() -> str:
         "favour of the lower mode. Click a peak label to toggle its selection. "
         "Use the Annotations button to cycle through "
         "All / Selected / None label modes. In the Results panel, the wand button resets "
-        "selections back to automatic if you have made manual changes."
+        "selections back to automatic if you have made manual changes. On desktop, clicking "
+        "a peak's dot highlights it and scrolls its Analysis Results row into view (and "
+        "clicking a row highlights its dot); click either again to clear. This only locates "
+        "a peak &mdash; it is separate from selection."
     ))
     parts.append(_row(
         "Step 5 &mdash; Read the Results",
