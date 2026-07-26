@@ -93,6 +93,20 @@ All dependencies (runtime + optional extras) are declared in [pyproject.toml](py
 * Launch the app:
 	- `python -m guitar_tap`
 
+## Soak / stress testing
+
+`Tooling/soak.sh` is an on-demand **dev tool** (not CI) that loops the fast pytest
+suite many times to surface nondeterministic teardown/GC races (e.g. QObject
+finalisation) that a single run hides:
+
+```bash
+./Tooling/soak.sh 200        # 200 runs; exits non-zero on any failure or hang
+```
+
+It runs under bash on macOS, Linux, and Windows (Cygwin / Git-Bash); the interpreter
+is auto-detected (`.venv/bin` or Windows `.venv/Scripts`, else `python` on PATH).
+A green soak is **confidence, not proof** — use a few hundred to ~1000 runs.
+
 ## Building installers
 
 Install the packaging extras (adds PyInstaller):
