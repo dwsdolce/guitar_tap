@@ -25,6 +25,7 @@ from models import microphone_calibration as _mc_mod
 from models import plate_stiffness_preset as PSP
 from models.analysis_display_mode import AnalysisDisplayMode
 from models.annotation_visibility_mode import AnnotationVisibilityMode
+from models import field_precision as fp
 from models.tap_display_settings import TapDisplaySettings as TDS
 from PySide6 import QtCore, QtGui, QtWidgets
 from views.comparison_results_view import ComparisonResultsView
@@ -5892,12 +5893,20 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_layout.addWidget(plate_dims_hdr)
         plate_layout.addWidget(_hsep())
 
-        def _dim_field(unit: str, value: float) -> QtWidgets.QLineEdit:
-            """Text field for a dimension value — mirrors Swift TextField bound to a String."""
-            tf = QtWidgets.QLineEdit(str(value))
+        def _decimal_validator(decimals: int) -> QtGui.QRegularExpressionValidator:
+            """Restrict a field to `decimals` fractional digits (see fp.input_regex) — the mirror of
+            Swift's limitedInput binding, so a keystroke exceeding the precision is rejected."""
+            return QtGui.QRegularExpressionValidator(
+                QtCore.QRegularExpression(fp.input_regex(decimals)))
+
+        def _dim_field(unit: str, value: float, decimals: int) -> QtWidgets.QLineEdit:
+            """Text field for a dimension value, restricted to `decimals` fractional digits and
+            displayed at that precision. Mirrors Swift _dim_field + limitedInput."""
+            tf = QtWidgets.QLineEdit(fp.string(value, decimals))
             tf.setFixedWidth(80)
             tf.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
             tf.setPlaceholderText(unit)
+            tf.setValidator(_decimal_validator(decimals))
             return tf
 
         def _dim_row(text: str, widget: QtWidgets.QWidget,
@@ -5910,10 +5919,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 row.addWidget(QtWidgets.QLabel(unit))
             return row
 
-        plate_length_field = _dim_field("mm", TDS.plate_length())
-        plate_width_field = _dim_field("mm", TDS.plate_width())
-        plate_thick_field = _dim_field("mm", TDS.plate_thickness())
-        plate_mass_field = _dim_field("g", TDS.plate_mass())
+        plate_length_field = _dim_field("mm", TDS.plate_length(), fp.LINEAR_DIMENSION_MM)
+        plate_width_field = _dim_field("mm", TDS.plate_width(), fp.LINEAR_DIMENSION_MM)
+        plate_thick_field = _dim_field("mm", TDS.plate_thickness(), fp.LINEAR_DIMENSION_MM)
+        plate_mass_field = _dim_field("g", TDS.plate_mass(), fp.MASS_G)
 
         plate_density_lbl = QtWidgets.QLabel("—")
         plate_density_lbl.setFont(small)
@@ -5989,8 +5998,8 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_layout.addWidget(gore_desc)
         plate_layout.addWidget(_hsep())
 
-        gore_body_len_field = _dim_field("mm", TDS.guitar_body_length())
-        gore_body_wid_field = _dim_field("mm", TDS.guitar_body_width())
+        gore_body_len_field = _dim_field("mm", TDS.guitar_body_length(), fp.BODY_DIMENSION_MM)
+        gore_body_wid_field = _dim_field("mm", TDS.guitar_body_width(), fp.BODY_DIMENSION_MM)
         plate_layout.addLayout(_dim_row("Body Length (a):", gore_body_len_field, "mm"))
         plate_layout.addWidget(_hsep())
         plate_layout.addLayout(_dim_row("Lower Bout Width (b):", gore_body_wid_field, "mm"))
@@ -6033,9 +6042,10 @@ class MainWindow(QtWidgets.QMainWindow):
         custom_fvs_row = QtWidgets.QHBoxLayout(custom_fvs_widget)
         custom_fvs_row.setContentsMargins(0, 0, 0, 0)
         custom_fvs_row.addWidget(QtWidgets.QLabel("Custom f_vs value:"))
-        custom_fvs_field = QtWidgets.QLineEdit(str(TDS.custom_plate_stiffness()))
+        custom_fvs_field = QtWidgets.QLineEdit(fp.string(TDS.custom_plate_stiffness(), fp.STIFFNESS))
         custom_fvs_field.setFixedWidth(80)
         custom_fvs_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        custom_fvs_field.setValidator(_decimal_validator(fp.STIFFNESS))
         custom_fvs_row.addWidget(custom_fvs_field)
         custom_fvs_widget.setVisible(fvs_combo.currentText() == "Custom")
         fvs_combo.currentTextChanged.connect(
@@ -6057,10 +6067,10 @@ class MainWindow(QtWidgets.QMainWindow):
         brace_layout.addWidget(brace_dims_hdr)
         brace_layout.addWidget(_hsep())
 
-        brace_length_field = _dim_field("mm", TDS.brace_length())
-        brace_width_field = _dim_field("mm", TDS.brace_width())
-        brace_thick_field = _dim_field("mm", TDS.brace_thickness())
-        brace_mass_field = _dim_field("g", TDS.brace_mass())
+        brace_length_field = _dim_field("mm", TDS.brace_length(), fp.LINEAR_DIMENSION_MM)
+        brace_width_field = _dim_field("mm", TDS.brace_width(), fp.LINEAR_DIMENSION_MM)
+        brace_thick_field = _dim_field("mm", TDS.brace_thickness(), fp.LINEAR_DIMENSION_MM)
+        brace_mass_field = _dim_field("g", TDS.brace_mass(), fp.MASS_G)
 
         brace_density_lbl = QtWidgets.QLabel("—")
         brace_density_lbl.setFont(small)
@@ -6181,8 +6191,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # selected type so the Display Settings section shows the correct range.
             # Mirrors Swift TapSettingsView+Sections.swift onChange(of: selectedMeasurementType)
             # which sets minFreqInput/maxFreqInput string state without touching the axis.
-            disp_f_min_field.setText(str(AS.AppSettings.f_min(mt_val)))
-            disp_f_max_field.setText(str(AS.AppSettings.f_max(mt_val)))
+            disp_f_min_field.setText(fp.string(AS.AppSettings.f_min(mt_val), fp.FREQUENCY_HZ))
+            disp_f_max_field.setText(fp.string(AS.AppSettings.f_max(mt_val), fp.FREQUENCY_HZ))
 
         meas_type_combo.currentTextChanged.connect(_on_meas_type_changed)
 
@@ -6226,28 +6236,32 @@ class MainWindow(QtWidgets.QMainWindow):
         _tf_width = 70
 
         disp_f_min_field = QtWidgets.QLineEdit(
-            str(int(AS.AppSettings.f_min(self.fft_canvas.analyzer._measurement_type)))
+            fp.string(AS.AppSettings.f_min(self.fft_canvas.analyzer._measurement_type), fp.FREQUENCY_HZ)
         )
         disp_f_min_field.setFixedWidth(_tf_width)
         disp_f_min_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        disp_f_min_field.setValidator(_decimal_validator(fp.FREQUENCY_HZ))
 
         disp_f_max_field = QtWidgets.QLineEdit(
-            str(int(AS.AppSettings.f_max(self.fft_canvas.analyzer._measurement_type)))
+            fp.string(AS.AppSettings.f_max(self.fft_canvas.analyzer._measurement_type), fp.FREQUENCY_HZ)
         )
         disp_f_max_field.setFixedWidth(_tf_width)
         disp_f_max_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        disp_f_max_field.setValidator(_decimal_validator(fp.FREQUENCY_HZ))
 
         disp_db_min_field = QtWidgets.QLineEdit(
-            f"{AS.AppSettings.db_min():.1f}"
+            fp.string(AS.AppSettings.db_min(), fp.MAGNITUDE_DB)
         )
         disp_db_min_field.setFixedWidth(_tf_width)
         disp_db_min_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        disp_db_min_field.setValidator(_decimal_validator(fp.MAGNITUDE_DB))
 
         disp_db_max_field = QtWidgets.QLineEdit(
-            f"{AS.AppSettings.db_max():.1f}"
+            fp.string(AS.AppSettings.db_max(), fp.MAGNITUDE_DB)
         )
         disp_db_max_field.setFixedWidth(_tf_width)
         disp_db_max_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        disp_db_max_field.setValidator(_decimal_validator(fp.MAGNITUDE_DB))
 
         _range_block(
             dg,
@@ -6340,9 +6354,10 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_hdr.setFont(hdr_font)
         pt_layout.addWidget(pt_hdr)
         pt_row = QtWidgets.QHBoxLayout()
-        peak_thresh_field = QtWidgets.QLineEdit(f"{AS.AppSettings.peak_min_threshold():.0f}")
+        peak_thresh_field = QtWidgets.QLineEdit(fp.string(AS.AppSettings.peak_min_threshold(), fp.MAGNITUDE_DB))
         peak_thresh_field.setFixedWidth(_tf_width)
         peak_thresh_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        peak_thresh_field.setValidator(_decimal_validator(fp.MAGNITUDE_DB))
         pt_row.addWidget(peak_thresh_field)
         pt_row.addWidget(QtWidgets.QLabel("dB"))
         pt_row.addStretch()
@@ -7055,29 +7070,29 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Plate / brace / gore / f_vs dimensions — parse text fields, mirrors Swift
             # applySettings() which parses plateLengthInput etc. with Float(input) ?? 0.
-            def _pf(field: QtWidgets.QLineEdit, fallback: float) -> float:
+            def _pf(field: QtWidgets.QLineEdit, fallback: float, decimals: int) -> float:
                 try:
                     v = float(field.text())
-                    return v if v > 0 else fallback
+                    return fp.rounded(v, decimals) if v > 0 else fallback  # round-to-P safety net
                 except ValueError:
                     return fallback
 
-            AS.AppSettings.set_plate_length(_pf(plate_length_field, TDS.plate_length()))
-            AS.AppSettings.set_plate_width(_pf(plate_width_field, TDS.plate_width()))
-            AS.AppSettings.set_plate_thickness(_pf(plate_thick_field, TDS.plate_thickness()))
-            AS.AppSettings.set_plate_mass(_pf(plate_mass_field, TDS.plate_mass()))
+            AS.AppSettings.set_plate_length(_pf(plate_length_field, TDS.plate_length(), fp.LINEAR_DIMENSION_MM))
+            AS.AppSettings.set_plate_width(_pf(plate_width_field, TDS.plate_width(), fp.LINEAR_DIMENSION_MM))
+            AS.AppSettings.set_plate_thickness(_pf(plate_thick_field, TDS.plate_thickness(), fp.LINEAR_DIMENSION_MM))
+            AS.AppSettings.set_plate_mass(_pf(plate_mass_field, TDS.plate_mass(), fp.MASS_G))
             AS.AppSettings.set_measure_flc(measure_flc_cb.isChecked())
-            AS.AppSettings.set_guitar_body_length(_pf(gore_body_len_field, TDS.guitar_body_length()))
-            AS.AppSettings.set_guitar_body_width(_pf(gore_body_wid_field, TDS.guitar_body_width()))
+            AS.AppSettings.set_guitar_body_length(_pf(gore_body_len_field, TDS.guitar_body_length(), fp.BODY_DIMENSION_MM))
+            AS.AppSettings.set_guitar_body_width(_pf(gore_body_wid_field, TDS.guitar_body_width(), fp.BODY_DIMENSION_MM))
             fvs_idx = fvs_combo.currentIndex()
             AS.AppSettings.set_plate_stiffness_preset(
                 PRESET_STORAGE_NAMES[fvs_idx] if 0 <= fvs_idx < len(PRESET_STORAGE_NAMES) else "Steel String Top"
             )
-            AS.AppSettings.set_custom_plate_stiffness(_pf(custom_fvs_field, TDS.custom_plate_stiffness()))
-            AS.AppSettings.set_brace_length(_pf(brace_length_field, TDS.brace_length()))
-            AS.AppSettings.set_brace_width(_pf(brace_width_field, TDS.brace_width()))
-            AS.AppSettings.set_brace_thickness(_pf(brace_thick_field, TDS.brace_thickness()))
-            AS.AppSettings.set_brace_mass(_pf(brace_mass_field, TDS.brace_mass()))
+            AS.AppSettings.set_custom_plate_stiffness(_pf(custom_fvs_field, TDS.custom_plate_stiffness(), fp.STIFFNESS))
+            AS.AppSettings.set_brace_length(_pf(brace_length_field, TDS.brace_length(), fp.LINEAR_DIMENSION_MM))
+            AS.AppSettings.set_brace_width(_pf(brace_width_field, TDS.brace_width(), fp.LINEAR_DIMENSION_MM))
+            AS.AppSettings.set_brace_thickness(_pf(brace_thick_field, TDS.brace_thickness(), fp.LINEAR_DIMENSION_MM))
+            AS.AppSettings.set_brace_mass(_pf(brace_mass_field, TDS.brace_mass(), fp.MASS_G))
 
             # Fire _on_measurement_type_changed exactly once after all settings are
             # persisted — mirrors Swift's onApply(measurementChanged:guitarTypeChanged:) callback

@@ -26,6 +26,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from models import field_precision as fp
 from models.tap_tone_measurement import TapToneMeasurement
 
 from guitar_tap.utilities.logging import gt_log
@@ -1049,12 +1050,12 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             dims_rows = [
                 [Paragraph("Sample Dimensions", S_SMALL), "", ""],
                 [
-                    Paragraph(f"<font color='#737373'>Length:</font>  <b>{dims.length_mm:.1f} mm</b>" if dims.length_mm else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Width:</font>  <b>{dims.width_mm:.1f} mm</b>" if dims.width_mm else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Thickness:</font>  <b>{dims.thickness_mm:.2f} mm</b>" if dims.thickness_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Length:</font>  <b>{fp.string(dims.length_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.length_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Width:</font>  <b>{fp.string(dims.width_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.width_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Thickness:</font>  <b>{fp.string(dims.thickness_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.thickness_mm else "", S_BODY),
                 ],
                 [
-                    Paragraph(f"<font color='#737373'>Mass:</font>  <b>{dims.mass_g:.1f} g</b>" if dims.mass_g else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Mass:</font>  <b>{fp.string(dims.mass_g, fp.MASS_G)} g</b>" if dims.mass_g else "", S_BODY),
                     Paragraph(f"<font color='#737373'>Density:</font>  <b>{plate_props.density_kg_m3/1000:.3f} g/cm\u00b3</b>", S_BODY),
                     "",
                 ],
@@ -1207,12 +1208,12 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             dims_rows = [
                 [Paragraph("Sample Dimensions", S_SMALL), "", ""],
                 [
-                    Paragraph(f"<font color='#737373'>Length:</font>  <b>{dims.length_mm:.1f} mm</b>" if dims.length_mm else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Width:</font>  <b>{dims.width_mm:.1f} mm</b>" if dims.width_mm else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Thickness:</font>  <b>{dims.thickness_mm:.2f} mm</b>" if dims.thickness_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Length:</font>  <b>{fp.string(dims.length_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.length_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Width:</font>  <b>{fp.string(dims.width_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.width_mm else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Thickness:</font>  <b>{fp.string(dims.thickness_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.thickness_mm else "", S_BODY),
                 ],
                 [
-                    Paragraph(f"<font color='#737373'>Mass:</font>  <b>{dims.mass_g:.1f} g</b>" if dims.mass_g else "", S_BODY),
+                    Paragraph(f"<font color='#737373'>Mass:</font>  <b>{fp.string(dims.mass_g, fp.MASS_G)} g</b>" if dims.mass_g else "", S_BODY),
                     Paragraph(f"<font color='#737373'>Density:</font>  <b>{brace_props.density_kg_m3/1000:.3f} g/cm\u00b3</b>", S_BODY),
                     "",
                 ],
