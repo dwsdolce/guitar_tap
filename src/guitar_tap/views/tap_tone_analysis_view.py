@@ -4368,8 +4368,13 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer = canvas.analyzer
 
         # ── Clear stale view-side tap count before model changes state ────────
+        # Hide BOTH the tap-count label and the progress bar — the model resets current_tap_count /
+        # tap_progress, but Qt is not reactive, so a capture the load interrupts (e.g. a plate sequence
+        # abandoned mid-phase) leaves the progress bar up unless the view hides it explicitly. Mirrors
+        # start_analyzer()/New Tap, which hides both; Swift gets this reactively from loadMeasurement.
         self._tap_count_captured = 0
         self._sb_tap_count.setVisible(False)
+        self._sb_progress.setVisible(False)
         if self._is_measurement_complete:
             # Temporarily un-complete so set_measurement_complete(True) at the
             # end fires its signal properly — view-side guard only.
