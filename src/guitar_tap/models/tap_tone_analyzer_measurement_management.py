@@ -162,6 +162,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
         from .tap_display_settings import TapDisplaySettings as TDS
 
         measurement_type = TDS.measurement_type()
+        # Store B — the measurement's own material values drive the saved snapshot. Falls back to the
+        # live Settings template only if unset (guitar, or a material measurement that never seeded).
+        # measure_flc, a capture setting, stays sourced from settings. Mirrors Swift makePhaseSnapshot.
+        mi = getattr(self, "material_inputs", None)
         return SpectrumSnapshot(
             frequencies=frequencies.tolist() if hasattr(frequencies, "tolist") else list(frequencies),
             magnitudes=magnitudes.tolist() if hasattr(magnitudes, "tolist") else list(magnitudes),
@@ -173,19 +177,19 @@ class TapToneAnalyzerMeasurementManagementMixin:
             show_unknown_modes=TDS.show_unknown_modes(),
             guitar_type=TDS.guitar_type().value,
             measurement_type=measurement_type.value,
-            plate_length=TDS.plate_length() if measurement_type.is_plate else None,
-            plate_width=TDS.plate_width() if measurement_type.is_plate else None,
-            plate_thickness=TDS.plate_thickness() if measurement_type.is_plate else None,
-            plate_mass=TDS.plate_mass() if measurement_type.is_plate else None,
-            guitar_body_length=TDS.guitar_body_length() if measurement_type.is_plate else None,
-            guitar_body_width=TDS.guitar_body_width() if measurement_type.is_plate else None,
-            plate_stiffness_preset=TDS.plate_stiffness_preset() if measurement_type.is_plate else None,
-            custom_plate_stiffness=TDS.custom_plate_stiffness() if measurement_type.is_plate else None,
+            plate_length=(mi.length_mm if mi else TDS.plate_length()) if measurement_type.is_plate else None,
+            plate_width=(mi.width_mm if mi else TDS.plate_width()) if measurement_type.is_plate else None,
+            plate_thickness=(mi.thickness_mm if mi else TDS.plate_thickness()) if measurement_type.is_plate else None,
+            plate_mass=(mi.mass_g if mi else TDS.plate_mass()) if measurement_type.is_plate else None,
+            guitar_body_length=(mi.body_length_mm if mi else TDS.guitar_body_length()) if measurement_type.is_plate else None,
+            guitar_body_width=(mi.body_width_mm if mi else TDS.guitar_body_width()) if measurement_type.is_plate else None,
+            plate_stiffness_preset=(mi.stiffness_preset.value if mi else TDS.plate_stiffness_preset()) if measurement_type.is_plate else None,
+            custom_plate_stiffness=(mi.custom_stiffness if mi else TDS.custom_plate_stiffness()) if measurement_type.is_plate else None,
             measure_flc=TDS.measure_flc() if measurement_type.is_plate else None,
-            brace_length=TDS.brace_length() if measurement_type.is_brace else None,
-            brace_width=TDS.brace_width() if measurement_type.is_brace else None,
-            brace_thickness=TDS.brace_thickness() if measurement_type.is_brace else None,
-            brace_mass=TDS.brace_mass() if measurement_type.is_brace else None,
+            brace_length=(mi.length_mm if mi else TDS.brace_length()) if measurement_type.is_brace else None,
+            brace_width=(mi.width_mm if mi else TDS.brace_width()) if measurement_type.is_brace else None,
+            brace_thickness=(mi.thickness_mm if mi else TDS.brace_thickness()) if measurement_type.is_brace else None,
+            brace_mass=(mi.mass_g if mi else TDS.brace_mass()) if measurement_type.is_brace else None,
         )
 
     def guitar_full_save_peaks(self) -> list:
@@ -475,7 +479,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.current_decay_time = measurement.decay_time
 
         # ── Determine measurement type ────────────────────────────────────────
-        mt_str = measurement.measurement_type or ""
+        # Use the RESOLVED type — a saved measurement stores its type inside the snapshot, not the
+        # top-level `measurement_type` field (which is None for save-created files), so the raw field
+        # would fall back to CLASSICAL and make a loaded plate/brace look like a guitar to the code
+        # below (e.g. the Store-B build). Mirrors Swift reading snapshot.measurementType.
+        mt_str = measurement.resolved_measurement_type or ""
         try:
             mt = MeasurementType(mt_str)
         except ValueError:
@@ -581,27 +589,35 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     AS.set_measurement_type(mt_enum)
                 except (ValueError, KeyError):
                     pass
-            if mt.is_brace:
-                if snap.brace_length    is not None: AS.set_brace_length(snap.brace_length)
-                if snap.brace_width     is not None: AS.set_brace_width(snap.brace_width)
-                if snap.brace_thickness is not None: AS.set_brace_thickness(snap.brace_thickness)
-                if snap.brace_mass      is not None: AS.set_brace_mass(snap.brace_mass)
-            elif mt.is_plate:
-                if snap.plate_length    is not None:
-                    gt_log(f"  📏 Publishing plate dimensions: L={snap.plate_length}mm")
-                    AS.set_plate_length(snap.plate_length)
-                if snap.plate_width     is not None: AS.set_plate_width(snap.plate_width)
-                if snap.plate_thickness is not None: AS.set_plate_thickness(snap.plate_thickness)
-                if snap.plate_mass      is not None: AS.set_plate_mass(snap.plate_mass)
-                if snap.plate_stiffness_preset is not None:
-                    gt_log(f"  🪵 Publishing plateStiffnessPreset: {snap.plate_stiffness_preset}")
-                    AS.set_plate_stiffness_preset(snap.plate_stiffness_preset)
-                if snap.custom_plate_stiffness is not None:
-                    AS.set_custom_plate_stiffness(snap.custom_plate_stiffness)
-                if snap.guitar_body_length is not None:
-                    AS.set_guitar_body_length(snap.guitar_body_length)
-                if snap.guitar_body_width is not None:
-                    AS.set_guitar_body_width(snap.guitar_body_width)
+            # Store B ← the file's own material inputs (never the live Settings defaults). The calc,
+            # Results panel, and Save all read this, so a loaded measurement's numbers come from the
+            # file and loading never disturbs the Settings defaults (Store A). Replaces the old
+            # snapshot-dims → AppSettings writes that used to clobber the user's defaults on every load.
+            # Mirrors Swift loadMeasurement. See MEASUREMENT-DIMENSIONS-SPEC.md.
+            if not mt.is_guitar:
+                from .material_measurement_inputs import MaterialMeasurementInputs
+                from .plate_stiffness_preset import PlateStiffnessPreset
+                from .tap_display_settings import TapDisplaySettings as TDS
+                brace = mt.is_brace
+                try:
+                    _preset = (PlateStiffnessPreset(snap.plate_stiffness_preset)
+                               if snap.plate_stiffness_preset is not None
+                               else PlateStiffnessPreset(TDS.plate_stiffness_preset()))
+                except ValueError:
+                    _preset = PlateStiffnessPreset.CUSTOM
+                self.material_inputs = MaterialMeasurementInputs(
+                    length_mm=(snap.brace_length if brace else snap.plate_length) or 0,
+                    width_mm=(snap.brace_width if brace else snap.plate_width) or 0,
+                    thickness_mm=(snap.brace_thickness if brace else snap.plate_thickness) or 0,
+                    mass_g=(snap.brace_mass if brace else snap.plate_mass) or 0,
+                    body_length_mm=(snap.guitar_body_length if snap.guitar_body_length is not None
+                                    else TDS.guitar_body_length()),
+                    body_width_mm=(snap.guitar_body_width if snap.guitar_body_width is not None
+                                   else TDS.guitar_body_width()),
+                    stiffness_preset=_preset,
+                    custom_stiffness=(snap.custom_plate_stiffness if snap.custom_plate_stiffness is not None
+                                      else TDS.custom_plate_stiffness()),
+                )
         else:
             gt_log("  ⚠️ No spectrum snapshot in measurement")
 
@@ -994,6 +1010,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     def set_measurement_complete(self, is_complete: bool) -> None:
         """Freeze/unfreeze the spectrum and reset related state."""
+        was_complete = self.is_measurement_complete
         self.is_measurement_complete = is_complete
         if is_complete:
             # Mirrors Swift isMeasurementComplete.didSet: a successful new tap clears the
@@ -1001,6 +1018,16 @@ class TapToneAnalyzerMeasurementManagementMixin:
             if self.show_loaded_settings_warning:
                 self.show_loaded_settings_warning = False
                 self.showLoadedSettingsWarningChanged.emit(False)
+            # Seed Store B from the Settings defaults at the material measurement-complete freeze —
+            # the one and only seed hook (nothing on New Tap / type-change / Cancel). Guarded to the
+            # transition (not already complete), material types, and not-loading (load sets Store B
+            # from the snapshot instead). Mirrors Swift didSet: !oldValue && !isGuitar && !isLoading.
+            from .tap_display_settings import TapDisplaySettings as TDS
+            if (not was_complete
+                    and not TDS.measurement_type().is_guitar
+                    and not self.is_loading_measurement):
+                from .material_measurement_inputs import MaterialMeasurementInputs
+                self.material_inputs = MaterialMeasurementInputs.from_settings(TDS.measurement_type())
         if not is_complete:
             self.captured_taps.clear()
             self.loaded_measurement_peaks = None

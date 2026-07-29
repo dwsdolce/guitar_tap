@@ -368,6 +368,12 @@ class TapToneAnalyzer(
         # Suppresses recalculate_frozen_peaks_if_needed() during loadMeasurement.
         # Mirrors Swift TapToneAnalyzer.isLoadingMeasurement.
         self.is_loading_measurement: bool = False
+        # Store B — the current material measurement's own dimensions (plate/brace L·W·T·M + Gore
+        # body dims + f_vs). None for guitar and before a material measurement completes. Seeded from
+        # the Settings defaults at the complete-freeze, restored from the snapshot on load, edited in
+        # the Results panel; it is the sole source for the measurement's calc/display/PDF and Save.
+        # Mirrors Swift TapToneAnalyzer.materialInputs. See MEASUREMENT-DIMENSIONS-SPEC.md.
+        self.material_inputs = None  # type: "MaterialMeasurementInputs | None"
         # Frequencies of currently selected peaks — stable carry-forward for
         # recalculate_frozen_peaks_if_needed(). Mirrors Swift selectedPeakFrequencies.
         self.selected_peak_frequencies: list = []

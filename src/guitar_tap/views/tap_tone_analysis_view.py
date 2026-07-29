@@ -30,6 +30,8 @@ from models.tap_display_settings import TapDisplaySettings as TDS
 from PySide6 import QtCore, QtGui, QtWidgets
 from views.comparison_results_view import ComparisonResultsView
 from views.exportable_spectrum_chart import make_exportable_spectrum_view
+from views.material_dimensions_editor import MaterialDimensionsEditor
+from views.plate_body_dimensions_editor import PlateBodyDimensionsEditor
 from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
 from views.shared.loading_overlay import LoadingOverlay
 from views.utilities import extensions as _ext
@@ -95,6 +97,10 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
+        # Hug the peak rows' height — don't expand to fill the panel (which pushed the property
+        # sections far down, leaving a large empty gap). The parent scroll area absorbs slack.
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred,
+                           QtWidgets.QSizePolicy.Policy.Maximum)
         self._peaks:      list[tuple[float, float]] = []
         self._long_freq:  float = 0.0
         self._cross_freq: float = 0.0
@@ -1234,14 +1240,36 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_section = QtWidgets.QWidget()
         ms_vbox = QtWidgets.QVBoxLayout(self._material_section)
         ms_vbox.setContentsMargins(0, 0, 0, 0)
-        ms_vbox.setSpacing(4)
+        ms_vbox.setSpacing(12)   # gap between titled sections (mirrors Swift's inter-GroupBox spacing)
 
-        self._mat_title = QtWidgets.QLabel("Brace Properties")
         _mat_title_font = QtGui.QFont()
         _mat_title_font.setPointSize(small_font.pointSize())
         _mat_title_font.setBold(True)
-        self._mat_title.setFont(_mat_title_font)
-        ms_vbox.addWidget(self._mat_title)
+
+        _big_font = QtGui.QFont()
+        _big_font.setPointSize(14)
+        _big_font.setBold(True)
+
+        def _titled_box(parent: QtWidgets.QVBoxLayout, title: str) -> QtWidgets.QVBoxLayout:
+            """A separator line, a bold section header, then a rounded gray content box; returns the
+            box's inner layout. Mirrors Swift: a divider above the header, the header on the plain
+            background, and the section body in a gray box."""
+            parent.addWidget(_hsep())
+            hdr = QtWidgets.QLabel(title)
+            hdr.setFont(_mat_title_font)
+            parent.addWidget(hdr)
+            frame = QtWidgets.QFrame()
+            # objectName selector so the fill applies to THIS frame only, not child QFrames
+            # (the separators / nested boxes). An explicit translucent gray is theme-agnostic and
+            # visible on both light and dark, unlike palette(alternateBase) which matched the panel bg.
+            frame.setObjectName("mat_section_box")
+            frame.setStyleSheet(
+                "#mat_section_box { background-color: rgba(127,127,127,0.12); border-radius: 6px; }")
+            inner = QtWidgets.QVBoxLayout(frame)
+            inner.setContentsMargins(10, 8, 10, 8)
+            inner.setSpacing(6)
+            parent.addWidget(frame)
+            return inner
 
         def _ms_row(label: str, parent: QtWidgets.QVBoxLayout) -> QtWidgets.QLabel:
             row = QtWidgets.QHBoxLayout()
@@ -1277,30 +1305,33 @@ class MainWindow(QtWidgets.QMainWindow):
         _bp_vbox.addWidget(_bp_p2)
         bs_vbox.addWidget(self._brace_placeholder)
 
-        # Content shown when L peak IS assigned
+        # Content shown when L peak IS assigned — titled boxes in Swift's order:
+        # Sample Dimensions -> Brace Properties.
         self._brace_content = QtWidgets.QWidget()
         bc_vbox = QtWidgets.QVBoxLayout(self._brace_content)
         bc_vbox.setContentsMargins(0, 0, 0, 0)
-        bc_vbox.setSpacing(2)
+        bc_vbox.setSpacing(12)
         self._brace_content.setVisible(False)
         bs_vbox.addWidget(self._brace_content)
 
-        # Redirect _ms_row to bc_vbox for brace content
-        bs_vbox = bc_vbox  # remaining rows go into the content widget
+        # Sample Dimensions box (editable, Store B) — mirrors Swift sampleDimensionsSection. The fL
+        # frequency is an input (shown in the peak list), not repeated here as a subtitle.
+        _b_sd = _titled_box(bc_vbox, "Sample Dimensions")
+        self._brace_sample_editor = MaterialDimensionsEditor(
+            self._material_inputs, self._refresh_material_properties, small_font)
+        _b_sd.addWidget(self._brace_sample_editor)
 
-        self._brace_subtitle = QtWidgets.QLabel("—")
-        self._brace_subtitle.setFont(small_font)
-        self._brace_subtitle.setStyleSheet("color: palette(shadow);")
-        bs_vbox.addWidget(self._brace_subtitle)
-        bs_vbox.addWidget(_hsep())
+        # Brace Properties box
+        _b_bp = _titled_box(bc_vbox, "Brace Properties")
+        self._brace_c_long = _ms_row("Speed of Sound:", _b_bp)
+        self._brace_E_long = _ms_row("Young's Modulus (E):", _b_bp)
 
-        self._brace_c_long = _ms_row("Speed of Sound:", bs_vbox)
-        self._brace_E_long = _ms_row("Young's Modulus (E):", bs_vbox)
-
-        # Specific modulus box
+        # Specific modulus (nested highlight box)
         _spec_frame_b = QtWidgets.QFrame()
+        _spec_frame_b.setObjectName("mat_spec_box")
         _spec_frame_b.setStyleSheet(
-            "QFrame { background-color: palette(alternateBase); border-radius: 4px; }"
+            "#mat_spec_box { background-color: rgba(127,127,127,0.10);"
+            " border: none; border-radius: 4px; }"
         )
         _sfb_vbox = QtWidgets.QVBoxLayout(_spec_frame_b)
         _sfb_vbox.setContentsMargins(6, 4, 6, 4)
@@ -1324,9 +1355,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._brace_quality_lbl = QtWidgets.QLabel("—")
         self._brace_quality_lbl.setFont(small_font)
         _sfb_vbox.addWidget(self._brace_quality_lbl)
-        bs_vbox.addWidget(_spec_frame_b)
+        _b_bp.addWidget(_spec_frame_b)
 
-        self._brace_rad_ratio = _ms_row("Radiation Ratio (R):", bs_vbox)
+        self._brace_rad_ratio = _ms_row("Radiation Ratio (R):", _b_bp)
         ms_vbox.addWidget(self._brace_section)
 
         # ── Plate sub-section ────────────────────────────────────────────────
@@ -1363,104 +1394,63 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_content.setVisible(False)
         ps_vbox.addWidget(self._plate_content)
 
-        # Redirect ps_vbox for remaining plate content rows
-        ps_vbox = pc_vbox
+        pc_vbox.setSpacing(12)  # gap between titled boxes
 
-        # ── Gore Target Thickness box (shown immediately after peaks — key result) ──
-        # Mirrors Swift: goreThicknessSectionView is placed BEFORE platePropertiesSection.
+        # Titled boxes in Swift's order: Sample Dimensions -> Body Dimensions -> Gore Target
+        # Thickness -> Plate Properties.
+        _p_sd = _titled_box(pc_vbox, "Sample Dimensions")
+        self._plate_sample_editor = MaterialDimensionsEditor(
+            self._material_inputs, self._refresh_material_properties, small_font)
+        _p_sd.addWidget(self._plate_sample_editor)
+
+        # Body Dimensions box — body length/width + panel stiffness (f_vs) feed only the Gore target.
+        _p_bd = _titled_box(pc_vbox, "Body Dimensions")
+        self._plate_body_editor = PlateBodyDimensionsEditor(
+            self._material_inputs, self._refresh_material_properties, small_font)
+        _p_bd.addWidget(self._plate_body_editor)
+
+        # Gore Target Thickness section — header + accent box with just the result (inputs live in
+        # Body Dimensions above; GLC is among the moduli in Plate Properties below). Toggled as a unit.
+        self._gore_section = QtWidgets.QWidget()
+        _gs_v = QtWidgets.QVBoxLayout(self._gore_section)
+        _gs_v.setContentsMargins(0, 0, 0, 0)
+        _gs_v.setSpacing(4)
+        _gs_v.addWidget(_hsep())
+        _gore_hdr = QtWidgets.QLabel("Gore Target Thickness")
+        _gore_hdr.setFont(_mat_title_font)
+        _gs_v.addWidget(_gore_hdr)
         self._gore_frame = QtWidgets.QFrame()
         self._gore_frame.setObjectName("gore_frame")
-        # Swift: Color.accentColor.opacity(0.08); system blue = #007AFF → alpha ~20/255
         self._gore_frame.setStyleSheet(
-            "#gore_frame { background-color: rgba(0,122,255,20);"
-            " border-radius: 8px; }"
+            "#gore_frame { background-color: rgba(0,122,255,0.10); border-radius: 6px; }"
         )
         _gf_vbox = QtWidgets.QVBoxLayout(self._gore_frame)
-        _gf_vbox.setContentsMargins(8, 4, 8, 4)
+        _gf_vbox.setContentsMargins(10, 8, 10, 8)
         _gf_vbox.setSpacing(3)
-
-        _gore_hdr_fnt = QtGui.QFont()
-        _gore_hdr_fnt.setPointSize(small_font.pointSize())
-        _gore_hdr_fnt.setBold(True)
-        _gore_title_lbl = QtWidgets.QLabel("Gore Target Thickness")
-        _gore_title_lbl.setFont(_gore_hdr_fnt)
-        _gf_vbox.addWidget(_gore_title_lbl)
-
         _gore_val_row = QtWidgets.QHBoxLayout()
         _gore_val_row.setSpacing(6)
         self._gore_thickness_value = QtWidgets.QLabel("—")
         _gv_fnt = QtGui.QFont()
-        _gv_fnt.setPointSize(32)
+        _gv_fnt.setPointSize(28)
         _gv_fnt.setBold(True)
         self._gore_thickness_value.setFont(_gv_fnt)
         self._gore_thickness_value.setStyleSheet("color: #007AFF;")
         _gore_val_row.addWidget(self._gore_thickness_value)
         _gore_mm_lbl = QtWidgets.QLabel("mm")
         _gore_mm_fnt = QtGui.QFont()
-        _gore_mm_fnt.setPointSize(small_font.pointSize() + 4)
+        _gore_mm_fnt.setPointSize(small_font.pointSize() + 2)
         _gore_mm_lbl.setFont(_gore_mm_fnt)
         _gore_mm_lbl.setStyleSheet("color: palette(shadow);")
         _gore_val_row.addWidget(_gore_mm_lbl)
         _gore_val_row.addStretch()
         _gf_vbox.addLayout(_gore_val_row)
+        _gs_v.addWidget(self._gore_frame)
+        self._gore_section.setVisible(False)
+        pc_vbox.addWidget(self._gore_section)
 
-        # GLC known: "Shear Modulus (GLC):"  [spacer]  "X.XXX GPa"
-        _gore_glc_row_w = QtWidgets.QWidget()
-        _gore_glc_hl = QtWidgets.QHBoxLayout(_gore_glc_row_w)
-        _gore_glc_hl.setContentsMargins(0, 0, 0, 0)
-        _gore_glc_title = QtWidgets.QLabel("Shear Modulus (GLC):")
-        _gore_glc_title.setFont(small_font)
-        _gore_glc_title.setStyleSheet("color: palette(shadow);")
-        self._gore_glc_value = QtWidgets.QLabel("—")
-        self._gore_glc_value.setFont(small_font)
-        _gore_glc_hl.addWidget(_gore_glc_title)
-        _gore_glc_hl.addStretch()
-        _gore_glc_hl.addWidget(self._gore_glc_value)
-        _gore_glc_row_w.setVisible(False)
-        _gf_vbox.addWidget(_gore_glc_row_w)
-        self._gore_glc_row_w = _gore_glc_row_w
-
-        # GLC not known: info message
-        self._gore_glc_info = QtWidgets.QLabel()
-        self._gore_glc_info.setFont(small_font)
-        self._gore_glc_info.setStyleSheet("color: palette(shadow);")
-        self._gore_glc_info.setWordWrap(True)
-        _gf_vbox.addWidget(self._gore_glc_info)
-
-        self._gore_params_lbl = QtWidgets.QLabel()
-        _gp_fnt = QtGui.QFont()
-        _gp_fnt.setPointSize(max(small_font.pointSize() - 1, 8))
-        self._gore_params_lbl.setFont(_gp_fnt)
-        self._gore_params_lbl.setStyleSheet("color: palette(shadow);")
-        _gf_vbox.addWidget(self._gore_params_lbl)
-
-        self._gore_frame.setVisible(False)
-        ps_vbox.addWidget(self._gore_frame)
-
-        # Separator between gore box and plate properties (mirrors Swift Divider).
-        # Hidden when gore is hidden so there's no double-separator.
-        self._gore_sep = _hsep()
-        self._gore_sep.setVisible(False)
-        ps_vbox.addWidget(self._gore_sep)
-
-        # ── Plate Properties section (mirrors Swift platePropertiesSection) ──
-
-        # Frequencies — one per line (fL, fC, optionally fLC)
-        self._plate_fl_lbl = QtWidgets.QLabel("fL (Longitudinal): —")
-        self._plate_fl_lbl.setFont(small_font)
-        self._plate_fl_lbl.setStyleSheet("color: palette(shadow);")
-        ps_vbox.addWidget(self._plate_fl_lbl)
-        self._plate_fc_lbl = QtWidgets.QLabel("fC (Cross-grain): —")
-        self._plate_fc_lbl.setFont(small_font)
-        self._plate_fc_lbl.setStyleSheet("color: palette(shadow);")
-        ps_vbox.addWidget(self._plate_fc_lbl)
-        self._plate_flc_lbl = QtWidgets.QLabel("fLC (Diagonal): —")
-        self._plate_flc_lbl.setFont(small_font)
-        self._plate_flc_lbl.setStyleSheet("color: palette(shadow);")
-        self._plate_flc_lbl.setVisible(False)
-        ps_vbox.addWidget(self._plate_flc_lbl)
-
-        ps_vbox.addWidget(_hsep())
+        # Plate Properties box (mirrors Swift platePropertiesSection) — subsequent rows add into it via
+        # ps_vbox. fL/fC/fLC are inputs (in the peak list), not calculated properties, so not repeated.
+        ps_vbox = _titled_box(pc_vbox, "Plate Properties")
 
         def _plate_row(label: str) -> tuple[QtWidgets.QLabel, QtWidgets.QLabel]:
             """Title on own line; 'L: —' / 'C: —' on line below."""
@@ -1510,8 +1500,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Specific modulus box for plate (two-column)
         _spec_frame_p = QtWidgets.QFrame()
+        _spec_frame_p.setObjectName("mat_spec_box")
         _spec_frame_p.setStyleSheet(
-            "QFrame { background-color: palette(alternateBase); border-radius: 4px; }"
+            "#mat_spec_box { background-color: rgba(127,127,127,0.10);"
+            " border: none; border-radius: 4px; }"
         )
         _sfp_vbox = QtWidgets.QVBoxLayout(_spec_frame_p)
         _sfp_vbox.setContentsMargins(6, 4, 6, 4)
@@ -1610,14 +1602,32 @@ class MainWindow(QtWidgets.QMainWindow):
         # bottom of the scroll view, after goreThicknessSectionView and platePropertiesSection).
         self._material_instr_widget = MaterialInstructionsWidget()
 
+        # Measurement Process section — bold header + rounded box, mirroring Swift's
+        # Measurement Process GroupBox (the instructions carry their own inner title).
+        self._material_instr_section = QtWidgets.QWidget()
+        _mp_v = QtWidgets.QVBoxLayout(self._material_instr_section)
+        _mp_v.setContentsMargins(0, 0, 0, 0)
+        _mp_v.setSpacing(4)
+        _mp_v.addWidget(_hsep())
+        _mp_hdr = QtWidgets.QLabel("Measurement Process")
+        _mp_hdr.setFont(_mat_title_font)
+        _mp_v.addWidget(_mp_hdr)
+        _mp_frame = QtWidgets.QFrame()
+        _mp_frame.setObjectName("mat_section_box")
+        _mp_frame.setStyleSheet(
+            "#mat_section_box { background-color: rgba(127,127,127,0.12); border-radius: 6px; }")
+        _mp_inner = QtWidgets.QVBoxLayout(_mp_frame)
+        _mp_inner.setContentsMargins(10, 8, 10, 8)
+        _mp_inner.addWidget(self._material_instr_widget)
+        _mp_v.addWidget(_mp_frame)
+
         _mat_container = QtWidgets.QWidget()
         _mat_vbox = QtWidgets.QVBoxLayout(_mat_container)
         _mat_vbox.setContentsMargins(0, 0, 0, 0)
-        _mat_vbox.setSpacing(8)
+        _mat_vbox.setSpacing(12)
         _mat_vbox.addWidget(self._material_peak_widget)
         _mat_vbox.addWidget(self._material_section)
-        _mat_vbox.addWidget(_hsep())
-        _mat_vbox.addWidget(self._material_instr_widget)
+        _mat_vbox.addWidget(self._material_instr_section)
         _mat_vbox.addStretch()
 
         self._material_scroll = QtWidgets.QScrollArea()
@@ -3436,9 +3446,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 show_cross=not mt.is_brace,
                 show_flc=show_flc,
             )
-            self._mat_title.setText(
-                "Brace Properties" if mt.is_brace else "Plate Properties"
-            )
+            # (Brace/Plate Properties is now its own section header inside the material section, set at
+            # build time — no shared top title to update here.)
             self._update_plate_phase_ui()   # Reset panel to IDLE/COMPLETE state for type
         self._update_measurement_badge()
 
@@ -3811,11 +3820,13 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         self.set_measurement_complete(True)
+        # Store B was just seeded from settings at the complete-freeze — fill the editor fields.
+        self._seed_material_editors()
 
 
     def _populate_brace_section(self, props: PA.BraceProperties) -> None:
-        """Fill the brace material properties sub-section and make it visible."""
-        self._brace_subtitle.setText(f"Longitudinal (fL): {props.f_long:.1f} Hz")
+        """Fill the brace material properties sub-section and make it visible.
+        fL is an input (shown in the peak list), not repeated here as a subtitle."""
         self._brace_c_long.setText(f"{props.c_long_m_s:.0f} m/s")
         self._brace_E_long.setText(f"{props.youngsModulusLongGPa:.2f} GPa")
         color = PA.WoodQuality(props.quality).color
@@ -3833,17 +3844,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _populate_plate_section(self, props: PA.PlateProperties) -> None:
         """Fill the plate material properties sub-section and make it visible.
 
-        All frequencies and G_LC are read from props directly — mirrors Swift where
-        PlateProperties carries f_flc and exposes goreShearModulus as a computed property.
+        G_LC is read from props directly — mirrors Swift where PlateProperties exposes
+        goreShearModulus as a computed property. fL/fC/fLC are inputs (shown in the peak list),
+        not repeated here.
         """
-        # Frequencies — one per line (mirrors Swift reading props.fundamentalFrequency*)
-        self._plate_fl_lbl.setText(f"fL (Longitudinal): {props.f_long:.1f} Hz")
-        self._plate_fc_lbl.setText(f"fC (Cross-grain): {props.f_cross:.1f} Hz")
-        if props.f_flc is not None and props.f_flc > 0:
-            self._plate_flc_lbl.setText(f"fLC (Diagonal): {props.f_flc:.1f} Hz")
-            self._plate_flc_lbl.setVisible(True)
-        else:
-            self._plate_flc_lbl.setVisible(False)
         # Properties (title + L: val  C: val format)
         self._plate_c_long.setText(f"L: {props.c_long_m_s:.0f} m/s")
         self._plate_c_cross.setText(f"C: {props.c_cross_m_s:.0f} m/s")
@@ -3873,56 +3877,93 @@ class MainWindow(QtWidgets.QMainWindow):
         cov = PA.WoodQuality(props.overall_quality).color
         self._plate_overall_quality.setText(props.overall_quality)
         self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
-        # Gore Target Thickness
+        # Gore Target Thickness — Store B (the measurement's own body dims + f_vs), never the live
+        # Settings template. Mirrors Swift goreThicknessView reading analyzer.materialInputs.
         try:
-            _fvs         = TDS.plate_stiffness()
-            _body_l      = TDS.guitar_body_length()
-            _body_w      = TDS.guitar_body_width()
-            try:
-                _preset = PSP.PlateStiffnessPreset(AS.AppSettings.plate_stiffness_preset())
-            except (ValueError, KeyError):
-                _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
+            _mi = getattr(self.fft_canvas.analyzer, "material_inputs", None)
+            if _mi is not None:
+                _fvs    = _mi.stiffness
+                _body_l = _mi.body_length_mm
+                _body_w = _mi.body_width_mm
+                _preset = _mi.stiffness_preset
+            else:
+                _fvs         = TDS.plate_stiffness()
+                _body_l      = TDS.guitar_body_length()
+                _body_w      = TDS.guitar_body_width()
+                try:
+                    _preset = PSP.PlateStiffnessPreset(AS.AppSettings.plate_stiffness_preset())
+                except (ValueError, KeyError):
+                    _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
             # Mirrors Swift: props.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:)
             _thickness_mm = PA.calculate_gore_target_thickness(
                 props, _body_l, _body_w, _fvs
             )
             if _thickness_mm is not None and _thickness_mm > 0:
+                # Just the target-thickness result \u2014 the body inputs live in the Body Dimensions box
+                # above and GLC among the moduli below (mirrors Swift's trimmed Gore box).
                 self._gore_thickness_value.setText(f"{_thickness_mm:.2f}")
-                if glc_pa is not None and glc_pa > 0:
-                    self._gore_glc_value.setText(f"{glc_pa / 1e9:.3f} GPa")
-                    self._gore_glc_row_w.setVisible(True)
-                    self._gore_glc_info.setVisible(False)
-                else:
-                    self._gore_glc_row_w.setVisible(False)
-                    self._gore_glc_info.setText(
-                        "\u24d8 GLC assumed 0 \u2014 enable FLC tap for a more accurate result"
-                    )
-                    self._gore_glc_info.setVisible(True)
-                _preset_lbl = (
-                    f"f_vs = {int(_fvs)} (custom)"
-                    if _preset == PSP.PlateStiffnessPreset.CUSTOM
-                    else f"f_vs = {int(_fvs)} ({_preset.value})"  # .value returns the human-readable label string
-                )
-                self._gore_params_lbl.setText(
-                    f"Body: {_body_l:.0f} \u00d7 {_body_w:.0f} mm"
-                    f"\n{_preset_lbl}"
-                )
-                self._gore_frame.setVisible(True)
-                self._gore_sep.setVisible(True)
+                self._gore_section.setVisible(True)
             else:
-                self._gore_frame.setVisible(False)
-                self._gore_sep.setVisible(False)
+                self._gore_section.setVisible(False)
         except Exception:
-            self._gore_frame.setVisible(False)
-            self._gore_sep.setVisible(False)
+            self._gore_section.setVisible(False)
         self._plate_placeholder.setVisible(False)
         self._plate_content.setVisible(True)
         self._brace_section.setVisible(False)
         self._plate_section.setVisible(True)
         self._material_section.setVisible(True)
 
+    def _material_inputs(self):
+        """The live per-measurement material inputs (Store B), or None. Defensive: the material
+        dimension editors call this during construction, before ``fft_canvas`` exists."""
+        canvas = getattr(self, "fft_canvas", None)
+        analyzer = getattr(canvas, "analyzer", None)
+        return getattr(analyzer, "material_inputs", None)
+
+    def _refresh_material_properties(self) -> None:
+        """Recompute + repopulate plate/brace properties from the current peak selection and the
+        measurement's own dimensions (Store B). Wired as the editors' on-change callback so editing a
+        dimension updates every derived value live. Mirrors Swift's reactive materialInputs binding."""
+        canvas = getattr(self, "fft_canvas", None)
+        analyzer = getattr(canvas, "analyzer", None)
+        if analyzer is None:
+            return
+        mt = TDS.measurement_type()
+        if mt.is_guitar:
+            return
+        f_long = analyzer.selected_longitudinal_peak.frequency if analyzer.selected_longitudinal_peak else 0.0
+        f_cross = analyzer.selected_cross_peak.frequency if analyzer.selected_cross_peak else 0.0
+        f_flc = analyzer.selected_flc_peak.frequency if analyzer.selected_flc_peak else 0.0
+        if f_long <= 0:
+            return
+        dims = self._get_current_dims()
+        if dims is None or not dims.is_valid():
+            return
+        try:
+            if mt.is_brace:
+                self._populate_brace_section(PA.calculate_brace_properties(dims, f_long))
+            elif f_cross > 0:
+                self._populate_plate_section(PA.calculate_plate_properties(
+                    dims, f_long, f_cross, f_flc_hz=f_flc if f_flc > 0 else None))
+        except ValueError:
+            pass
+
+    def _seed_material_editors(self) -> None:
+        """Re-seed the Results-panel dimension editors from Store B — called when a measurement freshly
+        completes or loads (material_inputs just set). Safe to call anytime: seeding skips a field whose
+        text already parses to the value, so it never resets a field mid-edit."""
+        for name in ("_plate_sample_editor", "_plate_body_editor", "_brace_sample_editor"):
+            editor = getattr(self, name, None)
+            if editor is not None:
+                editor.seed()
+
     def _get_current_dims(self) -> PA.PlateDimensions | None:
-        """Return current plate/brace dimensions from TapDisplaySettings."""
+        """Return the current material measurement's own dimensions — Store B
+        (``analyzer.material_inputs``) — falling back to the Settings template only when Store B is
+        unset. Mirrors Swift reading ``analyzer.materialInputs`` for the property calc."""
+        mi = getattr(self.fft_canvas.analyzer, "material_inputs", None)
+        if mi is not None:
+            return mi.dimensions
         mt = TDS.measurement_type()
         if mt.is_brace:
             return PA.PlateDimensions(
@@ -4409,15 +4450,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loaded_resonant_peaks = list(m.peaks) if m.peaks else []
         self._loaded_measurement = m
 
-        _restored_mt = MT.MeasurementType.from_string(m.measurement_type or "")
+        # Use the RESOLVED type — a measurement's type lives in its snapshot, not the top-level
+        # `measurement_type` field, which is None for a freshly-saved in-memory measurement (only a
+        # disk/settings re-read via from_dict populates it). Reading the raw field made a same-session
+        # load of a plate/brace fall back to guitar and skip the type switch. Mirrors Swift reading
+        # snapshot.measurementType. See MEASUREMENT-DIMENSIONS-SPEC.md.
+        _resolved_type_str = m.resolved_measurement_type or ""
+        _restored_mt = MT.MeasurementType.from_string(_resolved_type_str)
 
         # ── Propagate measurement type to TapDisplaySettings ──────────────────
         # AppSettings was already updated by load_measurement(); call
         # _on_loaded_measurement_type to propagate the loaded type to the UI —
         # mirrors Swift .onReceive(tap.$loadedMeasurementType) which updates the
         # bound picker without restarting the tap sequence.
-        if m.measurement_type:
-            _mt = MT.MeasurementType.from_string(m.measurement_type)
+        if _resolved_type_str:
+            _mt = MT.MeasurementType.from_string(_resolved_type_str)
             AS.AppSettings.set_measurement_type(_mt)
             self._on_loaded_measurement_type(_mt.short_name)
 
@@ -4584,6 +4631,8 @@ class MainWindow(QtWidgets.QMainWindow):
                                     f_flc_hz=_f_flc if _f_flc > 0 else None,
                                 ),
                             )
+                        # Store B was set from the loaded snapshot — fill the editor fields.
+                        self._seed_material_editors()
                     except ValueError:
                         pass
 
@@ -4917,13 +4966,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 cross_peak = next((p for p in all_peaks if p.id == sel_cross_id), None)
                 flc_peak   = next((p for p in all_peaks if p.id == sel_flc_id),   None) if sel_flc_id else None
                 if long_peak and cross_peak:
-                    dims = PA.MaterialDimensions(
-                        length_mm=TDS.plate_length(),
-                        width_mm=TDS.plate_width(),
-                        thickness_mm=TDS.plate_thickness(),
-                        mass_g=TDS.plate_mass(),
-                    )
-                    if dims.is_valid():
+                    dims = self._get_current_dims()  # Store B (analyzer.material_inputs)
+                    if dims is not None and dims.is_valid():
                         try:
                             plate_props = PA.calculate_plate_properties(
                                 dims, long_peak.frequency, cross_peak.frequency,
@@ -4934,29 +4978,35 @@ class MainWindow(QtWidgets.QMainWindow):
             elif mt == MT.MeasurementType.BRACE:
                 long_peak = next((p for p in all_peaks if p.id == sel_long_id), None)
                 if long_peak:
-                    dims = PA.MaterialDimensions(
-                        length_mm=TDS.brace_length(),
-                        width_mm=TDS.brace_width(),
-                        thickness_mm=TDS.brace_thickness(),
-                        mass_g=TDS.brace_mass(),
-                    )
-                    if dims.is_valid():
+                    dims = self._get_current_dims()  # Store B (analyzer.material_inputs)
+                    if dims is not None and dims.is_valid():
                         try:
                             brace_props = PA.calculate_brace_properties(dims, long_peak.frequency)
                         except Exception:
                             pass
 
-            # ── Gore / plate stiffness — mirrors Swift's TapDisplaySettings reads ─────────────
+            # ── Gore / plate stiffness — Store B (the measurement's own body dims + f_vs), never the
+            # live Settings template. Mirrors Swift reading analyzer.materialInputs for the report. ──
             from views.utilities.tap_settings_view import AppSettings as _AppSettings
-            _preset_str = _AppSettings.plate_stiffness_preset()
-            try:
-                _preset = PSP.PlateStiffnessPreset(_preset_str)
-            except ValueError:
-                _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
-            if _preset == PSP.PlateStiffnessPreset.CUSTOM:
-                plate_stiffness = TDS.custom_plate_stiffness()
+            _mi = getattr(analyzer, "material_inputs", None)
+            if _mi is not None:
+                _preset = _mi.stiffness_preset
+                _preset_str = _preset.value
+                plate_stiffness = _mi.stiffness
+                _body_l = _mi.body_length_mm
+                _body_w = _mi.body_width_mm
             else:
-                plate_stiffness = _preset.stiffness
+                _preset_str = _AppSettings.plate_stiffness_preset()
+                try:
+                    _preset = PSP.PlateStiffnessPreset(_preset_str)
+                except ValueError:
+                    _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
+                if _preset == PSP.PlateStiffnessPreset.CUSTOM:
+                    plate_stiffness = TDS.custom_plate_stiffness()
+                else:
+                    plate_stiffness = _preset.stiffness
+                _body_l = TDS.guitar_body_length()
+                _body_w = TDS.guitar_body_width()
 
             # ── Render spectrum PNG — mirrors Swift createExportableSpectrumView() ─────────────
             saved_freq = analyzer.frozen_frequencies
@@ -5086,8 +5136,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 tap_tone_ratio=analyzer.calculate_tap_tone_ratio(),
                 plate_properties=plate_props,
                 brace_properties=brace_props,
-                guitar_body_length=TDS.guitar_body_length(),
-                guitar_body_width=TDS.guitar_body_width(),
+                guitar_body_length=_body_l,
+                guitar_body_width=_body_w,
                 plate_stiffness=plate_stiffness,
                 plate_stiffness_preset_str=_preset_str,
                 spectrum_image_data=png_data,
@@ -5374,13 +5424,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 cross_peak = next((p for p in all_peaks if p.id == sel_cross_id), None)
                 flc_peak   = next((p for p in all_peaks if p.id == sel_flc_id),   None) if sel_flc_id else None
                 if long_peak and cross_peak:
-                    dims = PA.MaterialDimensions(
-                        length_mm=TDS.plate_length(),
-                        width_mm=TDS.plate_width(),
-                        thickness_mm=TDS.plate_thickness(),
-                        mass_g=TDS.plate_mass(),
-                    )
-                    if dims.is_valid():
+                    dims = self._get_current_dims()  # Store B (analyzer.material_inputs)
+                    if dims is not None and dims.is_valid():
                         try:
                             plate_props = PA.calculate_plate_properties(
                                 dims, long_peak.frequency, cross_peak.frequency,
@@ -5391,28 +5436,35 @@ class MainWindow(QtWidgets.QMainWindow):
             elif mt == MT.MeasurementType.BRACE:
                 long_peak = next((p for p in all_peaks if p.id == sel_long_id), None)
                 if long_peak:
-                    dims = PA.MaterialDimensions(
-                        length_mm=TDS.brace_length(),
-                        width_mm=TDS.brace_width(),
-                        thickness_mm=TDS.brace_thickness(),
-                        mass_g=TDS.brace_mass(),
-                    )
-                    if dims.is_valid():
+                    dims = self._get_current_dims()  # Store B (analyzer.material_inputs)
+                    if dims is not None and dims.is_valid():
                         try:
                             brace_props = PA.calculate_brace_properties(dims, long_peak.frequency)
                         except Exception:
                             pass
 
+            # Gore / plate stiffness — Store B (the measurement's own body dims + f_vs), never the
+            # live Settings template. Mirrors Swift reading analyzer.materialInputs for the report.
             from views.utilities.tap_settings_view import AppSettings as _AppSettings
-            _preset_str = _AppSettings.plate_stiffness_preset()
-            try:
-                _preset = PSP.PlateStiffnessPreset(_preset_str)
-            except ValueError:
-                _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
-            if _preset == PSP.PlateStiffnessPreset.CUSTOM:
-                plate_stiffness = TDS.custom_plate_stiffness()
+            _mi = getattr(analyzer, "material_inputs", None)
+            if _mi is not None:
+                _preset = _mi.stiffness_preset
+                _preset_str = _preset.value
+                plate_stiffness = _mi.stiffness
+                _body_l = _mi.body_length_mm
+                _body_w = _mi.body_width_mm
             else:
-                plate_stiffness = _preset.stiffness
+                _preset_str = _AppSettings.plate_stiffness_preset()
+                try:
+                    _preset = PSP.PlateStiffnessPreset(_preset_str)
+                except ValueError:
+                    _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
+                if _preset == PSP.PlateStiffnessPreset.CUSTOM:
+                    plate_stiffness = TDS.custom_plate_stiffness()
+                else:
+                    plate_stiffness = _preset.stiffness
+                _body_l = TDS.guitar_body_length()
+                _body_w = TDS.guitar_body_width()
 
             avg_png_data: bytes | None = None
             if freqs or _material_spectra:
@@ -5457,8 +5509,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 tap_tone_ratio=analyzer.calculate_tap_tone_ratio(),
                 plate_properties=plate_props,
                 brace_properties=brace_props,
-                guitar_body_length=TDS.guitar_body_length(),
-                guitar_body_width=TDS.guitar_body_width(),
+                guitar_body_length=_body_l,
+                guitar_body_width=_body_w,
                 plate_stiffness=plate_stiffness,
                 plate_stiffness_preset_str=_preset_str,
                 spectrum_image_data=avg_png_data,
@@ -7175,6 +7227,7 @@ class MainWindow(QtWidgets.QMainWindow):
                                                 f_flc_hz=_flc_peak.frequency if _flc_peak else None,
                                             )
                                         )
+                                self._seed_material_editors()
                             except ValueError:
                                 pass
 
