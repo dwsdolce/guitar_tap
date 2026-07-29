@@ -147,6 +147,7 @@ if __name__ == "__main__":
 
     sys.excepthook = _excepthook
 
+    rc = 0
     try:
         app = MainWindow()
         app.setWindowIcon(QtGui.QIcon(os.path.join(basedir, "icons/guitar-tap.svg")))
@@ -154,7 +155,27 @@ if __name__ == "__main__":
         app.apply_saved_geometry()
         app.activateWindow()
         app.raise_()
-        qapp.exec()
+        rc = qapp.exec()
     except Exception:
         _show_crash_dialog(*sys.exc_info())
         sys.exit(1)
+
+    # Hard-exit to bypass Python's atexit teardown — specifically sounddevice's
+    # atexit Pa_Terminate(), which on macOS deadlocks against a USB mic's CoreAudio
+    # HAL-mutex teardown that is still stalled from stream abort/close. Verified via a
+    # thread sample of a hung quit: the main thread was blocked in Pa_Terminate while
+    # the daemon "StreamClose" thread held the CoreAudio HALB_Mutex (AudioDeviceStop).
+    # The OS reclaims PortAudio/CoreAudio at process death, so skipping Pa_Terminate is
+    # safe. Native (Swift AVAudioEngine) has no equivalent teardown hang. Flush the
+    # persisted settings and logs first, since os._exit skips normal cleanup.
+    try:
+        QtCore.QSettings("Dolcesfogato", "guitar-tap").sync()
+        QtCore.QSettings("Dolcesfogato", "guitar_tap").sync()
+    except Exception:
+        pass
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(rc if isinstance(rc, int) else 0)

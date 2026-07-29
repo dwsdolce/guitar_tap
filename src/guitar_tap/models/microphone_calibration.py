@@ -428,7 +428,14 @@ class CalibrationStorage:
     # MARK: - Private Keys
 
     _ORG  = "Dolcesfogato"
-    _APP  = "GuitarTap"
+    # Unified with the rest of the app's settings (AppSettings uses "guitar_tap"), mirroring Swift
+    # where calibration + device + settings all live in the single UserDefaults.standard. This used
+    # to be a SEPARATE QSettings domain ("GuitarTap" → com.dolcesfogato.GuitarTap.plist), which split
+    # the calibration store off from every other setting — a straight divergence from Swift. The old
+    # scope is migrated once (see _migrate_legacy_scope) so existing profiles + device associations
+    # survive the change.
+    _APP  = "guitar_tap"
+    _LEGACY_APP = "GuitarTap"
     _STORAGE_KEY    = "storedCalibrations"    # JSON array of calibration dicts.
     _ACTIVE_KEY     = "activeCalibrationID"   # UUID string of the global active calibration.
     # JSON dict: deviceName → calibrationUUID.
@@ -437,9 +444,40 @@ class CalibrationStorage:
     # sessions and renames). Python uses device name as a best-effort substitute.
     _DEVICE_MAP_KEY = "deviceCalibrationMap"
 
+    _migrated_scope = False
+
     @classmethod
     def _s(cls):
-        return QtCore.QSettings(cls._ORG, cls._APP)
+        import os
+        # Isolate under pytest so tests never touch the user's real calibrations — the same redirect
+        # AppSettings uses. (Previously CalibrationStorage had none, because it lived in its own domain.)
+        org = f"{cls._ORG}.tests" if "PYTEST_CURRENT_TEST" in os.environ else cls._ORG
+        cls._migrate_legacy_scope(org)
+        return QtCore.QSettings(org, cls._APP)
+
+    @classmethod
+    def _migrate_legacy_scope(cls, org: str) -> None:
+        """One-time copy of calibrations from the pre-unification "GuitarTap" QSettings domain into
+        the unified one, so existing profiles + device→calibration associations survive the scope
+        change. Idempotent: runs only when the unified scope has no stored calibrations yet."""
+        if cls._migrated_scope:
+            return
+        cls._migrated_scope = True
+        try:
+            unified = QtCore.QSettings(org, cls._APP)
+            if unified.value(cls._STORAGE_KEY, None):
+                return  # unified scope already populated — nothing to migrate
+            legacy = QtCore.QSettings(org, cls._LEGACY_APP)
+            moved = False
+            for key in (cls._STORAGE_KEY, cls._ACTIVE_KEY, cls._DEVICE_MAP_KEY):
+                val = legacy.value(key, None)
+                if val is not None:
+                    unified.setValue(key, val)
+                    moved = True
+            if moved:
+                unified.sync()
+        except Exception:
+            pass
 
     # MARK: - CRUD
 

@@ -607,11 +607,15 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         if device is None:
             return
 
-        # Persist the selected device fingerprint so it can be restored on next launch.
-        # Mirrors Swift: UserDefaults.standard.set(deviceUID, forKey: "selectedInputDeviceUID")
+        # Persist the selected device (fingerprint + name) as the SINGLE source of truth
+        # so it can be restored on next launch — one key, one place, mirroring Swift's
+        # selectedInputDevice.didSet writing selectedInputDeviceUID. set_audio_device keeps
+        # the fingerprint and the calibration-lookup name in sync so the two restore paths
+        # (device_management auto-select and fft_canvas startup) can't drift onto different
+        # devices (the bug behind the false "different calibration" warning).
         try:
             from views.utilities.tap_settings_view import AppSettings as _AS
-            _AS.set_selected_input_device_fingerprint(device.fingerprint)
+            _AS.set_audio_device(device)
         except Exception:
             pass
 

@@ -152,9 +152,23 @@ class AppSettings:
     # restore it.  Mirrors Swift UserDefaults key "selectedInputDeviceUID"
     # (which stores AVAudioDevice.uid).
     # ------------------------------------------------------------------ #
+    # ONE canonical persisted identity for the selected input device — the single
+    # source of truth, mirroring Swift's single UserDefaults "selectedInputDeviceUID"
+    # written in selectedInputDevice.didSet. Previously this coexisted with a second,
+    # separate key ("audio/device_fingerprint" via set_audio_device); the two drifted
+    # apart (one restore path read each), which selected the wrong mic and dropped its
+    # calibration. Both restore paths + all writers now use this key. The device NAME
+    # is stored alongside because the calibration map is keyed by name. The legacy key
+    # is read as a fallback for installs saved before the unification and kept in sync.
+    _DEVICE_FP_KEY = "audio/selected_input_device_fingerprint"
+    _DEVICE_FP_LEGACY_KEY = "audio/device_fingerprint"
+    _DEVICE_NAME_KEY = "audio/device_name"
+
     @classmethod
     def selected_input_device_fingerprint(cls) -> "str | None":
-        v = cls._get("audio/selected_input_device_fingerprint", None)
+        v = (cls._get(cls._DEVICE_FP_KEY, None)
+             or cls._get(cls._DEVICE_FP_LEGACY_KEY, None)
+             or cls._get(cls._DEVICE_NAME_KEY, None))
         if v is None or v == "":
             return None
         return str(v)
@@ -162,9 +176,11 @@ class AppSettings:
     @classmethod
     def set_selected_input_device_fingerprint(cls, fingerprint: "str | None") -> None:
         if fingerprint:
-            cls._set("audio/selected_input_device_fingerprint", str(fingerprint))
+            cls._set(cls._DEVICE_FP_KEY, str(fingerprint))
+            cls._set(cls._DEVICE_FP_LEGACY_KEY, str(fingerprint))  # keep legacy in sync
         else:
-            cls._s().remove("audio/selected_input_device_fingerprint")
+            cls._s().remove(cls._DEVICE_FP_KEY)
+            cls._s().remove(cls._DEVICE_FP_LEGACY_KEY)
 
     # ------------------------------------------------------------------ #
     # Display magnitude range (dB)
@@ -203,35 +219,29 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def device_name(cls) -> str:
-        """Return the saved device name (legacy key — still used by calibration lookups)."""
-        return str(cls._get("audio/device_name", ""))
+        """Saved device name — the key the calibration map is keyed by."""
+        return str(cls._get(cls._DEVICE_NAME_KEY, ""))
 
     @classmethod
     def set_device_name(cls, name: str) -> None:
-        """Persist the device name (legacy key)."""
-        cls._set("audio/device_name", name)
+        """Persist the device name (calibration-lookup key)."""
+        cls._set(cls._DEVICE_NAME_KEY, name)
 
     @classmethod
     def audio_device_fingerprint(cls) -> str:
-        """Return the saved AudioDevice fingerprint (name:sample_rate), or "".
-
-        Mirrors Swift UserDefaults key ``selectedInputDeviceUID``.
-        Falls back to the legacy device_name key so upgrades are seamless.
-        """
-        fp = str(cls._get("audio/device_fingerprint", ""))
-        if not fp:
-            fp = cls.device_name()
-        return fp
+        """The canonical selected-device fingerprint (alias of
+        selected_input_device_fingerprint — the ONE key). Empty string if unset."""
+        return cls.selected_input_device_fingerprint() or ""
 
     @classmethod
     def set_audio_device(cls, device) -> None:
-        """Persist an AudioDevice for the next launch.
-
-        Stores both the fingerprint (primary) and the plain name (legacy fallback).
-        Mirrors Swift UserDefaults.standard.set(deviceUID, forKey: selectedInputDeviceUID).
+        """Persist the selected AudioDevice for the next launch — the single source of
+        truth. Writes the canonical fingerprint (+ legacy key in sync) and the device
+        name for calibration lookup. Mirrors Swift selectedInputDevice.didSet persisting
+        selectedInputDeviceUID.
         """
-        cls._set("audio/device_fingerprint", device.fingerprint)
-        cls._set("audio/device_name", device.name)  # keep legacy key in sync
+        cls.set_selected_input_device_fingerprint(device.fingerprint)
+        cls._set(cls._DEVICE_NAME_KEY, device.name)
 
     # ------------------------------------------------------------------ #
     # Measurement type  (mirrors Swift TapDisplaySettings.measurementType)
