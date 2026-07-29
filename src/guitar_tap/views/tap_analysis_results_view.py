@@ -799,9 +799,9 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     ]))
     story.append(header_tbl)
 
-    # Blue accent bar (3 pt tall, mirrors Swift accentBar)
+    # Blue accent bar (3 pt tall, mirrors Swift accentBar with .padding(.bottom, 12)).
+    # spaceAfter alone gives the 12 pt gap — an extra Spacer here would double it.
     story.append(_HLine(CONTENT_W, thickness=3, color=ACCENT, spaceAfter=12))
-    story.append(Spacer(1, 12))
 
     # --- METADATA ---------------------------------------------------------
     if data.measurement_name:
@@ -940,47 +940,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
     story.append(Spacer(1, 14))
 
-    # --- GORE TARGET THICKNESS (plate only, immediately after peaks — key result) ---
-    if mt == MT.MeasurementType.PLATE and plate_props is not None and gore_thickness_mm is not None:
-        if _preset == PSP.PlateStiffnessPreset.CUSTOM:
-            preset_label = f"f_vs = {int(plate_stiffness)} (custom)"
-        else:
-            preset_label = f"f_vs = {int(plate_stiffness)} ({_preset_str})"
-        body_label = (
-            f"Body: {guitar_body_length:.0f} \u00d7 {guitar_body_width:.0f} mm "
-            f"\u00b7 {preset_label}"
-        )
-        if glc_pa is not None and glc_pa > 0:
-            glc_line = f"GLC (Shear Modulus): {glc_pa/1e9:.3f} GPa"
-        else:
-            glc_line = "GLC assumed 0 \u2014 fLC tap not performed"
-        S_GORE_VAL = _style(
-            "gore_val", fontSize=16, fontName="Helvetica-Bold",
-            textColor=ACCENT, leading=20,
-        )
-        gore_content = [
-            Paragraph("Gore Target Thickness", S_SMALL),
-            Spacer(1, 4),
-            Paragraph(f"{gore_thickness_mm:.2f} mm", S_GORE_VAL),
-            Spacer(1, 2),
-            Paragraph(body_label, S_SMALL),
-            Spacer(1, 2),
-            Paragraph(glc_line, S_SMALL_I),
-        ]
-        gore_tbl = Table([[gore_content]])
-        gore_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), BG_ACCENT),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-            ("TOPPADDING",    (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        story.append(gore_tbl)
-        story.append(Spacer(1, 14))
-        # Swift: sectionDivider + Spacer(14) between gore and plateSection
-        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-        story.append(Spacer(1, 14))
-
     # --- ANALYSIS RESULTS ------------------------------------------------
     if mt.is_guitar:
         story.append(Paragraph("Analysis Results", S_SECTION))
@@ -1038,15 +997,13 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 story.append(boxes[0])
 
     elif mt == MT.MeasurementType.PLATE and plate_props is not None:
-        # ── Plate Properties ────────────────────────────────────────────
-        story.append(Paragraph("Plate Properties", S_SECTION))
-        story.append(Spacer(1, 10))
-
-        # Sample Dimensions sub-table — reads from plate_props.dimensions
-        # (mirrors Swift PDFReportContentView reading plateProperties.dimensions.*)
+        # Material analysis order mirrors Swift analysisSection (plate):
+        #   Sample Dimensions -> Body Dimensions -> Gore Target Thickness -> Plate Properties.
+        _cw3 = CONTENT_W / 3
         dims = plate_props.dimensions
+
+        # -- Sample Dimensions --------------------------------------------
         if dims:
-            _cw3 = CONTENT_W / 3
             dims_rows = [
                 [Paragraph("Sample Dimensions", S_SMALL), "", ""],
                 [
@@ -1056,49 +1013,90 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 ],
                 [
                     Paragraph(f"<font color='#737373'>Mass:</font>  <b>{fp.string(dims.mass_g, fp.MASS_G)} g</b>" if dims.mass_g else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{plate_props.density_kg_m3/1000:.3f} g/cm\u00b3</b>", S_BODY),
+                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{plate_props.density_kg_m3/1000:.3f} g/cm³</b>", S_BODY),
                     "",
                 ],
             ]
             dims_tbl = Table(dims_rows, colWidths=[_cw3] * 3)
             dims_tbl.setStyle(TableStyle([
                 ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
-                ("SPAN",          (0, 0), (-1, 0)),            # title spans all columns
+                ("SPAN",          (0, 0), (-1, 0)),
                 ("LEFTPADDING",   (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-                # Swift: VStack(spacing:4) + .padding(6) → 6pt top/bottom, 2pt padding
-                # per row edge so total inter-row gap = 2+2 = 4pt
                 ("TOPPADDING",    (0, 0), (-1, -1), 2),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                ("TOPPADDING",    (0, 0), (-1, 0), 6),        # extra top for title
-                ("BOTTOMPADDING", (0, -1), (-1, -1), 6),      # extra bottom for last row
+                ("TOPPADDING",    (0, 0), (-1, 0), 6),
+                ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
                 ("ROUNDEDCORNERS", [4]),
             ]))
             story.append(dims_tbl)
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 14))
+            story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
+            story.append(Spacer(1, 14))
 
-        # fL / fC / fLC frequencies row — mirrors Swift reading props.fundamentalFrequency*
-        freq_cells = [
-            Paragraph(f"<font color='#737373'>fL:</font>  <b>{plate_props.f_long:.1f} Hz</b>", S_BODY),
-            Paragraph(f"<font color='#737373'>fC:</font>  <b>{plate_props.f_cross:.1f} Hz</b>", S_BODY),
-            Paragraph(
-                f"<font color='#737373'>fLC:</font>  <b>{plate_props.f_flc:.1f} Hz</b>" if plate_props.f_flc else "",
-                S_BODY,
-            ),
+        # -- Body Dimensions (Gore inputs) --------------------------------
+        # Mirrors Swift plateBodyDimensionsPDFSection: finished-guitar body dims (a, b)
+        # and panel stiffness (f_vs) -- feeds only the Gore target below.
+        if _preset == PSP.PlateStiffnessPreset.CUSTOM:
+            preset_label = f"f_vs = {int(plate_stiffness)} (custom)"
+        else:
+            preset_label = f"f_vs = {int(plate_stiffness)} ({_preset_str})"
+        body_rows = [
+            [Paragraph("Body Dimensions", S_SMALL), ""],
+            [
+                Paragraph(f"<font color='#737373'>Body Length (a):</font>  <b>{fp.string(guitar_body_length, fp.BODY_DIMENSION_MM)} mm</b>", S_BODY),
+                Paragraph(f"<font color='#737373'>Lower Bout Width (b):</font>  <b>{fp.string(guitar_body_width, fp.BODY_DIMENSION_MM)} mm</b>", S_BODY),
+            ],
+            [Paragraph(f"<font color='#737373'>Panel Stiffness:</font>  <b>{preset_label}</b>", S_BODY), ""],
         ]
-        freq_tbl = Table([freq_cells], colWidths=[CONTENT_W/3]*3)
-        freq_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.06)),
+        body_tbl = Table(body_rows, colWidths=[CONTENT_W / 2] * 2)
+        body_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
+            ("SPAN",          (0, 0), (-1, 0)),
+            ("SPAN",          (0, 2), (-1, 2)),
             ("LEFTPADDING",   (0, 0), (-1, -1), 6),
             ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-            ("TOPPADDING",    (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING",    (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING",    (0, 0), (-1, 0), 6),
+            ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
             ("ROUNDEDCORNERS", [4]),
         ]))
-        story.append(freq_tbl)
+        story.append(body_tbl)
+        story.append(Spacer(1, 14))
+        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
+        story.append(Spacer(1, 14))
+
+        # -- Gore Target Thickness (just the number) ----------------------
+        if gore_thickness_mm is not None:
+            S_GORE_VAL = _style(
+                "gore_val", fontSize=16, fontName="Helvetica-Bold",
+                textColor=ACCENT, leading=20,
+            )
+            gore_content = [
+                Paragraph("Gore Target Thickness", S_SMALL),
+                Spacer(1, 4),
+                Paragraph(f"{gore_thickness_mm:.2f} mm", S_GORE_VAL),
+            ]
+            gore_tbl = Table([[gore_content]])
+            gore_tbl.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, -1), BG_ACCENT),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+                ("TOPPADDING",    (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("ROUNDEDCORNERS", [4]),
+            ]))
+            story.append(gore_tbl)
+            story.append(Spacer(1, 14))
+            story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
+            story.append(Spacer(1, 14))
+
+        # -- Plate Properties ---------------------------------------------
+        # (fL / fC / fLC are inputs, shown in the Detected Peaks table -- not repeated here.)
+        story.append(Paragraph("Plate Properties", S_SECTION))
         story.append(Spacer(1, 10))
 
-        # Two-column properties (mirrors Swift left/right VStack)
         def _pprow(label: str, value: str) -> Paragraph:
             return Paragraph(f"<font color='#737373'>{label}:</font>  <b>{value}</b>", S_BODY)
 
@@ -1117,9 +1115,9 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             Spacer(1, 6),
             _pprow("Speed of Sound (C)", f"{plate_props.c_cross_m_s:.0f} m/s"),
             Spacer(1, 6),
-            _pprow("Young\u2019s Modulus (L)", f"{plate_props.youngsModulusLongGPa:.2f} GPa"),
+            _pprow("Young’s Modulus (L)", f"{plate_props.youngsModulusLongGPa:.2f} GPa"),
             Spacer(1, 6),
-            _pprow("Young\u2019s Modulus (C)", f"{plate_props.youngsModulusCrossGPa:.2f} GPa"),
+            _pprow("Young’s Modulus (C)", f"{plate_props.youngsModulusCrossGPa:.2f} GPa"),
         ]
         right_col = [
             _qrow("Specific Modulus (L)", plate_props.specific_modulus_long, plate_props.quality_long),
@@ -1141,24 +1139,22 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         story.append(props_tbl)
         story.append(Spacer(1, 10))
 
-        # G_LC shear modulus — bare Paragraph (no leftIndent, already aligned)
         if glc_pa is not None and glc_pa > 0:
             story.append(_pprow("GLC (Shear Modulus)", f"{glc_pa/1e9:.3f} GPa"))
         else:
-            story.append(Paragraph("GLC assumed 0 \u2014 fLC tap not performed", S_SMALL_I))
+            story.append(Paragraph("GLC assumed 0 — fLC tap not performed", S_SMALL_I))
         story.append(Spacer(1, 10))
 
-        # Cross/Long and Long/Cross ratios
         ratio_tbl = Table([[
             [
                 _pprow("Cross/Long Ratio", f"{plate_props.cross_long_ratio:.3f}"),
                 Spacer(1, 2),
-                Paragraph("typical: 0.04\u20130.08", S_SMALL_I),
+                Paragraph("typical: 0.04–0.08", S_SMALL_I),
             ],
             [
                 _pprow("Long/Cross Ratio", f"{plate_props.long_cross_ratio:.1f}"),
                 Spacer(1, 2),
-                Paragraph("typical: 12\u201325", S_SMALL_I),
+                Paragraph("typical: 12–25", S_SMALL_I),
             ],
         ]], colWidths=[CONTENT_W/2]*2)
         ratio_tbl.setStyle(TableStyle([
@@ -1171,7 +1167,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         story.append(ratio_tbl)
         story.append(Spacer(1, 10))
 
-        # Overall Quality box
         oq = plate_props.overall_quality
         oq_color = _quality_color(oq)
         oq_hex = f"#{int(oq_color.red*255):02x}{int(oq_color.green*255):02x}{int(oq_color.blue*255):02x}"
@@ -1196,15 +1191,13 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         story.append(oq_tbl)
 
     elif mt == MT.MeasurementType.BRACE and brace_props is not None:
-        # ── Brace Properties ────────────────────────────────────────────
-        story.append(Paragraph("Brace Properties", S_SECTION))
-        story.append(Spacer(1, 10))
-
-        # Sample Dimensions sub-table — reads from brace_props.dimensions
-        # (mirrors Swift PDFReportContentView reading braceProperties.dimensions.*)
+        # Material analysis order mirrors Swift analysisSection (brace):
+        #   Sample Dimensions -> Brace Properties.
+        _cw3 = CONTENT_W / 3
         dims = brace_props.dimensions
+
+        # -- Sample Dimensions --------------------------------------------
         if dims:
-            _cw3 = CONTENT_W / 3
             dims_rows = [
                 [Paragraph("Sample Dimensions", S_SMALL), "", ""],
                 [
@@ -1214,7 +1207,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 ],
                 [
                     Paragraph(f"<font color='#737373'>Mass:</font>  <b>{fp.string(dims.mass_g, fp.MASS_G)} g</b>" if dims.mass_g else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{brace_props.density_kg_m3/1000:.3f} g/cm\u00b3</b>", S_BODY),
+                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{brace_props.density_kg_m3/1000:.3f} g/cm³</b>", S_BODY),
                     "",
                 ],
             ]
@@ -1231,23 +1224,13 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 ("ROUNDEDCORNERS", [4]),
             ]))
             story.append(dims_tbl)
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 14))
+            story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
+            story.append(Spacer(1, 14))
 
-        # fL row
-        fl_tbl = Table([[
-            Paragraph(f"<font color='#737373'>fL:</font>  <b>{brace_props.f_long:.1f} Hz</b>", S_BODY),
-            Paragraph("", S_BODY),
-            Paragraph("", S_BODY),
-        ]], colWidths=[CONTENT_W/3]*3)
-        fl_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.06)),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-            ("TOPPADDING",    (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ("ROUNDEDCORNERS", [4]),
-        ]))
-        story.append(fl_tbl)
+        # -- Brace Properties ---------------------------------------------
+        # (fL is an input, shown in the Detected Peaks table -- not repeated here.)
+        story.append(Paragraph("Brace Properties", S_SECTION))
         story.append(Spacer(1, 10))
 
         def _pprow(label, value):
@@ -1266,7 +1249,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         left_col = [
             _pprow("Speed of Sound", f"{brace_props.c_long_m_s:.0f} m/s"),
             Spacer(1, 6),
-            _pprow("Young\u2019s Modulus (E)", f"{brace_props.youngsModulusLongGPa:.2f} GPa"),
+            _pprow("Young’s Modulus (E)", f"{brace_props.youngsModulusLongGPa:.2f} GPa"),
         ]
         right_col = [
             _qrow("Specific Modulus", brace_props.specific_modulus, brace_props.quality),
@@ -1284,7 +1267,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         story.append(props_tbl)
         story.append(Spacer(1, 10))
 
-        # Overall Quality box
         oq = brace_props.quality
         oq_color = _quality_color(oq)
         oq_hex = f"#{int(oq_color.red*255):02x}{int(oq_color.green*255):02x}{int(oq_color.blue*255):02x}"
@@ -1415,32 +1397,59 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     return story
 
 
+# Report page geometry — matches Swift PDFReportContentView (US Letter width, 36 pt margins).
+_PAGE_W = 612
+_MARGIN = 36
+_CONTENT_W = _PAGE_W - 2 * _MARGIN
+# Zero frame padding so content spans the full 540 pt width (matching Swift's margin-only
+# layout) and so the measure/build frames agree exactly.
+_FRAME_PAD = dict(leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+
+
+def _measure_story_height(story: list) -> float:
+    """Measure the exact vertical space a story consumes at the report content width.
+
+    Swift renders each report page as a SINGLE variable-height page: ImageRenderer's PDF
+    media box is the SwiftUI view's natural size (e.g. 612 × 1107), so a page never
+    paginates. To mirror that, lay the story out on a throwaway very-tall frame and read
+    back how far the frame cursor descended — that is the natural content height.
+
+    The caller sizes the real page to this height (+ margins), instead of a fixed Letter
+    page that would spill a tall report onto extra pages.
+    """
+    import io
+    from reportlab.pdfgen.canvas import Canvas
+    from reportlab.platypus import Frame
+
+    big = 20_000.0
+    frame = Frame(_MARGIN, _MARGIN, _CONTENT_W, big - 2 * _MARGIN, id="measure", **_FRAME_PAD)
+    frame.addFromList(list(story), Canvas(io.BytesIO(), pagesize=(_PAGE_W, big)))
+    top = _MARGIN + (big - 2 * _MARGIN)   # frame top edge (y grows upward, no padding)
+    return top - frame._y                  # height actually used by the flowables
+
+
+def _build_variable_page_pdf(output_path: str, story: list) -> None:
+    """Render a story to a single variable-height PDF page sized to fit its content."""
+    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
+
+    page_h = _measure_story_height(story) + 2 * _MARGIN + 2  # +2 pt guard keeps it 1 page
+    frame = Frame(_MARGIN, _MARGIN, _CONTENT_W, page_h - 2 * _MARGIN, id="main", **_FRAME_PAD)
+    doc = BaseDocTemplate(
+        output_path,
+        pagesize=(_PAGE_W, page_h),
+        pageTemplates=[PageTemplate(id="report", frames=[frame])],
+        leftMargin=_MARGIN, rightMargin=_MARGIN, topMargin=_MARGIN, bottomMargin=_MARGIN,
+    )
+    doc.build(story)
+
+
 def export_pdf(data: PDFReportData, output_path: str) -> None:
     """Render a tap-tone averaged-result report to PDF.
 
     Mirrors Swift PDFReportGenerator.generate(data:) in PDFReportGenerator.swift.
     Delegates story construction to _build_averaged_story.
     """
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
-
-    PAGE_W, PAGE_H = letter
-    MARGIN = 36
-    CONTENT_W = PAGE_W - 2 * MARGIN
-
-    story = _build_averaged_story(data)
-    frame = Frame(MARGIN, MARGIN, CONTENT_W, PAGE_H - 2 * MARGIN, id="main")
-    page_template = PageTemplate(id="letter", frames=[frame])
-    doc = BaseDocTemplate(
-        output_path,
-        pagesize=letter,
-        pageTemplates=[page_template],
-        leftMargin=MARGIN,
-        rightMargin=MARGIN,
-        topMargin=MARGIN,
-        bottomMargin=MARGIN,
-    )
-    doc.build(story)
+    _build_variable_page_pdf(output_path, _build_averaged_story(data))
 
 
 # ── Comparison Mode Support ────────────────────────────────────────────────────
@@ -1916,26 +1925,7 @@ def export_comparison_pdf(data: ComparisonPDFReportData, output_path: str) -> No
     Mirrors Swift PDFReportGenerator.generateComparison(data:) in PDFReportGenerator.swift.
     Delegates story construction to _build_comparison_story.
     """
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
-
-    PAGE_W, PAGE_H = letter
-    MARGIN = 36
-    CONTENT_W = PAGE_W - 2 * MARGIN
-
-    story = _build_comparison_story(data)
-    frame = Frame(MARGIN, MARGIN, CONTENT_W, PAGE_H - 2 * MARGIN, id="main")
-    page_template = PageTemplate(id="letter", frames=[frame])
-    doc = BaseDocTemplate(
-        output_path,
-        pagesize=letter,
-        pageTemplates=[page_template],
-        leftMargin=MARGIN,
-        rightMargin=MARGIN,
-        topMargin=MARGIN,
-        bottomMargin=MARGIN,
-    )
-    doc.build(story)
+    _build_variable_page_pdf(output_path, _build_comparison_story(data))
 
 
 # ── Multi-Tap PDF Report ───────────────────────────────────────────────────────
@@ -1955,30 +1945,44 @@ def export_multi_tap_pdf(
     The result is identical regardless of which view was displayed at export
     time, mirroring Swift PDFReportGenerator.generateMultiTapReport(averaged:comparison:).
 
-    Page geometry: US Letter 612 x 792 pt, margins 36 pt, content width 540 pt.
+    Each of the two pages is sized independently to its own content height — mirroring
+    Swift, where the averaged page and the comparison page are each their view's natural
+    size (e.g. 612 × 966), rather than a fixed Letter page that spills onto extra pages.
     """
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import BaseDocTemplate, Frame, PageBreak, PageTemplate
-
-    PAGE_W, PAGE_H = letter
-    MARGIN = 36
-    CONTENT_W = PAGE_W - 2 * MARGIN
+    from reportlab.platypus import (
+        BaseDocTemplate, Frame, NextPageTemplate, PageBreak, PageTemplate,
+    )
 
     page1_story = _build_averaged_story(averaged)
     page2_story = _build_comparison_story(comparison)
 
-    story = page1_story + [PageBreak()] + page2_story
+    page1_h = _measure_story_height(page1_story) + 2 * _MARGIN + 2
+    page2_h = _measure_story_height(page2_story) + 2 * _MARGIN + 2
 
-    frame = Frame(MARGIN, MARGIN, CONTENT_W, PAGE_H - 2 * MARGIN, id="main")
-    page_template = PageTemplate(id="letter", frames=[frame])
+    # Each PageTemplate carries an onPage hook that stamps that page's media box, so the
+    # two pages can differ in height within a single document.
+    def _size_hook(height: float):
+        def _apply(canvas, _doc):
+            canvas.setPageSize((_PAGE_W, height))
+        return _apply
+
+    pt1 = PageTemplate(
+        id="averaged",
+        frames=[Frame(_MARGIN, _MARGIN, _CONTENT_W, page1_h - 2 * _MARGIN, id="f1", **_FRAME_PAD)],
+        onPage=_size_hook(page1_h),
+    )
+    pt2 = PageTemplate(
+        id="comparison",
+        frames=[Frame(_MARGIN, _MARGIN, _CONTENT_W, page2_h - 2 * _MARGIN, id="f2", **_FRAME_PAD)],
+        onPage=_size_hook(page2_h),
+    )
+
+    story = [NextPageTemplate("comparison")] + page1_story + [PageBreak()] + page2_story
     doc = BaseDocTemplate(
         output_path,
-        pagesize=letter,
-        pageTemplates=[page_template],
-        leftMargin=MARGIN,
-        rightMargin=MARGIN,
-        topMargin=MARGIN,
-        bottomMargin=MARGIN,
+        pagesize=(_PAGE_W, page1_h),
+        pageTemplates=[pt1, pt2],
+        leftMargin=_MARGIN, rightMargin=_MARGIN, topMargin=_MARGIN, bottomMargin=_MARGIN,
     )
     doc.build(story)
 
