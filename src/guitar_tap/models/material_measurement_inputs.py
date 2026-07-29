@@ -1,4 +1,4 @@
-# @parity model/material-measurement-inputs
+# @parity model/material-measurement-inputs tests=test/material-measurement-inputs
 """
 The material inputs of the **current measurement** — "Store B" in the measurement-dimensions
 design (GuitarTapWeb/Development/MEASUREMENT-DIMENSIONS-SPEC.md).
