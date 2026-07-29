@@ -737,8 +737,9 @@ class TapToneAnalyzerControlMixin:
         self.all_peaks = []
         self.identified_modes = []
 
-        # Mirrors Swift startTapSequence: loadedMeasurementName = nil
+        # Mirrors Swift startTapSequence: loadedMeasurementName = nil; loadedNotes = nil
         self.loaded_measurement_name = None
+        self.loaded_notes = None
         self.source_measurement_timestamp = None
         self.loadedMeasurementNameChanged.emit(None)
 

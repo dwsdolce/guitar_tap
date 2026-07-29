@@ -451,6 +451,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
             _name = measurement.measurement_name
             self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)
             self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
+            # Mirrors Swift: loadedNotes = measurement.notes (nil if empty) — kept so a re-save
+            # preserves the notes (R10).
+            _notes = measurement.notes
+            self.loaded_notes = (_notes if (_notes and _notes.strip()) else None)
             # Clear per-tap entries and multi-tap state after building comparison
             # data but before setting displayMode — mirrors Swift ordering:
             #   tapEntries = []; showingMultiTapComparison = false; displayMode = .comparison
@@ -623,9 +627,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         # ── Store loaded-measurement metadata ─────────────────────────────────
         # Mirrors Swift: loadedMeasurementName = measurement.measurementName (nil if empty)
+        #                loadedNotes = measurement.notes (nil if empty)
         #                sourceMeasurementTimestamp = measurement.timestamp
         _name = measurement.measurement_name
         self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)
+        _notes = measurement.notes
+        self.loaded_notes = (_notes if (_notes and _notes.strip()) else None)
         self.source_measurement_timestamp = measurement.timestamp
         self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
 
@@ -1133,6 +1140,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # Clear chart title to "New" for a live comparison (mirrors Swift loadComparison
         # setting loadedMeasurementName = nil after building comparisonSpectra).
         self.loaded_measurement_name = None
+        self.loaded_notes = None
         self.loadedMeasurementNameChanged.emit(None)
 
         if with_snapshots:

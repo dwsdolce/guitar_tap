@@ -353,10 +353,14 @@ class TapToneAnalyzer(
         self.microphone_warning: "str | None" = None
 
         # ── Loaded-measurement metadata ────────────────────────────────────
-        # Mirrors Swift @Published var loadedMeasurementName: String? and
+        # Mirrors Swift @Published var loadedMeasurementName: String?,
+        # @Published var loadedNotes: String?, and
         # @Published var sourceMeasurementTimestamp: Date?
         # Set by load_measurement(); cleared by start_tap_sequence() / reset.
         self.loaded_measurement_name: "str | None" = None
+        # loaded_notes: restored on load so re-saving a loaded measurement keeps its notes
+        # (R10) — previously only the name was restored, so the notes were silently dropped.
+        self.loaded_notes: "str | None" = None
         self.source_measurement_timestamp: "str | None" = None  # ISO-8601 string
 
         # ── Additional peak analysis state ────────────────────────────────

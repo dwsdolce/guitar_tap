@@ -4074,7 +4074,12 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg.set_measurement_name(
             self._measurement_name or (self.fft_canvas.analyzer.loaded_measurement_name or "")
         )
-        dlg.set_notes(self._notes)
+        # Pre-populate: live notes, else the loaded measurement's notes when re-saving one, so
+        # re-saving a loaded measurement keeps its notes (R10). Mirrors Swift SaveMeasurementSheet
+        # defaultNotes = tap.loadedNotes ?? "".
+        dlg.set_notes(
+            self._notes or (self.fft_canvas.analyzer.loaded_notes or "")
+        )
         if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
