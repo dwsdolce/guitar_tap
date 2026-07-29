@@ -366,7 +366,7 @@ def _build_help_html() -> str:
         "Annotations",
         "Cycles through three label modes: All peaks annotated, Selected peaks only, or None. "
         "For plate and brace there is no per-peak selection, so All and Selected show the same "
-        "thing — all three identified frequencies (Longitudinal, Cross, and FLC) — while None hides them.",
+        "thing — all three identified frequencies (Longitudinal, Cross-grain, and Diagonal) — while None hides them.",
         ["fa5.eye", "fa5.star", "fa5.eye-slash"]
     ))
     parts.append(_row(

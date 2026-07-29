@@ -538,13 +538,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
             spectra = []
             if self.longitudinal_spectrum is not None:
                 l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+                spectra.append(("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)))
             if self.cross_spectrum is not None:
                 c_mags, c_freqs = self.cross_spectrum
-                spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+                spectra.append(("Cross-grain (fC)", (255, 149, 0), list(c_freqs), list(c_mags)))
             if self.flc_spectrum is not None:
                 f_mags, f_freqs = self.flc_spectrum
-                spectra.append(("FLC", (175, 82, 222), list(f_freqs), list(f_mags)))
+                spectra.append(("Diagonal (fLC)", (175, 82, 222), list(f_freqs), list(f_mags)))
             self.set_material_spectra(spectra)
         else:
             # Guitar (or no-snapshot) measurement: clear any stale material spectra

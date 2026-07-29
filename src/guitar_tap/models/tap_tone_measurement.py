@@ -717,7 +717,7 @@ class TapToneMeasurement:
             elif peak.id == self.selected_cross_peak_id:
                 role_labels.append("Cross-grain")
             elif peak.id == self.selected_flc_peak_id:
-                role_labels.append("FLC")
+                role_labels.append("Diagonal")
             else:
                 role_labels.append("Peak")
         return role_labels

@@ -303,7 +303,7 @@ class ExportableSpectrumChart:
             if peak.id == self.selected_cross_peak_id:
                 return "Cross-grain"
             if peak.id == self.selected_flc_peak_id:
-                return "FLC"
+                return "Diagonal"
             return "Peak"
 
     def is_start_of_mode_range(self, frequency: float, mode) -> bool:
@@ -1084,7 +1084,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
             "frequencies": ls.frequencies,
             "magnitudes": ls.magnitudes,
             "color": "blue",
-            "label": "Longitudinal (L)",
+            "label": "Longitudinal (fL)",
         })
     if m.cross_snapshot:
         cs = m.cross_snapshot
@@ -1092,7 +1092,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
             "frequencies": cs.frequencies,
             "magnitudes": cs.magnitudes,
             "color": "orange",
-            "label": "Cross-grain (C)",
+            "label": "Cross-grain (fC)",
         })
     if m.flc_snapshot:
         fs = m.flc_snapshot
@@ -1100,7 +1100,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
             "frequencies": fs.frequencies,
             "magnitudes": fs.magnitudes,
             "color": "purple",
-            "label": "FLC",
+            "label": "Diagonal (fLC)",
         })
 
     # Mirror TapToneAnalyzer.visiblePeaks: filter by annotationVisibilityMode and selectedPeakIDs.

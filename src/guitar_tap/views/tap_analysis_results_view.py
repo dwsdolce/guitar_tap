@@ -877,15 +877,15 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             """Return a colored Paragraph for the Role column — mirrors Swift peakRoleCell."""
             if mt == MT.MeasurementType.PLATE:
                 if peak.id == data.selected_longitudinal_peak_id:
-                    return Paragraph(f"<font color='{_ROLE_BLUE}'>Longitudinal (L)</font>", S_BODY)
+                    return Paragraph(f"<font color='{_ROLE_BLUE}'>Longitudinal (fL)</font>", S_BODY)
                 if peak.id == data.selected_cross_peak_id:
-                    return Paragraph(f"<font color='{_ROLE_ORANGE}'>Cross-grain (C)</font>", S_BODY)
+                    return Paragraph(f"<font color='{_ROLE_ORANGE}'>Cross-grain (fC)</font>", S_BODY)
                 if peak.id == data.selected_flc_peak_id:
-                    return Paragraph(f"<font color='{_ROLE_PURPLE}'>FLC (Diagonal)</font>", S_BODY)
+                    return Paragraph(f"<font color='{_ROLE_PURPLE}'>Diagonal (fLC)</font>", S_BODY)
                 return Paragraph("\u2013", S_BODY)
             elif mt == MT.MeasurementType.BRACE:
                 if peak.id == data.selected_longitudinal_peak_id:
-                    return Paragraph(f"<font color='{_ROLE_BLUE}'>fL (Longitudinal)</font>", S_BODY)
+                    return Paragraph(f"<font color='{_ROLE_BLUE}'>Longitudinal (fL)</font>", S_BODY)
                 return Paragraph("\u2013", S_BODY)
             return Paragraph("", S_BODY)
 
@@ -953,7 +953,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         if glc_pa is not None and glc_pa > 0:
             glc_line = f"GLC (Shear Modulus): {glc_pa/1e9:.3f} GPa"
         else:
-            glc_line = "GLC assumed 0 \u2014 FLC tap not performed"
+            glc_line = "GLC assumed 0 \u2014 fLC tap not performed"
         S_GORE_VAL = _style(
             "gore_val", fontSize=16, fontName="Helvetica-Bold",
             textColor=ACCENT, leading=20,
@@ -1145,7 +1145,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         if glc_pa is not None and glc_pa > 0:
             story.append(_pprow("GLC (Shear Modulus)", f"{glc_pa/1e9:.3f} GPa"))
         else:
-            story.append(Paragraph("GLC assumed 0 \u2014 FLC tap not performed", S_SMALL_I))
+            story.append(Paragraph("GLC assumed 0 \u2014 fLC tap not performed", S_SMALL_I))
         story.append(Spacer(1, 10))
 
         # Cross/Long and Long/Cross ratios
@@ -1343,20 +1343,20 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
         story.append(_instr_row(
             _ROLE_BLUE,
-            "1. Longitudinal (L) Tap",
+            "1. Longitudinal (fL) Tap",
             "Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center.",
         ))
         story.append(Spacer(1, 6))
         story.append(_instr_row(
             _ROLE_ORANGE,
-            "2. Cross-grain (C) Tap",
+            "2. Cross-grain (fC) Tap",
             "Rotate 90\u00b0. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center.",
         ))
         if has_flc:
             story.append(Spacer(1, 6))
             story.append(_instr_row(
                 _ROLE_PURPLE,
-                "3. FLC (Diagonal) Tap",
+                "3. Diagonal (fLC) Tap",
                 "Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures shear stiffness.",
             ))
         story.append(Spacer(1, 6))

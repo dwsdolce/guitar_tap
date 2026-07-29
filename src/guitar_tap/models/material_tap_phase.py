@@ -139,18 +139,18 @@ class MaterialTapPhase(Enum):
             MaterialTapPhase.CAPTURING_LONGITUDINAL:
                 "Processing longitudinal tap...",
             MaterialTapPhase.REVIEWING_LONGITUDINAL:
-                "L tap captured — Accept to continue or Redo to re-tap",
+                "fL tap captured — Accept to continue or Redo to re-tap",
             MaterialTapPhase.CAPTURING_CROSS:
                 "Processing cross-grain tap...",
             MaterialTapPhase.REVIEWING_CROSS:
-                "C tap captured — Accept to continue or Redo to re-tap",
+                "fC tap captured — Accept to continue or Redo to re-tap",
             MaterialTapPhase.WAITING_FOR_FLC_TAP:
                 "Hold plate at the midpoint of one long edge. "
                 "Tap near the opposite corner (~22% from both the end and the side)",
             MaterialTapPhase.CAPTURING_FLC:
-                "Processing FLC tap...",
+                "Processing diagonal tap...",
             MaterialTapPhase.REVIEWING_FLC:
-                "FLC tap captured — Accept to complete or Redo to re-tap",
+                "fLC tap captured — Accept to complete or Redo to re-tap",
             MaterialTapPhase.COMPLETE:
                 "Measurement complete",
         }[self]
@@ -163,12 +163,12 @@ class MaterialTapPhase(Enum):
         """
         return {
             MaterialTapPhase.NOT_STARTED:             "Ready",
-            MaterialTapPhase.CAPTURING_LONGITUDINAL:  "L tap...",
-            MaterialTapPhase.REVIEWING_LONGITUDINAL:  "Review L",
-            MaterialTapPhase.CAPTURING_CROSS:         "C tap...",
-            MaterialTapPhase.REVIEWING_CROSS:         "Review C",
-            MaterialTapPhase.WAITING_FOR_FLC_TAP:     "Tap for FLC",
-            MaterialTapPhase.CAPTURING_FLC:           "FLC tap...",
-            MaterialTapPhase.REVIEWING_FLC:           "Review FLC",
+            MaterialTapPhase.CAPTURING_LONGITUDINAL:  "fL tap...",
+            MaterialTapPhase.REVIEWING_LONGITUDINAL:  "Review fL",
+            MaterialTapPhase.CAPTURING_CROSS:         "fC tap...",
+            MaterialTapPhase.REVIEWING_CROSS:         "Review fC",
+            MaterialTapPhase.WAITING_FOR_FLC_TAP:     "Tap for fLC",
+            MaterialTapPhase.CAPTURING_FLC:           "fLC tap...",
+            MaterialTapPhase.REVIEWING_FLC:           "Review fLC",
             MaterialTapPhase.COMPLETE:                "Done",
         }[self]

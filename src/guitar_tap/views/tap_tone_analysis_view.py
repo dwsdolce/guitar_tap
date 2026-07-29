@@ -234,17 +234,17 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
 
         # L badge (always shown) — display-only, shows auto-identified peak
         is_l = (freq == self._long_freq)
-        hl.addWidget(self._mode_btn("L", is_l, "#1976D2"))
+        hl.addWidget(self._mode_btn("fL", is_l, "#1976D2"))
 
         # C badge (plate only)
         if self._show_cross:
             is_c = (freq == self._cross_freq)
-            hl.addWidget(self._mode_btn("C", is_c, "#E65100"))
+            hl.addWidget(self._mode_btn("fC", is_c, "#E65100"))
 
         # FLC badge (plate + FLC only)
         if self._show_flc:
             is_flc = (freq == self._flc_freq)
-            hl.addWidget(self._mode_btn("FLC", is_flc, "#7B1FA2", width=42))
+            hl.addWidget(self._mode_btn("fLC", is_flc, "#7B1FA2", width=42))
 
         return w
 
@@ -284,11 +284,11 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         hl.addWidget(txt, stretch=1)
 
         # Phase badges — this row's bubble is active only once its peak is found.
-        hl.addWidget(self._mode_btn("L", role == "L" and found, "#1976D2"))
+        hl.addWidget(self._mode_btn("fL", role == "L" and found, "#1976D2"))
         if self._show_cross:
-            hl.addWidget(self._mode_btn("C", role == "C" and found, "#E65100"))
+            hl.addWidget(self._mode_btn("fC", role == "C" and found, "#E65100"))
         if self._show_flc:
-            hl.addWidget(self._mode_btn("FLC", role == "FLC" and found, "#7B1FA2", width=42))
+            hl.addWidget(self._mode_btn("fLC", role == "FLC" and found, "#7B1FA2", width=42))
         return w
 
     @staticmethod
@@ -400,18 +400,18 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
                 else "Two-Tap Measurement Process:"
             )
             self._instr_steps_layout.addWidget(self._step_row(
-                "#1976D2", "1. Longitudinal (L) Tap",
+                "#1976D2", "1. Longitudinal (fL) Tap",
                 "Hold plate at 22% from one end along the length, near one long edge "
                 "(not at the width node). Tap center.",
             ))
             self._instr_steps_layout.addWidget(self._step_row(
-                "#E65100", "2. Cross-grain (C) Tap",
+                "#E65100", "2. Cross-grain (fC) Tap",
                 "Rotate 90°. Hold plate at 22% from one end along the width, near one "
                 "short edge (not at the length node). Tap center.",
             ))
             if has_flc:
                 self._instr_steps_layout.addWidget(self._step_row(
-                    "#7B1FA2", "3. FLC (Diagonal) Tap",
+                    "#7B1FA2", "3. Diagonal (fLC) Tap",
                     "Hold plate at the midpoint of one long edge. Tap near the opposite "
                     "corner (~22% from both the end and the side). Measures shear stiffness.",
                 ))
@@ -1987,7 +1987,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         row1.addWidget(self._mip_dot, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
 
-        # Short status text — e.g. "L tap...", "Review L" (colored like the dot)
+        # Short status text — e.g. "fL tap...", "Review fL" (colored like the dot)
         _bold9 = QtGui.QFont()
         _bold9.setPointSize(9)
         _bold9.setBold(True)
@@ -3613,12 +3613,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         elif state == State.WAITING_L:
             color_hex  = "#1976D2"
-            short_status = "L tap..."
+            short_status = "fL tap..."
             step_text  = f"Phase\u00a01/{total}"
             icon_name  = "fa5s.wave-square"
             title      = (
                 "Step 1: Longitudinal (fL) Mode" if is_brace
-                else "Step 1: Longitudinal (L) Mode"
+                else "Step 1: Longitudinal (fL) Mode"
             )
             body       = (
                 "Hold brace at 22% from one end along the length. Tap center."
@@ -3631,23 +3631,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
         elif state == State.REVIEWING_L:
             color_hex  = "#1976D2"
-            short_status = "Review L"
+            short_status = "Review fL"
             step_text  = f"Phase\u00a01/{total}"
             icon_name  = "fa5.check-circle"
-            title      = "Review L Tap \u2014 Accept or Redo"
+            title      = "Review fL Tap \u2014 Accept or Redo"
             body       = (
-                "L tap captured. Review the spectrum \u2014 press Accept to continue "
-                "to the C tap, or Redo to re-capture."
+                "fL tap captured. Review the spectrum \u2014 press Accept to continue "
+                "to the fC tap, or Redo to re-capture."
             )
             # Mirrors Swift: step label only shown when isDetecting (hidden during review)
             self._sb_plate_step_lbl.setVisible(False)
 
         elif state == State.WAITING_C:
             color_hex  = "#E65100"
-            short_status = "C tap..."
+            short_status = "fC tap..."
             step_text  = f"Phase\u00a02/{total}"
             icon_name  = "fa5s.wave-square"
-            title      = "Step 2: Cross-grain (C) Mode"
+            title      = "Step 2: Cross-grain (fC) Mode"
             body       = (
                 "Hold plate at 22% from one end along the width, near one short edge "
                 "(not at the length node). Tap center."
@@ -3657,12 +3657,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         elif state == State.REVIEWING_C:
             color_hex  = "#E65100"
-            short_status = "Review C"
+            short_status = "Review fC"
             step_text  = f"Phase\u00a02/{total}"
             icon_name  = "fa5.check-circle"
-            title      = "Review C Tap \u2014 Accept or Redo"
+            title      = "Review fC Tap \u2014 Accept or Redo"
             body       = (
-                "C tap captured. Review the spectrum \u2014 press Accept to continue, "
+                "fC tap captured. Review the spectrum \u2014 press Accept to continue, "
                 "or Redo to re-capture."
             )
             # Mirrors Swift: step label only shown when isDetecting (hidden during review)
@@ -3678,31 +3678,31 @@ class MainWindow(QtWidgets.QMainWindow):
             from models.material_tap_phase import MaterialTapPhase as _MTPLocal
             if mtp == _MTPLocal.CAPTURING_FLC:
                 # Swift capturingFlc: actively capturing the FLC tap
-                short_status = "FLC tap..."
+                short_status = "fLC tap..."
                 icon_name    = "fa5s.wave-square"
-                title        = "Step 3: FLC (Diagonal) Mode"
+                title        = "Step 3: Diagonal (fLC) Mode"
                 body         = (
                     "Hold plate at the midpoint of one long edge. Tap near the opposite corner "
                     "(~22% from both the end and the side). Measures shear stiffness."
                 )
             else:
                 # Swift waitingForFlcTap: C captured, user repositioning for FLC
-                short_status = "Tap for FLC"
+                short_status = "Tap for fLC"
                 icon_name    = "fa5s.sync-alt"
-                title        = "C Captured \u2014 Prepare for Step 3"
+                title        = "fC Captured \u2014 Prepare for Step 3"
                 body         = (
                     "Cross-grain mode captured! Now hold plate at the midpoint of one long edge. "
-                    "Tap near the opposite corner (~22% from both sides) for FLC."
+                    "Tap near the opposite corner (~22% from both sides) for the fLC (Diagonal) tap."
                 )
 
         elif state == State.REVIEWING_FLC:
             color_hex  = "#7B1FA2"
-            short_status = "Review FLC"
+            short_status = "Review fLC"
             step_text  = f"Phase\u00a03/{total}"
             icon_name  = "fa5.check-circle"
-            title      = "Review FLC Tap \u2014 Accept or Redo"
+            title      = "Review fLC Tap \u2014 Accept or Redo"
             body       = (
-                "FLC tap captured. Review the spectrum \u2014 press Accept to complete "
+                "fLC tap captured. Review the spectrum \u2014 press Accept to complete "
                 "the measurement, or Redo to re-capture."
             )
             # Mirrors Swift: step label only shown when isDetecting (hidden during review)
@@ -3721,9 +3721,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     "Redo if the auto-selection isn\u2019t correct."
                 )
             else:
-                flc_part = ", and FLC (purple)" if measure_flc else ""
+                flc_part = ", and fLC (purple)" if measure_flc else ""
                 body = (
-                    f"All modes captured! Review the L (blue), C (orange){flc_part} peak "
+                    f"All modes captured! Review the fL (blue), fC (orange){flc_part} peak "
                     "selections in the Results panel. Redo if the auto-selection isn\u2019t correct."
                 )
             self._sb_plate_step_lbl.setVisible(False)
@@ -3795,7 +3795,7 @@ class MainWindow(QtWidgets.QMainWindow):
         }
 
         # Pass the selected peak IDs (UUID strings) to the model so mode_value() can
-        # resolve "Longitudinal" / "Cross-grain" / "FLC" labels by direct ID comparison.
+        # resolve "Longitudinal" / "Cross-grain" / "Diagonal" labels by direct ID comparison.
         # Mirrors Swift modeLabel in DraggablePeakAnnotation which checks
         # peak.id == selectedLongitudinalPeakID / selectedCrossPeakID / selectedFlcPeakID.
         az = self.fft_canvas.analyzer
@@ -4518,7 +4518,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if m.selected_cross_peak_id:
                 _id_to_label[m.selected_cross_peak_id.upper()] = "Cross-grain"
             if m.selected_flc_peak_id:
-                _id_to_label[m.selected_flc_peak_id.upper()] = "FLC"
+                _id_to_label[m.selected_flc_peak_id.upper()] = "Diagonal"
             peak_model.modes = {}
             for p in m.peaks:
                 peak_model.modes[p.frequency] = _id_to_label.get(
@@ -4570,15 +4570,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 _phase_spectra: list = []
                 if m.longitudinal_snapshot is not None:
                     ls = m.longitudinal_snapshot
-                    _phase_spectra.append(("Longitudinal (L)", (0, 122, 255),
+                    _phase_spectra.append(("Longitudinal (fL)", (0, 122, 255),
                                            list(ls.frequencies), list(ls.magnitudes)))
                 if _restored_mt.is_plate and m.cross_snapshot is not None:
                     cs = m.cross_snapshot
-                    _phase_spectra.append(("Cross-grain (C)", (255, 149, 0),
+                    _phase_spectra.append(("Cross-grain (fC)", (255, 149, 0),
                                            list(cs.frequencies), list(cs.magnitudes)))
                 if _restored_mt.is_plate and m.flc_snapshot is not None:
                     fs = m.flc_snapshot
-                    _phase_spectra.append(("FLC", (175, 82, 222),
+                    _phase_spectra.append(("Diagonal (fLC)", (175, 82, 222),
                                            list(fs.frequencies), list(fs.magnitudes)))
                 canvas.analyzer.set_material_spectra(_phase_spectra)
         else:
@@ -4796,15 +4796,15 @@ class MainWindow(QtWidgets.QMainWindow):
                     if m_exp.longitudinal_snapshot is not None:
                         ls = m_exp.longitudinal_snapshot
                         _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                    "color": "blue", "label": "Longitudinal (L)"})
+                                    "color": "blue", "label": "Longitudinal (fL)"})
                     if m_exp.cross_snapshot is not None:
                         cs = m_exp.cross_snapshot
                         _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                    "color": "orange", "label": "Cross-grain (C)"})
+                                    "color": "orange", "label": "Cross-grain (fC)"})
                     if m_exp.flc_snapshot is not None:
                         fs = m_exp.flc_snapshot
                         _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                    "color": "purple", "label": "FLC"})
+                                    "color": "purple", "label": "Diagonal (fLC)"})
                 else:
                     # Live measurement: read per-phase spectra from the analyzer.
                     # _material_spectra is a list of (label, (r,g,b), freqs, mags) tuples.
@@ -5034,15 +5034,15 @@ class MainWindow(QtWidgets.QMainWindow):
                     if m_exp.longitudinal_snapshot is not None:
                         ls = m_exp.longitudinal_snapshot
                         _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                    "color": "blue", "label": "Longitudinal (L)"})
+                                    "color": "blue", "label": "Longitudinal (fL)"})
                     if m_exp.cross_snapshot is not None:
                         cs = m_exp.cross_snapshot
                         _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                    "color": "orange", "label": "Cross-grain (C)"})
+                                    "color": "orange", "label": "Cross-grain (fC)"})
                     if m_exp.flc_snapshot is not None:
                         fs = m_exp.flc_snapshot
                         _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                    "color": "purple", "label": "FLC"})
+                                    "color": "purple", "label": "Diagonal (fLC)"})
                 else:
                     # Live measurement: read per-phase spectra from the analyzer.
                     _COLOR_NAMES = {
@@ -5324,15 +5324,15 @@ class MainWindow(QtWidgets.QMainWindow):
                     if m_exp.longitudinal_snapshot is not None:
                         ls = m_exp.longitudinal_snapshot
                         _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                    "color": "blue", "label": "Longitudinal (L)"})
+                                    "color": "blue", "label": "Longitudinal (fL)"})
                     if m_exp.cross_snapshot is not None:
                         cs = m_exp.cross_snapshot
                         _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                    "color": "orange", "label": "Cross-grain (C)"})
+                                    "color": "orange", "label": "Cross-grain (fC)"})
                     if m_exp.flc_snapshot is not None:
                         fs = m_exp.flc_snapshot
                         _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                    "color": "purple", "label": "FLC"})
+                                    "color": "purple", "label": "Diagonal (fLC)"})
                 else:
                     _COLOR_NAMES = {
                         (0, 122, 255): "blue",

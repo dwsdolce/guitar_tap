@@ -1463,7 +1463,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         gt_log(f"📊 Gated LONGITUDINAL tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
 
         if captured < total:
-            self._set_status_message(f"L tap {captured}/{total} captured. Tap again...")
+            self._set_status_message(f"fL tap {captured}/{total} captured. Tap again...")
             self.re_enable_detection_for_next_plate_tap()
             return
 
@@ -1524,11 +1524,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._emit_peaks_array(self.peaks_above_peak_min)
             # Emit the longitudinal spectrum for display — mirrors Swift's @Published
             # longitudinalSpectrum being set, which causes TapToneAnalysisView.materialSpectra
-            # (a computed property) to return [("Longitudinal (L)", blue, ...)] and
+            # (a computed property) to return [("Longitudinal (fL)", blue, ...)] and
             # SpectrumView to render the blue overlay waveform.
             l_mags, l_freqs = self.longitudinal_spectrum
             self.set_material_spectra([
-                ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
+                ("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)),
             ])
             self.plateAnalysisComplete.emit(avg_peak.frequency, 0.0, 0.0)
         elif self.mic.is_playing_file:
@@ -1552,11 +1552,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             # if the audio-queue level crossing doesn't fire in time.
             with self._gated_lock:
                 self._last_level_crossing_capture_id = -1
-            self._set_status_message("File: L complete, capturing C...")
+            self._set_status_message("File: fL complete, capturing fC...")
             gt_log("📂 File playback: auto-advancing L → C")
             l_mags, l_freqs = self.longitudinal_spectrum
             self.set_material_spectra([
-                ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
+                ("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)),
             ])
         else:
             # Plate: pause at review state — user must press Accept to continue or Redo to re-tap.
@@ -1568,11 +1568,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 f"fL: {avg_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
             )
             # Show longitudinal overlay — mirrors Swift's @Published longitudinalSpectrum
-            # causing materialSpectra to return [("Longitudinal (L)", .blue, ...)] which
+            # causing materialSpectra to return [("Longitudinal (fL)", .blue, ...)] which
             # SpectrumView renders instead of the primary curve (exclusive: no live curve shown).
             l_mags, l_freqs = self.longitudinal_spectrum
             self.set_material_spectra([
-                ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
+                ("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)),
             ])
 
         # Notify spectrum update (no peaksChanged here — each branch above emits exactly once).
@@ -1646,7 +1646,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         gt_log(f"📊 Gated CROSS-GRAIN tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
 
         if captured < total:
-            self._set_status_message(f"C tap {captured}/{total} captured. Tap again...")
+            self._set_status_message(f"fC tap {captured}/{total} captured. Tap again...")
             self.re_enable_detection_for_next_plate_tap()
             return
 
@@ -1697,7 +1697,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 self.tap_detected = False
                 with self._gated_lock:
                     self._last_level_crossing_capture_id = -1
-                self._set_status_message("File: C complete, capturing FLC...")
+                self._set_status_message("File: fC complete, capturing fLC...")
                 gt_log("📂 File playback: auto-advancing C → FLC")
             else:
                 # No FLC: measurement complete. Reuse existing finalise helper.
@@ -1717,10 +1717,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         spectra = []
         if self.longitudinal_spectrum:
             l_mags, l_freqs = self.longitudinal_spectrum
-            spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+            spectra.append(("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)))
         if self.cross_spectrum:
             c_mags, c_freqs = self.cross_spectrum
-            spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+            spectra.append(("Cross-grain (fC)", (255, 149, 0), list(c_freqs), list(c_mags)))
         self.set_material_spectra(spectra)
 
     # ------------------------------------------------------------------ #
@@ -1753,7 +1753,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         gt_log(f"📊 Gated FLC tap {captured}/{total}: {dominant_peak.frequency:.1f} Hz")
 
         if captured < total:
-            self._set_status_message(f"FLC tap {captured}/{total} captured. Tap again...")
+            self._set_status_message(f"fLC tap {captured}/{total} captured. Tap again...")
             self.re_enable_detection_for_next_plate_tap()
             return
 
@@ -1806,12 +1806,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         spectra = []
         if self.longitudinal_spectrum:
             l_mags, l_freqs = self.longitudinal_spectrum
-            spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+            spectra.append(("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)))
         if self.cross_spectrum:
             c_mags, c_freqs = self.cross_spectrum
-            spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+            spectra.append(("Cross-grain (fC)", (255, 149, 0), list(c_freqs), list(c_mags)))
         f_mags, f_freqs = self.flc_spectrum
-        spectra.append(("FLC", (175, 82, 222), list(f_freqs), list(f_mags)))
+        spectra.append(("Diagonal (fLC)", (175, 82, 222), list(f_freqs), list(f_mags)))
         self.set_material_spectra(spectra)
         # Mirrors Swift handleFlcGatedProgress terminal log:
         # gtLog("📊 FLC review: L=… C=… FLC=… Hz")

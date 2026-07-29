@@ -353,7 +353,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
                         elif peak.id == m.selected_cross_peak_id:
                             label = "Cross-grain"
                         elif peak.id == m.selected_flc_peak_id:
-                            label = "FLC"
+                            label = "Diagonal"
                         else:
                             label = "Peak"
                         rgb = mat_colors.get(label, (150, 150, 150))

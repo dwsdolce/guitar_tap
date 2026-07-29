@@ -480,11 +480,11 @@ class TapToneAnalyzerControlMixin:
             from models.material_tap_phase import MaterialTapPhase as _MTP
             phase = getattr(self, "material_tap_phase", _MTP.NOT_STARTED)
             if phase == _MTP.CAPTURING_LONGITUDINAL:
-                self._set_status_message("Ready for fL tap" if is_brace else "Ready for L tap")
+                self._set_status_message("Ready for fL tap" if is_brace else "Ready for fL tap")
             elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
-                self._set_status_message("Ready for FLC tap")
+                self._set_status_message("Ready for fLC tap")
             else:
-                self._set_status_message("Ready for C tap")
+                self._set_status_message("Ready for fC tap")
         elif self.current_tap_count == 0:
             self._set_status_message(self._tap_prompt())
         else:
@@ -726,10 +726,10 @@ class TapToneAnalyzerControlMixin:
             if self.number_of_taps > 1:
                 phases = "L, C, FLC" if measure_flc else "L, C"
                 self._set_status_message(
-                    f"Ready for L tap (×{self.number_of_taps} each for {phases})"
+                    f"Ready for fL tap (×{self.number_of_taps} each for {phases})"
                 )
             else:
-                self._set_status_message("Ready for L tap")
+                self._set_status_message("Ready for fL tap")
         else:
             self._set_status_message(self._tap_prompt())
 
@@ -853,7 +853,7 @@ class TapToneAnalyzerControlMixin:
             self.warmup_start_audio_time = self._audio_now()
             self.is_detecting = True
             self.tap_detected = False
-            self._set_status_message("Rotate 90° and tap for C")
+            self._set_status_message("Rotate 90° and tap for fC")
 
         elif phase == _MTP.REVIEWING_CROSS:
             if _tds.measure_flc():
@@ -862,7 +862,7 @@ class TapToneAnalyzerControlMixin:
                 # then transition to CAPTURING_FLC and clear frozen spectrum inside
                 # the asyncAfter closure (after the cooldown delay).
                 self._set_material_tap_phase(_MTP.WAITING_FOR_FLC_TAP)
-                self._set_status_message("Set up for FLC tap, then tap")
+                self._set_status_message("Set up for fLC tap, then tap")
                 cooldown = self.tap_cooldown
                 self._main_async_after(int(cooldown * 1000), self._do_start_flc)
             else:
@@ -916,7 +916,7 @@ class TapToneAnalyzerControlMixin:
             self.current_tap_count = 0
             self.tap_progress = 0.0
             capture_phase = _MTP.CAPTURING_LONGITUDINAL
-            status_msg = "Ready for L tap — tap again"
+            status_msg = "Ready for fL tap — tap again"
             # longitudinalSpectrum = nil → materialSpectra returns [] → live curve restored.
             self.set_material_spectra([])
 
@@ -933,12 +933,12 @@ class TapToneAnalyzerControlMixin:
             self.current_tap_count = l_count
             self.tap_progress = float(l_count) / float(self.total_plate_taps)
             capture_phase = _MTP.CAPTURING_CROSS
-            status_msg = "Ready for C tap — tap again"
+            status_msg = "Ready for fC tap — tap again"
             # crossSpectrum = nil → materialSpectra returns [L only] → show longitudinal overlay.
             spectra = []
             if self.longitudinal_spectrum:
                 l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+                spectra.append(("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)))
             self.set_material_spectra(spectra)
 
         elif phase == _MTP.REVIEWING_FLC:
@@ -958,15 +958,15 @@ class TapToneAnalyzerControlMixin:
             self.current_tap_count = lc_count
             self.tap_progress = float(lc_count) / float(self.total_plate_taps)
             capture_phase = _MTP.CAPTURING_FLC
-            status_msg = "Ready for FLC tap — tap again"
+            status_msg = "Ready for fLC tap — tap again"
             # flcSpectrum = nil → materialSpectra returns [L, C] → show both overlays.
             spectra = []
             if self.longitudinal_spectrum:
                 l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)))
+                spectra.append(("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)))
             if self.cross_spectrum:
                 c_mags, c_freqs = self.cross_spectrum
-                spectra.append(("Cross-grain (C)", (255, 149, 0), list(c_freqs), list(c_mags)))
+                spectra.append(("Cross-grain (fC)", (255, 149, 0), list(c_freqs), list(c_mags)))
             self.set_material_spectra(spectra)
 
         else:
@@ -1036,8 +1036,8 @@ class TapToneAnalyzerControlMixin:
         l_mags, l_freqs = self.longitudinal_spectrum
         c_mags, c_freqs = self.cross_spectrum
         self.set_material_spectra([
-            ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
-            ("Cross-grain (C)",  (255, 149, 0), list(c_freqs), list(c_mags)),
+            ("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)),
+            ("Cross-grain (fC)",  (255, 149, 0), list(c_freqs), list(c_mags)),
         ])
 
         fl = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
@@ -1080,9 +1080,9 @@ class TapToneAnalyzerControlMixin:
         c_mags, c_freqs = self.cross_spectrum
         f_mags, f_freqs = self.flc_spectrum
         self.set_material_spectra([
-            ("Longitudinal (L)", (0, 122, 255), list(l_freqs), list(l_mags)),
-            ("Cross-grain (C)",  (255, 149, 0), list(c_freqs), list(c_mags)),
-            ("FLC",              (175, 82, 222), list(f_freqs), list(f_mags)),
+            ("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)),
+            ("Cross-grain (fC)",  (255, 149, 0), list(c_freqs), list(c_mags)),
+            ("Diagonal (fLC)",              (175, 82, 222), list(f_freqs), list(f_mags)),
         ])
 
         l_freq = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0

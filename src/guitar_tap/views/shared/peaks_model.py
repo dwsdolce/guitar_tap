@@ -207,7 +207,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 elif pid == self.selected_cross_peak_id:
                     color_map[peak.frequency] = mc["Cross-grain"]
                 elif pid == self.selected_flc_peak_id:
-                    color_map[peak.frequency] = mc["FLC"]
+                    color_map[peak.frequency] = mc["Diagonal"]
                 else:
                     color_map[peak.frequency] = mc["Peak"]
         self.modeColorsChanged.emit(color_map)
@@ -262,7 +262,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 if peak_id == self.selected_cross_peak_id:
                     return "Cross-grain"
                 if peak_id == self.selected_flc_peak_id:
-                    return "FLC"
+                    return "Diagonal"
             return "Peak"
         mode = self._auto_mode_map.get(self._peak_id_at(index))
         if mode is not None:
@@ -361,7 +361,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     _MATERIAL_MODE_COLORS: dict[str, tuple[int, int, int]] = {
         "Longitudinal": (50,  100, 220),   # blue
         "Cross-grain":  (220, 130,  0),    # orange
-        "FLC":          (150,  50, 200),   # purple
+        "Diagonal":          (150,  50, 200),   # purple
         "Peak":         (150, 150, 150),   # secondary grey
     }
 

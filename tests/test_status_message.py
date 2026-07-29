@@ -8,7 +8,7 @@ The three suites assert identical strings; only the per-platform driving differs
 
 SCOPE: the state-reachable strings only.  Two families are intentionally NOT pinned:
 
-1. Material phase-guidance — "Ready for L tap", "Rotate 90° and tap for C" — is now
+1. Material phase-guidance — "Ready for fL tap", "Rotate 90° and tap for fC" — is now
    VISIBLE (OUT-1 fixed by the status state-machine alignment: the warm-up is silent).
    Pinned below by the "survives the warm-up" cases, which feed a warm-up frame and
    assert the guidance persists (these FAILED before the alignment — the warm-up
@@ -227,19 +227,19 @@ class TestStatusMessage:
     # them with "Initializing…" → "Tap the guitar…").
     def test_material_arm_ready_for_l_tap_survives_warmup(self):
         sut = _make_sut(1, MeasurementType.PLATE)
-        sut.start_tap_sequence()  # plate → "Ready for L tap"
-        assert sut.status_message == "Ready for L tap"
+        sut.start_tap_sequence()  # plate → "Ready for fL tap"
+        assert sut.status_message == "Ready for fL tap"
         sut.warmup_start_audio_time = 0.0  # warm-up active
         sut.just_exited_warmup = False
         sut.detect_tap(-80.0, 0.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
-        assert sut.status_message == "Ready for L tap"
+        assert sut.status_message == "Ready for fL tap"
 
     def test_accept_l_rotate90_survives_warmup(self):
         sut = _make_sut(1, MeasurementType.PLATE)
         sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_LONGITUDINAL)
-        sut.accept_current_phase()  # → "Rotate 90° and tap for C" + warm-up restart
-        assert sut.status_message == "Rotate 90° and tap for C"
+        sut.accept_current_phase()  # → "Rotate 90° and tap for fC" + warm-up restart
+        assert sut.status_message == "Rotate 90° and tap for fC"
         sut.warmup_start_audio_time = 0.0  # warm-up active
         sut.just_exited_warmup = False
         sut.detect_tap(-80.0, 0.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
-        assert sut.status_message == "Rotate 90° and tap for C"
+        assert sut.status_message == "Rotate 90° and tap for fC"
