@@ -203,9 +203,10 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Overview",
         "Plate material mode measures the stiffness of a rectangular tonewood sample using "
-        "three free-free beam bending taps: Longitudinal (along grain), Cross-grain, and "
-        "optionally FLC (diagonal/torsional). From the tap frequencies it derives Young&rsquo;s "
-        "modulus, speed of sound, specific modulus, radiation ratio, and a quality rating."
+        "three free-free beam bending taps: Longitudinal (fL, along grain), Cross-grain (fC), and "
+        "optionally Diagonal (fLC, torsional). From the tap frequencies and the sample dimensions "
+        "it derives Young&rsquo;s modulus, speed of sound, specific modulus, radiation ratio, and "
+        "a quality rating."
     ))
     parts.append(_row(
         "Prepare the Sample",
@@ -214,10 +215,12 @@ def _build_help_html() -> str:
         "moduli. A kitchen scale accurate to 0.1&nbsp;g is adequate for most samples."
     ))
     parts.append(_row(
-        "Enter Dimensions in Settings",
-        "Open Settings &rarr; Measurement Type &rarr; Material. Enter Length (along grain), "
-        "Width (cross grain), Thickness, and Mass. The app instantly shows the calculated "
-        "density so you can catch data-entry errors before tapping."
+        "Select Plate Mode",
+        "Open Settings &rarr; Measurement Type &rarr; Plate, and enable Measure Diagonal (fLC) "
+        "Tap if you&rsquo;ll capture the third tap. That is all Settings needs before you tap: you "
+        "enter this sample&rsquo;s dimensions in the Analysis Results after capturing (see Reading "
+        "the Results), where they drive the numbers live. The dimension fields in Settings are just "
+        "the defaults for a new measurement."
     ))
     parts.append(_row(
         "Suspension Technique",
@@ -231,15 +234,15 @@ def _build_help_html() -> str:
         "With the grain running left&ndash;right, hold the plate at one point 22% from one "
         "end along the length, near one long edge (not at the width nodal line &mdash; this "
         "damps the cross-grain resonance). Tap center. Click New Tap and follow the on-screen "
-        "prompt &ldquo;Capturing Longitudinal&rdquo;. The app selects the strongest peak as "
-        "the longitudinal frequency."
+        "prompt &ldquo;Step 1: Longitudinal (fL) Mode&rdquo;. The app selects the strongest peak "
+        "as the longitudinal frequency."
     ))
     parts.append(_row(
         "Tap 2 &mdash; Cross-Grain",
         "Rotate the plate 90&deg; so the grain runs front&ndash;back. Hold at one point 22% "
         "from one end along the width, near one short edge (not at the length nodal line &mdash; "
-        "this damps the longitudinal resonance). Tap center. The app prompts "
-        "&ldquo;Capturing Cross-Grain&rdquo; automatically after the longitudinal tap is accepted."
+        "this damps the longitudinal resonance). Tap center. The app advances to "
+        "&ldquo;Step 2: Cross-grain (fC) Mode&rdquo; automatically after the longitudinal tap is accepted."
     ))
     parts.append(_row(
         "Tap 3 &mdash; Diagonal (Optional)",
@@ -250,15 +253,17 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Reading the Results",
-        "After all taps, view Results to see:<br>"
-        "&bull; E_L / E_C &mdash; Young&rsquo;s modulus along and across grain (GPa)<br>"
+        "The Results panel is where you turn the captured frequencies into properties. Enter this "
+        "sample&rsquo;s Sample Dimensions (Length, Width, Thickness, Mass) and Body Dimensions "
+        "(Body Length, Lower Bout Width, Panel Stiffness); every number recomputes live. The panel shows:<br>"
+        "&bull; E_L / E_C &mdash; Young&rsquo;s modulus along and across grain (GPa); GLC (Shear) appears here when the Diagonal tap was measured<br>"
         "&bull; c_L / c_C &mdash; Speed of sound in each direction (m/s)<br>"
         "&bull; Specific modulus E/&rho; &mdash; The primary quality metric (GPa per g/cm&sup3;)<br>"
         "&bull; Radiation ratio &mdash; Sound radiation efficiency<br>"
         "&bull; Cross/Long ratio &mdash; Anisotropy (spruce: typically 0.04&ndash;0.08)<br>"
         "&bull; Quality rating &mdash; Excellent / Very Good / Good / Fair / Poor (spruce scale)<br>"
         "&bull; Gore target thickness &mdash; Recommended finished plate thickness for a guitar "
-        "of your specified body dimensions (requires FLC or uses an approximation)"
+        "of your specified body dimensions (requires the Diagonal (fLC) tap or uses an approximation)"
     ))
     parts.append(_row(
         "Spruce Quality Scale",
@@ -268,9 +273,9 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Gore Target Thickness",
-        "Enter the finished guitar body length and lower bout width in Settings (Material "
-        "section). Choose the plate stiffness preset: Steel String Top (f_vs 75), "
-        "Steel String Back (55), Classical (50), or Custom. The result is the plate thickness "
+        "In the Analysis Results, enter the finished guitar body length and lower bout width and "
+        "choose the Panel Stiffness preset: Steel String Top (f_vs 75), Steel String Back (55), "
+        "Classical Top (60), Classical Back (50), or Custom. The result is the plate thickness "
         "that hits the preset vibrational stiffness after bracing is factored in &mdash; a "
         "direct implementation of Gore Equation 4.5-7."
     ))
@@ -280,13 +285,14 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Overview",
         "Brace mode is a fast single-tap variant of Plate mode designed for brace strips. "
-        "Only a longitudinal tap is needed; cross-grain and FLC are skipped."
+        "Only a longitudinal (fL) tap is needed; cross-grain and the Diagonal (fLC) tap are skipped."
     ))
     parts.append(_row(
         "Brace Orientation",
-        "In Settings &rarr; Brace Dimensions, Height is the dimension in the tap direction "
-        "(the brace standing upright on the bench). This is the t value in the stiffness "
-        "formula. Length is along the grain."
+        "The dimension in the tap direction (the brace standing upright on the bench) is the t "
+        "value in the stiffness formula. Length is along the grain. Settings labels this dimension "
+        "Height (tap direction); the Analysis Results field is labelled Thickness &mdash; they are "
+        "the same value."
     ))
     parts.append(_row(
         "Technique",
@@ -299,8 +305,9 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Results",
-        "E_L, c_L, specific modulus, and a spruce quality rating are reported. "
-        "No cross-grain or Gore thickness calculation is available in Brace mode."
+        "Enter the strip&rsquo;s dimensions in the Analysis Results to compute E_L, c_L, specific "
+        "modulus, and a spruce quality rating. No cross-grain or Gore thickness calculation is "
+        "available in Brace mode."
     ))
 
     # ── Controls Reference ────────────────────────────────────────────────
@@ -664,7 +671,7 @@ def _build_help_html() -> str:
         "A plate thickness prediction based on Gore Equation 4.5-7, derived from E_L, E_C, "
         "shear modulus G_LC, the wood density, and the guitar body dimensions. It targets a "
         "specified vibrational stiffness (f_vs) preset."))
-    parts.append(_row("FLC Tap",
+    parts.append(_row("Diagonal (fLC) Tap",
         "A diagonal-mode tap that excites the torsional resonance of the plate. Used to "
         "calculate the shear modulus G_LC for the Gore thickness formula. Hold the plate at "
         "the midpoint of one long edge and tap near the opposite corner "
