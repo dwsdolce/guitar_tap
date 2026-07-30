@@ -6513,6 +6513,23 @@ class MainWindow(QtWidgets.QMainWindow):
         aud.addWidget(_hsep())
 
         import sounddevice as sd  # lazy: already warm by this point; explicit for clarity
+
+        # Windows only: PortAudio caches its device list at init time, so a mic
+        # connected AFTER launch is invisible to the sd.query_devices() call
+        # below and never appears in the combo.  Opening Settings is the natural,
+        # deliberate moment to refresh the list, so flush PortAudio's cache once
+        # here.  reinitialize_portaudio() closes + terminates/re-inits + reopens
+        # the stream on the CURRENT device, so it refreshes the enumeration
+        # WITHOUT switching mics.  Being user-initiated and one-shot, it causes
+        # none of the cascade/churn of the hot-plug notification path.  macOS
+        # enumerates live via its CoreAudio listener and needs no flush.
+        import platform as _platform_mic
+        if _platform_mic.system() == "Windows":
+            try:
+                self.fft_canvas.analyzer.mic.reinitialize_portaudio()
+            except Exception:
+                pass
+
         from models.audio_device import AudioDevice as _AudioDevice
         from models.audio_device import filter_input_devices as _filter_inputs
         input_devices: list[_AudioDevice] = []
@@ -6582,6 +6599,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 audio_dev = input_devices[combo_idx]
                 if audio_dev.fingerprint != AS.AppSettings.audio_device_fingerprint():
                     self.fft_canvas.set_device(audio_dev)
+                    # set_device() only reopens the stream + recomputes freq bins.
+                    # The hot-plug path (_on_devices_refreshed_impl) follows it with
+                    # handle_route_change_restart(), which blanks/refills the spectrum
+                    # over the settle delay, resets warmup/detection state, and
+                    # restores is_detecting — which is also what re-enables the
+                    # New Tap / Pause / Cancel controls.  Without it a Settings-driven
+                    # switch leaves the app frozen (no spectrum, dead buttons), so
+                    # mirror the hot-plug path here.
+                    self.fft_canvas.analyzer.handle_route_change_restart()
                     AS.AppSettings.set_audio_device(audio_dev)
                     self.device_status_lbl.setText(audio_dev.name)
                     self._update_mic_name_label()

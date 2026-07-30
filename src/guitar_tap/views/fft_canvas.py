@@ -845,14 +845,27 @@ class FftCanvas(pg.PlotWidget):
         self._overlay_label.setVisible(True)
 
     def shutdown(self) -> None:
-        """Stop the processing thread and wait for it to exit.
+        """Stop the audio stream and processing thread and wait for it to exit.
 
         Must be called before the widget is destroyed (e.g. from the main
         window's closeEvent) to prevent Qt from aborting on QThread::~QThread()
         while the thread is still running.
+
+        Stops the PortAudio stream (and hot-plug monitor + watchdog) FIRST so
+        that no native audio-callback thread is still live when __main__ calls
+        os._exit().  os._exit() (used to bypass sounddevice's atexit
+        Pa_Terminate, which deadlocks on macOS) kills the process immediately;
+        if the InputStream callback thread is still running at that point, the
+        OS tears its memory away mid-callback and the process crashes with an
+        access violation on exit (observed on Windows).  mic.close() aborts the
+        stream on a daemon thread with a bounded timeout, so it is safe on
+        macOS too.
         """
-        self.analyzer.mic.proc_thread.stop()
-        self.analyzer.mic.proc_thread.wait(2000)
+        mic = self.analyzer.mic
+        mic.stop_buffer_watchdog()
+        mic.close()
+        mic.proc_thread.stop()
+        mic.proc_thread.wait(2000)
 
     # ------------------------------------------------------------------ #
     # Guitar mode band overlays
