@@ -9,6 +9,10 @@
 
 ## New Features
 
+### Set a Plate or Brace's Dimensions in the Results
+
+- You now enter a sample's dimensions where you read its results. After tapping, the Analysis Results panel has editable **Sample Dimensions** (length, width, thickness, mass) and — for a plate — **Body Dimensions** (body length, lower bout width, and panel stiffness); every property and the Gore target thickness recompute as you type. You no longer have to fill the numbers into Settings before you start: the Settings dimension fields are now just the defaults for a new measurement, and each measurement keeps its own values. Tap first, then enter or correct the exact dimensions afterward.
+
 ### Update Check
 
 - Guitar Tap now tells you when a newer release is available. On start-up it checks this project's public release list on GitHub and shows a dismissible banner if there is something newer than the version you are running. You can also check on demand from **Check for Updates…** in the App menu (macOS) or the Help menu (Windows / Linux).
@@ -24,8 +28,16 @@
 
 ### Material (Plate & Brace) Results
 
-- The Analysis Results panel now fills in **as you tap**. The Long / Cross / (FLC) rows appear straight away as dashed placeholders and are completed as each phase finishes; the calculated properties appear only once the whole measurement is done. Previously the panel stayed empty until the very end, which gave no sense of progress.
+- The Analysis Results panel now fills in **as you tap**. The Longitudinal (fL), Cross-grain (fC), and Diagonal (fLC) rows appear straight away as dashed placeholders and are completed as each phase finishes; the calculated properties appear only once the whole measurement is done. Previously the panel stayed empty until the very end, which gave no sense of progress.
 - Peak selection for each material phase now uses the **averaged** spectrum of that phase's taps rather than the last tap alone.
+
+### Clearer Tap-Mode Names
+
+- The three material taps are now labelled consistently everywhere — **Longitudinal (fL)**, **Cross-grain (fC)**, and **Diagonal (fLC)** — on the chart, in the results, and on the report. The Settings option for the third tap is now **Measure Diagonal (fLC) Tap**.
+
+### More Panel-Stiffness Presets
+
+- The Gore target-thickness calculation adds **Classical Top** and **Classical Back** to the existing Steel String Top, Steel String Back, and Custom presets.
 
 ### Peak Min
 
