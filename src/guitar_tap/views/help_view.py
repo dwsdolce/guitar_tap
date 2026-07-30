@@ -242,8 +242,8 @@ def _build_help_html() -> str:
         "&ldquo;Capturing Cross-Grain&rdquo; automatically after the longitudinal tap is accepted."
     ))
     parts.append(_row(
-        "Tap 3 &mdash; FLC (Optional)",
-        "Enable Measure FLC in Settings. Hold the plate at the midpoint of one long edge "
+        "Tap 3 &mdash; Diagonal (Optional)",
+        "Enable Measure Diagonal (fLC) Tap in Settings. Hold the plate at the midpoint of one long edge "
         "and tap near the opposite corner (~22% from both the end and the side). This adds "
         "a shear modulus measurement used in the Gore target-thickness calculation. "
         "Omitting it over-estimates target thickness by roughly 5&ndash;7%."

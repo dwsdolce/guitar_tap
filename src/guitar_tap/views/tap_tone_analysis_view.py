@@ -6035,7 +6035,7 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
         plate_layout.addWidget(_hsep())
 
-        measure_flc_cb = QtWidgets.QCheckBox("Measure FLC (Diagonal Tap)")
+        measure_flc_cb = QtWidgets.QCheckBox("Measure Diagonal (fLC) Tap")
         measure_flc_cb.setChecked(AS.AppSettings.measure_flc())
         flc_desc = QtWidgets.QLabel(
             "Add a 3rd tap: hold plate at midpoint of one long edge, tap near opposite corner. "
