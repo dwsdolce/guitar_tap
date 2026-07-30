@@ -18,6 +18,7 @@ from typing import Callable, Optional
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from models import field_precision as fp
+from views.shared.validated_number_field import ValidatedNumberField
 
 
 class MaterialDimensionsEditor(QtWidgets.QWidget):
@@ -87,12 +88,8 @@ class MaterialDimensionsEditor(QtWidgets.QWidget):
     # ── Field factories (mirror the Settings-dialog _dim_field/_dim_row) ──────────────────
 
     def _dim_field(self, decimals: int) -> QtWidgets.QLineEdit:
-        tf = QtWidgets.QLineEdit()
-        tf.setFixedWidth(80)
+        tf = ValidatedNumberField(decimals, width=80)  # shared view/validated-number-field widget
         tf.setFont(self._small_font)
-        tf.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        tf.setValidator(QtGui.QRegularExpressionValidator(
-            QtCore.QRegularExpression(fp.input_regex(decimals))))
         return tf
 
     def _dim_row(self, text: str, widget: QtWidgets.QWidget, unit: str) -> QtWidgets.QHBoxLayout:

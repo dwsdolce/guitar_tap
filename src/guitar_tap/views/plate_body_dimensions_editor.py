@@ -19,6 +19,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from models import field_precision as fp
 from models.plate_stiffness_preset import PlateStiffnessPreset
+from views.shared.validated_number_field import ValidatedNumberField
 
 
 class PlateBodyDimensionsEditor(QtWidgets.QWidget):
@@ -88,12 +89,8 @@ class PlateBodyDimensionsEditor(QtWidgets.QWidget):
     # ── Field factories ───────────────────────────────────────────────────────────────────
 
     def _dim_field(self, decimals: int) -> QtWidgets.QLineEdit:
-        tf = QtWidgets.QLineEdit()
-        tf.setFixedWidth(80)
+        tf = ValidatedNumberField(decimals, width=80)  # shared view/validated-number-field widget
         tf.setFont(self._small_font)
-        tf.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        tf.setValidator(QtGui.QRegularExpressionValidator(
-            QtCore.QRegularExpression(fp.input_regex(decimals))))
         return tf
 
     def _dim_row(self, text: str, widget: QtWidgets.QWidget, unit: str) -> QtWidgets.QHBoxLayout:

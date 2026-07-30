@@ -34,6 +34,7 @@ from views.material_dimensions_editor import MaterialDimensionsEditor
 from views.plate_body_dimensions_editor import PlateBodyDimensionsEditor
 from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
 from views.shared.loading_overlay import LoadingOverlay
+from views.shared.validated_number_field import ValidatedNumberField
 from views.utilities import extensions as _ext
 from models.guitar_type import GuitarType as _GTy
 
@@ -5955,21 +5956,10 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_layout.addWidget(plate_dims_hdr)
         plate_layout.addWidget(_hsep())
 
-        def _decimal_validator(decimals: int) -> QtGui.QRegularExpressionValidator:
-            """Restrict a field to `decimals` fractional digits (see fp.input_regex) — the mirror of
-            Swift's limitedInput binding, so a keystroke exceeding the precision is rejected."""
-            return QtGui.QRegularExpressionValidator(
-                QtCore.QRegularExpression(fp.input_regex(decimals)))
-
         def _dim_field(unit: str, value: float, decimals: int) -> QtWidgets.QLineEdit:
             """Text field for a dimension value, restricted to `decimals` fractional digits and
-            displayed at that precision. Mirrors Swift _dim_field + limitedInput."""
-            tf = QtWidgets.QLineEdit(fp.string(value, decimals))
-            tf.setFixedWidth(80)
-            tf.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-            tf.setPlaceholderText(unit)
-            tf.setValidator(_decimal_validator(decimals))
-            return tf
+            displayed at that precision. Uses the shared ValidatedNumberField (view/validated-number-field)."""
+            return ValidatedNumberField(decimals, value=value, width=80, placeholder=unit)
 
         def _dim_row(text: str, widget: QtWidgets.QWidget,
                      unit: str = "") -> QtWidgets.QHBoxLayout:
@@ -6104,10 +6094,7 @@ class MainWindow(QtWidgets.QMainWindow):
         custom_fvs_row = QtWidgets.QHBoxLayout(custom_fvs_widget)
         custom_fvs_row.setContentsMargins(0, 0, 0, 0)
         custom_fvs_row.addWidget(QtWidgets.QLabel("Custom f_vs value:"))
-        custom_fvs_field = QtWidgets.QLineEdit(fp.string(TDS.custom_plate_stiffness(), fp.STIFFNESS))
-        custom_fvs_field.setFixedWidth(80)
-        custom_fvs_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        custom_fvs_field.setValidator(_decimal_validator(fp.STIFFNESS))
+        custom_fvs_field = ValidatedNumberField(fp.STIFFNESS, value=TDS.custom_plate_stiffness(), width=80)
         custom_fvs_row.addWidget(custom_fvs_field)
         custom_fvs_widget.setVisible(fvs_combo.currentText() == "Custom")
         fvs_combo.currentTextChanged.connect(
@@ -6297,33 +6284,19 @@ class MainWindow(QtWidgets.QMainWindow):
         # not live as the user types, matching Swift TapSettingsView behaviour.
         _tf_width = 70
 
-        disp_f_min_field = QtWidgets.QLineEdit(
-            fp.string(AS.AppSettings.f_min(self.fft_canvas.analyzer._measurement_type), fp.FREQUENCY_HZ)
-        )
-        disp_f_min_field.setFixedWidth(_tf_width)
-        disp_f_min_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        disp_f_min_field.setValidator(_decimal_validator(fp.FREQUENCY_HZ))
+        disp_f_min_field = ValidatedNumberField(
+            fp.FREQUENCY_HZ,
+            value=AS.AppSettings.f_min(self.fft_canvas.analyzer._measurement_type), width=_tf_width)
 
-        disp_f_max_field = QtWidgets.QLineEdit(
-            fp.string(AS.AppSettings.f_max(self.fft_canvas.analyzer._measurement_type), fp.FREQUENCY_HZ)
-        )
-        disp_f_max_field.setFixedWidth(_tf_width)
-        disp_f_max_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        disp_f_max_field.setValidator(_decimal_validator(fp.FREQUENCY_HZ))
+        disp_f_max_field = ValidatedNumberField(
+            fp.FREQUENCY_HZ,
+            value=AS.AppSettings.f_max(self.fft_canvas.analyzer._measurement_type), width=_tf_width)
 
-        disp_db_min_field = QtWidgets.QLineEdit(
-            fp.string(AS.AppSettings.db_min(), fp.MAGNITUDE_DB)
-        )
-        disp_db_min_field.setFixedWidth(_tf_width)
-        disp_db_min_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        disp_db_min_field.setValidator(_decimal_validator(fp.MAGNITUDE_DB))
+        disp_db_min_field = ValidatedNumberField(
+            fp.MAGNITUDE_DB, value=AS.AppSettings.db_min(), width=_tf_width)
 
-        disp_db_max_field = QtWidgets.QLineEdit(
-            fp.string(AS.AppSettings.db_max(), fp.MAGNITUDE_DB)
-        )
-        disp_db_max_field.setFixedWidth(_tf_width)
-        disp_db_max_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        disp_db_max_field.setValidator(_decimal_validator(fp.MAGNITUDE_DB))
+        disp_db_max_field = ValidatedNumberField(
+            fp.MAGNITUDE_DB, value=AS.AppSettings.db_max(), width=_tf_width)
 
         _range_block(
             dg,
@@ -6416,10 +6389,8 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_hdr.setFont(hdr_font)
         pt_layout.addWidget(pt_hdr)
         pt_row = QtWidgets.QHBoxLayout()
-        peak_thresh_field = QtWidgets.QLineEdit(fp.string(AS.AppSettings.peak_min_threshold(), fp.MAGNITUDE_DB))
-        peak_thresh_field.setFixedWidth(_tf_width)
-        peak_thresh_field.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        peak_thresh_field.setValidator(_decimal_validator(fp.MAGNITUDE_DB))
+        peak_thresh_field = ValidatedNumberField(
+            fp.MAGNITUDE_DB, value=AS.AppSettings.peak_min_threshold(), width=_tf_width)
         pt_row.addWidget(peak_thresh_field)
         pt_row.addWidget(QtWidgets.QLabel("dB"))
         pt_row.addStretch()
