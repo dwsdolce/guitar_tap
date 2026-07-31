@@ -736,6 +736,11 @@ class TapToneAnalyzerControlMixin:
         # Clear previous results so the chart shows a clean slate while waiting.
         self.all_peaks = []
         self.identified_modes = []
+        # Notify the view so the scatter clears now (Swift gets this free via @Published
+        # currentPeaks = []; mirrors the device-change path above). Without it the previous
+        # measurement's dots linger until the first tap of the new sequence — e.g. leftover
+        # guitar dots after switching to a plate measurement via Settings.
+        self.peaksChanged.emit([])
 
         # Mirrors Swift startTapSequence: loadedMeasurementName = nil; loadedNotes = nil
         self.loaded_measurement_name = None
