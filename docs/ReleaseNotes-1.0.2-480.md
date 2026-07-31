@@ -2,7 +2,7 @@
 
 ---
 
-## Version 1.0.2 · Build 443
+## Version 1.0.2 · Build 480
 ### What's New Since Build 378
 
 ---
