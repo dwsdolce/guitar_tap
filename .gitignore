@@ -47,6 +47,10 @@ MANIFEST
 # Distribution / packaging
 *.dmg
 
+# Generated build number (git commit count). The build scripts regenerate it, and _version.py
+# resolves it live from git when running from source — so it never needs to be committed.
+src/guitar_tap/version_build
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

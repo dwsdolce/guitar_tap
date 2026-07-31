@@ -49,6 +49,23 @@ if [ $? -ne 0 ]; then
 fi
 
 #===============================================
+# Generate the docs (Quick-Start guide + release notes) BEFORE the installer, so a doc
+# error surfaces before the long PyInstaller build. Both scripts are also runnable
+# standalone for validation. The release-notes version/build numbers are stamped from
+# git here — nothing typed by hand.
+#===============================================
+./packaging/generate_guide.sh
+if [ $? -ne 0 ]; then
+    echo "Generating the Quick-Start guide failed"
+    exit 1
+fi
+./packaging/generate_release_notes.sh
+if [ $? -ne 0 ]; then
+    echo "Generating the release notes failed"
+    exit 1
+fi
+
+#===============================================
 # Run pyinstaller
 #===============================================
 # Get the full version (e.g. 1.0.245) matching what the spec file produces
