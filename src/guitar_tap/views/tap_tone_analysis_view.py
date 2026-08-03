@@ -58,8 +58,7 @@ basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # systemBlue is light/dark adaptive on Apple's side; mirror that adaptivity here.
 #
 # THEME TOKEN: the Light/Dark/System theme work owns swapping these — that is why they are named
-# constants resolved through `_system_blue()`, not literals at the use sites. See
-# GuitarTapWeb/Development/THEME-SPEC.md.
+# constants resolved through `_system_blue()`, not literals at the use sites.
 SYSTEM_BLUE_LIGHT = "#007AFF"
 SYSTEM_BLUE_DARK = "#0A84FF"
 
@@ -3135,7 +3134,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # noise_floor_estimate = -100, collapsing `rising` onto tap_detection_threshold and silently
             # degrading relative detection to absolute -- so replaying a session did NOT reproduce what
             # the live session did.  A saved session WAV always contains its warm-up by construction.
-            # Mirrors Swift TapToneAnalysisView+Actions.  See GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md.
+            # Mirrors Swift TapToneAnalysisView+Actions.
             _is_material_playback = not TDS.measurement_type().is_guitar
             analyzer.start_tap_sequence(skip_warmup=not _is_material_playback)
 

@@ -503,7 +503,6 @@ class TapToneAnalyzer(
         # do not (setup happens between arming and the first chunk), and a wall-clock warm-up can
         # expire before any audio arrives — the warm-up never runs, the noise-floor re-anchor never
         # fires, and the EMA latches at its seed, silently disabling relative detection.
-        # See GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md.
         self.warmup_start_audio_time: "float | None" = None
         # Wall-clock time of the most recent detected tap. Mirrors lastTapTime.
         self.last_tap_time: "float | None" = None
@@ -750,7 +749,6 @@ class TapToneAnalyzer(
         #
         #    Playback must run the LIVE detection path -- otherwise it cannot tell us whether live and
         #    playback agree, which is the whole point of the file-playback regression.
-        #    See GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md.
         from models.measurement_type import MeasurementType as _MTp
         _is_material = measurement_type in (_MTp.PLATE, _MTp.BRACE)
         self.start_tap_sequence(skip_warmup=not _is_material, initial_phase=plate_tap_phase)
@@ -994,7 +992,6 @@ class TapToneAnalyzer(
         Per-peak state (selection, mode overrides, annotation offsets) is keyed to
         these identities, which is what makes it durable across a Peak Min move.
         Mirrors Swift `allPeaks` (@Published; didSet -> refreshDisplayedPeaks()).
-        See Development/PEAK-LIFECYCLE-SPEC.md in the GuitarTapWeb repo.
         """
         return self._all_peaks
 

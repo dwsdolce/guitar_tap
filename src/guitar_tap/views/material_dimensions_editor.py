@@ -7,8 +7,7 @@ Mirrors Swift MaterialDimensionsEditor.swift.
 
 Editing a field updates the measurement's ``material_inputs`` live (via the ``get_inputs`` accessor),
 so every derived property recomputes; it never touches the Settings defaults (Store A). Shown only when
-the measurement is complete (its container gates on that). See
-GuitarTapWeb/Development/MEASUREMENT-DIMENSIONS-SPEC.md.
+the measurement is complete (its container gates on that).
 """
 
 from __future__ import annotations

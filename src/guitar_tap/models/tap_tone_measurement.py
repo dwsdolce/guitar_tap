@@ -865,8 +865,7 @@ class TapToneMeasurement:
         capture (and one per tap entry in multi-tap files): the detector visited overlap bins
         once per overlapping mode range and minted a peak each time. Loaded peaks are
         authoritative and are never re-derived, so without this every existing file would show
-        a phantom Analysis Results row forever. See
-        Development/PEAK-FINDING-DUPLICATE-PEAKS.md in the GuitarTapWeb repo.
+        a phantom Analysis Results row forever.
 
         Keeps, in order of preference: the peak in ``selected_ids`` (the claimed mode winner),
         then the louder, then the first seen. find_peaks guarantees legitimately saved peaks

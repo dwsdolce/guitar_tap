@@ -35,7 +35,7 @@ class ModeRanges:
     mode in ascending range order and constrains Back to sit above the claimed Top.
     Detection must not consult these bands at all — a detector that iterates them
     visits overlap bins more than once, which is what produced the duplicate-peak
-    defect (Development/PEAK-FINDING-DUPLICATE-PEAKS.md in GuitarTapWeb).
+    defect.
 
     The values are approximations; GENERIC deliberately spans them all and is the more
     useful setting in practice.

@@ -90,7 +90,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._annotation_mode: AVM = AVM.SELECTED
         # peak id → mode, from classify_all. Keyed by IDENTITY, never by frequency: two peaks
         # can share a frequency, and a frequency-keyed map silently collapses them so the last
-        # one's label wins for both. See Development/PEAK-FINDING-DUPLICATE-PEAKS.md section 3d.
+        # one's label wins for both.
         self._auto_mode_map: dict[str, gm.GuitarMode] = {}
         # Selected L/C/FLC peak IDs for plate/brace measurements.
         # Mirrors Swift selectedLongitudinalPeakID / selectedCrossPeakID / selectedFlcPeakID

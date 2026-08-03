@@ -654,7 +654,6 @@ class TapToneAnalyzerControlMixin:
         # i.e. the relative rule collapses onto the absolute one, silently disabling the very model it
         # is meant to implement.  That is what used to happen on EVERY file playback, which is why the
         # relative detector was never exercised by any regression test on any platform.
-        # See GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md.
         # Mirrors Swift TapToneAnalyzer+Control.swift noiseFloorEstimate.
         self.noise_floor_estimate = -100.0 if skip_warmup else self._current_input_level_db
 

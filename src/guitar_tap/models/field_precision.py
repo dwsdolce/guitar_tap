@@ -5,7 +5,6 @@ One ``P`` per field governs input (restrict-on-entry), storage, and display, so 
 identically in the input field, Settings, the saved measurement, and the report — and identically
 across the Swift, Python, and web editions. Mirrors Swift ``FieldPrecision`` / web ``precision.ts``.
 
-Spec (with the validated value ranges): GuitarTapWeb/Development/NUMERIC-PRECISION-SPEC.md.
 This table MUST stay identical across the Swift, Python, and web mirrors.
 
 Precision table — P = decimal places::

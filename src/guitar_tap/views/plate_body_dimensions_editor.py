@@ -8,7 +8,7 @@ Mirrors Swift PlateBodyDimensionsEditor.swift.
 
 These feed only the Gore target thickness; editing a field updates the measurement's ``material_inputs``
 live so the target recomputes, and never touches the Settings defaults (Store A). Shown only when the
-plate measurement is complete. See GuitarTapWeb/Development/MEASUREMENT-DIMENSIONS-SPEC.md.
+plate measurement is complete.
 """
 
 from __future__ import annotations

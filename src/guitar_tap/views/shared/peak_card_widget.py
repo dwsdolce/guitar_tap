@@ -541,7 +541,7 @@ class PeakListWidget(QtWidgets.QWidget):
             # is peak identity. Going through model.freq_index(freq) was a defect: it returns
             # -1 for a non-unique frequency, and -1 is a VALID Python index, so both cards of a
             # duplicated peak silently read _peaks[-1] — an unrelated resonance — and showed its
-            # star, mode label and pitch. See Development/PEAK-FINDING-DUPLICATE-PEAKS.md §3d.
+            # star, mode label and pitch.
             src_idx = self.model.index(int(i), 0)
             mode = self.model.mode_value(src_idx)
             auto_mode = self.model.peak_mode(src_idx)

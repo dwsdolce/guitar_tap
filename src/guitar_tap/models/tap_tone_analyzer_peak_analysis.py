@@ -417,8 +417,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         mode passes and _make_peak was called on it twice, minting two peaks with two
         ids and otherwise identical values. The assembly step then reconciled two
         independently deduplicated lists **by id** and let the twin survive, so every
-        guitar capture on every platform saved one duplicated peak. See
-        Development/PEAK-FINDING-DUPLICATE-PEAKS.md in the GuitarTapWeb repo.
+        guitar capture on every platform saved one duplicated peak.
 
         Classification and mode claiming belong to GuitarMode.classify_all(), which
         operates on the returned peak *list* — where each peak has one identity and can
