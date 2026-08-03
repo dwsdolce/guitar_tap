@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a problem with Guitar Tap (the desktop app)
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Guitar Tap. The version, your OS, and clear
+        steps to reproduce make a bug far faster to fix.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+      placeholder: When I capture a plate tap, the second peak…
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps that reliably trigger it.
+      placeholder: |
+        1. Open Guitar Tap
+        2. Select Plate
+        3. Tap the plate
+        4. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: "Shown in Help → About, e.g. 1.0.2 (455)."
+      placeholder: "1.0.2 (NNN)"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Windows installer (.exe)
+        - macOS disk image (.dmg)
+        - Linux AppImage
+        - Ran from source
+        - Not sure
+    validations:
+      required: false
+  - type: input
+    id: microphone
+    attributes:
+      label: Microphone / audio interface
+      description: Which mic or interface were you using? Audio issues are often device-specific.
+      placeholder: built-in mic, UMIK-1, Focusrite Scarlett…
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or logs
+      description: Drag in screenshots, or paste any error text. Optional but helpful.
+    validations:
+      required: false
