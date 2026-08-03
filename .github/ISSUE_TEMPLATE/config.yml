@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question, feedback, or support
+    url: mailto:support@dolcesfogato.com
+    about: For anything that isn't a bug — general questions, feedback, or help.
+  - name: Guitar Tap on the web
+    url: https://dolcesfogato.com/guitar_tap/guitar_tap_web/
+    about: Try the browser version — no install needed.
