@@ -135,6 +135,9 @@ Then run the platform script from the repository root:
 The full [User Manual](https://www.dolcesfogato.com/guitar_tap/manual/) covers every
 measurement mode, the settings and controls reference, troubleshooting, and a glossary.
 
+Design and cross-platform project docs (specs, parity map, roadmap) are maintained in the
+project hub repo `guitar-tap-project`, not in this repo.
+
 ## Update check
 
 On startup Guitar Tap checks this repository's public
