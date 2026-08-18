@@ -67,7 +67,10 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity='Developer ID Application: David Smith (43QHHT3XK2)',
+    # Opt-in, and read from the environment rather than hardcoded: this is a
+    # public repository and a Developer ID does not belong in it. See
+    # packaging/build_mac.
+    codesign_identity=os.environ.get('CODESIGN_IDENTITY') or None,
     entitlements_file=os.path.join(SPECPATH, 'entitlements.plist'),
 )
 

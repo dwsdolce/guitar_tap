@@ -31,6 +31,16 @@ else
 fi
 
 
+#===============================================
+# Signing settings.
+#===============================================
+# Identity and notary profile live in one file outside every repository, so no
+# Developer ID is baked into the source and there is a single place to edit it.
+# Absent, the signing steps below detect the unset variables and the build goes
+# unsigned - which is the right behaviour for anyone who is not the maintainer.
+MACSIGN_ENV="${MACSIGN_ENV:-$HOME/.config/macsign.env}"
+[[ -f "$MACSIGN_ENV" ]] && source "$MACSIGN_ENV"
+
 echo "Running build for `arch` architecure"
 
 #===============================================
@@ -107,7 +117,6 @@ then
         $installer_name \
         "dist/"
 else
-    #productbuild --sign "Developer ID Installer: David Smith (43QHHT3XK2)" --component dist/Guitar\ Tap.app /Applications $installer_name
     rm -rf packages
     mkdir packages
     pkgbuild --root ./dist \
@@ -116,20 +125,34 @@ else
         --version "${VERSION}" \
         --install-location "/Applications" \
         packages/GuitarTap.pkg
-    productbuild --distribution ./packaging/guitar-tap.arm.dist  \
-        --package-path ./packages \
-        --sign "Developer ID Installer: David Smith (43QHHT3XK2)" \
-        $installer_name
+    if [[ -n "$INSTALLER_IDENTITY" ]]; then
+        productbuild --distribution ./packaging/guitar-tap.arm.dist  \
+            --package-path ./packages \
+            --sign "$INSTALLER_IDENTITY" \
+            $installer_name
+    else
+        echo "INSTALLER_IDENTITY is not set - building an unsigned package."
+        productbuild --distribution ./packaging/guitar-tap.arm.dist  \
+            --package-path ./packages \
+            $installer_name
+    fi
 fi
 if [ $? -ne 0 ]; then
     echo "Creating the ${format} failed"
     exit 1
 fi
 
+if [[ -z "$CODESIGN_IDENTITY" ]]; then
+    echo "CODESIGN_IDENTITY is not set - leaving ${installer_name} unsigned."
+    echo "Gatekeeper will warn on first launch; right-click > Open to bypass."
+    echo "Done creating ${installer_name}"
+    exit 0
+fi
+
 if [[ $format == "dmg" ]]
 then
     echo "Signing the ${format}"
-    /usr/bin/codesign -s "Developer ID Application: David Smith (43QHHT3XK2)" $installer_name
+    /usr/bin/codesign -s "$CODESIGN_IDENTITY" $installer_name
     if [ $? -ne 0 ]; then
         echo "Signing the ${format} failed"
         exit 1
@@ -141,8 +164,14 @@ echo "Done Creating the ${format}"
 #===============================================
 # Notarize the format.
 #===============================================
+if [[ -z "$NOTARY_PROFILE" ]]; then
+    echo "NOTARY_PROFILE is not set - skipping notarisation."
+    echo "Done creating ${installer_name}"
+    exit 0
+fi
+
 echo "Notarizing the ${format}"
-xcrun notarytool submit $installer_name --wait --keychain-profile "notarytool-profile"
+xcrun notarytool submit $installer_name --wait --keychain-profile "$NOTARY_PROFILE"
 if [ $? -ne 0 ]; then
     echo "Notarizing the ${format} failed"
     exit 1
