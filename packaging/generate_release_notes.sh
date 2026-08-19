@@ -26,6 +26,13 @@ set -e
 # Run from the project root regardless of where this script is invoked from.
 cd "$(dirname "$0")/.."
 
+# Abort if the notes were never rolled over after the last release — i.e. the
+# newest tag has no frozen "## Version <tag>" history entry and the top
+# {{placeholder}} section still holds already-shipped content. Without this a
+# "1.0.3" build would silently generate 1.0.2's notes. (set -e makes the
+# non-zero exit fatal; check_release_notes.sh prints the reason and the fix.)
+./packaging/check_release_notes.sh
+
 SRC="docs/ReleaseNotes.md"
 VERSION="$(cat src/guitar_tap/version)"
 BUILD="$(git rev-list --count HEAD)"

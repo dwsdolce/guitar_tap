@@ -42,6 +42,52 @@ REM ===============================================
 REM Get the full version (e.g. 1.0.245) matching what the spec file produces
 set /p version=<src\guitar_tap\version
 set /p version_build=<src\guitar_tap\version_build
+
+REM ===============================================
+REM Fail early if the version number is stale — already-tagged release + newer code.
+REM Mirrors packaging/check_version_freshness.sh. Uses the BASE version (before the
+REM build number is appended below) as the tag name.
+REM ===============================================
+setlocal enabledelayedexpansion
+git rev-parse -q --verify refs/tags/%version% >nul 2>&1
+if not errorlevel 1 (
+    set AHEAD=0
+    for /f %%a in ('git rev-list --count %version%..HEAD') do set AHEAD=%%a
+    if not "!AHEAD!"=="0" (
+        echo ======================================================================
+        echo BUILD BLOCKED - stale version number.
+        echo   src\guitar_tap\version says %version%, which is already released
+        echo   ^(git tag '%version%' exists^), but HEAD is !AHEAD! commit^(s^) newer.
+        echo   Bump src\guitar_tap\version to the next release number before building.
+        echo ======================================================================
+        endlocal
+        exit /b 1
+    )
+)
+endlocal
+
+REM ===============================================
+REM Fail if docs\ReleaseNotes.md was not rolled over after the last release.
+REM Required on every platform even though Windows does not generate the notes.
+REM Mirrors packaging\check_release_notes.sh: the newest tag must appear as a
+REM frozen "## Version <tag> " header. (findstr /b /c: = literal, line-start.)
+REM ===============================================
+set LATEST_TAG=
+for /f %%t in ('git describe --tags --abbrev^=0 2^>nul') do set LATEST_TAG=%%t
+if not "%LATEST_TAG%"=="" (
+    findstr /b /c:"## Version %LATEST_TAG% " docs\ReleaseNotes.md >nul
+    if errorlevel 1 (
+        echo ======================================================================
+        echo BUILD BLOCKED - release notes not rolled over after %LATEST_TAG%.
+        echo   docs\ReleaseNotes.md has no frozen "## Version %LATEST_TAG%" entry,
+        echo   so the top placeholder section still holds already-shipped content.
+        echo   Freeze the current top section as "## Version %LATEST_TAG%" and add
+        echo   a fresh placeholder section for the new version before building.
+        echo ======================================================================
+        exit /b 1
+    )
+)
+
 set version=%version%.%version_build%
 echo Creating installer for version %version%
 pyinstaller -y packaging\guitar-tap.spec
