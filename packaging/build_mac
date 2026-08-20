@@ -59,16 +59,12 @@ if [ $? -ne 0 ]; then
 fi
 
 #===============================================
-# Fail early if the version number is stale — already-tagged release + newer code.
-# (The guard prints a meaningful message and tells you to bump the version.)
+# Refuse to build a tree with a stale release identity: a version number that
+# still names an already-shipped release, or release notes never rolled over
+# after it. Same guard the app itself runs at startup, so a build can never be
+# the first thing to notice. It prints what is wrong and how to fix it.
 #===============================================
-./packaging/check_version_freshness.sh || exit 1
-
-#===============================================
-# Fail if docs/ReleaseNotes.md was not rolled over after the last release.
-# Required on every platform even though only macOS generates the notes PDF.
-#===============================================
-./packaging/check_release_notes.sh || exit 1
+python3 src/guitar_tap/_release_guard.py || exit 1
 
 #===============================================
 # Generate the docs (Quick-Start guide + release notes) BEFORE the installer, so a doc

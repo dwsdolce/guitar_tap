@@ -30,8 +30,8 @@ cd "$(dirname "$0")/.."
 # newest tag has no frozen "## Version <tag>" history entry and the top
 # {{placeholder}} section still holds already-shipped content. Without this a
 # "1.0.3" build would silently generate 1.0.2's notes. (set -e makes the
-# non-zero exit fatal; check_release_notes.sh prints the reason and the fix.)
-./packaging/check_release_notes.sh
+# non-zero exit fatal; the guard prints the reason and the fix.)
+python3 src/guitar_tap/_release_guard.py
 
 SRC="docs/ReleaseNotes.md"
 VERSION="$(cat src/guitar_tap/version)"

@@ -62,6 +62,16 @@ if sys.platform != "win32" and _fh_target is not None:
 # os.path.dirname(__file__) is src/guitar_tap/.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Refuse to run a development checkout whose release identity is stale — the
+# version still names an already-shipped release, or the release notes were
+# never rolled over after it. Deliberately BEFORE the Qt imports so the failure
+# is a plain stderr message rather than a half-started GUI, and before anything
+# can put a wrong version number on screen. No-ops in a shipped build (no git
+# repository to check). See _release_guard.py for the rule and the fix.
+import _release_guard
+
+_release_guard.enforce()
+
 from PySide6 import QtCore, QtGui, QtWidgets
 from views.tap_tone_analysis_view import MainWindow, basedir
 
