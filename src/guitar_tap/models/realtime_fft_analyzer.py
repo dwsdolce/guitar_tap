@@ -153,6 +153,11 @@ class _FftProcessingThread(QtCore.QThread):
     # Edge-triggered clipping signal.
     clippingChanged: QtCore.Signal = QtCore.Signal(bool)
 
+    # Edge-triggered dead-input signal: True while buffers arrive carrying no
+    # signal. Lives here for the same reason clippingChanged does — RealtimeFFTAnalyzer
+    # is not a QObject, so the QThread owns Qt signal delivery.
+    inputAppearsDeadChanged: QtCore.Signal = QtCore.Signal(bool)
+
     # Emitted when a gated capture window fills.
     gatedCaptureComplete: QtCore.Signal = QtCore.Signal(object, float, object)
 
@@ -437,6 +442,27 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._watchdog_engine_start_time: float | None = None
         self._watchdog_silence_threshold: float = 2.5  # s with no buffer → wedged
         self._watchdog_max_attempts: int = 6
+
+        # MARK: - Dead-input watchdog (mirrors Swift RealtimeFFTAnalyzer+Watchdog).
+        # A second, distinct failure mode: buffers keep arriving on schedule but carry
+        # NO SIGNAL. Delivery looks healthy (`_last_buffer_time` is stamped by every
+        # callback regardless of content), so the buffer-delivery watchdog above is
+        # blind to it — the spectrum keeps updating and every reading is silence.
+        # Seen on macOS with a USB mic after wake-from-sleep and while idling between
+        # taps, where the stream survives the device re-enumerating underneath it.
+        #
+        # The discriminator is "impossibly quiet", never merely "quiet": any real
+        # microphone clears this floor on its own self-noise, so a silent room can
+        # never trigger a restart.
+        self._last_signal_time: float = 0.0
+        self._watchdog_dead_input_threshold: float = 15.0  # s with no signal → dead
+        # True while the input delivers buffers carrying no signal. Surfaced in the
+        # status line rather than only auto-healed: a device-level failure cannot be
+        # fixed by restarting the stream (the recorded incident needed a USB
+        # re-enumeration), so recovery exhausts its attempts and stops — and the
+        # status line is then all that stands between the user and an app that looks
+        # alive while deaf. Mirrors Swift `inputAppearsDead`.
+        self.input_appears_dead: bool = False
 
         # MARK: - WAV File Playback (mirrors Swift RealtimeFFTAnalyzer.isPlayingFile)
         # True while a background thread is feeding a WAV file into self.queue.

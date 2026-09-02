@@ -65,22 +65,49 @@ class TapToneAnalyzerControlMixin:
         return (self._tap_prompt() if self.current_tap_count == 0
                 else f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again...")
 
+    CLIPPING_WARNING_STATUS = "⚠ Input clipping — reduce mic gain"
+    DEAD_INPUT_STATUS = "⚠ No audio input — check the microphone connection"
+
     def _set_clipping(self, clipping: bool) -> None:
         """Update the input-clipping state and re-render the status message.
 
         Called from a slot connected to the FFT thread's clippingChanged signal.
-        On transition, swaps the displayed status between the clipping warning
-        and the most recent analyzer-set message (preserved in
-        _latest_real_status).  Mirrors Swift TapToneAnalyzer.setClipping(_:).
+        Mirrors Swift TapToneAnalyzer.setClipping(_:).
         """
         if clipping == getattr(self, "is_clipping", False):
             return
         self.is_clipping = clipping
-        if clipping:
-            self.status_message = "⚠ Input clipping — reduce mic gain"
+        self._apply_status_overrides()
+
+    def _set_input_appears_dead(self, dead: bool) -> None:
+        """Update the dead-input state and re-render the status message.
+
+        Called from a slot connected to the FFT thread's inputAppearsDeadChanged
+        signal.  Mirrors Swift's `$inputAppearsDead` sink.
+        """
+        if dead == getattr(self, "input_appears_dead", False):
+            return
+        self.input_appears_dead = dead
+        self._apply_status_overrides()
+
+    def _apply_status_overrides(self) -> None:
+        """Resolve the displayed status against the active input-condition overrides.
+
+        One place decides precedence — dead input, then clipping, then whatever the
+        analyzer last set — so the two overrides cannot fight each other or leave a
+        stale warning on screen after its condition clears.  Dead input outranks
+        clipping: a dead input cannot also be clipping, and "no audio" is the more
+        actionable message.  Mirrors Swift `applyStatusOverrides()`.
+        """
+        if getattr(self, "input_appears_dead", False):
+            resolved = self.DEAD_INPUT_STATUS
+        elif getattr(self, "is_clipping", False):
+            resolved = self.CLIPPING_WARNING_STATUS
         else:
-            self.status_message = self._latest_real_status
-        self.statusMessageChanged.emit(self.status_message)
+            resolved = self._latest_real_status
+        if self.status_message != resolved:
+            self.status_message = resolved
+            self.statusMessageChanged.emit(self.status_message)
 
     # ------------------------------------------------------------------ #
     # Hot-plug (mirrors FftCanvas._on_devices_refreshed)

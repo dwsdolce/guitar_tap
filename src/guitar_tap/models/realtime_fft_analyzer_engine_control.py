@@ -207,6 +207,15 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 raise sd.CallbackStop
         self._last_buffer_time = time.monotonic()  # watchdog liveness stamp (audio thread)
         chunk = data[:, 0].copy()  # copy before queuing — PortAudio reuses the buffer
+
+        # Dead-input watchdog liveness stamp. float(np.sqrt(chunk.dot(chunk) / n))
+        # is an allocation-free RMS — dot() reduces to a scalar, so nothing is
+        # materialised inside the realtime callback.
+        if chunk.size:
+            rms = float(np.sqrt(chunk.dot(chunk) / chunk.size))
+            if rms > self._DEAD_INPUT_RMS_THRESHOLD:
+                self._last_signal_time = time.monotonic()
+
         self.queue.put(chunk)
 
         # Non-zero status means input overflow or output underflow; samples may have been dropped.
@@ -615,6 +624,16 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
     _WATCHDOG_BACKOFFS = (0.5, 1.0, 2.0, 4.0)
 
+    # RMS below which a chunk counts as carrying no signal: 1e-5 = -100 dBFS.
+    # Calibrated from the recorded incidents (hub AUDIO-WATCHDOG-SILENT-STREAM.md):
+    # a dead-but-present device sat pinned at ~-100 dBFS, a live room reads ~-70 dBFS.
+    # Set at the BOTTOM of that range on purpose — the UMIK-1 is an unusually quiet
+    # microphone and can sit near -90 dBFS in a silent room, so a mid-range threshold
+    # would call a quiet workshop a dead input and restart mid-measurement. A missed
+    # detection costs one more watchdog cycle; a false positive interrupts real work.
+    # RMS (not peak) so all three editions apply the identical criterion.
+    _DEAD_INPUT_RMS_THRESHOLD = 1e-5
+
     def start_buffer_watchdog(self) -> None:
         """(Re)start the buffer-delivery watchdog (main-thread QTimer)."""
         if getattr(self, "is_for_testing", False):
@@ -623,6 +642,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self.stop_buffer_watchdog()
         self._watchdog_engine_start_time = time.monotonic()
         self._last_buffer_time = time.monotonic()
+        # Prime the dead-input clock too, so its window is measured from the start.
+        self._last_signal_time = time.monotonic()
         timer = QtCore.QTimer()
         timer.setInterval(1000)
         timer.timeout.connect(self._check_buffer_watchdog)
@@ -643,14 +664,44 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         started = self._watchdog_engine_start_time
         if started is None or (time.monotonic() - started) <= 4.0:
             return  # startup grace — let a freshly-(re)started stream deliver its first buffer
-        silent_for = time.monotonic() - self._last_buffer_time
-        if silent_for <= self._watchdog_silence_threshold:
-            if self._watchdog_recovery_attempts != 0:
-                self._watchdog_recovery_attempts = 0  # healthy — clear the streak
+        now = time.monotonic()
+
+        # Failure mode 1: callbacks stopped firing at all.
+        starved_for = now - self._last_buffer_time
+        if starved_for > self._watchdog_silence_threshold:
+            gt_log(f"⏱️ Buffer watchdog: no audio for {starved_for:.1f}s while running — I/O appears wedged")
+            self._is_recovering = True
+            self._attempt_watchdog_recovery()
             return
-        gt_log(f"⏱️ Buffer watchdog: no audio for {silent_for:.1f}s while running — I/O appears wedged")
-        self._is_recovering = True
-        self._attempt_watchdog_recovery()
+
+        # Failure mode 2: callbacks still firing on schedule, but carrying nothing.
+        dead_for = now - self._last_signal_time
+        if dead_for > self._watchdog_dead_input_threshold:
+            gt_log(f"🔇 Dead-input watchdog: buffers arriving but no signal for "
+                   f"{dead_for:.1f}s — input appears dead")
+            if not self.input_appears_dead:
+                self.input_appears_dead = True
+                self._emit_input_appears_dead(True)
+            self._is_recovering = True
+            self._attempt_watchdog_recovery()
+            return
+
+        # Healthy — signal is flowing again; clear the warning and any recovery streak.
+        if self.input_appears_dead:
+            self.input_appears_dead = False
+            self._emit_input_appears_dead(False)
+        if self._watchdog_recovery_attempts != 0:
+            self._watchdog_recovery_attempts = 0
+
+    def _emit_input_appears_dead(self, dead: bool) -> None:
+        """Emit the dead-input edge on the processing thread's signal.
+
+        Guarded because the thread is torn down and rebuilt around a recovery
+        restart, so the watchdog can tick while proc_thread is briefly absent.
+        """
+        thread = getattr(self, "proc_thread", None)
+        if thread is not None:
+            thread.inputAppearsDeadChanged.emit(dead)
 
     def _attempt_watchdog_recovery(self) -> None:
         """Schedule one bounded, backed-off recovery restart."""

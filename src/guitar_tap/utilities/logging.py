@@ -13,6 +13,7 @@ Both write to the platform user-data directory alongside saved measurements:
 
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TextIO
@@ -30,6 +31,8 @@ class _FileLogger:
         # disabled never creates or touches the log file.
         self._file: "TextIO | None" = None
         self._lock = threading.Lock()
+        # Monotonic origin for the `t=` column (see _write).
+        self._log_start = time.monotonic()
 
     @staticmethod
     def _log_file_path() -> Path:
@@ -40,8 +43,22 @@ class _FileLogger:
             base = Path(user_documents_dir()) / "GuitarTap"
         return base / "guitar_tap-debug.log"
 
-    def _ensure_open(self) -> TextIO:
+    @staticmethod
+    def _under_test() -> bool:
+        """True when running under pytest (mirrors Swift's XCTest check).
+
+        The log file is a FIELD diagnostic: it is what the user sends after a
+        failure, and every session in it should be a session of the app. A test run
+        appends hundreds of construct/teardown cycles that look exactly like app
+        activity, making a real log unreadable. Console output is unaffected — only
+        the shared file is left alone.
+        """
+        return "pytest" in sys.modules
+
+    def _ensure_open(self) -> "TextIO | None":
         """Open the log file and write the session banner on first use."""
+        if self._under_test():
+            return None
         f = self._file
         if f is None:
             log_path = self._log_file_path()
@@ -52,9 +69,23 @@ class _FileLogger:
         return f
 
     def _write(self, message: str) -> None:
-        line = message if message.endswith("\n") else message + "\n"
+        """Write one stamped line (mirrors Swift ``FileLogger.write``).
+
+        Every line carries BOTH a wall clock and a monotonic elapsed time, because
+        the pair is what makes a SLEEP visible. ``time.monotonic()`` is suspended
+        while the machine sleeps; the wall clock is not. A line whose wall-clock gap
+        far exceeds its ``t=`` gap is the first line after a wake — otherwise
+        invisible in a log, and exactly the event under investigation for the
+        silent-input failure. Ordinary gaps move both clocks together.
+        """
+        wall = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        mono = time.monotonic() - self._log_start
+        body = message[:-1] if message.endswith("\n") else message
+        line = f"{wall} t={mono:9.3f} {body}\n"
         with self._lock:
-            self._ensure_open().write(line)
+            f = self._ensure_open()
+            if f is not None:
+                f.write(line)
 
     def __del__(self) -> None:
         if self._file is not None:

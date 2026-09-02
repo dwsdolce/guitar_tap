@@ -817,6 +817,7 @@ class TapToneAnalyzer(
 
         # ── Input-clipping signal (Qt — UI only) ────────────────────────
         self.mic.proc_thread.clippingChanged.connect(self._set_clipping)
+        self.mic.proc_thread.inputAppearsDeadChanged.connect(self._set_input_appears_dead)
 
         # ── Raw-sample handler ───────────────────────────────────────────
         self.mic.raw_sample_handler = self._accumulate_gated_samples
