@@ -456,6 +456,11 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # never trigger a restart.
         self._last_signal_time: float = 0.0
         self._watchdog_dead_input_threshold: float = 15.0  # s with no signal → dead
+        # True once recovery has exhausted its attempts. Restart attempts stop, but the
+        # watchdog keeps WATCHING, so the app heals itself the moment audio returns
+        # instead of staying deaf until it is relaunched. Mirrors Swift
+        # `watchdogRecoveryExhausted`.
+        self._watchdog_recovery_exhausted: bool = False
         # True while the input delivers buffers carrying no signal. Surfaced in the
         # status line rather than only auto-healed: a device-level failure cannot be
         # fixed by restarting the stream (the recorded incident needed a USB

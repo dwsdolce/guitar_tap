@@ -644,6 +644,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self._last_buffer_time = time.monotonic()
         # Prime the dead-input clock too, so its window is measured from the start.
         self._last_signal_time = time.monotonic()
+        # A deliberate (re)start gets a clean slate: full recovery attempts again.
+        self._watchdog_recovery_exhausted = False
         timer = QtCore.QTimer()
         timer.setInterval(1000)
         timer.timeout.connect(self._check_buffer_watchdog)
@@ -668,7 +670,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
         # Failure mode 1: callbacks stopped firing at all.
         starved_for = now - self._last_buffer_time
-        if starved_for > self._watchdog_silence_threshold:
+        if starved_for > self._watchdog_silence_threshold and not self._watchdog_recovery_exhausted:
             gt_log(f"⏱️ Buffer watchdog: no audio for {starved_for:.1f}s while running — I/O appears wedged")
             self._is_recovering = True
             self._attempt_watchdog_recovery()
@@ -676,7 +678,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
         # Failure mode 2: callbacks still firing on schedule, but carrying nothing.
         dead_for = now - self._last_signal_time
-        if dead_for > self._watchdog_dead_input_threshold:
+        if dead_for > self._watchdog_dead_input_threshold and not self._watchdog_recovery_exhausted:
             gt_log(f"🔇 Dead-input watchdog: buffers arriving but no signal for "
                    f"{dead_for:.1f}s — input appears dead")
             if not self.input_appears_dead:
@@ -686,10 +688,22 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self._attempt_watchdog_recovery()
             return
 
-        # Healthy — signal is flowing again; clear the warning and any recovery streak.
+        # Still dead, but out of restart attempts: keep the warning up and keep
+        # watching.  No restart is attempted until signal returns.
+        if self._watchdog_recovery_exhausted and dead_for > self._watchdog_dead_input_threshold:
+            if not self.input_appears_dead:
+                self.input_appears_dead = True
+                self._emit_input_appears_dead(True)
+            return
+
+        # Healthy — signal is flowing again.  Clear the warning, the recovery streak and
+        # the exhausted latch, so a later failure gets a full set of attempts.
         if self.input_appears_dead:
             self.input_appears_dead = False
             self._emit_input_appears_dead(False)
+        if self._watchdog_recovery_exhausted:
+            gt_log("✅ Audio input returned — dead-input warning cleared, recovery re-armed")
+            self._watchdog_recovery_exhausted = False
         if self._watchdog_recovery_attempts != 0:
             self._watchdog_recovery_attempts = 0
 
@@ -708,9 +722,16 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         from PySide6 import QtCore
         self._watchdog_recovery_attempts += 1
         if self._watchdog_recovery_attempts > self._watchdog_max_attempts:
-            gt_log(f"❌ Buffer watchdog: giving up after {self._watchdog_max_attempts} failed restarts")
+            # Stop RESTARTING, but keep WATCHING.  Stopping the timer here left the app
+            # permanently deaf: nothing remained to notice the input coming back, so a
+            # user who fixed the microphone — reconnected it, un-muted it, raised an
+            # input level — saw no change until they relaunched.  The tick is cheap; it
+            # now keeps evaluating and clears the warning as soon as signal returns.
+            gt_log(f"❌ Buffer watchdog: giving up on restarts after "
+                   f"{self._watchdog_max_attempts} attempts — still watching; "
+                   f"will clear as soon as audio returns")
             self._is_recovering = False
-            self.stop_buffer_watchdog()
+            self._watchdog_recovery_exhausted = True
             return
         idx = min(self._watchdog_recovery_attempts - 1, len(self._WATCHDOG_BACKOFFS) - 1)
         backoff = self._WATCHDOG_BACKOFFS[idx]
