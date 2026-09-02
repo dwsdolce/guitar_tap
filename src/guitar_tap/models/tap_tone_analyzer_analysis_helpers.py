@@ -40,7 +40,7 @@ class TapToneAnalyzerAnalysisHelpersMixin:
                 auto = entry["mode"]
                 break
         else:
-            from models.tap_display_settings import TapDisplaySettings as _tds_pm
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_pm
             auto = GuitarMode.classify_all([peak], _tds_pm.guitar_type()).get(peak.id, GuitarMode.UNKNOWN)
         # Effective = the ONE shared resolver — an override wins over auto (freeform → UNKNOWN).
         # Mirrors Swift peakMode delegating to GuitarMode.effectiveMode.

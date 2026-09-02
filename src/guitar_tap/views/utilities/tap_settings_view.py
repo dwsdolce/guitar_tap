@@ -21,7 +21,7 @@ def _meas_key(meas_type) -> str:
     Importing here avoids a circular dependency at module load time.
     """
     try:
-        from models.measurement_type import MeasurementType  # noqa: PLC0415
+        from guitar_tap.models.measurement_type import MeasurementType  # noqa: PLC0415
         if isinstance(meas_type, MeasurementType):
             return meas_type.storage_key
     except ImportError:
@@ -87,8 +87,8 @@ class AppSettings:
         so that view-layer callers (graph reset, settings UI) stay in sync automatically
         whenever the model-layer defaults change.
         """
-        from models.measurement_type import MeasurementType  # noqa: PLC0415
-        from models.tap_display_settings import TapDisplaySettings  # noqa: PLC0415
+        from guitar_tap.models.measurement_type import MeasurementType  # noqa: PLC0415
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings  # noqa: PLC0415
         if not isinstance(meas_type, MeasurementType):
             key_str = _meas_key(meas_type)
             meas_type = next((m for m in MeasurementType if m.storage_key == key_str), None)
@@ -103,8 +103,8 @@ class AppSettings:
         so that view-layer callers (graph reset, settings UI) stay in sync automatically
         whenever the model-layer defaults change.
         """
-        from models.measurement_type import MeasurementType  # noqa: PLC0415
-        from models.tap_display_settings import TapDisplaySettings  # noqa: PLC0415
+        from guitar_tap.models.measurement_type import MeasurementType  # noqa: PLC0415
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings  # noqa: PLC0415
         if not isinstance(meas_type, MeasurementType):
             key_str = _meas_key(meas_type)
             meas_type = next((m for m in MeasurementType if m.storage_key == key_str), None)
@@ -253,7 +253,7 @@ class AppSettings:
         Stores the enum raw value ("Classical Guitar", etc.) matching Swift's
         TapDisplaySettings.measurementType which stores newValue.rawValue.
         """
-        from models.measurement_type import MeasurementType  # noqa: PLC0415
+        from guitar_tap.models.measurement_type import MeasurementType  # noqa: PLC0415
         raw = cls._get("analysis/measurement_type", None)
         if raw:
             try:

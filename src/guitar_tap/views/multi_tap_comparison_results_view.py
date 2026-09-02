@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 
 if TYPE_CHECKING:
-    from models.tap_tone_measurement import TapEntry
+    from guitar_tap.models.tap_tone_measurement import TapEntry
 
 
 # Comparison palette — mirrors TapToneAnalyzer.multiTapPalette (Swift: [.blue, .orange, .green, .purple, .teal]).
@@ -124,7 +124,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         averaged_modes: dict,
         guitar_type: str | None,
     ) -> None:
-        from models.guitar_mode import GuitarMode
+        from guitar_tap.models.guitar_mode import GuitarMode
         mode_for_col = {
             1: GuitarMode.AIR,
             2: GuitarMode.TOP,

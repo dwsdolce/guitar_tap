@@ -89,7 +89,9 @@ import numpy.typing as npt
 import sounddevice as sd
 from PySide6 import QtCore
 
+from guitar_tap.models.dead_input import BUFFER_DELIVERY_TIMEOUT, DEAD_INPUT_DWELL
 from guitar_tap.utilities.logging import gt_log
+
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
 from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
 
@@ -103,7 +105,7 @@ from .realtime_fft_analyzer_fft_processing import (
 )
 
 if platform.system() == "Darwin":
-    from views.utilities import platform_adapters as mac_access
+    from guitar_tap.views.utilities import platform_adapters as mac_access
 
 
 # ── _FftProcessingThread ──────────────────────────────────────────────────────
@@ -440,7 +442,9 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._is_recovering: bool = False
         self._watchdog_recovery_attempts: int = 0
         self._watchdog_engine_start_time: float | None = None
-        self._watchdog_silence_threshold: float = 2.5  # s with no buffer → wedged
+        # Thresholds are owned by dead_input.py so the rule and its constants are
+        # unit-testable; these keep the historical attribute names.
+        self._watchdog_silence_threshold: float = BUFFER_DELIVERY_TIMEOUT
         self._watchdog_max_attempts: int = 6
 
         # MARK: - Dead-input watchdog (mirrors Swift RealtimeFFTAnalyzer+Watchdog).
@@ -455,7 +459,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # microphone clears this floor on its own self-noise, so a silent room can
         # never trigger a restart.
         self._last_signal_time: float = 0.0
-        self._watchdog_dead_input_threshold: float = 15.0  # s with no signal → dead
+        self._watchdog_dead_input_threshold: float = DEAD_INPUT_DWELL
         # True once recovery has exhausted its attempts. Restart attempts stop, but the
         # watchdog keeps WATCHING, so the app heals itself the moment audio returns
         # instead of staying deaf until it is relaunched. Mirrors Swift
@@ -645,7 +649,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # (device_management auto-select and fft_canvas startup) can't drift onto different
         # devices (the bug behind the false "different calibration" warning).
         try:
-            from views.utilities.tap_settings_view import AppSettings as _AS
+            from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
             _AS.set_audio_device(device)
         except Exception:
             pass
@@ -655,7 +659,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         on_cal = getattr(self, "_on_calibration_changed", None)
         if on_cal is not None:
             try:
-                from models.microphone_calibration import CalibrationStorage as _CS
+                from guitar_tap.models.microphone_calibration import CalibrationStorage as _CS
                 cal = _CS.calibration_for_device(device.fingerprint)
                 if cal is None:
                     cal = _CS.calibration_for_device(device.name)

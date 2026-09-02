@@ -37,7 +37,11 @@ if os.path.exists(build_file):
 
 a = Analysis(
     [os.path.join(project_root, 'src/guitar_tap/__main__.py')],
-    pathex=[os.path.join(project_root, 'src/guitar_tap')],
+    # src (not src/guitar_tap): imports are package-absolute (`guitar_tap.…`), so the
+    # package's PARENT must be on the path. Pointing at src/guitar_tap would also make
+    # models/ and views/ importable as top-level packages, reintroducing the dual
+    # module identity this layout exists to avoid.
+    pathex=[os.path.join(project_root, 'src')],
     binaries=added_binaries,
     datas=added_files,
     hiddenimports=[],

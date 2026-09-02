@@ -27,25 +27,24 @@ SCOPE: the state-reachable strings only.  Two families are intentionally NOT pin
 
 from __future__ import annotations
 
-import sys
+import datetime
 import os
+import sys
 import time
 import uuid
-import datetime
 
 import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 from PySide6 import QtWidgets
 
-from models.tap_tone_analyzer import TapToneAnalyzer
-from models.tap_display_settings import TapDisplaySettings
-from models.measurement_type import MeasurementType
-from models.material_tap_phase import MaterialTapPhase
-from models.resonant_peak import ResonantPeak
+from guitar_tap.models.material_tap_phase import MaterialTapPhase
+from guitar_tap.models.measurement_type import MeasurementType
+from guitar_tap.models.resonant_peak import ResonantPeak
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
 CLIP = "⚠ Input clipping — reduce mic gain"
 
@@ -180,8 +179,8 @@ class TestStatusMessage:
 
     # ── loaded measurement (frozen) ─────────────────────────────────────────
     def test_loaded_measurement_shows_frozen_loaded_prompt(self):
-        from models.tap_tone_measurement import TapToneMeasurement
-        from models.spectrum_snapshot import SpectrumSnapshot
+        from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
+        from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
 
         sut = _make_sut(1)
         sut.captured_taps = [_fake_spectrum()]

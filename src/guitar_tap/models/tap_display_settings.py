@@ -33,7 +33,7 @@ from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMod
 
 def _app_settings():
     """Lazy import of AppSettings to avoid circular dependencies."""
-    from views.utilities.tap_settings_view import AppSettings  # noqa: PLC0415
+    from guitar_tap.views.utilities.tap_settings_view import AppSettings  # noqa: PLC0415
     return AppSettings
 
 
@@ -462,7 +462,7 @@ class TapDisplaySettings:
         AppSettings.default_f_min() delegates back to this method; do not call
         AppSettings here to avoid a circular dependency.
         """
-        from models.measurement_type import MeasurementType  # noqa: PLC0415
+        from guitar_tap.models.measurement_type import MeasurementType  # noqa: PLC0415
         if isinstance(meas_type, MeasurementType):
             if meas_type == MeasurementType.PLATE:
                 return cls.DEFAULT_PLATE_MIN_FREQUENCY
@@ -478,7 +478,7 @@ class TapDisplaySettings:
         AppSettings.default_f_max() delegates back to this method; do not call
         AppSettings here to avoid a circular dependency.
         """
-        from models.measurement_type import MeasurementType  # noqa: PLC0415
+        from guitar_tap.models.measurement_type import MeasurementType  # noqa: PLC0415
         if isinstance(meas_type, MeasurementType):
             if meas_type == MeasurementType.PLATE:
                 return cls.DEFAULT_PLATE_MAX_FREQUENCY

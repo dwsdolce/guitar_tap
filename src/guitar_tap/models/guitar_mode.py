@@ -54,7 +54,7 @@ def get_bands(
     guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
     """
     if guitar_type is None:
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         guitar_type = _tds.guitar_type()
     r = guitar_type.mode_ranges
     entries: list[tuple[GuitarMode, tuple[float, float]]] = [
@@ -82,7 +82,7 @@ def in_mode_range(freq: float, mode_str: str, guitar_type: "GuitarType | None" =
     guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
     """
     if guitar_type is None:
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         guitar_type = _tds.guitar_type()
     mode = GuitarMode.from_mode_string(mode_str)
     if mode is GuitarMode.UNKNOWN:
@@ -100,7 +100,7 @@ def classify_peak(freq: float, guitar_type: "GuitarType | None" = None) -> str:
     guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
     """
     if guitar_type is None:
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         guitar_type = _tds.guitar_type()
     mode = GuitarMode.classify(freq, guitar_type)
     return mode.value
@@ -191,7 +191,7 @@ class GuitarMode(Enum):
         Mirrors Swift GuitarMode.classify(frequency:guitarType:).
         """
         if guitar_type is None:
-            from models.tap_display_settings import TapDisplaySettings as _tds
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
             guitar_type = _tds.guitar_type()
         ranges = guitar_type.mode_ranges
         checks: list[tuple[tuple[float, float], GuitarMode]] = [
@@ -250,7 +250,7 @@ class GuitarMode(Enum):
           Mirrors Swift ``[UUID: GuitarMode]``.
         """
         if guitar_type is None:
-            from models.tap_display_settings import TapDisplaySettings as _tds
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
             guitar_type = _tds.guitar_type()
         ordered_modes = sorted(
             [cls.AIR, cls.TOP, cls.BACK, cls.DIPOLE, cls.RING_MODE, cls.UPPER_MODES],
@@ -315,7 +315,7 @@ class GuitarMode(Enum):
         guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
         """
         if guitar_type is None:
-            from models.tap_display_settings import TapDisplaySettings as _tds
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
             guitar_type = _tds.guitar_type()
         ordered_modes = sorted(
             [cls.AIR, cls.TOP, cls.BACK, cls.DIPOLE, cls.RING_MODE, cls.UPPER_MODES],
@@ -376,7 +376,7 @@ class GuitarMode(Enum):
         Mirrors Swift GuitarMode.isKnown(frequency:guitarType:).
         """
         if guitar_type is None:
-            from models.tap_display_settings import TapDisplaySettings as _tds
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
             guitar_type = _tds.guitar_type()
         r = guitar_type.mode_ranges
         return (
@@ -459,7 +459,7 @@ class GuitarMode(Enum):
         Mirrors Swift GuitarMode.modeRange(for:).
         """
         if guitar_type is None:
-            from models.tap_display_settings import TapDisplaySettings as _tds
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
             guitar_type = _tds.guitar_type()
         ranges = guitar_type.mode_ranges
         n = self.normalized

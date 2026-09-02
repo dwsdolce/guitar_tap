@@ -6,8 +6,7 @@ table, the restrict-on-entry predicate (``decimals_within``), half-away-from-zer
 (``rounded``), and display formatting (``string``). Keep these cases identical across the three
 editions so the table, regex, and rounding can never quietly drift apart.
 """
-from models import field_precision as fp
-
+from guitar_tap.models import field_precision as fp
 
 # --- Precision table ---
 

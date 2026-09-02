@@ -20,14 +20,13 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 from PySide6 import QtCore, QtWidgets
 
-from models.tap_tone_analyzer import TapToneAnalyzer
-from models.tap_display_settings import TapDisplaySettings
-from models.measurement_type import MeasurementType
-from models.material_tap_phase import MaterialTapPhase
+from guitar_tap.models.material_tap_phase import MaterialTapPhase
+from guitar_tap.models.measurement_type import MeasurementType
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
 _APP = None
 

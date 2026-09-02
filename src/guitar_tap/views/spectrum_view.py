@@ -15,6 +15,6 @@ coordination, chart-only drawing methods could be extracted here.
 """
 
 # The implementation lives in views/fft_canvas.py — FftCanvas class.
-from views.fft_canvas import FftCanvas
+from guitar_tap.views.fft_canvas import FftCanvas
 
 __all__ = ["FftCanvas"]

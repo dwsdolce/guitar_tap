@@ -18,12 +18,12 @@ clicked toggles the selection circle.
 
 from __future__ import annotations
 
-
-from models import TapToneMeasurement
-from models import guitar_mode as GM
-from models import guitar_type as GT
 from PySide6 import QtCore, QtGui, QtWidgets
-from utilities.date_format import format_display_datetime
+
+from guitar_tap.models import TapToneMeasurement
+from guitar_tap.models import guitar_mode as GM
+from guitar_tap.models import guitar_type as GT
+from guitar_tap.utilities.date_format import format_display_datetime
 
 # "⋯" actions button: transparent text when idle, grey on hover (no layout shift).
 _ELLIPSIS_IDLE_QSS = "QToolButton { color: rgba(136,136,136,0); border: none; font-size: 11px; padding: 0 2px; }"

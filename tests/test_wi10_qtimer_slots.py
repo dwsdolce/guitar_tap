@@ -24,8 +24,8 @@ Two verification strategies are used:
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import time
 
 import pytest
@@ -110,8 +110,8 @@ class TestTapDetectionSlots:
     """Verify the WI-10 refactored tap-detection slots apply correct state."""
 
     def _make(self):
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings
         from guitar_tap.models.measurement_type import MeasurementType
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
         TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
         sut = _make_sut()
         sut.tap_detection_threshold = -40.0
@@ -195,10 +195,11 @@ class TestSpectrumCapturePhaseSlots:
         CAPTURING_CROSS and arm tap detection.
         """
         import numpy as _np
+
         # Use the bare 'models' import path to match the internal code's enum identity.
         # The analyzer imports MaterialTapPhase as 'from models.material_tap_phase import ...'
         # so we must use the same path to avoid the dual-import-path enum mismatch.
-        from models.material_tap_phase import MaterialTapPhase
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
         sut = self._make()
         # Seed a minimal frozen spectrum so accept_current_phase doesn't crash
         sut.set_frozen_spectrum(_np.array([100.0]), _np.array([-40.0]))
@@ -212,7 +213,7 @@ class TestSpectrumCapturePhaseSlots:
 
     def test_do_start_flc_arms_flc_detection(self):
         """_do_start_flc (site 3) sets phase to CAPTURING_FLC and enables detection."""
-        from models.material_tap_phase import MaterialTapPhase
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
         sut = self._make()
         # _do_start_flc has a guard: it only proceeds when phase == WAITING_FOR_FLC_TAP.
         sut._set_material_tap_phase(MaterialTapPhase.WAITING_FOR_FLC_TAP)

@@ -3,18 +3,19 @@
 """
 
 
-import models.tap_tone_analyzer as td
 import numpy as np
 import numpy.typing as npt
 import pyqtgraph as pg
-import views.utilities.tap_settings_view as _as
-from models import guitar_mode as gm
-from models import guitar_type as gt
-from models import microphone_calibration as _mc_mod
-from models.analysis_display_mode import AnalysisDisplayMode
-from models.tap_display_settings import TapDisplaySettings as _tds
 from PySide6 import QtCore, QtGui, QtWidgets
-from views import peak_annotations as fft_a
+
+import guitar_tap.models.tap_tone_analyzer as td
+import guitar_tap.views.utilities.tap_settings_view as _as
+from guitar_tap.models import guitar_mode as gm
+from guitar_tap.models import guitar_type as gt
+from guitar_tap.models import microphone_calibration as _mc_mod
+from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
+from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+from guitar_tap.views import peak_annotations as fft_a
 
 
 class _SceneMouseReleaseFilter(QtCore.QObject):
@@ -128,7 +129,7 @@ class _PlateCaptureAdapter:
 
     @property
     def state(self) -> "State":
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
         phase = self._analyzer.material_tap_phase
         if phase == _MTP.COMPLETE:
             return self.State.COMPLETE
@@ -240,7 +241,7 @@ class FftCanvas(pg.PlotWidget):
         self.setTitle("FFT Peaks", color="#333333")
         # Restore persisted dB range — mirrors Swift's @State minDB/maxDB initialized
         # from TapDisplaySettings.minMagnitude / TapDisplaySettings.maxMagnitude.
-        import views.utilities.tap_settings_view as _as_init
+        import guitar_tap.views.utilities.tap_settings_view as _as_init
         self.setYRange(_as_init.AppSettings.db_min(), _as_init.AppSettings.db_max(), padding=0)
 
         # Enable and configure top axis for note labels
@@ -292,9 +293,10 @@ class FftCanvas(pg.PlotWidget):
         # details.  Without this filter, persisted fingerprints (or the system
         # default) can resolve to a WDM-KS entry and the mic appears dead.
         import sounddevice as sd  # deferred: ~0.4 s cold-import cost
-        from models.audio_device import AudioDevice as _AudioDevice
-        from models.audio_device import filter_input_devices as _filter_inputs
-        from models.realtime_fft_analyzer_device_management import _is_builtin_mic
+
+        from guitar_tap.models.audio_device import AudioDevice as _AudioDevice
+        from guitar_tap.models.audio_device import filter_input_devices as _filter_inputs
+        from guitar_tap.models.realtime_fft_analyzer_device_management import _is_builtin_mic
         _saved_audio_device: _AudioDevice | None = None
         _filtered_devs: list[dict] = []
         try:
@@ -420,7 +422,7 @@ class FftCanvas(pg.PlotWidget):
         # Create the FFT engine first, then pass it to TapToneAnalyzer.
         # Mirrors Swift: view creates RealtimeFFTAnalyzer, then passes it to
         # TapToneAnalyzer(fftAnalyzer:) so signals wire at construction time.
-        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
         _mic = _Mic(
             self,
             rate=sampling_rate,
@@ -743,7 +745,7 @@ class FftCanvas(pg.PlotWidget):
         mag_db risk receiving mismatched arrays when the flag changes between
         the two reads.
         """
-        from models.analysis_display_mode import AnalysisDisplayMode as _ADM
+        from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
         if self.analyzer.is_measurement_complete:
             return (self.analyzer.frozen_frequencies, self.analyzer.frozen_magnitudes)
         # During a device-change settle, display_mode is FROZEN but
@@ -878,7 +880,7 @@ class FftCanvas(pg.PlotWidget):
             guitar_type = gt.GuitarType(guitar_type_str)
         except ValueError:
             return
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         is_guitar = _tds.measurement_type().is_guitar
         for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):
             r, g, b, _ = rgba
@@ -915,7 +917,7 @@ class FftCanvas(pg.PlotWidget):
         gate here because setVisible(visible) would otherwise re-show bands
         when called while in plate/brace mode.
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         is_guitar = _tds.measurement_type().is_guitar
         self._mode_bands_visible = visible
         for item in self._mode_band_items:
@@ -1445,7 +1447,7 @@ class FftCanvas(pg.PlotWidget):
         loc = getattr(m, "measurement_name", None)
         if loc:
             return loc
-        from utilities.date_format import format_display_datetime_compact
+        from guitar_tap.utilities.date_format import format_display_datetime_compact
         return format_display_datetime_compact(getattr(m, "timestamp", ""))
 
     def load_comparison(self, measurements: list) -> None:

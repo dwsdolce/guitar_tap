@@ -21,7 +21,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
 if TYPE_CHECKING:
-    from models import TapToneMeasurement
+    from guitar_tap.models import TapToneMeasurement
 
 
 class EditMeasurementView(QtWidgets.QDialog):

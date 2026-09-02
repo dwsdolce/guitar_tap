@@ -6,12 +6,13 @@ Matches MeasurementDetailView.swift / CombinedPeakModeRowView.swift.
 # @parity view/measurement-detail
 
 import qtawesome as qta
-from models import ResonantPeak, TapToneMeasurement
-from models import guitar_mode as GM
-from models import guitar_type as GT
-from models import pitch as P
 from PySide6 import QtCore, QtGui, QtWidgets
-from utilities.date_format import format_display_datetime
+
+from guitar_tap.models import ResonantPeak, TapToneMeasurement
+from guitar_tap.models import guitar_mode as GM
+from guitar_tap.models import guitar_type as GT
+from guitar_tap.models import pitch as P
+from guitar_tap.utilities.date_format import format_display_datetime
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ def _type_name(m) -> str:
     """
     if m.is_comparison:
         return "Comparison"
-    from models.measurement_type import MeasurementType
+    from guitar_tap.models.measurement_type import MeasurementType
     snapshot = m.spectrum_snapshot or m.longitudinal_snapshot
     try:
         return MeasurementType(snapshot.measurement_type).short_name
@@ -313,7 +314,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         # Comparison records show the per-spectrum Air/Top/Back table; everything
         # else shows the identified (selected) peaks only.
         if m.is_comparison:
-            from views.comparison_results_view import ComparisonResultsView
+            from guitar_tap.views.comparison_results_view import ComparisonResultsView
             cmp_group = QtWidgets.QGroupBox(
                 f"Compared Spectra ({len(m.comparison_entries or [])})"
             )
@@ -338,7 +339,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             if not shown:
                 peaks_vbox.addWidget(QtWidgets.QLabel("No identified peaks"))
             else:
-                from views.shared.peaks_model import PeaksModel
+                from guitar_tap.views.shared.peaks_model import PeaksModel
                 mat_colors = PeaksModel._MATERIAL_MODE_COLORS
                 gt = _resolve_guitar_type(m.guitar_type)
                 is_material = (

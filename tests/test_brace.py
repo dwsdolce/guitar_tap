@@ -7,12 +7,11 @@ Fixture values are derived from the same reference measurements used in the Swif
 
 import math
 
-from models.material_properties import (
+from guitar_tap.models.material_properties import (
     BraceProperties,
     MaterialDimensions,
     WoodQuality,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

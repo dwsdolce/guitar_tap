@@ -13,16 +13,16 @@ function — and the Swift mirror — together with it.
 
 from __future__ import annotations
 
+import os
+import sys
 from dataclasses import dataclass, field
 
 import pytest
 
-import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
-from models.measurement_type import MeasurementType
-from models.material_tap_phase import MaterialTapPhase
+from guitar_tap.models.material_tap_phase import MaterialTapPhase
+from guitar_tap.models.measurement_type import MeasurementType
 
 
 @dataclass

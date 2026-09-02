@@ -8,7 +8,7 @@ The implementation lives in views.tap_analysis_results_view; this module
 re-exports the public API under a name that matches the Swift file structure.
 """
 
-from views.tap_analysis_results_view import (
+from guitar_tap.views.tap_analysis_results_view import (
     PDFReportData,
     export_measurement_json,
     export_pdf,

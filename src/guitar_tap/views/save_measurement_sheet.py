@@ -54,7 +54,7 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         self._location_edit.setFocus()
 
     def _update_save_enabled(self) -> None:
-        from models.tap_tone_measurement import TapToneMeasurement
+        from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
         self._save_btn.setEnabled(TapToneMeasurement.is_valid_name(self._location_edit.text()))
 
     @property

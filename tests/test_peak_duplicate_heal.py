@@ -38,7 +38,6 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 from guitar_tap.models.tap_tone_measurement import TapToneMeasurement  # noqa: E402
 

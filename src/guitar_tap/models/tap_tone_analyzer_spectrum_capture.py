@@ -166,10 +166,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         Mirrors Swift dumpCaptureWAV(samples:sampleRate:label:).
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         if not _tds.dump_capture_audio():
             return
-        from models.wav_dump_folder import WavDumpFolder
+        from guitar_tap.models.wav_dump_folder import WavDumpFolder
         # The user-settable dump folder (§4b): the custom folder or the default. Reachability was
         # checked at arm time; if the custom folder vanished mid-measurement, skip rather than
         # silently write elsewhere. release() is a no-op (not sandboxed).
@@ -785,9 +785,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         schedules _finish_capture (all taps done) or _do_reenable_guitar
         (next tap pending).
         """
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+
         from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
 
         if self.mic is None:
             return
@@ -803,7 +804,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # finishGuitarGatedCapture.  Accepts any guitar measurement type
         # (GENERIC, ACOUSTIC, CLASSICAL, FLAMENCO); only rejects plate/brace.
         if not _tds.measurement_type().is_guitar:
-            from utilities.logging import TAP_DEBUG as _td_orphan
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td_orphan
             _td_orphan(
                 "guitar_gated_capture",
                 f"ORPHAN — discarded (measurementType={_tds.measurement_type()}, "
@@ -863,7 +864,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # DIAG: spectrum fingerprint — sum of first 100 magnitude bins
         _diag_spec_hash = float(np.sum(magnitudes_db[:100]))
         _diag_sample_hash = float(np.sum(samples[:16].astype(np.float64))) if len(samples) >= 16 else 0.0
-        from utilities.logging import TAP_DEBUG as _td
+        from guitar_tap.utilities.logging import TAP_DEBUG as _td
         _td("guitar_gated_capture",
             f"FINISHED | newCount={len(self.captured_taps)}/{self.number_of_taps} "
             f"capturedPeakMag={peak_db:.2f}dB samples={len(samples)} "
@@ -900,7 +901,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         doc comment: resetting would restart warm-up and destabilise isAboveThreshold.
         """
         import numpy as _np
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
         # Guard: if the sequence was cancelled or reset while the cooldown timer was
         # running, the phase will no longer be WAITING_FOR_FLC_TAP.  Do not re-arm
         # detection — mirrors Swift's captureTimer?.invalidate() cancellation idiom.
@@ -948,6 +950,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             unchanged if onset detection fails.
         """
         import math
+
         import numpy as np
 
         from guitar_tap.utilities.logging import TAP_DEBUG as _td_align
@@ -1052,9 +1055,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             sample_rate: Hardware sample rate in Hz.
             phase:       MaterialTapPhase active at capture time.
         """
-        from models.material_tap_phase import MaterialTapPhase as _MTP
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         # Guitar-mode capture (phase is None) — uses a different FFT pipeline
         # (rectangular window, full fft_size, no HPS / dominant-peak gate).
@@ -1305,7 +1308,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         """
         from typing import NamedTuple
 
-        from models.resonant_peak import ResonantPeak
+        from guitar_tap.models.resonant_peak import ResonantPeak
 
         class _Candidate(NamedTuple):
             index: int
@@ -1454,9 +1457,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         Mirrors Swift TapToneAnalyzer.handleLongitudinalGatedProgress(…).
         """
-        from models.material_tap_phase import MaterialTapPhase as _MTP
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
@@ -1639,7 +1642,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         Mirrors Swift TapToneAnalyzer.handleCrossGatedProgress(…).
         """
         import numpy as _np
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
@@ -1682,7 +1686,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         if self.mic.is_playing_file:
             # File playback: auto-advance past the review state.
-            from models.tap_display_settings import TapDisplaySettings as _tds
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
             if _tds.measure_flc():
                 # Skip reviewingCross AND tapCooldown — go straight to capturingFlc.
                 # The cooldown exists for user repositioning; irrelevant for file audio.
@@ -1746,7 +1750,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         Mirrors Swift TapToneAnalyzer.handleFlcGatedProgress(…).
         """
         import numpy as _np
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
 
         captured = len(self.captured_taps)
         total = self.number_of_taps
@@ -1985,7 +1990,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.loaded_measurement_peaks = None
         self.selected_peak_frequencies = []
 
-        from models.tap_display_settings import TapDisplaySettings as _tds_sc
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_sc
 
         from .guitar_mode import GuitarMode as _GM
         _mode_map = _GM.classify_all(peaks, _tds_sc.guitar_type())
@@ -2086,7 +2091,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # peaks_above_peak_min itself is unchanged (kept for the model/results); only the emitted payload that
         # feeds the chart scatter + annotations is the identified set. Guitar emits peaks_above_peak_min
         # unchanged. Mirrors Swift's view reading materialIdentifiedPeaks. (RESPIN-1.0.2, fix R.)
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         emit_peaks = peaks if _tds.measurement_type().is_guitar else self.material_identified_peaks
         self.peaksChanged.emit(emit_peaks)  # list[ResonantPeak] — mirrors Swift currentPeaks
 

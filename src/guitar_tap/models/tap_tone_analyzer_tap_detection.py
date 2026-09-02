@@ -28,9 +28,8 @@ import time as _time
 
 from PySide6 import QtCore
 from PySide6.QtCore import Slot
-from utilities.logging import TAP_DEBUG
 
-from guitar_tap.utilities.logging import gt_log
+from guitar_tap.utilities.logging import TAP_DEBUG, gt_log
 
 from .analysis_display_mode import AnalysisDisplayMode
 from .realtime_fft_analyzer import RealtimeFFTAnalyzer
@@ -103,8 +102,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             mag_y_db:       Current FFT magnitude spectrum (ndarray, dBFS).
             freq:           Frequency axis matching mag_y_db, in Hz.
         """
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         now = _time.monotonic()
 
@@ -301,8 +300,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         Guitar mode: accumulates spectra, starts decay tracking, starts capture-window timer.
         Plate/brace mode: delegates to handle_plate_tap_detection().
         """
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         # Stop detection temporarily while handling this tap (mirrors Swift line 247).
         self.is_detecting = False
@@ -422,8 +421,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         Used to compute tapProgress (0.0–1.0) across the full multi-phase sequence.
         Mirrors Swift var totalPlateTaps: Int.
         """
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         meas_type = _tds.measurement_type()
         if meas_type == _MT.BRACE:
@@ -600,8 +599,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             fps, sample_dt, processing_dt: Diagnostics.
         """
         import numpy as np
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
+
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         self._current_mag_y = mag_y
         self._current_mag_y_db = mag_y_db

@@ -91,14 +91,14 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # shows everything by default — mirrors Swift selectedPeakIDs = Set(peaks.map { $0.id }).
         # In plate/brace mode, selection is managed exclusively by the phase-completion handlers
         # so that only the identified peak(s) appear selected — don't clobber it here.
-        from models.tap_display_settings import TapDisplaySettings as _tds_pa
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_pa
         if _tds_pa.measurement_type().is_guitar:
             self.selected_peak_ids = {p.id for p in peaks}
 
         # Classify modes using the context-aware algorithm.
         # Read from TapDisplaySettings — mirrors Swift GuitarMode.classifyAll
         # using TapDisplaySettings.guitarType as the default parameter.
-        from models.tap_display_settings import TapDisplaySettings as _tds_classify
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_classify
         mode_map = GuitarMode.classify_all(peaks, _tds_classify.guitar_type())
         self.identified_modes = [
             {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)}
@@ -193,7 +193,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 if "peak" in entry and "mode" in entry
             ]
             if not modes_by_freq:
-                from models.tap_display_settings import TapDisplaySettings as _tds_rfp
+                from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_rfp
 
                 from .guitar_mode import GuitarMode
                 # Use classify_all (claiming algorithm) not GuitarMode.classify (simple
@@ -296,7 +296,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         Mirrors Swift ``canReanalyze``.
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds_cr
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_cr
 
         return (
             _tds_cr.measurement_type().is_guitar
@@ -509,7 +509,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         Mirrors Swift ``applyFrozenPeakState(peaks:modesByFrequency:...)``.
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds_afps
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_afps
 
         from .guitar_mode import GuitarMode
 
@@ -603,7 +603,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         Returns:
             A fully-populated ResonantPeak.
         """
-        from models.resonant_peak import ResonantPeak
+        from guitar_tap.models.resonant_peak import ResonantPeak
 
         interp_freq, interp_mag = self._parabolic_interpolate(
             magnitudes, frequencies, index
@@ -655,7 +655,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         Returns:
             Set of ``ResonantPeak.id`` strings for the auto-selected peaks.
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds_gms
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_gms
 
         from .guitar_mode import GuitarMode
 
@@ -696,7 +696,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         Mirrors Swift ``reclassifyPeaks()``.
         """
-        from models.tap_display_settings import TapDisplaySettings as _tds_rcp
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_rcp
 
         from .guitar_mode import GuitarMode
 

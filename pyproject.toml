@@ -39,7 +39,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src/guitar_tap"]
+pythonpath = ["src"]
 
 [tool.coverage.run]
 source = ["src/guitar_tap/models"]

@@ -16,8 +16,8 @@ from typing import Callable, Optional
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from models import field_precision as fp
-from views.shared.validated_number_field import ValidatedNumberField
+from guitar_tap.models import field_precision as fp
+from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
 
 
 class MaterialDimensionsEditor(QtWidgets.QWidget):

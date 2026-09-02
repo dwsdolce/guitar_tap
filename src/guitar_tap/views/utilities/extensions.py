@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from PySide6 import QtWidgets
 
 if TYPE_CHECKING:
-    from models.guitar_type import GuitarType
+    from guitar_tap.models.guitar_type import GuitarType
 
 
 # ── Analysis-quality helpers ─────────────────────────────────────────────────

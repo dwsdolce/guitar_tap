@@ -13,23 +13,21 @@ exercises where the dimensions come from. See GuitarTapWeb/Development/MEASUREME
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 from PySide6 import QtWidgets
 
-from models.tap_tone_analyzer import TapToneAnalyzer
-from models.tap_display_settings import TapDisplaySettings
-from models.measurement_type import MeasurementType
-from models.plate_stiffness_preset import PlateStiffnessPreset
-from models.spectrum_snapshot import SpectrumSnapshot
-from models.tap_tone_measurement import TapToneMeasurement
-
+from guitar_tap.models.measurement_type import MeasurementType
+from guitar_tap.models.plate_stiffness_preset import PlateStiffnessPreset
+from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
 
 _APP: QtWidgets.QApplication | None = None
 

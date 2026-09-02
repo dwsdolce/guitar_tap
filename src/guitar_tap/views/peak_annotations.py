@@ -16,9 +16,10 @@ from __future__ import annotations
 from typing import Any
 
 import pyqtgraph as pg
-from models import guitar_mode as gm
-from models.analysis_display_mode import AnalysisDisplayMode
 from PySide6 import QtCore, QtGui, QtWidgets
+
+from guitar_tap.models import guitar_mode as gm
+from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 
 # Type alias for the annotation dict stored in FftAnnotations.annotations
 _AnnDict = dict[str, Any]
@@ -233,7 +234,7 @@ class FftAnnotations(QtCore.QObject):
     def _mode_color(self, mode_str: str) -> tuple[int, int, int]:
         # Plate/brace material labels — mirrors Swift DraggablePeakAnnotation.modeColor
         # which checks measurementType.isGuitar before using guitar colours.
-        from views.shared.peaks_model import PeaksModel
+        from guitar_tap.views.shared.peaks_model import PeaksModel
         mat = PeaksModel._MATERIAL_MODE_COLORS.get(mode_str)
         if mat is not None:
             return mat

@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from guitar_tap.utilities.json_float import f32, f32_list
+
 from .resonant_peak import ResonantPeak
 from .spectrum_snapshot import SpectrumSnapshot
 
@@ -653,7 +654,7 @@ class TapToneMeasurement:
 
         Python-only — no Swift equivalent.
         """
-        from utilities.date_format import format_display_datetime
+        from guitar_tap.utilities.date_format import format_display_datetime
         time_str = format_display_datetime(self.timestamp)
         if self.measurement_name:
             return f"{self.measurement_name} — {time_str}"

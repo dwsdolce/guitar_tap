@@ -28,21 +28,20 @@ Adding a new completion path in Python without adding a test here is a gap.
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import time
 
 import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 from PySide6 import QtCore, QtWidgets
 
-from models.tap_tone_analyzer import TapToneAnalyzer
-from models.tap_display_settings import TapDisplaySettings
-from models.measurement_type import MeasurementType
+from guitar_tap.models.measurement_type import MeasurementType
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
 _APP: QtWidgets.QApplication | None = None
 
@@ -272,8 +271,8 @@ class TestLoadMeasurementSetsComplete:
     """Loading a saved measurement must freeze the display (mirrors Swift loadMeasurement)."""
 
     def test_load_measurement_sets_measurement_complete(self):
-        from models.tap_tone_measurement import TapToneMeasurement
-        from models.spectrum_snapshot import SpectrumSnapshot
+        from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
+        from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
 
         sut = _make_guitar_sut()
         assert sut.is_measurement_complete is False

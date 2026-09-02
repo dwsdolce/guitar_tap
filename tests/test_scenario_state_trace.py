@@ -15,24 +15,21 @@ parity bar for state evolution, not just final outputs.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import os
 import sys
 import time
+from dataclasses import dataclass
 
 import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 from PySide6 import QtCore, QtWidgets
 
-from models.tap_tone_analyzer import TapToneAnalyzer
-from models.tap_display_settings import TapDisplaySettings
-from models.measurement_type import MeasurementType
-
+from guitar_tap.models.measurement_type import MeasurementType
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
 _APP = None
 

@@ -32,7 +32,7 @@ import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 
 if TYPE_CHECKING:
-    from views.fft_canvas import FftCanvas
+    from guitar_tap.views.fft_canvas import FftCanvas
 
 
 # ---------------------------------------------------------------------------

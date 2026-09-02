@@ -178,6 +178,13 @@ import numpy as np
 import numpy.typing as npt
 import sounddevice as sd
 
+from guitar_tap.models.dead_input import (
+    BUFFER_DELIVERY_TIMEOUT,
+    DEAD_INPUT_DWELL,
+    WatchdogDecision,
+    chunk_carries_signal,
+    watchdog_decision,
+)
 from guitar_tap.utilities.logging import gt_log
 
 if TYPE_CHECKING:
@@ -213,7 +220,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # materialised inside the realtime callback.
         if chunk.size:
             rms = float(np.sqrt(chunk.dot(chunk) / chunk.size))
-            if rms > self._DEAD_INPUT_RMS_THRESHOLD:
+            if chunk_carries_signal(rms):
                 self._last_signal_time = time.monotonic()
 
         self.queue.put(chunk)
@@ -321,7 +328,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         thread's timer infrastructure and causes a bus error.
         """
         try:
-            from PySide6 import QtWidgets, QtCore
+            from PySide6 import QtCore, QtWidgets
             app = QtWidgets.QApplication.instance()
             if app is not None:
                 if QtCore.QThread.currentThread() is app.thread():
@@ -351,7 +358,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             sample_rate: Sample rate in Hz.
             file_name:   Display name for logging.
         """
-        from utilities.logging import TAP_DEBUG as _td
+        from guitar_tap.utilities.logging import TAP_DEBUG as _td
+
         from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
 
         n_samples = len(samples)
@@ -574,7 +582,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
         def _playback_worker() -> None:
             """Call process_file_data, then restart the mic."""
-            from utilities.logging import TAP_DEBUG as _td
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td
 
             self.process_file_data(mono, int(file_rate), file_name)
 
@@ -624,15 +632,6 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
     _WATCHDOG_BACKOFFS = (0.5, 1.0, 2.0, 4.0)
 
-    # RMS below which a chunk counts as carrying no signal: 1e-5 = -100 dBFS.
-    # Calibrated from the recorded incidents (hub AUDIO-WATCHDOG-SILENT-STREAM.md):
-    # a dead-but-present device sat pinned at ~-100 dBFS, a live room reads ~-70 dBFS.
-    # Set at the BOTTOM of that range on purpose — the UMIK-1 is an unusually quiet
-    # microphone and can sit near -90 dBFS in a silent room, so a mid-range threshold
-    # would call a quiet workshop a dead input and restart mid-measurement. A missed
-    # detection costs one more watchdog cycle; a false positive interrupts real work.
-    # RMS (not peak) so all three editions apply the identical criterion.
-    _DEAD_INPUT_RMS_THRESHOLD = 1e-5
 
     def start_buffer_watchdog(self) -> None:
         """(Re)start the buffer-delivery watchdog (main-thread QTimer)."""
@@ -668,19 +667,28 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             return  # startup grace — let a freshly-(re)started stream deliver its first buffer
         now = time.monotonic()
 
-        # Failure mode 1: callbacks stopped firing at all.
-        starved_for = now - self._last_buffer_time
-        if starved_for > self._watchdog_silence_threshold and not self._watchdog_recovery_exhausted:
-            gt_log(f"⏱️ Buffer watchdog: no audio for {starved_for:.1f}s while running — I/O appears wedged")
+        # The rule itself lives in dead_input.py as a pure function, so the whole truth
+        # table is unit-testable without a clock, a timer or audio hardware.  This tick
+        # only carries out the decision.
+        decision = watchdog_decision(
+            now=now,
+            last_buffer_time=self._last_buffer_time,
+            last_signal_time=self._last_signal_time,
+            recovery_exhausted=self._watchdog_recovery_exhausted,
+            silence_threshold=self._watchdog_silence_threshold,
+            dead_input_threshold=self._watchdog_dead_input_threshold,
+        )
+
+        if decision is WatchdogDecision.STARVED:
+            gt_log(f"⏱️ Buffer watchdog: no audio for {now - self._last_buffer_time:.1f}s "
+                   f"while running — I/O appears wedged")
             self._is_recovering = True
             self._attempt_watchdog_recovery()
             return
 
-        # Failure mode 2: callbacks still firing on schedule, but carrying nothing.
-        dead_for = now - self._last_signal_time
-        if dead_for > self._watchdog_dead_input_threshold and not self._watchdog_recovery_exhausted:
+        if decision is WatchdogDecision.DEAD_INPUT:
             gt_log(f"🔇 Dead-input watchdog: buffers arriving but no signal for "
-                   f"{dead_for:.1f}s — input appears dead")
+                   f"{now - self._last_signal_time:.1f}s — input appears dead")
             if not self.input_appears_dead:
                 self.input_appears_dead = True
                 self._emit_input_appears_dead(True)
@@ -688,16 +696,16 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self._attempt_watchdog_recovery()
             return
 
-        # Still dead, but out of restart attempts: keep the warning up and keep
-        # watching.  No restart is attempted until signal returns.
-        if self._watchdog_recovery_exhausted and dead_for > self._watchdog_dead_input_threshold:
+        if decision is WatchdogDecision.DEAD_INPUT_EXHAUSTED:
+            # Out of restart attempts: keep the warning up and keep watching, so the
+            # app heals itself the moment audio returns instead of staying deaf.
             if not self.input_appears_dead:
                 self.input_appears_dead = True
                 self._emit_input_appears_dead(True)
             return
 
-        # Healthy — signal is flowing again.  Clear the warning, the recovery streak and
-        # the exhausted latch, so a later failure gets a full set of attempts.
+        # Healthy — signal is flowing again.  Clear the warning, the recovery streak
+        # and the exhausted latch, so a later failure gets a full set of attempts.
         if self.input_appears_dead:
             self.input_appears_dead = False
             self._emit_input_appears_dead(False)

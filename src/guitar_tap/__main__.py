@@ -5,10 +5,6 @@ All application logic lives in views/tap_tone_analysis_view.py.
 This file only contains the launcher code.
 """
 
-import os
-import sys
-import traceback
-
 # Catch C-level crashes (segfaults, abort, illegal instruction) and dump a
 # stack trace for ALL threads.  Without this, Qt/PySide6 segfaults disappear
 # silently and the app exits with no output.  Must be enabled before any
@@ -21,6 +17,10 @@ import traceback
 # file under the same directory as the crash log so a C-level crash leaves
 # a diagnosable trace.
 import faulthandler
+import os
+import sys
+import traceback
+
 
 def _faulthandler_target():
     """Return a writable file object for faulthandler output.
@@ -57,10 +57,13 @@ if sys.platform != "win32" and _fh_target is not None:
     import signal
     faulthandler.register(signal.SIGUSR1, file=_fh_target, all_threads=True)
 
-# Ensure models/ and views/ are importable as top-level packages when running
-# as `python -m guitar_tap`. __file__ is src/guitar_tap/__main__.py so
-# os.path.dirname(__file__) is src/guitar_tap/.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# NOTE: this used to insert src/guitar_tap onto sys.path so that models/ and views/
+# resolved as TOP-LEVEL packages. That gave every module two import identities —
+# `models.x` and `guitar_tap.models.x` — and Python treats those as different
+# modules with different class objects, so an enum compared with `is` could be
+# False for a value that is semantically equal, depending only on which file it
+# travelled through. All imports are now package-absolute (`guitar_tap.…`), so the
+# hack is gone and there is exactly one identity per module.
 
 # Refuse to run a development checkout whose release identity is stale — the
 # version still names an already-shipped release, or the release notes were
@@ -68,12 +71,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # is a plain stderr message rather than a half-started GUI, and before anything
 # can put a wrong version number on screen. No-ops in a shipped build (no git
 # repository to check). See _release_guard.py for the rule and the fix.
-import _release_guard
+from guitar_tap import _release_guard
 
 _release_guard.enforce()
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from views.tap_tone_analysis_view import MainWindow, basedir
+
+from guitar_tap.views.tap_tone_analysis_view import MainWindow, basedir
 
 if os.name == "nt":
     from ctypes import windll

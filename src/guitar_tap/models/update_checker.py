@@ -61,7 +61,7 @@ def _app_settings():
     identity and, because views/__init__.py imports MainWindow, would drag in a
     duplicate copy of the whole view tree on the first update check.
     """
-    from views.utilities.tap_settings_view import AppSettings  # noqa: PLC0415
+    from guitar_tap.views.utilities.tap_settings_view import AppSettings  # noqa: PLC0415
     return AppSettings
 
 

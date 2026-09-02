@@ -14,12 +14,11 @@ Test plan coverage: IP1–IP3
 
 from __future__ import annotations
 
+import json
 import os
 import sys
-import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 # PySide6 application — required for QObject (TapToneAnalyzer is a QObject).
 from PySide6 import QtWidgets

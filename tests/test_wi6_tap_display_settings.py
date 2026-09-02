@@ -11,9 +11,9 @@ D19: Verifies validate_frequency_range and validate_magnitude_range behave
 
 from __future__ import annotations
 
-import sys
 import os
-from unittest.mock import MagicMock, patch, call
+import sys
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from PySide6 import QtWidgets
@@ -229,14 +229,14 @@ class TestPerTypeDisplayRanges:
     # source's isinstance() check silently falls through to the guitar default.
     def _cls(self):
         _get_app()
-        from models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
         return TapDisplaySettings
 
     def test_per_type_defaults_match_canonical(self):
         """Canonical per-type defaults, identical across Swift/Python/web:
         guitar (all subtypes) 75-350, plate 20-200, brace 30-1000."""
         tds = self._cls()
-        from models.measurement_type import MeasurementType as MT
+        from guitar_tap.models.measurement_type import MeasurementType as MT
 
         for t in (MT.GENERIC, MT.ACOUSTIC, MT.CLASSICAL, MT.FLAMENCO):
             assert tds.default_min_frequency(t) == 75.0
@@ -250,7 +250,7 @@ class TestPerTypeDisplayRanges:
         """Persisting a display range for one type must not change another's
         (the keys are per-type), and each type reads back its own value."""
         tds = self._cls()
-        from models.measurement_type import MeasurementType as MT
+        from guitar_tap.models.measurement_type import MeasurementType as MT
 
         orig_plate = tds.min_frequency_for(MT.PLATE)
         orig_brace = tds.min_frequency_for(MT.BRACE)

@@ -12,9 +12,9 @@ In Swift, AnalysisDisplayMode is declared at the top of TapToneAnalyzer.swift
     could not import it without creating a circular dependency.
 
 Python consumers should import from here directly:
-    from models.analysis_display_mode import AnalysisDisplayMode
+    from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 or via the tap_tone_analyzer module which re-exports it:
-    from models.tap_tone_analyzer import AnalysisDisplayMode
+    from guitar_tap.models.tap_tone_analyzer import AnalysisDisplayMode
 """
 
 from __future__ import annotations

@@ -63,7 +63,7 @@ makeExportableSpectrumView:
 
 from __future__ import annotations
 
-from models.annotation_visibility_mode import AnnotationVisibilityMode
+from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
 
 __all__ = [
     "ExportableSpectrumChart",
@@ -142,7 +142,7 @@ class ExportableSpectrumChart:
         _derived_guitar_type_str: str | None = guitar_type_str
         if measurement_type_str:
             try:
-                from models import measurement_type as _mt_mod
+                from guitar_tap.models import measurement_type as _mt_mod
                 _mt_enum = _mt_mod.MeasurementType(measurement_type_str)
                 self.is_guitar = _mt_enum.is_guitar
                 # Derive guitar_type from measurement_type when not explicitly provided,
@@ -156,8 +156,8 @@ class ExportableSpectrumChart:
         # classify_all() accepts ResonantPeak objects and returns {peak.id: GuitarMode},
         # matching Swift's [UUID: GuitarMode] exactly.  No index-to-id translation needed.
         try:
-            from models.guitar_mode import GuitarMode
-            from models.guitar_type import GuitarType
+            from guitar_tap.models.guitar_mode import GuitarMode
+            from guitar_tap.models.guitar_type import GuitarType
             self._GuitarMode = GuitarMode
             gt_enum = GuitarType(_derived_guitar_type_str) if _derived_guitar_type_str else GuitarType.CLASSICAL
             self._guitar_type_enum = gt_enum
@@ -826,7 +826,7 @@ def make_exportable_spectrum_view(
 
         Uses portable strftime codes (no %-d / %#d platform differences).
         """
-        from utilities.date_format import format_display_datetime
+        from guitar_tap.utilities.date_format import format_display_datetime
         return format_display_datetime(raw)
 
     # ── Header — mirrors makeExportableSpectrumView VStack(alignment:.leading) header block ──

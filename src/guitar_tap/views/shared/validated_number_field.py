@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from models import field_precision as fp
+from guitar_tap.models import field_precision as fp
 
 
 class ValidatedNumberField(QtWidgets.QLineEdit):

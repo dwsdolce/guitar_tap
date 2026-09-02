@@ -48,6 +48,7 @@ from __future__ import annotations
 from PySide6 import QtCore
 
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
+from guitar_tap.utilities.logging import gt_log
 
 # ── AnalysisDisplayMode ───────────────────────────────────────────────────────
 # Mirrors Swift AnalysisDisplayMode enum defined in TapToneAnalyzer.swift.
@@ -65,7 +66,6 @@ from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverr
 from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
 from .tap_tone_analyzer_spectrum_capture import TapToneAnalyzerSpectrumCaptureMixin
 from .tap_tone_analyzer_tap_detection import TapToneAnalyzerTapDetectionHandlerMixin
-from guitar_tap.utilities.logging import gt_log
 
 # ── TapToneAnalyzer ───────────────────────────────────────────────────────────
 # Mirrors the top-level Swift TapToneAnalyzer class declaration and its stored
@@ -189,10 +189,11 @@ class TapToneAnalyzer(
                           analysis method testing.
         """
         import numpy as np
-        from models import guitar_mode as _gm
-        from models import measurement_type as _mt_mod
-        from models.material_tap_phase import MaterialTapPhase as _MTP
-        from models.tap_display_settings import TapDisplaySettings as _tds
+
+        from guitar_tap.models import guitar_mode as _gm
+        from guitar_tap.models import measurement_type as _mt_mod
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         # Qt's metaclass does not participate in Python's cooperative super()
         # chain, so the QObject base must be initialised explicitly.
@@ -214,7 +215,7 @@ class TapToneAnalyzer(
         self._tds = _tds
 
         # Pitch calculator — mirrors Swift `let pitchCalculator = Pitch(a4: 440.0)`
-        from models.pitch import Pitch as _Pitch
+        from guitar_tap.models.pitch import Pitch as _Pitch
         self.pitch_calculator = _Pitch(a4=440.0)
 
         # ── fft_analyzer reference (mirrors Swift's fftAnalyzer property) ──
@@ -667,7 +668,7 @@ class TapToneAnalyzer(
         Args:
             sample_rate: Sample rate in Hz. Default 48000.
         """
-        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
 
         # 1. Create the hardware-free FFT engine.
         mic = _Mic.for_testing(sample_rate=sample_rate)
@@ -720,7 +721,7 @@ class TapToneAnalyzer(
         import numpy as np
         import soundfile as _sf
 
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         # 1. Configure measurement type and tap count.
         _tds.set_measurement_type(measurement_type)
@@ -729,7 +730,7 @@ class TapToneAnalyzer(
         # 1b. If a calibration file was provided, parse it and temporarily
         #     override the active calibration on the analyzer.
         if calibration_path is not None:
-            from models import microphone_calibration as _mc
+            from guitar_tap.models import microphone_calibration as _mc
             cal = _mc.MicrophoneCalibration.from_path(calibration_path)
             self.set_temporary_calibration(cal)
 
@@ -749,7 +750,7 @@ class TapToneAnalyzer(
         #
         #    Playback must run the LIVE detection path -- otherwise it cannot tell us whether live and
         #    playback agree, which is the whole point of the file-playback regression.
-        from models.measurement_type import MeasurementType as _MTp
+        from guitar_tap.models.measurement_type import MeasurementType as _MTp
         _is_material = measurement_type in (_MTp.PLATE, _MTp.BRACE)
         self.start_tap_sequence(skip_warmup=not _is_material, initial_phase=plate_tap_phase)
 
@@ -824,10 +825,11 @@ class TapToneAnalyzer(
 
         # ── Level-crossing handler (audio-queue fast-start) ──────────────
         def _level_crossing_handler() -> None:
-            from models.measurement_type import MeasurementType as _MT
-            from models.tap_display_settings import TapDisplaySettings as _tds
-            from guitar_tap.utilities.logging import TAP_DEBUG
             import math
+
+            from guitar_tap.models.measurement_type import MeasurementType as _MT
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+            from guitar_tap.utilities.logging import TAP_DEBUG
             mt = _tds.measurement_type()
             with self._gated_lock:
                 if mt == _MT.PLATE or mt == _MT.BRACE:
@@ -1125,7 +1127,8 @@ class TapToneAnalyzer(
             calibration_profile:     Full CalibrationProfile object, or None.
         """
         import sounddevice as _sd
-        from models import microphone_calibration as _mc_mod
+
+        from guitar_tap.models import microphone_calibration as _mc_mod
 
         self._sd = _sd
         self._mc_mod = _mc_mod
@@ -1181,7 +1184,7 @@ class TapToneAnalyzer(
         self.mic._start_hotplug_monitor()
 
         # ── Saved measurements (view-layer import deferred until here) ────
-        from views.tap_analysis_results_view import load_all_measurements as _load
+        from guitar_tap.views.tap_analysis_results_view import load_all_measurements as _load
         self.saved_measurements = _load()
         self.savedMeasurements = self.saved_measurements
         if self.saved_measurements:
@@ -1210,8 +1213,8 @@ class TapToneAnalyzer(
         self.pending_dump_folder_prompt = False
         if (not self.is_detecting and not self.is_measurement_complete
                 and not self.is_detection_paused and self.current_tap_count == 0):
-            from models.tap_display_settings import TapDisplaySettings
-            from models.wav_dump_folder import WavDumpFolder
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings
+            from guitar_tap.models.wav_dump_folder import WavDumpFolder
             if TapDisplaySettings.dump_capture_audio() and not WavDumpFolder.is_reachable():
                 self.pending_dump_folder_prompt = True
             else:
@@ -1362,7 +1365,7 @@ class TapToneAnalyzer(
         for entry in self.identified_modes:
             if entry.get("peak") and entry["peak"].id == peak.id:
                 return entry["mode"]
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         return GuitarMode.classify_all([peak], _tds.guitar_type()).get(peak.id, GuitarMode.UNKNOWN)
 
     def set_mode_override(self, mode: "str | None", peak_id: str) -> None:
@@ -1523,7 +1526,7 @@ class TapToneAnalyzer(
         Mirrors Swift ``cycleAnnotationVisibility()``.
         """
         self.annotation_visibility_mode = self.annotation_visibility_mode.next
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_annotation_visibility_mode(self.annotation_visibility_mode)
         # mirrors cycleAnnotationVisibility() → TapDisplaySettings.annotationVisibilityMode in Swift
 

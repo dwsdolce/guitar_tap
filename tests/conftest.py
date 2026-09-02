@@ -19,9 +19,11 @@ import sys
 
 import pytest
 
-# Ensure src/guitar_tap is importable before any test modules load.
+# Ensure the guitar_tap package is importable before any test modules load.
+# Only src/ goes on the path: adding src/guitar_tap as well would make models/ and
+# views/ importable as TOP-LEVEL packages too, giving every module two identities
+# (`models.x` and `guitar_tap.models.x`) with distinct class objects.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 
 @pytest.fixture(scope="session", autouse=True)

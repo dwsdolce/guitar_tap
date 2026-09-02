@@ -12,31 +12,32 @@ The class is split across several mixin-style logical sections (matching Swift
 
 import os
 
-import models.material_properties as PA
 import numpy as np
 import qtawesome as qta
-import views.shared.peak_card_widget as PT
-import views.tap_analysis_results_view as M
-import views.utilities.tap_settings_view as AS
-from models import TapToneMeasurement
-from models import guitar_type as GT
-from models import measurement_type as MT
-from models import microphone_calibration as _mc_mod
-from models import plate_stiffness_preset as PSP
-from models.analysis_display_mode import AnalysisDisplayMode
-from models.annotation_visibility_mode import AnnotationVisibilityMode
-from models import field_precision as fp
-from models.tap_display_settings import TapDisplaySettings as TDS
 from PySide6 import QtCore, QtGui, QtWidgets
-from views.comparison_results_view import ComparisonResultsView
-from views.exportable_spectrum_chart import make_exportable_spectrum_view
-from views.material_dimensions_editor import MaterialDimensionsEditor
-from views.plate_body_dimensions_editor import PlateBodyDimensionsEditor
-from views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
-from views.shared.loading_overlay import LoadingOverlay
-from views.shared.validated_number_field import ValidatedNumberField
-from views.utilities import extensions as _ext
-from models.guitar_type import GuitarType as _GTy
+
+import guitar_tap.models.material_properties as PA
+import guitar_tap.views.shared.peak_card_widget as PT
+import guitar_tap.views.tap_analysis_results_view as M
+import guitar_tap.views.utilities.tap_settings_view as AS
+from guitar_tap.models import TapToneMeasurement
+from guitar_tap.models import field_precision as fp
+from guitar_tap.models import guitar_type as GT
+from guitar_tap.models import measurement_type as MT
+from guitar_tap.models import microphone_calibration as _mc_mod
+from guitar_tap.models import plate_stiffness_preset as PSP
+from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
+from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
+from guitar_tap.models.guitar_type import GuitarType as _GTy
+from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS
+from guitar_tap.views.comparison_results_view import ComparisonResultsView
+from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
+from guitar_tap.views.material_dimensions_editor import MaterialDimensionsEditor
+from guitar_tap.views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
+from guitar_tap.views.plate_body_dimensions_editor import PlateBodyDimensionsEditor
+from guitar_tap.views.shared.loading_overlay import LoadingOverlay
+from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
+from guitar_tap.views.utilities import extensions as _ext
 
 # Heavy imports deferred to _deferred_canvas_init to reduce startup time:
 #   fft_canvas — pulls in pyqtgraph (~4 s) and sounddevice (~0.4 s)
@@ -774,7 +775,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _ensure_update_checker(self):
         """Lazily build the UpdateChecker and wire its 'available' signal."""
         if self._update_checker is None:
-            from models.update_checker import UpdateChecker  # noqa: PLC0415
+            from guitar_tap.models.update_checker import UpdateChecker  # noqa: PLC0415
             self._update_checker = UpdateChecker(self)
             self._update_checker.updateAvailable.connect(self._on_update_available)
         return self._update_checker
@@ -1008,7 +1009,7 @@ class MainWindow(QtWidgets.QMainWindow):
             """
             hl.addWidget(_lbl(label))
             if with_level_meter:
-                from views.shared.threshold_slider import ThresholdSlider as _TS
+                from guitar_tap.views.shared.threshold_slider import ThresholdSlider as _TS
                 slider = _TS()
             else:
                 slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
@@ -2200,7 +2201,8 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.currentDeviceLost.connect(self._on_device_lost)
         try:
             import sounddevice as sd  # lazy: defers ~400 ms cold-import cost
-            from models.audio_device import filter_input_devices as _filt
+
+            from guitar_tap.models.audio_device import filter_input_devices as _filt
             self._known_input_device_names: set[str] = {
                 str(d["name"]) for d in _filt(list(sd.query_devices()))
             }
@@ -2275,11 +2277,11 @@ class MainWindow(QtWidgets.QMainWindow):
             # as if they were top-level imports.
             import sys as _sys
 
-            import views.fft_analysis_metrics_view as FMV
-            import views.fft_canvas as fft_c
-            import views.help_view as HD
-            import views.measurements.measurements_list_view as MD
-            import views.save_measurement_sheet as SMD
+            import guitar_tap.views.fft_analysis_metrics_view as FMV
+            import guitar_tap.views.fft_canvas as fft_c
+            import guitar_tap.views.help_view as HD
+            import guitar_tap.views.measurements.measurements_list_view as MD
+            import guitar_tap.views.save_measurement_sheet as SMD
             _m = _sys.modules[__name__]
             _m.fft_c = fft_c
             _m.MD = MD
@@ -2883,7 +2885,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         Mirrors Swift TapToneAnalysisView.isInReviewPhase.
         """
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
         phase = self.fft_canvas.analyzer.material_tap_phase
         return phase in (
             _MTP.REVIEWING_LONGITUDINAL,
@@ -2900,8 +2902,8 @@ class MainWindow(QtWidgets.QMainWindow):
         the same one Swift computes in TapToneAnalysisView, with no derived shadow. Mirrors
         Swift buttonRule / test_button_enablement.
         """
-        from models.measurement_type import MeasurementType as _MT
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
 
         tap_num = self.tap_num_spin.value()
         mt = TDS.measurement_type()
@@ -2954,7 +2956,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.pause_tap_btn.setIcon(qta.icon("fa5.check-circle", color="green"))
             self.pause_tap_btn.setStyleSheet("color: green;")
 
-            from models.material_tap_phase import MaterialTapPhase as _MTP
+            from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
             phase = self.fft_canvas.analyzer.material_tap_phase
             redo_labels = {
                 _MTP.REVIEWING_LONGITUDINAL: "Redo L",
@@ -3273,8 +3275,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """If Dump Capture Audio is on but its folder can't be reached, prompt the user (Change
         Location / Turn Off Saving / Cancel) and return whether to proceed with arming. Mirrors the
         Swift ``dumpFolderUnreachable`` alert (§4b decision 1b)."""
-        from models.tap_display_settings import TapDisplaySettings
-        from models.wav_dump_folder import WavDumpFolder
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.wav_dump_folder import WavDumpFolder
 
         if not TapDisplaySettings.dump_capture_audio() or WavDumpFolder.is_reachable():
             return True
@@ -3517,7 +3519,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_plate_status_changed(self, status: str) -> None:
         """Update instructions panel, status bar, and buttons for plate/brace capture progress."""
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
 
         self._update_plate_phase_ui(status)
         self._update_tap_buttons()
@@ -3675,7 +3677,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(True)
             # WAITING_FLC covers two Swift sub-states; distinguish via underlying MTP phase.
             mtp = self.fft_canvas.analyzer.material_tap_phase
-            from models.material_tap_phase import MaterialTapPhase as _MTPLocal
+            from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTPLocal
             if mtp == _MTPLocal.CAPTURING_FLC:
                 # Swift capturingFlc: actively capturing the FLC tap
                 short_status = "fLC tap..."
@@ -4667,7 +4669,7 @@ class MainWindow(QtWidgets.QMainWindow):
         import time as _time
 
         # Name: live name → loaded name → "spectrum" default (§2b). Mirrors Swift exportCurrentSpectrum().
-        from models.export_filename import export_stem
+        from guitar_tap.models.export_filename import export_stem
         _name = self._measurement_name.strip() or (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
         suggested_name = f"{export_stem(_name, int(_time.time()), 'spectrum')}.png"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
@@ -4693,7 +4695,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # measurement — its frozen averaged spectrum should be exported, not the overlay.
             # Mirrors Swift createExportableSpectrumView(): isSavedMeasurementComparison.
             if canvas.analyzer.is_saved_measurement_comparison:
-                from views.exportable_spectrum_chart import make_exportable_spectrum_view as _mev
+                from guitar_tap.views.exportable_spectrum_chart import (
+                    make_exportable_spectrum_view as _mev,
+                )
                 analyzer = canvas.analyzer
                 comparison_spectra = []
                 for entry in analyzer._comparison_data:
@@ -4872,7 +4876,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         # Name: live name → loaded name → "report" default (§2b). Mirrors Swift exportPDFReport().
-        from models.export_filename import export_stem
+        from guitar_tap.models.export_filename import export_stem
         _name = self._measurement_name.strip() or (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
         suggested_name = f"{export_stem(_name, int(_time.time()), 'report')}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
@@ -4992,7 +4996,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # ── Gore / plate stiffness — Store B (the measurement's own body dims + f_vs), never the
             # live Settings template. Mirrors Swift reading analyzer.materialInputs for the report. ──
-            from views.utilities.tap_settings_view import AppSettings as _AppSettings
+            from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AppSettings
             _mi = getattr(analyzer, "material_inputs", None)
             if _mi is not None:
                 _preset = _mi.stiffness_preset
@@ -5170,7 +5174,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # A comparison report is just a report (§2b). Name: loaded name → live name → "report".
         # Mirrors Swift: label = tap.loadedMeasurementName ?? measurementName.
-        from models.export_filename import export_stem
+        from guitar_tap.models.export_filename import export_stem
         _name = (self.fft_canvas.analyzer.loaded_measurement_name or self._measurement_name or "").strip()
         suggested_name = f"{export_stem(_name, int(_time.time()), 'report')}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
@@ -5193,7 +5197,7 @@ class MainWindow(QtWidgets.QMainWindow):
             analyzer = canvas.analyzer
 
             # Render the comparison overlay chart image from live comparison data.
-            from views.exportable_spectrum_chart import make_exportable_spectrum_view
+            from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
             comparison_spectra = []
             for entry in analyzer._comparison_data:
                 r, g, b = entry["color"]
@@ -5225,8 +5229,10 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
             # Build mode_frequencies list from live _comparison_data.
-            from models.guitar_mode import GuitarMode
-            from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
+            from guitar_tap.models.guitar_mode import GuitarMode
+            from guitar_tap.models.tap_tone_analyzer_peak_analysis import (
+                TapToneAnalyzerPeakAnalysisMixin,
+            )
 
             def _cmp_freq(mode, entry):
                 # Read the stored definitive mode→peak map (override-correct, self-describing); fall
@@ -5450,7 +5456,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Gore / plate stiffness — Store B (the measurement's own body dims + f_vs), never the
             # live Settings template. Mirrors Swift reading analyzer.materialInputs for the report.
-            from views.utilities.tap_settings_view import AppSettings as _AppSettings
+            from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AppSettings
             _mi = getattr(analyzer, "material_inputs", None)
             if _mi is not None:
                 _preset = _mi.stiffness_preset
@@ -5568,10 +5574,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
             import uuid as _uuid
 
-            from models.guitar_mode import GuitarMode
-            from models.spectrum_snapshot import SpectrumSnapshot as _SpectrumSnapshot
-            from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
-            from models.tap_tone_measurement import ComparisonEntry
+            from guitar_tap.models.guitar_mode import GuitarMode
+            from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot as _SpectrumSnapshot
+            from guitar_tap.models.tap_tone_analyzer_peak_analysis import (
+                TapToneAnalyzerPeakAnalysisMixin,
+            )
+            from guitar_tap.models.tap_tone_measurement import ComparisonEntry
 
             # Step 1 — Build cmp_entries (mirrors Swift's [ComparisonEntry] build step).
             # Colors are stored as RGBA 0.0–1.0 inside ComparisonEntry, mirroring Swift's
@@ -5803,7 +5811,7 @@ class MainWindow(QtWidgets.QMainWindow):
         stack.addWidget(settings_page)   # index 0
 
         # ── Page 1: Quick-Start Guide ─────────────────────────────────────
-        import views.help_view as _HD
+        import guitar_tap.views.help_view as _HD
         help_page = QtWidgets.QWidget()
         help_layout = QtWidgets.QVBoxLayout(help_page)
         help_layout.setContentsMargins(8, 8, 8, 8)
@@ -6424,7 +6432,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # WAV-dump folder (§4b): where recordings go, with Open / Change… / Use Default.
         # Mirrors the Swift Settings folder row. Visible only while Dump Capture Audio is on.
-        from models.wav_dump_folder import WavDumpFolder as _WDF
+        from guitar_tap.models.wav_dump_folder import WavDumpFolder as _WDF
 
         dump_folder_widget = QtWidgets.QWidget()
         df_layout = QtWidgets.QVBoxLayout(dump_folder_widget)
@@ -6511,8 +6519,6 @@ class MainWindow(QtWidgets.QMainWindow):
         aud.addLayout(dev_row)
         aud.addWidget(_hsep())
 
-        import sounddevice as sd  # lazy: already warm by this point; explicit for clarity
-
         # Windows only: PortAudio caches its device list at init time, so a mic
         # connected AFTER launch is invisible to the sd.query_devices() call
         # below and never appears in the combo.  Opening Settings is the natural,
@@ -6523,14 +6529,16 @@ class MainWindow(QtWidgets.QMainWindow):
         # none of the cascade/churn of the hot-plug notification path.  macOS
         # enumerates live via its CoreAudio listener and needs no flush.
         import platform as _platform_mic
+
+        import sounddevice as sd  # lazy: already warm by this point; explicit for clarity
         if _platform_mic.system() == "Windows":
             try:
                 self.fft_canvas.analyzer.mic.reinitialize_portaudio()
             except Exception:
                 pass
 
-        from models.audio_device import AudioDevice as _AudioDevice
-        from models.audio_device import filter_input_devices as _filter_inputs
+        from guitar_tap.models.audio_device import AudioDevice as _AudioDevice
+        from guitar_tap.models.audio_device import filter_input_devices as _filter_inputs
         input_devices: list[_AudioDevice] = []
         default_input: dict | None = None
         try:
@@ -7288,6 +7296,7 @@ class MainWindow(QtWidgets.QMainWindow):
         accurate across version bumps without code changes.
         """
         import webbrowser
+
         from _version import __version__
         url = (
             "https://www.dolcesfogato.com/guitar_tap/manual/"

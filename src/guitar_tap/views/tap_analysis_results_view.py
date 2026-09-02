@@ -26,9 +26,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from models import field_precision as fp
-from models.tap_tone_measurement import TapToneMeasurement
-
+from guitar_tap.models import field_precision as fp
+from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
 from guitar_tap.utilities.logging import gt_log
 
 __all__ = [
@@ -58,7 +57,7 @@ __all__ = [
 # Both re-exported from TapToneAnalyzerMeasurementManagementMixin, which is the
 # single authoritative definition — mirrors Swift's TapToneAnalyzer.multiTapPalette
 # and TapToneAnalyzer.multiTapAvgColor.
-from models.tap_tone_analyzer_measurement_management import (  # noqa: E402
+from guitar_tap.models.tap_tone_analyzer_measurement_management import (  # noqa: E402
     TapToneAnalyzerMeasurementManagementMixin as _AnalyzerMixin,
 )
 
@@ -66,8 +65,10 @@ MULTI_TAP_PALETTE = _AnalyzerMixin._MULTI_TAP_PALETTE
 MULTI_TAP_AVG_COLOR = _AnalyzerMixin._MULTI_TAP_AVG_COLOR
 
 # Spectrum image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
-from views.exportable_spectrum_chart import render_spectrum_image_for_measurement  # noqa: E402
-from views.utilities import extensions as _ext  # noqa: E402
+from guitar_tap.views.exportable_spectrum_chart import (
+    render_spectrum_image_for_measurement,  # noqa: E402
+)
+from guitar_tap.views.utilities import extensions as _ext  # noqa: E402
 
 # ── Export directory tracking ─────────────────────────────────────────────────
 # Mirrors MeasurementFileExporter.lastUsedDirectory in Swift: remembers the
@@ -90,7 +91,7 @@ def last_export_dir() -> str:
     Persisted across launches via QSettings — mirrors Swift's UserDefaults
     bookmark storage in MeasurementFileExporter.
     """
-    from views.utilities.tap_settings_view import AppSettings
+    from guitar_tap.views.utilities.tap_settings_view import AppSettings
     stored = AppSettings._s().value(_EXPORT_DIR_KEY)
     if stored and os.path.isdir(stored):
         return stored
@@ -99,7 +100,7 @@ def last_export_dir() -> str:
 
 def update_export_dir(chosen_path: str) -> None:
     """Persist the directory of *chosen_path* as the new last-used export dir."""
-    from views.utilities.tap_settings_view import AppSettings
+    from guitar_tap.views.utilities.tap_settings_view import AppSettings
     AppSettings._s().setValue(_EXPORT_DIR_KEY, os.path.dirname(chosen_path))
 
 
@@ -306,11 +307,11 @@ def pdf_report_data_from_measurement(
                            classification are preserved.  Pass ``None`` (default)
                            when building from a saved measurement.
     """
-    from models import guitar_mode as GM
-    from models import guitar_type as GT_module
-    from models import measurement_type as MT
-    from models import plate_stiffness_preset as PSP
-    from models.material_properties import (
+    from guitar_tap.models import guitar_mode as GM
+    from guitar_tap.models import guitar_type as GT_module
+    from guitar_tap.models import measurement_type as MT
+    from guitar_tap.models import plate_stiffness_preset as PSP
+    from guitar_tap.models.material_properties import (
         MaterialDimensions,
         calculate_brace_properties,
         calculate_plate_properties,
@@ -493,7 +494,8 @@ def _spectrum_image_matte(image_data: bytes, content_w: float):
 
     from PIL import Image as _PILImage
     from reportlab.lib import colors
-    from reportlab.platypus import Image as _RLImg, Table, TableStyle
+    from reportlab.platypus import Image as _RLImg
+    from reportlab.platypus import Table, TableStyle
 
     _pil = _PILImage.open(_io.BytesIO(image_data))
     w_px, h_px = _pil.size
@@ -525,11 +527,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     from datetime import datetime as _dt
 
     from _version import __version_string__ as _app_version
-    from models import guitar_mode as GM
-    from models import guitar_type as GT_module
-    from models import measurement_type as MT
-    from models import plate_stiffness_preset as PSP
-    from models.material_properties import calculate_gore_target_thickness
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_RIGHT
     from reportlab.lib.pagesizes import letter
@@ -543,6 +540,12 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         Table,
         TableStyle,
     )
+
+    from guitar_tap.models import guitar_mode as GM
+    from guitar_tap.models import guitar_type as GT_module
+    from guitar_tap.models import measurement_type as MT
+    from guitar_tap.models import plate_stiffness_preset as PSP
+    from guitar_tap.models.material_properties import calculate_gore_target_thickness
 
     # ── Unpack PDFReportData into local names used by the story builder ───
     mt_str           = data.measurement_type_str
@@ -589,7 +592,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
 
     # Measurement timestamp — unified locale-aware display (local time).
-    from utilities.date_format import format_display_datetime
+    from guitar_tap.utilities.date_format import format_display_datetime
     datetime_str = format_display_datetime(data.timestamp)
 
     # Visible (selected) peaks, sorted by frequency
@@ -641,7 +644,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         Mirrors Swift PDFReportGenerator which uses WoodQuality.color directly —
         the single source of truth in MaterialProperties. No fallback, matching Swift.
         """
-        from models.material_properties import WoodQuality as _WQ
+        from guitar_tap.models.material_properties import WoodQuality as _WQ
         return colors.HexColor(_WQ(label).color)
 
     def _mode_color(mode: GM.GuitarMode) -> colors.Color:
@@ -1376,7 +1379,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     story.append(Spacer(1, 8))
 
     version_str = _app_version
-    from utilities.date_format import format_display_datetime
+    from guitar_tap.utilities.date_format import format_display_datetime
     now_str = format_display_datetime(_dt.now())  # PDF generation time (local)
     footer_tbl = Table(
         [[
@@ -1418,6 +1421,7 @@ def _measure_story_height(story: list) -> float:
     page that would spill a tall report onto extra pages.
     """
     import io
+
     from reportlab.pdfgen.canvas import Canvas
     from reportlab.platypus import Frame
 
@@ -1468,7 +1472,7 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
     Returns PNG bytes, or None if the measurement is not a comparison record or has
     no entries.
     """
-    from views.exportable_spectrum_chart import make_exportable_spectrum_view
+    from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
 
     if not measurement.is_comparison:
         return None
@@ -1522,7 +1526,7 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
 
     Returns PNG bytes, or None if the measurement has no tap entries.
     """
-    from views.exportable_spectrum_chart import make_exportable_spectrum_view
+    from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
 
     tap_entries = measurement.tap_entries
     if not tap_entries:
@@ -1625,7 +1629,7 @@ def comparison_pdf_report_data_from_measurement(
     Mirrors the reportData construction in Swift exportComparisonPDFReport()
     (TapToneAnalysisView+Export.swift).
     """
-    from models.guitar_mode import GuitarMode
+    from guitar_tap.models.guitar_mode import GuitarMode
 
     entries = measurement.comparison_entries or []
 
@@ -1839,7 +1843,7 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     # mirrors Swift HStack(spacing: 5) { Circle().frame(width: 8, height: 8); Text(...) }).
     _dot_col_w = 13.0
 
-    from models.guitar_mode import GuitarMode as _GM_pdf
+    from guitar_tap.models.guitar_mode import GuitarMode as _GM_pdf
     for row in data.mode_frequencies:
         # Tuples are 6-wide (\u2026, override_modes); tolerate legacy 5-wide callers with an empty set.
         label, color_rgb, air_hz, top_hz, back_hz = row[:5]
@@ -1900,7 +1904,7 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     story.append(footer_div)
     story.append(Spacer(1, 8))
 
-    from utilities.date_format import format_display_datetime
+    from guitar_tap.utilities.date_format import format_display_datetime
     now_str = format_display_datetime(data.timestamp)
     footer_tbl = Table(
         [[Paragraph("Generated by GuitarTap", S_FOOTER),
@@ -1950,7 +1954,11 @@ def export_multi_tap_pdf(
     size (e.g. 612 × 966), rather than a fixed Letter page that spills onto extra pages.
     """
     from reportlab.platypus import (
-        BaseDocTemplate, Frame, NextPageTemplate, PageBreak, PageTemplate,
+        BaseDocTemplate,
+        Frame,
+        NextPageTemplate,
+        PageBreak,
+        PageTemplate,
     )
 
     page1_story = _build_averaged_story(averaged)

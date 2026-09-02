@@ -235,7 +235,8 @@ class TapToneAnalyzerControlMixin:
     def load_calibration(self, path: str) -> bool:
         """Load and interpolate a calibration file onto the FFT bin grid."""
         import os
-        import models.microphone_calibration as _mc
+
+        import guitar_tap.models.microphone_calibration as _mc
         try:
             cal_data = _mc.parse_cal_file(path)
             self._calibration_corrections = _mc.interpolate_to_bins(cal_data, self.freq)
@@ -342,8 +343,9 @@ class TapToneAnalyzerControlMixin:
         from 2 s to absorb HALC/CoreAudio startup transients at ~2.5 s).
         """
         import numpy as np
-        from models.analysis_display_mode import AnalysisDisplayMode as _ADM
         from PySide6.QtCore import QTimer as _QTimer
+
+        from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
 
         gt_log("🔄 TapToneAnalyzer: Handling route change restart - resetting detection state")
 
@@ -406,7 +408,8 @@ class TapToneAnalyzerControlMixin:
         - Restores is_detecting and status message.
         """
         import numpy as np
-        from models.analysis_display_mode import AnalysisDisplayMode as _ADM
+
+        from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
 
         # Guard: stream may have been stopped again before the timer fired.
         # Mirrors Swift: guard self.fftAnalyzer.isRunning else { return }.
@@ -451,7 +454,7 @@ class TapToneAnalyzerControlMixin:
         # Mirrors Swift tapDetectionThreshold.didSet updating fftAnalyzer.levelCrossingThreshold.
         if self.mic is not None:
             self.mic._level_crossing_threshold = self.tap_detection_threshold
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_tap_detection_threshold(self.tap_detection_threshold)
         # Mirrors Swift tapDetectionThreshold.didSet: clear warning if user deviates from loaded value.
         if (self.show_loaded_settings_warning
@@ -485,8 +488,8 @@ class TapToneAnalyzerControlMixin:
         """
         if not self.is_detection_paused:
             return
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         self.is_detection_paused = False
 
@@ -504,7 +507,7 @@ class TapToneAnalyzerControlMixin:
         is_plate = (resume_type == _MT.PLATE)
         is_brace = (resume_type == _MT.BRACE)
         if is_plate or is_brace:
-            from models.material_tap_phase import MaterialTapPhase as _MTP
+            from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
             phase = getattr(self, "material_tap_phase", _MTP.NOT_STARTED)
             if phase == _MTP.CAPTURING_LONGITUDINAL:
                 self._set_status_message("Ready for fL tap" if is_brace else "Ready for fL tap")
@@ -592,9 +595,10 @@ class TapToneAnalyzerControlMixin:
         - Clears previous peaks, spectra, and annotation offsets.
         """
         import numpy as np
-        from models.material_tap_phase import MaterialTapPhase as _MTP
-        from models.measurement_type import MeasurementType as _MT
-        from models.tap_display_settings import TapDisplaySettings as _tds
+
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         from .analysis_display_mode import AnalysisDisplayMode as _ADM
 
@@ -863,8 +867,9 @@ class TapToneAnalyzerControlMixin:
         import time as _time_mod
 
         import numpy as _np
-        from models.material_tap_phase import MaterialTapPhase as _MTP
-        from models.tap_display_settings import TapDisplaySettings as _tds
+
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         # Session recording: checkpoint the current buffer position so that
         # if a subsequent phase is redone, we can truncate back to here.
@@ -918,7 +923,8 @@ class TapToneAnalyzerControlMixin:
         import time as _time_mod
 
         import numpy as _np
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
 
         # Session recording: truncate back to the start of the current phase
         # so the rejected tap's audio is excluded from the saved WAV.
@@ -1040,7 +1046,7 @@ class TapToneAnalyzerControlMixin:
         self.selected_peak_frequencies = [p.frequency for p in sel]
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
 
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
         self._set_material_tap_phase(_MTP.COMPLETE)
         self.set_measurement_complete(True)
         # Save the session WAV — mirrors Swift finishSessionRecording(label: "Plate_LC").
@@ -1094,7 +1100,7 @@ class TapToneAnalyzerControlMixin:
         self.selected_peak_frequencies = [p.frequency for p in sel]
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
 
-        from models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
         self._set_material_tap_phase(_MTP.COMPLETE)
         self.set_measurement_complete(True)
         # Save the session WAV — mirrors Swift finishSessionRecording(label: "Plate_LCF").
@@ -1128,7 +1134,7 @@ class TapToneAnalyzerControlMixin:
 
     def set_measurement_type(self, measurement_type) -> None:
         """Switch between Guitar / Plate / Brace analysis modes."""
-        import models.measurement_type as _mt_mod
+        import guitar_tap.models.measurement_type as _mt_mod
         if isinstance(measurement_type, str):
             measurement_type = _mt_mod.MeasurementType.from_combo_values(measurement_type, "")
         self._measurement_type = measurement_type
@@ -1141,7 +1147,7 @@ class TapToneAnalyzerControlMixin:
         """Set the peak-detection threshold (0-100 scale, stored as dBFS)."""
         # Assigning peak_min_threshold re-projects (the property setter, mirroring Swift didSet).
         self.peak_min_threshold = float(threshold - 100)
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_peak_min_threshold(self.peak_min_threshold)
         # Notify the view the projection changed (peaks_above_peak_min is a plain attr, not @Published).
         self.peaksChanged.emit(list(self.peaks_above_peak_min))

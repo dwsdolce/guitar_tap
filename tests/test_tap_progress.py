@@ -32,11 +32,10 @@ from PySide6 import QtWidgets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from models.tap_tone_analyzer import TapToneAnalyzer
-from models.tap_display_settings import TapDisplaySettings
-from models.measurement_type import MeasurementType
-from models.material_tap_phase import MaterialTapPhase
-
+from guitar_tap.models.material_tap_phase import MaterialTapPhase
+from guitar_tap.models.measurement_type import MeasurementType
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
 _APP: "QtWidgets.QApplication | None" = None
 
@@ -143,7 +142,7 @@ class TestCountSurvivesPhaseAdvance:
     """
 
     def test_count_accumulates_across_L_to_C(self):
-        from models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 
         sut = _make(MeasurementType.PLATE, 2, measure_flc=True)  # total_plate_taps = 6
         sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # gated-FFT engine

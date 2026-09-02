@@ -6,10 +6,11 @@ from enum import Enum
 
 import numpy as np
 import numpy.typing as npt
-from models import guitar_mode as gm
-from models import pitch as pitch_c
-from models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
 from PySide6 import QtCore
+
+from guitar_tap.models import guitar_mode as gm
+from guitar_tap.models import pitch as pitch_c
+from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
 
 
 class ColumnIndex(Enum):
@@ -271,7 +272,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         # but if somehow a frequency is missing, use classify_all (claiming algorithm)
         # rather than classify_peak (simple range lookup) — mirrors Swift, which has
         # no single-peak classify fallback; classifyAll is always used.
-        from models.resonant_peak import ResonantPeak as _RP
+        from guitar_tap.models.resonant_peak import ResonantPeak as _RP
         _fake = _RP(frequency=freq, magnitude=0.0, quality=1.0)
         _mode = gm.GuitarMode.classify_all([_fake]).get(_fake.id, gm.GuitarMode.UNKNOWN)
         return _mode.display_name
@@ -296,7 +297,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if peak is not None and self._analyzer is not None:
             return self._analyzer.auto_detected_mode(peak).display_name
         # Fallback (no analyzer wired): override-blind classify_all on the frequency.
-        from models.resonant_peak import ResonantPeak as _RP
+        from guitar_tap.models.resonant_peak import ResonantPeak as _RP
         _fake = _RP(frequency=self.freq_value(index), magnitude=0.0, quality=1.0)
         _mode = gm.GuitarMode.classify_all([_fake]).get(_fake.id, gm.GuitarMode.UNKNOWN)
         return _mode.display_name

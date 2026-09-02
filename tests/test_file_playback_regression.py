@@ -26,10 +26,9 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
-from models.measurement_type import MeasurementType
-from models.material_tap_phase import MaterialTapPhase
+from guitar_tap.models.material_tap_phase import MaterialTapPhase
+from guitar_tap.models.measurement_type import MeasurementType
 
 # ---------------------------------------------------------------------------
 # Expected values
@@ -202,28 +201,28 @@ def _wav_rate(path: str) -> int:
 @pytest.fixture
 def brace_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
-    from models.tap_tone_analyzer import TapToneAnalyzer
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
     return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(BRACE_WAV))
 
 
 @pytest.fixture
 def g1_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
-    from models.tap_tone_analyzer import TapToneAnalyzer
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
     return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(G1_WAV))
 
 
 @pytest.fixture
 def guitar_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
-    from models.tap_tone_analyzer import TapToneAnalyzer
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
     return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(GUITAR_WAV))
 
 
 @pytest.fixture
 def plate_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
-    from models.tap_tone_analyzer import TapToneAnalyzer
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
     return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(PLATE_WAV))
 
 
@@ -244,7 +243,7 @@ class TestFilePlaybackRegression:
           1. The pipeline completes with 1 tap entry
           2. Air, Top, Back frequencies and magnitudes match reference ± 1
         """
-        from models.guitar_mode import GuitarMode
+        from guitar_tap.models.guitar_mode import GuitarMode
 
         assert os.path.exists(G1_WAV), f"Test WAV not found: {G1_WAV}"
 
@@ -375,8 +374,8 @@ class TestFilePlaybackRegression:
           2. Averaged Air, Top, Back frequencies and magnitudes match reference ± 1
           3. All 8 individual taps' Air, Top, Back freq+mag match reference ± 1
         """
-        from models.guitar_mode import GuitarMode
-        from models.tap_tone_analyzer import TapToneAnalyzer
+        from guitar_tap.models.guitar_mode import GuitarMode
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
         assert os.path.exists(GUITAR_WAV), f"Test WAV not found: {GUITAR_WAV}"
 
@@ -491,7 +490,7 @@ class TestFilePlaybackRegression:
           3. Each auto-selected peak's frequency, magnitude, and Q
              factor matches the .guitartap reference within tolerance
         """
-        from models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
 
         assert os.path.exists(PLATE_WAV), f"Test WAV not found: {PLATE_WAV}"
 
@@ -601,7 +600,7 @@ class TestFilePlaybackRegression:
         Swift handleLongitudinalGatedProgress: collect number_of_taps, then
         averageSpectra).  Same fixture + expected values as the web REG-P2.
         """
-        from models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
 
         assert os.path.exists(PLATE_3TAP_WAV), f"Test WAV not found: {PLATE_3TAP_WAV}"
 
@@ -661,7 +660,7 @@ class TestFilePlaybackRegression:
         Asserts the PHASE COUNT, not peak values — the noise shifts the peaks slightly, and a
         tight peak assertion would be measuring the noise rather than the detector.
         """
-        from models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
 
         assert os.path.exists(PLATE_NOISY_WAV), f"Test WAV not found: {PLATE_NOISY_WAV}"
 

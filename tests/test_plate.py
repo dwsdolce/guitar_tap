@@ -8,13 +8,12 @@ Fixture values are derived from the same reference measurements used in the Swif
 
 import math
 
-from models.material_properties import (
+from guitar_tap.models.material_properties import (
     MaterialDimensions,
     PlateProperties,
     WoodQuality,
     calculate_gore_target_thickness,
 )
-
 
 # ---------------------------------------------------------------------------
 # MaterialDimensions

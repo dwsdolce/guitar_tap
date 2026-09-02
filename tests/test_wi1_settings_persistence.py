@@ -16,9 +16,9 @@ Mirrors the WI-1 fix in:
 
 from __future__ import annotations
 
-import sys
 import os
-from unittest.mock import patch, call
+import sys
+from unittest.mock import call, patch
 
 import pytest
 from PySide6 import QtWidgets
@@ -26,7 +26,6 @@ from PySide6 import QtWidgets
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture — one QApplication for the whole module
@@ -62,7 +61,7 @@ class TestD2CycleAnnotationVisibilityPersists:
         sut.annotation_visibility_mode = AnnotationVisibilityMode.ALL
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_annotation_visibility_mode"
+            "guitar_tap.models.tap_display_settings.TapDisplaySettings.set_annotation_visibility_mode"
         ) as mock_set:
             sut.cycle_annotation_visibility()
             mock_set.assert_called_once_with(AnnotationVisibilityMode.SELECTED)
@@ -73,7 +72,7 @@ class TestD2CycleAnnotationVisibilityPersists:
         sut.annotation_visibility_mode = AnnotationVisibilityMode.ALL
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_annotation_visibility_mode"
+            "guitar_tap.models.tap_display_settings.TapDisplaySettings.set_annotation_visibility_mode"
         ) as mock_set:
             sut.cycle_annotation_visibility()
             sut.cycle_annotation_visibility()
@@ -86,7 +85,7 @@ class TestD2CycleAnnotationVisibilityPersists:
         sut.annotation_visibility_mode = AnnotationVisibilityMode.NONE
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_annotation_visibility_mode"
+            "guitar_tap.models.tap_display_settings.TapDisplaySettings.set_annotation_visibility_mode"
         ) as mock_set:
             sut.cycle_annotation_visibility()
             mock_set.assert_called_once_with(AnnotationVisibilityMode.ALL)
@@ -105,7 +104,7 @@ class TestD3SetTapThresholdPersists:
         sut = _make_sut()
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_tap_detection_threshold"
+            "guitar_tap.models.tap_display_settings.TapDisplaySettings.set_tap_detection_threshold"
         ) as mock_set:
             sut.set_tap_threshold(80)
             mock_set.assert_called_once_with(-20.0)
@@ -115,7 +114,7 @@ class TestD3SetTapThresholdPersists:
         sut = _make_sut()
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_tap_detection_threshold"
+            "guitar_tap.models.tap_display_settings.TapDisplaySettings.set_tap_detection_threshold"
         ) as mock_set:
             sut.set_tap_threshold(0)
             mock_set.assert_called_once_with(-100.0)
@@ -134,7 +133,7 @@ class TestD5SetThresholdPersists:
         sut = _make_sut()
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_peak_min_threshold"
+            "guitar_tap.models.tap_display_settings.TapDisplaySettings.set_peak_min_threshold"
         ) as mock_set:
             sut.set_threshold(60)
             mock_set.assert_called_once_with(-40.0)
@@ -144,7 +143,7 @@ class TestD5SetThresholdPersists:
         sut = _make_sut()
 
         with patch(
-            "models.tap_display_settings.TapDisplaySettings.set_peak_min_threshold"
+            "guitar_tap.models.tap_display_settings.TapDisplaySettings.set_peak_min_threshold"
         ) as mock_set:
             sut.set_threshold(100)
             mock_set.assert_called_once_with(0.0)

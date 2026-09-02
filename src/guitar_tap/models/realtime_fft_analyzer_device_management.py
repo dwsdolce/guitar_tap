@@ -253,7 +253,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         # Priority 1: Previously persisted device fingerprint.
         # Mirrors Swift UserDefaults "selectedInputDeviceUID".
         try:
-            from views.utilities.tap_settings_view import AppSettings as _AS
+            from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
             saved_fp = _AS.selected_input_device_fingerprint()
             if saved_fp:
                 match = next(

@@ -19,7 +19,6 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot  # noqa: E402
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS  # noqa: E402

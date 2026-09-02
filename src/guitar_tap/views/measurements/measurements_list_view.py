@@ -21,12 +21,13 @@ Right-click    → context menu: Load into View | View Details | Edit Name & Not
 import os
 
 import qtawesome as qta
-from models import TapToneMeasurement
 from PySide6 import QtCore, QtGui, QtWidgets
-from views import tap_analysis_results_view as M
-from views.measurements import edit_measurement_view as EMV
-from views.measurements import measurement_detail_view as MDD
-from views.measurements.measurement_row_view import MeasurementRowView
+
+from guitar_tap.models import TapToneMeasurement
+from guitar_tap.views import tap_analysis_results_view as M
+from guitar_tap.views.measurements import edit_measurement_view as EMV
+from guitar_tap.views.measurements import measurement_detail_view as MDD
+from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
 
 # ── Main dialog ───────────────────────────────────────────────────────────────
 
@@ -495,9 +496,11 @@ class MeasurementsDialog(QtWidgets.QDialog):
             import uuid as _uuid
             from datetime import datetime, timezone
 
-            from models.guitar_mode import GuitarMode
-            from models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
-            from models.tap_tone_measurement import ComparisonEntry
+            from guitar_tap.models.guitar_mode import GuitarMode
+            from guitar_tap.models.tap_tone_analyzer_peak_analysis import (
+                TapToneAnalyzerPeakAnalysisMixin,
+            )
+            from guitar_tap.models.tap_tone_measurement import ComparisonEntry
 
             # Palette and avg color imported from the shared module-level constants — mirrors Swift's
             # TapToneAnalyzer.multiTapPalette / TapToneAnalyzer.multiTapAvgColor.

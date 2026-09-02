@@ -28,7 +28,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         Python-only helper — Swift achieves the same effect via the
         @Published property observer + explicit save(context:) call.
         """
-        from views import tap_analysis_results_view as M
+        from guitar_tap.views import tap_analysis_results_view as M
         M.save_all_measurements(self.savedMeasurements)
         self.savedMeasurementsChanged.emit()
 
@@ -572,7 +572,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # Mirrors Swift's loaded* @Published properties + .onReceive handlers
         # that write to TapDisplaySettings.  In Python TapDisplaySettings is
         # AppSettings, so we write there directly.
-        from views.utilities.tap_settings_view import AppSettings as AS
+        from guitar_tap.views.utilities.tap_settings_view import AppSettings as AS
         settings_snapshot = measurement.longitudinal_snapshot or measurement.spectrum_snapshot
         if settings_snapshot is not None:
             snap = settings_snapshot
@@ -1239,7 +1239,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
     @staticmethod
     def _comparison_label(m) -> str:
         """Short label for the comparison legend."""
-        from utilities.date_format import format_display_datetime_compact
+        from guitar_tap.utilities.date_format import format_display_datetime_compact
         loc = getattr(m, "measurement_name", None)
         if loc:
             return loc

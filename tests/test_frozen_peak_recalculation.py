@@ -29,7 +29,8 @@ data structures and the helper logic used to remap after re-analysis.
 from __future__ import annotations
 
 import json
-import sys, os
+import os
+import sys
 import uuid
 
 import numpy as np
@@ -37,18 +38,18 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from guitar_tap.models.resonant_peak import ResonantPeak
-from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
-from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
+# PySide6 application — required for QObject construction.
+# Mirrors the fixture pattern used in test_tap_detection.py.
+from PySide6 import QtWidgets
+
 from guitar_tap.models.realtime_fft_analyzer_fft_processing import (
     peak_detection,
     peak_interp,
     peak_q_factor,
 )
-
-# PySide6 application — required for QObject construction.
-# Mirrors the fixture pattern used in test_tap_detection.py.
-from PySide6 import QtWidgets
+from guitar_tap.models.resonant_peak import ResonantPeak
+from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
+from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
 
 _APP = None
 
@@ -65,10 +66,9 @@ def qt_app():
     return _get_app()
 
 
-from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
-
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -284,7 +284,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         Mirrors Swift recalculateFrozenPeaksIfNeeded — loaded path filters
         loaded_measurement_peaks by peak_threshold and stores in peaks_above_peak_min.
         """
-        from models.resonant_peak import ResonantPeak
+        from guitar_tap.models.resonant_peak import ResonantPeak
         sut = TapToneAnalyzer()
         # Frozen arrays must be non-empty to pass the guard (matches Swift behaviour).
         sut.frozen_frequencies = np.array([100.0, 200.0, 400.0])
@@ -313,7 +313,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         A display filter must never shrink the durable set. Mirrors Swift
         loadedPeaks_allBelowThreshold_clearsDisplayButKeepsClassification.
         """
-        from models.resonant_peak import ResonantPeak
+        from guitar_tap.models.resonant_peak import ResonantPeak
         sut = TapToneAnalyzer()
         sut.frozen_frequencies = np.array([100.0, 200.0, 400.0])
         sut.frozen_magnitudes = np.array([-80.0, -70.0, -65.0])
@@ -735,8 +735,8 @@ class TestPeakMinDurability:
     # ── Phase 3: per-tap entries computed once, at capture (mirrors Swift 11689b6) ──────────
 
     def _tap_entry(self, tap_index, peaks, selected):
-        from models.spectrum_snapshot import SpectrumSnapshot
-        from models.tap_tone_measurement import TapEntry
+        from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
+        from guitar_tap.models.tap_tone_measurement import TapEntry
         snap = SpectrumSnapshot(
             frequencies=[100.0, 200.0, 300.0, 400.0],
             magnitudes=[-40.0, -20.0, -50.0, -60.0],

@@ -10,6 +10,6 @@ PeakListWidget); this module re-exports those classes under the Swift-aligned
 name for consistency with the views package structure.
 """
 
-from views.shared.peak_card_widget import PeakCardWidget, PeakListWidget
+from guitar_tap.views.shared.peak_card_widget import PeakCardWidget, PeakListWidget
 
 __all__ = ["PeakCardWidget", "PeakListWidget"]

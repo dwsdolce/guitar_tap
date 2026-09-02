@@ -29,7 +29,6 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap"))
 
 from guitar_tap.models.guitar_mode import GuitarMode  # noqa: E402
 from guitar_tap.models.resonant_peak import ResonantPeak  # noqa: E402
@@ -374,6 +373,7 @@ class TestGuitarFullSavePeaks:
         import base64 as _b64
         import json as _json
         import os as _os
+
         import numpy as _np
         path = _os.path.join(_os.path.dirname(__file__), self._STEM + ".guitartap")
         sn = _json.load(open(path))[0]["spectrumSnapshot"]

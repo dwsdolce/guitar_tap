@@ -16,18 +16,18 @@ from __future__ import annotations
 # @parity view/peak-card
 # (The `combined_peak_mode_row_view.py` shim re-exports these under the Swift-aligned
 #  name; this module is the real implementation and carries the parity tag.)
-
 import csv
 import os
 
 import numpy as np
 import numpy.typing as npt
 import qtawesome as qta
-from models import guitar_mode as gm
-from models import guitar_type as gt
-from models import pitch as pitch_c
 from PySide6 import QtCore, QtGui, QtWidgets
-from views.shared import peaks_model as pm
+
+from guitar_tap.models import guitar_mode as gm
+from guitar_tap.models import guitar_type as gt
+from guitar_tap.models import pitch as pitch_c
+from guitar_tap.views.shared import peaks_model as pm
 
 
 def _short_mode(mode: str) -> str:
@@ -58,7 +58,7 @@ def _mag_color(mag_db: float) -> QtGui.QColor:
 
 def _mode_color(mode_str: str) -> QtGui.QColor:
     # Plate/brace material labels — mirrors Swift DraggablePeakAnnotation.modeColor.
-    from views.shared.peaks_model import PeaksModel
+    from guitar_tap.views.shared.peaks_model import PeaksModel
     mat = PeaksModel._MATERIAL_MODE_COLORS.get(mode_str)
     if mat is not None:
         r, g, b = mat
@@ -527,7 +527,7 @@ class PeakListWidget(QtWidgets.QWidget):
             self.updateGeometry()
             return
 
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _gt = _tds.guitar_type()
 
         # Sort by frequency ascending
@@ -623,7 +623,7 @@ class PeakListWidget(QtWidgets.QWidget):
 
     def _on_model_layout_changed(self) -> None:
         """Refresh mode displays when guitar_type changes."""
-        from models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _gt = _tds.guitar_type()
         rows_by_id = {p.id: r for r, p in enumerate(self.model._peaks)}
         for card in self._cards:
