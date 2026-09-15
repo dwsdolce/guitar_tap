@@ -1,9 +1,86 @@
-# Never touch line endings on anything
-* -text
+# Line endings: text is LF in the repository AND in every working copy, on every platform.
+#
+# There is deliberately no CRLF exception for .bat/.cmd. Verified on Windows 11 (build 26200): an LF-only
+# batch file behaves identically to a CRLF one for goto, call :label, for loops, multi-line if (...) blocks,
+# delayed expansion, exit codes, and a label as the final line with no trailing newline - and Gradle's own
+# gradlew.bat runs unmodified with LF endings.
+* text=auto eol=lf
 
-# Explicitly mark binary files (no diff, no merge either)
-*.wav binary
-*.mp3 binary
+# Never translate these.
+#
+# `text=auto` decides text vs binary by looking for a NUL byte in the first 8000 bytes only. A PDF written
+# by a Python tool has none, so git guesses "text" and inserts CR bytes on checkout, shifting every internal
+# offset and breaking the xref table. That is not hypothetical: it corrupted 26 PDFs in guitar-tap-project's
+# Windows working copies, and pdfarranger records the same incident in its own .gitattributes. PNG/WAV/JPEG
+# escape only by luck - they happen to carry a NUL early - so they are listed too.
+#
+# Last matching rule wins, so every rule below must stay under `* text=auto eol=lf`.
+
+# Documents
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.odt binary
+*.ods binary
+
+# Images
 *.png binary
 *.jpg binary
+*.jpeg binary
 *.gif binary
+*.bmp binary
+*.tif binary
+*.tiff binary
+*.ico binary
+*.icns binary
+*.webp binary
+*.heic binary
+*.heif binary
+*.xcf binary
+*.psd binary
+
+# Audio / video
+*.wav binary
+*.mp3 binary
+*.m4a binary
+*.aac binary
+*.caf binary
+*.flac binary
+*.ogg binary
+*.opus binary
+*.mp4 binary
+*.mov binary
+
+# Archives, fonts, compiled artefacts
+*.zip binary
+*.gz binary
+*.tgz binary
+*.bz2 binary
+*.xz binary
+*.7z binary
+*.jar binary
+*.aar binary
+*.apk binary
+*.aab binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.pyc binary
+*.pyd binary
+*.class binary
+*.dmg binary
+*.pkg binary
+*.msi binary
+*.jks binary
+*.keystore binary
+*.db binary
+*.sqlite binary
+*.mo binary
+*.car binary
+*.swp binary
