@@ -22,6 +22,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 
+sys.path.insert(0, os.path.dirname(__file__))
+
+from parity_oracle import TOLERANCES, gated  # noqa: E402  (follows the src path insert)
+
+# Expected magnitudes and the tones that produce them come from the shared oracle
+# (tests/parity-oracle.json), not from literals repeated in each edition. TOL is the
+# one tolerance all editions apply to gated-FFT dB.
+TOL: float = TOLERANCES["gatedFftDb"]
+
+
+def _expected(case_name: str, hz: float) -> float:
+    """The oracle dB for one tone of a GFFT case, matched on its target frequency."""
+    for e in gated(case_name)["expected"]:
+        if abs(float(e["hz"]) - hz) < 1e-6:
+            return float(e["db"])
+    raise KeyError(f"{case_name}: no expected entry near {hz} Hz")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,61 +100,64 @@ class TestGatedFFTParity:
     """
 
     def test_GFFT1_single_tone_100Hz_magnitude_is_reasonable(self):
-        """GFFT1: A single 100 Hz sine at amplitude 0.5.  Swift pins -15.72 dB."""
+        """GFFT1: A single 100 Hz sine at amplitude 0.5, pinned by the oracle."""
         sample_rate = 48000.0
+        (tone_hz, tone_amp), = gated("GFFT1")["tones"]
+        expected = _expected("GFFT1", tone_hz)
         signal = _make_two_tone_signal(
             sample_rate=sample_rate, duration=0.4,
-            freq1=100, amp1=0.5,
+            freq1=tone_hz, amp1=tone_amp,
             freq2=0, amp2=0,
         )
         pt = _make_proc_thread()
         mags, freqs = pt.compute_gated_fft(signal, sample_rate)
 
-        mag100 = _magnitude_at_frequency(100, mags, freqs)
-        assert mag100 is not None, "Should find bin near 100 Hz"
-        print(f"GFFT1 Python: 100 Hz magnitude = {mag100:.2f} dB")
-        assert abs(mag100 - (-15.72)) < 1.0, \
-            f"100 Hz: Python={mag100:.2f} dB, Swift=-15.72 dB — difference > 1 dB"
+        mag100 = _magnitude_at_frequency(tone_hz, mags, freqs)
+        assert mag100 is not None, f"Should find bin near {tone_hz} Hz"
+        print(f"GFFT1 Python: {tone_hz} Hz magnitude = {mag100:.2f} dB")
+        assert abs(mag100 - expected) < TOL, \
+            f"{tone_hz} Hz: Python={mag100:.2f} dB, oracle={expected} dB — difference > {TOL} dB"
 
     def test_GFFT2_two_tone_67Hz_and_117Hz_magnitudes_match(self):
         """GFFT2: Two tones at 67 Hz and 117 Hz with known amplitudes.
         This mirrors the exact frequencies from the plate C capture discrepancy."""
         sample_rate = 48000.0
+        (f1, a1), (f2, a2) = gated("GFFT2")["tones"]
+        exp1, exp2 = _expected("GFFT2", f1), _expected("GFFT2", f2)
+        exp_delta = float(gated("GFFT2")["deltaDb"])
         signal = _make_two_tone_signal(
             sample_rate=sample_rate, duration=0.4,
-            freq1=67, amp1=0.01,
-            freq2=117, amp2=0.1,
+            freq1=f1, amp1=a1,
+            freq2=f2, amp2=a2,
         )
         pt = _make_proc_thread()
         mags, freqs = pt.compute_gated_fft(signal, sample_rate)
 
-        mag67 = _magnitude_at_frequency(67, mags, freqs)
-        mag117 = _magnitude_at_frequency(117, mags, freqs)
+        mag67 = _magnitude_at_frequency(f1, mags, freqs)
+        mag117 = _magnitude_at_frequency(f2, mags, freqs)
         assert mag67 is not None and mag117 is not None, \
             "Should find bins near 67 and 117 Hz"
 
         print(f"GFFT2 Python: 67 Hz = {mag67:.2f} dB, 117 Hz = {mag117:.2f} dB")
         delta = mag117 - mag67
         print(f"GFFT2 Python: delta (117 - 67) = {delta:.2f} dB")
-        # Swift pins: 67 Hz = -49.74 dB, 117 Hz = -29.55 dB, delta = 20.19 dB.
-        assert abs(mag67 - (-49.74)) < 1.0, \
-            f"67 Hz: Python={mag67:.2f} dB, Swift=-49.74 dB — difference > 1 dB"
-        assert abs(mag117 - (-29.55)) < 1.0, \
-            f"117 Hz: Python={mag117:.2f} dB, Swift=-29.55 dB — difference > 1 dB"
-        assert abs(delta - 20.19) < 1.0, \
-            f"Delta: Python={delta:.2f} dB, Swift=20.19 dB — difference > 1 dB"
+        assert abs(mag67 - exp1) < TOL, \
+            f"{f1} Hz: Python={mag67:.2f} dB, oracle={exp1} dB — difference > {TOL} dB"
+        assert abs(mag117 - exp2) < TOL, \
+            f"{f2} Hz: Python={mag117:.2f} dB, oracle={exp2} dB — difference > {TOL} dB"
+        assert abs(delta - exp_delta) < TOL, \
+            f"Delta: Python={delta:.2f} dB, oracle={exp_delta} dB — difference > {TOL} dB"
 
     def test_GFFT3_bin_centred_tones_exact_magnitudes(self):
         """GFFT3: Exact bin-centred tones to eliminate spectral leakage.
         With paddedSize=32768 and sampleRate=48000, binWidth=1.46484375 Hz.
         Bin 46 = 67.3828125 Hz, Bin 80 = 117.1875 Hz"""
         sample_rate = 48000.0
-        padded_size = 32768
-        bin_width = sample_rate / padded_size
-        freq1 = 46 * bin_width   # 67.3828125 Hz
-        freq2 = 80 * bin_width   # 117.1875 Hz
-        amp1 = 0.01
-        amp2 = 0.1
+        # Bin-centred by construction: with paddedSize=32768 the oracle tone frequencies
+        # are exact multiples of the 1.46484375 Hz bin width (bins 46 and 80).
+        (freq1, amp1), (freq2, amp2) = gated("GFFT3")["tones"]
+        exp1, exp2 = _expected("GFFT3", freq1), _expected("GFFT3", freq2)
+        exp_delta = float(gated("GFFT3")["deltaDb"])
 
         signal = _make_two_tone_signal(
             sample_rate=sample_rate, duration=0.4,
@@ -155,13 +175,12 @@ class TestGatedFFTParity:
         delta = mag2 - mag1
         print(f"GFFT3 Python: delta = {delta:.2f} dB")
 
-        # Swift pins: 67.3828 Hz = -49.70 dB, 117.1875 Hz = -29.51 dB, delta = 20.19 dB.
-        assert abs(mag1 - (-49.70)) < 1.0, \
-            f"{freq1:.4f} Hz: Python={mag1:.2f} dB, Swift=-49.70 dB — difference > 1 dB"
-        assert abs(mag2 - (-29.51)) < 1.0, \
-            f"{freq2:.4f} Hz: Python={mag2:.2f} dB, Swift=-29.51 dB — difference > 1 dB"
-        assert abs(delta - 20.19) < 1.0, \
-            f"Delta: Python={delta:.2f} dB, Swift=20.19 dB — difference > 1 dB"
+        assert abs(mag1 - exp1) < TOL, \
+            f"{freq1:.4f} Hz: Python={mag1:.2f} dB, oracle={exp1} dB — difference > {TOL} dB"
+        assert abs(mag2 - exp2) < TOL, \
+            f"{freq2:.4f} Hz: Python={mag2:.2f} dB, oracle={exp2} dB — difference > {TOL} dB"
+        assert abs(delta - exp_delta) < TOL, \
+            f"Delta: Python={delta:.2f} dB, oracle={exp_delta} dB — difference > {TOL} dB"
 
     def test_GFFT4_silence_all_bins_below_noise_floor(self):
         """GFFT4: Silence should produce all bins near noise floor (< -100 dB)."""
@@ -171,10 +190,11 @@ class TestGatedFFTParity:
         pt = _make_proc_thread()
         mags, freqs = pt.compute_gated_fft(signal, sample_rate)
 
+        ceiling = float(gated("GFFT4")["maxDbBelow"])
         max_mag = max(mags)
         print(f"GFFT4 Python: max magnitude for silence = {max_mag:.2f} dB")
-        assert max_mag < -100, \
-            f"All bins should be below -100 dB for silence, max = {max_mag:.2f}"
+        assert max_mag < ceiling, \
+            f"All bins should be below {ceiling} dB for silence, max = {max_mag:.2f}"
 
     def test_GFFT5_after_fix_bin_centred_matches_swift(self):
         """GFFT5: Hann-window normalization (DENORM, unit-peak) parity.
@@ -184,11 +204,10 @@ class TestGatedFFTParity:
         inflate the value by ~4.26 dB.  Mirrors Swift
         GatedFFTParityTests.afterFix_binCentred_matchesPython."""
         sample_rate = 48000.0
-        n = 32768
-        target_bin = 46
-        amplitude = 0.01
+        (freq, amplitude), = gated("GFFT5")["tones"]
+        expected = _expected("GFFT5", freq)
+        target_bin = round(freq * 32768 / sample_rate)  # 46, for the printout
         sample_count = int(sample_rate * 0.4)
-        freq = target_bin * sample_rate / n
 
         t = np.arange(sample_count) / sample_rate
         signal = (amplitude * np.sin(2 * np.pi * freq * t)).astype(np.float32)
@@ -198,5 +217,5 @@ class TestGatedFFTParity:
         py_db = _magnitude_at_frequency(freq, mags, freqs)
 
         print(f"GFFT5 Python: bin {target_bin} ({freq:.4f} Hz) = {py_db:.2f} dB")
-        assert abs(py_db - (-49.70)) < 1.0, \
-            f"bin 46: Python={py_db:.2f} dB, Swift=-49.70 dB — difference > 1 dB"
+        assert abs(py_db - expected) < TOL, \
+            f"bin {target_bin}: Python={py_db:.2f} dB, oracle={expected} dB — difference > {TOL} dB"

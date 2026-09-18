@@ -30,8 +30,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from guitar_tap.models.material_tap_phase import MaterialTapPhase
 from guitar_tap.models.measurement_type import MeasurementType
 
+sys.path.insert(0, os.path.dirname(__file__))
+
+from parity_oracle import (  # noqa: E402  (follows the src path insert, like the imports above)
+    TOLERANCES,
+    calibration,
+    case,
+    fixture,
+    peak,
+    tol,
+)
+
 # ---------------------------------------------------------------------------
-# Expected values
+# Expected values - ALL from the shared oracle (tests/parity-oracle.json)
+#
+# These used to be literals here, typed out again in the Swift suite and a third
+# time in the web suite. Three copies of one contract kept equal by hand is the
+# drift the oracle exists to remove: change a number in one place now and the
+# other editions see it on their next sync-oracle run.
 # ---------------------------------------------------------------------------
 
 # brace-umik-1-swift-mac-1778816093.wav — Brace bar, UMIK-1 mic, 48 kHz.
@@ -43,21 +59,20 @@ from guitar_tap.models.measurement_type import MeasurementType
 #   Peak Q factor:  87.5
 #   Tap detection threshold: -53.33838 dB
 # The test uses tolerances per the test plan: ±1.0 Hz, ±1.0 dB, ±1.0 Q.
-BRACE_EXPECTED_FREQ = 512.68880   # Hz
-BRACE_EXPECTED_MAG = -70.93484    # dB
-BRACE_EXPECTED_Q = 87.5            # dimensionless
-BRACE_TAP_THRESHOLD = -53.33838   # dB — matches .guitartap reference
-FREQ_TOLERANCE = 1.0               # Hz
-MAG_TOLERANCE = 1.0                # dB
+_B1 = peak("REG-B1", "longitudinal")
+BRACE_EXPECTED_FREQ = _B1["frequency"]
+BRACE_EXPECTED_MAG = _B1["magnitude"]
+BRACE_EXPECTED_Q = _B1["q"]
+BRACE_TAP_THRESHOLD = case("REG-B1")["settings"]["tapDetectionThreshold"]
+FREQ_TOLERANCE = TOLERANCES["freqHz"]
+MAG_TOLERANCE = TOLERANCES["magDb"]
 
 # WAV file path — same file used in the Swift test suite.
-BRACE_WAV = os.path.join(
-    os.path.dirname(__file__),
-    "brace-umik-1-swift-mac-1778816093.wav",
-)
+BRACE_WAV = fixture("REG-B1")
 
 # UMIK-1 calibration file — used for brace and plate measurements.
-CALIBRATION_FILE = os.path.join(os.path.dirname(__file__), "7108913.txt")
+CALIBRATION_FILE = calibration("REG-B1")
+assert CALIBRATION_FILE is not None  # REG-B1 declares 7108913.txt
 
 # plate-umik-1-swift-mac-1778816330.wav — Plate, UMIK-1 mic, 48 kHz, full session.
 # Reference values from the matching .guitartap file
@@ -68,23 +83,25 @@ CALIBRATION_FILE = os.path.join(os.path.dirname(__file__), "7108913.txt")
 #   Tap detection threshold: -53.33838 dB
 # The single WAV exercises all three plate phases; on file playback the
 # pipeline auto-advances between phases so all three peaks are populated.
-PLATE_WAV = os.path.join(
-    os.path.dirname(__file__),
-    "plate-umik-1-swift-mac-1778816330.wav",
+PLATE_WAV = fixture("REG-P1")
+_P1_L, _P1_C, _P1_FLC = (
+    peak("REG-P1", "longitudinal"),
+    peak("REG-P1", "cross"),
+    peak("REG-P1", "flc"),
 )
-PLATE_L_EXPECTED_FREQ = 67.11537    # Hz
-PLATE_L_EXPECTED_MAG = -60.36113    # dB
-PLATE_L_EXPECTED_Q = 15.333
+PLATE_L_EXPECTED_FREQ = _P1_L["frequency"]
+PLATE_L_EXPECTED_MAG = _P1_L["magnitude"]
+PLATE_L_EXPECTED_Q = _P1_L["q"]
 
-PLATE_C_EXPECTED_FREQ = 116.27016   # Hz
-PLATE_C_EXPECTED_MAG = -52.80130    # dB
-PLATE_C_EXPECTED_Q = 26.333
+PLATE_C_EXPECTED_FREQ = _P1_C["frequency"]
+PLATE_C_EXPECTED_MAG = _P1_C["magnitude"]
+PLATE_C_EXPECTED_Q = _P1_C["q"]
 
-PLATE_FLC_EXPECTED_FREQ = 35.35375  # Hz
-PLATE_FLC_EXPECTED_MAG = -58.28925  # dB
-PLATE_FLC_EXPECTED_Q = 6.000
+PLATE_FLC_EXPECTED_FREQ = _P1_FLC["frequency"]
+PLATE_FLC_EXPECTED_MAG = _P1_FLC["magnitude"]
+PLATE_FLC_EXPECTED_Q = _P1_FLC["q"]
 
-PLATE_TAP_THRESHOLD = -53.33838     # dB — matches .guitartap reference
+PLATE_TAP_THRESHOLD = case("REG-P1")["settings"]["tapDetectionThreshold"]
 
 # ---------------------------------------------------------------------------
 # plate-umik-1-noisy-52.wav — OUT-4: the ONE fixture that separates the two
@@ -116,7 +133,7 @@ PLATE_NOISY_WAV = os.path.join(
     os.path.dirname(__file__),
     "plate-umik-1-noisy-52.wav",
 )
-Q_TOLERANCE = 1.0                    # dimensionless
+Q_TOLERANCE = TOLERANCES["q"]
 
 # ---------------------------------------------------------------------------
 # plate-umik-1-web-mac-3-taps.wav — Plate, UMIK-1 mic, 48 kHz, recorded by the WEB app (Chrome)
@@ -125,20 +142,28 @@ Q_TOLERANCE = 1.0                    # dimensionless
 # Expected values are the averaged-spectrum peaks (the web .guitartap, same recording). NB: Swift/Python
 # historically read material peaks off the LAST tap (a buildAllPeaks UUID-hack side-effect) — a latent
 # bug fixed alongside this so all three read the averaged peak (fLC -63.6008, not the last tap's -60.98).
-PLATE_3TAP_WAV = os.path.join(
-    os.path.dirname(__file__),
-    "plate-umik-1-web-mac-3-taps.wav",
+PLATE_3TAP_WAV = fixture("REG-P2")
+PLATE_3TAP_THRESHOLD = case("REG-P2")["settings"]["tapDetectionThreshold"]
+_P2_L, _P2_C, _P2_FLC = (
+    peak("REG-P2", "longitudinal"),
+    peak("REG-P2", "cross"),
+    peak("REG-P2", "flc"),
 )
-PLATE_3TAP_THRESHOLD = -40.0          # dB — matches the .guitartap reference
-PLATE_3TAP_L_FREQ, PLATE_3TAP_L_MAG, PLATE_3TAP_L_Q = 68.2587, -71.5858, 15.667
-PLATE_3TAP_C_FREQ, PLATE_3TAP_C_MAG, PLATE_3TAP_C_Q = 117.4681, -56.5436, 26.667
-PLATE_3TAP_FLC_FREQ, PLATE_3TAP_FLC_MAG, PLATE_3TAP_FLC_Q = 35.3011, -63.6008, 6.000
+PLATE_3TAP_L_FREQ, PLATE_3TAP_L_MAG, PLATE_3TAP_L_Q = (
+    _P2_L["frequency"], _P2_L["magnitude"], _P2_L["q"],
+)
+PLATE_3TAP_C_FREQ, PLATE_3TAP_C_MAG, PLATE_3TAP_C_Q = (
+    _P2_C["frequency"], _P2_C["magnitude"], _P2_C["q"],
+)
+PLATE_3TAP_FLC_FREQ, PLATE_3TAP_FLC_MAG, PLATE_3TAP_FLC_Q = (
+    _P2_FLC["frequency"], _P2_FLC["magnitude"], _P2_FLC["q"],
+)
 # REG-P2 uses a tighter magnitude tolerance than the generic ±1.0 dB.  The
 # averaged values are deterministic across platforms, so they agree far more
 # closely than a single tap would; ±0.5 dB still leaves headroom for FFT-library
 # differences while reliably catching a regression to last-tap selection (the
 # masked deltas were fL 0.94, fC 0.81, fLC 2.62 dB — all caught at 0.5).
-PLATE_3TAP_MAG_TOLERANCE = 0.5         # dB
+PLATE_3TAP_MAG_TOLERANCE = tol("REG-P2", "magDb")
 
 # ---------------------------------------------------------------------------
 # Recording 5.wav — Generic guitar, single-tap, 48 kHz.
@@ -148,13 +173,18 @@ PLATE_3TAP_MAG_TOLERANCE = 0.5         # dB
 #           FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
 # ---------------------------------------------------------------------------
 
-G1_WAV = os.path.join(os.path.dirname(__file__), "Recording 5.wav")
-G1_PEAK_MIN_THRESHOLD = -76.0   # dB
-G1_TAP_THRESHOLD = -40.0        # dB
+G1_WAV = fixture("REG-G1")
+G1_PEAK_MIN_THRESHOLD = case("REG-G1")["settings"]["peakMinThreshold"]
+G1_TAP_THRESHOLD = case("REG-G1")["settings"]["tapDetectionThreshold"]
 
-G1_AIR_FREQ = 87.30731;    G1_AIR_MAG = -45.351357
-G1_TOP_FREQ = 164.09756;   G1_TOP_MAG = -36.67097
-G1_BACK_FREQ = 240.5668;   G1_BACK_MAG = -54.567883
+_G1_AIR, _G1_TOP, _G1_BACK = (
+    peak("REG-G1", "air"),
+    peak("REG-G1", "top"),
+    peak("REG-G1", "back"),
+)
+G1_AIR_FREQ, G1_AIR_MAG = _G1_AIR["frequency"], _G1_AIR["magnitude"]
+G1_TOP_FREQ, G1_TOP_MAG = _G1_TOP["frequency"], _G1_TOP["magnitude"]
+G1_BACK_FREQ, G1_BACK_MAG = _G1_BACK["frequency"], _G1_BACK["magnitude"]
 
 # ---------------------------------------------------------------------------
 # Recording.wav — Generic guitar, 8-tap multi-tap, 48 kHz.
@@ -164,26 +194,33 @@ G1_BACK_FREQ = 240.5668;   G1_BACK_MAG = -54.567883
 #           FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
 # ---------------------------------------------------------------------------
 
-GUITAR_WAV = os.path.join(os.path.dirname(__file__), "Recording.wav")
-GUITAR_PEAK_MIN_THRESHOLD = -76.0   # dB
-GUITAR_TAP_THRESHOLD = -40.0        # dB
+GUITAR_WAV = fixture("REG-G2")
+GUITAR_PEAK_MIN_THRESHOLD = case("REG-G2")["settings"]["peakMinThreshold"]
+GUITAR_TAP_THRESHOLD = case("REG-G2")["settings"]["tapDetectionThreshold"]
 
 # Average peaks
-GUITAR_AVG_AIR_FREQ = 87.233154;   GUITAR_AVG_AIR_MAG = -44.34529
-GUITAR_AVG_TOP_FREQ = 164.04662;   GUITAR_AVG_TOP_MAG = -35.105385
-GUITAR_AVG_BACK_FREQ = 240.57095;  GUITAR_AVG_BACK_MAG = -55.152287
+_G2_AIR, _G2_TOP, _G2_BACK = (
+    peak("REG-G2", "air", "averagedPeaks"),
+    peak("REG-G2", "top", "averagedPeaks"),
+    peak("REG-G2", "back", "averagedPeaks"),
+)
+GUITAR_AVG_AIR_FREQ, GUITAR_AVG_AIR_MAG = _G2_AIR["frequency"], _G2_AIR["magnitude"]
+GUITAR_AVG_TOP_FREQ, GUITAR_AVG_TOP_MAG = _G2_TOP["frequency"], _G2_TOP["magnitude"]
+GUITAR_AVG_BACK_FREQ, GUITAR_AVG_BACK_MAG = _G2_BACK["frequency"], _G2_BACK["magnitude"]
 
-# Per-tap expected values: (air_freq, air_mag, top_freq, top_mag, back_freq, back_mag)
-GUITAR_PER_TAP = [
-    (87.20365, -46.083164, 164.15787, -37.15723,  296.5797,  -57.117817),  # Tap 1
-    (87.22049, -43.714653, 163.98953, -34.96168,  240.6308,  -54.930405),  # Tap 2
-    (87.21567, -44.400375, 164.00642, -36.064285, 240.54478, -56.384575),  # Tap 3
-    (87.23355, -43.930878, 164.02281, -34.72927,  240.58727, -55.048416),  # Tap 4
-    (87.23911, -44.447514, 164.09766, -36.650166, 240.52957, -54.569893),  # Tap 5
-    (87.258545,-44.08946,  164.05678, -34.239933, 240.63478, -54.847008),  # Tap 6
-    (87.2434,  -43.969948, 164.05476, -33.775253, 296.5151,  -54.0257),    # Tap 7
-    (87.24372, -44.523045, 164.0366,  -34.412136, 240.49031, -54.849174),  # Tap 8
-]
+# Per-tap expected values: (air_freq, air_mag, top_freq, top_mag, back_freq, back_mag).
+# Taps 1 and 7 pin Back at ~296.5 Hz rather than ~240.6 - real behaviour of the shared
+# selection path on this fixture, pinned deliberately (see _perTapNote in the oracle).
+def _per_tap_row(entry: dict[str, object]) -> tuple[float, ...]:
+    by_role = {p["role"]: p for p in entry["peaks"]}  # type: ignore[attr-defined]
+    return tuple(
+        float(by_role[role][key])
+        for role in ("air", "top", "back")
+        for key in ("frequency", "magnitude")
+    )
+
+
+GUITAR_PER_TAP = [_per_tap_row(entry) for entry in case("REG-G2")["perTap"]]
 
 
 # ---------------------------------------------------------------------------
@@ -706,8 +743,8 @@ class TestFilePlaybackRegression:
 # 0.0853 s ± 0.03 s. The web is audio-clock-deterministic; Python's wall-clock decay reaches the
 # same crossing because file playback runs at real-time pace (wall-clock ≈ audio time 1:1). The
 # loose tolerance covers per-platform chunk-granularity + clock jitter (web 0.0853, Python ~0.091).
-G1_RING_OUT_SEC = 0.0853
-RING_OUT_TOLERANCE = 0.03
+G1_RING_OUT_SEC = case("REG-G1")["ringOutSec"]
+RING_OUT_TOLERANCE = TOLERANCES["ringOutSec"]
 
 
 def test_REG_G_generic_guitar_ringout(g1_analyzer):
