@@ -840,6 +840,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                  np.zeros(fft_size - len(samples), dtype=np.float32)]
             )
 
+        # Diagnostic for the alignment family (#7/#3/#5): fingerprint the buffer on both
+        # sides of where the alignment step WOULD be, so a cross-edition comparison can say
+        # whether the editions captured the same samples, windowed them differently, or
+        # differ only in the arithmetic afterwards. Inert unless capture_probe.enabled.
+        # Mirrors Swift finishGuitarGatedCapture's CaptureProbe.record call.
+        from . import capture_probe
+        capture_probe.record(samples, chunk)
+
         window_fcn = self.mic.window_fcn  # rectangular (np.ones(fft_size))
         magnitudes_db, _ = _dft_anal(chunk, window_fcn, fft_size)
 
