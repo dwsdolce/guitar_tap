@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "tests"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import self_baseline  # noqa: E402
-from parity_oracle import ORACLE, TOLERANCES, case  # noqa: E402
+from parity_oracle import ORACLE, TOLERANCES  # noqa: E402
 from parity_runner import compute_all  # noqa: E402
 
 # Which tolerance governs a value, by the leaf its path ends in.
@@ -53,19 +53,24 @@ _TOLERANCE_KEYS = {
 }
 
 
+# The FIRST-MINT bar, not the parity bar. A new configuration has no prior to check
+# against, so the only available question is whether its numbers are plausible at all.
+# Parity is now tight enough (0.02 Hz / 0.01 dB) that a port still being built could fail
+# it — and failing it here would leave that port with no zero-tolerance regression check
+# at exactly the moment it most needs one. Falls back to the parity numbers for an older
+# oracle that predates the split.
+_BOOTSTRAP: dict[str, float] = ORACLE.get("bootstrapTolerances", TOLERANCES)
+
+
 def _tolerance_for(path: str) -> float | None:
-    leaf = path.rsplit("/", 1)[-1]
-    key = _TOLERANCE_KEYS.get(leaf)
-    if key is None:
-        return None
-    name = path.split("/", 1)[0]
-    if name in ORACLE["filePlayback"]:
-        return float(case(name).get("tolerances", {}).get(key, TOLERANCES[key]))
-    return float(TOLERANCES[key])
+    """The first-mint bar for a value. Per-case overrides are a parity concept and do not
+    apply here: this asks whether the numbers are garbage, which is not case-specific."""
+    key = _TOLERANCE_KEYS.get(path.rsplit("/", 1)[-1])
+    return None if key is None else float(_BOOTSTRAP[key])
 
 
 def check_against_oracle(computed: dict[str, float]) -> list[str]:
-    """Paths where this configuration falls outside the parity gate. Empty is a pass."""
+    """Paths where this configuration falls outside the first-mint bar. Empty is a pass."""
     oracle_flat = self_baseline.flatten(ORACLE)
     failures = []
     for path, value in sorted(computed.items()):
@@ -150,19 +155,19 @@ def main() -> int:
 
     if previous is None:
         print("\nNo baseline exists for this configuration — bootstrapping.")
-        print("Checking the values against the oracle's parity gate first, since there")
+        print("Checking the values against the oracle at the first-mint bar, since there")
         print("is no prior to compare them to.")
         failures = check_against_oracle(computed)
         if failures:
-            print(f"\n❌ {len(failures)} value(s) fall outside the parity gate:")
+            print(f"\n❌ {len(failures)} value(s) fall outside the first-mint bar:")
             print("\n".join(failures[:20]))
             if len(failures) > 20:
                 print(f"  ... and {len(failures) - 20} more")
-            print("\nNo baseline written. These numbers disagree with the canonical")
-            print("edition by more than the cross-edition bar allows, so freezing them")
-            print("would freeze the disagreement. Investigate before minting.")
+            print("\nNo baseline written. These numbers are too far from the canonical")
+            print("edition to be plausible, so freezing them would freeze the defect into")
+            print("the thing meant to detect defects. Investigate before minting.")
             return 1
-        print("✅ Every value is within the parity gate.")
+        print("✅ Every value is within the first-mint bar.")
     else:
         lines = diff_against(previous, computed)
         if not lines:
