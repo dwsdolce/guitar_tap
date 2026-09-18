@@ -124,6 +124,13 @@ def provenance() -> dict[str, str]:
 
 
 def main() -> int:
+    # Status lines use non-ASCII markers. A Windows console is cp1252 by default and raises
+    # UnicodeEncodeError on them, which killed this script at its first status line - on the
+    # very platforms it exists to characterise. Same fix as tooling/parity/doc_coverage.py.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--yes", action="store_true", help="overwrite without prompting")
     parser.add_argument("--check", action="store_true", help="report only; write nothing")
