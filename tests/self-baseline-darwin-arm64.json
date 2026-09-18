@@ -1,0 +1,322 @@
+{
+  "_generator": "guitar_tap Tooling/mint-baseline.py — this configuration's zero-tolerance regression reference. Not the oracle: the oracle is the cross-edition contract minted by canonical Swift.",
+  "configuration": {
+    "arch": "arm64",
+    "edition": "python",
+    "os": "darwin"
+  },
+  "provenance": {
+    "mintedAt": "2026-09-18T20:12:01Z",
+    "numpy": "2.4.2",
+    "oracleVersion": "74247e9",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "python": "3.14.2"
+  },
+  "values": {
+    "filePlayback": {
+      "REG-B1": {
+        "peaks": [
+          {
+            "frequency": 512.6888095520416,
+            "magnitude": -70.93451271905934,
+            "q": 87.5,
+            "role": "longitudinal"
+          }
+        ]
+      },
+      "REG-G1": {
+        "peaks": [
+          {
+            "frequency": 87.30735291789175,
+            "magnitude": -45.35163820149617,
+            "role": "air"
+          },
+          {
+            "frequency": 164.0974848898849,
+            "magnitude": -36.670951291016785,
+            "role": "top"
+          },
+          {
+            "frequency": 240.5674525676435,
+            "magnitude": -54.56870569960547,
+            "role": "back"
+          }
+        ],
+        "ringOutSec": 0.08533333333333334
+      },
+      "REG-G2": {
+        "averagedPeaks": [
+          {
+            "frequency": 87.23310702881977,
+            "magnitude": -44.344101026127994,
+            "role": "air"
+          },
+          {
+            "frequency": 164.04654563611933,
+            "magnitude": -35.10531885462911,
+            "role": "top"
+          },
+          {
+            "frequency": 240.5716338042606,
+            "magnitude": -55.15254435983414,
+            "role": "back"
+          }
+        ],
+        "perTap": [
+          {
+            "peaks": [
+              {
+                "frequency": 87.20386446808077,
+                "magnitude": -46.08257069018955,
+                "role": "air"
+              },
+              {
+                "frequency": 164.15740988979462,
+                "magnitude": -37.15723328883052,
+                "role": "top"
+              },
+              {
+                "frequency": 296.5795007339173,
+                "magnitude": -57.11513562152386,
+                "role": "back"
+              }
+            ],
+            "tap": 1
+          },
+          {
+            "peaks": [
+              {
+                "frequency": 87.22014551970535,
+                "magnitude": -43.71297159942941,
+                "role": "air"
+              },
+              {
+                "frequency": 163.98928710641886,
+                "magnitude": -34.961284607948684,
+                "role": "top"
+              },
+              {
+                "frequency": 240.63368117227225,
+                "magnitude": -54.92958466774147,
+                "role": "back"
+              }
+            ],
+            "tap": 2
+          },
+          {
+            "peaks": [
+              {
+                "frequency": 87.21593679888905,
+                "magnitude": -44.39803686579428,
+                "role": "air"
+              },
+              {
+                "frequency": 164.0064474110195,
+                "magnitude": -36.06443438166069,
+                "role": "top"
+              },
+              {
+                "frequency": 240.54388764765864,
+                "magnitude": -56.383975988071235,
+                "role": "back"
+              }
+            ],
+            "tap": 3
+          },
+          {
+            "peaks": [
+              {
+                "frequency": 87.23348674175922,
+                "magnitude": -43.92979900223677,
+                "role": "air"
+              },
+              {
+                "frequency": 164.02283000594258,
+                "magnitude": -34.729219921724486,
+                "role": "top"
+              },
+              {
+                "frequency": 240.588416190138,
+                "magnitude": -55.047820664747746,
+                "role": "back"
+              }
+            ],
+            "tap": 4
+          },
+          {
+            "peaks": [
+              {
+                "frequency": 87.2392281371573,
+                "magnitude": -44.44690502386986,
+                "role": "air"
+              },
+              {
+                "frequency": 164.0975228034204,
+                "magnitude": -36.649788787663745,
+                "role": "top"
+              },
+              {
+                "frequency": 240.53277046958652,
+                "magnitude": -54.57157721429167,
+                "role": "back"
+              }
+            ],
+            "tap": 5
+          },
+          {
+            "peaks": [
+              {
+                "frequency": 87.25827753805164,
+                "magnitude": -44.08804054359601,
+                "role": "air"
+              },
+              {
+                "frequency": 164.0569939278175,
+                "magnitude": -34.240160973223276,
+                "role": "top"
+              },
+              {
+                "frequency": 240.62851273616306,
+                "magnitude": -54.84819377293497,
+                "role": "back"
+              }
+            ],
+            "tap": 6
+          },
+          {
+            "peaks": [
+              {
+                "frequency": 87.24326341512469,
+                "magnitude": -43.968615168219664,
+                "role": "air"
+              },
+              {
+                "frequency": 164.05461007127164,
+                "magnitude": -33.77508837228098,
+                "role": "top"
+              },
+              {
+                "frequency": 296.51950009530407,
+                "magnitude": -54.02462461875266,
+                "role": "back"
+              }
+            ],
+            "tap": 7
+          },
+          {
+            "peaks": [
+              {
+                "frequency": 87.24372408154314,
+                "magnitude": -44.52298205345615,
+                "role": "air"
+              },
+              {
+                "frequency": 164.03660824399174,
+                "magnitude": -34.41218362872114,
+                "role": "top"
+              },
+              {
+                "frequency": 240.4919900544864,
+                "magnitude": -54.85058914691077,
+                "role": "back"
+              }
+            ],
+            "tap": 8
+          }
+        ]
+      },
+      "REG-P1": {
+        "peaks": [
+          {
+            "frequency": 67.11537379653835,
+            "magnitude": -60.36094007770172,
+            "q": 15.333333333333334,
+            "role": "longitudinal"
+          },
+          {
+            "frequency": 116.2701858073594,
+            "magnitude": -52.79993231766419,
+            "q": 26.333333333333332,
+            "role": "cross"
+          },
+          {
+            "frequency": 35.35375268947287,
+            "magnitude": -58.28906373621881,
+            "q": 6.0,
+            "role": "flc"
+          }
+        ]
+      },
+      "REG-P2": {
+        "peaks": [
+          {
+            "frequency": 68.25873071757576,
+            "magnitude": -71.58581253340726,
+            "q": 15.666666666666666,
+            "role": "longitudinal"
+          },
+          {
+            "frequency": 117.46809789453958,
+            "magnitude": -56.54357832777828,
+            "q": 26.666666666666668,
+            "role": "cross"
+          },
+          {
+            "frequency": 35.30115234948257,
+            "magnitude": -63.60079875813496,
+            "q": 6.0,
+            "role": "flc"
+          }
+        ]
+      }
+    },
+    "gatedFft": {
+      "GFFT1": {
+        "expected": [
+          {
+            "db": -15.722160814127067,
+            "hz": 100
+          }
+        ]
+      },
+      "GFFT2": {
+        "deltaDb": 20.18715125799819,
+        "expected": [
+          {
+            "db": -49.73713689505301,
+            "hz": 67
+          },
+          {
+            "db": -29.54998563705482,
+            "hz": 117
+          }
+        ]
+      },
+      "GFFT3": {
+        "deltaDb": 20.192560165098566,
+        "expected": [
+          {
+            "db": -49.69968240849789,
+            "hz": 67.3828125
+          },
+          {
+            "db": -29.507122243399326,
+            "hz": 117.1875
+          }
+        ]
+      },
+      "GFFT4": {
+        "maxDb": -313.07119549054045
+      },
+      "GFFT5": {
+        "expected": [
+          {
+            "db": -49.504727978338074,
+            "hz": 67.3828125
+          }
+        ]
+      }
+    }
+  }
+}
