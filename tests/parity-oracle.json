@@ -1,81 +1,410 @@
 {
-  "_generator": "HAND-AUTHORED BASELINE, lifted verbatim from the Swift/Python/web regression suites (guitar-tap-project#10). Once the canonical Swift GenerateParityOracle target lands, its output replaces this file and hand-editing stops. Vendored into each repo via tooling/sync-oracle.sh.",
-  "oracleVersion": "TBD-swift-commit-sha",
-  "generatedAt": "TBD-ISO-8601",
-  "_gatedFftSignal": "Synthetic, 48000 Hz, 0.4 s; computeGatedFFT; dB at the bin nearest the target. Kept top-level rather than inside gatedFft: consumers decode gatedFft as a map of case objects, and a sibling string there breaks a typed decoder.",
-  "tolerances": { "freqHz": 1.0, "magDb": 1.0, "q": 1.0, "gatedFftDb": 1.0, "ringOutSec": 0.03 },
-
-  "filePlayback": {
-    "REG-G1": {
-      "fixture": "Recording 5.wav",
-      "calibration": null,
-      "settings": { "measurementType": "Generic Guitar", "peakMinThreshold": -76.0, "tapDetectionThreshold": -40.0, "numberOfTaps": 1, "fftSize": 65536 },
-      "peaks": [
-        { "role": "air",  "frequency": 87.30731,  "magnitude": -45.351357 },
-        { "role": "top",  "frequency": 164.09756, "magnitude": -36.67097 },
-        { "role": "back", "frequency": 240.5668,  "magnitude": -54.567883 }
+  "_gatedFftSignal" : "Synthetic, 48000 Hz, 0.4 s; computeGatedFFT; dB at the bin nearest the target. Kept top-level rather than inside gatedFft: consumers decode gatedFft as a map of case objects, and a sibling string there breaks a typed decoder.",
+  "_generator" : "HAND-AUTHORED BASELINE, lifted verbatim from the Swift/Python/web regression suites (guitar-tap-project#10). Once the canonical Swift GenerateParityOracle target lands, its output replaces this file and hand-editing stops. Vendored into each repo via tooling/sync-oracle.sh.",
+  "_selfToleranceNote" : "tolerances is the CROSS-EDITION bar: Swift, Python, web and Kotlin use different FFT libraries and float paths, so 1 dB / 1 Hz is about as tight as parity can be asserted. selfTolerances is the SAME-EDITION bar, used when an edition checks against goldens it minted itself: same machine, same code path, deterministic, so any movement is a real change and the bar is zero. One number cannot do both jobs — the loose parity figure was hiding sub-0.003 dB drift in the Swift goldens for an unknown length of time.",
+  "filePlayback" : {
+    "REG-B1" : {
+      "calibration" : "7108913.txt",
+      "fixture" : "brace-umik-1-swift-mac-1778816093.wav",
+      "peaks" : [
+        {
+          "frequency" : 512.68880000000001,
+          "magnitude" : -70.934844999999996,
+          "q" : 87.5,
+          "role" : "longitudinal"
+        }
       ],
-      "ringOutSec": 0.0853,
-      "_ringOutNote": "Post-tap level decaying to peak-15 dB. The web is audio-clock-deterministic; Swift and Python reach the same crossing because file playback runs at real-time pace. The loose tolerance covers per-platform chunk granularity + clock jitter (web 0.0853, Python ~0.091)."
+      "settings" : {
+        "fftSize" : 65536,
+        "measurementType" : "Material (Brace)",
+        "numberOfTaps" : 1,
+        "tapDetectionThreshold" : -53.338380000000001
+      }
     },
-    "REG-G2": {
-      "fixture": "Recording.wav",
-      "calibration": null,
-      "settings": { "measurementType": "Generic Guitar", "peakMinThreshold": -76.0, "tapDetectionThreshold": -40.0, "numberOfTaps": 8, "fftSize": 65536 },
-      "averagedPeaks": [
-        { "role": "air",  "frequency": 87.233154, "magnitude": -44.34529 },
-        { "role": "top",  "frequency": 164.04662, "magnitude": -35.105385 },
-        { "role": "back", "frequency": 240.57095, "magnitude": -55.152287 }
+    "REG-G1" : {
+      "_ringOutNote" : "Post-tap level decaying to peak-15 dB. The web is audio-clock-deterministic; Swift and Python reach the same crossing because file playback runs at real-time pace. The loose tolerance covers per-platform chunk granularity + clock jitter (web 0.0853, Python ~0.091).",
+      "calibration" : null,
+      "fixture" : "Recording 5.wav",
+      "peaks" : [
+        {
+          "frequency" : 87.307320000000004,
+          "magnitude" : -45.351179999999999,
+          "role" : "air"
+        },
+        {
+          "frequency" : 164.09743,
+          "magnitude" : -36.671146,
+          "role" : "top"
+        },
+        {
+          "frequency" : 240.56693000000001,
+          "magnitude" : -54.567431999999997,
+          "role" : "back"
+        }
       ],
-      "perTap": [
-        { "tap": 1, "peaks": [ { "role": "air", "frequency": 87.20365,  "magnitude": -46.083164 }, { "role": "top", "frequency": 164.15787, "magnitude": -37.15723 },  { "role": "back", "frequency": 296.5797,  "magnitude": -57.117817 } ] },
-        { "tap": 2, "peaks": [ { "role": "air", "frequency": 87.22049,  "magnitude": -43.714653 }, { "role": "top", "frequency": 163.98953, "magnitude": -34.96168 },  { "role": "back", "frequency": 240.6308,  "magnitude": -54.930405 } ] },
-        { "tap": 3, "peaks": [ { "role": "air", "frequency": 87.21567,  "magnitude": -44.400375 }, { "role": "top", "frequency": 164.00642, "magnitude": -36.064285 }, { "role": "back", "frequency": 240.54478, "magnitude": -56.384575 } ] },
-        { "tap": 4, "peaks": [ { "role": "air", "frequency": 87.23355,  "magnitude": -43.930878 }, { "role": "top", "frequency": 164.02281, "magnitude": -34.72927 },  { "role": "back", "frequency": 240.58727, "magnitude": -55.048416 } ] },
-        { "tap": 5, "peaks": [ { "role": "air", "frequency": 87.23911,  "magnitude": -44.447514 }, { "role": "top", "frequency": 164.09766, "magnitude": -36.650166 }, { "role": "back", "frequency": 240.52957, "magnitude": -54.569893 } ] },
-        { "tap": 6, "peaks": [ { "role": "air", "frequency": 87.258545, "magnitude": -44.08946 },  { "role": "top", "frequency": 164.05678, "magnitude": -34.239933 }, { "role": "back", "frequency": 240.63478, "magnitude": -54.847008 } ] },
-        { "tap": 7, "peaks": [ { "role": "air", "frequency": 87.2434,   "magnitude": -43.969948 }, { "role": "top", "frequency": 164.05476, "magnitude": -33.775253 }, { "role": "back", "frequency": 296.5151,  "magnitude": -54.0257 } ] },
-        { "tap": 8, "peaks": [ { "role": "air", "frequency": 87.24372,  "magnitude": -44.523045 }, { "role": "top", "frequency": 164.0366,  "magnitude": -34.412136 }, { "role": "back", "frequency": 240.49031, "magnitude": -54.849174 } ] }
+      "ringOutSec" : 0.085333329999999999,
+      "settings" : {
+        "fftSize" : 65536,
+        "measurementType" : "Generic Guitar",
+        "numberOfTaps" : 1,
+        "peakMinThreshold" : -76,
+        "tapDetectionThreshold" : -40
+      }
+    },
+    "REG-G2" : {
+      "_perTapNote" : "Taps 1 and 7 select 296.5 Hz as Back rather than ~240.6 Hz. That is the real behaviour of the shared peak-selection path on this fixture, not a transcription slip - it is pinned deliberately so a change in selection shows up.",
+      "averagedPeaks" : [
+        {
+          "frequency" : 87.233054999999993,
+          "magnitude" : -44.344337000000003,
+          "role" : "air"
+        },
+        {
+          "frequency" : 164.04662999999999,
+          "magnitude" : -35.105473000000003,
+          "role" : "top"
+        },
+        {
+          "frequency" : 240.57117,
+          "magnitude" : -55.152447000000002,
+          "role" : "back"
+        }
       ],
-      "_perTapNote": "Taps 1 and 7 select 296.5 Hz as Back rather than ~240.6 Hz. That is the real behaviour of the shared peak-selection path on this fixture, not a transcription slip - it is pinned deliberately so a change in selection shows up."
-    },
-    "REG-B1": {
-      "fixture": "brace-umik-1-swift-mac-1778816093.wav",
-      "calibration": "7108913.txt",
-      "settings": { "measurementType": "Material (Brace)", "tapDetectionThreshold": -53.33838, "numberOfTaps": 1, "fftSize": 65536 },
-      "peaks": [
-        { "role": "longitudinal", "frequency": 512.68880, "magnitude": -70.93484, "q": 87.5 }
-      ]
-    },
-    "REG-P1": {
-      "fixture": "plate-umik-1-swift-mac-1778816330.wav",
-      "calibration": "7108913.txt",
-      "settings": { "measurementType": "Material (Plate)", "tapDetectionThreshold": -53.33838, "numberOfTaps": 1, "measureFlc": true, "fftSize": 65536 },
-      "peaks": [
-        { "role": "longitudinal", "frequency": 67.11537,  "magnitude": -60.36113, "q": 15.333 },
-        { "role": "cross",        "frequency": 116.27016, "magnitude": -52.80130, "q": 26.333 },
-        { "role": "flc",          "frequency": 35.35375,  "magnitude": -58.28925, "q": 6.000 }
-      ]
-    },
-    "REG-P2": {
-      "fixture": "plate-umik-1-web-mac-3-taps.wav",
-      "calibration": "7108913.txt",
-      "settings": { "measurementType": "Material (Plate)", "tapDetectionThreshold": -40.0, "numberOfTaps": 3, "measureFlc": true, "fftSize": 65536 },
-      "tolerances": { "magDb": 0.5 },
-      "peaks": [
-        { "role": "longitudinal", "frequency": 68.2587,  "magnitude": -71.5858, "q": 15.667 },
-        { "role": "cross",        "frequency": 117.4681, "magnitude": -56.5436, "q": 26.667 },
-        { "role": "flc",          "frequency": 35.3011,  "magnitude": -63.6008, "q": 6.000 }
+      "calibration" : null,
+      "fixture" : "Recording.wav",
+      "perTap" : [
+        {
+          "peaks" : [
+            {
+              "frequency" : 87.203450000000004,
+              "magnitude" : -46.082160000000002,
+              "role" : "air"
+            },
+            {
+              "frequency" : 164.15764999999999,
+              "magnitude" : -37.1571,
+              "role" : "top"
+            },
+            {
+              "frequency" : 296.58035000000001,
+              "magnitude" : -57.115009999999998,
+              "role" : "back"
+            }
+          ],
+          "tap" : 1
+        },
+        {
+          "peaks" : [
+            {
+              "frequency" : 87.219970000000004,
+              "magnitude" : -43.71407,
+              "role" : "air"
+            },
+            {
+              "frequency" : 163.98964000000001,
+              "magnitude" : -34.961959999999998,
+              "role" : "top"
+            },
+            {
+              "frequency" : 240.63084000000001,
+              "magnitude" : -54.932259999999999,
+              "role" : "back"
+            }
+          ],
+          "tap" : 2
+        },
+        {
+          "peaks" : [
+            {
+              "frequency" : 87.216049999999996,
+              "magnitude" : -44.398470000000003,
+              "role" : "air"
+            },
+            {
+              "frequency" : 164.00618,
+              "magnitude" : -36.064404000000003,
+              "role" : "top"
+            },
+            {
+              "frequency" : 240.54503,
+              "magnitude" : -56.384610000000002,
+              "role" : "back"
+            }
+          ],
+          "tap" : 3
+        },
+        {
+          "peaks" : [
+            {
+              "frequency" : 87.233559999999997,
+              "magnitude" : -43.929780000000001,
+              "role" : "air"
+            },
+            {
+              "frequency" : 164.02309,
+              "magnitude" : -34.729263000000003,
+              "role" : "top"
+            },
+            {
+              "frequency" : 240.58505,
+              "magnitude" : -55.048428000000001,
+              "role" : "back"
+            }
+          ],
+          "tap" : 4
+        },
+        {
+          "peaks" : [
+            {
+              "frequency" : 87.239104999999995,
+              "magnitude" : -44.446486999999998,
+              "role" : "air"
+            },
+            {
+              "frequency" : 164.0977,
+              "magnitude" : -36.649982000000001,
+              "role" : "top"
+            },
+            {
+              "frequency" : 240.52972,
+              "magnitude" : -54.568626000000002,
+              "role" : "back"
+            }
+          ],
+          "tap" : 5
+        },
+        {
+          "peaks" : [
+            {
+              "frequency" : 87.258255000000005,
+              "magnitude" : -44.088752999999997,
+              "role" : "air"
+            },
+            {
+              "frequency" : 164.05688000000001,
+              "magnitude" : -34.24033,
+              "role" : "top"
+            },
+            {
+              "frequency" : 240.6361,
+              "magnitude" : -54.84778,
+              "role" : "back"
+            }
+          ],
+          "tap" : 6
+        },
+        {
+          "peaks" : [
+            {
+              "frequency" : 87.24333,
+              "magnitude" : -43.968372000000002,
+              "role" : "air"
+            },
+            {
+              "frequency" : 164.05473000000001,
+              "magnitude" : -33.775215000000003,
+              "role" : "top"
+            },
+            {
+              "frequency" : 296.51636000000002,
+              "magnitude" : -54.027515000000001,
+              "role" : "back"
+            }
+          ],
+          "tap" : 7
+        },
+        {
+          "peaks" : [
+            {
+              "frequency" : 87.243679999999998,
+              "magnitude" : -44.523319999999998,
+              "role" : "air"
+            },
+            {
+              "frequency" : 164.03654,
+              "magnitude" : -34.412242999999997,
+              "role" : "top"
+            },
+            {
+              "frequency" : 240.49158,
+              "magnitude" : -54.848197999999996,
+              "role" : "back"
+            }
+          ],
+          "tap" : 8
+        }
       ],
-      "_note": "3 taps PER PHASE (9 total), recorded by the web app. Each phase averages, and the peak is read off the AVERAGED spectrum - not the last tap, which is the bug this case pins. The tighter magDb tolerance is what catches a regression to last-tap selection: the masked deltas were fL 0.94, fC 0.81, fLC 2.62 dB."
+      "settings" : {
+        "fftSize" : 65536,
+        "measurementType" : "Generic Guitar",
+        "numberOfTaps" : 8,
+        "peakMinThreshold" : -76,
+        "tapDetectionThreshold" : -40
+      }
+    },
+    "REG-P1" : {
+      "calibration" : "7108913.txt",
+      "fixture" : "plate-umik-1-swift-mac-1778816330.wav",
+      "peaks" : [
+        {
+          "frequency" : 67.115369999999999,
+          "magnitude" : -60.361130000000003,
+          "q" : 15.333333,
+          "role" : "longitudinal"
+        },
+        {
+          "frequency" : 116.27019,
+          "magnitude" : -52.800246999999999,
+          "q" : 26.333334000000001,
+          "role" : "cross"
+        },
+        {
+          "frequency" : 35.353745000000004,
+          "magnitude" : -58.289250000000003,
+          "q" : 6,
+          "role" : "flc"
+        }
+      ],
+      "settings" : {
+        "fftSize" : 65536,
+        "measureFlc" : true,
+        "measurementType" : "Material (Plate)",
+        "numberOfTaps" : 1,
+        "tapDetectionThreshold" : -53.338380000000001
+      }
+    },
+    "REG-P2" : {
+      "_note" : "3 taps PER PHASE (9 total), recorded by the web app. Each phase averages, and the peak is read off the AVERAGED spectrum - not the last tap, which is the bug this case pins. The tighter magDb tolerance is what catches a regression to last-tap selection: the masked deltas were fL 0.94, fC 0.81, fLC 2.62 dB.",
+      "calibration" : "7108913.txt",
+      "fixture" : "plate-umik-1-web-mac-3-taps.wav",
+      "peaks" : [
+        {
+          "frequency" : 68.258709999999994,
+          "magnitude" : -71.586160000000007,
+          "q" : 15.666667,
+          "role" : "longitudinal"
+        },
+        {
+          "frequency" : 117.46809399999999,
+          "magnitude" : -56.543846000000002,
+          "q" : 26.666665999999999,
+          "role" : "cross"
+        },
+        {
+          "frequency" : 35.301139999999997,
+          "magnitude" : -63.600999999999999,
+          "q" : 6,
+          "role" : "flc"
+        }
+      ],
+      "settings" : {
+        "fftSize" : 65536,
+        "measureFlc" : true,
+        "measurementType" : "Material (Plate)",
+        "numberOfTaps" : 3,
+        "tapDetectionThreshold" : -40
+      },
+      "tolerances" : {
+        "magDb" : 0.5
+      }
     }
   },
-
-  "gatedFft": {
-    "GFFT1": { "tones": [[100, 0.5]], "expected": [{ "hz": 100, "db": -15.72 }] },
-    "GFFT2": { "tones": [[67, 0.01], [117, 0.1]], "expected": [{ "hz": 67, "db": -49.74 }, { "hz": 117, "db": -29.55 }], "deltaDb": 20.19 },
-    "GFFT3": { "binCentered": true, "tones": [[67.3828125, 0.01], [117.1875, 0.1]], "expected": [{ "hz": 67.3828125, "db": -49.70 }, { "hz": 117.1875, "db": -29.51 }], "deltaDb": 20.19 },
-    "GFFT4": { "signal": "silence", "maxDbBelow": -100 },
-    "GFFT5": { "binCentered": true, "tones": [[67.3828125, 0.01]], "expected": [{ "hz": 67.3828125, "db": -49.70 }] }
+  "gatedFft" : {
+    "GFFT1" : {
+      "expected" : [
+        {
+          "db" : -15.722327,
+          "hz" : 100
+        }
+      ],
+      "tones" : [
+        [
+          100,
+          0.5
+        ]
+      ]
+    },
+    "GFFT2" : {
+      "deltaDb" : 20.187142999999999,
+      "expected" : [
+        {
+          "db" : -49.737296999999998,
+          "hz" : 67
+        },
+        {
+          "db" : -29.550153999999999,
+          "hz" : 117
+        }
+      ],
+      "tones" : [
+        [
+          67,
+          0.01
+        ],
+        [
+          117,
+          0.10000000000000001
+        ]
+      ]
+    },
+    "GFFT3" : {
+      "binCentered" : true,
+      "deltaDb" : 20.192564000000001,
+      "expected" : [
+        {
+          "db" : -49.699855999999997,
+          "hz" : 67.3828125
+        },
+        {
+          "db" : -29.507292,
+          "hz" : 117.1875
+        }
+      ],
+      "tones" : [
+        [
+          67.3828125,
+          0.01
+        ],
+        [
+          117.1875,
+          0.10000000000000001
+        ]
+      ]
+    },
+    "GFFT4" : {
+      "maxDbBelow" : -100,
+      "signal" : "silence"
+    },
+    "GFFT5" : {
+      "binCentered" : true,
+      "expected" : [
+        {
+          "db" : -49.504894,
+          "hz" : 67.3828125
+        }
+      ],
+      "tones" : [
+        [
+          67.3828125,
+          0.01
+        ]
+      ]
+    }
+  },
+  "generatedAt" : "2026-09-18T19:15:57Z",
+  "oracleVersion" : "74247e9",
+  "selfTolerances" : {
+    "freqHz" : 0,
+    "gatedFftDb" : 0,
+    "magDb" : 0,
+    "q" : 0,
+    "ringOutSec" : 0
+  },
+  "tolerances" : {
+    "freqHz" : 1,
+    "gatedFftDb" : 1,
+    "magDb" : 1,
+    "q" : 1,
+    "ringOutSec" : 0.029999999999999999
   }
 }
