@@ -1153,6 +1153,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             pre_onset_samples=pre_onset_samples,
         )
 
+        # Diagnostic for the material multi-tap divergence (#5): fingerprint the buffer on
+        # both sides of the alignment step, the same three-way split the guitar path uses.
+        # Mirrors Swift's CaptureProbe.record call in the material capture.
+        from . import capture_probe
+        capture_probe.record(samples, aligned)
+
         # Compute Hann-windowed gated FFT on the aligned window.
         magnitudes, frequencies = self.mic.compute_gated_fft(aligned, sample_rate)
 
