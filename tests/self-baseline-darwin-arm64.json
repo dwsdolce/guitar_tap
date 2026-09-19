@@ -6,9 +6,9 @@
     "os": "darwin"
   },
   "provenance": {
-    "mintedAt": "2026-09-19T02:04:33Z",
+    "mintedAt": "2026-09-19T22:29:25Z",
     "numpy": "2.4.2",
-    "oracleVersion": "75d4356-dirty",
+    "oracleVersion": "5bacce4-dirty",
     "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
     "processor": "arm",
     "python": "3.14.2"
@@ -21,6 +21,16 @@
             "frequency": 512.6888095520416,
             "magnitude": -70.93451271905934,
             "q": 87.5,
+            "role": "longitudinal"
+          }
+        ]
+      },
+      "REG-B2": {
+        "peaks": [
+          {
+            "frequency": 553.6318746565486,
+            "magnitude": -65.49038947115368,
+            "q": 94.5,
             "role": "longitudinal"
           }
         ]

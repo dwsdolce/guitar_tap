@@ -15,7 +15,7 @@ and recording the displayed peak frequency and magnitude values.
 Both Swift and Python test suites use the same WAV files and expected
 values so that passing both suites guarantees cross-platform parity.
 
-Test plan coverage: REG-G1, REG-B1, REG-G2, REG-P1
+Test plan coverage: REG-G1, REG-B1, REG-G2, REG-P1, REG-P2, REG-B2
 """
 
 from __future__ import annotations
@@ -69,6 +69,19 @@ MAG_TOLERANCE = TOLERANCES["magDb"]
 
 # WAV file path — same file used in the Swift test suite.
 BRACE_WAV = fixture("REG-B1")
+
+# REG-B2 — the brace counterpart to REG-P2: three taps, averaged. Captured live 2026-09-19 to close
+# the gap that let a claimed 2 dB Swift/Python divergence sit unexamined for two months (project
+# issue #5): REG-P2 pinned PLATE multi-tap and REG-B1 is single-tap brace, so brace averaging was
+# exercised by nothing. Deliberately harder than the other material fixtures — the UMIK-1 is on its
+# 18 dB gain path, so the peak sits at -65.5 dB against a -63.9 dB detection threshold.
+_B2 = peak("REG-B2", "longitudinal")
+BRACE3_EXPECTED_FREQ = _B2["frequency"]
+BRACE3_EXPECTED_MAG = _B2["magnitude"]
+BRACE3_EXPECTED_Q = _B2["q"]
+BRACE3_TAP_THRESHOLD = case("REG-B2")["settings"]["tapDetectionThreshold"]
+BRACE3_TAP_COUNT = case("REG-B2")["settings"]["numberOfTaps"]
+BRACE3_WAV = fixture("REG-B2")
 
 # UMIK-1 calibration file — used for brace and plate measurements.
 CALIBRATION_FILE = calibration("REG-B1")
@@ -236,6 +249,13 @@ def _wav_rate(path: str) -> int:
 
 
 @pytest.fixture
+def brace3_analyzer():
+    """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+    return TapToneAnalyzer.for_testing(sample_rate=_wav_rate(BRACE3_WAV))
+
+
+@pytest.fixture
 def brace_analyzer():
     """Create a TapToneAnalyzer wired for testing (no audio hardware)."""
     from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -333,6 +353,52 @@ class TestFilePlaybackRegression:
         assert abs(back_peak.magnitude - G1_BACK_MAG) < MAG_TOLERANCE, (
             f"Back mag: expected {G1_BACK_MAG} "
             f"±{MAG_TOLERANCE}, got {back_peak.magnitude}"
+        )
+
+    def test_REG_B2_brace_three_taps_averages_to_expected_peak(
+        self, brace3_analyzer
+    ):
+        """Brace at number_of_taps=3 — the three taps average into one spectrum.
+
+        The brace counterpart to REG-P2. The peak must be read off the AVERAGED spectrum,
+        not the last tap: the three taps here differ by ~6 dB, so a regression to last-tap
+        selection lands well outside the tolerance rather than hiding inside it.
+        """
+        assert os.path.exists(BRACE3_WAV), f"Test WAV not found: {BRACE3_WAV}"
+
+        sut = brace3_analyzer
+        sut.tap_detection_threshold = BRACE3_TAP_THRESHOLD
+        sut.play_file_for_testing(
+            path=BRACE3_WAV,
+            measurement_type=MeasurementType.BRACE,
+            number_of_taps=BRACE3_TAP_COUNT,
+            calibration_path=CALIBRATION_FILE,
+        )
+
+        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE, (
+            f"material_tap_phase should be COMPLETE, got {sut.material_tap_phase}"
+        )
+        assert sut.is_measurement_complete, "is_measurement_complete should be True"
+        assert len(sut.longitudinal_peaks) > 0, "longitudinal_peaks should not be empty"
+
+        dominant = sut.selected_longitudinal_peak or sut.longitudinal_peaks[0]
+
+        freq_delta = abs(dominant.frequency - BRACE3_EXPECTED_FREQ)
+        assert freq_delta < FREQ_TOLERANCE, (
+            f"Peak frequency: expected {BRACE3_EXPECTED_FREQ} Hz "
+            f"±{FREQ_TOLERANCE}, got {dominant.frequency} Hz (delta {freq_delta:.5f})"
+        )
+
+        mag_delta = abs(dominant.magnitude - BRACE3_EXPECTED_MAG)
+        assert mag_delta < MAG_TOLERANCE, (
+            f"Peak magnitude: expected {BRACE3_EXPECTED_MAG} dB "
+            f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB (delta {mag_delta:.5f})"
+        )
+
+        q_delta = abs(dominant.quality - BRACE3_EXPECTED_Q)
+        assert q_delta < Q_TOLERANCE, (
+            f"Peak Q factor: expected {BRACE3_EXPECTED_Q} "
+            f"±{Q_TOLERANCE}, got {dominant.quality} (delta {q_delta:.5f})"
         )
 
     def test_REG_B1_brace_single_tap_produces_expected_peak(

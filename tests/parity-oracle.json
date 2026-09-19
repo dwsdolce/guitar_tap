@@ -35,6 +35,25 @@
         "tapDetectionThreshold" : -53.338380000000001
       }
     },
+    "REG-B2" : {
+      "_note" : "Brace at numberOfTaps=3 — the brace counterpart to REG-P2, and the gap that let a claimed 2 dB Swift/Python divergence sit unexamined for two months (project issue #5): REG-P2 pinned PLATE multi-tap and REG-B1 is single-tap brace, so nothing exercised brace averaging. Captured live on 2026-09-19 specifically to close that hole. Deliberately a harder case than the other material fixtures: the UMIK-1 is on its 18 dB gain path, so the peak sits at -65.5 dB against a -63.9 dB detection threshold. The peak is read off the AVERAGED spectrum, not the last tap.",
+      "calibration" : "7108913.txt",
+      "fixture" : "brace-3-tap-umik-1-mac-algo-test-1789854214.wav",
+      "peaks" : [
+        {
+          "frequency" : 553.63189999999997,
+          "magnitude" : -65.490769999999998,
+          "q" : 94.5,
+          "role" : "longitudinal"
+        }
+      ],
+      "settings" : {
+        "fftSize" : 65536,
+        "measurementType" : "Material (Brace)",
+        "numberOfTaps" : 3,
+        "tapDetectionThreshold" : -63.916015999999999
+      }
+    },
     "REG-G1" : {
       "_ringOutNote" : "Post-tap level decaying to peak-15 dB. The web is audio-clock-deterministic; Swift and Python reach the same crossing because file playback runs at real-time pace. The loose tolerance covers per-platform chunk granularity + clock jitter (web 0.0853, Python ~0.091).",
       "calibration" : null,
@@ -402,8 +421,8 @@
       ]
     }
   },
-  "generatedAt" : "2026-09-19T00:41:26Z",
-  "oracleVersion" : "75d4356-dirty",
+  "generatedAt" : "2026-09-19T22:02:44Z",
+  "oracleVersion" : "5bacce4-dirty",
   "selfTolerances" : {
     "freqHz" : 0,
     "gatedFftDb" : 0,
