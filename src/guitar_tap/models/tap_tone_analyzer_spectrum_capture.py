@@ -831,13 +831,26 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         fft_size = int(self.mic.fft_size)
 
+        # Align the capture window to the sample-level tap onset so that
+        # chunk-boundary differences (live vs file playback) don't shift the FFT
+        # input.  The material path has always done this; the guitar path took
+        # samples[:fft_size] raw, so the same recording analysed live and on replay
+        # could land on a different sample range — and Swift, which does align here,
+        # was handed a different window than Python for the same audio.
+        # Mirrors Swift finishGuitarGatedCapture.
+        aligned = self.align_capture_to_onset(
+            samples,
+            window_size=fft_size,
+            pre_onset_samples=int(sample_rate * self.PRE_ONSET_DURATION),
+        )
+
         # Truncate or zero-pad to exactly fft_size.
-        if len(samples) >= fft_size:
-            chunk = samples[:fft_size].astype(np.float32)
+        if len(aligned) >= fft_size:
+            chunk = np.asarray(aligned[:fft_size], dtype=np.float32)
         else:
             chunk = np.concatenate(
-                [samples.astype(np.float32),
-                 np.zeros(fft_size - len(samples), dtype=np.float32)]
+                [np.asarray(aligned, dtype=np.float32),
+                 np.zeros(fft_size - len(aligned), dtype=np.float32)]
             )
 
         # Diagnostic for the alignment family (#7/#3/#5): fingerprint the buffer on both
