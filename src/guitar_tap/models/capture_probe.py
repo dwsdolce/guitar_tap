@@ -56,4 +56,9 @@ def record(buffer: Any, window: Any) -> None:
         "bufferHash": fingerprint(buffer),
         "windowCount": int(len(window)),
         "windowHash": fingerprint(window),
+        # First samples of the buffer, as hex bit patterns. Enough to locate the buffer's
+        # start offset inside the source file by search, which is what says whether the
+        # editions begin accumulating at the same sample.
+        "bufferHead": [f"{int(v):08x}" for v in
+                       np.asarray(buffer, dtype=np.float32)[:1024].view(np.uint32)],
     })
