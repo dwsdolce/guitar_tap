@@ -125,12 +125,8 @@ def measurements_file() -> str:
     # Mirror Swift's XCTestConfigurationFilePath check: redirect to an isolated
     # temp directory when running under pytest so tests never touch the user's
     # real saved measurements.
-    import tempfile
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        test_dir = os.path.join(tempfile.gettempdir(), "com.guitartap.tests")
-        os.makedirs(test_dir, exist_ok=True)
-        return os.path.join(test_dir, "saved_measurements.json")
-    data_dir = _app_data_dir()
+    from guitar_tap.models.settings_scope import measurements_dir  # noqa: PLC0415
+    data_dir = measurements_dir(_app_data_dir())
     os.makedirs(data_dir, exist_ok=True)
     return os.path.join(data_dir, "saved_measurements.json")
 

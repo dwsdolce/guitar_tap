@@ -30,10 +30,10 @@ _APP = "guitar_tap"
 
 
 def _settings() -> QtCore.QSettings:
-    # Mirror AppSettings: redirect to an isolated suite under pytest so tests never touch real prefs.
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        return QtCore.QSettings(f"{_ORG}.tests", _APP)
-    return QtCore.QSettings(_ORG, _APP)
+    # Mirror AppSettings: redirect to a PER-PROCESS isolated suite under pytest so tests never
+    # touch real prefs — and never each other's (see models/settings_scope.py).
+    from guitar_tap.models.settings_scope import settings_org  # noqa: PLC0415
+    return QtCore.QSettings(settings_org(_ORG), _APP)
 
 
 class WavDumpFolder:

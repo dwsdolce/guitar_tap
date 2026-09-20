@@ -451,7 +451,8 @@ class CalibrationStorage:
         import os
         # Isolate under pytest so tests never touch the user's real calibrations — the same redirect
         # AppSettings uses. (Previously CalibrationStorage had none, because it lived in its own domain.)
-        org = f"{cls._ORG}.tests" if "PYTEST_CURRENT_TEST" in os.environ else cls._ORG
+        from guitar_tap.models.settings_scope import settings_org  # noqa: PLC0415
+        org = settings_org(cls._ORG)
         cls._migrate_legacy_scope(org)
         return QtCore.QSettings(org, cls._APP)
 

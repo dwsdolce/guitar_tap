@@ -47,9 +47,8 @@ class AppSettings:
         # Mirror Swift's XCTestConfigurationFilePath check: redirect to an
         # isolated suite when running under pytest so tests never touch the
         # user's real preferences.
-        if "PYTEST_CURRENT_TEST" in os.environ:
-            return QtCore.QSettings("Dolcesfogato.tests", cls._APP)
-        return QtCore.QSettings(cls._ORG, cls._APP)
+        from guitar_tap.models.settings_scope import settings_org  # noqa: PLC0415
+        return QtCore.QSettings(settings_org(cls._ORG), cls._APP)
 
     @classmethod
     def _get(cls, key: str, default):

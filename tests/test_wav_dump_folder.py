@@ -61,7 +61,10 @@ def test_gone_custom_folder_is_unreachable_and_acquire_skips():
     # path-comparison; that round-trip is manual run-review).
     from PySide6 import QtCore
 
-    QtCore.QSettings("Dolcesfogato.tests", "guitar_tap").setValue("dump/folder", "/nonexistent/GuitarCaptures")
+    from guitar_tap.models.settings_scope import APP, settings_org
+
+    # settings_org() — not the literal suite name, which is now per-process.
+    QtCore.QSettings(settings_org(), APP).setValue("dump/folder", "/nonexistent/GuitarCaptures")
     assert WavDumpFolder.has_custom_folder() is True
     assert WavDumpFolder.is_reachable() is False
     assert WavDumpFolder.acquire_dump_folder() is None
