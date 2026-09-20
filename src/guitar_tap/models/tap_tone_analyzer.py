@@ -124,6 +124,12 @@ class TapToneAnalyzer(
     # Plate/brace phase status text for display.
     plateStatusChanged: QtCore.Signal = QtCore.Signal(str)
     # Plate analysis complete: (fL, fC, fFLC) Hz.
+    # Emitted when a material phase identifies its peak (fL / fC / fFLC), carrying its frequency.
+    # The view widens the chart axis onto it — mirrors Swift's `.onReceive(tap.$autoSelected*PeakID)`,
+    # which is the change channel Swift rides for the same purpose. Per PHASE, not at completion:
+    # plateAnalysisComplete fires once at the end, too late to reveal fL while capturing fC.
+    materialPeakIdentified: QtCore.Signal = QtCore.Signal(float)   # frequency Hz
+
     plateAnalysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)
     # Tap detection pause state changed.
     tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)

@@ -2126,6 +2126,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         canvas.plateStatusChanged.connect(self._on_plate_status_changed)
+        canvas.materialPeakIdentified.connect(self._on_material_peak_identified)
         canvas.plateAnalysisComplete.connect(self._on_plate_analysis_complete)
 
         # Peaks table ← canvas
@@ -3761,6 +3762,28 @@ class MainWindow(QtWidgets.QMainWindow):
         # isDetecting colour).  This method no longer writes the message — passing the phase
         # value here (e.g. "Capturing FLC") would clobber the analyzer's "Set up for FLC tap…".
         # (`status` param kept for call-site compatibility.)
+
+    def _on_material_peak_identified(self, frequency: float) -> None:
+        """Widen the chart's frequency axis so a newly identified fL / fC / fFLC is visible.
+
+        A plate or brace scans a wide band (brace: 100-1200 Hz) and the display range is
+        per-measurement-type and persisted, so the peak the measurement just produced can land off
+        the edge of the chart. Mirrors Swift's `.onReceive(tap.$autoSelected*PeakID)` ->
+        `expandFreqRangeToInclude`; the rule itself is shared (models/display_range.py).
+
+        Guitar ranges are the user's analysis window and are never widened for them — matching
+        Swift's `guard !measurementType.isGuitar`.
+        """
+        from guitar_tap.models.display_range import expanded_to_include
+        from guitar_tap.views.utilities import tap_settings_view as AS
+
+        if AS.AppSettings.measurement_type().is_guitar:
+            return
+        canvas = self.fft_canvas
+        lo, hi = expanded_to_include(float(frequency), float(canvas.minFreq), float(canvas.maxFreq))
+        if lo != canvas.minFreq or hi != canvas.maxFreq:
+            canvas.update_axis(int(lo), int(hi))
+            self._update_freq_range_label()
 
     def _on_plate_analysis_complete(self, f_long: float, f_cross: float, f_flc: float) -> None:
         """Auto-compute material properties and display in results panel."""

@@ -202,6 +202,7 @@ class FftCanvas(pg.PlotWidget):
     devicesChanged: QtCore.Signal = QtCore.Signal(list)       # new device-name list
     currentDeviceLost: QtCore.Signal = QtCore.Signal(str)     # lost device name
     plateStatusChanged: QtCore.Signal = QtCore.Signal(str)    # plate capture status
+    materialPeakIdentified: QtCore.Signal = QtCore.Signal(float)  # Hz — widen the axis onto it
     plateAnalysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)  # fL, fC, fFLC
     tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)   # True=paused
     measurementComplete: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var isMeasurementComplete
@@ -463,6 +464,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.devicesChanged.connect(self.devicesChanged)
         self.analyzer.currentDeviceLost.connect(self.currentDeviceLost)
         self.analyzer.plateStatusChanged.connect(self.plateStatusChanged)
+        self.analyzer.materialPeakIdentified.connect(self.materialPeakIdentified)
         self.analyzer.plateAnalysisComplete.connect(self.plateAnalysisComplete)
         self.analyzer.tapDetectionPaused.connect(self.tapDetectionPaused)
         self.analyzer.measurementComplete.connect(self.measurementComplete)

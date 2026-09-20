@@ -277,6 +277,50 @@ class TestAnnotationStateLive:
     # plate/brace peak, which has no guitar mode at all. A real brace fL at 220 Hz reported
     # GuitarMode.TOP. Removed 2026-09-20 to match web, which never guessed.
 
+    # The CLEAR half of the store. Setting each of these was tested; clearing them was not — in
+    # either native edition — while web covered all three. Found 2026-09-20 by checking the web
+    # `peak-state-store` tests against native BEHAVIOUR rather than method names (project #8).
+    # A characteristic gap: whoever wrote these covered setting a thing and not unsetting it.
+
+    def test_reset_mode_override_clears_only_that_peaks_override(self):
+        sut = _make_sut()
+        kept, cleared = _make_peak_live(freq=100.0), _make_peak_live(freq=200.0)
+        sut.set_mode_override("Wolf note", cleared.id)
+        sut.set_mode_override("Keep me", kept.id)
+
+        sut.reset_mode_override(cleared.id)
+
+        assert cleared.id not in sut.peak_mode_overrides, "the targeted override is gone"
+        assert sut.peak_mode_overrides.get(kept.id) == "Keep me", (
+            "the other peak's override is untouched"
+        )
+
+    def test_reset_annotation_offset_clears_only_that_peaks_offset(self):
+        sut = _make_sut()
+        kept, cleared = _make_peak_live(freq=100.0), _make_peak_live(freq=200.0)
+        sut.update_annotation_offset(cleared.id, (9.0, 9.0))
+        sut.update_annotation_offset(kept.id, (1.0, 2.0))
+
+        sut.reset_annotation_offset(cleared.id)
+
+        assert cleared.id not in sut.peak_annotation_offsets, "the dragged position is gone"
+        assert sut.peak_annotation_offsets.get(kept.id) == (1.0, 2.0), (
+            "the other peak keeps its dragged position"
+        )
+
+    def test_reset_all_annotation_offsets_empties_the_whole_store(self):
+        sut = _make_sut()
+        a, b = _make_peak_live(freq=100.0), _make_peak_live(freq=200.0)
+        sut.update_annotation_offset(a.id, (1.0, 2.0))
+        sut.update_annotation_offset(b.id, (3.0, 4.0))
+        assert len(sut.peak_annotation_offsets) == 2, "precondition"
+
+        sut.reset_all_annotation_offsets()
+
+        assert sut.peak_annotation_offsets == {}, (
+            "Reset Labels returns every callout to its anchor"
+        )
+
     def test_D7b_unclassified_peak_has_no_mode_even_in_the_top_back_overlap(self):
         """A peak absent from identified_modes resolves to UNKNOWN, never a guessed mode."""
         from guitar_tap.models.guitar_mode import GuitarMode

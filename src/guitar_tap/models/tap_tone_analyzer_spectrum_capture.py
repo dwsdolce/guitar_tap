@@ -1515,6 +1515,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Build the full peak list for display/manual override.
         self.longitudinal_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
         self.auto_selected_longitudinal_peak_id = avg_peak.id
+        # Let the view widen the axis onto it (mirrors Swift's autoSelected* change channel).
+        self.materialPeakIdentified.emit(float(avg_peak.frequency))
         self.selected_longitudinal_peak = (
             next((p for p in self.longitudinal_peaks if p.id == avg_peak.id), avg_peak)
         )
@@ -1694,6 +1696,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         ) or dominant_peak
         self.cross_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
         self.auto_selected_cross_peak_id = avg_peak.id
+        # Let the view widen the axis onto it (mirrors Swift's autoSelected* change channel).
+        self.materialPeakIdentified.emit(float(avg_peak.frequency))
         self.selected_cross_peak = (
             next((p for p in self.cross_peaks if p.id == avg_peak.id), avg_peak)
         )
@@ -1802,6 +1806,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         ) or dominant_peak
         self.flc_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
         self.auto_selected_flc_peak_id = avg_peak.id
+        # Let the view widen the axis onto it (mirrors Swift's autoSelected* change channel).
+        self.materialPeakIdentified.emit(float(avg_peak.frequency))
         self.selected_flc_peak = (
             next((p for p in self.flc_peaks if p.id == avg_peak.id), avg_peak)
         )

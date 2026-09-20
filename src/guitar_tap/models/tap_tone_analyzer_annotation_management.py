@@ -107,17 +107,17 @@ class TapToneAnalyzerAnnotationManagementMixin:
     def effective_longitudinal_peak_id(self) -> str | None:
         """The effective longitudinal peak UUID applying two-layer priority.
 
-        Priority: selectedLongitudinalPeak.id > autoSelectedLongitudinalPeakID. (A third,
-        highest-priority user-override layer existed until 2026-09-20 — see "Plate Peak Selection
-        — REMOVED" below.)
+        The identified peak for the phase, or None before it finalises.
 
-        Mirrors Swift ``effectiveLongitudinalPeakID``:
-            selectedLongitudinalPeak?.id ?? autoSelectedLongitudinalPeakID
+        Two earlier layers are gone (2026-09-20): a user-override tier whose UI was removed in
+        April 2026, and ``auto_selected_*_peak_id``, which was UNREACHABLE — both are assigned
+        adjacently in the phase handlers and the selected one is never None when the auto id is
+        set. The auto attributes THEMSELVES stay: they are the change channel the view rides to
+        widen the chart axis onto a newly identified peak.
+
+        Mirrors Swift ``effectiveLongitudinalPeakID``.
         """
-        return (
-            (self.selected_longitudinal_peak.id if self.selected_longitudinal_peak else None)
-            or self.auto_selected_longitudinal_peak_id
-        )
+        return self.selected_longitudinal_peak.id if self.selected_longitudinal_peak else None
 
     @property
     def effective_cross_peak_id(self) -> str | None:
@@ -129,10 +129,7 @@ class TapToneAnalyzerAnnotationManagementMixin:
         Mirrors Swift ``effectiveCrossPeakID``:
             userSelectedCrossPeakID ?? selectedCrossPeak?.id ?? autoSelectedCrossPeakID
         """
-        return (
-            (self.selected_cross_peak.id if self.selected_cross_peak else None)
-            or self.auto_selected_cross_peak_id
-        )
+        return self.selected_cross_peak.id if self.selected_cross_peak else None
 
     @property
     def effective_flc_peak_id(self) -> str | None:
@@ -144,10 +141,7 @@ class TapToneAnalyzerAnnotationManagementMixin:
         Mirrors Swift ``effectiveFlcPeakID``:
             userSelectedFlcPeakID ?? selectedFlcPeak?.id ?? autoSelectedFlcPeakID
         """
-        return (
-            (self.selected_flc_peak.id if self.selected_flc_peak else None)
-            or self.auto_selected_flc_peak_id
-        )
+        return self.selected_flc_peak.id if self.selected_flc_peak else None
 
     # Plate Peak Selection — REMOVED 2026-09-20
     #
