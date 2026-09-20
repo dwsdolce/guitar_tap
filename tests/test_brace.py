@@ -2,7 +2,16 @@
 """Tests for the brace side of models/material_properties.py.
 
 Mirrors GuitarTapTests/BracePropertiesTests.swift.
-Fixture values are derived from the same reference measurements used in the Swift tests.
+
+All fixtures are the real measured brace blank, read out of the hub's committed
+measurement rather than transcribed:
+
+    guitar-tap-project/Tests/Brace/brace-umik-1-swift-mac-1778816093.guitartap
+
+The expected values are the ones GuitarTap reported for that sample (see the .pdf beside
+the file), not numbers this suite produced. fL was 512.3 here until the #17 sweep — a
+transcription of the report's rounded "512.7 Hz" display that matched neither the saved
+measurement nor the parity oracle, both of which carry 512.6888.
 """
 
 import math
@@ -22,9 +31,9 @@ from guitar_tap.models.material_properties import (
 REAL_BRACE_DIM = MaterialDimensions(
     length_mm=556, width_mm=20.4, thickness_mm=29.4, mass_g=128
 )
-REAL_BRACE_FL: float = 512.3
+REAL_BRACE_FL: float = 512.6888
 # Known outputs (hand-calculated, confirmed by Swift tests):
-#   ρ ≈ 383.8 kg/m³, EL ≈ 10.541 GPa, c ≈ 5240 m/s, specific modulus ≈ 27.46 → Excellent
+#   ρ ≈ 383.8 kg/m³, EL ≈ 10.557 GPa, c ≈ 5244 m/s, specific modulus ≈ 27.50 → Excellent
 
 
 # ---------------------------------------------------------------------------
@@ -41,10 +50,10 @@ class TestBraceYoungsModulus:
         assert 8e9 < EL < 16e9, f"EL ({EL/1e9:.3f} GPa) should be in 8–16 GPa range"
 
     def test_youngs_modulus_long_real_brace_matches_known_value(self):
-        """EL should be within 0.05 GPa of the hand-calculated 10.541 GPa."""
+        """EL for the real blank, as GuitarTap reported it: 10.557 GPa."""
         props = BraceProperties(REAL_BRACE_DIM, REAL_BRACE_FL)
         EL_GPa = props.youngsModulusLong / 1e9
-        assert abs(EL_GPa - 10.541) < 0.05, f"EL should be ≈10.541 GPa, got {EL_GPa:.3f} GPa"
+        assert abs(EL_GPa - 10.557) < 0.01, f"EL should be ≈10.557 GPa, got {EL_GPa:.3f} GPa"
 
     def test_youngs_modulus_long_zero_thickness_returns_zero(self):
         """Guard: zero thickness → EL = 0."""
@@ -105,9 +114,9 @@ class TestBraceSpeedOfSound:
         assert 4000 < c < 7000, f"Sound speed ({c:.0f} m/s) should be in 4000–7000 m/s"
 
     def test_speed_of_sound_real_brace_matches_known_value(self):
-        """c should be within 10 m/s of the hand-calculated 5240 m/s."""
+        """c for the real blank, as GuitarTap reported it: 5244 m/s."""
         props = BraceProperties(REAL_BRACE_DIM, REAL_BRACE_FL)
-        assert abs(props.c_long_m_s - 5240.4) < 10, f"c should be ≈5240 m/s, got {props.c_long_m_s:.1f} m/s"
+        assert abs(props.c_long_m_s - 5244.4) < 1, f"c should be ≈5244 m/s, got {props.c_long_m_s:.1f} m/s"
 
     def test_speed_of_sound_proportional_to_frequency(self):
         """c ∝ f: doubling fL should double c."""
@@ -137,10 +146,10 @@ class TestBraceSpecificModulus:
     """Mirrors Swift BraceSpecificModulusTests."""
 
     def test_specific_modulus_real_brace_matches_known_value(self):
-        """Specific modulus should be within 0.1 of the known 27.46 GPa/(g/cm³)."""
+        """Specific modulus for the real blank, as reported: 27.50 GPa/(g/cm³)."""
         props = BraceProperties(REAL_BRACE_DIM, REAL_BRACE_FL)
-        assert abs(props.specific_modulus - 27.46) < 0.1, \
-            f"Specific modulus should be ≈27.46, got {props.specific_modulus:.3f}"
+        assert abs(props.specific_modulus - 27.504) < 0.01, \
+            f"Specific modulus should be ≈27.50, got {props.specific_modulus:.3f}"
 
     def test_specific_modulus_matches_manual_calc(self):
         """specific_modulus = youngsModulusLongGPa / density_g_cm3."""
@@ -169,7 +178,7 @@ class TestBraceQuality:
     """Mirrors Swift BraceQualityTests."""
 
     def test_spruce_quality_real_brace_excellent(self):
-        """Real brace with specific modulus ≈ 27.46 (≥ 25) → Excellent."""
+        """Real brace with specific modulus ≈ 27.50 (≥ 25) → Excellent."""
         props = BraceProperties(REAL_BRACE_DIM, REAL_BRACE_FL)
         assert props.quality == "Excellent", \
             f"Real brace should be Excellent, got {props.quality}"
@@ -188,3 +197,43 @@ class TestBraceQuality:
         lo_score = WoodQuality(lo.quality).numeric_score
         hi_score = WoodQuality(hi.quality).numeric_score
         assert hi_score >= lo_score
+
+
+# ---------------------------------------------------------------------------
+# Radiation ratio — BraceProperties
+#
+# R = c_L/ρ is shown in the Brace Properties panel and in the exported image in all
+# three editions, and had no test in any of them until the #17 sweep. See the matching
+# suite in test_plate.py for what that cost.
+# Mirrors Swift BraceRadiationRatioTests.
+# ---------------------------------------------------------------------------
+
+class TestBraceRadiationRatio:
+    """Mirrors Swift BraceRadiationRatioTests."""
+
+    def test_radiation_ratio_long_is_speed_over_density(self):
+        """R = c_L / ρ."""
+        props = BraceProperties(REAL_BRACE_DIM, REAL_BRACE_FL)
+        expected = props.c_long_m_s / REAL_BRACE_DIM.density()
+        assert abs(props.radiation_ratio - expected) < 1e-6
+
+    def test_radiation_ratio_long_real_brace_in_expected_range(self):
+        """c ≈ 5244 m/s at ρ ≈ 383.8 kg/m³ → R ≈ 13.7, inside the 10–15 band for spruce."""
+        props = BraceProperties(REAL_BRACE_DIM, REAL_BRACE_FL)
+        assert 10 < props.radiation_ratio < 15, \
+            f"R ({props.radiation_ratio:.2f}) should be in the 10-15 range for quality spruce"
+
+    def test_radiation_ratio_long_zero_density_returns_zero_not_nan(self):
+        """Zero density → c is 0 too, so the unguarded quotient would be 0/0."""
+        d = MaterialDimensions(length_mm=556, width_mm=20.4, thickness_mm=0, mass_g=128)
+        props = BraceProperties(d, REAL_BRACE_FL)
+        assert d.density() == 0
+        assert not math.isnan(props.radiation_ratio)
+        assert props.radiation_ratio == 0.0
+
+    def test_radiation_ratio_long_zero_mass_returns_zero_not_nan(self):
+        """Zero mass reaches the same guard by the other route."""
+        d = MaterialDimensions(length_mm=556, width_mm=20.4, thickness_mm=29.4, mass_g=0)
+        props = BraceProperties(d, REAL_BRACE_FL)
+        assert not math.isnan(props.radiation_ratio)
+        assert props.radiation_ratio == 0.0
