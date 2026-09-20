@@ -167,7 +167,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         freqs = np.array([i * hz_per_bin for i in range(n_bins)])
         return freqs, mag
 
-    def test_PRA1_frozen_spectrum_path_detects_peak(self, qt_app):
+    def test_PR01_frozen_spectrum_path_detects_peak(self, qt_app):
         """PR-A1: When loaded_measurement_peaks is None, uses frozen spectrum.
 
         Mirrors Swift recalculateFrozenPeaksIfNeeded — frozen path calls
@@ -194,7 +194,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
             f"Expected peak near 200 Hz; got {[f'{f:.1f}' for f in detected_freqs]}"
         )
 
-    def test_PRA2_threshold_change_removes_weak_peak(self, qt_app):
+    def test_PR02_threshold_change_removes_weak_peak(self, qt_app):
         """PR-A2: Raising peak_threshold removes sub-threshold peaks on recalculate.
 
         Mirrors Swift PR2c — the frozen path re-runs find_peaks with the new
@@ -226,8 +226,8 @@ class TestRecalculateFrozenPeaksIfNeeded:
             "Weak peak should be absent after raising threshold"
         )
 
-    def test_PRA3_loaded_path_peak_min_projects_and_never_shrinks_the_durable_set(self, qt_app):
-        """B03: the loaded path applies Peak Min to the PROJECTION and never to the durable set.
+    def test_PR03_loaded_path_peak_min_projects_and_never_shrinks_the_durable_set(self, qt_app):
+        """PR03: the loaded path applies Peak Min to the PROJECTION and never to the durable set.
 
         Asserts BOTH surfaces deliberately. This test asserted only `peaks_above_peak_min` and was
         named "filters by threshold", which read as contradicting web's PR-A3 ("keeps the FULL
@@ -263,7 +263,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
             "The surviving peak should be at 200 Hz"
         )
 
-    def test_PRA4_loaded_all_below_threshold_clears_display_keeps_durable_set(self, qt_app):
+    def test_PR04_loaded_all_below_threshold_clears_display_keeps_durable_set(self, qt_app):
         """PR-A4 (Phase 1/2 model): all loaded peaks below Peak Min → the DISPLAY projection
         (peaks_above_peak_min) empties, but the DURABLE set (all_peaks) and classification survive.
         A display filter must never shrink the durable set. Mirrors Swift
@@ -289,7 +289,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
             "the durable set survives — a display filter must never shrink all_peaks"
         )
 
-    def test_PRA5_empty_frozen_magnitudes_yields_no_peaks(self, qt_app):
+    def test_PR05_empty_frozen_magnitudes_yields_no_peaks(self, qt_app):
         """PR-A5: Empty frozen_magnitudes does not crash; peaks_above_peak_min stays empty."""
         sut = TapToneAnalyzer()
         sut.freq = np.array([])
@@ -339,7 +339,7 @@ class TestPR8CanReanalyze:
         sut.is_measurement_complete = True
         return sut
 
-    def test_PR8a_live_frozen_capture_can_reanalyze(self, qt_app):
+    def test_PR33_live_frozen_capture_can_reanalyze(self, qt_app):
         """A never-loaded frozen capture CAN be re-analyzed.
 
         It is the only route back to a clean mode classification once the assignments
@@ -351,7 +351,7 @@ class TestPR8CanReanalyze:
 
         assert sut.can_reanalyze is True
 
-    def test_PR8b_loaded_measurement_can_reanalyze(self, qt_app):
+    def test_PR34_loaded_measurement_can_reanalyze(self, qt_app):
         """A loaded measurement can be re-analyzed — its saved peaks were never derived here."""
         sut = self._frozen(MeasurementType.CLASSICAL)
         saved_peaks = [_peak(200.0)]
@@ -360,7 +360,7 @@ class TestPR8CanReanalyze:
 
         assert sut.can_reanalyze is True
 
-    def test_PR8c_reanalyze_is_not_a_one_shot(self, qt_app):
+    def test_PR35_reanalyze_is_not_a_one_shot(self, qt_app):
         """THE ONE-SHOT REGRESSION.
 
         reanalyze_peaks() clears loaded_measurement_peaks, which used to be the button's
@@ -379,7 +379,7 @@ class TestPR8CanReanalyze:
             "Re-analyze must remain available after a press — it is a reset, not a one-shot"
         )
 
-    def test_PR8d_material_can_never_reanalyze(self, qt_app):
+    def test_PR36_material_can_never_reanalyze(self, qt_app):
         """Material peaks come from the per-phase captures; find_peaks would destroy them.
 
         This previously held only by accident (a loaded material measurement leaves the
@@ -392,7 +392,7 @@ class TestPR8CanReanalyze:
                 f"Re-analyze is meaningless for {mtype} and must never be offered"
             )
 
-    def test_PR8e_incomplete_or_no_frozen_spectrum_cannot_reanalyze(self, qt_app):
+    def test_PR37_incomplete_or_no_frozen_spectrum_cannot_reanalyze(self, qt_app):
         """Nothing to re-analyze without a completed measurement and a frozen spectrum."""
         TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
 
@@ -439,8 +439,8 @@ class TestLoadedPath:
         sut.frozen_magnitudes = _flat_spectrum()
         sut.is_measurement_complete = True
         return sut
-    def test_loaded_path_uses_saved_peaks_not_the_frozen_spectrum(self, qt_app):
-        """B06: loaded peaks are authoritative — the frozen spectrum is NOT re-analysed.
+    def test_PR06_loaded_path_uses_saved_peaks_not_the_frozen_spectrum(self, qt_app):
+        """PR06: loaded peaks are authoritative — the frozen spectrum is NOT re-analysed.
 
         Saved peaks may not be reproducible by re-running detection: spectrum averaging, FFT
         windowing and analysis settings can all differ between sessions. The frozen spectrum here
@@ -458,8 +458,8 @@ class TestLoadedPath:
             "the saved peak must survive — a flat spectrum would yield nothing if re-analysed"
         )
 
-    def test_loaded_peaks_above_threshold_are_kept(self, qt_app):
-        """B07: the durable set holds every saved peak; Peak Min only projects it.
+    def test_PR07_loaded_peaks_above_threshold_are_kept(self, qt_app):
+        """PR07: the durable set holds every saved peak; Peak Min only projects it.
 
         Asserts BOTH surfaces deliberately. all_peaks must stay whole — assigning it a filtered
         view would shrink it as Peak Min rises, and the save path would then write the shrunken
@@ -480,8 +480,8 @@ class TestLoadedPath:
             "the projection must drop the peak below Peak Min"
         )
 
-    def test_loading_measurement_suppresses_recalculation(self, qt_app):
-        """B10: while is_loading_measurement is set, recalculation is a no-op.
+    def test_PR10_loading_measurement_suppresses_recalculation(self, qt_app):
+        """PR10: while is_loading_measurement is set, recalculation is a no-op.
 
         Swift guards the same way (recalculateFrozenPeaksIfNeeded, first line). Both editions
         trigger recalculation from property observers that can fire part-way through a load, so
@@ -502,10 +502,10 @@ class TestLoadedPath:
             "recalculation must not run while a measurement is loading"
         )
 
-    def test_recalculation_runs_once_loading_completes(self, qt_app):
-        """B11: clearing is_loading_measurement lets the next recalculation through.
+    def test_PR11_recalculation_runs_once_loading_completes(self, qt_app):
+        """PR11: clearing is_loading_measurement lets the next recalculation through.
 
-        The other half of B10 — the guard must suppress, not permanently disable.
+        The other half of PR10 — the guard must suppress, not permanently disable.
         """
         TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
         sut = self._frozen(MeasurementType.GENERIC)
@@ -524,12 +524,12 @@ class TestLoadedPath:
         )
 
 
-    def test_B08_loaded_all_below_peak_min_clears_display_but_keeps_classification(self, qt_app):
-        """B08: with every loaded peak below Peak Min the DISPLAY empties — the durable set and
+    def test_PR08_loaded_all_below_peak_min_clears_display_but_keeps_classification(self, qt_app):
+        """PR08: with every loaded peak below Peak Min the DISPLAY empties — the durable set and
         the classification both survive.
 
         Classification is a fact about the measurement, not about what is on screen. Distinct
-        from B04/PRA4, which pins the projection emptying; this pins what must NOT empty with it.
+        from PR04/PRA4, which pins the projection emptying; this pins what must NOT empty with it.
         Mirrors Swift loadedPeaks_allBelowThreshold_clearsDisplayButKeepsClassification.
         Gap filled 2026-09-19 (issue #8).
         """
@@ -553,8 +553,8 @@ class TestLoadedPath:
             "classification describes the measurement, not the display"
         )
 
-    def test_B09_loaded_material_peaks_are_never_filtered_by_peak_min(self, qt_app):
-        """B09: Peak Min is a GUITAR-only control — a loaded plate/brace keeps every peak.
+    def test_PR09_loaded_material_peaks_are_never_filtered_by_peak_min(self, qt_app):
+        """PR09: Peak Min is a GUITAR-only control — a loaded plate/brace keeps every peak.
 
         A loaded material measurement's identified L / C / FLC peaks ARE the result; filtering
         them by a guitar display control would take the answer off the screen. Regression found
@@ -579,11 +579,11 @@ class TestLoadedPath:
                 f"{mtype.short_name}: fC must survive"
             )
 
-    def test_B26_unmodified_selection_re_runs_auto_over_the_durable_set(self, qt_app):
-        """B26: an untouched selection is re-derived, not carried — the loudest peak in each
+    def test_PR28_unmodified_selection_re_runs_auto_over_the_durable_set(self, qt_app):
+        """PR28: an untouched selection is re-derived, not carried — the loudest peak in each
         claimed mode band wins.
 
-        The counterpart to B24: once the user has touched the selection it carries forward by
+        The counterpart to PR26: once the user has touched the selection it carries forward by
         frequency; until then every recalculation re-runs auto-selection. Acoustic Air is
         90–120 Hz (GuitarType.ACOUSTIC.mode_ranges), so both peaks are Air candidates and only
         magnitude separates them. Mirrors Swift loadedPath_autoSelection_reRunsWhenNotModified.
@@ -604,8 +604,8 @@ class TestLoadedPath:
         assert quiet_air.id not in sut.selected_peak_ids, (
             "the quieter Air candidate loses — one winner per mode"
         )
-    def test_B29_loaded_branch_keeps_stable_ids_so_overrides_are_not_remapped_away(self, qt_app):
-        """B29: on the LOADED branch the peak ids do not change, so a restored override must stay
+    def test_PR31_loaded_branch_keeps_stable_ids_so_overrides_are_not_remapped_away(self, qt_app):
+        """PR31: on the LOADED branch the peak ids do not change, so a restored override must stay
         on its own peak's id — the ±5 Hz remap must not re-home it onto a different peak.
 
         The carry-forward exists for the RE-MINT case, where detection produces fresh ids and state
@@ -671,7 +671,7 @@ class TestRemappingThroughProduction:
     def _peak_near(sut, hz, tol=5.0):
         return next((p for p in sut.all_peaks if abs(p.frequency - hz) < tol), None)
 
-    def test_B20_offset_is_remapped_onto_the_nearby_new_peak(self, qt_app):
+    def test_PR20_offset_is_remapped_onto_the_nearby_new_peak(self, qt_app):
         sut = TapToneAnalyzer()
         _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
         old = self._peak_near(sut, 200.0)
@@ -686,7 +686,7 @@ class TestRemappingThroughProduction:
             "the dragged label must follow the peak across a re-mint"
         )
 
-    def test_B21_offset_is_dropped_when_no_new_peak_is_near(self, qt_app):
+    def test_PR22_offset_is_dropped_when_no_new_peak_is_near(self, qt_app):
         sut = TapToneAnalyzer()
         _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
         old = self._peak_near(sut, 200.0)
@@ -698,7 +698,7 @@ class TestRemappingThroughProduction:
             "an offset whose peak vanished must not be carried onto an unrelated peak"
         )
 
-    def test_B22_override_is_remapped_onto_the_nearby_new_peak(self, qt_app):
+    def test_PR23_override_is_remapped_onto_the_nearby_new_peak(self, qt_app):
         sut = TapToneAnalyzer()
         _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
         old = self._peak_near(sut, 200.0)
@@ -712,7 +712,7 @@ class TestRemappingThroughProduction:
             "a custom mode name must follow the peak across a re-mint"
         )
 
-    def test_B23_override_is_orphaned_when_no_new_peak_is_near(self, qt_app):
+    def test_PR25_override_is_orphaned_when_no_new_peak_is_near(self, qt_app):
         sut = TapToneAnalyzer()
         _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
         old = self._peak_near(sut, 200.0)
@@ -728,7 +728,7 @@ class TestRemappingThroughProduction:
             "an orphaned override must be dropped, not re-homed or left under a stale id"
         )
 
-    def test_B24_manual_selection_is_carried_forward_by_frequency(self, qt_app):
+    def test_PR26_manual_selection_is_carried_forward_by_frequency(self, qt_app):
         sut = TapToneAnalyzer()
         _freeze_on_real_spectrum(sut, [(200.0, -20.0), (400.0, -22.0)])
         keep = self._peak_near(sut, 200.0)
@@ -743,7 +743,7 @@ class TestRemappingThroughProduction:
             "a deliberate selection must survive a re-mint that shifts the id"
         )
 
-    def test_B25_selection_is_not_carried_when_the_peak_moved_far(self, qt_app):
+    def test_PR27_selection_is_not_carried_when_the_peak_moved_far(self, qt_app):
         sut = TapToneAnalyzer()
         _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
         keep = self._peak_near(sut, 200.0)
@@ -759,7 +759,7 @@ class TestRemappingThroughProduction:
             "selection must not jump to a peak the user never chose"
         )
 
-    def test_B27_empty_new_peaks_preserve_the_selection_for_re_selection(self, qt_app):
+    def test_PR29_empty_new_peaks_preserve_the_selection_for_re_selection(self, qt_app):
         sut = TapToneAnalyzer()
         _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
         keep = self._peak_near(sut, 200.0)
@@ -774,7 +774,7 @@ class TestRemappingThroughProduction:
             "an empty detection must not erase the selection — lowering the threshold restores it"
         )
 
-    def test_B28_remap_with_no_prior_overrides_is_a_no_op(self, qt_app):
+    def test_PR30_remap_with_no_prior_overrides_is_a_no_op(self, qt_app):
         sut = TapToneAnalyzer()
         _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
         sut.peak_mode_overrides = {}
@@ -806,7 +806,7 @@ class TestPeakMinDurability:
         sut.frozen_magnitudes = np.array([-100.0] * 6)
         return sut
 
-    def test_reanalyze_preserves_state_of_peaks_hidden_by_peak_min(self, qt_app):
+    def test_PR19_reanalyze_preserves_state_of_peaks_hidden_by_peak_min(self, qt_app):
         """Re-analyze re-detects from the frozen spectrum, and a peak HIDDEN by Peak Min keeps its
         dragged annotation offset and its custom mode name — the carry-forward snapshot resolves
         UUIDs over the durable ``all_peaks``, not the Peak-Min projection (Phase 4a). Mirrors Swift
@@ -841,7 +841,7 @@ class TestPeakMinDurability:
         assert sut.peak_mode_overrides.get(new_hidden.id) == "Wolf note", \
             "custom mode name must survive Re-analyze on a Peak-Min-hidden peak"
 
-    def test_peak_min_sweep_preserves_identity_selection_override_and_offset(self, qt_app):
+    def test_PR13_peak_min_sweep_preserves_identity_selection_override_and_offset(self, qt_app):
         sut = self._frozen_guitar()
         loud = _peak(200.0, -20.0)
         quiet = _peak(300.0, -50.0)   # the one we will hide
@@ -871,7 +871,7 @@ class TestPeakMinDurability:
             "dragged annotation position must survive a Peak Min sweep"
         )
 
-    def test_deselect_survives_peak_min_sweep(self, qt_app):
+    def test_PR14_deselect_survives_peak_min_sweep(self, qt_app):
         """PEAK-SELECTION-SURVIVES-SLIDER.md: deselect a peak, sweep Peak Min — it stays
         deselected. The decoupling means the slider never re-runs the carry-forward.
         """
@@ -910,7 +910,7 @@ class TestPeakMinDurability:
             selected_peak_ids=list(selected),
         )
 
-    def test_peak_min_sweep_leaves_tap_entries_untouched(self, qt_app):
+    def test_PR15_peak_min_sweep_leaves_tap_entries_untouched(self, qt_app):
         """Mirrors Swift peakMinSweep_leavesTapEntriesUntouched — drive the real slider path."""
         sut = self._frozen_guitar()
         loud = _peak(200.0, -20.0)
@@ -934,7 +934,7 @@ class TestPeakMinDurability:
             "the sub-Peak-Min peak stays in the durable per-tap set — hidden, not destroyed"
         )
 
-    def test_recalculate_frozen_peaks_leaves_tap_entries_untouched(self, qt_app):
+    def test_PR16_recalculate_frozen_peaks_leaves_tap_entries_untouched(self, qt_app):
         """Mirrors Swift recalculateFrozenPeaks_leavesTapEntriesUntouched — the direct guard
         against the deleted per-tap recompute being reintroduced, on BOTH recalc branches."""
         loud = _peak(200.0, -20.0)
@@ -958,11 +958,11 @@ class TestPeakMinDurability:
                 f"recalc must not rebuild per-tap selection (loaded={loaded})"
             )
 
-    def test_B17_loading_restores_saved_per_tap_peaks_and_never_re_detects(self, qt_app):
-        """B17: per-tap peaks are found ONCE, at capture, and persisted — loading restores them
+    def test_PR17_loading_restores_saved_per_tap_peaks_and_never_re_detects(self, qt_app):
+        """PR17: per-tap peaks are found ONCE, at capture, and persisted — loading restores them
         verbatim.
 
-        The companion to B15/B16, which pin the same rule against a *display* recalc. This pins
+        The companion to PR15/PR16, which pin the same rule against a *display* recalc. This pins
         it against the LOAD. The saved entry carries a peak at 777 Hz, a frequency absent from
         its own snapshot, so re-detection could not mint it: if it comes back, it was restored.
         tap_entries is persisted, so re-deriving here would truncate the saved per-tap set —
@@ -989,7 +989,7 @@ class TestPeakMinDurability:
             "a peak absent from the snapshot proves the saved set was used"
         )
 
-    def test_selected_peaks_resolve_over_durable_set(self, qt_app):
+    def test_PR18_selected_peaks_resolve_over_durable_set(self, qt_app):
         """Mirrors Swift selectedPeaks_resolveOverDurableSet_notTheDisplayProjection — the
         averaged-row source. A selected peak below Peak Min must stay in `selected_peaks`."""
         sut = self._frozen_guitar()
@@ -1022,8 +1022,8 @@ class TestLivePath:
         yield
         TapDisplaySettings.set_measurement_type(saved)
 
-    def test_B12_live_peaks_track_the_spectrum_until_the_measurement_completes(self, qt_app):
-        """B12: while detection is running the durable set follows each FFT frame; once the
+    def test_PR12_live_peaks_track_the_spectrum_until_the_measurement_completes(self, qt_app):
+        """PR12: while detection is running the durable set follows each FFT frame; once the
         measurement is complete analyze_magnitudes stops touching it.
 
         The second half is the load-bearing one. After completion the frozen/loaded path owns
@@ -1072,8 +1072,8 @@ class TestMaterialPeakIdentity:
         yield
         TapDisplaySettings.set_measurement_type(saved)
 
-    def test_B30_a_captured_material_peak_owns_its_annotation_offset(self, qt_app):
-        """B30: a brace capture mints a real peak id, and its dragged label lives in the ONE
+    def test_PR32_a_captured_material_peak_owns_its_annotation_offset(self, qt_app):
+        """PR32: a brace capture mints a real peak id, and its dragged label lives in the ONE
         annotation store — there is no separate material store.
 
         Material peaks reach the chart through a different capture path (the gated per-phase
