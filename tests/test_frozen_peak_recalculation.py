@@ -144,43 +144,6 @@ def _freeze_on_real_spectrum(sut, bumps) -> None:
     sut.all_peaks = sut.find_peaks(mags, freqs, peak_min_override=sut.PEAK_DETECTION_FLOOR)
 
 
-def _remap_by_freq(
-    old_map: dict,  # {old_freq_approx_str_or_id: value}
-    old_peaks: list[ResonantPeak],
-    new_peaks_freqs: list[float],
-    tolerance_hz: float = 5.0,
-) -> dict:
-    """Remap a {old_peak_id: value} dict to new peak frequencies by nearest-freq match.
-
-    This is the Python equivalent of the Swift 'carry-forward' logic that
-    walks through new peaks and finds the nearest old peak within tolerance_hz.
-    Returns {new_peak_freq_str_repr: value} for matched entries only.
-    """
-    result = {}
-    # Build {peak_id: freq} for old peaks
-    id_to_freq = {p.id: p.frequency for p in old_peaks}
-
-    for new_freq in new_peaks_freqs:
-        # Find the best matching old peak by frequency
-        best_id = None
-        best_dist = float("inf")
-        for old_id, old_freq in id_to_freq.items():
-            dist = abs(new_freq - old_freq)
-            if dist < best_dist and dist <= tolerance_hz:
-                best_dist = dist
-                best_id = old_id
-        if best_id is not None and best_id in old_map:
-            result[new_freq] = old_map[best_id]
-    return result
-
-
-# ---------------------------------------------------------------------------
-# PR-A: TapToneAnalyzer.recalculate_frozen_peaks_if_needed() integration tests
-#
-# These tests exercise the unified entry point directly on TapToneAnalyzer,
-# mirroring Swift FrozenPeakRecalculationTests which call
-# recalculateFrozenPeaksIfNeeded() on a real TapToneAnalyzer instance.
-# ---------------------------------------------------------------------------
 
 
 class TestRecalculateFrozenPeaksIfNeeded:
@@ -355,57 +318,12 @@ class TestThresholdFilter:
 class TestOffsetRemap:
     """Mirrors Swift FrozenPeakRecalculationTests PR3a/PR3b."""
 
-    def test_PR3a_offset_remapped_to_close_new_peak(self):
-        """PR3a: An annotation offset from an old peak maps to the new peak at ~same frequency."""
-        old_peak = _peak(freq=200.0)
-        offsets = {old_peak.id: [200.0, -40.0]}  # old: id → position
-
-        # New peaks are at similar frequencies (within 5 Hz)
-        new_freqs = [200.5, 300.0]
-
-        remapped = _remap_by_freq(offsets, [old_peak], new_freqs, tolerance_hz=5.0)
-        assert 200.5 in remapped, "Offset should remap to the new peak at ~200 Hz"
-        assert remapped[200.5] == [200.0, -40.0]
-
-    def test_PR3b_offset_not_remapped_when_no_close_peak(self):
-        """PR3b: An old offset is dropped when no new peak is within tolerance."""
-        old_peak = _peak(freq=200.0)
-        offsets = {old_peak.id: [200.0, -40.0]}
-
-        new_freqs = [500.0, 700.0]   # far from 200 Hz
-
-        remapped = _remap_by_freq(offsets, [old_peak], new_freqs, tolerance_hz=5.0)
-        assert len(remapped) == 0, "Offset should not remap when no nearby new peak"
-
-
 # ---------------------------------------------------------------------------
 # PR4/PR4b: Mode override remap
 # ---------------------------------------------------------------------------
 
 class TestOverrideRemap:
     """Mirrors Swift FrozenPeakRecalculationTests PR4/PR4b."""
-
-    def test_PR4_override_remapped_to_close_new_peak(self):
-        """PR4: A mode override from an old peak is carried to the nearby new peak."""
-        old_peak = _peak(freq=195.0)
-        overrides = {old_peak.id: "Top"}   # id → mode label
-
-        new_freqs = [196.0]   # within 5 Hz
-
-        remapped = _remap_by_freq(overrides, [old_peak], new_freqs, tolerance_hz=5.0)
-        assert 196.0 in remapped, "Override should remap to close new peak"
-        assert remapped[196.0] == "Top"
-
-    def test_PR4b_override_dropped_when_no_close_peak(self):
-        """PR4b: Mode override is dropped when the new peaks have shifted too far."""
-        old_peak = _peak(freq=195.0)
-        overrides = {old_peak.id: "Top"}
-
-        new_freqs = [300.0, 400.0]  # far from 195 Hz
-
-        remapped = _remap_by_freq(overrides, [old_peak], new_freqs, tolerance_hz=5.0)
-        assert len(remapped) == 0
-
 
 # ---------------------------------------------------------------------------
 # PR5a/PR5b: Selection carry-forward
@@ -414,43 +332,12 @@ class TestOverrideRemap:
 class TestSelectionCarryForward:
     """Mirrors Swift FrozenPeakRecalculationTests PR5a/PR5b."""
 
-    def test_PR5a_selected_peak_id_remapped_by_frequency(self):
-        """PR5a: When new peaks emerge at ~same frequency, selection is carried forward."""
-        old_peak = _peak(freq=200.0)
-        new_peak = _peak(freq=201.0)  # nearby — carry selection
-
-        # Simulate carry-forward: does new_peak's freq match old_peak within tolerance?
-        match = abs(new_peak.frequency - old_peak.frequency) <= 5.0
-        assert match, "New peak at 201 Hz should carry forward selection from 200 Hz peak"
-
-    def test_PR5b_selection_not_carried_when_peak_moved_far(self):
-        """PR5b: Selection is not carried when frequency changed beyond tolerance."""
-        old_peak = _peak(freq=200.0)
-        new_peak = _peak(freq=250.0)  # too far — no carry
-
-        match = abs(new_peak.frequency - old_peak.frequency) <= 5.0
-        assert not match, "Peak at 250 Hz should NOT carry forward from 200 Hz"
-
-
 # ---------------------------------------------------------------------------
 # PR6: Empty peaks guard
 # ---------------------------------------------------------------------------
 
 class TestEmptyPeaksGuard:
     """Mirrors Swift FrozenPeakRecalculationTests PR6."""
-
-    def test_PR6_remap_with_empty_new_peaks_returns_empty(self):
-        """PR6: Remapping any dict onto an empty new-peak list yields empty output."""
-        old_peak = _peak(freq=200.0)
-        offsets = {old_peak.id: [200.0, -40.0]}
-        remapped = _remap_by_freq(offsets, [old_peak], new_peaks_freqs=[], tolerance_hz=5.0)
-        assert remapped == {}, "Remapping onto empty peaks should produce empty dict"
-
-    def test_PR6b_remap_with_empty_old_overrides_returns_empty(self):
-        """PR6b: No old overrides → nothing to remap."""
-        remapped = _remap_by_freq({}, old_peaks=[], new_peaks_freqs=[200.0, 300.0])
-        assert remapped == {}
-
 
 # ---------------------------------------------------------------------------
 # PR8: can_reanalyze — when the Re-analyze button is offered
@@ -542,6 +429,90 @@ class TestPR8CanReanalyze:
                 f"Re-analyze is meaningless for {mtype} and must never be offered"
             )
 
+    def test_loaded_path_uses_saved_peaks_not_the_frozen_spectrum(self, qt_app):
+        """B06: loaded peaks are authoritative — the frozen spectrum is NOT re-analysed.
+
+        Saved peaks may not be reproducible by re-running detection: spectrum averaging, FFT
+        windowing and analysis settings can all differ between sessions. The frozen spectrum here
+        is flat, so detection would find nothing — the saved peak surviving proves it was used.
+        Gap filled 2026-09-19 (issue #8); Swift and web already covered this.
+        """
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut = self._frozen(MeasurementType.GENERIC)   # flat spectrum: detection finds nothing
+        sut.loaded_measurement_peaks = [_peak(300.0, -25.0)]
+        sut.peak_min_threshold = -80.0
+
+        sut.recalculate_frozen_peaks_if_needed()
+
+        assert any(abs(p.frequency - 300.0) < 1.0 for p in sut.all_peaks), (
+            "the saved peak must survive — a flat spectrum would yield nothing if re-analysed"
+        )
+
+    def test_loaded_peaks_above_threshold_are_kept(self, qt_app):
+        """B07: the durable set holds every saved peak; Peak Min only projects it.
+
+        Asserts BOTH surfaces deliberately. all_peaks must stay whole — assigning it a filtered
+        view would shrink it as Peak Min rises, and the save path would then write the shrunken
+        set (silent data loss). peaks_above_peak_min is where the filtering shows.
+        """
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut = self._frozen(MeasurementType.GENERIC)
+        strong, weak = _peak(200.0, -20.0), _peak(400.0, -60.0)
+        sut.loaded_measurement_peaks = [strong, weak]
+        sut.peak_min_threshold = -40.0          # drops the weak one from the DISPLAY only
+
+        sut.recalculate_frozen_peaks_if_needed()
+
+        assert {round(p.frequency) for p in sut.all_peaks} == {200, 400}, (
+            "the durable set must keep both saved peaks regardless of Peak Min"
+        )
+        assert {round(p.frequency) for p in sut.peaks_above_peak_min} == {200}, (
+            "the projection must drop the peak below Peak Min"
+        )
+
+    def test_loading_measurement_suppresses_recalculation(self, qt_app):
+        """B10: while is_loading_measurement is set, recalculation is a no-op.
+
+        Swift guards the same way (recalculateFrozenPeaksIfNeeded, first line). Both editions
+        trigger recalculation from property observers that can fire part-way through a load, so
+        without the guard a half-applied measurement would be re-analysed and clobber what is
+        being loaded. Gap filled 2026-09-19 (issue #8): the guard existed here, untested.
+
+        The web needs no equivalent — it drives recalculatePeaks from one layout effect keyed on
+        the loaded peaks themselves, so the effect only runs once they are in place.
+        """
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut = self._frozen(MeasurementType.GENERIC)
+        sut.loaded_measurement_peaks = [_peak(200.0, -20.0)]
+        sut.all_peaks = []
+
+        sut.is_loading_measurement = True
+        sut.recalculate_frozen_peaks_if_needed()
+        assert sut.all_peaks == [], (
+            "recalculation must not run while a measurement is loading"
+        )
+
+    def test_recalculation_runs_once_loading_completes(self, qt_app):
+        """B11: clearing is_loading_measurement lets the next recalculation through.
+
+        The other half of B10 — the guard must suppress, not permanently disable.
+        """
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut = self._frozen(MeasurementType.GENERIC)
+        saved = _peak(200.0, -20.0)
+        sut.loaded_measurement_peaks = [saved]
+        sut.all_peaks = []
+
+        sut.is_loading_measurement = True
+        sut.recalculate_frozen_peaks_if_needed()
+        assert sut.all_peaks == [], "precondition: suppressed while loading"
+
+        sut.is_loading_measurement = False
+        sut.recalculate_frozen_peaks_if_needed()
+        assert [p.frequency for p in sut.all_peaks] == [saved.frequency], (
+            "once loading completes the saved peaks must be adopted"
+        )
+
     def test_PR8e_incomplete_or_no_frozen_spectrum_cannot_reanalyze(self, qt_app):
         """Nothing to re-analyze without a completed measurement and a frozen spectrum."""
         TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
@@ -553,6 +524,150 @@ class TestPR8CanReanalyze:
         incomplete = self._frozen(MeasurementType.CLASSICAL)
         incomplete.is_measurement_complete = False
         assert incomplete.can_reanalyze is False, "Measurement still in progress"
+
+
+class TestRemappingThroughProduction:
+    """Carry-forward of per-peak state across a re-mint — driven through the REAL path.
+
+    Replaces eight tests purged 2026-09-19 (issue #8) that exercised `_remap_by_freq`, a
+    reimplementation of this logic living in the test file, or asserted arithmetic on literals.
+    Production remapping could have been broken in every one and all eight would have passed.
+
+    Each test here re-freezes the analyzer on a SHIFTED spectrum so detection mints genuinely new
+    peak ids, then asserts what `recalculate_frozen_peaks_if_needed` did with the state keyed to
+    the old ones.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_measurement_type(self):
+        saved = TapDisplaySettings.measurement_type()
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        yield
+        TapDisplaySettings.set_measurement_type(saved)
+
+    @staticmethod
+    def _remint(sut, bumps):
+        """Re-detect on a new spectrum, as a re-analyze would: fresh ids, same analyzer."""
+        freqs, mags = _gaussian_spectrum(bumps)
+        sut.frozen_frequencies = freqs
+        sut.frozen_magnitudes = mags
+        sut.recalculate_frozen_peaks_if_needed()
+
+    @staticmethod
+    def _peak_near(sut, hz, tol=5.0):
+        return next((p for p in sut.all_peaks if abs(p.frequency - hz) < tol), None)
+
+    def test_B20_offset_is_remapped_onto_the_nearby_new_peak(self, qt_app):
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
+        old = self._peak_near(sut, 200.0)
+        assert old is not None, "precondition: a peak was detected at 200 Hz"
+        sut.peak_annotation_offsets = {old.id: (12.0, -8.0)}
+
+        self._remint(sut, [(203.0, -20.0)])          # within the 5 Hz tolerance
+
+        new = self._peak_near(sut, 203.0)
+        assert new is not None and new.id != old.id, "precondition: the re-mint minted a new id"
+        assert sut.peak_annotation_offsets.get(new.id) == (12.0, -8.0), (
+            "the dragged label must follow the peak across a re-mint"
+        )
+
+    def test_B21_offset_is_dropped_when_no_new_peak_is_near(self, qt_app):
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
+        old = self._peak_near(sut, 200.0)
+        sut.peak_annotation_offsets = {old.id: (12.0, -8.0)}
+
+        self._remint(sut, [(300.0, -20.0)])          # far outside the tolerance
+
+        assert old.id not in sut.peak_annotation_offsets, (
+            "an offset whose peak vanished must not be carried onto an unrelated peak"
+        )
+
+    def test_B22_override_is_remapped_onto_the_nearby_new_peak(self, qt_app):
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
+        old = self._peak_near(sut, 200.0)
+        sut.peak_mode_overrides = {old.id: "Air"}
+
+        self._remint(sut, [(203.0, -20.0)])
+
+        new = self._peak_near(sut, 203.0)
+        assert new is not None and new.id != old.id
+        assert sut.peak_mode_overrides.get(new.id) == "Air", (
+            "a custom mode name must follow the peak across a re-mint"
+        )
+
+    def test_B23_override_is_orphaned_when_no_new_peak_is_near(self, qt_app):
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
+        old = self._peak_near(sut, 200.0)
+        sut.peak_mode_overrides = {old.id: "Air"}
+
+        self._remint(sut, [(300.0, -20.0)])
+
+        new = self._peak_near(sut, 300.0)
+        assert new is not None, "precondition: the re-mint produced a peak at 300 Hz"
+        # Negative-only assertions pass vacuously on an empty dict, so assert the value is gone
+        # ENTIRELY — not merely absent from the new id, which a leak under the old id would satisfy.
+        assert "Air" not in sut.peak_mode_overrides.values(), (
+            "an orphaned override must be dropped, not re-homed or left under a stale id"
+        )
+
+    def test_B24_manual_selection_is_carried_forward_by_frequency(self, qt_app):
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0), (400.0, -22.0)])
+        keep = self._peak_near(sut, 200.0)
+        sut.selected_peak_ids = {keep.id}
+        sut.user_has_modified_peak_selection = True
+
+        self._remint(sut, [(203.0, -20.0), (400.0, -22.0)])
+
+        new = self._peak_near(sut, 203.0)
+        assert new is not None
+        assert new.id in sut.selected_peak_ids, (
+            "a deliberate selection must survive a re-mint that shifts the id"
+        )
+
+    def test_B25_selection_is_not_carried_when_the_peak_moved_far(self, qt_app):
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
+        keep = self._peak_near(sut, 200.0)
+        sut.selected_peak_ids = {keep.id}
+        sut.user_has_modified_peak_selection = True
+
+        self._remint(sut, [(300.0, -20.0)])
+
+        moved = self._peak_near(sut, 300.0)
+        assert moved is not None, "precondition: the re-mint produced a peak at 300 Hz"
+        assert keep.id not in {p.id for p in sut.all_peaks}, "precondition: the old peak is gone"
+        assert moved.id not in sut.selected_peak_ids, (
+            "selection must not jump to a peak the user never chose"
+        )
+
+    def test_B27_empty_new_peaks_preserve_the_selection_for_re_selection(self, qt_app):
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
+        keep = self._peak_near(sut, 200.0)
+        sut.selected_peak_ids = {keep.id}
+        sut.user_has_modified_peak_selection = True
+        before = set(sut.selected_peak_ids)
+
+        sut.frozen_magnitudes = _flat_spectrum(floor=-100.0)   # nothing to detect
+        sut.recalculate_frozen_peaks_if_needed()
+
+        assert sut.selected_peak_ids == before, (
+            "an empty detection must not erase the selection — lowering the threshold restores it"
+        )
+
+    def test_B28_remap_with_no_prior_overrides_is_a_no_op(self, qt_app):
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
+        sut.peak_mode_overrides = {}
+
+        self._remint(sut, [(203.0, -20.0)])       # must not raise
+
+        assert sut.peak_mode_overrides == {}, "no overrides in, none out"
 
 
 class TestPeakMinDurability:
