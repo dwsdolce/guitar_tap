@@ -88,6 +88,26 @@ class TestFFTPeakDetection:
                 f"Expected a peak near {target} Hz; got: {[f'{f:.1f}' for f in detected_freqs]}"
             )
 
+    def test_raised_threshold_drops_the_weaker_of_two_tones(self):
+        """Two tones of UNEQUAL amplitude: a threshold between them keeps only the stronger.
+
+        The multi-tone case above uses equal amplitudes and one threshold, so it cannot show the
+        threshold discriminating between peaks. Moved here from the frozen-recalc suite (issue #8),
+        where it was the only coverage of this case in any edition but was filed under a slug about
+        recalculation — it tests detection, not recalculation.
+        """
+        mag = _flat_spectrum(floor=-80.0)
+        _add_tone(mag, freq_hz=200.0, peak_db=-20.0, width_bins=4)   # strong
+        _add_tone(mag, freq_hz=400.0, peak_db=-55.0, width_bins=4)   # weak
+
+        low = [p * HZ_PER_BIN for p in peak_detection(mag, threshold=-60)]
+        assert any(abs(f - 200.0) < 20.0 for f in low), "strong tone missing at the low threshold"
+        assert any(abs(f - 400.0) < 20.0 for f in low), "weak tone missing at the low threshold"
+
+        high = [p * HZ_PER_BIN for p in peak_detection(mag, threshold=-40)]
+        assert any(abs(f - 200.0) < 20.0 for f in high), "strong tone should survive the raised threshold"
+        assert not any(abs(f - 400.0) < 20.0 for f in high), "weak tone should be dropped by the raised threshold"
+
     def test_clipped_flat_top_produces_at_most_one_peak(self):
         mag = _flat_spectrum(floor=-80.0)
         for b in [100, 101, 102]:

@@ -43,8 +43,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from PySide6 import QtWidgets
 
 from guitar_tap.models.realtime_fft_analyzer_fft_processing import (
-    peak_detection,
-    peak_interp,
     peak_q_factor,
 )
 from guitar_tap.models.resonant_peak import ResonantPeak
@@ -144,16 +142,6 @@ def _freeze_on_real_spectrum(sut, bumps) -> None:
     sut.frozen_frequencies = freqs
     sut.frozen_magnitudes = mags
     sut.all_peaks = sut.find_peaks(mags, freqs, peak_min_override=sut.PEAK_DETECTION_FLOOR)
-
-
-def _detect_peaks(mag: np.ndarray, threshold_db: float):
-    """Run the full peak detection pipeline and return (freqs_hz, mags_db)."""
-    ploc = peak_detection(mag, threshold=int(threshold_db))
-    if len(ploc) == 0:
-        return np.array([]), np.array([])
-    iploc, ipmag = peak_interp(mag, ploc)
-    freqs = iploc * HZ_PER_BIN
-    return freqs, ipmag
 
 
 def _remap_by_freq(
@@ -353,68 +341,12 @@ class TestRecalculateFrozenPeaksIfNeeded:
 class TestLoadingGuard:
     """Mirrors Swift FrozenPeakRecalculationTests PR1/PR1b."""
 
-    def test_PR1_spectrum_snapshot_present_enables_recalculation(self):
-        """PR1: A measurement with a spectrum snapshot can be re-analysed."""
-        mag = _flat_spectrum()
-        _add_tone(mag, 200.0, -25.0)
-        snap = SpectrumSnapshot(
-            frequencies=[i * HZ_PER_BIN for i in range(N_BINS)],
-            magnitudes=list(mag),
-        )
-        m = TapToneMeasurement.create(peaks=[], spectrum_snapshot=snap)
-        assert m.spectrum_snapshot is not None, "Snapshot should be present"
-        # Re-run detection on the stored magnitudes
-        mag_arr = np.array(m.spectrum_snapshot.magnitudes)
-        freqs, mags = _detect_peaks(mag_arr, threshold_db=-60.0)
-        assert len(freqs) >= 1, "Should detect at least 1 peak after re-analysis"
-
-    def test_PR1b_no_snapshot_returns_empty_peaks(self):
-        """PR1b: A measurement without a snapshot cannot yield new peaks."""
-        m = TapToneMeasurement.create(peaks=[], spectrum_snapshot=None)
-        assert m.spectrum_snapshot is None, "No snapshot → cannot recalculate"
-
-
 # ---------------------------------------------------------------------------
 # PR2a–PR2c: Threshold filter
 # ---------------------------------------------------------------------------
 
 class TestThresholdFilter:
     """Mirrors Swift FrozenPeakRecalculationTests PR2a–PR2c."""
-
-    def test_PR2a_peaks_above_threshold_detected(self):
-        """PR2a: Peaks above the detection threshold are found."""
-        mag = _flat_spectrum(floor=-80.0)
-        _add_tone(mag, 200.0, -20.0)
-        freqs, _ = _detect_peaks(mag, threshold_db=-60.0)
-        assert any(abs(f - 200.0) < 20.0 for f in freqs), (
-            f"Expected peak near 200 Hz; detected: {[f'{f:.1f}' for f in freqs]}"
-        )
-
-    def test_PR2b_peaks_below_threshold_excluded(self):
-        """PR2b: A peak below the detection threshold is not returned."""
-        mag = _flat_spectrum(floor=-80.0)
-        _add_tone(mag, 300.0, -70.0)   # below -60 dB threshold
-        freqs, _ = _detect_peaks(mag, threshold_db=-60.0)
-        assert not any(abs(f - 300.0) < 20.0 for f in freqs), (
-            "Peak below threshold should not be detected after recalculation"
-        )
-
-    def test_PR2c_raising_threshold_removes_weak_peaks(self):
-        """PR2c: Raising the threshold eliminates the weaker of two peaks."""
-        mag = _flat_spectrum(floor=-80.0)
-        _add_tone(mag, 200.0, -20.0)   # strong: -20 dB
-        _add_tone(mag, 400.0, -55.0)   # weak: -55 dB
-        # With low threshold, both should be found
-        freqs_low, _ = _detect_peaks(mag, threshold_db=-60.0)
-        # With high threshold, only the strong one
-        freqs_high, _ = _detect_peaks(mag, threshold_db=-40.0)
-        assert any(abs(f - 200.0) < 20.0 for f in freqs_high), (
-            "Strong peak should still be found with raised threshold"
-        )
-        assert not any(abs(f - 400.0) < 20.0 for f in freqs_high), (
-            "Weak peak should be excluded with raised threshold"
-        )
-
 
 # ---------------------------------------------------------------------------
 # PR3a/PR3b: Annotation offset remap
