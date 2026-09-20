@@ -25,23 +25,30 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         do not match any predefined mode return UNKNOWN; views detect the
         freeform case separately via has_manual_override + from_mode_string.
 
-        Falls back to ``identified_modes`` (populated by classify pass), then
-        to a single-element ``classify_all`` call for stale references.
+        Reads ``identified_modes`` (populated by the classify pass). A peak with no entry there
+        has no mode and resolves to UNKNOWN — see the comment below for why it does not guess.
 
-        Mirrors Swift ``peakMode(for:)``.
+        Mirrors Swift ``peakMode(for:)`` and web ``effectiveMode``.
         """
         from .guitar_mode import GuitarMode
-        # AUTO classification (override-blind): identified_modes (populated by the classify pass),
-        # falling back to a single-element classify_all for stale references. Mirrors Swift's
-        # peakMode auto resolution.
+        # AUTO classification (override-blind): identified_modes, populated by the classify pass.
+        # Mirrors Swift's peakMode auto resolution.
+        #
+        # A peak with no entry in identified_modes has NO mode, and says so. This used to fall back
+        # to ``classify_all([peak])`` — classifying the peak ALONE — which cannot disambiguate the
+        # Top/Back overlap (Generic: Top 140-260 Hz, Back 180-300) and so returned TOP for anything
+        # in it. classify_all earns its answer by letting peaks compete for a band; handed one peak
+        # it has nothing to arbitrate.
+        #
+        # The miss is not an error case: a completed plate/brace capture leaves identified_modes
+        # empty on purpose, because material peaks have no guitar mode. The fallback answered that
+        # with TOP — a real brace fL at 220 Hz reported GuitarMode.TOP. Mirrors web, which has never
+        # guessed here (``modeByPeak.get(id) ?? 'unknown'``).
         auto = GuitarMode.UNKNOWN
         for entry in self.identified_modes:
             if entry.get("peak") and entry["peak"].id == peak.id:
                 auto = entry["mode"]
                 break
-        else:
-            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_pm
-            auto = GuitarMode.classify_all([peak], _tds_pm.guitar_type()).get(peak.id, GuitarMode.UNKNOWN)
         # Effective = the ONE shared resolver — an override wins over auto (freeform → UNKNOWN).
         # Mirrors Swift peakMode delegating to GuitarMode.effectiveMode.
         return GuitarMode.effective_mode(self.peak_mode_overrides.get(peak.id), auto)

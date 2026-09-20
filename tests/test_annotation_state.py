@@ -68,6 +68,22 @@ def _make_peak_live(freq: float = 200.0, mag: float = -20.0) -> ResonantPeak:
     )
 
 
+def _classify_into(sut, peaks) -> None:
+    """Put *peaks* on the analyzer AND classify them, the way every production path does.
+
+    `all_peaks` and `identified_modes` are written together in the same pass everywhere in the app;
+    a test that assigns only the first leaves every peak UNKNOWN.
+    """
+    from guitar_tap.models.guitar_mode import GuitarMode
+    from guitar_tap.models.tap_display_settings import TapDisplaySettings
+
+    sut.all_peaks = list(peaks)
+    mode_map = GuitarMode.classify_all(list(peaks), TapDisplaySettings.guitar_type())
+    sut.identified_modes = [
+        {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)} for p in peaks
+    ]
+
+
 class TestAnnotationStateLive:
     """Port of Swift AnnotationStateTests driving TapToneAnalyzer state directly.
 
@@ -215,10 +231,13 @@ class TestAnnotationStateLive:
     # ── D7–D8: Mode overrides ─────────────────────────────────────────────
 
     def test_D7_no_override_returns_auto_label(self):
-        """D7: No override → label comes from GuitarMode.classify_peak."""
+        """D7: No override → the label is the peak's auto-classified mode."""
         sut = _make_sut()
         # 100 Hz is in the Air (Helmholtz) range for classical/acoustic.
+        # The analyzer must KNOW the peak: effective_mode_label reads identified_modes and no longer
+        # classifies a stray peak on its own (one peak cannot compete for a band — see peak_mode).
         p = _make_peak_live(freq=100.0)
+        _classify_into(sut, [p])
         label = sut.effective_mode_label(p)
         assert label == "Air (Helmholtz)", (
             f"Expected 'Air (Helmholtz)' for 100 Hz, got '{label}'"
@@ -244,10 +263,49 @@ class TestAnnotationStateLive:
         """Clearing an override (set_mode_override None) reverts to auto-classification."""
         sut = _make_sut()
         p = _make_peak_live(freq=100.0)
+        _classify_into(sut, [p])
         sut.set_mode_override("Temp", p.id)
         sut.set_mode_override(None, p.id)
         label = sut.effective_mode_label(p)
         assert label == "Air (Helmholtz)"
+
+    # ── An unclassified peak has NO mode — it is not guessed at ──────────
+    #
+    # This used to fall back to classifying the peak ALONE (``classify_all([peak])``). One peak
+    # cannot compete for a band, and the Generic Top (140-260 Hz) and Back (180-300 Hz) ranges
+    # overlap, so the fallback returned TOP for anything between 180 and 260 Hz — including a
+    # plate/brace peak, which has no guitar mode at all. A real brace fL at 220 Hz reported
+    # GuitarMode.TOP. Removed 2026-09-20 to match web, which never guessed.
+
+    def test_D7b_unclassified_peak_has_no_mode_even_in_the_top_back_overlap(self):
+        """A peak absent from identified_modes resolves to UNKNOWN, never a guessed mode."""
+        from guitar_tap.models.guitar_mode import GuitarMode
+
+        sut = _make_sut()
+        # 220 Hz sits in BOTH the Generic Top and Back ranges — the band where classifying a lone
+        # peak cannot arbitrate, and where the old fallback always answered TOP.
+        stray = _make_peak_live(freq=220.0)
+        assert sut.identified_modes == [], "precondition: the analyzer knows nothing about it"
+
+        assert sut.peak_mode(stray) == GuitarMode.UNKNOWN
+        assert sut.auto_detected_mode(stray) == GuitarMode.UNKNOWN
+
+    def test_D7c_a_completed_material_capture_leaves_its_peak_unclassified(self):
+        """The real case the fallback mis-answered: material peaks have no guitar mode.
+
+        A completed plate/brace capture sets all_peaks but leaves identified_modes empty on
+        purpose — there is no guitar classification to make. UNKNOWN is the honest answer.
+        """
+        from guitar_tap.models.guitar_mode import GuitarMode
+
+        sut = _make_sut()
+        fl = _make_peak_live(freq=220.0)
+        sut.all_peaks = [fl]          # as the material capture handlers do — no classify pass
+        assert sut.identified_modes == []
+
+        assert sut.peak_mode(fl) == GuitarMode.UNKNOWN, (
+            "a material peak must not be labelled with a guitar mode"
+        )
 
     # ── CI5: cycle_annotation_visibility ─────────────────────────────────
 

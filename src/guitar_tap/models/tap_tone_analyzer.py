@@ -1335,11 +1335,10 @@ class TapToneAnalyzer(
             case .assigned(let l):   return l
             }
 
-        For the auto case, delegates to ``self.peak_mode(peak)`` which reads
-        ``identified_modes`` (populated by ``classify_all`` with all peaks together)
-        before falling back to ``classify_all([peak])`` — identical to Swift
-        ``peakMode(for:)``.  Returns ``mode.display_name`` (human-readable),
-        not ``mode.value`` (internal enum string).
+        For the auto case, delegates to ``self.peak_mode(peak)``, which reads ``identified_modes``
+        (populated by ``classify_all`` with all peaks together) and returns UNKNOWN for a peak that
+        has no entry — identical to Swift ``peakMode(for:)``.  Returns ``mode.display_name``
+        (human-readable), not ``mode.value`` (internal enum string).
         """
         override = self.peak_mode_overrides.get(peak.id)
         if override:
@@ -1351,10 +1350,11 @@ class TapToneAnalyzer(
         """The mode this peak would carry with **no** override — the mode a "Reset to Auto-Detected"
         would restore it to.
 
-        Deliberately override-BLIND: it reads the auto-classification (``identified_modes``, falling
-        back to ``GuitarMode.classify_all``) and never consults ``peak_mode_overrides``. This is
-        exactly the value the reset menu item should name — the target of the reset, not the current
-        label. ``UNKNOWN`` is a legitimate result (a peak in no band) and is shown as such.
+        Deliberately override-BLIND: it reads the auto-classification (``identified_modes``) and
+        never consults ``peak_mode_overrides``. This is exactly the value the reset menu item should
+        name — the target of the reset, not the current label. ``UNKNOWN`` is a legitimate result (a
+        peak in no band, or a material peak, which has no guitar mode) and is shown as such — so a
+        peak with no entry resolves to it rather than being classified alone. See ``peak_mode``.
 
         Mirrors Swift ``autoDetectedMode(for:)``.
         """
@@ -1362,8 +1362,7 @@ class TapToneAnalyzer(
         for entry in self.identified_modes:
             if entry.get("peak") and entry["peak"].id == peak.id:
                 return entry["mode"]
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-        return GuitarMode.classify_all([peak], _tds.guitar_type()).get(peak.id, GuitarMode.UNKNOWN)
+        return GuitarMode.UNKNOWN
 
     def set_mode_override(self, mode: "str | None", peak_id: str) -> None:
         """Set or clear a mode-label override for a specific peak.
