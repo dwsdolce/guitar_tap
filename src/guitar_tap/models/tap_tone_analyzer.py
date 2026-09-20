@@ -446,23 +446,20 @@ class TapToneAnalyzer(
         self.longitudinal_peaks: list = []
         self.cross_peaks: list = []
         self.flc_peaks: list = []
-        # Three-layer peak selection (priority: user_selected > selected > auto_selected):
+        # Two-layer peak selection (priority: selected > auto_selected):
         #   1. auto_selected_* — intermediate UUID from HPS analysis, set before the
         #      phase finalises.
-        #   2. selected_*      — the dominant peak stored when the phase finalises
-        #      (used when there is no user override).
-        #   3. user_selected_* — explicit override set when the user taps a peak row
-        #      in the results panel (highest priority).
-        # Mirrors Swift autoSelected*/selected*/userSelected* three-layer selection.
+        #   2. selected_*      — the dominant peak stored when the phase finalises.
+        # Mirrors Swift autoSelected*/selected* two-layer selection. A third, highest-priority
+        # user_selected_* layer existed until 2026-09-20, set by L/C/FLC buttons on each peak row;
+        # those were removed on 2026-04-17 and replaced by redoing the phase. See "Plate Peak
+        # Selection — REMOVED" in tap_tone_analyzer_annotation_management.py.
         self.auto_selected_longitudinal_peak_id = None
         self.auto_selected_cross_peak_id = None
         self.auto_selected_flc_peak_id = None
         self.selected_longitudinal_peak = None
         self.selected_cross_peak = None
         self.selected_flc_peak = None
-        self.user_selected_longitudinal_peak_id = None
-        self.user_selected_cross_peak_id = None
-        self.user_selected_flc_peak_id = None
 
         # ── Tap detection state (mirrors Swift TapToneAnalyzer stored properties)
         # State bit of the hysteresis state machine: True while the signal is above the

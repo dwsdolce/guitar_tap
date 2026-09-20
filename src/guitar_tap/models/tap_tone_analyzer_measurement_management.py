@@ -650,9 +650,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             _peak_by_id.get((measurement.selected_flc_peak_id or "").upper())
         )
         # Mirrors Swift: userSelectedLongitudinalPeakID = nil (and cross/flc)
-        self.user_selected_longitudinal_peak_id = None
-        self.user_selected_cross_peak_id = None
-        self.user_selected_flc_peak_id = None
         gt_log(f"  🔵 Restored longitudinal peak: {self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else -1} Hz")
         gt_log(f"  🟠 Restored cross-grain peak: {self.selected_cross_peak.frequency if self.selected_cross_peak else -1} Hz")
         gt_log(f"  🟣 Restored FLC peak: {self.selected_flc_peak.frequency if self.selected_flc_peak else -1} Hz")

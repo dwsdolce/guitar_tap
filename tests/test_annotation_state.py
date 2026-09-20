@@ -13,7 +13,6 @@ Mirrors Swift AnnotationStateTests covering:
   D4–D6:   visible_peaks on the live analyzer
   D7–D8:   mode overrides on the live analyzer
   CI5:     annotation_visibility_mode cycle on the live analyzer
-  PS1–PS6: plate peak selection on the live analyzer
   UpdateMeasurement: update_measurement() on the live analyzer
 """
 
@@ -74,7 +73,6 @@ class TestAnnotationStateLive:
 
     Covers: D1–D2 (offsets), D3/D3b (toggle/select/clear/reset),
     D4–D6 (visible_peaks), D7–D8 (mode overrides), CI5 (cycle),
-    PS1–PS6 (plate peak selection — on the analyzer instance).
     """
 
     # ── D1: updateAnnotationOffset stores offset by peak ID ──────────────
@@ -267,59 +265,13 @@ class TestAnnotationStateLive:
         sut.cycle_annotation_visibility()
         assert sut.annotation_visibility_mode == AnnotationVisibilityMode.ALL
 
-    # ── PS1–PS6: Plate peak selection on the analyzer ────────────────────
-
-    def test_PS1_select_longitudinal_peak_selects_new_peak(self):
-        """PS1: selectLongitudinalPeak sets user_selected_longitudinal_peak_id."""
-        sut = _make_sut()
-        pid = str(uuid.uuid4())
-        sut.select_longitudinal_peak(pid)
-        assert sut.user_selected_longitudinal_peak_id == pid
-
-    def test_PS2_select_longitudinal_peak_deselects_current(self):
-        """PS2: Selecting the already-selected longitudinal peak deselects it."""
-        sut = _make_sut()
-        pid = str(uuid.uuid4())
-        sut.user_selected_longitudinal_peak_id = pid
-        sut.select_longitudinal_peak(pid)
-        assert sut.user_selected_longitudinal_peak_id is None
-
-    def test_PS3_select_longitudinal_peak_clears_cross_conflict(self):
-        """PS3: selectLongitudinalPeak clears a conflicting cross assignment."""
-        sut = _make_sut()
-        shared = str(uuid.uuid4())
-        sut.user_selected_cross_peak_id = shared
-        sut.select_longitudinal_peak(shared)
-        assert sut.user_selected_longitudinal_peak_id == shared
-        assert sut.user_selected_cross_peak_id is None
-
-    def test_PS4_select_longitudinal_peak_clears_flc_conflict(self):
-        """PS4: selectLongitudinalPeak clears a conflicting FLC assignment."""
-        sut = _make_sut()
-        shared = str(uuid.uuid4())
-        sut.user_selected_flc_peak_id = shared
-        sut.select_longitudinal_peak(shared)
-        assert sut.user_selected_longitudinal_peak_id == shared
-        assert sut.user_selected_flc_peak_id is None
-
-    def test_PS5_select_cross_peak_clears_longitudinal_conflict(self):
-        """PS5: selectCrossPeak clears a conflicting longitudinal assignment."""
-        sut = _make_sut()
-        shared = str(uuid.uuid4())
-        sut.user_selected_longitudinal_peak_id = shared
-        sut.select_cross_peak(shared)
-        assert sut.user_selected_cross_peak_id == shared
-        assert sut.user_selected_longitudinal_peak_id is None
-
-    def test_PS6_select_flc_peak_clears_cross_conflict(self):
-        """PS6: selectFlcPeak clears a conflicting cross assignment."""
-        sut = _make_sut()
-        shared = str(uuid.uuid4())
-        sut.user_selected_cross_peak_id = shared
-        sut.select_flc_peak(shared)
-        assert sut.user_selected_flc_peak_id == shared
-        assert sut.user_selected_cross_peak_id is None
-
+    # ── PS1–PS6: Plate peak selection — REMOVED 2026-09-20 ───────────────
+    #
+    # These six were the only callers of select_longitudinal_peak / select_cross_peak /
+    # select_flc_peak. The L / C / FLC buttons that drove them were removed from Swift on
+    # 2026-04-17 (c88e5e1) and replaced by redoing the phase (plate) or the measurement (brace);
+    # Python had mirrored the leftovers rather than the feature. Tests are the last thing keeping
+    # removed code alive, so they went with it. Swift's PS1–PS6 were deleted in the same pass.
 
 # ---------------------------------------------------------------------------
 # Update Measurement — mirrors Swift @Suite("UpdateMeasurement") in

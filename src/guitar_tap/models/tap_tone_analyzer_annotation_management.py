@@ -22,9 +22,6 @@ class TapToneAnalyzerAnnotationManagementMixin:
     Stored properties initialised in TapToneAnalyzer.__init__:
         self.peak_annotation_offsets: dict[str, tuple[float, float]]
             UUID-string → (x, y) in data-space coordinates.
-        self.user_selected_longitudinal_peak_id: str | None
-        self.user_selected_cross_peak_id: str | None
-        self.user_selected_flc_peak_id: str | None
         self.selected_longitudinal_peak: ResonantPeak | None
         self.selected_cross_peak: ResonantPeak | None
         self.selected_flc_peak: ResonantPeak | None
@@ -108,17 +105,17 @@ class TapToneAnalyzerAnnotationManagementMixin:
 
     @property
     def effective_longitudinal_peak_id(self) -> str | None:
-        """The effective longitudinal peak UUID applying three-layer priority.
+        """The effective longitudinal peak UUID applying two-layer priority.
 
-        Priority: userSelectedLongitudinalPeakID > selectedLongitudinalPeak.id
-        > autoSelectedLongitudinalPeakID.
+        Priority: selectedLongitudinalPeak.id > autoSelectedLongitudinalPeakID. (A third,
+        highest-priority user-override layer existed until 2026-09-20 — see "Plate Peak Selection
+        — REMOVED" below.)
 
         Mirrors Swift ``effectiveLongitudinalPeakID``:
-            userSelectedLongitudinalPeakID ?? selectedLongitudinalPeak?.id ?? autoSelectedLongitudinalPeakID
+            selectedLongitudinalPeak?.id ?? autoSelectedLongitudinalPeakID
         """
         return (
-            self.user_selected_longitudinal_peak_id
-            or (self.selected_longitudinal_peak.id if self.selected_longitudinal_peak else None)
+            (self.selected_longitudinal_peak.id if self.selected_longitudinal_peak else None)
             or self.auto_selected_longitudinal_peak_id
         )
 
@@ -133,8 +130,7 @@ class TapToneAnalyzerAnnotationManagementMixin:
             userSelectedCrossPeakID ?? selectedCrossPeak?.id ?? autoSelectedCrossPeakID
         """
         return (
-            self.user_selected_cross_peak_id
-            or (self.selected_cross_peak.id if self.selected_cross_peak else None)
+            (self.selected_cross_peak.id if self.selected_cross_peak else None)
             or self.auto_selected_cross_peak_id
         )
 
@@ -149,75 +145,18 @@ class TapToneAnalyzerAnnotationManagementMixin:
             userSelectedFlcPeakID ?? selectedFlcPeak?.id ?? autoSelectedFlcPeakID
         """
         return (
-            self.user_selected_flc_peak_id
-            or (self.selected_flc_peak.id if self.selected_flc_peak else None)
+            (self.selected_flc_peak.id if self.selected_flc_peak else None)
             or self.auto_selected_flc_peak_id
         )
 
-    def select_longitudinal_peak(self, peak_id: str) -> None:
-        """Toggle *peak_id* as the user-selected longitudinal peak.
-
-        Tapping an already-selected longitudinal peak deselects it. Selecting a
-        new peak clears any conflicting cross or FLC user-selection for the same
-        peak ID, enforcing mutual exclusion across tap-type assignments.
-
-        Mirrors Swift ``selectLongitudinalPeak(_ peakID: UUID)``.
-
-        Args:
-            peak_id: ``ResonantPeak.id`` (UUID string).
-        """
-        if self.effective_longitudinal_peak_id == peak_id:
-            self.user_selected_longitudinal_peak_id = None
-            self.selected_longitudinal_peak = None
-        else:
-            self.user_selected_longitudinal_peak_id = peak_id
-            if self.effective_cross_peak_id == peak_id:
-                self.user_selected_cross_peak_id = None
-                self.selected_cross_peak = None
-            if self.effective_flc_peak_id == peak_id:
-                self.user_selected_flc_peak_id = None
-                self.selected_flc_peak = None
-
-    def select_cross_peak(self, peak_id: str) -> None:
-        """Toggle *peak_id* as the user-selected cross-grain peak.
-
-        Mirrors the mutual-exclusion logic of ``select_longitudinal_peak``.
-
-        Mirrors Swift ``selectCrossPeak(_ peakID: UUID)``.
-
-        Args:
-            peak_id: ``ResonantPeak.id`` (UUID string).
-        """
-        if self.effective_cross_peak_id == peak_id:
-            self.user_selected_cross_peak_id = None
-            self.selected_cross_peak = None
-        else:
-            self.user_selected_cross_peak_id = peak_id
-            if self.effective_longitudinal_peak_id == peak_id:
-                self.user_selected_longitudinal_peak_id = None
-                self.selected_longitudinal_peak = None
-            if self.effective_flc_peak_id == peak_id:
-                self.user_selected_flc_peak_id = None
-                self.selected_flc_peak = None
-
-    def select_flc_peak(self, peak_id: str) -> None:
-        """Toggle *peak_id* as the user-selected FLC peak.
-
-        Mirrors the mutual-exclusion logic of ``select_longitudinal_peak``.
-
-        Mirrors Swift ``selectFlcPeak(_ peakID: UUID)``.
-
-        Args:
-            peak_id: ``ResonantPeak.id`` (UUID string).
-        """
-        if self.effective_flc_peak_id == peak_id:
-            self.user_selected_flc_peak_id = None
-            self.selected_flc_peak = None
-        else:
-            self.user_selected_flc_peak_id = peak_id
-            if self.effective_longitudinal_peak_id == peak_id:
-                self.user_selected_longitudinal_peak_id = None
-                self.selected_longitudinal_peak = None
-            if self.effective_cross_peak_id == peak_id:
-                self.user_selected_cross_peak_id = None
-                self.selected_cross_peak = None
+    # Plate Peak Selection — REMOVED 2026-09-20
+    #
+    # ``select_longitudinal_peak`` / ``select_cross_peak`` / ``select_flc_peak`` let the user
+    # re-assign which detected peak was the fL / fC / fFLC, from L / C / FLC buttons on each peak
+    # row in the material Results panel. Those buttons were removed from Swift on 2026-04-17
+    # (``c88e5e1``) and the correction path became: REDO the phase (plate) or the measurement
+    # (brace). Python mirrored the leftovers rather than the feature, so this model layer sat here
+    # unreachable, exercised only by its own PS1-PS6 tests, which went with it.
+    #
+    # Do not reintroduce without the UI. This was also the only reason material peaks had to live
+    # in the shared ``all_peaks`` list — see the parity doc for that thread.

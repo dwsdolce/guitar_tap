@@ -949,7 +949,6 @@ class TapToneAnalyzerControlMixin:
             self.longitudinal_peaks = []
             self.auto_selected_longitudinal_peak_id = None
             self.selected_longitudinal_peak = None
-            self.user_selected_longitudinal_peak_id = None
             self.captured_taps.clear()
             self.current_tap_count = 0
             self.tap_progress = 0.0
@@ -964,7 +963,6 @@ class TapToneAnalyzerControlMixin:
             self.cross_peaks = []
             self.auto_selected_cross_peak_id = None
             self.selected_cross_peak = None
-            self.user_selected_cross_peak_id = None
             self.captured_taps.clear()
             # Mirrors Swift: lCount = (longitudinalSpectrum != nil) ? numberOfTaps : 0
             l_count = self.number_of_taps if self.longitudinal_spectrum is not None else 0
@@ -985,7 +983,6 @@ class TapToneAnalyzerControlMixin:
             self.flc_peaks = []
             self.auto_selected_flc_peak_id = None
             self.selected_flc_peak = None
-            self.user_selected_flc_peak_id = None
             self.captured_taps.clear()
             # Mirrors Swift: lcCount = (longitudinalSpectrum != nil && crossSpectrum != nil) ? numberOfTaps * 2 : 0
             lc_count = (
@@ -1212,9 +1209,6 @@ class TapToneAnalyzerControlMixin:
         self.selected_longitudinal_peak = None
         self.selected_cross_peak = None
         self.selected_flc_peak = None
-        self.user_selected_longitudinal_peak_id = None
-        self.user_selected_cross_peak_id = None
-        self.user_selected_flc_peak_id = None
         # All phase spectra cleared — mirrors Swift's @Published vars becoming nil,
         # which causes materialSpectra to return [] and SpectrumView to restore the live curve.
         self.set_material_spectra([])
