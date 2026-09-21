@@ -1,4 +1,4 @@
-# @parity test/parity-runner
+# @parity tooling/parity-runner
 """Run every oracle case and report what THIS configuration computes.
 
 The oracle declares each case's *inputs* — fixture, calibration, settings — and the

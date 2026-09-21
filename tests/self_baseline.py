@@ -1,4 +1,4 @@
-# @parity test/self-baseline
+# @parity tooling/self-baseline
 """This configuration's committed self-baseline: what it computed, last time it was minted.
 
 Two different bars guard the numbers, and conflating them is what let a real drift hide:

@@ -11,8 +11,16 @@
 #   ./tooling/sync-oracle.sh --publish # canonical <- local (Swift repo only; see below)
 #
 # Sources, in the order tried:
-#   ORACLE_SRC   a local hub checkout path or file — used while the hub is private
-#   ORACLE_URL   a raw URL — the long-term source once the hub is public (#11)
+#   ORACLE_SRC       a hub working copy (directory or file), when set explicitly — always wins
+#   ../guitar-tap-project   the hub directory beside this repo, read only if it is there
+#   ORACLE_URL       a raw URL — the long-term source once the hub is public (#11)
+#
+# The middle rung was added in #17. Before it, a machine with the hub sitting right next to the
+# repo still fell through to the URL, which 404s while the hub is private — so the staleness
+# check skipped everywhere and the vendored oracle was never actually checked for drift.
+#
+# --publish deliberately does NOT use the middle rung: it WRITES, and inferring a destination is
+# a different risk from inferring a source. Publishing stays explicit about where it is going.
 #
 # The oracle is GENERATED in the canonical Swift repo (GenerateParityOracle) and
 # published into the hub; every other repo pulls. Only Swift publishes, because only
@@ -25,6 +33,10 @@ ORACLE_URL="${ORACLE_URL:-https://raw.githubusercontent.com/dwsdolce/guitar-tap-
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# The hub directory as a sibling of this repo — the standard developer layout, and the one the
+# rest of the toolchain already assumes (gen_parity_map.py resolves the code repos the same way).
+# Read only if present; never fetched, never created.
+SIBLING_ORACLE="$REPO_ROOT/../guitar-tap-project/tooling/parity/parity-oracle.json"
 # Beside the script, not at a hardcoded tooling/ — the Python repo spells it Tooling/,
 # and a case-sensitive filesystem would not forgive the assumption.
 DEST_DECL="$SCRIPT_DIR/oracle-dest.txt"
@@ -40,32 +52,60 @@ LOCAL="$REPO_ROOT/$(grep -vE '^\s*(#|$)' "$DEST_DECL" | head -1 | tr -d '[:space
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
+# Canonical comes from the first of these that is available:
+#   1. ORACLE_SRC, when set explicitly — always wins.
+#   2. The hub directory sitting beside this repo. Nothing is fetched or checked out: if that
+#      file is there it is read, and if it is not, this rung is skipped. The rest of the
+#      toolchain already resolves the repos this way (gen_parity_map.py: "the code repos are
+#      siblings of the hub").
+#   3. The published URL, for a working copy with no hub beside it.
+#
+# Rung 2 was missing until #17. Without it the staleness check fell straight through to a URL
+# that 404s while the hub is private, so it skipped on every machine that had the hub sitting
+# right next to it — the vendored oracle was never actually checked for drift anywhere.
+#
+# Rungs 1 and 2 read a WORKING COPY, not a published artifact, so what they compare against is
+# whatever is on disk — including edits nobody has committed yet. That is usually what you want
+# (mint-oracle.sh --publish writes into the hub, and a repo that has not synced should report
+# drift straight away) but it is not the same claim as matching a published file. So the result
+# says which kind of source it used, and a reader can judge it: a pass against a working copy is
+# a statement about this machine, a pass against the URL is a statement about the project.
 fetch_canonical() {
+  local src=""
   if [[ -n "${ORACLE_SRC:-}" ]]; then
-    local src="$ORACLE_SRC"
+    src="$ORACLE_SRC"
     [[ -d "$src" ]] && src="$src/tooling/parity/parity-oracle.json"
     if [[ ! -f "$src" ]]; then
       echo "ERROR: ORACLE_SRC given but no oracle at $src" >&2
       exit 2
     fi
+    CANONICAL_KIND="local working copy, via ORACLE_SRC"
+  elif [[ -f "$SIBLING_ORACLE" ]]; then
+    src="$SIBLING_ORACLE"
+    CANONICAL_KIND="local working copy, the hub beside this repo"
+  fi
+
+  if [[ -n "$src" ]]; then
     cp "$src" "$tmp"
     CANONICAL_DESC="$src"
-  else
-    if ! curl -fsSL "$ORACLE_URL" -o "$tmp"; then
-      echo "ERROR: could not fetch canonical oracle from $ORACLE_URL" >&2
-      echo "       While the hub is private this will 404 — set ORACLE_SRC to a local" >&2
-      echo "       hub checkout instead: ORACLE_SRC=~/src/guitar-tap-project $0 $*" >&2
-      exit 2
-    fi
-    CANONICAL_DESC="$ORACLE_URL"
+    return
   fi
+
+  if ! curl -fsSL "$ORACLE_URL" -o "$tmp"; then
+    echo "ERROR: could not fetch canonical oracle from $ORACLE_URL" >&2
+    echo "       No hub directory beside this repo either ($SIBLING_ORACLE)." >&2
+    echo "       Point ORACLE_SRC at a hub working copy: ORACLE_SRC=~/src/guitar-tap-project $0 $*" >&2
+    exit 2
+  fi
+  CANONICAL_DESC="$ORACLE_URL"
+  CANONICAL_KIND="published"
 }
 
 case "${1:-}" in
   --publish)
     # Swift-only: push this repo's freshly generated oracle back to the hub.
     if [[ -z "${ORACLE_SRC:-}" ]]; then
-      echo "ERROR: --publish needs ORACLE_SRC=<hub checkout> (the destination)." >&2
+      echo "ERROR: --publish needs ORACLE_SRC=<hub working copy> (the destination)." >&2
       exit 2
     fi
     hub="$ORACLE_SRC"; [[ -d "$hub" ]] && hub="$hub/tooling/parity/parity-oracle.json"
@@ -76,10 +116,13 @@ case "${1:-}" in
   --check)
     fetch_canonical
     if diff -q "$tmp" "$LOCAL" >/dev/null 2>&1; then
-      echo "✅ parity-oracle.json is in sync with canonical ($CANONICAL_DESC)"
+      echo "✅ parity-oracle.json is in sync with canonical"
+      echo "   Compared against: $CANONICAL_DESC"
+      echo "   Source:           $CANONICAL_KIND"
     else
       echo "❌ DRIFT: local parity-oracle.json differs from canonical." >&2
       echo "   Canonical: $CANONICAL_DESC" >&2
+      echo "   Source:    $CANONICAL_KIND" >&2
       echo "   Local:     $LOCAL" >&2
       echo "   The Swift algorithm/oracle changed without re-syncing this repo." >&2
       echo "   Run: ./tooling/sync-oracle.sh" >&2

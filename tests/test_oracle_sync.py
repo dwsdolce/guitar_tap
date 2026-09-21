@@ -1,4 +1,4 @@
-# @parity test/oracle-sync
+# @parity tooling/oracle-sync
 """The vendored oracle still matches canonical — when canonical can be reached.
 
 Each repo commits its own copy of ``parity-oracle.json`` so the suite runs offline. That

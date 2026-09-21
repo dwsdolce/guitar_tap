@@ -1,4 +1,4 @@
-# @parity test/parity-oracle
+# @parity tooling/parity-oracle
 """Shared parity oracle — the numeric golden contract, read from the vendored copy.
 
 ``parity-oracle.json`` is generated in the canonical Swift repo and published to the
