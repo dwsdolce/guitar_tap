@@ -368,7 +368,13 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
                             m.peak_mode_overrides.get(peak.id)
                             if m.peak_mode_overrides else None
                         )
-                        label = override or peak.mode_label or mode.display_name
+                        # override > classification. NOT peak.mode_label: that is an
+                        # export-only convenience injected at serialisation time, not stored
+                        # state, and preferring it here showed a label this app's own writer
+                        # would never save — a loaded file's stale label outlived the
+                        # reclassification that replaced it. Swift derives at display time for
+                        # the same reason (MeasurementDetailView). See SLUG-SWEEP.md F15.
+                        label = override or mode.display_name
                         row = _PeakRow(peak, mode, label, gt)
                     peaks_vbox.addWidget(row)
 

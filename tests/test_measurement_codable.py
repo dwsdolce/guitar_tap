@@ -853,6 +853,61 @@ class TestFixtureLoading:
 
 
 # ---------------------------------------------------------------------------
+# modeLabel is derived, never carried through
+#
+# Added in the #17 sweep. Swift pinned this in MeasurementExportModeLabel; neither port did,
+# and both had drifted. The web preferred a decoded label over reclassifying on EXPORT, and
+# this edition's detail view did the same for DISPLAY (measurement_detail_view.py) — so a
+# loaded file's stale label was shown even though this app's own writer would never save it.
+#
+# modeLabel is an export-only convenience injected at serialisation time; Swift has no such
+# field on ResonantPeak. Deriving it afresh is the design. See SLUG-SWEEP.md F15.
+# ---------------------------------------------------------------------------
+
+class TestModeLabelIsDerived:
+    """Mirrors Swift MeasurementExportModeLabelTests and web's equivalent block."""
+
+    @staticmethod
+    def _overlap_measurement(stale_label_on_stronger: str = ""):
+        """Two classical peaks in the Top/Back overlap; the stronger claims Top."""
+        from guitar_tap.models.resonant_peak import ResonantPeak
+
+        stronger = ResonantPeak(frequency=210.0, magnitude=-18.0)
+        weaker = ResonantPeak(frequency=220.0, magnitude=-26.0)
+        stronger.mode_label = stale_label_on_stronger
+        m = TapToneMeasurement(
+            id=str(uuid.uuid4()),
+            timestamp="2026-01-01T00:00:00Z",
+            peaks=[stronger, weaker],
+            guitar_type="Classical",
+            measurement_type="Classical Guitar",
+        )
+        return m, stronger, weaker
+
+    def _labels(self, m) -> list:
+        return [p["modeLabel"] for p in m.to_dict()["peaks"]]
+
+    def test_overlap_zone_peaks_get_distinct_labels(self):
+        """classifyAll gives the stronger overlap peak Top and the weaker Back."""
+        m, _, _ = self._overlap_measurement()
+        assert self._labels(m) == ["Top", "Back"]
+
+    def test_stale_carried_through_label_does_not_win(self):
+        """The stronger peak carries a stale "Back" from an older save; it is reclassified.
+
+        This is the case the web diverged on — it wrote Back and kept writing it, because the
+        label was read on decode and preferred on encode.
+        """
+        m, _, _ = self._overlap_measurement("Back")
+        assert self._labels(m) == ["Top", "Back"]
+
+    def test_user_override_does_win(self):
+        m, stronger, _ = self._overlap_measurement()
+        m.peak_mode_overrides = {stronger.id: "Dipole"}
+        assert self._labels(m) == ["Dipole", "Back"]
+
+
+# ---------------------------------------------------------------------------
 # Phase 6 — definitive tap-tone ratio + guitar decode heal
 # ---------------------------------------------------------------------------
 

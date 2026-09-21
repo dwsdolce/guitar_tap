@@ -112,3 +112,28 @@ def test_loaded_measurement_still_resolves():
     m = _M(longitudinal_snapshot=_Snap("Material (Brace)"),
            measurement_type="Material (Brace)", guitar_type="Classical")
     assert _type_name(m) == "Brace"
+
+
+# ── Cases levelled across the editions (#17 F16) ─────────────────────────────
+#
+# The cases above were shared with Swift and the web; each edition had grown extras the others
+# never received. This is the one this edition lacked.
+
+
+def test_every_type_resolves_to_its_short_name():
+    """The 6-type table. Mirrors Swift everyTypeResolvesToItsShortName.
+
+    Only Swift pinned this, so a short name that drifted in one edition would have gone
+    unnoticed. The three tables agree today: Generic, Acoustic, Classical, Flamenco, Plate,
+    Brace. See SLUG-SWEEP.md F16.
+    """
+    cases = [
+        ("Generic Guitar", "Generic"),
+        ("Acoustic Guitar", "Acoustic"),
+        ("Classical Guitar", "Classical"),
+        ("Flamenco Guitar", "Flamenco"),
+        ("Material (Plate)", "Plate"),
+        ("Material (Brace)", "Brace"),
+    ]
+    for raw, short in cases:
+        assert _type_name(_M(spectrum_snapshot=_Snap(raw))) == short, f"{raw} should be {short}"
