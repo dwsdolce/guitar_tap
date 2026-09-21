@@ -93,29 +93,22 @@ class Pitch:
         - Parameter frequency: The frequency to analyse, in Hz.
         - Returns: A tuple (upper, lower) where upper is the frequency of the next semitone
           above the nearest note and lower is the semitone below.
-          Octave boundaries are handled correctly (e.g. B4 → C5 above, A4 below).
+          No octave special-casing is needed, and none should be added back: freq() is
+          c0 * 2^(note/12) * 2^octave with no bounds check, so note 12 already MEANS C of the
+          next octave and note -1 already means B of the previous one. Two `if note == 0 / == 11`
+          branches stood here until the #17 sweep claiming to "handle octave boundaries";
+          deleting them changed 648 bound values across C0-B8 by at most 1.15e-16 relative.
+          See SLUG-SWEEP.md F13.
 
         Mirrors Swift Pitch.pitchRange(frequency:).
         """
         note, octave = self.pitch(frequency)
-        c = self.cents(frequency)
 
-        if c >= 0:
-            # Frequency is above the nearest note: upper bound is the next semitone.
-            if note == 11:
-                upper = self.freq(note=0, octave=octave + 1)  # B → C in next octave
-            else:
-                upper = self.freq(note=note + 1, octave=octave)
-            lower = self.freq(note=note, octave=octave)
-        else:
-            # Frequency is below the nearest note: lower bound is the previous semitone.
-            upper = self.freq(note=note, octave=octave)
-            if note == 0:
-                lower = self.freq(note=11, octave=octave - 1)  # C → B in previous octave
-            else:
-                lower = self.freq(note=note - 1, octave=octave)
-
-        return upper, lower
+        if self.cents(frequency) >= 0:
+            # Sharp of (or exactly on) the nearest note: that note is the LOWER bound.
+            return self.freq(note=note + 1, octave=octave), self.freq(note=note, octave=octave)
+        # Flat of the nearest note: that note is the UPPER bound.
+        return self.freq(note=note, octave=octave), self.freq(note=note - 1, octave=octave)
 
     def note(self, frequency: float) -> str:
         """Return the name of the nearest equal-temperament note for the given frequency.

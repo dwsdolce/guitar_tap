@@ -2,7 +2,14 @@
 """
 Port of PitchTests.swift — equal-temperament pitch calculations.
 
-Mirrors Swift test plan coverage (note ID, cents, freq0, in-tune, tuning reference).
+Mirrors Swift test plan coverage (note ID, cents, freq0, semitone bounds, in-tune,
+tuning reference).
+
+Pitch is deliberately a GENERAL package, not only what guitar_tap calls: pitch_range,
+formatted_note and is_in_tune have no call site in the app. They are still tested, because the
+package's API is the contract, not the subset the app happens to use today. The web edition
+carries only the subset it uses, which is why test/pitch reads 22/22/6 — that spread is a
+difference in surface, not a gap in coverage. See SLUG-SWEEP.md F13.
 """
 
 from __future__ import annotations
@@ -27,6 +34,60 @@ _pitch = Pitch(a4=440.0)
 # ---------------------------------------------------------------------------
 # Note Identification
 # ---------------------------------------------------------------------------
+
+class TestPitchRange:
+    """Semitone bounds. Mirrors Swift PitchTests pitchRange_*.
+
+    Added in the #17 sweep: pitch_range had NO test in any edition, despite branching on the
+    sign of the cents offset and on the two octave boundaries (B->C going up, C->B going down).
+    Four branches, nothing pinning any of them.
+    """
+
+    def test_exactly_on_note_spans_up_to_the_next_semitone(self):
+        """cents == 0 takes the >= 0 branch: the note is the lower bound."""
+        p = Pitch(440.0)
+        upper, lower = p.pitch_range(440.0)
+        assert abs(lower - 440.0) < 1e-4, f"lower should be A4 itself, got {lower}"
+        assert abs(upper - 466.1638) < 1e-3, f"upper should be A#4, got {upper}"
+
+    def test_sharp_of_note_spans_note_to_next_semitone(self):
+        p = Pitch(440.0)
+        upper, lower = p.pitch_range(442.0)
+        assert abs(lower - 440.0) < 1e-4
+        assert abs(upper - 466.1638) < 1e-3
+
+    def test_flat_of_note_spans_previous_semitone_to_note(self):
+        """Flat takes the other branch: the note becomes the UPPER bound."""
+        p = Pitch(440.0)
+        upper, lower = p.pitch_range(438.0)
+        assert abs(upper - 440.0) < 1e-4, f"upper should be A4 itself, got {upper}"
+        assert abs(lower - 415.3047) < 1e-3, f"lower should be G#4, got {lower}"
+
+    def test_sharp_of_b_upper_crosses_into_the_next_octave(self):
+        """note == 11 -> C in the next octave."""
+        p = Pitch(440.0)
+        b4 = p.freq(11, 4)
+        upper, lower = p.pitch_range(b4 * 1.01)
+        assert abs(lower - 493.8833) < 1e-3, f"lower should be B4, got {lower}"
+        assert abs(upper - 523.2511) < 1e-3, f"upper should be C5, got {upper}"
+
+    def test_flat_of_c_lower_crosses_into_the_previous_octave(self):
+        """note == 0 -> B in the previous octave."""
+        p = Pitch(440.0)
+        c5 = p.freq(0, 5)
+        upper, lower = p.pitch_range(c5 * 0.99)
+        assert abs(upper - 523.2511) < 1e-3, f"upper should be C5, got {upper}"
+        assert abs(lower - 493.8833) < 1e-3, f"lower should be B4, got {lower}"
+
+    def test_bounds_are_always_one_semitone_apart(self):
+        """Whichever branch was taken, the bounds span exactly one semitone."""
+        p = Pitch(440.0)
+        for f in (440.0, 442.0, 438.0, 82.41, 1046.5, 65.406):
+            upper, lower = p.pitch_range(f)
+            ratio = upper / lower
+            assert abs(ratio - 2 ** (1 / 12)) < 1e-6, \
+                f"{f} Hz: bounds should be a semitone apart, ratio was {ratio}"
+
 
 class TestNoteIdentification:
     """Mirrors Swift PitchTests note-identification cases."""
