@@ -145,7 +145,7 @@ class UpdateChecker(QtCore.QObject):
 
     def current_version(self) -> str:
         """The running app's marketing version (e.g. "1.0.2")."""
-        from _version import __version__  # noqa: PLC0415
+        from guitar_tap._version import __version__  # noqa: PLC0415
         return str(__version__)
 
     def pending_update(self) -> "tuple[str, str] | None":

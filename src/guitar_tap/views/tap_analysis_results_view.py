@@ -522,7 +522,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     import io as _io
     from datetime import datetime as _dt
 
-    from _version import __version_string__ as _app_version
+    from guitar_tap._version import __version_string__ as _app_version
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_RIGHT
     from reportlab.lib.pagesizes import letter

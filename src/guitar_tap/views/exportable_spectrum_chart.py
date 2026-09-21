@@ -873,7 +873,7 @@ def make_exportable_spectrum_view(
     meta_parts.append(f"Platform: {platform_str}")
     if software_version is None:
         try:
-            from _version import __version_string__ as _v
+            from guitar_tap._version import __version_string__ as _v
             software_version = _v
         except ImportError:
             software_version = ""

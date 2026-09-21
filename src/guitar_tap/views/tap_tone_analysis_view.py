@@ -450,7 +450,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._measurement_name: str = ""
         self._notes: str = ""
 
-        from _version import __version_string__
+        from guitar_tap._version import __version_string__
         self.setWindowTitle(f"Guitar Tap {__version_string__}")
 
         # Menu bar
@@ -809,7 +809,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_checker, so the banner cannot depend on the checker having
         been constructed (it is built lazily).
         """
-        from _version import __version__  # noqa: PLC0415
+        from guitar_tap._version import __version__  # noqa: PLC0415
         self._pending_update_version = version
         self._pending_update_url = url
         self._update_banner_label.setText(
@@ -6909,7 +6909,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ab = QtWidgets.QVBoxLayout(about_group)
         about_header = _group_header("mdi.information", "About & Help")
 
-        from _version import __version_string__
+        from guitar_tap._version import __version_string__
         ver_row = QtWidgets.QHBoxLayout()
         ver_lbl = QtWidgets.QLabel("Version")
         ver_val = QtWidgets.QLabel(__version_string__)
@@ -7294,7 +7294,7 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _show_about(self) -> None:
-        from _version import __version_string__
+        from guitar_tap._version import __version_string__
         QtWidgets.QMessageBox.about(
             self,
             "About Guitar Tap",
@@ -7321,7 +7321,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         import webbrowser
 
-        from _version import __version__
+        from guitar_tap._version import __version__
         url = (
             "https://www.dolcesfogato.com/guitar_tap/manual/"
             f"GuitarTap-User-Manual-{__version__}.html"

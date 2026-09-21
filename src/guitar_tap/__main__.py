@@ -82,7 +82,7 @@ from guitar_tap.views.tap_tone_analysis_view import MainWindow, basedir
 if os.name == "nt":
     from ctypes import windll
 
-    import named_mutex as NM
+    from guitar_tap import named_mutex as NM
     MY_APP_ID = "dolcesfogato.guitar-tap.guitar-tap.0.5"
     windll.shell32.SetCurrentProcessExplicitAppUserModelID(MY_APP_ID)
 
