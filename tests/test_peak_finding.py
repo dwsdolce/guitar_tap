@@ -17,8 +17,13 @@ equivalents call ``sut.findPeaks``, ``sut.removeDuplicatePeaks`` and
   removeDuplicatePeaks (Swift) → TapToneAnalyzer.remove_duplicate_peaks
   averageSpectra (Swift)       → TapToneAnalyzer.average_spectra
 
-The FFT-layer tests that used to live here are preserved in
-test_fft_peak_detection.py, outside this parity group.
+The FFT-layer tests that used to live here were preserved in test_fft_peak_detection.py,
+outside this parity group. That file is GONE as of 2026-09-20 (#17), along with the
+peak_detection / peak_interp / peak_q_factor trio it exercised: NumPy ports of Swift's findPeaks
+section that the application never called. Relocating those tests in July kept them running
+against dead code and left the sibling slug, test/dsp, testing the same dead pair — which is what
+the #17 sweep found. test/dsp now tests TapToneAnalyzer._parabolic_interpolate and
+._calculate_q_factor, the pair this app actually runs. See SLUG-SWEEP.md F14.
 """
 
 from __future__ import annotations

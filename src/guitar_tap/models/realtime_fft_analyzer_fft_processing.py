@@ -14,9 +14,6 @@ Python ↔ Swift correspondence:
                       are the side-effect-free computation layer used by the test suite.
   dft_anal        ↔  computeGatedFFT (Hann window, plate/brace capture) — see also
                       _FftProcessingThread.compute_gated_fft() in realtime_fft_analyzer.py
-  peak_detection  ↔  findPeaks — threshold + local-maximum filter
-  peak_interp     ↔  findPeaks — parabolic sub-bin interpolation
-  peak_q_factor   ↔  findPeaks — −3 dB bandwidth Q calculation
   hps_peak_freq   ↔  HPS dominant-peak selection inside computeGatedFFT
   is_power2       ↔  (utility; implicit in Swift vDSP_DFT_zrop_CreateSetup)
 
@@ -197,125 +194,23 @@ def perform_fft(analyzer, samples: "npt.NDArray[np.float32]", fft_size: int):
     return mag_y_db, mag_y, fft_peak_amp
 
 
-# MARK: - Peak Detection (mirrors findPeaks in +FFTProcessing.swift)
-
-def peak_detection(
-    magnitude: npt.NDArray[np.float32], threshold: int, window_size: int = 5
-) -> npt.NDArray[np.signedinteger]:
-    """Detect spectral peak locations using a threshold and local-maximum filter.
-
-    Args:
-        magnitude:   dB-scale magnitude spectrum (one-sided).
-        threshold:   Minimum magnitude in dB to qualify as a peak.
-        window_size: Half-width of the local-maximum neighbourhood (bins on each side).
-                     Default 5 mirrors Swift's ``windowSize = 5`` in findPeaks.
-
-    Returns:
-        ploc: Array of bin indices where local maxima exceed *threshold*.
-
-    Mirrors Swift findPeaks — threshold + local-maximum filter section.
-    The Swift implementation checks ±windowSize (= 5) bins; the original Python
-    implementation only checked ±1 bin, which is why it found far more peaks than
-    Swift.  The default window_size=5 now matches Swift exactly.
-    """
-    # Pure-numpy local-maximum detection — identical result to scipy.signal.argrelmax
-    # with order=window_size.  For each index i, checks that magnitude[i] is strictly
-    # greater than all neighbours in [i-window_size, i+window_size].
-    indices = np.arange(window_size, len(magnitude) - window_size)
-    is_max = np.ones(len(indices), dtype=bool)
-    for offset in range(1, window_size + 1):
-        is_max &= magnitude[indices] > magnitude[indices - offset]
-        is_max &= magnitude[indices] > magnitude[indices + offset]
-    local_max_indices = indices[is_max]
-    # Keep only those above the threshold
-    ploc = local_max_indices[magnitude[local_max_indices] > threshold]
-    return ploc
-
-
-def peak_interp(
-    magnitude: npt.NDArray[np.float32], ploc: npt.NDArray[np.int64]
-) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
-    """Parabolic sub-bin interpolation for peak location and magnitude.
-
-    Args:
-        magnitude: dB-scale magnitude spectrum (one-sided).
-        ploc:      Integer bin indices of detected peaks.
-
-    Returns:
-        (iploc, ipmag) — interpolated peak location (fractional bin) and
-        interpolated peak magnitude (dB).
-
-    Mirrors Swift findPeaks parabolic sub-bin interpolation section.
-    The parabola is fitted through (ploc−1, ploc, ploc+1); the correction
-    gives sub-bin accuracy roughly 10× finer than the raw bin spacing.
-    """
-    val = magnitude[ploc]
-    n = len(magnitude)
-    # Guard: bins at the array boundary have no neighbour on one side.
-    # Return the raw bin value (no sub-bin correction), mirroring Swift's
-    # parabolicInterpolate edge-bin guard.
-    interior = (ploc > 0) & (ploc < n - 1)
-    iploc = np.where(interior, ploc, ploc).astype(np.float64)
-    ipmag = val.copy().astype(np.float64)
-    if np.any(interior):
-        lval = magnitude[ploc[interior] - 1]
-        rval = magnitude[ploc[interior] + 1]
-        denom = lval - 2 * val[interior] + rval
-        # Avoid division by zero if the parabola is degenerate (flat peak)
-        safe = denom != 0
-        shift = np.where(safe, 0.5 * (lval - rval) / np.where(denom != 0, denom, 1.0), 0.0)
-        iploc[interior] = ploc[interior] + shift
-        ipmag[interior] = val[interior] - 0.25 * (lval - rval) * shift
-    return iploc, ipmag
-
-
-def peak_q_factor(
-    magnitude: Float64_1D,
-    ploc: npt.NDArray[np.signedinteger],
-    iploc: Float64_1D,
-    ipmag: Float64_1D,
-    sample_freq: int,
-    n_f: int,
-) -> Float64_1D:
-    """Compute Q = f₀ / bandwidth for each peak using the −3 dB method.
-
-    Walks left and right from each integer peak bin until the magnitude spectrum
-    drops below peak_mag − 3 dB, then computes Q = f₀ / (f_hi − f_lo).
-    Returns 0 for peaks where the −3 dB boundary cannot be found within the spectrum.
-
-    Args:
-        magnitude:   dB-scale magnitude spectrum (one-sided).
-        ploc:        Integer bin indices of detected peaks (from peak_detection).
-        iploc:       Interpolated (fractional) bin positions (from peak_interp).
-        ipmag:       Interpolated peak magnitudes in dB (from peak_interp).
-        sample_freq: Audio sample rate in Hz.
-        n_f:         FFT size.
-
-    Returns:
-        q_values: Q factor for each peak; 0.0 if boundary not found.
-
-    Mirrors Swift findPeaks Q-factor calculation section in +FFTProcessing.swift.
-    """
-    hz_per_bin = sample_freq / n_f
-    q_values = np.zeros(len(ploc), dtype=np.float64)
-
-    for i, peak_bin in enumerate(ploc):
-        half_power = ipmag[i] - 3.0
-
-        bin_lo = int(peak_bin) - 1
-        while bin_lo > 0 and magnitude[bin_lo] > half_power:
-            bin_lo -= 1
-
-        bin_hi = int(peak_bin) + 1
-        while bin_hi < len(magnitude) - 1 and magnitude[bin_hi] > half_power:
-            bin_hi += 1
-
-        bandwidth = (bin_hi - bin_lo) * hz_per_bin
-        if bandwidth > 0:
-            q_values[i] = (iploc[i] * hz_per_bin) / bandwidth
-
-    return q_values
-
+# MARK: - Peak detection, interpolation and Q — REMOVED 2026-09-20 (#17)
+#
+# peak_detection, peak_interp and peak_q_factor lived here: NumPy ports of the peak-finding
+# section of Swift's findPeaks. Nothing in the application ever called them. The app uses the
+# scalar pair on TapToneAnalyzer instead — _parabolic_interpolate and _calculate_q_factor in
+# tap_tone_analyzer_peak_analysis.py — which are the direct counterparts of Swift's
+# TapToneAnalyzer.parabolicInterpolate / calculateQFactor and are what the capture and
+# peak-analysis paths run.
+#
+# So this module carried a second implementation of two rules, and test/dsp's ten tests
+# exercised THAT one, in an edition where the app runs the other. Swift and the web each have
+# exactly one implementation; the duplicate was Python-only.
+#
+# The same defect was found in test/peaks on 2026-07-19 and fixed by relocating those tests to
+# test_fft_peak_detection.py rather than repointing them, which left this copy alive and its
+# sibling slug untouched. test/dsp now tests the live pair in all three editions, and
+# test_fft_peak_detection.py is gone with peak_detection. See SLUG-SWEEP.md F14.
 
 # MARK: - HPS Dominant-Peak Selection (mirrors computeGatedFFT HPS section)
 

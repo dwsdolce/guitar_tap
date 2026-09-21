@@ -39,9 +39,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 # Mirrors the fixture pattern used in test_tap_detection.py.
 from PySide6 import QtWidgets
 
-from guitar_tap.models.realtime_fft_analyzer_fft_processing import (
-    peak_q_factor,
-)
 from guitar_tap.models.resonant_peak import ResonantPeak
 from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
 from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
