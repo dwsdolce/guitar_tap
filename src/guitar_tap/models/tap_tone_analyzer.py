@@ -342,7 +342,11 @@ class TapToneAnalyzer(
         )                                           # mirrors annotationVisibilityMode
 
         # MARK: - Measurement Complete State
-        self.is_measurement_complete: bool = False  # mirrors isMeasurementComplete
+        # Assign the backing field, not the property: the setter reads collaborators that
+        # __init__ has not created yet (show_loaded_settings_warning, is_loading_measurement,
+        # material_inputs, all below).  Mirrors Swift, whose property initialiser likewise
+        # does not run didSet.
+        self._is_measurement_complete: bool = False  # mirrors isMeasurementComplete
 
         # Mirrors Swift @Published var showLoadedSettingsWarning: Bool
         # Set True by load_measurement(); cleared when the user changes threshold
@@ -614,6 +618,61 @@ class TapToneAnalyzer(
         # provided.  Mirrors Swift init calling setupSubscriptions().
         if self.mic is not None:
             self._wire_pipeline_signals()
+
+    # ------------------------------------------------------------------ #
+    # is_measurement_complete — mirrors Swift @Published var isMeasurementComplete
+    # ------------------------------------------------------------------ #
+
+    # Class-level default so the getter is safe for any read that reaches the instance
+    # before __init__ assigns the backing field.
+    _is_measurement_complete: bool = False
+
+    @property
+    def is_measurement_complete(self) -> bool:
+        """Whether a measurement is frozen and complete.
+
+        Mirrors Swift ``TapToneAnalyzer.isMeasurementComplete``.  The setter carries the two
+        actions Swift performs in its ``didSet`` and nothing else.  The reset work that
+        accompanies *leaving* the complete state is not here: Swift does it in
+        ``startTapSequence()``, and so does this edition.
+
+        The ``measurementComplete`` signal is deliberately NOT emitted from the setter.
+        Swift's notification comes from ``@Published``/``objectWillChange``, which SwiftUI
+        coalesces to the end of the run loop, so the view is never told until the enclosing
+        method has finished populating state.  A Qt signal fires synchronously, so emitting
+        here would hand the view a half-built model at the two sites that set the flag early
+        on purpose — ``process_multiple_taps()`` and ``_load_measurement_body()``, both of
+        which emit once all state is restored.  Callers emit at the point Swift renders.
+        """
+        return self._is_measurement_complete
+
+    @is_measurement_complete.setter
+    def is_measurement_complete(self, value: bool) -> None:
+        old_value = self._is_measurement_complete
+        self._is_measurement_complete = value
+        if not value:
+            return
+
+        # Mirrors Swift didSet: a completed measurement clears the loaded-settings warning,
+        # so the user knows their loaded settings produced this result.  load_measurement()
+        # raises that warning *after* setting complete, so a load's own warning survives —
+        # the same ordering dependency Swift has (isMeasurementComplete = true at line 709,
+        # showLoadedSettingsWarning = true at line 833).
+        if self.show_loaded_settings_warning:
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
+
+        # Mirrors Swift didSet: seed Store B from the Settings defaults at the material
+        # measurement-complete freeze — the one and only seed hook (nothing on New Tap,
+        # type-change or Cancel).  Guarded to the transition (!oldValue), to material types,
+        # and to not-loading (a load seeds Store B from the snapshot instead).
+        if old_value or self.is_loading_measurement:
+            return
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+        if _tds.measurement_type().is_guitar:
+            return
+        from guitar_tap.models.material_measurement_inputs import MaterialMeasurementInputs
+        self.material_inputs = MaterialMeasurementInputs.from_settings(_tds.measurement_type())
 
     # ------------------------------------------------------------------ #
     # _main_async_after — mirrors Swift DispatchQueue.main.asyncAfter

@@ -222,3 +222,37 @@ class TestRedoRebasesCumulativeCount:
 
         assert sut.current_tap_count == 0
         assert sut.tap_progress == 0.0
+
+# --------------------------------------------------------------------------- #
+# FLC cooldown cancellation -- the re-arm must not fire into a restarted sequence
+# --------------------------------------------------------------------------- #
+
+class TestFlcCooldownCancellation:
+    """Accepting fC schedules a cooldown, after which detection re-arms for the FLC tap.
+
+    If the user restarts (Cancel / New Tap) before the cooldown elapses, that timer must not drag
+    the fresh sequence into the FLC phase.  Swift shipped without this guard until #17: its
+    ``DispatchQueue.main.asyncAfter`` cannot be cancelled and ``cancelTapSequence()``'s
+    ``captureTimer.invalidate()`` does not reach the closure, so the re-arm fired into whatever was
+    running 0.5 s later.  Python and the web have always guarded; this pins it in all three.
+    """
+
+    def test_restart_during_cooldown_does_not_rearm_flc(self):
+        sut = _make(MeasurementType.PLATE, 1, measure_flc=True)
+        sut.longitudinal_spectrum = _spec()
+        sut.cross_spectrum = _spec()
+        sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_CROSS)
+
+        sut.accept_current_phase()
+        assert sut.material_tap_phase == MaterialTapPhase.WAITING_FOR_FLC_TAP
+
+        # The user restarts before the cooldown elapses.
+        sut.start_tap_sequence()
+        phase_after_restart = sut.material_tap_phase
+        assert phase_after_restart != MaterialTapPhase.WAITING_FOR_FLC_TAP
+
+        # The cooldown callback now fires against the restarted sequence.
+        sut._do_start_flc()
+
+        assert sut.material_tap_phase == phase_after_restart
+        assert sut.material_tap_phase != MaterialTapPhase.CAPTURING_FLC

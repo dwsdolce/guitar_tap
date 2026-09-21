@@ -658,10 +658,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # ── Stop tap detection ────────────────────────────────────────────────
         # Mirrors Swift: isDetecting = false; isDetectionPaused = false;
         # isMeasurementComplete = true; currentTapCount = 0; tapProgress = 0.0
-        # NOTE: is_measurement_complete is set via set_measurement_complete(True) at the
-        # END of this method (after all state is restored) so that when measurementComplete
-        # fires the view receives it with fully-populated model state — equivalent to
-        # SwiftUI's batched objectWillChange which defers re-render until run-loop end.
+        # NOTE: the flag is assigned HERE (running the property setter, which mirrors Swift's
+        # didSet), but measurementComplete is not emitted until the END of this method, once
+        # all state is restored — so the view receives the signal with a fully-populated
+        # model.  That is the equivalent of SwiftUI's batched objectWillChange, which defers
+        # re-render until run-loop end.  This is why the assignment is used directly rather
+        # than set_measurement_complete(), which emits immediately.
         self.is_detecting = False
         self.is_detection_paused = False
         self.is_measurement_complete = True  # set early; signal fires at end of method
@@ -1020,41 +1022,19 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self._persist_measurements()
 
     def set_measurement_complete(self, is_complete: bool) -> None:
-        """Freeze/unfreeze the spectrum and reset related state."""
-        was_complete = self.is_measurement_complete
+        """Set the completion flag and notify the view.
+
+        The state changes that accompany completion live in the
+        ``is_measurement_complete`` setter, which mirrors Swift's ``didSet``; this method
+        adds only the ``measurementComplete`` emit, for the callers that have no reason to
+        defer it.  The two that set the flag early and emit later — ``process_multiple_taps()``
+        and ``_load_measurement_body()`` — assign the property directly instead.
+
+        Leaving the complete state resets nothing here.  Swift's ``didSet`` clears no taps,
+        peaks, offsets, frozen arrays, comparison or material spectra, and neither does this:
+        ``start_tap_sequence()`` owns that work in both editions.
+        """
         self.is_measurement_complete = is_complete
-        if is_complete:
-            # Mirrors Swift isMeasurementComplete.didSet: a successful new tap clears the
-            # loaded-settings warning so the user knows their loaded settings produced this result.
-            if self.show_loaded_settings_warning:
-                self.show_loaded_settings_warning = False
-                self.showLoadedSettingsWarningChanged.emit(False)
-            # Seed Store B from the Settings defaults at the material measurement-complete freeze —
-            # the one and only seed hook (nothing on New Tap / type-change / Cancel). Guarded to the
-            # transition (not already complete), material types, and not-loading (load sets Store B
-            # from the snapshot instead). Mirrors Swift didSet: !oldValue && !isGuitar && !isLoading.
-            from .tap_display_settings import TapDisplaySettings as TDS
-            if (not was_complete
-                    and not TDS.measurement_type().is_guitar
-                    and not self.is_loading_measurement):
-                from .material_measurement_inputs import MaterialMeasurementInputs
-                self.material_inputs = MaterialMeasurementInputs.from_settings(TDS.measurement_type())
-        if not is_complete:
-            self.captured_taps.clear()
-            self.loaded_measurement_peaks = None
-            self.reset_all_annotation_offsets()
-            # Clear the frozen spectrum — mirrors Swift setFrozenSpectrum(frequencies: [], magnitudes: [])
-            # in reset() and cancelTapSequence().  Both arrays are reset to empty so they
-            # remain matched; frozen_frequencies will be populated again when the next tap
-            # fires or a measurement is loaded.
-            self.frozen_magnitudes = np.array([])
-            self.frozen_frequencies = np.array([])
-            # Clear comparison overlay — uses clear_comparison() so comparisonChanged(False)
-            # is emitted when needed, allowing the UI to hide the comparison status bar.
-            self.clear_comparison()
-            # Clear per-phase material spectra — mirrors Swift loadMeasurement clearing
-            # longitudinalSpectrum/crossSpectrum/flcSpectrum when returning to live mode.
-            self.set_material_spectra([])
         self.measurementComplete.emit(is_complete)
 
     def load_comparison(self, measurements: list) -> list:

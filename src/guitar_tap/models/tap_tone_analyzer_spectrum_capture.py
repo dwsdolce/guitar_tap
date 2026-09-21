@@ -1546,10 +1546,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.set_measurement_complete(True)
             # Save the session WAV — mirrors Swift finishSessionRecording(label: "Brace").
             self.finish_session_recording(label="Brace")
-            # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
-            if self.show_loaded_settings_warning:
-                self.show_loaded_settings_warning = False
-                self.showLoadedSettingsWarningChanged.emit(False)
             self.tap_progress = 1.0
             self._set_status_message("Complete - check Results")
             gt_log(f"✅ Brace measurement complete: fL={avg_peak.frequency} Hz")
@@ -1992,17 +1988,15 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.set_frozen_spectrum(_np.array(avg_freqs), avg_db)
         # Set is_measurement_complete early (mirrors Swift isMeasurementComplete = true
         # at the same point) but defer the signal emit until after peaks, modes, and
-        # selected IDs are fully populated — mirrors loadMeasurement() which also sets
-        # the flag early and emits last. Swift @Published batches all state in one render
-        # cycle; Python signals fire immediately, so the emit must come after all state
-        # is ready to avoid the view seeing an incomplete snapshot.
+        # selected IDs are fully populated — mirrors _load_measurement_body() which also
+        # sets the flag early and emits last. Swift @Published batches all state in one
+        # render cycle; Python signals fire immediately, so the emit must come after all
+        # state is ready to avoid the view seeing an incomplete snapshot.  Assigning the
+        # property runs the setter (Swift's didSet, which clears the loaded-settings
+        # warning); set_measurement_complete() is not used here because it emits at once.
         self.is_measurement_complete = True
         # Save the session WAV — mirrors Swift finishSessionRecording(label: "Guitar_Ntap").
         self.finish_session_recording(label=f"Guitar_{len(self.captured_taps)}tap")
-        # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
-        if self.show_loaded_settings_warning:
-            self.show_loaded_settings_warning = False
-            self.showLoadedSettingsWarningChanged.emit(False)
         gt_log(f"📸 Guitar spectrum captured from {len(self.captured_taps)} averaged taps")
 
         # Mirrors Swift findPeaks(avg…, peakMinOverride: peakDetectionFloor) — detect the

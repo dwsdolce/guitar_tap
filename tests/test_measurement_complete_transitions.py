@@ -236,17 +236,30 @@ class TestCancelTapSequenceReArms:
 # ---------------------------------------------------------------------------
 
 class TestSetMeasurementCompleteDirectly:
-    """set_measurement_complete is the canonical setter — verify its contract."""
+    """set_measurement_complete assigns the flag and emits — verify its contract.
 
-    def test_set_false_clears_frozen_arrays(self):
+    It is not a reset.  Swift's isMeasurementComplete.didSet clears no taps, peaks,
+    annotation offsets, frozen arrays, comparison or material spectra; start_tap_sequence()
+    owns that work in both editions (see TestCancelRestartsSequence above, which covers it).
+    """
+
+    def test_set_false_does_not_reset_frozen_arrays(self):
+        """Leaving the complete state must not reset — mirrors Swift didSet.
+
+        This previously did clear the frozen spectrum, bundling a full reset into the
+        setter.  No production path relied on it: start_tap_sequence() is the only site
+        that drives completion False, and it clears the frozen spectrum itself.  The
+        bundling is what prevented the flag from becoming a property at all.
+        """
         sut = _make_guitar_sut()
         sut.captured_taps = [_fake_spectrum()]
         sut._finish_capture()
         assert len(sut.frozen_magnitudes) > 0
 
         sut.set_measurement_complete(False)
-        assert len(sut.frozen_magnitudes) == 0
-        assert len(sut.frozen_frequencies) == 0
+        assert sut.is_measurement_complete is False
+        assert len(sut.frozen_magnitudes) > 0
+        assert len(sut.frozen_frequencies) > 0
 
     def test_set_true_emits_signal(self):
         sut = _make_guitar_sut()
@@ -296,3 +309,52 @@ class TestLoadMeasurementSetsComplete:
         )
         sut.load_measurement(m)
         assert sut.is_measurement_complete is True
+
+
+# ---------------------------------------------------------------------------
+# MC6: process_multiple_taps with no captured taps does NOT complete
+# ---------------------------------------------------------------------------
+
+class TestEmptyTapsDoesNotComplete:
+    """An empty capture must bail out before freezing anything.
+
+    Mirrors Swift MC6 processMultipleTaps_emptyTaps_doesNotComplete and web MC6.
+    """
+
+    def test_process_multiple_taps_with_no_taps_does_not_complete(self):
+        sut = _make_guitar_sut(number_of_taps=1)
+        # captured_taps is empty — the guard should bail out.
+        sut.captured_taps = []
+        sut.process_multiple_taps()
+        assert sut.is_measurement_complete is False
+
+
+# ---------------------------------------------------------------------------
+# MC8: completing clears the loaded-settings warning (the didSet rule)
+# ---------------------------------------------------------------------------
+
+class TestCompletingClearsSettingsWarning:
+    """Completing a measurement clears show_loaded_settings_warning.
+
+    The rule lives in the is_measurement_complete property setter, which mirrors Swift's
+    isMeasurementComplete.didSet — so assigning the flag enforces it, exactly as it does in
+    Swift and in the web port's setter.  Mirrors Swift MC8 and web MC8.
+    """
+
+    def test_completing_clears_loaded_settings_warning(self):
+        sut = _make_guitar_sut()
+        sut.show_loaded_settings_warning = True
+        sut.captured_taps = [_fake_spectrum()]
+        sut.process_multiple_taps()
+        assert sut.show_loaded_settings_warning is False
+
+    def test_assigning_the_flag_clears_the_warning(self):
+        """A bare assignment enforces the rule — it is a property, not a plain attribute.
+
+        Before the property conversion this assertion could not be written in Python: the
+        rule lived in set_measurement_complete() and four production sites bypassed it.
+        """
+        sut = _make_guitar_sut()
+        sut.show_loaded_settings_warning = True
+        sut.is_measurement_complete = True
+        assert sut.show_loaded_settings_warning is False

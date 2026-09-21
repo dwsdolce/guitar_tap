@@ -1048,10 +1048,6 @@ class TapToneAnalyzerControlMixin:
         self.set_measurement_complete(True)
         # Save the session WAV — mirrors Swift finishSessionRecording(label: "Plate_LC").
         self.finish_session_recording(label="Plate_LC")
-        # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
-        if self.show_loaded_settings_warning:
-            self.show_loaded_settings_warning = False
-            self.showLoadedSettingsWarningChanged.emit(False)
         self.tap_progress = 1.0
 
         fl_str = (
@@ -1102,10 +1098,6 @@ class TapToneAnalyzerControlMixin:
         self.set_measurement_complete(True)
         # Save the session WAV — mirrors Swift finishSessionRecording(label: "Plate_LCF").
         self.finish_session_recording(label="Plate_LCF")
-        # Mirrors Swift isMeasurementComplete.didSet: clear warning on successful new tap.
-        if self.show_loaded_settings_warning:
-            self.show_loaded_settings_warning = False
-            self.showLoadedSettingsWarningChanged.emit(False)
         self.tap_progress = 1.0
         self._set_status_message("Complete - check Results")
 

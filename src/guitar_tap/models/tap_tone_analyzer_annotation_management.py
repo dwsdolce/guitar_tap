@@ -105,7 +105,7 @@ class TapToneAnalyzerAnnotationManagementMixin:
 
     @property
     def effective_longitudinal_peak_id(self) -> str | None:
-        """The effective longitudinal peak UUID applying two-layer priority.
+        """The longitudinal (fL) peak's UUID, or None before the phase finalises.
 
         The identified peak for the phase, or None before it finalises.
 
@@ -121,25 +121,19 @@ class TapToneAnalyzerAnnotationManagementMixin:
 
     @property
     def effective_cross_peak_id(self) -> str | None:
-        """The effective cross-grain peak UUID applying three-layer priority.
+        """The cross-grain (fC) peak's UUID, or None before the phase finalises.
 
-        Priority: userSelectedCrossPeakID > selectedCrossPeak.id
-        > autoSelectedCrossPeakID.
-
-        Mirrors Swift ``effectiveCrossPeakID``:
-            userSelectedCrossPeakID ?? selectedCrossPeak?.id ?? autoSelectedCrossPeakID
+        Nothing to resolve — see ``effective_longitudinal_peak_id`` for why the two earlier
+        layers went. Mirrors Swift ``effectiveCrossPeakID``.
         """
         return self.selected_cross_peak.id if self.selected_cross_peak else None
 
     @property
     def effective_flc_peak_id(self) -> str | None:
-        """The effective FLC peak UUID applying three-layer priority.
+        """The FLC (torsional/twist) peak's UUID, or None before the phase finalises.
 
-        Priority: userSelectedFlcPeakID > selectedFlcPeak.id
-        > autoSelectedFlcPeakID.
-
-        Mirrors Swift ``effectiveFlcPeakID``:
-            userSelectedFlcPeakID ?? selectedFlcPeak?.id ?? autoSelectedFlcPeakID
+        Nothing to resolve — see ``effective_longitudinal_peak_id`` for why the two earlier
+        layers went. Mirrors Swift ``effectiveFlcPeakID``.
         """
         return self.selected_flc_peak.id if self.selected_flc_peak else None
 
