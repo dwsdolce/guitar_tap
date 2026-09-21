@@ -19,6 +19,7 @@ action. Mirrors Swift ``EditMeasurementView.hasChanges``.
 - SeeAlso: ``MeasurementsDialog``, ``MeasurementDetailDialog``
 """
 
+# @parity view/edit-sheet
 from __future__ import annotations
 
 from PySide6 import QtWidgets
