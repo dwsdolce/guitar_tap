@@ -199,8 +199,73 @@ class TestModeRange:
 # classify_all — context-aware overlap resolution
 # ---------------------------------------------------------------------------
 
+class TestModeOverrideLabels:
+    """Mirrors Swift ModeOverrideLabelsTests.
+
+    Added in the #17 sweep. from_mode_string is reachable from the override picker
+    (peak_card_widget offers both groups) and was tested in NO edition — which is how Python and
+    Swift came to disagree about one of the seven academic labels, and how the web port came to
+    lack the table entirely. See SLUG-SWEEP.md F11/F12.
+    """
+
+    def test_standard_display_names_resolve_to_their_own_mode(self):
+        for mode in GuitarMode.current_cases:
+            assert GuitarMode.from_mode_string(mode.display_name).normalized == mode.normalized, \
+                f"{mode.display_name} should resolve to {mode}"
+
+    def test_academic_labels_resolve_to_their_mode(self):
+        """All three editions offer these and must agree — a file saved in one opens in the others."""
+        expected = {
+            "Helmholtz T(1,1)_1":   GuitarMode.AIR,
+            "Top T(1,1)_2":         GuitarMode.TOP,
+            "Back T(1,1)_3":        GuitarMode.BACK,
+            "Cross Dipole T(2,1)":  GuitarMode.DIPOLE,
+            "Long Dipole T(1,2)":   GuitarMode.DIPOLE,
+            # Swift is canonical here. Python mapped Quadrapole to UPPER_MODES until #17.
+            "Quadrapole T(2,2)":    GuitarMode.RING_MODE,
+            "Cross Tripole T(3,1)": GuitarMode.RING_MODE,
+        }
+        for label, mode in expected.items():
+            assert GuitarMode.from_mode_string(label).normalized == mode, \
+                f"{label} should resolve to {mode}"
+
+    def test_every_offered_label_resolves(self):
+        """An unresolvable offered label would silently become freeform and drop out of the
+        ratio and the definitive-peak resolution."""
+        for label in GuitarMode.additional_mode_labels:
+            assert GuitarMode.from_mode_string(label) != GuitarMode.UNKNOWN, \
+                f"the picker offers {label} but nothing resolves it"
+
+    def test_freeform_label_is_unknown_and_does_not_fall_through_to_auto(self):
+        assert GuitarMode.from_mode_string("Wolf note") == GuitarMode.UNKNOWN
+        assert GuitarMode.effective_mode("Wolf note", GuitarMode.TOP) == GuitarMode.UNKNOWN
+
+    def test_no_override_leaves_the_auto_classification_standing(self):
+        assert GuitarMode.effective_mode(None, GuitarMode.TOP) == GuitarMode.TOP
+        assert GuitarMode.effective_mode("", GuitarMode.BACK) == GuitarMode.BACK
+
+
 class TestClassifyAll:
     """Mirrors Swift GuitarModeClassifyAllTests."""
+
+    def test_equal_magnitude_first_peak_wins_the_band(self):
+        """On equal magnitude the FIRST peak wins the band.
+
+        All three editions agree — Swift's max(by:) and Python's max() both keep the first
+        maximal element, and web's loop replaces only on a strict >. Pinned during the #17
+        sweep because no edition pinned it: a tie-break that differed per edition would stay
+        invisible until a real measurement produced a tie, and would then move which peak is
+        "the Air peak" in one app and not the others.
+        """
+        first = _peak(95.0, mag=-20.0)
+        second = _peak(100.0, mag=-20.0)
+        result = GuitarMode.classify_all([first, second], GuitarType.ACOUSTIC)
+        assert result[first.id] == GuitarMode.AIR
+        assert result[second.id] == GuitarMode.AIR
+        # Both are Air; the question is which one the claiming pass took.
+        candidates = [(first.id, first.magnitude), (second.id, second.magnitude)]
+        assert max(candidates, key=lambda x: x[1])[0] == first.id, \
+            "the first of two equal-magnitude peaks is claimed"
 
     def test_single_peak_in_air_range(self):
         """A single peak in the Air range is classified as AIR."""

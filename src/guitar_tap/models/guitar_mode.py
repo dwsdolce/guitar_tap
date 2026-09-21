@@ -501,26 +501,36 @@ class GuitarMode(Enum):
         return _names.get(self, "Unknown")
 
     @property
-    def color(self) -> tuple[int, int, int]:
-        """Display color for a guitar mode, derived from self.normalized.
+    def hex(self) -> str:
+        """Display colour for a guitar mode as an absolute sRGB hex, from self.normalized.
 
-        Legacy enum cases are collapsed to their canonical equivalents via
-        normalized before the color is resolved, so all historical variants
-        of e.g. AIR map to cyan.
-
-        Mirrors Swift GuitarMode.color (Color extension).
+        Mirrors Swift ``GuitarMode.hex``. Python rendered its own palette until the #17 sweep —
+        invented here, never matching Swift, on the same white background. Ring was #823CC8
+        against Swift's #CB30E0, and UPPER_MODES and UNKNOWN were the SAME grey, so those two
+        categories were indistinguishable on this chart while Swift and the web separated them.
+        Swift is canonical and these are its values. See SLUG-SWEEP.md F9.
         """
         n = self.normalized
-        _colors = {
-            GuitarMode.AIR:         (  0, 183, 235),  # cyan
-            GuitarMode.TOP:         ( 40, 160,  40),  # green
-            GuitarMode.BACK:        (220, 120,  40),  # orange
-            GuitarMode.DIPOLE:      (210,  50,  50),  # red
-            GuitarMode.RING_MODE:   (130,  60, 200),  # purple
-            GuitarMode.UPPER_MODES: (130, 130, 130),  # gray
-            GuitarMode.UNKNOWN:     (130, 130, 130),  # secondary
+        _hexes = {
+            GuitarMode.AIR:         "#00C0E8",
+            GuitarMode.TOP:         "#34C759",
+            GuitarMode.BACK:        "#FF8D28",
+            GuitarMode.DIPOLE:      "#FF383C",
+            GuitarMode.RING_MODE:   "#CB30E0",
+            GuitarMode.UPPER_MODES: "#8E8E93",
+            GuitarMode.UNKNOWN:     "#808080",
         }
-        return _colors.get(n, (130, 130, 130))
+        return _hexes.get(n, "#808080")
+
+    @property
+    def color(self) -> tuple[int, int, int]:
+        """Display colour as an (r, g, b) tuple, for the Qt drawing calls.
+
+        Derived from :attr:`hex` so there is one place the value lives.
+        Mirrors Swift ``GuitarMode.color``.
+        """
+        h = self.hex.lstrip("#")
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
     @property
     def abbreviation(self) -> str:
@@ -654,7 +664,11 @@ _PYTHON_STR_TO_MODE: dict[str, GuitarMode] = {
     "Back T(1,1)_3":        GuitarMode.BACK,
     "Cross Dipole T(2,1)":  GuitarMode.DIPOLE,
     "Long Dipole T(1,2)":   GuitarMode.DIPOLE,
-    "Quadrapole T(2,2)":    GuitarMode.UPPER_MODES,
+    # Swift maps Quadrapole to RING_MODE, and Swift is canonical. Python had UPPER_MODES here
+    # until the #17 sweep — a one-entry disagreement in a seven-entry table that no edition
+    # tested, so the two apps assigned a user's "Quadrapole T(2,2)" override to different modes
+    # and then disagreed about which peak was the Ring Mode peak. See SLUG-SWEEP.md F12.
+    "Quadrapole T(2,2)":    GuitarMode.RING_MODE,
     "Cross Tripole T(3,1)": GuitarMode.RING_MODE,
 }
 
