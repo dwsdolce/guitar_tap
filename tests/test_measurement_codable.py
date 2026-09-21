@@ -569,44 +569,6 @@ class TestTapToneRatio:
 
 
 # ---------------------------------------------------------------------------
-# with_() method
-# ---------------------------------------------------------------------------
-
-class TestWithMethod:
-    """Mirrors Swift UpdateMeasurementTests."""
-
-    def test_with_updates_measurement_name(self):
-        m = TapToneMeasurement.create(peaks=[], measurement_name="Old")
-        updated = m.with_(measurement_name="New", notes=None)
-        assert updated.measurement_name == "New"
-        assert updated.id == m.id          # ID preserved
-
-    def test_with_updates_notes(self):
-        m = TapToneMeasurement.create(peaks=[], notes="old notes")
-        updated = m.with_(measurement_name=None, notes="new notes")
-        assert updated.notes == "new notes"
-
-    def test_with_clears_measurement_name_with_none(self):
-        m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge")
-        updated = m.with_(measurement_name=None, notes=None)
-        assert updated.measurement_name is None
-
-    def test_with_preserves_other_fields(self):
-        peak = _make_peak()
-        snap = _make_snapshot()
-        m = TapToneMeasurement.create(
-            peaks=[peak],
-            spectrum_snapshot=snap,
-            decay_time=0.5,
-            measurement_name="Bridge",
-        )
-        updated = m.with_(measurement_name="Neck", notes=None)
-        assert updated.peaks == [peak]
-        assert updated.spectrum_snapshot == snap
-        assert updated.decay_time == 0.5
-
-
-# ---------------------------------------------------------------------------
 # ComparisonEntry and TapToneMeasurement with comparisonEntries (Phase 2)
 # Mirrors Swift ComparisonEntryCodableTests
 # ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 import numpy as np
 import numpy.typing as npt
 from PySide6 import QtCore
+from guitar_tap.utilities.new_uuid import new_uuid
 
 # MARK: - CalibrationFileParser (module-level helpers)
 # Mirrors Swift CalibrationFileParser struct.
@@ -170,7 +171,7 @@ class CalibrationFileParser:
         correction_points.sort(key=lambda p: p["frequency"])
 
         return MicrophoneCalibration(
-            id=str(_uuid.uuid4()),
+            id=new_uuid(),
             name=name,
             sensitivity_factor=sensitivity,
             reference_level=reference,

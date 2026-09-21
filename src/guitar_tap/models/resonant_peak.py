@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from guitar_tap.utilities.json_float import f32
+from guitar_tap.utilities.new_uuid import new_uuid
 
 
 def _now_iso() -> str:
@@ -77,7 +78,7 @@ class ResonantPeak:
     # str form of UUID — Swift uses UUID type.
     # Auto-assigned on construction (matching Swift's init which calls UUID()).
     # Mirrors Swift ResonantPeak.id.
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    id: str = field(default_factory=lambda: new_uuid())
 
     # ISO-8601 string — Swift uses Date.
     # Auto-assigned on construction (matching Swift's init which calls Date()).
@@ -170,7 +171,7 @@ class ResonantPeak:
         Python-only — Swift uses Codable.
         """
         return ResonantPeak(
-            id=d.get("id", str(uuid.uuid4())),
+            id=d.get("id", new_uuid()),
             frequency=d.get("frequency", 0.0),
             magnitude=d.get("magnitude", 0.0),
             quality=d.get("quality", 0.0),

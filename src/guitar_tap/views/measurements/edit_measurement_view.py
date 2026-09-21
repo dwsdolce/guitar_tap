@@ -10,18 +10,21 @@ values via ``edited_values()`` after the dialog is accepted. The caller
 list and persisting to disk, matching how the dialog manages its own
 measurement list.
 
+Save is disabled until the name or notes actually differ from the stored values. A saved
+edit mints a new measurement ``id`` — an amended measurement is a different dataset — so a
+Save that changes nothing must not be reachable, or unchanged content would get a new
+identity. With the button disabled, saving an untouched form and cancelling it are the same
+action. Mirrors Swift ``EditMeasurementView.hasChanges``.
+
 - SeeAlso: ``MeasurementsDialog``, ``MeasurementDetailDialog``
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
-if TYPE_CHECKING:
-    from guitar_tap.models import TapToneMeasurement
+from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
 
 
 class EditMeasurementView(QtWidgets.QDialog):
@@ -122,12 +125,33 @@ class EditMeasurementView(QtWidgets.QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
-        save_btn = QtWidgets.QPushButton("Save")
-        save_btn.setDefault(True)
-        save_btn.clicked.connect(self.accept)
-        btn_row.addWidget(save_btn)
+        self._save_btn = QtWidgets.QPushButton("Save")
+        self._save_btn.setDefault(True)
+        self._save_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self._save_btn)
 
         outer.addLayout(btn_row)
+
+        # Gate Save on an actual change — see the module docstring.
+        self._measurement_name_edit.textChanged.connect(self._sync_save_enabled)
+        self._notes_edit.textChanged.connect(self._sync_save_enabled)
+        self._sync_save_enabled()
+
+    # MARK: - Change detection
+
+    def has_changes(self) -> bool:
+        """Whether Save would write anything different from the stored measurement.
+
+        The rule itself lives on the model (``TapToneMeasurement.is_amended``) so all three
+        platforms and their tests share one definition; this dialog only supplies the normalised
+        values. Mirrors Swift ``EditMeasurementView.hasChanges``.
+        """
+        measurement_name, notes = self.edited_values()
+        return self._measurement.is_amended(measurement_name, notes)
+
+    def _sync_save_enabled(self, *_args: object) -> None:
+        """Enable Save only while ``has_changes()`` holds."""
+        self._save_btn.setEnabled(self.has_changes())
 
     # MARK: - Result
 
@@ -135,10 +159,10 @@ class EditMeasurementView(QtWidgets.QDialog):
         """Return (measurement_name, notes) as entered by the user.
 
         Mirrors Swift save() reading self.measurementName / self.notes before
-        calling analyzer.updateMeasurement(at:measurementName:notes:).
-        Empty strings are normalised to None (mirrors Swift's
-        ``measurementName.isEmpty ? nil : measurementName``).
+        calling analyzer.updateMeasurement(at:measurementName:notes:). Both fields are normalised
+        by the model's own rules — the same ones the save path uses — so the change test compares
+        against what would actually be stored.
         """
-        measurement_name = self._measurement_name_edit.text().strip() or None
-        notes = self._notes_edit.toPlainText().strip() or None
+        measurement_name = TapToneMeasurement.normalized_name(self._measurement_name_edit.text())
+        notes = TapToneMeasurement.normalized_notes(self._notes_edit.toPlainText())
         return measurement_name, notes

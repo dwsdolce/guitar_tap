@@ -38,6 +38,7 @@ from guitar_tap.utilities.json_float import f32, f32_list
 
 from .resonant_peak import ResonantPeak
 from .spectrum_snapshot import SpectrumSnapshot
+from guitar_tap.utilities.new_uuid import new_uuid
 
 
 def _now_iso() -> str:
@@ -102,7 +103,7 @@ class TapEntry:
         snapshot = SpectrumSnapshot.from_dict(snap_d)
         peaks = [ResonantPeak.from_dict(p) for p in d.get("peaks", [])]
         return cls(
-            id=d.get("id", str(uuid.uuid4())),
+            id=d.get("id", new_uuid()),
             tap_index=d.get("tapIndex", 1),
             snapshot=snapshot,
             peaks=peaks,
@@ -248,7 +249,7 @@ class ComparisonEntry:
         snapshot = SpectrumSnapshot.from_dict(snap_d)
         peaks = [ResonantPeak.from_dict(p) for p in d.get("peaks", [])]
         return cls(
-            id=d.get("id", str(uuid.uuid4())),
+            id=d.get("id", new_uuid()),
             label=d.get("label", ""),
             color_components=d.get("colorComponents", [0.0, 0.0, 1.0, 1.0]),
             snapshot=snapshot,
@@ -647,6 +648,19 @@ class TapToneMeasurement:
         trimmed = name.strip()
         return trimmed or None
 
+    @staticmethod
+    def normalized_notes(notes: str) -> "str | None":
+        """The notes to store: trimmed, or ``None`` if blank.
+
+        The two user-entered text fields normalize the same way, so "has this been edited" means
+        the same thing for both. This edition stripped notes in the EDIT dialog but not on the SAVE
+        path, so saving notes with surrounding whitespace and then reopening the edit dialog read as
+        an edit of a field the user never touched. Every path that stores notes goes through here
+        now. Mirrors Swift ``normalizedNotes``. See SLUG-SWEEP.md F21.
+        """
+        trimmed = notes.strip()
+        return trimmed or None
+
     def display_name(self) -> str:
         """Human-readable display name combining measurement name and formatted timestamp.
 
@@ -660,15 +674,48 @@ class TapToneMeasurement:
             return f"{self.measurement_name} — {time_str}"
         return time_str
 
-    def with_(self, measurement_name: str | None, notes: str | None) -> "TapToneMeasurement":
-        """Return a copy of the measurement with only ``measurement_name`` and ``notes`` replaced.
+    # @parity model/measurement-amend tests=test/measurement-amend
 
-        All other fields — including ``id`` and ``timestamp`` — are preserved exactly.
+    def is_amended(self, measurement_name: "str | None", notes: "str | None") -> bool:
+        """Whether the supplied values differ from what this measurement stores.
+
+        The gate on the edit dialog's Save button. Both arguments must already be normalised
+        (``normalized_name`` / ``normalized_notes``) so the comparison is against what would
+        actually be written. Amending mints a new ``id``, so a Save that changes nothing must not be
+        reachable — it would give unchanged content a new identity. Single source of truth so all
+        three platforms, and their tests, agree; a view binds its Save button to this and never
+        re-implements it, exactly as it does for ``is_valid_name``.
+
+        Mirrors Swift ``TapToneMeasurement.isAmended(measurementName:notes:)``.
+        """
+        return measurement_name != self.measurement_name or notes != self.notes
+
+    def with_(self, measurement_name: str | None, notes: str | None) -> "TapToneMeasurement":
+        """Return a copy with ``measurement_name`` and ``notes`` replaced and a **new** ``id``.
+
+        Name and notes are part of a measurement's data, not annotations on top of it, so an
+        amended measurement is a different dataset and must carry a different identity. That is
+        what makes ``id`` mean *same content* rather than *same act of saving*: two entries share
+        an id exactly when they hold identical data — the state a duplicate import produces, and
+        which editing either one correctly ends.
+
+        ``timestamp`` is preserved. It records when the tap was captured, and amending a name
+        does not change when it was captured.
+
+        This is the *amend* operation, so callers must only reach it when something actually
+        differs. ``EditMeasurementView`` enforces that by disabling Save until the normalised
+        name or notes differ from the stored values; calling it with identical values would give
+        unchanged content a new identity and break the rule above.
 
         Mirrors Swift TapToneMeasurement.with(measurementName:notes:).
         """
         import dataclasses
-        return dataclasses.replace(self, measurement_name=measurement_name, notes=notes)
+        return dataclasses.replace(
+            self,
+            id=new_uuid(),
+            measurement_name=measurement_name,
+            notes=notes,
+        )
 
     # MARK: - Serialisation (Python-only)
 
@@ -1114,7 +1161,7 @@ class TapToneMeasurement:
                     healed = True
 
         return TapToneMeasurement(
-            id=d.get("id", str(uuid.uuid4())),
+            id=d.get("id", new_uuid()),
             timestamp=d.get("timestamp", _now_iso()),
             peaks=peaks,
             decay_time=d.get("decayTime"),
@@ -1197,12 +1244,12 @@ class TapToneMeasurement:
         Python-only — Swift uses a struct initialiser with default parameters.
         """
         return TapToneMeasurement(
-            id=str(uuid.uuid4()),
+            id=new_uuid(),
             timestamp=_now_iso(),
             peaks=peaks,
             decay_time=decay_time,
             measurement_name=measurement_name or None,
-            notes=notes or None,
+            notes=TapToneMeasurement.normalized_notes(notes) if notes else None,
             spectrum_snapshot=spectrum_snapshot,
             annotation_offsets=annotation_offsets or None,
             selected_peak_ids=selected_peak_ids or None,

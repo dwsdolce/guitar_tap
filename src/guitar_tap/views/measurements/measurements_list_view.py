@@ -28,6 +28,7 @@ from guitar_tap.views import tap_analysis_results_view as M
 from guitar_tap.views.measurements import edit_measurement_view as EMV
 from guitar_tap.views.measurements import measurement_detail_view as MDD
 from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
+from guitar_tap.utilities.new_uuid import new_uuid
 
 # ── Main dialog ───────────────────────────────────────────────────────────────
 
@@ -517,7 +518,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
                 sel_ids = set(entry.selected_peak_ids)
                 sel_peaks = [p for p in entry.peaks if p.id in sel_ids]
                 cmp_entries.append(ComparisonEntry(
-                    id=str(_uuid.uuid4()),
+                    id=new_uuid(),
                     label=f"Tap {entry.tap_index}",
                     color_components=color_components,
                     snapshot=entry.snapshot,
@@ -535,7 +536,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
                 avg_r, avg_g, avg_b = _AVERAGED_COLOR
                 avg_color_components = [avg_r / 255.0, avg_g / 255.0, avg_b / 255.0, 1.0]
                 cmp_entries.append(ComparisonEntry(
-                    id=str(_uuid.uuid4()),
+                    id=new_uuid(),
                     label="Averaged",
                     color_components=avg_color_components,
                     snapshot=avg_snap,

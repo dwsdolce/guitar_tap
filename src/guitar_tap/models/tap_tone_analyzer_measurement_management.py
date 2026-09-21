@@ -12,6 +12,7 @@ import numpy as np
 from guitar_tap.utilities.logging import gt_log
 
 from .analysis_display_mode import AnalysisDisplayMode
+from guitar_tap.utilities.new_uuid import new_uuid
 
 
 class TapToneAnalyzerMeasurementManagementMixin:
@@ -978,8 +979,14 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.updateMeasurement(at:measurementName:notes:)``.
 
-        The index into ``savedMeasurements`` is used rather than id matching so
-        that duplicate imports (which share the same id) are treated independently.
+        All captured data is preserved, but the entry receives a **new id**: name and notes are
+        part of a measurement's data, so an amended entry is a different dataset. See
+        ``TapToneMeasurement.with_``.
+
+        The index into ``savedMeasurements`` is used rather than id matching, because duplicate
+        imports share an id until one of them is edited — so an id cannot address a row. Callers
+        must pass the position in ``savedMeasurements`` itself, which is why the list is
+        displayed in storage order.
 
         Args:
             at:               Position in ``savedMeasurements`` to update.
@@ -1199,7 +1206,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             r, g, b = entry["color"]
             color_components = [r / 255.0, g / 255.0, b / 255.0, 1.0]
             ce = ComparisonEntry(
-                id=str(_uuid.uuid4()),
+                id=new_uuid(),
                 label=entry["label"],
                 color_components=color_components,
                 snapshot=entry["snapshot"],

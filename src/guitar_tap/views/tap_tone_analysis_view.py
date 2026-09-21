@@ -38,6 +38,7 @@ from guitar_tap.views.plate_body_dimensions_editor import PlateBodyDimensionsEdi
 from guitar_tap.views.shared.loading_overlay import LoadingOverlay
 from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
 from guitar_tap.views.utilities import extensions as _ext
+from guitar_tap.utilities.new_uuid import new_uuid
 
 # Heavy imports deferred to _deferred_canvas_init to reduce startup time:
 #   fft_canvas — pulls in pyqtgraph (~4 s) and sounddevice (~0.4 s)
@@ -5614,7 +5615,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 sel_ids = set(entry.selected_peak_ids)
                 sel_peaks = [p for p in entry.peaks if p.id in sel_ids]
                 cmp_entries.append(ComparisonEntry(
-                    id=str(_uuid.uuid4()),
+                    id=new_uuid(),
                     label=f"Tap {entry.tap_index}",
                     color_components=color_components,
                     snapshot=entry.snapshot,
@@ -5640,7 +5641,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 measurement_type=mt.value,
             )
             cmp_entries.append(ComparisonEntry(
-                id=str(_uuid.uuid4()),
+                id=new_uuid(),
                 label="Averaged",
                 color_components=avg_color_components,
                 snapshot=avg_snap,

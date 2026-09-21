@@ -38,6 +38,27 @@ def test_normalized_trims_and_blanks_to_none():
     assert M.normalized_name("   ") is None
 
 
+# ── normalized_notes — the other user-entered field, normalized the same way ─
+
+def test_normalized_notes_trims_and_blanks_to_none():
+    """Notes trim exactly as the name does.
+
+    This edition stripped notes in the edit dialog but NOT on the save path, so notes saved with
+    surrounding whitespace read as an edit the moment the dialog reopened — a change the user never
+    made. Both paths go through the model rule now. See SLUG-SWEEP.md F21.
+    """
+    assert M.normalized_notes("  Tapped cold  ") == "Tapped cold"
+    assert M.normalized_notes("line one\nline two") == "line one\nline two"
+    assert M.normalized_notes("") is None
+    assert M.normalized_notes("   \n  ") is None
+
+
+def test_both_fields_normalize_identically():
+    """Or a round trip through one of them looks like an edit."""
+    for candidate in ["", "  ", "\n", "a", "  a  ", "Spruce Top", " multi word \n"]:
+        assert M.normalized_name(candidate) == M.normalized_notes(candidate)
+
+
 # ── validity agrees with storage ────────────────────────────────────────────
 
 def test_validity_matches_storage():

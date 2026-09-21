@@ -412,7 +412,10 @@ class TestUpdateMeasurement:
         assert sut.savedMeasurements[1].notes == "Second", "Second entry must not be affected"
 
     def test_update_duplicate_import_only_edited_index_changes(self):
-        """Editing one of two duplicates (same id, different index) leaves the other unchanged."""
+        """Editing one of two duplicates leaves the other unchanged, and the ids diverge.
+
+        The edited entry is no longer the same dataset as its twin.
+        """
         original = _make_measurement(measurement_name="Top", notes="Original")
         # Simulate importing the same file twice — both entries share the same id.
         sut = _make_analyzer_with_measurements([original, original])
@@ -423,8 +426,10 @@ class TestUpdateMeasurement:
         assert sut.savedMeasurements[0].notes == "Original",    "First duplicate must not change"
         assert sut.savedMeasurements[1].measurement_name == "Back", "Second duplicate should be updated"
         assert sut.savedMeasurements[1].notes == "Copy",        "Second duplicate should be updated"
-        assert sut.savedMeasurements[0].id == sut.savedMeasurements[1].id, \
-            "id must be preserved through the update"
+        assert sut.savedMeasurements[0].id == original.id, \
+            "the untouched duplicate keeps its id"
+        assert sut.savedMeasurements[0].id != sut.savedMeasurements[1].id, \
+            "the edited duplicate is different data, so it must no longer share the twin's id"
 
     def test_update_nil_values_clear_fields(self):
         """Passing None clears the fields."""
@@ -435,6 +440,7 @@ class TestUpdateMeasurement:
 
         assert sut.savedMeasurements[0].measurement_name is None
         assert sut.savedMeasurements[0].notes is None
+        assert sut.savedMeasurements[0].id != m.id, "clearing the fields is a data change too"
 
     def test_update_out_of_range_index_is_noop(self):
         """An out-of-range index is a no-op."""
@@ -446,8 +452,11 @@ class TestUpdateMeasurement:
         assert sut.savedMeasurements[0].measurement_name == "Bridge", "Out-of-range update must not modify array"
         assert len(sut.savedMeasurements) == 1
 
-    def test_update_preserves_id_and_other_fields(self):
-        """The id and all other fields are preserved after an update."""
+    def test_update_mints_new_id_and_preserves_captured_data(self):
+        """An update mints a NEW id while preserving every captured field and the capture time.
+
+        Name and notes are part of the data, so an amended measurement is a different dataset.
+        """
         from guitar_tap.models.resonant_peak import ResonantPeak
         peak = ResonantPeak(
             id=str(uuid.uuid4()),
@@ -457,16 +466,33 @@ class TestUpdateMeasurement:
             peaks=[peak], decay_time=0.5, measurement_name="Old", notes="Old notes"
         )
         original_id = m.id
+        original_timestamp = m.timestamp
         sut = _make_analyzer_with_measurements([m])
 
         sut.update_measurement(at=0, measurement_name="New", notes="New notes")
 
         updated = sut.savedMeasurements[0]
-        assert updated.id == original_id, "id must be preserved"
+        assert updated.id != original_id, "an amended measurement is a different dataset"
+        assert updated.timestamp == original_timestamp, \
+            "timestamp records when the tap was captured; amending a name does not change that"
         assert len(updated.peaks) == 1,   "peaks must be preserved"
         assert updated.decay_time == 0.5, "decay_time must be preserved"
         assert updated.measurement_name == "New"
         assert updated.notes == "New notes"
+
+    def test_update_successive_edits_each_mint_a_new_id(self):
+        """Two successive edits yield three distinct ids: identity tracks content, not the row."""
+        m = _make_measurement(measurement_name="First", notes=None)
+        sut = _make_analyzer_with_measurements([m])
+
+        sut.update_measurement(at=0, measurement_name="Second", notes=None)
+        after_first = sut.savedMeasurements[0].id
+        sut.update_measurement(at=0, measurement_name="Third", notes=None)
+        after_second = sut.savedMeasurements[0].id
+
+        assert after_first != m.id
+        assert after_second != after_first
+        assert sut.savedMeasurements[0].measurement_name == "Third"
 
 
 # ---------------------------------------------------------------------------

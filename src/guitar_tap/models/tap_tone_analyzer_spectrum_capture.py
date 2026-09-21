@@ -52,6 +52,7 @@ from PySide6 import QtCore
 from PySide6.QtCore import Slot
 
 from guitar_tap.utilities.logging import gt_log
+from guitar_tap.utilities.new_uuid import new_uuid
 
 
 class TapToneAnalyzerSpectrumCaptureMixin:
@@ -2080,7 +2081,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                     measurement_type=_mt_str2,
                 )
                 tap_entries_built.append(TapEntry(
-                    id=str(_uuid2.uuid4()),
+                    id=new_uuid(),
                     tap_index=idx + 1,
                     snapshot=snap,
                     peaks=t_peaks,
