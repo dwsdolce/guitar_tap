@@ -100,3 +100,80 @@ class TestImportPersistence:
             f"Second import should append; count was {count_after_first}, "
             f"now {count_after_second}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Update Measurement — the saved-measurement LIBRARY, addressed by index
+# ---------------------------------------------------------------------------
+#
+# Tests update_measurement(at=...): editing an entry of the savedMeasurements list. Filed here,
+# with the library, because that is what it mutates — it lived under test/annotation-state until
+# #17 F27, which is neither where it belongs nor where the web files its equivalent.
+#
+# The VALUE-level rules of an amendment — what with_() preserves, and that every amendment mints a
+# new id — belong to test/measurement-amend and are not repeated here.
+#
+# Two of these have no web counterpart BY ARCHITECTURE, not by omission: the natives address the
+# library by index, while web's store is a rowKey-addressed IndexedDB with no index API (F19b).
+
+
+def _make_measurement(measurement_name=None, notes=None):
+    from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
+    return TapToneMeasurement.create(peaks=[], measurement_name=measurement_name, notes=notes)
+
+
+def _make_analyzer_with_measurements(measurements):
+    sut = _make_sut()
+    # update_measurement() reads/writes savedMeasurements (camelCase).
+    sut.savedMeasurements = list(measurements)
+    return sut
+
+
+class TestUpdateMeasurement:
+    """Port of Swift UpdateMeasurementTests — update_measurement() on the live analyzer.
+
+    Mirrors Swift @Suite("UpdateMeasurement — the library, by index") in ImportPersistenceTests.swift.
+    """
+
+    def test_update_by_index_changes_only_targeted_entry(self):
+        """Updating by index changes only the targeted entry's measurement_name and notes."""
+        m0 = _make_measurement(measurement_name="Bridge", notes="First")
+        m1 = _make_measurement(measurement_name="Soundhole", notes="Second")
+        sut = _make_analyzer_with_measurements([m0, m1])
+
+        sut.update_measurement(at=0, measurement_name="Upper Bout", notes="Edited")
+
+        assert sut.savedMeasurements[0].measurement_name == "Upper Bout"
+        assert sut.savedMeasurements[0].notes == "Edited"
+        assert sut.savedMeasurements[1].measurement_name == "Soundhole", "Second entry must not be affected"
+        assert sut.savedMeasurements[1].notes == "Second", "Second entry must not be affected"
+
+    def test_update_duplicate_import_only_edited_index_changes(self):
+        """Editing one of two duplicates leaves the other unchanged, and the ids diverge.
+
+        The edited entry is no longer the same dataset as its twin.
+        """
+        original = _make_measurement(measurement_name="Top", notes="Original")
+        # Simulate importing the same file twice — both entries share the same id.
+        sut = _make_analyzer_with_measurements([original, original])
+
+        sut.update_measurement(at=1, measurement_name="Back", notes="Copy")
+
+        assert sut.savedMeasurements[0].measurement_name == "Top",  "First duplicate must not change"
+        assert sut.savedMeasurements[0].notes == "Original",    "First duplicate must not change"
+        assert sut.savedMeasurements[1].measurement_name == "Back", "Second duplicate should be updated"
+        assert sut.savedMeasurements[1].notes == "Copy",        "Second duplicate should be updated"
+        assert sut.savedMeasurements[0].id == original.id, \
+            "the untouched duplicate keeps its id"
+        assert sut.savedMeasurements[0].id != sut.savedMeasurements[1].id, \
+            "the edited duplicate is different data, so it must no longer share the twin's id"
+
+    def test_update_out_of_range_index_is_noop(self):
+        """An out-of-range index is a no-op."""
+        m = _make_measurement(measurement_name="Bridge")
+        sut = _make_analyzer_with_measurements([m])
+
+        sut.update_measurement(at=99, measurement_name="Changed", notes=None)
+
+        assert sut.savedMeasurements[0].measurement_name == "Bridge", "Out-of-range update must not modify array"
+        assert len(sut.savedMeasurements) == 1

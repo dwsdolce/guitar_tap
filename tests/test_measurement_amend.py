@@ -100,6 +100,8 @@ class TestWithMethod:
         m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge")
         updated = m.with_(measurement_name=None, notes=None)
         assert updated.measurement_name is None
+        # Clearing the fields is a data change too, so it mints a new id.
+        assert updated.id != m.id
 
     def test_with_preserves_other_fields(self):
         peak = _make_peak()
