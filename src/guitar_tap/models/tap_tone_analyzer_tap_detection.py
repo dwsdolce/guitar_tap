@@ -1,3 +1,4 @@
+# @parity state/tap-detection tests=test/tap-decisions,test/status-message
 """
 TapToneAnalyzerTapDetectionHandlerMixin — detectTap, handleTapDetection,
 and all tap-detection stored state.
