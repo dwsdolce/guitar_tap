@@ -17,12 +17,14 @@ SCOPE: the state-reachable strings only.  Two families are intentionally NOT pin
 
 2. Per-tap capture PROGRESS transients — "Tap n/N capturing...",
    "Tap n/N captured. Tap again...", "All taps captured. Processing...", the material
-   "L/C/FLC tap n/N captured..." / review / "No resonance detected" strings — are
-   written deep in the gated-capture pipeline and are produced by the file-playback +
-   gated-capture regression tests running the real capture.  The web pins them
-   directly because it has an explicit engine-state setter (setEngineState);
-   Swift/Python set them imperatively mid-pipeline, so a state-driven suite can't
-   reach them cleanly.
+   "L/C/FLC tap n/N captured..." / review / "No resonance detected" strings — are pinned
+   below, in TestCaptureProgressStrings.
+
+   This used to say they were written too deep in the gated-capture pipeline for a
+   state-driven suite to reach, and were covered by the file-playback regression tests.
+   Neither held (#17 F29): those tests run the pipeline but assert no status at all, and
+   the handlers take a spectrum and a peak, which test_frozen_peak_recalculation has always
+   called directly.  The strings were pinned in no edition but web.
 """
 
 from __future__ import annotations
@@ -242,3 +244,108 @@ class TestStatusMessage:
         sut.just_exited_warmup = False
         sut.detect_tap(-80.0, 0.0, np.full(len(sut.freq), -80.0), sut.freq)  # a warm-up frame
         assert sut.status_message == "Rotate 90° and tap for fC"
+
+    def test_accept_c_prompts_to_set_up_for_flc_and_survives_warmup(self):
+        """The OTHER accept transition: fC → the FLC set-up prompt, shown during the disarmed cooldown.
+
+        Web covered both accepts in one case; the natives covered only the first, so this string was
+        asserted in no edition but web (#17 F29).  It is the prompt the FLC cooldown guard hands the
+        user while detection is deliberately off.
+        """
+        saved = TapDisplaySettings.measure_flc()
+        TapDisplaySettings.set_measure_flc(True)
+        try:
+            sut = _make_sut(1, MeasurementType.PLATE)
+            sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_CROSS)
+            sut.accept_current_phase()
+            assert sut.status_message == "Set up for fLC tap, then tap"
+            sut.warmup_start_audio_time = 0.0  # warm-up active
+            sut.just_exited_warmup = False
+            sut.detect_tap(-80.0, 0.0, np.full(len(sut.freq), -80.0), sut.freq)
+            assert sut.status_message == "Set up for fLC tap, then tap"
+        finally:
+            TapDisplaySettings.set_measure_flc(saved)
+
+# ---------------------------------------------------------------------------
+# Capture-progress strings (#17 F29)
+# ---------------------------------------------------------------------------
+#
+# These were excluded on the grounds that they are written deep in the gated-capture pipeline and
+# are "produced by" the file-playback regression tests.  Those tests run the pipeline, so the
+# strings are certainly set — but status_message is asserted in exactly two test files here, and
+# neither is one of them: deleting "No signal detected — tap again" left both native suites green.
+# Web pinned them all along, which is why the slug read 12/12/16 as though web carried extras.
+#
+# Each case drives a method another test file already calls without audio.
+
+class TestCaptureProgressStrings:
+    """Mirrors Swift StatusMessageCaptureProgressTests."""
+
+    @staticmethod
+    def _peak_spectrum(freq: float, min_hz: float, max_hz: float):
+        """A synthetic spectrum with one gaussian peak — enough for find_dominant_peak."""
+        freqs = np.linspace(min_hz, max_hz, 512)
+        mags = -80.0 + 50.0 * np.exp(-0.5 * ((freqs - freq) / 8.0) ** 2)
+        return mags, freqs
+
+    def test_guitar_loop_capturing_and_between_taps(self):
+        sut = _make_sut(3)
+        sut.current_tap_count = 0
+        assert sut._guitar_loop_status(capturing=True) == "Tap 1/3 capturing..."
+        sut.current_tap_count = 1
+        assert sut._guitar_loop_status(capturing=False) == "Tap 1/3 captured. Tap again..."
+        sut.current_tap_count = 2
+        # the last tap's provisional string announces processing, not 3/3 capturing
+        assert sut._guitar_loop_status(capturing=True) == "All taps captured. Processing..."
+
+    def test_redo_longitudinal_prompts_to_tap_again(self):
+        sut = _make_sut(1, MeasurementType.PLATE)
+        sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_LONGITUDINAL)
+        sut.redo_current_phase()
+        assert sut.status_message == "Ready for fL tap — tap again"
+
+    def test_material_progress_counts_and_asks_for_another(self):
+        sut = _make_sut(3, MeasurementType.BRACE)
+        sut.min_frequency = 100
+        sut.max_frequency = 1200
+        mags, freqs = self._peak_spectrum(300, 100, 1200)
+        dominant = sut.find_dominant_peak(
+            magnitudes=mags, frequencies=freqs, min_hz=100, max_hz=1200,
+            prefer_lowest_significant=False,
+        )
+        assert dominant is not None, "precondition: the synthetic tap has a dominant peak"
+        sut.captured_taps = [(mags, freqs, 0.0)]  # Swift calls this materialCapturedTaps
+        sut._handle_longitudinal_gated_progress(
+            mags, freqs, dominant, min_hz=100, max_hz=1200, prefer_lowest=False,
+        )
+        assert sut.status_message == "fL tap 1/3 captured. Tap again..."
+
+    def test_no_resonance_in_band_asks_to_tap_again(self):
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+        sut = _make_sut(1, MeasurementType.PLATE)
+        # The analyzer asks the engine for the gated transform, as Swift's does — give it a real one.
+        sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)
+        silence = np.zeros(24000, dtype=np.float32)
+        sut.finish_gated_fft_capture(silence, 48000.0, MaterialTapPhase.CAPTURING_LONGITUDINAL)
+        # a tap with nothing in band must prompt again, not advance
+        assert sut.status_message.endswith("— tap again")
+        assert not sut.captured_taps, "and it must not count toward the phase"
+
+    def test_file_playback_announces_the_auto_advance(self):
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+        sut = _make_sut(1, MeasurementType.PLATE)
+        sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)
+        sut.mic.is_playing_file = True
+        sut.min_frequency = 100
+        sut.max_frequency = 1200
+        mags, freqs = self._peak_spectrum(300, 100, 1200)
+        dominant = sut.find_dominant_peak(
+            magnitudes=mags, frequencies=freqs, min_hz=100, max_hz=1200,
+            prefer_lowest_significant=False,
+        )
+        assert dominant is not None
+        sut.captured_taps = [(mags, freqs, 0.0)]
+        sut._handle_longitudinal_gated_progress(
+            mags, freqs, dominant, min_hz=100, max_hz=1200, prefer_lowest=False,
+        )
+        assert sut.status_message == "File: fL complete, capturing fC..."
