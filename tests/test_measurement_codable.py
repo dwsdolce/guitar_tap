@@ -703,6 +703,36 @@ class TestComparisonEntryCodable:
 class TestFixtureLoading:
     """Mirrors Swift FixtureLoadingTests — skipped when fixture not found."""
 
+    # Mode overrides, read from files the APPS actually wrote — one saved by Swift, one by Python.
+    #
+    # Until #17 F28 no file in the corpus carried peakModeOverrides at all: 119 measurements, 116
+    # with selection, 91 with annotation offsets, ZERO with an override. Every override test used a
+    # hand-built fixture, so the reader had never met a real one. The owner captured these two.
+    @pytest.mark.parametrize("fixture_name,expected_label", [
+        ("annotation-override-1790037028.guitartap", "Fred"),          # written by Swift
+        ("annotation-override-python-1790037332.guitartap", "Fred2"),  # written by Python
+    ])
+    def test_real_override_fixture_decodes_its_label(self, fixture_name, expected_label):
+        here = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(here, fixture_name)
+        if not os.path.exists(path):
+            pytest.skip(f"Fixture '{fixture_name}' not found; skipping fixture test")
+
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+        measurements = [TapToneMeasurement.from_dict(d) for d in raw]
+
+        overrides = measurements[0].peak_mode_overrides
+        assert overrides, "the fixture must carry peakModeOverrides"
+        assert len(overrides) == 1
+        assert list(overrides.values())[0] == expected_label, (
+            "the label must survive the wire shape, in memory, as the label alone"
+        )
+        peak_id = list(overrides.keys())[0]
+        assert any(p.id == peak_id for p in measurements[0].peaks), (
+            "the override must key a peak the file still contains"
+        )
+
     def test_fixture_loads_and_decodes(self):
         fixture_name = "contreras-classical-1774731564.guitartap"
         # Mirror Swift: look next to the test file (same directory as __file__),
