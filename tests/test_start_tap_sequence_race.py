@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from PySide6 import QtCore, QtWidgets
 
+from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -102,7 +103,7 @@ class TestStartTapSequenceRace:
         assert sut.is_detecting is True, "start_tap_sequence must arm detection"
 
         # Simulate handle_tap_detection's effect on is_detecting.
-        sut.is_detecting = False
+        sut.detection_state = DetectionState.IDLE
 
         # Drain any deferred work.  If start_tap_sequence ever grows a
         # deferred is_detecting=True assignment, the drain will expose it.
@@ -120,7 +121,7 @@ class TestStartTapSequenceRace:
         sut = _make_sut(number_of_taps=1)
 
         sut.start_tap_sequence()
-        sut.is_detecting = False              # handle_tap_detection effect
+        sut.detection_state = DetectionState.IDLE              # handle_tap_detection effect
         _drain_event_loop()
         sut.captured_taps.append(_fake_tap())  # gated capture finished
         sut.current_tap_count = 1
@@ -141,7 +142,7 @@ class TestStartTapSequenceRace:
 
         sut.captured_taps = [_fake_tap(), _fake_tap(), _fake_tap()]
         sut.current_tap_count = 3
-        sut.is_detecting = False
+        sut.detection_state = DetectionState.IDLE
         sut.process_multiple_taps()
 
         assert sut.is_measurement_complete is True
@@ -190,3 +191,27 @@ class TestStartTapSequenceRace:
         assert sut.is_measurement_complete is True
         assert sut.is_detecting is False
         assert sut.is_detection_paused is False
+
+    # R5: A restart from PAUSED must end LISTENING, not paused.
+    #
+    # start_tap_sequence used to clear the pause flag up front; with one detection state it
+    # simply moves to LISTENING at the arming step, and nothing in between may leave PAUSED
+    # standing. Cancel is the reachable route: the button rule DISABLES New Tap while paused
+    # (a paused sequence is still in flight, B6) and ENABLES Cancel, which delegates to
+    # start_tap_sequence in all three editions.
+    def test_R5_restart_from_paused_ends_listening(self):
+        sut = _make_sut(number_of_taps=3)
+
+        sut.start_tap_sequence()
+        sut.current_tap_count = 1
+        sut.pause_tap_detection()
+        assert sut.is_detection_paused is True, "precondition: the sequence is paused"
+
+        sut.cancel_tap_sequence()
+
+        assert sut.detection_state is DetectionState.LISTENING, (
+            "REGRESSION: a restart from paused must arm; leaving it PAUSED strands the user "
+            "with a sequence they cannot resume or restart."
+        )
+        assert sut.is_detection_paused is False
+        assert sut.current_tap_count == 0

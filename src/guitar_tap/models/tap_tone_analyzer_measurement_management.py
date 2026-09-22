@@ -12,6 +12,7 @@ import numpy as np
 from guitar_tap.utilities.logging import gt_log
 
 from .analysis_display_mode import AnalysisDisplayMode
+from .detection_state import DetectionState
 from guitar_tap.utilities.new_uuid import new_uuid
 
 
@@ -473,7 +474,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.clear_comparison()
         self.frozen_frequencies = np.array([])
         self.frozen_magnitudes = np.array([])
-        self._display_mode = AnalysisDisplayMode.FROZEN
+        # Not a comparison any more; the loaded measurement displays because
+        # is_measurement_complete is set, not because of the mode (#17 F35).
+        self._display_mode = AnalysisDisplayMode.LIVE
 
         # ── Restore peaks ─────────────────────────────────────────────────────
         # Mirrors Swift: allPeaks = measurement.peaks (the durable full set).
@@ -656,16 +659,17 @@ class TapToneAnalyzerMeasurementManagementMixin:
         gt_log(f"  🟣 Restored FLC peak: {self.selected_flc_peak.frequency if self.selected_flc_peak else -1} Hz")
 
         # ── Stop tap detection ────────────────────────────────────────────────
-        # Mirrors Swift: isDetecting = false; isDetectionPaused = false;
-        # isMeasurementComplete = true; currentTapCount = 0; tapProgress = 0.0
+        # Mirrors Swift: detectionState = .idle; isMeasurementComplete = true;
+        # currentTapCount = 0; tapProgress = 0.0.  IDLE rather than PAUSED matters: if a
+        # tap sequence was paused before loading, the analysis loop would otherwise keep
+        # overwriting the displayed peaks with fresh live-audio peaks on every FFT frame.
         # NOTE: the flag is assigned HERE (running the property setter, which mirrors Swift's
         # didSet), but measurementComplete is not emitted until the END of this method, once
         # all state is restored — so the view receives the signal with a fully-populated
         # model.  That is the equivalent of SwiftUI's batched objectWillChange, which defers
         # re-render until run-loop end.  This is why the assignment is used directly rather
         # than set_measurement_complete(), which emits immediately.
-        self.is_detecting = False
-        self.is_detection_paused = False
+        self.detection_state = DetectionState.IDLE
         self.is_measurement_complete = True  # set early; signal fires at end of method
         self.current_tap_count = 0
         self.tap_progress = 0.0
@@ -884,7 +888,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         When ``enabled`` is False:
           - Clears _comparison_data, comparison_labels, and comparison_snapshots.
-          - Sets display_mode = FROZEN (returns chart to averaged-only view).
+          - Sets display_mode = LIVE (the chart returns to the averaged spectrum on its own,
+            because the measurement is complete).
 
         Mirrors Swift TapToneAnalyzer+MeasurementManagement.applyMultiTapComparisonOverlays(enabled:).
         """
@@ -894,7 +899,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self._comparison_data = []
             self.comparison_labels = []
             self.comparison_snapshots = []
-            self._display_mode = AnalysisDisplayMode.FROZEN
+            # Leave comparison; the chart returns to the averaged spectrum on its own, because the
+            # measurement is complete (#17 F35).
+            self._display_mode = AnalysisDisplayMode.LIVE
             self.comparisonChanged.emit(False)
             return
 
@@ -1143,6 +1150,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
         was_comparing = self._display_mode == AnalysisDisplayMode.COMPARISON
         if self._comparison_data:
             self._display_mode = AnalysisDisplayMode.COMPARISON
+            # An overlay is frozen, exactly like a loaded measurement — so stand the detector
+            # down, as load_measurement does for the same reason. Left armed, the analysis loop
+            # goes on overwriting the displayed peaks from live audio underneath the overlay,
+            # and a tap captures and completes a measurement the user never sees being made.
+            # Empty data means we stayed LIVE, so there is nothing to freeze and nothing to
+            # disarm. Mirrors Swift load_comparison / web loadComparison (#17 F31).
+            self.detection_state = DetectionState.IDLE
             self.comparisonChanged.emit(True)
         else:
             self._display_mode = AnalysisDisplayMode.LIVE

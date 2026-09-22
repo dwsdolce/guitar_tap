@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from PySide6 import QtCore, QtWidgets
 
+from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -70,8 +71,7 @@ def _make_guitar_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
     sut.just_exited_warmup = False
     TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
     # Arm detection
-    sut.is_detecting = True
-    sut.is_detection_paused = False
+    sut.detection_state = DetectionState.LISTENING
     sut.is_measurement_complete = False
     # Pre-populate freq so _finish_capture / frozen_frequencies assignment works
     sut.freq = np.linspace(0, 2000, 256)

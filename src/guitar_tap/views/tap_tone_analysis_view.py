@@ -2199,6 +2199,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # must re-run the slot explicitly, or a detection-state change alone never refreshes the
         # bar's visibility or the label's text — they go stale mid-sequence.
         canvas.detectionStateChanged.connect(self._on_detection_state_changed)
+        canvas.readyForDetectionChanged.connect(self._on_ready_for_detection_changed)
         canvas.devicesChanged.connect(self._on_devices_changed)
         canvas.currentDeviceLost.connect(self._on_device_lost)
         try:
@@ -2330,15 +2331,25 @@ class MainWindow(QtWidgets.QMainWindow):
             self._is_paused = False
         self._update_tap_buttons()
 
-    def _on_detection_state_changed(self, _is_detecting: bool) -> None:
-        """Detection armed/disarmed → re-evaluate the status-bar tap count + progress.
+    def _on_detection_state_changed(self, _state: object) -> None:
+        """Detection state changed → re-evaluate the status-bar tap count + progress.
 
-        Mirrors Swift, where the status bar is bound to the @Published `isDetecting` and re-renders
-        on every change. Re-runs set_tap_count with the CURRENT counts so the label's visibility and
-        text track the detection state instead of freezing at whatever they were on the last
-        tapCountChanged.
+        Mirrors Swift, where the status bar is bound to the @Published `detectionState` and
+        re-renders on every change. Re-runs set_tap_count with the CURRENT counts so the label's
+        visibility and text track the detection state instead of freezing at whatever they were on
+        the last tapCountChanged.
         """
         self.set_tap_count(self._tap_count_captured, self._tap_count_total)
+
+    def _on_ready_for_detection_changed(self, _ready: bool) -> None:
+        """Engine readiness changed → re-evaluate the button row.
+
+        Mirrors Swift, where `isReadyForDetection` is @Published and every bound view re-renders,
+        greying New Tap out for the route-change settle and restoring it afterwards. Python has no
+        such binding, so without this slot the buttons held their stale state for the whole settle
+        and the disable was never visible (#17 F32).
+        """
+        self._update_tap_buttons()
 
     def set_tap_count(self, captured: int, total: int) -> None:
         self._tap_count_captured = captured
@@ -2895,27 +2906,22 @@ class MainWindow(QtWidgets.QMainWindow):
             _MTP.REVIEWING_FLC,
         ) and not TDS.measurement_type().is_guitar
 
-    # @parity state/button-enablement
     def _update_tap_buttons(self) -> None:
         """Refresh enabled/disabled state of New Tap, Pause, Cancel, and tap count spinner.
 
-        Reads the analyzer's real state flags — is_detecting, is_detection_paused,
-        is_measurement_complete, material_tap_phase, is_ready_for_detection — so the rule is
-        the same one Swift computes in TapToneAnalysisView, with no derived shadow. Mirrors
-        Swift buttonRule / test_button_enablement.
+        Gathers the analyzer's real state and hands it to the shared rule in
+        models/button_enablement.py, so the view and the button-enablement test exercise ONE
+        implementation. Mirrors Swift (TapToneAnalysisView -> buttonRule) and web (App.tsx ->
+        buttonRule); the rule used to be inline here with a second copy in the test.
         """
-        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
-        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.button_enablement import ButtonState, button_rule
 
         tap_num = self.tap_num_spin.value()
         mt = TDS.measurement_type()
         analyzer = self.fft_canvas.analyzer
 
-        is_detecting = analyzer.is_detecting
-        is_paused = analyzer.is_detection_paused
+        is_paused = analyzer.is_detection_paused  # used below for the Pause/Resume label
         is_complete = analyzer.is_measurement_complete
-        phase = analyzer.material_tap_phase
-        is_comparing = self.fft_canvas.is_comparing
         in_review = self._is_in_review_phase()
         # fft running + past the post-tap/route-change reinit window. `_is_running` is the
         # audio-engine-running flag (the analog of Swift fft.isRunning); is_ready_for_detection
@@ -2929,28 +2935,21 @@ class MainWindow(QtWidgets.QMainWindow):
             not (self._tap_count_captured > 0 and not is_complete)
         )
 
-        # ── Enablement (mirrors Swift buttonRule / test_button_enablement) ──
-        # A sequence is "in flight" when the analyzer is working toward a measurement: for
-        # guitar, detecting or paused; for material, past NOT_STARTED and not complete. New
-        # Tap is disabled while in flight and enabled otherwise (idle OR complete) — the
-        # honest predicate, replacing the old "complete only" proxy that wrongly locked New
-        # Tap in the disarmed-idle state the Dump Capture Audio folder guard can produce (§4b).
-        if mt.is_guitar:
-            sequence_active = is_detecting or is_paused
-        else:
-            sequence_active = phase != _MTP.NOT_STARTED and not is_complete
-        # multi-step = multi-tap OR multi-phase (plate; brace is single-phase).
-        multi_step = tap_num > 1 or mt == _MT.PLATE
-        cancel_enabled = in_review or (sequence_active and multi_step)
-
-        # New Tap: comparison overrides; else needs fft running + ready, then enabled when
-        # idle (no sequence in flight) — including the disarmed-idle state, so the user can re-arm.
-        self.new_tap_btn.setEnabled(is_comparing or (ready and not sequence_active))
-        # Pause/Resume ("Accept" in review): review, detecting, or paused — works even
-        # single-tap, for setting the threshold without doing a capture.
-        self.pause_tap_btn.setEnabled(in_review or is_detecting or is_paused)
-        # Cancel ("Redo" in review) restarts: a review phase, or an active multi-step sequence.
-        self.cancel_tap_btn.setEnabled(cancel_enabled)
+        # ── Enablement — the shared canonical rule (models/button_enablement.py) ──
+        # `ready` folds Swift's `fft.isRunning && isReadyForDetection` into one flag, so it is
+        # passed as fft_is_running with is_ready_for_detection left at its default.
+        out = button_rule(ButtonState(
+            detection_state=analyzer.detection_state,
+            is_measurement_complete=is_complete,
+            display_mode=analyzer.display_mode,
+            fft_is_running=ready,
+            measurement_type=mt,
+            material_tap_phase=analyzer.material_tap_phase,
+            number_of_taps=tap_num,
+        ))
+        self.new_tap_btn.setEnabled(not out.new_tap_disabled)
+        self.pause_tap_btn.setEnabled(out.pause_enabled)
+        self.cancel_tap_btn.setEnabled(out.cancel_enabled)
 
         if in_review:
             # Relabel Pause → Accept (green) and Cancel → Redo <phase> (orange).
@@ -2980,9 +2979,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cancel_tap_btn.setText("Cancel")
             # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? .orange : .gray)
             self.cancel_tap_btn.setStyleSheet(
-                "color: orange;" if cancel_enabled else "color: gray;"
+                "color: orange;" if out.cancel_enabled else "color: gray;"
             )
-            if cancel_enabled:
+            if out.cancel_enabled:
                 self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle", color="orange"))
             else:
                 self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle"))

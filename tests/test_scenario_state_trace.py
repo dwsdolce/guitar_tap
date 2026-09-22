@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from PySide6 import QtCore, QtWidgets
 
+from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -109,7 +110,7 @@ class TestScenarioStateTrace:
         _drain()
         trace.append(_snap("postStart", sut))
 
-        sut.is_detecting = False               # handle_tap_detection effect
+        sut.detection_state = DetectionState.IDLE               # handle_tap_detection effect
         sut.captured_taps.append(_fake_tap())
         sut.current_tap_count = 1
         trace.append(_snap("postCapture", sut))
@@ -131,7 +132,7 @@ class TestScenarioStateTrace:
         trace.append(_snap("init", sut))
 
         sut.start_tap_sequence()              # triggered by type-change handler
-        sut.is_detecting = False              # spurious tap fires immediately
+        sut.detection_state = DetectionState.IDLE              # spurious tap fires immediately
         _drain()                              # drain any deferred work
         trace.append(_snap("postStart", sut))
 
@@ -166,7 +167,7 @@ class TestScenarioStateTrace:
 
         sut.captured_taps.append(_fake_tap())
         sut.current_tap_count = 1
-        sut.is_detecting = True               # schedule_guitar_re_enable result
+        sut.detection_state = DetectionState.LISTENING               # schedule_guitar_re_enable result
         trace.append(_snap("postTap1", sut))
 
         sut.pause_tap_detection()
@@ -177,7 +178,7 @@ class TestScenarioStateTrace:
 
         sut.captured_taps = [_fake_tap(), _fake_tap(), _fake_tap()]
         sut.current_tap_count = 3
-        sut.is_detecting = False
+        sut.detection_state = DetectionState.IDLE
         sut.process_multiple_taps()
         trace.append(_snap("postProcess", sut))
 
@@ -204,7 +205,7 @@ class TestScenarioStateTrace:
 
         sut.captured_taps.append(_fake_tap())
         sut.current_tap_count = 1
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         trace.append(_snap("postTap1", sut))
 
         sut.cancel_tap_sequence()

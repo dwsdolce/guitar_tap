@@ -33,6 +33,8 @@ from PySide6 import QtCore, QtWidgets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from guitar_tap.models.detection_state import DetectionState  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Shared QApplication fixture
@@ -88,8 +90,8 @@ class TestQTimerMainThreadDelivery:
         sut = _make_sut()
 
         # _do_reenable_detection is one of the WI-10 refactored slots.
-        # Set is_detecting=False first so the slot's effect is visible.
-        sut.is_detecting = False
+        # Start from IDLE so the slot's effect is visible.
+        sut.detection_state = DetectionState.IDLE
         sut.tap_detected = True
 
         QtCore.QTimer.singleShot(0, sut._do_reenable_detection)
@@ -123,7 +125,7 @@ class TestTapDetectionSlots:
     def test_do_reenable_detection_sets_is_detecting_true(self):
         """_do_reenable_detection (site 6) enables detection after plate cooldown."""
         sut = self._make()
-        sut.is_detecting = False
+        sut.detection_state = DetectionState.IDLE
         sut.tap_detected = True
         # Simulate very quiet input so is_above_threshold should be False.
         sut._current_input_level_db = -80.0
@@ -138,7 +140,7 @@ class TestTapDetectionSlots:
     def test_do_reenable_guitar_sets_is_detecting_true(self):
         """_do_reenable_guitar (site 5) re-enables detection for guitar mode."""
         sut = self._make()
-        sut.is_detecting = False
+        sut.detection_state = DetectionState.IDLE
         sut.tap_detected = True
         sut._current_input_level_db = -80.0
 

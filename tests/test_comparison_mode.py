@@ -646,3 +646,52 @@ class TestComparisonDefinitiveModes:
         assert e.mode_peak_ids[GuitarMode.AIR.value] == air.id, "healed Air (positional)"
         assert e.mode_peak_ids[GuitarMode.TOP.value] == top.id, "healed Top (positional)"
 
+
+
+# ---------------------------------------------------------------------------
+# CP-U9 / CP-U10 — a comparison overlay stands the detector down (#17 F31)
+# ---------------------------------------------------------------------------
+
+
+class TestComparisonDisarmsDetection:
+    """An overlay is frozen, like a loaded measurement.
+
+    Left armed, the analysis loop keeps overwriting the displayed peaks from live audio
+    underneath the overlay, and a tap captures and completes a measurement the user never
+    sees being made — which is what a run-review of #17 F30 found in the shipping app.
+
+    Uses a real TapToneAnalyzer rather than the stub above, because the behaviour under test
+    IS the detection-state property. Mirrors Swift CP-U9/CP-U10 and web's pair.
+    """
+
+    def _sut(self):
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        _get_app()
+        return TapToneAnalyzer()
+
+    def test_CP_U9_load_comparison_while_detecting_disarms(self):
+        from guitar_tap.models.detection_state import DetectionState
+
+        sut = self._sut()
+        sut.detection_state = DetectionState.LISTENING
+
+        sut.load_comparison([_make_measurement("A"), _make_measurement("B")])
+
+        assert sut.is_comparing is True, "precondition: the overlay was built"
+        assert sut.detection_state is DetectionState.IDLE, (
+            "REGRESSION: a comparison overlay is frozen — leaving the detector armed lets live "
+            "audio overwrite the overlay's peaks and lets a tap complete a measurement invisibly."
+        )
+
+    def test_CP_U10_empty_comparison_leaves_detection_alone(self):
+        from guitar_tap.models.detection_state import DetectionState
+
+        sut = self._sut()
+        sut.detection_state = DetectionState.LISTENING
+
+        sut.load_comparison([])
+
+        assert sut.is_comparing is False, "an empty comparison stays live"
+        assert sut.detection_state is DetectionState.LISTENING, (
+            "nothing was frozen, so the detector must keep running"
+        )

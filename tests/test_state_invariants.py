@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from PySide6 import QtCore, QtWidgets
 
+from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.material_tap_phase import MaterialTapPhase
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
@@ -127,7 +128,7 @@ class TestStateInvariants:
     def test_V3_after_single_tap_complete_holds_invariants(self):
         sut = _make_sut(number_of_taps=1)
         sut.start_tap_sequence()
-        sut.is_detecting = False
+        sut.detection_state = DetectionState.IDLE
         sut.captured_taps.append(_fake_tap())
         sut.current_tap_count = 1
         sut.process_multiple_taps()
@@ -140,7 +141,7 @@ class TestStateInvariants:
         sut.start_tap_sequence()
         sut.captured_taps.append(_fake_tap())
         sut.current_tap_count = 1
-        sut.is_detecting = True   # schedule_guitar_re_enable result
+        sut.detection_state = DetectionState.LISTENING   # schedule_guitar_re_enable result
         assert state_invariant_violation(sut) is None
 
     def test_V5_after_cancel_holds_invariants(self):
@@ -158,7 +159,7 @@ class TestStateInvariants:
     def test_V7_impossible_state_detecting_and_complete_is_flagged(self):
         """If this passes with violation == None, the checker itself has regressed."""
         sut = _make_sut(number_of_taps=1)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.is_measurement_complete = True
         assert state_invariant_violation(sut) is not None, (
             "Invariant checker must reject (is_detecting && is_measurement_complete) in guitar mode"

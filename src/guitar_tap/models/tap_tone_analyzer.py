@@ -55,6 +55,7 @@ from guitar_tap.utilities.logging import gt_log
 # Lives in analysis_display_mode.py so the mixin files can import it without
 # creating a circular dependency (they are imported by this file).
 from .analysis_display_mode import AnalysisDisplayMode
+from .detection_state import DetectionState
 from .tap_tone_analyzer_analysis_helpers import TapToneAnalyzerAnalysisHelpersMixin
 from .tap_tone_analyzer_annotation_management import TapToneAnalyzerAnnotationManagementMixin
 
@@ -102,9 +103,15 @@ class TapToneAnalyzer(
     # Live tap count update: (captured, total).
     tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)
 
-    # Emitted whenever is_detecting flips. Stands in for Swift's @Published isDetecting, which the
-    # status bar binds to directly; without it the view cannot re-evaluate on a detection-state change.
-    detectionStateChanged: QtCore.Signal = QtCore.Signal(bool)
+    # Emitted whenever detection_state changes, carrying the new DetectionState. Stands in for
+    # Swift's @Published detectionState, which the status bar binds to directly; without it the
+    # view cannot re-evaluate on a detection-state change.
+    detectionStateChanged: QtCore.Signal = QtCore.Signal(object)
+    # Emitted whenever is_ready_for_detection changes. Stands in for Swift's @Published
+    # isReadyForDetection: there it flips during a route-change restart and every bound view
+    # re-renders, which is what greys New Tap out for the settle. Python has no such binding, so
+    # without this signal the button state simply went stale (#17 F32).
+    readyForDetectionChanged: QtCore.Signal = QtCore.Signal(bool)
     # Ring-out time measured by DecayTracker (seconds).
     ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
     # Input level 0-100 scale (dBFS + 100).
@@ -309,9 +316,14 @@ class TapToneAnalyzer(
         # tap_detection_threshold.
         self.tap_detection_level: float = -100.0    # mirrors tapDetectionLevel
         self.tap_detected: bool = False             # mirrors tapDetected
-        self._is_detecting: bool = False             # mirrors isDetecting
-        self.is_detection_paused: bool = False      # mirrors isDetectionPaused
-        self.is_ready_for_detection: bool = True    # mirrors isReadyForDetection
+        # mirrors detectionState; is_detecting / is_detection_paused derive from it
+        self._detection_state: DetectionState = DetectionState.IDLE
+        # True while a device/route change settles and the chart should show nothing. The
+        # transient blank used to be expressed by writing display_mode = FROZEN, which overloaded
+        # that value and made the "should I blank?" guard wipe completed measurements (#17 F35).
+        self.is_settling: bool = False
+        # mirrors isReadyForDetection; the property below emits readyForDetectionChanged
+        self._is_ready_for_detection: bool = True
         self.current_tap_count: int = 0             # mirrors currentTapCount
         self.tap_progress: float = 0.0              # mirrors tapProgress
         # All writes must go through _set_status_message() to emit statusMessageChanged.
@@ -1111,23 +1123,35 @@ class TapToneAnalyzer(
         self.refresh_displayed_peaks()
 
     @property
-    def is_detecting(self) -> bool:
-        """Whether the analyzer is actively listening for taps.
+    def detection_state(self) -> DetectionState:
+        """Whether the detector is listening, paused mid-sequence, or neither.
 
-        Setting it arms (false→true) or disarms (→false) the audio-queue
-        level-crossing detector. Mirrors Swift `isDetecting`.
+        Setting it arms (on entry to LISTENING) or disarms (on exit) the audio-queue
+        level-crossing detector. Mirrors Swift `detectionState`.
+
+        One value rather than the ``is_detecting`` / ``is_detection_paused`` pair it
+        replaced: that pair could express "detecting AND paused", and every site touching
+        either flag had to keep them consistent by hand. Both remain available as
+        read-only properties below.
         """
-        return self._is_detecting
+        return self._detection_state
 
-    @is_detecting.setter
-    def is_detecting(self, value: bool) -> None:
-        old = self._is_detecting
-        self._is_detecting = value
-        # Mirrors Swift isDetecting.didSet — arm the audio-queue level-crossing
-        # detector on false→true transition; disarm on any transition to false.
+    @detection_state.setter
+    def detection_state(self, value: DetectionState) -> None:
+        old = self._detection_state
+        # Nothing to do for a same-value assignment — and in particular the re-confirmation
+        # in start_tap_sequence must not re-arm, so that a capture already started by the
+        # audio queue is not disrupted. Mirrors Swift's `guard oldValue != detectionState`.
+        if value is old:
+            return
+        self._detection_state = value
+        was_detecting = old is DetectionState.LISTENING
+        is_detecting = value is DetectionState.LISTENING
+        # Mirrors Swift detectionState.didSet — arm the audio-queue level-crossing
+        # detector on entry to LISTENING; disarm on exit.
         if self.mic is not None:
-            if value and not old:
-                # false → true: arm crossing and sync previous level.
+            if is_detecting and not was_detecting:
+                # → LISTENING: arm crossing and sync previous level.
                 # Reset the consecutive-above counter so arming starts a
                 # fresh candidate run — mirrors Swift didSet on
                 # ``levelCrossingArmed`` (see RealtimeFFTAnalyzer.swift).
@@ -1141,8 +1165,8 @@ class TapToneAnalyzer(
                 # waiting for the real next tap's attack.
                 if not self.mic.is_playing_file:
                     self.mic._previous_level_db = -100.0
-            elif not value:
-                # → false: disarm crossing.
+            elif not is_detecting:
+                # left LISTENING: disarm crossing.
                 # During file playback, the audio queue manages its own
                 # re-arming cycle (_accumulate_gated_samples re-arms after
                 # each capture completes).  Disarming here would undo that
@@ -1151,13 +1175,47 @@ class TapToneAnalyzer(
                     self.mic._level_crossing_consecutive_above = 0
                     self.mic._level_crossing_armed = False
 
-        # Swift's `isDetecting` is @Published, so every view bound to it re-evaluates on ANY
+        # Swift's `detectionState` is @Published, so every view bound to it re-evaluates on ANY
         # change — that is how the status bar's tap-count label tracks it. Python has no such
-        # binding: without this signal the view could only sample is_detecting inside some other
-        # slot (set_tap_count, driven by tapCountChanged), which meant a change to is_detecting
-        # alone never refreshed anything — the label's visibility and text both went stale.
-        if value != old:
-            self.detectionStateChanged.emit(value)
+        # binding: without this signal the view could only sample the state inside some other
+        # slot (set_tap_count, driven by tapCountChanged), which meant a state change alone
+        # never refreshed anything — the label's visibility and text both went stale.
+        self.detectionStateChanged.emit(value)
+
+    @property
+    def is_detecting(self) -> bool:
+        """Whether the analyzer is actively listening for taps.
+
+        False after stop(), cancel_tap_sequence(), or while paused.
+        Mirrors Swift `isDetecting`.
+        """
+        return self._detection_state is DetectionState.LISTENING
+
+    @property
+    def is_ready_for_detection(self) -> bool:
+        """False during the brief period after a route change while the engine reinitialises.
+
+        The New Tap button is disabled while this is False. Mirrors Swift `isReadyForDetection`;
+        setting it emits readyForDetectionChanged so the view can re-evaluate, which is what
+        Swift gets for free from @Published.
+        """
+        return self._is_ready_for_detection
+
+    @is_ready_for_detection.setter
+    def is_ready_for_detection(self, value: bool) -> None:
+        if value == self._is_ready_for_detection:
+            return
+        self._is_ready_for_detection = value
+        self.readyForDetectionChanged.emit(value)
+
+    @property
+    def is_detection_paused(self) -> bool:
+        """Whether the tap sequence is paused (spectrum stays live, detection is off).
+
+        Distinct from DetectionState.IDLE because pause preserves the in-progress tap
+        count, while a full stop resets it. Mirrors Swift `isDetectionPaused`.
+        """
+        return self._detection_state is DetectionState.PAUSED
 
     def start(
         self,

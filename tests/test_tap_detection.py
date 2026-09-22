@@ -36,6 +36,7 @@ def qt_app():
     return _get_app()
 
 
+from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
 from guitar_tap.models.measurement_type import MeasurementType
@@ -87,7 +88,7 @@ class TestRisingEdge:
     def test_T1_above_threshold_sets_tap_detected(self):
         """T1: Rising edge above threshold sets tap_detected = True."""
         sut = _make_sut(threshold=-40)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.is_above_threshold = False
 
         # Rising edge fires after RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS
@@ -101,7 +102,7 @@ class TestRisingEdge:
         """T1b: last_tap_time is set when a tap is detected."""
         import time as _t
         sut = _make_sut(threshold=-40)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.is_above_threshold = False
 
         before = _t.monotonic()
@@ -123,7 +124,7 @@ class TestBelowThreshold:
     def test_T2_below_threshold_does_not_detect(self):
         """T2: A level below threshold leaves tap_detected = False."""
         sut = _make_sut(threshold=-40)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.is_above_threshold = False
 
         sut.detect_tap(level=-50, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
@@ -142,7 +143,7 @@ class TestWarmup:
         """T3: Calls during warm-up period suppress detection entirely."""
         import time as _t
         sut = _make_sut()
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.is_above_threshold = False
         # Set start time to 'now' so warmup is still active.
         sut.warmup_start_audio_time = 0.0  # audio clock: warm-up starts now
@@ -163,7 +164,7 @@ class TestCooldown:
         """T4: A second detect_tap call within tap_cooldown is rejected."""
         import time as _t
         sut = _make_sut(threshold=-40)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.is_above_threshold = False
         # Simulate that a tap was just recorded 0.1 s ago.
         sut.last_tap_time = _t.monotonic() - 0.1
@@ -184,7 +185,7 @@ class TestHysteresis:
         """T5: Signal between falling and rising threshold keeps is_above_threshold True."""
         import time as _t
         sut = _make_sut(threshold=-40, hysteresis=5)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
 
         # First sequence: rising-edge confirmation requires N consecutive
         # above-rising-threshold calls before firing — feed enough to latch.
@@ -209,7 +210,7 @@ class TestHysteresis:
     def test_T5b_signal_below_falling_threshold_resets_above_threshold(self):
         """T5b: Once signal drops below falling_threshold, is_above_threshold becomes False."""
         sut = _make_sut(threshold=-40, hysteresis=5)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.is_above_threshold = True   # currently above
 
         # Signal drops below falling_threshold (-45)
@@ -229,7 +230,7 @@ class TestPostWarmupSync:
     def test_T8_just_exited_warmup_syncs_then_skips(self):
         """T8: First frame after warmup syncs is_above_threshold but does not fire tap."""
         sut = _make_sut(threshold=-40)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.just_exited_warmup = True
         # warmup_start_audio_time is 2 audio-seconds ago → warm-up check passes
 
@@ -261,7 +262,7 @@ class TestPlateMode:
             sut.number_of_taps = 1
             sut.warmup_start_audio_time = -2.0  # audio-seconds in the past
             sut.just_exited_warmup = False
-            sut.is_detecting = True
+            sut.detection_state = DetectionState.LISTENING
             sut.is_above_threshold = False
 
             # Set a controlled noise floor estimate.

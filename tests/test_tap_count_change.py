@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from PySide6 import QtWidgets
 
+from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -58,8 +59,7 @@ def _make_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
     sut.warmup_start_audio_time = -2.0
     sut.just_exited_warmup = False
     TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
-    sut.is_detecting = False
-    sut.is_detection_paused = False
+    sut.detection_state = DetectionState.IDLE
     sut.is_measurement_complete = False
     sut.freq = np.linspace(0, 2000, 256)
     return sut
@@ -73,7 +73,7 @@ class TestTapCountChange:
     # Raising the count while armed-and-waiting refreshes the prompt.
     def test_raising_count_while_armed_idle_refreshes_prompt(self):
         sut = _make_sut(1)
-        sut.is_detecting = True     # armed, waiting for the first tap
+        sut.detection_state = DetectionState.LISTENING     # armed, waiting for the first tap
         sut.captured_taps = []
         sut.set_tap_num(3)
         assert sut.status_message == "Tap the guitar 3 times..."
@@ -81,7 +81,7 @@ class TestTapCountChange:
     # Lowering it back also refreshes (the regression the web's PC-4 fixed).
     def test_lowering_count_while_armed_idle_refreshes_prompt(self):
         sut = _make_sut(4)
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.captured_taps = []
         sut.set_tap_num(1)
         assert sut.status_message == "Tap the guitar..."
@@ -111,7 +111,7 @@ class TestNoImplicitFinalise:
         freqs = np.linspace(0, 2000, 64)
         sut.captured_taps = [(mags, freqs, _dt.datetime.now()) for _ in range(taps)]
         sut.current_tap_count = taps
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         return sut
 
     def test_lowering_to_the_captured_count_does_not_complete(self):

@@ -33,6 +33,7 @@ from PySide6.QtCore import Slot
 from guitar_tap.utilities.logging import TAP_DEBUG, gt_log
 
 from .analysis_display_mode import AnalysisDisplayMode
+from .detection_state import DetectionState
 from .realtime_fft_analyzer import RealtimeFFTAnalyzer
 
 
@@ -305,7 +306,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         # Stop detection temporarily while handling this tap (mirrors Swift line 247).
-        self.is_detecting = False
+        self.detection_state = DetectionState.IDLE
 
         meas_type = _tds.measurement_type()
         is_plate = (meas_type == _MT.PLATE)
@@ -395,12 +396,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             self._last_level_crossing_capture_id = -1
         if current_level <= falling_threshold:
             self.is_above_threshold = False
-            self.is_detecting = True
+            self.detection_state = DetectionState.LISTENING
             self.tap_detected = False
             self._set_status_message(self._guitar_loop_status(capturing=False))
         else:
             self.is_above_threshold = True
-            self.is_detecting = True
+            self.detection_state = DetectionState.LISTENING
             self.tap_detected = False
             self._set_status_message(
                 f"Tap {self.current_tap_count}/{self.number_of_taps} captured."
@@ -513,7 +514,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         current_level = self._current_input_level_db
         falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
         self.is_above_threshold = current_level > falling_threshold
-        self.is_detecting = True
+        self.detection_state = DetectionState.LISTENING
         self.tap_detected = False
         # Clear stale fast-start marker so the next tap's main-thread
         # start_gated_capture correctly falls back to pre-roll seeding
@@ -626,7 +627,13 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # tap onset (see start_guitar_gated_capture).
 
         # Emit spectrum for the view to draw.
-        if self._display_mode == AnalysisDisplayMode.LIVE:
+        # A device/route change is settling: show nothing rather than the new device's
+        # not-yet-valid audio. This used to fall out of the settle writing display_mode = FROZEN
+        # with blank frozen arrays; the settle now says so directly and leaves the frozen arrays
+        # (a completed or loaded measurement's data) alone (#17 F35).
+        if self.is_settling:
+            self.spectrumUpdated.emit(np.array([]), np.array([]))
+        elif self._display_mode == AnalysisDisplayMode.LIVE:
             if self.is_measurement_complete:
                 self.spectrumUpdated.emit(self.frozen_frequencies, self.frozen_magnitudes)
             else:
@@ -638,9 +645,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 peak_mag = float(fft_peak_amp) - 100.0
                 self.analyze_magnitudes(list(mag_y_db), list(self.freq), peak_mag)
                 self.spectrumUpdated.emit(self.freq, mag_y_db)
-        elif self._display_mode == AnalysisDisplayMode.FROZEN:
-            self.spectrumUpdated.emit(self.frozen_frequencies, self.frozen_magnitudes)
-        # COMPARISON: skip spectrum update — only overlay curves shown
+        # COMPARISON: skip spectrum update — only overlay curves shown.
+        # There was a FROZEN branch here emitting the frozen arrays; it was redundant with the
+        # is_measurement_complete check above (a loaded or completed measurement is complete) and
+        # unreachable once the settle stopped writing FROZEN (#17 F35).
 
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
         self.levelChanged.emit(fft_peak_amp)

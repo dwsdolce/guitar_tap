@@ -198,7 +198,8 @@ class FftCanvas(pg.PlotWidget):
     tapDetected: QtCore.Signal = QtCore.Signal()
     ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
     tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)  # (captured, total)
-    detectionStateChanged: QtCore.Signal = QtCore.Signal(bool)  # is_detecting flipped
+    detectionStateChanged: QtCore.Signal = QtCore.Signal(object)  # new DetectionState
+    readyForDetectionChanged: QtCore.Signal = QtCore.Signal(bool)  # engine ready for detection
     devicesChanged: QtCore.Signal = QtCore.Signal(list)       # new device-name list
     currentDeviceLost: QtCore.Signal = QtCore.Signal(str)     # lost device name
     plateStatusChanged: QtCore.Signal = QtCore.Signal(str)    # plate capture status
@@ -460,6 +461,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.tapDetectedSignal.connect(self._on_tap_detected_from_analyzer)
         self.analyzer.tapCountChanged.connect(self.tapCountChanged)
         self.analyzer.detectionStateChanged.connect(self.detectionStateChanged)
+        self.analyzer.readyForDetectionChanged.connect(self.readyForDetectionChanged)
         self.analyzer.ringOutMeasured.connect(self.ringOutMeasured)
         self.analyzer.devicesChanged.connect(self.devicesChanged)
         self.analyzer.currentDeviceLost.connect(self.currentDeviceLost)
@@ -750,12 +752,11 @@ class FftCanvas(pg.PlotWidget):
         from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
         if self.analyzer.is_measurement_complete:
             return (self.analyzer.frozen_frequencies, self.analyzer.frozen_magnitudes)
-        # During a device-change settle, display_mode is FROZEN but
-        # is_measurement_complete is False.  Return the frozen arrays directly
-        # (empty = blank spectrum during settle).  Mirrors the Swift fix in
-        # TapToneAnalysisView+SpectrumViews.swift displaySpectrum.
-        if self.analyzer.display_mode == _ADM.FROZEN:
-            return (self.analyzer.frozen_frequencies, self.analyzer.frozen_magnitudes)
+        # A device/route change is settling — show nothing. This used to read back a blank the
+        # settle had written into the frozen arrays via display_mode = FROZEN; the settle now says
+        # so directly and leaves those arrays alone. Mirrors Swift displaySpectrum (#17 F35).
+        if self.analyzer.is_settling:
+            return (None, None)
         return (self.analyzer.freq, None)
 
     @property

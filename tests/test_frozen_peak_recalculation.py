@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 # Mirrors the fixture pattern used in test_tap_detection.py.
 from PySide6 import QtWidgets
 
+from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.resonant_peak import ResonantPeak
 from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
 from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
@@ -1034,7 +1035,7 @@ class TestLivePath:
         sut.min_frequency = 50.0
         sut.max_frequency = 500.0
         sut.peak_min_threshold = -80.0
-        sut.is_detecting = True
+        sut.detection_state = DetectionState.LISTENING
         sut.is_measurement_complete = False
 
         freqs, mags = _gaussian_spectrum([(200.0, -20.0)])

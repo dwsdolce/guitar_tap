@@ -11,6 +11,8 @@ import time as _time
 
 from guitar_tap.utilities.logging import gt_log
 
+from .detection_state import DetectionState
+
 
 class TapToneAnalyzerControlMixin:
     """Lifecycle control and parameter management for TapToneAnalyzer.
@@ -64,6 +66,60 @@ class TapToneAnalyzerControlMixin:
                     else "All taps captured. Processing...")
         return (self._tap_prompt() if self.current_tap_count == 0
                 else f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again...")
+
+    PAUSED_STATUS = "Detection paused – tap freely, then resume"
+
+    def _armed_prompt(self) -> str:
+        """The prompt for an ARMED analyzer — guitar count-aware, material phase-aware.
+
+        Extracted from resume_tap_detection(), which is where this logic lived as the only
+        "restore a context-appropriate prompt" in the app. Mirrors Swift armedPrompt().
+        """
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+
+        m_type = _tds.measurement_type()
+        if m_type.is_guitar:
+            return self._guitar_loop_status(False)
+        phase = getattr(self, "material_tap_phase", _MTP.NOT_STARTED)
+        if phase == _MTP.CAPTURING_LONGITUDINAL:
+            return "Ready for fL tap"
+        if phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
+            return "Ready for fLC tap"
+        return "Ready for fC tap"
+
+    def _status_after_settle(self) -> "str | None":
+        """The status to restore when a device/route-change settle ends, or None to leave it alone.
+
+        The settle used to CHOOSE between two strings (the tap prompt when detecting, "Ready"
+        otherwise), which is wrong in both directions: mid-sequence it said "Tap the guitar 3
+        times…" when a tap was already captured, and on a finished measurement it replaced
+        "Analysis complete! N peaks…" with "Ready". The status is a function of state, so derive it
+        rather than guessing — and say nothing where the status is a RESULT announcement rather than
+        a live prompt, because a completed or loaded measurement's status is not re-derivable and
+        must not be thrown away. Mirrors Swift statusAfterSettle() (#17 F33).
+        """
+        from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
+
+        if self.is_measurement_complete:
+            return None                      # "Analysis complete…" / "Loaded measurement…"
+        if self.display_mode == _ADM.COMPARISON:
+            return None                      # an overlay is not a tap prompt
+        if self.is_detection_paused:
+            return self.PAUSED_STATUS
+        if self.is_detecting:
+            return self._armed_prompt()
+        return "Ready"
+
+    def _restored_status(self, before: str) -> str:
+        """The status to show when a settle ends, given what it said before the settle began.
+
+        The whole decision in one pure function, so every edition can pin it. Mirrors Swift
+        restoredStatus(before:) (#17 F33).
+        """
+        derived = self._status_after_settle()
+        return derived if derived is not None else before
 
     CLIPPING_WARNING_STATUS = "⚠ Input clipping — reduce mic gain"
     DEAD_INPUT_STATUS = "⚠ No audio input — check the microphone connection"
@@ -349,12 +405,14 @@ class TapToneAnalyzerControlMixin:
 
         gt_log("🔄 TapToneAnalyzer: Handling route change restart - resetting detection state")
 
-        was_detecting = self.is_detecting
+        was_detecting = self.detection_state is DetectionState.LISTENING
 
         # Disable the is_ready_for_detection flag while reinitialising.
-        # Mirrors Swift: isReadyForDetection = false / isDetecting = false.
+        # Mirrors Swift: isReadyForDetection = false, then IDLE only if it was listening —
+        # a sequence paused before the route change must still be paused after it.
         self.is_ready_for_detection = False
-        self.is_detecting = False
+        if was_detecting:
+            self.detection_state = DetectionState.IDLE
 
         # Reset the warmup timer so the new engine session starts cleanly.
         # Mirrors Swift: analyzerStartTime = Date().
@@ -366,19 +424,25 @@ class TapToneAnalyzerControlMixin:
         self.is_above_threshold = True
         self.tap_detected = False
 
-        # Freeze the display on a blank spectrum while the pipeline refills with
-        # valid data from the new device.  Only freeze if we were in live mode —
-        # don't disturb a frozen measurement result.
-        # Mirrors Swift: wasLive / setFrozenSpectrum([], []) / displayMode = .frozen /
-        #                currentPeaks = [] / identifiedModes = [].
-        was_live = (self.display_mode == _ADM.LIVE)
-        if was_live:
-            self.set_frozen_spectrum(np.array([]), np.array([]))
-            self.display_mode = _ADM.FROZEN
+        # Blank only if a LIVE spectrum is on screen. `display_mode == LIVE` was the old test and
+        # it is wrong: no completion path sets FROZEN, so a finished measurement is still LIVE and
+        # was being wiped. is_measurement_complete is the field that actually says whether what you
+        # are looking at is a result. Mirrors Swift wasShowingLive / is_settling (#17 F35).
+        was_showing_live = (not self.is_measurement_complete
+                            and self.display_mode != _ADM.COMPARISON)
+        if was_showing_live:
+            # The flag is the whole mechanism — no display_mode write, so a completed or loaded
+            # measurement is untouched.
+            self.is_settling = True
             self.all_peaks = []
             self.identified_modes = []
             self.peaksChanged.emit([])
 
+        # Remember what the status said BEFORE the transient replaces it. When the settle ends,
+        # _status_after_settle() returns None for the states whose status is a result announcement
+        # rather than a prompt — and "leave it alone" has to mean restoring THIS, not leaving the
+        # transient up forever, which is what it meant on the first pass (#17 F33).
+        self._status_before_settle = self.status_message
         # Mirrors Swift: statusMessage = "Audio device changed - reinitializing...".
         self._set_status_message("Audio device changed - reinitializing...")
 
@@ -388,7 +452,7 @@ class TapToneAnalyzerControlMixin:
         # Mirrors Swift: fftSettleTime = 3.0 / DispatchQueue.main.asyncAfter.
         self._main_async_after(
             3000,
-            lambda: self._restore_detection_after_route_change(was_detecting, was_live),
+            lambda: self._restore_detection_after_route_change(was_detecting, was_showing_live),
         )
 
     def _restore_detection_after_route_change(self, was_detecting: bool, was_live: bool = False) -> None:
@@ -425,18 +489,17 @@ class TapToneAnalyzerControlMixin:
         # Unfreeze the display now that valid FFT data is available.
         # Mirrors Swift: setFrozenSpectrum([], []) / displayMode = .live.
         if was_live:
-            self.set_frozen_spectrum(np.array([]), np.array([]))
-            self.display_mode = _ADM.LIVE
+            self.is_settling = False
 
         # Mirrors Swift: isReadyForDetection = true.
         self.is_ready_for_detection = True
 
-        # Mirrors Swift: isDetecting / statusMessage restore block.
+        # Mirrors Swift: detectionState / statusMessage restore block. Derive the status from the
+        # state we are now in, and leave it alone where it is a result announcement (F33).
         if was_detecting:
-            self.is_detecting = True
-            self._set_status_message(self._tap_prompt())
-        else:
-            self._set_status_message("Ready")
+            self.detection_state = DetectionState.LISTENING
+        before = getattr(self, "_status_before_settle", None) or "Ready"
+        self._set_status_message(self._restored_status(before))
 
         gt_log(f"🔄 TapToneAnalyzer: Detection re-enabled after route change "
                f"(current level: {current_level} dB, threshold: {self.tap_detection_threshold} dB, "
@@ -466,13 +529,12 @@ class TapToneAnalyzerControlMixin:
     def pause_tap_detection(self) -> None:
         """Pause tap detection mid-sequence without losing the current tap count.
 
-        No-op when not currently detecting or already paused.
-        Mirrors Swift pauseTapDetection() guard: isDetecting && !isDetectionPaused.
+        No-op when not currently listening.
+        Mirrors Swift pauseTapDetection() guard: detectionState == .listening.
         """
-        if not self.is_detecting or self.is_detection_paused:
+        if self.detection_state is not DetectionState.LISTENING:
             return
-        self.is_detecting = False
-        self.is_detection_paused = True
+        self.detection_state = DetectionState.PAUSED
         # Stop accumulating audio during pause — mirrors Swift pauseTapDetection.
         self._is_session_recording = False
         self._set_status_message("Detection paused – tap freely, then resume")
@@ -482,16 +544,14 @@ class TapToneAnalyzerControlMixin:
         """Resume tap detection after a pause, continuing from the current tap count.
 
         No-op when not paused.
-        Mirrors Swift resumeTapDetection() guard: isDetectionPaused.
+        Mirrors Swift resumeTapDetection() guard: detectionState == .paused.
         Resets the warm-up timer inline (mirrors Swift analyzerStartTime = Date();
         isAboveThreshold = false) without calling the full reset_tap_detector().
         """
-        if not self.is_detection_paused:
+        if self.detection_state is not DetectionState.PAUSED:
             return
         from guitar_tap.models.measurement_type import MeasurementType as _MT
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-
-        self.is_detection_paused = False
 
         # Reset warm-up timer to prevent an immediate false trigger on the first frame.
         # Mirrors Swift: analyzerStartTime = Date(); isAboveThreshold = false
@@ -500,27 +560,10 @@ class TapToneAnalyzerControlMixin:
 
         # Resume accumulating audio after pause — mirrors Swift resumeTapDetection.
         self._is_session_recording = True
-        self.is_detecting = True
+        self.detection_state = DetectionState.LISTENING
 
-        # Restore a context-appropriate prompt (mirrors Swift resumeTapDetection).
-        resume_type = _tds.measurement_type()
-        is_plate = (resume_type == _MT.PLATE)
-        is_brace = (resume_type == _MT.BRACE)
-        if is_plate or is_brace:
-            from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
-            phase = getattr(self, "material_tap_phase", _MTP.NOT_STARTED)
-            if phase == _MTP.CAPTURING_LONGITUDINAL:
-                self._set_status_message("Ready for fL tap" if is_brace else "Ready for fL tap")
-            elif phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
-                self._set_status_message("Ready for fLC tap")
-            else:
-                self._set_status_message("Ready for fC tap")
-        elif self.current_tap_count == 0:
-            self._set_status_message(self._tap_prompt())
-        else:
-            self._set_status_message(
-                f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again..."
-            )
+        # Restore a context-appropriate prompt. The same derivation the device-change settle uses.
+        self._set_status_message(self._armed_prompt())
 
         self.tapDetectionPaused.emit(False)
 
@@ -634,7 +677,9 @@ class TapToneAnalyzerControlMixin:
         self.current_tap_count = 0
         self.tap_progress = 0.0
         self.tap_detected = False
-        self.is_detection_paused = False
+        # No pause-clear here: DetectionState.LISTENING further down leaves PAUSED on its
+        # own, and clearing to IDLE at this point would disarm a level crossing that a
+        # restart-while-listening is relying on staying armed. Mirrors Swift startTapSequence.
 
         # Cancel any in-flight gated capture from a previous sequence and drop
         # the pre-roll ring buffer.  Without this, a gated capture that was
@@ -742,7 +787,7 @@ class TapToneAnalyzerControlMixin:
         else:
             self.warmup_start_audio_time = self._audio_now()
 
-        self.is_detecting = True
+        self.detection_state = DetectionState.LISTENING
 
         # Set context-appropriate status message (mirrors Swift lines 184-196).
         if is_brace:
@@ -888,7 +933,7 @@ class TapToneAnalyzerControlMixin:
             falling = self.tap_detection_threshold - self.hysteresis_margin
             self.is_above_threshold = level > falling
             self.warmup_start_audio_time = self._audio_now()
-            self.is_detecting = True
+            self.detection_state = DetectionState.LISTENING
             self.tap_detected = False
             self._set_status_message("Rotate 90° and tap for fC")
 
@@ -1021,7 +1066,7 @@ class TapToneAnalyzerControlMixin:
         falling = self.tap_detection_threshold - self.hysteresis_margin
         self.is_above_threshold = level > falling
         self.warmup_start_audio_time = self._audio_now()
-        self.is_detecting = True
+        self.detection_state = DetectionState.LISTENING
         self.tap_detected = False
 
         self._set_material_tap_phase(capture_phase)

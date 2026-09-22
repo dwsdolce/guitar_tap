@@ -34,13 +34,14 @@ class AnalysisDisplayMode(Enum):
 
     # MARK: - Cases
 
-    # Live FFT; tap detection is active or waiting for a tap.
+    # The main spectrum is shown — live input, or the measurement's own frozen result once
+    # is_measurement_complete is set. Those two are NOT distinguished here: there used to be a
+    # FROZEN case, but nothing ever branched on it, because whether a result is displayed is what
+    # is_measurement_complete says. Keeping both meant two fields describing one fact, and no
+    # completion path set FROZEN — so the device-settle guard, which asked display_mode == LIVE,
+    # wiped finished measurements (#17 F35).
     # Mirrors Swift AnalysisDisplayMode.live.
     LIVE = auto()
-
-    # A single frozen or loaded measurement is displayed; tap detection is idle.
-    # Mirrors Swift AnalysisDisplayMode.frozen.
-    FROZEN = auto()
 
     # Two or more saved measurements are overlaid for comparison.
     # Tap detection is idle.

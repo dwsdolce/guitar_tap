@@ -54,6 +54,8 @@ from PySide6.QtCore import Slot
 from guitar_tap.utilities.logging import gt_log
 from guitar_tap.utilities.new_uuid import new_uuid
 
+from .detection_state import DetectionState
+
 
 class TapToneAnalyzerSpectrumCaptureMixin:
     """Gated-FFT capture pipeline and spectrum averaging for TapToneAnalyzer.
@@ -824,7 +826,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # TapToneAnalyzer+SpectrumCapture finishGuitarGatedCapture.  For
         # multi-tap sequences, _schedule_guitar_re_enable below sets
         # is_detecting=True again after the cooldown.
-        self.is_detecting = False
+        self.detection_state = DetectionState.IDLE
 
         # NOTE: no per-tap WAV dump here. The "Dump Capture Audio" diagnostic writes only ONE
         # continuous session WAV per measurement (finish_session_recording), which already contains
@@ -934,7 +936,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         level = self._current_input_level_db
         falling = self.tap_detection_threshold - self.hysteresis_margin
         self.is_above_threshold = level > falling
-        self.is_detecting = True
+        self.detection_state = DetectionState.LISTENING
         self.tap_detected = False
         self._set_material_tap_phase(_MTP.CAPTURING_FLC)
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
@@ -1574,7 +1576,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             # the decay, capturing 67 Hz L content instead of the real C tap.
             # Matches the skipWarmup=True initial setup in start_tap_sequence.
             self.is_above_threshold = True
-            self.is_detecting = True
+            self.detection_state = DetectionState.LISTENING
             self.tap_detected = False
             # Clear stale fast-start marker so the C tap's main-thread
             # start_gated_capture correctly falls back to pre-roll seeding
@@ -1592,7 +1594,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             # Emit longitudinal peaks now — mirrors Swift's single currentPeaks assignment.
             self._emit_peaks_array(self.peaks_above_peak_min)
             self._set_material_tap_phase(_MTP.REVIEWING_LONGITUDINAL)
-            self.is_detecting = False
+            self.detection_state = DetectionState.IDLE
             self._set_status_message(
                 f"fL: {avg_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
             )
@@ -1725,7 +1727,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 # rationale.  Without this the C tap's ring-out fires a
                 # bogus FLC "rising edge" on the decaying tail.
                 self.is_above_threshold = True
-                self.is_detecting = True
+                self.detection_state = DetectionState.LISTENING
                 self.tap_detected = False
                 with self._gated_lock:
                     self._last_level_crossing_capture_id = -1
@@ -1739,7 +1741,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             # Pause at review state — user must press Accept to continue or Redo to re-tap.
             self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
             self._set_material_tap_phase(_MTP.REVIEWING_CROSS)
-            self.is_detecting = False
+            self.detection_state = DetectionState.IDLE
             self._set_status_message(
                 f"fC: {avg_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
             )
@@ -1832,7 +1834,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             # Pause at review state — user must press Accept to complete or Redo to re-tap.
             self.set_frozen_spectrum(_np.array(avg_freqs), _np.array(avg_mags))
             self._set_material_tap_phase(_MTP.REVIEWING_FLC)
-            self.is_detecting = False
+            self.detection_state = DetectionState.IDLE
             self._set_status_message(
                 f"fLC: {avg_peak.frequency:.1f} Hz \u2014 Accept to complete or Redo to re-tap"
             )

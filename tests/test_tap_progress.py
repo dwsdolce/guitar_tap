@@ -256,3 +256,31 @@ class TestFlcCooldownCancellation:
 
         assert sut.material_tap_phase == phase_after_restart
         assert sut.material_tap_phase != MaterialTapPhase.CAPTURING_FLC
+
+
+# ---------------------------------------------------------------------------
+# A later count change must not rewrite a finished measurement (#17 F34)
+# ---------------------------------------------------------------------------
+
+
+class TestTapProgressAfterCountChange:
+    """tap_progress is STORED, written at each capture site and pinned to 1.0 at completion — so a
+    completed measurement's bar records what was actually measured. Raising the tap count afterwards
+    configures the NEXT measurement and must leave the finished one alone. Web derived it at render
+    time instead, so a complete 1-tap measurement's full bar dropped to a third when Taps went to 3.
+
+    Mirrors Swift TapProgressAfterCountChangeTests.
+    """
+
+    def test_complete_measurement_keeps_full_bar_when_tap_count_raised(self):
+        sut = _make(MeasurementType.GENERIC, 1)
+        sut.current_tap_count = 1
+        sut.tap_progress = 1.0
+        sut.is_measurement_complete = True
+
+        sut.number_of_taps = 3  # configures the next measurement
+
+        assert sut.tap_progress == 1.0, (
+            "REGRESSION: tap_progress must be stored, not derived — a later count change cannot "
+            "rewrite a finished measurement's bar"
+        )

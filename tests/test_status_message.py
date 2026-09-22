@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from PySide6 import QtWidgets
 
+from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.material_tap_phase import MaterialTapPhase
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.resonant_peak import ResonantPeak
@@ -75,8 +76,7 @@ def _make_sut(number_of_taps: int = 1,
     sut.warmup_start_audio_time = -2.0  # past the warm-up window
     sut.just_exited_warmup = False
     TapDisplaySettings.set_measurement_type(measurement_type)
-    sut.is_detecting = True
-    sut.is_detection_paused = False
+    sut.detection_state = DetectionState.LISTENING
     sut.is_measurement_complete = False
     sut.freq = np.linspace(0, 2000, 256)
     return sut
@@ -170,7 +170,7 @@ class TestStatusMessage:
         sut = _make_sut(2)
         sut.captured_taps = [_fake_spectrum(), _fake_spectrum()]
         sut.current_tap_count = 2
-        sut.is_detecting = False
+        sut.detection_state = DetectionState.IDLE
         sut._finish_capture()
         announced = sut.status_message
         assert announced.startswith("Analysis complete! ")
