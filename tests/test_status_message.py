@@ -349,3 +349,29 @@ class TestCaptureProgressStrings:
             mags, freqs, dominant, min_hz=100, max_hz=1200, prefer_lowest=False,
         )
         assert sut.status_message == "File: fL complete, capturing fC..."
+
+
+class TestStatusMessageReArm:
+    """The re-arm after a guitar tap's cooldown does not touch the status: the capture set the loop
+    prompt and it stays, as in Swift and the web. Python used to rewrite it here, and to show
+    "Tap N/M captured. Waiting for settle..." while the level was still high (#17 F45)."""
+
+    def test_re_arm_leaves_status_as_the_capture_set_it(self):
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+        sut = _make_sut(number_of_taps=3)
+        sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)
+        sut.start_tap_sequence()
+        t = np.arange(sut.mic.fft_size) / 48000.0
+        sut.finish_guitar_gated_capture(
+            (0.5 * np.exp(-t * 6) * np.sin(2 * np.pi * 100 * t)).astype(np.float32), 48000.0)
+        after_capture = sut.status_message
+        assert after_capture == sut._guitar_loop_status(capturing=False)
+
+        sut._current_input_level_db = -20.0  # still ringing, above the falling threshold at re-arm
+        deadline = time.monotonic() + sut.tap_cooldown + 0.3
+        while time.monotonic() < deadline:
+            QtWidgets.QApplication.processEvents()
+            time.sleep(0.01)
+        assert sut.is_detecting, "re-armed"
+        assert sut.status_message == after_capture, "the re-arm leaves the status alone"
+

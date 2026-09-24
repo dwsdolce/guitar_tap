@@ -382,21 +382,17 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         detection now runs on RMS, so the seed for is_above_threshold must
         come from the same source the rising-edge detector reads.
         """
+        # Re-anchor the latch from the current level and listen again — and nothing else. The status
+        # message was set when the tap was captured (the loop prompt) and stays as it is: Swift's
+        # scheduleGuitarReEnable and the web's touch only the latch and the detection state. This
+        # used to rewrite it here, and to show "Tap N/M captured. Waiting for settle..." while the
+        # level was still high — text neither other edition has (#17 F45).
         current_level = self._current_input_level_db
         falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
+        self.is_above_threshold = current_level > falling_threshold
+        self.detection_state = DetectionState.LISTENING
         with self._gated_lock:
             self._last_level_crossing_capture_id = -1
-        if current_level <= falling_threshold:
-            self.is_above_threshold = False
-            self.detection_state = DetectionState.LISTENING
-            self._set_status_message(self._guitar_loop_status(capturing=False))
-        else:
-            self.is_above_threshold = True
-            self.detection_state = DetectionState.LISTENING
-            self._set_status_message(
-                f"Tap {self.current_tap_count}/{self.number_of_taps} captured."
-                " Waiting for settle..."
-            )
 
     # ------------------------------------------------------------------ #
     # totalPlateTaps — mirrors Swift var totalPlateTaps: Int

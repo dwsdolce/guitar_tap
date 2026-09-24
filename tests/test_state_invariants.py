@@ -27,6 +27,7 @@ from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.material_tap_phase import MaterialTapPhase
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
 _APP = None
@@ -65,6 +66,20 @@ def _fake_tap(n: int = 64, peak_db: float = -30.0):
     mags[n // 4] = peak_db
     freqs = np.arange(n, dtype=np.float32) * 31.25
     return (mags, freqs, _dt.datetime.now())
+
+
+def _tap_samples(freq_hz: float, count: int, sample_rate: float = 48000.0):
+    """A decaying sinusoid — a synthetic tap with one resonance at freq_hz."""
+    t = np.arange(count, dtype=np.float64) / sample_rate
+    return (0.5 * np.exp(-t * 6.0) * np.sin(2 * np.pi * freq_hz * t)).astype(np.float32)
+
+
+def _pump_events(seconds: float) -> None:
+    """Run the Qt event loop for `seconds`, so QTimer-scheduled work (the tap cooldown) fires."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        QtWidgets.QApplication.processEvents()
+        time.sleep(0.01)
 
 
 def state_invariant_violation(a: TapToneAnalyzer) -> str | None:
@@ -137,12 +152,20 @@ class TestStateInvariants:
         )
 
     def test_V4_mid_multi_tap_sequence_holds_invariants(self):
+        """Reached through the REAL capture path (finish_guitar_gated_capture), not by assigning
+        captured_taps / current_tap_count / detection_state by hand — that only tested the checker on
+        a state the test invented (#17 F45). Checked resting through the cooldown, and re-armed."""
         sut = _make_sut(number_of_taps=3)
+        sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # the capture's FFT engine
         sut.start_tap_sequence()
-        sut.captured_taps.append(_fake_tap())
-        sut.current_tap_count = 1
-        sut.detection_state = DetectionState.LISTENING   # schedule_guitar_re_enable result
-        assert state_invariant_violation(sut) is None
+        sut.finish_guitar_gated_capture(_tap_samples(100.0, sut.mic.fft_size), 48000.0)
+        assert len(sut.captured_taps) == 1
+        assert not sut.is_detecting, "detection rests through the tap cooldown"
+        assert state_invariant_violation(sut) is None, "mid-sequence, resting"
+
+        _pump_events(sut.tap_cooldown + 0.3)
+        assert sut.is_detecting, "re-armed for the next tap once the cooldown has passed"
+        assert state_invariant_violation(sut) is None, "mid-sequence, re-armed"
 
     def test_V5_after_cancel_holds_invariants(self):
         sut = _make_sut(number_of_taps=3)
@@ -164,3 +187,53 @@ class TestStateInvariants:
         assert state_invariant_violation(sut) is not None, (
             "Invariant checker must reject (is_detecting && is_measurement_complete) in guitar mode"
         )
+
+    def test_V8_plate_review_phase_holds_invariants(self):
+        """A plate capture reaches its REVIEW phase through the real gated path, and invariants hold
+        there — including I6, which no guitar case can reach (#17 F45)."""
+        sut = _make_sut(number_of_taps=1, measurement_type=MeasurementType.PLATE)
+        try:
+            sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # gated-FFT engine
+            sut.tap_detection_threshold = -90.0  # accept the synthetic tap
+            sut.start_tap_sequence()
+            sut.finish_gated_fft_capture(_tap_samples(60.0, 24_000), 48000.0,
+                                         MaterialTapPhase.CAPTURING_LONGITUDINAL)
+            assert sut.material_tap_phase == MaterialTapPhase.REVIEWING_LONGITUDINAL
+            assert not sut.is_detecting
+            assert state_invariant_violation(sut) is None
+        finally:
+            TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+
+    # V9–V13: each invariant REPORTS its forbidden state. V7 did this for I1 alone (#17 F45).
+
+    def test_I2_paused_and_complete_is_flagged(self):
+        sut = _make_sut()
+        sut.detection_state = DetectionState.PAUSED
+        sut.is_measurement_complete = True
+        assert (state_invariant_violation(sut) or "").startswith("I2")
+
+    def test_I3_more_taps_than_requested_is_flagged(self):
+        sut = _make_sut(number_of_taps=1)
+        sut.captured_taps.extend([_fake_tap(), _fake_tap()])
+        assert (state_invariant_violation(sut) or "").startswith("I3")
+
+    def test_I4_count_out_of_step_with_taps_is_flagged(self):
+        sut = _make_sut(number_of_taps=3)
+        sut.captured_taps.append(_fake_tap())
+        sut.current_tap_count = 0
+        assert (state_invariant_violation(sut) or "").startswith("I4")
+
+    def test_I5_progress_out_of_range_is_flagged(self):
+        sut = _make_sut()
+        sut.tap_progress = 1.5
+        assert (state_invariant_violation(sut) or "").startswith("I5")
+
+    def test_I6_detecting_while_reviewing_is_flagged(self):
+        sut = _make_sut(measurement_type=MeasurementType.PLATE)
+        try:
+            sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_LONGITUDINAL)
+            sut.detection_state = DetectionState.LISTENING
+            assert (state_invariant_violation(sut) or "").startswith("I6")
+        finally:
+            TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+
