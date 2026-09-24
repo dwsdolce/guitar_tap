@@ -138,7 +138,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
     @property
     def _measurements(self) -> "list[TapToneMeasurement]":
         """Live view of the analyzer's measurement list — the single source of truth."""
-        return self._analyzer.savedMeasurements
+        return self._analyzer.saved_measurements
 
     def _rebuild_list(self) -> None:
         self._list.clear()
@@ -674,27 +674,10 @@ class MeasurementsDialog(QtWidgets.QDialog):
         try:
             with open(path, "rb") as f:
                 data = f.read()
-            # mirrors Swift importMeasurements(from: Data) — model owns decode+append
-            imported = self._analyzer.import_measurements_from_data(data)
+            # The model imports, loads a single measurement, and words the message — mirrors
+            # Swift importAndLoadMeasurements(from:). The main view follows the load by signal.
+            msg = self._analyzer.import_and_load_measurements(data)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Import Error", str(exc))
             return
-
-        if len(imported) == 1:
-            # Auto-load single imported measurement (matches Swift importFromFile).
-            # Suppress the mic warning so we can fold it into the success message
-            # instead of showing two dialogs.  Read the warning directly from the
-            # analyzer after the synchronous signal chain completes, then clear it
-            # so the main view's handler doesn't fire a second dialog.
-            self._analyzer._suppress_mic_warning_signal = True
-            self.measurementSelected.emit(imported[0])
-            self._analyzer._suppress_mic_warning_signal = False
-            msg = "Successfully imported and loaded 1 measurement."
-            # Fold microphone warning into the success message (mirrors Swift).
-            if self._analyzer.microphone_warning:
-                msg += f"\n\n⚠️ {self._analyzer.microphone_warning}"
-                self._analyzer.microphone_warning = None
-            QtWidgets.QMessageBox.information(self, "Import Successful", msg)
-        else:
-            msg = f"Successfully imported {len(imported)} measurements."
-            QtWidgets.QMessageBox.information(self, "Import Successful", msg)
+        QtWidgets.QMessageBox.information(self, "Import Successful", msg)

@@ -180,3 +180,139 @@ class TestQFactor:
         # Q = centre / span = 500 / 990.
         assert abs(q - 0.50505) < 1e-4, f"Q should be centre/span ≈ 0.505, got {q}"
         assert math.isfinite(q) and not math.isnan(q)
+
+
+# ---------------------------------------------------------------------------
+# A silent buffer yields -inf, not a finite floor
+# ---------------------------------------------------------------------------
+
+class TestSilentBufferIsNegativeInfinity:
+    """A bin with no energy must read -inf, not a clamped number.
+
+    All three editions convert magnitude with 20*log10, so an empty bin is -inf, and that is what
+    Swift's vDSP_vdbcon returns.  Python and web had each clamped the magnitude up to float64
+    epsilon first -- the SAME literal, 2.220446049250313e-16, Python's since 2026-05-09 and web's
+    transcribed from it -- which put "-313.0 dB" on screen for the absence of a signal.
+
+    It matters because -100 dB is a REAL reading: a live UMIK-1 in a quiet room sits near there, and
+    it is the dead-input watchdog's own threshold.  A finite floor makes "no microphone at all" look
+    like "a very quiet microphone", which is the one distinction the Peak readout has to keep.
+    Owner's call during the #17 run-review, having seen -inf on Swift and -313 here.
+
+    Python carried the clamp TWICE -- the live per-frame path (dft_anal) and the gated capture path
+    (compute_gated_fft).  Only the live one reaches the Peak readout, which is why removing the
+    other first would have looked like a fix and changed nothing on screen.
+
+    Paired with Swift DSPTests and web test/dsp.test.ts.
+    """
+
+    def test_every_bin_of_a_silent_buffer_is_negative_infinity(self):
+        import numpy as np
+        from guitar_tap.models.realtime_fft_analyzer_fft_processing import dft_anal
+
+        mag, _abs_fft = dft_anal(np.zeros(1024, dtype=np.float32), np.ones(1024), 1024)
+        assert np.all(np.isneginf(mag)), "an all-zero buffer must be -inf in every bin"
+
+    def test_the_floor_is_not_a_finite_epsilon(self):
+        """The -313 dB regression: a clamp at float64 eps reads as a precise measurement."""
+        import numpy as np
+        from guitar_tap.models.realtime_fft_analyzer_fft_processing import dft_anal
+
+        mag, _ = dft_anal(np.zeros(1024, dtype=np.float32), np.ones(1024), 1024)
+        peak = float(np.max(mag))
+        assert not math.isfinite(peak), f"silence must not report a finite level, got {peak}"
+
+    def test_the_gated_path_is_also_unclamped(self):
+        """The GATED capture path carried the identical clamp and is fixed with the live one.
+
+        Removing only one of the two would have looked like a fix and changed nothing on screen:
+        the Peak readout reads the live path, so the gated clamp was invisible there — and the live
+        clamp was invisible in any test that only drove the gated path.  Swift pins this path too
+        (its live path cannot be called without starting the engine); web pins both.
+        """
+        import numpy as np
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+
+        # A real instance: the method reads self._calibration_profile under a lock. Constructing
+        # the analyzer opens no audio device — the existing _sut() helper relies on the same thing.
+        mags, _freqs = RealtimeFFTAnalyzer(None).compute_gated_fft(
+            np.zeros(4096, dtype=np.float32), 48000.0
+        )
+        assert len(mags) > 0, "precondition: the gated FFT produced a spectrum"
+        assert all(math.isinf(m) and m < 0 for m in mags), (
+            "an all-zero buffer must be -inf in every bin of the gated path too"
+        )
+
+    def test_the_live_peak_of_silence_is_negative_infinity_at_zero_hz(self):
+        """The model's live peak — what the status bar and the Metrics panel both show.
+
+        Swift's RealtimeFFTAnalyzer owns peakFrequency / peakMagnitude and takes the first maximum
+        on ties (max(by:)), so an all -inf spectrum reports bin 0: "-∞ dB @ 0.0 Hz". perform_fft
+        now owns the same pair. Before it did, Python's Metrics panel read the detected-peaks list
+        instead, which is empty on silence (and after any live capture) and showed "—".
+        """
+        import numpy as np
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+        from guitar_tap.models.realtime_fft_analyzer_fft_processing import perform_fft
+
+        a = RealtimeFFTAnalyzer(None)
+        assert (a.peak_frequency, a.peak_magnitude) == (0.0, -100.0), "starts at Swift's silent state"
+
+        perform_fft(a, np.zeros(a.fft_size, dtype=np.float32), a.fft_size)
+        assert a.peak_frequency == 0.0
+        assert math.isinf(a.peak_magnitude) and a.peak_magnitude < 0
+
+    def test_a_tones_live_peak_lands_within_one_bin(self):
+        import numpy as np
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+        from guitar_tap.models.realtime_fft_analyzer_fft_processing import perform_fft
+
+        a = RealtimeFFTAnalyzer(None)
+        n = a.fft_size
+        t = np.arange(n)
+        perform_fft(a, (0.5 * np.sin(2 * np.pi * 1000.0 * t / a.rate)).astype(np.float32), n)
+        assert abs(a.peak_frequency - 1000.0) < a.rate / n, "a tone's peak lands within one bin"
+        assert math.isfinite(a.peak_magnitude)
+
+    def test_a_silent_chunk_reads_negative_infinity_on_the_readout_detection_sees_minus_100(self):
+        """True digital silence: the READOUT is -inf; detection's level is -100, as Swift's.
+
+        -100 dB is a real level (a quiet UMIK-1 reaches it), so the material level readout must not
+        show it for no signal at all. Detection keeps -100 — Swift's rule. Python used
+        max(rms, 1e-10), i.e. -200, written independently of Swift, so on true silence its
+        detection saw a different level than Swift's. Paired with Swift SilentBufferTests.
+        """
+        import numpy as np
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+
+        a = RealtimeFFTAnalyzer(None)
+        seen: list[float] = []
+        a.rms_level_handler = lambda level_db, _t: seen.append(level_db)
+        a.process_raw_samples(np.zeros(1024, dtype=np.float32))
+        assert seen == [-100.0], f"detection's level on silence must be Swift's -100, got {seen}"
+        assert math.isinf(a.readout_level_db) and a.readout_level_db < 0
+
+    def test_a_real_chunk_reads_the_same_level_on_the_readout_and_for_detection(self):
+        import numpy as np
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+
+        a = RealtimeFFTAnalyzer(None)
+        seen: list[float] = []
+        a.rms_level_handler = lambda level_db, _t: seen.append(level_db)
+        t = np.arange(1024)
+        a.process_raw_samples((0.01 * np.sin(2 * np.pi * 1000 * t / 48000)).astype(np.float32))
+        assert len(seen) == 1 and math.isfinite(seen[0]) and seen[0] > -100
+        assert a.readout_level_db == seen[0]
+
+    def test_a_real_signal_is_unaffected(self):
+        """The clamp never applied to real audio -- removing it must not move any real value."""
+        import numpy as np
+        from guitar_tap.models.realtime_fft_analyzer_fft_processing import dft_anal
+
+        n = 1024
+        t = np.arange(n, dtype=np.float64)
+        sig = (0.5 * np.sin(2 * np.pi * 1000 * t / 48000)).astype(np.float32)
+        mag, _ = dft_anal(sig, np.ones(n), n)   # rectangular window, as the live path uses
+        peak = float(np.max(mag))
+        assert math.isfinite(peak)
+        assert peak > -60, f"a half-scale tone should be well above -60 dB, got {peak}"

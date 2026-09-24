@@ -66,7 +66,7 @@ class _StubAnalyzer(
         self._comparison_data: list = []
         self.comparison_labels: list = []
         self.comparison_snapshots: list = []
-        self.savedMeasurements: list = []
+        self.saved_measurements: list = []
         self.loaded_measurement_name: str | None = None
 
     @property
@@ -260,7 +260,7 @@ class _FullStubAnalyzer(_StubAnalyzer):
 
     def _persist_measurements(self) -> None:
         """Captures the list for inspection after save_comparison()."""
-        self._persisted = list(self.savedMeasurements)
+        self._persisted = list(self.saved_measurements)
 
 
 def _make_measurement_with_peaks(
@@ -372,8 +372,8 @@ class TestSaveComparison:
         sut.load_comparison([m1, m2])
         sut.save_comparison(measurement_name="My Comparison", notes=None)
 
-        assert len(sut.savedMeasurements) == 1
-        saved = sut.savedMeasurements[0]
+        assert len(sut.saved_measurements) == 1
+        saved = sut.saved_measurements[0]
         assert saved.is_comparison
 
     def test_save_comparison_entries_count_matches_comparison_data(self):
@@ -383,7 +383,7 @@ class TestSaveComparison:
         sut.load_comparison(measurements)
         sut.save_comparison(measurement_name="Triple", notes=None)
 
-        saved = sut.savedMeasurements[0]
+        saved = sut.saved_measurements[0]
         assert saved.comparison_entries is not None
         assert len(saved.comparison_entries) == 3
 
@@ -391,14 +391,14 @@ class TestSaveComparison:
         """save_comparison() does nothing when _comparison_data is empty."""
         sut = _FullStubAnalyzer()
         sut.save_comparison(measurement_name="Empty", notes=None)
-        assert sut.savedMeasurements == []
+        assert sut.saved_measurements == []
 
     def test_save_comparison_measurement_name_stored(self):
         """measurement_name argument is stored on the saved measurement."""
         sut = _FullStubAnalyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         sut.save_comparison(measurement_name="My Label", notes="Some notes")
-        saved = sut.savedMeasurements[0]
+        saved = sut.saved_measurements[0]
         assert saved.measurement_name == "My Label"
         assert saved.notes == "Some notes"
 
@@ -407,7 +407,7 @@ class TestSaveComparison:
         sut = _FullStubAnalyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         sut.save_comparison()
-        saved = sut.savedMeasurements[0]
+        saved = sut.saved_measurements[0]
         for entry in saved.comparison_entries:
             for c in entry.color_components:
                 assert 0.0 <= c <= 1.0, f"Component {c} out of [0,1] range"
@@ -596,7 +596,7 @@ class TestComparisonDefinitiveModes:
         sut = _FullStubAnalyzer()
         sut.load_comparison([source])
         sut.save_comparison(measurement_name="C")
-        restored = _cmp_round_trip(sut.savedMeasurements[0])
+        restored = _cmp_round_trip(sut.saved_measurements[0])
         e = restored.comparison_entries[0]
         assert e.mode_peak_ids[GuitarMode.AIR.value] == air.id
         assert e.mode_peak_ids[GuitarMode.TOP.value] == top.id

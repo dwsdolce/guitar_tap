@@ -192,10 +192,8 @@ class FftCanvas(pg.PlotWidget):
     peakDeselected: QtCore.Signal = QtCore.Signal()
     peakSelected: QtCore.Signal = QtCore.Signal(float)
     peaksChanged: QtCore.Signal = QtCore.Signal(np.ndarray)
-    ampChanged: QtCore.Signal = QtCore.Signal(int)
     framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
     newSample: QtCore.Signal = QtCore.Signal(bool)
-    tapDetected: QtCore.Signal = QtCore.Signal()
     ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
     tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)  # (captured, total)
     detectionStateChanged: QtCore.Signal = QtCore.Signal(object)  # new DetectionState
@@ -213,8 +211,9 @@ class FftCanvas(pg.PlotWidget):
     showLoadedSettingsWarningChanged: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var showLoadedSettingsWarning
     microphoneWarningChanged: QtCore.Signal = QtCore.Signal(object)        # str | None — mirrors Swift @Published var microphoneWarning
     requestDeviceSwitch: QtCore.Signal = QtCore.Signal(object)             # AudioDevice — mirrors Swift fftAnalyzer.setInputDevice(match)
+    measurementLoadStarting: QtCore.Signal = QtCore.Signal()               # relays TapToneAnalyzer.measurementLoadStarting
+    measurementLoaded: QtCore.Signal = QtCore.Signal(object)               # relays TapToneAnalyzer.measurementLoaded
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
-    levelChanged: QtCore.Signal = QtCore.Signal(int)              # level 0-100 (dB+100)
     comparisonChanged: QtCore.Signal = QtCore.Signal(bool)         # True=entering, False=leaving
     freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)      # (fmin, fmax) — pan/zoom
 
@@ -456,9 +455,7 @@ class FftCanvas(pg.PlotWidget):
         # This allows guitar_tap.py to connect to FftCanvas signals as before.
         self.analyzer.peaksChanged.connect(self.peaksChanged)
         self.analyzer.framerateUpdate.connect(self.framerateUpdate)
-        self.analyzer.levelChanged.connect(self.levelChanged)
         self.analyzer.newSample.connect(self.newSample)
-        self.analyzer.tapDetectedSignal.connect(self._on_tap_detected_from_analyzer)
         self.analyzer.tapCountChanged.connect(self.tapCountChanged)
         self.analyzer.detectionStateChanged.connect(self.detectionStateChanged)
         self.analyzer.readyForDetectionChanged.connect(self.readyForDetectionChanged)
@@ -476,6 +473,8 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.showLoadedSettingsWarningChanged.connect(self.showLoadedSettingsWarningChanged)
         self.analyzer.microphoneWarningChanged.connect(self.microphoneWarningChanged)
         self.analyzer.requestDeviceSwitch.connect(self.requestDeviceSwitch)
+        self.analyzer.measurementLoadStarting.connect(self.measurementLoadStarting)
+        self.analyzer.measurementLoaded.connect(self.measurementLoaded)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
         self.analyzer.loadedAxisRangeChanged.connect(self._on_loaded_axis_range_changed)
         self.analyzer.materialSpectraChanged.connect(self.load_material_spectra)
@@ -789,7 +788,6 @@ class FftCanvas(pg.PlotWidget):
         fftFrameReady is connected inside TapToneAnalyzer.start() and
         recreate_proc_thread() — not here.  The analyzer owns that wiring.
         """
-        self.analyzer.mic.proc_thread.rmsLevelChanged.connect(self.ampChanged)
         self.analyzer.mic.proc_thread.finished.connect(self._on_proc_thread_finished)
 
     def _on_proc_thread_finished(self) -> None:
@@ -1613,7 +1611,7 @@ class FftCanvas(pg.PlotWidget):
             self._clear_comparison_view()
             # Reset the Y range to the full live view so the ambient noise floor
             # is visible.  The loaded-measurement range (set by setYRange in
-            # _restore_measurement) is appropriate for frozen display but typically
+            # _on_measurement_loaded) is appropriate for frozen display but typically
             # too narrow to show quiet live audio.
             self.setYRange(-100, 0, padding=0)
 
@@ -1862,28 +1860,9 @@ class FftCanvas(pg.PlotWidget):
         """
         return self.analyzer.find_peaks(mag_y_db, list(self.analyzer.freq))
 
-    # ------------------------------------------------------------------ #
-    # FFT frame handler (called from proc_thread signal)
-    # ------------------------------------------------------------------ #
-
-    def _on_fft_frame_ready(
-        self,
-        mag_y_db: npt.NDArray[np.float64],
-        mag_y: npt.NDArray[np.float32],
-        fft_peak_amp: int,
-        rms_amp: int,
-        fps: float,
-        sample_dt: float,
-        processing_dt: float,
-    ) -> None:
-        """Receive a processed FFT frame from proc_thread (main thread slot).
-
-        Delegates analysis to the TapToneAnalyzer, which calls detect_tap() and
-        emits spectrumUpdated (connected to _on_spectrum_updated) for rendering.
-        """
-        self.analyzer.on_fft_frame(
-            mag_y_db, mag_y, fft_peak_amp, rms_amp, fps, sample_dt, processing_dt
-        )
+    # -{66} #
+    # Spectrum handler (TapToneAnalyzer.spectrumUpdated)
+    # -{66} #
 
     def _on_spectrum_updated(self, freqs, mag_y_db) -> None:
         """Receive spectrum data from the analyzer and update the view.
@@ -1899,15 +1878,3 @@ class FftCanvas(pg.PlotWidget):
         """
         self.set_draw_data(mag_y_db, freqs=freqs)
 
-    def _on_tap_detected_from_analyzer(self) -> None:
-        """Relay analyzer.tapDetectedSignal → FftCanvas.tapDetected (hold trigger)."""
-        # Update the spectrum line with the averaged result.
-        # The scatter plot is updated automatically via peaksChanged →
-        # _on_peaks_changed_scatter, which fires during tap capture.
-        # Use display_spectrum to read freq and mag_db atomically — mirrors
-        # the Swift displaySpectrum pattern so both arrays always match.
-        if self.display_mode != AnalysisDisplayMode.COMPARISON:
-            freqs, mag_db = self.display_spectrum
-            if mag_db is not None:
-                self.set_draw_data(mag_db, freqs=freqs)
-        self.tapDetected.emit()

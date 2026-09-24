@@ -28,8 +28,9 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING
 
-import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
+
+from guitar_tap.models import field_precision as fp
 
 if TYPE_CHECKING:
     from guitar_tap.views.fft_canvas import FftCanvas
@@ -279,7 +280,6 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         framerate: float,
         processing_time: float,
         is_running: bool,
-        peaks: "np.ndarray",
     ) -> None:
         """Refresh all dynamic metric values.
 
@@ -293,10 +293,11 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
                              Mirrors Swift ``analyzer.processingTimeMs / 1000``.
             is_running:      Whether the analyzer is currently capturing.
                              Mirrors Swift ``analyzer.isRunning``.
-            peaks:           Current peaks array (N×3: freq, mag, Q).
-                             Used to derive peakFrequency / peakMagnitude,
-                             mirroring Swift ``analyzer.peakFrequency`` /
-                             ``analyzer.peakMagnitude``.
+
+        The Peak Detection rows read the live peak off the FFT analyzer
+        (``analyzer.mic.peak_frequency`` / ``peak_magnitude``), as Swift reads
+        ``analyzer.peakFrequency`` / ``analyzer.peakMagnitude`` — the same value
+        the status bar shows.
         """
         if not self.isVisible():
             return
@@ -324,15 +325,13 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         self._row_cpu.set_value(f"{cpu_pct:.1f}%", cpu_color)
 
         # ── Peak Detection ─────────────────────────────────────────────────
-        # Derives peakFrequency / peakMagnitude from peaks array.
-        # Mirrors Swift analyzer.peakFrequency / analyzer.peakMagnitude.
-        if peaks.ndim == 2 and peaks.shape[0] > 0:
-            best = int(np.argmax(peaks[:, 1]))
-            self._row_peak_freq.set_value(f"{peaks[best, 0]:.1f} Hz")
-            self._row_peak_mag.set_value(f"{peaks[best, 1]:.1f} dB")
-        else:
-            self._row_peak_freq.set_value("—")
-            self._row_peak_mag.set_value("—")
+        # Mirrors Swift formatFrequency(analyzer.peakFrequency) and
+        # FieldPrecision.string(analyzer.peakMagnitude, peakMagnitudeDB) + " dB".
+        mic = self._canvas.analyzer.mic
+        self._row_peak_freq.set_value(self._fmt_freq(mic.peak_frequency))
+        self._row_peak_mag.set_value(
+            f"{fp.string(mic.peak_magnitude, fp.PEAK_MAGNITUDE_DB)} dB"
+        )
 
         # ── Status indicator ───────────────────────────────────────────────
         # Mirrors Swift Circle().fill(analyzer.isRunning ? .green : .gray)

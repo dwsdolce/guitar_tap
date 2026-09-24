@@ -75,6 +75,7 @@ NOTE — Python vs Swift architectural differences:
 from __future__ import annotations
 
 import atexit
+import math
 
 # ── RealtimeFFTAnalyzer / device management ───────────────────────────────────
 import platform
@@ -144,13 +145,19 @@ class _FftProcessingThread(QtCore.QThread):
 
     # MARK: - Signals (kept on the QThread for Qt signal delivery)
 
-    # (mag_y_db, mag_y, fft_peak_amp, rms_amp, fps, sample_dt, processing_dt)
+    # (mag_y_db, mag_y, peak_db, fps, sample_dt, processing_dt). The ONE delivery of a frame to the
+    # analyzer: connected to on_fft_frame, which therefore runs on the main thread — Swift's analyzer
+    # takes frames through a Combine sink `.receive(on: DispatchQueue.main)`. The peak travels as float
+    # dB (Swift's `peakMagnitude`); it used to be int-encoded as dB + 100 and decoded at every consumer.
     fftFrameReady: QtCore.Signal = QtCore.Signal(
-        np.ndarray, np.ndarray, int, int, float, float, float
+        np.ndarray, np.ndarray, float, float, float, float
     )
 
-    # Per-chunk RMS level (0-100 scale) emitted every audio chunk.
-    rmsLevelChanged: QtCore.Signal = QtCore.Signal(int, float)  # (rms_amp, audio_time)
+    # Per-chunk RMS level in dB, every audio chunk — for the UI (the threshold meter) ONLY. Tap
+    # detection takes the level from the direct rms_level_handler on this thread, as Swift's does from
+    # rmsLevelHandler on the audio queue. It used to take it from BOTH, deduplicated by a guard that
+    # could not tell a late queued copy from a new chunk (#17 F44).
+    rmsLevelChanged: QtCore.Signal = QtCore.Signal(float, float)  # (level_db, audio_time)
 
     # Edge-triggered clipping signal.
     clippingChanged: QtCore.Signal = QtCore.Signal(bool)
@@ -537,7 +544,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # reading audio_elapsed at the consumer would give the CURRENT audio time, not this
         # chunk's — which silently skips the detection warm-up. Mirrors Swift rmsLevelHandler.
         self.rms_level_handler: "Callable[[float, float], None] | None" = None
-        self.fft_frame_handler: "Callable[..., None] | None" = None
 
         # MARK: - Processing State (formerly on _FftProcessingThread)
         # Moved here so process_raw_samples can access them directly.
@@ -559,6 +565,18 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._recent_peak_db: float = -100.0
         self._recent_peak_window: float = 2.0
         self._recent_peak_time: float = 0.0
+
+        # The live spectrum's loudest bin — Swift peakFrequency / peakMagnitude. Set on every frame
+        # by perform_fft; read by the Metrics panel. Starts at, and stop() returns it to, Swift's
+        # silent state (-100 dB @ 0 Hz).
+        self.peak_frequency: float = 0.0
+        self.peak_magnitude: float = -100.0
+
+        # The material level readout — Swift readoutLevelDB (per chunk) and displayLevelDB (the
+        # same, published at the frame rate by perform_fft). True silence is -inf on the readout;
+        # detection reads the per-chunk level, which stays -100 on silence.
+        self.readout_level_db: float = -100.0
+        self.display_level_db: float = -100.0
 
         # Level-crossing detection.
         self._level_crossing_handler: "Callable[[], None] | None" = None
@@ -689,7 +707,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         5. rms_level_handler callback + rmsLevelChanged Qt signal
         6. Clipping detection → clippingChanged Qt signal
         7. Recent peak history update
-        8. Input buffer accumulation → FFT → fft_frame_handler callback + fftFrameReady Qt signal
+        8. Input buffer accumulation → FFT → fftFrameReady Qt signal (the analyzer's one frame delivery)
         """
         from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
 
@@ -712,9 +730,14 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             self.audio_elapsed += len(chunk_f32) / float(self.rate)
 
         # Per-chunk RMS level — mirrors Swift vDSP_rmsqv → levelDB calculation.
+        # Silence is -100, exactly as Swift (`rms > 0 ? 20*log10(rms) : -100`). This was
+        # `max(rms, 1e-10)`, i.e. -200 — written independently of Swift, so detection saw a
+        # different level on true digital silence than Swift's did.
         rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-        level_db = 20.0 * np.log10(max(rms, 1e-10))
-        rms_amp = int(level_db + 100.0)
+        level_db = 20.0 * math.log10(rms) if rms > 0 else -100.0
+        # The READOUT's level — Swift readoutLevelDB: the same value, except true silence is -inf,
+        # because -100 dB is a real level a quiet UMIK-1 reaches. Detection keeps level_db.
+        self.readout_level_db = level_db if rms > 0 else float("-inf")
 
         # ── Level-crossing detection (audio-queue fast-start) ────
         # MUST run BEFORE rms_level_handler.  Mirrors Swift processRawSamples
@@ -790,8 +813,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         if rms_handler is not None:
             rms_handler(level_db, self.audio_elapsed)
 
-        # Qt signal (for UI updates via event loop — live mic path).
-        self.proc_thread.rmsLevelChanged.emit(rms_amp, self.audio_elapsed)
+        # Qt signal — the UI's copy (threshold meter). Detection used the direct handler above.
+        self.proc_thread.rmsLevelChanged.emit(level_db, self.audio_elapsed)
 
         # Accumulate samples — mirrors Swift bufferAccessQueue.sync { inputBuffer.append }.
         # In Swift this comes after the level-crossing and rmsLevelHandler blocks.
@@ -835,22 +858,18 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
             # FFT + post-processing — perform_fft now reads calibration
             # from self (the analyzer) instead of the thread.
-            mag_y_db, mag_y, fft_peak_amp = _perform_fft(self, samples, fft_size)
+            mag_y_db, mag_y, peak_db = _perform_fft(self, samples, fft_size)
 
             exit_now = time.time()
             processing_dt = exit_now - enter_now
             fps = 1.0 / max(sample_dt, 1e-12)
 
-            # Direct callback (works without Qt event loop).
-            fft_handler = self.fft_frame_handler
-            if fft_handler is not None:
-                fft_handler(mag_y_db, mag_y, fft_peak_amp, rms_amp,
-                            fps, sample_dt, processing_dt)
-
-            # Qt signal (for UI updates).
+            # The ONE delivery of this frame to the analyzer (see fftFrameReady). Live, it is queued to
+            # the main thread; in tests and inline file playback the emitter and receiver share a thread,
+            # so Qt delivers it synchronously. There used to be a direct fft_frame_handler call here as
+            # well, which analysed every live frame a second time, on this thread (#17 F44).
             self.proc_thread.fftFrameReady.emit(
-                mag_y_db, mag_y, fft_peak_amp, rms_amp,
-                fps, sample_dt, processing_dt,
+                mag_y_db, mag_y, peak_db, fps, sample_dt, processing_dt,
             )
 
     # MARK: - Calibration (formerly on _FftProcessingThread)
@@ -927,8 +946,18 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         abs_fft /= fft_size
         abs_fft[1:] *= 2.0
 
-        abs_fft[abs_fft < np.finfo(float).eps] = np.finfo(float).eps
-        mag_db = 20.0 * np.log10(abs_fft)
+        # NO epsilon clamp. A bin with no energy is -inf, which is what Swift's vDSP_vdbcon
+        # produces and what the Peak readout should say: -inf means "nothing at all", and it has to
+        # stay distinguishable from -100 dB, which is a REAL level a live UMIK-1 reaches in a quiet
+        # room. Clamping to float64 epsilon put -313.0 dB on screen instead — a precise-looking
+        # number for the absence of a signal (#17, run-review).
+        #
+        # Safe because no axis is derived from the data: every setYRange call uses explicit bounds
+        # (settings, a fixed -100..0, or a loaded measurement's saved range), so -inf bins clip off
+        # the bottom rather than collapsing the scale. errstate only silences numpy's per-frame
+        # divide-by-zero warning; the -inf is the intended result.
+        with np.errstate(divide="ignore"):
+            mag_db = 20.0 * np.log10(abs_fft)
 
         freqs_arr = np.array([float(i) * sample_rate / fft_size
                               for i in range(half_n)])

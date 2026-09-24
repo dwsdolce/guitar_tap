@@ -183,18 +183,20 @@ class TestGatedFFTParity:
             f"Delta: Python={delta:.2f} dB, oracle={exp_delta} dB — difference > {TOL} dB"
 
     def test_GFFT4_silence_all_bins_below_noise_floor(self):
-        """GFFT4: Silence should produce all bins near noise floor (< -100 dB)."""
+        """GFFT4: silence reads EXACTLY what Swift reads — -inf in every bin, not a floor.
+
+        The oracle used to record only a bound (maxDbBelow: -100), because JSON cannot hold
+        infinity; it now stores "-Infinity" as a string and every edition compares exactly (#17 F44).
+        """
         sample_rate = 48000.0
         count = int(sample_rate * 0.4)
         signal = np.zeros(count, dtype=np.float32)
         pt = _make_proc_thread()
         mags, freqs = pt.compute_gated_fft(signal, sample_rate)
 
-        ceiling = float(gated("GFFT4")["maxDbBelow"])
-        max_mag = max(mags)
-        print(f"GFFT4 Python: max magnitude for silence = {max_mag:.2f} dB")
-        assert max_mag < ceiling, \
-            f"All bins should be below {ceiling} dB for silence, max = {max_mag:.2f}"
+        expected = float(gated("GFFT4")["maxDb"])
+        max_mag = float(max(mags))
+        assert max_mag == expected, f"silence must read {expected} dB, got {max_mag}"
 
     def test_GFFT5_after_fix_bin_centred_matches_swift(self):
         """GFFT5: Hann-window normalization (DENORM, unit-peak) parity.

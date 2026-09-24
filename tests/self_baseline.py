@@ -22,6 +22,7 @@ would let the baseline follow the upgrade and report nothing.
 from __future__ import annotations
 
 import json
+import math
 import os
 import platform
 import sys
@@ -56,13 +57,41 @@ def baseline_path() -> str:
     return os.path.join(os.path.dirname(__file__), f"self-baseline-{os_name()}-{arch_name()}.json")
 
 
+# JSON has no infinity. A silent input's peak is -inf, and it has to be stored and compared exactly,
+# so every oracle and baseline file — all three editions and the hub — writes a non-finite number as
+# the STRING "-Infinity" / "Infinity" / "NaN" and turns it back into a float on load (#17 F44).
+_NONFINITE = {"-Infinity": float("-inf"), "Infinity": float("inf"), "NaN": float("nan")}
+
+
+def decode_nonfinite(node: Any) -> Any:
+    """Loaded JSON -> the same structure with "-Infinity" / "Infinity" / "NaN" strings as floats."""
+    if isinstance(node, dict):
+        return {k: decode_nonfinite(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [decode_nonfinite(v) for v in node]
+    if isinstance(node, str) and node in _NONFINITE:
+        return _NONFINITE[node]
+    return node
+
+
+def encode_nonfinite(node: Any) -> Any:
+    """The inverse of decode_nonfinite, for writing: non-finite floats become their strings."""
+    if isinstance(node, dict):
+        return {k: encode_nonfinite(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [encode_nonfinite(v) for v in node]
+    if isinstance(node, float) and not math.isfinite(node):
+        return "NaN" if math.isnan(node) else ("Infinity" if node > 0 else "-Infinity")
+    return node
+
+
 def load() -> dict[str, Any] | None:
     """The committed baseline for this configuration, or None if none has been minted."""
     path = baseline_path()
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+        return decode_nonfinite(json.load(fh))
 
 
 def flatten(values: dict[str, Any]) -> dict[str, float]:

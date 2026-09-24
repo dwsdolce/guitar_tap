@@ -55,7 +55,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.tap_peak_level: float                (dBFS at moment of tap)
         self.is_detecting: bool                   (via Published)
         self.is_detection_paused: bool            (via Published)
-        self.tap_detected: bool                   (via Published)
         self.current_tap_count: int               (via Published)
         self.tap_progress: float                  (via Published)
         self.status_message: str                  (via Published)
@@ -155,7 +154,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 # SILENT warm-up: suppress detection but never write status_message, so the
                 # prompt set at the transition (arm/accept/redo/resume) survives — mirrors the
                 # web's counter-based warm-up. (Was: overwrote status with "Initializing… (Xs)".)
-                self.tap_detected = False
                 self.just_exited_warmup = True
                 return
 
@@ -181,7 +179,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     f"isAboveThreshold={self.is_above_threshold}"
                 )
             # (The noise-floor re-anchor above stays; only the status write is gone — silent warm-up.)
-            self.tap_detected = False
             return
 
         # Cooldown check (mirrors Swift tapCooldown).
@@ -197,7 +194,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                         f"peakMag={level:.2f}"
                     )
                     self._cooldown_logged = True
-                self.tap_detected = False
                 return
             else:
                 self._cooldown_logged = False
@@ -239,7 +235,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 )
                 self.is_above_threshold = False
                 self.detect_tap_consecutive_above = 0
-            self.tap_detected = False
         else:
             # Currently latched below — apply rising-threshold gate with
             # N-chunk confirmation.
@@ -255,7 +250,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     )
                     self.is_above_threshold = True
                     self.detect_tap_consecutive_above = 0
-                    self.tap_detected = True
                     self.last_tap_time = now
                     # Capture the recent peak input level for decay tracking
                     # reference.  Mirrors Swift TapToneAnalyzer+TapDetection.swift:
@@ -278,7 +272,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                             f"risingThresh={effective_rising:.2f} "
                             f"need={confirm_target - 1} more"
                         )
-                    self.tap_detected = False
             else:
                 # Below rising threshold.
                 if self.detect_tap_consecutive_above > 0 and is_file_playback:
@@ -288,7 +281,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                         f"{self.detect_tap_consecutive_above}/{confirm_target} chunks)"
                     )
                 self.detect_tap_consecutive_above = 0
-                self.tap_detected = False
 
     # ------------------------------------------------------------------ #
     # _handle_tap_detection — mirrors Swift handleTapDetection(magnitudes:frequencies:time:)
@@ -397,12 +389,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         if current_level <= falling_threshold:
             self.is_above_threshold = False
             self.detection_state = DetectionState.LISTENING
-            self.tap_detected = False
             self._set_status_message(self._guitar_loop_status(capturing=False))
         else:
             self.is_above_threshold = True
             self.detection_state = DetectionState.LISTENING
-            self.tap_detected = False
             self._set_status_message(
                 f"Tap {self.current_tap_count}/{self.number_of_taps} captured."
                 " Waiting for settle..."
@@ -515,7 +505,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
         self.is_above_threshold = current_level > falling_threshold
         self.detection_state = DetectionState.LISTENING
-        self.tap_detected = False
         # Clear stale fast-start marker so the next tap's main-thread
         # start_gated_capture correctly falls back to pre-roll seeding
         # if the audio-queue level crossing doesn't fire in time.
@@ -577,8 +566,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self,
         mag_y_db,
         mag_y,
-        fft_peak_amp: int,
-        rms_amp: int,
+        peak_db: float,
         fps: float,
         sample_dt: float,
         processing_dt: float,
@@ -596,8 +584,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         Args:
             mag_y_db:     FFT magnitude spectrum in dBFS (ndarray).
             mag_y:        FFT linear magnitude spectrum (ndarray).
-            fft_peak_amp: FFT peak level on 0-100 scale (dBFS + 100).
-            rms_amp:      Per-chunk RMS level on 0-100 scale (dBFS + 100).
+            peak_db:      The spectrum's peak in dBFS, as a float (Swift ``peakMagnitude``).
             fps, sample_dt, processing_dt: Diagnostics.
         """
         import numpy as np
@@ -612,7 +599,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # Updated here at the FFT frame rate (~2.7 Hz).  Used by guitar-mode _reenable()
         # to seed is_above_threshold, exactly as Swift handleTapDetection() does.
         # Distinct from _current_input_level_db (fftAnalyzer.inputLevelDB / RMS, ~43 Hz).
-        self._current_peak_magnitude_db = float(fft_peak_amp) - 100.0
+        self._current_peak_magnitude_db = peak_db
 
         # NOTE: decay tracking is NOT driven here. on_fft_frame fires at the FFT frame rate (~2.7 Hz),
         # far too coarse for ring-out timing. It now runs in _on_rms_level_changed at the per-chunk
@@ -642,8 +629,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 # self?.analyzeMagnitudes(magnitudes, frequencies:, peakMagnitude:).
                 # analyze_magnitudes updates peaks_above_peak_min, selected_peak_ids,
                 # identified_modes, and emits peaksChanged via its internal logic.
-                peak_mag = float(fft_peak_amp) - 100.0
-                self.analyze_magnitudes(list(mag_y_db), list(self.freq), peak_mag)
+                self.analyze_magnitudes(list(mag_y_db), list(self.freq), peak_db)
                 self.spectrumUpdated.emit(self.freq, mag_y_db)
         # COMPARISON: skip spectrum update — only overlay curves shown.
         # There was a FROZEN branch here emitting the frozen arrays; it was redundant with the
@@ -651,7 +637,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # unreachable once the settle stopped writing FROZEN (#17 F35).
 
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
-        self.levelChanged.emit(fft_peak_amp)
         peak_idx = int(np.argmax(mag_y_db))
         if peak_idx < len(self.freq):
             peak_freq = float(self.freq[peak_idx])
@@ -661,8 +646,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     # _on_rms_level_changed — tap detection for all modes at ~43 Hz
     # ------------------------------------------------------------------ #
 
-    @Slot(int)
-    def _on_rms_level_changed(self, rms_amp: int, audio_time: float) -> None:
+    def _on_rms_level_changed(self, level_db: float, audio_time: float) -> None:
         """Tap-detection driver for ALL modes at ~43 Hz from per-chunk RMS.
 
         Mirrors Swift's Combine sink on fftAnalyzer.$inputLevelDB which fires
@@ -675,24 +659,19 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         an fft_size-aligned spectrum starting just before the tap onset.
 
         Args:
-            rms_amp:    Per-chunk RMS level on 0-100 scale (dBFS + 100).
+            level_db:   Per-chunk RMS level in dBFS, exact (Swift ``levelDB``; −100 on true silence).
             audio_time: The AUDIO clock value for THIS chunk (see detect_tap).
+
+        Called ONCE per chunk, directly by process_raw_samples on the processing thread — Swift's
+        rmsLevelHandler on the audio queue. It used to be called twice (direct, plus the queued Qt
+        signal) and deduplicated by the mic's CURRENT sample count, which a late queued copy could
+        slip past — and it received the level truncated to whole dB (#17 F44).
         """
 
         # Cache instantaneous level — mirrors Swift fftAnalyzer.inputLevelDB.
         # Must be stored before the early-return guards so _do_reenable_detection
         # always has a fresh value even when detection is paused/complete.
-        self._current_input_level_db = float(rms_amp) - 100.0
-
-        # Chunk-identity dedupe, hoisted ABOVE the detection guards + decay so both run exactly once
-        # per chunk. This method is called twice per chunk (direct rms_level_handler callback AND the
-        # Qt rmsLevelChanged signal); the mic's running sample count identifies the duplicate.
-        if self.mic is not None:
-            _pos = getattr(self.mic, '_diag_total_samples', None)
-            if _pos is not None and _pos == self._last_rms_chunk_pos:
-                return
-            if _pos is not None:
-                self._last_rms_chunk_pos = _pos
+        self._current_input_level_db = level_db
 
         # Fast path: decay tracking at the per-chunk RMS rate (~43 Hz), run regardless of detection
         # state (its own is_tracking_decay guard gates it, and the post-tap window must keep updating

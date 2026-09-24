@@ -93,6 +93,89 @@ class TestTapCountChange:
         sut.set_tap_num(5)
         assert sut.status_message == before
 
+class TestTapCountChangeMaterial:
+    """The same hook, on a MATERIAL measurement -- the case whose absence hid #17 F36.
+
+    Every case above is guitar, in all three editions, and the hook is shared by plate and brace.
+    At the start of a material sequence no tap has been captured, so the Taps spinner is still
+    unlocked (current_tap_count > 0 and not complete is False) and detection is listening: the count
+    CAN change here, and it is the one phase whose prompt names the count.
+    """
+
+    def teardown_method(self):
+        TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+
+    def _plate_sut(self, number_of_taps: int, measure_flc: bool) -> TapToneAnalyzer:
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
+
+        sut = _make_sut(number_of_taps)   # NB: _make_sut forces CLASSICAL, so set the type AFTER it
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        TapDisplaySettings.set_measure_flc(measure_flc)
+        sut.material_tap_phase = MaterialTapPhase.CAPTURING_LONGITUDINAL
+        sut.current_tap_count = 0
+        sut.detection_state = DetectionState.LISTENING
+        return sut
+
+    def test_raising_count_at_plate_start_refreshes_the_material_arm_prompt(self):
+        sut = self._plate_sut(1, measure_flc=False)
+
+        sut.set_tap_num(3)
+
+        assert sut.status_message == "Ready for fL tap (×3 each for L, C)", (
+            "REGRESSION: the hook called the GUITAR prompt, so changing Taps during a plate "
+            'measurement said "Tap the guitar 3 times..." (#17 F36)'
+        )
+
+    def test_raising_count_at_plate_start_with_flc_names_all_three_phases(self):
+        sut = self._plate_sut(1, measure_flc=True)
+
+        sut.set_tap_num(2)
+
+        assert sut.status_message == "Ready for fL tap (×2 each for L, C, FLC)"
+
+    def test_raising_count_at_brace_start_uses_the_brace_prompt(self):
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
+
+        sut = _make_sut(1)
+        TapDisplaySettings.set_measurement_type(MeasurementType.BRACE)
+        sut.material_tap_phase = MaterialTapPhase.CAPTURING_LONGITUDINAL
+        sut.current_tap_count = 0
+        sut.detection_state = DetectionState.LISTENING
+
+        sut.set_tap_num(4)
+
+        assert sut.status_message == "Ready for fL tap (×4)"
+
+    def test_count_change_at_a_later_phase_does_not_rewrite_the_instruction(self):
+        """The guard, not the prompt.
+
+        current_tap_count is CUMULATIVE across L -> C -> FLC while captured_taps is the within-phase
+        buffer, cleared at every phase completion -- so a guard written against the buffer reads
+        "nothing captured yet" at the start of every phase.  This one was, and rewrote the fC
+        instruction mid-measurement (#17 F36).
+        """
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
+
+        sut = _make_sut(3)
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        TapDisplaySettings.set_measure_flc(False)
+        sut.material_tap_phase = MaterialTapPhase.CAPTURING_CROSS
+        sut.captured_taps = []      # the phase buffer is empty -- L's taps were consumed
+        sut.current_tap_count = 3   # but three taps ARE captured for this measurement
+        sut.detection_state = DetectionState.LISTENING
+        # The string a REDO leaves on screen -- deliberately NOT what the hook would derive for this
+        # phase, so "stayed silent" and "fired" are distinguishable.  Asserting the derived string
+        # here passes under both, which is an assertion true by construction.
+        sut._set_status_message("Ready for fC tap — tap again")
+
+        sut.set_tap_num(5)
+
+        assert sut.status_message == "Ready for fC tap — tap again", (
+            "REGRESSION: the guard read the within-phase buffer, which is empty at every phase "
+            "boundary, so the hook fired mid-measurement and overwrote the instruction (#17 F36)"
+        )
+
+
 class TestNoImplicitFinalise:
     """OUT-5 — a count change with taps already in hand must NOT finalise the measurement.
 

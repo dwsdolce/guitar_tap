@@ -306,6 +306,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self.is_stopped = True
         self.is_playing_file = False
         self.playing_file_name = None  # Mirrors Swift stop(): self?.playingFileName = nil
+        self.peak_magnitude = -100.0   # Mirrors Swift stop(): peakMagnitude = -100 (silent state)
+        self.peak_frequency = 0.0      # Mirrors Swift stop(): peakFrequency = 0
         self.stream.abort()
 
     # MARK: - Event-loop pump helper
@@ -437,16 +439,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             # any active gated capture with duplicate/zero data.  The gated
             # capture is flushed separately by _on_pre_mic_restart below.
             _td("file_playback", f"PARTIAL_FLUSH_EMIT | emitting FFT frame with {len(partial)} samples")
-            mag_y_db, mag_y, fft_peak_amp = _perform_fft(self, partial, fft_size)
+            mag_y_db, mag_y, peak_db = _perform_fft(self, partial, fft_size)
 
-            # Publish via direct callback and Qt signal — mirrors Swift
-            # performFFT(on:) which publishes magnitudes on main thread.
-            fft_handler = self.fft_frame_handler
-            if fft_handler is not None:
-                fft_handler(mag_y_db, mag_y, fft_peak_amp, 0.0, 0.0, 0.0, 0.0)
-            self.proc_thread.fftFrameReady.emit(
-                mag_y_db, mag_y, fft_peak_amp, 0.0, 0.0, 0.0, 0.0,
-            )
+            # One delivery, as every frame — mirrors Swift performFFT(on:) publishing the magnitudes
+            # for the analyzer's main-thread sink.
+            self.proc_thread.fftFrameReady.emit(mag_y_db, mag_y, peak_db, 0.0, 0.0, 0.0)
             _td("file_playback", "PARTIAL_FLUSH_DONE")
         # Clear the input buffer so the caller starts from a clean slate.
         self._input_buffer = []
@@ -633,7 +630,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
     _WATCHDOG_BACKOFFS = (0.5, 1.0, 2.0, 4.0)
 
 
-    def start_buffer_watchdog(self) -> None:
+    def start_buffer_watchdog(self, is_watchdog_recovery: bool = False) -> None:
         """(Re)start the buffer-delivery watchdog (main-thread QTimer)."""
         if getattr(self, "is_for_testing", False):
             return
@@ -641,10 +638,21 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self.stop_buffer_watchdog()
         self._watchdog_engine_start_time = time.monotonic()
         self._last_buffer_time = time.monotonic()
-        # Prime the dead-input clock too, so its window is measured from the start.
-        self._last_signal_time = time.monotonic()
-        # A deliberate (re)start gets a clean slate: full recovery attempts again.
-        self._watchdog_recovery_exhausted = False
+        # Prime the dead-input clock too, so its window is measured from the start -- but ONLY for a
+        # start the user asked for.
+        #
+        # A watchdog RECOVERY must not stamp this: _last_signal_time means "signal was last
+        # OBSERVED", and a restart observes nothing.  Stamping it made the next tick read HEALTHY,
+        # which cleared the warning and reset the attempt streak, while the clean slate below
+        # cleared the exhausted latch -- so DEAD_INPUT_EXHAUSTED was unreachable and the stream
+        # restarted every 15 s forever, strobing the warning.  Found on a BlackHole 2ch virtual
+        # input during the #17 run-review; any permanently silent input does it.  Mirrors Swift
+        # start(isWatchdogRecovery:).
+        if not is_watchdog_recovery:
+            self._last_signal_time = time.monotonic()
+            # A deliberate (re)start gets a clean slate: full recovery attempts again.
+            self._watchdog_recovery_exhausted = False
+            self._watchdog_recovery_attempts = 0
         timer = QtCore.QTimer()
         timer.setInterval(1000)
         timer.timeout.connect(self._check_buffer_watchdog)
@@ -760,4 +768,5 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         except Exception as e:  # noqa: BLE001 — last-resort recovery, never raise
             gt_log(f"⚠️ Buffer watchdog: restart failed ({e})")
         self._is_recovering = False
-        self.start_buffer_watchdog()  # re-arm; a healthy buffer clears the streak
+        # re-arm; only REAL signal clears the streak (#17)
+        self.start_buffer_watchdog(is_watchdog_recovery=True)

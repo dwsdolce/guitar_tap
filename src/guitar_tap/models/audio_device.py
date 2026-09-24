@@ -16,7 +16,7 @@ best-effort fingerprint:
 e.g. "MacBook Pro Microphone:48000"
 
 This fingerprint is used as the persistent storage key in AppSettings and as the
-matching key in _restore_measurement, mirroring the role of AVAudioDevice.uid in
+matching key in _on_measurement_loaded, mirroring the role of AVAudioDevice.uid in
 Swift's CalibrationStorage and loadMeasurement device-restore logic.  It is more
 discriminating than name alone (useful when two devices share a base name at different
 sample rates) while remaining human-readable.

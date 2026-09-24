@@ -52,6 +52,7 @@ NOTE — Python vs Swift implementation differences:
 
 from __future__ import annotations
 
+
 import numpy as np
 import numpy.typing as npt
 
@@ -142,9 +143,17 @@ def dft_anal(
     # DC (bin 0) and Nyquist (bin N/2) have no mirror, so they are not doubled.
     abs_fft[1:-1] *= 2.0
 
-    abs_fft[abs_fft < np.finfo(float).eps] = np.finfo(float).eps  # guard against log(0)
-
-    magnitude = 20 * np.log10(abs_fft)
+    # NO epsilon clamp. A bin with no energy is -inf, which is what Swift's vDSP_vdbcon produces
+    # and what the Peak readout must say: -inf means "nothing at all", and it has to stay
+    # distinguishable from -100 dB, a REAL level a live UMIK-1 reaches in a quiet room (it is also
+    # the dead-input watchdog's own threshold). The clamp put "-313.0 dB" on screen for the absence
+    # of a signal — a precise-looking number for nothing (#17, run-review).
+    #
+    # This is the LIVE per-frame path, the one the Peak readout reads; compute_gated_fft carried the
+    # identical clamp and is fixed with it. errstate only silences numpy's per-frame divide-by-zero
+    # warning — the -inf is the intended result.
+    with np.errstate(divide="ignore"):
+        magnitude = 20 * np.log10(abs_fft)
     return magnitude, abs_fft
 
 
@@ -158,10 +167,9 @@ def perform_fft(analyzer, samples: "npt.NDArray[np.float32]", fft_size: int):
     DSP step with:
       - per-bin calibration application (mirrors Swift's vDSP_vadd of
         calibrationCorrections)
-      - peak amplitude int-encoded as ``max(dB) + 100`` for the int-typed Qt
-        ``fftFrameReady`` signal.  Swift publishes the raw dB via the
-        ``peakMagnitude`` @Published Float instead — same peak value, different
-        transport encoding (Qt int signal vs Swift Float).
+      - the spectrum's peak, in dB, as a float — Swift's ``peakMagnitude``. It used to be
+        int-encoded as ``max(dB) + 100`` for the Qt signal and decoded back at every consumer,
+        which rounded the peak to whole dB for no reason any platform required (#17 F44).
     (Per-frame counters and any debug tracing live in the caller,
     _FftProcessingThread.run(), not here.)
 
@@ -176,9 +184,8 @@ def perform_fft(analyzer, samples: "npt.NDArray[np.float32]", fft_size: int):
         fft_size:  FFT size, snapshot at call time.
 
     Returns:
-        ``(mag_y_db, mag_y, fft_peak_amp)`` — the dB and linear magnitude
-        spectra (calibration-applied) plus the int-encoded peak amplitude
-        ready for the ``fftFrameReady`` signal.
+        ``(mag_y_db, mag_y, peak_db)`` — the dB and linear magnitude spectra
+        (calibration-applied) and the spectrum's peak in dB (``-inf`` on a silent input).
     """
     # Snapshot calibration under the analyzer's settings lock.  Mirrors Swift
     # where calibrationCorrections is read inside performFFT.
@@ -189,9 +196,17 @@ def perform_fft(analyzer, samples: "npt.NDArray[np.float32]", fft_size: int):
     if calibration is not None:
         mag_y_db = mag_y_db + calibration
 
-    fft_peak_amp = int(np.max(mag_y_db) + 100.0)
+    _peak_bin = int(np.argmax(mag_y_db))  # first maximum on ties, as Swift's max(by:)
+    _peak_db = float(mag_y_db[_peak_bin])
 
-    return mag_y_db, mag_y, fft_peak_amp
+    # The live peak, owned here as Swift's RealtimeFFTAnalyzer owns peakFrequency/peakMagnitude.
+    # A silent input is -inf dB at bin 0 (0 Hz), exactly as Swift reports it.
+    analyzer.peak_frequency = _peak_bin * float(analyzer.rate) / fft_size
+    analyzer.peak_magnitude = _peak_db
+    # Swift: displayLevelDB = readoutLevelDB, at the same rate as the graph.
+    analyzer.display_level_db = analyzer.readout_level_db
+
+    return mag_y_db, mag_y, _peak_db
 
 
 # MARK: - Peak detection, interpolation and Q — REMOVED 2026-09-20 (#17)

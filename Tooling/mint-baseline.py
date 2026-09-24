@@ -75,9 +75,10 @@ def check_against_oracle(computed: dict[str, float]) -> list[str]:
     failures = []
     for path, value in sorted(computed.items()):
         if path.endswith("/maxDb"):
-            ceiling = float(ORACLE["gatedFft"][path.split("/", 1)[0]]["maxDbBelow"])
-            if not value < ceiling:
-                failures.append(f"  {path}: {value:.6g} is not below the {ceiling} dB ceiling")
+            # Silence: the oracle records Swift's exact value (-inf) — no tolerance applies to it.
+            want = float(ORACLE["gatedFft"][path.split("/", 1)[0]]["maxDb"])
+            if not value == want:
+                failures.append(f"  {path}: {value!r} is not the oracle's {want!r}")
             continue
         if path not in oracle_flat:
             continue
@@ -105,6 +106,13 @@ def diff_against(previous: dict, computed: dict[str, float]) -> list[str]:
         elif before != after:
             lines.append(f"  ~ {path}: {before!r} -> {after!r}  (delta {after - before:+.10g})")
     return lines
+
+
+def _encoding_is_current(path: str) -> bool:
+    """True when the file on disk already stores every non-finite number as its string."""
+    with open(path, encoding="utf-8") as fh:
+        raw = json.load(fh)  # NOT decoded: a bare -Infinity stays a float and shows up below
+    return raw == self_baseline.encode_nonfinite(raw)
 
 
 def provenance() -> dict[str, str]:
@@ -170,21 +178,42 @@ def main() -> int:
         print("✅ Every value is within the first-mint bar.")
     else:
         lines = diff_against(previous, computed)
-        if not lines:
+        checked_against = str(previous.get("provenance", {}).get("oracleVersion", "unknown"))
+        current_oracle = str(ORACLE.get("oracleVersion", "unknown"))
+        if not lines and _encoding_is_current(path) and checked_against == current_oracle:
             print("\n✅ Identical to the committed baseline — nothing to do.")
             return 0
-        print(f"\n{len(lines)} value(s) differ from the committed baseline:")
-        print("\n".join(lines[:40]))
-        if len(lines) > 40:
-            print(f"  ... and {len(lines) - 40} more")
-        print("\nThis diff is the review artifact. Adopt it only if a deliberate change")
-        print("explains every line; otherwise it is a regression and re-minting hides it.")
-        if args.check:
-            return 1
-        if not args.yes:
-            if input("\nOverwrite the baseline with these values? [y/N] ").strip().lower() != "y":
-                print("Not written.")
+        if not lines and checked_against != current_oracle:
+            # Same values, but the baseline names a different oracle than the one it was just checked
+            # against — e.g. a -dirty mint superseded by a clean one. Rewrite so the provenance names
+            # an oracle anyone can check out; no value changes (#17 F44).
+            print(f"\nEvery value is identical, but the baseline names oracle {checked_against}, not the")
+            print(f"current {current_oracle}. Re-minting rewrites the provenance; no value changes.")
+            if args.check:
                 return 1
+        elif not lines:
+            # Same values, stale FILE: Python's reader accepts the bare, non-standard `-Infinity`
+            # token, so a file written before non-finite numbers were stored as strings loads and
+            # compares identical — and would never be rewritten. Mint it again so the file is valid
+            # JSON and its provenance names the oracle it was actually checked against (#17 F44).
+            print("\nEvery value is identical, but the file stores a non-finite number in the old,")
+            print("non-standard form rather than as its string. Re-minting rewrites the encoding and")
+            print("the provenance; no value changes.")
+            if args.check:
+                return 1
+        if lines:  # a VALUE changed: show the diff, and confirm before adopting it
+            print(f"\n{len(lines)} value(s) differ from the committed baseline:")
+            print("\n".join(lines[:40]))
+            if len(lines) > 40:
+                print(f"  ... and {len(lines) - 40} more")
+            print("\nThis diff is the review artifact. Adopt it only if a deliberate change")
+            print("explains every line; otherwise it is a regression and re-minting hides it.")
+            if args.check:
+                return 1
+            if not args.yes:
+                if input("\nOverwrite the baseline with these values? [y/N] ").strip().lower() != "y":
+                    print("Not written.")
+                    return 1
 
     if args.check:
         print("\n--check: nothing written.")
@@ -201,7 +230,8 @@ def main() -> int:
         "values": values,
     }
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(document, fh, indent=2, sort_keys=True, ensure_ascii=False)
+        json.dump(self_baseline.encode_nonfinite(document), fh, indent=2, sort_keys=True,
+                  ensure_ascii=False, allow_nan=False)  # "-Infinity" as a string: valid JSON
         fh.write("\n")
     print(f"\n✅ Wrote {path}")
     print("   Review it, commit it, and publish it to the hub so the parity")

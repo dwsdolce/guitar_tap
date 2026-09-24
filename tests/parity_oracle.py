@@ -20,8 +20,10 @@ from typing import Any
 
 ORACLE_PATH = os.path.join(os.path.dirname(__file__), "parity-oracle.json")
 
+from self_baseline import decode_nonfinite  # noqa: E402 — "-Infinity" strings -> floats
+
 with open(ORACLE_PATH, encoding="utf-8") as _fh:
-    ORACLE: dict[str, Any] = json.load(_fh)
+    ORACLE: dict[str, Any] = decode_nonfinite(json.load(_fh))
 
 TOLERANCES: dict[str, float] = ORACLE["tolerances"]
 

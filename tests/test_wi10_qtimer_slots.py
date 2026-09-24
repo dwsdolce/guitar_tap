@@ -92,7 +92,6 @@ class TestQTimerMainThreadDelivery:
         # _do_reenable_detection is one of the WI-10 refactored slots.
         # Start from IDLE so the slot's effect is visible.
         sut.detection_state = DetectionState.IDLE
-        sut.tap_detected = True
 
         QtCore.QTimer.singleShot(0, sut._do_reenable_detection)
         # Before processEvents — slot has not yet run.
@@ -101,7 +100,6 @@ class TestQTimerMainThreadDelivery:
         QtWidgets.QApplication.instance().processEvents()
         # Slot ran on the main thread and applied its state.
         assert sut.is_detecting is True
-        assert sut.tap_detected is False
 
 
 # ---------------------------------------------------------------------------
@@ -126,14 +124,12 @@ class TestTapDetectionSlots:
         """_do_reenable_detection (site 6) enables detection after plate cooldown."""
         sut = self._make()
         sut.detection_state = DetectionState.IDLE
-        sut.tap_detected = True
         # Simulate very quiet input so is_above_threshold should be False.
         sut._current_input_level_db = -80.0
 
         sut._do_reenable_detection()
 
         assert sut.is_detecting is True
-        assert sut.tap_detected is False
         # Level (-80) < falling threshold (-45) → not above threshold.
         assert sut.is_above_threshold is False
 
@@ -141,13 +137,11 @@ class TestTapDetectionSlots:
         """_do_reenable_guitar (site 5) re-enables detection for guitar mode."""
         sut = self._make()
         sut.detection_state = DetectionState.IDLE
-        sut.tap_detected = True
         sut._current_input_level_db = -80.0
 
         sut._do_reenable_guitar()
 
         assert sut.is_detecting is True
-        assert sut.tap_detected is False
 
     def test_finish_capture_transitions_state(self):
         """_finish_capture (site 4) processes taps and sets is_measurement_complete.

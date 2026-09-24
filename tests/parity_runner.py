@@ -208,7 +208,7 @@ def compute_gated_fft() -> dict[str, Any]:
             if "deltaDb" in spec:
                 first, second = computed["expected"][0], computed["expected"][1]
                 computed["deltaDb"] = second["db"] - first["db"]
-        if "maxDbBelow" in spec:
+        if "maxDb" in spec:
             computed["maxDb"] = float(max(mags))
 
         out[name] = computed

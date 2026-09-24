@@ -31,7 +31,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         @Published property observer + explicit save(context:) call.
         """
         from guitar_tap.views import tap_analysis_results_view as M
-        M.save_all_measurements(self.savedMeasurements)
+        M.save_all_measurements(self.saved_measurements)
         self.savedMeasurementsChanged.emit()
 
     # ── Mutation methods (mirror Swift TapToneAnalyzer+MeasurementManagement) ─
@@ -58,7 +58,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         except Exception:
             return False
 
-        self.savedMeasurements.extend(measurements)
+        self.saved_measurements.extend(measurements)
         self._persist_measurements()
         return True
 
@@ -88,54 +88,47 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 f"import_measurements_from_data: decode failed: {exc}"
             ) from exc
 
-        self.savedMeasurements.extend(measurements)
+        self.saved_measurements.extend(measurements)
         self._persist_measurements()
-
-        # Warn if any imported measurement's microphone is not currently available.
-        # Mirrors Swift importMeasurements(from:) — checks UID first, then name
-        # (Python companion app measurements store a "Name:SampleRate" fingerprint
-        # as the UID rather than a CoreAudio UID, so name matching is needed).
-        mic = getattr(self, "mic", None)
-        available_devices = getattr(mic, "available_input_devices", []) or []
-        # available_input_devices starts empty; populate if needed.
-        if not available_devices and mic is not None and hasattr(mic, "load_available_input_devices"):
-            # Suppress _on_devices_changed to avoid triggering _on_devices_refreshed,
-            # which calls sd._terminate()/_initialize() and kills the live audio stream.
-            saved_cb = mic._on_devices_changed
-            mic._on_devices_changed = None
-            try:
-                mic.load_available_input_devices()
-            finally:
-                mic._on_devices_changed = saved_cb
-            available_devices = getattr(mic, "available_input_devices", []) or []
-        available_uids  = {d.fingerprint for d in available_devices}
-        available_names = {d.name for d in available_devices}
-        missing_names: list = []
-        for m in measurements:
-            uid = getattr(m, "microphone_uid", None)
-            if uid:
-                found_by_uid  = uid in available_uids
-                mic_name = getattr(m, "microphone_name", None) or ""
-                found_by_name = (not found_by_uid) and (mic_name in available_names)
-                if not found_by_uid and not found_by_name:
-                    label = mic_name or uid
-                    if label not in missing_names:
-                        missing_names.append(label)
-        if missing_names:
-            joined = ", ".join(missing_names)
-            # Report UNKNOWN, not "unplugged": a no-match can equally mean the device is
-            # attached under a different name on this platform (the same UMIK-1 is
-            # "Umik-1  Gain: 18dB" on macOS and "Microphone (Umik-1  Gain: 18dB)" here).
-            # Impact stated so the reader can judge — frequencies are essentially
-            # mic-independent; levels, trigger and faint peaks are not. Mirrors Swift + web.
-            self.microphone_warning = (
-                f"Recorded with {joined}. No connected microphone matches that name — it may be "
-                f"unplugged, or attached under a different name on this platform. Peak frequencies "
-                f"should still be comparable; input levels, the tap threshold, and faint peaks "
-                f"(such as FLC) may differ."
-            )
-
+        # A library operation only: nothing about microphones. Nothing is on screen yet, so there is
+        # nothing for a microphone difference to affect — the check belongs to load_measurement(),
+        # which shows the user data. (It used to list every imported measurement's missing
+        # microphone here, so importing an exported library warned about measurements the user had
+        # not opened.) Mirrors Swift importMeasurements(from:).
         return measurements
+
+    def import_and_load_measurements(self, data: bytes) -> str:
+        """Import a ``.guitartap`` file and return the one message the user sees for it.
+
+        Mirrors Swift ``importAndLoadMeasurements(from:)``. A single measurement is also loaded —
+        so, and only then, the message carries the LOAD's microphone warning, folded in so one
+        dialog appears rather than two, and consumed. A library import (Export All) only adds to
+        the library and says nothing about microphones.
+
+        The warning is cleared first, so the message can only ever describe THIS import — whatever
+        mechanism the view uses to clear an acknowledged warning, a stale one cannot ride along.
+
+        Raises:
+            ValueError: If ``data`` is not a valid ``.guitartap`` array.
+        """
+        self.microphone_warning = None
+        imported = self.import_measurements_from_data(data)
+        if len(imported) != 1:
+            return f"Successfully imported {len(imported)} measurements"
+        # Loading sets microphone_warning, whose signal would raise the main view's warning dialog
+        # synchronously — a second dialog for the same import. Suppress it; the warning is folded
+        # into this message instead. Swift needs no flag: its view clears the field before the
+        # alert can render.
+        self._suppress_mic_warning_signal = True
+        try:
+            self.load_measurement(imported[0])
+        finally:
+            self._suppress_mic_warning_signal = False
+        message = "Successfully imported and loaded 1 measurement"
+        if self.microphone_warning:
+            message += f"\n\n⚠️ {self.microphone_warning}"
+            self.microphone_warning = None
+        return message
 
     def _make_phase_snapshot(
         self,
@@ -369,7 +362,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             sample_rate=sample_rate,
             tap_entries=tap_entries_to_save,
         )
-        self.savedMeasurements.append(measurement)
+        self.saved_measurements.append(measurement)
         self._persist_measurements()
 
     def load_measurement(self, measurement) -> None:
@@ -390,11 +383,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         # Suppress recalculate_frozen_peaks_if_needed() for the duration of the
         # load — mirrors Swift: isLoadingMeasurement = true / defer { = false }
+        self.measurementLoadStarting.emit()
         self.is_loading_measurement = True
         try:
             self._load_measurement_body(measurement)
         finally:
             self.is_loading_measurement = False
+        self.measurementLoaded.emit(measurement)
 
     def _load_measurement_body(self, measurement) -> None:
         """Inner implementation called by load_measurement(); guards isLoadingMeasurement."""
@@ -992,19 +987,19 @@ class TapToneAnalyzerMeasurementManagementMixin:
         part of a measurement's data, so an amended entry is a different dataset. See
         ``TapToneMeasurement.with_``.
 
-        The index into ``savedMeasurements`` is used rather than id matching, because duplicate
+        The index into ``saved_measurements`` is used rather than id matching, because duplicate
         imports share an id until one of them is edited — so an id cannot address a row. Callers
-        must pass the position in ``savedMeasurements`` itself, which is why the list is
+        must pass the position in ``saved_measurements`` itself, which is why the list is
         displayed in storage order.
 
         Args:
-            at:               Position in ``savedMeasurements`` to update.
+            at:               Position in ``saved_measurements`` to update.
             measurement_name: New measurement name, or ``None`` to clear it.
             notes:            New free-form notes, or ``None`` to clear them.
         """
-        if not (0 <= at < len(self.savedMeasurements)):
+        if not (0 <= at < len(self.saved_measurements)):
             return
-        self.savedMeasurements[at] = self.savedMeasurements[at].with_(
+        self.saved_measurements[at] = self.saved_measurements[at].with_(
             measurement_name=measurement_name,
             notes=notes,
         )
@@ -1015,9 +1010,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.deleteMeasurement(at:)``.
         """
-        if not (0 <= at < len(self.savedMeasurements)):
+        if not (0 <= at < len(self.saved_measurements)):
             return
-        self.savedMeasurements.pop(at)
+        self.saved_measurements.pop(at)
         self._persist_measurements()
 
     def delete_all_measurements(self) -> None:
@@ -1025,7 +1020,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.deleteAllMeasurements()``.
         """
-        self.savedMeasurements.clear()
+        self.saved_measurements.clear()
         self._persist_measurements()
 
     def set_measurement_complete(self, is_complete: bool) -> None:
@@ -1183,7 +1178,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         """Save the current live comparison as a TapToneMeasurement with comparisonEntries.
 
         Creates a new TapToneMeasurement whose comparisonEntries hold a snapshot of the
-        current comparison data, then appends it to savedMeasurements and persists.
+        current comparison data, then appends it to saved_measurements and persists.
 
         Mirrors Swift TapToneAnalyzer.saveComparison(measurementName:notes:)
         (TapToneAnalyzer+MeasurementManagement.swift).
@@ -1219,7 +1214,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             notes=notes,
             comparison_entries=entries,
         )
-        self.savedMeasurements.append(m)
+        self.saved_measurements.append(m)
         self._persist_measurements()
 
     def loaded_comparison_snapshots(self) -> list:

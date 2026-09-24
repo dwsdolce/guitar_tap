@@ -99,7 +99,6 @@ class TapToneAnalyzer(
     # Full spectrum ready for the view to draw.
     spectrumUpdated: QtCore.Signal = QtCore.Signal(object, object)  # (freqs, mags_db)
     # A single tap has been fully captured (all required taps averaged).
-    tapDetectedSignal: QtCore.Signal = QtCore.Signal()
     # Live tap count update: (captured, total).
     tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)
 
@@ -114,8 +113,6 @@ class TapToneAnalyzer(
     readyForDetectionChanged: QtCore.Signal = QtCore.Signal(bool)
     # Ring-out time measured by DecayTracker (seconds).
     ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
-    # Input level 0-100 scale (dBFS + 100).
-    levelChanged: QtCore.Signal = QtCore.Signal(int)
     # FFT frame diagnostics: (fps, sample_dt, processing_dt).
     framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
     # Emitted on every live FFT frame (for average-enable logic).
@@ -178,6 +175,13 @@ class TapToneAnalyzer(
     # and wants the view to switch to it.  Payload: AudioDevice.
     # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
     requestDeviceSwitch: QtCore.Signal = QtCore.Signal(object)
+    # The two edges of load_measurement() — is_loading_measurement going True, then False (Swift's
+    # isLoadingMeasurement). SwiftUI re-renders from the loaded state on its own; Qt does not, so the
+    # view does its restoration work in response to these rather than by wrapping the load itself.
+    # That is what lets ANY caller load — the list, and an import — and still have the screen follow.
+    # STARTING exists because two view steps must precede the load's own signals (see the view).
+    measurementLoadStarting: QtCore.Signal = QtCore.Signal()
+    measurementLoaded: QtCore.Signal = QtCore.Signal(object)   # the TapToneMeasurement just loaded
     # Internal: fired from hotplug monitor thread → main thread (no-arg).
     _devicesRefreshed: QtCore.Signal = QtCore.Signal()
     # Internal: cross-thread DispatchQueue.main.asyncAfter equivalent.
@@ -281,7 +285,7 @@ class TapToneAnalyzer(
         # Ring-out is measured from the peak to the first moment the signal drops
         # more than this below it; 15 dB works well against room noise floors.
         self.decay_threshold: float = 15.0                                 # mirrors decayThreshold
-        self.number_of_taps: int = 1                                       # mirrors numberOfTaps
+        self._number_of_taps: int = 1                                      # mirrors numberOfTaps
         # Duration of the spectrum-capture window after each tap, in seconds. The
         # snapshot is taken this long after the tap; 200 ms captures the early decay
         # while avoiding the noise floor.
@@ -305,7 +309,6 @@ class TapToneAnalyzer(
         self.identified_modes: list = []                                   # mirrors identifiedModes
         self.current_decay_time: "float | None" = None                    # mirrors currentDecayTime
         self.saved_measurements: list = []                                 # mirrors savedMeasurements
-        self.savedMeasurements = self.saved_measurements                   # legacy alias
 
         # MARK: - Detection State
         # Most recent average FFT magnitude, in dBFS. Used by the hysteresis detector
@@ -315,7 +318,6 @@ class TapToneAnalyzer(
         # brace it is noise_floor_estimate + headroom; for guitar it equals
         # tap_detection_threshold.
         self.tap_detection_level: float = -100.0    # mirrors tapDetectionLevel
-        self.tap_detected: bool = False             # mirrors tapDetected
         # mirrors detectionState; is_detecting / is_detection_paused derive from it
         self._detection_state: DetectionState = DetectionState.IDLE
         # True while a device/route change settles and the chart should show nothing. The
@@ -370,9 +372,10 @@ class TapToneAnalyzer(
         self.loaded_number_of_taps: "int | None" = None
 
         # Mirrors Swift @Published var microphoneWarning: String?
-        # Set by import_measurements_from_data when an imported measurement's device
-        # is not among the currently available input devices.  View clears it after
-        # showing the alert (mirrors MeasurementsListView.swift behaviour).
+        # Set by load_measurement() when the loaded measurement's microphone is not connected, or
+        # its calibration / sample rate differs. An import never sets it — only a load shows the user
+        # data. The view clears it once the alert is acknowledged; import_and_load_measurements()
+        # folds it into its message and clears it (mirrors Swift).
         self.microphone_warning: "str | None" = None
 
         # ── Loaded-measurement metadata ────────────────────────────────────
@@ -500,17 +503,6 @@ class TapToneAnalyzer(
         # rejected by the audio queue can still fire here and start a
         # bogus gated capture.
         self.detect_tap_consecutive_above: int = 0
-        # Last audio-source sample position processed by ``_on_rms_level_changed``.
-        # Python wires _on_rms_level_changed via TWO paths — a direct callback
-        # from process_raw_samples and the Qt rmsLevelChanged signal — so the
-        # handler runs twice per chunk.  Without this dedupe, the per-call
-        # increment in detect_tap_consecutive_above doubles the counter and
-        # any "N consecutive chunks above threshold" gate effectively fires
-        # at N/2 chunks.  Tracking the mic's running sample count lets us
-        # skip the second call for the same chunk (where the position hasn't
-        # advanced).  Swift doesn't need this — its Combine sink delivers a
-        # single event per chunk.
-        self._last_rms_chunk_pos: int = -1
         # True for the single FFT frame right after warm-up ends, so is_above_threshold
         # can be re-anchored to the real signal level without firing a spurious tap.
         # Mirrors justExitedWarmup.
@@ -632,6 +624,48 @@ class TapToneAnalyzer(
             self._wire_pipeline_signals()
 
     # ------------------------------------------------------------------ #
+    # number_of_taps — mirrors Swift @Published var numberOfTaps { didSet { … } }
+    #
+    # A property, not a plain attribute, so the hook runs on EVERY write.  It was an attribute with
+    # the hook parked in a separate ``set_tap_num()`` method, which meant two ways to change one
+    # value and two paths that took the quiet one: ``_load_measurement_body()`` and
+    # ``play_file_for_testing()`` both assigned the attribute directly.  Swift has one way in and
+    # cannot be bypassed; so does this now (#17 F38, the same shape F25 fixed for
+    # is_measurement_complete).
+    #
+    # No clamp: Swift's didSet has none, and the spinner already bounds the value 1..10 in the view,
+    # exactly as the Swift stepper and the web stepper do.  ``set_tap_num``'s ``max(1, n)`` was a
+    # model-layer guard no sibling had.
+    _number_of_taps: int = 1
+
+    @property
+    def number_of_taps(self) -> int:
+        """How many taps to accumulate before freezing.  Mirrors Swift ``numberOfTaps``."""
+        return self._number_of_taps
+
+    @number_of_taps.setter
+    def number_of_taps(self, value: int) -> None:
+        self._number_of_taps = value
+        # Mirrors Swift numberOfTaps.didSet: clear the loaded-settings warning once the user
+        # deviates from the value the measurement was saved with.
+        if (self.show_loaded_settings_warning
+                and self.loaded_number_of_taps is not None
+                and self._number_of_taps != self.loaded_number_of_taps):
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
+        # Mirrors Swift numberOfTaps.didSet: refresh the prompt while armed and waiting for the
+        # FIRST tap of the measurement.
+        #
+        # `current_tap_count`, not `len(captured_taps)`: the latter is the WITHIN-PHASE buffer,
+        # cleared at every material phase completion, so it read zero at the start of every plate
+        # phase rather than only at the start of the measurement.  current_tap_count is the
+        # cumulative count -- the same field the spinner lock reads, so the guard and the lock
+        # agree.  And `_armed_prompt()`, not `_tap_prompt()`: the latter is the GUITAR prompt, so
+        # changing Taps at the start of a plate or brace sequence wrote "Tap the guitar 3 times..."
+        # over "Ready for fL tap (×3 each for L, C)" (#17 F36).
+        if self.is_detecting and self.current_tap_count == 0:
+            self._set_status_message(self._armed_prompt())
+
     # is_measurement_complete — mirrors Swift @Published var isMeasurementComplete
     # ------------------------------------------------------------------ #
 
@@ -881,11 +915,11 @@ class TapToneAnalyzer(
 
         Mirrors Swift ``TapToneAnalyzer.setupSubscriptions()``.
         """
-        # ── Direct callbacks (work without Qt event loop) ────────────────
-        # These are the primary delivery path for pipeline-critical events.
-        # Mirrors Swift's direct handler closures on RealtimeFFTAnalyzer.
-        self.mic.rms_level_handler = self._on_rms_level_changed_direct
-        self.mic.fft_frame_handler = self.on_fft_frame
+        # ── Per-chunk level → tap detection: ONE delivery, direct ────────
+        # Called synchronously by process_raw_samples, on the processing thread — as Swift's
+        # rmsLevelHandler is on the audio queue. The float dB goes straight in; it used to be
+        # truncated to a whole-dB int first (#17 F44).
+        self.mic.rms_level_handler = self._on_rms_level_changed
 
         # ── Gated-FFT capture signal (Qt — for cross-thread delivery) ────
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
@@ -1005,28 +1039,13 @@ class TapToneAnalyzer(
                 self._pending_level_crossing_pre_roll = None
         self.mic._on_post_engine_stop = _clear_pre_roll
 
-        # ── Qt signal connections (for UI — live mic path) ───────────────
-        # These are secondary to the direct callbacks above.  They exist
-        # for the UI layer (fft_canvas, tap_tone_analysis_view) which
-        # connects to these Qt signals for chart updates and level meters.
+        # ── FFT frame → peak analysis: ONE delivery, the Qt signal ───────
+        # So on_fft_frame runs on the main thread, as Swift's analyzer takes frames through a Combine
+        # sink `.receive(on: DispatchQueue.main)`. Each level and each frame used to arrive TWICE —
+        # direct AND by signal — with a duplicate guard on the level that could not tell a late queued
+        # copy from a new chunk, and none at all on the frame (#17 F44). rmsLevelChanged is not
+        # connected here: it is the UI's copy of the level (the threshold meter).
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
-        self.mic.proc_thread.rmsLevelChanged.connect(self._on_rms_level_changed)
-
-    # ------------------------------------------------------------------ #
-    # _on_rms_level_changed_direct — direct callback version of _on_rms_level_changed
-    # ------------------------------------------------------------------ #
-
-    def _on_rms_level_changed_direct(self, level_db: float, audio_time: float) -> None:
-        """Direct-callback RMS handler — called by process_raw_samples.
-
-        Same logic as ``_on_rms_level_changed(rms_amp)`` but takes
-        ``level_db: float`` directly instead of the 0-100 scaled int.
-        This works without a Qt event loop (file playback, tests).
-
-        Mirrors Swift's Combine sink on fftAnalyzer.$inputLevelDB.
-        """
-        rms_amp = int(level_db + 100.0)
-        self._on_rms_level_changed(rms_amp, audio_time)
 
     # _initialize_pre_roll was removed — pre-filling the pre-roll with
     # zeros diluted the gated capture signal by ~50%, suppressing spectral
@@ -1306,7 +1325,6 @@ class TapToneAnalyzer(
         # ── Saved measurements (view-layer import deferred until here) ────
         from guitar_tap.views.tap_analysis_results_view import load_all_measurements as _load
         self.saved_measurements = _load()
-        self.savedMeasurements = self.saved_measurements
         if self.saved_measurements:
             gt_log(f"📂 Loaded {len(self.saved_measurements)} persisted measurements")
         else:

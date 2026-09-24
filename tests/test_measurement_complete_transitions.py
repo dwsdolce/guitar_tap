@@ -146,8 +146,7 @@ class TestGuitarSingleTapCompletion:
         sut.on_fft_frame(
             mag_y_db=live_mag,
             mag_y=np.power(10.0, live_mag / 20.0),
-            fft_peak_amp=80,
-            rms_amp=70,
+            peak_db=-20.0,
             fps=2.7,
             sample_dt=0.37,
             processing_dt=0.01,
@@ -357,4 +356,23 @@ class TestCompletingClearsSettingsWarning:
         sut = _make_guitar_sut()
         sut.show_loaded_settings_warning = True
         sut.is_measurement_complete = True
+        assert sut.show_loaded_settings_warning is False
+
+    # MC9-MC10: the other two rules that move this flag.  Paired with Swift and web, where until
+    # #17 F40 the banner's real state was an App.tsx useState and these were untestable -- web's
+    # MC8 passed against a field the application never read.
+
+    def test_start_tap_sequence_clears_loaded_settings_warning(self):
+        """Starting a new sequence clears it -- the user's own Threshold/Taps now apply."""
+        sut = _make_guitar_sut()
+        sut.show_loaded_settings_warning = True
+        sut.start_tap_sequence()
+        assert sut.show_loaded_settings_warning is False
+
+    def test_tap_count_change_clears_loaded_settings_warning(self):
+        """Changing Taps clears it (Swift numberOfTaps.didSet)."""
+        sut = _make_guitar_sut()
+        sut.loaded_number_of_taps = 1
+        sut.show_loaded_settings_warning = True
+        sut.number_of_taps = 3
         assert sut.show_loaded_settings_warning is False

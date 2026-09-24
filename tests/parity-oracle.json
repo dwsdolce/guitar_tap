@@ -402,7 +402,7 @@
       ]
     },
     "GFFT4" : {
-      "maxDbBelow" : -100,
+      "maxDb" : "-Infinity",
       "signal" : "silence"
     },
     "GFFT5" : {
@@ -421,8 +421,8 @@
       ]
     }
   },
-  "generatedAt" : "2026-09-21T18:27:29Z",
-  "oracleVersion" : "74d995d",
+  "generatedAt" : "2026-09-24T05:50:06Z",
+  "oracleVersion" : "068f814",
   "selfTolerances" : {
     "freqHz" : 0,
     "gatedFftDb" : 0,

@@ -1038,7 +1038,13 @@ class MainWindow(QtWidgets.QMainWindow):
             return slider, readout, reset_btn
 
         # ── Taps ──────────────────────────────────────────────────────────
-        hl.addWidget(_lbl("Taps:"))
+        # The label is kept as an attribute so it can be dimmed WITH the spinner. SwiftUI's
+        # .disabled() propagates down the view tree, so Swift's `.disabledDimmed(tapCountLocked)`
+        # greys the label, the value and the stepper as one field; Qt does not propagate to a
+        # sibling QLabel, so without this the word "Taps:" stayed crisp beside a greyed-out box —
+        # the label looking live while the thing it labels looked dead (#17, run-review).
+        self.tap_num_label = _lbl("Taps:")
+        hl.addWidget(self.tap_num_label)
         self.tap_num_spin = QtWidgets.QSpinBox()
         self.tap_num_spin.setMinimum(1)
         self.tap_num_spin.setMaximum(10)
@@ -2146,7 +2152,6 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peakSelected.connect(self._on_peak_selected)
         canvas.peakDeselected.connect(self.peak_widget.clear_selection)
         canvas.framerateUpdate.connect(self._on_framerate_update)
-        canvas.levelChanged.connect(self._on_level_changed)
         canvas.peakInfoChanged.connect(self._on_peak_info)
         canvas.newSample.connect(self.peak_widget.new_data)
         canvas.annotations.restoreFocus.connect(self.peak_widget.restore_focus)
@@ -2169,8 +2174,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_widget.peakSelected.connect(self._on_peak_selected)
         self.peak_widget.peakDeselected.connect(self._on_peak_deselected)
 
-        # Tap events
-        canvas.tapDetected.connect(self._on_tap_detected)
         canvas.statusMessageChanged.connect(self._on_status_message_changed)
         # Initial pull: the signal fires only on CHANGE, so seed the label from the analyzer's
         # current status_message now (else the QLabel keeps its "Stopped" init string).
@@ -2191,6 +2194,9 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.requestDeviceSwitch.connect(self._on_request_device_switch)
         # Mirrors Swift @Published var microphoneWarning driving alert sheet.
         canvas.microphoneWarningChanged.connect(self._on_microphone_warning_changed)
+        # Every load, from any caller, brings the view along — Swift re-renders reactively.
+        canvas.measurementLoadStarting.connect(self._on_measurement_load_starting)
+        canvas.measurementLoaded.connect(self._on_measurement_loaded)
         canvas.ringOutMeasured.connect(self.set_ring_out)
         canvas.ringOutMeasured.connect(self._on_ring_out_measured)
         canvas.tapCountChanged.connect(self.set_tap_count)
@@ -2408,19 +2414,17 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.cal_status.setText("Calibration: none")
 
-    def _on_level_changed(self, amp: int) -> None:
-        # Plate/brace mode: show RMS input level gated to FFT frame rate —
-        # mirrors Swift fft.displayLevelDB used when !measurementType.isGuitar
-        if self._is_running and not TDS.measurement_type().is_guitar:
-            self._sb_avg_lbl.setText(f"{amp - 100.0:.1f} dB")
-
     def _on_peak_info(self, peak_hz: float, peak_db: float) -> None:
         if self._is_running:
-            # Guitar mode: show FFT peak magnitude — mirrors Swift fft.peakMagnitude
-            # Plate/brace: _sb_avg_lbl is updated in _on_level_changed (displayLevelDB)
+            # The left readout, per FFT frame — Swift's one choice: guitar shows fft.peakMagnitude,
+            # material shows fft.displayLevelDB (the RMS input level, -inf on true silence).
+            peak_text = fp.string(peak_db, fp.PEAK_MAGNITUDE_DB)
             if TDS.measurement_type().is_guitar:
-                self._sb_avg_lbl.setText(f"{peak_db:.1f} dB")
-            self._sb_peak_lbl.setText(f"Peak: {peak_db:.1f} dB @ {peak_hz:.1f} Hz")
+                self._sb_avg_lbl.setText(f"{peak_text} dB")
+            else:
+                level = self.fft_canvas.analyzer.mic.display_level_db
+                self._sb_avg_lbl.setText(f"{fp.string(level, fp.PEAK_MAGNITUDE_DB)} dB")
+            self._sb_peak_lbl.setText(f"Peak: {peak_text} dB @ {peak_hz:.1f} Hz")
 
     def _sb_update_frozen_state(self, frozen: bool) -> None:
         if frozen:
@@ -2463,7 +2467,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 framerate=framerate,
                 processing_time=processingtime,
                 is_running=self._is_running,
-                peaks=self.fft_canvas.saved_peaks,
             )
 
         # Update the results-panel running / stopped status indicator
@@ -2607,7 +2610,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # so show_value_bool() evaluates peak.id membership without any frequency
         # translation.
         #
-        # _restore_measurement sets selected_peak_ids directly *before* emitting peaks
+        # _on_measurement_loaded sets selected_peak_ids directly *before* emitting peaks
         # and calls set_measurement_complete(True) *after*, so _is_measurement_complete
         # is False during restore — the guard below correctly skips that path.
         #
@@ -2627,7 +2630,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 # For plate/brace: selected_peak_ids on the analyzer holds exactly the
                 # identified L/C/FLC peak IDs (set by phase-completion handlers).
                 # During a loaded/frozen measurement the analyzer's objects are None but
-                # selected_peak_ids was already set by _restore_measurement — do not
+                # selected_peak_ids was already set by _on_measurement_loaded — do not
                 # overwrite it.
                 az = self.fft_canvas.analyzer
                 live_ids = {
@@ -2637,7 +2640,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 }
                 if live_ids:
                     self.peak_widget.model.selected_peak_ids = live_ids
-                # else: frozen/loaded measurement — _restore_measurement already set
+                # else: frozen/loaded measurement — _on_measurement_loaded already set
                 # selected_peak_ids; leave it untouched.
             else:
                 # Guitar: pass selected_peak_ids (Set<UUID>) directly — mirrors Swift.
@@ -2856,24 +2859,45 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         if warning is None:
             return
+        # Show it AFTER the load, not in the middle of it. The model raises this during
+        # load_measurement(), and a modal opened here would block until OK -- so everything the view
+        # brings up to date once the load finishes (_on_measurement_loaded: ring-out, sliders, material
+        # results...) waited behind the dialog. Swift publishes the loaded state, renders, and only then
+        # presents the alert over a fully drawn measurement; deferring one event-loop turn does the same.
+        from PySide6 import QtCore
+        QtCore.QTimer.singleShot(0, lambda: self._show_microphone_warning(warning))
+
+    def _show_microphone_warning(self, warning: str) -> None:
+        """Present the microphone warning modally, then consume it (see _on_microphone_warning_changed)."""
         from PySide6 import QtWidgets
+        # A later load may have replaced or cleared it while this was queued; show only a live warning.
+        if self.fft_canvas.analyzer.microphone_warning != warning:
+            return
         QtWidgets.QMessageBox.warning(self, "Microphone Not Connected", warning)
+        # CONSUME it, as Swift does: its alert is bound to `microphoneWarning != nil` and both the OK
+        # button and the binding's setter clear the field, so acknowledging the modal ends the
+        # warning's life.  Python only displayed it, leaving the field set after the dialog closed --
+        # invisible except to the import handler, which reads `analyzer.microphone_warning` directly
+        # rather than listening, and would fold a PREVIOUS measurement's warning into the success
+        # message for a file that records no microphone of its own (#17 F41).
+        canvas = self.fft_canvas
+        if canvas.analyzer.microphone_warning == warning:
+            canvas.analyzer.microphone_warning = None
 
     def _on_tap_threshold_changed(self, db_val: int) -> None:
         self.fft_canvas.set_tap_threshold(db_val + 100)
         AS.AppSettings.set_tap_threshold(db_val + 100)
         self.tap_threshold_readout.setText(f"{db_val} dB")
 
-    @QtCore.Slot(int)
-    def _on_rms_level_for_threshold_meter(self, rms_amp: int) -> None:
-        """Forward per-chunk RMS level to the threshold slider's level meter.
+    @QtCore.Slot(float, float)
+    def _on_rms_level_for_threshold_meter(self, level_db: float, _audio_time: float) -> None:
+        """Forward the per-chunk RMS level (dB, exact) to the threshold slider's level meter.
 
-        ``rms_amp`` is on the 0-100 scale (= ``levelDB + 100``).  The
-        slider expects dB, so we subtract 100 before forwarding.  Mirrors
-        Swift's `$inputLevelDB` binding to ThresholdSlider.level.
+        Mirrors Swift's `$inputLevelDB` binding to ThresholdSlider.level. It used to arrive as a
+        whole-dB integer offset by 100 and be converted back here (#17 F44).
         """
         if hasattr(self.tap_threshold_slider, "set_level_db"):
-            self.tap_threshold_slider.set_level_db(float(rms_amp) - 100.0)
+            self.tap_threshold_slider.set_level_db(level_db)
 
     def _on_tap_num_changed(self, n: int) -> None:
         self.fft_canvas.set_tap_num(n)
@@ -2931,9 +2955,17 @@ class MainWindow(QtWidgets.QMainWindow):
         # Mirrors Swift: .disabled(tap.currentTapCount > 0 && !tap.isMeasurementComplete)
         # Lock the tap count spinner once any tap has been detected in the current sequence,
         # so the total can't change mid-measurement. Re-enables when measurement completes.
-        self.tap_num_spin.setEnabled(
-            not (self._tap_count_captured > 0 and not is_complete)
-        )
+        #
+        # Reads the MODEL, not the view's `_tap_count_captured` mirror. That mirror is fed by
+        # tapCountChanged and hand-reset in five more view paths, one of which exists purely to
+        # cover a model reset that emits nothing -- so the lock was a second field describing a
+        # fact the model already holds, agreeing with it only by maintenance. Swift and web both
+        # read the analyzer here (#17 F39). The mirror stays for the LABEL, which is legitimately
+        # push-fed by the signal's payload.
+        _taps_enabled = not (analyzer.current_tap_count > 0 and not is_complete)
+        self.tap_num_spin.setEnabled(_taps_enabled)
+        # Dim the LABEL with the control — the whole field is unavailable, not just its box.
+        self.tap_num_label.setEnabled(_taps_enabled)
 
         # ── Enablement — the shared canonical rule (models/button_enablement.py) ──
         # `ready` folds Swift's `fft.isRunning && isReadyForDetection` into one flag, so it is
@@ -3222,18 +3254,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_detect_msg.setStyleSheet(
             "" if is_detecting else "color: orange;"
         )
-
-    def _on_tap_detected(self) -> None:
-        """Update the status dot when a tap fires.
-
-        Selection is handled in the model layer: both _finish_capture (single-tap)
-        and process_multiple_taps() (multi-tap) set selected_peak_ids before emitting
-        peaksChanged, so _on_peaks_changed_results propagates the ID set directly to
-        peak_widget.model.selected_peak_ids. Mirrors Swift where processMultipleTaps()
-        sets selectedPeakIDs synchronously before @Published notifications propagate.
-        """
-        # Status message is set by the model via statusMessageChanged → _on_status_message_changed.
-        self._sb_detect_dot.setStyleSheet("color: orange;")
 
     def _on_new_tap(self) -> None:
         """Begin a new tap sequence, clearing any in-progress accumulated spectra.
@@ -4140,7 +4160,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_open_measurements(self) -> None:
         dlg = MD.MeasurementsDialog(self.fft_canvas.analyzer, self)
-        dlg.measurementSelected.connect(self._restore_measurement)
+        # The list asks the MODEL to load; the view follows via measurementLoadStarting/Loaded.
+        dlg.measurementSelected.connect(self.fft_canvas.analyzer.load_measurement)
         dlg.comparisonRequested.connect(self._on_comparison_requested)
         dlg.exec()
 
@@ -4262,8 +4283,8 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         # ── display_mode is already set by load_comparison / clear_comparison ──
-        # The canvas _on_fft_frame_ready gates on display_mode == COMPARISON to
-        # suppress live updates — no need to touch is_measurement_complete here.
+        # TapToneAnalyzer.on_fft_frame skips the spectrum update in COMPARISON mode, so live
+        # frames cannot overwrite the overlay — no need to touch is_measurement_complete here.
 
         # ── Annotations ───────────────────────────────────────────────────────
         # Hide annotations during any comparison mode (saved-measurement or multi-tap).
@@ -4434,10 +4455,12 @@ class MainWindow(QtWidgets.QMainWindow):
             guitar_type=TDS.guitar_type().value,
         )
 
-    def _restore_measurement(self, m: TapToneMeasurement) -> None:
-        canvas = self.fft_canvas
-        analyzer = canvas.analyzer
+    def _on_measurement_load_starting(self) -> None:
+        """First edge of a load (analyzer.measurementLoadStarting) — before the model changes state.
 
+        These two steps must precede the load's own signals, which is why this edge exists at all:
+        SwiftUI re-renders from the loaded state and needs neither.
+        """
         # ── Clear stale view-side tap count before model changes state ────────
         # Hide BOTH the tap-count label and the progress bar — the model resets current_tap_count /
         # tap_progress, but Qt is not reactive, so a capture the load interrupts (e.g. a plate sequence
@@ -4447,17 +4470,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_tap_count.setVisible(False)
         self._sb_progress.setVisible(False)
         if self._is_measurement_complete:
-            # Temporarily un-complete so set_measurement_complete(True) at the
-            # end fires its signal properly — view-side guard only.
+            # Temporarily un-complete for the duration of the load: the peaks handler reads this
+            # flag while the load emits peaks, and set_measurement_complete(True) — driven by the
+            # load's final measurementComplete signal — restores it.
             self._is_measurement_complete = False
 
-        # ── Delegate all model-state restoration to the model ─────────────────
-        # Mirrors Swift: TapToneAnalyzer.loadMeasurement(_:) is a model method.
-        # load_measurement() sets peaks, spectra, selections, annotation offsets,
-        # analysis settings, detection flags, AppSettings (the Python equivalent
-        # of Swift's loaded* @Published + .onReceive → TapDisplaySettings writes),
-        # and emits measurementComplete(True) + the status message.
-        analyzer.load_measurement(m)
+    def _on_measurement_loaded(self, m: TapToneMeasurement) -> None:
+        """Second edge of a load (analyzer.measurementLoaded) — the model has restored everything.
+
+        Qt is not reactive, so this brings the widgets the model does not drive by signal up to
+        date with the loaded measurement — what SwiftUI does by re-rendering. Runs after EVERY load,
+        whoever asked for it: the Measurements list, or an import that auto-loads.
+        """
+        canvas = self.fft_canvas
+        analyzer = canvas.analyzer
 
         # Reset any stale multi-tap comparison VIEW left from the previous measurement.
         # load_measurement() cleared showing_multi_tap_comparison (mirrors Swift
@@ -4776,7 +4802,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # The analyzer's visible_peaks property already applies the
             # annotation-visibility-mode + show-unknown-modes filters, and
             # works for both fresh captures and loaded measurements (since
-            # _restore_measurement populates peaks_above_peak_min, selected_peak_ids,
+            # _on_measurement_loaded populates peaks_above_peak_min, selected_peak_ids,
             # and annotation_visibility_mode from the loaded measurement).
             # The earlier inline re-implementation manually filtered peaks
             # and was wrapped in `try / except: pass` that silently swallowed

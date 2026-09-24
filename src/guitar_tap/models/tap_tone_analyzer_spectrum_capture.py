@@ -937,7 +937,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         falling = self.tap_detection_threshold - self.hysteresis_margin
         self.is_above_threshold = level > falling
         self.detection_state = DetectionState.LISTENING
-        self.tap_detected = False
         self._set_material_tap_phase(_MTP.CAPTURING_FLC)
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
 
@@ -1577,7 +1576,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             # Matches the skipWarmup=True initial setup in start_tap_sequence.
             self.is_above_threshold = True
             self.detection_state = DetectionState.LISTENING
-            self.tap_detected = False
             # Clear stale fast-start marker so the C tap's main-thread
             # start_gated_capture correctly falls back to pre-roll seeding
             # if the audio-queue level crossing doesn't fire in time.
@@ -1728,7 +1726,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 # bogus FLC "rising edge" on the decaying tail.
                 self.is_above_threshold = True
                 self.detection_state = DetectionState.LISTENING
-                self.tap_detected = False
                 with self._gated_lock:
                     self._last_level_crossing_capture_id = -1
                 self._set_status_message("File: fC complete, capturing fLC...")

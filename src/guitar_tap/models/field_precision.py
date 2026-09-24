@@ -47,7 +47,13 @@ DECAY_RATIO = 2
 
 
 def string(value: float, decimals: int) -> str:
-    """Format a value for display at the given precision."""
+    """Format a value for display at the given precision.
+
+    Infinity reads as "-∞" / "∞" — what Swift's status bar shows — not Python's "-inf". A silent
+    input's peak is -∞ dB, and it must not look different from one screen to the next.
+    """
+    if math.isinf(value):
+        return "-∞" if value < 0 else "∞"
     return f"{value:.{decimals}f}"
 
 

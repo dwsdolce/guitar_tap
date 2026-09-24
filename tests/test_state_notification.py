@@ -154,3 +154,106 @@ class TestStateNotification:
         sut.handle_route_change_restart()
 
         assert sut.is_settling is True, "a live spectrum is blanked for the settle"
+
+    # N9: a MATERIAL phase prompt is an instruction about something that already happened
+    # ("Rotate 90deg..."), not a description of the state, so the settle must put it back rather
+    # than re-derive it.  Two strings are equally correct for one phase -- the advance's instruction
+    # and a redo's "... - tap again" -- which is the proof it is not a function of the state
+    # (#17 F37).
+    def test_N9_settle_preserves_a_material_phase_instruction(self):
+        from guitar_tap.models.detection_state import DetectionState
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
+        from guitar_tap.models.measurement_type import MeasurementType
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        try:
+            sut = _make_sut()
+            sut.material_tap_phase = MaterialTapPhase.CAPTURING_CROSS
+            sut.detection_state = DetectionState.LISTENING
+            after_redo = "Ready for fC tap — tap again"
+
+            assert sut._status_after_settle() is None, (
+                "a material phase instruction is not re-derivable from (type, phase)"
+            )
+            assert sut._restored_status(after_redo) == after_redo, (
+                "REGRESSION: the settle reworded the instruction the user was following - it said "
+                '"Rotate 90deg and tap for fC" to someone who had already rotated the plate (#17 F37)'
+            )
+        finally:
+            TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+
+    # N10: the override precedence, in one place.  Dead input outranks clipping, and an ordinary
+    # status write while a condition holds must not drop the warning -- this used to resolve
+    # clipping inline in _set_status_message and ignore input_appears_dead entirely (#17 F37).
+    def test_N10_dead_input_outranks_clipping_and_survives_a_status_write(self):
+        sut = _make_sut()
+        sut._set_status_message("Tap the guitar...")
+
+        sut.is_clipping = True
+        sut._apply_status_overrides()
+        assert sut.status_message == sut.CLIPPING_WARNING_STATUS
+
+        sut.input_appears_dead = True
+        sut._apply_status_overrides()
+        assert sut.status_message == sut.DEAD_INPUT_STATUS, "dead input outranks clipping"
+
+        sut._set_status_message("Tap the guitar 3 times...")
+        assert sut.status_message == sut.DEAD_INPUT_STATUS, (
+            "REGRESSION: an ordinary status write dropped the dead-input warning, because the "
+            "write path resolved clipping only (#17 F37)"
+        )
+
+        sut.input_appears_dead = False
+        sut.is_clipping = False
+        sut._apply_status_overrides()
+        assert sut.status_message == "Tap the guitar 3 times...", (
+            "clearing both conditions restores the analyzer's own status"
+        )
+
+    # N11: what the settle PRESERVES is the analyzer's real status, not the override-resolved
+    # string.  Capturing the displayed value meant a route change during clipping preserved the
+    # warning sentinel and fed it back as the real status (#17 F37).
+    def test_N11_settle_captures_the_real_status_not_an_override_warning(self):
+        from guitar_tap.models.detection_state import DetectionState
+
+        sut = _make_sut()
+        sut.detection_state = DetectionState.LISTENING
+        sut._set_status_message("Tap the guitar 3 times...")
+        sut.is_clipping = True
+        sut._apply_status_overrides()
+        assert sut.status_message == sut.CLIPPING_WARNING_STATUS, "precondition: the warning shows"
+
+        sut.handle_route_change_restart()
+
+        assert sut._status_before_settle == "Tap the guitar 3 times...", (
+            "REGRESSION: the settle preserved the clipping sentinel instead of the real status"
+        )
+
+    # N12: the phase ADVANCE and the armed DERIVATION must produce the same string, because they are
+    # the same string.  They used to be two sets of literals -- the advance said "Rotate 90deg and
+    # tap for fC", the derivation "Ready for fC tap" -- so every resume, settle or tap-count change
+    # mid-plate silently reworded the instruction (#17 F37).  Pins the single source from both ends.
+    def test_N12_material_phase_advance_and_armed_derivation_agree(self):
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
+        from guitar_tap.models.measurement_type import MeasurementType
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+
+        sut = _make_sut()
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        TapDisplaySettings.set_measure_flc(False)
+        try:
+            sut.material_tap_phase = MaterialTapPhase.REVIEWING_LONGITUDINAL
+
+            sut.accept_current_phase()
+
+            assert sut.material_tap_phase == MaterialTapPhase.CAPTURING_CROSS, (
+                "precondition: the accept advanced the phase"
+            )
+            assert sut.status_message == "Rotate 90° and tap for fC"
+            assert sut._armed_prompt() == sut.status_message, (
+                "REGRESSION: the advance and the derivation drifted apart - one source, or the "
+                "settle and the resume reword what the advance said"
+            )
+        finally:
+            TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)

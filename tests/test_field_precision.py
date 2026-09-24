@@ -98,3 +98,9 @@ def test_string_formats_at_precision():
 
 def test_string_rounds_for_display():
     assert fp.string(2.678, 2) == "2.68"
+
+
+def test_string_infinity_reads_as_symbol():
+    """A silent input's peak is -∞ dB: it reads "-∞" (as Swift's status bar draws it), not "-inf"."""
+    assert fp.string(float("-inf"), 1) == "-∞"
+    assert fp.string(float("inf"), 1) == "∞"
