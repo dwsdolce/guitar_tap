@@ -35,6 +35,7 @@ from PySide6 import QtCore, QtWidgets
 from guitar_tap.models.detection_state import DetectionState
 from guitar_tap.models.measurement_type import MeasurementType
 from guitar_tap.models.tap_display_settings import TapDisplaySettings
+from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
 _APP = None
@@ -62,17 +63,15 @@ def _make_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
     sut.just_exited_warmup = False
     TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
     sut.freq = np.linspace(0, 2000, 256)
+    sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # the capture's FFT engine
     return sut
 
 
-def _fake_tap(n: int = 64, peak_db: float = -30.0):
-    """Match the captured_taps entry shape used by the Python analyzer:
-    a (magnitudes, frequencies, datetime) tuple."""
-    import datetime as _dt
-    mags = np.full(n, -80.0, dtype=np.float32)
-    mags[n // 4] = peak_db
-    freqs = np.arange(n, dtype=np.float32) * 31.25
-    return (mags, freqs, _dt.datetime.now())
+def _capture_tap(sut: TapToneAnalyzer) -> None:
+    """Capture one tap through the REAL completion path (finish_guitar_gated_capture)."""
+    t = np.arange(sut.mic.fft_size) / 48000.0
+    sut.finish_guitar_gated_capture(
+        (0.5 * np.exp(-t * 6) * np.sin(2 * np.pi * 100 * t)).astype(np.float32), 48000.0)
 
 
 def _drain_event_loop(ms: int = 50) -> None:
@@ -115,17 +114,18 @@ class TestStartTapSequenceRace:
             "the Swift line-304 race."
         )
 
-    # R2: End-to-end repro of the iPad bug scenario.  Same final state
-    # asserted as the Swift test: complete, not detecting, not paused.
+    # R2: End-to-end repro of the iPad bug scenario — spurious detection, then the capture completes
+    # through the REAL path and the measurement completes on its own after the capture window. Same
+    # final state as the Swift test: complete, not detecting, not paused. (The capture used to be
+    # simulated by appending to captured_taps and calling process_multiple_taps by hand — #17 F48.)
     def test_spurious_tap_on_type_change_settles_to_complete_not_detecting(self):
         sut = _make_sut(number_of_taps=1)
 
         sut.start_tap_sequence()
         sut.detection_state = DetectionState.IDLE              # handle_tap_detection effect
         _drain_event_loop()
-        sut.captured_taps.append(_fake_tap())  # gated capture finished
-        sut.current_tap_count = 1
-        sut.process_multiple_taps()
+        _capture_tap(sut)
+        _drain_event_loop(int((sut.capture_window + 0.3) * 1000))
 
         assert sut.is_measurement_complete is True
         assert sut.is_detecting is False, (
@@ -133,18 +133,19 @@ class TestStartTapSequenceRace:
         )
         assert sut.is_detection_paused is False
 
-    # R3: Multi-tap variant.
+    # R3: Multi-tap variant — three real captures, the real cooldowns, the real completion.
     def test_spurious_tap_multi_tap_eventually_completes_cleanly(self):
         sut = _make_sut(number_of_taps=3)
 
         sut.start_tap_sequence()
         _drain_event_loop()
+        for tap in range(1, 4):
+            _capture_tap(sut)
+            if tap < 3:
+                _drain_event_loop(int((sut.tap_cooldown + 0.3) * 1000))
+        _drain_event_loop(int((sut.capture_window + 0.3) * 1000))
 
-        sut.captured_taps = [_fake_tap(), _fake_tap(), _fake_tap()]
-        sut.current_tap_count = 3
-        sut.detection_state = DetectionState.IDLE
-        sut.process_multiple_taps()
-
+        assert sut.current_tap_count == 3
         assert sut.is_measurement_complete is True
         assert sut.is_detecting is False
         assert sut.is_detection_paused is False
@@ -155,20 +156,12 @@ class TestStartTapSequenceRace:
     # The _level_crossing_handler starts a gated capture directly without
     # ever calling handle_tap_detection, so is_detecting stays True through
     # the capture.  finish_guitar_gated_capture must clear it; without that,
-    # process_multiple_taps would set is_measurement_complete=True with
-    # is_detecting still True — the impossible state the Swift iPad bug
-    # exhibited.  R1–R3 drove the model through the RMS path and missed
-    # this; this test drives the audio-queue path explicitly.
+    # the measurement would complete with is_detecting still True — the
+    # impossible state the Swift iPad bug exhibited.  The measurement then
+    # completes on its own: the capture schedules process_multiple_taps, and
+    # calling it here as well ran it twice (#17 F48).
     def test_R4_audio_queue_gated_capture_path_clears_is_detecting(self):
-        import numpy as np
-
-        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
-
         sut = _make_sut(number_of_taps=1)
-        # finish_guitar_gated_capture reads self.mic.fft_size / window_fcn /
-        # _calibration / _settings_lock to compute the FFT; attach a
-        # non-running analyzer so those attributes are present.
-        sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)
         sut.freq = np.linspace(0, 24000, sut.mic.fft_size // 2 + 1)
 
         sut.start_tap_sequence()
@@ -177,8 +170,7 @@ class TestStartTapSequenceRace:
         # defining trait.
         assert sut.is_detecting is True, "post-start_tap_sequence: detection must be armed"
 
-        fft_size = int(sut.mic.fft_size)
-        samples = np.zeros(fft_size, dtype=np.float32)
+        samples = np.zeros(int(sut.mic.fft_size), dtype=np.float32)
         sut.finish_guitar_gated_capture(samples, 48000.0)
 
         assert sut.is_detecting is False, (
@@ -187,7 +179,7 @@ class TestStartTapSequenceRace:
             "through measurement completion."
         )
 
-        sut.process_multiple_taps()
+        _drain_event_loop(int((sut.capture_window + 0.3) * 1000))
         assert sut.is_measurement_complete is True
         assert sut.is_detecting is False
         assert sut.is_detection_paused is False
