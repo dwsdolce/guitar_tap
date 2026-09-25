@@ -26,8 +26,7 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-import numpy as np
-
+from gated_signal import gated_magnitude_at, make_gated_test_signal
 from parity_oracle import ORACLE, calibration, case, fixture, gated
 
 # Oracle spellings of measurementType → the enum the analyzer takes.
@@ -160,26 +159,6 @@ def compute_file_playback() -> dict[str, Any]:
     return out
 
 
-def _two_tone(sample_rate: float, duration: float, tones: list[list[float]]) -> np.ndarray:
-    """The oracle's tone list as PCM — float64 accumulation, float32 result.
-
-    Matches the regression suite and the canonical Swift generator: the app is handed
-    float32 samples, but the sine itself is evaluated in double, so the stored value
-    is a rounded double rather than a float-accumulated sum.
-    """
-    count = int(sample_rate * duration)
-    t = np.arange(count) / sample_rate
-    signal = np.zeros(count, dtype=np.float64)
-    for freq, amp in tones:
-        signal += amp * np.sin(2 * np.pi * freq * t)
-    return signal.astype(np.float32)
-
-
-def _magnitude_at(target_hz: float, mags: list[float], freqs: list[float]) -> float:
-    best = min(range(len(freqs)), key=lambda i: abs(freqs[i] - target_hz))
-    return float(mags[best])
-
-
 def compute_gated_fft() -> dict[str, Any]:
     """Every gatedFft case, shaped as the oracle shapes it."""
     from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
@@ -192,17 +171,16 @@ def compute_gated_fft() -> dict[str, Any]:
         spec = gated(name)
         analyzer = RealtimeFFTAnalyzer.for_testing(sample_rate=int(sample_rate))
 
-        if spec.get("signal") == "silence":
-            signal = np.zeros(int(sample_rate * duration), dtype=np.float32)
-        else:
-            signal = _two_tone(sample_rate, duration, spec["tones"])
+        # Silence is the signal with no tones. The same builder the GFFT tests use (#17 F49).
+        tones = [] if spec.get("signal") == "silence" else spec["tones"]
+        signal = make_gated_test_signal(tones, sample_rate, duration)
 
         mags, freqs = analyzer.compute_gated_fft(signal, sample_rate)
         computed: dict[str, Any] = {}
 
         if "expected" in spec:
             computed["expected"] = [
-                {"hz": e["hz"], "db": _magnitude_at(float(e["hz"]), mags, freqs)}
+                {"hz": e["hz"], "db": gated_magnitude_at(float(e["hz"]), mags, freqs)}
                 for e in spec["expected"]
             ]
             if "deltaDb" in spec:

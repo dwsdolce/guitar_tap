@@ -899,18 +899,31 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         Unlike the live per-frame path (rectangular window) this method:
           - Accepts an arbitrary-length buffer (zero-padded to the next power of
             two, capped at 32768 samples for ~1.35 Hz/bin resolution at 44.1 kHz).
-          - Applies a Hann window (np.hanning): its ~31 dB sidelobe suppression
-            vs a rectangular window gives sharper, cleaner peaks and therefore
-            more accurate frequency/Q readings. Edge roll-off is harmless because
-            a gated capture starts and ends near silence
-            (pre-roll → tap → ring → silence).
+          - Applies a periodic Hann window spanning the PADDED length (below).
           - Returns raw dB values (not published), one-sided with interior bins
             doubled and normalised by 1/fft_size.
           - Applies microphone calibration at the bin frequencies.
+          - Returns an empty spectrum for fewer than two samples.
 
-        np.hanning is the unit-peak window w[n] = 0.5·(1 − cos(2πn/N)),
-        matching Swift's vDSP_HANN_DENORM (not HANN_NORM, which would inflate
-        magnitudes by +4.26 dB via the √(8/3) energy normalisation).
+        The window is the PERIODIC unit-peak Hann w[n] = 0.5·(1 − cos(2πn/N)), which
+        is what Swift's vDSP_HANN_DENORM produces — NOT np.hanning, which is the
+        symmetric 0.5·(1 − cos(2πn/(N−1))). The two differ by less than any tolerance
+        can see, which is how this edition drifted to np.hanning before; a window test
+        in all three guards it (#17 F49). (Nor HANN_NORM, which would inflate magnitudes
+        by +4.26 dB via its √(8/3) energy normalisation.)
+
+        The window spans the padded length, not the captured one. At 48 kHz the 0.4 s
+        capture is 19200 of 32768 samples, so its last sample is weighted ≈0.93, not
+        tapered to zero. For a steady tone that is a hard edge with poor sidelobes (a
+        tone 7 Hz from a stronger one picks up its leakage at about −21 dB). For a TAP it
+        works: the ring-out decays, so the signal supplies its own end taper, and the
+        abrupt onset — 0.1 s in, after the pre-onset silence — is weighted ≈0.2. Tested
+        against decaying modes at known frequencies, this measures a tap's frequency as
+        well as or better than a Hann spanning only the captured samples (#17 F49).
+        Because the capture fills a different share of the padded window at each sample
+        rate, the window's gain differs with it: about −10.8 dB at 44.1 kHz, −9.5 dB at
+        48 kHz, and −6.0 dB at 96 kHz, where the capture exceeds 32768 samples and is
+        truncated to it.
 
         Args:
             samples:     PCM samples captured after tap detection.
@@ -923,8 +936,10 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         """
         from numpy.fft import fft
 
+        # Fewer than two samples is not a spectrum; callers treat an empty one as a failed
+        # capture. Mirrors Swift's guard.
         n = len(samples)
-        if n == 0:
+        if n < 2:
             return [], []
 
         MAX_FFT = 32768
@@ -937,7 +952,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         copy_count = min(n, fft_size)
         padded[:copy_count] = samples[:copy_count]
 
-        window = np.hanning(fft_size)
+        # The periodic Hann — Swift's vDSP_HANN_DENORM — not np.hanning's symmetric form.
+        window = 0.5 - 0.5 * np.cos(2.0 * np.pi * np.arange(fft_size) / fft_size)
         padded *= window
 
         complex_fft = fft(padded)

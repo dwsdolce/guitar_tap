@@ -233,9 +233,9 @@ class TestSilentBufferIsNegativeInfinity:
         import numpy as np
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 
-        # A real instance: the method reads self._calibration_profile under a lock. Constructing
-        # the analyzer opens no audio device — the existing _sut() helper relies on the same thing.
-        mags, _freqs = RealtimeFFTAnalyzer(None).compute_gated_fft(
+        # A real instance, since the method reads self._calibration_profile under a lock — built with
+        # for_testing(), which opens no audio stream (the full constructor does; #17 F49).
+        mags, _freqs = RealtimeFFTAnalyzer.for_testing().compute_gated_fft(
             np.zeros(4096, dtype=np.float32), 48000.0
         )
         assert len(mags) > 0, "precondition: the gated FFT produced a spectrum"
@@ -255,7 +255,7 @@ class TestSilentBufferIsNegativeInfinity:
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
         from guitar_tap.models.realtime_fft_analyzer_fft_processing import perform_fft
 
-        a = RealtimeFFTAnalyzer(None)
+        a = RealtimeFFTAnalyzer.for_testing()
         assert (a.peak_frequency, a.peak_magnitude) == (0.0, -100.0), "starts at Swift's silent state"
 
         perform_fft(a, np.zeros(a.fft_size, dtype=np.float32), a.fft_size)
@@ -267,7 +267,7 @@ class TestSilentBufferIsNegativeInfinity:
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
         from guitar_tap.models.realtime_fft_analyzer_fft_processing import perform_fft
 
-        a = RealtimeFFTAnalyzer(None)
+        a = RealtimeFFTAnalyzer.for_testing()
         n = a.fft_size
         t = np.arange(n)
         perform_fft(a, (0.5 * np.sin(2 * np.pi * 1000.0 * t / a.rate)).astype(np.float32), n)
@@ -285,7 +285,7 @@ class TestSilentBufferIsNegativeInfinity:
         import numpy as np
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 
-        a = RealtimeFFTAnalyzer(None)
+        a = RealtimeFFTAnalyzer.for_testing()
         seen: list[float] = []
         a.rms_level_handler = lambda level_db, _t: seen.append(level_db)
         a.process_raw_samples(np.zeros(1024, dtype=np.float32))
@@ -296,7 +296,7 @@ class TestSilentBufferIsNegativeInfinity:
         import numpy as np
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 
-        a = RealtimeFFTAnalyzer(None)
+        a = RealtimeFFTAnalyzer.for_testing()
         seen: list[float] = []
         a.rms_level_handler = lambda level_db, _t: seen.append(level_db)
         t = np.arange(1024)

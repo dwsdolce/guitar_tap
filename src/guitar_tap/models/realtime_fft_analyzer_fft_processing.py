@@ -12,8 +12,8 @@ Python ↔ Swift correspondence:
                       computeFFT and dispatches its results to @Published properties;
                       dft_anal is the direct counterpart of computeFFT because both
                       are the side-effect-free computation layer used by the test suite.
-  dft_anal        ↔  computeGatedFFT (Hann window, plate/brace capture) — see also
-                      _FftProcessingThread.compute_gated_fft() in realtime_fft_analyzer.py
+  (computeGatedFFT, the Hann-window plate/brace capture path, is not here: it is
+   RealtimeFFTAnalyzer.compute_gated_fft() in realtime_fft_analyzer.py)
   hps_peak_freq   ↔  HPS dominant-peak selection inside computeGatedFFT
   is_power2       ↔  (utility; implicit in Swift vDSP_DFT_zrop_CreateSetup)
 
@@ -42,10 +42,11 @@ NOTE — Python vs Swift implementation differences:
     - Rectangular (all ones) window of fftSize samples for the live display path
       (performFFT / dft_anal with boxcar window) — flat amplitude response preferred
       over sidelobe suppression since the result is only used visually.
-    - Hann window for the gated tap-capture path (computeGatedFFT / dft_anal with Hann
-      window) — suppresses sidelobes by ~31 dB for accurate frequency and Q readings
-      used in material property calculations.  This path zero-pads to the next
-      power-of-two, capped at 32768 samples, for finer frequency resolution.
+    - A periodic Hann window for the gated tap-capture path (computeGatedFFT /
+      RealtimeFFTAnalyzer.compute_gated_fft), whose result feeds the material property
+      calculations.  This path zero-pads to the next power-of-two, capped at 32768
+      samples, and the window spans that padded length — see compute_gated_fft for what
+      that does and does not suppress.
   Swift normalises with scale = 1/fftSize before calling vDSP_zvabs;
   Python normalises implicitly via window_function / sum(window_function) in dft_anal.
 """
@@ -92,17 +93,13 @@ def dft_anal(
         (magnitude_db, abs_fft) — dB-scale magnitude and linear-scale magnitude,
         each of length N/2 + 1 (the one-sided spectrum).
 
-    Mirrors Swift computeFFT(on:) (rectangular-window continuous path) and
-    computeGatedFFT(samples:sampleRate:) (Hann-window plate/brace capture path).
+    Mirrors Swift computeFFT(on:) (the rectangular-window continuous path). The
+    Hann-window plate/brace capture path is RealtimeFFTAnalyzer.compute_gated_fft.
 
     Design note — window choice:
       Rectangular (all ones) is used for the live display path: flat amplitude
       response is preferred over sidelobe suppression because the result is only
-      used visually.  Hann is used for the gated path: it suppresses sidelobes
-      by ~31 dB compared to rectangular, giving sharper, cleaner peaks and
-      therefore more accurate frequency and Q readings that feed material property
-      calculations.  Mirrors Swift's identical choice documented in performFFT and
-      computeGatedFFT.
+      used visually.  Mirrors Swift's choice documented in performFFT.
     """
     # numpy.fft.fft is numerically identical to scipy.fft.fft for power-of-2 sizes
     # (both use pocketfft since NumPy 1.17) and avoids the ~8 s scipy cold-import
