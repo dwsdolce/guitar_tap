@@ -24,6 +24,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))
+from audio_clock_feed import advance_audio  # noqa: E402
 
 from PySide6 import QtCore, QtWidgets
 
@@ -98,15 +100,16 @@ def _drain(ms: int = 50):
 
 
 def _after_cooldown(sut: TapToneAnalyzer) -> None:
-    _drain(int((sut.tap_cooldown + 0.3) * 1000))
+    advance_audio(sut, sut.tap_cooldown)
 
 
 def _after_capture_window(sut: TapToneAnalyzer) -> None:
-    _drain(int((sut.capture_window + 0.3) * 1000))
+    advance_audio(sut, sut.capture_window)
 
 
 # Every tap goes through the real finish_guitar_gated_capture, and the waits are the real ones — the tap
-# cooldown before re-arming, the capture window before averaging. The traces used to assign the "tap
+# cooldown before re-arming, the capture window before averaging — measured, as the app measures them, in
+# AUDIO fed through _on_rms_level_changed (#19). The traces used to assign the "tap
 # happened" state by hand, so their capture rows recorded what the TEST wrote; and S3/S4's postTap1 said
 # detection was back on the instant a tap was captured, a path the app never takes (#17 F46). These
 # traces are identical in Swift, Python and web.
@@ -166,9 +169,9 @@ class TestScenarioStateTrace:
         trace.append(_snap("postStart", sut))
         _capture_tap(sut)                          # tap 1: detection rests through the cooldown
         trace.append(_snap("postTap1", sut))
-        _drain(int(sut.tap_cooldown * 1000 / 2))   # halfway: still resting
+        advance_audio(sut, sut.tap_cooldown / 2)   # halfway: still resting
         trace.append(_snap("midCooldown", sut))
-        _drain(int((sut.tap_cooldown / 2 + 0.3) * 1000))                       # ...then re-arms
+        advance_audio(sut, sut.tap_cooldown / 2)   # ...then re-arms
         trace.append(_snap("postReArm", sut))
         sut.pause_tap_detection()
         trace.append(_snap("postPause", sut))
@@ -202,9 +205,9 @@ class TestScenarioStateTrace:
         trace.append(_snap("postStart", sut))
         _capture_tap(sut)
         trace.append(_snap("postTap1", sut))
-        _drain(int(sut.tap_cooldown * 1000 / 2))   # halfway: still resting
+        advance_audio(sut, sut.tap_cooldown / 2)   # halfway: still resting
         trace.append(_snap("midCooldown", sut))
-        _drain(int((sut.tap_cooldown / 2 + 0.3) * 1000))
+        advance_audio(sut, sut.tap_cooldown / 2)
         trace.append(_snap("postReArm", sut))
         sut.cancel_tap_sequence()
         _drain()

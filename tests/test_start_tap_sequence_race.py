@@ -29,6 +29,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))
+from audio_clock_feed import advance_audio  # noqa: E402
 
 from PySide6 import QtCore, QtWidgets
 
@@ -125,7 +127,7 @@ class TestStartTapSequenceRace:
         sut.detection_state = DetectionState.IDLE              # handle_tap_detection effect
         _drain_event_loop()
         _capture_tap(sut)
-        _drain_event_loop(int((sut.capture_window + 0.3) * 1000))
+        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock (#19)
 
         assert sut.is_measurement_complete is True
         assert sut.is_detecting is False, (
@@ -142,8 +144,8 @@ class TestStartTapSequenceRace:
         for tap in range(1, 4):
             _capture_tap(sut)
             if tap < 3:
-                _drain_event_loop(int((sut.tap_cooldown + 0.3) * 1000))
-        _drain_event_loop(int((sut.capture_window + 0.3) * 1000))
+                advance_audio(sut, sut.tap_cooldown)   # the rest, in audio (#19)
+        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock (#19)
 
         assert sut.current_tap_count == 3
         assert sut.is_measurement_complete is True
@@ -179,7 +181,7 @@ class TestStartTapSequenceRace:
             "through measurement completion."
         )
 
-        _drain_event_loop(int((sut.capture_window + 0.3) * 1000))
+        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock (#19)
         assert sut.is_measurement_complete is True
         assert sut.is_detecting is False
         assert sut.is_detection_paused is False

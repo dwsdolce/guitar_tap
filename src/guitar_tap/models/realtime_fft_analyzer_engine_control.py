@@ -360,103 +360,110 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             sample_rate: Sample rate in Hz.
             file_name:   Display name for logging.
         """
-        from guitar_tap.utilities.logging import TAP_DEBUG as _td
+        # Playback is paced by one-chunk sleeps; keep the OS from throttling them for the whole run
+        # (#19). Mirrors Swift's `holdTimingActivity` / `defer releaseTimingActivity`.
+        from guitar_tap.utilities.timing_activity import hold_timing_activity, release_timing_activity
+        timing_activity = hold_timing_activity("Guitar Tap file playback")
+        try:
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td
 
-        from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
+            from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
 
-        n_samples = len(samples)
-        self.rate = sample_rate
-        self.is_playing_file = True
-        self.playing_file_name = file_name
-        self.is_stopped = False
+            n_samples = len(samples)
+            self.rate = sample_rate
+            self.is_playing_file = True
+            self.playing_file_name = file_name
+            self.is_stopped = False
 
-        chunksize = self.chunksize
-        fft_size = self.fft_size
-        chunk_duration = chunksize / sample_rate
-        expected_duration_s = n_samples / float(sample_rate)
+            chunksize = self.chunksize
+            fft_size = self.fft_size
+            chunk_duration = chunksize / sample_rate
+            expected_duration_s = n_samples / float(sample_rate)
 
-        _td("file_playback",
-            f"START | path={file_name} "
-            f"samples={n_samples} rate={int(sample_rate)}Hz "
-            f"chunksize={chunksize} chunkDuration={chunk_duration*1000:.1f}ms "
-            f"expectedDuration={expected_duration_s:.3f}s "
-            f"fftSize={fft_size} expectedFftFrames={n_samples // fft_size}"
-        )
-        t0 = time.time()
-        idx = 0
-        chunks_pumped = 0
-        while idx < n_samples:
-            if not self.is_playing_file:
-                _td("file_playback",
-                    f"INTERRUPTED | idx={idx}/{n_samples} chunksPumped={chunks_pumped}"
-                )
-                break
-            chunk = samples[idx: idx + chunksize]
-            if len(chunk) == 0:
-                break
-            # Inline processing — no queue, no thread.
-            # Mirrors Swift processFileData calling processRawSamples directly.
-            self.process_raw_samples(chunk)
-            idx += chunksize
-            chunks_pumped += 1
-            # Sleep + pump the Qt event loop so QTimer.singleShot callbacks
-            # fire between chunks.  Mirrors Swift processFileData which uses
-            # Thread.sleep (blocking the background thread) while the main
-            # RunLoop concurrently pumps asyncAfter callbacks.
-            # When called from the main thread (tests), we must pump here;
-            # when called from a background thread (live UI), the main thread
-            # event loop pumps on its own.
-            time.sleep(chunk_duration)
-            self._pump_events_if_available()
-        elapsed = time.time() - t0
-        _td("file_playback",
-            f"END | chunksPumped={chunks_pumped} samplesPumped={idx} "
-            f"elapsed={elapsed:.3f}s expected={expected_duration_s:.3f}s "
-            f"realtimeRatio={elapsed/max(expected_duration_s,1e-9):.3f}x"
-        )
+            _td("file_playback",
+                f"START | path={file_name} "
+                f"samples={n_samples} rate={int(sample_rate)}Hz "
+                f"chunksize={chunksize} chunkDuration={chunk_duration*1000:.1f}ms "
+                f"expectedDuration={expected_duration_s:.3f}s "
+                f"fftSize={fft_size} expectedFftFrames={n_samples // fft_size}"
+            )
+            t0 = time.time()
+            idx = 0
+            chunks_pumped = 0
+            while idx < n_samples:
+                if not self.is_playing_file:
+                    _td("file_playback",
+                        f"INTERRUPTED | idx={idx}/{n_samples} chunksPumped={chunks_pumped}"
+                    )
+                    break
+                chunk = samples[idx: idx + chunksize]
+                if len(chunk) == 0:
+                    break
+                # Inline processing — no queue, no thread.
+                # Mirrors Swift processFileData calling processRawSamples directly.
+                self.process_raw_samples(chunk)
+                idx += chunksize
+                chunks_pumped += 1
+                # Sleep + pump the Qt event loop so QTimer.singleShot callbacks
+                # fire between chunks.  Mirrors Swift processFileData which uses
+                # Thread.sleep (blocking the background thread) while the main
+                # RunLoop concurrently pumps asyncAfter callbacks.
+                # When called from the main thread (tests), we must pump here;
+                # when called from a background thread (live UI), the main thread
+                # event loop pumps on its own.
+                time.sleep(chunk_duration)
+                self._pump_events_if_available()
+            elapsed = time.time() - t0
+            _td("file_playback",
+                f"END | chunksPumped={chunks_pumped} samplesPumped={idx} "
+                f"elapsed={elapsed:.3f}s expected={expected_duration_s:.3f}s "
+                f"realtimeRatio={elapsed/max(expected_duration_s,1e-9):.3f}x"
+            )
 
-        self.is_playing_file = False
+            self.is_playing_file = False
 
-        # Force-flush any partial audio still in the input buffer.
-        # Mirrors Swift processFileData partial flush.
-        if self._input_buffer:
-            partial = np.concatenate(self._input_buffer)
-        else:
-            partial = np.zeros(0, dtype=np.float32)
-        _td("file_playback", f"PARTIAL_FLUSH | partialSamples={len(partial)} fftSize={fft_size}")
-        if len(partial) > 0:
-            if len(partial) < fft_size:
-                partial = np.concatenate(
-                    [partial, np.zeros(fft_size - len(partial), dtype=np.float32)]
-                )
+            # Force-flush any partial audio still in the input buffer.
+            # Mirrors Swift processFileData partial flush.
+            if self._input_buffer:
+                partial = np.concatenate(self._input_buffer)
             else:
-                partial = partial[:fft_size]
-            # Emit the final FFT frame via perform_fft ONLY — do NOT call
-            # process_raw_samples.  Mirrors Swift processFileData which calls
-            # performFFT(on: partial), NOT processRawSamples.  This is critical
-            # because process_raw_samples would feed the zero-padded partial
-            # into raw_sample_handler → _accumulate_gated_samples, corrupting
-            # any active gated capture with duplicate/zero data.  The gated
-            # capture is flushed separately by _on_pre_mic_restart below.
-            _td("file_playback", f"PARTIAL_FLUSH_EMIT | emitting FFT frame with {len(partial)} samples")
-            mag_y_db, mag_y, peak_db = _perform_fft(self, partial, fft_size)
+                partial = np.zeros(0, dtype=np.float32)
+            _td("file_playback", f"PARTIAL_FLUSH | partialSamples={len(partial)} fftSize={fft_size}")
+            if len(partial) > 0:
+                if len(partial) < fft_size:
+                    partial = np.concatenate(
+                        [partial, np.zeros(fft_size - len(partial), dtype=np.float32)]
+                    )
+                else:
+                    partial = partial[:fft_size]
+                # Emit the final FFT frame via perform_fft ONLY — do NOT call
+                # process_raw_samples.  Mirrors Swift processFileData which calls
+                # performFFT(on: partial), NOT processRawSamples.  This is critical
+                # because process_raw_samples would feed the zero-padded partial
+                # into raw_sample_handler → _accumulate_gated_samples, corrupting
+                # any active gated capture with duplicate/zero data.  The gated
+                # capture is flushed separately by _on_pre_mic_restart below.
+                _td("file_playback", f"PARTIAL_FLUSH_EMIT | emitting FFT frame with {len(partial)} samples")
+                mag_y_db, mag_y, peak_db = _perform_fft(self, partial, fft_size)
 
-            # One delivery, as every frame — mirrors Swift performFFT(on:) publishing the magnitudes
-            # for the analyzer's main-thread sink.
-            self.proc_thread.fftFrameReady.emit(mag_y_db, mag_y, peak_db, 0.0, 0.0, 0.0)
-            _td("file_playback", "PARTIAL_FLUSH_DONE")
-        # Clear the input buffer so the caller starts from a clean slate.
-        self._input_buffer = []
-        self._input_buffer_len = 0
+                # One delivery, as every frame — mirrors Swift performFFT(on:) publishing the magnitudes
+                # for the analyzer's main-thread sink.
+                self.proc_thread.fftFrameReady.emit(mag_y_db, mag_y, peak_db, 0.0, 0.0, 0.0)
+                _td("file_playback", "PARTIAL_FLUSH_DONE")
+            # Clear the input buffer so the caller starts from a clean slate.
+            self._input_buffer = []
+            self._input_buffer_len = 0
 
-        # Flush any active gated capture by zero-padding the remaining
-        # window.  Must happen BEFORE the mic restarts.
-        # Mirrors Swift processFileData preMicRestartHandler call.
-        pre_restart = self._on_pre_mic_restart
-        _td("file_playback", f"PRE_MIC_RESTART | handler={'set' if pre_restart else 'None'}")
-        if pre_restart is not None:
-            pre_restart()
-        _td("file_playback", "PRE_MIC_RESTART_DONE")
+            # Flush any active gated capture by zero-padding the remaining
+            # window.  Must happen BEFORE the mic restarts.
+            # Mirrors Swift processFileData preMicRestartHandler call.
+            pre_restart = self._on_pre_mic_restart
+            _td("file_playback", f"PRE_MIC_RESTART | handler={'set' if pre_restart else 'None'}")
+            if pre_restart is not None:
+                pre_restart()
+            _td("file_playback", "PRE_MIC_RESTART_DONE")
+        finally:
+            release_timing_activity(timing_activity)
 
     # @parity dsp/wav
     def start_from_file(self, path: str) -> None:

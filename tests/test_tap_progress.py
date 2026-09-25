@@ -31,6 +31,8 @@ import pytest
 from PySide6 import QtWidgets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))
+from audio_clock_feed import advance_audio  # noqa: E402
 
 from guitar_tap.models.material_tap_phase import MaterialTapPhase
 from guitar_tap.models.measurement_type import MeasurementType
@@ -232,7 +234,7 @@ class TestFlcCooldownCancellation:
 
     If the user restarts (Cancel / New Tap) before the cooldown elapses, that timer must not drag
     the fresh sequence into the FLC phase.  Swift shipped without this guard until #17: its
-    ``DispatchQueue.main.asyncAfter`` cannot be cancelled and ``cancelTapSequence()``'s
+    timer (now ``afterAudio``, #19) cannot be cancelled and ``cancelTapSequence()``'s
     ``captureTimer.invalidate()`` does not reach the closure, so the re-arm fired into whatever was
     running 0.5 s later.  Python and the web have always guarded; this pins it in all three.
     """
@@ -251,8 +253,9 @@ class TestFlcCooldownCancellation:
         phase_after_restart = sut.material_tap_phase
         assert phase_after_restart != MaterialTapPhase.WAITING_FOR_FLC_TAP
 
-        # The cooldown callback now fires against the restarted sequence.
-        sut._do_start_flc()
+        # The hold ends — in AUDIO (#19) — against the restarted sequence. (This used to call the
+        # callback by hand; it now runs as the app runs it, as Swift's test does.)
+        advance_audio(sut, 0.8)
 
         assert sut.material_tap_phase == phase_after_restart
         assert sut.material_tap_phase != MaterialTapPhase.CAPTURING_FLC

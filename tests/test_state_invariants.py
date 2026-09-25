@@ -20,6 +20,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))
+from audio_clock_feed import advance_audio  # noqa: E402
 
 from PySide6 import QtCore, QtWidgets
 
@@ -163,7 +165,7 @@ class TestStateInvariants:
         assert not sut.is_detecting, "detection rests through the tap cooldown"
         assert state_invariant_violation(sut) is None, "mid-sequence, resting"
 
-        _pump_events(sut.tap_cooldown + 0.3)
+        advance_audio(sut, sut.tap_cooldown)   # the rest runs on the audio clock (#19)
         assert sut.is_detecting, "re-armed for the next tap once the cooldown has passed"
         assert state_invariant_violation(sut) is None, "mid-sequence, re-armed"
 

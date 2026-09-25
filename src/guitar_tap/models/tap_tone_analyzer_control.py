@@ -991,12 +991,11 @@ class TapToneAnalyzerControlMixin:
                 # Advance to FLC waiting then capturing.
                 # Mirrors Swift: set WAITING_FOR_FLC_TAP and status message first,
                 # then transition to CAPTURING_FLC and clear frozen spectrum inside
-                # the asyncAfter closure (after the cooldown delay).
+                # the hold's closure (tap_cooldown of AUDIO, #19).
                 self._set_material_tap_phase(_MTP.WAITING_FOR_FLC_TAP)
                 # Phase is WAITING_FOR_FLC_TAP -- one source for the string (#17 F37).
                 self._set_status_message(self._material_arm_prompt())
-                cooldown = self.tap_cooldown
-                self._main_async_after(int(cooldown * 1000), self._do_start_flc)
+                self.after_audio(self.tap_cooldown, self._do_start_flc)
             else:
                 # No FLC — finalise measurement now.
                 self._finalise_plate_no_flc()
@@ -1325,11 +1324,5 @@ class TapToneAnalyzerControlMixin:
         self.cancel_tap_sequence()
 
     def _reset_decay_tracking(self) -> None:
-        """Stop any active decay tracking and clear the associated timer.
-
-        Mirrors Swift private func resetDecayTracking() lines 342-346.
-        """
+        """Stop any active decay tracking. Mirrors Swift private func resetDecayTracking()."""
         self.is_tracking_decay = False
-        if self._decay_tracking_timer is not None:
-            self._decay_tracking_timer.stop()
-            self._decay_tracking_timer = None

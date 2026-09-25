@@ -39,6 +39,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))
+from audio_clock_feed import advance_audio  # noqa: E402
 
 from PySide6 import QtWidgets
 
@@ -367,11 +369,9 @@ class TestStatusMessageReArm:
         after_capture = sut.status_message
         assert after_capture == sut._guitar_loop_status(capturing=False)
 
-        sut._current_input_level_db = -20.0  # still ringing, above the falling threshold at re-arm
-        deadline = time.monotonic() + sut.tap_cooldown + 0.3
-        while time.monotonic() < deadline:
-            QtWidgets.QApplication.processEvents()
-            time.sleep(0.01)
+        # The rest runs on the audio clock (#19); the audio is still ringing, above the falling
+        # threshold, when the re-arm falls due.
+        advance_audio(sut, sut.tap_cooldown, level=-20.0)
         assert sut.is_detecting, "re-armed"
         assert sut.status_message == after_capture, "the re-arm leaves the status alone"
 

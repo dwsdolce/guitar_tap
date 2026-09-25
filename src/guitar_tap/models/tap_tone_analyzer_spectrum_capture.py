@@ -519,45 +519,52 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         emit gatedCaptureComplete so the FFT runs on a clean (partial +
         silence) buffer rather than partial + mic noise.
         """
-        import numpy as np
+        # File end is also the end of the audio clock: release what must still happen — the capture
+        # window's processing — once any finish this flush triggers has scheduled it (#19). The finish
+        # arrives through the queued gatedCaptureComplete signal, so the release is queued behind it on
+        # the main thread rather than run here. On every path out. Mirrors Swift's `defer`.
+        try:
+            import numpy as np
 
-        from guitar_tap.utilities.logging import TAP_DEBUG as _td_flush
-        with self._gated_lock:
-            _td_flush("file_playback", f"FLUSH_GATED_CHECK | active={self._gated_capture_active} accumLen={len(self._gated_accum)} phase={self._gated_capture_phase}")
-            if not self._gated_capture_active:
-                _td_flush("file_playback", "FLUSH_GATED_SKIP | not active")
+            from guitar_tap.utilities.logging import TAP_DEBUG as _td_flush
+            with self._gated_lock:
+                _td_flush("file_playback", f"FLUSH_GATED_CHECK | active={self._gated_capture_active} accumLen={len(self._gated_accum)} phase={self._gated_capture_phase}")
+                if not self._gated_capture_active:
+                    _td_flush("file_playback", "FLUSH_GATED_SKIP | not active")
+                    return
+                self._gated_capture_active = False
+                partial = list(self._gated_accum)
+                target = self._gated_capture_samples
+                phase = self._gated_capture_phase
+                self._gated_accum = []
+
+            if not partial:
+                _td_flush("file_playback", "FLUSH_GATED_SKIP | empty partial")
                 return
-            self._gated_capture_active = False
-            partial = list(self._gated_accum)
-            target = self._gated_capture_samples
-            phase = self._gated_capture_phase
-            self._gated_accum = []
 
-        if not partial:
-            _td_flush("file_playback", "FLUSH_GATED_SKIP | empty partial")
-            return
+            sample_rate = self._mpm_sample_rate
 
-        sample_rate = self._mpm_sample_rate
+            # Zero-pad to target window size so the FFT receives an exactly-sized
+            # window.  The padded zeros lower the average level but don't distort
+            # the ring-out peaks — the file signal is in the leading portion.
+            if len(partial) < target:
+                partial.extend([0.0] * (target - len(partial)))
+            else:
+                partial = partial[:target]
 
-        # Zero-pad to target window size so the FFT receives an exactly-sized
-        # window.  The padded zeros lower the average level but don't distort
-        # the ring-out peaks — the file signal is in the leading portion.
-        if len(partial) < target:
-            partial.extend([0.0] * (target - len(partial)))
-        else:
-            partial = partial[:target]
+            gt_log(f"🎯 Gated capture flushed on file end — "
+                   f"{len(partial)} samples (zero-padded to {target})")
 
-        gt_log(f"🎯 Gated capture flushed on file end — "
-               f"{len(partial)} samples (zero-padded to {target})")
-
-        # Emit on this thread (playback worker); Qt queued connection delivers
-        # on the main thread.
-        if self.mic is not None and self.mic.proc_thread is not None:
-            self.mic.proc_thread.gatedCaptureComplete.emit(
-                np.array(partial, dtype=np.float32),
-                sample_rate,
-                phase,
-            )
+            # Emit on this thread (playback worker); Qt queued connection delivers
+            # on the main thread.
+            if self.mic is not None and self.mic.proc_thread is not None:
+                self.mic.proc_thread.gatedCaptureComplete.emit(
+                    np.array(partial, dtype=np.float32),
+                    sample_rate,
+                    phase,
+                )
+        finally:
+            self._main_async_after(0, self.release_audio_actions_at_file_end)
 
     # ------------------------------------------------------------------ #
     # start_gated_capture
@@ -635,9 +642,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                      f"target={target_samples} rate={int(rate)} "
                      f"deferred={deferred_pre_roll is not None}\n{seed_profile}")
 
-        # Safety timeout: if the buffer still has audio after 2 s, flush it;
-        # if empty, ask the user to tap again.
-        # Mirrors Swift DispatchQueue.main.asyncAfter(deadline: .now() + 2.0).
+        # Safety timeout: once no audio has arrived for 2 s, flush what the buffer holds; if empty, ask
+        # the user to tap again. Measured from the last chunk, not the capture's start (#19).
+        # Mirrors Swift afterAudioStall(2.0, ...).
         def _safety_timeout() -> None:
             with self._gated_lock:
                 # Identity guard — see start_guitar_gated_capture.
@@ -660,7 +667,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 self._set_status_message("No signal detected — tap again")
                 self.re_enable_detection_for_next_plate_tap()
 
-        self._main_async_after(2000, _safety_timeout)
+        self.after_audio_stall(2.0, lambda: self._gated_capture_id == my_capture_id and self._gated_capture_active,
+                               _safety_timeout)
 
     # ------------------------------------------------------------------ #
     # start_guitar_gated_capture / finish_guitar_gated_capture
@@ -769,13 +777,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                     None,
                 )
 
-        self._main_async_after(target_ms, _safety_timeout)
+        self.after_audio_stall(target_ms / 1000.0,
+                               lambda: self._gated_capture_id == my_capture_id and self._gated_capture_active,
+                               _safety_timeout)
 
     def _guitar_gated_capture_failed(self) -> None:
         """Re-arm detection without storing a tap when guitar capture fails."""
         self._set_status_message("No signal detected — tap again")
-        cooldown_ms = int(self.tap_cooldown * 1000)
-        self._main_async_after(cooldown_ms, self._do_reenable_guitar)
+        self.after_audio(self.tap_cooldown, self._do_reenable_guitar)   # the rest, in AUDIO (#19)
 
     def finish_guitar_gated_capture(self, samples, sample_rate: float) -> None:
         """Compute FFT for a guitar gated capture and append to captured_taps.
@@ -903,26 +912,25 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         if self.current_tap_count < self.number_of_taps:
             self._set_status_message(self._guitar_loop_status(capturing=False))
-            cooldown_ms = int(self.tap_cooldown * 1000)
-            self._main_async_after(cooldown_ms, self._do_reenable_guitar)
+            self.after_audio(self.tap_cooldown, self._do_reenable_guitar)   # the rest, in AUDIO (#19)
         else:
             self._set_status_message("All taps captured. Processing...")
             self.capture_timer_active = False
-            self._main_async_after(int(self.capture_window * 1000), self._finish_capture)
+            # capture_window of AUDIO (#19). Released at file end: when the last capture ends with
+            # the file, the audio clock stops and would never make it due.
+            self.after_audio(self.capture_window, self._finish_capture, released_at_file_end=True)
 
     @Slot()
     def _do_start_flc(self) -> None:
         """Main-thread slot: arm detection for the FLC tap phase.
 
-        Invoked via _main_async_after from accept_current_phase,
-        so this always runs on the main thread.
+        Invoked through after_audio from accept_current_phase — tap_cooldown of AUDIO after the C tap
+        is accepted (#19) — so it runs on the main thread, on the chunk that ends the hold.
 
-        Mirrors Swift handleCrossGatedProgress() FLC-transition closure:
-          self.isAboveThreshold = fftAnalyzer.inputLevelDB > fallingThreshold
-          self.isDetecting = true
-          self.materialTapPhase = .capturingFlc
-        Does NOT reset analyzerStartTime — mirrors Swift reEnableDetectionForNextPlateTap
-        doc comment: resetting would restart warm-up and destabilise isAboveThreshold.
+        Mirrors Swift acceptCurrentPhase's FLC closure: anchored on that chunk — the latch from its
+        level, and the warm-up restarted at its audio time — then listen in .capturingFlc. (This
+        edition used to skip the warm-up restart, citing the plate REST's rule, which is a different
+        path; Swift's FLC arm has always restarted it — #19.)
         """
         import numpy as _np
 
@@ -932,13 +940,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # detection — mirrors Swift's captureTimer?.invalidate() cancellation idiom.
         if self.material_tap_phase != _MTP.WAITING_FOR_FLC_TAP:
             return
-        # Use instantaneous RMS level — mirrors Swift fftAnalyzer.inputLevelDB.
-        level = self._current_input_level_db
-        falling = self.tap_detection_threshold - self.hysteresis_margin
-        self.is_above_threshold = level > falling
-        self.detection_state = DetectionState.LISTENING
         self._set_material_tap_phase(_MTP.CAPTURING_FLC)
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
+        falling = self.tap_detection_threshold - self.hysteresis_margin
+        self.is_above_threshold = self.last_chunk_level_db > falling
+        self.warmup_start_audio_time = self.last_audio_time
+        self.detection_state = DetectionState.LISTENING
 
     # ------------------------------------------------------------------ #
     # align_capture_to_onset

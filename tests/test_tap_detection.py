@@ -2,10 +2,10 @@
 """
 Port of TapDetectionTests.swift — hysteresis, warmup, cooldown, EMA.
 
-Mirrors Swift TapDetectionTests test suite (T1–T9).
+Mirrors Swift TapDetectionTests test suite (T1–T9; T4, the cooldown gate, removed in #19).
 
 Strategy: detectTap() is a method on TapToneAnalyzer.  We manipulate its
-internal guard state (warmup_start_audio_time, is_above_threshold, last_tap_time)
+internal guard state (warmup_start_audio_time, is_above_threshold)
 directly so the method exercises pure logic without a real audio engine.
 TapToneAnalyzer() is now constructible without audio hardware (Part 5).
 """
@@ -88,7 +88,9 @@ class TestRisingEdge:
     def test_T1_above_threshold_records_a_tap(self):
         """T1: Rising edge above threshold records a tap.
 
-        These tests observe ``last_tap_time``, which a confirmed tap sets and nothing clears.  They
+        These tests observe ``decay_tap_audio_time``, which a confirmed tap sets to its own audio time
+        and nothing clears.  (They observed ``last_tap_time`` until #19 removed it with the cooldown
+        gate it fed.)  They
         used to observe a ``tap_detected`` flag that existed on the analyzer for no other purpose:
         no view and no model logic read it in ANY edition -- Python had wired a status-dot flash to
         a signal that was never emitted, so even that never ran.  A production field kept alive to
@@ -106,7 +108,7 @@ class TestRisingEdge:
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
             sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert sut.last_tap_time is not None, "a tap should be recorded after crossing the rising threshold"
+        assert sut.decay_tap_audio_time is not None, "a tap should be recorded after crossing the rising threshold"
 
     # T1c-T1e: the detector must use the threshold the APPLICATION configured.
     #
@@ -129,7 +131,7 @@ class TestRisingEdge:
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
             sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert sut.last_tap_time is None, (
+        assert sut.decay_tap_audio_time is None, (
             "a tap quieter than the configured threshold must not fire -- if this fails, the "
             "detector is not reading the configured value"
         )
@@ -143,7 +145,7 @@ class TestRisingEdge:
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
             sut.detect_tap(level=-25, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert sut.last_tap_time is not None
+        assert sut.decay_tap_audio_time is not None
 
     def test_T1e_same_tap_decided_differently_by_the_threshold(self):
         """The same tap, judged against two thresholds, must be decided differently."""
@@ -152,14 +154,14 @@ class TestRisingEdge:
         lenient.is_above_threshold = False
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
             lenient.detect_tap(level=-45, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
-        assert lenient.last_tap_time is not None, "-45 clears a -50 threshold"
+        assert lenient.decay_tap_audio_time is not None, "-45 clears a -50 threshold"
 
         strict = _make_sut(threshold=-35)
         strict.detection_state = DetectionState.LISTENING
         strict.is_above_threshold = False
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
             strict.detect_tap(level=-45, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
-        assert strict.last_tap_time is None, "the same tap is too quiet for a -35 threshold"
+        assert strict.decay_tap_audio_time is None, "the same tap is too quiet for a -35 threshold"
 
     def test_T1f_ring_out_above_falling_threshold_is_not_a_new_tap(self):
         """The re-arm rule -- a ring-out above the falling threshold is not a new tap.
@@ -183,7 +185,7 @@ class TestRisingEdge:
         for _ in range(3):                  # the decay swings back up
             sut.detect_tap(level=-20, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert sut.last_tap_time is None, (
+        assert sut.decay_tap_audio_time is None, (
             "a ring-out that never fell below the falling threshold must not be taken as a new tap"
         )
 
@@ -198,22 +200,20 @@ class TestRisingEdge:
         for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
             sut.detect_tap(level=-20, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert sut.last_tap_time is not None
+        assert sut.decay_tap_audio_time is not None
 
-    def test_T1b_last_tap_time_set_on_detection(self):
-        """T1b: last_tap_time is set when a tap is detected."""
-        import time as _t
+    def test_T1b_tap_is_stamped_with_its_audio_time(self):
+        """T1b: a detected tap is stamped with the AUDIO time of the chunk that confirmed it."""
         sut = _make_sut(threshold=-40)
         sut.detection_state = DetectionState.LISTENING
         sut.is_above_threshold = False
 
-        before = _t.monotonic()
-        for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
-            sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
-        after = _t.monotonic()
+        chunks = RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS
+        for k in range(chunks):
+            sut.detect_tap(level=-35, audio_time=2.0 + k * 0.02, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert sut.last_tap_time is not None, "last_tap_time should be set on detection"
-        assert before <= sut.last_tap_time <= after
+        assert sut.decay_tap_audio_time == 2.0 + (chunks - 1) * 0.02, \
+            "the tap's time is the confirming chunk's audio time"
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +231,7 @@ class TestBelowThreshold:
 
         sut.detect_tap(level=-50, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert sut.last_tap_time is None, "Signal below threshold must not trigger detection"
+        assert sut.decay_tap_audio_time is None, "Signal below threshold must not trigger detection"
 
 
 # ---------------------------------------------------------------------------
@@ -252,30 +252,7 @@ class TestWarmup:
 
         sut.detect_tap(level=-20, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-        assert sut.last_tap_time is None, "Should not detect during warm-up"
-
-
-# ---------------------------------------------------------------------------
-# T4: Cooldown suppression
-# ---------------------------------------------------------------------------
-
-class TestCooldown:
-    """Mirrors Swift TapDetectionTests T4."""
-
-    def test_T4_during_cooldown_suppresses_detection(self):
-        """T4: A second detect_tap call within tap_cooldown is rejected."""
-        import time as _t
-        sut = _make_sut(threshold=-40)
-        sut.detection_state = DetectionState.LISTENING
-        sut.is_above_threshold = False
-        # Simulate that a tap was just recorded 0.1 s ago.  last_tap_time is the cooldown's own
-        # input, so "no tap fired" here is "it did not MOVE", not "it is None".
-        cooldown_anchor = _t.monotonic() - 0.1
-        sut.last_tap_time = cooldown_anchor
-
-        sut.detect_tap(level=-30, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
-
-        assert sut.last_tap_time == cooldown_anchor, "Should not fire while in cooldown window"
+        assert sut.decay_tap_audio_time is None, "Should not detect during warm-up"
 
 
 # ---------------------------------------------------------------------------
@@ -298,18 +275,16 @@ class TestHysteresis:
             sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
         # A tap has fired; is_above_threshold == True.
 
-        # Advance last_tap_time past cooldown so the next call isn't blocked by it.  This also
-        # becomes the anchor: a second tap would move it.
-        anchor = _t.monotonic() - 1.0
-        sut.last_tap_time = anchor
+        # The anchor: the first tap was stamped at audio time 0; a second tap, fed at 1, would move it.
+        anchor = sut.decay_tap_audio_time
 
         # Second call: signal at -43 dB — between falling_threshold (-45) and
         # rising_threshold (-40). Should stay "above" and not fire a new tap.
-        sut.detect_tap(level=-43, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
+        sut.detect_tap(level=-43, audio_time=1.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         assert sut.is_above_threshold is True, \
             "Signal above falling_threshold should keep is_above_threshold = True"
-        assert sut.last_tap_time == anchor, \
+        assert anchor == 0.0 and sut.decay_tap_audio_time == anchor, \
             "No new tap should fire when still above falling threshold"
 
     def test_T5b_signal_below_falling_threshold_resets_above_threshold(self):
@@ -342,7 +317,7 @@ class TestPostWarmupSync:
         sut.detect_tap(level=-30, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
         # No tap must fire on the sync frame
-        assert sut.last_tap_time is None, \
+        assert sut.decay_tap_audio_time is None, \
             "First frame after warmup should sync state but not fire a tap"
         # just_exited_warmup should be cleared
         assert sut.just_exited_warmup is False, \
@@ -379,7 +354,9 @@ class TestPlateMode:
             for _ in range(RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS):
                 sut.detect_tap(level=-35, audio_time=0.0, mag_y_db=_FAKE_MAGS, freq=_FAKE_FREQS)
 
-            assert sut.last_tap_time is not None, \
+            # Plate taps do not start ring-out tracking, so decay_tap_audio_time is not set here; the
+            # tap's own effect is that detection stops while its gated capture runs.
+            assert sut.detection_state == DetectionState.IDLE, \
                 "Plate mode: signal above noise floor + headroom should fire"
         finally:
             TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
@@ -430,8 +407,9 @@ class TestEMAConvergence:
 class TestPipelineDeliversOnceAndExact:
     """What the analyzer receives from the audio pipeline — through the real process_raw_samples.
 
-    Swift delivers each chunk's level once (rmsLevelHandler, on the audio queue) and each FFT frame
-    once (a Combine sink on the main thread), both as Float dB. Python delivered both TWICE — a
+    Swift delivers each chunk's level once (rmsLevelHandler, called on the audio queue, hopping to
+    the main thread — as Python's now does, #19) and each FFT frame once (a Combine sink on the main
+    thread), both as Float dB. Python delivered both TWICE — a
     direct callback plus a Qt signal — with the level truncated to a whole-dB integer on the way,
     and a duplicate guard (on the level only) keyed to the mic's current sample count, which a late
     queued copy could slip past, doubling the "N consecutive chunks" confirmation (#17 F44).
@@ -459,8 +437,26 @@ class TestPipelineDeliversOnceAndExact:
         chunk = self._tone(-37.6)
         expected = 20.0 * math.log10(float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2))))
         sut.mic.process_raw_samples(chunk)
+        QtWidgets.QApplication.processEvents()  # the level is queued to the main thread (#19)
         assert sut._current_input_level_db == pytest.approx(expected, abs=1e-9)
         assert abs(sut._current_input_level_db - (-38.0)) > 0.1, "truncated to whole dB"
+
+    def test_detection_runs_on_the_main_thread_when_the_chunk_is_processed_off_it(self):
+        """A chunk processed on another thread reaches detection on the MAIN thread, as Swift's does
+        (rmsLevelHandler hops with DispatchQueue.main.async). Detection used to run right there on the
+        processing thread, while a capture's finish arrived on the main thread, so the audio time seen
+        at a finish depended on thread timing (#19)."""
+        import threading
+        sut = self._sut()
+        seen: list = []
+        original = sut.track_decay_fast   # runs in every detection pass
+        sut.track_decay_fast = lambda *a, **k: (seen.append(threading.current_thread()), original(*a, **k))
+        worker = threading.Thread(target=lambda: sut.mic.process_raw_samples(self._tone(-50.0)))
+        worker.start()
+        worker.join()
+        assert seen == [], "detection ran on the processing thread"
+        QtWidgets.QApplication.processEvents()
+        assert seen == [threading.main_thread()], f"detection ran on {seen}"
 
     def test_one_chunk_runs_detection_once(self):
         sut = self._sut()

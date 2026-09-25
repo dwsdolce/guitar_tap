@@ -44,6 +44,8 @@ This file (tap_tone_analyzer.py) contains:
 
 from __future__ import annotations
 
+from typing import Callable
+
 # ── PySide6 ─────────────────────────────────────────────────────────────────────
 from PySide6 import QtCore
 
@@ -189,6 +191,11 @@ class TapToneAnalyzer(
     # main thread.  Payload: (delay_ms: int, callable: object).
     # Mirrors Swift DispatchQueue.main.asyncAfter(deadline:execute:).
     _mainAsyncAfterRequest: QtCore.Signal = QtCore.Signal(int, object)
+    # Internal: each chunk's (level_db, audio_time), carried from the thread that processed the chunk
+    # to the main thread — Swift's rmsLevelHandler hop, `DispatchQueue.main.async { onRmsLevelChanged }`.
+    # Connected QUEUED, so detection, the audio-clock lifecycle actions and a capture's finish all run
+    # on the main thread in chunk order, as in Swift (#19).
+    _rmsLevelOnMain: QtCore.Signal = QtCore.Signal(float, float)
 
     def __init__(self, fft_analyzer=None) -> None:
         """Create a TapToneAnalyzer with all state at sensible defaults.
@@ -226,6 +233,9 @@ class TapToneAnalyzer(
         self._mainAsyncAfterRequest.connect(
             self._on_main_async_after_request,
         )
+        # Always queued — even from the main thread, as Swift's main.async is — so a chunk's level is
+        # handled after anything the same chunk already queued (a completed capture's finish).
+        self._rmsLevelOnMain.connect(self._on_rms_level_changed, QtCore.Qt.ConnectionType.QueuedConnection)
 
         self._np = np
         self._gm = _gm
@@ -516,8 +526,22 @@ class TapToneAnalyzer(
         # expire before any audio arrives — the warm-up never runs, the noise-floor re-anchor never
         # fires, and the EMA latches at its seed, silently disabling relative detection.
         self.warmup_start_audio_time: "float | None" = None
-        # Wall-clock time of the most recent detected tap. Mirrors lastTapTime.
-        self.last_tap_time: "float | None" = None
+        # The audio clock as the analyzer has seen it: the audio time of the latest chunk delivered to
+        # _on_rms_level_changed, recorded on every chunk before any guard. The tap-lifecycle timers run
+        # on THIS clock, not the wall clock (#19): file playback advances audio at "real time +
+        # processing time", so a wall-clock delay covered a different stretch of audio on a slower run
+        # and late captures in a sequence moved. Mirrors Swift lastAudioTime.
+        self.last_audio_time: float = 0.0
+        # The level (dBFS) of that chunk — a re-arm that falls due re-anchors the latch from it.
+        # Mirrors Swift lastChunkLevelDB.
+        self.last_chunk_level_db: float = -100.0
+        # The WALL time (time.monotonic) at which the latest chunk reached _on_rms_level_changed — what the
+        # capture safety timeout measures its silence from (after_audio_stall, #19). Mirrors Swift
+        # lastChunkWallTime.
+        self.last_chunk_wall_time: float = 0.0
+        # Tap-lifecycle actions waiting on the audio clock: (due, released_at_file_end, action).
+        # See after_audio(). Mirrors Swift pendingAudioActions.
+        self._pending_audio_actions: "list[tuple[float, bool, Callable[[], None]]]" = []
         # Exponential moving average of the input level, used as the ambient noise-floor
         # estimate for relative tap detection in plate/brace modes. Updated only when
         # the signal is below threshold (between taps) so tap energy does not
@@ -544,10 +568,12 @@ class TapToneAnalyzer(
         # ring-out invariant to main-thread scheduling jitter under load (OUT-4 lesson).
         self.peak_magnitude_history: list = []
         # Audio-clock time of the tap that started the current decay window — the time-zero
-        # reference for measure_decay_time (separate from last_tap_time, the wall-clock cooldown gate).
+        # reference for measure_decay_time.
         self.decay_tap_audio_time: "float | None" = None
         self.is_tracking_decay: bool = False
-        self._decay_tracking_timer = None
+        # How long after a tap the ring-out is tracked, in seconds of AUDIO (#19). Mirrors Swift
+        # decayTrackingDuration.
+        self.decay_tracking_duration: float = 3.0
 
         # ── Gated FFT capture state ────────────────────────────────────────
         # Mirrors Swift TapToneAnalyzer stored properties for gated capture:
@@ -915,11 +941,14 @@ class TapToneAnalyzer(
 
         Mirrors Swift ``TapToneAnalyzer.setupSubscriptions()``.
         """
-        # ── Per-chunk level → tap detection: ONE delivery, direct ────────
-        # Called synchronously by process_raw_samples, on the processing thread — as Swift's
-        # rmsLevelHandler is on the audio queue. The float dB goes straight in; it used to be
-        # truncated to a whole-dB int first (#17 F44).
-        self.mic.rms_level_handler = self._on_rms_level_changed
+        # ── Per-chunk level → tap detection: ONE delivery, queued to the main thread ─────
+        # process_raw_samples calls rms_level_handler on whatever thread processed the chunk — as
+        # Swift's rmsLevelHandler is called on the audio queue — and, as Swift's does, it hops to the
+        # main thread before detection. It used to call _on_rms_level_changed right there on the
+        # processing thread (#17 F44 kept that path when it ended a double delivery), so detection and
+        # a capture's finish — queued to the main thread — ran on different threads, and the audio
+        # time seen at a finish depended on thread timing (#19). The float dB goes straight in.
+        self.mic.rms_level_handler = self._rmsLevelOnMain.emit
 
         # ── Gated-FFT capture signal (Qt — for cross-thread delivery) ────
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
