@@ -1565,7 +1565,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self.set_measurement_complete(True)
             # Save the session WAV — mirrors Swift finishSessionRecording(label: "Brace").
             self.finish_session_recording(label="Brace")
-            self.tap_progress = 1.0
             self._set_status_message("Complete - check Results")
             gt_log(f"✅ Brace measurement complete: fL={avg_peak.frequency} Hz")
             # Emit final peaks.
@@ -2049,7 +2048,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             f"Analysis complete! {len(peaks)} peaks identified "
             f"(from {tap_count} averaged taps)."
         )
-        self.tap_progress = 1.0
         gt_log(f"✅ Found {len(peaks)} peaks in averaged spectrum from {tap_count} taps")
 
         # ── Build per-tap entries for multi-tap comparison ─────────────────

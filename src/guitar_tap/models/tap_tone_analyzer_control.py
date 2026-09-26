@@ -1147,7 +1147,6 @@ class TapToneAnalyzerControlMixin:
         self.set_measurement_complete(True)
         # Save the session WAV — mirrors Swift finishSessionRecording(label: "Plate_LC").
         self.finish_session_recording(label="Plate_LC")
-        self.tap_progress = 1.0
 
         fl_str = (
             f"{self.selected_longitudinal_peak.frequency:.1f}"
@@ -1197,7 +1196,6 @@ class TapToneAnalyzerControlMixin:
         self.set_measurement_complete(True)
         # Save the session WAV — mirrors Swift finishSessionRecording(label: "Plate_LCF").
         self.finish_session_recording(label="Plate_LCF")
-        self.tap_progress = 1.0
         self._set_status_message("Complete - check Results")
 
         self._emit_peaks_array(self.peaks_above_peak_min)

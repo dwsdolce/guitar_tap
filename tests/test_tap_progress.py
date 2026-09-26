@@ -13,7 +13,7 @@ Python had a matching latent bug in the VIEW: it recomputed the bar percentage f
 `number_of_taps` instead of rendering `tap_progress`, pinning the bar at 100% from the end of
 phase L onward.
 
-The canonical model these tests lock down (Swift TapDetection:360 / Control:465-487):
+The canonical model these tests lock down (Swift `totalPlateTaps` / `redoCurrentPhase`):
 
     total_plate_taps = number_of_taps * (1 if brace else 3 if measure_flc else 2)
     tap_progress     = min(1.0, current_tap_count / (number_of_taps if guitar
@@ -54,16 +54,11 @@ def qt_app():
     return _get_app()
 
 
-def _spec():
-    """A minimal (magnitudes, frequencies) spectrum tuple -- presence is all these tests need."""
-    return (np.full(64, -60.0, dtype=np.float64), np.linspace(0, 2000, 64))
-
-
 def _make(meas_type: MeasurementType, taps: int, measure_flc: bool = False) -> TapToneAnalyzer:
     _get_app()
     TapDisplaySettings.set_measurement_type(meas_type)
     TapDisplaySettings.set_measure_flc(measure_flc)
-    sut = TapToneAnalyzer()
+    sut = TapToneAnalyzer.for_testing(sample_rate=48000)
     sut.number_of_taps = taps
     return sut
 
@@ -91,30 +86,40 @@ class TestTotalPlateTaps:
 # --------------------------------------------------------------------------- #
 
 class TestTapProgress:
-    def test_guitar_divides_by_number_of_taps(self):
-        sut = _make(MeasurementType.CLASSICAL, 4)
-        sut.current_tap_count = 1
-        sut.tap_progress = min(1.0, sut.current_tap_count / sut.number_of_taps)
+    def test_guitar_progress_advances_by_number_of_taps(self):
+        """A guitar measurement's bar advances by number_of_taps, through the real capture finish -- the
+        place progress is decided. (This used to compute min(1, count / taps) in the test itself and
+        assert that; the material denominator is asserted by the count-across-phases case below, and the
+        clamp is unreachable in production -- #17 F51.) Mirrors Swift
+        guitarProgressAdvancesByNumberOfTaps."""
+        sut = TapToneAnalyzer.for_testing(sample_rate=48000)
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut.number_of_taps = 4
+        sut.start_tap_sequence()
+        assert sut.tap_progress == 0
+
+        tap = _tap_samples(100.0, dur=sut.mic.fft_size / 48000.0)
+        sut.finish_guitar_gated_capture(tap, 48000.0)
         assert sut.tap_progress == pytest.approx(0.25)
+        sut.finish_guitar_gated_capture(tap, 48000.0)
+        assert sut.tap_progress == pytest.approx(0.5)
+        sut.finish_guitar_gated_capture(tap, 48000.0)
+        assert sut.tap_progress == pytest.approx(0.75)
 
-    def test_material_divides_by_total_plate_taps_not_number_of_taps(self):
-        """The bar must fill ONCE across L->C->FLC, not once per phase.
+    def test_new_sequence_resets_the_bar(self):
+        """A new sequence starts its bar at 0 -- a finished measurement's full bar does not carry into
+        it. Mirrors Swift newSequenceResetsTheBar."""
+        sut = _make(MeasurementType.GENERIC, 1)
+        sut.start_tap_sequence()
+        sut.finish_guitar_gated_capture(_tap_samples(100.0, dur=sut.mic.fft_size / 48000.0), 48000.0)
+        advance_audio(sut, sut.capture_window)   # complete
+        QtWidgets.QApplication.processEvents()
+        assert sut.is_measurement_complete
+        assert sut.tap_progress == 1.0
 
-        This is the assertion the web violated: with number_of_taps as the denominator, a
-        cumulative count of 2 in a 2-tap plate reads 100% at the END OF PHASE L.
-        """
-        sut = _make(MeasurementType.PLATE, 2, measure_flc=True)  # total_plate_taps = 6
-        assert sut.total_plate_taps == 6
+        sut.start_tap_sequence()                 # New Tap
 
-        # End of phase L: 2 of 6 taps done -> one third, NOT 100%.
-        sut.current_tap_count = 2
-        assert sut.current_tap_count / sut.total_plate_taps == pytest.approx(2 / 6)
-        assert sut.current_tap_count / sut.number_of_taps == pytest.approx(1.0)  # the WRONG denominator
-
-    def test_progress_is_clamped_to_one(self):
-        sut = _make(MeasurementType.BRACE, 2)
-        sut.current_tap_count = 5  # over-count
-        assert min(1.0, sut.current_tap_count / sut.total_plate_taps) == 1.0
+        assert sut.tap_progress == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -128,6 +133,22 @@ def _tap_samples(freq_hz: float, sample_rate: float = 48000.0,
     t = np.arange(n) / sample_rate
     env = np.exp(-t * 6.0)
     return (amp * env * np.sin(2.0 * np.pi * freq_hz * t)).astype(np.float64)
+
+
+def _plate_reviewing_l(sut: TapToneAnalyzer) -> None:
+    """A plate sequence driven to its first review through real taps at the capture finish: L tapped
+    number_of_taps times. The phase and count are the app's, not the test's."""
+    sut.start_tap_sequence()
+    for _ in range(sut.number_of_taps):
+        sut.finish_gated_fft_capture(_tap_samples(60.0), 48000.0, MaterialTapPhase.CAPTURING_LONGITUDINAL)
+
+
+def _plate_reviewing_c(sut: TapToneAnalyzer) -> None:
+    """On to C's review: Accept L, then C tapped number_of_taps times."""
+    _plate_reviewing_l(sut)
+    sut.accept_current_phase()
+    for _ in range(sut.number_of_taps):
+        sut.finish_gated_fft_capture(_tap_samples(150.0), 48000.0, MaterialTapPhase.CAPTURING_CROSS)
 
 
 class TestCountSurvivesPhaseAdvance:
@@ -144,15 +165,12 @@ class TestCountSurvivesPhaseAdvance:
     """
 
     def test_count_accumulates_across_L_to_C(self):
-        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
-
         sut = _make(MeasurementType.PLATE, 2, measure_flc=True)  # total_plate_taps = 6
-        sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # gated-FFT engine
-        sut.tap_detection_threshold = -90.0  # accept our synthetic taps
+        sut.start_tap_sequence()                                 # capturing L, as the app arms it
+        assert sut.material_tap_phase == MaterialTapPhase.CAPTURING_LONGITUDINAL
         sr = 48000.0
 
         # --- Phase L: two taps at 60 Hz (plate L band = 20-100 Hz) ---
-        sut._set_material_tap_phase(MaterialTapPhase.CAPTURING_LONGITUDINAL)
         sut.finish_gated_fft_capture(_tap_samples(60.0, sr), sr,
                                      MaterialTapPhase.CAPTURING_LONGITUDINAL)
         assert sut.current_tap_count == 1
@@ -182,46 +200,76 @@ class TestCountSurvivesPhaseAdvance:
         assert sut.current_tap_count == 4
         assert sut.tap_progress == pytest.approx(4 / 6)
 
+        # --- Accept C -> waiting for the FLC tap: L + C stay counted through the hold ---
+        sut.accept_current_phase()
+        assert sut.material_tap_phase == MaterialTapPhase.WAITING_FOR_FLC_TAP
+        assert sut.current_tap_count == 4
+        assert sut.tap_progress == pytest.approx(4 / 6)
+
+    def test_brace_bar_fills_over_its_taps(self):
+        """Brace has one phase: its count and bar fill over its taps, and the last tap completes it."""
+        sut = _make(MeasurementType.BRACE, 2)  # total = 2
+        sut.start_tap_sequence()
+        sut.finish_gated_fft_capture(_tap_samples(150.0), 48000.0, MaterialTapPhase.CAPTURING_LONGITUDINAL)
+        assert sut.current_tap_count == 1
+        assert sut.tap_progress == pytest.approx(0.5)
+
+        sut.finish_gated_fft_capture(_tap_samples(150.0), 48000.0, MaterialTapPhase.CAPTURING_LONGITUDINAL)
+        assert sut.current_tap_count == 2
+        assert sut.tap_progress == 1.0
+        assert sut.is_measurement_complete
+
 
 # --------------------------------------------------------------------------- #
-# Redo rebases the cumulative count to the PRIOR phases (Swift Control:465-487)
+# Redo rebases the cumulative count to the PRIOR phases
 # --------------------------------------------------------------------------- #
 
 class TestRedoRebasesCumulativeCount:
+    """Each case reaches its review through real taps, real Accepts and -- for FLC -- the real hold,
+    fed in audio; none sets a spectrum, a count or a phase by hand (#17 F51). Mirrors Swift
+    RedoRebasesCumulativeCountTests."""
+
     def test_redo_cross_keeps_longitudinal_taps_counted(self):
         """Redo C -> current_tap_count = l_count (= number_of_taps), NOT 0."""
         sut = _make(MeasurementType.PLATE, 2, measure_flc=True)  # total = 6
-        sut.longitudinal_spectrum = _spec()  # L was captured
-        sut.current_tap_count = 4  # L (2) + C (2)
-        sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_CROSS)
+        _plate_reviewing_c(sut)
+        assert sut.material_tap_phase == MaterialTapPhase.REVIEWING_CROSS
+        assert sut.current_tap_count == 4  # L (2) + C (2)
 
         sut.redo_current_phase()
 
+        assert sut.material_tap_phase == MaterialTapPhase.CAPTURING_CROSS
         assert sut.current_tap_count == 2  # L's taps stay counted
         assert sut.tap_progress == pytest.approx(2 / 6)
 
     def test_redo_flc_keeps_longitudinal_and_cross_counted(self):
         """Redo FLC -> current_tap_count = lc_count (= number_of_taps * 2)."""
         sut = _make(MeasurementType.PLATE, 2, measure_flc=True)  # total = 6
-        sut.longitudinal_spectrum = _spec()
-        sut.cross_spectrum = _spec()
-        sut.current_tap_count = 6
-        sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_FLC)
+        _plate_reviewing_c(sut)
+        sut.accept_current_phase()                   # -> waiting for the FLC tap
+        advance_audio(sut, sut.tap_cooldown)         # the hold, in audio -> capturing FLC
+        assert sut.material_tap_phase == MaterialTapPhase.CAPTURING_FLC
+        for _ in range(2):
+            sut.finish_gated_fft_capture(_tap_samples(60.0), 48000.0, MaterialTapPhase.CAPTURING_FLC)
+        assert sut.material_tap_phase == MaterialTapPhase.REVIEWING_FLC
+        assert sut.current_tap_count == 6
 
         sut.redo_current_phase()
 
+        assert sut.material_tap_phase == MaterialTapPhase.CAPTURING_FLC
         assert sut.current_tap_count == 4  # L + C stay counted
         assert sut.tap_progress == pytest.approx(4 / 6)
 
     def test_redo_longitudinal_resets_to_zero(self):
         """Nothing precedes L, so redoing it drops the count to 0."""
         sut = _make(MeasurementType.PLATE, 2, measure_flc=True)
-        sut.longitudinal_spectrum = _spec()
-        sut.current_tap_count = 2
-        sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_LONGITUDINAL)
+        _plate_reviewing_l(sut)
+        assert sut.material_tap_phase == MaterialTapPhase.REVIEWING_LONGITUDINAL
+        assert sut.current_tap_count == 2
 
         sut.redo_current_phase()
 
+        assert sut.material_tap_phase == MaterialTapPhase.CAPTURING_LONGITUDINAL
         assert sut.current_tap_count == 0
         assert sut.tap_progress == 0.0
 
@@ -241,24 +289,72 @@ class TestFlcCooldownCancellation:
 
     def test_restart_during_cooldown_does_not_rearm_flc(self):
         sut = _make(MeasurementType.PLATE, 1, measure_flc=True)
-        sut.longitudinal_spectrum = _spec()
-        sut.cross_spectrum = _spec()
-        sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_CROSS)
+        _plate_reviewing_c(sut)                      # real taps and Accepts to C's review
 
         sut.accept_current_phase()
         assert sut.material_tap_phase == MaterialTapPhase.WAITING_FOR_FLC_TAP
 
-        # The user restarts before the cooldown elapses.
-        sut.start_tap_sequence()
+        # The user cancels before the cooldown elapses.
+        sut.cancel_tap_sequence()
         phase_after_restart = sut.material_tap_phase
         assert phase_after_restart != MaterialTapPhase.WAITING_FOR_FLC_TAP
 
-        # The hold ends — in AUDIO (#19) — against the restarted sequence. (This used to call the
-        # callback by hand; it now runs as the app runs it, as Swift's test does.)
+        # The hold ends — in AUDIO (#19) — against the restarted sequence.
         advance_audio(sut, 0.8)
 
         assert sut.material_tap_phase == phase_after_restart
         assert sut.material_tap_phase != MaterialTapPhase.CAPTURING_FLC
+
+
+# --------------------------------------------------------------------------- #
+# Loading a measurement tears down an interrupted capture
+# --------------------------------------------------------------------------- #
+
+def _saved_measurement():
+    """A saved classical measurement to load -- built as test_measurement_complete_transitions builds one."""
+    from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
+    from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
+    freqs = list(np.linspace(0, 2000, 64))
+    mags = [-80.0] * 64
+    mags[16] = -30.0
+    snap = SpectrumSnapshot(frequencies=freqs, magnitudes=mags, measurement_type="Classical Guitar")
+    return TapToneMeasurement.create(measurement_type="Classical Guitar", guitar_type=None, peaks=[],
+                                     spectrum_snapshot=snap, number_of_taps=1)
+
+
+class TestLoadTearsDownInterruptedCapture:
+    """Loading a measurement while a capture is unfinished tears it down, so the progress bar and the
+    Analyzing indicator do not linger over the loaded measurement. The sequence is driven for real; the
+    load is the real load_measurement. Mirrors Swift LoadTearsDownInterruptedCaptureTests."""
+
+    def test_abandoned_plate_sequence_resets_on_load(self):
+        sut = _make(MeasurementType.PLATE, 2, measure_flc=True)
+        _plate_reviewing_c(sut)
+        sut.accept_current_phase()                   # -> waiting for the FLC tap
+        assert sut.current_tap_count == 4
+        assert sut.material_tap_phase == MaterialTapPhase.WAITING_FOR_FLC_TAP
+
+        sut.load_measurement(_saved_measurement())
+
+        assert sut.current_tap_count == 0
+        assert sut.tap_progress == 0
+        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE
+        assert not sut.is_detecting
+        assert sut.is_measurement_complete
+
+    def test_load_while_detecting_stops_detection(self):
+        sut = _make(MeasurementType.PLATE, 2, measure_flc=True)
+        sut.start_tap_sequence()
+        sut.finish_gated_fft_capture(_tap_samples(60.0), 48000.0, MaterialTapPhase.CAPTURING_LONGITUDINAL)
+        advance_audio(sut, sut.tap_cooldown)         # the rest ends: listening for tap 2
+        assert sut.is_detecting
+        assert sut.current_tap_count == 1
+
+        sut.load_measurement(_saved_measurement())
+
+        assert not sut.is_detecting
+        assert sut.current_tap_count == 0
+        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE
 
 
 # ---------------------------------------------------------------------------
@@ -267,19 +363,23 @@ class TestFlcCooldownCancellation:
 
 
 class TestTapProgressAfterCountChange:
-    """tap_progress is STORED, written at each capture site and pinned to 1.0 at completion — so a
+    """tap_progress is STORED, written at each capture site (the last tap leaves it at 1) — so a
     completed measurement's bar records what was actually measured. Raising the tap count afterwards
     configures the NEXT measurement and must leave the finished one alone. Web derived it at render
     time instead, so a complete 1-tap measurement's full bar dropped to a third when Taps went to 3.
+    The measurement is completed for real: one tap through the finish, then the capture window's audio.
 
     Mirrors Swift TapProgressAfterCountChangeTests.
     """
 
     def test_complete_measurement_keeps_full_bar_when_tap_count_raised(self):
         sut = _make(MeasurementType.GENERIC, 1)
-        sut.current_tap_count = 1
-        sut.tap_progress = 1.0
-        sut.is_measurement_complete = True
+        sut.start_tap_sequence()
+        sut.finish_guitar_gated_capture(_tap_samples(100.0, dur=sut.mic.fft_size / 48000.0), 48000.0)
+        advance_audio(sut, sut.capture_window)   # "All taps captured. Processing..." -> complete
+        QtWidgets.QApplication.processEvents()
+        assert sut.is_measurement_complete
+        assert sut.tap_progress == 1.0
 
         sut.number_of_taps = 3  # configures the next measurement
 
