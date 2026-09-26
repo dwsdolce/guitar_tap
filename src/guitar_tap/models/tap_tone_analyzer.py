@@ -113,8 +113,11 @@ class TapToneAnalyzer(
     # re-renders, which is what greys New Tap out for the settle. Python has no such binding, so
     # without this signal the button state simply went stale (#17 F32).
     readyForDetectionChanged: QtCore.Signal = QtCore.Signal(bool)
-    # Ring-out time measured by DecayTracker (seconds).
-    ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
+    # The ring-out on screen changed: seconds, or None while there is none yet. Swift's
+    # `@Published var currentDecayTime` re-renders the Ring-Out box on every change; Python has no such
+    # binding, so the property below emits this. (It was `ringOutMeasured`, which nothing emitted after
+    # the old DecayTracker was removed on 2026-04-05, so the live box stayed "Waiting…" — #17 F50.)
+    currentDecayTimeChanged: QtCore.Signal = QtCore.Signal(object)
     # FFT frame diagnostics: (fps, sample_dt, processing_dt).
     framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
     # Emitted on every live FFT frame (for average-enable logic).
@@ -235,7 +238,7 @@ class TapToneAnalyzer(
         )
         # Always queued — even from the main thread, as Swift's main.async is — so a chunk's level is
         # handled after anything the same chunk already queued (a completed capture's finish).
-        self._rmsLevelOnMain.connect(self._on_rms_level_changed, QtCore.Qt.ConnectionType.QueuedConnection)
+        self._rmsLevelOnMain.connect(self._on_chunk_level, QtCore.Qt.ConnectionType.QueuedConnection)
 
         self._np = np
         self._gm = _gm
@@ -286,20 +289,11 @@ class TapToneAnalyzer(
         # threshold stuck at its default, causing the audio-queue to fire
         # on signals the main thread would correctly reject (or vice versa).
         self._tap_detection_threshold: float = float(_tds.tap_detection_threshold())
-        # Hysteresis margin, in dB. After a tap, the signal must fall at least this far
-        # below the detection threshold before the next tap can register — prevents
-        # re-triggering during a single tap's ring-out. Hardcoded constant, no longer
-        # user-configurable. Mirrors Swift hysteresisMargin.
-        self.hysteresis_margin: float = 3.0
         # Minimum decay level below the tap peak for ring-out measurement, in dB.
         # Ring-out is measured from the peak to the first moment the signal drops
         # more than this below it; 15 dB works well against room noise floors.
         self.decay_threshold: float = 15.0                                 # mirrors decayThreshold
         self._number_of_taps: int = 1                                      # mirrors numberOfTaps
-        # Duration of the spectrum-capture window after each tap, in seconds. The
-        # snapshot is taken this long after the tap; 200 ms captures the early decay
-        # while avoiding the noise floor.
-        self.capture_window: float = 0.2                                   # mirrors captureWindow
         self.capture_timer_active: bool = False                            # mirrors captureTimer != nil
 
         # MARK: - Results
@@ -317,17 +311,13 @@ class TapToneAnalyzer(
         # per-peak state carry-forward, whether a measurement exists — reads `all_peaks`, never this.
         self.peaks_above_peak_min: list = []
         self.identified_modes: list = []                                   # mirrors identifiedModes
-        self.current_decay_time: "float | None" = None                    # mirrors currentDecayTime
+        self._current_decay_time: "float | None" = None                   # mirrors currentDecayTime
         self.saved_measurements: list = []                                 # mirrors savedMeasurements
 
         # MARK: - Detection State
         # Most recent average FFT magnitude, in dBFS. Used by the hysteresis detector
         # and exposed for the level-meter view.
         self.average_magnitude: float = -100.0      # mirrors averageMagnitude
-        # Computed detection-threshold level shown on the chart, in dBFS. For plate/
-        # brace it is noise_floor_estimate + headroom; for guitar it equals
-        # tap_detection_threshold.
-        self.tap_detection_level: float = -100.0    # mirrors tapDetectionLevel
         # mirrors detectionState; is_detecting / is_detection_paused derive from it
         self._detection_state: DetectionState = DetectionState.IDLE
         # True while a device/route change settles and the chart should show nothing. The
@@ -517,8 +507,6 @@ class TapToneAnalyzer(
         # can be re-anchored to the real signal level without firing a spurious tap.
         # Mirrors justExitedWarmup.
         self.just_exited_warmup: bool = False
-        # Wall-clock time when start()/start_tap_sequence() was called; used to enforce
-        # the warm-up period. Mirrors analyzerStartTime.
         # Value of the engine's AUDIO clock (mic.audio_elapsed) when a sequence was last armed.
         # Used to enforce the warm-up. Deliberately the AUDIO clock, not the wall clock: the warm-up
         # must cover the first `warmup_period` of AUDIO. Live the two coincide; in FILE PLAYBACK they
@@ -547,17 +535,6 @@ class TapToneAnalyzer(
         # the signal is below threshold (between taps) so tap energy does not
         # contaminate it. Mirrors noiseFloorEstimate.
         self.noise_floor_estimate: float = -60.0
-        # EMA smoothing factor for noise-floor tracking. At ~23 ms audio-buffer updates
-        # (1024 samples at 44.1 kHz), alpha = 0.05 gives a time constant tau ~= 450 ms
-        # (alpha ~= 1 - exp(-dt/tau)) — slow enough that brief transients (handling /
-        # room-noise spikes) do not drive the estimate up. Mirrors noiseFloorAlpha.
-        self.noise_floor_alpha: float = 0.05
-        # Warm-up duration, in seconds, during which all taps are suppressed; lets the
-        # audio engine and FFT pipeline settle after a cold start. Mirrors warmupPeriod.
-        self.warmup_period: float = 0.5
-        # Minimum inter-tap interval to prevent double-trigger artefacts, in seconds.
-        # Mirrors tapCooldown.
-        self.tap_cooldown: float = 0.5
         # Input level (dBFS) at the moment the most recent tap was detected; the
         # reference magnitude for ring-out time computation. Mirrors tapPeakLevel.
         self.tap_peak_level: float = -100.0
@@ -571,9 +548,6 @@ class TapToneAnalyzer(
         # reference for measure_decay_time.
         self.decay_tap_audio_time: "float | None" = None
         self.is_tracking_decay: bool = False
-        # How long after a tap the ring-out is tracked, in seconds of AUDIO (#19). Mirrors Swift
-        # decayTrackingDuration.
-        self.decay_tracking_duration: float = 3.0
 
         # ── Gated FFT capture state ────────────────────────────────────────
         # Mirrors Swift TapToneAnalyzer stored properties for gated capture:
@@ -650,6 +624,51 @@ class TapToneAnalyzer(
             self._wire_pipeline_signals()
 
     # ------------------------------------------------------------------ #
+    # Constants — Swift declares these `let`, so they are read-only here: a property with no setter,
+    # so writing one raises AttributeError (#17 F50 item 4).
+    # ------------------------------------------------------------------ #
+
+    @property
+    def hysteresis_margin(self) -> float:
+        """Hysteresis margin, in dB. After a tap, the signal must fall at least this far below the
+        detection threshold before the next tap can register — prevents re-triggering during a single
+        tap's ring-out. A constant; it was once a user setting. Mirrors Swift ``hysteresisMargin``."""
+        return 3.0
+
+    @property
+    def noise_floor_alpha(self) -> float:
+        """EMA smoothing factor for noise-floor tracking. At ~23 ms audio-buffer updates (1024 samples at
+        44.1 kHz), alpha = 0.05 gives a time constant tau ~= 450 ms (alpha ~= 1 - exp(-dt/tau)) — slow
+        enough that brief transients (handling / room-noise spikes) do not drive the estimate up.
+        Mirrors Swift ``noiseFloorAlpha``."""
+        return 0.05
+
+    @property
+    def warmup_period(self) -> float:
+        """Duration of the warm-up during which all taps are suppressed, in seconds of AUDIO; lets the
+        audio engine and FFT pipeline settle after a cold start. Mirrors Swift ``warmupPeriod``."""
+        return 0.5
+
+    @property
+    def tap_cooldown(self) -> float:
+        """The rest after a capture before detection re-arms, and the hold before the FLC phase arms, in
+        seconds of AUDIO (see ``after_audio``, #19). Mirrors Swift ``tapCooldown``."""
+        return 0.5
+
+    @property
+    def capture_window(self) -> float:
+        """After the LAST guitar tap, "All taps captured. Processing..." shows for this much AUDIO before
+        the taps are averaged (``after_audio``, released at file end; #19). Mirrors Swift
+        ``captureWindow``."""
+        return 0.2
+
+    @property
+    def decay_tracking_duration(self) -> float:
+        """How long after a tap the ring-out is tracked, in seconds of AUDIO (#19). Mirrors Swift
+        ``decayTrackingDuration``."""
+        return 3.0
+
+    # ------------------------------------------------------------------ #
     # number_of_taps — mirrors Swift @Published var numberOfTaps { didSet { … } }
     #
     # A property, not a plain attribute, so the hook runs on EVERY write.  It was an attribute with
@@ -663,6 +682,20 @@ class TapToneAnalyzer(
     # exactly as the Swift stepper and the web stepper do.  ``set_tap_num``'s ``max(1, n)`` was a
     # model-layer guard no sibling had.
     _number_of_taps: int = 1
+
+    @property
+    def current_decay_time(self) -> "float | None":
+        """The ring-out of what is on screen, in seconds, or None: the live measurement during a capture,
+        the file's when a measurement is loaded. Mirrors Swift ``@Published var currentDecayTime``."""
+        return self._current_decay_time
+
+    @current_decay_time.setter
+    def current_decay_time(self, value: "float | None") -> None:
+        # Swift's @Published re-renders the Ring-Out box on every change; this emit is Python's.
+        if value == self._current_decay_time:
+            return
+        self._current_decay_time = value
+        self.currentDecayTimeChanged.emit(value)
 
     @property
     def number_of_taps(self) -> int:
@@ -933,11 +966,16 @@ class TapToneAnalyzer(
     # ------------------------------------------------------------------ #
 
     def _wire_pipeline_signals(self) -> None:
-        """Connect pipeline signals and direct callbacks to this analyzer.
+        """Connect this analyzer to the mic's pipeline. Called once, from ``__init__``.
 
-        This wires both the direct callback properties (for file playback
-        where there is no Qt event loop) and the Qt signal connections (for
-        live mic UI updates).
+        Direct handlers on the mic: ``rms_level_handler`` (the queued ``_rmsLevelOnMain``, so each
+        chunk's level reaches detection on the main thread), ``raw_sample_handler`` and
+        ``_level_crossing_handler``. Signals on the processing thread object: ``gatedCaptureComplete``,
+        ``clippingChanged``, ``inputAppearsDeadChanged`` and ``fftFrameReady``.
+
+        The signals are connected to the processing thread object, once. It is created with the mic and
+        never replaced, so these connections hold for the whole run. A second ``connect()`` on it would
+        deliver every emission twice (#17 F44).
 
         Mirrors Swift ``TapToneAnalyzer.setupSubscriptions()``.
         """
@@ -1080,6 +1118,19 @@ class TapToneAnalyzer(
     # zeros diluted the gated capture signal by ~50%, suppressing spectral
     # magnitude by ~6 dB.  The pre-roll buffer now starts empty (cleared by
     # start_tap_sequence) and fills naturally with real audio as chunks arrive.
+
+    def _on_chunk_level(self, level_db: float, audio_time: float) -> None:
+        """One chunk's level, on the main thread: detection, then ring-out tracking — the per-chunk entry.
+
+        Swift ``onChunkLevel`` (the body of its rmsLevelHandler hop), the web's ``processAudioFrame``;
+        tests feed audio through it (#17 F50 item 3). ``onRmsLevelChanged`` and then ``trackDecayFast``,
+        both with THIS chunk's audio time. Ring-out tracking runs after detection, so a tap confirmed
+        on this chunk records the chunk into its new ring-out, and outside detection's guards, so it
+        runs on past the measurement's completion — the window it measures. It gates itself on
+        is_tracking_decay. It used to run inside _on_rms_level_changed, before detection (#17 F50).
+        """
+        self._on_rms_level_changed(level_db, audio_time)
+        self.track_decay_fast(level_db, audio_time)
 
     # ------------------------------------------------------------------ #
     # is_detecting property — mirrors Swift @Published var isDetecting
@@ -1462,32 +1513,6 @@ class TapToneAnalyzer(
         """
         self._material_spectra = spectra
         self.materialSpectraChanged.emit(spectra)
-
-    # ------------------------------------------------------------------ #
-    # Processing thread management
-    # ------------------------------------------------------------------ #
-
-    def recreate_proc_thread(self):
-        """Destroy the current processing thread and create a fresh one.
-
-        Applies the current calibration to the analyzer.
-        FftCanvas calls this when it needs to reset all processing state
-        (e.g. after the analyzer was already running and the user presses Start
-        again).
-
-        Returns the new proc_thread (_FftProcessingThread) so FftCanvas can
-        reconnect signals.
-
-        Python-only — Swift achieves equivalent reset via AVAudioEngine stop/start.
-        """
-        from .realtime_fft_analyzer import _FftProcessingThread as _FPT
-        self.mic.proc_thread = _FPT(mic=self.mic, parent=self)
-        self.mic.set_calibration(self._calibration_corrections,
-                                 profile=self._calibration_profile)
-        # Reconnect the Qt signals on the new thread for UI delivery.
-        self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
-        self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
-        return self.mic.proc_thread
 
     # ------------------------------------------------------------------ #
     # Mode Override

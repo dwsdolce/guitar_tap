@@ -435,7 +435,6 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
 
         self.saved_path: str = ""
-        self._ring_out_s: float | None = None
         self._is_running: bool = False
         self._is_paused: bool = False
         self._is_measurement_complete: bool = False
@@ -2197,8 +2196,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Every load, from any caller, brings the view along — Swift re-renders reactively.
         canvas.measurementLoadStarting.connect(self._on_measurement_load_starting)
         canvas.measurementLoaded.connect(self._on_measurement_loaded)
-        canvas.ringOutMeasured.connect(self.set_ring_out)
-        canvas.ringOutMeasured.connect(self._on_ring_out_measured)
+        # The Ring-Out box follows the analyzer's one value, as Swift's view does `currentDecayTime`: a
+        # live measurement, a new tap clearing it, a loaded measurement's — every change arrives here.
+        canvas.currentDecayTimeChanged.connect(self.set_ring_out)
         canvas.tapCountChanged.connect(self.set_tap_count)
         # Re-evaluate the status-bar tap count / progress whenever detection arms or disarms.
         # Swift gets this free (isDetecting is @Published, so the status bar re-renders); Python
@@ -2402,7 +2402,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_plate_phase_ui()
         self._update_tap_buttons()
 
-    def set_ring_out(self, time_s: float) -> None:
+    def set_ring_out(self, time_s: "float | None") -> None:
+        if time_s is None:
+            self._gs_ro_value.setText("Waiting\u2026")
+            self._gs_ro_quality.setText("")
+            return
         self._gs_ro_value.setText(f"{time_s:.2f}s")
         gt = TDS.measurement_type().guitar_type or _GTy.GENERIC
         self._gs_ro_quality.setText(_ext.decay_quality_label(time_s, gt))
@@ -3323,9 +3327,6 @@ class MainWindow(QtWidgets.QMainWindow):
             TapDisplaySettings.set_dump_capture_audio(False)
             return True
         return False  # Cancel
-
-    def _on_ring_out_measured(self, time_s: float) -> None:
-        self._ring_out_s = time_s
 
     # ================================================================
     # Peak select / deselect all
@@ -4639,11 +4640,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 canvas.analyzer.set_material_spectra(_phase_spectra)
         else:
             canvas._emit_loaded_peaks_at_threshold()
-
-        # ── Restore ring-out widget ───────────────────────────────────────────
-        self._ring_out_s = m.decay_time
-        if m.decay_time is not None:
-            self.set_ring_out(m.decay_time)
 
         # ── Restore analysis settings sliders/spinners ────────────────────────
         # load_measurement() already wrote the model attrs; read them back to

@@ -115,7 +115,6 @@ class TestTapDetectionSlots:
         TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
         sut = _make_sut()
         sut.tap_detection_threshold = -40.0
-        sut.hysteresis_margin = 5.0
         sut.warmup_start_audio_time = -2.0
         sut.just_exited_warmup = False
         return sut

@@ -65,7 +65,6 @@ def _make_guitar_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
     sut = TapToneAnalyzer()
     sut.number_of_taps = number_of_taps
     sut.tap_detection_threshold = -40.0
-    sut.hysteresis_margin = 5.0
     # Defeat warm-up guard
     sut.warmup_start_audio_time = -2.0
     sut.just_exited_warmup = False

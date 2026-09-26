@@ -733,8 +733,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
     def _emit_input_appears_dead(self, dead: bool) -> None:
         """Emit the dead-input edge on the processing thread's signal.
 
-        Guarded because the thread is torn down and rebuilt around a recovery
-        restart, so the watchdog can tick while proc_thread is briefly absent.
+        Guarded in case the mic has no processing thread. The thread is created once, in the mic's
+        ``__init__``, and is not torn down or replaced by a recovery restart.
         """
         thread = getattr(self, "proc_thread", None)
         if thread is not None:

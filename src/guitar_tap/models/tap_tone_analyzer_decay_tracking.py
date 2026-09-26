@@ -11,8 +11,8 @@ Architecture:
     The continuous FFT operates on a long window (≈ 400 ms), delivering
     only about 1 update per second — too coarse for accurate decay timing.
     Decay tracking uses the per-chunk RMS level: track_decay_fast() is
-    called from _on_rms_level_changed() once per audio chunk (~43 Hz,
-    every ~23 ms) — the SAME audio-thread RMS path that drives tap detection,
+    called from _on_chunk_level() once per audio chunk (~43 Hz,
+    every ~23 ms), after tap detection — the SAME per-chunk RMS path that drives it,
     which carries each chunk's audio-clock timestamp. The ring-out is therefore
     measured in audio time and does not drift when the main thread is starved
     under load (mirrors Swift, which routes decay through rmsLevelHandler).
@@ -100,7 +100,7 @@ class TapToneAnalyzerDecayTrackingMixin:
 
     def track_decay_fast(self, input_level: float, audio_time: float) -> None:
         """Fast-path decay tracker called once per audio chunk (~43 Hz) from
-        _on_rms_level_changed().
+        _on_chunk_level(), after detection.
 
         Appends the current input_level to peak_magnitude_history (stamped with the chunk's AUDIO
         time) and trims entries older than 5 seconds.  When enough history is present it calls

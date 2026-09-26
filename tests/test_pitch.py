@@ -284,3 +284,20 @@ class TestFormattedNote:
 
         s_flat = _pitch.formatted_note(438.0)
         assert "-" in s_flat, f"Flat note should show '-'; got: {s_flat}"
+
+
+class TestNoPitch:
+    """A frequency with no pitch — 0 Hz, negative, NaN, infinite — gets "no pitch" from every method,
+    and none of them raises. log2(0) used to raise for a peak at 0 Hz (#17 F50 item 14). Mirrors Swift
+    PitchTests aFrequencyWithNoPitch_getsNoPitch."""
+
+    @pytest.mark.parametrize("frequency", [0.0, -5.0, float("nan"), float("inf")])
+    def test_a_frequency_with_no_pitch_gets_no_pitch(self, frequency):
+        p = Pitch(440.0)
+        assert not p.has_pitch(frequency)
+        assert p.note(frequency) == ""
+        assert p.cents(frequency) == 0
+        assert p.freq0(frequency) == 0
+        assert p.pitch_range(frequency) == (0.0, 0.0)
+        assert p.formatted_note(frequency) == ""
+        assert p.is_in_tune(frequency) is False

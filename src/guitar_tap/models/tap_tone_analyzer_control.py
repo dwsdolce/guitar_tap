@@ -461,7 +461,7 @@ class TapToneAnalyzerControlMixin:
             self.detection_state = DetectionState.IDLE
 
         # Reset the warmup timer so the new engine session starts cleanly.
-        # Mirrors Swift: analyzerStartTime = Date().
+        # Mirrors Swift: warmupStartAudioTime = fftAnalyzer.audioElapsed.
         self.warmup_start_audio_time = self._audio_now()
 
         # Pre-set is_above_threshold = True so the first FFT frame does not fire a
@@ -597,8 +597,8 @@ class TapToneAnalyzerControlMixin:
 
         No-op when not paused.
         Mirrors Swift resumeTapDetection() guard: detectionState == .paused.
-        Resets the warm-up timer inline (mirrors Swift analyzerStartTime = Date();
-        isAboveThreshold = false) without calling the full reset_tap_detector().
+        Resets the warm-up timer (mirrors Swift warmupStartAudioTime = fftAnalyzer.audioElapsed;
+        isAboveThreshold = false).
         """
         if self.detection_state is not DetectionState.PAUSED:
             return
@@ -606,9 +606,12 @@ class TapToneAnalyzerControlMixin:
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
         # Reset warm-up timer to prevent an immediate false trigger on the first frame.
-        # Mirrors Swift: analyzerStartTime = Date(); isAboveThreshold = false
+        # Mirrors Swift: warmupStartAudioTime = fftAnalyzer.audioElapsed; isAboveThreshold = false
         self.warmup_start_audio_time = self._audio_now()
         self.is_above_threshold = False
+        # The tap confirmation restarts: a chunk counted before the pause must not help confirm a tap
+        # after it, or a single loud chunk could fire one (#17 F50 item 13, the web's behaviour).
+        self.detect_tap_consecutive_above = 0
 
         # Resume accumulating audio after pause — mirrors Swift resumeTapDetection.
         self._is_session_recording = True
@@ -824,6 +827,9 @@ class TapToneAnalyzerControlMixin:
         # The decay will naturally fall below threshold, then the real first tap
         # attack will produce the genuine rising edge.
         self.is_above_threshold = skip_warmup
+        # A new sequence starts its tap confirmation from zero: a chunk counted before it cannot help
+        # confirm its first tap (#17 F50 item 13, the web's behaviour).
+        self.detect_tap_consecutive_above = 0
         self.just_exited_warmup = False  # Will be set True as warm-up ends.
 
         # Reset the warm-up timer for this new sequence.

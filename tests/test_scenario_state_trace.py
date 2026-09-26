@@ -76,7 +76,6 @@ def _make_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
     sut = TapToneAnalyzer()
     sut.number_of_taps = number_of_taps
     sut.tap_detection_threshold = -40.0
-    sut.hysteresis_margin = 5.0
     sut.warmup_start_audio_time = -2.0
     sut.just_exited_warmup = False
     TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
@@ -109,7 +108,7 @@ def _after_capture_window(sut: TapToneAnalyzer) -> None:
 
 # Every tap goes through the real finish_guitar_gated_capture, and the waits are the real ones — the tap
 # cooldown before re-arming, the capture window before averaging — measured, as the app measures them, in
-# AUDIO fed through _on_rms_level_changed (#19). The traces used to assign the "tap
+# AUDIO fed through _on_chunk_level (#19). The traces used to assign the "tap
 # happened" state by hand, so their capture rows recorded what the TEST wrote; and S3/S4's postTap1 said
 # detection was back on the instant a tap was captured, a path the app never takes (#17 F46). These
 # traces are identical in Swift, Python and web.

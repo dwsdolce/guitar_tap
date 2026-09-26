@@ -139,6 +139,16 @@ class _FftProcessingThread(QtCore.QThread):
     For file playback, ``process_file_data`` calls ``process_raw_samples``
     inline without using this thread or the queue.
 
+    It also carries the pipeline's Qt signals (``fftFrameReady``, ``rmsLevelChanged``,
+    ``gatedCaptureComplete`` and the rest): ``RealtimeFFTAnalyzer`` is not a QObject, so it cannot own
+    signals, and this thread object does. So the object is created once, with the mic, and never
+    replaced: a replacement would start with no connections. And each ``connect()`` ADDS a receiver, so
+    connecting a signal twice delivers every emission twice (#17 F44). Both are guarded by the pipeline
+    cases in ``tests/test_tap_detection.py``.
+
+    The object holds no processing state: only its stop and drain events, and its signals. The input
+    buffer and the peak hold live on the mic and are cleared by ``reset_state()``.
+
     Python-only: Swift uses AVAudioEngine taps on the main audio graph rather
     than a separate QThread.
     """

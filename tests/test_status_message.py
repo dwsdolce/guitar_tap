@@ -74,7 +74,6 @@ def _make_sut(number_of_taps: int = 1,
     sut = TapToneAnalyzer()
     sut.number_of_taps = number_of_taps
     sut.tap_detection_threshold = -40.0
-    sut.hysteresis_margin = 5.0
     sut.warmup_start_audio_time = -2.0  # past the warm-up window
     sut.just_exited_warmup = False
     TapDisplaySettings.set_measurement_type(measurement_type)

@@ -194,7 +194,7 @@ class FftCanvas(pg.PlotWidget):
     peaksChanged: QtCore.Signal = QtCore.Signal(np.ndarray)
     framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
     newSample: QtCore.Signal = QtCore.Signal(bool)
-    ringOutMeasured: QtCore.Signal = QtCore.Signal(float)
+    currentDecayTimeChanged: QtCore.Signal = QtCore.Signal(object)  # ring-out seconds, or None
     tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)  # (captured, total)
     detectionStateChanged: QtCore.Signal = QtCore.Signal(object)  # new DetectionState
     readyForDetectionChanged: QtCore.Signal = QtCore.Signal(bool)  # engine ready for detection
@@ -459,7 +459,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.tapCountChanged.connect(self.tapCountChanged)
         self.analyzer.detectionStateChanged.connect(self.detectionStateChanged)
         self.analyzer.readyForDetectionChanged.connect(self.readyForDetectionChanged)
-        self.analyzer.ringOutMeasured.connect(self.ringOutMeasured)
+        self.analyzer.currentDecayTimeChanged.connect(self.currentDecayTimeChanged)
         self.analyzer.devicesChanged.connect(self.devicesChanged)
         self.analyzer.currentDeviceLost.connect(self.currentDeviceLost)
         self.analyzer.plateStatusChanged.connect(self.plateStatusChanged)
@@ -506,9 +506,6 @@ class FftCanvas(pg.PlotWidget):
         # Threshold lines — use InfiniteLine so labels stay in view when panned
         _peak_y: int = self.threshold_y
         _tap_y: int  = _as.AppSettings.tap_threshold() - 100
-        # Hysteresis margin is a hardcoded constant (3.0 dB) — no longer
-        # user-configurable.
-        _hyst: float = 3.0
 
         # Label opts: anchors are (x, y) where x=0 left-align, x=1 right-align;
         #             y=0 text below position, y=1 text above position.
@@ -536,7 +533,6 @@ class FftCanvas(pg.PlotWidget):
         # State kept so set_tap_threshold remains well-defined for the
         # analyzer-side mirror, even though no chart element reflects it.
         self._tap_threshold_y: int = _tap_y
-        self._hysteresis_margin: float = _hyst
 
         # Mode band overlays
         self._mode_band_items: list = []
@@ -646,9 +642,6 @@ class FftCanvas(pg.PlotWidget):
         # Start the microphone (always running; processing thread gated by start_analyzer())
         self.mic.start()
 
-        # Connect processing thread signals.  The thread is owned by the mic
-        # (RealtimeFFTAnalyzer) and accessed via self.analyzer.mic.proc_thread.
-        self._connect_proc_thread_signals()
         # Apply the initial calibration to the analyzer if one was loaded above.
         self.analyzer.mic.set_calibration(
             self.analyzer._calibration_corrections,
@@ -782,22 +775,12 @@ class FftCanvas(pg.PlotWidget):
         cy = (y_range[0] + y_range[1]) / 2
         self._overlay_label.setPos(cx, cy)
 
-    def _connect_proc_thread_signals(self) -> None:
-        """Connect proc_thread signals to FftCanvas slots.
-
-        fftFrameReady is connected inside TapToneAnalyzer.start() and
-        recreate_proc_thread() — not here.  The analyzer owns that wiring.
-        """
-        self.analyzer.mic.proc_thread.finished.connect(self._on_proc_thread_finished)
-
-    def _on_proc_thread_finished(self) -> None:
-        """Called when the processing thread exits (after stop_analyzer)."""
-        pass  # placeholder for future cleanup if needed
-
     def start_analyzer(self) -> None:
         """Start the processing thread and hide the idle overlay.
 
-        Called on initial startup (thread not yet running).  The model-layer
+        Called only when the thread is NOT running: at startup, on the first file playback if it has not
+        started yet, and from restart_tap_sequence if it has died. Nothing stops the thread before
+        shutdown, so it is never started twice while running. The model-layer
         auto-start (analyzer.start() → start_tap_sequence()) has already
         run by this point, so this method only manages thread lifecycle
         and UI overlay.
@@ -810,12 +793,6 @@ class FftCanvas(pg.PlotWidget):
         # start_tap_sequence() is NOT called here — it was already called
         # by analyzer.start() during init, matching Swift's start() which
         # auto-starts a tap sequence via DispatchQueue.main.async.
-        if self.analyzer.mic.proc_thread.isRunning():
-            self.analyzer.mic.proc_thread.stop()
-            self.analyzer.mic.proc_thread.wait(500)
-            # Recreate thread on the mic (RealtimeFFTAnalyzer owns it) to reset all state.
-            self.analyzer.recreate_proc_thread()
-            self._connect_proc_thread_signals()
         self.analyzer.mic.proc_thread.reset_state()
         self.analyzer.mic.proc_thread.start()
 
@@ -839,13 +816,6 @@ class FftCanvas(pg.PlotWidget):
         # Reset ring buffer so stale pre-tap audio doesn't contaminate the new sequence.
         # reset_state() is safe to call on a running thread.
         self.analyzer.mic.proc_thread.reset_state()
-
-    def stop_analyzer(self) -> None:
-        """Stop the processing thread and show the idle overlay."""
-        self.analyzer.mic.proc_thread.stop()
-        self._center_overlay()
-        self._overlay_label.setText("Stopped")
-        self._overlay_label.setVisible(True)
 
     def shutdown(self) -> None:
         """Stop the audio stream and processing thread and wait for it to exit.
@@ -1054,10 +1024,6 @@ class FftCanvas(pg.PlotWidget):
     # ------------------------------------------------------------------ #
     # Tap detector / sequence control (delegates to analyzer)
     # ------------------------------------------------------------------ #
-
-    def reset_tap_detector(self) -> None:
-        """Public wrapper to reset the tap detector state machine."""
-        self.analyzer.reset_tap_detector()
 
     @property
     def chart_title(self) -> str:

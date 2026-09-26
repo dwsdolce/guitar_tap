@@ -1,7 +1,7 @@
 # @parity tooling/audio-clock-feed
 """Advance the analyzer's AUDIO clock the way audio does.
 
-Chunk by chunk through the production entry point, ``_on_rms_level_changed(level_db, audio_time)``.
+Chunk by chunk through the production entry point, ``_on_chunk_level(level_db, audio_time)``.
 The tap lifecycle's rests, the FLC hold and the capture window run on that clock (#19), so a test
 that used to wait out a wall-clock delay now feeds the audio that delay covers — the same path
 playback and the microphone take.
@@ -25,4 +25,4 @@ def advance_audio(sut, seconds: float, level: float = -90.0) -> None:
     t = sut.last_audio_time
     while t < target:
         t = min(t + AUDIO_FEED_CHUNK_SECONDS, target)
-        sut._on_rms_level_changed(level, t)
+        sut._on_chunk_level(level, t)

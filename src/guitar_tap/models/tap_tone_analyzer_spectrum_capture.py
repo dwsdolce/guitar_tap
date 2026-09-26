@@ -1,5 +1,5 @@
 # @parity dsp/spectrum-average
-# @parity dsp/gated-capture
+# @parity dsp/gated-capture tests=test/file-playback,test/tap-decisions
 # @parity dsp/gated-fft tests=test/gated-fft
 """
 TapToneAnalyzer+SpectrumCapture — gated-FFT capture pipeline for plate/brace
@@ -975,9 +975,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             pre_onset_samples: Number of silence samples to include before the onset.
 
         Returns:
-            A ``window_size``-length list[float] (or ndarray, same as input) with
-            the onset at index ``pre_onset_samples``, or the original buffer
-            unchanged if onset detection fails.
+            A ``window_size``-length float32 ndarray with the onset at index ``pre_onset_samples``. If
+            the buffer is too short to estimate the noise, or no onset is found, the first
+            ``window_size`` samples, zero-padded — still ``window_size`` long, so the tap reaches the
+            transform at the same length as every other: the same bin grid, so a phase's taps average
+            bin for bin, and the same window gain (the Hann spans the padded length, so its gain depends
+            on how much of it the audio fills). This returned the buffer unchanged, a different length
+            (#17 F50 item 12).
         """
         import math
 
@@ -988,8 +992,15 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         arr = np.asarray(samples, dtype=np.float32)
         n = int(arr.shape[0])
 
+        def leading_window():
+            """The fallback: the first window_size samples, zero-padded (see Returns)."""
+            out = np.zeros(window_size, dtype=np.float32)
+            count = min(n, window_size)
+            out[:count] = arr[:count]
+            return out
+
         if n < self.ONSET_NOISE_ESTIMATE_SAMPLES:
-            return samples  # buffer too short for noise estimation
+            return leading_window()  # buffer too short for noise estimation
 
         # 1. Estimate noise floor from the first N samples (pre-onset silence).
         noise_region = arr[: self.ONSET_NOISE_ESTIMATE_SAMPLES]
@@ -1005,13 +1016,13 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         abs_arr = np.abs(arr)
         above = np.where(abs_arr > threshold)[0]
         if above.size == 0:
-            # No onset found (noise-only capture) — return unchanged.
+            # No onset found (noise-only capture) — the start of the buffer, window-sized.
             _td_align(
                 "onsetAlign",
                 f"NO_ONSET | noiseRMS={noise_rms:.6f} "
                 f"threshold={threshold:.6f} len={n}",
             )
-            return samples
+            return leading_window()
 
         onset = int(above[0])
 

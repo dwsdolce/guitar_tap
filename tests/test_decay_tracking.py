@@ -7,7 +7,7 @@ Mirrors Swift DecayTrackingTests test suite (DK1–DK7).
 
 All tests operate directly on TapToneAnalyzer's state; no audio hardware
 or real timing is involved.  TapToneAnalyzer() is constructible without
-audio hardware (Part 5).
+audio hardware.
 
 NOTE: timestamps are the AUDIO clock (seconds since engine start) — plain floats carried with each
       sample, matching Swift. History tuples are (audio_time, magnitude). Fixed constants (100.0)
@@ -166,3 +166,29 @@ class TestDecayTracking:
             "Sample should be appended when tracking is active"
         assert sut.current_decay_time is None, \
             "current_decay_time stays None when decay_tap_audio_time is not set"
+
+
+class TestRingOutReachesTheView:
+    """The measured ring-out reaches the Ring-Out box. Python-only: Swift's view observes its
+    `@Published currentDecayTime` and the web's its snapshot; Python's box listens to
+    currentDecayTimeChanged, which the current_decay_time property emits. The box's old signal,
+    ringOutMeasured, was emitted by nothing after 2026-04-05, so a live tap left it "Waiting…" (#17 F50).
+    """
+
+    def test_a_measured_ring_out_reaches_the_view_and_a_new_tap_clears_it(self):
+        sut = _make_sut()
+        seen: list = []
+        sut.currentDecayTimeChanged.connect(seen.append)
+
+        sut.start_decay_tracking(tap_audio_time=0.0)
+        # The ring-out: 12 chunks falling 2 dB each from -10 dB, fed through the per-chunk entry.
+        for k in range(1, 13):
+            sut._on_chunk_level(-10.0 - 2.0 * k, 0.05 * k)
+        QtWidgets.QApplication.processEvents()
+        assert sut.current_decay_time is not None, "the ring-out was measured"
+        assert seen and seen[-1] == sut.current_decay_time, "the measured ring-out reached the view"
+
+        sut.start_decay_tracking(tap_audio_time=1.0)   # the next tap
+        assert sut.current_decay_time is None
+        assert seen[-1] is None, "a new tap puts the box back to Waiting…"
+

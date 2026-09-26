@@ -19,7 +19,7 @@ Algorithm Overview:
 Reference: https://www.johndcook.com/blog/2016/02/10/musical-pitch-notation/
 """
 
-from math import log2
+from math import isfinite, log2
 from math import pow as mpow
 
 
@@ -70,6 +70,16 @@ class Pitch:
 
     # MARK: - Pitch Calculation
 
+    @staticmethod
+    def has_pitch(frequency: float) -> bool:
+        """Whether *frequency* has a pitch at all: a finite, positive number of hertz.
+
+        A frequency that has none — 0 Hz, a negative value, NaN, infinity — gets "no pitch" from every
+        method here: an empty note name, 0 cents, 0 Hz, a (0, 0) range, not in tune. It used to reach
+        ``log2(0)``, which raises (#17 F50 item 14). Mirrors Swift Pitch.hasPitch(_:).
+        """
+        return isfinite(frequency) and frequency > 0
+
     def pitch(self, frequency: float) -> tuple[int, int]:
         """Return the note index (0–11) and octave number closest to the given frequency.
 
@@ -77,10 +87,13 @@ class Pitch:
         6 = F#, 7 = G, 8 = G#, 9 = A, 10 = A#, 11 = B.
 
         - Parameter frequency: The frequency to analyse, in Hz.
-        - Returns: A tuple (note, octave) identifying the nearest equal-temperament pitch.
+        - Returns: A tuple (note, octave) identifying the nearest equal-temperament pitch;
+          (0, 0) for a frequency with no pitch (has_pitch).
 
         Mirrors Swift Pitch.pitch(frequency:).
         """
+        if not self.has_pitch(frequency):
+            return 0, 0
         # Count half-steps above C0; rounding snaps to the nearest semitone.
         half_steps = int(round(12 * log2(frequency / self.c0)))
         octave = half_steps // 12
@@ -100,8 +113,10 @@ class Pitch:
           deleting them changed 648 bound values across C0-B8 by at most 1.15e-16 relative.
           See SLUG-SWEEP.md F13.
 
-        Mirrors Swift Pitch.pitchRange(frequency:).
+        Mirrors Swift Pitch.pitchRange(frequency:). (0, 0) for a frequency with no pitch.
         """
+        if not self.has_pitch(frequency):
+            return 0.0, 0.0
         note, octave = self.pitch(frequency)
 
         if self.cents(frequency) >= 0:
@@ -116,8 +131,10 @@ class Pitch:
         - Parameter frequency: The frequency to analyse, in Hz.
         - Returns: A string such as "A4" or "C#3".
 
-        Mirrors Swift Pitch.note(frequency:).
+        Mirrors Swift Pitch.note(frequency:). Empty for a frequency with no pitch.
         """
+        if not self.has_pitch(frequency):
+            return ""
         n, octave = self.pitch(frequency)
         return f"{self._note_names[n]}{octave}"
 
@@ -130,8 +147,10 @@ class Pitch:
         - Parameter frequency: The frequency to analyse, in Hz.
         - Returns: The exact frequency in Hz of the nearest note.
 
-        Mirrors Swift Pitch.freq0(frequency:).
+        Mirrors Swift Pitch.freq0(frequency:). 0 for a frequency with no pitch.
         """
+        if not self.has_pitch(frequency):
+            return 0.0
         n, octave = self.pitch(frequency)
         return self.freq(note=n, octave=octave)
 
@@ -158,8 +177,10 @@ class Pitch:
         - Returns: Cents offset in the range −50 to +50 (100 cents = 1 semitone).
           Negative means flat; positive means sharp.
 
-        Mirrors Swift Pitch.cents(frequency:).
+        Mirrors Swift Pitch.cents(frequency:). 0 for a frequency with no pitch.
         """
+        if not self.has_pitch(frequency):
+            return 0.0
         n, octave = self.pitch(frequency)
         f0 = self.freq(note=n, octave=octave)
         # 1200 × log₂ gives the interval in cents between f0 (ideal) and frequency (measured).
@@ -175,8 +196,10 @@ class Pitch:
         - Parameter frequency: The frequency to format, in Hz.
         - Returns: A human-readable pitch-and-deviation string.
 
-        Mirrors Swift Pitch.formattedNote(frequency:).
+        Mirrors Swift Pitch.formattedNote(frequency:). Empty for a frequency with no pitch.
         """
+        if not self.has_pitch(frequency):
+            return ""
         note_str = self.note(frequency)
         c = self.cents(frequency)
         sign = "+" if c >= 0 else ""
@@ -190,6 +213,8 @@ class Pitch:
           - threshold: Maximum absolute cents deviation considered "in tune".  Defaults to 10 cents.
         - Returns: True when |cents| ≤ threshold.
 
-        Mirrors Swift Pitch.isInTune(frequency:threshold:).
+        Mirrors Swift Pitch.isInTune(frequency:threshold:). False for a frequency with no pitch.
         """
+        if not self.has_pitch(frequency):
+            return False
         return abs(self.cents(frequency)) <= threshold

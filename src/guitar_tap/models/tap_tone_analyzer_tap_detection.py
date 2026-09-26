@@ -60,7 +60,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.current_tap_count: int               (via Published)
         self.tap_progress: float                  (via Published)
         self.status_message: str                  (via Published)
-        self.tap_detection_level: float           (via Published)
     """
 
     # ------------------------------------------------------------------ #
@@ -190,8 +189,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # before anything counts, so the gate was removed in all three editions.
 
 
-        # Update detection-level indicator (mirrors Swift tapDetectionLevel).
-        self.tap_detection_level = effective_rising
 
         # Hysteresis: rising edge ALSO requires N consecutive chunks above
         # the rising threshold to confirm — mirrors the audio-queue level
@@ -212,15 +209,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             # Currently latched above — apply falling-threshold hysteresis.
             if level <= effective_falling:
                 # Falling edge.
-                if (
-                    self.current_tap_count > 0
-                    and self.current_tap_count < self.number_of_taps
-                ):
-                    TAP_DEBUG("detectTap",
-                        f"SIGNAL SETTLED | tap {self.current_tap_count}/{self.number_of_taps}"
-                        f" — signal dropped below falling threshold"
-                    )
-                    self._set_status_message(self._guitar_loop_status(capturing=False))
                 TAP_DEBUG("detectTap",
                     f"FALLING EDGE | peakMag={level:.2f} "
                     f"fallingThresh={effective_falling:.2f} — signal settled, ready for next tap"
@@ -655,14 +643,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.last_audio_time = audio_time
         self.last_chunk_level_db = level_db
         self.last_chunk_wall_time = time.monotonic()
-        ran_actions = self._run_due_audio_actions()
-
-        # Fast path: decay tracking at the per-chunk RMS rate (~43 Hz), run regardless of detection
-        # state (its own is_tracking_decay guard gates it, and the post-tap window must keep updating
-        # even once the measurement is complete). Stamped with THIS chunk's audio_time so the ring-out
-        # is measured in audio time (load-invariant). Mirrors Swift rmsLevelHandler -> trackDecayFast.
-        self.track_decay_fast(self._current_input_level_db, audio_time)
-        if ran_actions:
+        if self._run_due_audio_actions():
             return
 
         if self.mic and getattr(self.mic, 'is_playing_file', False):
@@ -750,19 +731,3 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         falling_threshold = self.tap_detection_threshold - self.hysteresis_margin
         self.is_above_threshold = self.last_chunk_level_db > falling_threshold
         self.detection_state = DetectionState.LISTENING
-
-    # ------------------------------------------------------------------ #
-    # reset_tap_detector — mirrors Swift analyzerStartTime = Date() reset
-    # ------------------------------------------------------------------ #
-
-    def reset_tap_detector(self) -> None:
-        """Restart warmup — mirrors Swift analyzerStartTime = Date().
-
-        Called after device change, new tap sequence, resume, cancel.
-        Equivalent to the Swift pattern of setting analyzerStartTime = Date()
-        to restart the warmup window from now.
-        """
-        self.is_above_threshold = False
-        self.just_exited_warmup = True
-        self.warmup_start_audio_time = self._audio_now()
-        TAP_DEBUG("reset_tap_detector", "reset_tap_detector called — warmup restarted")
