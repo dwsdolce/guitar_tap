@@ -248,11 +248,11 @@ class TestDisplayModeTransitions:
 
 
 # ---------------------------------------------------------------------------
-# Extended stub for Phase 2 tests (requires extra signals + persistence stub)
+# Extended stub for the save/load tests (requires extra signals + persistence stub)
 # ---------------------------------------------------------------------------
 
 class _FullStubAnalyzer(_StubAnalyzer):
-    """Extends _StubAnalyzer with persistence capture for Phase 2 inspection."""
+    """Extends _StubAnalyzer with persistence capture for save/load inspection."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -296,11 +296,11 @@ def _make_measurement_with_peaks(
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — resolved_mode_peaks helper
+# resolved_mode_peaks helper
 # ---------------------------------------------------------------------------
 
 class TestResolvedModePeaks:
-    """Mirrors Swift TapToneAnalyzerResolvedModePeaksTests (Phase 1)."""
+    """Mirrors Swift TapToneAnalyzerResolvedModePeaksTests."""
 
     def test_returns_empty_for_no_peaks(self):
         """No peaks → empty dict."""
@@ -358,11 +358,11 @@ class TestResolvedModePeaks:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 — save_comparison / load comparison record
+# save_comparison / load comparison record
 # ---------------------------------------------------------------------------
 
 class TestSaveComparison:
-    """Mirrors Swift ComparisonSaveLoadTests (Phase 2)."""
+    """Mirrors Swift ComparisonSaveLoadTests."""
 
     def test_save_comparison_creates_record(self):
         """save_comparison() appends a measurement with is_comparison == True."""
@@ -515,7 +515,7 @@ class TestMultiTapToSavedComparisonTransition:
 
 
 # ---------------------------------------------------------------------------
-# Phase 6b — definitive modes persisted in a comparison (mode_peak_ids)
+# Definitive modes persisted in a comparison (mode_peak_ids)
 # ---------------------------------------------------------------------------
 #
 # A comparison MEASUREMENT aggregates other measurements, so their override context is not otherwise
@@ -548,7 +548,7 @@ def _cmp_round_trip(m):
 
 
 class TestComparisonDefinitiveModes:
-    """Phase 6b: ComparisonEntry.mode_peak_ids — the definitive Air/Top/Back stored as a
+    """ComparisonEntry.mode_peak_ids — the definitive Air/Top/Back stored as a
     self-describing {mode name: peak id} map. Mirrors Swift ComparisonModePersistenceTests."""
 
     def test_comparison_reflects_source_override(self):
@@ -649,7 +649,7 @@ class TestComparisonDefinitiveModes:
 
 
 # ---------------------------------------------------------------------------
-# CP-U9 / CP-U10 — a comparison overlay stands the detector down (#17 F31)
+# CP-U9 / CP-U10 — a comparison overlay stands the detector down
 # ---------------------------------------------------------------------------
 
 
@@ -658,7 +658,7 @@ class TestComparisonDisarmsDetection:
 
     Left armed, the analysis loop keeps overwriting the displayed peaks from live audio
     underneath the overlay, and a tap captures and completes a measurement the user never
-    sees being made — which is what a run-review of #17 F30 found in the shipping app.
+    sees being made.
 
     Uses a real TapToneAnalyzer rather than the stub above, because the behaviour under test
     IS the detection-state property. Mirrors Swift CP-U9/CP-U10 and web's pair.

@@ -40,10 +40,9 @@ class TapToneAnalyzerControlMixin:
         override pattern.
         """
         self._latest_real_status = message
-        # Resolve through the ONE precedence rule rather than re-deciding here.  This used to test
-        # `is_clipping` inline and ignore `input_appears_dead` entirely, so any status write while
-        # the input was dead dropped the "no audio" warning -- where Swift's $statusMessage sink
-        # calls applyStatusOverrides() on every write and keeps it (#17 F37).
+        # Resolve through the ONE precedence rule rather than re-deciding here, so a status write
+        # while the input is dead keeps the "no audio" warning -- as Swift's $statusMessage sink
+        # calls applyStatusOverrides() on every write and keeps it.
         #
         # The emit is UNCONDITIONAL, unlike _apply_status_overrides()'s: Swift's @Published fires on
         # every write regardless of equality, and the view's slot re-applies the status COLOUR,
@@ -93,10 +92,9 @@ class TapToneAnalyzerControlMixin:
         the single source for these strings.
 
         Three callers, which is the point: start_tap_sequence() (which sets the phase before the
-        status), the phase advances in accept_current_phase(), and _armed_prompt().  They used to
-        hold two sets of literals -- the advance said "Rotate 90deg and tap for fC" while the armed
-        derivation said "Ready for fC tap" -- so resuming or changing the tap count silently
-        reworded the instruction the user was following (#17 F37).
+        status), the phase advances in accept_current_phase(), and _armed_prompt().  One set of
+        literals for all three, so resuming or changing the tap count never rewords the instruction
+        the user is following.
 
         The fL branch is count-aware, because that is the phase whose prompt names the tap count and
         the only phase where the Taps spinner is still unlocked.  Mirrors Swift materialArmPrompt().
@@ -121,13 +119,11 @@ class TapToneAnalyzerControlMixin:
     def _status_after_settle(self) -> "str | None":
         """The status to restore when a device/route-change settle ends, or None to leave it alone.
 
-        The settle used to CHOOSE between two strings (the tap prompt when detecting, "Ready"
-        otherwise), which is wrong in both directions: mid-sequence it said "Tap the guitar 3
-        times…" when a tap was already captured, and on a finished measurement it replaced
-        "Analysis complete! N peaks…" with "Ready". The status is a function of state, so derive it
-        rather than guessing — and say nothing where the status is a RESULT announcement rather than
-        a live prompt, because a completed or loaded measurement's status is not re-derivable and
-        must not be thrown away. Mirrors Swift statusAfterSettle() (#17 F33).
+        The status is a function of state, so it is derived rather than chosen from a fixed pair —
+        mid-sequence it reflects the taps already captured, and a finished measurement keeps its
+        "Analysis complete! N peaks…". It says nothing where the status is a RESULT announcement
+        rather than a live prompt, because a completed or loaded measurement's status is not
+        re-derivable and must not be thrown away. Mirrors Swift statusAfterSettle().
         """
         from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
 
@@ -144,7 +140,7 @@ class TapToneAnalyzerControlMixin:
             # rotated the plate, and a redo's "Ready for fC tap - tap again" is a different, equally
             # correct string for the same phase.  Preserve it, exactly as a completed measurement's
             # announcement is preserved.  Guitar's prompt IS a function of count and total, both of
-            # which the analyzer holds, so it is still derived (#17 F37).
+            # which the analyzer holds, so it is still derived.
             from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds2
             if not _tds2.measurement_type().is_guitar:
                 return None
@@ -155,7 +151,7 @@ class TapToneAnalyzerControlMixin:
         """The status to show when a settle ends, given what it said before the settle began.
 
         The whole decision in one pure function, so every edition can pin it. Mirrors Swift
-        restoredStatus(before:) (#17 F33).
+        restoredStatus(before:).
         """
         derived = self._status_after_settle()
         return derived if derived is not None else before
@@ -203,7 +199,7 @@ class TapToneAnalyzerControlMixin:
         """The status that SHOULD be displayed: dead input, then clipping, then the analyzer's own.
 
         The precedence itself, with no assignment and no signal, so the write path and the override
-        toggles share one rule instead of each deciding (#17 F37).
+        toggles share one rule instead of each deciding.
         """
         if getattr(self, "input_appears_dead", False):
             return self.DEAD_INPUT_STATUS
@@ -469,10 +465,9 @@ class TapToneAnalyzerControlMixin:
         # Mirrors Swift: isAboveThreshold = true.
         self.is_above_threshold = True
 
-        # Blank only if a LIVE spectrum is on screen. `display_mode == LIVE` was the old test and
-        # it is wrong: no completion path sets FROZEN, so a finished measurement is still LIVE and
-        # was being wiped. is_measurement_complete is the field that actually says whether what you
-        # are looking at is a result. Mirrors Swift wasShowingLive / is_settling (#17 F35).
+        # Blank only if a LIVE spectrum is on screen. `display_mode == LIVE` is not that test: a
+        # finished measurement is still LIVE. is_measurement_complete is the field that says whether
+        # what you are looking at is a result. Mirrors Swift wasShowingLive / is_settling.
         was_showing_live = (not self.is_measurement_complete
                             and self.display_mode != _ADM.COMPARISON)
         if was_showing_live:
@@ -485,15 +480,14 @@ class TapToneAnalyzerControlMixin:
 
         # Remember what the status said BEFORE the transient replaces it. When the settle ends,
         # _status_after_settle() returns None for the states whose status is a result announcement
-        # rather than a prompt — and "leave it alone" has to mean restoring THIS, not leaving the
-        # transient up forever, which is what it meant on the first pass (#17 F33).
+        # rather than a prompt — and "leave it alone" means restoring THIS, not leaving the
+        # transient up.
         #
-        # _latest_real_status, NOT status_message: the latter is the OVERRIDE-RESOLVED string, so a
-        # route change while the input is clipping or dead preserved the warning sentinel and fed it
-        # back through _set_status_message() as though the analyzer had set it -- which then stored
-        # the sentinel AS the real status, so clearing the condition restored the warning.  The
-        # override layer re-resolves on its own, so the real status is what has to survive the
-        # settle (#17 F37).
+        # _latest_real_status, NOT status_message: the latter is the OVERRIDE-RESOLVED string, and
+        # during a route change while the input is clipping or dead it holds the warning sentinel;
+        # fed back through _set_status_message() it would be stored AS the real status, so clearing
+        # the condition would restore the warning.  The override layer re-resolves on its own, so
+        # the real status is what has to survive the settle.
         self._status_before_settle = self._latest_real_status
         # Mirrors Swift: statusMessage = "Audio device changed - reinitializing...".
         self._set_status_message("Audio device changed - reinitializing...")
@@ -547,7 +541,7 @@ class TapToneAnalyzerControlMixin:
         self.is_ready_for_detection = True
 
         # Mirrors Swift: detectionState / statusMessage restore block. Derive the status from the
-        # state we are now in, and leave it alone where it is a result announcement (F33).
+        # state we are now in, and leave it alone where it is a result announcement.
         if was_detecting:
             self.detection_state = DetectionState.LISTENING
         before = getattr(self, "_status_before_settle", None) or "Ready"
@@ -610,7 +604,7 @@ class TapToneAnalyzerControlMixin:
         self.warmup_start_audio_time = self._audio_now()
         self.is_above_threshold = False
         # The tap confirmation restarts: a chunk counted before the pause must not help confirm a tap
-        # after it, or a single loud chunk could fire one (#17 F50 item 13, the web's behaviour).
+        # after it, or a single loud chunk could fire one. The web behaves the same.
         self.detect_tap_consecutive_above = 0
 
         # Resume accumulating audio after pause — mirrors Swift resumeTapDetection.
@@ -625,6 +619,72 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
     # Tap sequence management
     # ------------------------------------------------------------------ #
+
+    def play_file(self, path: str, calibration_path: "str | None" = None,
+                  on_finished: "Callable[[], None] | None" = None) -> None:
+        """Play an audio file through the live pipeline — the Play File action.
+
+        Plays with the calibration file given for it, or with no calibration (never the live input's),
+        arms a fresh tap sequence, then starts the file; the calibration in effect before is restored
+        when playback ends. The view
+        calls this; so do the file-playback regressions, which therefore run the path users take.
+        Mirrors Swift ``TapToneAnalyzer.playFile(url:calibrationURL:completion:)``.
+
+        The warm-up is decided by the MEASUREMENT TYPE, not by "is this a file". Guitar skips it: an
+        externally recorded file may put the tap inside the first 0.5 s, and guitar uses the absolute
+        threshold, never the noise floor. Material (plate/brace) runs it: it is the only mode on the
+        relative noise-floor detector, and the warm-up is what establishes that floor — skipping it
+        collapses ``rising`` onto ``tap_detection_threshold``. A saved session WAV always contains its
+        warm-up.
+
+        ``start_tap_sequence`` runs BEFORE ``start_from_file``, as in Swift: ``start_from_file`` tears the
+        engine down (stops the stream, drains the processing queue, clears the input buffer) before any
+        file audio flows, so the armed detector cannot fire on stale mic audio.
+
+        Args:
+            path:             Filesystem path to the audio file.
+            calibration_path: The calibration of the microphone the file was recorded with, or None to
+                              play uncalibrated. A file that cannot be parsed is logged and the
+                              playback is uncalibrated.
+            on_finished:      Called after playback has ended and the calibration is restored.
+        Raises:
+            Exception: If the audio file cannot be read.
+        """
+        from guitar_tap.models import microphone_calibration as _mc
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+
+        # The playback uses the file's calibration, or none. The microphone the file was recorded with is
+        # unknown, so the live input's calibration never applies to it.
+        previous = (self._calibration_profile, self._calibration_corrections, self._active_calibration_name)
+        playback_calibration = None
+        if calibration_path:
+            try:
+                playback_calibration = _mc.MicrophoneCalibration.from_path(calibration_path)
+            except Exception as exc:  # noqa: BLE001 — an unreadable calibration file must not stop playback
+                gt_log(f"⚠️ Could not parse calibration file: {exc}")
+        self.set_temporary_calibration(playback_calibration)
+
+        def _restore_calibration() -> None:
+            profile, corrections, name = previous
+            self._calibration_profile = profile
+            self._calibration_corrections = corrections
+            self._active_calibration_name = name
+            if corrections is not None:
+                self.mic.set_calibration(corrections, profile=profile)
+            else:
+                self.mic.set_calibration(None)
+
+        def _finished() -> None:
+            _restore_calibration()
+            if on_finished is not None:
+                on_finished()
+
+        self.start_tap_sequence(skip_warmup=_tds.measurement_type().is_guitar)
+        try:
+            self.start_from_file(path, on_finished=_finished)
+        except Exception:
+            _restore_calibration()
+            raise
 
     def start_from_file(self, path: str,
                         on_finished: "Callable[[], None] | None" = None) -> None:
@@ -681,7 +741,7 @@ class TapToneAnalyzerControlMixin:
         self._update_frequency_bins()
 
     # @parity state/tap-tone-analyzer
-    def start_tap_sequence(self, skip_warmup: bool = False, initial_phase=None) -> None:
+    def start_tap_sequence(self, skip_warmup: bool = False) -> None:
         """Begin a new tap detection sequence, resetting all per-sequence state.
 
         Mirrors Swift startTapSequence() including:
@@ -767,7 +827,7 @@ class TapToneAnalyzerControlMixin:
             self._session_recording_buffer = []
             self._session_checkpoints = [0]
             self._is_session_recording = True
-            self._session_pre_roll_active = True  # bound the pre-first-tap audio to ~2 s (§6)
+            self._session_pre_roll_active = True  # bound the pre-first-tap audio to ~2 s
             self._session_recording_sample_rate = (
                 self._mpm_sample_rate if self._mpm_sample_rate > 0 else 48000.0
             )
@@ -791,19 +851,16 @@ class TapToneAnalyzerControlMixin:
         self.peak_magnitude_history = []
         self._reset_decay_tracking()
 
-        # Initialise plate/brace phase state (mirrors Swift resetMaterialPhaseState(to: newPhase)).
-        # If initial_phase is provided (used by playFileForTesting for phase-targeted
-        # plate testing), use it instead of the default .capturingLongitudinal.
-        if is_plate or is_brace:
-            new_phase = initial_phase if initial_phase is not None else _MTP.CAPTURING_LONGITUDINAL
-        else:
-            new_phase = _MTP.NOT_STARTED
-        self._reset_material_phase_state(to=new_phase)
+        # Reset material phase state: a material sequence starts at its first phase (mirrors Swift
+        # resetMaterialPhaseState(to:)).
+        self._reset_material_phase_state(
+            to=_MTP.CAPTURING_LONGITUDINAL if (is_plate or is_brace) else _MTP.NOT_STARTED
+        )
 
         # Clear annotation offsets so dragged positions reset for the new measurement.
         self.reset_all_annotation_offsets()
 
-        # Clear ALL per-peak state from the PREVIOUS measurement (Phase 7). These are keyed by the old
+        # Clear ALL per-peak state from the PREVIOUS measurement. These are keyed by the old
         # peaks' UUIDs, so once the peaks are replaced they are invisible on screen — but they would
         # otherwise be written verbatim into the NEXT measurement's saved file. A new sequence starts
         # with no selection, no manual labels and no dragged offsets. Mirrors Swift startTapSequence.
@@ -828,7 +885,7 @@ class TapToneAnalyzerControlMixin:
         # attack will produce the genuine rising edge.
         self.is_above_threshold = skip_warmup
         # A new sequence starts its tap confirmation from zero: a chunk counted before it cannot help
-        # confirm its first tap (#17 F50 item 13, the web's behaviour).
+        # confirm its first tap. The web behaves the same.
         self.detect_tap_consecutive_above = 0
         self.just_exited_warmup = False  # Will be set True as warm-up ends.
 
@@ -848,7 +905,7 @@ class TapToneAnalyzerControlMixin:
 
         # Set context-appropriate status message (mirrors Swift startTapSequence).
         # The material phase was set above, so the prompt is READ from it rather than rebuilt here
-        # -- one source for these strings (#17 F37).  A phase-targeted start (file playback)
+        # -- one source for these strings.  A phase-targeted start (file playback)
         # consequently announces the phase it actually begins in instead of always announcing fL.
         if is_brace or is_plate:
             self._set_status_message(self._material_arm_prompt())
@@ -895,11 +952,8 @@ class TapToneAnalyzerControlMixin:
         already captured" branch.  The tap-count spinner is disabled the moment a sequence has a
         tap -- ``setEnabled(not (captured > 0 and not complete))``, matching Swift's
         ``.disabled(currentTapCount > 0 && !isMeasurementComplete)`` -- so the count simply cannot
-        change mid-sequence; to change it you cancel first.  The branch that used to live here was
-        therefore unreachable, and being unreachable it had silently drifted three ways: Swift
-        deferred processing by ``captureWindow`` and averaged ALL captured taps, this method
-        finalised synchronously and TRUNCATED to the new count, and the web never implemented it at
-        all.  Removed rather than reconciled (OUT-5) -- reachable behaviour is unchanged.
+        change mid-sequence; to change it you cancel first.  Such a branch would be unreachable,
+        and an unreachable branch drifts between editions unnoticed.
 
         If a mid-sequence count change is ever wanted, unlock the spinner and define the semantics
         deliberately -- do not resurrect an implicit finalise.
@@ -920,10 +974,10 @@ class TapToneAnalyzerControlMixin:
         # `current_tap_count`, not `len(captured_taps)`: the latter is the WITHIN-PHASE buffer,
         # cleared at every material phase completion, so it read zero at the start of every plate
         # phase rather than only at the start of the measurement.  current_tap_count is the
-        # cumulative count -- the same field the spinner lock reads, so the guard and the lock now
-        # agree.  And `_armed_prompt()`, not `_tap_prompt()`: the latter is the GUITAR prompt, so
-        # changing Taps at the start of a plate or brace sequence wrote "Tap the guitar 3 times..."
-        # over "Ready for fL tap (×3 each for L, C)" (#17 F36).
+        # cumulative count -- the same field the spinner lock reads, so the guard and the lock
+        # agree.  And `_armed_prompt()`, not `_tap_prompt()`: the latter is the GUITAR prompt, and
+        # changing Taps at the start of a plate or brace sequence must keep the material prompt
+        # ("Ready for fL tap (×3 each for L, C)").
         if self.is_detecting and self.current_tap_count == 0:
             self._set_status_message(self._armed_prompt())
 
@@ -989,7 +1043,7 @@ class TapToneAnalyzerControlMixin:
             self.is_above_threshold = level > falling
             self.warmup_start_audio_time = self._audio_now()
             self.detection_state = DetectionState.LISTENING
-            # Phase is CAPTURING_CROSS -- one source for the string (#17 F37).
+            # Phase is CAPTURING_CROSS -- one source for the string.
             self._set_status_message(self._material_arm_prompt())
 
         elif phase == _MTP.REVIEWING_CROSS:
@@ -997,9 +1051,9 @@ class TapToneAnalyzerControlMixin:
                 # Advance to FLC waiting then capturing.
                 # Mirrors Swift: set WAITING_FOR_FLC_TAP and status message first,
                 # then transition to CAPTURING_FLC and clear frozen spectrum inside
-                # the hold's closure (tap_cooldown of AUDIO, #19).
+                # the hold's closure (tap_cooldown of AUDIO).
                 self._set_material_tap_phase(_MTP.WAITING_FOR_FLC_TAP)
-                # Phase is WAITING_FOR_FLC_TAP -- one source for the string (#17 F37).
+                # Phase is WAITING_FOR_FLC_TAP -- one source for the string.
                 self._set_status_message(self._material_arm_prompt())
                 self.after_audio(self.tap_cooldown, self._do_start_flc)
             else:
@@ -1037,7 +1091,7 @@ class TapToneAnalyzerControlMixin:
                 if len(self._session_recording_buffer) > phase_start:
                     del self._session_recording_buffer[phase_start:]
                     # Redoing the FIRST phase empties the buffer back to the pre-first-tap state,
-                    # so re-arm the bounded pre-roll (§6). Later phases keep the latch frozen.
+                    # so re-arm the bounded pre-roll. Later phases keep the latch frozen.
                     if phase_start == 0:
                         self._session_pre_roll_active = True
 
@@ -1046,8 +1100,6 @@ class TapToneAnalyzerControlMixin:
         if phase == _MTP.REVIEWING_LONGITUDINAL:
             # Clear longitudinal data only.
             self.longitudinal_spectrum = None
-            self.longitudinal_peaks = []
-            self.auto_selected_longitudinal_peak_id = None
             self.selected_longitudinal_peak = None
             self.captured_taps.clear()
             self.current_tap_count = 0
@@ -1060,8 +1112,6 @@ class TapToneAnalyzerControlMixin:
         elif phase == _MTP.REVIEWING_CROSS:
             # Clear cross data only — longitudinal stays.
             self.cross_spectrum = None
-            self.cross_peaks = []
-            self.auto_selected_cross_peak_id = None
             self.selected_cross_peak = None
             self.captured_taps.clear()
             # Mirrors Swift: lCount = (longitudinalSpectrum != nil) ? numberOfTaps : 0
@@ -1080,8 +1130,6 @@ class TapToneAnalyzerControlMixin:
         elif phase == _MTP.REVIEWING_FLC:
             # Clear FLC data only — L and C stay.
             self.flc_spectrum = None
-            self.flc_peaks = []
-            self.auto_selected_flc_peak_id = None
             self.selected_flc_peak = None
             self.captured_taps.clear()
             # Mirrors Swift: lcCount = (longitudinalSpectrum != nil && crossSpectrum != nil) ? numberOfTaps * 2 : 0
@@ -1115,6 +1163,9 @@ class TapToneAnalyzerControlMixin:
         # lock and phase label reflect the correct state (mirrors Swift where
         # currentTapCount is @Published and the view re-renders automatically).
         self.tapCountChanged.emit(self.current_tap_count, self.number_of_taps)
+        # The redone phase's identified peak is gone: tell the view, so its dot and label go now
+        # (Swift's view re-reads materialIdentifiedPeaks on the change).
+        self._emit_peaks_array(self.peaks_above_peak_min)
 
         # Reset warm-up and re-arm detection.
         level = self._current_input_level_db
@@ -1134,12 +1185,6 @@ class TapToneAnalyzerControlMixin:
         """
         import numpy as _np
 
-        sel = self._resolved_plate_peaks(
-            cross_override=self.selected_cross_peak or (self.cross_peaks[0] if self.cross_peaks else None)
-        )
-        self.all_peaks = sel
-        self.selected_peak_ids = {p.id for p in sel}
-        self.selected_peak_frequencies = [p.frequency for p in sel]
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
 
         from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
@@ -1181,14 +1226,6 @@ class TapToneAnalyzerControlMixin:
         """
         import numpy as _np
 
-        sel = self._resolved_plate_peaks(
-            include_cross=True,
-            include_flc=True,
-            flc_override=self.selected_flc_peak or (self.flc_peaks[0] if self.flc_peaks else None),
-        )
-        self.all_peaks = sel
-        self.selected_peak_ids = {p.id for p in sel}
-        self.selected_peak_frequencies = [p.frequency for p in sel]
         self.set_frozen_spectrum(_np.array([]), _np.array([]))
 
         from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
@@ -1236,7 +1273,10 @@ class TapToneAnalyzerControlMixin:
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_peak_min_threshold(self.peak_min_threshold)
         # Notify the view the projection changed (peaks_above_peak_min is a plain attr, not @Published).
-        self.peaksChanged.emit(list(self.peaks_above_peak_min))
+        # The measurement's peaks: the projection (guitar) or the identified L/C/FLC (material).
+        self.peaksChanged.emit(list(
+            self.peaks_above_peak_min if _tds.measurement_type().is_guitar else self.material_identified_peaks
+        ))
 
     def set_fmin(self, fmin: int) -> None:
         self.update_axis(fmin, int(self.max_frequency))
@@ -1289,12 +1329,6 @@ class TapToneAnalyzerControlMixin:
         self.longitudinal_spectrum = None
         self.cross_spectrum = None
         self.flc_spectrum = None
-        self.longitudinal_peaks = []
-        self.cross_peaks = []
-        self.flc_peaks = []
-        self.auto_selected_longitudinal_peak_id = None
-        self.auto_selected_cross_peak_id = None
-        self.auto_selected_flc_peak_id = None
         self.selected_longitudinal_peak = None
         self.selected_cross_peak = None
         self.selected_flc_peak = None

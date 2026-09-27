@@ -176,8 +176,8 @@ class ComparisonEntry:
     # (the UUID references one of this entry's own `peaks`). Makes a saved comparison
     # self-describing: a reader reproduces the displayed table by looking each ID up in `peaks` —
     # no need to re-run classify_all, and no need for the source's override data (absent from this
-    # file). `None` on files written before Phase 6b; those are healed on decode and re-saved.
-    # Mirrors Swift ComparisonEntry.modePeakIDs ([String: UUID]?). (Phase 6b)
+    # file). `None` on older files that lack it; those are healed on decode and re-saved.
+    # Mirrors Swift ComparisonEntry.modePeakIDs ([String: UUID]?).
     mode_peak_ids: dict[str, str] | None = None
 
     @staticmethod
@@ -553,7 +553,7 @@ class TapToneMeasurement:
         (effective) mode is *mode*.
 
         Selection uses ``effective_selected_peak_ids`` (guitar: the saved selection, or all peaks when
-        none; material: all). By the Phase 5 invariant there is at most one definitive Air/Top/Back;
+        none; material: all). Selection keeps at most one definitive Air/Top/Back;
         ``max`` guards the legacy case. Mirrors Swift ``TapToneMeasurement.definitivePeak(for:)``.
         """
         from . import guitar_mode as gm
@@ -617,7 +617,6 @@ class TapToneMeasurement:
         solely because this model stores ``timestamp`` as an ISO-8601 string that must be parsed to
         integer seconds, whereas Swift's ``Date`` converts for free and its call sites invoke
         ``ExportFilename.stem`` directly. No divergent logic: the rule lives in ``export_stem``.
-        See FILE-PATHS-AND-NAMES-SPEC §2b.
         """
         from .export_filename import export_stem
         try:
@@ -626,7 +625,7 @@ class TapToneMeasurement:
             ts = 0
         return export_stem(self.measurement_name, ts, unnamed)
 
-    # ── Name validation (FILE-PATHS-AND-NAMES-SPEC §3) ──────────────────────
+    # ── Name validation ──────────────────────
     # @parity model/measurement-name tests=test/measurement-name
 
     @staticmethod
@@ -656,7 +655,7 @@ class TapToneMeasurement:
         the same thing for both. This edition stripped notes in the EDIT dialog but not on the SAVE
         path, so saving notes with surrounding whitespace and then reopening the edit dialog read as
         an edit of a field the user never touched. Every path that stores notes goes through here
-        now. Mirrors Swift ``normalizedNotes``. See SLUG-SWEEP.md F21.
+        now. Mirrors Swift ``normalizedNotes``.
         """
         trimmed = notes.strip()
         return trimmed or None
@@ -1083,12 +1082,11 @@ class TapToneMeasurement:
                 ]
                 healed = True
 
-        # --- Phase 6b: heal legacy comparison entries — fill the definitive mode→peak map ---
-        # Pre-6b saved comparisons stored no `modePeakIDs`, so their Air/Top/Back was re-derived
-        # positionally at render — and could not reflect a source measurement's override. Compute it
-        # once now from each entry's own selected peaks. Override-BLIND (an old file never wrote the
-        # source's overrides, so nothing better is recoverable), but it freezes what the old app
-        # showed and makes the file self-describing from here on. Mirrors Swift init(from:).
+        # --- Heal legacy comparison entries — fill the definitive mode→peak map ---
+        # A comparison entry with no `modePeakIDs` gets it computed here, once, from the entry's own
+        # selected peaks. Override-BLIND (such a file carries no source overrides, so nothing better
+        # is recoverable), and it makes the file self-describing once re-saved. Mirrors Swift
+        # init(from:).
         if comparison_entries:
             from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin as _PA
             for _e in comparison_entries:
@@ -1097,9 +1095,9 @@ class TapToneMeasurement:
                     _e.mode_peak_ids = ComparisonEntry.mode_id_map(_resolved)
                     healed = True
 
-        # --- Phase 6: heal the guitar DEFINITIVE selection (Air/Top/Back at most one each) ---
+        # --- Heal the guitar DEFINITIVE selection (Air/Top/Back at most one each) ---
         # Guitar only. A file with no saved selection is auto-selected (strongest per mode via the
-        # EFFECTIVE mode); a pre-Phase-5 file with >1 selected in a single-holder mode is pruned to the
+        # EFFECTIVE mode); a file with >1 selected in a single-holder mode is pruned to the
         # strongest. Same `healed` re-save contract as the duplicate heal. Mirrors Swift init(from:).
         _mt_raw = d.get("measurementType")
         if _mt_raw:

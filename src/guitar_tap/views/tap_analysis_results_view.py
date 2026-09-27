@@ -1453,7 +1453,7 @@ def export_pdf(data: PDFReportData, output_path: str) -> None:
 
 
 # ── Comparison Mode Support ────────────────────────────────────────────────────
-# The functions below mirror Swift's comparison export additions in Phase 2:
+# The functions below mirror Swift's comparison export:
 #   - renderSpectrumImageForComparison  (ExportableSpectrumChart.swift)
 #   - ComparisonPDFReportData           (PDFReportGenerator.swift)
 #   - generateComparison / ComparisonPDFReportContentView (PDFReportGenerator.swift)

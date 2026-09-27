@@ -1,6 +1,6 @@
 # @parity test/peaks
 """
-D3 + D5 + D6 of Development/PEAK-FINDING-DUPLICATE-PEAKS.md (GuitarTapWeb).
+The duplicate-peak defect: fixture regressions.
 
 Port of PeakFixtureRegressionTests.swift. Replays real captured spectra through
 ``find_peaks`` and pins the result against a golden baseline.

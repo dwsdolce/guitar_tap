@@ -310,34 +310,6 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self.peak_frequency = 0.0      # Mirrors Swift stop(): peakFrequency = 0
         self.stream.abort()
 
-    # MARK: - Event-loop pump helper
-
-    @staticmethod
-    def _pump_events_if_available() -> None:
-        """Pump the Qt event loop if called from the main thread.
-
-        Called between chunks in ``process_file_data`` so that
-        ``QTimer.singleShot`` callbacks (scheduled by ``_main_async_after``)
-        fire during file playback.
-
-        Only pumps when the caller is on the main thread (the test path,
-        where ``play_file_for_testing`` calls ``process_file_data`` inline).
-        When called from a background thread (the live UI's FilePlayback
-        worker), pumping is neither needed nor safe — the main thread's
-        event loop (``QApplication.exec()``) is already running and will
-        deliver QueuedConnection signals naturally.  Calling
-        ``processEvents()`` from a non-main thread races with the main
-        thread's timer infrastructure and causes a bus error.
-        """
-        try:
-            from PySide6 import QtCore, QtWidgets
-            app = QtWidgets.QApplication.instance()
-            if app is not None:
-                if QtCore.QThread.currentThread() is app.thread():
-                    app.processEvents()
-        except ImportError:
-            pass
-
     # MARK: - WAV File Playback (mirrors Swift startFromFile(_ url:))
 
     def process_file_data(
@@ -348,8 +320,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
     ) -> None:
         """Process pre-read mono audio through the FFT pipeline.
 
-        Data-processing core of ``start_from_file``, factored out so tests
-        can drive the pipeline without audio hardware.  The chunk-pacing
+        Data-processing core of ``start_from_file``; runs on its FilePlayback
+        worker thread.  The chunk-pacing
         loop, partial flush, and ``_on_pre_mic_restart`` call are included.
         Mic stop/restart and UI state management are NOT.
 
@@ -360,8 +332,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             sample_rate: Sample rate in Hz.
             file_name:   Display name for logging.
         """
-        # Playback is paced by one-chunk sleeps; keep the OS from throttling them for the whole run
-        # (#19). Mirrors Swift's `holdTimingActivity` / `defer releaseTimingActivity`.
+        # Playback is paced by one-chunk sleeps; keep the OS from throttling them for the whole run.
+        # Mirrors Swift's `holdTimingActivity` / `defer releaseTimingActivity`.
         from guitar_tap.utilities.timing_activity import hold_timing_activity, release_timing_activity
         timing_activity = hold_timing_activity("Guitar Tap file playback")
         try:
@@ -404,15 +376,9 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 self.process_raw_samples(chunk)
                 idx += chunksize
                 chunks_pumped += 1
-                # Sleep + pump the Qt event loop so QTimer.singleShot callbacks
-                # fire between chunks.  Mirrors Swift processFileData which uses
-                # Thread.sleep (blocking the background thread) while the main
-                # RunLoop concurrently pumps asyncAfter callbacks.
-                # When called from the main thread (tests), we must pump here;
-                # when called from a background thread (live UI), the main thread
-                # event loop pumps on its own.
+                # Pace at real time. Mirrors Swift processFileData, which Thread.sleeps the background
+                # thread while the main run loop delivers the asyncAfter callbacks.
                 time.sleep(chunk_duration)
-                self._pump_events_if_available()
             elapsed = time.time() - t0
             _td("file_playback",
                 f"END | chunksPumped={chunks_pumped} samplesPumped={idx} "
@@ -598,13 +564,15 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
             # Restart the PortAudio stream so the mic is live again.
             # Mirrors Swift try? self.start() in startFromFile's main.async block.
+            # A test instance has no stream to restart (Swift: `if !self.isForTesting { try? self.start() }`).
             _td("file_playback", "MIC_RESTART")
-            try:
-                with self._stop_lock:
-                    self.is_stopped = False
-                self.stream.start()
-            except Exception:
-                pass
+            if not self.is_for_testing:
+                try:
+                    with self._stop_lock:
+                        self.is_stopped = False
+                    self.stream.start()
+                except Exception:
+                    pass
             _td("file_playback", "MIC_RESTART_DONE")
 
             # Notify the caller (e.g. to restore freq axis after mic restart).
@@ -649,12 +617,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # start the user asked for.
         #
         # A watchdog RECOVERY must not stamp this: _last_signal_time means "signal was last
-        # OBSERVED", and a restart observes nothing.  Stamping it made the next tick read HEALTHY,
-        # which cleared the warning and reset the attempt streak, while the clean slate below
-        # cleared the exhausted latch -- so DEAD_INPUT_EXHAUSTED was unreachable and the stream
-        # restarted every 15 s forever, strobing the warning.  Found on a BlackHole 2ch virtual
-        # input during the #17 run-review; any permanently silent input does it.  Mirrors Swift
-        # start(isWatchdogRecovery:).
+        # OBSERVED", and a restart observes nothing.  Stamping it would make the next tick read
+        # HEALTHY, clearing the warning and resetting the attempt streak, while the clean slate below
+        # cleared the exhausted latch -- so DEAD_INPUT_EXHAUSTED would be unreachable and the stream
+        # would restart every 15 s forever, strobing the warning, on any permanently silent input
+        # (a BlackHole 2ch virtual input, for one).  Mirrors Swift start(isWatchdogRecovery:).
         if not is_watchdog_recovery:
             self._last_signal_time = time.monotonic()
             # A deliberate (re)start gets a clean slate: full recovery attempts again.
@@ -775,5 +742,5 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         except Exception as e:  # noqa: BLE001 — last-resort recovery, never raise
             gt_log(f"⚠️ Buffer watchdog: restart failed ({e})")
         self._is_recovering = False
-        # re-arm; only REAL signal clears the streak (#17)
+        # re-arm; only REAL signal clears the streak
         self.start_buffer_watchdog(is_watchdog_recovery=True)

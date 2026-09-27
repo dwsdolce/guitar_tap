@@ -3,7 +3,7 @@
 
 Used by the GFFT parity tests (test_gated_fft_parity.py) and by the self-regression runner
 (parity_runner.py), so both feed the transform the same samples by construction rather than by
-two copies kept in step (#17 F49).
+two copies kept in step.
 
 Mirrors Swift GuitarTapTests/GatedTestSignal.swift and web test/gatedSignal.ts.
 """

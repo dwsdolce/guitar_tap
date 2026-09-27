@@ -154,8 +154,8 @@ class TestStateInvariants:
 
     def test_V4_mid_multi_tap_sequence_holds_invariants(self):
         """Reached through the REAL capture path (finish_guitar_gated_capture), not by assigning
-        captured_taps / current_tap_count / detection_state by hand — that only tested the checker on
-        a state the test invented (#17 F45). Checked resting through the cooldown, and re-armed."""
+        captured_taps / current_tap_count / detection_state by hand, so the state checked is one the
+        app reaches. Checked resting through the cooldown, and re-armed."""
         sut = _make_sut(number_of_taps=3)
         sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # the capture's FFT engine
         sut.start_tap_sequence()
@@ -164,7 +164,7 @@ class TestStateInvariants:
         assert not sut.is_detecting, "detection rests through the tap cooldown"
         assert state_invariant_violation(sut) is None, "mid-sequence, resting"
 
-        advance_audio(sut, sut.tap_cooldown)   # the rest runs on the audio clock (#19)
+        advance_audio(sut, sut.tap_cooldown)   # the rest runs on the audio clock
         assert sut.is_detecting, "re-armed for the next tap once the cooldown has passed"
         assert state_invariant_violation(sut) is None, "mid-sequence, re-armed"
 
@@ -191,7 +191,7 @@ class TestStateInvariants:
 
     def test_V8_plate_review_phase_holds_invariants(self):
         """A plate capture reaches its REVIEW phase through the real gated path, and invariants hold
-        there — including I6, which no guitar case can reach (#17 F45)."""
+        there — including I6, which no guitar case can reach."""
         sut = _make_sut(number_of_taps=1, measurement_type=MeasurementType.PLATE)
         try:
             sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # gated-FFT engine
@@ -205,7 +205,7 @@ class TestStateInvariants:
         finally:
             TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
 
-    # V9–V13: each invariant REPORTS its forbidden state. V7 did this for I1 alone (#17 F45).
+    # V9–V13: each invariant REPORTS its forbidden state (V7 covers I1).
 
     def test_I2_paused_and_complete_is_flagged(self):
         sut = _make_sut()

@@ -1,6 +1,6 @@
 # @parity test/peak-heal
 """
-D8 of Development/PEAK-FINDING-DUPLICATE-PEAKS.md (GuitarTapWeb), section 7b.
+The duplicate-peak defect: healing files saved with a duplicate peak.
 
 Port of PeakDuplicateHealTests.swift.
 

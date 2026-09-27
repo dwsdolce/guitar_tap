@@ -373,7 +373,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
                         # state, and preferring it here showed a label this app's own writer
                         # would never save — a loaded file's stale label outlived the
                         # reclassification that replaced it. Swift derives at display time for
-                        # the same reason (MeasurementDetailView). See SLUG-SWEEP.md F15.
+                        # the same reason (MeasurementDetailView).
                         label = override or mode.display_name
                         row = _PeakRow(peak, mode, label, gt)
                     peaks_vbox.addWidget(row)

@@ -9,7 +9,6 @@ nothing would hand unchanged content a new identity, so the edit dialog must not
 These cases lived in test_measurement_codable.py, which is about serialisation; the amend rule is
 not a serialisation concern, and the web had no counterpart for it at all. Mirrors Swift
 GuitarTapTests/MeasurementAmendTests.swift and web test/measurement-amend.test.ts.
-See SLUG-SWEEP.md F20.
 """
 
 from __future__ import annotations
@@ -65,7 +64,7 @@ class TestIsAmended:
 
         This is the case that made the rule worth sharing. This edition stripped in the dialog but
         not on the save path, so notes saved with surrounding whitespace made Save light up the
-        moment the dialog opened, for a change the user never made. See SLUG-SWEEP.md F21.
+        moment the dialog opened, for a change the user never made.
         """
         m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge", notes="Some notes")
         name = TapToneMeasurement.normalized_name("  Bridge  ")

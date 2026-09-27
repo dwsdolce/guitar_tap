@@ -4,16 +4,11 @@
 Single source of truth (material_properties.py); the live view and the PDF both delegate to it.
 This is the exact bug the group guards: a copy drifts to a wrong hue with nothing to catch it.
 
-The values are ABSOLUTE, in all three editions, as of the #17 sweep. Swift used to resolve these
-from SwiftUI's semantic colours (.green, .mint, .blue, .orange, .red), which the OS supplies — so
-what Swift drew changed when Apple revised the palette, and macOS 26 did revise it: Swift moved to
-.blue = #0088FF and .orange = #FF8D28 while Python and the web went on pinning #007AFF and #FF9500.
-Three editions that all claimed to agree rendered two visibly different blues and oranges on the
-same white surface (the macOS app, this app, and the PDF report the web generates).
-
-Nothing caught it, because Swift's test asserted `color == .green` — a semantic identity that stays
-true whatever hue the OS hands back. Swift now pins `WoodQuality.hex` and these values are what all
-three editions compare. Mirrors Swift QualityColorsTests and web quality-colors.test.ts.
+The values are ABSOLUTE hex, in all three editions, not OS-supplied semantic colours
+(SwiftUI's .green, .blue, ...), whose hue changes when the OS revises its palette. A test of a
+semantic identity (`color == .green`) stays true whatever hue the OS hands back, so Swift pins
+`WoodQuality.hex` and these values are what all three editions compare. Mirrors Swift
+QualityColorsTests and web quality-colors.test.ts.
 """
 
 import os

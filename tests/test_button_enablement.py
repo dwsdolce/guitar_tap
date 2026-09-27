@@ -34,7 +34,7 @@ class TestButtonEnablement:
 
     def test_B1_guitar_disarmed_idle_new_tap_enabled(self):
         # Disarmed-idle guitar — nothing complete, nothing in flight (the Dump Capture Audio
-        # folder guard declined to arm, §4b, or the sub-frame before launch auto-arm). New
+        # folder guard declined to arm or the sub-frame before launch auto-arm). New
         # Tap is ENABLED so the user can re-arm; Pause and Cancel stay disabled.
         s = ButtonState(detection_state=DetectionState.IDLE, is_measurement_complete=False, display_mode=AnalysisDisplayMode.LIVE)
         assert button_rule(s) == ButtonOutput(

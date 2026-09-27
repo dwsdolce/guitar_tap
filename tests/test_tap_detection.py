@@ -9,10 +9,7 @@ arming the way the app does: ``start_tap_sequence()``, then the warm-up on quiet
 detector's state by hand. A tap has fired when a capture has started (``_gated_capture_active``) — the
 one effect a tap has in both capture kinds; cases about the detector's state read that state. The same
 cases, with the same numbers, are in Swift GuitarTapTests/TapDetectionTests.swift and web
-test/tap-decisions.test.ts (#17 F50 item 3).
-
-They used to call ``detect_tap`` directly with the warm-up, sync flag, detection state and latch set by
-hand, and with a hysteresis margin of 5 dB, which production never has (it is 3 in all three editions).
+test/tap-decisions.test.ts. The hysteresis margin is production's, 3 dB in all three editions.
 """
 
 from __future__ import annotations
@@ -118,8 +115,7 @@ class TestDetectorDecisions:
             "the tap's time is the confirming chunk's audio time"
 
     # T1c–T1e: the detector uses the threshold the APPLICATION configured — tap_detection_threshold, which
-    # the slider writes. The web once left it behind in the engine's config, so the slider went dead and
-    # detection sat at the -40 dB default (#17 F30).
+    # the slider writes, not a value left behind in the engine's config at the -40 dB default.
 
     def test_T1c_below_the_configured_threshold_does_not_fire(self):
         """T1c: a level below the configured threshold, but above the -40 default, is not a tap."""
@@ -243,9 +239,8 @@ class TestDetectorDecisions:
         assert not sut._gated_capture_active, "the sync chunk does not fire"
 
 
-    # The settle — the latched ring-out falling below the falling threshold — leaves the prompt alone.
-    # It used to rewrite it with the GUITAR loop status whatever the mode, so a plate's
-    # "fL tap 1/2 captured. Tap again..." became "Tap 1/2 captured. Tap again..." (#17 F50 item 7).
+    # The settle — the latched ring-out falling below the falling threshold — leaves the prompt alone,
+    # so a plate's "fL tap 1/2 captured. Tap again..." is never replaced by the GUITAR loop status.
 
     def test_settle_leaves_a_plate_prompt_alone(self):
         sut = _armed(-40.0, MeasurementType.PLATE)
@@ -280,7 +275,7 @@ class TestDetectorDecisions:
         assert not sut.is_above_threshold
         assert sut.status_message == prompt
 
-    # Arming and resuming (#17 F50 item 13). A new sequence seeds the noise floor from the current input
+    # Arming and resuming. A new sequence seeds the noise floor from the current input
     # level — here from a chunk, the way the level reaches the analyzer — and -100 when the warm-up is
     # skipped.
 
@@ -389,12 +384,10 @@ class TestOnsetAlignment:
 class TestPipelineDeliversOnceAndExact:
     """What the analyzer receives from the audio pipeline — through the real process_raw_samples.
 
-    Swift delivers each chunk's level once (rmsLevelHandler, called on the audio queue, hopping to
-    the main thread — as Python's now does, #19) and each FFT frame once (a Combine sink on the main
-    thread), both as Float dB. Python delivered both TWICE — a
-    direct callback plus a Qt signal — with the level truncated to a whole-dB integer on the way,
-    and a duplicate guard (on the level only) keyed to the mic's current sample count, which a late
-    queued copy could slip past, doubling the "N consecutive chunks" confirmation (#17 F44).
+    Each chunk's level arrives once (rmsLevelHandler, called on the audio queue, hopping to the
+    main thread) and each FFT frame once (a Combine sink on the main thread), both as unrounded
+    Float dB — in Swift and here. A second delivery would double the "N consecutive chunks"
+    confirmation.
 
     Python-only, because the risk is Python's: its outlets are Qt signals on its own processing thread,
     where each connect() ADDS a receiver and a replacement thread object would have none. Swift's
@@ -421,15 +414,14 @@ class TestPipelineDeliversOnceAndExact:
         chunk = self._tone(-37.6)
         expected = 20.0 * math.log10(float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2))))
         sut.mic.process_raw_samples(chunk)
-        QtWidgets.QApplication.processEvents()  # the level is queued to the main thread (#19)
+        QtWidgets.QApplication.processEvents()  # the level is queued to the main thread
         assert sut._current_input_level_db == pytest.approx(expected, abs=1e-9)
         assert abs(sut._current_input_level_db - (-38.0)) > 0.1, "truncated to whole dB"
 
     def test_detection_runs_on_the_main_thread_when_the_chunk_is_processed_off_it(self):
         """A chunk processed on another thread reaches detection on the MAIN thread, as Swift's does
-        (rmsLevelHandler hops with DispatchQueue.main.async). Detection used to run right there on the
-        processing thread, while a capture's finish arrived on the main thread, so the audio time seen
-        at a finish depended on thread timing (#19)."""
+        (rmsLevelHandler hops with DispatchQueue.main.async) — the thread a capture's finish arrives
+        on, so the audio time seen at a finish does not depend on thread timing."""
         import threading
         sut = self._sut()
         seen: list = []
@@ -464,11 +456,9 @@ class TestPipelineDeliversOnceAndExact:
         receiver the analyzer connected at construction in place, each once: the clipping warning, the
         dead-input warning, and the FFT frame.
 
-        The thread object carries the pipeline's Qt signals and is never replaced. It used to be replaced
-        on a restart, and only some receivers were connected to the new object, so the clipping and
-        dead-input warnings stopped reaching the analyzer — on a path the app never took, now removed
-        (#17 F50 item 8). FftCanvas opens the audio device when constructed, so the view's real
-        start_analyzer runs on a stand-in holding only what it uses.
+        The thread object carries the pipeline's Qt signals and is never replaced, so every receiver
+        connected at construction keeps reaching the analyzer. FftCanvas opens the audio device when
+        constructed, so the view's real start_analyzer runs on a stand-in holding only what it uses.
         """
         import numpy as np
         from types import SimpleNamespace

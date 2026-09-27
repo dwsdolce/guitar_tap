@@ -9,8 +9,6 @@ defect found on 2026-09-01 — a watchdog that stopped watching after giving up,
 the app deaf until relaunch even after the user fixed the microphone — is a single row
 of the truth table here, and a unit test would have caught it immediately.
 
-Calibration and incident history: hub ``docs/AUDIO-WATCHDOG-SILENT-STREAM.md``.
-
 @parity dead-input
 """
 

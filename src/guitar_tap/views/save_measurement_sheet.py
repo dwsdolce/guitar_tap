@@ -45,7 +45,7 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
 
-        # A name must be entered before Save is allowed (§3). The rule lives on the model so all
+        # A name must be entered before Save is allowed. The rule lives on the model so all
         # three platforms agree; the view only binds the button's enabled state to it.
         self._save_btn = btns.button(QtWidgets.QDialogButtonBox.StandardButton.Save)
         self._location_edit.textChanged.connect(self._update_save_enabled)

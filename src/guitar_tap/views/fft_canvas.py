@@ -744,9 +744,8 @@ class FftCanvas(pg.PlotWidget):
         from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
         if self.analyzer.is_measurement_complete:
             return (self.analyzer.frozen_frequencies, self.analyzer.frozen_magnitudes)
-        # A device/route change is settling — show nothing. This used to read back a blank the
-        # settle had written into the frozen arrays via display_mode = FROZEN; the settle now says
-        # so directly and leaves those arrays alone. Mirrors Swift displaySpectrum (#17 F35).
+        # A device/route change is settling — show nothing. The settle says so directly, through
+        # is_settling, and leaves the frozen arrays alone. Mirrors Swift displaySpectrum.
         if self.analyzer.is_settling:
             return (None, None)
         return (self.analyzer.freq, None)
@@ -1391,7 +1390,12 @@ class FftCanvas(pg.PlotWidget):
         self._minFreq = float(fmin)
         self._maxFreq = float(fmax)
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
-            self.analyzer.peaksChanged.emit(self.analyzer.peaks_above_peak_min)
+            # The measurement's peaks: the Peak-Min projection (guitar) or the identified L/C/FLC
+            # (material) — mirrors Swift's views reading the same two.
+            self.analyzer.peaksChanged.emit(
+                self.analyzer.peaks_above_peak_min if _tds.measurement_type().is_guitar
+                else self.analyzer.material_identified_peaks
+            )
         self.freqRangeChanged.emit(fmin, fmax)
 
     # ------------------------------------------------------------------ #
@@ -1696,7 +1700,10 @@ class FftCanvas(pg.PlotWidget):
         # (property setter, mirroring Swift peakMinThreshold.didSet). peaks_above_peak_min is a plain
         # attr, not @Published, so the view must be told explicitly. Safe here: display-only,
         # all other state already set (unlike the capture path).
-        self.analyzer.peaksChanged.emit(list(self.analyzer.peaks_above_peak_min))
+        self.analyzer.peaksChanged.emit(list(
+            self.analyzer.peaks_above_peak_min if _tds.measurement_type().is_guitar
+            else self.analyzer.material_identified_peaks
+        ))
 
         self.selected_point.setData(x=[], y=[])
         self.peakDeselected.emit()

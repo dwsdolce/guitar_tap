@@ -171,8 +171,7 @@ class TestDecayTracking:
 class TestRingOutReachesTheView:
     """The measured ring-out reaches the Ring-Out box. Python-only: Swift's view observes its
     `@Published currentDecayTime` and the web's its snapshot; Python's box listens to
-    currentDecayTimeChanged, which the current_decay_time property emits. The box's old signal,
-    ringOutMeasured, was emitted by nothing after 2026-04-05, so a live tap left it "Waiting…" (#17 F50).
+    currentDecayTimeChanged, which the current_decay_time property emits.
     """
 
     def test_a_measured_ring_out_reaches_the_view_and_a_new_tap_clears_it(self):

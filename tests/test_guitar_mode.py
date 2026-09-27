@@ -74,8 +74,7 @@ class TestGuitarModeClassification:
     def test_flamenco_top_190Hz(self):
         # Flamenco top=(180, 220). Corrected 2026-07-19: the old bands had top=(190, 250)
         # and back=(180, 240), i.e. the back range sitting BELOW the top range, which
-        # inverted Top/Back classification for flamenco only. See section 7c of
-        # Development/PEAK-FINDING-DUPLICATE-PEAKS.md (GuitarTapWeb).
+        # inverted Top/Back classification for flamenco only.
         assert GuitarMode.classify(190.0, GuitarType.FLAMENCO) == GuitarMode.TOP
 
     def test_flamenco_back_240Hz(self):
@@ -83,8 +82,7 @@ class TestGuitarModeClassification:
         assert GuitarMode.classify(240.0, GuitarType.FLAMENCO) == GuitarMode.BACK
 
     def test_flamenco_top_is_claimed_below_back(self):
-        # Regression guard for the inverted bands (section 7c of
-        # Development/PEAK-FINDING-DUPLICATE-PEAKS.md). Two peaks straddling the overlap must
+        # Regression guard for the inverted bands. Two peaks straddling the overlap must
         # resolve Top-below-Back, as on every other guitar type. Under the old bands
         # (top=(190,250), back=(180,240)) Back sorted first, so the "Back above Top" guard in
         # classify_all never fired and the STRONGEST peak was labelled Back.
@@ -202,10 +200,9 @@ class TestModeRange:
 class TestModeOverrideLabels:
     """Mirrors Swift ModeOverrideLabelsTests.
 
-    Added in the #17 sweep. from_mode_string is reachable from the override picker
-    (peak_card_widget offers both groups) and was tested in NO edition — which is how Python and
-    Swift came to disagree about one of the seven academic labels, and how the web port came to
-    lack the table entirely. See SLUG-SWEEP.md F11/F12.
+    from_mode_string is reachable from the override picker (peak_card_widget offers both
+    groups), and all three editions must agree on it: a label that resolves differently in one
+    edition puts a user's override on a different mode there.
     """
 
     def test_standard_display_names_resolve_to_their_own_mode(self):
@@ -221,7 +218,7 @@ class TestModeOverrideLabels:
             "Back T(1,1)_3":        GuitarMode.BACK,
             "Cross Dipole T(2,1)":  GuitarMode.DIPOLE,
             "Long Dipole T(1,2)":   GuitarMode.DIPOLE,
-            # Swift is canonical here. Python mapped Quadrapole to UPPER_MODES until #17.
+            # Swift is canonical here.
             "Quadrapole T(2,2)":    GuitarMode.RING_MODE,
             "Cross Tripole T(3,1)": GuitarMode.RING_MODE,
         }
@@ -252,10 +249,9 @@ class TestClassifyAll:
         """On equal magnitude the FIRST peak wins the band.
 
         All three editions agree — Swift's max(by:) and Python's max() both keep the first
-        maximal element, and web's loop replaces only on a strict >. Pinned during the #17
-        sweep because no edition pinned it: a tie-break that differed per edition would stay
-        invisible until a real measurement produced a tie, and would then move which peak is
-        "the Air peak" in one app and not the others.
+        maximal element, and web's loop replaces only on a strict >. Pinned because a tie-break
+        that differed per edition would stay invisible until a real measurement produced a tie,
+        and would then move which peak is "the Air peak" in one app and not the others.
         """
         first = _peak(95.0, mag=-20.0)
         second = _peak(100.0, mag=-20.0)

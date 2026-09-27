@@ -21,7 +21,7 @@ Plate/Brace mode — EMA-relative threshold on the RMS input level.
 Warmup is measured on the AUDIO clock (seconds of audio processed), not the wall clock, so it always
 covers the first `warmup_period` of AUDIO however long the setup before the first chunk took, and
 behaves identically whether playback is real-time paced or not.  So are the lifecycle's delays — the
-rests before re-arming, the FLC hold, the capture window (after_audio, #19).
+rests before re-arming, the FLC hold, the capture window (after_audio).
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.is_above_threshold: bool
         self.just_exited_warmup: bool
         self.warmup_start_audio_time: float | None   (AUDIO clock, not wall clock)
-        self.last_audio_time: float              (AUDIO clock seen by detection — #19)
+        self.last_audio_time: float              (AUDIO clock seen by detection)
         self.last_chunk_level_db: float          (level of that chunk)
         self.noise_floor_estimate: float          (dBFS)
         self.noise_floor_alpha: float             (EMA coefficient = 0.05)
@@ -88,13 +88,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             level: Current RMS input level in dBFS
                             (fftAnalyzer.inputLevelDB, ~43 Hz).
 
-                            This was previously named ``peak_magnitude``, which was wrong and actively
-                            misleading: it is the broadband RMS chunk level, never an FFT peak-bin
-                            magnitude.  (A genuine FFT peak does exist -- see ``on_fft_frame`` /
+                            The broadband RMS chunk level, never an FFT peak-bin magnitude.  (A
+                            genuine FFT peak does exist -- see ``on_fft_frame`` /
                             ``analyze_magnitudes`` -- but it drives peak ANALYSIS, not tap detection.)
-                            The old name cost real time during the OUT-4 investigation: it looked as
-                            though Swift and the web were detecting on entirely different signals.
-                            They are not -- all three platforms detect on the per-chunk RMS level.
+                            All three platforms detect on the per-chunk RMS level.
             audio_time:     The AUDIO clock value for THIS chunk (mic.audio_elapsed at the moment
                             the chunk was processed).  It travels WITH the sample rather than being
                             read here: the handler can be delivered across a thread hop and the audio
@@ -180,13 +177,11 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             # (The noise-floor re-anchor above stays; only the status write is gone — silent warm-up.)
             return
 
-        # No cooldown gate here. There used to be one — a crossing within tap_cooldown of the last tap,
-        # measured on the WALL clock, was ignored. In file playback a plate phase auto-advances and
-        # arms the next at once, so this edition, whose test harness processes audio inline, reached
-        # it and rejected the tail of the ring-out, while Swift, whose audio runs ahead of its main
-        # thread, reached the same audio after the gate had closed — the same audio decided two ways
-        # (#19). The auto-advance's own latch (is_above_threshold = True) already makes a ring-out fall
-        # before anything counts, so the gate was removed in all three editions.
+        # No cooldown gate here, in any of the three editions. A wall-clock gate would decide the same
+        # audio differently depending on how far the audio runs ahead of the main thread — after a
+        # plate phase auto-advances and arms the next at once, the tail of the ring-out would be
+        # rejected on one run and not on another. The auto-advance's own latch
+        # (is_above_threshold = True) already makes a ring-out fall before anything counts.
 
 
 
@@ -363,9 +358,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         """
         # Re-anchor the latch from the current level and listen again — and nothing else. The status
         # message was set when the tap was captured (the loop prompt) and stays as it is: Swift's
-        # scheduleGuitarReEnable and the web's touch only the latch and the detection state. This
-        # used to rewrite it here, and to show "Tap N/M captured. Waiting for settle..." while the
-        # level was still high — text neither other edition has (#17 F45).
+        # scheduleGuitarReEnable and the web's touch only the latch and the detection state.
         self._re_arm_from_current_chunk()
         with self._gated_lock:
             self._last_level_crossing_capture_id = -1
@@ -457,7 +450,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             f"Scheduling re-enable after cooldown={self.tap_cooldown}s"
         )
 
-        # tap_cooldown of AUDIO (#19).
+        # tap_cooldown of AUDIO.
         self.after_audio(self.tap_cooldown, self._do_reenable_detection)
 
     @Slot()
@@ -482,46 +475,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             f"isAboveThreshold={self.is_above_threshold} "
             f"isDetecting={self.is_detecting}"
         )
-
-    # ------------------------------------------------------------------ #
-    # combine_plate_peaks — mirrors Swift func combinePlatePeaks() -> [ResonantPeak]
-    # ------------------------------------------------------------------ #
-
-    def combine_plate_peaks(self) -> list:
-        """Merge longitudinal, cross-grain, and FLC peak arrays for combined display.
-
-        Cross and FLC peaks are deduplicated against previously added peaks using
-        a 5 Hz frequency tolerance, except that the auto-selected peak from each
-        phase is always included regardless of proximity to another peak.
-
-        Returns the merged peak list sorted by frequency (ascending).
-        Mirrors Swift func combinePlatePeaks() -> [ResonantPeak].
-        """
-        FREQUENCY_TOLERANCE: float = 5.0  # Hz
-
-        combined: list = list(self.longitudinal_peaks)
-
-        # Add cross-grain peaks, avoiding duplicates; always include the auto-selected one.
-        for cross_peak in self.cross_peaks:
-            is_auto = (cross_peak.id == self.auto_selected_cross_peak_id)
-            is_duplicate = any(
-                abs(existing.frequency - cross_peak.frequency) < FREQUENCY_TOLERANCE
-                for existing in combined
-            )
-            if is_auto or not is_duplicate:
-                combined.append(cross_peak)
-
-        # Add FLC peaks with the same deduplication logic.
-        for flc_peak in self.flc_peaks:
-            is_auto = (flc_peak.id == self.auto_selected_flc_peak_id)
-            is_duplicate = any(
-                abs(existing.frequency - flc_peak.frequency) < FREQUENCY_TOLERANCE
-                for existing in combined
-            )
-            if is_auto or not is_duplicate:
-                combined.append(flc_peak)
-
-        return sorted(combined, key=lambda p: p.frequency)
 
     # ------------------------------------------------------------------ #
     # on_fft_frame — main-thread FFT frame receiver
@@ -580,9 +533,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         # Emit spectrum for the view to draw.
         # A device/route change is settling: show nothing rather than the new device's
-        # not-yet-valid audio. This used to fall out of the settle writing display_mode = FROZEN
-        # with blank frozen arrays; the settle now says so directly and leaves the frozen arrays
-        # (a completed or loaded measurement's data) alone (#17 F35).
+        # not-yet-valid audio. The settle says so directly, through is_settling, and leaves the
+        # frozen arrays (a completed or loaded measurement's data) alone.
         if self.is_settling:
             self.spectrumUpdated.emit(np.array([]), np.array([]))
         elif self._display_mode == AnalysisDisplayMode.LIVE:
@@ -597,9 +549,8 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                 self.analyze_magnitudes(list(mag_y_db), list(self.freq), peak_db)
                 self.spectrumUpdated.emit(self.freq, mag_y_db)
         # COMPARISON: skip spectrum update — only overlay curves shown.
-        # There was a FROZEN branch here emitting the frozen arrays; it was redundant with the
-        # is_measurement_complete check above (a loaded or completed measurement is complete) and
-        # unreachable once the settle stopped writing FROZEN (#17 F35).
+        # A loaded or completed measurement is complete, so the is_measurement_complete check above
+        # is what shows its frozen arrays.
 
         self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
         peak_idx = int(np.argmax(mag_y_db))
@@ -615,9 +566,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         """Tap-detection driver for ALL modes at ~43 Hz from per-chunk RMS.
 
         Mirrors Swift's Combine sink on fftAnalyzer.$inputLevelDB which fires
-        every 1024 samples (~43 Hz).  Guitar mode now detects from RMS too —
-        previously it ran inside on_fft_frame at ~2.7 Hz which was coarser
-        than the inter-tap interval for files with closely-spaced taps.
+        every 1024 samples (~43 Hz).  Guitar mode detects from RMS too, not
+        from on_fft_frame, whose ~2.7 Hz rate is coarser than the inter-tap
+        interval for files with closely-spaced taps.
 
         For guitar mode the detected rising edge starts a gated raw-PCM
         capture (start_guitar_gated_capture) that retroactively assembles
@@ -627,17 +578,15 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             level_db:   Per-chunk RMS level in dBFS, exact (Swift ``levelDB``; −100 on true silence).
             audio_time: The AUDIO clock value for THIS chunk (see detect_tap).
 
-        Called ONCE per chunk, directly by process_raw_samples on the processing thread — Swift's
-        rmsLevelHandler on the audio queue. It used to be called twice (direct, plus the queued Qt
-        signal) and deduplicated by the mic's CURRENT sample count, which a late queued copy could
-        slip past — and it received the level truncated to whole dB (#17 F44).
+        Called ONCE per chunk, on the main thread, by _on_chunk_level — the body of Swift's
+        rmsLevelHandler hop — with the level as an unrounded float.
         """
 
         # Cache instantaneous level — mirrors Swift fftAnalyzer.inputLevelDB.
         self._current_input_level_db = level_db
 
         # Advance the analyzer's audio clock and run any lifecycle action this chunk makes due —
-        # before the guards, since a re-arm is what turns detection back on (#19). A chunk that made
+        # before the guards, since a re-arm is what turns detection back on. A chunk that made
         # an action due is not also detected on: a re-arm has just re-anchored the latch from it.
         # Mirrors Swift onRmsLevelChanged.
         self.last_audio_time = audio_time
@@ -659,7 +608,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.detect_tap(level, audio_time, self._current_mag_y_db, self.freq)
 
     # ------------------------------------------------------------------ #
-    # Audio-clock lifecycle timers (#19) — mirrors Swift afterAudio / runDueAudioActions
+    # Audio-clock lifecycle timers — mirrors Swift afterAudio / runDueAudioActions
     # ------------------------------------------------------------------ #
 
     def after_audio(self, delay: float, action, released_at_file_end: bool = False) -> None:
@@ -667,10 +616,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         The tap lifecycle's delays — the rest before re-arming, the FLC hold, the capture window — run
         on this clock, never the wall clock: file playback advances audio at "real time + processing
-        time", so a wall-clock delay covered a different stretch of audio on a slower run and late
-        captures in a sequence moved (#19). The action runs on the main thread from
-        _on_rms_level_changed, on the first chunk whose audio time reaches the due time. Like the
-        _main_async_after it replaces, it cannot be cancelled; each action guards itself.
+        time", so a wall-clock delay would cover a different stretch of audio on a slower run and move
+        late captures in a sequence. The action runs on the main thread from _on_rms_level_changed, on
+        the first chunk whose audio time reaches the due time. Like _main_async_after, it cannot be
+        cancelled; each action guards itself.
 
         Args:
             delay:                Seconds of AUDIO to wait.
@@ -709,10 +658,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         It exists for when the audio STOPS (the file ends, the user stops, the device drops), and then
         the audio clock stops too, so it cannot run on that clock. But it must not fire while audio is
-        merely slow: measured from the capture's START it did, when paced playback ran slower than real
-        time — which macOS timer throttling (App Nap) made 2–4× in this edition's test process — and
-        closed captures early (#19). Measured from the LAST chunk, it fires only when the audio has
-        really stopped. Stops checking once *relevant()* is false. Mirrors Swift afterAudioStall.
+        merely slow — paced playback can run 2–4× slower than real time under macOS timer throttling
+        (App Nap). So it is measured from the LAST chunk, not the capture's start, and fires only when
+        the audio has really stopped. Stops checking once *relevant()* is false. Mirrors Swift afterAudioStall.
         """
         def check() -> None:
             if not relevant():

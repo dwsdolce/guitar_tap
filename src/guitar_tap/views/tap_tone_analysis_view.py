@@ -186,7 +186,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         else:
             # Live capture: fixed per-phase slot rows (L, C, [FLC] for plate; fL for brace) —
             # the layout matches the final display, but a slot shows a dash + unselected bubble
-            # until its phase's peak is captured. See MATERIAL-RESULTS-PHASED-DISPLAY.md.
+            # until its phase's peak is captured.
             slots: list[tuple[str, float]] = [("L", self._long_freq)]
             if self._show_cross:
                 slots.append(("C", self._cross_freq))
@@ -1040,8 +1040,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # The label is kept as an attribute so it can be dimmed WITH the spinner. SwiftUI's
         # .disabled() propagates down the view tree, so Swift's `.disabledDimmed(tapCountLocked)`
         # greys the label, the value and the stepper as one field; Qt does not propagate to a
-        # sibling QLabel, so without this the word "Taps:" stayed crisp beside a greyed-out box —
-        # the label looking live while the thing it labels looked dead (#17, run-review).
+        # sibling QLabel, so without this the word "Taps:" would stay crisp beside a greyed-out
+        # box — the label looking live while the thing it labels looks dead.
         self.tap_num_label = _lbl("Taps:")
         hl.addWidget(self.tap_num_label)
         self.tap_num_spin = QtWidgets.QSpinBox()
@@ -1188,7 +1188,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addLayout(mic_row)
 
-        # Row 2: "Showing …" (left) + Deselect All / Reset buttons (right). No Select All (Phase 5).
+        # Row 2: "Showing …" (left) + Deselect All / Reset buttons (right). No Select All.
         freq_row = QtWidgets.QHBoxLayout()
         self.freq_range_label = QtWidgets.QLabel(
             f"Showing {f_range['f_min']} – {f_range['f_max']} Hz"
@@ -1199,7 +1199,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # qtawesome icons (not Qt's SP_Dialog* standard pixmaps — those render blank on the macOS
         # style, leaving the buttons invisible). Mirrors Swift xmark.circle (Select None). There is
         # deliberately no "Select All": Air, Top and Back can each have at most ONE definitive peak,
-        # so selecting "all" is meaningless (Phase 5).
+        # so selecting "all" is meaningless.
         self.deselect_all_btn = QtWidgets.QToolButton()
         self.deselect_all_btn.setIcon(qta.icon("fa5s.times-circle", color="gray"))
         self.deselect_all_btn.setIconSize(QtCore.QSize(14, 14))
@@ -2119,11 +2119,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # Select / deselect / reset-auto all peaks
         self.deselect_all_btn.clicked.connect(self._on_deselect_all_peaks)
         self.reset_auto_selection_btn.clicked.connect(self._on_reset_auto_selection)
-        # Route a user per-peak toggle through the analyzer (Phase 2 C) — mirrors Swift
+        # Route a user per-peak toggle through the analyzer — mirrors Swift
         # onToggleSelection -> analyzer.togglePeakSelection.
         # Give the model a back-reference to the analyzer so the "Reset to Auto-Detected" label can
-        # resolve the override-BLIND auto mode via analyzer.auto_detected_mode (Phase 5; mirrors
-        # Swift's row consuming analyzer.autoDetectedMode).
+        # resolve the override-BLIND auto mode via analyzer.auto_detected_mode (mirrors Swift's
+        # row consuming analyzer.autoDetectedMode).
         self.peak_widget.model._analyzer = self.fft_canvas.analyzer
         self.peak_widget.model.selectionToggled.connect(self._on_peak_selection_toggled)
         self.peak_widget.model.modeOverrideChanged.connect(self._on_mode_override_changed)
@@ -2352,8 +2352,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         Mirrors Swift, where `isReadyForDetection` is @Published and every bound view re-renders,
         greying New Tap out for the route-change settle and restoring it afterwards. Python has no
-        such binding, so without this slot the buttons held their stale state for the whole settle
-        and the disable was never visible (#17 F32).
+        such binding, so this slot is what makes the buttons follow readiness through the settle.
         """
         self._update_tap_buttons()
 
@@ -2598,6 +2597,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_tap_buttons()
 
     # ================================================================
+    def _refresh_annotations_enabled(self) -> None:
+        """Enable Annotations only when there is something to annotate and no comparison is shown:
+        the Peak-Min projection (guitar) or the identified L/C/FLC (material) is non-empty. Mirrors
+        Swift's `.disabled((isGuitar ? peaksAbovePeakMin : materialIdentifiedPeaks).isEmpty ||
+        displayMode == .comparison)` and the web's `displayPeaks` / `materialMarkers` test.
+        """
+        az = self.fft_canvas.analyzer
+        shown = az.peaks_above_peak_min if TDS.measurement_type().is_guitar else az.material_identified_peaks
+        self.annotations_btn.setEnabled(bool(shown) and not az.is_saved_measurement_comparison)
+
     def _on_peaks_changed_results(self, peaks: object) -> None:
         """Filter all peaks to the current viewport and forward to the results panel.
 
@@ -2605,6 +2614,7 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer.currentPeaks by minFreq/maxFreq at display time.
         """
         self._peaks_above_peak_min = peaks if isinstance(peaks, list) else []
+        self._refresh_annotations_enabled()
 
         # Rule 5a: propagate selection state when peaks change on a frozen measurement.
         #
@@ -2700,7 +2710,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.peak_widget.model.update_data(list(peaks))
             # update_data() (unlike the guitar update_data_with_modes) does NOT emit annotations, so
             # the material L/C/FLC labels wouldn't appear on the chart until a manual visibility cycle.
-            # Emit them here so annotations update live per FFT frame, matching guitar. (RESPIN-1.0.2, fix R.)
+            # Emit them here so annotations update live per FFT frame, matching guitar.
             self.peak_widget.model.refresh_annotations()
         else:
             fmin = self.fft_canvas.minFreq
@@ -2728,29 +2738,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # in sync — _on_plate_analysis_complete only fires after all phases
         # complete, so intermediate phases need this path.
         if not mt.is_guitar:
-            long_id  = analyzer.effective_longitudinal_peak_id
-            cross_id = analyzer.effective_cross_peak_id
-            flc_id   = analyzer.effective_flc_peak_id
-            # Resolve each phase id → frequency against the PERSISTENT per-phase peak lists, not the
-            # transient peaks_above_peak_min. Mirrors Swift TapAnalysisResultsView.swift:421
-            #   analyzer.longitudinalPeaks.first { $0.id == effectiveLongitudinalPeakID }
-            # peaks_above_peak_min holds only the CURRENT phase's peaks, so a completed phase's peak vanishes
-            # from it the instant the next phase begins — which cleared the L/C/FLC row one event after
-            # it was set (set-then-cleared; the row only "caught up" at each phase completion when
-            # combine_plate_peaks() briefly re-unioned all phases). longitudinal_peaks/cross_peaks/
-            # flc_peaks persist across phases (reset only on redo/reset/load), so they carry completed
-            # phases forward. peaks_above_peak_min is still included so a LOADED measurement — whose per-phase
-            # lists are emptied by _load_measurement_body — resolves from its restored peaks.
-            peak_by_id = {
-                p.id: p
-                for p in (list(peaks)
-                          + (analyzer.longitudinal_peaks or [])
-                          + (analyzer.cross_peaks or [])
-                          + (analyzer.flc_peaks or []))
-            }
-            long_freq  = float(peak_by_id[long_id].frequency)  if long_id  and long_id  in peak_by_id else 0.0
-            cross_freq = float(peak_by_id[cross_id].frequency) if cross_id and cross_id in peak_by_id else 0.0
-            flc_freq   = float(peak_by_id[flc_id].frequency)   if flc_id   and flc_id   in peak_by_id else 0.0
+            # The identified peaks themselves — the only material peak state, live or loaded.
+            # Mirrors Swift TapAnalysisResultsView reading analyzer.selectedLongitudinalPeak etc.
+            long_freq  = float(analyzer.selected_longitudinal_peak.frequency) if analyzer.selected_longitudinal_peak else 0.0
+            cross_freq = float(analyzer.selected_cross_peak.frequency) if analyzer.selected_cross_peak else 0.0
+            flc_freq   = float(analyzer.selected_flc_peak.frequency) if analyzer.selected_flc_peak else 0.0
             self._material_peak_widget.set_assignment(long_freq, cross_freq,
                                                       flc_freq=flc_freq)
 
@@ -2880,10 +2872,10 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.warning(self, "Microphone Not Connected", warning)
         # CONSUME it, as Swift does: its alert is bound to `microphoneWarning != nil` and both the OK
         # button and the binding's setter clear the field, so acknowledging the modal ends the
-        # warning's life.  Python only displayed it, leaving the field set after the dialog closed --
-        # invisible except to the import handler, which reads `analyzer.microphone_warning` directly
-        # rather than listening, and would fold a PREVIOUS measurement's warning into the success
-        # message for a file that records no microphone of its own (#17 F41).
+        # warning's life.  Left set, it would be invisible except to the import handler, which reads
+        # `analyzer.microphone_warning` directly rather than listening, and would fold a PREVIOUS
+        # measurement's warning into the success message for a file that records no microphone of
+        # its own.
         canvas = self.fft_canvas
         if canvas.analyzer.microphone_warning == warning:
             canvas.analyzer.microphone_warning = None
@@ -2897,8 +2889,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_rms_level_for_threshold_meter(self, level_db: float, _audio_time: float) -> None:
         """Forward the per-chunk RMS level (dB, exact) to the threshold slider's level meter.
 
-        Mirrors Swift's `$inputLevelDB` binding to ThresholdSlider.level. It used to arrive as a
-        whole-dB integer offset by 100 and be converted back here (#17 F44).
+        Mirrors Swift's `$inputLevelDB` binding to ThresholdSlider.level.
         """
         if hasattr(self.tap_threshold_slider, "set_level_db"):
             self.tap_threshold_slider.set_level_db(level_db)
@@ -2962,10 +2953,10 @@ class MainWindow(QtWidgets.QMainWindow):
         #
         # Reads the MODEL, not the view's `_tap_count_captured` mirror. That mirror is fed by
         # tapCountChanged and hand-reset in five more view paths, one of which exists purely to
-        # cover a model reset that emits nothing -- so the lock was a second field describing a
-        # fact the model already holds, agreeing with it only by maintenance. Swift and web both
-        # read the analyzer here (#17 F39). The mirror stays for the LABEL, which is legitimately
-        # push-fed by the signal's payload.
+        # cover a model reset that emits nothing -- a second field describing a fact the model
+        # already holds, agreeing with it only by maintenance. Swift and web both read the
+        # analyzer here. The mirror serves the LABEL, which is legitimately push-fed by the
+        # signal's payload.
         _taps_enabled = not (analyzer.current_tap_count > 0 and not is_complete)
         self.tap_num_spin.setEnabled(_taps_enabled)
         # Dim the LABEL with the control — the whole field is unavailable, not just its box.
@@ -3073,7 +3064,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_running(True)
         self.fft_canvas.start_analyzer()
         # Launch auto-arm was deferred by the model because Dump Capture Audio is on but its folder is
-        # unreachable (§4b decision 1b) — prompt now, same as New Tap, and arm only if resolved. This
+        # unreachable — prompt now, same as New Tap, and arm only if resolved. This
         # runs after the model's start()/auto-arm, so the flag is reliably set (a signal would race).
         if getattr(self.fft_canvas.analyzer, "pending_dump_folder_prompt", False):
             self.fft_canvas.analyzer.pending_dump_folder_prompt = False
@@ -3102,24 +3093,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         analyzer = self.fft_canvas.analyzer
 
-        # If a calibration file was provided, parse it and temporarily override
-        # the active calibration.  Save the previous state so we can restore it.
-        previous_cal_profile = analyzer._calibration_profile
-        previous_cal_corrections = analyzer._calibration_corrections
-        previous_cal_name = analyzer._active_calibration_name
-        did_override_calibration = False
-
-        if cal_path:
-            try:
-                cal = _mc_mod.MicrophoneCalibration.from_path(cal_path)
-                analyzer.set_temporary_calibration(cal)
-                did_override_calibration = True
-            except Exception as exc:
-                QtWidgets.QMessageBox.warning(
-                    self, "Calibration Error",
-                    f"Could not parse calibration file:\n{cal_path}\n\n{exc}",
-                )
-
         try:
             # Start the processing thread if it isn't running yet (first use).
             if not analyzer.mic.proc_thread.isRunning():
@@ -3128,62 +3101,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 # Thread already running — reset ring-buffer state for the new source.
                 analyzer.mic.proc_thread.reset_state()
 
-            # Mirrors Swift openAudioFile(_:calibrationURL:) which calls:
-            #   1. tapToneAnalyzer.startTapSequence(skipWarmup: true) — reset state, arm detection
-            #   2. fft.startFromFile(url, completion:) — stop engine, start file source
+            # The analyzer applies the calibration, arms the sequence and starts the file (the app's one
+            # Play File path, which the file-playback regressions also run). Mirrors Swift openAudioFile
+            # calling tapToneAnalyzer.playFile(url:calibrationURL:completion:).
             #
-            # IMPORTANT: start_tap_sequence runs BEFORE start_from_file, matching
-            # Swift exactly.  This is safe because start_from_file performs a full
-            # engine teardown (stop PortAudio, drain processing queue, clear input
-            # buffer) before spawning the file playback thread — no audio flows
-            # until after start_from_file returns.  The crossing detector armed by
-            # start_tap_sequence cannot fire on stale mic noise because the drain
-            # barrier guarantees the processing thread has finished any in-flight
-            # chunk before the file source begins.
-            #
-            # The completion closure in Swift releases security-scoped resource access.
-            # It does NOT clear playingFileName — that stays set until stop() is called,
-            # so the chart title continues showing the filename while the result is frozen.
-            # Python matches: playing_file_name is cleared only by stop(), not here.
-            # However we DO emit playingFileNameChanged(None) on completion so that
-            # _on_playing_file_changed clears the orange tint on the Play File button —
-            # this is safe because chart_title reads mic.playing_file_name directly
-            # (not the signal value), so the title is unaffected by the None emission.
-            def _on_finished_clear_tint() -> None:
-                analyzer.playingFileNameChanged.emit(None)
-                # Restore previous calibration after playback completes.
-                if did_override_calibration:
-                    analyzer._calibration_profile = previous_cal_profile
-                    analyzer._calibration_corrections = previous_cal_corrections
-                    analyzer._active_calibration_name = previous_cal_name
-                    if previous_cal_corrections is not None:
-                        analyzer.mic.set_calibration(
-                            previous_cal_corrections, profile=previous_cal_profile
-                        )
-                    else:
-                        analyzer.mic.set_calibration(None)
+            # When playback ends, playingFileNameChanged(None) clears the orange tint on the Play File
+            # button. It does NOT clear playing_file_name — that stays set until stop(), so the chart title
+            # keeps showing the file while the result is frozen (chart_title reads mic.playing_file_name
+            # directly, not the signal value).
+            analyzer.play_file(
+                path, calibration_path=cal_path or None,
+                on_finished=lambda: analyzer.playingFileNameChanged.emit(None),
+            )
 
-            # Reset analyzer state and arm the level-crossing detector FIRST.
-            #
-            # skip_warmup is decided by the MEASUREMENT TYPE, not by "is this a file".
-            # Guitar: skip it (an externally recorded file may put the tap inside the first 0.5 s, and
-            # guitar uses the absolute threshold, so the noise floor is never read).
-            # Material (plate/brace): RUN the warm-up -- it is the only mode that uses the relative
-            # noise-floor detector, and the warm-up is what establishes that floor.  Skipping it pinned
-            # noise_floor_estimate = -100, collapsing `rising` onto tap_detection_threshold and silently
-            # degrading relative detection to absolute -- so replaying a session did NOT reproduce what
-            # the live session did.  A saved session WAV always contains its warm-up by construction.
-            # Mirrors Swift TapToneAnalysisView+Actions.
-            _is_material_playback = not TDS.measurement_type().is_guitar
-            analyzer.start_tap_sequence(skip_warmup=not _is_material_playback)
-
-            # Stop the mic stream, drain the processing queue, clear input
-            # buffer, then set up the file source.  The drain barrier ensures
-            # no stale mic chunk processing is in-flight when file audio begins.
-            analyzer.start_from_file(path, on_finished=_on_finished_clear_tint)
-
-            # Emit the playing filename AFTER start_tap_sequence so the title update
-            # is last — start_tap_sequence emits loadedMeasurementNameChanged(None)
+            # Emit the playing filename AFTER play_file (which calls start_tap_sequence) so the
+            # title update is last — start_tap_sequence emits loadedMeasurementNameChanged(None)
             # which calls set_loaded_measurement_name and would overwrite the title.
             # Mirrors Swift: fft.playingFileName (@Published) drives chartTitle computed var.
             analyzer.playingFileNameChanged.emit(analyzer.mic.playing_file_name)
@@ -3191,17 +3123,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._is_running = True
             self.set_running(True)
         except Exception as exc:
-            # Restore calibration on error path too.
-            if did_override_calibration:
-                analyzer._calibration_profile = previous_cal_profile
-                analyzer._calibration_corrections = previous_cal_corrections
-                analyzer._active_calibration_name = previous_cal_name
-                if previous_cal_corrections is not None:
-                    analyzer.mic.set_calibration(
-                        previous_cal_corrections, profile=previous_cal_profile
-                    )
-                else:
-                    analyzer.mic.set_calibration(None)
+            # play_file has already restored the calibration.
             QtWidgets.QMessageBox.warning(
                 self, "Could not play audio file", str(exc)
             )
@@ -3269,7 +3191,7 @@ class MainWindow(QtWidgets.QMainWindow):
         restarts the audio processing thread (equivalent to Swift's AVAudioEngine restart
         that occurs when startTapSequence re-arms the audio pipeline).
         """
-        # Arm-time guard (§4b decision 1b): Dump Capture Audio on but its folder unreachable →
+        # Arm-time guard: Dump Capture Audio on but its folder unreachable →
         # prompt before capturing rather than losing the write at completion. Mirrors Swift's
         # dumpFolderUnreachable alert (the reachability predicate lives on the shared model).
         if not self._ensure_dump_folder_reachable():
@@ -3299,7 +3221,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _ensure_dump_folder_reachable(self) -> bool:
         """If Dump Capture Audio is on but its folder can't be reached, prompt the user (Change
         Location / Turn Off Saving / Cancel) and return whether to proceed with arming. Mirrors the
-        Swift ``dumpFolderUnreachable`` alert (§4b decision 1b)."""
+        Swift ``dumpFolderUnreachable`` alert."""
         from guitar_tap.models.tap_display_settings import TapDisplaySettings
         from guitar_tap.models.wav_dump_folder import WavDumpFolder
 
@@ -3338,7 +3260,7 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_peak_selection_toggled(self, peak_id: str) -> None:
-        """Route a user per-peak toggle to the analyzer (Phase 2 C).
+        """Route a user per-peak toggle to the analyzer.
 
         Mirrors Swift's row ``onToggleSelection: { analyzer.togglePeakSelection(id) }``.
         The subsequent peaksChanged re-emits so the scatter annotations update and the
@@ -3349,7 +3271,7 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_mode_override_changed(self, peak_id: str, label: str) -> None:
-        """Route a user mode-override change to the analyzer (Phase 5; Qt vs SwiftUI).
+        """Route a user mode-override change to the analyzer (the Qt counterpart of a SwiftUI binding).
 
         ``set_mode_override`` runs ``enforce_definitive_mode_uniqueness``, so relabelling a selected
         peak into Air/Top/Back displaces the previous definitive holder. Mirrors Swift, where the mode
@@ -3489,7 +3411,7 @@ class MainWindow(QtWidgets.QMainWindow):
     ) -> None:
         """Handle a measurement-type change that originated from the settings UI.
 
-        Mirrors Swift's ``onApply(measurementChanged:guitarTypeChanged:)`` callback (Phase 7),
+        Mirrors Swift's ``onApply(measurementChanged:guitarTypeChanged:)`` callback,
         branching identically:
         - **measurement changed** (``crosses_boundary`` — the guitar/material boundary flipped): restart
           the tap sequence (guitar ↔ plate/brace need a fresh capture).
@@ -3508,7 +3430,7 @@ class MainWindow(QtWidgets.QMainWindow):
             analyzer.reclassify_for_guitar_type_change()
             # Clear the VIEW-side override map too: Qt has no @Published auto-refresh, so mirror the
             # analyzer's cleared peak_mode_overrides here or the reclassified modes would still show
-            # the stale manual labels (the Phase 5 view-sync gap). The new auto classification is
+            # the stale manual labels. The new auto classification is
             # rebuilt by _refresh_results_peaks off the peaksChanged below.
             self.peak_widget.model.modes = {}
             # Emit peaksChanged: triggers _on_peaks_changed_results which propagates
@@ -4115,7 +4037,7 @@ class MainWindow(QtWidgets.QMainWindow):
         is_comparing = self.fft_canvas.analyzer.is_saved_measurement_comparison
 
         dlg = SMD.SaveMeasurementDialog(self)
-        # Pre-populate: live name, else the loaded measurement's name when re-saving one (§3).
+        # Pre-populate: live name, else the loaded measurement's name when re-saving one.
         # Mirrors Swift SaveMeasurementSheet defaultName = tap.loadedMeasurementName ?? "".
         dlg.set_measurement_name(
             self._measurement_name or (self.fft_canvas.analyzer.loaded_measurement_name or "")
@@ -4294,7 +4216,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # disabled (mirrors Swift `.disabled(isComparing)`) so a stray cycle can't
         # re-emit annotation signals; FftAnnotations.update_annotation additionally
         # no-ops in COMPARISON mode so the suppression is reactive, not one-shot.
-        self.annotations_btn.setEnabled(not is_comparing)
+        self._refresh_annotations_enabled()
         if is_comparing:
             canvas.annotations.hide_annotations()
         else:
@@ -4411,8 +4333,10 @@ class MainWindow(QtWidgets.QMainWindow):
             frozen_mags  = analyzer.frozen_magnitudes
             if frozen_freqs is not None and len(frozen_freqs):
                 self.fft_canvas.set_draw_data(frozen_mags, freqs=frozen_freqs)
-            if analyzer.peaks_above_peak_min:
-                analyzer.peaksChanged.emit(analyzer.peaks_above_peak_min)
+            _shown = (analyzer.peaks_above_peak_min if TDS.measurement_type().is_guitar
+                      else analyzer.material_identified_peaks)
+            if _shown:
+                analyzer.peaksChanged.emit(_shown)
 
         # _on_comparison_changed will fire from apply_multi_tap_comparison_overlays
         # via comparisonChanged.emit — it handles all widget visibility updates.
@@ -4424,10 +4348,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """Refresh the multi-tap comparison table on peaksChanged.
 
         Per-tap rows are durable — computed once at capture over the full -100 set and never
-        re-derived (Phase 3 deleted the per-tap recompute). This handler still earns its keep for
-        the **Averaged** row, which resolves selection over the durable set (`selected_peaks`) and
-        so updates when the user changes the selection; it no longer changes with the Peak Min
-        slider. (No Swift counterpart: SwiftUI re-renders the results view from @Published
+        re-derived. This handler serves the **Averaged** row, which resolves selection over the
+        durable set (`selected_peaks`) and so updates when the user changes the selection; it does
+        not change with the Peak Min slider. (No Swift counterpart: SwiftUI re-renders the results view from @Published
         tap_entries automatically; Qt needs this explicit refresh.)
         """
         if (
@@ -4511,7 +4434,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # `measurement_type` field, which is None for a freshly-saved in-memory measurement (only a
         # disk/settings re-read via from_dict populates it). Reading the raw field made a same-session
         # load of a plate/brace fall back to guitar and skip the type switch. Mirrors Swift reading
-        # snapshot.measurementType. See MEASUREMENT-DIMENSIONS-SPEC.md.
+        # snapshot.measurementType.
         _resolved_type_str = m.resolved_measurement_type or ""
         _restored_mt = MT.MeasurementType.from_string(_resolved_type_str)
 
@@ -4713,7 +4636,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_export_spectrum(self) -> None:
         import time as _time
 
-        # Name: live name → loaded name → "spectrum" default (§2b). Mirrors Swift exportCurrentSpectrum().
+        # Name: live name → loaded name → "spectrum" default. Mirrors Swift exportCurrentSpectrum().
         from guitar_tap.models.export_filename import export_stem
         _name = self._measurement_name.strip() or (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
         suggested_name = f"{export_stem(_name, int(_time.time()), 'spectrum')}.png"
@@ -4920,7 +4843,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_export_comparison_pdf()
             return
 
-        # Name: live name → loaded name → "report" default (§2b). Mirrors Swift exportPDFReport().
+        # Name: live name → loaded name → "report" default. Mirrors Swift exportPDFReport().
         from guitar_tap.models.export_filename import export_stem
         _name = self._measurement_name.strip() or (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
         suggested_name = f"{export_stem(_name, int(_time.time()), 'report')}.pdf"
@@ -4987,10 +4910,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 for _pid, (_lx, _ly) in analyzer.peak_annotation_offsets.items():
                     annotation_positions[_pid] = [float(_lx), float(_ly)]
             else:
-                # Mirror Swift: read tap.currentPeaks and tap.selectedPeakIDs directly
-                # from the live analyzer — do NOT reconstruct peaks from the table model.
-                all_peaks = list(analyzer.peaks_above_peak_min)
-                selected_ids = set(analyzer.selected_peak_ids)
+                # Mirror Swift: read the analyzer's peaks and selection directly — do NOT reconstruct
+                # peaks from the table model. Material's peaks are the identified L/C/FLC, all
+                # selected (a saved measurement's effective_selected_peak_ids rule).
+                if TDS.measurement_type().is_guitar:
+                    all_peaks = list(analyzer.peaks_above_peak_min)
+                    selected_ids = set(analyzer.selected_peak_ids)
+                else:
+                    all_peaks = list(analyzer.material_identified_peaks)
+                    selected_ids = {p.id for p in all_peaks}
                 sel_long_id  = analyzer.effective_longitudinal_peak_id
                 sel_cross_id = analyzer.effective_cross_peak_id
                 sel_flc_id   = analyzer.effective_flc_peak_id
@@ -5132,12 +5060,12 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 date_label = datetime.now(_tz.utc).isoformat()
 
-            # ── Device identity — mirrors Swift fft.selectedInputDevice?.name (WI-31) ──────────
+            # ── Device identity — mirrors Swift fft.selectedInputDevice?.name ──────────────────
             # Use the currently selected input device, not the calibration-time device name.
             _sel_dev = getattr(getattr(analyzer, "mic", None), "selected_input_device", None)
             mic_name: str | None = getattr(_sel_dev, "name", None) or None
 
-            # ── Active calibration name — mirrors Swift fft.activeCalibration?.name (WI-30) ──
+            # ── Active calibration name — mirrors Swift fft.activeCalibration?.name ────────
             # Use _active_calibration_name which is set by both manual selection and
             # device-specific auto-load (via load_calibration_from_profile).
             _active_cal_name: str | None = getattr(analyzer, "_active_calibration_name", None) or None
@@ -5217,7 +5145,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         import time as _time
 
-        # A comparison report is just a report (§2b). Name: loaded name → live name → "report".
+        # A comparison report is just a report. Name: loaded name → live name → "report".
         # Mirrors Swift: label = tap.loadedMeasurementName ?? measurementName.
         from guitar_tap.models.export_filename import export_stem
         _name = (self.fft_canvas.analyzer.loaded_measurement_name or self._measurement_name or "").strip()
@@ -6428,9 +6356,9 @@ class MainWindow(QtWidgets.QMainWindow):
         an.addWidget(show_unknown_widget)
         an.addWidget(_hsep())
 
-        # The Analysis Frequency Range setting was removed in Phase 7 — it is now a fixed 30–2000 Hz
-        # constant (TapDisplaySettings.analysis_min/max_frequency). Detection is still bounded by it;
-        # only the knob is gone. The display/pan-zoom range above stays user-controllable.
+        # The analysis frequency range is not a setting: it is a fixed 30–2000 Hz constant
+        # (TapDisplaySettings.analysis_min/max_frequency) that bounds detection. The display/pan-zoom
+        # range above is user-controllable.
 
         # Peak Detection Minimum
         peak_thresh_widget = QtWidgets.QWidget()
@@ -6465,8 +6393,7 @@ class MainWindow(QtWidgets.QMainWindow):
         da_layout.setContentsMargins(0, 4, 0, 0)
         da_layout.setSpacing(2)
         # One WAV per measurement, not one per tap (per-tap dumps were dropped for a single session
-        # recording). Names no folder here — the folder becomes its own settable field
-        # (FILE-PATHS-AND-NAMES-SPEC §4b).
+        # recording). Names no folder here — the folder becomes its own settable field.
         dump_audio_cb = QtWidgets.QCheckBox("Dump Capture Audio")
         dump_audio_cb.setToolTip("Save the captured audio of each measurement as a WAV file")
         dump_audio_cb.setChecked(AS.AppSettings.dump_capture_audio())
@@ -6475,7 +6402,7 @@ class MainWindow(QtWidgets.QMainWindow):
         da_layout.addWidget(dump_audio_cb)
         da_layout.addWidget(dump_audio_desc)
 
-        # WAV-dump folder (§4b): where recordings go, with Open / Change… / Use Default.
+        # WAV-dump folder: where recordings go, with Open / Change… / Use Default.
         # Mirrors the Swift Settings folder row. Visible only while Dump Capture Audio is on.
         from guitar_tap.models.wav_dump_folder import WavDumpFolder as _WDF
 
@@ -7146,7 +7073,7 @@ class MainWindow(QtWidgets.QMainWindow):
             disp_db_max_field.setText(f"{new_db_max:.1f}")
             self.fft_canvas.setYRange(new_db_min, new_db_max, padding=0)
 
-            # Analysis frequency range — no longer a setting (Phase 7). It is a fixed 30–2000 Hz
+            # Analysis frequency range — not a setting. It is a fixed 30–2000 Hz
             # constant; the analyzer's min_frequency/max_frequency are seeded from it at init and
             # detection stays bounded by it. Nothing to apply here.
 
@@ -7207,7 +7134,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Fire _on_measurement_type_changed exactly once after all settings are
             # persisted — mirrors Swift's onApply(measurementChanged:guitarTypeChanged:) callback
-            # which runs after applySettings() completes (Phase 7).
+            # which runs after applySettings() completes.
             #   measurement_changed = crosses the guitar/material boundary (isGuitar flipped).
             #   guitar_type_changed = a guitar→guitar subtype change (e.g. Generic → Classical) — the
             #     mode bands change, so it is a clean-slate re-derivation for the new type.
@@ -7243,47 +7170,33 @@ class MainWindow(QtWidgets.QMainWindow):
             if (mt_val is MT.MeasurementType.BRACE or mt_val is MT.MeasurementType.PLATE) \
                     and self._is_measurement_complete:
                 _az = self.fft_canvas.analyzer
-                _long_id = _az.effective_longitudinal_peak_id
-                if _long_id:
-                    # Mirrors Swift: search longitudinalPeaks first (live), then
-                    # sortedPeaksWithModes / currentPeaks (saved measurement).
-                    _long_peak = (
-                        next((p for p in _az.longitudinal_peaks if p.id == _long_id), None)
-                        or next((p for p in _az.peaks_above_peak_min if p.id == _long_id), None)
-                    )
-                    if _long_peak:
-                        _dims = self._get_current_dims()
-                        if _dims and _dims.is_valid():
-                            try:
-                                if mt_val is MT.MeasurementType.BRACE:
-                                    self._populate_brace_section(
-                                        PA.calculate_brace_properties(
-                                            _dims, _long_peak.frequency
+                # The identified peaks, live or loaded (mirrors Swift calculatedPlate/BraceProperties).
+                _long_peak = _az.selected_longitudinal_peak
+                if _long_peak:
+                    _dims = self._get_current_dims()
+                    if _dims and _dims.is_valid():
+                        try:
+                            if mt_val is MT.MeasurementType.BRACE:
+                                self._populate_brace_section(
+                                    PA.calculate_brace_properties(
+                                        _dims, _long_peak.frequency
+                                    )
+                                )
+                            else:
+                                _cross_peak = _az.selected_cross_peak
+                                _flc_peak = _az.selected_flc_peak
+                                if _cross_peak:
+                                    self._populate_plate_section(
+                                        PA.calculate_plate_properties(
+                                            _dims,
+                                            _long_peak.frequency,
+                                            _cross_peak.frequency,
+                                            f_flc_hz=_flc_peak.frequency if _flc_peak else None,
                                         )
                                     )
-                                else:
-                                    _cross_id = _az.effective_cross_peak_id
-                                    _cross_peak = (
-                                        next((p for p in _az.cross_peaks if p.id == _cross_id), None)
-                                        or next((p for p in _az.peaks_above_peak_min if p.id == _cross_id), None)
-                                    ) if _cross_id else None
-                                    _flc_id = _az.effective_flc_peak_id
-                                    _flc_peak = (
-                                        next((p for p in _az.flc_peaks if p.id == _flc_id), None)
-                                        or next((p for p in _az.peaks_above_peak_min if p.id == _flc_id), None)
-                                    ) if _flc_id else None
-                                    if _cross_peak:
-                                        self._populate_plate_section(
-                                            PA.calculate_plate_properties(
-                                                _dims,
-                                                _long_peak.frequency,
-                                                _cross_peak.frequency,
-                                                f_flc_hz=_flc_peak.frequency if _flc_peak else None,
-                                            )
-                                        )
-                                self._seed_material_editors()
-                            except ValueError:
-                                pass
+                            self._seed_material_editors()
+                        except ValueError:
+                            pass
 
             dlg.accept()
 

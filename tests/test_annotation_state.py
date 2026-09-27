@@ -140,8 +140,7 @@ class TestAnnotationStateLive:
         sut = _make_sut()
         peaks = [_make_peak_live(100), _make_peak_live(200)]
         sut.peaks_above_peak_min = peaks
-        # Select explicitly, NOT via select_all_peaks — that feature is removed in Phase 5 and this
-        # test must not depend on it (mirrors Swift Phase 4a).
+        # Select explicitly — there is no select-all (mirrors Swift).
         sut.selected_peak_ids = {p.id for p in peaks}
         sut.select_no_peaks()
         assert len(sut.selected_peak_ids) == 0
@@ -224,7 +223,7 @@ class TestAnnotationStateLive:
         sut.annotation_visibility_mode = "none"
         peaks = [_make_peak_live(), _make_peak_live(300)]
         sut.peaks_above_peak_min = peaks
-        # Select explicitly, NOT via select_all_peaks (removed in Phase 5) — mirrors Swift Phase 4a.
+        # Select explicitly — there is no select-all (mirrors Swift).
         sut.selected_peak_ids = {p.id for p in peaks}
         assert sut.visible_peaks == []
 
@@ -271,16 +270,13 @@ class TestAnnotationStateLive:
 
     # ── An unclassified peak has NO mode — it is not guessed at ──────────
     #
-    # This used to fall back to classifying the peak ALONE (``classify_all([peak])``). One peak
+    # There is no fallback that classifies the peak ALONE (``classify_all([peak])``): one peak
     # cannot compete for a band, and the Generic Top (140-260 Hz) and Back (180-300 Hz) ranges
-    # overlap, so the fallback returned TOP for anything between 180 and 260 Hz — including a
-    # plate/brace peak, which has no guitar mode at all. A real brace fL at 220 Hz reported
-    # GuitarMode.TOP. Removed 2026-09-20 to match web, which never guessed.
+    # overlap, so such a fallback would call anything between 180 and 260 Hz TOP — including a
+    # plate/brace peak, which has no guitar mode at all. The web does not guess either.
 
-    # The CLEAR half of the store. Setting each of these was tested; clearing them was not — in
-    # either native edition — while web covered all three. Found 2026-09-20 by checking the web
-    # `peak-state-store` tests against native BEHAVIOUR rather than method names (project #8).
-    # A characteristic gap: whoever wrote these covered setting a thing and not unsetting it.
+    # The CLEAR half of the store: each of these is unset as well as set, matching the BEHAVIOUR
+    # the web's `peak-state-store` tests pin.
 
     def test_reset_mode_override_clears_only_that_peaks_override(self):
         sut = _make_sut()
@@ -367,16 +363,8 @@ class TestAnnotationStateLive:
         sut.cycle_annotation_visibility()
         assert sut.annotation_visibility_mode == AnnotationVisibilityMode.ALL
 
-    # ── PS1–PS6: Plate peak selection — REMOVED 2026-09-20 ───────────────
-    #
-    # These six were the only callers of select_longitudinal_peak / select_cross_peak /
-    # select_flc_peak. The L / C / FLC buttons that drove them were removed from Swift on
-    # 2026-04-17 (c88e5e1) and replaced by redoing the phase (plate) or the measurement (brace);
-    # Python had mirrored the leftovers rather than the feature. Tests are the last thing keeping
-    # removed code alive, so they went with it. Swift's PS1–PS6 were deleted in the same pass.
-
 # ---------------------------------------------------------------------------
-# Definitive Air/Top/Back uniqueness (D11-D16) — Phase 5
+# Definitive Air/Top/Back uniqueness (D11-D16)
 # ---------------------------------------------------------------------------
 #
 # Classification and selection are independent. Classification is band membership: five peaks in the
@@ -514,8 +502,8 @@ class TestAutoDetectedMode:
 
 
 class TestDefinitivePeakAndRatio:
-    """Phase 6: get_peak / calculate_tap_tone_ratio read the DEFINITIVE peak — the SELECTED peak whose
-    override-aware mode is that mode. Mirrors Swift AnnotationStateTests Phase 6."""
+    """get_peak / calculate_tap_tone_ratio read the DEFINITIVE peak — the SELECTED peak whose
+    override-aware mode is that mode. Mirrors Swift AnnotationStateTests."""
 
     @pytest.fixture(autouse=True)
     def _generic(self):
@@ -575,7 +563,7 @@ class TestDefinitivePeakAndRatio:
 
 
 class TestDefinitiveModeInfo:
-    """Phase 6b: definitive_mode_info() — the multi-tap Averaged row source. get_peak per mode plus
+    """definitive_mode_info() — the multi-tap Averaged row source. get_peak per mode plus
     an override flag; the DEFINITIVE selected peak, NOT a strongest-per-mode re-classification.
     Mirrors Swift AnnotationStateTests D21/D22."""
 
@@ -621,7 +609,7 @@ class TestDefinitiveModeInfo:
 
 
 class TestPhase7Triggers:
-    """Phase 7: clean-slate guitar-type change + a new tap sequence clears ALL per-peak state.
+    """A clean-slate guitar-type change + a new tap sequence clears ALL per-peak state.
     Paired with Swift AnnotationStateTests (same behaviours pinned on both platforms)."""
 
     @pytest.fixture(autouse=True)
@@ -650,6 +638,27 @@ class TestPhase7Triggers:
         assert sut.selected_peak_ids == set(sut.guitar_mode_selected_peak_ids(sut.all_peaks)), (
             "selection is the fresh auto-selection for the new type"
         )
+
+
+    def test_reclassify_for_guitar_type_change_reclassifies_the_peaks(self):
+        # A guitar-type change re-classifies the SAME peaks under the new type's bands (no
+        # re-detection). 160 Hz is below the Classical Top band (170-230) and inside the Acoustic one
+        # (150-210). Mirrors Swift reclassifyForGuitarTypeChange_reclassifiesThePeaks.
+        TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+        sut = _make_sut()
+        peak160 = _make_peak_live(160, -20)
+        sut.all_peaks = [_make_peak_live(100, -25), peak160]
+        sut.reclassify_peaks()
+
+        def mode_of_160():
+            return next((m["mode"] for m in sut.identified_modes if m["peak"].id == peak160.id), None)
+
+        assert mode_of_160() != GuitarMode.TOP, "precondition: 160 Hz is not Top on a classical"
+
+        TapDisplaySettings.set_measurement_type(MeasurementType.ACOUSTIC)
+        sut.reclassify_for_guitar_type_change()
+
+        assert mode_of_160() == GuitarMode.TOP, "re-classified under the new type's bands"
 
     def test_start_tap_sequence_clears_all_per_peak_state(self):
         # A new sequence must leave nothing from the previous measurement to leak into the next file.

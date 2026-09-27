@@ -75,8 +75,8 @@ class Pitch:
         """Whether *frequency* has a pitch at all: a finite, positive number of hertz.
 
         A frequency that has none — 0 Hz, a negative value, NaN, infinity — gets "no pitch" from every
-        method here: an empty note name, 0 cents, 0 Hz, a (0, 0) range, not in tune. It used to reach
-        ``log2(0)``, which raises (#17 F50 item 14). Mirrors Swift Pitch.hasPitch(_:).
+        method here: an empty note name, 0 cents, 0 Hz, a (0, 0) range, not in tune — never
+        ``log2(0)``, which raises. Mirrors Swift Pitch.hasPitch(_:).
         """
         return isfinite(frequency) and frequency > 0
 
@@ -106,12 +106,9 @@ class Pitch:
         - Parameter frequency: The frequency to analyse, in Hz.
         - Returns: A tuple (upper, lower) where upper is the frequency of the next semitone
           above the nearest note and lower is the semitone below.
-          No octave special-casing is needed, and none should be added back: freq() is
-          c0 * 2^(note/12) * 2^octave with no bounds check, so note 12 already MEANS C of the
-          next octave and note -1 already means B of the previous one. Two `if note == 0 / == 11`
-          branches stood here until the #17 sweep claiming to "handle octave boundaries";
-          deleting them changed 648 bound values across C0-B8 by at most 1.15e-16 relative.
-          See SLUG-SWEEP.md F13.
+          No octave special-casing is needed: freq() is c0 * 2^(note/12) * 2^octave with no
+          bounds check, so note 12 already MEANS C of the next octave and note -1 already means
+          B of the previous one.
 
         Mirrors Swift Pitch.pitchRange(frequency:). (0, 0) for a frequency with no pitch.
         """

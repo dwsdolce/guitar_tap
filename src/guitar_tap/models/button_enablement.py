@@ -35,9 +35,9 @@ class ButtonState:
     detection_state: DetectionState
     is_measurement_complete: bool
     # What the spectrum is showing. REQUIRED, and the mode itself rather than a boolean:
-    # the rule reads the analyzer's display mode, so a defaulted boolean silently answers
-    # for a state the caller never supplied — which is how New Tap came out DISABLED
-    # during a comparison in web, trapping the user in it with no way back (#17 F24).
+    # the rule reads the analyzer's display mode, and a defaulted boolean would silently
+    # answer for a state the caller never supplied — New Tap during a comparison, for one,
+    # which must stay enabled so the user has a way back out.
     display_mode: AnalysisDisplayMode
     is_ready_for_detection: bool = True
     fft_is_running: bool = True
@@ -72,7 +72,7 @@ def button_rule(s: ButtonState) -> ButtonOutput:
     # guitar, detecting or paused; for material, past NOT_STARTED and not complete. New Tap
     # is disabled while in flight and enabled otherwise (idle OR complete) — the honest
     # predicate, replacing the old `not is_measurement_complete` proxy that wrongly locked
-    # New Tap in the disarmed-idle state the Dump Capture Audio folder guard can produce (§4b).
+    # New Tap in the disarmed-idle state the Dump Capture Audio folder guard can produce.
     # Cancel restarts, offered during a review phase (as "Redo") or an active multi-step
     # sequence (multi-tap or multi-phase = plate; brace is single-phase).
     is_detecting = s.detection_state is DetectionState.LISTENING

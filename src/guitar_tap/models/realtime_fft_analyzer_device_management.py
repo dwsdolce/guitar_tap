@@ -23,12 +23,6 @@ Swift ↔ Python method correspondence:
   setCalibrationWithoutSavingDeviceMapping ↔ _on_calibration_changed callback fired
                                               from set_device(); handler lives in
                                               tap_tone_analyzer_control._on_mic_calibration_changed()
-
-Recommendations from docs/DEVICE_MANAGEMENT_REFACTORING.md:
-  Rec 1 — DONE: available_input_devices / selected_input_device on RealtimeFFTAnalyzer
-  Rec 2 — DONE: load_available_input_devices() consolidated here
-  Rec 3 — DONE: calibration auto-load in set_device() via _on_calibration_changed callback
-  Rec 4 — PENDING: raw_sample_handler callback
 """
 
 from __future__ import annotations

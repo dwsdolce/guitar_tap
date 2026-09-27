@@ -5,15 +5,12 @@ One contract, three mechanisms: when the model's readiness changes, the view lay
 Python satisfies it with an explicit signal (this file), Swift with ``@Published`` (observed via
 ``objectWillChange``), web by putting the field on the snapshot and calling ``notify()``. Every one
 of those can be broken by an ordinary edit — drop the ``@Published``, forget to add the signal,
-leave the field off the snapshot — and in Python it simply never existed, so the button row went
-stale for the whole route-change settle and New Tap never greyed out (#17 F32).
+leave the field off the snapshot — and then the button row goes stale for the whole route-change
+settle and New Tap never greys out.
 
-These cases were first parked in ``test_wi10_qtimer_slots.py``, tagged ``@parity none``, on the
-grounds that signal plumbing is PySide6-specific and has no counterpart. It does have one. The
-contract is not "does Qt emit" but "does a state change reach the UI", which all three implement and
-all three can break — and ``none`` is the one home where ``--check`` can never report a missing
-edition. PARITY-TEST-METHOD rule 4: an "n/a" that rests on the view layer is a finding, not a
-difference.
+The contract is not "does Qt emit" but "does a state change reach the UI", which all three
+editions implement and all three can break — so these cases carry a shared parity tag rather than
+``@parity none``, and ``--check`` reports a missing edition.
 
 Mirrors: GuitarTapTests/StateNotificationTests.swift · test/state-notification.test.ts
 """
@@ -123,9 +120,8 @@ class TestStateNotification:
         assert _make_sut()._status_after_settle() == "Ready"
 
     # N7: a COMPLETED measurement survives a device change. The settle blanks the chart while the
-    # new device's audio is not yet valid, but only when a LIVE spectrum is on screen. The old guard
-    # asked display_mode == LIVE, which is still true of a finished measurement because no
-    # completion path sets FROZEN — so a device change wiped the result (#17 F35).
+    # new device's audio is not yet valid, but only when a LIVE spectrum is on screen — and
+    # display_mode == LIVE is still true of a finished measurement, so that alone is not the test.
     def test_N7_route_change_leaves_a_completed_measurement_intact(self):
         import numpy as np
         from guitar_tap.models.resonant_peak import ResonantPeak
@@ -148,18 +144,21 @@ class TestStateNotification:
     def test_N8_route_change_blanks_a_live_spectrum(self):
         from guitar_tap.models.detection_state import DetectionState
 
+        from guitar_tap.models.resonant_peak import ResonantPeak
+
         sut = _make_sut()
         sut.detection_state = DetectionState.LISTENING
+        sut.all_peaks = [ResonantPeak(frequency=100.0, magnitude=-40.0)]   # a live frame's peaks
 
         sut.handle_route_change_restart()
 
         assert sut.is_settling is True, "a live spectrum is blanked for the settle"
+        assert sut.all_peaks == [], "and its peaks cleared, so no annotation floats on a blank chart"
 
     # N9: a MATERIAL phase prompt is an instruction about something that already happened
     # ("Rotate 90deg..."), not a description of the state, so the settle must put it back rather
     # than re-derive it.  Two strings are equally correct for one phase -- the advance's instruction
-    # and a redo's "... - tap again" -- which is the proof it is not a function of the state
-    # (#17 F37).
+    # and a redo's "... - tap again" -- which is the proof it is not a function of the state.
     def test_N9_settle_preserves_a_material_phase_instruction(self):
         from guitar_tap.models.detection_state import DetectionState
         from guitar_tap.models.material_tap_phase import MaterialTapPhase
@@ -178,14 +177,13 @@ class TestStateNotification:
             )
             assert sut._restored_status(after_redo) == after_redo, (
                 "REGRESSION: the settle reworded the instruction the user was following - it said "
-                '"Rotate 90deg and tap for fC" to someone who had already rotated the plate (#17 F37)'
+                '"Rotate 90deg and tap for fC" to someone who had already rotated the plate'
             )
         finally:
             TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
 
     # N10: the override precedence, in one place.  Dead input outranks clipping, and an ordinary
-    # status write while a condition holds must not drop the warning -- this used to resolve
-    # clipping inline in _set_status_message and ignore input_appears_dead entirely (#17 F37).
+    # status write while a condition holds must not drop the warning.
     def test_N10_dead_input_outranks_clipping_and_survives_a_status_write(self):
         sut = _make_sut()
         sut._set_status_message("Tap the guitar...")
@@ -201,7 +199,7 @@ class TestStateNotification:
         sut._set_status_message("Tap the guitar 3 times...")
         assert sut.status_message == sut.DEAD_INPUT_STATUS, (
             "REGRESSION: an ordinary status write dropped the dead-input warning, because the "
-            "write path resolved clipping only (#17 F37)"
+            "write path resolved clipping only"
         )
 
         sut.input_appears_dead = False
@@ -212,8 +210,8 @@ class TestStateNotification:
         )
 
     # N11: what the settle PRESERVES is the analyzer's real status, not the override-resolved
-    # string.  Capturing the displayed value meant a route change during clipping preserved the
-    # warning sentinel and fed it back as the real status (#17 F37).
+    # string.  Capturing the displayed value would preserve the warning sentinel during clipping
+    # and feed it back as the real status.
     def test_N11_settle_captures_the_real_status_not_an_override_warning(self):
         from guitar_tap.models.detection_state import DetectionState
 
@@ -231,9 +229,8 @@ class TestStateNotification:
         )
 
     # N12: the phase ADVANCE and the armed DERIVATION must produce the same string, because they are
-    # the same string.  They used to be two sets of literals -- the advance said "Rotate 90deg and
-    # tap for fC", the derivation "Ready for fC tap" -- so every resume, settle or tap-count change
-    # mid-plate silently reworded the instruction (#17 F37).  Pins the single source from both ends.
+    # the same string, so no resume, settle or tap-count change mid-plate rewords the instruction.
+    # Pins the single source from both ends.
     def test_N12_material_phase_advance_and_armed_derivation_agree(self):
         from guitar_tap.models.material_tap_phase import MaterialTapPhase
         from guitar_tap.models.measurement_type import MeasurementType

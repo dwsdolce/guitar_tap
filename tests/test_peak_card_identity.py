@@ -1,6 +1,6 @@
 # @parity none
 """
-D7 of Development/PEAK-FINDING-DUPLICATE-PEAKS.md (GuitarTapWeb).
+The duplicate-peak defect: card identity.
 
 Python-only: the Analysis Results card list resolves each card back to its model row
 **by frequency**, and ``PeaksModel.freq_index`` returns ``-1`` when a frequency is not

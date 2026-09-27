@@ -1,5 +1,5 @@
 # @parity test/peak-selection-persistence
-"""Option 1 of PEAK-MIN-SEMANTICS.md (GuitarTapWeb): the manual/auto selection flag is persisted,
+"""The manual/auto selection flag is persisted,
 so a reloaded measurement behaves like a live one. An AUTOMATIC selection re-runs auto-selection
 when Peak Min changes (a peak revealed by lowering Peak Min is selected as its mode winner); a
 MANUAL one is carried forward. Files saved before the field default to manual (no regression).

@@ -67,12 +67,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.longitudinal_spectrum: tuple | None
         self.cross_spectrum: tuple | None
         self.flc_spectrum: tuple | None
-        self.longitudinal_peaks: list[ResonantPeak]
-        self.cross_peaks: list[ResonantPeak]
-        self.flc_peaks: list[ResonantPeak]
-        self.auto_selected_longitudinal_peak_id: str | None
-        self.auto_selected_cross_peak_id: str | None
-        self.auto_selected_flc_peak_id: str | None
         self.selected_longitudinal_peak: ResonantPeak | None
         self.selected_cross_peak: ResonantPeak | None
         self.selected_flc_peak: ResonantPeak | None
@@ -173,7 +167,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         if not _tds.dump_capture_audio():
             return
         from guitar_tap.models.wav_dump_folder import WavDumpFolder
-        # The user-settable dump folder (§4b): the custom folder or the default. Reachability was
+        # The user-settable dump folder: the custom folder or the default. Reachability was
         # checked at arm time; if the custom folder vanished mid-measurement, skip rather than
         # silently write elsewhere. release() is a no-op (not sandboxed).
         acquired = WavDumpFolder.acquire_dump_folder()
@@ -219,7 +213,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             release_folder()
 
     # ------------------------------------------------------------------ #
-    # _maintain_session_recording — bounded pre-roll (§6)
+    # _maintain_session_recording — bounded pre-roll
     # Mirrors Swift TapToneAnalyzer.maintainSessionRecording(appending:)
     # ------------------------------------------------------------------ #
 
@@ -232,7 +226,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         return int(self._session_recording_sample_rate * self.SESSION_PRE_ROLL_DURATION)
 
     def _maintain_session_recording(self, samples) -> None:
-        """Append one audio chunk to the session WAV buffer and maintain the bounded pre-roll (§6).
+        """Append one audio chunk to the session WAV buffer and maintain the bounded pre-roll.
         Caller holds _gated_lock.
 
         Extracted so the rule is unit-testable independently of the gated-capture pipeline:
@@ -395,7 +389,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 self._pre_roll_buf = self._pre_roll_buf[-self._pre_roll_samples:]
 
             # Session recording: append every chunk while recording, maintaining the bounded
-            # pre-roll (§6). Mirrors Swift accumulateGatedSamples -> maintainSessionRecording.
+            # pre-roll. Mirrors Swift accumulateGatedSamples -> maintainSessionRecording.
             self._maintain_session_recording(samples)
 
             if not self._gated_capture_active:
@@ -520,7 +514,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         silence) buffer rather than partial + mic noise.
         """
         # File end is also the end of the audio clock: release what must still happen — the capture
-        # window's processing — once any finish this flush triggers has scheduled it (#19). The finish
+        # window's processing — once any finish this flush triggers has scheduled it. The finish
         # arrives through the queued gatedCaptureComplete signal, so the release is queued behind it on
         # the main thread rather than run here. On every path out. Mirrors Swift's `defer`.
         try:
@@ -643,7 +637,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                      f"deferred={deferred_pre_roll is not None}\n{seed_profile}")
 
         # Safety timeout: once no audio has arrived for 2 s, flush what the buffer holds; if empty, ask
-        # the user to tap again. Measured from the last chunk, not the capture's start (#19).
+        # the user to tap again. Measured from the last chunk, not the capture's start.
         # Mirrors Swift afterAudioStall(2.0, ...).
         def _safety_timeout() -> None:
             with self._gated_lock:
@@ -784,7 +778,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     def _guitar_gated_capture_failed(self) -> None:
         """Re-arm detection without storing a tap when guitar capture fails."""
         self._set_status_message("No signal detected — tap again")
-        self.after_audio(self.tap_cooldown, self._do_reenable_guitar)   # the rest, in AUDIO (#19)
+        self.after_audio(self.tap_cooldown, self._do_reenable_guitar)   # the rest, in AUDIO
 
     def finish_guitar_gated_capture(self, samples, sample_rate: float) -> None:
         """Compute FFT for a guitar gated capture and append to captured_taps.
@@ -865,7 +859,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                  np.zeros(fft_size - len(aligned), dtype=np.float32)]
             )
 
-        # Diagnostic for the alignment family (#7/#3/#5): fingerprint the buffer on both
+        # Diagnostic for cross-edition capture differences: fingerprint the buffer on both
         # sides of where the alignment step WOULD be, so a cross-edition comparison can say
         # whether the editions captured the same samples, windowed them differently, or
         # differ only in the arithmetic afterwards. Inert unless capture_probe.enabled.
@@ -912,11 +906,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         if self.current_tap_count < self.number_of_taps:
             self._set_status_message(self._guitar_loop_status(capturing=False))
-            self.after_audio(self.tap_cooldown, self._do_reenable_guitar)   # the rest, in AUDIO (#19)
+            self.after_audio(self.tap_cooldown, self._do_reenable_guitar)   # the rest, in AUDIO
         else:
             self._set_status_message("All taps captured. Processing...")
             self.capture_timer_active = False
-            # capture_window of AUDIO (#19). Released at file end: when the last capture ends with
+            # capture_window of AUDIO. Released at file end: when the last capture ends with
             # the file, the audio clock stops and would never make it due.
             self.after_audio(self.capture_window, self._finish_capture, released_at_file_end=True)
 
@@ -925,12 +919,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         """Main-thread slot: arm detection for the FLC tap phase.
 
         Invoked through after_audio from accept_current_phase — tap_cooldown of AUDIO after the C tap
-        is accepted (#19) — so it runs on the main thread, on the chunk that ends the hold.
+        is accepted — so it runs on the main thread, on the chunk that ends the hold.
 
         Mirrors Swift acceptCurrentPhase's FLC closure: anchored on that chunk — the latch from its
-        level, and the warm-up restarted at its audio time — then listen in .capturingFlc. (This
-        edition used to skip the warm-up restart, citing the plate REST's rule, which is a different
-        path; Swift's FLC arm has always restarted it — #19.)
+        level, and the warm-up restarted at its audio time — then listen in .capturingFlc.
         """
         import numpy as _np
 
@@ -980,8 +972,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             ``window_size`` samples, zero-padded — still ``window_size`` long, so the tap reaches the
             transform at the same length as every other: the same bin grid, so a phase's taps average
             bin for bin, and the same window gain (the Hann spans the padded length, so its gain depends
-            on how much of it the audio fills). This returned the buffer unchanged, a different length
-            (#17 F50 item 12).
+            on how much of it the audio fills).
         """
         import math
 
@@ -1173,7 +1164,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             pre_onset_samples=pre_onset_samples,
         )
 
-        # Diagnostic for the material multi-tap divergence (#5): fingerprint the buffer on
+        # Diagnostic for cross-edition material multi-tap differences: fingerprint the buffer on
         # both sides of the alignment step, the same three-way split the guitar path uses.
         # Mirrors Swift's CaptureProbe.record call in the material capture.
         from . import capture_probe
@@ -1532,20 +1523,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             prefer_lowest_significant=prefer_lowest,
         ) or dominant_peak
 
-        # Build the full peak list for display/manual override.
-        self.longitudinal_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
-        self.auto_selected_longitudinal_peak_id = avg_peak.id
-        # Let the view widen the axis onto it (mirrors Swift's autoSelected* change channel).
+        # The phase's peak is the dominant peak of the averaged spectrum.
+        self.selected_longitudinal_peak = avg_peak
+        # Let the view widen the axis onto it (mirrors Swift's selectedLongitudinalPeak change channel).
         self.materialPeakIdentified.emit(float(avg_peak.frequency))
-        self.selected_longitudinal_peak = (
-            next((p for p in self.longitudinal_peaks if p.id == avg_peak.id), avg_peak)
-        )
-        gt_log(f"🔵 Auto-selected longitudinal peak: {avg_peak.frequency} Hz")
-
-        self.all_peaks = self.longitudinal_peaks
-        # Only the identified (auto-selected) peak is selected — others are informational.
-        # Mirrors Swift: selectedPeakIDs = Set([avgPeak.id])
-        self.selected_peak_ids = {avg_peak.id}
+        gt_log(f"🔵 Identified longitudinal peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 
         # Update displayed spectrum — mirrors Swift setFrozenSpectrum (empty for plate transitions).
@@ -1555,11 +1537,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         is_brace = (_tds.measurement_type() == _MT.BRACE)
         if is_brace:
             # Brace: only longitudinal tap — measurement complete.
-            sel_peak = next(
-                (p for p in self.longitudinal_peaks if p.id == avg_peak.id),
-                avg_peak
-            )
-            self.all_peaks = [sel_peak]
             self.set_frozen_spectrum(_np.array([]), _np.array([]))
             self._set_material_tap_phase(_MTP.COMPLETE)
             self.set_measurement_complete(True)
@@ -1628,40 +1605,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
 
     # ------------------------------------------------------------------ #
-    # _resolved_plate_peaks
-    # Mirrors Swift func resolvedPlatePeaks(…)
-    # ------------------------------------------------------------------ #
-
-    def _resolved_plate_peaks(
-        self,
-        include_cross: bool = True,
-        cross_override=None,
-        include_flc: bool = False,
-        flc_override=None,
-    ) -> "list":
-        """Build the ordered peak list from whichever phase peaks are available.
-
-        Mirrors Swift TapToneAnalyzer.resolvedPlatePeaks(…).
-        """
-        sel = []
-        if self.selected_longitudinal_peak:
-            sel.append(self.selected_longitudinal_peak)
-        elif self.longitudinal_peaks:
-            sel.append(self.longitudinal_peaks[0])
-
-        if include_cross:
-            cross = cross_override or self.selected_cross_peak or (self.cross_peaks[0] if self.cross_peaks else None)
-            if cross:
-                sel.append(cross)
-
-        if include_flc:
-            flc = flc_override or self.selected_flc_peak or (self.flc_peaks[0] if self.flc_peaks else None)
-            if flc:
-                sel.append(flc)
-
-        return sel
-
-    # ------------------------------------------------------------------ #
     # _handle_cross_gated_progress
     # Mirrors Swift handleCrossGatedProgress(magnitudes:frequencies:dominantPeak:)
     # ------------------------------------------------------------------ #
@@ -1708,23 +1651,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             max_hz=max_hz,
             prefer_lowest_significant=prefer_lowest,
         ) or dominant_peak
-        self.cross_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
-        self.auto_selected_cross_peak_id = avg_peak.id
-        # Let the view widen the axis onto it (mirrors Swift's autoSelected* change channel).
+        self.selected_cross_peak = avg_peak
+        # Let the view widen the axis onto it (mirrors Swift's selectedCrossPeak change channel).
         self.materialPeakIdentified.emit(float(avg_peak.frequency))
-        self.selected_cross_peak = (
-            next((p for p in self.cross_peaks if p.id == avg_peak.id), avg_peak)
-        )
-        gt_log(f"🟠 Auto-selected cross-grain peak: {avg_peak.frequency} Hz")
+        gt_log(f"🟠 Identified cross-grain peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 
-        self.all_peaks = self.combine_plate_peaks()
-        # Only the identified (auto-selected) L and C peaks are selected — others are informational.
-        # Mirrors Swift: selectedPeakIDs = Set([autoSelectedLongitudinalPeakID, autoSelectedCrossPeakID].compactMap { $0 })
-        self.selected_peak_ids = {
-            pid for pid in (self.auto_selected_longitudinal_peak_id, self.auto_selected_cross_peak_id)
-            if pid is not None
-        }
         # Emit peaks BEFORE the phase transition so the view's peaks model has
         # up-to-date data when plateStatusChanged triggers refresh_annotations().
         self._emit_peaks_array(self.peaks_above_peak_min)
@@ -1817,23 +1749,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             max_hz=max_hz,
             prefer_lowest_significant=prefer_lowest,
         ) or dominant_peak
-        self.flc_peaks = self._build_all_peaks(avg_mags, avg_freqs, avg_peak)
-        self.auto_selected_flc_peak_id = avg_peak.id
-        # Let the view widen the axis onto it (mirrors Swift's autoSelected* change channel).
+        self.selected_flc_peak = avg_peak
+        # Let the view widen the axis onto it (mirrors Swift's selectedFlcPeak change channel).
         self.materialPeakIdentified.emit(float(avg_peak.frequency))
-        self.selected_flc_peak = (
-            next((p for p in self.flc_peaks if p.id == avg_peak.id), avg_peak)
-        )
-        gt_log(f"🟣 Auto-selected FLC peak: {avg_peak.frequency} Hz")
+        gt_log(f"🟣 Identified FLC peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 
-        sel = self._resolved_plate_peaks(
-            include_cross=True,
-            include_flc=True,
-            flc_override=self.selected_flc_peak or avg_peak,
-        )
-        self.all_peaks = sel
-        self.selected_peak_ids = {p.id for p in sel}
         # Emit peaks BEFORE the phase transition so the view's peaks model has
         # up-to-date data when plateStatusChanged triggers refresh_annotations().
         self._emit_peaks_array(self.peaks_above_peak_min)
@@ -1872,36 +1793,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             f"C={self.selected_cross_peak.frequency if self.selected_cross_peak else 0} "
             f"FLC={dominant_peak.frequency} Hz"
         )
-
-    # ------------------------------------------------------------------ #
-    # _build_all_peaks
-    # Mirrors Swift func buildAllPeaks(magnitudes:frequencies:dominantPeak:)
-    # ------------------------------------------------------------------ #
-
-    def _build_all_peaks(self, magnitudes, frequencies, dominant_peak) -> "list":
-        """Build a display-ready peak list ensuring dominantPeak is always present.
-
-        Runs findPeaks with no range restrictions, then replaces or prepends
-        dominantPeak so its UUID identity is preserved for ID-based lookups.
-
-        For plate/brace, uses the median of the full spectrum as an adaptive
-        noise-floor threshold instead of the guitar-mode peak_min_threshold.
-        Mirrors Swift TapToneAnalyzer.buildAllPeaks(magnitudes:frequencies:dominantPeak:).
-        """
-        sorted_mags = sorted(magnitudes)
-        median_threshold = sorted_mags[len(sorted_mags) // 2]
-        peaks = self.find_peaks(magnitudes, frequencies, peak_min_override=median_threshold)
-        prox = self.PEAK_PROXIMITY_HZ
-
-        idx = next(
-            (i for i, p in enumerate(peaks) if abs(p.frequency - dominant_peak.frequency) < prox),
-            None,
-        )
-        if idx is not None:
-            peaks[idx] = dominant_peak
-        else:
-            peaks.insert(0, dominant_peak)
-        return peaks
 
     # ------------------------------------------------------------------ #
     # average_spectra
@@ -2133,7 +2024,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # persistent), matching the web — NOT the raw peaks_above_peak_min (87→126→3 during capture).
         # peaks_above_peak_min itself is unchanged (kept for the model/results); only the emitted payload that
         # feeds the chart scatter + annotations is the identified set. Guitar emits peaks_above_peak_min
-        # unchanged. Mirrors Swift's view reading materialIdentifiedPeaks. (RESPIN-1.0.2, fix R.)
+        # unchanged. Mirrors Swift's view reading materialIdentifiedPeaks.
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         emit_peaks = peaks if _tds.measurement_type().is_guitar else self.material_identified_peaks
         self.peaksChanged.emit(emit_peaks)  # list[ResonantPeak] — mirrors Swift currentPeaks

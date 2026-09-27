@@ -2,23 +2,10 @@
 """
 Port of DSPTests.swift — parabolic interpolation and Q-factor calculation (F1–F9).
 
-REWRITTEN 2026-09-20 (#17) — this file previously did not test the code the app runs.
-
-It exercised ``peak_interp`` and ``peak_q_factor`` from
-``realtime_fft_analyzer_fft_processing``: NumPy ports of the peak-finding section of Swift's
-findPeaks that **nothing in the application ever called**. The app uses the scalar pair on
-TapToneAnalyzer — ``_parabolic_interpolate`` and ``_calculate_q_factor`` — which are the direct
-counterparts of Swift's ``parabolicInterpolate`` / ``calculateQFactor`` and are what the capture
-and peak-analysis paths run. Those had no test at all.
-
-So test/dsp paired Swift's tests of the live code with this edition's tests of a second,
-unused implementation. Swift and the web each have exactly one; the duplicate was Python-only.
-The dead trio (peak_detection, peak_interp, peak_q_factor) has been removed, and these tests now
-call what the app calls.
-
-This is the same defect test_peak_finding.py records finding on 2026-07-19 in test/peaks. It was
-fixed there by relocating the FFT-layer tests rather than repointing them, which left this copy
-alive and the sibling slug untouched. See SLUG-SWEEP.md F14.
+Tests the scalar pair on TapToneAnalyzer — ``_parabolic_interpolate`` and ``_calculate_q_factor`` —
+the direct counterparts of Swift's ``parabolicInterpolate`` / ``calculateQFactor`` and what the
+capture and peak-analysis paths run. Each edition has exactly one implementation of these rules,
+and these tests call what the app calls.
 """
 
 from __future__ import annotations
@@ -168,7 +155,7 @@ class TestQFactor:
 
         This was called ``test_F9_peak_with_all_bins_above_threshold_returns_zero`` and asserted
         only ``q >= 0``. Q is centre/span here, not 0 — the name promised a behaviour the body
-        never checked and that does not hold. A test name is a comment. See SLUG-SWEEP.md F14.
+        never checked and that does not hold. A test name is a comment.
         """
         sut = _sut()
         n = 100
@@ -190,18 +177,15 @@ class TestSilentBufferIsNegativeInfinity:
     """A bin with no energy must read -inf, not a clamped number.
 
     All three editions convert magnitude with 20*log10, so an empty bin is -inf, and that is what
-    Swift's vDSP_vdbcon returns.  Python and web had each clamped the magnitude up to float64
-    epsilon first -- the SAME literal, 2.220446049250313e-16, Python's since 2026-05-09 and web's
-    transcribed from it -- which put "-313.0 dB" on screen for the absence of a signal.
+    Swift's vDSP_vdbcon returns.  A clamp to float64 epsilon would put "-313.0 dB" on screen for
+    the absence of a signal.
 
     It matters because -100 dB is a REAL reading: a live UMIK-1 in a quiet room sits near there, and
     it is the dead-input watchdog's own threshold.  A finite floor makes "no microphone at all" look
     like "a very quiet microphone", which is the one distinction the Peak readout has to keep.
-    Owner's call during the #17 run-review, having seen -inf on Swift and -313 here.
 
-    Python carried the clamp TWICE -- the live per-frame path (dft_anal) and the gated capture path
-    (compute_gated_fft).  Only the live one reaches the Peak readout, which is why removing the
-    other first would have looked like a fix and changed nothing on screen.
+    Both paths are checked -- the live per-frame path (dft_anal), which the Peak readout reads, and
+    the gated capture path (compute_gated_fft).
 
     Paired with Swift DSPTests and web test/dsp.test.ts.
     """
@@ -223,18 +207,18 @@ class TestSilentBufferIsNegativeInfinity:
         assert not math.isfinite(peak), f"silence must not report a finite level, got {peak}"
 
     def test_the_gated_path_is_also_unclamped(self):
-        """The GATED capture path carried the identical clamp and is fixed with the live one.
+        """The GATED capture path is unclamped too, like the live one.
 
-        Removing only one of the two would have looked like a fix and changed nothing on screen:
-        the Peak readout reads the live path, so the gated clamp was invisible there — and the live
-        clamp was invisible in any test that only drove the gated path.  Swift pins this path too
-        (its live path cannot be called without starting the engine); web pins both.
+        Each path needs its own check: the Peak readout reads the live path, so a gated clamp would
+        be invisible there — and a live clamp would be invisible to a test that drove only the gated
+        path.  Swift pins this path too (its live path cannot be called without starting the
+        engine); web pins both.
         """
         import numpy as np
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 
         # A real instance, since the method reads self._calibration_profile under a lock — built with
-        # for_testing(), which opens no audio stream (the full constructor does; #17 F49).
+        # for_testing(), which opens no audio stream (the full constructor does).
         mags, _freqs = RealtimeFFTAnalyzer.for_testing().compute_gated_fft(
             np.zeros(4096, dtype=np.float32), 48000.0
         )

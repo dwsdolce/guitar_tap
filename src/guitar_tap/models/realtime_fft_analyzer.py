@@ -143,7 +143,7 @@ class _FftProcessingThread(QtCore.QThread):
     ``gatedCaptureComplete`` and the rest): ``RealtimeFFTAnalyzer`` is not a QObject, so it cannot own
     signals, and this thread object does. So the object is created once, with the mic, and never
     replaced: a replacement would start with no connections. And each ``connect()`` ADDS a receiver, so
-    connecting a signal twice delivers every emission twice (#17 F44). Both are guarded by the pipeline
+    connecting a signal twice delivers every emission twice. Both are guarded by the pipeline
     cases in ``tests/test_tap_detection.py``.
 
     The object holds no processing state: only its stop and drain events, and its signals. The input
@@ -158,15 +158,14 @@ class _FftProcessingThread(QtCore.QThread):
     # (mag_y_db, mag_y, peak_db, fps, sample_dt, processing_dt). The ONE delivery of a frame to the
     # analyzer: connected to on_fft_frame, which therefore runs on the main thread — Swift's analyzer
     # takes frames through a Combine sink `.receive(on: DispatchQueue.main)`. The peak travels as float
-    # dB (Swift's `peakMagnitude`); it used to be int-encoded as dB + 100 and decoded at every consumer.
+    # dB (Swift's `peakMagnitude`), unrounded.
     fftFrameReady: QtCore.Signal = QtCore.Signal(
         np.ndarray, np.ndarray, float, float, float, float
     )
 
     # Per-chunk RMS level in dB, every audio chunk — for the UI (the threshold meter) ONLY. Tap
-    # detection takes the level from the direct rms_level_handler on this thread, as Swift's does from
-    # rmsLevelHandler on the audio queue. It used to take it from BOTH, deduplicated by a guard that
-    # could not tell a late queued copy from a new chunk (#17 F44).
+    # detection takes the level from the direct rms_level_handler on this thread instead, as Swift's
+    # does from rmsLevelHandler on the audio queue, so each chunk reaches detection exactly once.
     rmsLevelChanged: QtCore.Signal = QtCore.Signal(float, float)  # (level_db, audio_time)
 
     # Edge-triggered clipping signal.
@@ -876,8 +875,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
             # The ONE delivery of this frame to the analyzer (see fftFrameReady). Live, it is queued to
             # the main thread; in tests and inline file playback the emitter and receiver share a thread,
-            # so Qt delivers it synchronously. There used to be a direct fft_frame_handler call here as
-            # well, which analysed every live frame a second time, on this thread (#17 F44).
+            # so Qt delivers it synchronously.
             self.proc_thread.fftFrameReady.emit(
                 mag_y_db, mag_y, peak_db, fps, sample_dt, processing_dt,
             )
@@ -917,9 +915,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
         The window is the PERIODIC unit-peak Hann w[n] = 0.5·(1 − cos(2πn/N)), which
         is what Swift's vDSP_HANN_DENORM produces — NOT np.hanning, which is the
-        symmetric 0.5·(1 − cos(2πn/(N−1))). The two differ by less than any tolerance
-        can see, which is how this edition drifted to np.hanning before; a window test
-        in all three guards it (#17 F49). (Nor HANN_NORM, which would inflate magnitudes
+        symmetric 0.5·(1 − cos(2πn/(N−1))). The two differ by less than most tolerances
+        can see, so a window test in all three editions pins it. (Nor HANN_NORM, which would inflate magnitudes
         by +4.26 dB via its √(8/3) energy normalisation.)
 
         The window spans the padded length, not the captured one. At 48 kHz the 0.4 s
@@ -929,7 +926,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         works: the ring-out decays, so the signal supplies its own end taper, and the
         abrupt onset — 0.1 s in, after the pre-onset silence — is weighted ≈0.2. Tested
         against decaying modes at known frequencies, this measures a tap's frequency as
-        well as or better than a Hann spanning only the captured samples (#17 F49).
+        well as or better than a Hann spanning only the captured samples.
         Because the capture fills a different share of the padded window at each sample
         rate, the window's gain differs with it: about −10.8 dB at 44.1 kHz, −9.5 dB at
         48 kHz, and −6.0 dB at 96 kHz, where the capture exceeds 32768 samples and is
@@ -975,8 +972,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # NO epsilon clamp. A bin with no energy is -inf, which is what Swift's vDSP_vdbcon
         # produces and what the Peak readout should say: -inf means "nothing at all", and it has to
         # stay distinguishable from -100 dB, which is a REAL level a live UMIK-1 reaches in a quiet
-        # room. Clamping to float64 epsilon put -313.0 dB on screen instead — a precise-looking
-        # number for the absence of a signal (#17, run-review).
+        # room. A clamp to float64 epsilon would put -313.0 dB on screen instead — a precise-looking
+        # number for the absence of a signal.
         #
         # Safe because no axis is derived from the data: every setYRange call uses explicit bounds
         # (settings, a fixed -100..0, or a loaded measurement's saved range), so -inf bins clip off

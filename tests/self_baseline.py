@@ -59,7 +59,7 @@ def baseline_path() -> str:
 
 # JSON has no infinity. A silent input's peak is -inf, and it has to be stored and compared exactly,
 # so every oracle and baseline file — all three editions and the hub — writes a non-finite number as
-# the STRING "-Infinity" / "Infinity" / "NaN" and turns it back into a float on load (#17 F44).
+# the STRING "-Infinity" / "Infinity" / "NaN" and turns it back into a float on load.
 _NONFINITE = {"-Infinity": float("-inf"), "Infinity": float("inf"), "NaN": float("nan")}
 
 

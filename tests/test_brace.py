@@ -9,9 +9,8 @@ measurement rather than transcribed:
     guitar-tap-project/Tests/Brace/brace-umik-1-swift-mac-1778816093.guitartap
 
 The expected values are the ones GuitarTap reported for that sample (see the .pdf beside
-the file), not numbers this suite produced. fL was 512.3 here until the #17 sweep — a
-transcription of the report's rounded "512.7 Hz" display that matched neither the saved
-measurement nor the parity oracle, both of which carry 512.6888.
+the file), not numbers this suite produced. fL is the saved measurement's and the parity
+oracle's 512.6888, not the report's rounded "512.7 Hz" display.
 """
 
 import math
@@ -203,8 +202,7 @@ class TestBraceQuality:
 # Radiation ratio — BraceProperties
 #
 # R = c_L/ρ is shown in the Brace Properties panel and in the exported image in all
-# three editions, and had no test in any of them until the #17 sweep. See the matching
-# suite in test_plate.py for what that cost.
+# three editions, each of which pins it. See the matching suite in test_plate.py.
 # Mirrors Swift BraceRadiationRatioTests.
 # ---------------------------------------------------------------------------
 

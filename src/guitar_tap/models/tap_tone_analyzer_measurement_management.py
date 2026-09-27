@@ -191,8 +191,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         """Peak set to persist: the durable full set. Now that ``all_peaks`` IS the full set
         (found at the -100 dB floor at capture, or the authoritative saved set on a loaded
         measurement), this is simply that set — the old re-detect-and-append dance is gone.
-        Mirrors Swift ``guitarFullSavePeaks() { allPeaks }``. See PEAK-MIN-SEMANTICS.md in the
-        GuitarTapWeb repo.
+        Mirrors Swift ``guitarFullSavePeaks() { allPeaks }``.
         """
         return list(self.all_peaks)
 
@@ -293,7 +292,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 flc_snapshot = self._make_phase_snapshot(_mags, _freqs, **_kw)
 
         # ── Read model state directly — mirrors Swift currentPeaks etc. ───────
-        peaks = self.guitar_full_save_peaks()
+        # Guitar saves the full durable set; material (plate/brace) has no per-peak selection, so its
+        # peaks ARE the identified L/C/FLC (material_identified_peaks, in phase order). Mirrors Swift.
+        peaks = self.guitar_full_save_peaks() if mt.is_guitar else list(self.material_identified_peaks)
         decay_time = getattr(self, "current_decay_time", None)
 
         # annotation_offsets: passed value or self.peak_annotation_offsets
@@ -304,9 +305,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # selectedPeakIDs / selectedPeakFrequencies
         # Mirrors Swift: selectedPeakIDs.isEmpty ? nil : Array(selectedPeakIDs)
         # and currentPeaks.filter { selectedPeakIDs.contains($0.id) }.map { $0.frequency }
-        # Material (plate/brace) has no per-peak selection: persist the FULL identified peak set,
-        # never the live selected_peak_ids aggregate (which can be corrupted by the phase-transition
-        # glitch). Guitar persists the user's selection. Mirrors Swift/web (RESPIN-1.0.2).
+        # Material (plate/brace) has no per-peak selection: every identified peak is marked
+        # selected. Guitar persists the user's selection. Mirrors Swift/web.
         persisted_ids = set(self.selected_peak_ids) if mt.is_guitar else {p.id for p in peaks}
         sel_ids = list(persisted_ids) if persisted_ids else None
         sel_freqs = (
@@ -470,13 +470,15 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.frozen_frequencies = np.array([])
         self.frozen_magnitudes = np.array([])
         # Not a comparison any more; the loaded measurement displays because
-        # is_measurement_complete is set, not because of the mode (#17 F35).
+        # is_measurement_complete is set, not because of the mode.
         self._display_mode = AnalysisDisplayMode.LIVE
 
         # ── Restore peaks ─────────────────────────────────────────────────────
-        # Mirrors Swift: allPeaks = measurement.peaks (the durable full set).
-        # peaks_above_peak_min becomes its Peak-Min projection via the all_peaks setter.
-        self.all_peaks = list(measurement.peaks) if measurement.peaks else []
+        # Mirrors Swift: allPeaks = measurement.isMaterial ? [] : measurement.peaks (the durable
+        # full set). all_peaks is guitar-only: a material measurement's peaks are its identified
+        # L/C/FLC, restored into the selected_* peaks below. peaks_above_peak_min becomes
+        # its Peak-Min projection via the all_peaks setter.
+        self.all_peaks = [] if measurement.is_material else (list(measurement.peaks) if measurement.peaks else [])
 
         # ── Restore decay time ────────────────────────────────────────────────
         self.current_decay_time = measurement.decay_time
@@ -521,13 +523,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             )
         else:
             self.flc_spectrum = None
-
-        # ── Reset per-phase peak arrays ───────────────────────────────────────
-        # Mirrors Swift lines 453/456/460/463/467/470:
-        #   longitudinalPeaks = []; crossPeaks = []; flcPeaks = []
-        self.longitudinal_peaks = []
-        self.cross_peaks = []
-        self.flc_peaks = []
 
         # ── Restore frozen spectrum and material spectra ──────────────────────
         # Mirrors Swift: setFrozenSpectrum(frequencies:magnitudes:)
@@ -596,7 +591,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # Results panel, and Save all read this, so a loaded measurement's numbers come from the
             # file and loading never disturbs the Settings defaults (Store A). Replaces the old
             # snapshot-dims → AppSettings writes that used to clobber the user's defaults on every load.
-            # Mirrors Swift loadMeasurement. See MEASUREMENT-DIMENSIONS-SPEC.md.
+            # Mirrors Swift loadMeasurement.
             if not mt.is_guitar:
                 from .material_measurement_inputs import MaterialMeasurementInputs
                 from .plate_stiffness_preset import PlateStiffnessPreset
@@ -635,10 +630,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.source_measurement_timestamp = measurement.timestamp
         self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
 
-        # ── Restore plate/brace peak selections ───────────────────────────────
-        # Mirrors Swift: selectedLongitudinalPeak = measurement.selectedLongitudinalPeakID
-        #     .flatMap { id in currentPeaks.first(where: { $0.id == id }) }
-        _peak_by_id = {(p.id or "").upper(): p for p in self.peaks_above_peak_min}
+        # ── Restore the plate/brace identified peaks ──────────────────────────
+        # The only material peak state, by id from the saved peaks. Mirrors Swift:
+        #   selectedLongitudinalPeak = measurement.selectedLongitudinalPeakID
+        #       .flatMap { id in measurement.peaks.first(where: { $0.id == id }) }
+        _peak_by_id = {(p.id or "").upper(): p for p in (measurement.peaks or [])}
         self.selected_longitudinal_peak = (
             _peak_by_id.get((measurement.selected_longitudinal_peak_id or "").upper())
         )
@@ -652,6 +648,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
         gt_log(f"  🔵 Restored longitudinal peak: {self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else -1} Hz")
         gt_log(f"  🟠 Restored cross-grain peak: {self.selected_cross_peak.frequency if self.selected_cross_peak else -1} Hz")
         gt_log(f"  🟣 Restored FLC peak: {self.selected_flc_peak.frequency if self.selected_flc_peak else -1} Hz")
+        # Let the view widen the axis onto each restored identified peak — the same channel a phase
+        # completion uses (Swift's selected…Peak change channel fires on a load too; the web widens on
+        # any change of its identified peaks).
+        for _p in self.material_identified_peaks:
+            self.materialPeakIdentified.emit(float(_p.frequency))
 
         # ── Stop tap detection ────────────────────────────────────────────────
         # Mirrors Swift: detectionState = .idle; isMeasurementComplete = true;
@@ -670,9 +671,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.tap_progress = 0.0
         gt_log("  🧊 Spectrum frozen, tap detection disabled")
 
-        # ── Retain loaded peaks for recalculate_frozen_peaks_if_needed() ──────
-        # Mirrors Swift: loadedMeasurementPeaks = measurement.peaks
-        self.loaded_measurement_peaks = list(measurement.peaks) if measurement.peaks else []
+        # ── Retain the saved guitar peaks as the authoritative set (Re-analyze drops them) ──
+        # Mirrors Swift: loadedMeasurementPeaks = measurement.isMaterial ? nil : measurement.peaks
+        self.loaded_measurement_peaks = (
+            None if measurement.is_material else (list(measurement.peaks) if measurement.peaks else [])
+        )
 
         # ── Restore annotation offsets ────────────────────────────────────────
         # Mirrors Swift: peakAnnotationOffsets = measurement.peakAnnotationOffsets
@@ -686,14 +689,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         # ── Restore selected peak IDs ─────────────────────────────────────────
         # Mirrors Swift: selectedPeakIDs = saved ?? all; userHasModifiedPeakSelection = true
-        # Material (plate/brace) has no per-peak selection: always restore ALL peaks, ignoring the
-        # saved aggregate (which can be corrupted). Heals existing corrupt files on load. Guitar
-        # restores the user's saved selection. Mirrors Swift/web (RESPIN-1.0.2).
+        # Material (plate/brace) has no per-peak selection, so it restores none — its saved
+        # aggregate is never read. Guitar restores the user's saved selection. Mirrors Swift/web.
         # Resolved over the DURABLE set (`all_peaks`), not the Peak-Min projection: which peaks ARE
         # selected is a fact about the measurement, so a peak below the saved Peak Min is still
-        # restored as selected. Mirrors Swift Phase 4a (currentPeaks -> allPeaks).
+        # restored as selected. Mirrors Swift (allPeaks).
         if measurement.is_material:
-            self.selected_peak_ids = {p.id for p in self.all_peaks}
+            self.selected_peak_ids = set()
         elif measurement.selected_peak_ids is not None:
             self.selected_peak_ids = set(measurement.selected_peak_ids)
         else:
@@ -704,7 +706,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         _ums = getattr(measurement, "user_modified_selection", None)
         self.user_has_modified_peak_selection = True if _ums is None else _ums
         # Seed stable frequency cache — mirrors Swift selectedPeakFrequencies assignment. Over the
-        # DURABLE set so a selected sub-Peak-Min peak's frequency reaches the cache (Phase 4a).
+        # DURABLE set so a selected sub-Peak-Min peak's frequency reaches the cache.
         self.selected_peak_frequencies = [
             p.frequency for p in self.all_peaks
             if p.id in self.selected_peak_ids
@@ -842,10 +844,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.tap_entries = list(measurement.tap_entries) if measurement.tap_entries else []
         self.showing_multi_tap_comparison = False
 
-        # (Phase 3: the per-tap recompute on load was deleted, with its stale justification —
-        # loaded TapEntry peaks are the AUTHORITATIVE saved set; re-detecting them fought
-        # project_loaded_peaks_authoritative and truncated the saved set whenever Peak Min was
-        # raised. A reloaded multi-tap measurement now agrees with a fresh capture.)
+        # Loaded TapEntry peaks are the AUTHORITATIVE saved set and are not re-detected: re-deriving
+        # them would truncate the saved set whenever Peak Min is raised. A reloaded multi-tap
+        # measurement agrees with a fresh capture.
 
         gt_log(f"✅ Loaded measurement with {len(self.peaks_above_peak_min)} peaks (frozen)")
         if self.tap_entries:
@@ -895,7 +896,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.comparison_labels = []
             self.comparison_snapshots = []
             # Leave comparison; the chart returns to the averaged spectrum on its own, because the
-            # measurement is complete (#17 F35).
+            # measurement is complete.
             self._display_mode = AnalysisDisplayMode.LIVE
             self.comparisonChanged.emit(False)
             return
@@ -951,7 +952,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             )
             # Selected (mode-identified) averaged peaks only — resolved over the durable set via the
             # shared `selected_peaks` property, the same rule the on-screen table and PDF use, so the
-            # overlay does not lose a selected peak when Peak Min rises above it (Swift Phase 4a fix).
+            # overlay does not lose a selected peak when Peak Min rises above it. Mirrors Swift.
             avg_sel_peaks = list(self.selected_peaks)
             entries.append({
                 "label":      avg_label,
@@ -1150,7 +1151,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # goes on overwriting the displayed peaks from live audio underneath the overlay,
             # and a tap captures and completes a measurement the user never sees being made.
             # Empty data means we stayed LIVE, so there is nothing to freeze and nothing to
-            # disarm. Mirrors Swift load_comparison / web loadComparison (#17 F31).
+            # disarm. Mirrors Swift load_comparison / web loadComparison.
             self.detection_state = DetectionState.IDLE
             self.comparisonChanged.emit(True)
         else:

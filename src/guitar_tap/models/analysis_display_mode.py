@@ -35,11 +35,9 @@ class AnalysisDisplayMode(Enum):
     # MARK: - Cases
 
     # The main spectrum is shown — live input, or the measurement's own frozen result once
-    # is_measurement_complete is set. Those two are NOT distinguished here: there used to be a
-    # FROZEN case, but nothing ever branched on it, because whether a result is displayed is what
-    # is_measurement_complete says. Keeping both meant two fields describing one fact, and no
-    # completion path set FROZEN — so the device-settle guard, which asked display_mode == LIVE,
-    # wiped finished measurements (#17 F35).
+    # is_measurement_complete is set. Those two are NOT distinguished here: whether a result is
+    # displayed is what is_measurement_complete says, and a separate case would be a second field
+    # describing the same fact.
     # Mirrors Swift AnalysisDisplayMode.live.
     LIVE = auto()
 

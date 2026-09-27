@@ -504,11 +504,8 @@ class GuitarMode(Enum):
     def hex(self) -> str:
         """Display colour for a guitar mode as an absolute sRGB hex, from self.normalized.
 
-        Mirrors Swift ``GuitarMode.hex``. Python rendered its own palette until the #17 sweep —
-        invented here, never matching Swift, on the same white background. Ring was #823CC8
-        against Swift's #CB30E0, and UPPER_MODES and UNKNOWN were the SAME grey, so those two
-        categories were indistinguishable on this chart while Swift and the web separated them.
-        Swift is canonical and these are its values. See SLUG-SWEEP.md F9.
+        Mirrors Swift ``GuitarMode.hex``: Swift is canonical and these are its values. UPPER_MODES
+        and UNKNOWN are distinct greys, so the two categories stay distinguishable on the chart.
         """
         n = self.normalized
         _hexes = {
@@ -664,10 +661,9 @@ _PYTHON_STR_TO_MODE: dict[str, GuitarMode] = {
     "Back T(1,1)_3":        GuitarMode.BACK,
     "Cross Dipole T(2,1)":  GuitarMode.DIPOLE,
     "Long Dipole T(1,2)":   GuitarMode.DIPOLE,
-    # Swift maps Quadrapole to RING_MODE, and Swift is canonical. Python had UPPER_MODES here
-    # until the #17 sweep — a one-entry disagreement in a seven-entry table that no edition
-    # tested, so the two apps assigned a user's "Quadrapole T(2,2)" override to different modes
-    # and then disagreed about which peak was the Ring Mode peak. See SLUG-SWEEP.md F12.
+    # Swift maps Quadrapole to RING_MODE, and Swift is canonical. The editions must agree here, or
+    # a user's "Quadrapole T(2,2)" override lands on different modes and they disagree about which
+    # peak is the Ring Mode peak.
     "Quadrapole T(2,2)":    GuitarMode.RING_MODE,
     "Cross Tripole T(3,1)": GuitarMode.RING_MODE,
 }

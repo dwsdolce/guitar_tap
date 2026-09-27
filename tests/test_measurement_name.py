@@ -1,5 +1,5 @@
 # @parity test/measurement-name
-"""Pin the required-name rule (FILE-PATHS-AND-NAMES-SPEC §3).
+"""Pin the required-name rule.
 
 A measurement name must be non-empty after trimming before Save is allowed, and the stored name
 is trimmed. Three-way with Swift MeasurementNameTests.swift and web measurement-name.test.ts.
@@ -45,7 +45,7 @@ def test_normalized_notes_trims_and_blanks_to_none():
 
     This edition stripped notes in the edit dialog but NOT on the save path, so notes saved with
     surrounding whitespace read as an edit the moment the dialog reopened — a change the user never
-    made. Both paths go through the model rule now. See SLUG-SWEEP.md F21.
+    made. Both paths go through the model rule now.
     """
     assert M.normalized_notes("  Tapped cold  ") == "Tapped cold"
     assert M.normalized_notes("line one\nline two") == "line one\nline two"

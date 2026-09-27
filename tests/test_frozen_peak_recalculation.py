@@ -1,9 +1,7 @@
 # @parity test/frozen-peak-recalc
 """Port of FrozenPeakRecalculationTests.swift — the frozen/loaded peak recalculation path.
 
-Mirrors Swift ``FrozenPeakRecalculationTests``; the shared behaviour list is
-``docs/FROZEN-RECALC-TEST-PARITY.md`` in the hub (one id per behaviour; the range moves as the
-table grows, so do not cite a bound here).
+Mirrors Swift ``FrozenPeakRecalculationTests``.
 
 `recalculate_frozen_peaks_if_needed()` is the single entry point that refreshes the peak
 display after a threshold or analysis-range change. It has two branches:
@@ -262,7 +260,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         )
 
     def test_PR04_loaded_all_below_threshold_clears_display_keeps_durable_set(self, qt_app):
-        """PR-A4 (Phase 1/2 model): all loaded peaks below Peak Min → the DISPLAY projection
+        """PR-A4: all loaded peaks below Peak Min → the DISPLAY projection
         (peaks_above_peak_min) empties, but the DURABLE set (all_peaks) and classification survive.
         A display filter must never shrink the durable set. Mirrors Swift
         loadedPeaks_allBelowThreshold_clearsDisplayButKeepsClassification.
@@ -443,7 +441,7 @@ class TestLoadedPath:
         Saved peaks may not be reproducible by re-running detection: spectrum averaging, FFT
         windowing and analysis settings can all differ between sessions. The frozen spectrum here
         is flat, so detection would find nothing — the saved peak surviving proves it was used.
-        Gap filled 2026-09-19 (issue #8); Swift and web already covered this.
+        Swift and web cover the same.
         """
         TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
         sut = self._frozen(MeasurementType.GENERIC)   # flat spectrum: detection finds nothing
@@ -484,7 +482,7 @@ class TestLoadedPath:
         Swift guards the same way (recalculateFrozenPeaksIfNeeded, first line). Both editions
         trigger recalculation from property observers that can fire part-way through a load, so
         without the guard a half-applied measurement would be re-analysed and clobber what is
-        being loaded. Gap filled 2026-09-19 (issue #8): the guard existed here, untested.
+        being loaded.
 
         The web needs no equivalent — it drives recalculatePeaks from one layout effect keyed on
         the loaded peaks themselves, so the effect only runs once they are in place.
@@ -529,7 +527,6 @@ class TestLoadedPath:
         Classification is a fact about the measurement, not about what is on screen. Distinct
         from PR04/PRA4, which pins the projection emptying; this pins what must NOT empty with it.
         Mirrors Swift loadedPeaks_allBelowThreshold_clearsDisplayButKeepsClassification.
-        Gap filled 2026-09-19 (issue #8).
         """
         from guitar_tap.models.guitar_mode import GuitarMode
 
@@ -555,10 +552,9 @@ class TestLoadedPath:
         """PR09: Peak Min is a GUITAR-only control — a loaded plate/brace keeps every peak.
 
         A loaded material measurement's identified L / C / FLC peaks ARE the result; filtering
-        them by a guitar display control would take the answer off the screen. Regression found
-        2026-07-21: a loaded plate whose fL sat at -62.41 dB with Peak Min -60 lost that peak
-        from both the table and the annotations. Mirrors Swift
-        loadedPeaks_material_areNeverFilteredByPeakMin. Gap filled 2026-09-19 (issue #8).
+        them by a guitar display control would take the answer off the screen — here, a loaded
+        plate whose fL sits at -62.41 dB with Peak Min -60 keeps that peak in both the table and
+        the annotations. Mirrors Swift loadedPeaks_material_areNeverFilteredByPeakMin.
         """
         for mtype in (MeasurementType.PLATE, MeasurementType.BRACE):
             sut = self._frozen(mtype)
@@ -585,7 +581,6 @@ class TestLoadedPath:
         frequency; until then every recalculation re-runs auto-selection. Acoustic Air is
         90–120 Hz (GuitarType.ACOUSTIC.mode_ranges), so both peaks are Air candidates and only
         magnitude separates them. Mirrors Swift loadedPath_autoSelection_reRunsWhenNotModified.
-        Gap filled 2026-09-19 (issue #8).
         """
         sut = self._frozen(MeasurementType.ACOUSTIC)
         quiet_air = _peak(98.0, -50.0)
@@ -615,9 +610,7 @@ class TestLoadedPath:
         travels into the saved measurement.
 
         Mirrors Swift `loadedPath_stableIDs_leaveRestoredOverridesInPlace`; web covers it as
-        "the loaded branch keeps stable ids". Gap filled 2026-09-20 (issue #8) — it had been open
-        since 2026-09-19 but was invisible, because the parity table showed a dash for BOTH Swift
-        and Python after only Swift's half was written.
+        "the loaded branch keeps stable ids".
         """
         sut = self._frozen(MeasurementType.GENERIC)
         low, high = _peak(200.0, -20.0), _peak(400.0, -25.0)
@@ -640,10 +633,6 @@ class TestLoadedPath:
 
 class TestRemappingThroughProduction:
     """Carry-forward of per-peak state across a re-mint — driven through the REAL path.
-
-    Replaces eight tests purged 2026-09-19 (issue #8) that exercised `_remap_by_freq`, a
-    reimplementation of this logic living in the test file, or asserted arithmetic on literals.
-    Production remapping could have been broken in every one and all eight would have passed.
 
     Each test here re-freezes the analyzer on a SHIFTED spectrum so detection mints genuinely new
     peak ids, then asserts what `recalculate_frozen_peaks_if_needed` did with the state keyed to
@@ -807,7 +796,7 @@ class TestPeakMinDurability:
     def test_PR19_reanalyze_preserves_state_of_peaks_hidden_by_peak_min(self, qt_app):
         """Re-analyze re-detects from the frozen spectrum, and a peak HIDDEN by Peak Min keeps its
         dragged annotation offset and its custom mode name — the carry-forward snapshot resolves
-        UUIDs over the durable ``all_peaks``, not the Peak-Min projection (Phase 4a). Mirrors Swift
+        UUIDs over the durable ``all_peaks``, not the Peak-Min projection. Mirrors Swift
         ``reanalyzePreservesStateOfPeaksHiddenByPeakMin``. Asserts its own preconditions so it cannot
         rot into a vacuous pass through the flat-spectrum trap.
         """
@@ -870,7 +859,7 @@ class TestPeakMinDurability:
         )
 
     def test_PR14_deselect_survives_peak_min_sweep(self, qt_app):
-        """PEAK-SELECTION-SURVIVES-SLIDER.md: deselect a peak, sweep Peak Min — it stays
+        """Deselect a peak, sweep Peak Min — it stays
         deselected. The decoupling means the slider never re-runs the carry-forward.
         """
         sut = self._frozen_guitar()
@@ -891,7 +880,7 @@ class TestPeakMinDurability:
         )
         assert a.id in sut.selected_peak_ids, "the still-selected peak stays selected"
 
-    # ── Phase 3: per-tap entries computed once, at capture (mirrors Swift 11689b6) ──────────
+    # ── Per-tap entries computed once, at capture (mirrors Swift) ──────────────────────────
 
     def _tap_entry(self, tap_index, peaks, selected):
         from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
@@ -965,7 +954,7 @@ class TestPeakMinDurability:
         its own snapshot, so re-detection could not mint it: if it comes back, it was restored.
         tap_entries is persisted, so re-deriving here would truncate the saved per-tap set —
         load with Peak Min raised, save, and the difference is permanent. Mirrors web's
-        `loaded per-tap entries are found once`. Gap filled 2026-09-19 (issue #8).
+        `PR17: loading restores the saved per-tap peaks and never re-detects`.
         """
         sut = self._frozen_guitar()
         undetectable = _peak(777.0, -30.0)   # not a local max of the entry's snapshot
@@ -986,6 +975,82 @@ class TestPeakMinDurability:
         assert [round(p.frequency) for p in sut.tap_entries[0].peaks] == [777], (
             "a peak absent from the snapshot proves the saved set was used"
         )
+
+    def test_PR38_tap_entry_resolved_mode_peaks_resolves_over_selected_peaks_only(self, qt_app):
+        """PR38: a tap's modes resolve over its SELECTED peaks only. At capture a tap's selection is
+        the strongest peak per mode, so resolving over all of its peaks gives the same answer and no
+        other case tells the two apart. Here the selected Top is the weaker of two Top-band peaks.
+        Mirrors Swift PR38_tapEntryResolvedModePeaks_resolvesOverSelectedPeaksOnly.
+        """
+        from guitar_tap.models.guitar_mode import GuitarMode
+        from guitar_tap.models.guitar_type import GuitarType
+        air = _peak(100.0, -25.0)
+        stronger_top = _peak(200.0, -20.0)
+        selected_top = _peak(220.0, -30.0)
+        entry = self._tap_entry(1, [air, stronger_top, selected_top], [air.id, selected_top.id])
+
+        modes = entry.resolved_mode_peaks(guitar_type=GuitarType.GENERIC)
+
+        assert modes[GuitarMode.TOP].id == selected_top.id, "the selected Top, not the stronger unselected one"
+        assert modes[GuitarMode.AIR].id == air.id
+
+    def test_PR39_live_frame_never_overwrites_a_complete_result(self, qt_app):
+        """PR39: a live FFT frame never overwrites a complete result — the durable peaks of a finished
+        or loaded measurement are not replaced by live audio. The same frame DOES set the peaks while
+        the sequence is running, so the guard is what the first assertion pins. Mirrors Swift
+        PR39_liveFrame_neverOverwritesACompleteResult.
+        """
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut = TapToneAnalyzer()
+        sut.detection_state = DetectionState.LISTENING
+        result = _peak(777.0, -30.0)
+        sut.all_peaks = [result]
+        sut.is_measurement_complete = True
+        freqs, mags = _gaussian_spectrum([(200.0, -20.0)])
+
+        sut.analyze_magnitudes(list(mags), list(freqs), -20.0)
+        assert [p.id for p in sut.all_peaks] == [result.id], (
+            "a complete result's peaks are not replaced by a live frame"
+        )
+
+        sut.is_measurement_complete = False
+        sut.analyze_magnitudes(list(mags), list(freqs), -20.0)
+        assert any(abs(p.frequency - 200.0) < 5.0 for p in sut.all_peaks), "while running, the frame sets the peaks"
+
+    def test_PR40_load_measurement_sets_the_saved_peaks(self, qt_app):
+        """PR40: a load puts the saved peaks in place — the durable set IS the file's peaks, by
+        identity. Mirrors Swift PR40_loadMeasurement_setsTheSavedPeaks.
+        """
+        sut = self._frozen_guitar()
+        saved = [_peak(100.0, -25.0), _peak(777.0, -30.0)]
+        snap = self._tap_entry(1, [], []).snapshot
+        measurement = TapToneMeasurement.create(
+            peaks=saved, spectrum_snapshot=snap, measurement_type=MeasurementType.GENERIC.value,
+        )
+
+        sut.load_measurement(measurement)
+
+        assert [p.id for p in sut.all_peaks] == [p.id for p in saved], (
+            "the loaded peaks are the saved ones, by identity"
+        )
+
+    def test_PR41_reanalyze_drops_the_loaded_peaks_and_re_detects(self, qt_app):
+        """PR41: Re-analyze drops a loaded measurement's peaks and re-detects the frozen spectrum. The
+        saved 777 Hz peak is absent from the spectrum, so it can only survive if the loaded peaks were
+        kept. Mirrors Swift PR41_reanalyze_dropsTheLoadedPeaksAndReDetects.
+        """
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut = TapToneAnalyzer()
+        _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
+        saved = _peak(777.0, -30.0)
+        sut.all_peaks = [saved]
+        sut.loaded_measurement_peaks = [saved]
+
+        sut.reanalyze_peaks()
+
+        assert sut.loaded_measurement_peaks is None, "Re-analyze drops the loaded peaks"
+        assert saved.id not in {p.id for p in sut.all_peaks}, "the saved peak is gone"
+        assert any(abs(p.frequency - 200.0) < 5.0 for p in sut.all_peaks), "the spectrum's peak is re-detected"
 
     def test_PR18_selected_peaks_resolve_over_durable_set(self, qt_app):
         """Mirrors Swift selectedPeaks_resolveOverDurableSet_notTheDisplayProjection — the
@@ -1027,7 +1092,7 @@ class TestLivePath:
         The second half is the load-bearing one. After completion the frozen/loaded path owns
         the display, and a late audio frame arriving from the still-draining engine must not
         overwrite the captured result. Mirrors web's `live-spectrum path`; Swift covers the
-        same guard in `analyzeMagnitudes`. Gap filled 2026-09-19 (issue #8).
+        same guard in `analyzeMagnitudes`.
         """
         TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
         sut = TapToneAnalyzer()
@@ -1078,7 +1143,7 @@ class TestMaterialPeakIdentity:
         handlers, not find_peaks on a frozen spectrum), so the risk is that they arrive as
         second-class objects the per-peak state cannot key on. Driven through
         _handle_longitudinal_gated_progress, the real brace completion path. Mirrors web's
-        `a captured MATERIAL peak gets a stored id`. Gap filled 2026-09-19 (issue #8).
+        `a captured MATERIAL peak gets a stored id`.
         """
         TapDisplaySettings.set_measurement_type(MeasurementType.BRACE)
         sut = TapToneAnalyzer()
@@ -1101,9 +1166,9 @@ class TestMaterialPeakIdentity:
         captured = sut.selected_longitudinal_peak
         assert captured is not None, "the brace capture must produce an fL peak"
         assert captured.id, "a captured material peak carries a real id"
-        # Precondition, not a claim: the brace branch assigns all_peaks = [selected fL], so this
-        # holds by construction. The assertions with teeth are the round trip below.
-        assert [p.id for p in sut.all_peaks] == [captured.id]
+        # Precondition, not a claim: a brace's peaks are its identified fL. The assertions with teeth
+        # are the round trip below.
+        assert [p.id for p in sut.material_identified_peaks] == [captured.id]
 
         sut.update_annotation_offset(captured.id, (12.0, -3.0))
 
@@ -1112,11 +1177,11 @@ class TestMaterialPeakIdentity:
         )
 
         # The claim with teeth: that identity survives a save/load round trip. The save path
-        # persists guitar_full_save_peaks() (= all_peaks) and the load path restores an offset
-        # only for an id it finds in measurement.peaks — so a material peak missing from the
+        # persists a material measurement's identified peaks and the load path restores an
+        # offset only for an id it finds in measurement.peaks — so a material peak missing from the
         # saved set would silently drop its label position.
         saved = TapToneMeasurement.create(
-            peaks=sut.guitar_full_save_peaks(),
+            peaks=list(sut.material_identified_peaks),
             annotation_offsets=dict(sut.peak_annotation_offsets),
             measurement_type=MeasurementType.BRACE.value,
         )
@@ -1127,3 +1192,138 @@ class TestMaterialPeakIdentity:
         assert reloaded.get_annotation_offset(captured.id) == (12.0, -3.0), (
             "the offset must come back keyed to the same material peak id"
         )
+
+    # ── A material measurement's peaks are its identified L/C/FLC, and nothing else ──────────────
+
+    @staticmethod
+    def _capture_longitudinal(sut, hz: float = 300.0):
+        """Capture one material phase through the real gated handler (a synthetic tap at ``hz``) on
+        ``sut``, already set to a material type. Returns the identified peak. Mirrors Swift
+        captureLongitudinal."""
+        sut.min_frequency = 20.0
+        sut.max_frequency = 1200.0
+        sut.number_of_taps = 1
+        freqs, mags = _gaussian_spectrum([(hz, -30.0)], lo=20.0, hi=1200.0)
+        dominant = sut.find_dominant_peak(
+            magnitudes=list(mags), frequencies=list(freqs), min_hz=20.0, max_hz=1200.0,
+        )
+        if dominant is None:
+            return None
+        sut.captured_taps = [(list(mags), list(freqs), 0.0)]
+        sut._handle_longitudinal_gated_progress(
+            list(mags), list(freqs), dominant, min_hz=20.0, max_hz=1200.0,
+        )
+        return sut.selected_longitudinal_peak
+
+    @staticmethod
+    def _capture_cross(sut, hz: float):
+        """Capture the cross-grain phase the same way. Returns the identified fC. Mirrors Swift
+        captureCross."""
+        freqs, mags = _gaussian_spectrum([(hz, -30.0)], lo=20.0, hi=1200.0)
+        dominant = sut.find_dominant_peak(
+            magnitudes=list(mags), frequencies=list(freqs), min_hz=20.0, max_hz=1200.0,
+        )
+        if dominant is None:
+            return None
+        sut.captured_taps = [(list(mags), list(freqs), 0.0)]
+        sut._handle_cross_gated_progress(
+            list(mags), list(freqs), dominant, min_hz=20.0, max_hz=1200.0,
+        )
+        return sut.selected_cross_peak
+
+    def test_PR42_material_save_writes_the_identified_peaks(self, qt_app):
+        """PR42: saving a material measurement writes its identified peaks — all selected — not the
+        guitar peak set, which is empty for material. Mirrors Swift
+        PR42_materialSave_writesTheIdentifiedPeaks."""
+        TapDisplaySettings.set_measurement_type(MeasurementType.BRACE)
+        sut = TapToneAnalyzer()
+        sut.set_measurement_type(MeasurementType.BRACE)
+        f_l = self._capture_longitudinal(sut)
+        assert f_l is not None, "precondition: the brace capture identifies fL"
+
+        sut.save_measurement()
+        saved = sut.saved_measurements[-1]
+
+        assert [p.id for p in saved.peaks] == [f_l.id], "the file's peaks are the identified fL"
+        assert list(saved.selected_peak_ids or []) == [f_l.id], "and it is marked selected"
+
+    def test_PR43_material_load_restores_the_identified_peaks_only(self, qt_app):
+        """PR43: loading a material measurement restores its identified peaks by id from the file, and
+        leaves the guitar peak state (all_peaks, selected_peak_ids) empty. A plate (fL + fC), so each
+        role is restored separately. Mirrors Swift PR43_materialLoad_restoresTheIdentifiedPeaksOnly."""
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        _saved_flc = TapDisplaySettings.measure_flc()
+        TapDisplaySettings.set_measure_flc(False)
+        try:
+            source = TapToneAnalyzer()
+            source.set_measurement_type(MeasurementType.PLATE)
+            source.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # live: stops at review
+            f_l = self._capture_longitudinal(source, hz=60.0)
+            assert f_l is not None, "precondition: the plate capture identifies fL"
+            source.accept_current_phase()
+            f_c = self._capture_cross(source, hz=150.0)
+            assert f_c is not None, "precondition: the plate capture identifies fC"
+            source.accept_current_phase()  # no FLC: the measurement completes, as it must before a save
+            assert source.is_measurement_complete, "precondition: the plate is complete"
+            # The identified ids are passed in, as the view's save passes them.
+            source.save_measurement(
+                selected_longitudinal_peak_id=source.effective_longitudinal_peak_id,
+                selected_cross_peak_id=source.effective_cross_peak_id,
+            )
+            saved = source.saved_measurements[-1]
+        finally:
+            TapDisplaySettings.set_measure_flc(_saved_flc)
+
+        sut = TapToneAnalyzer()
+        sut.set_measurement_type(MeasurementType.PLATE)
+        sut.load_measurement(saved)
+
+        assert sut.selected_longitudinal_peak is not None and sut.selected_longitudinal_peak.id == f_l.id, (
+            "fL restored by id from the file"
+        )
+        assert sut.selected_cross_peak is not None and sut.selected_cross_peak.id == f_c.id, (
+            "fC restored by id from the file"
+        )
+        assert sut.all_peaks == [], "the guitar peak set stays empty for material"
+        assert not sut.selected_peak_ids, "and so does the guitar selection"
+
+    def test_PR44_material_live_frame_leaves_no_peaks(self, qt_app):
+        """PR44: a live FFT frame during a material sequence leaves no peaks — material has no live
+        peaks, and any guitar peaks left from before are cleared. Mirrors Swift
+        PR44_materialLiveFrame_leavesNoPeaks."""
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        sut = TapToneAnalyzer()
+        sut.set_measurement_type(MeasurementType.PLATE)
+        sut.detection_state = DetectionState.LISTENING
+        sut.all_peaks = [_peak(200.0, -20.0)]   # guitar peaks left from before
+        freqs, mags = _gaussian_spectrum([(200.0, -20.0)])
+
+        sut.analyze_magnitudes(list(mags), list(freqs), -20.0)
+
+        assert sut.all_peaks == [], "a material frame leaves no peaks"
+
+    def test_PR45_redo_clears_the_phases_identified_peak(self, qt_app):
+        """PR45: Redo clears the redone phase's identified peak and spectrum, so the rejected fL is gone
+        while the user re-taps. Mirrors Swift PR45_redo_clearsThePhasesIdentifiedPeak. Python also
+        checks the view is told (peaksChanged) — Swift's and the web's views re-read the model; a Qt view
+        only learns of it by the signal."""
+        from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
+        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+        sut = TapToneAnalyzer()
+        sut.set_measurement_type(MeasurementType.PLATE)
+        sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # live (not file) → stops at review
+        assert self._capture_longitudinal(sut, hz=60.0) is not None, "precondition: the plate L capture identifies fL"
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
+        assert sut.material_tap_phase == MaterialTapPhase.REVIEWING_LONGITUDINAL, (
+            "precondition: live capture stops at review"
+        )
+        emitted = []
+        sut.peaksChanged.connect(lambda peaks: emitted.append(list(peaks)))
+
+        sut.redo_current_phase()
+
+        assert sut.selected_longitudinal_peak is None, "the rejected fL is gone"
+        assert sut.longitudinal_spectrum is None, "and so is its spectrum"
+        assert sut.material_identified_peaks == []
+        assert emitted and emitted[-1] == [], "the view is told the identified peaks are now empty"

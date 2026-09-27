@@ -1,5 +1,5 @@
 # @parity test/session-pre-roll
-"""Pin the bounded pre-roll for the session WAV (FILE-PATHS-AND-NAMES-SPEC §6).
+"""Pin the bounded pre-roll for the session WAV.
 
 The head is trimmed to ~2 s ONLY before the first tap; everything after — subsequent taps, plate
 phases, and the gaps between them — is completely live. Three-way with Swift SessionPreRollTests.swift

@@ -13,15 +13,11 @@ MeasurementDetailView.measurementTypeName:
         ?? measurement.longitudinalSnapshot?.measurementType
     return mt?.shortName ?? "—"
 
-REGRESSION (2026-07-16, found in 1.0.2 run-review): `_type_name` read the top-level
-`measurement_type` instead, so every measurement saved in the CURRENT SESSION showed "—" for
-Measurement Type.  It rendered correctly only after an app restart, when `from_dict` populated the
-top-level field from the file.  That session-scoped behaviour is exactly why no test caught it — a
-round-trip test loads from a dict and always passes.  Hence the in-memory cases below.
+A measurement saved in the CURRENT SESSION has no top-level `measurement_type`; only one loaded
+through `from_dict` has it populated from the file.  A round-trip test loads from a dict and so
+cannot tell the two sources apart — hence the in-memory cases below.
 
-Swift and the web already resolve from the snapshot correctly; this was a Python-only divergence.
-Counterpart tests for Swift/web are deferred (Swift is on TestFlight for the 1.0.2 candidate and must
-not be touched) — see Development/MATERIAL-MULTITAP-DISCREPANCIES.md §2.
+Swift and the web resolve from the snapshot the same way.
 """
 
 from __future__ import annotations
@@ -114,10 +110,7 @@ def test_loaded_measurement_still_resolves():
     assert _type_name(m) == "Brace"
 
 
-# ── Cases levelled across the editions (#17 F16) ─────────────────────────────
-#
-# The cases above were shared with Swift and the web; each edition had grown extras the others
-# never received. This is the one this edition lacked.
+# ── Every type's short name, shared with Swift and the web ──────────────────
 
 
 def test_every_type_resolves_to_its_short_name():
@@ -125,7 +118,7 @@ def test_every_type_resolves_to_its_short_name():
 
     Only Swift pinned this, so a short name that drifted in one edition would have gone
     unnoticed. The three tables agree today: Generic, Acoustic, Classical, Flamenco, Plate,
-    Brace. See SLUG-SWEEP.md F16.
+    Brace.
     """
     cases = [
         ("Generic Guitar", "Generic"),

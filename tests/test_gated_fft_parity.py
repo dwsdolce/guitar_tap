@@ -4,8 +4,7 @@ Parity tests for compute_gated_fft, the transform every plate/brace capture runs
 the oracle's synthetic signals and assert the oracle's dB, as Swift (GatedFFTParityTests.swift) and
 web (gated-fft.test.ts) do — any systematic difference between the implementations shows up as a
 one-sided failure. The remaining cases pin rules the oracle cases cannot see: which window is used,
-that calibration is applied inside the transform, and that too little input is not a spectrum
-(#17 F49).
+that calibration is applied inside the transform, and that too little input is not a spectrum.
 
 Test plan coverage: GFFT1–GFFT5
 """
@@ -87,8 +86,7 @@ class TestGatedFFTParity:
     def test_GFFT4_silence_is_minus_infinity_in_every_bin(self):
         """GFFT4: silence reads exactly the oracle's value — -inf in every bin.
 
-        The oracle stores it as the string "-Infinity", which every edition's reader decodes
-        (#17 F44).
+        The oracle stores it as the string "-Infinity", which every edition's reader decodes.
         """
         signal = make_gated_test_signal([], SAMPLE_RATE)
         mags, _ = _analyzer().compute_gated_fft(signal, SAMPLE_RATE)

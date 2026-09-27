@@ -166,7 +166,7 @@ class TapDisplaySettings:
     def guitar_type(cls) -> "GuitarType":
         """The currently selected guitar type.
 
-        Mirrors Swift TapDisplaySettings.guitarType getter (WI-22 / D34):
+        Mirrors Swift TapDisplaySettings.guitarType getter (D34):
         checks measurementType first — if it is a guitar type, returns it;
         otherwise falls back to the stored guitarTypeKey for backward
         compatibility.  Always returns a GuitarType enum value.
@@ -189,7 +189,7 @@ class TapDisplaySettings:
     def set_guitar_type(cls, v: "str | GuitarType") -> None:
         """Set the guitar type and keep measurementType in sync.
 
-        Mirrors Swift TapDisplaySettings.guitarType setter (WI-23 / D35):
+        Mirrors Swift TapDisplaySettings.guitarType setter (D35):
         writes the raw guitar type value *and* updates measurementType so
         that the two settings stay in sync — matching Swift's setter which
         calls ``measurementType = MeasurementType.from(newValue)``.
@@ -568,20 +568,19 @@ class TapDisplaySettings:
 
     @classmethod
     def analysis_min_frequency(cls) -> float:
-        """The analysis frequency range minimum (Hz) — a **fixed** 30 Hz (Phase 7).
+        """The analysis frequency range minimum (Hz) — a **fixed** 30 Hz.
 
-        A real bound on where useful modes live (30 Hz reaches the material fLC). It was once a
-        user-editable Settings knob, but the range never needs changing, so the control was removed
-        and the value is a constant; ``find_peaks`` still restricts detection to this range — the
-        concept stays, only the knob is gone. Distinct from the display/pan-zoom range, which stays
-        user-controllable. Any old ``analysis/analysis_f_min`` QSettings value is now ignored.
+        A real bound on where useful modes live (30 Hz reaches the material fLC). Not a user setting:
+        the range never needs changing, so the value is a constant; ``find_peaks`` restricts
+        detection to this range. Distinct from the display/pan-zoom range, which is
+        user-controllable. Any ``analysis/analysis_f_min`` QSettings value is ignored.
         Mirrors Swift TapDisplaySettings.analysisMinFrequency.
         """
         return cls.DEFAULT_ANALYSIS_MIN_FREQUENCY
 
     @classmethod
     def analysis_max_frequency(cls) -> float:
-        """The analysis frequency range maximum (Hz) — a **fixed** 2000 Hz (Phase 7). Nothing useful
+        """The analysis frequency range maximum (Hz) — a **fixed** 2000 Hz. Nothing useful
         sits above 2000 Hz. See ``analysis_min_frequency``. Mirrors Swift
         TapDisplaySettings.analysisMaxFrequency."""
         return cls.DEFAULT_ANALYSIS_MAX_FREQUENCY

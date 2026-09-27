@@ -1,7 +1,7 @@
 # @parity model/wav-dump-folder tests=test/wav-dump-folder
 """Where 'Dump Capture Audio' saves its per-measurement session WAVs.
 
-See FILE-PATHS-AND-NAMES-SPEC.md §4b / §6. Mirrors Swift ``WavDumpFolder`` — same interface and
+Mirrors Swift ``WavDumpFolder`` — same interface and
 method names.
 
 **Default** = the OS Documents folder + ``GuitarTap`` (via ``QStandardPaths``, so a OneDrive-
@@ -12,7 +12,7 @@ the old hardcoded ``~/Documents``). On any platform the user may *Change…* to 
 security-scoped bookmark; Python is **not** sandboxed, so the custom folder is stored as a plain
 path. The interface is identical.
 
-The debug log deliberately does **not** use this — it stays in the app's Documents (§4c).
+The debug log deliberately does **not** use this — it stays in the app's Documents.
 """
 
 from __future__ import annotations
@@ -41,7 +41,12 @@ class WavDumpFolder:
 
     @staticmethod
     def default_folder() -> Path:
-        """The OS Documents folder + ``GuitarTap`` (always creatable / writable)."""
+        """The OS Documents folder + ``GuitarTap`` (always creatable / writable). Under test, a
+        per-process temp folder instead, like the measurements file — a test that turns dumps on never
+        writes into the user's folder. Mirrors Swift ``defaultFolder``."""
+        from guitar_tap.models.settings_scope import measurements_dir, sandbox_id  # noqa: PLC0415
+        if sandbox_id() is not None:
+            return Path(measurements_dir("")) / "GuitarTap"
         docs = QtCore.QStandardPaths.writableLocation(
             QtCore.QStandardPaths.StandardLocation.DocumentsLocation
         )
@@ -84,7 +89,7 @@ class WavDumpFolder:
     @staticmethod
     def is_reachable() -> bool:
         """Whether the configured dump folder can be written to **right now** — checked at New Tap /
-        launch auto-arm when Dump Capture Audio is on (§4b decision 1b). The default is always
+        launch auto-arm when Dump Capture Audio is on. The default is always
         creatable; a custom folder must still be **at its chosen path** — a rename / move / delete
         makes it unreachable (Python stores a plain path, so the folder-must-be-where-you-put-it
         rule is inherent), and the user must Change Location or Turn Off Saving. Do NOT create the

@@ -143,12 +143,12 @@ def dft_anal(
     # NO epsilon clamp. A bin with no energy is -inf, which is what Swift's vDSP_vdbcon produces
     # and what the Peak readout must say: -inf means "nothing at all", and it has to stay
     # distinguishable from -100 dB, a REAL level a live UMIK-1 reaches in a quiet room (it is also
-    # the dead-input watchdog's own threshold). The clamp put "-313.0 dB" on screen for the absence
-    # of a signal — a precise-looking number for nothing (#17, run-review).
+    # the dead-input watchdog's own threshold). A clamp would put "-313.0 dB" on screen for the
+    # absence of a signal — a precise-looking number for nothing.
     #
-    # This is the LIVE per-frame path, the one the Peak readout reads; compute_gated_fft carried the
-    # identical clamp and is fixed with it. errstate only silences numpy's per-frame divide-by-zero
-    # warning — the -inf is the intended result.
+    # This is the LIVE per-frame path, the one the Peak readout reads; compute_gated_fft does the
+    # same. errstate only silences numpy's per-frame divide-by-zero warning — the -inf is the
+    # intended result.
     with np.errstate(divide="ignore"):
         magnitude = 20 * np.log10(abs_fft)
     return magnitude, abs_fft
@@ -164,9 +164,7 @@ def perform_fft(analyzer, samples: "npt.NDArray[np.float32]", fft_size: int):
     DSP step with:
       - per-bin calibration application (mirrors Swift's vDSP_vadd of
         calibrationCorrections)
-      - the spectrum's peak, in dB, as a float — Swift's ``peakMagnitude``. It used to be
-        int-encoded as ``max(dB) + 100`` for the Qt signal and decoded back at every consumer,
-        which rounded the peak to whole dB for no reason any platform required (#17 F44).
+      - the spectrum's peak, in dB, as an unrounded float — Swift's ``peakMagnitude``.
     (Per-frame counters and any debug tracing live in the caller,
     _FftProcessingThread.run(), not here.)
 
@@ -205,24 +203,6 @@ def perform_fft(analyzer, samples: "npt.NDArray[np.float32]", fft_size: int):
 
     return mag_y_db, mag_y, _peak_db
 
-
-# MARK: - Peak detection, interpolation and Q — REMOVED 2026-09-20 (#17)
-#
-# peak_detection, peak_interp and peak_q_factor lived here: NumPy ports of the peak-finding
-# section of Swift's findPeaks. Nothing in the application ever called them. The app uses the
-# scalar pair on TapToneAnalyzer instead — _parabolic_interpolate and _calculate_q_factor in
-# tap_tone_analyzer_peak_analysis.py — which are the direct counterparts of Swift's
-# TapToneAnalyzer.parabolicInterpolate / calculateQFactor and are what the capture and
-# peak-analysis paths run.
-#
-# So this module carried a second implementation of two rules, and test/dsp's ten tests
-# exercised THAT one, in an edition where the app runs the other. Swift and the web each have
-# exactly one implementation; the duplicate was Python-only.
-#
-# The same defect was found in test/peaks on 2026-07-19 and fixed by relocating those tests to
-# test_fft_peak_detection.py rather than repointing them, which left this copy alive and its
-# sibling slug untouched. test/dsp now tests the live pair in all three editions, and
-# test_fft_peak_detection.py is gone with peak_detection. See SLUG-SWEEP.md F14.
 
 # MARK: - HPS Dominant-Peak Selection (mirrors computeGatedFFT HPS section)
 

@@ -2,9 +2,9 @@
 """Advance the analyzer's AUDIO clock the way audio does.
 
 Chunk by chunk through the production entry point, ``_on_chunk_level(level_db, audio_time)``.
-The tap lifecycle's rests, the FLC hold and the capture window run on that clock (#19), so a test
-that used to wait out a wall-clock delay now feeds the audio that delay covers — the same path
-playback and the microphone take.
+The tap lifecycle's rests, the FLC hold and the capture window run on that clock, so a test feeds
+the audio a delay covers rather than waiting out wall-clock time — the same path playback and the
+microphone take.
 
 Mirrors Swift GuitarTapTests/AudioClockFeed.swift and web test/audioClockFeed.ts.
 """

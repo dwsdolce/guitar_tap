@@ -4,22 +4,10 @@ Tests for is_measurement_complete state transitions.
 
 Mirrors Swift TapDetectionTests / isMeasurementComplete didSet behaviour.
 
-## Why this file exists
-
 `is_measurement_complete` is the single boolean that gates whether the spectrum
 display freezes or continues to paint live FFT frames.  It must be set True by
-every capture-completion path and False by every reset/cancel path.
-
-A previous bug (frozen spectrum not freezing after guitar tap) was caused by
-`_finish_capture()` setting `frozen_magnitudes` directly but never calling
-`set_measurement_complete(True)`.  The audit (§5) had declared "Full method
-parity" without a line-by-line assignment check on this critical flag.
-
-These tests are the automated guard against that class of regression:
-every path in and out of is_measurement_complete = True is exercised and
-asserted.
-
-## Critical-flag rule (from audit guidelines Rule 8)
+every capture-completion path and False by every reset/cancel path.  Every path
+in and out of is_measurement_complete = True is exercised and asserted here.
 
 For `is_measurement_complete` (and any other critical state flag), EVERY code
 path that should set it True or False must have a corresponding test here.
@@ -357,9 +345,7 @@ class TestCompletingClearsSettingsWarning:
         sut.is_measurement_complete = True
         assert sut.show_loaded_settings_warning is False
 
-    # MC9-MC10: the other two rules that move this flag.  Paired with Swift and web, where until
-    # #17 F40 the banner's real state was an App.tsx useState and these were untestable -- web's
-    # MC8 passed against a field the application never read.
+    # MC9-MC10: the other two rules that move this flag.  Paired with Swift and web.
 
     def test_start_tap_sequence_clears_loaded_settings_warning(self):
         """Starting a new sequence clears it -- the user's own Threshold/Taps now apply."""

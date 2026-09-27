@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from gated_signal import gated_magnitude_at, make_gated_test_signal
 from parity_oracle import ORACLE, calibration, case, fixture, gated
+from playback_support import play_file_and_wait
 
 # Oracle spellings of measurementType → the enum the analyzer takes.
 _MEASUREMENT_TYPES = {
@@ -53,22 +54,12 @@ def _guitar_peak(sut: Any, role: str) -> Any:
 
 
 def _material_peak(sut: Any, role: str) -> Any:
-    """The peak the Results panel shows for a material role.
-
-    Selected-first, dominant as the fallback: REG-P1/P2 assert against
-    ``selected_*`` and REG-B1 against ``longitudinal_peaks[0]``, which are the same
-    peak whenever a selection exists.
-    """
-    selected, series = {
-        "longitudinal": ("selected_longitudinal_peak", "longitudinal_peaks"),
-        "cross": ("selected_cross_peak", "cross_peaks"),
-        "flc": ("selected_flc_peak", "flc_peaks"),
-    }[role]
-    peak = getattr(sut, selected)
-    if peak is None:
-        peaks = getattr(sut, series)
-        peak = peaks[0] if peaks else None
-    return peak
+    """The identified peak the Results panel shows for a material role (``selected_*``)."""
+    return getattr(sut, {
+        "longitudinal": "selected_longitudinal_peak",
+        "cross": "selected_cross_peak",
+        "flc": "selected_flc_peak",
+    }[role])
 
 
 def _record(peak: Any, keys: list[str], name: str, role: str) -> dict[str, Any]:
@@ -101,8 +92,8 @@ def _play(name: str) -> Any:
     restore = TapDisplaySettings.measure_flc()
     TapDisplaySettings.set_measure_flc(measure_flc)
     try:
-        sut.play_file_for_testing(
-            path=path,
+        play_file_and_wait(
+            sut, path=path,
             measurement_type=getattr(
                 MeasurementType, _MEASUREMENT_TYPES[settings["measurementType"]]
             ),
@@ -171,7 +162,7 @@ def compute_gated_fft() -> dict[str, Any]:
         spec = gated(name)
         analyzer = RealtimeFFTAnalyzer.for_testing(sample_rate=int(sample_rate))
 
-        # Silence is the signal with no tones. The same builder the GFFT tests use (#17 F49).
+        # Silence is the signal with no tones. The same builder the GFFT tests use.
         tones = [] if spec.get("signal") == "silence" else spec["tones"]
         signal = make_gated_test_signal(tones, sample_rate, duration)
 

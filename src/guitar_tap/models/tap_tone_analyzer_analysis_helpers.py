@@ -59,8 +59,8 @@ class TapToneAnalyzerAnalysisHelpersMixin:
 
         Not the strongest auto-classified peak — the one the user (or auto-selection) chose AND whose
         effective mode is *mode*. So renaming the Top peak removes it from the ratio just as it
-        removes it from every display surface. By the Phase 5 invariant there is at most one
-        definitive Air/Top/Back; ``max`` guards the legacy case. Mode comparison uses ``normalized``
+        removes it from every display surface. Selection keeps at most one definitive
+        Air/Top/Back; ``max`` guards the legacy case. Mode comparison uses ``normalized``
         so legacy aliases resolve. Mirrors Swift ``getPeak(for:)``.
         """
         candidates = [

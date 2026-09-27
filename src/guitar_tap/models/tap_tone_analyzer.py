@@ -111,12 +111,11 @@ class TapToneAnalyzer(
     # Emitted whenever is_ready_for_detection changes. Stands in for Swift's @Published
     # isReadyForDetection: there it flips during a route-change restart and every bound view
     # re-renders, which is what greys New Tap out for the settle. Python has no such binding, so
-    # without this signal the button state simply went stale (#17 F32).
+    # this signal is what tells the view to re-evaluate the button state.
     readyForDetectionChanged: QtCore.Signal = QtCore.Signal(bool)
     # The ring-out on screen changed: seconds, or None while there is none yet. Swift's
     # `@Published var currentDecayTime` re-renders the Ring-Out box on every change; Python has no such
-    # binding, so the property below emits this. (It was `ringOutMeasured`, which nothing emitted after
-    # the old DecayTracker was removed on 2026-04-05, so the live box stayed "Waiting…" — #17 F50.)
+    # binding, so the property below emits this.
     currentDecayTimeChanged: QtCore.Signal = QtCore.Signal(object)
     # FFT frame diagnostics: (fps, sample_dt, processing_dt).
     framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
@@ -197,7 +196,7 @@ class TapToneAnalyzer(
     # Internal: each chunk's (level_db, audio_time), carried from the thread that processed the chunk
     # to the main thread — Swift's rmsLevelHandler hop, `DispatchQueue.main.async { onRmsLevelChanged }`.
     # Connected QUEUED, so detection, the audio-clock lifecycle actions and a capture's finish all run
-    # on the main thread in chunk order, as in Swift (#19).
+    # on the main thread in chunk order, as in Swift.
     _rmsLevelOnMain: QtCore.Signal = QtCore.Signal(float, float)
 
     def __init__(self, fft_analyzer=None) -> None:
@@ -300,7 +299,7 @@ class TapToneAnalyzer(
         # The DURABLE full peak set (found at the -100 dB floor at capture). Source of
         # truth for peak identity; peaks_above_peak_min is its Peak-Min display projection.
         # Mirrors Swift allPeaks. Assign via the all_peaks property so the projection
-        # refreshes (Swift allPeaks.didSet). See PEAK-LIFECYCLE-SPEC.md (GuitarTapWeb).
+        # refreshes (Swift allPeaks.didSet).
         self._all_peaks: list = []                                         # mirrors allPeaks (durable)
         # `peaks_above_peak_min` (mirrors Swift `peaksAbovePeakMin`) is the Peak-Min projection of
         # `all_peaks` — NOT "the peaks". Three distinct scopes exist; this is the MIDDLE one:
@@ -320,9 +319,9 @@ class TapToneAnalyzer(
         self.average_magnitude: float = -100.0      # mirrors averageMagnitude
         # mirrors detectionState; is_detecting / is_detection_paused derive from it
         self._detection_state: DetectionState = DetectionState.IDLE
-        # True while a device/route change settles and the chart should show nothing. The
-        # transient blank used to be expressed by writing display_mode = FROZEN, which overloaded
-        # that value and made the "should I blank?" guard wipe completed measurements (#17 F35).
+        # True while a device/route change settles and the chart should show nothing. A flag of its
+        # own, separate from display_mode, so the transient blank never touches a completed
+        # measurement's display.
         self.is_settling: bool = False
         # mirrors isReadyForDetection; the property below emits readyForDetectionChanged
         self._is_ready_for_detection: bool = True
@@ -402,7 +401,7 @@ class TapToneAnalyzer(
         # body dims + f_vs). None for guitar and before a material measurement completes. Seeded from
         # the Settings defaults at the complete-freeze, restored from the snapshot on load, edited in
         # the Results panel; it is the sole source for the measurement's calc/display/PDF and Save.
-        # Mirrors Swift TapToneAnalyzer.materialInputs. See MEASUREMENT-DIMENSIONS-SPEC.md.
+        # Mirrors Swift TapToneAnalyzer.materialInputs.
         self.material_inputs = None  # type: "MaterialMeasurementInputs | None"
         # Frequencies of currently selected peaks — stable carry-forward for
         # recalculate_frozen_peaks_if_needed(). Mirrors Swift selectedPeakFrequencies.
@@ -466,22 +465,10 @@ class TapToneAnalyzer(
         self.longitudinal_spectrum = None
         self.cross_spectrum = None
         self.flc_spectrum = None
-        # All candidate peaks detected from each material tap (not just the dominant).
-        # Mirrors longitudinalPeaks / crossPeaks / flcPeaks.
-        self.longitudinal_peaks: list = []
-        self.cross_peaks: list = []
-        self.flc_peaks: list = []
-        # Two-layer peak selection (priority: selected > auto_selected):
-        #   1. auto_selected_* — intermediate UUID from HPS analysis, set before the
-        #      phase finalises.
-        #   2. selected_*      — the dominant peak stored when the phase finalises.
-        # Mirrors Swift autoSelected*/selected* two-layer selection. A third, highest-priority
-        # user_selected_* layer existed until 2026-09-20, set by L/C/FLC buttons on each peak row;
-        # those were removed on 2026-04-17 and replaced by redoing the phase. See "Plate Peak
-        # Selection — REMOVED" in tap_tone_analyzer_annotation_management.py.
-        self.auto_selected_longitudinal_peak_id = None
-        self.auto_selected_cross_peak_id = None
-        self.auto_selected_flc_peak_id = None
+        # The identified peak of each material phase — the dominant peak of its averaged spectrum,
+        # stored when the phase completes. These are a material measurement's peaks: there is no
+        # per-peak selection and no other material peak state (all_peaks / selected_peak_ids are
+        # guitar-only). Mirrors Swift selectedLongitudinalPeak / selectedCrossPeak / selectedFlcPeak.
         self.selected_longitudinal_peak = None
         self.selected_cross_peak = None
         self.selected_flc_peak = None
@@ -516,15 +503,15 @@ class TapToneAnalyzer(
         self.warmup_start_audio_time: "float | None" = None
         # The audio clock as the analyzer has seen it: the audio time of the latest chunk delivered to
         # _on_rms_level_changed, recorded on every chunk before any guard. The tap-lifecycle timers run
-        # on THIS clock, not the wall clock (#19): file playback advances audio at "real time +
-        # processing time", so a wall-clock delay covered a different stretch of audio on a slower run
-        # and late captures in a sequence moved. Mirrors Swift lastAudioTime.
+        # on THIS clock, not the wall clock: file playback advances audio at "real time + processing
+        # time", so a wall-clock delay would cover a different stretch of audio on a slower run and move
+        # late captures in a sequence. Mirrors Swift lastAudioTime.
         self.last_audio_time: float = 0.0
         # The level (dBFS) of that chunk — a re-arm that falls due re-anchors the latch from it.
         # Mirrors Swift lastChunkLevelDB.
         self.last_chunk_level_db: float = -100.0
         # The WALL time (time.monotonic) at which the latest chunk reached _on_rms_level_changed — what the
-        # capture safety timeout measures its silence from (after_audio_stall, #19). Mirrors Swift
+        # capture safety timeout measures its silence from (after_audio_stall). Mirrors Swift
         # lastChunkWallTime.
         self.last_chunk_wall_time: float = 0.0
         # Tap-lifecycle actions waiting on the audio clock: (due, released_at_file_end, action).
@@ -542,7 +529,7 @@ class TapToneAnalyzer(
         # ── Decay tracking state (mirrors Swift TapToneAnalyzer stored properties)
         # peak_magnitude_history holds (audio_time, magnitude_dBFS) pairs — the AUDIO clock
         # (seconds since engine start), carried with each sample, NOT wall-clock. This makes the
-        # ring-out invariant to main-thread scheduling jitter under load (OUT-4 lesson).
+        # ring-out invariant to main-thread scheduling jitter under load.
         self.peak_magnitude_history: list = []
         # Audio-clock time of the tap that started the current decay window — the time-zero
         # reference for measure_decay_time.
@@ -585,7 +572,7 @@ class TapToneAnalyzer(
         self._session_checkpoints: list = []
         self._session_recording_sample_rate: float = 48000.0
 
-        # Bounded pre-roll for the session WAV (FILE-PATHS-AND-NAMES-SPEC §6). True from
+        # Bounded pre-roll for the session WAV. True from
         # start_tap_sequence until the first gated capture begins, then False for the rest of the
         # session. While True, the session buffer keeps only the last SESSION_PRE_ROLL_DURATION of
         # audio; after the first tap it grows straight through. Mirrors Swift sessionPreRollActive.
@@ -625,7 +612,7 @@ class TapToneAnalyzer(
 
     # ------------------------------------------------------------------ #
     # Constants — Swift declares these `let`, so they are read-only here: a property with no setter,
-    # so writing one raises AttributeError (#17 F50 item 4).
+    # so writing one raises AttributeError.
     # ------------------------------------------------------------------ #
 
     @property
@@ -652,31 +639,27 @@ class TapToneAnalyzer(
     @property
     def tap_cooldown(self) -> float:
         """The rest after a capture before detection re-arms, and the hold before the FLC phase arms, in
-        seconds of AUDIO (see ``after_audio``, #19). Mirrors Swift ``tapCooldown``."""
+        seconds of AUDIO (see ``after_audio``). Mirrors Swift ``tapCooldown``."""
         return 0.5
 
     @property
     def capture_window(self) -> float:
         """After the LAST guitar tap, "All taps captured. Processing..." shows for this much AUDIO before
-        the taps are averaged (``after_audio``, released at file end; #19). Mirrors Swift
+        the taps are averaged (``after_audio``, released at file end). Mirrors Swift
         ``captureWindow``."""
         return 0.2
 
     @property
     def decay_tracking_duration(self) -> float:
-        """How long after a tap the ring-out is tracked, in seconds of AUDIO (#19). Mirrors Swift
+        """How long after a tap the ring-out is tracked, in seconds of AUDIO. Mirrors Swift
         ``decayTrackingDuration``."""
         return 3.0
 
     # ------------------------------------------------------------------ #
     # number_of_taps — mirrors Swift @Published var numberOfTaps { didSet { … } }
     #
-    # A property, not a plain attribute, so the hook runs on EVERY write.  It was an attribute with
-    # the hook parked in a separate ``set_tap_num()`` method, which meant two ways to change one
-    # value and two paths that took the quiet one: ``_load_measurement_body()`` and
-    # ``play_file_for_testing()`` both assigned the attribute directly.  Swift has one way in and
-    # cannot be bypassed; so does this now (#17 F38, the same shape F25 fixed for
-    # is_measurement_complete).
+    # A property, not a plain attribute, so the hook runs on EVERY write: there is one way to change
+    # the value and it cannot be bypassed, as in Swift (and as with is_measurement_complete).
     #
     # No clamp: Swift's didSet has none, and the spinner already bounds the value 1..10 in the view,
     # exactly as the Swift stepper and the web stepper do.  ``set_tap_num``'s ``max(1, n)`` was a
@@ -719,9 +702,9 @@ class TapToneAnalyzer(
         # cleared at every material phase completion, so it read zero at the start of every plate
         # phase rather than only at the start of the measurement.  current_tap_count is the
         # cumulative count -- the same field the spinner lock reads, so the guard and the lock
-        # agree.  And `_armed_prompt()`, not `_tap_prompt()`: the latter is the GUITAR prompt, so
-        # changing Taps at the start of a plate or brace sequence wrote "Tap the guitar 3 times..."
-        # over "Ready for fL tap (×3 each for L, C)" (#17 F36).
+        # agree.  And `_armed_prompt()`, not `_tap_prompt()`: the latter is the GUITAR prompt, and
+        # changing Taps at the start of a plate or brace sequence must keep the material prompt
+        # ("Ready for fL tap (×3 each for L, C)").
         if self.is_detecting and self.current_tap_count == 0:
             self._set_status_message(self._armed_prompt())
 
@@ -824,8 +807,8 @@ class TapToneAnalyzer(
 
         The returned instance has the full pipeline connected (signal wiring,
         raw-sample handler, level-crossing handler) but no audio hardware.
-        Use ``play_file_for_testing(path, measurement_type, number_of_taps)``
-        to feed a WAV file through the pipeline.
+        Tests play a file through it with ``tests/playback_support.play_file_and_wait``,
+        which runs the app's own ``play_file``.
 
         The FFT size is a constant inside ``RealtimeFFTAnalyzer`` (65 536);
         it is not configurable per-instance.
@@ -845,123 +828,6 @@ class TapToneAnalyzer(
         return cls(fft_analyzer=mic)
 
     # ------------------------------------------------------------------ #
-    # play_file_for_testing — mirrors Swift playFileForTesting(url:…)
-    # ------------------------------------------------------------------ #
-
-    def play_file_for_testing(
-        self,
-        path: str,
-        measurement_type: "MeasurementType",
-        number_of_taps: int = 1,
-        calibration_path: str | None = None,
-        plate_tap_phase=None,
-    ) -> None:
-        """Feed a WAV file through the full analysis pipeline for testing.
-
-        This is the test-only equivalent of the view-layer ``_open_audio_file``.
-        It configures the measurement type, starts a tap sequence with warmup
-        skipped, and processes all audio through ``process_file_data`` inline.
-
-        A QCoreApplication is created if one does not already exist, and the
-        Qt event loop is pumped between audio chunks so that
-        ``_main_async_after`` callbacks (cooldown re-enables, finish
-        processing, safety timeouts) fire during playback — exactly as
-        Swift's ``playFileForTesting`` pumps ``RunLoop.main.run(until:)``
-        to drain ``DispatchQueue.main.asyncAfter`` callbacks.  This means
-        the test exercises the *exact same* code paths as the live app.
-
-        Mirrors Swift ``TapToneAnalyzer.playFileForTesting(url:measurementType:numberOfTaps:calibrationURL:)``.
-
-        Args:
-            path:              Filesystem path to the audio file.
-            measurement_type:  The MeasurementType to configure before playback.
-            number_of_taps:    Number of taps to detect (guitar mode). Default 1.
-            calibration_path:  Optional path to a microphone calibration file
-                               (.txt, .cal) to apply during playback.
-            plate_tap_phase:   Optional MaterialTapPhase to start in (e.g.
-                               CAPTURING_CROSS or CAPTURING_FLC) for
-                               phase-targeted plate testing.  Passed through
-                               to start_tap_sequence as initial_phase.
-        """
-        import os as _os
-
-        import numpy as np
-        import soundfile as _sf
-
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-
-        # 1. Configure measurement type and tap count.
-        _tds.set_measurement_type(measurement_type)
-        self.number_of_taps = number_of_taps
-
-        # 1b. If a calibration file was provided, parse it and temporarily
-        #     override the active calibration on the analyzer.
-        if calibration_path is not None:
-            from guitar_tap.models import microphone_calibration as _mc
-            cal = _mc.MicrophoneCalibration.from_path(calibration_path)
-            self.set_temporary_calibration(cal)
-
-        # 2. Start the tap sequence.  The MEASUREMENT TYPE decides whether to skip the warm-up.
-        #
-        #    Guitar: SKIP it.  The guitar fixtures are externally recorded files (not session dumps)
-        #    with only 0.15-0.26 s before the tap, so a 0.5 s warm-up would suppress the transient.
-        #    Guitar detects against the ABSOLUTE threshold and never reads the noise floor.
-        #
-        #    Material (plate/brace): RUN it.  Material is the ONLY mode that uses the relative
-        #    noise-floor detector, and the warm-up is what establishes that floor (it feeds the EMA and
-        #    fires the re-anchor at exit).  Skipping it also pinned noise_floor_estimate = -100, which
-        #    makes `rising` compute to exactly tap_detection_threshold -- i.e. it silently DEGRADED
-        #    relative detection to absolute, so playback never exercised the path live users take.
-        #    A saved session WAV always contains its warm-up by construction, and every material fixture
-        #    carries 2.3-2.9 s of lead-in.
-        #
-        #    Playback must run the LIVE detection path -- otherwise it cannot tell us whether live and
-        #    playback agree, which is the whole point of the file-playback regression.
-        from guitar_tap.models.measurement_type import MeasurementType as _MTp
-        _is_material = measurement_type in (_MTp.PLATE, _MTp.BRACE)
-        self.start_tap_sequence(skip_warmup=not _is_material, initial_phase=plate_tap_phase)
-
-        # 3. Read the audio file.
-        data, file_rate = _sf.read(path, dtype="float32", always_2d=True)
-        mono = data.mean(axis=1).astype(np.float32)
-        file_name = _os.path.splitext(_os.path.basename(path))[0]
-
-        # 4. Set the sample rate so gated_capture_samples is computed correctly.
-        self._mpm_sample_rate = float(file_rate)
-
-        # 5. Process all audio inline, pumping the Qt event loop between
-        #    chunks so that _main_async_after callbacks (delivered via
-        #    QueuedConnection signal → QTimer.singleShot) fire during
-        #    playback — exactly as Swift's playFileForTesting pumps
-        #    RunLoop.main.run(until:) to drain asyncAfter callbacks.
-        #
-        #    A QCoreApplication is required for event-loop pumping.  The
-        #    test harness creates one via the qapp fixture (or we create a
-        #    transient one here if none exists).
-        from PySide6 import QtWidgets
-        app = QtWidgets.QApplication.instance()
-        owns_app = False
-        if app is None:
-            app = QtWidgets.QApplication([])
-            owns_app = True
-
-        self.mic.process_file_data(mono, int(file_rate), file_name)
-
-        # Continue pumping the Qt event loop until the measurement completes.
-        # _finish_capture (and thus process_multiple_taps) is scheduled via
-        # QTimer.singleShot with a delay of capture_window (200 ms), so we
-        # must keep processing events until it fires and sets
-        # is_measurement_complete = True.
-        import time as _time
-        _deadline = _time.monotonic() + 5.0
-        while not self.is_measurement_complete and _time.monotonic() < _deadline:
-            app.processEvents()
-            _time.sleep(0.01)
-
-        if owns_app:
-            app.shutdown()
-
-    # ------------------------------------------------------------------ #
     # _wire_pipeline_signals — shared by start() and for_testing()
     # ------------------------------------------------------------------ #
 
@@ -975,17 +841,16 @@ class TapToneAnalyzer(
 
         The signals are connected to the processing thread object, once. It is created with the mic and
         never replaced, so these connections hold for the whole run. A second ``connect()`` on it would
-        deliver every emission twice (#17 F44).
+        deliver every emission twice.
 
         Mirrors Swift ``TapToneAnalyzer.setupSubscriptions()``.
         """
         # ── Per-chunk level → tap detection: ONE delivery, queued to the main thread ─────
         # process_raw_samples calls rms_level_handler on whatever thread processed the chunk — as
         # Swift's rmsLevelHandler is called on the audio queue — and, as Swift's does, it hops to the
-        # main thread before detection. It used to call _on_rms_level_changed right there on the
-        # processing thread (#17 F44 kept that path when it ended a double delivery), so detection and
-        # a capture's finish — queued to the main thread — ran on different threads, and the audio
-        # time seen at a finish depended on thread timing (#19). The float dB goes straight in.
+        # main thread before detection, so detection and a capture's finish — also queued to the main
+        # thread — run on the same thread, and the audio time seen at a finish does not depend on
+        # thread timing. The float dB goes straight in.
         self.mic.rms_level_handler = self._rmsLevelOnMain.emit
 
         # ── Gated-FFT capture signal (Qt — for cross-thread delivery) ────
@@ -1108,26 +973,22 @@ class TapToneAnalyzer(
 
         # ── FFT frame → peak analysis: ONE delivery, the Qt signal ───────
         # So on_fft_frame runs on the main thread, as Swift's analyzer takes frames through a Combine
-        # sink `.receive(on: DispatchQueue.main)`. Each level and each frame used to arrive TWICE —
-        # direct AND by signal — with a duplicate guard on the level that could not tell a late queued
-        # copy from a new chunk, and none at all on the frame (#17 F44). rmsLevelChanged is not
-        # connected here: it is the UI's copy of the level (the threshold meter).
+        # sink `.receive(on: DispatchQueue.main)`. Each frame arrives once, by this signal alone.
+        # rmsLevelChanged is not connected here: it is the UI's copy of the level (the threshold meter).
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
 
-    # _initialize_pre_roll was removed — pre-filling the pre-roll with
-    # zeros diluted the gated capture signal by ~50%, suppressing spectral
-    # magnitude by ~6 dB.  The pre-roll buffer now starts empty (cleared by
-    # start_tap_sequence) and fills naturally with real audio as chunks arrive.
+    # The pre-roll buffer starts empty (cleared by start_tap_sequence) and fills
+    # with real audio as chunks arrive. It is not pre-filled with zeros, which
+    # would dilute the gated capture signal by ~50% (~6 dB of spectral magnitude).
 
     def _on_chunk_level(self, level_db: float, audio_time: float) -> None:
         """One chunk's level, on the main thread: detection, then ring-out tracking — the per-chunk entry.
 
         Swift ``onChunkLevel`` (the body of its rmsLevelHandler hop), the web's ``processAudioFrame``;
-        tests feed audio through it (#17 F50 item 3). ``onRmsLevelChanged`` and then ``trackDecayFast``,
-        both with THIS chunk's audio time. Ring-out tracking runs after detection, so a tap confirmed
-        on this chunk records the chunk into its new ring-out, and outside detection's guards, so it
-        runs on past the measurement's completion — the window it measures. It gates itself on
-        is_tracking_decay. It used to run inside _on_rms_level_changed, before detection (#17 F50).
+        tests feed audio through it. ``onRmsLevelChanged`` and then ``trackDecayFast``, both with THIS
+        chunk's audio time. Ring-out tracking runs after detection, so a tap confirmed on this chunk
+        records the chunk into its new ring-out, and outside detection's guards, so it runs on past the
+        measurement's completion — the window it measures. It gates itself on is_tracking_decay.
         """
         self._on_rms_level_changed(level_db, audio_time)
         self.track_decay_fast(level_db, audio_time)
@@ -1158,7 +1019,7 @@ class TapToneAnalyzer(
         if self.mic is not None:
             self.mic._level_crossing_threshold = self._tap_detection_threshold
 
-    # ── Durable peak set + display projection (Phase 1) ──────────────────────
+    # ── Durable peak set + display projection ──────────────────────────────
     @property
     def all_peaks(self) -> list:
         """The DURABLE full peak set — the source of truth for peak identity.
@@ -1423,7 +1284,7 @@ class TapToneAnalyzer(
             self._persist_measurements()
 
         # ── Auto-start tap sequence on first launch ────────────────────────
-        # Mirrors Swift start() auto-start guard + requestStartTapSequence (§4b decision 1b): if Dump
+        # Mirrors Swift start() auto-start guard + requestStartTapSequence: if Dump
         # Capture Audio is on but its folder is unreachable, DON'T arm — set a flag the view checks at
         # startup to prompt (Change Location / Turn Off Saving / Cancel), same as New Tap. A Qt signal
         # can't be used here: this runs inside analyzer.start() during init, BEFORE the view connects
@@ -1679,7 +1540,7 @@ class TapToneAnalyzer(
             return
         # Resolve through peak_mode() — the OVERRIDE-AWARE path. identified_modes is built from
         # classify_all alone and never consults overrides, so using it here would silently ignore a
-        # mode the user assigned by hand. (See Phase 6.)
+        # mode the user assigned by hand.
         mode = self.peak_mode(winner).normalized
         if mode not in self.single_holder_modes:
             return
@@ -1735,7 +1596,7 @@ class TapToneAnalyzer(
         from .tap_display_settings import TapDisplaySettings as _tds_vp
         # Material (plate/brace): annotate the accumulated identified L/C/FLC (stable, persistent),
         # matching the web — NOT peaks_above_peak_min, which churns through 87→126→3 raw peaks during
-        # capture. No per-peak selection, so ALL/SELECTED are equivalent. (RESPIN-1.0.2, fix R.)
+        # capture. No per-peak selection, so ALL/SELECTED are equivalent.
         if not _tds_vp.measurement_type().is_guitar:
             if self.annotation_visibility_mode == AnnotationVisibilityMode.NONE:
                 return []
@@ -1762,10 +1623,10 @@ class TapToneAnalyzer(
     @property
     def material_identified_peaks(self) -> list:
         """The identified per-phase peaks (L, then C, then FLC) found so far in a material
-        measurement, in phase order. Stable and PERSISTENT across phases — the material analog of the
-        guitar "selected" set, mirroring the web's matPeaks. Empty for guitar. Used as the live-chart
-        annotation source so annotations grow 1→2→3 cleanly instead of following peaks_above_peak_min (which
-        churns through all raw peaks during capture). Mirrors Swift materialIdentifiedPeaks (RESPIN-1.0.2, fix R).
+        measurement, in phase order — a material measurement's peaks. The three selected_* peaks are
+        the only material peak state (all_peaks / selected_peak_ids are guitar-only); the chart,
+        annotations, results panel, save and PDF all read them through here. Empty for guitar.
+        Mirrors Swift materialIdentifiedPeaks.
         """
         from .tap_display_settings import TapDisplaySettings
         if TapDisplaySettings.measurement_type().is_guitar:

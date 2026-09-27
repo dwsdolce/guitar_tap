@@ -24,7 +24,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
     # A saved measurement records every peak down to this floor, not just those above the current
     # Peak Min, so a reloaded measurement can reveal peaks below the capture-time Peak Min exactly
     # as the live one can. -100 dB is the chart floor and the Peak Min slider's lower bound — below
-    # it a peak can neither be drawn nor admitted. See PEAK-MIN-SEMANTICS.md (GuitarTapWeb).
+    # it a peak can neither be drawn nor admitted.
     PEAK_DETECTION_FLOOR: float = -100.0
 
     # ------------------------------------------------------------------ #
@@ -40,8 +40,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
     ) -> None:
         """Update live peaks from a new FFT frame.
 
-        Called on each FFT output frame while detection is active. Finds peaks,
-        updates ``peaks_above_peak_min``, auto-selects all new peaks, and classifies modes.
+        Called on each FFT output frame while detection is active. For a guitar sequence finds
+        peaks at Peak Min, updates ``peaks_above_peak_min``, auto-selects all new peaks, and
+        classifies modes; a material sequence has no live peaks.
 
         Mirrors Swift ``analyzeMagnitudes(_:frequencies:peakMagnitude:)``.
 
@@ -53,10 +54,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
                             since tap detection is handled separately).
         """
         from .guitar_mode import GuitarMode
-        from .measurement_type import MeasurementType
         from .tap_display_settings import TapDisplaySettings
-        m_type = TapDisplaySettings.measurement_type()
-        uses_fast_tap_detection = (m_type == MeasurementType.PLATE or m_type == MeasurementType.BRACE)
 
         # Only analyze when detection is active, paused (spectrum stays live),
         # or in a capture window; stop once the measurement is complete.
@@ -70,30 +68,21 @@ class TapToneAnalyzerPeakAnalysisMixin:
         if getattr(self, "is_measurement_complete", False):
             return
 
-        # For plate/brace, use an adaptive noise-floor threshold (median of the
-        # analysis range) instead of the guitar-mode peak_min_threshold so the live peak list
-        # self-calibrates to each tap's actual signal level.
-        live_threshold = None
-        if uses_fast_tap_detection:
-            lo_freq = self.min_frequency
-            hi_freq = self.max_frequency
-            s_idx = next((i for i, f in enumerate(frequencies) if f >= lo_freq), 0)
-            e_idx = next((i for i, f in enumerate(frequencies) if f > hi_freq), len(frequencies) - 1)
-            if s_idx < e_idx:
-                search_mags = sorted(magnitudes[s_idx:e_idx])
-                live_threshold = search_mags[len(search_mags) // 2]
+        # Material (plate/brace) has no live peaks: its peaks are the identified L/C/FLC
+        # (material_identified_peaks), and all_peaks is guitar-only. Mirrors Swift.
+        if not TapDisplaySettings.measurement_type().is_guitar:
+            if self.all_peaks:
+                self.all_peaks = []
+                self.identified_modes = []
+            return
 
-        peaks = self.find_peaks(magnitudes, frequencies, peak_min_override=live_threshold)
+        peaks = self.find_peaks(magnitudes, frequencies)
         # Mirrors Swift allPeaks = peaks — store the durable set; peaks_above_peak_min is its
         # Peak-Min projection (refreshed by the all_peaks setter).
         self.all_peaks = peaks
         # Auto-select all newly detected peaks so visibility mode «selected»
         # shows everything by default — mirrors Swift selectedPeakIDs = Set(peaks.map { $0.id }).
-        # In plate/brace mode, selection is managed exclusively by the phase-completion handlers
-        # so that only the identified peak(s) appear selected — don't clobber it here.
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_pa
-        if _tds_pa.measurement_type().is_guitar:
-            self.selected_peak_ids = {p.id for p in peaks}
+        self.selected_peak_ids = {p.id for p in peaks}
 
         # Classify modes using the context-aware algorithm.
         # Read from TapDisplaySettings — mirrors Swift GuitarMode.classifyAll
@@ -106,13 +95,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         ]
 
         # Notify observers — mirrors Swift @Published var currentPeaks which
-        # automatically publishes to all subscribers including the peaks display.
-        # Material (plate/brace): do NOT emit on every live FFT frame. The identified L/C/FLC change
-        # only at phase completion (driven by the gated-phase handlers via _emit_peaks_array); emitting
-        # per frame would re-run the results refresh + annotation rebuild, flickering the table and
-        # repainting the whole live spectrum as "Peak". Guitar emits live per frame. (RESPIN-1.0.2, fix R.)
-        if m_type.is_guitar:
-            self.peaksChanged.emit(peaks)
+        # automatically publishes to all subscribers including the peaks display. (Material returned
+        # above: its identified L/C/FLC are emitted at phase completion via _emit_peaks_array.)
+        self.peaksChanged.emit(peaks)
 
     # ------------------------------------------------------------------ #
     # recalculate_frozen_peaks_if_needed / _apply_frozen_peak_state
@@ -215,8 +200,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
                 is_guitar=is_guitar,
                 tolerance=tolerance,
             )
-            # (Phase 3: the per-tap recompute here was deleted — TapEntry peaks are computed once
-            # at capture and are durable; a display recalc must never re-derive them.)
+            # TapEntry peaks are computed once, at capture, and are durable; a display recalc never
+            # re-derives them.
             self.peaksChanged.emit(self.peaks_above_peak_min)
             return
 
@@ -247,18 +232,15 @@ class TapToneAnalyzerPeakAnalysisMixin:
             is_guitar=is_guitar,
             tolerance=tolerance,
         )
-        # (Phase 3: the per-tap recompute here was deleted — TapEntry peaks are computed once at
-        # capture and are durable; a display recalc must never re-derive them.)
+        # TapEntry peaks are computed once, at capture, and are durable; a display recalc never
+        # re-derives them.
         self.peaksChanged.emit(self.peaks_above_peak_min)
 
-    # _recalculate_tap_entry_peaks was DELETED in Phase 3 (mirrors Swift 11689b6). It re-ran
-    # find_peaks over every TapEntry snapshot at the CURRENT Peak Min, from both recalc branches and
-    # loadMeasurement — overwriting each entry's durable -100 dB set with a filtered one, minting
-    # fresh UUIDs and rebuilding selected_peak_ids. Since tap_entries is PERSISTED, that truncated
-    # the saved per-tap set (load with Peak Min raised, save -> permanent loss) and made a reloaded
-    # multi-tap measurement disagree with a fresh one. A TapEntry is now computed ONCE, at capture,
-    # over the full set (see the per-tap block in tap_tone_analyzer_spectrum_capture.py) and is never
-    # re-derived — least of all by a display control.
+    # A TapEntry's peaks are computed ONCE, at capture, over the full set (see the per-tap block in
+    # tap_tone_analyzer_spectrum_capture.py) and are never re-derived — not by a recalc, not on load,
+    # not by a display control. tap_entries is PERSISTED, so re-deriving at the current Peak Min would
+    # truncate the saved per-tap set and make a reloaded multi-tap measurement disagree with a fresh
+    # one. Mirrors Swift.
 
     # ------------------------------------------------------------------ #
     # can_reanalyze
@@ -358,7 +340,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
     def reclassify_for_guitar_type_change(self) -> None:
         """Apply a guitar-subtype change (e.g. Classical → Flamenco) as a **clean slate** for the new
-        type (Phase 7, Option 1, decided with the user).
+        type.
 
         The guitar type changes what "Top" *means* (the mode bands), so classification and selection
         are re-derived for the new type, and manual mode labels — made against the OLD bands' meaning —

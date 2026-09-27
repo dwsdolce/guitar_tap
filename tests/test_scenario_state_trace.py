@@ -108,10 +108,8 @@ def _after_capture_window(sut: TapToneAnalyzer) -> None:
 
 # Every tap goes through the real finish_guitar_gated_capture, and the waits are the real ones — the tap
 # cooldown before re-arming, the capture window before averaging — measured, as the app measures them, in
-# AUDIO fed through _on_chunk_level (#19). The traces used to assign the "tap
-# happened" state by hand, so their capture rows recorded what the TEST wrote; and S3/S4's postTap1 said
-# detection was back on the instant a tap was captured, a path the app never takes (#17 F46). These
-# traces are identical in Swift, Python and web.
+# AUDIO fed through _on_chunk_level. No trace assigns the "tap happened" state by hand, so every capture
+# row records what the APP did. These traces are identical in Swift, Python and web.
 class TestScenarioStateTrace:
     """Python parity for Swift ScenarioStateTraceTests."""
 

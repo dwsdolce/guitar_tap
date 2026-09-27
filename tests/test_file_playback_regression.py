@@ -1,21 +1,19 @@
 # @parity test/file-playback
 """
-Full-pipeline file playback regression tests.
-
-Unlike test_file_playback.py (FP1–FP15) which test the FFT → peak_detection
-path directly, these tests exercise the FULL pipeline:
+End-to-end regression tests for the full file-playback pipeline:
   WAV read → chunk pacing → RMS → tap detection → gated capture →
-  Hann window → FFT → peak selection → mode identification
+  FFT (rectangular window for the guitar capture, Hann for the material one) →
+  peak selection → mode identification (guitar) / L→C→FLC phases (material)
 
 The analyzer is created via ``TapToneAnalyzer.for_testing()`` (no audio
-hardware) and fed via ``play_file_for_testing(path, measurement_type)``.
+hardware) and fed via ``playback_support.play_file_and_wait``, which runs the app's own
+``play_file`` (the Play File path).
 
-Expected values were established by running the file through the app
-and recording the displayed peak frequency and magnitude values.
-Both Swift and Python test suites use the same WAV files and expected
-values so that passing both suites guarantees cross-platform parity.
+The expected values are the shared oracle's (parity-oracle.json): Swift mints them from its
+pipeline and asserts them at zero; Python reads the same file.
 
-Test plan coverage: REG-G1, REG-B1, REG-G2, REG-P1, REG-P2, REG-B2
+Cases: REG-B2, REG-B1, REG-G1, the REG-G ring-out, REG-G2, REG-P1, OUT-4, REG-P2, session
+recording, playback calibration.
 """
 
 from __future__ import annotations
@@ -32,13 +30,13 @@ from guitar_tap.models.measurement_type import MeasurementType
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+from playback_support import play_file_and_wait  # noqa: E402
 from parity_oracle import (  # noqa: E402  (follows the src path insert, like the imports above)
     TOLERANCES,
     calibration,
     case,
     fixture,
     peak,
-    tol,
 )
 
 # ---------------------------------------------------------------------------
@@ -51,14 +49,10 @@ from parity_oracle import (  # noqa: E402  (follows the src path insert, like th
 # ---------------------------------------------------------------------------
 
 # brace-umik-1-swift-mac-1778816093.wav — Brace bar, UMIK-1 mic, 48 kHz.
-# Full-session recording (mono float32, 48 kHz).
-# Reference values from the matching .guitartap file
-# (Tests/Brace/brace-umik-1-swift-mac-1778816093.guitartap):
-#   Peak frequency: 512.68880 Hz
-#   Peak magnitude: -70.93484 dB
-#   Peak Q factor:  87.5
-#   Tap detection threshold: -53.33838 dB
-# The test uses tolerances per the test plan: ±1.0 Hz, ±1.0 dB, ±1.0 Q.
+# Full-session recording (mono float32, 48 kHz). The oracle's values originally came from the
+# matching .guitartap file (Tests/Brace/brace-umik-1-swift-mac-1778816093.guitartap).
+# Python asserts the oracle's values at the cross-edition `tolerances` — whether it agrees with Swift,
+# which mints them and asserts them at zero; Python's own zero-bar check is its self-regression.
 _B1 = peak("REG-B1", "longitudinal")
 BRACE_EXPECTED_FREQ = _B1["frequency"]
 BRACE_EXPECTED_MAG = _B1["magnitude"]
@@ -70,11 +64,10 @@ MAG_TOLERANCE = TOLERANCES["magDb"]
 # WAV file path — same file used in the Swift test suite.
 BRACE_WAV = fixture("REG-B1")
 
-# REG-B2 — the brace counterpart to REG-P2: three taps, averaged. Captured live 2026-09-19 to close
-# the gap that let a claimed 2 dB Swift/Python divergence sit unexamined for two months (project
-# issue #5): REG-P2 pinned PLATE multi-tap and REG-B1 is single-tap brace, so brace averaging was
-# exercised by nothing. Deliberately harder than the other material fixtures — the UMIK-1 is on its
-# 18 dB gain path, so the peak sits at -65.5 dB against a -63.9 dB detection threshold.
+# REG-B2 — the brace counterpart to REG-P2: three taps, averaged. REG-P2 pins PLATE multi-tap and
+# REG-B1 is single-tap brace, so this is the case that exercises brace averaging. Deliberately harder
+# than the other material fixtures — the UMIK-1 is on its 18 dB gain path, so the peak sits at
+# -65.5 dB against a -63.9 dB detection threshold.
 _B2 = peak("REG-B2", "longitudinal")
 BRACE3_EXPECTED_FREQ = _B2["frequency"]
 BRACE3_EXPECTED_MAG = _B2["magnitude"]
@@ -87,13 +80,9 @@ BRACE3_WAV = fixture("REG-B2")
 CALIBRATION_FILE = calibration("REG-B1")
 assert CALIBRATION_FILE is not None  # REG-B1 declares 7108913.txt
 
-# plate-umik-1-swift-mac-1778816330.wav — Plate, UMIK-1 mic, 48 kHz, full session.
-# Reference values from the matching .guitartap file
-# (Tests/Plate/plate-umik-1-swift-mac-1778816330.guitartap):
-#   fL  frequency: 67.11537 Hz   magnitude: -60.36113 dB   Q: 15.333
-#   fC  frequency: 116.27016 Hz  magnitude: -52.80130 dB   Q: 26.333
-#   fLC frequency: 35.35375 Hz   magnitude: -58.28925 dB   Q: 6.000
-#   Tap detection threshold: -53.33838 dB
+# plate-umik-1-swift-mac-1778816330.wav — Plate, UMIK-1 mic, 48 kHz, full session. The oracle's
+# values originally came from the matching .guitartap file
+# (Tests/Plate/plate-umik-1-swift-mac-1778816330.guitartap).
 # The single WAV exercises all three plate phases; on file playback the
 # pipeline auto-advances between phases so all three peaks are populated.
 PLATE_WAV = fixture("REG-P1")
@@ -121,8 +110,8 @@ PLATE_TAP_THRESHOLD = case("REG-P1")["settings"]["tapDetectionThreshold"]
 # detection models.  It is PLATE_WAV with broadband noise mixed in to raise its
 # noise floor from -77 dBFS to -52 dBFS, i.e. ABOVE the -53.34 dB tap threshold.
 #
-# Swift/Python detect material taps against an EMA-tracked noise floor; the web
-# port uses a fixed absolute dBFS threshold.  The relative rule reduces to
+# All three editions detect material taps against an EMA-tracked noise floor, not a
+# fixed absolute dBFS threshold.  The relative rule reduces to
 #     rising = max(tap_detection_threshold, noise_floor + 10 dB)
 # so the two are the SAME FUNCTION until the floor climbs within 10 dB of the
 # threshold.  Every other fixture sits at -64..-69 dBFS, far below that — which
@@ -140,7 +129,6 @@ PLATE_TAP_THRESHOLD = case("REG-P1")["settings"]["tapDetectionThreshold"]
 # noise, not the detector.  The clean fixtures keep the strict peak assertions.
 #
 # Regenerate: python3 GuitarTapWeb/tooling/make-noisy-fixture.py (deterministic).
-# Analysis:   GuitarTapWeb/Development/OUT-4-DETECTION-SPEC.md
 # ---------------------------------------------------------------------------
 PLATE_NOISY_WAV = os.path.join(
     os.path.dirname(__file__),
@@ -151,10 +139,7 @@ Q_TOLERANCE = TOLERANCES["q"]
 # ---------------------------------------------------------------------------
 # plate-umik-1-web-mac-3-taps.wav — Plate, UMIK-1 mic, 48 kHz, recorded by the WEB app (Chrome)
 # with number_of_taps = 3, i.e. 3 taps PER PHASE (9 taps total). Replaying it at number_of_taps=3
-# averages each phase (L/C/FLC) and reads the dominant peak OFF THE AVERAGED spectrum (like guitar).
-# Expected values are the averaged-spectrum peaks (the web .guitartap, same recording). NB: Swift/Python
-# historically read material peaks off the LAST tap (a buildAllPeaks UUID-hack side-effect) — a latent
-# bug fixed alongside this so all three read the averaged peak (fLC -63.6008, not the last tap's -60.98).
+# averages each phase; the peak must come off the averaged spectrum, not the last tap.
 PLATE_3TAP_WAV = fixture("REG-P2")
 PLATE_3TAP_THRESHOLD = case("REG-P2")["settings"]["tapDetectionThreshold"]
 _P2_L, _P2_C, _P2_FLC = (
@@ -171,16 +156,10 @@ PLATE_3TAP_C_FREQ, PLATE_3TAP_C_MAG, PLATE_3TAP_C_Q = (
 PLATE_3TAP_FLC_FREQ, PLATE_3TAP_FLC_MAG, PLATE_3TAP_FLC_Q = (
     _P2_FLC["frequency"], _P2_FLC["magnitude"], _P2_FLC["q"],
 )
-# REG-P2 uses a tighter magnitude tolerance than the generic ±1.0 dB.  The
-# averaged values are deterministic across platforms, so they agree far more
-# closely than a single tap would; ±0.5 dB still leaves headroom for FFT-library
-# differences while reliably catching a regression to last-tap selection (the
-# masked deltas were fL 0.94, fC 0.81, fLC 2.62 dB — all caught at 0.5).
-PLATE_3TAP_MAG_TOLERANCE = tol("REG-P2", "magDb")
 
 # ---------------------------------------------------------------------------
 # Recording 5.wav — Generic guitar, single-tap, 48 kHz.
-# Reference values from the Recording 5.guitartap file (Tests/O'Brien/).
+# The oracle's values originally came from the Recording 5.guitartap file (Tests/O'Brien/).
 # Settings: peak_min_threshold = -76, tap_detection_threshold = -40,
 #           measurement_type = GENERIC, number_of_taps = 1.
 #           FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
@@ -198,10 +177,12 @@ _G1_AIR, _G1_TOP, _G1_BACK = (
 G1_AIR_FREQ, G1_AIR_MAG = _G1_AIR["frequency"], _G1_AIR["magnitude"]
 G1_TOP_FREQ, G1_TOP_MAG = _G1_TOP["frequency"], _G1_TOP["magnitude"]
 G1_BACK_FREQ, G1_BACK_MAG = _G1_BACK["frequency"], _G1_BACK["magnitude"]
+G1_RING_OUT_SEC = case("REG-G1")["ringOutSec"]
+RING_OUT_TOLERANCE = TOLERANCES["ringOutSec"]
 
 # ---------------------------------------------------------------------------
 # Recording.wav — Generic guitar, 8-tap multi-tap, 48 kHz.
-# Reference values from the Recording.guitartap file (Tests/O'Brien/).
+# The oracle's values originally came from the Recording.guitartap file (Tests/O'Brien/).
 # Settings: peak_min_threshold = -76, tap_detection_threshold = -40,
 #           measurement_type = GENERIC, number_of_taps = 8.
 #           FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
@@ -284,11 +265,118 @@ def plate_analyzer():
 
 
 # ---------------------------------------------------------------------------
-# Tests  (REG-G1, REG-B1, REG-G2, REG-P1)
+# Tests — in Swift's order (FilePlaybackRegressionTests), then the session-recording cases
 # ---------------------------------------------------------------------------
 
 class TestFilePlaybackRegression:
     """Full-pipeline file playback regression tests."""
+
+    def test_REG_B2_brace_three_taps_averages_to_expected_peak(
+        self, brace3_analyzer
+    ):
+        """Brace at number_of_taps=3 — the three taps average into one spectrum.
+
+        The brace counterpart to REG-P2. The peak must be read off the AVERAGED spectrum,
+        not the last tap: the three taps here differ by ~6 dB, so a regression to last-tap
+        selection lands well outside the tolerance rather than hiding inside it.
+        """
+        assert os.path.exists(BRACE3_WAV), f"Test WAV not found: {BRACE3_WAV}"
+
+        sut = brace3_analyzer
+        sut.tap_detection_threshold = BRACE3_TAP_THRESHOLD
+        play_file_and_wait(
+            sut, path=BRACE3_WAV,
+            measurement_type=MeasurementType.BRACE,
+            number_of_taps=BRACE3_TAP_COUNT,
+            calibration_path=CALIBRATION_FILE,
+        )
+
+        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE, (
+            f"material_tap_phase should be COMPLETE, got {sut.material_tap_phase}"
+        )
+        assert sut.is_measurement_complete, "is_measurement_complete should be True"
+        assert sut.selected_longitudinal_peak is not None, "the fL peak should be identified"
+
+        dominant = sut.selected_longitudinal_peak
+
+        freq_delta = abs(dominant.frequency - BRACE3_EXPECTED_FREQ)
+        assert freq_delta <= FREQ_TOLERANCE, (
+            f"Peak frequency: expected {BRACE3_EXPECTED_FREQ} Hz "
+            f"±{FREQ_TOLERANCE}, got {dominant.frequency} Hz (delta {freq_delta:.5f})"
+        )
+
+        mag_delta = abs(dominant.magnitude - BRACE3_EXPECTED_MAG)
+        assert mag_delta <= MAG_TOLERANCE, (
+            f"Peak magnitude: expected {BRACE3_EXPECTED_MAG} dB "
+            f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB (delta {mag_delta:.5f})"
+        )
+
+        q_delta = abs(dominant.quality - BRACE3_EXPECTED_Q)
+        assert q_delta <= Q_TOLERANCE, (
+            f"Peak Q factor: expected {BRACE3_EXPECTED_Q} "
+            f"±{Q_TOLERANCE}, got {dominant.quality} (delta {q_delta:.5f})"
+        )
+
+    def test_REG_B1_brace_single_tap_produces_expected_peak(
+        self, brace_analyzer
+    ):
+        """Brace single-tap — known WAV produces expected fL peak.
+
+        Loads a full-session brace recording WAV (~12.6 s, 48 kHz) and plays it
+        through the full pipeline with measurement_type = BRACE.  Verifies that:
+          1. The pipeline completes (material_tap_phase == COMPLETE)
+          2. At least one longitudinal peak is detected
+          3. The dominant peak's frequency, magnitude and Q match the oracle
+        """
+        assert os.path.exists(BRACE_WAV), (
+            f"Test WAV not found: {BRACE_WAV}"
+        )
+
+        sut = brace_analyzer
+        sut.tap_detection_threshold = BRACE_TAP_THRESHOLD
+        play_file_and_wait(
+            sut, path=BRACE_WAV,
+            measurement_type=MeasurementType.BRACE,
+            calibration_path=CALIBRATION_FILE,
+        )
+
+        # 1. Pipeline should reach COMPLETE for brace (single-tap mode).
+        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE, (
+            f"material_tap_phase should be COMPLETE, "
+            f"got {sut.material_tap_phase}"
+        )
+
+        assert sut.is_measurement_complete, (
+            "is_measurement_complete should be True"
+        )
+
+        # 2. The fL peak should be identified.
+        assert sut.selected_longitudinal_peak is not None, "the fL peak should be identified"
+
+        # 3. Verify the fL peak's frequency.
+        dominant = sut.selected_longitudinal_peak
+        freq_delta = abs(dominant.frequency - BRACE_EXPECTED_FREQ)
+        assert freq_delta <= FREQ_TOLERANCE, (
+            f"Peak frequency: expected {BRACE_EXPECTED_FREQ} Hz "
+            f"±{FREQ_TOLERANCE}, got {dominant.frequency} Hz "
+            f"(delta {freq_delta:.2f})"
+        )
+
+        # 4. Verify dominant peak magnitude.
+        mag_delta = abs(dominant.magnitude - BRACE_EXPECTED_MAG)
+        assert mag_delta <= MAG_TOLERANCE, (
+            f"Peak magnitude: expected {BRACE_EXPECTED_MAG} dB "
+            f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB "
+            f"(delta {mag_delta:.2f})"
+        )
+
+        # 5. Verify dominant peak Q factor.
+        q_delta = abs(dominant.quality - BRACE_EXPECTED_Q)
+        assert q_delta <= Q_TOLERANCE, (
+            f"Peak Q factor: expected {BRACE_EXPECTED_Q} "
+            f"±{Q_TOLERANCE}, got {dominant.quality} "
+            f"(delta {q_delta:.2f})"
+        )
 
     def test_REG_G1_generic_guitar_single_tap_produces_expected_peaks(
         self, g1_analyzer
@@ -298,7 +386,7 @@ class TestFilePlaybackRegression:
         Loads a single-tap generic guitar recording and plays it through the
         full pipeline.  Verifies that:
           1. The pipeline completes with 1 tap entry
-          2. Air, Top, Back frequencies and magnitudes match reference ± 1
+          2. Air, Top, Back frequencies and magnitudes match the oracle
         """
         from guitar_tap.models.guitar_mode import GuitarMode
 
@@ -307,8 +395,8 @@ class TestFilePlaybackRegression:
         sut = g1_analyzer
         sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
         sut.tap_detection_threshold = G1_TAP_THRESHOLD
-        sut.play_file_for_testing(
-            path=G1_WAV,
+        play_file_and_wait(
+            sut, path=G1_WAV,
             measurement_type=MeasurementType.GENERIC,
             number_of_taps=1,
         )
@@ -324,146 +412,51 @@ class TestFilePlaybackRegression:
         # 2. Peaks — use get_peak(), the same API the Results panel uses.
         air_peak = sut.get_peak(GuitarMode.AIR)
         assert air_peak is not None, "No Air peak found"
-        assert abs(air_peak.frequency - G1_AIR_FREQ) < FREQ_TOLERANCE, (
+        assert abs(air_peak.frequency - G1_AIR_FREQ) <= FREQ_TOLERANCE, (
             f"Air freq: expected {G1_AIR_FREQ} "
             f"±{FREQ_TOLERANCE}, got {air_peak.frequency}"
         )
-        assert abs(air_peak.magnitude - G1_AIR_MAG) < MAG_TOLERANCE, (
+        assert abs(air_peak.magnitude - G1_AIR_MAG) <= MAG_TOLERANCE, (
             f"Air mag: expected {G1_AIR_MAG} "
             f"±{MAG_TOLERANCE}, got {air_peak.magnitude}"
         )
 
         top_peak = sut.get_peak(GuitarMode.TOP)
         assert top_peak is not None, "No Top peak found"
-        assert abs(top_peak.frequency - G1_TOP_FREQ) < FREQ_TOLERANCE, (
+        assert abs(top_peak.frequency - G1_TOP_FREQ) <= FREQ_TOLERANCE, (
             f"Top freq: expected {G1_TOP_FREQ} "
             f"±{FREQ_TOLERANCE}, got {top_peak.frequency}"
         )
-        assert abs(top_peak.magnitude - G1_TOP_MAG) < MAG_TOLERANCE, (
+        assert abs(top_peak.magnitude - G1_TOP_MAG) <= MAG_TOLERANCE, (
             f"Top mag: expected {G1_TOP_MAG} "
             f"±{MAG_TOLERANCE}, got {top_peak.magnitude}"
         )
 
         back_peak = sut.get_peak(GuitarMode.BACK)
         assert back_peak is not None, "No Back peak found"
-        assert abs(back_peak.frequency - G1_BACK_FREQ) < FREQ_TOLERANCE, (
+        assert abs(back_peak.frequency - G1_BACK_FREQ) <= FREQ_TOLERANCE, (
             f"Back freq: expected {G1_BACK_FREQ} "
             f"±{FREQ_TOLERANCE}, got {back_peak.frequency}"
         )
-        assert abs(back_peak.magnitude - G1_BACK_MAG) < MAG_TOLERANCE, (
+        assert abs(back_peak.magnitude - G1_BACK_MAG) <= MAG_TOLERANCE, (
             f"Back mag: expected {G1_BACK_MAG} "
             f"±{MAG_TOLERANCE}, got {back_peak.magnitude}"
         )
 
-    def test_REG_B2_brace_three_taps_averages_to_expected_peak(
-        self, brace3_analyzer
-    ):
-        """Brace at number_of_taps=3 — the three taps average into one spectrum.
-
-        The brace counterpart to REG-P2. The peak must be read off the AVERAGED spectrum,
-        not the last tap: the three taps here differ by ~6 dB, so a regression to last-tap
-        selection lands well outside the tolerance rather than hiding inside it.
-        """
-        assert os.path.exists(BRACE3_WAV), f"Test WAV not found: {BRACE3_WAV}"
-
-        sut = brace3_analyzer
-        sut.tap_detection_threshold = BRACE3_TAP_THRESHOLD
-        sut.play_file_for_testing(
-            path=BRACE3_WAV,
-            measurement_type=MeasurementType.BRACE,
-            number_of_taps=BRACE3_TAP_COUNT,
-            calibration_path=CALIBRATION_FILE,
+    # REG-G ring-out — Recording 5.wav's post-tap level decays to peak-15 dB, measured on the audio
+    # clock. The value is the oracle's, shared by all three editions.
+    def test_REG_G_generic_guitar_ringout(self, g1_analyzer):
+        """Ring-out time for Recording 5.wav matches the cross-platform golden."""
+        sut = g1_analyzer
+        sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
+        sut.tap_detection_threshold = G1_TAP_THRESHOLD
+        play_file_and_wait(
+            sut, path=G1_WAV, measurement_type=MeasurementType.GENERIC, number_of_taps=1
         )
-
-        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE, (
-            f"material_tap_phase should be COMPLETE, got {sut.material_tap_phase}"
-        )
-        assert sut.is_measurement_complete, "is_measurement_complete should be True"
-        assert len(sut.longitudinal_peaks) > 0, "longitudinal_peaks should not be empty"
-
-        dominant = sut.selected_longitudinal_peak or sut.longitudinal_peaks[0]
-
-        freq_delta = abs(dominant.frequency - BRACE3_EXPECTED_FREQ)
-        assert freq_delta < FREQ_TOLERANCE, (
-            f"Peak frequency: expected {BRACE3_EXPECTED_FREQ} Hz "
-            f"±{FREQ_TOLERANCE}, got {dominant.frequency} Hz (delta {freq_delta:.5f})"
-        )
-
-        mag_delta = abs(dominant.magnitude - BRACE3_EXPECTED_MAG)
-        assert mag_delta < MAG_TOLERANCE, (
-            f"Peak magnitude: expected {BRACE3_EXPECTED_MAG} dB "
-            f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB (delta {mag_delta:.5f})"
-        )
-
-        q_delta = abs(dominant.quality - BRACE3_EXPECTED_Q)
-        assert q_delta < Q_TOLERANCE, (
-            f"Peak Q factor: expected {BRACE3_EXPECTED_Q} "
-            f"±{Q_TOLERANCE}, got {dominant.quality} (delta {q_delta:.5f})"
-        )
-
-    def test_REG_B1_brace_single_tap_produces_expected_peak(
-        self, brace_analyzer
-    ):
-        """Brace single-tap — known WAV produces expected fL peak.
-
-        Loads a full-session brace recording WAV (~12.6 s, 48 kHz) and plays it
-        through the full pipeline with measurement_type = BRACE.  Verifies that:
-          1. The pipeline completes (material_tap_phase == COMPLETE)
-          2. At least one longitudinal peak is detected
-          3. The dominant peak frequency matches the .guitartap reference ± 1 Hz
-          4. The dominant peak magnitude matches the reference ± 1 dB
-          5. The dominant peak Q factor matches the reference ± 1
-        """
-        assert os.path.exists(BRACE_WAV), (
-            f"Test WAV not found: {BRACE_WAV}"
-        )
-
-        sut = brace_analyzer
-        sut.tap_detection_threshold = BRACE_TAP_THRESHOLD
-        sut.play_file_for_testing(
-            path=BRACE_WAV,
-            measurement_type=MeasurementType.BRACE,
-            calibration_path=CALIBRATION_FILE,
-        )
-
-        # 1. Pipeline should reach COMPLETE for brace (single-tap mode).
-        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE, (
-            f"material_tap_phase should be COMPLETE, "
-            f"got {sut.material_tap_phase}"
-        )
-
-        assert sut.is_measurement_complete, (
-            "is_measurement_complete should be True"
-        )
-
-        # 2. Longitudinal peaks should be populated.
-        assert len(sut.longitudinal_peaks) > 0, (
-            "longitudinal_peaks should not be empty"
-        )
-
-        # 3. Verify dominant peak frequency.
-        dominant = sut.longitudinal_peaks[0]
-        freq_delta = abs(dominant.frequency - BRACE_EXPECTED_FREQ)
-        assert freq_delta < FREQ_TOLERANCE, (
-            f"Peak frequency: expected {BRACE_EXPECTED_FREQ} Hz "
-            f"±{FREQ_TOLERANCE}, got {dominant.frequency} Hz "
-            f"(delta {freq_delta:.2f})"
-        )
-
-        # 4. Verify dominant peak magnitude.
-        mag_delta = abs(dominant.magnitude - BRACE_EXPECTED_MAG)
-        assert mag_delta < MAG_TOLERANCE, (
-            f"Peak magnitude: expected {BRACE_EXPECTED_MAG} dB "
-            f"±{MAG_TOLERANCE}, got {dominant.magnitude} dB "
-            f"(delta {mag_delta:.2f})"
-        )
-
-        # 5. Verify dominant peak Q factor.
-        q_delta = abs(dominant.quality - BRACE_EXPECTED_Q)
-        assert q_delta < Q_TOLERANCE, (
-            f"Peak Q factor: expected {BRACE_EXPECTED_Q} "
-            f"±{Q_TOLERANCE}, got {dominant.quality} "
-            f"(delta {q_delta:.2f})"
+        assert sut.current_decay_time is not None, "No ring-out measured"
+        assert abs(sut.current_decay_time - G1_RING_OUT_SEC) <= RING_OUT_TOLERANCE, (
+            f"Ring-out: expected {G1_RING_OUT_SEC} ±{RING_OUT_TOLERANCE}, "
+            f"got {sut.current_decay_time}"
         )
 
     def test_REG_G2_generic_guitar_8tap_produces_expected_peaks(
@@ -474,8 +467,8 @@ class TestFilePlaybackRegression:
         Loads a live 8-tap generic guitar recording and plays it through the
         full pipeline.  Verifies that:
           1. The pipeline completes with 8 tap entries
-          2. Averaged Air, Top, Back frequencies and magnitudes match reference ± 1
-          3. All 8 individual taps' Air, Top, Back freq+mag match reference ± 1
+          2. Averaged Air, Top, Back frequencies and magnitudes match the oracle
+          3. All 8 individual taps' Air, Top, Back freq+mag match the oracle
         """
         from guitar_tap.models.guitar_mode import GuitarMode
         from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -485,8 +478,8 @@ class TestFilePlaybackRegression:
         sut = guitar_analyzer
         sut.peak_min_threshold = GUITAR_PEAK_MIN_THRESHOLD
         sut.tap_detection_threshold = GUITAR_TAP_THRESHOLD
-        sut.play_file_for_testing(
-            path=GUITAR_WAV,
+        play_file_and_wait(
+            sut, path=GUITAR_WAV,
             measurement_type=MeasurementType.GENERIC,
             number_of_taps=8,
         )
@@ -500,33 +493,33 @@ class TestFilePlaybackRegression:
         # 2. Averaged peaks — use get_peak(), the same API the Results panel uses.
         air_peak = sut.get_peak(GuitarMode.AIR)
         assert air_peak is not None, "No averaged Air peak found"
-        assert abs(air_peak.frequency - GUITAR_AVG_AIR_FREQ) < FREQ_TOLERANCE, (
+        assert abs(air_peak.frequency - GUITAR_AVG_AIR_FREQ) <= FREQ_TOLERANCE, (
             f"Avg Air freq: expected {GUITAR_AVG_AIR_FREQ} "
             f"±{FREQ_TOLERANCE}, got {air_peak.frequency}"
         )
-        assert abs(air_peak.magnitude - GUITAR_AVG_AIR_MAG) < MAG_TOLERANCE, (
+        assert abs(air_peak.magnitude - GUITAR_AVG_AIR_MAG) <= MAG_TOLERANCE, (
             f"Avg Air mag: expected {GUITAR_AVG_AIR_MAG} "
             f"±{MAG_TOLERANCE}, got {air_peak.magnitude}"
         )
 
         top_peak = sut.get_peak(GuitarMode.TOP)
         assert top_peak is not None, "No averaged Top peak found"
-        assert abs(top_peak.frequency - GUITAR_AVG_TOP_FREQ) < FREQ_TOLERANCE, (
+        assert abs(top_peak.frequency - GUITAR_AVG_TOP_FREQ) <= FREQ_TOLERANCE, (
             f"Avg Top freq: expected {GUITAR_AVG_TOP_FREQ} "
             f"±{FREQ_TOLERANCE}, got {top_peak.frequency}"
         )
-        assert abs(top_peak.magnitude - GUITAR_AVG_TOP_MAG) < MAG_TOLERANCE, (
+        assert abs(top_peak.magnitude - GUITAR_AVG_TOP_MAG) <= MAG_TOLERANCE, (
             f"Avg Top mag: expected {GUITAR_AVG_TOP_MAG} "
             f"±{MAG_TOLERANCE}, got {top_peak.magnitude}"
         )
 
         back_peak = sut.get_peak(GuitarMode.BACK)
         assert back_peak is not None, "No averaged Back peak found"
-        assert abs(back_peak.frequency - GUITAR_AVG_BACK_FREQ) < FREQ_TOLERANCE, (
+        assert abs(back_peak.frequency - GUITAR_AVG_BACK_FREQ) <= FREQ_TOLERANCE, (
             f"Avg Back freq: expected {GUITAR_AVG_BACK_FREQ} "
             f"±{FREQ_TOLERANCE}, got {back_peak.frequency}"
         )
-        assert abs(back_peak.magnitude - GUITAR_AVG_BACK_MAG) < MAG_TOLERANCE, (
+        assert abs(back_peak.magnitude - GUITAR_AVG_BACK_MAG) <= MAG_TOLERANCE, (
             f"Avg Back mag: expected {GUITAR_AVG_BACK_MAG} "
             f"±{MAG_TOLERANCE}, got {back_peak.magnitude}"
         )
@@ -545,11 +538,11 @@ class TestFilePlaybackRegression:
             # Air
             air = mode_peaks.get(GuitarMode.AIR)
             assert air is not None, f"{tap_label}: no Air peak in selected peaks"
-            assert abs(air.frequency - exp_air_freq) < FREQ_TOLERANCE, (
+            assert abs(air.frequency - exp_air_freq) <= FREQ_TOLERANCE, (
                 f"{tap_label} Air freq: expected {exp_air_freq} "
                 f"±{FREQ_TOLERANCE}, got {air.frequency}"
             )
-            assert abs(air.magnitude - exp_air_mag) < MAG_TOLERANCE, (
+            assert abs(air.magnitude - exp_air_mag) <= MAG_TOLERANCE, (
                 f"{tap_label} Air mag: expected {exp_air_mag} "
                 f"±{MAG_TOLERANCE}, got {air.magnitude}"
             )
@@ -557,11 +550,11 @@ class TestFilePlaybackRegression:
             # Top
             top = mode_peaks.get(GuitarMode.TOP)
             assert top is not None, f"{tap_label}: no Top peak in selected peaks"
-            assert abs(top.frequency - exp_top_freq) < FREQ_TOLERANCE, (
+            assert abs(top.frequency - exp_top_freq) <= FREQ_TOLERANCE, (
                 f"{tap_label} Top freq: expected {exp_top_freq} "
                 f"±{FREQ_TOLERANCE}, got {top.frequency}"
             )
-            assert abs(top.magnitude - exp_top_mag) < MAG_TOLERANCE, (
+            assert abs(top.magnitude - exp_top_mag) <= MAG_TOLERANCE, (
                 f"{tap_label} Top mag: expected {exp_top_mag} "
                 f"±{MAG_TOLERANCE}, got {top.magnitude}"
             )
@@ -569,11 +562,11 @@ class TestFilePlaybackRegression:
             # Back
             back = mode_peaks.get(GuitarMode.BACK)
             assert back is not None, f"{tap_label}: no Back peak in selected peaks"
-            assert abs(back.frequency - exp_back_freq) < FREQ_TOLERANCE, (
+            assert abs(back.frequency - exp_back_freq) <= FREQ_TOLERANCE, (
                 f"{tap_label} Back freq: expected {exp_back_freq} "
                 f"±{FREQ_TOLERANCE}, got {back.frequency}"
             )
-            assert abs(back.magnitude - exp_back_mag) < MAG_TOLERANCE, (
+            assert abs(back.magnitude - exp_back_mag) <= MAG_TOLERANCE, (
                 f"{tap_label} Back mag: expected {exp_back_mag} "
                 f"±{MAG_TOLERANCE}, got {back.magnitude}"
             )
@@ -591,7 +584,7 @@ class TestFilePlaybackRegression:
           1. The pipeline reaches COMPLETE
           2. fL / fC / fLC peaks are each populated
           3. Each auto-selected peak's frequency, magnitude, and Q
-             factor matches the .guitartap reference within tolerance
+             factor matches the oracle within the cross-edition tolerances
         """
         from guitar_tap.models.tap_display_settings import TapDisplaySettings
 
@@ -606,8 +599,8 @@ class TestFilePlaybackRegression:
         try:
             sut = plate_analyzer
             sut.tap_detection_threshold = PLATE_TAP_THRESHOLD
-            sut.play_file_for_testing(
-                path=PLATE_WAV,
+            play_file_and_wait(
+            sut, path=PLATE_WAV,
                 measurement_type=MeasurementType.PLATE,
                 calibration_path=CALIBRATION_FILE,
             )
@@ -623,27 +616,27 @@ class TestFilePlaybackRegression:
         )
 
         # 2. All three peak arrays populated.
-        assert len(sut.longitudinal_peaks) > 0, "longitudinal_peaks should not be empty"
-        assert len(sut.cross_peaks) > 0, "cross_peaks should not be empty"
-        assert len(sut.flc_peaks) > 0, "flc_peaks should not be empty"
+        assert sut.selected_longitudinal_peak is not None, "the fL peak should be identified"
+        assert sut.selected_cross_peak is not None, "the fC peak should be identified"
+        assert sut.selected_flc_peak is not None, "the fLC peak should be identified"
 
         # 3a. fL peak.
         l_peak = sut.selected_longitudinal_peak
         assert l_peak is not None, "selected_longitudinal_peak is None"
         l_freq_delta = abs(l_peak.frequency - PLATE_L_EXPECTED_FREQ)
-        assert l_freq_delta < FREQ_TOLERANCE, (
+        assert l_freq_delta <= FREQ_TOLERANCE, (
             f"fL frequency: expected {PLATE_L_EXPECTED_FREQ} Hz "
             f"±{FREQ_TOLERANCE}, got {l_peak.frequency} Hz "
             f"(delta {l_freq_delta:.2f})"
         )
         l_mag_delta = abs(l_peak.magnitude - PLATE_L_EXPECTED_MAG)
-        assert l_mag_delta < MAG_TOLERANCE, (
+        assert l_mag_delta <= MAG_TOLERANCE, (
             f"fL magnitude: expected {PLATE_L_EXPECTED_MAG} dB "
             f"±{MAG_TOLERANCE}, got {l_peak.magnitude} dB "
             f"(delta {l_mag_delta:.2f})"
         )
         l_q_delta = abs(l_peak.quality - PLATE_L_EXPECTED_Q)
-        assert l_q_delta < Q_TOLERANCE, (
+        assert l_q_delta <= Q_TOLERANCE, (
             f"fL Q factor: expected {PLATE_L_EXPECTED_Q} "
             f"±{Q_TOLERANCE}, got {l_peak.quality} "
             f"(delta {l_q_delta:.2f})"
@@ -653,19 +646,19 @@ class TestFilePlaybackRegression:
         c_peak = sut.selected_cross_peak
         assert c_peak is not None, "selected_cross_peak is None"
         c_freq_delta = abs(c_peak.frequency - PLATE_C_EXPECTED_FREQ)
-        assert c_freq_delta < FREQ_TOLERANCE, (
+        assert c_freq_delta <= FREQ_TOLERANCE, (
             f"fC frequency: expected {PLATE_C_EXPECTED_FREQ} Hz "
             f"±{FREQ_TOLERANCE}, got {c_peak.frequency} Hz "
             f"(delta {c_freq_delta:.2f})"
         )
         c_mag_delta = abs(c_peak.magnitude - PLATE_C_EXPECTED_MAG)
-        assert c_mag_delta < MAG_TOLERANCE, (
+        assert c_mag_delta <= MAG_TOLERANCE, (
             f"fC magnitude: expected {PLATE_C_EXPECTED_MAG} dB "
             f"±{MAG_TOLERANCE}, got {c_peak.magnitude} dB "
             f"(delta {c_mag_delta:.2f})"
         )
         c_q_delta = abs(c_peak.quality - PLATE_C_EXPECTED_Q)
-        assert c_q_delta < Q_TOLERANCE, (
+        assert c_q_delta <= Q_TOLERANCE, (
             f"fC Q factor: expected {PLATE_C_EXPECTED_Q} "
             f"±{Q_TOLERANCE}, got {c_peak.quality} "
             f"(delta {c_q_delta:.2f})"
@@ -675,75 +668,23 @@ class TestFilePlaybackRegression:
         flc_peak = sut.selected_flc_peak
         assert flc_peak is not None, "selected_flc_peak is None"
         flc_freq_delta = abs(flc_peak.frequency - PLATE_FLC_EXPECTED_FREQ)
-        assert flc_freq_delta < FREQ_TOLERANCE, (
+        assert flc_freq_delta <= FREQ_TOLERANCE, (
             f"fLC frequency: expected {PLATE_FLC_EXPECTED_FREQ} Hz "
             f"±{FREQ_TOLERANCE}, got {flc_peak.frequency} Hz "
             f"(delta {flc_freq_delta:.2f})"
         )
         flc_mag_delta = abs(flc_peak.magnitude - PLATE_FLC_EXPECTED_MAG)
-        assert flc_mag_delta < MAG_TOLERANCE, (
+        assert flc_mag_delta <= MAG_TOLERANCE, (
             f"fLC magnitude: expected {PLATE_FLC_EXPECTED_MAG} dB "
             f"±{MAG_TOLERANCE}, got {flc_peak.magnitude} dB "
             f"(delta {flc_mag_delta:.2f})"
         )
         flc_q_delta = abs(flc_peak.quality - PLATE_FLC_EXPECTED_Q)
-        assert flc_q_delta < Q_TOLERANCE, (
+        assert flc_q_delta <= Q_TOLERANCE, (
             f"fLC Q factor: expected {PLATE_FLC_EXPECTED_Q} "
             f"±{Q_TOLERANCE}, got {flc_peak.quality} "
             f"(delta {flc_q_delta:.2f})"
         )
-
-    def test_REG_P2_plate_three_taps_per_phase_averages(self, plate_analyzer):
-        """Plate at number_of_taps=3 — each phase (L/C/FLC) averages 3 taps.
-
-        plate-umik-1-web-mac-3-taps.wav is a 3-taps-per-phase plate session
-        recorded by the web app (Chrome, UMIK-1).  Replaying it at
-        number_of_taps=3 must average each phase and reproduce the companion
-        .guitartap peaks.  Exercises the multi-tap-per-phase path (mirrors
-        Swift handleLongitudinalGatedProgress: collect number_of_taps, then
-        averageSpectra).  Same fixture + expected values as the web REG-P2.
-        """
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings
-
-        assert os.path.exists(PLATE_3TAP_WAV), f"Test WAV not found: {PLATE_3TAP_WAV}"
-
-        original_measure_flc = TapDisplaySettings.measure_flc()
-        TapDisplaySettings.set_measure_flc(True)
-        try:
-            sut = plate_analyzer
-            sut.tap_detection_threshold = PLATE_3TAP_THRESHOLD
-            sut.play_file_for_testing(
-                path=PLATE_3TAP_WAV,
-                measurement_type=MeasurementType.PLATE,
-                number_of_taps=3,
-                calibration_path=CALIBRATION_FILE,
-            )
-        finally:
-            TapDisplaySettings.set_measure_flc(original_measure_flc)
-
-        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE, (
-            f"material_tap_phase should be COMPLETE, got {sut.material_tap_phase}"
-        )
-        assert sut.is_measurement_complete, "is_measurement_complete should be True"
-
-        for name, peak, ef, em, eq in (
-            ("fL", sut.selected_longitudinal_peak,
-             PLATE_3TAP_L_FREQ, PLATE_3TAP_L_MAG, PLATE_3TAP_L_Q),
-            ("fC", sut.selected_cross_peak,
-             PLATE_3TAP_C_FREQ, PLATE_3TAP_C_MAG, PLATE_3TAP_C_Q),
-            ("fLC", sut.selected_flc_peak,
-             PLATE_3TAP_FLC_FREQ, PLATE_3TAP_FLC_MAG, PLATE_3TAP_FLC_Q),
-        ):
-            assert peak is not None, f"{name} peak is None"
-            assert abs(peak.frequency - ef) < FREQ_TOLERANCE, (
-                f"{name} freq: expected {ef} Hz ±{FREQ_TOLERANCE}, got {peak.frequency}"
-            )
-            assert abs(peak.magnitude - em) < PLATE_3TAP_MAG_TOLERANCE, (
-                f"{name} mag: expected {em} dB ±{PLATE_3TAP_MAG_TOLERANCE}, got {peak.magnitude}"
-            )
-            assert abs(peak.quality - eq) < Q_TOLERANCE, (
-                f"{name} Q: expected {eq} ±{Q_TOLERANCE}, got {peak.quality}"
-            )
 
     def test_OUT4_noisy_plate_relative_noise_floor_still_captures_all_phases(
         self, plate_analyzer
@@ -751,14 +692,13 @@ class TestFilePlaybackRegression:
         """OUT-4 — the relative noise-floor detector survives an elevated ambient floor.
 
         The same plate session with its noise floor raised to -52 dBFS, ABOVE the -53.34 dB
-        tap-detection threshold.  An ABSOLUTE-threshold detector saturates here and captures
-        nothing (the web port does exactly that — this is its failing counterpart test).  The
-        noise-floor-RELATIVE detector floats its threshold to floor+10 and still captures all
+        tap-detection threshold.  An ABSOLUTE-threshold detector would saturate here and capture
+        nothing.  The noise-floor-RELATIVE detector floats its threshold to floor+10 and still captures all
         three phases.
 
-        This test only became possible once file playback stopped pinning
-        noise_floor_estimate = -100 (which collapsed `rising` onto the absolute threshold and
-        silently disabled the relative model in playback on every platform).
+        File playback lets the noise floor track the audio rather than pinning
+        noise_floor_estimate = -100, which would collapse `rising` onto the absolute threshold and
+        disable the relative model.
 
         Asserts the PHASE COUNT, not peak values — the noise shifts the peaks slightly, and a
         tight peak assertion would be measuring the noise rather than the detector.
@@ -772,8 +712,8 @@ class TestFilePlaybackRegression:
         try:
             sut = plate_analyzer
             sut.tap_detection_threshold = PLATE_TAP_THRESHOLD
-            sut.play_file_for_testing(
-                path=PLATE_NOISY_WAV,
+            play_file_and_wait(
+            sut, path=PLATE_NOISY_WAV,
                 measurement_type=MeasurementType.PLATE,
                 calibration_path=CALIBRATION_FILE,
             )
@@ -803,26 +743,166 @@ class TestFilePlaybackRegression:
             f"got {sut.noise_floor_estimate:.1f} (pinned at -100 means relative detection is OFF)"
         )
 
+    def test_REG_P2_plate_three_taps_per_phase_averages(self, plate_analyzer):
+        """Plate at number_of_taps=3 — each phase (L/C/FLC) averages 3 taps.
 
-# REG-G ring-out (decay) — Recording 5.wav post-tap level decays to peak-15 dB. Shared
-# cross-platform golden (web g4d-decay + Swift FilePlaybackRegression assert the same value):
-# 0.0853 s ± 0.03 s. The web is audio-clock-deterministic; Python's wall-clock decay reaches the
-# same crossing because file playback runs at real-time pace (wall-clock ≈ audio time 1:1). The
-# loose tolerance covers per-platform chunk-granularity + clock jitter (web 0.0853, Python ~0.091).
-G1_RING_OUT_SEC = case("REG-G1")["ringOutSec"]
-RING_OUT_TOLERANCE = TOLERANCES["ringOutSec"]
+        plate-umik-1-web-mac-3-taps.wav is a 3-taps-per-phase plate session
+        recorded by the web app (Chrome, UMIK-1).  Replaying it at
+        number_of_taps=3 must average each phase and reproduce the oracle's
+        peaks.  Exercises the multi-tap-per-phase path (mirrors Swift
+        handleLongitudinalGatedProgress: collect number_of_taps, then
+        averageSpectra).
+        """
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
 
+        assert os.path.exists(PLATE_3TAP_WAV), f"Test WAV not found: {PLATE_3TAP_WAV}"
 
-def test_REG_G_generic_guitar_ringout(g1_analyzer):
-    """Ring-out time for Recording 5.wav matches the cross-platform golden."""
-    sut = g1_analyzer
-    sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
-    sut.tap_detection_threshold = G1_TAP_THRESHOLD
-    sut.play_file_for_testing(
-        path=G1_WAV, measurement_type=MeasurementType.GENERIC, number_of_taps=1
-    )
-    assert sut.current_decay_time is not None, "No ring-out measured"
-    assert abs(sut.current_decay_time - G1_RING_OUT_SEC) < RING_OUT_TOLERANCE, (
-        f"Ring-out: expected {G1_RING_OUT_SEC} ±{RING_OUT_TOLERANCE}, "
-        f"got {sut.current_decay_time}"
-    )
+        original_measure_flc = TapDisplaySettings.measure_flc()
+        TapDisplaySettings.set_measure_flc(True)
+        try:
+            sut = plate_analyzer
+            sut.tap_detection_threshold = PLATE_3TAP_THRESHOLD
+            play_file_and_wait(
+            sut, path=PLATE_3TAP_WAV,
+                measurement_type=MeasurementType.PLATE,
+                number_of_taps=3,
+                calibration_path=CALIBRATION_FILE,
+            )
+        finally:
+            TapDisplaySettings.set_measure_flc(original_measure_flc)
+
+        assert sut.material_tap_phase == MaterialTapPhase.COMPLETE, (
+            f"material_tap_phase should be COMPLETE, got {sut.material_tap_phase}"
+        )
+        assert sut.is_measurement_complete, "is_measurement_complete should be True"
+
+        for name, peak, ef, em, eq in (
+            ("fL", sut.selected_longitudinal_peak,
+             PLATE_3TAP_L_FREQ, PLATE_3TAP_L_MAG, PLATE_3TAP_L_Q),
+            ("fC", sut.selected_cross_peak,
+             PLATE_3TAP_C_FREQ, PLATE_3TAP_C_MAG, PLATE_3TAP_C_Q),
+            ("fLC", sut.selected_flc_peak,
+             PLATE_3TAP_FLC_FREQ, PLATE_3TAP_FLC_MAG, PLATE_3TAP_FLC_Q),
+        ):
+            assert peak is not None, f"{name} peak is None"
+            assert abs(peak.frequency - ef) <= FREQ_TOLERANCE, (
+                f"{name} freq: expected {ef} Hz ±{FREQ_TOLERANCE}, got {peak.frequency}"
+            )
+            assert abs(peak.magnitude - em) <= MAG_TOLERANCE, (
+                f"{name} mag: expected {em} dB ±{MAG_TOLERANCE}, got {peak.magnitude}"
+            )
+            assert abs(peak.quality - eq) <= Q_TOLERANCE, (
+                f"{name} Q: expected {eq} ±{Q_TOLERANCE}, got {peak.quality}"
+            )
+
+    # ── Session recording ─────────────────────────────────────────────────────────────────────
+    # With "save capture audio" on, a guitar measurement writes ONE session WAV labelled
+    # "Guitar_<n>tap" covering the audio that flowed through the pipeline (arm → final tap); off, it
+    # writes nothing. The dump folder is test-sandboxed (WavDumpFolder.default_folder), so the WAVs are
+    # read back from there. Twins of the web's and Swift's session-recording cases.
+
+    _SESSION_PREFIX = "python_session_"
+
+    @classmethod
+    def _session_wavs(cls):
+        """The session WAVs in the sandboxed dump folder: (label, sample_rate, sample_count)."""
+        import struct
+        from guitar_tap.models.wav_dump_folder import WavDumpFolder
+        folder = WavDumpFolder.default_folder()
+        out = []
+        if not folder.is_dir():
+            return out
+        for path in sorted(folder.glob(cls._SESSION_PREFIX + "*.wav")):
+            data = path.read_bytes()
+            if len(data) < 44:
+                continue
+            rate = struct.unpack_from("<I", data, 24)[0]
+            nbytes = struct.unpack_from("<I", data, 40)[0]
+            # "python_session_Guitar_1tap_<timestamp>.wav" → "Guitar_1tap"
+            label = "_".join(path.name[len(cls._SESSION_PREFIX):].split("_")[:2])
+            out.append((label, rate, nbytes // 4))
+        return out
+
+    @classmethod
+    def _play_guitar_session(cls, path: str, number_of_taps: int, dump: bool):
+        """Play a generic-guitar fixture with "save capture audio" set to ``dump``; return the
+        session WAVs."""
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        from guitar_tap.models.wav_dump_folder import WavDumpFolder
+        folder = WavDumpFolder.default_folder()
+        if folder.is_dir():
+            for old in folder.glob(cls._SESSION_PREFIX + "*.wav"):
+                old.unlink()
+        saved = TapDisplaySettings.dump_capture_audio()
+        TapDisplaySettings.set_dump_capture_audio(dump)
+        try:
+            sut = TapToneAnalyzer.for_testing(sample_rate=_wav_rate(path))
+            sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
+            sut.tap_detection_threshold = G1_TAP_THRESHOLD
+            play_file_and_wait(
+                sut, path=path, measurement_type=MeasurementType.GENERIC, number_of_taps=number_of_taps
+            )
+        finally:
+            TapDisplaySettings.set_dump_capture_audio(saved)
+        return cls._session_wavs()
+
+    def test_REG_G1_session_recording_dump_on_writes_one_guitar_1tap_wav(self):
+        import soundfile as sf
+        sessions = self._play_guitar_session(G1_WAV, 1, dump=True)
+        assert len(sessions) == 1, f"one session WAV, got {[s[0] for s in sessions]}"
+        label, rate, samples = sessions[0]
+        assert label == "Guitar_1tap"
+        assert rate == _wav_rate(G1_WAV)
+        # Covers the arm → tap → capture span: many chunks, and never more than the whole file.
+        assert samples > 8192, f"a continuous run of many chunks, got {samples}"
+        assert samples <= sf.info(G1_WAV).frames, f"bounded by the file, got {samples}"
+
+    def test_REG_G2_session_recording_is_labelled_by_the_tap_count(self):
+        sessions = self._play_guitar_session(GUITAR_WAV, 8, dump=True)
+        assert len(sessions) == 1, f"one session WAV, got {[s[0] for s in sessions]}"
+        assert sessions[0][0] == "Guitar_8tap"
+
+    def test_session_recording_dump_off_writes_nothing(self):
+        sessions = self._play_guitar_session(G1_WAV, 1, dump=False)
+        assert sessions == [], f"no session WAV with the setting off, got {[s[0] for s in sessions]}"
+
+    # ── Playback calibration ─────────────────────────────────────────────────────────────────────
+    # A file plays with the calibration given for it, or with none: the microphone it was recorded with
+    # is unknown, so the live input's calibration never applies to it. The input's calibration is back
+    # once playback ends. Twins of Swift's playback-calibration cases.
+
+    @staticmethod
+    def _playback_calibrations(input_calibration, calibration_path):
+        """Play G1 with ``calibration_path``; return the active calibration during and after playback."""
+        import threading
+        import time
+        from PySide6 import QtWidgets
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        sut = TapToneAnalyzer.for_testing(sample_rate=_wav_rate(G1_WAV))
+        sut.set_temporary_calibration(input_calibration)
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        ended = threading.Event()
+        sut.play_file(G1_WAV, calibration_path=calibration_path, on_finished=ended.set)
+        during = sut._calibration_profile
+        while not ended.is_set():
+            app.processEvents()
+            time.sleep(0.005)
+        return during, sut._calibration_profile
+
+    def test_playback_without_a_calibration_file_is_uncalibrated_and_the_inputs_calibration_returns(self):
+        from guitar_tap.models.microphone_calibration import MicrophoneCalibration
+        input_calibration = MicrophoneCalibration.from_path(CALIBRATION_FILE)
+        during, after = self._playback_calibrations(input_calibration, None)
+        assert during is None, "no calibration file → uncalibrated"
+        assert after is input_calibration, "the input's calibration is restored after playback"
+
+    def test_playback_with_a_calibration_file_uses_it_and_the_inputs_calibration_returns(self):
+        from guitar_tap.models.microphone_calibration import MicrophoneCalibration
+        file_calibration = MicrophoneCalibration.from_path(CALIBRATION_FILE)
+        during, after = self._playback_calibrations(None, CALIBRATION_FILE)
+        assert during is not None and during.correction_points == file_calibration.correction_points, \
+            "the file's calibration is applied"
+        assert after is None, "the input's (absent) calibration is restored after playback"

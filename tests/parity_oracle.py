@@ -38,15 +38,6 @@ def gated(name: str) -> dict[str, Any]:
     return ORACLE["gatedFft"][name]
 
 
-def tol(name: str, key: str) -> float:
-    """Tolerance for a case: the case's own override if it declares one, else global.
-
-    REG-P2 is the case that needs this — its averaged magnitudes are deterministic
-    across editions, so it pins them at 0.5 dB where the single-tap cases allow 1.0.
-    """
-    return float(case(name).get("tolerances", {}).get(key, TOLERANCES[key]))
-
-
 def peak(name: str, role: str, key: str = "peaks") -> dict[str, Any]:
     """The expected peak for one mode role within a case ('peaks' or 'averagedPeaks')."""
     for p in case(name)[key]:

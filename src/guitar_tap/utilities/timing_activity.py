@@ -2,7 +2,7 @@
 """Hold off the operating system's timer throttling while the app does something time-critical.
 
 macOS throttles the timers of an app it considers idle — App Nap. Measured in this edition's test
-process (#19): after ~30–35 s a one-chunk (21.3 ms) sleep took 56–98 ms, so paced file playback ran
+process: after ~30–35 s a one-chunk (21.3 ms) sleep took 56–98 ms, so paced file playback ran
 2–4× slower than real time. Only a LATENCY-CRITICAL activity lifted it; a user-initiated one did not.
 File playback is paced by such sleeps, so it holds one of these for its whole run.
 

@@ -8,7 +8,7 @@ loading NEVER writes the Settings defaults (the origin bug this design fixes). A
 
 These are the *sourcing* invariants that existing tests don't cover: material_properties tests the calc
 math (dims passed in directly) and test_measurement_codable tests the format round-trip — neither
-exercises where the dimensions come from. See GuitarTapWeb/Development/MEASUREMENT-DIMENSIONS-SPEC.md.
+exercises where the dimensions come from.
 """
 
 from __future__ import annotations

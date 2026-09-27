@@ -9,7 +9,7 @@ Pitch is deliberately a GENERAL package, not only what guitar_tap calls: pitch_r
 formatted_note and is_in_tune have no call site in the app. They are still tested, because the
 package's API is the contract, not the subset the app happens to use today. The web edition
 carries only the subset it uses, which is why test/pitch reads 22/22/6 — that spread is a
-difference in surface, not a gap in coverage. See SLUG-SWEEP.md F13.
+difference in surface, not a gap in coverage.
 """
 
 from __future__ import annotations
@@ -38,9 +38,8 @@ _pitch = Pitch(a4=440.0)
 class TestPitchRange:
     """Semitone bounds. Mirrors Swift PitchTests pitchRange_*.
 
-    Added in the #17 sweep: pitch_range had NO test in any edition, despite branching on the
-    sign of the cents offset and on the two octave boundaries (B->C going up, C->B going down).
-    Four branches, nothing pinning any of them.
+    Covers the sign of the cents offset and the two octave boundaries (B->C going up, C->B going
+    down).
     """
 
     def test_exactly_on_note_spans_up_to_the_next_semitone(self):
@@ -288,8 +287,7 @@ class TestFormattedNote:
 
 class TestNoPitch:
     """A frequency with no pitch — 0 Hz, negative, NaN, infinite — gets "no pitch" from every method,
-    and none of them raises. log2(0) used to raise for a peak at 0 Hz (#17 F50 item 14). Mirrors Swift
-    PitchTests aFrequencyWithNoPitch_getsNoPitch."""
+    and none of them raises. Mirrors Swift PitchTests aFrequencyWithNoPitch_getsNoPitch."""
 
     @pytest.mark.parametrize("frequency", [0.0, -5.0, float("nan"), float("inf")])
     def test_a_frequency_with_no_pitch_gets_no_pitch(self, frequency):

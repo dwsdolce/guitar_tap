@@ -3,27 +3,17 @@
 Port of PeakFindingTests.swift — peak finding, deduplication, spectrum averaging.
 
 Mirrors Swift test plan coverage F10–F16 and A1–A5, plus the duplicate-peak
-regression D1/D2/D4 (Development/PEAK-FINDING-DUPLICATE-PEAKS.md in GuitarTapWeb).
+regression.
 
-REWRITTEN 2026-07-19 — this file previously did not test the code it claimed to.
-F10–F14 exercised ``peak_detection`` from the FFT layer rather than
-``TapToneAnalyzer.find_peaks``; F15–F16 and A1–A5 called *reimplementations of the
-production logic written inside this test file* (``_deduplicate_2hz``,
-``_power_average_db``), so they could not fail however the app behaved. Swift's
-equivalents call ``sut.findPeaks``, ``sut.removeDuplicatePeaks`` and
-``sut.averageSpectra``; these now do the same:
+Every case calls the production code on TapToneAnalyzer, as Swift's equivalents call
+``sut.findPeaks``, ``sut.removeDuplicatePeaks`` and ``sut.averageSpectra``:
 
   findPeaks (Swift)            → TapToneAnalyzer.find_peaks
   removeDuplicatePeaks (Swift) → TapToneAnalyzer.remove_duplicate_peaks
   averageSpectra (Swift)       → TapToneAnalyzer.average_spectra
 
-The FFT-layer tests that used to live here were preserved in test_fft_peak_detection.py,
-outside this parity group. That file is GONE as of 2026-09-20 (#17), along with the
-peak_detection / peak_interp / peak_q_factor trio it exercised: NumPy ports of Swift's findPeaks
-section that the application never called. Relocating those tests in July kept them running
-against dead code and left the sibling slug, test/dsp, testing the same dead pair — which is what
-the #17 sweep found. test/dsp now tests TapToneAnalyzer._parabolic_interpolate and
-._calculate_q_factor, the pair this app actually runs. See SLUG-SWEEP.md F14.
+Parabolic interpolation and Q (TapToneAnalyzer._parabolic_interpolate / ._calculate_q_factor)
+are tested in the sibling slug, test/dsp.
 """
 
 from __future__ import annotations
@@ -103,6 +93,22 @@ class TestFindPeaks:
         assert any(abs(p.frequency - 1000) < 25 for p in peaks), (
             f"Expected a peak near 1000 Hz; got {[round(p.frequency, 1) for p in peaks]}"
         )
+
+    def test_F17_found_peak_carries_its_pitch(self):
+        # A found peak carries its pitch — the nearest note, its cents offset and the note's exact
+        # frequency are filled in when the peak is made. Mirrors Swift foundPeak_carriesItsPitch.
+        sut = make_sut()
+        sut.peak_min_threshold = -60
+        sut.min_frequency = 50
+        sut.max_frequency = 2000
+
+        mags, freqs = make_spectrum(peak_hz=440, peak_db=-20, half_width_hz=20)
+        peaks = sut.find_peaks(mags, freqs)
+        a4 = min(peaks, key=lambda p: abs(p.frequency - 440))
+
+        assert a4.pitch_note == "A4"
+        assert abs(a4.pitch_cents) < 5
+        assert abs(a4.pitch_frequency - 440) < 0.01
 
     def test_F11_silence_produces_no_peaks(self):
         sut = make_sut()
@@ -357,7 +363,7 @@ class TestFindPeaksDuplicates:
         assert selected <= ids, "selected peak ids contain ids absent from the peak list"
 
 # ---------------------------------------------------------------------------
-# Full-set save  (Option 4 — PEAK-MIN-SEMANTICS.md, GuitarTapWeb)
+# Full-set save
 #
 # A freshly captured guitar measurement persists every peak down to the -100 dB
 # floor, not just those above the current Peak Min, so a reloaded measurement can

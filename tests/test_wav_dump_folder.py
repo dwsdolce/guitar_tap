@@ -1,8 +1,8 @@
 # @parity test/wav-dump-folder
-"""Pin the shared WAV-dump-folder logic (FILE-PATHS-AND-NAMES-SPEC §4b).
+"""Pin the shared WAV-dump-folder logic.
 
-Default folder, no-custom reachability, and the acquire/release write helper. The picker is manual
-run-review. Two-way with Swift WavDumpFolderTests.swift (the web has no counterpart — a page can
+Default folder, no-custom reachability, and the acquire/release write helper. The folder picker is
+not covered here; it is checked by hand. Two-way with Swift WavDumpFolderTests.swift (the web has no counterpart — a page can
 only download to Downloads).
 """
 
@@ -58,7 +58,7 @@ def test_gone_custom_folder_is_unreachable_and_acquire_skips():
     # A custom folder that no longer exists (renamed / moved / deleted): must be unreachable, and
     # acquire must skip (None) rather than silently fall back to the default. Python stores a plain
     # path, so this is the "folder must be where you put it" rule (Swift enforces it via the bookmark
-    # path-comparison; that round-trip is manual run-review).
+    # path-comparison; that round-trip is checked by hand).
     from PySide6 import QtCore
 
     from guitar_tap.models.settings_scope import APP, settings_org

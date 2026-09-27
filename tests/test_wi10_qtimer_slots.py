@@ -2,10 +2,9 @@
 # unit test with no cross-platform contract (Swift uses DispatchQueue.main.asyncAfter, tested
 # via the behavioural suites). Justified platform-only.
 """
-WI-10 — QTimer.singleShot thread-delivery and slot-correctness tests.
+QTimer.singleShot thread-delivery and slot-correctness tests.
 
-Verifies that the callbacks formerly dispatched via threading.Timer +
-QMetaObject.invokeMethod now fire correctly when scheduled with
+Verifies that the analyzer's deferred callbacks fire correctly when scheduled with
 QTimer.singleShot.
 
 Two verification strategies are used:
@@ -89,7 +88,7 @@ class TestQTimerMainThreadDelivery:
         """QTimer.singleShot targeting a QObject @Slot fires via processEvents."""
         sut = _make_sut()
 
-        # _do_reenable_detection is one of the WI-10 refactored slots.
+        # _do_reenable_detection is one of the timer-fired slots.
         # Start from IDLE so the slot's effect is visible.
         sut.detection_state = DetectionState.IDLE
 
@@ -107,7 +106,7 @@ class TestQTimerMainThreadDelivery:
 # ---------------------------------------------------------------------------
 
 class TestTapDetectionSlots:
-    """Verify the WI-10 refactored tap-detection slots apply correct state."""
+    """Verify the timer-fired tap-detection slots apply correct state."""
 
     def _make(self):
         from guitar_tap.models.measurement_type import MeasurementType
@@ -176,7 +175,7 @@ class TestTapDetectionSlots:
 # ---------------------------------------------------------------------------
 
 class TestSpectrumCapturePhaseSlots:
-    """Verify the WI-10 refactored phase-transition slots apply correct state."""
+    """Verify the timer-fired phase-transition slots apply correct state."""
 
     def _make(self):
         sut = _make_sut()

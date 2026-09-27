@@ -1,18 +1,17 @@
 # @parity test/uuid-case
 """Minted UUIDs are UPPERCASE, and nothing mints outside the one helper.
 
-Swift's ``UUID().uuidString`` is uppercase and the web mints
-``crypto.randomUUID().toUpperCase()`` to match it. This edition minted lowercase at 14 sites
-across 7 files, so the same measurement exported from here and from Swift differed by case in
-``id`` — the field that identifies a dataset — and anything comparing ids as strings would read
-them as two different things. Swift uppercases whatever it decodes while the ports preserve what
-the file holds, so nothing normalised it back. See SLUG-SWEEP.md F22.
+Swift's ``UUID().uuidString`` is uppercase, the web mints ``crypto.randomUUID().toUpperCase()``
+to match it, and this edition mints through ``new_uuid()`` the same way. ``id`` is the field that
+identifies a dataset, and anything comparing ids as strings would read two cases as two different
+things. Swift uppercases whatever it decodes while the ports preserve what the file holds, so
+nothing would normalise a lowercase id back.
 
 The second test is the one that prevents a regression. Checking that ``new_uuid()`` is uppercase
 proves the helper works; it does nothing about a new ``str(uuid.uuid4())`` added somewhere else
-next month, which would pass every other test in this suite while quietly reintroducing the
-divergence. F22 corrected the values without pinning the rule, and a rule with no test is a rule
-that drifts — so this scans the source instead of trusting it.
+later, which would pass every other test in this suite while quietly reintroducing the
+divergence. A rule with no test is a rule that drifts — so this scans the source instead of
+trusting it.
 
 Case has never affected correctness *within* one file: a file's internal references agree with its
 own ids whatever their case. It matters only when two editions compare ids for the same thing.

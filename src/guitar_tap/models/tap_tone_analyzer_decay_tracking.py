@@ -119,9 +119,9 @@ class TapToneAnalyzerDecayTrackingMixin:
         if not self.is_tracking_decay:
             return
 
-        # Stop decay_tracking_duration of AUDIO after the tap, without applying this chunk. This was a
-        # 3 s WALL-clock QTimer, so on a slow run more (or fewer) chunks got in before it fired and a
-        # slow ring-out could read differently (#19). The web's DecayTracker has always stopped here.
+        # Stop decay_tracking_duration of AUDIO after the tap, without applying this chunk. Measured on
+        # the audio clock, so which chunks count toward a ring-out does not depend on how fast the run
+        # is. The web's DecayTracker stops at the same point.
         if (self.decay_tap_audio_time is not None
                 and audio_time - self.decay_tap_audio_time >= self.decay_tracking_duration):
             self.stop_decay_tracking()

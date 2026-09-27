@@ -88,10 +88,8 @@ class TestTotalPlateTaps:
 class TestTapProgress:
     def test_guitar_progress_advances_by_number_of_taps(self):
         """A guitar measurement's bar advances by number_of_taps, through the real capture finish -- the
-        place progress is decided. (This used to compute min(1, count / taps) in the test itself and
-        assert that; the material denominator is asserted by the count-across-phases case below, and the
-        clamp is unreachable in production -- #17 F51.) Mirrors Swift
-        guitarProgressAdvancesByNumberOfTaps."""
+        place progress is decided. (The material denominator is asserted by the count-across-phases
+        case below.) Mirrors Swift guitarProgressAdvancesByNumberOfTaps."""
         sut = TapToneAnalyzer.for_testing(sample_rate=48000)
         TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
         sut.number_of_taps = 4
@@ -226,7 +224,7 @@ class TestCountSurvivesPhaseAdvance:
 
 class TestRedoRebasesCumulativeCount:
     """Each case reaches its review through real taps, real Accepts and -- for FLC -- the real hold,
-    fed in audio; none sets a spectrum, a count or a phase by hand (#17 F51). Mirrors Swift
+    fed in audio; none sets a spectrum, a count or a phase by hand. Mirrors Swift
     RedoRebasesCumulativeCountTests."""
 
     def test_redo_cross_keeps_longitudinal_taps_counted(self):
@@ -281,10 +279,9 @@ class TestFlcCooldownCancellation:
     """Accepting fC schedules a cooldown, after which detection re-arms for the FLC tap.
 
     If the user restarts (Cancel / New Tap) before the cooldown elapses, that timer must not drag
-    the fresh sequence into the FLC phase.  Swift shipped without this guard until #17: its
-    timer (now ``afterAudio``, #19) cannot be cancelled and ``cancelTapSequence()``'s
-    ``captureTimer.invalidate()`` does not reach the closure, so the re-arm fired into whatever was
-    running 0.5 s later.  Python and the web have always guarded; this pins it in all three.
+    the fresh sequence into the FLC phase.  The hold (``after_audio``) cannot be cancelled --
+    ``cancel_tap_sequence()`` does not reach the scheduled action -- so the re-arm guards itself on
+    the phase.  Pinned in all three editions.
     """
 
     def test_restart_during_cooldown_does_not_rearm_flc(self):
@@ -299,7 +296,7 @@ class TestFlcCooldownCancellation:
         phase_after_restart = sut.material_tap_phase
         assert phase_after_restart != MaterialTapPhase.WAITING_FOR_FLC_TAP
 
-        # The hold ends — in AUDIO (#19) — against the restarted sequence.
+        # The hold ends — in AUDIO — against the restarted sequence.
         advance_audio(sut, 0.8)
 
         assert sut.material_tap_phase == phase_after_restart
@@ -358,7 +355,7 @@ class TestLoadTearsDownInterruptedCapture:
 
 
 # ---------------------------------------------------------------------------
-# A later count change must not rewrite a finished measurement (#17 F34)
+# A later count change must not rewrite a finished measurement
 # ---------------------------------------------------------------------------
 
 

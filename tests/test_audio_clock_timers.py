@@ -1,8 +1,8 @@
 # @parity test/audio-clock-timers
-"""The tap lifecycle's delays run on the AUDIO clock, not the wall clock (#19).
+"""The tap lifecycle's delays run on the AUDIO clock, not the wall clock.
 
-File playback advances audio at "real time + processing time", so a wall-clock delay covered a
-different stretch of audio on a slower run and late captures in a sequence moved.
+File playback advances audio at "real time + processing time", so a wall-clock delay would cover a
+different stretch of audio on a slower run and move late captures in a sequence.
 
 Each case here advances only audio — through _on_chunk_level, the path audio takes — and no
 wall time to speak of, so a delay that went back to the wall clock would not have fired and the case
@@ -181,7 +181,7 @@ class TestAudioClockTimers:
 
     def test_the_safety_timeout_does_not_fire_while_audio_keeps_arriving(self):
         """T6 measures SILENCE, not time since the capture started: while audio keeps arriving —
-        however slowly, as under throttled playback — it does not fire (#19)."""
+        however slowly, as under throttled playback — it does not fire."""
         import time
         from audio_clock_feed import AUDIO_FEED_CHUNK_SECONDS
         sut = _make_sut(MeasurementType.PLATE, 1)

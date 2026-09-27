@@ -1,5 +1,5 @@
 # @parity test/export-filename
-"""Pin the shared export-filename rule (FILE-PATHS-AND-NAMES-SPEC §2b).
+"""Pin the shared export-filename rule.
 
 One stem function, per-artifact default word, integer-second discriminator, name slugged
 (spaces and "/" → "-", lowercased). Three-way with Swift ExportFilenameTests.swift and web

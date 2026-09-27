@@ -117,8 +117,7 @@ class TestStartTapSequenceRace:
 
     # R2: End-to-end repro of the iPad bug scenario — spurious detection, then the capture completes
     # through the REAL path and the measurement completes on its own after the capture window. Same
-    # final state as the Swift test: complete, not detecting, not paused. (The capture used to be
-    # simulated by appending to captured_taps and calling process_multiple_taps by hand — #17 F48.)
+    # final state as the Swift test: complete, not detecting, not paused.
     def test_spurious_tap_on_type_change_settles_to_complete_not_detecting(self):
         sut = _make_sut(number_of_taps=1)
 
@@ -126,7 +125,7 @@ class TestStartTapSequenceRace:
         sut.detection_state = DetectionState.IDLE              # handle_tap_detection effect
         _drain_event_loop()
         _capture_tap(sut)
-        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock (#19)
+        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock
 
         assert sut.is_measurement_complete is True
         assert sut.is_detecting is False, (
@@ -143,8 +142,8 @@ class TestStartTapSequenceRace:
         for tap in range(1, 4):
             _capture_tap(sut)
             if tap < 3:
-                advance_audio(sut, sut.tap_cooldown)   # the rest, in audio (#19)
-        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock (#19)
+                advance_audio(sut, sut.tap_cooldown)   # the rest, in audio
+        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock
 
         assert sut.current_tap_count == 3
         assert sut.is_measurement_complete is True
@@ -159,8 +158,8 @@ class TestStartTapSequenceRace:
     # the capture.  finish_guitar_gated_capture must clear it; without that,
     # the measurement would complete with is_detecting still True — the
     # impossible state the Swift iPad bug exhibited.  The measurement then
-    # completes on its own: the capture schedules process_multiple_taps, and
-    # calling it here as well ran it twice (#17 F48).
+    # completes on its own: the capture schedules process_multiple_taps, so
+    # the test does not call it as well.
     def test_R4_audio_queue_gated_capture_path_clears_is_detecting(self):
         sut = _make_sut(number_of_taps=1)
         sut.freq = np.linspace(0, 24000, sut.mic.fft_size // 2 + 1)
@@ -180,7 +179,7 @@ class TestStartTapSequenceRace:
             "through measurement completion."
         )
 
-        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock (#19)
+        advance_audio(sut, sut.capture_window)   # the capture window runs on the audio clock
         assert sut.is_measurement_complete is True
         assert sut.is_detecting is False
         assert sut.is_detection_paused is False

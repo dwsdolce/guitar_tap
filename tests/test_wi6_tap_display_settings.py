@@ -1,5 +1,5 @@
 """
-WI-6 — TapDisplaySettings round-trip and helper tests (D18, D19).
+TapDisplaySettings round-trip and helper tests (D18, D19).
 
 D18: Verifies the tap_detection_threshold getter/setter are mutual inverses.
      The setter must convert dBFS → 0-100 scale before persisting, matching

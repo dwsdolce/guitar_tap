@@ -12,7 +12,7 @@ by hand. This puts it in the suite, where it runs without being remembered.
 It cannot always run. While the hub is private the published URL 404s, so canonical is only
 reachable through ``ORACLE_SRC`` pointing at a local hub checkout — which most machines do
 not have. Rather than fail everywhere for a condition nobody can fix locally, an unreachable
-canonical **skips loudly**. Once the hub is public (issue #11) the URL resolves on its own
+canonical **skips loudly**. Once the hub is public the URL resolves on its own
 and this starts checking everywhere with no change here.
 
   exit 0 → in sync            exit 1 → drift, and the diff is the message

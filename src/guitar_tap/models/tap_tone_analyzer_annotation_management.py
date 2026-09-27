@@ -25,9 +25,6 @@ class TapToneAnalyzerAnnotationManagementMixin:
         self.selected_longitudinal_peak: ResonantPeak | None
         self.selected_cross_peak: ResonantPeak | None
         self.selected_flc_peak: ResonantPeak | None
-        self.auto_selected_longitudinal_peak_id: str | None
-        self.auto_selected_cross_peak_id: str | None
-        self.auto_selected_flc_peak_id: str | None
     """
 
     # ------------------------------------------------------------------ #

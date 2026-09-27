@@ -185,9 +185,8 @@ class TestDotLayerVsAnnotationList:
         """DL7: a freeform mode override makes peak_mode() report UNKNOWN, but the peak keeps its
         dot.
 
-        The assertion predates Phase 4 and still holds — the REASON changed. It used to hold
-        because the dot layer was purely positional and 200 Hz is in a band; it now holds because a
-        user-named peak is known by definition. DL8 is the case that separates the two rules.
+        It holds because a user-named peak is known by definition (200 Hz is also in a band, so a
+        purely positional rule would pass too). DL8 is the case that separates the two rules.
         """
         sut = _make_sut()
         p = _make_peak_live(200.0)                   # squarely inside top/back
@@ -205,15 +204,13 @@ class TestDotLayerVsAnnotationList:
 
 
 # ---------------------------------------------------------------------------
-# Naming a peak makes it known (DL8-DL10) -- Phase 4
+# Naming a peak makes it known (DL8-DL10)
 # ---------------------------------------------------------------------------
 #
-# One predicate now governs all three display surfaces: the results panel row, the chart dot, and
+# One predicate governs all three display surfaces: the results panel row, the chart dot, and
 # the annotation badge. A peak is unknown only when auto-classification placed it in no band AND the
-# user has not named it. Before Phase 4 the three surfaces disagreed -- the panel used the assigned
-# mode while the dot layer and the badges used the positional test -- so a peak the user had
-# explicitly labelled could lose its row while keeping its dot, or lose everything if it happened to
-# sit outside every band.
+# user has not named it, so a peak the user has explicitly labelled keeps its row, its dot and its
+# badge together, even outside every band.
 
 # Generic bands leave 305 Hz in NO band (back ends at 300, dipole starts at 310).
 _OUT_OF_BAND = 305.0
@@ -221,8 +218,8 @@ _OUT_OF_BAND = 305.0
 
 class TestDotLayerUserNamedPeaks:
     def test_dl8_freeform_label_makes_out_of_band_peak_known(self):
-        """DL8: THE Phase 4 change. An out-of-band peak is hidden -- until the user names it, at
-        which point it is known and appears. Pre-Phase-4 it stayed hidden no matter the label.
+        """DL8: an out-of-band peak is hidden -- until the user names it, at which point it is
+        known and appears.
         """
         saved_mt = TapDisplaySettings.measurement_type()
         saved_pm = TapDisplaySettings.peak_min_threshold()

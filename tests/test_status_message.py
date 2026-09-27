@@ -6,25 +6,20 @@ the web pins in test/status-message.test.ts and Swift pins in StatusMessageTests
 The three suites assert identical strings; only the per-platform driving differs
 (as test_scenario_state_trace.py does for state tuples).
 
-SCOPE: the state-reachable strings only.  Two families are intentionally NOT pinned:
+SCOPE: the state-reachable strings, plus two families that need their own driving:
 
-1. Material phase-guidance — "Ready for fL tap", "Rotate 90° and tap for fC" — is now
-   VISIBLE (OUT-1 fixed by the status state-machine alignment: the warm-up is silent).
-   Pinned below by the "survives the warm-up" cases, which feed a warm-up frame and
-   assert the guidance persists (these FAILED before the alignment — the warm-up
-   overwrote them with "Initializing…"). The redo / FLC phase strings follow the same
-   mechanism and are covered by the material accept/redo transitions.
+1. Material phase-guidance — "Ready for fL tap", "Rotate 90° and tap for fC" — stays
+   VISIBLE through the warm-up, which is silent. Pinned below by the "survives the
+   warm-up" cases, which feed a warm-up frame and assert the guidance persists. The
+   redo / FLC phase strings follow the same mechanism and are covered by the material
+   accept/redo transitions.
 
 2. Per-tap capture PROGRESS transients — "Tap n/N capturing...",
    "Tap n/N captured. Tap again...", "All taps captured. Processing...", the material
    "L/C/FLC tap n/N captured..." / review / "No resonance detected" strings — are pinned
-   below, in TestCaptureProgressStrings.
-
-   This used to say they were written too deep in the gated-capture pipeline for a
-   state-driven suite to reach, and were covered by the file-playback regression tests.
-   Neither held (#17 F29): those tests run the pipeline but assert no status at all, and
-   the handlers take a spectrum and a peak, which test_frozen_peak_recalculation has always
-   called directly.  The strings were pinned in no edition but web.
+   below, in TestCaptureProgressStrings, by calling the handlers directly with a spectrum
+   and a peak, as test_frozen_peak_recalculation does.  The file-playback regression tests
+   run the pipeline but assert no status, so these cases are what pin the strings.
 """
 
 from __future__ import annotations
@@ -223,10 +218,9 @@ class TestStatusMessage:
         sut.accept_current_phase()  # → _finalise_plate_with_flc
         assert sut.status_message == "Complete - check Results"  # ASCII hyphen
 
-    # ── OUT-1 fixed: material phase-guidance survives the (now silent) warm-up ──
+    # ── Material phase-guidance survives the (silent) warm-up ──
     # Each phase-arm restarts the warm-up; feed a warm-up frame and assert the guidance
-    # persists. These FAILED before the state-machine alignment (the warm-up overwrote
-    # them with "Initializing…" → "Tap the guitar…").
+    # persists rather than being replaced by a warm-up or guitar prompt.
     def test_material_arm_ready_for_l_tap_survives_warmup(self):
         sut = _make_sut(1, MeasurementType.PLATE)
         sut.start_tap_sequence()  # plate → "Ready for fL tap"
@@ -249,9 +243,7 @@ class TestStatusMessage:
     def test_accept_c_prompts_to_set_up_for_flc_and_survives_warmup(self):
         """The OTHER accept transition: fC → the FLC set-up prompt, shown during the disarmed cooldown.
 
-        Web covered both accepts in one case; the natives covered only the first, so this string was
-        asserted in no edition but web (#17 F29).  It is the prompt the FLC cooldown guard hands the
-        user while detection is deliberately off.
+        It is the prompt the FLC cooldown guard hands the user while detection is deliberately off.
         """
         saved = TapDisplaySettings.measure_flc()
         TapDisplaySettings.set_measure_flc(True)
@@ -268,14 +260,8 @@ class TestStatusMessage:
             TapDisplaySettings.set_measure_flc(saved)
 
 # ---------------------------------------------------------------------------
-# Capture-progress strings (#17 F29)
+# Capture-progress strings
 # ---------------------------------------------------------------------------
-#
-# These were excluded on the grounds that they are written deep in the gated-capture pipeline and
-# are "produced by" the file-playback regression tests.  Those tests run the pipeline, so the
-# strings are certainly set — but status_message is asserted in exactly two test files here, and
-# neither is one of them: deleting "No signal detected — tap again" left both native suites green.
-# Web pinned them all along, which is why the slug read 12/12/16 as though web carried extras.
 #
 # Each case drives a method another test file already calls without audio.
 
@@ -354,8 +340,7 @@ class TestCaptureProgressStrings:
 
 class TestStatusMessageReArm:
     """The re-arm after a guitar tap's cooldown does not touch the status: the capture set the loop
-    prompt and it stays, as in Swift and the web. Python used to rewrite it here, and to show
-    "Tap N/M captured. Waiting for settle..." while the level was still high (#17 F45)."""
+    prompt and it stays, as in Swift and the web."""
 
     def test_re_arm_leaves_status_as_the_capture_set_it(self):
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
@@ -368,7 +353,7 @@ class TestStatusMessageReArm:
         after_capture = sut.status_message
         assert after_capture == sut._guitar_loop_status(capturing=False)
 
-        # The rest runs on the audio clock (#19); the audio is still ringing, above the falling
+        # The rest runs on the audio clock; the audio is still ringing, above the falling
         # threshold, when the re-arm falls due.
         advance_audio(sut, sut.tap_cooldown, level=-20.0)
         assert sut.is_detecting, "re-armed"

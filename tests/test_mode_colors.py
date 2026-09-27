@@ -1,12 +1,10 @@
 # @parity test/mode-colors
 """Lock GuitarMode's display colour against silent drift (parity group model/mode-colors).
 
-Until the #17 sweep Python rendered its own palette — invented here, never matching Swift, on the
-same white background. Ring was #823CC8 against Swift's #CB30E0, and UPPER_MODES and UNKNOWN were
-the SAME grey, so those two categories were indistinguishable on this chart while Swift and the web
-separated them. Swift is canonical and these are its values, now absolute in both.
+Swift is canonical and these are its values, absolute in every edition. UPPER_MODES and UNKNOWN
+are distinct greys, so the two categories stay distinguishable on the chart.
 
-Mirrors Swift ModeColorsTests and web mode-colors.test.ts. See SLUG-SWEEP.md F9.
+Mirrors Swift ModeColorsTests and web mode-colors.test.ts.
 """
 
 import os
@@ -31,7 +29,7 @@ def test_per_mode_hex():
 def test_every_mode_has_its_own_colour():
     """Seven modes must be seven tellable-apart colours — the only thing the hue has to do.
 
-    Upper Modes and Unknown are the close pair, and they were IDENTICAL here until #17.
+    Upper Modes and Unknown are the close pair.
     """
     hexes = [m.hex for m in GuitarMode.current_cases]
     assert len(set(hexes)) == len(hexes), f"each mode needs its own colour, got {hexes}"

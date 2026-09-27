@@ -1,4 +1,4 @@
-"""Diagnostic for the capture-window alignment family (project issues #7, #3, #5).
+"""Diagnostic for where the editions' captured tap buffers diverge.
 
 The editions disagree on the guitar path by 0.0004-0.003 dB, and the cause is known to be
 at least partly that Swift aligns the guitar FFT window to the sample-level tap onset while

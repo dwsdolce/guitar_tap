@@ -1,5 +1,5 @@
 """
-WI-1 — Settings persistence tests (D2, D3, D5).
+Settings persistence tests (D2, D3, D5).
 
 Verifies that each setter on TapToneAnalyzer / TapToneAnalyzerControlMixin
 calls the corresponding TapDisplaySettings classmethod so that the new value
@@ -8,7 +8,7 @@ is persisted to QSettings.
 These tests mock TapDisplaySettings at the call site so that no real QSettings
 file is written during the test run.
 
-Mirrors the WI-1 fix in:
+Covers:
   - models/tap_tone_analyzer.py          cycle_annotation_visibility (D2)
   - models/tap_tone_analyzer_control.py  set_tap_threshold  (D3)
                                          set_threshold      (D5)

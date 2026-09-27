@@ -286,8 +286,7 @@ class TestPlateAnisotropyRatios:
 # Radiation ratio — PlateProperties
 #
 # R = c/ρ is shown in the Results panel and in the exported image in all three
-# editions and had no test in any of them until the #17 sweep, which is how the
-# web port's inline copy came to be missing the zero-density guard.
+# editions, each of which pins it, including the zero-density guard.
 # Mirrors Swift PlateRadiationRatioTests.
 # ---------------------------------------------------------------------------
 
@@ -421,8 +420,8 @@ class TestWoodQuality:
         assert WoodQuality.POOR.numeric_score      == 1.0
 
     # The colour rule is NOT tested here. It belongs to test_quality_colors.py, which owns the
-    # model/quality-colors slug; asserting it here as well put the same rule under two slugs.
-    # Mirrors the same removal from Swift PlatePropertiesTests.swift (#17).
+    # model/quality-colors slug, so the rule sits under one slug. Swift PlatePropertiesTests.swift
+    # leaves it out the same way.
 
     def test_evaluate_spruce_longitudinal_thresholds(self):
         """Spruce longitudinal thresholds: ≥25=Excellent, ≥22=VG, ≥19=Good, ≥16=Fair, <16=Poor."""

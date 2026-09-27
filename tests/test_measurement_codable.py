@@ -569,7 +569,7 @@ class TestTapToneRatio:
 
 
 # ---------------------------------------------------------------------------
-# ComparisonEntry and TapToneMeasurement with comparisonEntries (Phase 2)
+# ComparisonEntry and TapToneMeasurement with comparisonEntries
 # Mirrors Swift ComparisonEntryCodableTests
 # ---------------------------------------------------------------------------
 
@@ -703,11 +703,8 @@ class TestComparisonEntryCodable:
 class TestFixtureLoading:
     """Mirrors Swift FixtureLoadingTests — skipped when fixture not found."""
 
-    # Mode overrides, read from files the APPS actually wrote — one saved by Swift, one by Python.
-    #
-    # Until #17 F28 no file in the corpus carried peakModeOverrides at all: 119 measurements, 116
-    # with selection, 91 with annotation offsets, ZERO with an override. Every override test used a
-    # hand-built fixture, so the reader had never met a real one. The owner captured these two.
+    # Mode overrides, read from files the APPS actually wrote — one saved by Swift, one by Python —
+    # so the reader is tested against real overrides, not only hand-built fixtures.
     @pytest.mark.parametrize("fixture_name,expected_label", [
         ("annotation-override-1790037028.guitartap", "Fred"),          # written by Swift
         ("annotation-override-python-1790037332.guitartap", "Fred2"),  # written by Python
@@ -847,13 +844,11 @@ class TestFixtureLoading:
 # ---------------------------------------------------------------------------
 # modeLabel is derived, never carried through
 #
-# Added in the #17 sweep. Swift pinned this in MeasurementExportModeLabel; neither port did,
-# and both had drifted. The web preferred a decoded label over reclassifying on EXPORT, and
-# this edition's detail view did the same for DISPLAY (measurement_detail_view.py) — so a
-# loaded file's stale label was shown even though this app's own writer would never save it.
+# A decoded label is never preferred over reclassifying, on EXPORT or on DISPLAY
+# (measurement_detail_view.py), so a loaded file's stale label is never shown.
 #
 # modeLabel is an export-only convenience injected at serialisation time; Swift has no such
-# field on ResonantPeak. Deriving it afresh is the design. See SLUG-SWEEP.md F15.
+# field on ResonantPeak. Deriving it afresh is the design.
 # ---------------------------------------------------------------------------
 
 class TestModeLabelIsDerived:
@@ -900,7 +895,7 @@ class TestModeLabelIsDerived:
 
 
 # ---------------------------------------------------------------------------
-# Phase 6 — definitive tap-tone ratio + guitar decode heal
+# Definitive tap-tone ratio + guitar decode heal
 # ---------------------------------------------------------------------------
 
 from guitar_tap.models.guitar_mode import GuitarMode as _GM6

@@ -284,8 +284,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
         Delegates to the analyzer's ``auto_detected_mode`` — the model source of truth — mirroring
         Swift where the reset row consumes ``analyzer.autoDetectedMode(for:)``. **Must NOT read
         ``_auto_mode_map``**: that map is populated from the override-AWARE ``analyzer.peak_mode`` (it
-        drives mode colours), so reading it here showed the *current* label, not the auto one — the
-        exact bug Swift Phase 5 fixed. Falls back to an override-blind ``classify_all`` only when no
+        drives mode colours), so reading it here would show the *current* label, not the auto one.
+        Falls back to an override-blind ``classify_all`` only when no
         analyzer is wired (isolated model tests).
         """
         if not self.is_guitar:

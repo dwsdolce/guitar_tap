@@ -603,7 +603,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         Mirrors Swift exportComparisonPDFReport(for:) in MeasurementsListView.
         """
-        # A comparison report is just a report (§2b): "report" default, not "measurement".
+        # A comparison report is just a report: "report" default, not "measurement".
         basename = m.export_stem_for("report")
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
