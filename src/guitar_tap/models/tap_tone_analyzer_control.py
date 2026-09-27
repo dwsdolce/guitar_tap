@@ -855,8 +855,6 @@ class TapToneAnalyzerControlMixin:
         self.noise_floor_estimate = -100.0 if skip_warmup else self._current_input_level_db
 
         self.current_decay_time = None
-        # A new sequence listens to the input until play_file says otherwise.
-        self.result_provenance = None
         self.peak_magnitude_history = []
         self._reset_decay_tracking()
 
@@ -949,6 +947,8 @@ class TapToneAnalyzerControlMixin:
         if self.mic is not None and getattr(self.mic, "playing_file_name", None) is not None:
             self.mic.playing_file_name = None
             self.playingFileNameChanged.emit(None)
+        # A new sequence listens to the input until play_file says otherwise.
+        self.result_provenance = None
 
         self.tapCountChanged.emit(0, self.number_of_taps)
 

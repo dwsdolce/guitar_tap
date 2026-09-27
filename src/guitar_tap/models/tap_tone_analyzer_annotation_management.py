@@ -117,6 +117,14 @@ class TapToneAnalyzerAnnotationManagementMixin:
         ``effectiveFlcPeakID``."""
         return self.selected_flc_peak.id if self.selected_flc_peak else None
 
+    @property
+    def has_result_to_save_or_export(self) -> bool:
+        """There is something to save or export: a complete measurement (captured, loaded, multi-tap, or a
+        finished plate/brace) or a comparison. Save, Export Spectrum and Export PDF — the buttons and the
+        menu items — are enabled only then. Mirrors Swift ``hasResultToSaveOrExport``."""
+        from .analysis_display_mode import AnalysisDisplayMode
+        return self.is_measurement_complete or self.display_mode == AnalysisDisplayMode.COMPARISON
+
     # ``result_provenance`` (set in ``__init__``) — where the current result came from when it is not the
     # live input: a played file or a loaded measurement; None while listening to the input. Set by
     # ``play_file`` and ``load_measurement``; a new sequence clears it. Mirrors Swift ``resultProvenance``.

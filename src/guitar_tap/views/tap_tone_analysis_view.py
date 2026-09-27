@@ -1675,18 +1675,17 @@ class MainWindow(QtWidgets.QMainWindow):
         _ro_col.addWidget(_ro_cap)
         _ro_val_row = QtWidgets.QHBoxLayout()
         _ro_val_row.setSpacing(4)
-        self._gs_ro_value = QtWidgets.QLabel("Waiting\u2026")
-        self._gs_ro_value.setFont(_sum_bold)
+        self._gs_ro_value = QtWidgets.QLabel()
         _ro_val_row.addWidget(self._gs_ro_value)
         self._gs_ro_quality = QtWidgets.QLabel("")
         self._gs_ro_quality.setFont(small_font)
         _ro_val_row.addWidget(self._gs_ro_quality)
         _ro_val_row.addStretch()
         _ro_col.addLayout(_ro_val_row)
-        _ro_sub = QtWidgets.QLabel("\u201315 dB")
-        _ro_sub.setFont(_tiny_font)
-        _ro_sub.setStyleSheet("color: palette(shadow);")
-        _ro_col.addWidget(_ro_sub)
+        self._gs_ro_sub = QtWidgets.QLabel()
+        self._gs_ro_sub.setFont(_tiny_font)
+        self._gs_ro_sub.setStyleSheet("color: palette(shadow);")
+        _ro_col.addWidget(self._gs_ro_sub)
         _gsum_hl.addLayout(_ro_col)
 
         # Vertical divider
@@ -1704,19 +1703,24 @@ class MainWindow(QtWidgets.QMainWindow):
         _ratio_col.addWidget(_ratio_cap)
         _ratio_val_row = QtWidgets.QHBoxLayout()
         _ratio_val_row.setSpacing(4)
-        self._gs_ratio_value = QtWidgets.QLabel("Need Air & Top")
-        self._gs_ratio_value.setFont(_sum_bold)
+        self._gs_ratio_value = QtWidgets.QLabel()
         _ratio_val_row.addWidget(self._gs_ratio_value)
         self._gs_ratio_quality = QtWidgets.QLabel("")
         self._gs_ratio_quality.setFont(small_font)
         _ratio_val_row.addWidget(self._gs_ratio_quality)
         _ratio_val_row.addStretch()
         _ratio_col.addLayout(_ratio_val_row)
-        _ratio_sub = QtWidgets.QLabel("Ideal: 1.9\u20132.1")
-        _ratio_sub.setFont(_tiny_font)
-        _ratio_sub.setStyleSheet("color: palette(shadow);")
-        _ratio_col.addWidget(_ratio_sub)
+        self._gs_ratio_sub = QtWidgets.QLabel("Ideal: 1.9\u20132.1")
+        self._gs_ratio_sub.setFont(_tiny_font)
+        self._gs_ratio_sub.setStyleSheet("color: palette(shadow);")
+        _ratio_col.addWidget(self._gs_ratio_sub)
         _gsum_hl.addLayout(_ratio_col)
+        # A value is bold; with no value the box shows only a small grey placeholder, no second line.
+        # Mirrors Swift guitarAnalysisSummary.
+        self._gs_value_font = _sum_bold
+        self._gs_placeholder_font = small_font
+        self.set_ring_out(None)
+        self.update_tap_tone_ratio(None)
 
         vbox.addWidget(self._guitar_summary)
 
@@ -2401,12 +2405,27 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_plate_phase_ui()
         self._update_tap_buttons()
 
+    def _show_summary_value(self, value_label, sub_label, text: "str | None", placeholder: str) -> None:
+        """Show a Ring-Out / Tap Ratio value — bold, with its second line — or, with no value, only a
+        small grey placeholder and no second line. Mirrors Swift guitarAnalysisSummary."""
+        if text is None:
+            value_label.setText(placeholder)
+            value_label.setFont(self._gs_placeholder_font)
+            value_label.setStyleSheet("color: palette(shadow);")
+            sub_label.setVisible(False)
+        else:
+            value_label.setText(text)
+            value_label.setFont(self._gs_value_font)
+            value_label.setStyleSheet("")
+            sub_label.setVisible(True)
+
     def set_ring_out(self, time_s: "float | None") -> None:
         if time_s is None:
-            self._gs_ro_value.setText("Waiting\u2026")
+            self._show_summary_value(self._gs_ro_value, self._gs_ro_sub, None, "Waiting\u2026")
             self._gs_ro_quality.setText("")
             return
-        self._gs_ro_value.setText(f"{time_s:.2f}s")
+        self._gs_ro_sub.setText(f"\u2013{int(self.fft_canvas.analyzer.decay_threshold)} dB")
+        self._show_summary_value(self._gs_ro_value, self._gs_ro_sub, f"{time_s:.2f}s", "Waiting\u2026")
         gt = TDS.measurement_type().guitar_type or _GTy.GENERIC
         self._gs_ro_quality.setText(_ext.decay_quality_label(time_s, gt))
         self._gs_ro_quality.setStyleSheet(f"color: {_ext.decay_quality_color(time_s, gt)};")
@@ -2488,12 +2507,12 @@ class MainWindow(QtWidgets.QMainWindow):
         Mirrors TapAnalysisResultsView.swift:550,620.
         """
         if ratio is not None:
-            self._gs_ratio_value.setText(f"{ratio:.2f}:1")
+            self._show_summary_value(self._gs_ratio_value, self._gs_ratio_sub, f"{ratio:.2f}:1", "Need Air & Top")
             self._gs_ratio_quality.setText(_ext.tap_tone_ratio_quality_label(ratio))
             self._gs_ratio_quality.setStyleSheet(
                 f"color: {_ext.tap_tone_ratio_quality_color(ratio)};")
         else:
-            self._gs_ratio_value.setText("Need Air & Top")
+            self._show_summary_value(self._gs_ratio_value, self._gs_ratio_sub, None, "Need Air & Top")
             self._gs_ratio_quality.setText("")
 
     def set_measurement_complete(self, checked: bool) -> None:
@@ -2521,13 +2540,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.auto_db_btn.isChecked():
                 self.auto_db_btn.setChecked(False)
 
+        self._update_save_export_enabled()
         if checked:
-            self.save_measurement_btn.setEnabled(True)
-            self.export_spectrum_btn.setEnabled(True)
-            self.export_pdf_btn.setEnabled(True)
-            self._menu_save_action.setEnabled(True)
-            self._menu_export_spectrum_action.setEnabled(True)
-            self._menu_export_pdf_action.setEnabled(True)
             self.deselect_all_btn.setEnabled(mt.is_guitar)
             self.reset_auto_selection_btn.setEnabled(
                 mt.is_guitar and self.peak_widget.model.user_has_modified_peak_selection
@@ -2538,20 +2552,12 @@ class MainWindow(QtWidgets.QMainWindow):
             # "the guitar type changed since find_peaks last ran".
             self._reanalyze_btn.setEnabled(self.fft_canvas.analyzer.can_reanalyze)
         else:
-            self.save_measurement_btn.setEnabled(False)
-            self.export_spectrum_btn.setEnabled(False)
-            self.export_pdf_btn.setEnabled(False)
-            self._menu_save_action.setEnabled(False)
-            self._menu_export_spectrum_action.setEnabled(False)
-            self._menu_export_pdf_action.setEnabled(False)
             self.deselect_all_btn.setEnabled(False)
             self.reset_auto_selection_btn.setEnabled(False)
             self._reanalyze_btn.setEnabled(False)
             # Reset guitar summary to waiting state
-            self._gs_ro_value.setText("Waiting\u2026")
-            self._gs_ro_quality.setText("")
-            self._gs_ratio_value.setText("Need Air & Top")
-            self._gs_ratio_quality.setText("")
+            self.set_ring_out(None)
+            self.update_tap_tone_ratio(None)
         self._sb_frozen_wgt.setVisible(checked)
         self._sb_update_frozen_state(checked)
 
@@ -2755,6 +2761,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.freq_range_label.setText(
             f"Showing {self.fft_canvas.minFreq} – {self.fft_canvas.maxFreq} Hz"
         )
+
+    def _update_save_export_enabled(self) -> None:
+        """Enable Save, Export Spectrum and Export PDF — buttons and menu items — only when there is
+        something to save or export (the analyzer's ``has_result_to_save_or_export``). Mirrors Swift's
+        buttons and menu commands reading ``hasResultToSaveOrExport``."""
+        enabled = self.fft_canvas.analyzer.has_result_to_save_or_export
+        for widget in (self.save_measurement_btn, self.export_spectrum_btn, self.export_pdf_btn,
+                       self._menu_save_action, self._menu_export_spectrum_action,
+                       self._menu_export_pdf_action):
+            widget.setEnabled(enabled)
 
     def _update_mic_name_label(self) -> None:
         """Show the microphone the result was captured with in the Analysis Results header: the input for a
@@ -4206,28 +4222,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_measurement_badge()
 
         # ── Save / Export ──────────────────────────────────────────────────────
-        # Export PDF is hidden (not just disabled) during comparison — mirrors
-        # `if let exportPDF = onExportPDFReport, analyzer.displayMode != .comparison`
-        # in TapAnalysisResultsView.swift.
-        # Export Spectrum remains visible and is enabled during comparison.
-        if is_comparing:
-            # Save is enabled in comparison mode — routes to save_comparison().
-            # Mirrors Swift: Save Comparison button visible when displayMode == .comparison.
-            self.save_measurement_btn.setEnabled(True)
-            self.export_spectrum_btn.setEnabled(True)
-            self.export_pdf_btn.setVisible(True)
-            self.export_pdf_btn.setEnabled(True)
-            self._menu_save_action.setEnabled(True)
-            self._menu_export_spectrum_action.setEnabled(True)
-            self._menu_export_pdf_action.setEnabled(True)
-        else:
-            self.save_measurement_btn.setEnabled(self._is_measurement_complete)
-            self.export_spectrum_btn.setEnabled(self._is_measurement_complete)
-            self.export_pdf_btn.setVisible(True)
-            self.export_pdf_btn.setEnabled(self._is_measurement_complete)
-            self._menu_save_action.setEnabled(self._is_measurement_complete)
-            self._menu_export_spectrum_action.setEnabled(self._is_measurement_complete)
-            self._menu_export_pdf_action.setEnabled(self._is_measurement_complete)
+        # Save and both exports stay available in a comparison (Save routes to save_comparison(), Export
+        # PDF writes the comparison report). Mirrors Swift.
+        self.export_pdf_btn.setVisible(True)
+        self._update_save_export_enabled()
 
         # ── Peak-selection buttons ─────────────────────────────────────────────
         can_select = self._is_measurement_complete and not is_comparing and TDS.measurement_type().is_guitar

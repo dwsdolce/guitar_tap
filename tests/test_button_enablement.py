@@ -163,3 +163,18 @@ class TestButtonEnablement:
         assert button_rule(s) == ButtonOutput(
             pause_enabled=True, new_tap_disabled=True, cancel_enabled=True
         )
+
+    def test_has_result_to_save_or_export_only_for_a_complete_measurement_or_a_comparison(self):
+        """Save and the exports: enabled only when there is something to save or export — a complete
+        measurement or a comparison. One analyzer rule, read by the Save and export buttons and the menu.
+        Mirrors Swift hasResultToSaveOrExport_onlyForACompleteMeasurementOrAComparison."""
+        from PySide6 import QtWidgets
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        sut = TapToneAnalyzer()
+        assert not sut.has_result_to_save_or_export, "nothing to save or export while live"
+        sut.is_measurement_complete = True
+        assert sut.has_result_to_save_or_export, "a complete measurement"
+        sut.is_measurement_complete = False
+        sut.display_mode = AnalysisDisplayMode.COMPARISON
+        assert sut.has_result_to_save_or_export, "a comparison"
