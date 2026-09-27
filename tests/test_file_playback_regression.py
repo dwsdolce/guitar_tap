@@ -867,6 +867,168 @@ class TestFilePlaybackRegression:
         sessions = self._play_guitar_session(G1_WAV, 1, dump=False)
         assert sessions == [], f"no session WAV with the setting off, got {[s[0] for s in sessions]}"
 
+    # ── Stopping a playback ──────────────────────────────────────────────────────────────────────
+    # Cancel during a playback stops the file and restarts the sequence on live input; a measurement-type
+    # change stops it before arming the new type. Nothing from the rest of the file reaches the new
+    # sequence, and the playback's finished callback runs (the input's calibration returns). Twins of
+    # Swift's stopping-a-playback cases.
+
+    @staticmethod
+    def _stop_playback_after_first_tap(stop):
+        """Start "Recording" (8 guitar taps) with the input calibration set, wait for the first tap, run
+        ``stop(sut)``; return the analyzer, whether the playback finished, and the input calibration."""
+        import threading
+        import time
+        from PySide6 import QtWidgets
+        from guitar_tap.models.microphone_calibration import MicrophoneCalibration
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        input_calibration = MicrophoneCalibration.from_path(CALIBRATION_FILE)
+        sut = TapToneAnalyzer.for_testing(sample_rate=_wav_rate(GUITAR_WAV))
+        sut.peak_min_threshold = GUITAR_PEAK_MIN_THRESHOLD
+        sut.tap_detection_threshold = GUITAR_TAP_THRESHOLD
+        sut.set_temporary_calibration(input_calibration)
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        sut.number_of_taps = 8
+        finished = threading.Event()
+        sut.play_file(GUITAR_WAV, on_finished=finished.set)
+        deadline = time.monotonic() + 20
+        while sut.current_tap_count < 1 and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.005)
+        assert sut.current_tap_count >= 1, "precondition: a tap before the stop"
+        stop(sut)
+        return sut, finished.is_set(), input_calibration
+
+    @staticmethod
+    def _run_on_for(seconds):
+        import time
+        from PySide6 import QtWidgets
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            QtWidgets.QApplication.processEvents()
+            time.sleep(0.005)
+
+    def test_cancel_during_playback_stops_the_file_and_restarts_on_live_input(self):
+        from guitar_tap.models.detection_state import DetectionState
+        sut, finished, input_calibration = self._stop_playback_after_first_tap(lambda a: a.cancel_tap_sequence())
+        assert not sut.mic.is_playing_file, "the file is stopped"
+        assert sut.mic.playing_file_name is None, "the chart no longer names the file"
+        assert finished, "the playback's finished callback ran"
+        assert sut._calibration_profile is input_calibration, "the input's calibration is back"
+        assert sut.detection_state == DetectionState.LISTENING, "a fresh sequence is armed"
+        assert sut.current_tap_count == 0 and not sut.captured_taps, "the partial result is discarded"
+        # The rest of the file must not reach the fresh sequence.
+        self._run_on_for(2.0)
+        assert sut.current_tap_count == 0 and not sut.captured_taps and not sut.is_measurement_complete, \
+            f"no tap from the abandoned file, got {sut.current_tap_count}"
+
+    def test_measurement_type_change_during_playback_stops_the_file_before_arming_the_new_type(self):
+        from types import SimpleNamespace
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.views.fft_canvas import FftCanvas
+
+        def change_type(sut):
+            # What the view does for a changed type: FftCanvas.restart_tap_sequence. The canvas opens the
+            # audio device when constructed, so its real method runs on a stand-in holding what it uses.
+            TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
+            view = SimpleNamespace(analyzer=sut, start_analyzer=sut.start_tap_sequence)
+            FftCanvas.restart_tap_sequence(view)
+
+        try:
+            sut, finished, _ = self._stop_playback_after_first_tap(change_type)
+            assert not sut.mic.is_playing_file, "the file is stopped"
+            assert finished, "the playback's finished callback ran"
+            assert sut.material_tap_phase == MaterialTapPhase.CAPTURING_LONGITUDINAL, "the plate sequence is armed"
+            self._run_on_for(2.0)
+            assert sut.longitudinal_spectrum is None and not sut.captured_taps, \
+                "no guitar tap from the abandoned file reaches the plate measurement"
+        finally:
+            TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+
+    # ── The end-of-file step runs on the main thread ─────────────────────────────────────────────
+    # The flush of an unfinished capture, its finish and the release of the pending audio actions are one
+    # step on the main thread, with the playback worker waiting for it — as Swift's worker waits in
+    # DispatchQueue.main.sync. (Swift and the web get this by construction; Python's worker is a thread.)
+    def test_the_end_of_file_step_runs_on_the_main_thread(self):
+        import threading
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        sut = TapToneAnalyzer.for_testing(sample_rate=_wav_rate(G1_WAV))
+        sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
+        sut.tap_detection_threshold = G1_TAP_THRESHOLD
+        threads = []
+        flush = sut.mic._on_pre_mic_restart
+
+        def recording_flush():
+            threads.append(threading.current_thread())
+            flush()
+
+        sut.mic._on_pre_mic_restart = recording_flush
+        play_file_and_wait(sut, path=G1_WAV, measurement_type=MeasurementType.GENERIC, number_of_taps=1)
+        assert threads == [threading.main_thread()], f"the end-of-file step ran on {threads}"
+        assert sut.is_measurement_complete
+
+    # ── Provenance of a played file ──────────────────────────────────────────────────────────────
+    # A result made from a played file is saved with the file's provenance: the calibration it was played
+    # with (or none), the file's sample rate, and no microphone — the microphone that recorded a file is
+    # unknown. A new sequence listens to the input again, and saves the input's. Twins of Swift's cases.
+
+    def test_save_after_playback_records_the_files_provenance_and_an_unknown_microphone(self, brace_analyzer):
+        from guitar_tap.models.microphone_calibration import MicrophoneCalibration
+        sut = brace_analyzer
+        sut.tap_detection_threshold = BRACE_TAP_THRESHOLD
+        play_file_and_wait(sut, path=BRACE_WAV, measurement_type=MeasurementType.BRACE,
+                           calibration_path=CALIBRATION_FILE)
+        assert sut.is_measurement_complete, "precondition: the brace completed"
+        file_calibration = MicrophoneCalibration.from_path(CALIBRATION_FILE)
+
+        sut.save_measurement()
+        saved = sut.saved_measurements[-1]
+        assert saved.microphone_name is None and saved.microphone_uid is None, "the microphone is unknown"
+        assert saved.calibration_name == file_calibration.name, "the file's calibration"
+        assert saved.sample_rate == float(_wav_rate(BRACE_WAV)), "the file's sample rate"
+        assert saved.selected_longitudinal_peak_id == sut.effective_longitudinal_peak_id, \
+            "fL's role, read by the save"
+
+    def test_a_new_sequence_after_playback_saves_the_inputs_provenance(self, g1_analyzer):
+        from guitar_tap.models.microphone_calibration import MicrophoneCalibration
+        sut = g1_analyzer
+        sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
+        sut.tap_detection_threshold = G1_TAP_THRESHOLD
+        input_calibration = MicrophoneCalibration.from_path(CALIBRATION_FILE)
+        sut.set_temporary_calibration(input_calibration)
+        play_file_and_wait(sut, path=G1_WAV, measurement_type=MeasurementType.GENERIC, number_of_taps=1)
+        assert sut.capture_calibration_name is None, "precondition: the file played uncalibrated"
+
+        sut.start_tap_sequence()
+        assert sut.capture_calibration_name == input_calibration.name, "the input's calibration again"
+
+    def test_a_loaded_measurement_reports_its_recorded_provenance_and_a_re_save_keeps_it(self, brace_analyzer):
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        # A played-file result saved with an unknown microphone and the file's calibration and rate.
+        source = brace_analyzer
+        source.tap_detection_threshold = BRACE_TAP_THRESHOLD
+        play_file_and_wait(source, path=BRACE_WAV, measurement_type=MeasurementType.BRACE,
+                           calibration_path=CALIBRATION_FILE)
+        source.save_measurement()
+        saved = source.saved_measurements[-1]
+
+        # Loaded by an analyzer whose input has no calibration: the loaded result reports the file's.
+        sut = TapToneAnalyzer.for_testing(sample_rate=_wav_rate(BRACE_WAV))
+        sut.load_measurement(saved)
+        assert sut.capture_microphone_name is None and sut.result_provenance is not None, \
+            "the microphone is unknown"
+        assert sut.capture_calibration_name == saved.calibration_name, "the recorded calibration"
+        assert sut.capture_sample_rate == saved.sample_rate, "the recorded sample rate"
+
+        sut.save_measurement()
+        re_saved = sut.saved_measurements[-1]
+        assert re_saved.microphone_name is None, "a re-save keeps the unknown microphone"
+        assert re_saved.calibration_name == saved.calibration_name, "and the recorded calibration"
+        assert re_saved.sample_rate == saved.sample_rate, "and the recorded sample rate"
+
     # ── Playback calibration ─────────────────────────────────────────────────────────────────────
     # A file plays with the calibration given for it, or with none: the microphone it was recorded with
     # is unknown, so the live input's calibration never applies to it. The input's calibration is back

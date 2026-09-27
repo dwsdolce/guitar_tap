@@ -682,6 +682,13 @@ class TapToneAnalyzerControlMixin:
         self.start_tap_sequence(skip_warmup=_tds.measurement_type().is_guitar)
         try:
             self.start_from_file(path, on_finished=_finished)
+            # The result comes from the file: its calibration, its sample rate, an unknown microphone.
+            from .tap_tone_analyzer import ResultProvenance
+            self.result_provenance = ResultProvenance(
+                microphone_name=None, microphone_uid=None,
+                calibration_name=getattr(playback_calibration, "name", None) or None,
+                sample_rate=float(self.mic.rate),
+            )
         except Exception:
             _restore_calibration()
             raise
@@ -848,6 +855,8 @@ class TapToneAnalyzerControlMixin:
         self.noise_floor_estimate = -100.0 if skip_warmup else self._current_input_level_db
 
         self.current_decay_time = None
+        # A new sequence listens to the input until play_file says otherwise.
+        self.result_provenance = None
         self.peak_magnitude_history = []
         self._reset_decay_tracking()
 
@@ -990,17 +999,18 @@ class TapToneAnalyzerControlMixin:
 
         Cancel is a **restart**: it returns to the exact state that New Tap
         produces — a fresh, re-armed sequence waiting for the first tap — rather
-        than completing the measurement.  (Previously this set
-        is_measurement_complete = True purely to re-enable the New Tap button;
-        that button-gating hack is gone now that the button rule keys off
-        is_measurement_complete.)  Cancel is only offered while a multi-step
-        (multi-tap or multi-phase) sequence is in progress.  Mirrors Swift
+        than completing the measurement.  Cancel is offered while a multi-step
+        (multi-tap or multi-phase) sequence is in progress, and throughout a file
+        playback. During a playback it stops the file first, so the fresh sequence
+        listens to the microphone and the partial result is discarded.  Mirrors Swift
         cancelTapSequence().
         """
         gt_log("❌ Tap sequence cancelled — restarting")
         # A pending capture-completion timer from the abandoned sequence must not
         # fire into the fresh one (mirrors Swift captureTimer?.invalidate()).
         self.capture_timer_active = False
+        if self.mic is not None:
+            self.mic.stop_file_playback()
         # Re-arm a fresh sequence — identical to pressing New Tap. start_tap_sequence
         # clears captured taps / counts / frozen spectrum, resets the material phase,
         # restarts session recording, sets is_detecting = True with the correct status,

@@ -304,6 +304,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self.stop_buffer_watchdog()
         with self._stop_lock:
             self.is_stopped = True
+        # Ends an in-flight playback worker at its next chunk (Swift: filePlaybackGeneration += 1).
+        self._file_playback_generation += 1
         self.is_playing_file = False
         self.playing_file_name = None  # Mirrors Swift stop(): self?.playingFileName = nil
         self.peak_magnitude = -100.0   # Mirrors Swift stop(): peakMagnitude = -100 (silent state)
@@ -342,6 +344,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
 
             n_samples = len(samples)
+            my_generation = self._file_playback_generation
             self.rate = sample_rate
             self.is_playing_file = True
             self.playing_file_name = file_name
@@ -363,11 +366,12 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             idx = 0
             chunks_pumped = 0
             while idx < n_samples:
-                if not self.is_playing_file:
+                # Superseded by a newer playback, or stopped: nothing of this file is processed further.
+                if self._file_playback_generation != my_generation:
                     _td("file_playback",
                         f"INTERRUPTED | idx={idx}/{n_samples} chunksPumped={chunks_pumped}"
                     )
-                    break
+                    return
                 chunk = samples[idx: idx + chunksize]
                 if len(chunk) == 0:
                     break
@@ -386,7 +390,9 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 f"realtimeRatio={elapsed/max(expected_duration_s,1e-9):.3f}x"
             )
 
-            self.is_playing_file = False
+            # Stopped while the last chunk was sleeping? Then nothing of the abandoned file is processed.
+            if self._file_playback_generation != my_generation:
+                return
 
             # Force-flush any partial audio still in the input buffer.
             # Mirrors Swift processFileData partial flush.
@@ -420,13 +426,21 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self._input_buffer = []
             self._input_buffer_len = 0
 
-            # Flush any active gated capture by zero-padding the remaining
-            # window.  Must happen BEFORE the mic restarts.
-            # Mirrors Swift processFileData preMicRestartHandler call.
-            pre_restart = self._on_pre_mic_restart
-            _td("file_playback", f"PRE_MIC_RESTART | handler={'set' if pre_restart else 'None'}")
-            if pre_restart is not None:
-                pre_restart()
+            # Flush any active gated capture by zero-padding the remaining window — BEFORE the mic
+            # restarts. The flush, the capture's finish and the release of the pending audio actions are
+            # one step on the main thread, and this worker waits for it (Swift: DispatchQueue.main.sync).
+            # Stopped meanwhile? Then the capture belongs to a playback the user abandoned, and the
+            # sequence now running must not receive it.
+            def _flush_and_clear() -> None:
+                if self._file_playback_generation != my_generation:
+                    return
+                pre_restart = self._on_pre_mic_restart
+                _td("file_playback", f"PRE_MIC_RESTART | handler={'set' if pre_restart else 'None'}")
+                if pre_restart is not None:
+                    pre_restart()
+                self.is_playing_file = False
+
+            self._on_main_and_wait(_flush_and_clear)
             _td("file_playback", "PRE_MIC_RESTART_DONE")
         finally:
             release_timing_activity(timing_activity)
@@ -466,12 +480,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # `self.is_playing_file = False`, which then breaks the NEW worker's loop
         # condition and silently truncates the new playback mid-file.
         #
-        # We tell the old worker to exit by clearing is_playing_file (its loop
-        # guard), then bounded-join so it actually exits before we proceed.
-        # Swift's AVAudioEngine handles this via engine.stop()/start() implicitly.
+        # The generation bump ends the old worker at its next chunk (Swift: filePlaybackGeneration += 1);
+        # the bounded join makes sure it has exited before we proceed.
+        self._file_playback_generation += 1
         prev_worker = getattr(self, "_file_playback_thread", None)
         if prev_worker is not None and prev_worker.is_alive():
-            self.is_playing_file = False
             prev_worker.join(timeout=0.5)
 
         # ── Teardown: stop engine, drain queue, clear buffers ────────────
@@ -545,46 +558,96 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         import os as _os
         file_name = _os.path.splitext(_os.path.basename(path))[0]
 
-        # Use a mutable sentinel so _playback_worker can verify it is still the
-        # active playback thread when the post-playback delay completes.
-        # Mirrors Swift's filePlaybackGeneration identity guard.
-        sentinel: list[threading.Thread | None] = [None]
+        # The file defines the analysis rate from now on — set before the worker starts, so the caller
+        # sees it on return (Swift prepareForFilePlayback sets actualSampleRate before dispatch).
+        self.rate = int(file_rate)
+        self.is_playing_file = True
+        self.playing_file_name = file_name
+
+        my_generation = self._file_playback_generation
 
         def _playback_worker() -> None:
             """Call process_file_data, then restart the mic."""
-            from guitar_tap.utilities.logging import TAP_DEBUG as _td
-
             self.process_file_data(mono, int(file_rate), file_name)
 
-            # Guard: if a new file was opened while we were processing, our
-            # thread is no longer the active one — skip the rest.
-            # Mirrors Swift guard self.filePlaybackGeneration == myGeneration.
-            if self._file_playback_thread is not sentinel[0]:
+            # Superseded by a newer playback, or stopped: skip the rest. The mic restart and the
+            # finished callback run on the main thread (Swift: DispatchQueue.main.async), checked again
+            # there. Mirrors Swift guard self.filePlaybackGeneration == myGeneration.
+            if self._file_playback_generation != my_generation:
                 return
 
-            # Restart the PortAudio stream so the mic is live again.
-            # Mirrors Swift try? self.start() in startFromFile's main.async block.
-            # A test instance has no stream to restart (Swift: `if !self.isForTesting { try? self.start() }`).
-            _td("file_playback", "MIC_RESTART")
-            if not self.is_for_testing:
-                try:
-                    with self._stop_lock:
-                        self.is_stopped = False
-                    self.stream.start()
-                except Exception:
-                    pass
-            _td("file_playback", "MIC_RESTART_DONE")
+            def _restart_if_current() -> None:
+                if self._file_playback_generation == my_generation:
+                    self._restart_mic_after_playback()
 
-            # Notify the caller (e.g. to restore freq axis after mic restart).
-            # Mirrors Swift's completion?() call.
-            cb = self._on_playback_finished
-            if cb is not None:
-                cb()
+            self._on_main(_restart_if_current)
 
         thread = threading.Thread(target=_playback_worker, daemon=True, name="FilePlayback")
-        sentinel[0] = thread
         self._file_playback_thread = thread
         thread.start()
+
+    def stop_file_playback(self) -> None:
+        """Stop a file playback before the end of the file and switch back to the microphone.
+
+        The rest of the file is not played, and nothing from it is processed: no partial FFT frame is
+        flushed and an unfinished capture is not completed — the playback is being abandoned. The
+        playback's ``_on_playback_finished`` callback runs, as it does at the end of a file. No-op when
+        no file is playing. Mirrors Swift ``RealtimeFFTAnalyzer.stopFilePlayback()``.
+        """
+        if not self.is_playing_file:
+            return
+        gt_log("🎤 File playback stopped")
+        # The worker checks the generation on every chunk and before any end-of-file work; the bounded
+        # join lets a chunk already being processed finish (Swift: audioProcessingQueue.sync {}).
+        self._file_playback_generation += 1
+        worker = self._file_playback_thread
+        if worker is not None and worker.is_alive() and worker is not threading.current_thread():
+            worker.join(timeout=0.5)
+        self._input_buffer = []
+        self._input_buffer_len = 0
+        self.is_playing_file = False
+        self.playing_file_name = None
+        self._restart_mic_after_playback()
+
+    def _on_main_and_wait(self, fn) -> None:
+        """Run *fn* on the main thread and wait for it (Swift ``DispatchQueue.main.sync``). Already on the
+        main thread, or with no Qt application, runs it here."""
+        from PySide6 import QtCore
+        app = QtCore.QCoreApplication.instance()
+        if app is None or QtCore.QThread.currentThread() is app.thread():
+            fn()
+        else:
+            self.proc_thread.runOnMainBlocking.emit(fn)
+
+    def _on_main(self, fn) -> None:
+        """Run *fn* on the main thread without waiting (Swift ``DispatchQueue.main.async``). With no Qt
+        application, runs it here."""
+        from PySide6 import QtCore
+        if QtCore.QCoreApplication.instance() is None:
+            fn()
+        else:
+            self.proc_thread.runOnMain.emit(fn)
+
+    def _restart_mic_after_playback(self) -> None:
+        """Restart the PortAudio stream so the mic is live again, then run the playback's finished
+        callback once. A test instance has no stream to restart (Swift: ``if !self.isForTesting {
+        try? self.start() }``). Mirrors Swift's main-thread block after a playback and
+        ``runFilePlaybackCompletion``."""
+        from guitar_tap.utilities.logging import TAP_DEBUG as _td
+
+        _td("file_playback", "MIC_RESTART")
+        if not self.is_for_testing:
+            try:
+                with self._stop_lock:
+                    self.is_stopped = False
+                self.stream.start()
+            except Exception:
+                pass
+        _td("file_playback", "MIC_RESTART_DONE")
+        cb = self._on_playback_finished
+        self._on_playback_finished = None
+        if cb is not None:
+            cb()
 
     def close(self) -> None:
         """Stop the audio stream and shut down the hot-plug monitor.

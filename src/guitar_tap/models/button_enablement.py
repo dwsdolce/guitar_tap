@@ -3,7 +3,7 @@ The Pause / New Tap / Cancel enablement rule — a pure function of the analyzer
 shared by the tap-tone analysis view and the button-enablement test.
 
 Mirrors Swift ``buttonRule`` (Models/ButtonEnablement.swift) and web ``buttonRule``
-(state/buttonEnablement.ts).  If this rule changes, update the B1–B13 truth table on all
+(state/buttonEnablement.ts).  If this rule changes, update the B1–B16 truth table on all
 three platforms.
 
 The rule used to live inline in ``_update_tap_buttons``, with a second copy in the test
@@ -44,6 +44,8 @@ class ButtonState:
     measurement_type: MeasurementType = MeasurementType.GENERIC
     material_tap_phase: MaterialTapPhase = MaterialTapPhase.NOT_STARTED
     number_of_taps: int = 1
+    # A file is playing through the pipeline.
+    is_playing_file: bool = False
 
 
 @dataclass
@@ -57,6 +59,12 @@ class ButtonOutput:
 
 def button_rule(s: ButtonState) -> ButtonOutput:
     """Compute the Pause / New Tap / Cancel enablement triple from the analyzer state."""
+    # During a file playback Cancel stops the file; Pause and New Tap are disabled. A recording
+    # delivers taps back to back, so pausing detection while the file plays on would only let taps
+    # go by, and a new sequence would be fed the rest of the file.
+    if s.is_playing_file:
+        return ButtonOutput(pause_enabled=False, new_tap_disabled=True, cancel_enabled=True)
+
     is_guitar = s.measurement_type.is_guitar
 
     is_in_review_phase = (

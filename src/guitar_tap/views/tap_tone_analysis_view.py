@@ -2757,12 +2757,14 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _update_mic_name_label(self) -> None:
-        """Update the microphone name label from the current device.
-
-        Mirrors Swift ``fftAnalyzer.selectedInputDevice?.name`` displayed
-        in the Analysis Results header.
+        """Show the microphone the result was captured with in the Analysis Results header: the input for a
+        live result, the recorded one — or "unknown" — for a played file or a loaded measurement. Mirrors
+        Swift ``TapAnalysisResultsView`` reading ``analyzer.captureMicrophoneName``.
         """
-        name = getattr(self.fft_canvas.analyzer, "_calibration_device_name", "")
+        analyzer = self.fft_canvas.analyzer
+        name = analyzer.capture_microphone_name
+        if name is None and analyzer.result_provenance is not None:
+            name = "unknown"
         self._mic_name_label.setText(name or "")
 
     # ================================================================
@@ -2973,6 +2975,7 @@ class MainWindow(QtWidgets.QMainWindow):
             measurement_type=mt,
             material_tap_phase=analyzer.material_tap_phase,
             number_of_taps=tap_num,
+            is_playing_file=analyzer.mic.is_playing_file,
         ))
         self.new_tap_btn.setEnabled(not out.new_tap_disabled)
         self.pause_tap_btn.setEnabled(out.pause_enabled)
@@ -3151,6 +3154,10 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             # Clear override — button reverts to the toolbar-inherited blue style.
             self._play_file_btn.setStyleSheet("")
+        # Playback changes which of Pause / New Tap / Cancel are available, and whose microphone the
+        # result is.
+        self._update_tap_buttons()
+        self._update_mic_name_label()
 
     # ================================================================
     # Tap events
@@ -3957,17 +3964,12 @@ class MainWindow(QtWidgets.QMainWindow):
         measurement_name: str | None = None,
         notes: str | None = None,
     ) -> None:
-        """Collect view-side state and delegate to the model to save a measurement.
-
-        Mirrors Swift ``TapToneAnalysisView+Actions.saveMeasurement()``:
-        reads the visible axis range (view @State), reads device identity,
-        reads effective peak role IDs from the analyzer, then calls
-        ``analyzer.save_measurement(...)`` directly.  The model builds all
-        ``SpectrumSnapshot`` objects internally from its own state.
+        """Save a measurement: pass the model the view's own state — the name, the notes and the visible
+        axis range — and let it read everything else from itself. Mirrors Swift
+        ``TapToneAnalysisView+Actions.saveMeasurement()``.
         """
         canvas = self.fft_canvas
         analyzer = canvas.analyzer
-        mt = TDS.measurement_type()
 
         # ── Axis range — view @State, mirrors Swift minFreq/maxFreq/minDB/maxDB ──
         min_freq_val = float(canvas.minFreq)
@@ -3980,32 +3982,10 @@ class MainWindow(QtWidgets.QMainWindow):
             min_db_val = float(self.peak_min_slider.value())
             max_db_val = 0.0
 
-        # ── Device identity — mirrors Swift fft.selectedInputDevice?.name / fft.selectedInputDevice?.uid ──
-        # Use the currently selected input device (not the calibration-time device name).
-        _sel_dev = getattr(getattr(analyzer, "mic", None), "selected_input_device", None)
-        mic_name: str | None = getattr(_sel_dev, "name", None) or None
-        mic_uid: str | None = getattr(_sel_dev, "fingerprint", None) or None
-        cal_name: str | None = getattr(analyzer, "_active_calibration_name", None) or None
-        # Capture sample rate for provenance — mirrors Swift fft.actualSampleRate.
-        _mic_rate = getattr(getattr(analyzer, "mic", None), "rate", None)
-        sample_rate_val: float | None = float(_mic_rate) if _mic_rate else None
-
-        # ── Plate/brace peak role selections — mirrors Swift tap.effectiveLongitudinalPeakID ──
-        selected_longitudinal_peak_id = analyzer.effective_longitudinal_peak_id if not mt.is_guitar else None
-        selected_cross_peak_id        = analyzer.effective_cross_peak_id        if mt.is_plate  else None
-        selected_flc_peak_id          = analyzer.effective_flc_peak_id          if mt.is_plate  else None
-
+        # The model reads everything else from itself. Mirrors Swift saveMeasurement(name:noteText:).
         analyzer.save_measurement(
             measurement_name=measurement_name or None,
             notes=notes or None,
-            include_spectrum=True,
-            selected_longitudinal_peak_id=selected_longitudinal_peak_id,
-            selected_cross_peak_id=selected_cross_peak_id,
-            selected_flc_peak_id=selected_flc_peak_id,
-            microphone_name=mic_name,
-            microphone_uid=mic_uid,
-            calibration_name=cal_name,
-            sample_rate=sample_rate_val,
             min_freq=min_freq_val,
             max_freq=max_freq_val,
             min_db=min_db_val,
@@ -5060,15 +5040,10 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 date_label = datetime.now(_tz.utc).isoformat()
 
-            # ── Device identity — mirrors Swift fft.selectedInputDevice?.name ──────────────────
-            # Use the currently selected input device, not the calibration-time device name.
-            _sel_dev = getattr(getattr(analyzer, "mic", None), "selected_input_device", None)
-            mic_name: str | None = getattr(_sel_dev, "name", None) or None
-
-            # ── Active calibration name — mirrors Swift fft.activeCalibration?.name ────────
-            # Use _active_calibration_name which is set by both manual selection and
-            # device-specific auto-load (via load_calibration_from_profile).
-            _active_cal_name: str | None = getattr(analyzer, "_active_calibration_name", None) or None
+            # ── Provenance — the microphone and calibration the result was captured with ────────
+            # Mirrors Swift tap.captureMicrophoneName / tap.captureCalibrationName.
+            mic_name: str | None = analyzer.capture_microphone_name
+            _active_cal_name: str | None = analyzer.capture_calibration_name
 
             # Mirror Swift createExportableSpectrumView(): always call make_exportable_spectrum_view.
             # For plate/brace, frozenFrequencies is intentionally empty — the spectrum renders
@@ -5396,9 +5371,8 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 date_label = datetime.now(_tz.utc).isoformat()
 
-            _sel_dev = getattr(getattr(analyzer, "mic", None), "selected_input_device", None)
-            mic_name: str | None = getattr(_sel_dev, "name", None) or None
-            _active_cal_name: str | None = getattr(analyzer, "_active_calibration_name", None) or None
+            mic_name: str | None = analyzer.capture_microphone_name
+            _active_cal_name: str | None = analyzer.capture_calibration_name
 
             # ── Material properties — mirrors Swift plate/brace derivation ────────────────────
             plate_props = None

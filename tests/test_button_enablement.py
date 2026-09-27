@@ -106,6 +106,33 @@ class TestButtonEnablement:
             pause_enabled=False, new_tap_disabled=False, cancel_enabled=False
         )
 
+    # B14–B16: During a file playback Cancel (stop the file) is enabled; Pause and New Tap are
+    # disabled — whatever the detector is doing.
+
+    def test_B14_playback_guitar_listening_cancel_only(self):
+        # Cancel is enabled even though a single-tap sequence offers no Cancel live.
+        s = ButtonState(detection_state=DetectionState.LISTENING, is_measurement_complete=False,
+                        display_mode=AnalysisDisplayMode.LIVE, is_playing_file=True)
+        assert button_rule(s) == ButtonOutput(
+            pause_enabled=False, new_tap_disabled=True, cancel_enabled=True
+        )
+
+    def test_B15_playback_guitar_between_taps_cancel_only(self):
+        # Multi-tap playback between taps — the detector idle while it rests and re-arms.
+        s = ButtonState(detection_state=DetectionState.IDLE, is_measurement_complete=False,
+                        display_mode=AnalysisDisplayMode.LIVE, number_of_taps=8, is_playing_file=True)
+        assert button_rule(s) == ButtonOutput(
+            pause_enabled=False, new_tap_disabled=True, cancel_enabled=True
+        )
+
+    def test_B16_playback_plate_complete_file_still_playing_cancel_only(self):
+        s = ButtonState(detection_state=DetectionState.IDLE, is_measurement_complete=True,
+                        display_mode=AnalysisDisplayMode.LIVE, measurement_type=MeasurementType.PLATE,
+                        material_tap_phase=MaterialTapPhase.COMPLETE, is_playing_file=True)
+        assert button_rule(s) == ButtonOutput(
+            pause_enabled=False, new_tap_disabled=True, cancel_enabled=True
+        )
+
     def test_B9_fft_not_running_new_tap_disabled(self):
         s = ButtonState(detection_state=DetectionState.IDLE, is_measurement_complete=True, display_mode=AnalysisDisplayMode.LIVE,
                         fft_is_running=False)

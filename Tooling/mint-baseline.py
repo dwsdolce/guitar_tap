@@ -34,6 +34,11 @@ import os
 import platform
 import sys
 
+# Run in this process's settings sandbox, as the test suite does: minting plays every oracle case
+# through the app, which reads and writes settings (the measurement type, the tap count), and none of
+# that may touch the user's real settings. Claimed BEFORE anything imports code that reads settings.
+os.environ.setdefault("GT_TEST_SANDBOX", str(os.getpid()))
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "tests"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))

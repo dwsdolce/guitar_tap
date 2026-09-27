@@ -155,6 +155,13 @@ class _FftProcessingThread(QtCore.QThread):
 
     # MARK: - Signals (kept on the QThread for Qt signal delivery)
 
+    # Run a callable on the main thread: this object lives there. runOnMainBlocking makes the emitting
+    # thread wait for it (Swift DispatchQueue.main.sync); runOnMain does not (DispatchQueue.main.async).
+    # The file-playback worker uses them for the end-of-file step. Emitted only from other threads —
+    # a blocking emit from the main thread would wait on itself.
+    runOnMainBlocking: QtCore.Signal = QtCore.Signal(object)
+    runOnMain: QtCore.Signal = QtCore.Signal(object)
+
     # (mag_y_db, mag_y, peak_db, fps, sample_dt, processing_dt). The ONE delivery of a frame to the
     # analyzer: connected to on_fft_frame, which therefore runs on the main thread — Swift's analyzer
     # takes frames through a Combine sink `.receive(on: DispatchQueue.main)`. The peak travels as float
@@ -181,12 +188,19 @@ class _FftProcessingThread(QtCore.QThread):
 
     # MARK: - Initialization
 
+    @QtCore.Slot(object)
+    def _run_callable(self, fn) -> None:
+        """Slot for runOnMainBlocking / runOnMain: runs *fn* on the main thread."""
+        fn()
+
     def __init__(
         self,
         mic: "RealtimeFFTAnalyzer",
         parent: QtCore.QObject | None = None,
     ) -> None:
         super().__init__(parent)
+        self.runOnMainBlocking.connect(self._run_callable, QtCore.Qt.ConnectionType.BlockingQueuedConnection)
+        self.runOnMain.connect(self._run_callable, QtCore.Qt.ConnectionType.QueuedConnection)
 
         # Weak back-reference to the owning analyzer.  A strong ref here would
         # form a QObject reference cycle (analyzer.proc_thread → thread._mic →
@@ -494,6 +508,10 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # Set to False by stop() or when the file thread finishes.
         self.is_playing_file: bool = False
         self._file_playback_thread: threading.Thread | None = None
+        # Identity token for the active playback: bumped when a playback starts or is stopped. The
+        # worker checks it on every chunk and before any end-of-file work. Mirrors Swift
+        # filePlaybackGeneration.
+        self._file_playback_generation: int = 0
 
         # Filename (without extension) of the file currently being played, or None.
         # Mirrors Swift RealtimeFFTAnalyzer.playingFileName (@Published var).

@@ -821,24 +821,20 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
 
     def _emit_loaded_peaks_at_threshold(self) -> None:
-        """Filter loaded-measurement peaks by threshold and emit peaksChanged.
+        """Emit a loaded measurement's peaks as peaksChanged — the view's peak list, chart markers and
+        annotations take them from this signal.
 
-        Mirrors Swift recalculateFrozenPeaksIfNeeded — applied when threshold or
-        frequency range changes while a measurement is frozen/loaded.
-
-        **Guitar only.**  Peak Min is a guitar-mode control: plate/brace capture uses its own
-        adaptive per-phase noise floor, and the identified L / C / FLC peaks ARE the material
-        result — they must never be filtered out from under it.  A loaded plate whose fL sits
-        below the saved Peak Min (e.g. fL at -62.4 dB with Peak Min -60) otherwise loses that
-        peak from both the peak table and the chart annotations.
-
-        Swift reaches the same outcome, but only by accident: recalculateFrozenPeaksIfNeeded
-        guards on a non-empty frozen spectrum, and a loaded material measurement leaves the
-        frozen spectrum empty, so its equivalent filter is never reached.  We state the intent
-        instead of relying on that.  Python's own capture path already branches this way --
-        see tap_tone_analyzer_spectrum_capture.py (emit_peaks = ... if is_guitar else
-        material_identified_peaks).
+        Guitar: the full loaded set becomes the durable ``all_peaks``, and its Peak-Min projection
+        (``peaks_above_peak_min``) is emitted. Material (plate/brace): the identified L / C / FLC peaks are
+        emitted unfiltered — they ARE the result, and Peak Min is a guitar control, so a loaded fL below
+        the saved Peak Min still shows. The capture path emits the same way (``_emit_peaks_array``).
+        Mirrors Swift's views reading ``peaksAbovePeakMin`` / ``materialIdentifiedPeaks``.
         """
+        if not self._tds.measurement_type().is_guitar:
+            # A loaded material measurement's peaks are its identified L / C / FLC, unfiltered; it keeps no
+            # guitar peak set (loaded_measurement_peaks is None, all_peaks empty).
+            self.peaksChanged.emit(list(self.material_identified_peaks))
+            return
         assert self.loaded_measurement_peaks is not None
         # Mirrors Swift: store the FULL loaded set as the durable all_peaks; peaks_above_peak_min is
         # its Peak-Min projection (guitar filters; material passes through). Emitting the

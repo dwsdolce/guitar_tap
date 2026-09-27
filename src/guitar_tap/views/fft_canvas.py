@@ -806,6 +806,9 @@ class FftCanvas(pg.PlotWidget):
 
         If the thread is not running for any reason, falls back to start_analyzer().
         """
+        # A file that is playing is stopped first: a new sequence — for a changed measurement type,
+        # say — must not be fed the rest of the file. Mirrors Swift requestStartTapSequence.
+        self.analyzer.mic.stop_file_playback()
         if not self.analyzer.mic.proc_thread.isRunning():
             # Fallback: thread died unexpectedly — do a full restart.
             self.start_analyzer()

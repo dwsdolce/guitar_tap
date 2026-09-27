@@ -96,52 +96,63 @@ class TapToneAnalyzerAnnotationManagementMixin:
         self.peak_annotation_offsets = dict(offsets)
 
     # ------------------------------------------------------------------ #
-    # Plate Peak Selection
-    # Mirrors Swift selectLongitudinalPeak / selectCrossPeak / selectFlcPeak
+    # Identified material peaks and capture provenance
     # ------------------------------------------------------------------ #
 
     @property
     def effective_longitudinal_peak_id(self) -> str | None:
-        """The longitudinal (fL) peak's UUID, or None before the phase finalises.
-
-        The identified peak for the phase, or None before it finalises.
-
-        Two earlier layers are gone (2026-09-20): a user-override tier whose UI was removed in
-        April 2026, and ``auto_selected_*_peak_id``, which was UNREACHABLE — both are assigned
-        adjacently in the phase handlers and the selected one is never None when the auto id is
-        set. The auto attributes THEMSELVES stay: they are the change channel the view rides to
-        widen the chart axis onto a newly identified peak.
-
-        Mirrors Swift ``effectiveLongitudinalPeakID``.
-        """
+        """The longitudinal (fL) peak's UUID, or None before the phase finalises: the phase's identified
+        peak. Mirrors Swift ``effectiveLongitudinalPeakID``."""
         return self.selected_longitudinal_peak.id if self.selected_longitudinal_peak else None
 
     @property
     def effective_cross_peak_id(self) -> str | None:
-        """The cross-grain (fC) peak's UUID, or None before the phase finalises.
-
-        Nothing to resolve — see ``effective_longitudinal_peak_id`` for why the two earlier
-        layers went. Mirrors Swift ``effectiveCrossPeakID``.
-        """
+        """The cross-grain (fC) peak's UUID, or None before the phase finalises. Mirrors Swift
+        ``effectiveCrossPeakID``."""
         return self.selected_cross_peak.id if self.selected_cross_peak else None
 
     @property
     def effective_flc_peak_id(self) -> str | None:
-        """The FLC (torsional/twist) peak's UUID, or None before the phase finalises.
-
-        Nothing to resolve — see ``effective_longitudinal_peak_id`` for why the two earlier
-        layers went. Mirrors Swift ``effectiveFlcPeakID``.
-        """
+        """The FLC (torsional/twist) peak's UUID, or None before the phase finalises. Mirrors Swift
+        ``effectiveFlcPeakID``."""
         return self.selected_flc_peak.id if self.selected_flc_peak else None
 
-    # Plate Peak Selection — REMOVED 2026-09-20
-    #
-    # ``select_longitudinal_peak`` / ``select_cross_peak`` / ``select_flc_peak`` let the user
-    # re-assign which detected peak was the fL / fC / fFLC, from L / C / FLC buttons on each peak
-    # row in the material Results panel. Those buttons were removed from Swift on 2026-04-17
-    # (``c88e5e1``) and the correction path became: REDO the phase (plate) or the measurement
-    # (brace). Python mirrored the leftovers rather than the feature, so this model layer sat here
-    # unreachable, exercised only by its own PS1-PS6 tests, which went with it.
-    #
-    # Do not reintroduce without the UI. This was also the only reason material peaks had to live
-    # in the shared ``all_peaks`` list — see the parity doc for that thread.
+    # ``result_provenance`` (set in ``__init__``) — where the current result came from when it is not the
+    # live input: a played file or a loaded measurement; None while listening to the input. Set by
+    # ``play_file`` and ``load_measurement``; a new sequence clears it. Mirrors Swift ``resultProvenance``.
+
+    @property
+    def capture_microphone_name(self) -> "str | None":
+        """The microphone the current result was captured with, as shown, saved and reported: the input
+        device for a live result; the recorded one for a played file or a loaded measurement, None
+        (unknown) when there is none. Mirrors Swift ``captureMicrophoneName``."""
+        if self.result_provenance is not None:
+            return self.result_provenance.microphone_name
+        device = getattr(self.mic, "selected_input_device", None) if self.mic is not None else None
+        return getattr(device, "name", None) or None
+
+    @property
+    def capture_microphone_uid(self) -> "str | None":
+        """The UID of ``capture_microphone_name``'s device. Mirrors Swift ``captureMicrophoneUID``."""
+        if self.result_provenance is not None:
+            return self.result_provenance.microphone_uid
+        device = getattr(self.mic, "selected_input_device", None) if self.mic is not None else None
+        return getattr(device, "fingerprint", None) or None
+
+    @property
+    def capture_calibration_name(self) -> "str | None":
+        """The calibration the current result was captured with: the input's for a live result, the
+        recorded one otherwise (none for a file played uncalibrated). Mirrors Swift
+        ``captureCalibrationName``."""
+        if self.result_provenance is not None:
+            return self.result_provenance.calibration_name
+        return self._active_calibration_name or None
+
+    @property
+    def capture_sample_rate(self) -> "float | None":
+        """The sample rate the current result was captured at: the input's for a live result (None when
+        the engine has no rate yet), the recorded one otherwise. Mirrors Swift ``captureSampleRate``."""
+        if self.result_provenance is not None:
+            return self.result_provenance.sample_rate
+        rate = getattr(self.mic, "rate", None) if self.mic is not None else None
+        return float(rate) if rate else None

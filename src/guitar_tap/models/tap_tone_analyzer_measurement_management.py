@@ -199,39 +199,22 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self,
         measurement_name: "str | None" = None,
         notes: "str | None" = None,
-        include_spectrum: bool = True,
-        spectrum_snapshot=None,
-        annotation_offsets: "dict | None" = None,
-        selected_longitudinal_peak_id: "str | None" = None,
-        selected_cross_peak_id: "str | None" = None,
-        selected_flc_peak_id: "str | None" = None,
-        microphone_name: "str | None" = None,
-        microphone_uid: "str | None" = None,
-        calibration_name: "str | None" = None,
-        sample_rate: "float | None" = None,
         min_freq: "float | None" = None,
         max_freq: "float | None" = None,
         min_db: "float | None" = None,
         max_db: "float | None" = None,
     ) -> None:
-        """Assemble a new measurement from live analyzer state, then persist.
+        """Assemble a new measurement from the analyzer's state, then persist.
 
-        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(...)``:
+        Everything but the view's own state is read from the model: the peaks and selection, the
+        identified material peaks, overrides, annotation offsets, the ring-out, the spectra, and the
+        capture's provenance (``capture_microphone_name``, ``capture_microphone_uid``,
+        ``capture_calibration_name``, ``capture_sample_rate``). For guitar a combined
+        ``SpectrumSnapshot`` is built from the frozen spectrum; for plate/brace the per-phase snapshots
+        are built from ``longitudinal_spectrum``, ``cross_spectrum`` and ``flc_spectrum`` using
+        ``_make_phase_snapshot``. The view passes the name, the notes and the displayed axis range.
 
-        - Reads ``currentPeaks``, ``currentDecayTime``, ``selectedPeakIDs``,
-          ``peakAnnotationOffsets``, ``annotationVisibilityMode``, and
-          ``peakModeOverrides`` directly from model state — not passed by the view.
-        - Builds the guitar ``SpectrumSnapshot`` internally from
-          ``frozenFrequencies`` / ``frozenMagnitudes`` and ``TapDisplaySettings``.
-          The view passes only the four axis-range floats.
-        - Builds per-phase snapshots (plate/brace) internally from
-          ``self.longitudinal_spectrum``, ``self.cross_spectrum``, ``self.flc_spectrum``
-          using ``_make_phase_snapshot``.  These spectra are set on the model by the
-          gated-FFT capture pipeline — the view does not pass them.
-        - ``spectrum_snapshot`` is an optional override (mirrors Swift's
-          ``spectrumSnapshot: SpectrumSnapshot? = nil``) used by the import path.
-        - ``annotation_offsets`` falls back to ``self.peak_annotation_offsets``
-          when ``None``, matching Swift's ``annotationOffsets ?? peakAnnotationOffsets``.
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(...)``.
         """
         from .measurement_type import MeasurementType
         from .spectrum_snapshot import SpectrumSnapshot
@@ -256,11 +239,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
         #     frequencies: isMeasurementComplete ? frozenFrequencies : fftAnalyzer.frequencies,
         #     magnitudes:  isMeasurementComplete ? frozenMagnitudes  : fftAnalyzer.magnitudes, ...)
         guitar_snapshot = None
-        if include_spectrum and mt.is_guitar:
+        if mt.is_guitar:
             freqs = self.frozen_frequencies
             mags  = self.frozen_magnitudes
             if freqs is not None and len(freqs) > 0:
-                guitar_snapshot = spectrum_snapshot or SpectrumSnapshot(
+                guitar_snapshot = SpectrumSnapshot(
                     frequencies=freqs.tolist() if hasattr(freqs, "tolist") else list(freqs),
                     magnitudes=mags.tolist()  if hasattr(mags,  "tolist") else list(mags),
                     min_freq=_min_freq,
@@ -279,7 +262,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         longitudinal_snapshot = None
         cross_snapshot = None
         flc_snapshot = None
-        if include_spectrum and not mt.is_guitar:
+        if not mt.is_guitar:
             _kw = dict(min_freq=_min_freq, max_freq=_max_freq, min_db=_min_db, max_db=_max_db)
             if self.longitudinal_spectrum is not None:
                 _mags, _freqs = self.longitudinal_spectrum
@@ -297,10 +280,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         peaks = self.guitar_full_save_peaks() if mt.is_guitar else list(self.material_identified_peaks)
         decay_time = getattr(self, "current_decay_time", None)
 
-        # annotation_offsets: passed value or self.peak_annotation_offsets
-        # Mirrors Swift: annotationOffsets ?? peakAnnotationOffsets
-        offsets = annotation_offsets if annotation_offsets is not None \
-                  else dict(self.peak_annotation_offsets)
+        offsets = dict(self.peak_annotation_offsets)
 
         # selectedPeakIDs / selectedPeakFrequencies
         # Mirrors Swift: selectedPeakIDs.isEmpty ? nil : Array(selectedPeakIDs)
@@ -352,14 +332,14 @@ class TapToneAnalyzerMeasurementManagementMixin:
             number_of_taps=getattr(self, "number_of_taps", None),
             peak_min_threshold=getattr(self, "peak_min_threshold", None),
             # Plate/brace peak selections — mirrors Swift conditional nil assignments
-            selected_longitudinal_peak_id=selected_longitudinal_peak_id if not mt.is_guitar else None,
-            selected_cross_peak_id=selected_cross_peak_id if mt == MeasurementType.PLATE else None,
-            selected_flc_peak_id=selected_flc_peak_id if mt == MeasurementType.PLATE else None,
+            selected_longitudinal_peak_id=self.effective_longitudinal_peak_id if not mt.is_guitar else None,
+            selected_cross_peak_id=self.effective_cross_peak_id if mt == MeasurementType.PLATE else None,
+            selected_flc_peak_id=self.effective_flc_peak_id if mt == MeasurementType.PLATE else None,
             peak_mode_overrides=overrides,
-            microphone_name=microphone_name,
-            microphone_uid=microphone_uid,
-            calibration_name=calibration_name,
-            sample_rate=sample_rate,
+            microphone_name=self.capture_microphone_name,
+            microphone_uid=self.capture_microphone_uid,
+            calibration_name=self.capture_calibration_name,
+            sample_rate=self.capture_sample_rate,
             tap_entries=tap_entries_to_save,
         )
         self.saved_measurements.append(measurement)
@@ -458,8 +438,19 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.tap_entries = []
             self.showing_multi_tap_comparison = False
             self._display_mode = AnalysisDisplayMode.COMPARISON
+            self.result_provenance = None  # a comparison has no microphone of its own
             self.comparisonChanged.emit(True)
             return
+
+        # The loaded result's provenance is what the file recorded; no microphone means unknown. Set before
+        # anything this load emits, so a view refreshing on those signals reads it.
+        from .tap_tone_analyzer import ResultProvenance
+        self.result_provenance = ResultProvenance(
+            microphone_name=measurement.microphone_name,
+            microphone_uid=measurement.microphone_uid,
+            calibration_name=measurement.calibration_name,
+            sample_rate=measurement.sample_rate,
+        )
 
         # ── Exit comparison mode, enter frozen mode ───────────────────────────
         # Mirrors Swift: comparisonSpectra = []; setFrozenSpectrum([], []); displayMode = .frozen

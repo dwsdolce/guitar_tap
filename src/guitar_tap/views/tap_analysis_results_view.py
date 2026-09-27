@@ -822,10 +822,10 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         f"{_fmt_freq(min_freq)} \u2013 {_fmt_freq(max_freq)}",
         CONTENT_W,
     ))
-    if data.microphone_name:
-        cal_suffix = f" \u00b7 calibrated ({data.calibration_name})" if data.calibration_name else " \u00b7 uncalibrated"
-        story.append(Spacer(1, 4))
-        story.append(_TwoColRow("Microphone", data.microphone_name + cal_suffix, CONTENT_W))
+    # No recorded microphone means it is unknown (a played file, say): say so, and keep the calibration.
+    cal_suffix = f" \u00b7 calibrated ({data.calibration_name})" if data.calibration_name else " \u00b7 uncalibrated"
+    story.append(Spacer(1, 4))
+    story.append(_TwoColRow("Microphone", (data.microphone_name or "unknown") + cal_suffix, CONTENT_W))
 
     story.append(Spacer(1, 14))
 

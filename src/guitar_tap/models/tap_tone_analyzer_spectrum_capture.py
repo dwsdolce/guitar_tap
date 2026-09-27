@@ -500,13 +500,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     def _flush_gated_capture_on_file_end(self) -> None:
         """Zero-pad and complete any active gated capture when file playback ends.
 
-        Called from _playback_worker (via _on_pre_mic_restart) after the input
-        buffer flush but BEFORE the mic stream restarts.  Without this, the mic
-        restarts instantly and mic noise fills the remaining gated capture window,
+        Called on the main thread (via _on_pre_mic_restart) at the end of a file, after the input
+        buffer flush but BEFORE the mic stream restarts; the playback worker waits for it.  Without
+        this, the mic restarts instantly and mic noise fills the remaining gated capture window,
         contaminating the last tap's spectrum.
 
-        Mirrors Swift TapToneAnalyzer.flushGatedCaptureOnFileEnd() which is
-        called from startFromFile's asyncAfter block.
+        Mirrors Swift TapToneAnalyzer.flushGatedCaptureOnFileEnd().
 
         The pattern is the same as the safety timeout flush: take whatever
         samples have accumulated, zero-pad to the target window size, and
@@ -514,9 +513,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         silence) buffer rather than partial + mic noise.
         """
         # File end is also the end of the audio clock: release what must still happen — the capture
-        # window's processing — once any finish this flush triggers has scheduled it. The finish
-        # arrives through the queued gatedCaptureComplete signal, so the release is queued behind it on
-        # the main thread rather than run here. On every path out. Mirrors Swift's `defer`.
+        # window's processing — after any finish below has scheduled it. On every path out. Mirrors
+        # Swift's `defer`.
         try:
             import numpy as np
 
@@ -549,16 +547,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             gt_log(f"🎯 Gated capture flushed on file end — "
                    f"{len(partial)} samples (zero-padded to {target})")
 
-            # Emit on this thread (playback worker); Qt queued connection delivers
-            # on the main thread.
-            if self.mic is not None and self.mic.proc_thread is not None:
-                self.mic.proc_thread.gatedCaptureComplete.emit(
-                    np.array(partial, dtype=np.float32),
-                    sample_rate,
-                    phase,
-                )
+            self.finish_gated_fft_capture(np.array(partial, dtype=np.float32), sample_rate, phase)
         finally:
-            self._main_async_after(0, self.release_audio_actions_at_file_end)
+            self.release_audio_actions_at_file_end()
 
     # ------------------------------------------------------------------ #
     # start_gated_capture

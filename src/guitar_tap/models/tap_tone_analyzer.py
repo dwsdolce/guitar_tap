@@ -44,7 +44,7 @@ This file (tap_tone_analyzer.py) contains:
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import NamedTuple, Callable
 
 # ── PySide6 ─────────────────────────────────────────────────────────────────────
 from PySide6 import QtCore
@@ -74,6 +74,17 @@ from .tap_tone_analyzer_tap_detection import TapToneAnalyzerTapDetectionHandlerM
 # Mirrors the top-level Swift TapToneAnalyzer class declaration and its stored
 # properties / init.  All methods live in the mixin base classes above,
 # matching the Swift extension-file organisation.
+
+
+class ResultProvenance(NamedTuple):
+    """Where a result came from when it is not the live input: a played file (no microphone — the one
+    that recorded a file is not known — the calibration it was played with, or None, and its sample
+    rate) or a loaded measurement (what the file recorded). Mirrors Swift
+    ``TapToneAnalyzer.ResultProvenance``."""
+    microphone_name: "str | None"
+    microphone_uid: "str | None"
+    calibration_name: "str | None"
+    sample_rate: "float | None"
 
 class TapToneAnalyzer(
     TapToneAnalyzerControlMixin,
@@ -403,6 +414,9 @@ class TapToneAnalyzer(
         # the Results panel; it is the sole source for the measurement's calc/display/PDF and Save.
         # Mirrors Swift TapToneAnalyzer.materialInputs.
         self.material_inputs = None  # type: "MaterialMeasurementInputs | None"
+        # Where the current result came from when it is not the live input — a played file or a loaded
+        # measurement — or None while listening to the input. Mirrors Swift resultProvenance.
+        self.result_provenance: "ResultProvenance | None" = None
         # Frequencies of currently selected peaks — stable carry-forward for
         # recalculate_frozen_peaks_if_needed(). Mirrors Swift selectedPeakFrequencies.
         self.selected_peak_frequencies: list = []

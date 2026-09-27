@@ -296,9 +296,11 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             info_layout.addRow(
                 "Number of Taps:", QtWidgets.QLabel(str(m.number_of_taps))
             )
-        if m.microphone_name:
+        # No recorded microphone means it is unknown (a played file, say). A comparison has no
+        # microphone of its own. Mirrors Swift MeasurementDetailView.
+        if not m.is_comparison:
             info_layout.addRow(
-                "Microphone:", QtWidgets.QLabel(m.microphone_name)
+                "Microphone:", QtWidgets.QLabel(m.microphone_name or "unknown")
             )
         if m.calibration_name:
             info_layout.addRow(

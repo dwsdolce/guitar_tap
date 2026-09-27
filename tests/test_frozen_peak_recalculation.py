@@ -1247,6 +1247,26 @@ class TestMaterialPeakIdentity:
         assert [p.id for p in saved.peaks] == [f_l.id], "the file's peaks are the identified fL"
         assert list(saved.selected_peak_ids or []) == [f_l.id], "and it is marked selected"
 
+    def test_material_load_delivers_its_identified_peaks_to_the_view(self, qt_app):
+        """A loaded material measurement's identified peaks reach the view's peak list: the view's load
+        handler asks for the loaded peaks (``_emit_loaded_peaks_at_threshold``), and peaksChanged carries
+        the identified L / C / FLC. Python-specific: the Swift and web views read the analyzer's state."""
+        TapDisplaySettings.set_measurement_type(MeasurementType.BRACE)
+        source = TapToneAnalyzer()
+        source.set_measurement_type(MeasurementType.BRACE)
+        f_l = self._capture_longitudinal(source)
+        assert f_l is not None, "precondition: the brace capture identifies fL"
+        source.save_measurement()
+        saved = source.saved_measurements[-1]
+
+        sut = TapToneAnalyzer()
+        sut.load_measurement(saved)
+        emitted = []
+        sut.peaksChanged.connect(lambda peaks: emitted.append([p.id for p in peaks]))
+        sut._emit_loaded_peaks_at_threshold()  # what the view's load handler calls
+
+        assert emitted == [[f_l.id]], f"the identified fL reaches the view, got {emitted}"
+
     def test_PR43_material_load_restores_the_identified_peaks_only(self, qt_app):
         """PR43: loading a material measurement restores its identified peaks by id from the file, and
         leaves the guitar peak state (all_peaks, selected_peak_ids) empty. A plate (fL + fC), so each
@@ -1266,11 +1286,8 @@ class TestMaterialPeakIdentity:
             assert f_c is not None, "precondition: the plate capture identifies fC"
             source.accept_current_phase()  # no FLC: the measurement completes, as it must before a save
             assert source.is_measurement_complete, "precondition: the plate is complete"
-            # The identified ids are passed in, as the view's save passes them.
-            source.save_measurement(
-                selected_longitudinal_peak_id=source.effective_longitudinal_peak_id,
-                selected_cross_peak_id=source.effective_cross_peak_id,
-            )
+            # The save reads the identified peaks itself.
+            source.save_measurement()
             saved = source.saved_measurements[-1]
         finally:
             TapDisplaySettings.set_measure_flc(_saved_flc)
