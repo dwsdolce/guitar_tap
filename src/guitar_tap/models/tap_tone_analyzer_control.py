@@ -581,20 +581,9 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
 
     def set_tap_threshold(self, value: int) -> None:
-        """Update tap-trigger threshold (0-100 scale → dBFS)."""
+        """Update tap-trigger threshold (0-100 scale → dBFS). The property setter saves it, syncs
+        the level-crossing threshold and ends the loaded-settings warning (Swift's didSet)."""
         self.tap_detection_threshold = float(value - 100)
-        # Keep the audio-queue level-crossing threshold in sync.
-        # Mirrors Swift tapDetectionThreshold.didSet updating fftAnalyzer.levelCrossingThreshold.
-        if self.mic is not None:
-            self.mic._level_crossing_threshold = self.tap_detection_threshold
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-        _tds.set_tap_detection_threshold(self.tap_detection_threshold)
-        # Mirrors Swift tapDetectionThreshold.didSet: clear warning if user deviates from loaded value.
-        if (self.show_loaded_settings_warning
-                and self.loaded_tap_detection_threshold is not None
-                and self.tap_detection_threshold != self.loaded_tap_detection_threshold):
-            self.show_loaded_settings_warning = False
-            self.showLoadedSettingsWarningChanged.emit(False)
 
     def pause_tap_detection(self) -> None:
         """Pause tap detection mid-sequence without losing the current tap count.
@@ -1302,10 +1291,9 @@ class TapToneAnalyzerControlMixin:
 
     def set_threshold(self, threshold: int) -> None:
         """Set the peak-detection threshold (0-100 scale, stored as dBFS)."""
-        # Assigning peak_min_threshold re-projects (the property setter, mirroring Swift didSet).
+        # Assigning peak_min_threshold saves and re-projects (the property setter, Swift's didSet).
         self.peak_min_threshold = float(threshold - 100)
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-        _tds.set_peak_min_threshold(self.peak_min_threshold)
         # Notify the view the projection changed (peaks_above_peak_min is a plain attr, not @Published).
         # The measurement's peaks: the projection (guitar) or the identified L/C/FLC (material).
         self.peaksChanged.emit(list(

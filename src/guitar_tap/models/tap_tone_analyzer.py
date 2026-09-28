@@ -1015,22 +1015,29 @@ class TapToneAnalyzer(
     def tap_detection_threshold(self) -> float:
         """Rising-edge threshold (dBFS) for the main-thread tap detector.
 
-        Mirrors Swift ``TapToneAnalyzer.tapDetectionThreshold``.  Setting
-        this property syncs ``mic._level_crossing_threshold`` so the
-        audio-queue fast-path fires at the same threshold — Swift handles
-        this with a ``didSet`` observer.
+        Mirrors Swift ``TapToneAnalyzer.tapDetectionThreshold`` and its ``didSet``: setting it
+        saves it, syncs ``mic._level_crossing_threshold`` so the audio-queue fast-path fires at the
+        same threshold, and clears the loaded-settings warning when it moves off the loaded value.
         """
         return self._tap_detection_threshold
 
     @tap_detection_threshold.setter
     def tap_detection_threshold(self, value: float) -> None:
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+
         self._tap_detection_threshold = float(value)
+        _tds.set_tap_detection_threshold(self._tap_detection_threshold)
         # Keep the audio-queue level-crossing threshold in sync with the
         # main-thread detection threshold, so both rising-edge detectors
-        # see the same signal as "above threshold".  Mirrors Swift's
-        # ``didSet`` on ``tapDetectionThreshold`` (TapToneAnalyzer.swift).
+        # see the same signal as "above threshold".
         if self.mic is not None:
             self.mic._level_crossing_threshold = self._tap_detection_threshold
+        # A threshold moved off the loaded measurement's value ends the loaded-settings warning.
+        if (getattr(self, "show_loaded_settings_warning", False)
+                and self.loaded_tap_detection_threshold is not None
+                and self._tap_detection_threshold != self.loaded_tap_detection_threshold):
+            self.show_loaded_settings_warning = False
+            self.showLoadedSettingsWarningChanged.emit(False)
 
     # ── Durable peak set + display projection ──────────────────────────────
     @property
@@ -1080,19 +1087,22 @@ class TapToneAnalyzer(
     def peak_min_threshold(self) -> float:
         """Minimum magnitude (dBFS) for a peak to be displayed.
 
-        A DISPLAY control: assigning it re-projects `peaks_above_peak_min` from the durable
-        `all_peaks` and nothing else — no re-detection, no re-classification. Mirrors Swift
-        `@Published var peakMinThreshold { didSet { refreshDisplayedPeaks() } }`. Persistence
-        and the view's `peaksChanged` emit stay at the call sites: Python's `peaks_above_peak_min` is
-        not signal-backed like Swift's `@Published peaksAbovePeakMin`, so emitting here would
-        fire prematurely during capture/load.
+        A DISPLAY control: assigning it saves it and re-projects `peaks_above_peak_min` from the
+        durable `all_peaks` — no re-detection, no re-classification. Mirrors Swift
+        `@Published var peakMinThreshold { didSet { save; refreshDisplayedPeaks() } }`. The view's
+        `peaksChanged` emit stays at the call sites: Python's `peaks_above_peak_min` is not
+        signal-backed like Swift's `@Published peaksAbovePeakMin`, so emitting here would fire
+        prematurely during capture/load.
         """
         return self._peak_min_threshold
 
     @peak_min_threshold.setter
     def peak_min_threshold(self, value: float) -> None:
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+
         self._peak_min_threshold = value
-        # Mirrors Swift peakMinThreshold.didSet -> refreshDisplayedPeaks(). Re-project only.
+        # Mirrors Swift peakMinThreshold.didSet: save, then refreshDisplayedPeaks().
+        _tds.set_peak_min_threshold(value)
         self.refresh_displayed_peaks()
 
     @property

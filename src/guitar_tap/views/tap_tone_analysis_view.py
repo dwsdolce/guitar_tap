@@ -645,7 +645,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.resize(1200, 760)
 
         # Audio / FFT parameters
-        self.threshold: int = AS.AppSettings.threshold()
+        self.threshold: int = int(AS.AppSettings.peak_min_threshold()) + 100
         self._sampling_rate: int = 48000
         self._f_range: dict[str, int] = {
             "f_min": AS.AppSettings.f_min(),
@@ -1074,7 +1074,7 @@ class MainWindow(QtWidgets.QMainWindow):
         hl.addWidget(_vsep())
 
         # ── Peak Min ──────────────────────────────────────────────────────
-        peak_min_val = AS.AppSettings.threshold()   # 0-100 scale
+        peak_min_val = int(AS.AppSettings.peak_min_threshold()) + 100   # 0-100 scale
         self.peak_min_slider, self.peak_min_readout, self.peak_min_reset_btn = \
             _db_slider_group(
                 "Peak Min:", -100, -20, peak_min_val, 40,
@@ -2827,9 +2827,7 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _on_peak_min_changed(self, db_val: int) -> None:
-        self.fft_canvas.set_threshold(db_val + 100)
-        AS.AppSettings.set_threshold(db_val + 100)
-        AS.AppSettings.set_peak_min_threshold(float(db_val))  # keep single source of truth in sync — mirrors Swift peakMinThreshold didSet
+        self.fft_canvas.set_threshold(db_val + 100)  # the model saves it (peak_min_threshold)
         self.peak_min_readout.setText(f"{db_val} dB")
 
     def _on_loaded_settings_warning_changed(self, active: bool) -> None:
@@ -2895,8 +2893,7 @@ class MainWindow(QtWidgets.QMainWindow):
             canvas.analyzer.microphone_warning = None
 
     def _on_tap_threshold_changed(self, db_val: int) -> None:
-        self.fft_canvas.set_tap_threshold(db_val + 100)
-        AS.AppSettings.set_tap_threshold(db_val + 100)
+        self.fft_canvas.set_tap_threshold(db_val + 100)  # the model saves it (tap_detection_threshold)
         self.tap_threshold_readout.setText(f"{db_val} dB")
 
     @QtCore.Slot(float, float)
@@ -6490,8 +6487,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 audio_dev = input_devices[combo_idx]
                 engine_dev = self.fft_canvas.analyzer.mic.selected_input_device
                 if engine_dev is None or audio_dev.fingerprint != engine_dev.fingerprint:
-                    # The user's choice: selected and saved, then the stream reopened on it.
-                    self.fft_canvas.analyzer.mic.choose_input_device(audio_dev)
                     self.fft_canvas.set_device(audio_dev)
                     # set_device() only reopens the stream + recomputes freq bins.
                     # The hot-plug path (_on_devices_refreshed_impl) follows it with
@@ -6983,8 +6978,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 final_db = int(AS.AppSettings.peak_min_threshold())
             final_db = max(-120, min(0, final_db))
             peak_thresh_field.setText(str(final_db))
-            AS.AppSettings.set_peak_min_threshold(float(final_db))
-            AS.AppSettings.set_threshold(final_db + 100)
+            self.fft_canvas.analyzer.peak_min_threshold = float(final_db)  # the model saves it
             slider_val = max(-100, min(-20, final_db))
             if self.peak_min_slider.value() != slider_val:
                 self.peak_min_slider.setValue(slider_val)

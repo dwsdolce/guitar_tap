@@ -1,15 +1,16 @@
 # @parity test/mic-selection
 """
-Which input device the engine uses and which it saves: the rule input_device_to_use (MS1–MS5), the
-engine driven through apply_input_device_list, choose_input_device and set_device (MS6–MS11), and a
-measurement load switching to its recorded microphone (MS14–MS17), and choosing a calibration for the
-selected device (MS18–MS20).
+Which input device the engine uses and what it saves: the launch rule input_device_to_use (MS1–MS5),
+the engine driven through apply_input_device_list, a Settings selection and set_device (MS6–MS11), a
+measurement load switching to its recorded microphone (MS14–MS17), choosing a calibration for the
+selected device (MS18–MS20), and the thresholds a load restores, saved as a setting (MS21–MS22).
 
-The rule: the saved choice when it is present, otherwise the system default input, otherwise the
-first device. Only a choice — picked in Settings, or plugged in while the app runs — is saved; the
-startup selection, a fallback and a loaded measurement's microphone are not.
+The rules: at launch, the saved device when it is present, otherwise the system default input,
+otherwise the first device; a device connected while running is selected; the device in use
+disappearing selects the system default, otherwise the first device. Every selection is saved, so
+what Settings shows is what the next launch uses.
 
-The saved choice lives in AppSettings, which the test sandbox isolates. MS1–MS11 and MS14–MS20 are the
+The saved device lives in AppSettings, which the test sandbox isolates. MS1–MS11 and MS14–MS22 are the
 same list, ids and devices as Swift MicSelectionTests and web test/mic-selection.test.ts. MS12–MS13 are Python
 only: which PortAudio default is the system default (Swift reads CoreAudio's; the browser resolves its
 own).
@@ -50,6 +51,7 @@ from guitar_tap.views.utilities.tap_settings_view import AppSettings
 BUILT_IN = AudioDevice(name="MacBook Pro Microphone", index=1, sample_rate=48000)
 BLACK_HOLE = AudioDevice(name="BlackHole 2ch", index=2, sample_rate=48000)
 UMIK = AudioDevice(name="UMIK-1", index=3, sample_rate=48000)
+USB2 = AudioDevice(name="USB Mic 2", index=4, sample_rate=48000)
 
 
 def _saved() -> str | None:
@@ -99,26 +101,24 @@ def test_MS5_no_devices_selects_nothing():
 
 # MARK: - The engine: what is selected, and what is saved
 
-def test_MS6_startup_selection_is_not_saved():
-    """MS6: The startup selection is not saved: nothing saved, the default is selected, and nothing
-    is saved afterwards."""
+def test_MS6_launch_selection_is_saved():
+    """MS6: The launch selection is saved: nothing saved, the default is selected and saved."""
     sut = _make_sut(saved=None)
     sut.apply_input_device_list([BLACK_HOLE, BUILT_IN], BUILT_IN.fingerprint)
     assert sut.selected_input_device == BUILT_IN
-    assert _saved() is None
+    assert _saved() == BUILT_IN.fingerprint
 
 
-def test_MS7_choice_is_saved():
-    """MS7: A device the user chooses is selected and saved."""
+def test_MS7_settings_selection_is_saved():
+    """MS7: A device selected in Settings is selected and saved."""
     sut = _make_sut(saved=BUILT_IN)
     sut.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
-    sut.choose_input_device(UMIK)
-    assert sut.selected_input_device == UMIK
+    sut.selected_input_device = UMIK
     assert _saved() == UMIK.fingerprint
 
 
 def test_MS8_plugged_in_is_selected_and_saved():
-    """MS8: A device plugged in while running is switched to and saved."""
+    """MS8: A device plugged in while running is selected and saved."""
     sut = _make_sut(saved=BUILT_IN)
     sut.apply_input_device_list([BUILT_IN], BUILT_IN.fingerprint)
     sut.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
@@ -126,24 +126,24 @@ def test_MS8_plugged_in_is_selected_and_saved():
     assert _saved() == UMIK.fingerprint
 
 
-def test_MS9_saved_unplugged_falls_back_without_saving():
-    """MS9: The saved device unplugged — the system default for the session; the saved choice is
-    still the unplugged device, so it comes back at the next launch."""
+def test_MS9_in_use_unplugged_falls_back_and_saves():
+    """MS9: The device in use unplugged (or dropping out) — the system default, selected and saved,
+    so the next launch is on what Settings shows."""
     sut = _make_sut(saved=UMIK)
     sut.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
     assert sut.selected_input_device == UMIK
     sut.apply_input_device_list([BUILT_IN], BUILT_IN.fingerprint)
     assert sut.selected_input_device == BUILT_IN
-    assert _saved() == UMIK.fingerprint
+    assert _saved() == BUILT_IN.fingerprint
 
 
-def test_MS10_session_device_unplugged_returns_to_saved():
-    """MS10: A device used for the session only (not the saved one) unplugged — back to the saved
-    device, which is present."""
-    sut = _make_sut(saved=BUILT_IN)
-    sut.apply_input_device_list([BUILT_IN, BLACK_HOLE, UMIK], BLACK_HOLE.fingerprint)
-    sut.selected_input_device = UMIK
-    sut.apply_input_device_list([BUILT_IN, BLACK_HOLE], BLACK_HOLE.fingerprint)
+def test_MS10_in_use_unplugged_falls_to_the_default_not_another_usb_mic():
+    """MS10: The device in use unplugged falls to the system default, not to another connected USB
+    mic."""
+    sut = _make_sut(saved=USB2)
+    sut.apply_input_device_list([BUILT_IN, UMIK, USB2], BUILT_IN.fingerprint)
+    assert sut.selected_input_device == USB2
+    sut.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
     assert sut.selected_input_device == BUILT_IN
     assert _saved() == BUILT_IN.fingerprint
 
@@ -158,15 +158,14 @@ class _FakeStream:
         pass
 
 
-def test_MS11_load_switch_is_not_saved(monkeypatch):
-    """MS11: The switch a measurement load makes to its recorded microphone (set_device) is not
-    saved."""
+def test_MS11_load_switch_is_saved(monkeypatch):
+    """MS11: The switch a measurement load makes to its recorded microphone (set_device) is saved."""
     monkeypatch.setattr(dm.sd, "InputStream", _FakeStream)
     sut = _make_sut(saved=BUILT_IN)
     sut.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
     sut.set_device(UMIK)
     assert sut.selected_input_device == UMIK
-    assert _saved() == BUILT_IN.fingerprint
+    assert _saved() == UMIK.fingerprint
 
 
 # MARK: - Python only: which PortAudio default is the system default
@@ -234,9 +233,11 @@ def _load_recorded_with_usb_mic(monkeypatch):
 
 
 def test_MS14_load_switch_is_in_place_when_the_load_returns(monkeypatch):
-    """MS14: The load has switched to the recorded microphone by the time it returns."""
+    """MS14: The load has switched to the recorded microphone, and saved it, by the time it
+    returns."""
     sut = _load_recorded_with_usb_mic(monkeypatch)
     assert sut.mic.selected_input_device == UMIK
+    assert _saved() == UMIK.fingerprint
 
 
 def test_MS15_load_check_reads_the_recorded_microphone(monkeypatch):
@@ -300,9 +301,9 @@ def test_MS18_chosen_calibration_is_saved_for_the_device():
     sut.choose_calibration(room)
     assert storage.calibration_for_device(BUILT_IN.name).id == room.id
     assert storage.active_calibration_id() == room.id
-    sut.mic.choose_input_device(UMIK)
+    sut.mic.selected_input_device = UMIK
     assert sut._calibration_profile is None
-    sut.mic.choose_input_device(BUILT_IN)
+    sut.mic.selected_input_device = BUILT_IN
     assert sut._calibration_profile.id == room.id
 
 
@@ -313,8 +314,8 @@ def test_MS19_choosing_none_removes_the_devices_calibration():
     sut.choose_calibration(None)
     assert storage.calibration_for_device(BUILT_IN.name) is None
     assert storage.active_calibration_id() is None
-    sut.mic.choose_input_device(UMIK)
-    sut.mic.choose_input_device(BUILT_IN)
+    sut.mic.selected_input_device = UMIK
+    sut.mic.selected_input_device = BUILT_IN
     assert sut._calibration_profile is None
 
 
@@ -325,3 +326,35 @@ def test_MS20_temporary_calibration_saves_nothing():
     assert sut._calibration_profile.id == room.id
     assert storage.calibration_for_device(BUILT_IN.name) is None
     assert storage.active_calibration_id() is None
+
+
+# MARK: - A load restores settings as the user setting them would
+
+def test_MS21_load_saves_the_thresholds_it_restores():
+    """MS21: A load saves the thresholds it restores, so they are the settings at the next launch."""
+    import uuid
+
+    from guitar_tap.models.tap_display_settings import TapDisplaySettings
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+    from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
+
+    TapDisplaySettings.set_tap_detection_threshold(-40.0)
+    TapDisplaySettings.set_peak_min_threshold(-60.0)
+    sut = TapToneAnalyzer.for_testing()
+    sut.load_measurement(TapToneMeasurement(
+        id=str(uuid.uuid4()), timestamp="2026-01-01T00:00:00Z", peaks=[],
+        measurement_name="Loaded", tap_detection_threshold=-30.0, peak_min_threshold=-50.0))
+    assert TapDisplaySettings.tap_detection_threshold() == -30.0
+    assert TapDisplaySettings.peak_min_threshold() == -50.0
+
+
+def test_MS22_setting_a_threshold_saves_it():
+    """MS22: Setting a threshold on the analyzer saves it."""
+    from guitar_tap.models.tap_display_settings import TapDisplaySettings
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+
+    sut = TapToneAnalyzer.for_testing()
+    sut.tap_detection_threshold = -35.0
+    sut.peak_min_threshold = -45.0
+    assert TapDisplaySettings.tap_detection_threshold() == -35.0
+    assert TapDisplaySettings.peak_min_threshold() == -45.0

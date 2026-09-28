@@ -675,16 +675,17 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
     # MARK: - Selected Input Device Property
     # Mirrors Swift @Published var selectedInputDevice: AVAudioDevice? { didSet { ... } }
-    # The setter mirrors Swift's didSet: auto-loads the device-specific calibration on every
-    # assignment.
+    # The setter mirrors Swift's didSet: saves the device and auto-loads its calibration on
+    # every assignment.
 
     @property
     def selected_input_device(self) -> "AudioDevice | None":
         """The active audio input device, or None.
 
-        Assigning it selects the device for this session and auto-loads that device's
-        calibration; it is not saved. A choice remembered across launches goes through
-        ``choose_input_device``. Mirrors Swift `selectedInputDevice`.
+        Assigning it saves it and auto-loads that device's calibration. Every selection is
+        saved — a Settings choice, a device plugged in, a fallback, the launch selection and a
+        loaded measurement's microphone — so what Settings shows is what the next launch uses.
+        Mirrors Swift `selectedInputDevice`.
         """
         return self._selected_input_device
 
@@ -693,6 +694,14 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._selected_input_device = device
         if device is None:
             return
+
+        # Save it so it is restored on the next launch. Mirrors Swift selectedInputDevice.didSet
+        # writing selectedInputDeviceUID.
+        try:
+            from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
+            _AS.set_audio_device(device)
+        except Exception:
+            pass
 
         # Automatically load device-specific calibration when device changes.
         # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).

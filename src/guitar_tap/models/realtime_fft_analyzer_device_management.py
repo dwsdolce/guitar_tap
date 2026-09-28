@@ -109,7 +109,7 @@ def _log_stream_diagnostics(stream: "sd.InputStream", requested_rate: int) -> in
 
 def input_device_to_use(devices: list, saved_fingerprint: "str | None",
                         system_default_fingerprint: "str | None") -> "AudioDevice | None":
-    """The input device to use from *devices*: the saved choice when it is present, otherwise
+    """The input device to use from *devices*: the saved device when it is present, otherwise
     the system default input, otherwise the first device. None when there are no devices.
 
     Mirrors Swift ``RealtimeFFTAnalyzer.inputDeviceToUse(in:savedUID:systemDefaultUID:)``.
@@ -226,23 +226,22 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         """Apply a freshly enumerated device list to available_input_devices and the selection.
 
         - The first list: selects ``input_device_to_use``.
-        - A new device that is not an aggregate device: ``choose_input_device`` — the user
-          plugged it in, so it is selected and saved.
-        - The selected device is gone: selects ``input_device_to_use``.
+        - A new device that is not an aggregate device: selects it.
+        - The selected device is gone: selects the system default, otherwise the first device.
 
-        The startup selection and a fallback are not saved, so a microphone that drops out is
-        still the saved choice when it returns. Mirrors Swift ``applyInputDeviceList``.
+        Every selection is saved (the selected_input_device setter), so what Settings shows is
+        what the next launch uses. Mirrors Swift ``applyInputDeviceList``.
 
-        Assigning selected_input_device only selects; the analyzer reopens the stream
+        Assigning selected_input_device does not open a stream; the analyzer reopens it
         (``_on_devices_refreshed_impl``) or, at construction, the stream opens on it.
         """
         from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
 
         previous = list(self.available_input_devices)
         self.available_input_devices = devices
-        saved_fp = _AS.selected_input_device_fingerprint()
 
         if not previous:
+            saved_fp = _AS.selected_input_device_fingerprint()
             device = input_device_to_use(devices, saved_fp, system_default_fingerprint)
             if device is None:
                 return
@@ -260,31 +259,18 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             if d.fingerprint not in previous_fps and "aggregate" not in d.name.lower()
         ]
         if newly_connected:
-            self.choose_input_device(newly_connected[0])
+            self.selected_input_device = newly_connected[0]
             gt_log(f"🎤 New device connected, selected: {newly_connected[0].name}")
             return
 
         current = self.selected_input_device
         if current is not None and not any(d.fingerprint == current.fingerprint for d in devices):
             self.selected_input_device = input_device_to_use(
-                devices, saved_fp, system_default_fingerprint
+                devices, None, system_default_fingerprint
             )
             chosen = self.selected_input_device
             gt_log(f"🎤 '{current.name}' disconnected, switched to: "
                    f"{chosen.name if chosen is not None else 'none'}")
-
-    def choose_input_device(self, device: "AudioDevice") -> None:
-        """Select *device* as the user's choice and save it, so it is restored at launch
-        whenever it is present. Used for a device picked in Settings and a device plugged in
-        while the app runs; the startup selection, a fallback and a loaded measurement's
-        microphone are not saved.
-
-        Mirrors Swift ``RealtimeFFTAnalyzer.chooseInputDevice(_:)``.
-        """
-        from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
-
-        self.selected_input_device = device
-        _AS.set_audio_device(device)
 
     # MARK: - Device Switch (mirrors setInputDevice(_:))
 
