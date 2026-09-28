@@ -253,6 +253,7 @@ class TapToneAnalyzerControlMixin:
         # 1-2+ seconds after the initial unplug event, so they pass through.
         last = getattr(self, '_devices_refresh_last_t', 0.0)
         if now - last < 1.0:
+            gt_log("🔄 _on_devices_refreshed: suppressed (within 1 s of the last refresh)")
             return
         self._devices_refresh_active = True
         try:
@@ -263,7 +264,6 @@ class TapToneAnalyzerControlMixin:
 
     def _on_devices_refreshed_impl(self) -> None:
         """Inner implementation of _on_devices_refreshed (called with debounce guard held)."""
-        import sounddevice as _sd
         previous_device = self.mic.selected_input_device
 
         # Close the active stream BEFORE terminating PortAudio. Calling
@@ -274,12 +274,9 @@ class TapToneAnalyzerControlMixin:
         self.mic._close_stream_only()
 
         # Flush PortAudio's cached device list so query_devices() reflects
-        # the current OS device state. Swift CoreAudio doesn't need this step.
-        try:
-            _sd._terminate()
-            _sd._initialize()
-        except Exception:
-            pass
+        # the current OS device state (not while a stream close is still pending — see
+        # terminate_and_reinitialize_portaudio). Swift CoreAudio doesn't need this step.
+        self.mic.terminate_and_reinitialize_portaudio()
 
         # Re-enumerate and apply auto-selection (fingerprint-based diff,
         # aggregate filter, built-in fallback) — mirrors Swift
@@ -317,7 +314,13 @@ class TapToneAnalyzerControlMixin:
         # a newly-plugged device, or a fallback after disconnect).
         new_device = self.mic.selected_input_device
         if new_device is not None:
-            self.set_device(new_device)
+            from guitar_tap.models.realtime_fft_analyzer_device_management import (
+                InputDeviceOpenError,
+            )
+            try:
+                self.set_device(new_device)
+            except InputDeviceOpenError as exc:
+                self._keep_previous_after_failed_open(previous_device, exc)
             self.handle_route_change_restart()
 
         # Notify the view if the previously active device disappeared.
@@ -415,6 +418,23 @@ class TapToneAnalyzerControlMixin:
         """Device name the active calibration is associated with."""
         return self._calibration_device_name
 
+    def _keep_previous_after_failed_open(self, previous_device, error) -> None:
+        """A device the list selected (plugged in, or a fallback) could not be opened: select and
+        open the previous device again if it is still listed, and report the failure for the view's
+        alert. Mirrors Swift revertFailedInputSwitch(from:to:)."""
+        from guitar_tap.models.realtime_fft_analyzer_device_management import (
+            InputDeviceOpenError,
+        )
+        if previous_device is not None:
+            fresh = next((d for d in self.mic.available_input_devices
+                          if d.fingerprint == previous_device.fingerprint), None)
+            if fresh is not None:
+                try:
+                    self.set_device(fresh)
+                except InputDeviceOpenError:
+                    pass
+        self.inputDeviceOpenFailed.emit(str(error))
+
     def set_device(self, device) -> None:
         """Switch to a different input device.
 
@@ -429,13 +449,18 @@ class TapToneAnalyzerControlMixin:
         on fftAnalyzer, then selectedInputDevice.didSet applies calibration —
         both now happen inside RealtimeFFTAnalyzer.set_device().
         """
-        self._calibration_device_name = device.name
-        self.mic.set_device(device)
-        # Recompute self.freq from the new device's sample rate.
-        # Mirrors Swift start() calling updateFrequencyBins() after the engine
-        # restarts with the new device — ensures the frequency axis matches
-        # the actual hardware sample rate.
-        self._update_frequency_bins()
+        try:
+            self.mic.set_device(device)
+        finally:
+            # The device now selected — the new one, or the previous one if the new one could not
+            # be opened (mic.set_device then raises InputDeviceOpenError).
+            current = self.mic.selected_input_device
+            self._calibration_device_name = current.name if current is not None else ""
+            # Recompute self.freq from the device's sample rate.
+            # Mirrors Swift start() calling updateFrequencyBins() after the engine
+            # restarts with the new device — ensures the frequency axis matches
+            # the actual hardware sample rate.
+            self._update_frequency_bins()
 
     def _on_mic_calibration_changed(self, cal) -> None:
         """Apply the calibration profile emitted by RealtimeFFTAnalyzer.set_device().

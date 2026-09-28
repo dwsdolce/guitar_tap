@@ -3,17 +3,18 @@
 Which input device the engine uses and what it saves: the launch rule input_device_to_use (MS1–MS5),
 the engine driven through apply_input_device_list, a Settings selection and set_device (MS6–MS11), a
 measurement load switching to its recorded microphone (MS14–MS17), choosing a calibration for the
-selected device (MS18–MS20), and the thresholds a load restores, saved as a setting (MS21–MS22).
+selected device (MS18–MS20), the thresholds a load restores, saved as a setting (MS21–MS22), and a
+device that cannot be opened (MS23–MS25).
 
 The rules: at launch, the saved device when it is present, otherwise the system default input,
 otherwise the first device; a device connected while running is selected; the device in use
 disappearing selects the system default, otherwise the first device. Every selection is saved, so
 what Settings shows is what the next launch uses.
 
-The saved device lives in AppSettings, which the test sandbox isolates. MS1–MS11 and MS14–MS22 are the
-same list, ids and devices as Swift MicSelectionTests and web test/mic-selection.test.ts. MS12–MS13 are Python
-only: which PortAudio default is the system default (Swift reads CoreAudio's; the browser resolves its
-own).
+The saved device lives in AppSettings, which the test sandbox isolates. MS1–MS11 and MS14–MS25 are the
+same list, ids and devices as Swift MicSelectionTests and web test/mic-selection.test.ts. MS12–MS13 and MS26–MS28 are
+Python only: which PortAudio default is the system default (Swift reads CoreAudio's; the browser resolves
+its own), and PortAudio's device numbering and re-initialising.
 """
 
 from __future__ import annotations
@@ -358,3 +359,126 @@ def test_MS22_setting_a_threshold_saves_it():
     sut.peak_min_threshold = -45.0
     assert TapDisplaySettings.tap_detection_threshold() == -35.0
     assert TapDisplaySettings.peak_min_threshold() == -45.0
+
+
+# MARK: - A device that cannot be opened
+
+class _StreamFailingFor:
+    """An InputStream stand-in that fails to open for the device indices given."""
+
+    def __init__(self, failing: set):
+        self.failing = failing
+
+    def __call__(self, **kwargs):
+        if kwargs.get("device") in self.failing:
+            raise dm.sd.PortAudioError("cannot open")
+        return _FakeStream()
+
+
+def test_MS23_failed_open_keeps_the_previous_device(monkeypatch):
+    """MS23: A switch whose device cannot be opened leaves the previous device selected and saved,
+    and the failure is reported to the caller."""
+    monkeypatch.setattr(dm.sd, "InputStream", _StreamFailingFor({UMIK.index}))
+    sut = _make_sut(saved=BUILT_IN)
+    sut.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
+    with pytest.raises(dm.InputDeviceOpenError):
+        sut.set_device(UMIK)
+    assert sut.selected_input_device == BUILT_IN
+    assert _saved() == BUILT_IN.fingerprint
+
+
+def test_MS24_failed_switch_while_running_reverts_and_reports(monkeypatch):
+    """MS24: A device switched to while running (a plug-in, a fallback) that cannot be opened is
+    reverted, and the failed-open message is reported for the alert."""
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+
+    monkeypatch.setattr(dm.sd, "InputStream", _StreamFailingFor({UMIK.index}))
+    AppSettings.set_audio_device(BUILT_IN)
+    sut = TapToneAnalyzer.for_testing()
+    sut.mic.apply_input_device_list([BUILT_IN], BUILT_IN.fingerprint)
+    sut.mic.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
+    assert sut.mic.selected_input_device == UMIK
+    reported: list = []
+    sut.inputDeviceOpenFailed.connect(reported.append)
+    sut._keep_previous_after_failed_open(BUILT_IN, dm.InputDeviceOpenError(UMIK.name))
+    assert sut.mic.selected_input_device == BUILT_IN
+    assert _saved() == BUILT_IN.fingerprint
+    assert reported == [dm.failed_open_message(UMIK.name)]
+
+
+def test_MS25_load_whose_switch_fails_keeps_the_input_and_says_so(monkeypatch):
+    """MS25: A load whose recorded microphone is listed but cannot be opened keeps the current
+    input (selected and saved) and its warning is the failed-open message."""
+    import uuid
+
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+    from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
+
+    monkeypatch.setattr(dm.sd, "InputStream", _StreamFailingFor({UMIK.index}))
+    AppSettings.set_audio_device(BUILT_IN)
+    sut = TapToneAnalyzer.for_testing()
+    sut.mic.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
+    sut.load_measurement(TapToneMeasurement(
+        id=str(uuid.uuid4()), timestamp="2026-01-01T00:00:00Z", peaks=[],
+        measurement_name="Loaded", microphone_name=UMIK.name, microphone_uid=UMIK.fingerprint))
+    assert sut.mic.selected_input_device == BUILT_IN
+    assert _saved() == BUILT_IN.fingerprint
+    assert sut.microphone_warning == dm.failed_open_message(UMIK.name)
+
+
+# MARK: - Python only: PortAudio's device numbering and re-initialising
+
+def test_MS26_renumbered_device_keeps_its_selection_with_the_fresh_index():
+    """MS26 (Python only): PortAudio renumbers devices when it is re-initialised; a selected device
+    still present takes its fresh index (the stream is opened by index)."""
+    sut = _make_sut(saved=BUILT_IN)
+    listed = [AudioDevice(name=UMIK.name, index=0, sample_rate=48000),
+              AudioDevice(name=BLACK_HOLE.name, index=1, sample_rate=48000),
+              AudioDevice(name=BUILT_IN.name, index=2, sample_rate=48000)]
+    sut.apply_input_device_list(listed, BUILT_IN.fingerprint)
+    assert sut.selected_input_device.index == 2
+    sut.apply_input_device_list(listed[1:2] + [AudioDevice(name=BUILT_IN.name, index=1,
+                                                           sample_rate=48000)],
+                                BUILT_IN.fingerprint)
+    assert sut.selected_input_device == BUILT_IN
+    assert sut.selected_input_device.index == 1
+
+
+def test_MS27_portaudio_is_not_terminated_while_a_close_is_pending(monkeypatch):
+    """MS27 (Python only): terminating PortAudio waits for every stream, so it is not done while a
+    timed-out stream close is still pending."""
+    import threading
+
+    calls: list = []
+    monkeypatch.setattr(dm.sd, "_terminate", lambda: calls.append("terminate"))
+    monkeypatch.setattr(dm.sd, "_initialize", lambda: calls.append("initialize"))
+    sut = _make_sut(saved=BUILT_IN)
+    stuck = threading.Event()
+    pending = threading.Thread(target=stuck.wait, daemon=True)
+    pending.start()
+    sut._pending_stream_close = pending
+    try:
+        assert sut.terminate_and_reinitialize_portaudio() is False
+        assert calls == []
+    finally:
+        stuck.set()
+        pending.join()
+    assert sut.terminate_and_reinitialize_portaudio() is True
+    assert calls == ["terminate", "initialize"]
+
+
+def test_MS28_a_failed_watchdog_restart_retries():
+    """MS28 (Python only): a watchdog restart that cannot open the device is a failed attempt and
+    retries, as Swift's recovery does when start() throws — not a reported success."""
+    sut = _make_sut(saved=BUILT_IN)
+    attempts: list = []
+
+    def failing_reinitialize():
+        raise dm.InputDeviceOpenError(BUILT_IN.name)
+
+    sut.reinitialize_portaudio = failing_reinitialize
+    sut._attempt_watchdog_recovery = lambda: attempts.append("retry")
+    sut._is_recovering = True
+    sut._do_watchdog_restart()
+    assert attempts == ["retry"]
+    assert sut._is_recovering is True

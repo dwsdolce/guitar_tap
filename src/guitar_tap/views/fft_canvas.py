@@ -211,6 +211,7 @@ class FftCanvas(pg.PlotWidget):
     showLoadedSettingsWarningChanged: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var showLoadedSettingsWarning
     microphoneWarningChanged: QtCore.Signal = QtCore.Signal(object)        # str | None — mirrors Swift @Published var microphoneWarning
     inputDeviceSwitched: QtCore.Signal = QtCore.Signal(object)             # AudioDevice — relays TapToneAnalyzer.inputDeviceSwitched
+    inputDeviceOpenFailed: QtCore.Signal = QtCore.Signal(str)              # message — relays TapToneAnalyzer.inputDeviceOpenFailed
     measurementLoadStarting: QtCore.Signal = QtCore.Signal()               # relays TapToneAnalyzer.measurementLoadStarting
     measurementLoaded: QtCore.Signal = QtCore.Signal(object)               # relays TapToneAnalyzer.measurementLoaded
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
@@ -357,6 +358,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.showLoadedSettingsWarningChanged.connect(self.showLoadedSettingsWarningChanged)
         self.analyzer.microphoneWarningChanged.connect(self.microphoneWarningChanged)
         self.analyzer.inputDeviceSwitched.connect(self.inputDeviceSwitched)
+        self.analyzer.inputDeviceOpenFailed.connect(self.inputDeviceOpenFailed)
         self.analyzer.measurementLoadStarting.connect(self.measurementLoadStarting)
         self.analyzer.measurementLoaded.connect(self.measurementLoaded)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)

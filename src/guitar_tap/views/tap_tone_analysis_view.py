@@ -2195,6 +2195,7 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.showLoadedSettingsWarningChanged.connect(self._on_loaded_settings_warning_changed)
         # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
         canvas.inputDeviceSwitched.connect(self._on_input_device_switched)
+        canvas.inputDeviceOpenFailed.connect(self._on_input_device_open_failed)
         # Mirrors Swift @Published var microphoneWarning driving alert sheet.
         canvas.microphoneWarningChanged.connect(self._on_microphone_warning_changed)
         # Every load, from any caller, brings the view along — Swift re-renders reactively.
@@ -2851,6 +2852,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._warn_pulse_timer.stop()
             self._warn_opacity_effect.setOpacity(1.0)
             self._sb_warning_wgt.setVisible(False)
+
+    def _on_input_device_open_failed(self, message: str) -> None:
+        """A device switched to while running (plugged in, or a fallback) could not be opened; the
+        previous device is kept. Swift's alert on inputDeviceOpenFailure."""
+        selected = self.fft_canvas.analyzer.mic.selected_input_device
+        if selected is not None:
+            self.device_status_lbl.setText(selected.name)
+        self._update_mic_name_label()
+        QtWidgets.QMessageBox.warning(self, "Microphone Unavailable", message)
 
     def _on_input_device_switched(self, device) -> None:
         """Show the device a measurement load switched the input to.
@@ -6487,7 +6497,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 audio_dev = input_devices[combo_idx]
                 engine_dev = self.fft_canvas.analyzer.mic.selected_input_device
                 if engine_dev is None or audio_dev.fingerprint != engine_dev.fingerprint:
-                    self.fft_canvas.set_device(audio_dev)
+                    from guitar_tap.models.realtime_fft_analyzer_device_management import (
+                        InputDeviceOpenError,
+                    )
+                    try:
+                        self.fft_canvas.set_device(audio_dev)
+                    except InputDeviceOpenError as exc:
+                        # Not selected, not saved: the previous device is still in use. Show it.
+                        kept = self.fft_canvas.analyzer.mic.selected_input_device
+                        device_combo.blockSignals(True)
+                        for i, d in enumerate(input_devices):
+                            if kept is not None and d.fingerprint == kept.fingerprint:
+                                device_combo.setCurrentIndex(i)
+                        device_combo.blockSignals(False)
+                        _update_sr_lbl(device_combo.currentIndex())
+                        _update_cal_display()
+                        QtWidgets.QMessageBox.warning(dlg, "Microphone Unavailable", str(exc))
+                        return
                     # set_device() only reopens the stream + recomputes freq bins.
                     # The hot-plug path (_on_devices_refreshed_impl) follows it with
                     # handle_route_change_restart(), which blanks/refills the spectrum

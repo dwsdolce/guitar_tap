@@ -793,17 +793,20 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         QtCore.QTimer.singleShot(int(backoff * 1000), self._do_watchdog_restart)
 
     def _do_watchdog_restart(self) -> None:
-        """Re-open the stream via the proven device-refresh path, then re-arm.
+        """Re-open the selected device via ``reinitialize_portaudio``, then re-arm.
 
-        ``reinitialize_portaudio`` (close + reinit PortAudio + recreate InputStream +
-        start) swallows errors and leaves the stream closed on failure, so if buffers
-        still don't flow the next watchdog tick retries (bounded by max attempts).
+        A restart that cannot open the device is a failed attempt: it retries at once through
+        ``_attempt_watchdog_recovery`` (bounded by max attempts), as Swift's recovery does when
+        ``start()`` throws.
         """
         try:
             self.reinitialize_portaudio()
-            gt_log(f"✅ Buffer watchdog: stream restarted (attempt {self._watchdog_recovery_attempts})")
         except Exception as e:  # noqa: BLE001 — last-resort recovery, never raise
-            gt_log(f"⚠️ Buffer watchdog: restart failed ({e})")
+            gt_log(f"⚠️ Buffer watchdog: restart could not open "
+                   f"'{getattr(e, 'device_name', e)}' — retrying")
+            self._attempt_watchdog_recovery()
+            return
+        gt_log(f"✅ Buffer watchdog: stream restarted (attempt {self._watchdog_recovery_attempts})")
         self._is_recovering = False
         # re-arm; only REAL signal clears the streak
         self.start_buffer_watchdog(is_watchdog_recovery=True)

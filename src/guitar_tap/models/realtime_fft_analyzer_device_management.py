@@ -161,6 +161,21 @@ def _system_default_fingerprint(inputs: "list[dict]") -> "str | None":
     return None
 
 
+def failed_open_message(name: str) -> str:
+    """The message shown when an input device cannot be opened. Mirrors Swift
+    ``RealtimeFFTAnalyzer.failedOpenMessage(for:)``."""
+    return (f"Could not open the microphone '{name}'. The previous input is still in use — "
+            f"please check the microphone.")
+
+
+class InputDeviceOpenError(Exception):
+    """An input device could not be opened; the previous device is still selected and in use."""
+
+    def __init__(self, device_name: str) -> None:
+        super().__init__(failed_open_message(device_name))
+        self.device_name = device_name
+
+
 class RealtimeFFTAnalyzerDeviceManagementMixin:
     """Device management methods for RealtimeFFTAnalyzer.
 
@@ -264,28 +279,37 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             return
 
         current = self.selected_input_device
-        if current is not None and not any(d.fingerprint == current.fingerprint for d in devices):
+        if current is None:
+            return
+        fresh = next((d for d in devices if d.fingerprint == current.fingerprint), None)
+        if fresh is None:
             self.selected_input_device = input_device_to_use(
                 devices, None, system_default_fingerprint
             )
             chosen = self.selected_input_device
             gt_log(f"🎤 '{current.name}' disconnected, switched to: "
                    f"{chosen.name if chosen is not None else 'none'}")
+        elif fresh.index != current.index:
+            # The same device, renumbered: PortAudio numbers devices by position and renumbers them
+            # when it is re-initialised, so the selection takes the fresh entry — its index is what
+            # the stream is opened with. Not a new selection: nothing is saved or reloaded.
+            self._selected_input_device = fresh
 
     # MARK: - Device Switch (mirrors setInputDevice(_:))
 
     def set_device(self, device: "AudioDevice") -> None:
         """Switch to a different input device and restart the audio stream.
 
-        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:).
+        Mirrors Swift RealtimeFFTAnalyzer.setInputDevice(_:) / switchInputDevice(to:open:).
 
-        Assigning self.selected_input_device fires the property setter which
-        persists the fingerprint and auto-loads calibration — mirroring Swift's
-        selectedInputDevice.didSet.
+        Assigning self.selected_input_device fires the property setter which saves the device and
+        auto-loads its calibration — mirroring Swift's selectedInputDevice.didSet. If the device
+        cannot be opened, the previous device is selected and opened again and
+        ``InputDeviceOpenError`` is raised, so a device that cannot be used is never left selected
+        or saved.
         """
         # No-op if we're already on this device with a live stream.  set_device is
-        # called redundantly (e.g. _show_settings syncs the saved device on every
-        # open, and the device-combo selection signal also fires), and each call
+        # called redundantly (e.g. the device-combo selection signal and a refresh), and each call
         # tears the stream down and reopens it.  Rapid open/close churns the CoreAudio
         # AUHAL into -10851 (InvalidPropertyValue) / Pa -9986 on some mics (e.g. the
         # UMIK-1), so skip the rebuild when nothing actually changed.
@@ -296,10 +320,26 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         ):
             return
 
+        previous = self._selected_input_device
+        try:
+            self._open_device(device)
+        except sd.PortAudioError as exc:
+            gt_log(f"❌ Could not open '{device.name}' ({exc}) — keeping "
+                   f"'{previous.name if previous is not None else 'none'}'")
+            if previous is not None and previous.fingerprint != device.fingerprint:
+                try:
+                    self._open_device(previous)
+                except sd.PortAudioError as exc2:
+                    gt_log(f"Could not reopen '{previous.name}' ({exc2}); stream left closed")
+            raise InputDeviceOpenError(device.name) from exc
+
+    def _open_device(self, device: "AudioDevice") -> None:
+        """Select *device* (the setter saves it and loads its calibration) and open its stream.
+        Raises sd.PortAudioError, with the stream left closed, if it cannot be opened."""
         self._close_stream_only()
         self.device_index = device.index
         self.rate = int(device.sample_rate)
-        self.selected_input_device = device  # property setter persists fingerprint + loads calibration
+        self.selected_input_device = device
         gt_log(f"🎤 Device index={device.index}, native SR={device.sample_rate} Hz — switching")
 
         # Reset diagnostic counters so each device session is reported independently.
@@ -317,12 +357,9 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                 callback=self.new_frame,
             )
             self.stream.start()
-        except sd.PortAudioError as exc:
-            # Don't raise into the UI action; leave the stream closed and log.  The
-            # hot-plug refresh or the next valid selection recovers.
-            gt_log(f"Could not open '{device.name}' ({exc}); stream left closed")
+        except sd.PortAudioError:
             self.stream = None
-            return
+            raise
         gt_log(f"🎤 Audio engine started")
         gt_log(f"🎤 Hardware sample rate: {self.rate} Hz, hardware channels: 1 (tap will use mono)")
 
@@ -330,26 +367,31 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         self.rate = _log_stream_diagnostics(self.stream, self.rate)
 
     def reinitialize_portaudio(self) -> None:
-        """Stop, reinitialize PortAudio (refreshes device list), then restart.
+        """Stop, reinitialize PortAudio (refreshes device list), then reopen the selected device.
 
         PortAudio caches the device list at Pa_Initialize() time.  Calling
         sd._terminate() + sd._initialize() forces a fresh enumeration so that
-        sd.query_devices() reflects the current OS device list.
+        sd.query_devices() reflects the current OS device list — and renumbers the devices, so the
+        selected device is looked up again by its fingerprint before its stream is opened.
 
-        If the current device is no longer available after reinit (it was
-        unplugged), the stream is left closed; the caller is responsible for
-        selecting a replacement via set_device().
+        Raises ``InputDeviceOpenError`` if the selected device is no longer listed or cannot be
+        opened (the stream is left closed); the watchdog counts that as a failed attempt.
 
         Python-only — Swift reloads the device list via
         loadAvailableInputDevices() which calls CoreAudio/AVAudioSession APIs
         directly (no reinit step needed).
         """
         self._close_stream_only()
-        try:
-            sd._terminate()
-            sd._initialize()
-        except Exception:
-            pass
+        self.terminate_and_reinitialize_portaudio()
+        selected = self._selected_input_device
+        if selected is None:
+            raise InputDeviceOpenError("none")
+        fresh = self._listed_device(selected.fingerprint)
+        if fresh is None:
+            self.stream = None
+            raise InputDeviceOpenError(selected.name)
+        self._selected_input_device = fresh  # the same device, as PortAudio now numbers it
+        self.device_index = fresh.index
         try:
             with self._stop_lock:
                 self.is_stopped = False
@@ -362,10 +404,39 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                 callback=self.new_frame,
             )
             self.stream.start()
+        except sd.PortAudioError as exc:
+            self.stream = None
+            raise InputDeviceOpenError(fresh.name) from exc
+
+    def terminate_and_reinitialize_portaudio(self) -> bool:
+        """Terminate and re-initialise PortAudio, so its device list is current. Returns False —
+        and does neither — while a stream close is still pending: terminating waits for every
+        stream to finish, and a close that timed out never does (on macOS, a stuck CoreAudio I/O
+        thread), so it would block the calling thread for good."""
+        pending = getattr(self, "_pending_stream_close", None)
+        if pending is not None and pending.is_alive():
+            gt_log("⚠️ A stream close is still pending — PortAudio not re-initialised "
+                   "(terminating would wait on it)")
+            return False
+        try:
+            sd._terminate()
+            sd._initialize()
         except Exception:
-            # Device no longer available — stream stays closed until
-            # set_device() is called with a working device index.
             pass
+        return True
+
+    def _listed_device(self, fingerprint: str) -> "AudioDevice | None":
+        """The listed input device with *fingerprint*, as PortAudio numbers it now, or None."""
+        from .audio_device import AudioDevice as _AD
+        from .audio_device import filter_input_devices as _filter
+        try:
+            for d in _filter(list(sd.query_devices())):
+                device = _AD.from_sounddevice_dict(d)
+                if device.fingerprint == fingerprint:
+                    return device
+        except Exception:
+            pass
+        return None
 
     # MARK: - Internal Helpers
 
@@ -406,6 +477,8 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         if t.is_alive():
             gt_log("⚠️ _close_stream_only: abort/close timed out after 2 s — "
                    "proceeding without waiting")
+            # Remembered so PortAudio is not terminated while it is still pending.
+            self._pending_stream_close = t
 
     # MARK: - Hot-plug Monitoring (mirrors registerMacOSHardwareListener / routeChangeNotification)
 
@@ -419,10 +492,16 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         Mirrors the body of Swift's hardwareListenerBlock / handleRouteChange
         which calls loadAvailableInputDevices() on the main thread.
         """
+        gt_log("🔌 Device change reported by the system")
         if self._on_devices_changed is None:
+            gt_log("🔌 Device change dropped — no handler connected")
             return
         time.sleep(0.5)
-        self._on_devices_changed()
+        callback = self._on_devices_changed
+        if callback is None:
+            gt_log("🔌 Device change dropped — handler disconnected during an enumeration")
+            return
+        callback()
 
     def _start_hotplug_monitor(self) -> None:
         """Start the platform-appropriate hot-plug monitor.

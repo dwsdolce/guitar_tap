@@ -189,6 +189,10 @@ class TapToneAnalyzer(
     # Emitted after load_measurement() switched the input to the recorded microphone, so the
     # view shows it. Payload: AudioDevice. Swift's view re-reads @Published selectedInputDevice.
     inputDeviceSwitched: QtCore.Signal = QtCore.Signal(object)
+    # Emitted when a device switched to while running (plugged in, or a fallback) could not be
+    # opened; the previous device is kept. Payload: the message for the alert. Mirrors Swift
+    # @Published var inputDeviceOpenFailure.
+    inputDeviceOpenFailed: QtCore.Signal = QtCore.Signal(str)
     # The two edges of load_measurement() — is_loading_measurement going True, then False (Swift's
     # isLoadingMeasurement). SwiftUI re-renders from the loaded state on its own; Qt does not, so the
     # view does its restoration work in response to these rather than by wrapping the load itself.

@@ -765,29 +765,41 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 # Device is connected — switch to it (for this session, not saved); its paired
                 # calibration loads with it, before the check below reads it. Mirrors Swift
                 # fftAnalyzer.setInputDevice(match).
+                # If it cannot be opened the current input is kept and the load says so.
+                from guitar_tap.models.realtime_fft_analyzer_device_management import (
+                    InputDeviceOpenError,
+                )
+                switch_failed = None
                 if mic.selected_input_device != match:
-                    self.set_device(match)
-                    self.inputDeviceSwitched.emit(match)
-                    gt_log(f"🎤 Auto-selected microphone '{label}' for loaded measurement")
-                # Same microphone — flag calibration / sample-rate differences (mirrors
-                # the Swift tiered warning): a new tap would then not match this measurement.
-                diffs: list[str] = []
-                if measurement.calibration_name != getattr(self, "_active_calibration_name", None):
-                    diffs.append("calibration")
-                rec_rate = measurement.sample_rate
-                cur_rate = getattr(mic, "rate", None)
-                if rec_rate is not None and cur_rate is not None and round(rec_rate) != round(cur_rate):
-                    diffs.append("sample rate")
-                if diffs:
-                    _warn = (
-                        f"This measurement was recorded with a different {' and '.join(diffs)}. "
-                        f"A newly captured tap may not match the saved result."
-                    )
-                    self.microphone_warning = _warn
-                    self.microphoneWarningChanged.emit(_warn)
+                    try:
+                        self.set_device(match)
+                        self.inputDeviceSwitched.emit(match)
+                        gt_log(f"🎤 Auto-selected microphone '{label}' for loaded measurement")
+                    except InputDeviceOpenError as exc:
+                        switch_failed = str(exc)
+                if switch_failed is not None:
+                    self.microphone_warning = switch_failed
+                    self.microphoneWarningChanged.emit(switch_failed)
                 else:
-                    self.microphone_warning = None
-                    self.microphoneWarningChanged.emit(None)
+                    # Same microphone — flag calibration / sample-rate differences (mirrors
+                    # the Swift tiered warning): a new tap would then not match this measurement.
+                    diffs: list[str] = []
+                    if measurement.calibration_name != getattr(self, "_active_calibration_name", None):
+                        diffs.append("calibration")
+                    rec_rate = measurement.sample_rate
+                    cur_rate = getattr(mic, "rate", None)
+                    if rec_rate is not None and cur_rate is not None and round(rec_rate) != round(cur_rate):
+                        diffs.append("sample rate")
+                    if diffs:
+                        _warn = (
+                            f"This measurement was recorded with a different {' and '.join(diffs)}. "
+                            f"A newly captured tap may not match the saved result."
+                        )
+                        self.microphone_warning = _warn
+                        self.microphoneWarningChanged.emit(_warn)
+                    else:
+                        self.microphone_warning = None
+                        self.microphoneWarningChanged.emit(None)
             else:
                 # See the note at the missing_names warning above: a no-match cannot distinguish
                 # "unplugged" from "attached under a different name on this platform".
