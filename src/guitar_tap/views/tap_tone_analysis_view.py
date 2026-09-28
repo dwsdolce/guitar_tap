@@ -2194,7 +2194,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Mirrors Swift .onChange(of: tap.showLoadedSettingsWarning) driving banner animation.
         canvas.showLoadedSettingsWarningChanged.connect(self._on_loaded_settings_warning_changed)
         # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
-        canvas.requestDeviceSwitch.connect(self._on_request_device_switch)
+        canvas.inputDeviceSwitched.connect(self._on_input_device_switched)
         # Mirrors Swift @Published var microphoneWarning driving alert sheet.
         canvas.microphoneWarningChanged.connect(self._on_microphone_warning_changed)
         # Every load, from any caller, brings the view along — Swift re-renders reactively.
@@ -2854,15 +2854,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._warn_opacity_effect.setOpacity(1.0)
             self._sb_warning_wgt.setVisible(False)
 
-    def _on_request_device_switch(self, device) -> None:
-        """Switch to the device emitted by the model after loading a measurement.
+    def _on_input_device_switched(self, device) -> None:
+        """Show the device a measurement load switched the input to.
 
-        Connected to canvas.requestDeviceSwitch — mirrors Swift
-        fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
+        Connected to canvas.inputDeviceSwitched — Swift's view re-reads selectedInputDevice.
         """
-        canvas = self.fft_canvas
-        canvas.set_device(device)
-        AS.AppSettings.set_audio_device(device)
         self.device_status_lbl.setText(device.name)
 
     def _on_microphone_warning_changed(self, warning: "str | None") -> None:
@@ -4596,8 +4592,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notes = ""
 
         # ── Auto-select the recorded microphone ───────────────────────────────
-        # Handled reactively: _load_measurement_body() emits requestDeviceSwitch
-        # (drives _on_request_device_switch) and microphoneWarningChanged
+        # Handled reactively: _load_measurement_body() emits inputDeviceSwitched
+        # (drives _on_input_device_switched) and microphoneWarningChanged
         # (drives _on_microphone_warning_changed).  No view-side logic needed here.
 
         # ── Advance plate/brace phase UI to COMPLETE ──────────────────────────
@@ -5635,9 +5631,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_devices_changed(self, device_names: list[str]) -> None:
         """Sync the UI after the model has processed a hot-plug event.
 
-        The model (_on_devices_refreshed) already called set_device() on the
-        newly-selected device via mic.load_available_input_devices() +
-        auto-selection logic. We read the already-selected device from the
+        The model (_on_devices_refreshed) already selected the new device via
+        mic.load_available_input_devices() and called set_device() on it. We read the already-selected device from the
         model rather than re-implementing the selection here.
         """
         new_names = set(device_names)
@@ -5653,7 +5648,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if selected is not None and selected.name in added:
             self.device_status_lbl.setText(selected.name)
-            AS.AppSettings.set_audio_device(selected)
             _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.fingerprint)
             if _cal is None:
                 _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.name)
@@ -5663,9 +5657,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_device_lost(self, device_name: str) -> None:
         """Active device disconnected — sync the UI to the model's already-chosen fallback.
 
-        The model (_on_devices_refreshed) already called _auto_select_on_hotplug()
-        via load_available_input_devices(), which falls back to built-in or first
-        available, and then called set_device() on the fallback. We just read the
+        The model (_on_devices_refreshed) already selected the fallback via
+        load_available_input_devices() — the saved choice if present, else the system
+        default, else the first — and then called set_device() on it. We just read the
         model's selection and update the UI labels.
         """
         selected = getattr(self.fft_canvas.analyzer, "mic", None)
@@ -5676,7 +5670,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         self.device_status_lbl.setText(selected.name)
-        AS.AppSettings.set_audio_device(selected)
         _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.fingerprint)
         if _cal is None:
             _cal = _mc_mod.CalibrationStorage.calibration_for_device(selected.name)
@@ -5703,13 +5696,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         _mc_mod.CalibrationStorage.save(cal)
         AS.AppSettings.set_calibration_path(os.path.dirname(path))
-        dev_name = (
-            self.fft_canvas.current_calibration_device()
-            or AS.AppSettings.device_name()
-        )
-        if dev_name:
-            _mc_mod.CalibrationStorage.set_calibration_for_device(dev_name, cal.id)
-        self.fft_canvas.load_calibration_from_profile(cal)
+        # Activate the newly imported calibration (saved for the selected device).
+        self.fft_canvas.choose_calibration(cal)
         self.set_calibration_status(cal.name)
 
     # ================================================================
@@ -6463,68 +6451,20 @@ class MainWindow(QtWidgets.QMainWindow):
         aud.addLayout(dev_row)
         aud.addWidget(_hsep())
 
-        # Windows only: PortAudio caches its device list at init time, so a mic
-        # connected AFTER launch is invisible to the sd.query_devices() call
-        # below and never appears in the combo.  Opening Settings is the natural,
-        # deliberate moment to refresh the list, so flush PortAudio's cache once
-        # here.  reinitialize_portaudio() closes + terminates/re-inits + reopens
-        # the stream on the CURRENT device, so it refreshes the enumeration
-        # WITHOUT switching mics.  Being user-initiated and one-shot, it causes
-        # none of the cascade/churn of the hot-plug notification path.  macOS
-        # enumerates live via its CoreAudio listener and needs no flush.
-        import platform as _platform_mic
+        # The engine's device list — kept current by its hot-plug handling. Opening Settings
+        # neither re-enumerates nor selects. Mirrors Swift's picker over availableInputDevices.
+        input_devices = list(self.fft_canvas.analyzer.mic.available_input_devices)
 
-        import sounddevice as sd  # lazy: already warm by this point; explicit for clarity
-        if _platform_mic.system() == "Windows":
-            try:
-                self.fft_canvas.analyzer.mic.reinitialize_portaudio()
-            except Exception:
-                pass
-
-        from guitar_tap.models.audio_device import AudioDevice as _AudioDevice
-        from guitar_tap.models.audio_device import filter_input_devices as _filter_inputs
-        input_devices: list[_AudioDevice] = []
-        default_input: dict | None = None
-        try:
-            default_input = sd.query_devices(kind="input")
-            for dev in _filter_inputs(list(sd.query_devices())):
-                input_devices.append(_AudioDevice.from_sounddevice_dict(dev))
-        except Exception:
-            pass
-
-        # Auto-selection policy mirrors Swift loadAvailableInputDevicesMacOS:
-        #   1. Saved device by fingerprint (selectedInputDeviceUID match)
-        #   2. Saved device by name (legacy fallback for pre-fingerprint profiles)
-        #   3. System default input device (kAudioHardwarePropertyDefaultInputDevice)
-        #   4. First device in the enumerated list (Qt combo default at index 0)
-        saved_fp = AS.AppSettings.audio_device_fingerprint()
-        saved_name = AS.AppSettings.device_name()
+        # The combo shows the engine's selected device; opening Settings selects nothing.
+        engine_dev = self.fft_canvas.analyzer.mic.selected_input_device
+        engine_fp = engine_dev.fingerprint if engine_dev is not None else ""
         current_dev_idx = -1
         for list_idx, audio_dev in enumerate(input_devices):
             device_combo.addItem(audio_dev.name)
-            if audio_dev.fingerprint == saved_fp or (
-                current_dev_idx < 0 and audio_dev.name == saved_name
-            ):
+            if audio_dev.fingerprint == engine_fp:
                 current_dev_idx = list_idx
-        # Step 3: if neither saved fingerprint nor saved name matched, fall back
-        # to the system default input device.
-        if current_dev_idx < 0 and default_input is not None:
-            try:
-                default_fp = _AudioDevice.from_sounddevice_dict(default_input).fingerprint
-                for list_idx, audio_dev in enumerate(input_devices):
-                    if audio_dev.fingerprint == default_fp:
-                        current_dev_idx = list_idx
-                        break
-            except (KeyError, ValueError, TypeError):
-                pass
         if current_dev_idx >= 0:
             device_combo.setCurrentIndex(current_dev_idx)
-            # _on_device_selected is not connected yet, so explicitly sync the engine
-            # to the saved device.  This mirrors the Swift path where selectedInputDevice
-            # is assigned during init before any UI signals are live.
-            init_dev = input_devices[current_dev_idx]
-            self.fft_canvas.set_device(init_dev)
-            AS.AppSettings.set_audio_device(init_dev)
 
         sr_row = QtWidgets.QHBoxLayout()
         sr_lbl = QtWidgets.QLabel("Sample Rate:")
@@ -6548,7 +6488,10 @@ class MainWindow(QtWidgets.QMainWindow):
         def _on_device_selected(combo_idx: int) -> None:
             if 0 <= combo_idx < len(input_devices):
                 audio_dev = input_devices[combo_idx]
-                if audio_dev.fingerprint != AS.AppSettings.audio_device_fingerprint():
+                engine_dev = self.fft_canvas.analyzer.mic.selected_input_device
+                if engine_dev is None or audio_dev.fingerprint != engine_dev.fingerprint:
+                    # The user's choice: selected and saved, then the stream reopened on it.
+                    self.fft_canvas.analyzer.mic.choose_input_device(audio_dev)
                     self.fft_canvas.set_device(audio_dev)
                     # set_device() only reopens the stream + recomputes freq bins.
                     # The hot-plug path (_on_devices_refreshed_impl) follows it with
@@ -6559,55 +6502,29 @@ class MainWindow(QtWidgets.QMainWindow):
                     # switch leaves the app frozen (no spectrum, dead buttons), so
                     # mirror the hot-plug path here.
                     self.fft_canvas.analyzer.handle_route_change_restart()
-                    AS.AppSettings.set_audio_device(audio_dev)
                     self.device_status_lbl.setText(audio_dev.name)
                     self._update_mic_name_label()
                     _update_cal_display()
         device_combo.currentIndexChanged.connect(_on_device_selected)
 
         def _rebuild_device_combo(_: list[str]) -> None:
-            """Refresh the device combo when sounddevice reports a change."""
+            """Refresh the device combo after the engine applies a device change."""
             nonlocal input_devices
-            try:
-                new_devices: list[_AudioDevice] = [
-                    _AudioDevice.from_sounddevice_dict(dev)
-                    for dev in _filter_inputs(list(sd.query_devices()))
-                ]
-            except Exception:
-                return
-            input_devices = new_devices
-            saved_fp = AS.AppSettings.audio_device_fingerprint()
-            saved_name = AS.AppSettings.device_name()
+            input_devices = list(self.fft_canvas.analyzer.mic.available_input_devices)
+            # The engine has already applied the change (a new device selected, or a fallback);
+            # the combo shows its selection.
+            engine_dev = self.fft_canvas.analyzer.mic.selected_input_device
+            engine_fp = engine_dev.fingerprint if engine_dev is not None else ""
             device_combo.blockSignals(True)
             device_combo.clear()
             restore_idx = -1
             for list_idx, audio_dev in enumerate(input_devices):
                 device_combo.addItem(audio_dev.name)
-                if audio_dev.fingerprint == saved_fp or (
-                    restore_idx < 0 and audio_dev.name == saved_name
-                ):
+                if audio_dev.fingerprint == engine_fp:
                     restore_idx = list_idx
-            if restore_idx >= 0:
-                device_combo.setCurrentIndex(restore_idx)
-            elif input_devices:
-                # Saved device not present — select first available but do NOT
-                # switch the engine; leave it on whatever it already has.
-                device_combo.setCurrentIndex(0)
+            device_combo.setCurrentIndex(restore_idx)
             device_combo.blockSignals(False)
-            # Explicitly sync the engine to the restored device.  We cannot rely
-            # on _on_device_selected here because signals were blocked above.
-            # Only switch when the restored device differs from what the engine
-            # already has (fingerprint comparison mirrors _on_device_selected).
-            cur_idx = device_combo.currentIndex()
-            if 0 <= cur_idx < len(input_devices):
-                restored_dev = input_devices[cur_idx]
-                engine_dev = self.fft_canvas.analyzer.mic.selected_input_device
-                engine_fp = engine_dev.fingerprint if engine_dev is not None else ""
-                if restored_dev.fingerprint != engine_fp:
-                    self.fft_canvas.set_device(restored_dev)
-                    AS.AppSettings.set_audio_device(restored_dev)
-                    self.device_status_lbl.setText(restored_dev.name)
-                    _update_cal_display()
+            _update_cal_display()
             _update_sr_lbl(device_combo.currentIndex())
 
         # Live-update the device combo while Settings is open: the hot-plug monitor
@@ -6657,8 +6574,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _update_cal_display() -> None:
             _rebuild_cal_combo()
-            cur_dev = device_combo.currentText()
-            active = _mc_mod.CalibrationStorage.calibration_for_device(cur_dev)
+            # The model's active calibration (Swift's picker shows fftAnalyzer.activeCalibration).
+            active = self.fft_canvas.analyzer._calibration_profile
             cal_combo.blockSignals(True)
             try:
                 if active:
@@ -6673,19 +6590,16 @@ class MainWindow(QtWidgets.QMainWindow):
         def _on_cal_selected(index: int) -> None:
             """Activate the selected calibration for the current device."""
             cal_id = cal_combo.itemData(index)
-            cur_dev = device_combo.currentText()
             if cal_id:
                 cal = next(
                     (c for c in _mc_mod.CalibrationStorage.load_all() if c.id == cal_id),
                     None,
                 )
                 if cal:
-                    _mc_mod.CalibrationStorage.set_calibration_for_device(cur_dev, cal.id)
-                    self.fft_canvas.load_calibration_from_profile(cal)
+                    self.fft_canvas.choose_calibration(cal)
                     self.set_calibration_status(cal.name)
             else:
-                _mc_mod.CalibrationStorage.set_calibration_for_device(cur_dev, None)
-                self.fft_canvas.clear_calibration()
+                self.fft_canvas.choose_calibration(None)
                 self.set_calibration_status("")
             _update_cal_display()
 
@@ -6712,10 +6626,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             _mc_mod.CalibrationStorage.save(cal)
             AS.AppSettings.set_calibration_path(os.path.dirname(path))
-            dev_name = device_combo.currentText()
-            if dev_name:
-                _mc_mod.CalibrationStorage.set_calibration_for_device(dev_name, cal.id)
-            self.fft_canvas.load_calibration_from_profile(cal)
+            # Activate the newly imported calibration (saved for the selected device).
+            self.fft_canvas.choose_calibration(cal)
             self.set_calibration_status(cal.name)
             _update_cal_display()
 
@@ -6803,8 +6715,11 @@ class MainWindow(QtWidgets.QMainWindow):
             box.exec()
             if box.clickedButton() != del_btn:
                 return
-            _mc_mod.CalibrationStorage.delete_all()
-            self.fft_canvas.clear_calibration()
+            # Clear the active calibration first, then delete every stored one (Swift
+            # deleteAllCalibrations).
+            self.fft_canvas.choose_calibration(None)
+            for cal in _mc_mod.CalibrationStorage.load_all():
+                _mc_mod.CalibrationStorage.delete(cal)
             self.set_calibration_status("")
             _update_cal_display()
 

@@ -210,7 +210,7 @@ class FftCanvas(pg.PlotWidget):
     playingFileNameChanged: QtCore.Signal = QtCore.Signal(object)        # str | None — mirrors Swift @Published var playingFileName on RealtimeFFTAnalyzer
     showLoadedSettingsWarningChanged: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var showLoadedSettingsWarning
     microphoneWarningChanged: QtCore.Signal = QtCore.Signal(object)        # str | None — mirrors Swift @Published var microphoneWarning
-    requestDeviceSwitch: QtCore.Signal = QtCore.Signal(object)             # AudioDevice — mirrors Swift fftAnalyzer.setInputDevice(match)
+    inputDeviceSwitched: QtCore.Signal = QtCore.Signal(object)             # AudioDevice — relays TapToneAnalyzer.inputDeviceSwitched
     measurementLoadStarting: QtCore.Signal = QtCore.Signal()               # relays TapToneAnalyzer.measurementLoadStarting
     measurementLoaded: QtCore.Signal = QtCore.Signal(object)               # relays TapToneAnalyzer.measurementLoaded
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
@@ -283,155 +283,39 @@ class FftCanvas(pg.PlotWidget):
         self._maxFreq: float = float(frange["f_max"])
         self.setXRange(frange["f_min"], frange["f_max"], padding=0)
 
-        # Resolve the saved AudioDevice (fingerprint → live index).
-        # Mirrors Swift RealtimeFFTAnalyzer selectedInputDevice restore logic.
-        #
-        # IMPORTANT (Windows): use filter_input_devices() to strip WDM-KS variants
-        # and Sound-Mapper / loopback pseudo-devices.  PortAudio happily opens a
-        # WDM-KS stream in shared mode and then delivers all-zero samples (-313
-        # dB) with no error — indistinguishable from a working device.  See the
-        # docstring on filter_input_devices() in models/audio_device.py for
-        # details.  Without this filter, persisted fingerprints (or the system
-        # default) can resolve to a WDM-KS entry and the mic appears dead.
-        import sounddevice as sd  # deferred: ~0.4 s cold-import cost
-
-        from guitar_tap.models.audio_device import AudioDevice as _AudioDevice
-        from guitar_tap.models.audio_device import filter_input_devices as _filter_inputs
-        from guitar_tap.models.realtime_fft_analyzer_device_management import _is_builtin_mic
-        _saved_audio_device: _AudioDevice | None = None
-        _filtered_devs: list[dict] = []
-        try:
-            _all_devs = list(sd.query_devices())
-            # Annotate each device dict with its host-API name so the filter
-            # doesn't need a second query_hostapis() call (which can fail
-            # mid-enumeration on Windows).
-            try:
-                _apis = list(sd.query_hostapis())
-                for _d in _all_devs:
-                    _ai = int(_d.get("hostapi", -1))
-                    if 0 <= _ai < len(_apis):
-                        _d["_hostapi_name"] = _apis[_ai].get("name", "")
-            except Exception:
-                pass
-            _filtered_devs = _filter_inputs(_all_devs)
-
-            _saved_fp = _as.AppSettings.audio_device_fingerprint()
-            if _saved_fp:
-                # Try fingerprint match first (name:sample_rate), then name-only fallback.
-                _proto = _AudioDevice.from_fingerprint(_saved_fp)
-                if _proto is not None:
-                    _saved_audio_device = _proto.resolve(_filtered_devs)
-                if _saved_audio_device is None:
-                    # Name-only fallback for settings saved before fingerprints.
-                    _saved_name = _as.AppSettings.device_name()
-                    for _d in _filtered_devs:
-                        if str(_d["name"]) == _saved_name and _d["max_input_channels"] > 0:
-                            _saved_audio_device = _AudioDevice.from_sounddevice_dict(_d)
-                            break
-        except Exception:
-            pass
-
-        # ── Built-in-mic override ────────────────────────────────────────
-        # If the persisted device resolved to a built-in / integrated mic
-        # (Microphone Array, Intel Smart Sound, Realtek HDA, etc.), and an
-        # external mic is available, prefer the external.  This recovers from
-        # a bad fingerprint that got persisted via _on_device_lost when an
-        # external mic was momentarily unenumerated, and prevents Windows
-        # built-in mics that silently deliver zeros under WASAPI shared mode
-        # from being chosen at startup when a real mic is present.  Mirrors
-        # the existing _BUILTIN_MIC_KEYWORDS deny-list intent.
-        if _saved_audio_device is not None and _is_builtin_mic(_saved_audio_device.name):
-            _external = next(
-                (d for d in _filtered_devs if not _is_builtin_mic(d["name"])),
-                None,
-            )
-            if _external is not None:
-                _saved_audio_device = _AudioDevice.from_sounddevice_dict(_external)
-                # Heal the persistence so the next launch picks the right one.
-                try:
-                    _as.AppSettings.set_audio_device(_saved_audio_device)
-                except Exception:
-                    pass
-
-        # If the saved device wasn't found, fall back to the system default
-        # input — but only if it survives the WDM-KS / pseudo-device filter
-        # AND is not a built-in mic when an external is available.  Otherwise
-        # pick the first external mic, then the first filtered device.
-        if _saved_audio_device is None:
-            try:
-                _def_info = sd.query_devices(kind="input")
-            except Exception:
-                _def_info = None
-            _def_dev: _AudioDevice | None = None
-            if _def_info is not None:
-                _def_dev = _AudioDevice.from_sounddevice_dict(_def_info)
-                # Accept the system default only if it appears in the
-                # filtered list (i.e. is not a WDM-KS / pseudo-device).
-                if _filtered_devs and not any(
-                    int(_d["index"]) == _def_dev.index for _d in _filtered_devs
-                ):
-                    _def_dev = None
-            # Prefer first external mic over the system default if the
-            # default turns out to be a built-in.
-            if (_def_dev is None or _is_builtin_mic(_def_dev.name)) and _filtered_devs:
-                _ext = next(
-                    (d for d in _filtered_devs if not _is_builtin_mic(d["name"])),
-                    None,
-                )
-                if _ext is not None:
-                    _def_dev = _AudioDevice.from_sounddevice_dict(_ext)
-            if _def_dev is None and _filtered_devs:
-                _def_dev = _AudioDevice.from_sounddevice_dict(_filtered_devs[0])
-            if _def_dev is not None:
-                _saved_audio_device = _def_dev
-                try:
-                    _as.AppSettings.set_audio_device(_saved_audio_device)
-                except Exception:
-                    pass
-
-        # Use the selected device's native sample rate if available.
-        # AudioDevice already carries sample_rate so no extra OS query is needed.
-        if _saved_audio_device is not None:
-            _native_rate = int(_saved_audio_device.sample_rate)
-            if _native_rate > 0:
-                sampling_rate = _native_rate
-
-        # ── TapToneAnalyzer: the model ─────────────────────────────────────
-        # Auto-load calibration profile before constructing the analyzer so we
-        # can pass the corrections array in.  Try fingerprint key first, then
-        # name-only fallback for profiles saved before fingerprints.
-        _initial_calibration = None
-        _initial_calibration_name = None
-        if _saved_audio_device is not None:
-            _cal = _mc_mod.CalibrationStorage.calibration_for_device(
-                _saved_audio_device.fingerprint
-            )
-            if _cal is None:
-                _cal = _mc_mod.CalibrationStorage.calibration_for_device(
-                    _saved_audio_device.name
-                )
-            if _cal is not None:
-                # FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
-                _fft_size = 65536
-                _x = np.arange(0, _fft_size // 2 + 1)
-                _freq_tmp = _x * sampling_rate // _fft_size
-                _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
-                _initial_calibration_name = _cal.name
-
         guitar_type_str = _as.AppSettings.guitar_type()
 
         # Create the FFT engine first, then pass it to TapToneAnalyzer.
         # Mirrors Swift: view creates RealtimeFFTAnalyzer, then passes it to
         # TapToneAnalyzer(fftAnalyzer:) so signals wire at construction time.
+        # The engine selects the input device — the saved choice when it is present, else the
+        # system default, else the first — and opens its stream at that device's rate.
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
         _mic = _Mic(
             self,
             rate=sampling_rate,
             chunksize=1024,
-            device=_saved_audio_device,
             on_devices_changed=None,       # wired by start() below
             on_calibration_changed=None,   # wired by start() below
         )
+
+        # The selected device's calibration, so the analyzer starts with its corrections. Try
+        # the fingerprint key first, then the name-only key of profiles saved before fingerprints.
+        _device = _mic.selected_input_device
+        _cal = None
+        _initial_calibration = None
+        _initial_calibration_name = None
+        if _device is not None:
+            _cal = _mc_mod.CalibrationStorage.calibration_for_device(_device.fingerprint)
+            if _cal is None:
+                _cal = _mc_mod.CalibrationStorage.calibration_for_device(_device.name)
+            if _cal is not None:
+                # FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
+                _fft_size = 65536
+                _x = np.arange(0, _fft_size // 2 + 1)
+                _freq_tmp = _x * _mic.rate // _fft_size
+                _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
+                _initial_calibration_name = _cal.name
         self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(fft_analyzer=_mic)
         self.analyzer.start(
             parent_widget=self,
@@ -472,7 +356,7 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.playingFileNameChanged.connect(self.playingFileNameChanged)
         self.analyzer.showLoadedSettingsWarningChanged.connect(self.showLoadedSettingsWarningChanged)
         self.analyzer.microphoneWarningChanged.connect(self.microphoneWarningChanged)
-        self.analyzer.requestDeviceSwitch.connect(self.requestDeviceSwitch)
+        self.analyzer.inputDeviceSwitched.connect(self.inputDeviceSwitched)
         self.analyzer.measurementLoadStarting.connect(self.measurementLoadStarting)
         self.analyzer.measurementLoaded.connect(self.measurementLoaded)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
@@ -1011,13 +895,9 @@ class FftCanvas(pg.PlotWidget):
         """Load and pre-interpolate a calibration file onto the FFT bin grid."""
         return self.analyzer.load_calibration(path)
 
-    def load_calibration_from_profile(self, cal: "_mc_mod.MicrophoneCalibration") -> None:
-        """Apply a pre-parsed MicrophoneCalibration profile to the FFT pipeline."""
-        self.analyzer.load_calibration_from_profile(cal)
-
-    def clear_calibration(self) -> None:
-        """Remove the active calibration (no dB correction applied)."""
-        self.analyzer.clear_calibration()
+    def choose_calibration(self, cal: "_mc_mod.MicrophoneCalibration | None") -> None:
+        """Apply and save the user's calibration choice (None: none) for the selected device."""
+        self.analyzer.choose_calibration(cal)
 
     def current_calibration_device(self) -> str:
         """Device name the active calibration is associated with."""

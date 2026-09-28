@@ -107,42 +107,58 @@ def _log_stream_diagnostics(stream: "sd.InputStream", requested_rate: int) -> in
     return actual_rate
 
 
-# Patterns for identifying built-in / integrated microphones.  Used by the
-# auto-select priority to prefer external (USB / Bluetooth / measurement)
-# mics over the laptop's built-in mic when no user preference is persisted.
-# Mirrors Swift's `uid.contains("BuiltInMicrophone")` heuristic, expanded
-# to cover the Windows / Linux device-name conventions PortAudio reports.
-#
-# Patterns are chosen to be specific enough that legitimate USB/Bluetooth
-# mic names (UMIK-1, "USB Audio Device", brand-named mics) won't match.
-# False negatives (missing a built-in) are preferred over false positives
-# (rejecting the user's real mic).
-_BUILTIN_MIC_KEYWORDS = (
-    # macOS
-    "built-in",            # macOS / generic
-    "macbook",             # macOS legacy naming
-    # Windows
-    "internal",            # Windows / Linux generic
-    "microphone array",    # Windows generic built-in mic array
-    "intel smart sound",   # Windows on Intel laptops (DSP-fronted built-in)
-    "realtek",             # Common integrated audio codec (Windows + Linux)
-    # Linux (ALSA / PulseAudio / PipeWire device naming)
-    "hda intel",           # ALSA Intel HDA codec — the typical onboard chip
-    "hd-audio intel",      # ALSA alternate spelling
-    "hda generic",         # Generic HDA codec name
-    "hd-audio generic",    # Generic HDA codec, alternate spelling
-    "analog stereo",       # PulseAudio analog profile (built-in audio routes)
-)
+def input_device_to_use(devices: list, saved_fingerprint: "str | None",
+                        system_default_fingerprint: "str | None") -> "AudioDevice | None":
+    """The input device to use from *devices*: the saved choice when it is present, otherwise
+    the system default input, otherwise the first device. None when there are no devices.
 
-
-def _is_builtin_mic(name: str) -> bool:
-    """Heuristic: True when *name* matches a known built-in / integrated mic
-    pattern.  Used by ``_auto_select_initial_device`` to skip built-in mics
-    in favour of external measurement mics (UMIK-1, USB, Bluetooth, etc.)
-    when no user preference is persisted.
+    Mirrors Swift ``RealtimeFFTAnalyzer.inputDeviceToUse(in:savedUID:systemDefaultUID:)``.
     """
-    n = (name or "").lower()
-    return any(kw in n for kw in _BUILTIN_MIC_KEYWORDS)
+    if saved_fingerprint:
+        saved = next((d for d in devices if d.fingerprint == saved_fingerprint), None)
+        if saved is not None:
+            return saved
+    if system_default_fingerprint:
+        system_default = next(
+            (d for d in devices if d.fingerprint == system_default_fingerprint), None
+        )
+        if system_default is not None:
+            return system_default
+    return devices[0] if devices else None
+
+
+def _system_default_fingerprint(inputs: "list[dict]") -> "str | None":
+    """Fingerprint of the system default input among *inputs* (filtered PortAudio device dicts),
+    or None.
+
+    The default is the default input of the host API the inputs are listed under — on Windows
+    the filter keeps one API (WASAPI when present), whose default is Windows' default recording
+    device. PortAudio's global default (``sd.default.device``) belongs to its own host API (MME
+    on Windows), so it is only the fallback. Mirrors Swift reading
+    kAudioHardwarePropertyDefaultInputDevice.
+    """
+    candidates: list[int] = []
+    try:
+        apis = list(sd.query_hostapis())
+        for api_index in dict.fromkeys(int(d.get("hostapi", -1)) for d in inputs):
+            if 0 <= api_index < len(apis):
+                candidates.append(int(apis[api_index].get("default_input_device", -1)))
+    except Exception:
+        pass
+    try:
+        global_default = sd.default.device[0]
+        if global_default is not None:
+            candidates.append(int(global_default))
+    except Exception:
+        pass
+    from .audio_device import AudioDevice as _AD
+    for index in candidates:
+        if index < 0:
+            continue
+        match = next((d for d in inputs if int(d["index"]) == index), None)
+        if match is not None:
+            return _AD.from_sounddevice_dict(match).fingerprint
+    return None
 
 
 class RealtimeFFTAnalyzerDeviceManagementMixin:
@@ -169,23 +185,10 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
     # MARK: - Device Enumeration (mirrors loadAvailableInputDevices / loadAvailableInputDevicesMacOS)
 
     def load_available_input_devices(self) -> None:
-        """Enumerate PortAudio input devices and update available_input_devices.
+        """Enumerate PortAudio input devices and apply them with ``apply_input_device_list``.
 
         Mirrors Swift RealtimeFFTAnalyzer.loadAvailableInputDevices() →
         loadAvailableInputDevicesMacOS().
-
-        On initial load (available_input_devices is empty) applies the
-        priority-based auto-selection policy below.  On subsequent calls
-        (hot-plug) auto-selects newly appeared real devices or falls back.
-
-        Auto-selection priority (mirrors Swift loadAvailableInputDevicesMacOS):
-          1. Previously persisted device (fingerprint in AppSettings)
-             Swift: UserDefaults "selectedInputDeviceUID"
-          2. Built-in microphone (name contains "Built-in" or "MacBook")
-             Swift: uid.contains("BuiltInMicrophone")
-          3. System default PortAudio input device
-             Swift: kAudioHardwarePropertyDefaultInputDevice
-          4. First available device
         """
         from .audio_device import AudioDevice as _AD
         from .audio_device import filter_input_devices as _filter
@@ -206,160 +209,82 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         except Exception:
             pass
 
-        devices: list[AudioDevice] = [
-            _AD.from_sounddevice_dict(d) for d in _filter(raw)
-        ]
+        inputs = _filter(raw)
+        devices: list[AudioDevice] = [_AD.from_sounddevice_dict(d) for d in inputs]
 
         for d in devices:
             gt_log(f"🎤 Found input device: {d.name} @ {d.sample_rate} Hz")
         gt_log(f"🎤 Found {len(devices)} audio input device(s) total")
 
-        previous = list(self.available_input_devices)
-        self.available_input_devices = devices
-
-        if not previous:
-            self._auto_select_initial_device(devices)
-        else:
-            self._auto_select_on_hotplug(devices, previous)
+        self.apply_input_device_list(devices, _system_default_fingerprint(inputs))
 
         if self._on_devices_changed is not None:
             self._on_devices_changed()
 
-    def _auto_select_initial_device(self, devices: list) -> None:
-        """Apply priority-based auto-selection on the first device enumeration.
+    def apply_input_device_list(self, devices: list,
+                                system_default_fingerprint: "str | None") -> None:
+        """Apply a freshly enumerated device list to available_input_devices and the selection.
 
-        Priority order (mirrors Swift loadAvailableInputDevicesMacOS):
-          1. Previously persisted fingerprint (user's last explicit selection)
-          2. Any external mic (USB / Bluetooth / etc — anything that is NOT
-             a built-in / integrated / "Microphone Array" device).  This
-             prefers higher-quality measurement mics like the UMIK-1 over
-             the laptop's built-in mic when no preference is saved.
-          3. System default PortAudio input device.
-          4. First available device.
+        - The first list: selects ``input_device_to_use``.
+        - A new device that is not an aggregate device: ``choose_input_device`` — the user
+          plugged it in, so it is selected and saved.
+        - The selected device is gone: selects ``input_device_to_use``.
 
-        Assigning self.selected_input_device fires the property setter which
-        persists the fingerprint and auto-loads calibration — mirroring Swift's
-        selectedInputDevice.didSet.
+        The startup selection and a fallback are not saved, so a microphone that drops out is
+        still the saved choice when it returns. Mirrors Swift ``applyInputDeviceList``.
+
+        Assigning selected_input_device only selects; the analyzer reopens the stream
+        (``_on_devices_refreshed_impl``) or, at construction, the stream opens on it.
         """
-        if not devices:
+        from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
+
+        previous = list(self.available_input_devices)
+        self.available_input_devices = devices
+        saved_fp = _AS.selected_input_device_fingerprint()
+
+        if not previous:
+            device = input_device_to_use(devices, saved_fp, system_default_fingerprint)
+            if device is None:
+                return
+            self.selected_input_device = device
+            if device.fingerprint == saved_fp:
+                gt_log(f"🎤 Restored previously selected mic: {device.name}")
+            else:
+                gt_log(f"🎤 Saved mic not connected — selected: {device.name}")
             return
 
-        # Priority 1: Previously persisted device fingerprint.
-        # Mirrors Swift UserDefaults "selectedInputDeviceUID".
-        try:
-            from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
-            saved_fp = _AS.selected_input_device_fingerprint()
-            if saved_fp:
-                match = next(
-                    (d for d in devices if d.fingerprint == saved_fp), None
-                )
-                if match:
-                    gt_log(f"🎤 Restored previously selected mic: {match.name}")
-                    self.selected_input_device = match
-                    return
-        except Exception:
-            pass
-
-        # Priority 2: Any external (non-built-in) microphone.  Prefer
-        # high-quality external measurement mics (UMIK-1 etc) over the
-        # laptop's built-in mic.  Mirrors Swift's `!uid.contains("BuiltInMicrophone")`.
-        external = next(
-            (d for d in devices if not _is_builtin_mic(d.name)), None
-        )
-        if external is not None:
-            gt_log(f"🎤 Auto-selected external mic: {external.name}")
-            self.selected_input_device = external
-            return
-
-        # Priority 3: System default PortAudio input device.
-        try:
-            default_index = sd.default.device[0]
-            if default_index is not None and default_index >= 0:
-                match = next(
-                    (d for d in devices if d.index == default_index), None
-                )
-                if match:
-                    gt_log(f"🎤 Auto-selected system default: {match.name}")
-                    self.selected_input_device = match
-                    return
-        except Exception:
-            pass
-
-        # Priority 4: First available device.
-        gt_log(f"🎤 Auto-selected first device: {devices[0].name}")
-        self.selected_input_device = devices[0]
-
-    def _auto_select_on_hotplug(self, devices: list, previous: list) -> None:
-        """Auto-select on device connect/disconnect.
-
-        Mirrors the ``else`` branch of Swift's ``loadAvailableInputDevicesMacOS()``.
-
-        Newly connected real devices are auto-selected.
-        Aggregate devices (name contains "CADefaultDeviceAggregate" equivalent)
-        are ignored.  If the currently selected device disappeared, falls back
-        to built-in or first.
-        """
         previous_fps = {d.fingerprint for d in previous}
+        # Transient system-created aggregate devices are never auto-selected.
         newly_connected = [
-            d for d in devices if d.fingerprint not in previous_fps
+            d for d in devices
+            if d.fingerprint not in previous_fps and "aggregate" not in d.name.lower()
         ]
-        # Ignore transient system-created aggregate devices
-        real_new = [
-            d for d in newly_connected
-            if "aggregate" not in d.name.lower()
-        ]
-
-        if real_new:
-            gt_log(f"🎤 New device connected, auto-selected: {real_new[0].name}")
-            self.selected_input_device = real_new[0]
+        if newly_connected:
+            self.choose_input_device(newly_connected[0])
+            gt_log(f"🎤 New device connected, selected: {newly_connected[0].name}")
             return
 
-        # If selected device disappeared, fall back
         current = self.selected_input_device
-        if current is not None:
-            still_present = any(d.fingerprint == current.fingerprint for d in devices)
-            if not still_present:
-                # Filter out Windows/DirectSound pseudo-devices that route to the
-                # system default but can't reliably capture, especially right
-                # after a real device was unplugged.
-                pseudo = ("microsoft sound mapper", "primary sound capture", "sound mapper")
-                real = [
-                    d for d in devices
-                    if not any(p in d.name.lower() for p in pseudo)
-                ]
+        if current is not None and not any(d.fingerprint == current.fingerprint for d in devices):
+            self.selected_input_device = input_device_to_use(
+                devices, saved_fp, system_default_fingerprint
+            )
+            chosen = self.selected_input_device
+            gt_log(f"🎤 '{current.name}' disconnected, switched to: "
+                   f"{chosen.name if chosen is not None else 'none'}")
 
-                chosen = None
+    def choose_input_device(self, device: "AudioDevice") -> None:
+        """Select *device* as the user's choice and save it, so it is restored at launch
+        whenever it is present. Used for a device picked in Settings and a device plugged in
+        while the app runs; the startup selection, a fallback and a loaded measurement's
+        microphone are not saved.
 
-                # Priority 1: any external (non-built-in) microphone.
-                # Mirrors the initial-load priority — when the user's selected
-                # device has disappeared, prefer another high-quality external
-                # mic over the laptop's built-in.
-                chosen = next(
-                    (d for d in real if not _is_builtin_mic(d.name)), None
-                )
+        Mirrors Swift ``RealtimeFFTAnalyzer.chooseInputDevice(_:)``.
+        """
+        from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
 
-                # Priority 2: current system default input (post-reinit).
-                if chosen is None:
-                    try:
-                        default_index = sd.default.device[0]
-                        if default_index is not None and default_index >= 0:
-                            chosen = next(
-                                (d for d in real if d.index == default_index), None
-                            )
-                    except Exception:
-                        pass
-
-                # Priority 3: first real device.
-                if chosen is None and real:
-                    chosen = real[0]
-
-                # Last resort: anything.
-                if chosen is None and devices:
-                    chosen = devices[0]
-
-                if chosen is not None:
-                    gt_log(f"🎤 '{current.name}' disconnected, switched to: {chosen.name}")
-                self.selected_input_device = chosen
+        self.selected_input_device = device
+        _AS.set_audio_device(device)
 
     # MARK: - Device Switch (mirrors setInputDevice(_:))
 

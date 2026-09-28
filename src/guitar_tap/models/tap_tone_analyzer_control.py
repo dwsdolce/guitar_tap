@@ -362,6 +362,30 @@ class TapToneAnalyzerControlMixin:
         # Track the name so _on_export_pdf can report it — mirrors Swift activeCalibration?.name.
         self._active_calibration_name = getattr(cal, "name", None)
 
+    def choose_calibration(self, cal) -> None:
+        """Apply *cal* (None: no calibration) as the user's choice and save it — as the last
+        chosen (the global active id) and for the selected input device, so it loads whenever
+        that device is selected.
+
+        Mirrors Swift assigning RealtimeFFTAnalyzer.activeCalibration, whose didSet saves both. A
+        device's own calibration loading when the input switches (_on_mic_calibration_changed)
+        and a file playback's (set_temporary_calibration) save nothing.
+        """
+        from guitar_tap.models.microphone_calibration import CalibrationStorage
+
+        if cal is not None:
+            self.load_calibration_from_profile(cal)
+        else:
+            self.clear_calibration()
+        cal_id = cal.id if cal is not None else None
+        CalibrationStorage.set_active_calibration_id(cal_id)
+        device = self.mic.selected_input_device
+        if device is not None:
+            # The map is keyed by device name; the lookup tries the fingerprint first, so any
+            # fingerprint entry for this device is removed.
+            CalibrationStorage.set_calibration_for_device(device.fingerprint, None)
+            CalibrationStorage.set_calibration_for_device(device.name, cal_id)
+
     def set_temporary_calibration(self, cal) -> None:
         """Apply calibration for file playback without persisting to storage.
 

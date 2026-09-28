@@ -151,14 +151,11 @@ class AppSettings:
     # restore it.  Mirrors Swift UserDefaults key "selectedInputDeviceUID"
     # (which stores AVAudioDevice.uid).
     # ------------------------------------------------------------------ #
-    # ONE canonical persisted identity for the selected input device — the single
-    # source of truth, mirroring Swift's single UserDefaults "selectedInputDeviceUID"
-    # written in selectedInputDevice.didSet. Previously this coexisted with a second,
-    # separate key ("audio/device_fingerprint" via set_audio_device); the two drifted
-    # apart (one restore path read each), which selected the wrong mic and dropped its
-    # calibration. Both restore paths + all writers now use this key. The device NAME
-    # is stored alongside because the calibration map is keyed by name. The legacy key
-    # is read as a fallback for installs saved before the unification and kept in sync.
+    # ONE canonical persisted identity for the input device the user chose, mirroring
+    # Swift's single UserDefaults "selectedInputDeviceUID". Written only by
+    # RealtimeFFTAnalyzer.choose_input_device. The device NAME is stored alongside because
+    # the calibration map is keyed by name. The legacy key "audio/device_fingerprint" is read
+    # as a fallback for installs saved before it and kept in sync.
     _DEVICE_FP_KEY = "audio/selected_input_device_fingerprint"
     _DEVICE_FP_LEGACY_KEY = "audio/device_fingerprint"
     _DEVICE_NAME_KEY = "audio/device_name"
@@ -234,10 +231,9 @@ class AppSettings:
 
     @classmethod
     def set_audio_device(cls, device) -> None:
-        """Persist the selected AudioDevice for the next launch — the single source of
-        truth. Writes the canonical fingerprint (+ legacy key in sync) and the device
-        name for calibration lookup. Mirrors Swift selectedInputDevice.didSet persisting
-        selectedInputDeviceUID.
+        """Save the AudioDevice the user chose, restored at the next launch when present.
+        Writes the canonical fingerprint (+ legacy key in sync) and the device name for
+        calibration lookup. Mirrors Swift chooseInputDevice saving selectedInputDeviceUID.
         """
         cls.set_selected_input_device_fingerprint(device.fingerprint)
         cls._set(cls._DEVICE_NAME_KEY, device.name)

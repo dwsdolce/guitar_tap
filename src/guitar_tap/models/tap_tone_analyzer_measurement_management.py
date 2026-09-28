@@ -749,36 +749,25 @@ class TapToneAnalyzerMeasurementManagementMixin:
             gt_log("  ⚠️ No peak threshold in measurement")
 
         # ── Auto-select the recorded microphone ───────────────────────────────
-        # Mirrors Swift loadMeasurement(_:) device-restore block.
-        # UID match is tried first; name match is fallback for Python companion
-        # app measurements (which store a "Name:SampleRate" fingerprint as UID).
+        # Mirrors Swift loadMeasurement(_:) device-restore block: only a measurement that
+        # recorded a microphone UID. UID match is tried first; name match is the fallback for
+        # measurements from another edition (a CoreAudio UID, or a web deviceId).
         mic_uid  = measurement.microphone_uid
         mic_name = measurement.microphone_name
-        if mic_uid or mic_name:
+        if mic_uid:
             mic = getattr(self, "mic", None)
             available: list = getattr(mic, "available_input_devices", []) or []
-            # available_input_devices starts empty until load_available_input_devices()
-            # is called. If it is still empty, populate it now so the match below
-            # has a real device list to work with.
-            if not available and mic is not None and hasattr(mic, "load_available_input_devices"):
-                # Suppress _on_devices_changed to avoid triggering _on_devices_refreshed,
-                # which calls sd._terminate()/_initialize() and kills the live audio stream.
-                # We only need the device list here — no hot-plug side-effects.
-                saved_cb = mic._on_devices_changed
-                mic._on_devices_changed = None
-                try:
-                    mic.load_available_input_devices()
-                finally:
-                    mic._on_devices_changed = saved_cb
-                available = getattr(mic, "available_input_devices", []) or []
             match = next((d for d in available if d.fingerprint == mic_uid), None)
             if match is None and mic_name:
                 match = next((d for d in available if d.name == mic_name), None)
-            label = mic_name or mic_uid or ""
+            label = mic_name or mic_uid
             if match is not None:
-                # Device is connected — request switch; calibration loads automatically.
-                if self._calibration_device_name != match.name:
-                    self.requestDeviceSwitch.emit(match)
+                # Device is connected — switch to it (for this session, not saved); its paired
+                # calibration loads with it, before the check below reads it. Mirrors Swift
+                # fftAnalyzer.setInputDevice(match).
+                if mic.selected_input_device != match:
+                    self.set_device(match)
+                    self.inputDeviceSwitched.emit(match)
                     gt_log(f"🎤 Auto-selected microphone '{label}' for loaded measurement")
                 # Same microphone — flag calibration / sample-rate differences (mirrors
                 # the Swift tiered warning): a new tap would then not match this measurement.

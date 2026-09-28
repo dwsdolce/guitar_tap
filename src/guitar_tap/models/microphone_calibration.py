@@ -521,17 +521,6 @@ class CalibrationStorage:
         if cls.active_calibration_id() == calibration.id:
             cls.set_active_calibration_id(None)
 
-    @classmethod
-    def delete_all(cls) -> None:
-        """Remove all stored calibrations and all device mappings.
-
-        Python-only (Swift exposes individual delete methods).
-        """
-        s = cls._s()
-        s.remove(cls._STORAGE_KEY)
-        s.remove(cls._ACTIVE_KEY)
-        s.remove(cls._DEVICE_MAP_KEY)
-
     # MARK: - Global Active Calibration
 
     @classmethod

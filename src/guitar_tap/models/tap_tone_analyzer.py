@@ -186,10 +186,9 @@ class TapToneAnalyzer(
     # Emitted when microphoneWarning changes (mirrors Swift @Published var microphoneWarning).
     # Payload: str | None — warning text, or None when cleared.
     microphoneWarningChanged: QtCore.Signal = QtCore.Signal(object)
-    # Emitted when load_measurement() finds the recorded device is currently connected
-    # and wants the view to switch to it.  Payload: AudioDevice.
-    # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
-    requestDeviceSwitch: QtCore.Signal = QtCore.Signal(object)
+    # Emitted after load_measurement() switched the input to the recorded microphone, so the
+    # view shows it. Payload: AudioDevice. Swift's view re-reads @Published selectedInputDevice.
+    inputDeviceSwitched: QtCore.Signal = QtCore.Signal(object)
     # The two edges of load_measurement() — is_loading_measurement going True, then False (Swift's
     # isLoadingMeasurement). SwiftUI re-renders from the loaded state on its own; Qt does not, so the
     # view does its restoration work in response to these rather than by wrapping the load itself.
@@ -1207,7 +1206,6 @@ class TapToneAnalyzer(
           - QObject re-parenting
           - Hotplug signal wiring
           - Calibration state
-          - Device enumeration
           - Saved measurements
           - Auto-start tap sequence
 
@@ -1247,19 +1245,6 @@ class TapToneAnalyzer(
         self._active_calibration_name = calibration_name
         audio_device = self.mic._selected_input_device
         self._calibration_device_name = audio_device.name if audio_device else ""
-
-        # ── Initial device enumeration ────────────────────────────────────
-        # Mirrors Swift RealtimeFFTAnalyzer.init() calling loadAvailableInputDevices()
-        # synchronously so that availableInputDevices is populated before any
-        # measurement can be loaded. Suppresses the _on_devices_changed callback to
-        # avoid triggering _on_devices_refreshed (which calls sd._terminate()) during
-        # init — the hot-plug monitor will handle subsequent changes.
-        saved_cb = self.mic._on_devices_changed
-        self.mic._on_devices_changed = None
-        try:
-            self.mic.load_available_input_devices()
-        finally:
-            self.mic._on_devices_changed = saved_cb
 
         # Stamp the cooldown timer so the spurious CM_Register_Notification that
         # Windows fires when Pa_OpenStream is called during init (or when the CM

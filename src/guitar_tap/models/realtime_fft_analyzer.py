@@ -342,7 +342,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             parent=None,
             rate=sample_rate,
             chunksize=1024,
-            device=None,
             for_testing=True,
         )
 
@@ -392,7 +391,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
     # MARK: - Initialization
 
     def __init__(self, parent, rate: int = 44100, chunksize: int = 1024,
-                 device: "AudioDevice | None" = None,
                  on_devices_changed: Callable[[], None] | None = None,
                  on_calibration_changed: "Callable[[object | None], None] | None" = None,
                  for_testing: bool = False):
@@ -410,9 +408,9 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
         Args:
             parent:                  Parent QObject (used to anchor a MacAccess helper on macOS).
-            rate:                    Fallback sample rate in Hz; overridden by device.sample_rate.
+            rate:                    Fallback sample rate in Hz; overridden by the selected
+                                     device's sample rate.
             chunksize:               PortAudio block size in frames (Python-only; Swift uses 1024).
-            device:                  AudioDevice to open, or None for the system default.
             on_devices_changed:      Callback fired on hot-plug connect/disconnect events.
                                      Mirrors Swift's @Published availableInputDevices update.
             on_calibration_changed:  Callback fired by set_device() after auto-loading the
@@ -427,9 +425,9 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self.is_for_testing = for_testing
 
         # Python-only: PortAudio session state
-        self.rate: int = int(device.sample_rate) if device else rate
+        self.rate: int = rate
         self.chunksize: int = chunksize
-        self.device_index: int | None = device.index if device else None
+        self.device_index: int | None = None
 
         # MARK: - FFT Configuration (mirrors Swift RealtimeFFTAnalyzer)
 
@@ -544,9 +542,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
         # The currently selected input device (backing store for the property).
         # Mirrors Swift RealtimeFFTAnalyzer.selectedInputDevice (@Published).
-        # Use _selected_input_device directly only during init to avoid
-        # firing didSet logic before callbacks are wired.
-        self._selected_input_device: "AudioDevice | None" = device
+        # Set by the device enumeration below (not in testing).
+        self._selected_input_device: "AudioDevice | None" = None
 
         # Python-only: hot-plug monitoring threads
         self._on_devices_changed = on_devices_changed
@@ -649,6 +646,15 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         if platform.system() == "Darwin":
             mac_access.MacAccess(parent)
 
+        # Enumerate the input devices and select the one to use — the saved choice when it is
+        # present, else the system default, else the first. Mirrors Swift init calling
+        # loadAvailableInputDevices(). The callbacks are not wired yet, so nothing is notified.
+        self.load_available_input_devices()
+        selected = self._selected_input_device
+        if selected is not None:
+            self.device_index = selected.index
+            self.rate = int(selected.sample_rate)
+
         # Open the sounddevice stream; Swift opens AVAudioEngine in start()
         self.stream: sd.InputStream = sd.InputStream(
             device=self.device_index,
@@ -669,15 +675,16 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
 
     # MARK: - Selected Input Device Property
     # Mirrors Swift @Published var selectedInputDevice: AVAudioDevice? { didSet { ... } }
-    # The setter mirrors Swift's didSet: persists the device fingerprint and
-    # auto-loads the device-specific calibration on every assignment.
+    # The setter mirrors Swift's didSet: auto-loads the device-specific calibration on every
+    # assignment.
 
     @property
     def selected_input_device(self) -> "AudioDevice | None":
         """The active audio input device, or None.
 
-        Assigning it persists the device fingerprint and auto-loads that device's
-        calibration. Mirrors Swift `selectedInputDevice`.
+        Assigning it selects the device for this session and auto-loads that device's
+        calibration; it is not saved. A choice remembered across launches goes through
+        ``choose_input_device``. Mirrors Swift `selectedInputDevice`.
         """
         return self._selected_input_device
 
@@ -686,18 +693,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._selected_input_device = device
         if device is None:
             return
-
-        # Persist the selected device (fingerprint + name) as the SINGLE source of truth
-        # so it can be restored on next launch — one key, one place, mirroring Swift's
-        # selectedInputDevice.didSet writing selectedInputDeviceUID. set_audio_device keeps
-        # the fingerprint and the calibration-lookup name in sync so the two restore paths
-        # (device_management auto-select and fft_canvas startup) can't drift onto different
-        # devices (the bug behind the false "different calibration" warning).
-        try:
-            from guitar_tap.views.utilities.tap_settings_view import AppSettings as _AS
-            _AS.set_audio_device(device)
-        except Exception:
-            pass
 
         # Automatically load device-specific calibration when device changes.
         # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
