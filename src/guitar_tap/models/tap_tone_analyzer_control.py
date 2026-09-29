@@ -251,10 +251,17 @@ class TapToneAnalyzerControlMixin:
         # 0.5 s sleep in _notify_devices_changed, arrives ~0.5-0.7 s after the
         # impl finishes).  Legitimate Windows device-settled notifications arrive
         # 1-2+ seconds after the initial unplug event, so they pass through.
-        last = getattr(self, '_devices_refresh_last_t', 0.0)
-        if now - last < 1.0:
-            gt_log("🔄 _on_devices_refreshed: suppressed (within 1 s of the last refresh)")
-            return
+        # Guard 2 exists because cfgmgr32 device-interface events cascade: Pa_OpenStream
+        # itself fires one. MMDevice endpoint events do not — opening a shared-mode stream
+        # neither adds, removes nor activates an endpoint — so with that monitor the
+        # cooldown has nothing to suppress and is skipped. It is what dropped the
+        # notification that would have found the microphone on plug-in (#21). Guard 1 still
+        # covers overlap, without a clock.
+        if getattr(self.mic, "_hotplug_kind", None) != "mmdevice":
+            last = getattr(self, '_devices_refresh_last_t', 0.0)
+            if now - last < 1.0:
+                gt_log("🔄 _on_devices_refreshed: suppressed (within 1 s of the last refresh)")
+                return
         self._devices_refresh_active = True
         try:
             self._on_devices_refreshed_impl()

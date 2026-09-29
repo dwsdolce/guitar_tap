@@ -103,7 +103,13 @@ def gt_log(message: str) -> None:
         # .write attribute, so skip it in that case — the file logger below
         # still captures the message.
         if sys.stdout is not None:
-            print(message)
+            # The markers are emoji and a Windows console is cp1252 by default, which
+            # raises UnicodeEncodeError on them - enough to kill the app at its first log
+            # line when logging is enabled. The file logger below is explicitly UTF-8.
+            try:
+                print(message)
+            except UnicodeEncodeError:
+                print(message.encode("ascii", "replace").decode("ascii"))
         _file_logger._write(message)
 
 
@@ -111,5 +117,8 @@ def TAP_DEBUG(category: str, message: str) -> None:
     if _tap_debug_enabled:
         msg = f"TAP_DEBUG {category}: {message}"
         if sys.stdout is not None:
-            print(msg)
+            try:
+                print(msg)
+            except UnicodeEncodeError:
+                print(msg.encode("ascii", "replace").decode("ascii"))
         _file_logger._write(msg)

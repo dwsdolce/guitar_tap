@@ -549,6 +549,12 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._on_devices_changed = on_devices_changed
         self._monitor_stop = threading.Event()
         self._monitor_thread: threading.Thread | None = None
+        # Which monitor is running: 'mmdevice' | 'cm' (Windows), 'coreaudio', 'udev', None.
+        # The caller consults it because the cascade guard is only needed for cfgmgr32.
+        self._hotplug_kind: str | None = None
+        # Windows/MMDevice: COM holds a raw pointer, so the client must outlive registration.
+        self._mm_client: object | None = None
+        self._mm_enumerator: object | None = None
 
         # Calibration-change callback.
         self._on_calibration_changed: "Callable[[object | None], None] | None" = on_calibration_changed

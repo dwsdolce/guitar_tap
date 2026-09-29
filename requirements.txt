@@ -7,6 +7,11 @@ QtAwesome>=1.4.1
 reportlab>=4.4.10
 soundfile>=0.10.3
 platformdirs>=4.0
+# Windows only, installed automatically by the marker: COM access to the MMDevice API
+# (IMMNotificationClient), which reports when an audio ENDPOINT becomes active. The
+# cfgmgr32 device-interface notification fires earlier, before PortAudio can enumerate
+# the device - see MIC-SELECTION.md.
+comtypes>=1.4.17; sys_platform == "win32"
 
 # macOS only — install with: pip install -r requirements-macos.txt
 # pyobjc

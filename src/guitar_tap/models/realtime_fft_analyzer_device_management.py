@@ -700,7 +700,204 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
     # Python-only — Swift targets macOS/iOS only.
 
     def _start_windows_monitor(self) -> None:
-        """Register a Windows device-interface arrival/removal notification.
+        """Start the Windows hot-plug monitor: MMDevice endpoint events, else cfgmgr32.
+
+        MMDevice is the correct source and cfgmgr32 is the fallback, not the other way
+        round. ``CM_Register_Notification`` reports that a USB *device interface* arrived;
+        what we need to know is that an audio *endpoint* became active, which happens
+        later. Measured on the #21 run review (2026-09-28), a UMIK-1 plug-in produced:
+
+            t=9.275  OnPropertyValueChanged x7      <- 28 ms EARLY, must be ignored
+            t=9.303  OnDeviceStateChanged ACTIVE    <- the real event
+            t=9.336  OnDefaultDeviceChanged x3 (capture)
+                     PortAudio enumerates the device from here on
+
+        Acting on the interface arrival meant re-enumerating before PortAudio could see
+        the device, so nothing was selected; the later notification that would have found
+        it was then dropped by the caller's cooldown. Hence the microphone never switched.
+
+        With endpoint events there is no settle delay to choose: the event and PortAudio's
+        WASAPI enumeration read the same list, so a refresh triggered by ACTIVE finds the
+        device. No timing constant is introduced here.
+        """
+        if self._start_windows_mmdevice_monitor():
+            self._hotplug_kind = "mmdevice"
+            return
+        self._start_windows_cm_monitor()
+        self._hotplug_kind = "cm"
+
+    def _start_windows_mmdevice_monitor(self) -> bool:
+        """Register an IMMNotificationClient for audio endpoint changes.
+
+        Returns True when the monitor is running. comtypes is a Windows-only dependency
+        declared in requirements.txt; if it is missing the caller falls back to cfgmgr32
+        (the same optional-import shape as pyudev on Linux).
+
+        Threading: comtypes CoInitializes the importing thread as an STA, and an STA
+        callback object only receives calls while a message pump runs. Registration
+        therefore happens on a dedicated thread that joins the MTA, where callbacks arrive
+        directly on COM worker threads.
+        """
+        try:
+            import comtypes
+            from comtypes import COMMETHOD, GUID, COMObject, IUnknown
+            from comtypes.client import CreateObject
+        except ImportError:
+            gt_log("🔌 comtypes not installed — falling back to the cfgmgr32 monitor")
+            return False
+
+        import ctypes
+        from ctypes import POINTER, Structure, c_wchar_p
+
+        class PROPERTYKEY(Structure):
+            _fields_ = [("fmtid", GUID), ("pid", ctypes.c_ulong)]
+
+        class IMMNotificationClient(IUnknown):
+            _iid_ = GUID("{7991EEC9-7E89-4D85-8390-6C703CEC60C0}")
+            _methods_ = [
+                COMMETHOD([], comtypes.HRESULT, "OnDeviceStateChanged",
+                          (["in"], c_wchar_p, "pwstrDeviceId"),
+                          (["in"], ctypes.c_ulong, "dwNewState")),
+                COMMETHOD([], comtypes.HRESULT, "OnDeviceAdded",
+                          (["in"], c_wchar_p, "pwstrDeviceId")),
+                COMMETHOD([], comtypes.HRESULT, "OnDeviceRemoved",
+                          (["in"], c_wchar_p, "pwstrDeviceId")),
+                COMMETHOD([], comtypes.HRESULT, "OnDefaultDeviceChanged",
+                          (["in"], ctypes.c_uint, "flow"),
+                          (["in"], ctypes.c_uint, "role"),
+                          (["in"], c_wchar_p, "pwstrDefaultDeviceId")),
+                COMMETHOD([], comtypes.HRESULT, "OnPropertyValueChanged",
+                          (["in"], c_wchar_p, "pwstrDeviceId"),
+                          (["in"], PROPERTYKEY, "key")),
+            ]
+
+        class IMMDeviceEnumerator(IUnknown):
+            # Only the slots up to the two we call; declaration order sets the offsets.
+            _iid_ = GUID("{A95664D2-9614-4F35-A746-DE8DB63617E6}")
+            _methods_ = [
+                COMMETHOD([], comtypes.HRESULT, "EnumAudioEndpoints",
+                          (["in"], ctypes.c_uint, "dataFlow"),
+                          (["in"], ctypes.c_ulong, "dwStateMask"),
+                          (["out"], POINTER(POINTER(IUnknown)), "ppDevices")),
+                COMMETHOD([], comtypes.HRESULT, "GetDefaultAudioEndpoint",
+                          (["in"], ctypes.c_uint, "dataFlow"),
+                          (["in"], ctypes.c_uint, "role"),
+                          (["out"], POINTER(POINTER(IUnknown)), "ppEndpoint")),
+                COMMETHOD([], comtypes.HRESULT, "GetDevice",
+                          (["in"], c_wchar_p, "pwstrId"),
+                          (["out"], POINTER(POINTER(IUnknown)), "ppDevice")),
+                COMMETHOD([], comtypes.HRESULT, "RegisterEndpointNotificationCallback",
+                          (["in"], POINTER(IMMNotificationClient), "pClient")),
+                COMMETHOD([], comtypes.HRESULT, "UnregisterEndpointNotificationCallback",
+                          (["in"], POINTER(IMMNotificationClient), "pClient")),
+            ]
+
+        analyzer = self
+
+        class _NotificationClient(COMObject):
+            """Endpoint events only. Property changes are ignored, deliberately.
+
+            They are the majority of the traffic (21 of 25 events in the measured
+            plug-in/unplug cycle) and they fire BEFORE the endpoint is active, so acting
+            on them reproduces the very race this replaces.
+            """
+
+            _com_interfaces_ = [IMMNotificationClient]
+
+            def IMMNotificationClient_OnDeviceStateChanged(self, this, pwstrDeviceId, dwNewState):
+                analyzer._mmdevice_event(f"state={dwNewState}")
+                return 0
+
+            def IMMNotificationClient_OnDeviceAdded(self, this, pwstrDeviceId):
+                analyzer._mmdevice_event("added")
+                return 0
+
+            def IMMNotificationClient_OnDeviceRemoved(self, this, pwstrDeviceId):
+                analyzer._mmdevice_event("removed")
+                return 0
+
+            def IMMNotificationClient_OnDefaultDeviceChanged(self, this, flow, role, pwstrId):
+                # Ignored, like property changes. It reports which device Windows now
+                # PREFERS, never a change to the device list: plugging one microphone in
+                # fires it three times (console, multimedia, communications) right after
+                # the state change we already acted on, and each one drove a full
+                # PortAudio re-init, stream reopen and detection reset. The fallback that
+                # does care about the system default - an unplug of the device in use -
+                # reads it at enumeration time, driven by OnDeviceStateChanged.
+                return 0
+
+            def IMMNotificationClient_OnPropertyValueChanged(self, this, pwstrDeviceId, key):
+                return 0
+
+        started = threading.Event()
+        self._mm_client = None
+        self._monitor_stop.clear()
+
+        def _run() -> None:
+            enumerator = None
+            client = None
+            try:
+                comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
+                enumerator = CreateObject(
+                    GUID("{BCDE0395-E52F-467C-8E3D-C4579291692E}"),  # CLSID_MMDeviceEnumerator
+                    interface=IMMDeviceEnumerator,
+                )
+                client = _NotificationClient()
+                enumerator.RegisterEndpointNotificationCallback(client)
+                self._mm_client = client        # keep alive; COM holds only a raw pointer
+                self._mm_enumerator = enumerator
+                started.set()
+            except Exception as exc:  # noqa: BLE001 - any COM failure falls back
+                gt_log(f"🔌 MMDevice monitor failed to start ({exc!r})")
+                started.set()
+                return
+            self._monitor_stop.wait()
+            try:
+                enumerator.UnregisterEndpointNotificationCallback(client)
+            except Exception:  # noqa: BLE001 - teardown is best effort
+                pass
+
+        self._monitor_thread = threading.Thread(
+            target=_run, daemon=True, name="mmdevice-monitor"
+        )
+        self._monitor_thread.start()
+        started.wait(5.0)
+        if getattr(self, "_mm_client", None) is None:
+            return False
+        gt_log("🔌 Watching audio endpoint changes (MMDevice)")
+        return True
+
+    def _mmdevice_event(self, what: str) -> None:
+        """An endpoint event arrived on a COM worker thread.
+
+        Does no work here: the callback must return promptly, and re-initializing
+        PortAudio inside it is how the first version of the diagnostic probe made its own
+        events disappear. Hands off to a daemon thread exactly as the CoreAudio listener
+        does — but with no settle sleep, because an endpoint event already means the
+        device list has changed.
+        """
+        gt_log(f"🔌 Audio endpoint change ({what})")
+        threading.Thread(
+            target=self._notify_devices_changed_now, daemon=True
+        ).start()
+
+    def _notify_devices_changed_now(self) -> None:
+        """Signal the caller immediately (Windows/MMDevice only).
+
+        Deliberately a separate method rather than a parameter on
+        _notify_devices_changed: that one is shared with the CoreAudio and udev monitors,
+        whose 0.5 s settle sleep is part of behaviour validated on those platforms.
+        """
+        if self._on_devices_changed is None:
+            gt_log("🔌 Device change dropped — no handler connected")
+            return
+        callback = self._on_devices_changed
+        if callback is None:
+            return
+        callback()
+
+    def _start_windows_cm_monitor(self) -> None:
+        """FALLBACK: register a Windows device-interface arrival/removal notification.
 
         Uses CM_Register_Notification (cfgmgr32) filtered to the USB audio
         device interface class GUID (KSCATEGORY_AUDIO =
@@ -790,10 +987,14 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             gt_log(f"CM_Register_Notification failed (CR=0x{rc:08X}); hot-plug disabled")
 
     def _stop_windows_monitor(self) -> None:
-        """Unregister the Windows CM_Register_Notification handle.
+        """Stop whichever Windows monitor is running.
 
-        Python-only — Swift targets macOS/iOS only.
+        _monitor_stop is already set by the caller, which releases the MMDevice thread
+        from its wait; it unregisters the callback itself, on the apartment that
+        registered it. Python-only — Swift targets macOS/iOS only.
         """
+        self._mm_client = None
+        self._mm_enumerator = None
         try:
             self._win_cfgmgr.CM_Unregister_Notification(self._win_hnotify)
         except Exception:

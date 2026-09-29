@@ -16,6 +16,8 @@ dependencies = [
     "soundfile>=0.10.3",
     "platformdirs>=4.0",
     "babel>=2.12",
+    # Windows only: MMDevice COM notifications for microphone hot-plug (see requirements.txt).
+    "comtypes>=1.4.17; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
