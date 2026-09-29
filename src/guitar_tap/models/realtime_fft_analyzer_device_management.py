@@ -736,7 +736,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         MMDevice is the correct source and cfgmgr32 is the fallback, not the other way
         round. ``CM_Register_Notification`` reports that a USB *device interface* arrived;
         what we need to know is that an audio *endpoint* became active, which happens
-        later. Measured on the #21 run review (2026-09-28), a UMIK-1 plug-in produced:
+        later. Measured, a UMIK-1 plug-in produces:
 
             t=9.275  OnPropertyValueChanged x7      <- 28 ms EARLY, must be ignored
             t=9.303  OnDeviceStateChanged ACTIVE    <- the real event
@@ -1068,8 +1068,8 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         * A device that reappears because PipeWire released it is indistinguishable from one
           just plugged in, so apply_input_device_list's ``newly_connected`` branch selects it,
           and because every selection is saved it also becomes what the next launch uses.
-          That is precisely the defect issue #21 exists to fix, reintroduced on a third
-          platform - which is why leaving hot-plug half-working is worse than not having it.
+          A selection the user never made then becomes what the next launch restores - which is
+          why leaving hot-plug half-working is worse than not having it.
 
         Fixing that means deciding what Linux should enumerate at all - PipeWire's sources
         rather than raw hw: devices - a design change with consequences for what users can

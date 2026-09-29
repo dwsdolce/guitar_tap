@@ -255,13 +255,11 @@ class TestStateNotification:
         finally:
             TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
 
-    # N13: a route change DURING a settle must not capture the transient as the pre-settle status.
-    # The burst is what a user does -- unplug and replug faster than the 3 s settle -- and the
-    # second capture then stored "Audio device changed - reinitializing..." AS the real status.
-    # Every state whose status is not re-derivable (N4's completed measurement, N9's material phase
-    # instruction) had the transient put back on top of itself, where it stayed until the next tap
-    # wrote over it.  Found in the #24 run-review on Windows, brace mode: the transient sat in the
-    # status bar for minutes across a dozen replug cycles.
+    # N13: a route change during a settle must not capture the transient as the pre-settle status.
+    # A user unplugging and replugging faster than the 3 s settle makes that burst. Were the
+    # transient captured, every state whose status is not re-derivable (N4's completed measurement,
+    # N9's material phase instruction) would have it put back on top of itself, where it would stay
+    # until the next tap wrote over it.
     def test_N13_a_settle_during_a_settle_does_not_capture_the_transient(self):
         from guitar_tap.models.detection_state import DetectionState
         from guitar_tap.models.material_tap_phase import MaterialTapPhase

@@ -258,9 +258,9 @@ class TapToneAnalyzerControlMixin:
         # Guard 2 exists because cfgmgr32 device-interface events cascade: Pa_OpenStream
         # itself fires one. MMDevice endpoint events do not — opening a shared-mode stream
         # neither adds, removes nor activates an endpoint — so with that monitor the
-        # cooldown has nothing to suppress and is skipped. It is what dropped the
-        # notification that would have found the microphone on plug-in (#21). Guard 1 still
-        # covers overlap, without a clock.
+        # cooldown has nothing to suppress and is skipped: it would drop the endpoint
+        # notification that finds a newly plugged microphone. Guard 1 still covers overlap,
+        # without a clock.
         if getattr(self.mic, "_hotplug_kind", None) != "mmdevice":
             last = getattr(self, '_devices_refresh_last_t', 0.0)
             if now - last < 1.0:
@@ -563,14 +563,13 @@ class TapToneAnalyzerControlMixin:
         # the condition would restore the warning.  The override layer re-resolves on its own, so
         # the real status is what has to survive the settle.
         #
-        # GUARDED so a route change DURING a settle cannot capture the transient itself. Unplug and
-        # replug faster than the 3 s settle and the second capture stored ROUTE_CHANGE_STATUS as the
-        # real status; _restored_status() then put THAT back for every state whose status is not
-        # re-derivable — a completed measurement, a material phase prompt — and the transient stayed
-        # up until the next tap wrote a status over it.  Web guards the same capture
-        # (`if (this.statusBeforeSettle === null)`); it can test for null because its device-change
-        # timer is coalesced (`clearTimeout` in useAudioEngine), while here every route change
-        # leaves its own restore behind, so the test is "is this already the transient".
+        # Guarded so a route change during a settle does not capture the transient itself: a
+        # captured ROUTE_CHANGE_STATUS would be put back by _restored_status() for every state whose
+        # status is not re-derivable — a completed measurement, a material phase prompt — and stay
+        # up until something else writes a status. Every route change leaves its own restore
+        # behind, so the test is "is this already the transient". (Web tests
+        # `statusBeforeSettle === null`: its device-change timer is coalesced, so only one restore
+        # is ever pending.)
         if self._latest_real_status != self.ROUTE_CHANGE_STATUS:
             self._status_before_settle = self._latest_real_status
         # Mirrors Swift: statusMessage = "Audio device changed - reinitializing...".
