@@ -44,6 +44,7 @@ def qt_app():
 
 
 from guitar_tap.models import realtime_fft_analyzer_device_management as dm
+from guitar_tap.models import tap_tone_analyzer_measurement_management as mm
 from guitar_tap.models.audio_device import AudioDevice
 from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
 from guitar_tap.models.realtime_fft_analyzer_device_management import input_device_to_use
@@ -253,16 +254,20 @@ def test_MS16_no_match_warns_and_keeps_the_input(monkeypatch):
     """MS16: No connected microphone matches — the not-found warning; the input is unchanged."""
     sut = _load(monkeypatch, AudioDevice(name="Absent Mic", index=9, sample_rate=48000))
     assert sut.mic.selected_input_device == BUILT_IN
-    assert sut.microphone_warning.startswith(
-        "Recorded with 'Absent Mic'. No connected microphone matches that name")
+    assert sut.microphone_warning_title == "Microphone Not Found"
+    assert sut.microphone_warning == mm.microphone_not_found_message("Absent Mic", BUILT_IN.name)
+    assert "you are still using 'MacBook Pro Microphone'" in sut.microphone_warning
 
 
 def test_MS17_same_microphone_different_calibration_warns(monkeypatch):
     """MS17: The recorded microphone is the current one but its calibration differs — the warning."""
     sut = _load(monkeypatch, BUILT_IN, calibration_name="Other")
+    assert sut.microphone_warning_title == "Recording Setup Differs"
     assert sut.microphone_warning == (
-        "This measurement was recorded with a different calibration. A newly captured tap may not "
-        "match the saved result.")
+        "This measurement was made with a different setup from the current one:\n"
+        "• Calibration: recorded with 'Other'; the current microphone uses 'Built-in room'.\n\n"
+        "A tap captured now may not match the saved result. The sample rate is set outside Guitar "
+        "Tap: in Audio MIDI Setup on a Mac, or Sound settings on Windows.")
 
 
 

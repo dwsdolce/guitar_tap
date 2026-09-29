@@ -390,6 +390,9 @@ class TapToneAnalyzer(
         # data. The view clears it once the alert is acknowledged; import_and_load_measurements()
         # folds it into its message and clears it (mirrors Swift).
         self.microphone_warning: "str | None" = None
+        # The title of the dialog that shows microphone_warning; set with it. Mirrors Swift
+        # microphoneWarningTitle.
+        self.microphone_warning_title: str = "Microphone Not Found"
 
         # ── Loaded-measurement metadata ────────────────────────────────────
         # Mirrors Swift @Published var loadedMeasurementName: String?,

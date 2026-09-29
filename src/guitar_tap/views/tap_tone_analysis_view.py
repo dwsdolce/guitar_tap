@@ -2891,7 +2891,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # A later load may have replaced or cleared it while this was queued; show only a live warning.
         if self.fft_canvas.analyzer.microphone_warning != warning:
             return
-        QtWidgets.QMessageBox.warning(self, "Microphone Not Connected", warning)
+        QtWidgets.QMessageBox.warning(
+            self, self.fft_canvas.analyzer.microphone_warning_title, warning
+        )
         # CONSUME it, as Swift does: its alert is bound to `microphoneWarning != nil` and both the OK
         # button and the binding's setter clear the field, so acknowledging the modal ends the
         # warning's life.  Left set, it would be invisible except to the import handler, which reads

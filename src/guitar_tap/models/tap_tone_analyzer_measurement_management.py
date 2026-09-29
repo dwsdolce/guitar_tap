@@ -16,6 +16,44 @@ from .detection_state import DetectionState
 from guitar_tap.utilities.new_uuid import new_uuid
 
 
+
+
+def microphone_not_found_message(recorded: str, current: "str | None") -> str:
+    """The load's warning when no connected microphone has the recorded name. Names both
+    microphones — the recorded one and the one in use — and says why a measurement from another
+    computer usually cannot find its microphone. Mirrors Swift
+    ``TapToneAnalyzer.microphoneNotFoundMessage(recorded:current:)``."""
+    return (
+        f"This measurement was recorded with a microphone named '{recorded}'. No connected microphone "
+        f"has exactly that name, so the input has not been changed — you are still using "
+        f"'{current if current is not None else 'no microphone'}'.\n\n"
+        "Each computer names microphones its own way. A measurement made on another computer — "
+        "especially one running a different operating system — will usually not find its microphone "
+        "even when the same one is connected. If it is, choose it in Settings.\n\n"
+        "Peak frequencies are still comparable; input levels, the tap threshold, and faint peaks "
+        "(such as FLC) may differ."
+    )
+
+
+def setup_differs_message(calibration: "tuple[str | None, str | None] | None",
+                          sample_rate: "tuple[int, int] | None") -> str:
+    """The load's warning when the recorded microphone is in use but the calibration and/or the
+    sample rate differs — one line for each that differs, with both values. Mirrors Swift
+    ``TapToneAnalyzer.setupDiffersMessage(calibration:sampleRate:)``."""
+    def _name(n: "str | None") -> str:
+        return f"'{n}'" if n else "none"
+
+    lines = ["This measurement was made with a different setup from the current one:"]
+    if calibration is not None:
+        lines.append(f"• Calibration: recorded with {_name(calibration[0])}; the current microphone "
+                     f"uses {_name(calibration[1])}.")
+    if sample_rate is not None:
+        lines.append(f"• Sample rate: recorded at {sample_rate[0]} Hz; audio is now captured at "
+                     f"{sample_rate[1]} Hz.")
+    return ("\n".join(lines)
+            + "\n\nA tap captured now may not match the saved result. The sample rate is set outside "
+              "Guitar Tap: in Audio MIDI Setup on a Mac, or Sound settings on Windows.")
+
 class TapToneAnalyzerMeasurementManagementMixin:
     """Measurement state and comparison overlay management for TapToneAnalyzer.
 
@@ -778,22 +816,23 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     except InputDeviceOpenError as exc:
                         switch_failed = str(exc)
                 if switch_failed is not None:
+                    self.microphone_warning_title = "Microphone Unavailable"
                     self.microphone_warning = switch_failed
                     self.microphoneWarningChanged.emit(switch_failed)
                 else:
                     # Same microphone — flag calibration / sample-rate differences (mirrors
                     # the Swift tiered warning): a new tap would then not match this measurement.
-                    diffs: list[str] = []
-                    if measurement.calibration_name != getattr(self, "_active_calibration_name", None):
-                        diffs.append("calibration")
+                    current_cal = getattr(self, "_active_calibration_name", None)
+                    calibration_differs = measurement.calibration_name != current_cal
                     rec_rate = measurement.sample_rate
                     cur_rate = getattr(mic, "rate", None)
-                    if rec_rate is not None and cur_rate is not None and round(rec_rate) != round(cur_rate):
-                        diffs.append("sample rate")
-                    if diffs:
-                        _warn = (
-                            f"This measurement was recorded with a different {' and '.join(diffs)}. "
-                            f"A newly captured tap may not match the saved result."
+                    rate_differs = (rec_rate is not None and cur_rate is not None
+                                    and round(rec_rate) != round(cur_rate))
+                    self.microphone_warning_title = "Recording Setup Differs"
+                    if calibration_differs or rate_differs:
+                        _warn = setup_differs_message(
+                            (measurement.calibration_name, current_cal) if calibration_differs else None,
+                            (round(rec_rate), round(cur_rate)) if rate_differs else None,
                         )
                         self.microphone_warning = _warn
                         self.microphoneWarningChanged.emit(_warn)
@@ -801,14 +840,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
                         self.microphone_warning = None
                         self.microphoneWarningChanged.emit(None)
             else:
-                # See the note at the missing_names warning above: a no-match cannot distinguish
-                # "unplugged" from "attached under a different name on this platform".
-                warning = (
-                    f"Recorded with '{label}'. No connected microphone matches that name — it may "
-                    f"be unplugged, or attached under a different name on this platform. Peak "
-                    f"frequencies should still be comparable; input levels, the tap threshold, and "
-                    f"faint peaks (such as FLC) may differ."
+                # A no-match cannot distinguish "unplugged" from "attached under a different name
+                # on this platform"; the message says both.
+                current = mic.selected_input_device if mic is not None else None
+                warning = microphone_not_found_message(
+                    label, current.name if current is not None else None
                 )
+                self.microphone_warning_title = "Microphone Not Found"
                 self.microphone_warning = warning
                 if not getattr(self, "_suppress_mic_warning_signal", False):
                     self.microphoneWarningChanged.emit(warning)

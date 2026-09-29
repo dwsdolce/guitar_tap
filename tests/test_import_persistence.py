@@ -210,7 +210,8 @@ class TestImportMessage:
         sut = _make_sut()
         message = sut.import_and_load_measurements(self._file(self.ABSENT_MIC))
         assert message.startswith(
-            f"Successfully imported and loaded 1 measurement\n\n⚠️ Recorded with '{self.ABSENT_MIC}'"
+            f"Successfully imported and loaded 1 measurement\n\n⚠️ This measurement was recorded with a "
+            f"microphone named '{self.ABSENT_MIC}'"
         ), message
         assert sut.microphone_warning is None, "folded into the message, so no second dialog"
 
