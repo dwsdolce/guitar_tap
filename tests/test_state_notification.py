@@ -254,3 +254,51 @@ class TestStateNotification:
             )
         finally:
             TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+
+    # N13: a route change DURING a settle must not capture the transient as the pre-settle status.
+    # The burst is what a user does -- unplug and replug faster than the 3 s settle -- and the
+    # second capture then stored "Audio device changed - reinitializing..." AS the real status.
+    # Every state whose status is not re-derivable (N4's completed measurement, N9's material phase
+    # instruction) had the transient put back on top of itself, where it stayed until the next tap
+    # wrote over it.  Found in the #24 run-review on Windows, brace mode: the transient sat in the
+    # status bar for minutes across a dozen replug cycles.
+    def test_N13_a_settle_during_a_settle_does_not_capture_the_transient(self):
+        from guitar_tap.models.detection_state import DetectionState
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase
+        from guitar_tap.models.measurement_type import MeasurementType
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+
+        TapDisplaySettings.set_measurement_type(MeasurementType.BRACE)
+        try:
+            # for_testing(), not _make_sut(): the settle's restore is gated on a live mic
+            # (`self.mic.is_stopped`), so the case needs the hardware-free engine to run the
+            # RESTORE and not just the capture.
+            sut = TapToneAnalyzer.for_testing()
+            sut.material_tap_phase = MaterialTapPhase.CAPTURING_LONGITUDINAL
+            sut.detection_state = DetectionState.LISTENING
+            sut._set_status_message("Ready for fL tap")
+
+            # The settles are driven by hand: each route change schedules its own restore, and the
+            # point of the case is what happens when two of them overlap.
+            scheduled: list = []
+            sut._main_async_after = lambda _delay_ms, callback: scheduled.append(callback)
+
+            sut.handle_route_change_restart()      # unplug
+            sut.handle_route_change_restart()      # replug, inside the first settle
+
+            assert sut.status_message == sut.ROUTE_CHANGE_STATUS, "precondition: the transient shows"
+            assert len(scheduled) == 2, "precondition: each route change scheduled its own restore"
+            assert sut._status_before_settle == "Ready for fL tap", (
+                "REGRESSION: the second route change captured the transient as the real status"
+            )
+
+            for restore in scheduled:              # both settles come due
+                restore()
+
+            assert sut.status_message == "Ready for fL tap", (
+                "REGRESSION: the transient stayed up after the burst. A material phase prompt is "
+                "not re-derivable, so the settle puts back what it captured -- and it had captured "
+                "itself."
+            )
+        finally:
+            TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)

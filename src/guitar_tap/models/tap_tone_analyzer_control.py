@@ -75,6 +75,10 @@ class TapToneAnalyzerControlMixin:
 
     PAUSED_STATUS = "Detection paused – tap freely, then resume"
 
+    # The device-change transient. Named because two places must agree on it: the write below, and
+    # the guard that keeps a second route change from capturing it as the pre-settle status.
+    ROUTE_CHANGE_STATUS = "Audio device changed - reinitializing..."
+
     def _armed_prompt(self) -> str:
         """The prompt for an ARMED analyzer — guitar count-aware, material phase-aware.
 
@@ -558,9 +562,19 @@ class TapToneAnalyzerControlMixin:
         # fed back through _set_status_message() it would be stored AS the real status, so clearing
         # the condition would restore the warning.  The override layer re-resolves on its own, so
         # the real status is what has to survive the settle.
-        self._status_before_settle = self._latest_real_status
+        #
+        # GUARDED so a route change DURING a settle cannot capture the transient itself. Unplug and
+        # replug faster than the 3 s settle and the second capture stored ROUTE_CHANGE_STATUS as the
+        # real status; _restored_status() then put THAT back for every state whose status is not
+        # re-derivable — a completed measurement, a material phase prompt — and the transient stayed
+        # up until the next tap wrote a status over it.  Web guards the same capture
+        # (`if (this.statusBeforeSettle === null)`); it can test for null because its device-change
+        # timer is coalesced (`clearTimeout` in useAudioEngine), while here every route change
+        # leaves its own restore behind, so the test is "is this already the transient".
+        if self._latest_real_status != self.ROUTE_CHANGE_STATUS:
+            self._status_before_settle = self._latest_real_status
         # Mirrors Swift: statusMessage = "Audio device changed - reinitializing...".
-        self._set_status_message("Audio device changed - reinitializing...")
+        self._set_status_message(self.ROUTE_CHANGE_STATUS)
 
         # Wait for the FFT pipeline to fill with valid post-restart data
         # (~1.36 s for 65 536 samples at 48 kHz).  Use 3 s to absorb HALC/CoreAudio
