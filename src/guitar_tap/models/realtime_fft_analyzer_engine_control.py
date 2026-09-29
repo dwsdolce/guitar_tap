@@ -705,6 +705,9 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
     def _check_buffer_watchdog(self) -> None:
         """One tick: recover if the live stream has gone silent past the threshold."""
+        # A PortAudio re-initialise skipped for a pending stream close is retried from here once
+        # the close is no longer pending.
+        self._retry_owed_reinit()
         if self.is_stopped or self.is_playing_file or self._is_recovering:
             return
         started = self._watchdog_engine_start_time
@@ -790,6 +793,10 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         backoff = self._WATCHDOG_BACKOFFS[idx]
         gt_log(f"🔄 Buffer watchdog: recovery attempt "
                f"{self._watchdog_recovery_attempts}/{self._watchdog_max_attempts} in {backoff}s")
+        # Close the stream now, as Swift's recovery stops the engine when it schedules its restart:
+        # a device refresh while the restart is pending then only updates the selection, and the
+        # restart opens whichever device is selected — one stream, opened once.
+        self._close_stream_only()
         QtCore.QTimer.singleShot(int(backoff * 1000), self._do_watchdog_restart)
 
     def _do_watchdog_restart(self) -> None:

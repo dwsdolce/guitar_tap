@@ -468,6 +468,13 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         self._last_buffer_time: float = 0.0
         self._watchdog_timer = None  # QtCore.QTimer | None
         self._is_recovering: bool = False
+        # A stream close that timed out and is still running on its thread; PortAudio is not
+        # terminated while it is (terminating would wait on it).
+        self._pending_stream_close: "threading.Thread | None" = None
+        # A PortAudio re-initialise was skipped for that pending close and is still owed.
+        self._portaudio_reinit_owed: bool = False
+        # Called after the watchdog's restart reopens the stream (set by TapToneAnalyzer).
+        self._on_stream_reopened: "Callable[[], None] | None" = None
         self._watchdog_recovery_attempts: int = 0
         self._watchdog_engine_start_time: float | None = None
         # Thresholds are owned by dead_input.py so the rule and its constants are

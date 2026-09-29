@@ -392,6 +392,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             raise InputDeviceOpenError(selected.name)
         self._selected_input_device = fresh  # the same device, as PortAudio now numbers it
         self.device_index = fresh.index
+        self.rate = int(fresh.sample_rate)
         try:
             with self._stop_lock:
                 self.is_stopped = False
@@ -407,6 +408,12 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         except sd.PortAudioError as exc:
             self.stream = None
             raise InputDeviceOpenError(fresh.name) from exc
+        self.rate = _log_stream_diagnostics(self.stream, self.rate)
+        # The selected device may have changed while the restart was pending (a hot-plug refresh only
+        # updates the selection then), so the listener re-reads the device and its rate.
+        on_reopened = getattr(self, "_on_stream_reopened", None)
+        if on_reopened is not None:
+            on_reopened()
 
     def terminate_and_reinitialize_portaudio(self) -> bool:
         """Terminate and re-initialise PortAudio, so its device list is current. Returns False —
@@ -416,13 +423,32 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         pending = getattr(self, "_pending_stream_close", None)
         if pending is not None and pending.is_alive():
             gt_log("⚠️ A stream close is still pending — PortAudio not re-initialised "
-                   "(terminating would wait on it)")
+                   "(terminating would wait on it); it is retried when the close finishes")
+            self._portaudio_reinit_owed = True
             return False
         try:
             sd._terminate()
             sd._initialize()
         except Exception:
             pass
+        self._portaudio_reinit_owed = False
+        return True
+
+    def _retry_owed_reinit(self) -> bool:
+        """Ask for the device refresh a pending close made ``terminate_and_reinitialize_portaudio``
+        skip, once no close is pending. Called when the stuck close finishes and on every
+        watchdog tick; the refresh re-initialises PortAudio and clears the debt. Returns whether
+        it asked."""
+        if not getattr(self, "_portaudio_reinit_owed", False):
+            return False
+        pending = getattr(self, "_pending_stream_close", None)
+        if pending is not None and pending.is_alive():
+            return False
+        callback = getattr(self, "_on_devices_changed", None)
+        if callback is None:
+            return False
+        gt_log("🔄 Retrying the PortAudio re-initialise skipped while a stream close was pending")
+        callback()
         return True
 
     def _listed_device(self, fingerprint: str) -> "AudioDevice | None":
@@ -470,6 +496,11 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
                 stream.close()
             except Exception:
                 pass
+            # A close that outlived its timeout may have made a re-initialise wait; now that it has
+            # finished, that re-initialise can run.
+            if getattr(self, "_pending_stream_close", None) is threading.current_thread():
+                self._pending_stream_close = None
+                self._retry_owed_reinit()
 
         t = threading.Thread(target=_do_close, daemon=True, name="StreamClose")
         t.start()

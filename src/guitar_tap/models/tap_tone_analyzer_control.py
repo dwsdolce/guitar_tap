@@ -320,7 +320,13 @@ class TapToneAnalyzerControlMixin:
         # reopen on the currently-selected device (which may be the same one,
         # a newly-plugged device, or a fallback after disconnect).
         new_device = self.mic.selected_input_device
-        if new_device is not None:
+        if new_device is not None and self.mic._is_recovering:
+            # A watchdog restart is pending: it opens whichever device is selected, so the refresh
+            # only updates the selection. Mirrors Swift, where a device switch while the engine is
+            # stopped for a recovery does not restart it.
+            gt_log("🔄 Device refresh during a pending watchdog restart — the restart opens "
+                   f"'{new_device.name}'")
+        elif new_device is not None:
             from guitar_tap.models.realtime_fft_analyzer_device_management import (
                 InputDeviceOpenError,
             )
@@ -424,6 +430,14 @@ class TapToneAnalyzerControlMixin:
     def current_calibration_device(self) -> str:
         """Device name the active calibration is associated with."""
         return self._calibration_device_name
+
+    def _on_stream_reopened(self) -> None:
+        """The watchdog's restart reopened the stream — on the selected device, which a refresh during
+        the pending restart may have changed: re-read its name and rate. Mirrors Swift start()
+        updating actualSampleRate and the frequency bins."""
+        current = self.mic.selected_input_device
+        self._calibration_device_name = current.name if current is not None else ""
+        self._update_frequency_bins()
 
     def _keep_previous_after_failed_open(self, previous_device, error) -> None:
         """A device the list selected (plugged in, or a fallback) could not be opened: select and

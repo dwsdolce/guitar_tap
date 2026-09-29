@@ -1255,6 +1255,7 @@ class TapToneAnalyzer(
         # the Qt signal system to be wired, which needs setParent() first.
         self.mic._on_devices_changed = self._devicesRefreshed.emit
         self.mic._on_calibration_changed = self._on_mic_calibration_changed
+        self.mic._on_stream_reopened = self._on_stream_reopened
 
         # ── Calibration ───────────────────────────────────────────────────
         self._calibration_corrections = calibration_corrections
