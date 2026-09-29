@@ -9,6 +9,22 @@
 
 <!-- TODO(1.0.3): add this release's user-facing changes here before shipping, then delete this comment. -->
 
+## Known Limitations
+
+### Microphone Hot-Plugging (Linux)
+
+- On Linux, a microphone connected or disconnected **while Guitar Tap is running** is not
+  detected automatically. The list of input devices is built when the app starts. To use a
+  microphone you plugged in afterwards, open **Settings → Audio Input** and select it, or
+  restart Guitar Tap.
+- This affects the Linux build only. On macOS and Windows, microphones hot-plug
+  automatically.
+- The reason is that Linux audio servers such as PipeWire open and release the sound cards
+  on their own, so a device can enter and leave the list without anything being plugged in
+  or unplugged. Switching automatically on those changes would mean occasionally selecting
+  a microphone you did not choose — and remembering it for next time — so Guitar Tap leaves
+  the choice to you.
+
 ---
 
 ## Version 1.0.2 · Build 482

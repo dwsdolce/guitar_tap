@@ -1000,31 +1000,54 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         except Exception:
             pass
 
-    # -- Linux: udev via pyudev --------------------------------------------
+    # -- Linux: hot-plug is NOT supported, deliberately (2026-09-28) -------
     # Python-only — Swift targets macOS/iOS only.
 
     def _start_linux_monitor(self) -> None:
-        """Monitor Linux udev 'sound' subsystem events for device changes.
+        """Deliberately does nothing. Linux does not hot-plug. Please do not re-implement.
 
-        Requires the optional ``pyudev`` package; silently disabled if absent.
-        Python-only — Swift targets macOS/iOS only.
+        This is a decision, not an omission and not a TODO.
+
+        A udev monitor lived here from 2026-03-22. It never ran for anybody: the import was
+        ``try: import pyudev / except ImportError: return`` and ``pyudev`` was never declared
+        in requirements.txt, pyproject.toml or the PyInstaller spec, so every install - source
+        or AppImage - took the early return. Hot-plug on Linux has therefore never shipped,
+        and the release notes only ever claimed it for Windows and macOS.
+
+        In September 2026 it was made to work, and then removed again. Getting the events
+        right turned out to be the easy half, and is measurable: udev emits its sound events
+        3-20 ms *after* creating the /dev/snd nodes, the uaccess ACL that makes those nodes
+        readable lands 6-10 ms later, and that ACL - not the node, and not any single event -
+        is when PortAudio can first enumerate the card. The node-to-ACL interval measured
+        20 ms, 42 ms and 214 ms on consecutive plug cycles of one idle machine, which is why
+        a fixed settle sleep cannot be right for every machine.
+
+        The device list underneath those events is the part that does not work:
+
+        * PortAudio's Linux enumeration lists raw ALSA ``hw:`` devices alongside PipeWire's
+          ``default`` / ``pipewire`` / ``sysdefault`` aliases, and filter_input_devices keeps
+          everything with max_input_channels > 0 - the careful Windows pruning above does not
+          apply to Linux at all.
+        * Whenever PipeWire holds a card, that card reports 0 input channels and drops out of
+          the list. Confirmed directly: ``fuser /dev/snd/pcmC0D0c`` shows pipewire holding it
+          while ``arecord -D hw:0,0`` answers "Device or resource busy".
+        * PipeWire moves its active source by itself - it auto-switches to a newly plugged
+          microphone and suspends idle ones - so devices enter and leave the list with no
+          hardware change whatsoever. One session was observed going 5 -> 4 -> 3 -> 2 devices.
+        * A device that reappears because PipeWire released it is indistinguishable from one
+          just plugged in, so apply_input_device_list's ``newly_connected`` branch selects it,
+          and because every selection is saved it also becomes what the next launch uses.
+          That is precisely the defect issue #21 exists to fix, reintroduced on a third
+          platform - which is why leaving hot-plug half-working is worse than not having it.
+
+        Fixing that means deciding what Linux should enumerate at all - PipeWire's sources
+        rather than raw hw: devices - a design change with consequences for what users can
+        pick, needing verification on real hardware. Judged not worth the effort against a
+        Linux user base that may well be empty, when macOS and Windows both work.
+
+        What Linux gets instead is the contract Windows shipped with for a time: the device
+        list is built at startup, and a microphone connected later is selected by opening
+        Settings and choosing it. Documented in docs/ReleaseNotes.md and the user manual.
         """
-        try:
-            import pyudev  # optional dependency
-        except ImportError:
-            return
-
-        context = pyudev.Context()
-        monitor = pyudev.Monitor.from_netlink(context)
-        monitor.filter_by(subsystem="sound")
-
-        def _run() -> None:
-            monitor.start()
-            while not self._monitor_stop.is_set():
-                device = monitor.poll(timeout=1.0)
-                if device is not None and device.action in ("add", "remove"):
-                    self._notify_devices_changed()
-
-        self._monitor_thread = threading.Thread(target=_run, daemon=True)
-        self._monitor_thread.start()
+        return
 
