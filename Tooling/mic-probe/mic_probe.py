@@ -11,6 +11,13 @@ taps:
   wasapi-N    WASAPI with the endpoint's native channel count (no downmix)
   mme-N       MME with its native channel count     (what many older apps use)
   dsound-N    DirectSound with its native channel count
+  raw-N       WASAPI shared, native channels, RAW stream option: bypasses the
+              Windows audio effects (noise suppression, Voice Clarity, vendor
+              APOs) where the driver allows it
+
+After that pass, on Windows, a second short recording opens the mic alone in
+WASAPI exclusive mode (``excl-N``), which bypasses the shared-mode effects too
+but cannot share the device with the other streams.
 
 For each it writes a WAV (all channels kept) and reports per-channel peak,
 loudest 1024-sample chunk RMS (the level Guitar Tap's tap detector compares with
@@ -45,10 +52,12 @@ import zipfile
 import numpy as np
 import sounddevice as sd
 
-PROBE_VERSION = "1.0"
+PROBE_VERSION = "1.1"
 CHUNK = 1024           # Guitar Tap's blocksize; its detector level is per-chunk RMS
 QUIET_SECONDS = 5.0    # leading window the user keeps quiet — the noise floor
+EXCL_SECONDS = 20.0    # length of the exclusive-mode pass
 GTAP_MIN_THRESHOLD_DB = -80.0   # bottom of Guitar Tap's Threshold slider
+GATED_FLOOR_DB = -110.0  # a real mic's self-noise sits well above this; lower means gated/suppressed
 
 
 # ── Device discovery ─────────────────────────────────────────────────────────
@@ -108,10 +117,20 @@ def siblings(target: dict, inputs: "list[dict]") -> "dict[str, dict]":
 
 # ── Recording ────────────────────────────────────────────────────────────────
 
+def wasapi_settings(raw: bool = False, exclusive: bool = False) -> "sd.WasapiSettings":
+    """WASAPI extra settings; sounddevice has no RAW option, so set PaWasapiStreamInfo.streamOption directly."""
+    s = sd.WasapiSettings(exclusive=exclusive)
+    if raw:
+        s._streaminfo.streamOption = sd._lib.eStreamOptionRaw
+    return s
+
+
 class Capture:
-    def __init__(self, label: str, dev: dict, channels: int, rate: int, blocksize: int | None):
+    def __init__(self, label: str, dev: dict, channels: int, rate: int, blocksize: int | None,
+                 extra=None):
         self.label, self.dev, self.channels, self.rate = label, dev, channels, rate
         self.blocksize = blocksize
+        self.extra = extra
         self.blocks: "list[np.ndarray]" = []
         self.error: str | None = None
         self.status_flags = 0
@@ -134,6 +153,8 @@ class Capture:
                       samplerate=self.rate, dtype=np.float32, callback=self._cb)
             if self.blocksize:
                 kw["blocksize"] = self.blocksize
+            if self.extra is not None:
+                kw["extra_settings"] = self.extra
             self.stream = sd.InputStream(**kw)
             self.stream.start()
             self.rate = int(self.stream.samplerate)
@@ -170,7 +191,20 @@ def build_captures(target: dict, inputs: "list[dict]") -> "list[Capture]":
         if d is target and ch == 1:
             continue   # identical to the gtap stream
         caps.append(Capture(f"{short}-{ch}ch", d, ch, int(d["default_samplerate"]), None))
+    w = sib.get("Windows WASAPI")
+    if w is not None:
+        ch = int(w["max_input_channels"])
+        caps.append(Capture(f"raw-{ch}ch", w, ch, int(w["default_samplerate"]), None, wasapi_settings(raw=True)))
     return caps
+
+
+def build_exclusive(target: dict, inputs: "list[dict]") -> "Capture | None":
+    """Exclusive mode can't share the device, so it gets its own pass after the others close."""
+    w = siblings(target, inputs).get("Windows WASAPI")
+    if w is None:
+        return None
+    ch = int(w["max_input_channels"])
+    return Capture(f"excl-{ch}ch", w, ch, int(w["default_samplerate"]), None, wasapi_settings(exclusive=True))
 
 
 # ── Analysis ─────────────────────────────────────────────────────────────────
@@ -218,7 +252,8 @@ def analyse(cap: Capture) -> "list[str]":
         cols.append(("mono avg", x.mean(axis=1)))   # what a 1-channel open would deliver
     for name, sig in cols:
         s = channel_stats(sig, cap.rate)
-        note = "   ALL ZEROS (mic blocked / privacy setting?)" if s["zeros"] else ""
+        note = ("   ALL ZEROS (mic blocked / privacy setting?)" if s["zeros"]
+                else "   floor below self-noise: gated/suppressed" if s["floor"] < GATED_FLOOR_DB else "")
         lines.append(f"    {name:<10}      {fmt_db(s['peak'])} dB      {fmt_db(s['max_chunk'])} dB"
                      f"         {fmt_db(s['floor'])} dB      {fmt_db(s['max_chunk'] - s['floor'])} dB{note}")
     if x.shape[1] > 1 and len(x):
@@ -244,6 +279,19 @@ def verdict(caps: "list[Capture]") -> "list[str]":
     gs = channel_stats(g.data()[:, 0], g.rate)
     out = [f"Guitar Tap-style stream: loudest chunk {fmt_db(gs['max_chunk'])} dB "
            f"(Threshold slider bottom is {GTAP_MIN_THRESHOLD_DB:.0f} dB)."]
+    if np.isfinite(gs["floor"]) and gs["floor"] < GATED_FLOOR_DB:
+        out.append(f"Its quiet part is at {fmt_db(gs['floor'])} dB, below any real mic's self-noise: "
+                   "something (a noise gate or suppressor) is processing this mic before apps see it.")
+    for c in caps:   # the effect-bypassing configurations, compared directly
+        if c.label.startswith(("raw-", "excl-")):
+            if c.error:
+                out.append(f"{c.label}: could not open ({c.error}).")
+                continue
+            s = channel_stats(c.data()[:, 0], c.rate)
+            diff = s["max_chunk"] - gs["max_chunk"]
+            out.append(f"{c.label}: loudest chunk {fmt_db(s['max_chunk'])} dB ({diff:+.1f} dB vs Guitar Tap-style), "
+                       f"floor {fmt_db(s['floor'])} dB" + (" (separate take, so taps differ)." if
+                                                          c.label.startswith("excl-") else "."))
     best = None
     for c in caps:
         if c is g or c.error:
@@ -314,6 +362,25 @@ def pause_exit(code: int, prompt: bool) -> int:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+def record(caps: "list[Capture]", seconds: float) -> None:
+    """Open every capture at once, show live meters, and close them after `seconds`."""
+    for c in caps:
+        c.open()
+    t0 = time.time()
+    try:
+        while (el := time.time() - t0) < seconds:
+            phase = "QUIET " if el < QUIET_SECONDS else "TAP NOW"
+            meters = "  ".join(f"{c.label}:{fmt_db(c.live_db)}" for c in caps if not c.error)
+            print(f"\r  {phase}  {seconds - el:4.0f}s left   {meters}   ", end="", flush=True)
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        print("\n  stopped early")
+    finally:
+        for c in caps:
+            c.close()
+    print("\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--list", action="store_true", help="list input devices and exit")
@@ -360,25 +427,18 @@ def main() -> int:
               f"{args.seconds:.0f} seconds:\n"
               f"  * the first {QUIET_SECONDS:.0f} seconds: stay QUIET (this measures background noise)\n"
               "  * then TAP the guitar 5 or 6 times, a couple of seconds apart,\n"
-              "    the same way you would when using Guitar Tap.\n"
-              "If Audacity is recording the same microphone at the same time, that's fine.")
+              "    the same way you would when using Guitar Tap.")
         input("\nPress Enter to start...")
+    record(caps, args.seconds)
 
-    for c in caps:
-        c.open()
-    t0 = time.time()
-    try:
-        while (el := time.time() - t0) < args.seconds:
-            phase = "QUIET " if el < QUIET_SECONDS else "TAP NOW"
-            meters = "  ".join(f"{c.label}:{fmt_db(c.live_db)}" for c in caps if not c.error)
-            print(f"\r  {phase}  {args.seconds - el:4.0f}s left   {meters}   ", end="", flush=True)
-            time.sleep(0.2)
-    except KeyboardInterrupt:
-        print("\n  stopped early")
-    finally:
-        for c in caps:
-            c.close()
-    print("\n")
+    excl = build_exclusive(target, inputs) if platform.system() == "Windows" else None
+    if excl is not None:
+        if prompt:
+            print(f"One more, shorter recording ({EXCL_SECONDS:.0f} seconds) with the microphone opened a different way.\n"
+                  f"Same routine: {QUIET_SECONDS:.0f} seconds QUIET, then TAP 4 or 5 times.")
+            input("\nPress Enter to start...")
+        record([excl], min(EXCL_SECONDS, args.seconds))
+        caps.append(excl)
 
     stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     out = os.path.join(args.outdir or desktop(), f"GuitarTap-MicProbe-{stamp}")
