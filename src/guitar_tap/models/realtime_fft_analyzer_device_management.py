@@ -107,6 +107,50 @@ def _log_stream_diagnostics(stream: "sd.InputStream", requested_rate: int) -> in
     return actual_rate
 
 
+# MARK: - Stream Open
+
+def _wasapi_raw_settings(device_index: "int | None") -> "sd.WasapiSettings | None":
+    """WASAPI settings that request a RAW stream, or None when *device_index* is not a WASAPI device.
+
+    RAW skips the Windows audio effects (Settings → Sound → Audio enhancements: "Device default
+    effects", Voice Clarity, vendor noise suppression). Those gate and suppress taps as noise: on
+    one Acer laptop they cost ~70 dB on every shared-mode path. Swift gets the
+    same result on iOS from the `.measurement` session mode; the web edition from turning off
+    echoCancellation / noiseSuppression / autoGainControl.
+
+    sounddevice has no RAW option, so this sets PaWasapiStreamInfo.streamOption directly; the
+    struct version must stay 1 (PortAudio rejects any other).
+    """
+    if platform.system() != "Windows":
+        return None
+    try:
+        dev = sd.query_devices(device_index, "input")
+        if sd.query_hostapis(int(dev["hostapi"]))["name"] != "Windows WASAPI":
+            return None
+        settings = sd.WasapiSettings()
+        settings._streaminfo.streamOption = sd._lib.eStreamOptionRaw
+        return settings
+    except Exception as exc:   # a sounddevice without these internals: open without RAW
+        gt_log(f"⚠️ WASAPI RAW mode unavailable ({exc}) — Windows audio effects stay on")
+        return None
+
+
+def _open_input_stream(device_index: "int | None", rate: int, blocksize: int, callback) -> "sd.InputStream":
+    """Open (not start) the mono float32 input stream — in WASAPI RAW mode on Windows, falling
+    back to a plain open if the device refuses RAW. Raises sd.PortAudioError if neither opens."""
+    kw = dict(device=device_index, channels=1, samplerate=rate, dtype=np.float32,
+              blocksize=blocksize, callback=callback)
+    raw = _wasapi_raw_settings(device_index)
+    if raw is not None:
+        try:
+            stream = sd.InputStream(extra_settings=raw, **kw)
+            gt_log("🎤 WASAPI RAW stream (Windows audio effects bypassed)")
+            return stream
+        except sd.PortAudioError as exc:
+            gt_log(f"⚠️ WASAPI RAW open failed ({exc}) — opening without RAW")
+    return sd.InputStream(**kw)
+
+
 def input_device_to_use(devices: list, saved_fingerprint: "str | None",
                         system_default_fingerprint: "str | None") -> "AudioDevice | None":
     """The input device to use from *devices*: the saved device when it is present, otherwise
@@ -348,14 +392,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         with self._stop_lock:
             self.is_stopped = False
         try:
-            self.stream = sd.InputStream(
-                device=self.device_index,
-                channels=1,
-                samplerate=self.rate,
-                dtype=np.float32,
-                blocksize=self.chunksize,
-                callback=self.new_frame,
-            )
+            self.stream = _open_input_stream(self.device_index, self.rate, self.chunksize, self.new_frame)
             self.stream.start()
         except sd.PortAudioError:
             self.stream = None
@@ -396,14 +433,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         try:
             with self._stop_lock:
                 self.is_stopped = False
-            self.stream = sd.InputStream(
-                device=self.device_index,
-                channels=1,
-                samplerate=self.rate,
-                dtype=np.float32,
-                blocksize=self.chunksize,
-                callback=self.new_frame,
-            )
+            self.stream = _open_input_stream(self.device_index, self.rate, self.chunksize, self.new_frame)
             self.stream.start()
         except sd.PortAudioError as exc:
             self.stream = None

@@ -161,6 +161,16 @@ if __name__ == "__main__":
 
     sys.excepthook = _excepthook
 
+    # Ctrl+C in the terminal quits the way closing the window does. Python's default
+    # raises KeyboardInterrupt in whatever slot runs next, which prints a traceback and
+    # tears Qt down mid-flight. The handler runs only when the interpreter regains control,
+    # so a no-op timer hands it control while the Qt event loop is otherwise idle.
+    import signal
+    signal.signal(signal.SIGINT, lambda *_: qapp.closeAllWindows())
+    _sigint_pulse = QtCore.QTimer()
+    _sigint_pulse.timeout.connect(lambda: None)
+    _sigint_pulse.start(250)
+
     rc = 0
     try:
         app = MainWindow()
@@ -185,6 +195,13 @@ if __name__ == "__main__":
     try:
         QtCore.QSettings("Dolcesfogato", "guitar-tap").sync()
         QtCore.QSettings("Dolcesfogato", "guitar_tap").sync()
+    except Exception:
+        pass
+    # Destroy the QApplication, which os._exit would skip: Qt's main-thread caches (font data)
+    # are freed with it. Left alive, Qt warns "QThreadStorage: entry N destroyed before end of
+    # thread" as its DLL unloads. This is Qt teardown only; PortAudio was closed in closeEvent.
+    try:
+        qapp.shutdown()
     except Exception:
         pass
     try:
