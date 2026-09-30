@@ -77,6 +77,7 @@ _release_guard.enforce()
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from guitar_tap.utilities.logging import gt_log
 from guitar_tap.views.tap_tone_analysis_view import MainWindow, basedir
 
 if os.name == "nt":
@@ -200,8 +201,13 @@ if __name__ == "__main__":
     # Destroy the QApplication, which os._exit would skip: Qt's main-thread caches (font data)
     # are freed with it. Left alive, Qt warns "QThreadStorage: entry N destroyed before end of
     # thread" as its DLL unloads. This is Qt teardown only; PortAudio was closed in closeEvent.
+    # Skipped if the processing thread outlived closeEvent's wait: destroying a running QThread
+    # aborts the process, so that exit keeps the warning instead.
     try:
-        qapp.shutdown()
+        if not app.fft_canvas.analyzer.mic.proc_thread.isRunning():
+            qapp.shutdown()
+        else:
+            gt_log("⚠️ Processing thread still running at exit — Qt teardown skipped")
     except Exception:
         pass
     try:

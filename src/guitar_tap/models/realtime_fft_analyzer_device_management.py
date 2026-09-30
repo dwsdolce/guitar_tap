@@ -127,10 +127,13 @@ def _wasapi_raw_settings(device_index: "int | None") -> "sd.WasapiSettings | Non
         dev = sd.query_devices(device_index, "input")
         if sd.query_hostapis(int(dev["hostapi"]))["name"] != "Windows WASAPI":
             return None
+    except (sd.PortAudioError, ValueError):
+        return None   # the device can't be queried: the plain open reports why
+    try:
         settings = sd.WasapiSettings()
         settings._streaminfo.streamOption = sd._lib.eStreamOptionRaw
         return settings
-    except Exception as exc:   # a sounddevice without these internals: open without RAW
+    except AttributeError as exc:   # a sounddevice without these internals: open without RAW
         gt_log(f"⚠️ WASAPI RAW mode unavailable ({exc}) — Windows audio effects stay on")
         return None
 
