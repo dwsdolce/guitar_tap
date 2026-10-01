@@ -820,6 +820,26 @@ class TapToneAnalyzerControlMixin:
         self._update_frequency_bins()
 
     # @parity state/tap-tone-analyzer
+    def request_start_tap_sequence(self) -> bool:
+        """User-initiated arming (New Tap, settings-apply re-arm, launch auto-arm). A file that is
+        playing is stopped first: a new sequence — for a changed measurement type, say — must not be
+        fed the rest of the file. If Dump Capture Audio is on and its folder can't be reached, emits
+        ``dumpFolderUnreachable`` so the view prompts the user (Change Location / Turn Off Saving /
+        Cancel) and does **not** arm — the prompt's actions retry. File-playback setup calls
+        ``start_tap_sequence`` directly, bypassing this check. Returns whether it armed.
+        Mirrors Swift ``requestStartTapSequence()``.
+        """
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.wav_dump_folder import WavDumpFolder
+
+        self.mic.stop_file_playback()
+        if _tds.dump_capture_audio() and not WavDumpFolder.is_reachable():
+            self.dumpFolderUnreachable.emit()
+            return False
+        self.start_tap_sequence()
+        return True
+
+    # @parity state/tap-tone-analyzer
     def start_tap_sequence(self, skip_warmup: bool = False) -> None:
         """Begin a new tap detection sequence, resetting all per-sequence state.
 
@@ -1005,6 +1025,7 @@ class TapToneAnalyzerControlMixin:
         self.loaded_notes = None
         self.source_measurement_timestamp = None
         self.loadedMeasurementNameChanged.emit(None)
+        self.dismiss_capture_audio_saved()
 
         # Also clear the played-file name so the chart title reverts to "New"
         # when the user starts a fresh tap sequence (e.g. by changing

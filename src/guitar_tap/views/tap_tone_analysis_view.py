@@ -436,7 +436,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.saved_path: str = ""
         self._is_running: bool = False
-        self._is_paused: bool = False
         self._is_measurement_complete: bool = False
         self._tap_count_captured: int = 0
         self._tap_count_total: int = 1
@@ -1939,6 +1938,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_warning_wgt.setVisible(False)
         vl.addWidget(self._sb_warning_wgt)
 
+        # "Capture audio saved" notice — Dump Capture Audio wrote this measurement's WAV; shown so a
+        # setting left on is noticed. Mirrors Swift's row in fullStatusBar.
+        self._sb_saved_wgt = QtWidgets.QWidget()
+        self._sb_saved_wgt.setObjectName("sb_saved_wgt")
+        self._sb_saved_wgt.setStyleSheet(
+            "#sb_saved_wgt { background: rgba(0,122,255,31); border-radius: 4px; }"
+        )
+        _saved_hl = QtWidgets.QHBoxLayout(self._sb_saved_wgt)
+        _saved_hl.setContentsMargins(6, 2, 6, 2)
+        _saved_hl.setSpacing(5)
+        self._sb_saved_msg = QtWidgets.QLabel("")
+        self._sb_saved_msg.setFont(caption)
+        self._sb_saved_msg.setStyleSheet("color: rgb(0,122,255);")
+        _saved_hl.addWidget(self._sb_saved_msg)
+        _saved_hl.addStretch()
+        _saved_close = QtWidgets.QToolButton()
+        _saved_close.setIcon(qta.icon("fa5s.times", color="gray"))
+        _saved_close.setToolTip("Dismiss")
+        _saved_close.setAutoRaise(True)
+        _saved_close.clicked.connect(lambda: self.fft_canvas.analyzer.dismiss_capture_audio_saved())
+        _saved_hl.addWidget(_saved_close)
+        self._sb_saved_wgt.setVisible(False)
+        vl.addWidget(self._sb_saved_wgt)
+
         # Timer for pulsing the warning icon opacity (mirrors Swift warningIconOpacity animation:
         # easeInOut 0.6 s, repeating, autoreverses, range 0.2–1.0)
         import math as _math
@@ -2196,6 +2219,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Mirrors Swift fftAnalyzer.setInputDevice(match) called inside loadMeasurement().
         canvas.inputDeviceSwitched.connect(self._on_input_device_switched)
         canvas.inputDeviceOpenFailed.connect(self._on_input_device_open_failed)
+        canvas.dumpFolderUnreachable.connect(self._on_dump_folder_unreachable)
+        canvas.captureRecordingHeld.connect(self._on_capture_recording_held)
+        canvas.captureAudioSavedChanged.connect(self._on_capture_audio_saved_changed)
         # Mirrors Swift @Published var microphoneWarning driving alert sheet.
         canvas.microphoneWarningChanged.connect(self._on_microphone_warning_changed)
         # Every load, from any caller, brings the view along — Swift re-renders reactively.
@@ -2339,7 +2365,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_detect_dot.setStyleSheet("color: orange;")
             self._sb_detect_msg.setText("Stopped")
             self._sb_detect_msg.setStyleSheet("color: orange;")
-            self._is_paused = False
         self._update_tap_buttons()
 
     def _on_detection_state_changed(self, _state: object) -> None:
@@ -2518,6 +2543,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_measurement_complete(self, checked: bool) -> None:
         self._is_measurement_complete = checked
+        if not checked:
+            # A new sequence has started (only start_tap_sequence emits False): the loaded
+            # measurement no longer backs what is shown or exported.
+            self._loaded_resonant_peaks = []
+            self._loaded_measurement = None
         self._material_peak_widget.set_complete(checked)
         self.fft_canvas.set_measurement_complete(checked)
         # loadedMeasurementName is cleared by start_tap_sequence() / reset(), not here.
@@ -3041,6 +3071,13 @@ class MainWindow(QtWidgets.QMainWindow):
     # Pause / Cancel tap detection
     # ================================================================
 
+    @property
+    def _is_paused(self) -> bool:
+        """Whether detection is paused — read from the analyzer, as Swift derives it from
+        detectionState."""
+        from guitar_tap.models.detection_state import DetectionState
+        return self.fft_canvas.analyzer.detection_state is DetectionState.PAUSED
+
     def _on_pause_tap(self) -> None:
         if self._is_in_review_phase():
             # In review mode the Pause button acts as Accept.
@@ -3056,13 +3093,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.fft_canvas.analyzer.redo_current_phase()
             self._update_tap_buttons()
             return
-        self._is_paused = False
         self.fft_canvas.cancel_tap_sequence()
-        self._tap_count_captured = 0
         self._update_tap_buttons()
 
     def _on_tap_detection_paused(self, paused: bool) -> None:
-        self._is_paused = paused
         if paused:
             # Mirrors Swift: phase/tap labels are guarded by tap.isDetecting,
             # which is False when paused → labels hidden.
@@ -3087,13 +3121,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._is_running = True
         self.set_running(True)
         self.fft_canvas.start_analyzer()
-        # Launch auto-arm was deferred by the model because Dump Capture Audio is on but its folder is
-        # unreachable — prompt now, same as New Tap, and arm only if resolved. This
-        # runs after the model's start()/auto-arm, so the flag is reliably set (a signal would race).
-        if getattr(self.fft_canvas.analyzer, "pending_dump_folder_prompt", False):
-            self.fft_canvas.analyzer.pending_dump_folder_prompt = False
-            if self._ensure_dump_folder_reachable():
-                self.fft_canvas.restart_tap_sequence()
 
     def _open_audio_file(self) -> None:
         """Show a dialog for selecting an audio file and optional calibration,
@@ -3210,51 +3237,23 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _on_new_tap(self) -> None:
-        """Begin a new tap sequence, clearing any in-progress accumulated spectra.
+        """Request a new tap sequence. Mirrors Swift New Tap button action: tap.requestStartTapSequence().
 
-        Mirrors Swift New Tap button action: tap.startTapSequence().
-        startTapSequence() sets isMeasurementComplete = false, clears captured
-        taps, resets material phase state for plate/brace, and emits measurementComplete(False).
-        In Python, start_analyzer() calls analyzer.start_tap_sequence() and also
-        restarts the audio processing thread (equivalent to Swift's AVAudioEngine restart
-        that occurs when startTapSequence re-arms the audio pipeline).
+        The analyzer checks the dump folder (prompting through dumpFolderUnreachable if it can't be
+        reached) and, if it arms, start_tap_sequence() clears the comparison, the loaded measurement
+        and the captured taps and emits the signals the view follows. restart_tap_sequence() also
+        resets the ring buffer — without stopping the processing thread, as Swift's New Tap runs on
+        a continuously-running AVAudioEngine.
         """
-        # Arm-time guard: Dump Capture Audio on but its folder unreachable →
-        # prompt before capturing rather than losing the write at completion. Mirrors Swift's
-        # dumpFolderUnreachable alert (the reachability predicate lives on the shared model).
-        if not self._ensure_dump_folder_reachable():
-            return
-        # Exit comparison mode first — required when _is_measurement_complete is False
-        # (e.g. user entered comparison from live-detecting state).
-        if self.fft_canvas.is_comparing:
-            self.fft_canvas.clear_comparison()
-        self._is_paused = False
-        # Clear loaded measurement state — mirrors Swift loadMeasurement clearing
-        # currentPeaks/selectedPeakIDs when a new tap begins, ensuring _on_export_pdf
-        # reads live analyzer state rather than stale loaded-measurement data.
-        self._loaded_resonant_peaks = []
-        self._loaded_measurement = None
-        self._tap_count_captured = 0
-        self._sb_tap_count.setVisible(False)
-        self._sb_progress.setVisible(False)
-        # restart_tap_sequence() calls analyzer.start_tap_sequence() (sets
-        # is_measurement_complete = False, emits measurementComplete(False)) and
-        # resets the ring buffer state — without stopping the processing thread.
-        # This mirrors Swift's New Tap button calling tap.startTapSequence() on a
-        # continuously-running AVAudioEngine (no engine restart on New Tap in Swift).
-        # For plate/brace, start_tap_sequence() already transitions material_tap_phase
-        # to CAPTURING_LONGITUDINAL — no separate start_plate_analysis() call needed.
         self.fft_canvas.restart_tap_sequence()
 
-    def _ensure_dump_folder_reachable(self) -> bool:
-        """If Dump Capture Audio is on but its folder can't be reached, prompt the user (Change
-        Location / Turn Off Saving / Cancel) and return whether to proceed with arming. Mirrors the
-        Swift ``dumpFolderUnreachable`` alert."""
+    def _on_dump_folder_unreachable(self) -> None:
+        """Arming was refused: Dump Capture Audio is on but its folder can't be reached. Prompt
+        before capturing rather than losing the write at completion. Change Location retries the
+        request (arms if now reachable); Turn Off Saving arms; Cancel leaves everything as it was.
+        Connected to canvas.dumpFolderUnreachable — Swift's dumpFolderUnreachable alert."""
         from guitar_tap.models.tap_display_settings import TapDisplaySettings
         from guitar_tap.models.wav_dump_folder import WavDumpFolder
-
-        if not TapDisplaySettings.dump_capture_audio() or WavDumpFolder.is_reachable():
-            return True
 
         box = QtWidgets.QMessageBox(self)
         box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
@@ -3272,11 +3271,55 @@ class MainWindow(QtWidgets.QMainWindow):
         clicked = box.clickedButton()
 
         if clicked is change_btn:
-            return WavDumpFolder.choose_folder(self) and WavDumpFolder.is_reachable()
-        if clicked is off_btn:
+            if WavDumpFolder.choose_folder(self):
+                self.fft_canvas.restart_tap_sequence()   # retry — arms if now reachable
+        elif clicked is off_btn:
             TapDisplaySettings.set_dump_capture_audio(False)
-            return True
-        return False  # Cancel
+            self.fft_canvas.start_tap_sequence()     # dump now off → arm directly
+
+    def _on_capture_audio_saved_changed(self, name) -> None:
+        """Show or hide the "Capture audio saved" notice. Connected to canvas.captureAudioSavedChanged
+        — Swift's row on tap.captureAudioSaved."""
+        from guitar_tap.models.wav_dump_folder import WavDumpFolder
+
+        if name:
+            self._sb_saved_msg.setText(
+                f"Capture audio saved: {name} ({WavDumpFolder.current_folder().name})"
+            )
+        self._sb_saved_wgt.setVisible(bool(name))
+
+    def _on_capture_recording_held(self) -> None:
+        """A measurement finished but its captured audio couldn't be written; the recording is held.
+        Change Location saves it (asking again if it still can't be written); Turn Off Saving and
+        Cancel let it go. Connected to canvas.captureRecordingHeld — Swift's captureRecordingHeld
+        alert."""
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
+        from guitar_tap.models.wav_dump_folder import WavDumpFolder
+
+        analyzer = self.fft_canvas.analyzer
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        box.setWindowTitle("Capture Audio Folder Unavailable")
+        box.setText(
+            "The captured audio of this measurement couldn't be saved to:\n"
+            f"{WavDumpFolder.current_folder()}\n\n"
+            "The folder may have been renamed, moved, or removed. Choose a folder to save it, or "
+            "turn off audio saving."
+        )
+        change_btn = box.addButton("Change Location…", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+        off_btn = box.addButton("Turn Off Saving", QtWidgets.QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.StandardButton.Cancel)
+        box.exec()
+        clicked = box.clickedButton()
+
+        if clicked is change_btn:
+            WavDumpFolder.choose_folder(self)
+            analyzer.save_held_capture_recordings()   # asks again if still not written
+        elif clicked is off_btn:
+            TapDisplaySettings.set_dump_capture_audio(False)
+            analyzer.discard_held_capture_recordings()
+        else:
+            analyzer.discard_held_capture_recordings()
 
     # ================================================================
     # Peak select / deselect all
@@ -6394,7 +6437,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # Disabled (not removed) when already on the default — button-visibility principle.
             df_use_default_btn.setEnabled(_WDF.has_custom_folder())
 
-        df_open_btn.clicked.connect(_WDF.reveal_in_finder)
+        df_open_btn.clicked.connect(_WDF.open_folder)
 
         def _change_df() -> None:
             if _WDF.choose_folder(self):
@@ -6942,9 +6985,7 @@ class MainWindow(QtWidgets.QMainWindow):
             _flc_changed = (measure_flc_cb.isChecked() != _current_flc)
             _needs_restart = (_type_changed or _flc_changed) and not _current_mt.is_guitar and self._is_running
             if _needs_restart:
-                self._is_paused = False
                 self.fft_canvas.cancel_tap_sequence()
-                self._tap_count_captured = 0
 
             # Apply measurement type to TapDisplaySettings — mirrors Swift where
             # selectedMeasurementType (local @State) is written to TapDisplaySettings

@@ -44,6 +44,7 @@ This file (tap_tone_analyzer.py) contains:
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import NamedTuple, Callable
 
 # ── PySide6 ─────────────────────────────────────────────────────────────────────
@@ -85,6 +86,16 @@ class ResultProvenance(NamedTuple):
     microphone_uid: "str | None"
     calibration_name: "str | None"
     sample_rate: "float | None"
+
+class CaptureRecording(NamedTuple):
+    """A capture's audio waiting to be saved by Dump Capture Audio. Mirrors Swift
+    ``TapToneAnalyzer.CaptureRecording``."""
+
+    samples: object       # float32 ndarray
+    sample_rate: float
+    label: str
+    captured_at: datetime  # when it was captured — names the file, whenever it is written
+
 
 class TapToneAnalyzer(
     TapToneAnalyzerControlMixin,
@@ -193,6 +204,17 @@ class TapToneAnalyzer(
     # opened; the previous device is kept. Payload: the message for the alert. Mirrors Swift
     # @Published var inputDeviceOpenFailure.
     inputDeviceOpenFailed: QtCore.Signal = QtCore.Signal(str)
+    # Emitted when arming is refused because Dump Capture Audio is on and its folder can't be
+    # reached; the view prompts (Change Location / Turn Off Saving / Cancel). Mirrors Swift
+    # @Published var dumpFolderUnreachable.
+    dumpFolderUnreachable: QtCore.Signal = QtCore.Signal()
+    # Emitted when a finished measurement's captured audio could not be written and is held; the view
+    # asks the user to choose a folder, turn off saving, or cancel. Mirrors Swift
+    # @Published var captureRecordingHeld.
+    captureRecordingHeld: QtCore.Signal = QtCore.Signal()
+    # The file name of the last capture audio Dump Capture Audio wrote (for the "saved" notice), or
+    # None when none is shown. Mirrors Swift @Published var captureAudioSaved.
+    captureAudioSavedChanged: QtCore.Signal = QtCore.Signal(object)
     # The two edges of load_measurement() — is_loading_measurement going True, then False (Swift's
     # isLoadingMeasurement). SwiftUI re-renders from the loaded state on its own; Qt does not, so the
     # view does its restoration work in response to these rather than by wrapping the load itself.
@@ -589,6 +611,13 @@ class TapToneAnalyzer(
         # Access is protected by _gated_lock (shared with the gated-capture state).
         self._session_recording_buffer: list = []
         self._is_session_recording: bool = False
+        # Recordings that could not be written when their measurement finished (the chosen folder
+        # was no longer at its path, or the write failed). Held until the user chooses a folder or
+        # lets them go. Mirrors Swift heldCaptureRecordings.
+        self.held_capture_recordings: list[CaptureRecording] = []
+        # The file name of the last capture audio written, for the "saved" notice; None when none is
+        # shown. A new sequence clears it. Mirrors Swift captureAudioSaved.
+        self.capture_audio_saved: str | None = None
         self._session_checkpoints: list = []
         self._session_recording_sample_rate: float = 48000.0
 
@@ -1301,20 +1330,17 @@ class TapToneAnalyzer(
             self._persist_measurements()
 
         # ── Auto-start tap sequence on first launch ────────────────────────
-        # Mirrors Swift start() auto-start guard + requestStartTapSequence: if Dump
-        # Capture Audio is on but its folder is unreachable, DON'T arm — set a flag the view checks at
-        # startup to prompt (Change Location / Turn Off Saving / Cancel), same as New Tap. A Qt signal
-        # can't be used here: this runs inside analyzer.start() during init, BEFORE the view connects
-        # its signals (fft_canvas connects after .start()), so the emit would be lost.
-        self.pending_dump_folder_prompt = False
+        # Mirrors Swift start(): the guard is evaluated on the main loop after pending state changes
+        # have settled, and arms through request_start_tap_sequence so it gets the same dump-folder
+        # check as New Tap — launching the app is a user action, so it must prompt too rather than
+        # silently record to (or skip) an unreachable folder.
+        self._main_async_after(0, self._auto_start_tap_sequence)
+
+    def _auto_start_tap_sequence(self) -> None:
+        """Arm on a fresh launch only — not if a sequence is running, complete or paused."""
         if (not self.is_detecting and not self.is_measurement_complete
                 and not self.is_detection_paused and self.current_tap_count == 0):
-            from guitar_tap.models.tap_display_settings import TapDisplaySettings
-            from guitar_tap.models.wav_dump_folder import WavDumpFolder
-            if TapDisplaySettings.dump_capture_audio() and not WavDumpFolder.is_reachable():
-                self.pending_dump_folder_prompt = True
-            else:
-                self.start_tap_sequence()
+            self.request_start_tap_sequence()
 
     # ------------------------------------------------------------------ #
     # FFT frequency axis

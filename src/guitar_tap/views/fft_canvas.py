@@ -212,6 +212,9 @@ class FftCanvas(pg.PlotWidget):
     microphoneWarningChanged: QtCore.Signal = QtCore.Signal(object)        # str | None — mirrors Swift @Published var microphoneWarning
     inputDeviceSwitched: QtCore.Signal = QtCore.Signal(object)             # AudioDevice — relays TapToneAnalyzer.inputDeviceSwitched
     inputDeviceOpenFailed: QtCore.Signal = QtCore.Signal(str)              # message — relays TapToneAnalyzer.inputDeviceOpenFailed
+    dumpFolderUnreachable: QtCore.Signal = QtCore.Signal()                 # relays TapToneAnalyzer.dumpFolderUnreachable
+    captureRecordingHeld: QtCore.Signal = QtCore.Signal()                  # relays TapToneAnalyzer.captureRecordingHeld
+    captureAudioSavedChanged: QtCore.Signal = QtCore.Signal(object)        # file name or None — relays TapToneAnalyzer.captureAudioSavedChanged
     measurementLoadStarting: QtCore.Signal = QtCore.Signal()               # relays TapToneAnalyzer.measurementLoadStarting
     measurementLoaded: QtCore.Signal = QtCore.Signal(object)               # relays TapToneAnalyzer.measurementLoaded
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
@@ -359,6 +362,9 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.microphoneWarningChanged.connect(self.microphoneWarningChanged)
         self.analyzer.inputDeviceSwitched.connect(self.inputDeviceSwitched)
         self.analyzer.inputDeviceOpenFailed.connect(self.inputDeviceOpenFailed)
+        self.analyzer.dumpFolderUnreachable.connect(self.dumpFolderUnreachable)
+        self.analyzer.captureRecordingHeld.connect(self.captureRecordingHeld)
+        self.analyzer.captureAudioSavedChanged.connect(self.captureAudioSavedChanged)
         self.analyzer.measurementLoadStarting.connect(self.measurementLoadStarting)
         self.analyzer.measurementLoaded.connect(self.measurementLoaded)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
@@ -666,41 +672,46 @@ class FftCanvas(pg.PlotWidget):
         Called only when the thread is NOT running: at startup, on the first file playback if it has not
         started yet, and from restart_tap_sequence if it has died. Nothing stops the thread before
         shutdown, so it is never started twice while running. The model-layer
-        auto-start (analyzer.start() → start_tap_sequence()) has already
-        run by this point, so this method only manages thread lifecycle
-        and UI overlay.
+        auto-start is scheduled by analyzer.start(), so this method only
+        manages thread lifecycle and UI overlay.
 
         For New Tap while the thread is already running, use
         restart_tap_sequence() instead, which keeps the thread alive
         (no audio dropout) — mirrors Swift's AVAudioEngine running continuously.
         """
         self._overlay_label.setVisible(False)
-        # start_tap_sequence() is NOT called here — it was already called
-        # by analyzer.start() during init, matching Swift's start() which
-        # auto-starts a tap sequence via DispatchQueue.main.async.
+        # No tap sequence is armed here — analyzer.start() schedules the
+        # launch auto-arm on the main loop, as Swift's start() does via
+        # DispatchQueue.main.async.
         self.analyzer.mic.proc_thread.reset_state()
         self.analyzer.mic.proc_thread.start()
 
     def restart_tap_sequence(self) -> None:
-        """Begin a new tap sequence while the processing thread is already running.
+        """Request a new tap sequence while the processing thread is already running.
 
-        Mirrors Swift's New Tap button calling tap.startTapSequence() on a
+        Mirrors Swift's New Tap button calling tap.requestStartTapSequence() on a
         continuously-running AVAudioEngine — no audio engine restart occurs.
         In Python the PortAudio stream runs continuously; only the ring buffer
-        state is reset (reset_state() is thread-safe) and the analysis state
-        machine is restarted via start_tap_sequence().
-
-        If the thread is not running for any reason, falls back to start_analyzer().
+        state is reset (reset_state() is thread-safe) once the analyzer arms.
+        If the analyzer does not arm (the dump folder is unreachable), nothing changes.
         """
-        # A file that is playing is stopped first: a new sequence — for a changed measurement type,
-        # say — must not be fed the rest of the file. Mirrors Swift requestStartTapSequence.
-        self.analyzer.mic.stop_file_playback()
+        # Stops file playback, checks the dump folder, and arms (is_measurement_complete = False,
+        # is_detecting = True, etc.).
+        if self.analyzer.request_start_tap_sequence():
+            self._reset_audio_for_new_sequence()
+
+    def start_tap_sequence(self) -> None:
+        """Arm a new tap sequence without the dump-folder check — Swift's direct
+        tap.startTapSequence()."""
+        self.analyzer.start_tap_sequence()
+        self._reset_audio_for_new_sequence()
+
+    def _reset_audio_for_new_sequence(self) -> None:
+        """After arming: reset the ring buffer, or start the processing thread if it has died."""
         if not self.analyzer.mic.proc_thread.isRunning():
             # Fallback: thread died unexpectedly — do a full restart.
             self.start_analyzer()
             return
-        # Reset analysis state (is_measurement_complete = False, is_detecting = True, etc.)
-        self.analyzer.start_tap_sequence()
         # Reset ring buffer so stale pre-tap audio doesn't contaminate the new sequence.
         # reset_state() is safe to call on a running thread.
         self.analyzer.mic.proc_thread.reset_state()
@@ -935,10 +946,6 @@ class FftCanvas(pg.PlotWidget):
         Connected to playingFileNameChanged signal.
         """
         self.setTitle(self.chart_title, color="#333333")
-
-    def start_tap_sequence(self) -> None:
-        """Begin a fresh tap sequence: clear any accumulated spectra and restart warmup."""
-        self.analyzer.start_tap_sequence()
 
     def cancel_tap_sequence(self) -> None:
         """Cancel the current tap sequence and restart warmup — matches Swift cancelTapSequence."""
@@ -1311,9 +1318,8 @@ class FftCanvas(pg.PlotWidget):
 
         Delegates analysis to the analyzer, then creates PlotDataItem view curves.
         """
-        # Remove only the canvas curves — do NOT call self.clear_comparison() here,
-        # because that would call analyzer.clear_comparison() which emits
-        # comparisonChanged(False).  The model's load_comparison() resets
+        # Remove only the canvas curves — do NOT call analyzer.clear_comparison() here,
+        # because it emits comparisonChanged(False).  The model's load_comparison() resets
         # showing_multi_tap_comparison and tap_entries directly (mirroring Swift),
         # then emits a single coherent comparisonChanged(True).
         self._clear_comparison_curves()
@@ -1333,8 +1339,8 @@ class FftCanvas(pg.PlotWidget):
 
         Called both by load_comparison() (live path) and by
         _on_comparison_changed_from_analyzer() when curves are absent (restore path).
-        Assumes _comparison_curves is empty; callers must call clear_comparison() first
-        if needed.
+        Assumes _comparison_curves is empty; callers must call _clear_comparison_curves()
+        first if needed.
         """
         for entry in self.analyzer._comparison_data:
             label    = entry["label"]
@@ -1397,19 +1403,13 @@ class FftCanvas(pg.PlotWidget):
             self._comparison_legend.deleteLater()
             self._comparison_legend = None
 
-    def clear_comparison(self) -> None:
-        """Remove all comparison overlay curves — mirrors clearComparison() in Swift."""
-        self._clear_comparison_curves()
-        self.analyzer.clear_comparison()
-        # comparisonChanged (and _on_comparison_changed_from_analyzer) is emitted
-        # by analyzer.clear_comparison — visibility is applied there.
-
     def _on_comparison_changed_from_analyzer(self, is_comparing: bool) -> None:
         """React to comparison mode entering or leaving.
 
         Applies visibility of peaks and threshold lines (mirrors the isComparing
-        checks in TapToneAnalysisView+SpectrumViews.swift), and applies the
-        axis ranges from the comparison data when entering comparison mode.
+        checks in TapToneAnalysisView+SpectrumViews.swift), applies the
+        axis ranges from the comparison data when entering comparison mode, and
+        removes the comparison curves when leaving it.
 
         Also relays the signal outward so external observers can react.
         """
@@ -1434,6 +1434,8 @@ class FftCanvas(pg.PlotWidget):
             # Axis bounds are applied by _on_loaded_axis_range_changed, which fires
             # before this handler because set_loaded_axis_range() emits
             # loadedAxisRangeChanged before the model emits comparisonChanged.
+        else:
+            self._clear_comparison_curves()
 
         self.comparisonChanged.emit(is_comparing)
 

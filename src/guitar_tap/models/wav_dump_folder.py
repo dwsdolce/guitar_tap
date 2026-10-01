@@ -5,8 +5,8 @@ Mirrors Swift ``WavDumpFolder`` — same interface and
 method names.
 
 **Default** = the OS Documents folder + ``GuitarTap`` (via ``QStandardPaths``, so a OneDrive-
-redirected Documents on Windows and a Linux XDG ``user-dirs`` Documents are honoured — this replaces
-the old hardcoded ``~/Documents``). On any platform the user may *Change…* to a custom folder.
+redirected Documents on Windows and a Linux XDG ``user-dirs`` Documents are honoured). On any
+platform the user may *Change…* to a custom folder.
 
 **Storage differs from Swift by necessity:** Swift is sandboxed and persists the grant as a
 security-scoped bookmark; Python is **not** sandboxed, so the custom folder is stored as a plain
@@ -88,12 +88,13 @@ class WavDumpFolder:
 
     @staticmethod
     def is_reachable() -> bool:
-        """Whether the configured dump folder can be written to **right now** — checked at New Tap /
+        """Whether the configured dump folder is still where the user put it — checked at New Tap /
         launch auto-arm when Dump Capture Audio is on. The default is always
         creatable; a custom folder must still be **at its chosen path** — a rename / move / delete
         makes it unreachable (Python stores a plain path, so the folder-must-be-where-you-put-it
         rule is inherent), and the user must Change Location or Turn Off Saving. Do NOT create the
-        custom folder here — recreating a renamed-away path would defeat the check.
+        custom folder here — recreating a renamed-away path would defeat the check. Write
+        permission is not checked — a write that fails is logged by the capture.
         """
         custom = WavDumpFolder._custom_folder()
         if custom is None:
@@ -112,7 +113,13 @@ class WavDumpFolder:
         )
         if not chosen:
             return False
-        _settings().setValue(_FOLDER_KEY, chosen)
+        return WavDumpFolder.set_custom_folder(Path(chosen))
+
+    @staticmethod
+    def set_custom_folder(folder: Path) -> bool:
+        """Store ``folder`` as the custom folder. Returns True.
+        Mirrors Swift ``setCustomFolder``."""
+        _settings().setValue(_FOLDER_KEY, str(folder))
         return True
 
     @staticmethod
@@ -121,13 +128,22 @@ class WavDumpFolder:
         _settings().remove(_FOLDER_KEY)
 
     @staticmethod
-    def reveal_in_finder() -> None:
-        """Open the current dump folder in the OS file browser. Mirrors Swift ``revealInFinder``."""
+    def open_folder() -> None:
+        """Open the dump folder in the OS file browser: the custom folder if reachable, else the
+        default. Mirrors Swift ``openFolder``."""
         from PySide6 import QtGui
 
-        folder = WavDumpFolder.current_folder()
+        QtGui.QDesktopServices.openUrl(
+            QtCore.QUrl.fromLocalFile(str(WavDumpFolder.folder_to_open())))
+
+    @staticmethod
+    def folder_to_open() -> Path:
+        """The folder Open Folder opens, created if missing: the custom folder if reachable, else
+        the default. A custom folder that is not at its chosen path is never re-created."""
+        acquired = WavDumpFolder.acquire_dump_folder()
+        folder = acquired[0] if acquired is not None else WavDumpFolder.default_folder()
         try:
             folder.mkdir(parents=True, exist_ok=True)
         except OSError:
             pass
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(folder)))
+        return folder

@@ -925,17 +925,12 @@ class TestFilePlaybackRegression:
             f"no tap from the abandoned file, got {sut.current_tap_count}"
 
     def test_measurement_type_change_during_playback_stops_the_file_before_arming_the_new_type(self):
-        from types import SimpleNamespace
         from guitar_tap.models.material_tap_phase import MaterialTapPhase
         from guitar_tap.models.tap_display_settings import TapDisplaySettings
-        from guitar_tap.views.fft_canvas import FftCanvas
 
         def change_type(sut):
-            # What the view does for a changed type: FftCanvas.restart_tap_sequence. The canvas opens the
-            # audio device when constructed, so its real method runs on a stand-in holding what it uses.
             TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
-            view = SimpleNamespace(analyzer=sut, start_analyzer=sut.start_tap_sequence)
-            FftCanvas.restart_tap_sequence(view)
+            sut.request_start_tap_sequence()   # what the settings Apply does for a changed type
 
         try:
             sut, finished, _ = self._stop_playback_after_first_tap(change_type)

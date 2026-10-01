@@ -155,39 +155,83 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # ------------------------------------------------------------------ #
 
     def _dump_capture_wav(self, samples, sample_rate: float, label: str) -> None:
-        """Write raw PCM samples to a mono 32-bit float WAV file.
-
-        Saves to ~/Documents/GuitarTap/ (macOS/Linux) or
-        Documents\\GuitarTap\\ (Windows) when the setting is enabled.
+        """Save raw PCM samples as a mono 32-bit float WAV file in the dump folder
+        (``WavDumpFolder``) when the setting is enabled.
         Shared by guitar, plate, and brace capture paths.
+
+        A recording that can't be written — the chosen folder is no longer at its path, or the
+        write fails — is held rather than dropped: ``captureRecordingHeld`` is emitted so the view
+        asks the user to choose a folder (``save_held_capture_recordings``) or let it go
+        (``discard_held_capture_recordings``). It is never written anywhere the user didn't choose.
 
         Mirrors Swift dumpCaptureWAV(samples:sampleRate:label:).
         """
+        from datetime import datetime
+
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+        from guitar_tap.models.tap_tone_analyzer import CaptureRecording
         if not _tds.dump_capture_audio():
             return
+        recording = CaptureRecording(samples, sample_rate, label, datetime.now())
+        if self.write_capture_recording(recording):
+            return
+        self.held_capture_recordings.append(recording)
+        self.captureRecordingHeld.emit()
+
+    def save_held_capture_recordings(self) -> None:
+        """Write every held recording to the dump folder — after the user has chosen one.
+        Recordings that still can't be written stay held and the prompt is raised again.
+        Mirrors Swift saveHeldCaptureRecordings()."""
+        self.held_capture_recordings = [
+            r for r in self.held_capture_recordings if not self.write_capture_recording(r)
+        ]
+        if self.held_capture_recordings:
+            # After the prompt that called this has closed.
+            self._main_async_after(0, self.captureRecordingHeld.emit)
+
+    def _set_capture_audio_saved(self, name: "str | None") -> None:
+        self.capture_audio_saved = name
+        self.captureAudioSavedChanged.emit(name)
+
+    def dismiss_capture_audio_saved(self) -> None:
+        """The user dismissed the "Capture audio saved" notice. Mirrors Swift
+        dismissCaptureAudioSaved()."""
+        if self.capture_audio_saved is not None:
+            self._set_capture_audio_saved(None)
+
+    def discard_held_capture_recordings(self) -> None:
+        """Let the held recordings go — the user turned saving off or cancelled.
+        Mirrors Swift discardHeldCaptureRecordings()."""
+        if not self.held_capture_recordings:
+            return
+        gt_log(f"⚠️ WAV dump discarded by the user — {len(self.held_capture_recordings)} "
+               f"recording(s) not saved")
+        self.held_capture_recordings = []
+
+    def write_capture_recording(self, recording) -> bool:
+        """Write one recording to the dump folder. Returns False if the chosen folder is no longer
+        at its path or the write fails. The file is named for when it was captured.
+        Mirrors Swift writeCaptureRecording(_:)."""
+        from datetime import timezone
+
         from guitar_tap.models.wav_dump_folder import WavDumpFolder
-        # The user-settable dump folder: the custom folder or the default. Reachability was
-        # checked at arm time; if the custom folder vanished mid-measurement, skip rather than
-        # silently write elsewhere. release() is a no-op (not sandboxed).
         acquired = WavDumpFolder.acquire_dump_folder()
         if acquired is None:
-            gt_log("⚠️ WAV dump skipped — the chosen folder is no longer reachable")
-            return
+            gt_log("⚠️ WAV dump not written — the chosen folder is no longer reachable")
+            return False
         dump_dir, release_folder = acquired
         try:
             import struct
-            from datetime import datetime, timezone
 
             dump_dir.mkdir(parents=True, exist_ok=True)
 
-            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-            name = f"python_{label}_{ts}.wav"
+            ts = recording.captured_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+            name = f"python_{recording.label}_{ts}.wav"
             path = dump_dir / name
 
-            pcm = samples.astype(np.float32).tobytes()
-            sr = int(sample_rate)
-            n_samples = len(samples)
+            pcm = np.asarray(recording.samples).astype(np.float32).tobytes()
+            sr = int(recording.sample_rate)
+            n_samples = len(recording.samples)
             bytes_per_sample = 4
             data_size = n_samples * bytes_per_sample
 
@@ -207,8 +251,11 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 f.write(struct.pack("<I", data_size))
                 f.write(pcm)
             gt_log(f"📦 WAV dump: {path} ({n_samples} samples, {sr} Hz)")
+            self._set_capture_audio_saved(name)
+            return True
         except Exception as e:
             gt_log(f"⚠️ WAV dump failed: {e}")
+            return False
         finally:
             release_folder()
 
