@@ -1,0 +1,23 @@
+0	44.0	<date>
+0	53.0	GuitarTap
+0	70.0	Tap Tone Analysis Report
+0	104.0	Measurement Name: Brace UMIK-1 Python Mac
+0	119.0	Type: Material (Brace)
+0	134.0	Frequency Range: 30.0 Hz – 1.0 kHz
+0	149.0	Microphone: Umik-1 Gain: 18dB · calibrated (7108913)
+0	175.0	Frequency Spectrum
+0	661.0	Detected Peaks
+0	681.0	Frequency Magnitude Note Q Factor Role
+0	704.0	513.0 Hz -63.3 dB C5 87.5 Longitudinal (fL)
+0	736.0	Sample Dimensions
+0	750.0	Length: 556.00 mm Width: 20.38 mm Thickness: 29.35 mm
+0	764.0	Mass: 128.0 g Density: 0.385 g/cm³
+0	811.0	Brace Properties
+0	832.0	Speed of Sound: 5257 m/s Specific Modulus: 27.6 (Excellent)
+0	848.0	Young's Modulus (E): 10.64 GPa Radiation Ratio: 13.7
+0	878.0	Overall Quality: Excellent
+0	916.0	Single-Tap Measurement (fL only):
+0	932.0	1. Longitudinal (fL) Tap
+0	942.0	Hold brace at 22% from one end along the length. Tap center.
+0	957.0	The strongest peak is auto-selected.
+0	1005.0	<generated>

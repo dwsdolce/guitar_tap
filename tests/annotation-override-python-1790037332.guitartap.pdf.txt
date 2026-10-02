@@ -1,0 +1,34 @@
+0	44.0	<date>
+0	53.0	GuitarTap
+0	70.0	Tap Tone Analysis Report
+0	104.0	Measurement Name: Annotation override Python
+0	119.0	Type: Generic Guitar
+0	134.0	Frequency Range: 70.0 Hz – 345.0 Hz
+0	149.0	Microphone: MacBook Pro Microphone · uncalibrated
+0	175.0	Frequency Spectrum
+0	661.0	Detected Peaks
+0	681.0	Frequency Magnitude Note Mode
+0	704.0	99.2 Hz -56.2 dB G2 Air (Helmholtz)
+0	724.0	133.6 Hz -68.5 dB C3 Fred2 *
+0	744.0	208.9 Hz -45.8 dB G#3 Top
+0	764.0	236.9 Hz -57.5 dB A#3 Back
+0	792.0	Analysis Results
+0	823.0	Ring-Out Time Short Tap Tone Ratio Above Target
+0	834.0	Sustain quality Ideal: 1.9–2.1
+0	841.0	0.10 s 2.11 : 1
+0	854.0	Time to decay 15 dB Top / Air
+0	898.0	<generated>
+1	44.0	<date>
+1	53.0	GuitarTap
+1	70.0	Comparison Report
+1	104.0	Comparison: Annotation override Python
+1	119.0	Spectra: 4 spectra compared
+1	134.0	Frequency Range: 70.0 Hz – 350.0 Hz
+1	160.0	Frequency Spectrum
+1	602.0	Peak Mode Comparison
+1	623.0	Spectrum Air Top Back
+1	647.0	Tap 1 99.2 Hz 208.9 Hz 236.9 Hz
+1	671.0	Tap 2 99.2 Hz 209.0 Hz 250.2 Hz
+1	695.0	Tap 3 99.2 Hz 209.0 Hz 250.2 Hz
+1	719.0	Averaged 99.2 Hz 208.9 Hz 236.9 Hz
+1	757.0	<generated>

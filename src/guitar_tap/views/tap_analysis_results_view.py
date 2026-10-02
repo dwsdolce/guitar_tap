@@ -19,6 +19,8 @@ JSON format:
   - Format is cross-compatible with Swift GuitarTap .guitartap files
 """
 
+# @parity view/pdf-report tests=test/pdf-report
+
 from __future__ import annotations
 
 import json
@@ -48,6 +50,9 @@ __all__ = [
     "comparison_pdf_report_data_from_measurement",
     "export_comparison_pdf",
     "export_multi_tap_pdf",
+    "multi_tap_comparison_pdf_report_data_from_measurement",
+    "export_report_for_measurement",
+    "report_basename",
     "default_export_dir",
     "last_export_dir",
     "update_export_dir",
@@ -336,7 +341,7 @@ def pdf_report_data_from_measurement(
 
     # ── Filter peaks to display range ─────────────────────────────────────
     range_peaks = [p for p in m.peaks if min_freq <= p.frequency <= max_freq]
-    selected_ids = set(m.selected_peak_ids or [p.id for p in range_peaks])
+    selected_ids = m.effective_selected_peak_ids
 
     # ── Mode classification ───────────────────────────────────────────────
     visible_peaks = sorted(
@@ -457,13 +462,147 @@ def pdf_report_data_from_measurement(
 _SPECTRUM_MATTE_PT = 5
 _SPECTRUM_CORNER_PT = 6
 
+# SwiftUI lays out a line of Helvetica text in a box exactly its font size tall, with the baseline 0.77 ×
+# the size below the top, and steps wrapped lines by the size. reportlab's Paragraph puts the first
+# baseline a full font size below the top, so the report's text is drawn a little higher, by the
+# difference; with Swift's paddings and spacings around it, each line lands where Swift's does.
+_SWIFT_ASCENT = 0.77
+_swift_text_cls = None
+
+
+def _text(text: str, size: float, *, bold: bool = False, italic: bool = False, color=None,
+          align: str = "left", markup: bool = False):
+    """A Paragraph laid out as SwiftUI lays out a Text (see ``_SWIFT_ASCENT``).
+
+    ``text`` is plain text unless ``markup`` is set, when it is reportlab paragraph markup (inline
+    ``<font>`` / ``<b>`` for a row mixing colours or weights)."""
+    global _swift_text_cls
+    from xml.sax.saxutils import escape
+
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph
+
+    if _swift_text_cls is None:
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        class _SwiftText(Paragraph):
+            def drawOn(self, canvas, x, y, _sW=0):
+                super().drawOn(canvas, x, y + (1 - _SWIFT_ASCENT) * self.style.fontSize, _sW)
+
+            def breakLines(self, width):
+                # As Swift's Text wraps: the last line never holds a single word when the line above
+                # can spare one — Apple's push-out line-break strategy, which avoids an orphan word.
+                para = super().breakLines(width)
+                lines = getattr(para, "lines", None)
+                if getattr(para, "kind", 1) != 0 or not lines or len(lines) < 2:
+                    return para
+                prev, last = lines[-2][1], lines[-1][1]
+                if len(last) != 1 or len(prev) < 2:
+                    return para
+                max_w = width[-1] if isinstance(width, (list, tuple)) else width
+                kept, moved = prev[:-1], [prev[-1]] + last
+                moved_w = stringWidth(" ".join(moved), para.fontName, para.fontSize)
+                if moved_w <= max_w:
+                    kept_w = stringWidth(" ".join(kept), para.fontName, para.fontSize)
+                    lines[-2] = (max_w - kept_w, kept)
+                    lines[-1] = (max_w - moved_w, moved)
+                return para
+        _swift_text_cls = _SwiftText
+
+    font = "Helvetica-Oblique" if italic else "Helvetica-Bold" if bold else "Helvetica"
+    style = ParagraphStyle(
+        "swift", fontName=font, fontSize=size, leading=size,
+        textColor=color if color is not None else colors.black,
+        alignment=TA_RIGHT if align == "right" else TA_LEFT,
+    )
+    return _swift_text_cls(text if markup else escape(text), style)
+
+
+def _grid(rows: list, col_widths: list, style: list | None = None, **kw):
+    """A table with no cell padding, its cells top-aligned — every gap is set explicitly, as Swift's
+    stacks and paddings set them."""
+    from reportlab.platypus import Table, TableStyle
+
+    tbl = Table(rows, colWidths=col_widths, **kw)
+    tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        *(style or []),
+    ]))
+    return tbl
+
+
+def _rule(width: float, thickness: float, color):
+    """A filled rule — Swift's accentBar and sectionDivider (a Rectangle of the given height)."""
+    return _grid([[""]], [width], [("BACKGROUND", (0, 0), (-1, -1), color)], rowHeights=[thickness])
+
+
+def _report_header(subtitle: str, date_str: str, accent, secondary, content_w: float):
+    """Swift's report header: HStack(top) { VStack(spacing 2) { "GuitarTap" 22 bold, subtitle 13 },
+    the date 11 } with 8 below, then the 3 pt accent bar with 12 below."""
+    from reportlab.platypus import Spacer
+
+    return [
+        _grid(
+            [[[_text("GuitarTap", 22, bold=True, color=accent), Spacer(1, 2), _text(subtitle, 13, color=secondary)],
+              _text(date_str, 11, color=secondary, align="right")]],
+            [content_w * 0.6, content_w * 0.4],
+            [("BOTTOMPADDING", (0, 0), (-1, -1), 8)],
+        ),
+        _rule(content_w, 3, accent),
+        Spacer(1, 12),
+    ]
+
+
+def _meta_rows(rows: list, label_w: float, secondary, value_color, content_w: float) -> list:
+    """Swift's metadata: VStack(spacing 4) of HStack(top, spacing 6) { label 11 bold in a ``label_w``
+    frame, value 11 }."""
+    from reportlab.platypus import Spacer
+
+    out: list = []
+    for label, value in rows:
+        if out:
+            out.append(Spacer(1, 4))
+        out.append(_grid(
+            [[_text(label + ":", 11, bold=True, color=secondary), _text(value, 11, color=value_color)]],
+            [label_w + 6, content_w - label_w - 6],
+        ))
+    return out
+
+
+def _report_footer(generated_by: str, secondary, content_w: float) -> list:
+    """Swift's footer: Spacer 16, a 1 pt rule, Spacer 8, then "Generated by …" and the time of
+    generation, 9 pt."""
+    from datetime import datetime as _dt
+
+    from reportlab.lib import colors
+    from reportlab.platypus import Spacer
+
+    from guitar_tap.utilities.date_format import format_display_datetime
+
+    now_str = format_display_datetime(_dt.now())  # PDF generation time (local)
+    return [
+        Spacer(1, 16),
+        _rule(content_w, 1, colors.Color(0.5, 0.5, 0.5, 0.2)),
+        Spacer(1, 8),
+        _grid(
+            [[_text(generated_by, 9, color=secondary), _text(now_str, 9, color=secondary, align="right")]],
+            [content_w * 0.6, content_w * 0.4],
+        ),
+    ]
+
 
 def _spectrum_image_matte(image_data: bytes, content_w: float):
     """The spectrum image inside a dark rounded matte, as a single flowable.
 
     The matte makes it obvious where the captured spectrum ends and the report begins.
 
-    Mirrors Swift (PDFReportGenerator.swift:405-410)::
+    Mirrors Swift::
 
         reportImage(from: imageData)
             .resizable().aspectRatio(contentMode: .fit)
@@ -473,11 +612,12 @@ def _spectrum_image_matte(image_data: bytes, content_w: float):
 
     On Swift the frame is not a stroke: its chart PNG carries transparent padding (hence the
     DeviceGray alpha mask in its PDF) and the near-black background shows *through* it. Our chart
-    image is opaque, so the same look is drawn deliberately — a near-black rounded cell with the
-    image inset by ``_SPECTRUM_MATTE_PT``.
+    image is opaque, so the same look is drawn deliberately — a near-black rounded cell the size of
+    Swift's image (the content width, at the image's proportions), with the image inset by
+    ``_SPECTRUM_MATTE_PT``.
 
-    Shared by both story builders (`_build_averaged_story` / `_build_comparison_story`), which each
-    embedded a bare ``Image`` with no matte. Swift has it at BOTH of its sites (:405 and :1261).
+    Shared by both story builders (`_build_averaged_story` / `_build_comparison_story`), as Swift has
+    the matte at both of its sites.
 
     Args:
         image_data: PNG bytes of the rendered spectrum.
@@ -496,16 +636,20 @@ def _spectrum_image_matte(image_data: bytes, content_w: float):
     _pil = _PILImage.open(_io.BytesIO(image_data))
     w_px, h_px = _pil.size
     aspect = h_px / w_px if w_px > 0 else 0.5
-    inner_w = content_w - _SPECTRUM_MATTE_PT * 2
-    img = _RLImg(_io.BytesIO(image_data), width=inner_w, height=inner_w * aspect)
+    frame_h = content_w * aspect
+    inner_h = frame_h - _SPECTRUM_MATTE_PT * 2
+    inner_w = inner_h / aspect
+    side = (content_w - inner_w) / 2
+    img = _RLImg(_io.BytesIO(image_data), width=inner_w, height=inner_h)
 
-    cell = Table([[img]], colWidths=[content_w])
+    cell = Table([[img]], colWidths=[content_w], rowHeights=[frame_h])
     cell.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.05, 0.05, 0.05)),
-        ("LEFTPADDING",   (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
+        ("LEFTPADDING",   (0, 0), (-1, -1), side),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), side),
         ("TOPPADDING",    (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
         ("BOTTOMPADDING", (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("ROUNDEDCORNERS", [_SPECTRUM_CORNER_PT] * 4),
     ]))
     return cell
@@ -514,28 +658,16 @@ def _spectrum_image_matte(image_data: bytes, content_w: float):
 def _build_averaged_story(data: "PDFReportData") -> list:
     """Build and return the reportlab story list for an averaged-result report.
 
-    Contains all setup, imports, style definitions, and story-element construction
-    from export_pdf. Called by export_pdf and export_multi_tap_pdf.
+    Called by export_pdf and export_multi_tap_pdf.
 
     Mirrors Swift PDFReportContentView (PDFReportGenerator.swift).
     """
-    import io as _io
-    from datetime import datetime as _dt
+    from xml.sax.saxutils import escape
 
     from guitar_tap._version import __version_string__ as _app_version
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_RIGHT
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import ParagraphStyle
     from reportlab.pdfbase.pdfmetrics import stringWidth
-    from reportlab.platypus import (
-        Flowable,
-        Image,
-        Paragraph,
-        Spacer,
-        Table,
-        TableStyle,
-    )
+    from reportlab.platypus import Flowable, Spacer
 
     from guitar_tap.models import guitar_mode as GM
     from guitar_tap.models import guitar_type as GT_module
@@ -598,40 +730,21 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     )
 
     # ── Geometry (mirrors Swift) ──────────────────────────────────────────
-    PAGE_W, PAGE_H = letter        # 612 × 792 pt
     MARGIN        = 36             # 36 pt on every side (pt == 1 in reportlab)
-    CONTENT_W     = PAGE_W - 2 * MARGIN   # 540 pt
+    CONTENT_W     = 612 - 2 * MARGIN   # 540 pt
 
     # ── Accent colour (matches Swift Color(red:0.15, green:0.35, blue:0.75)) ──
     ACCENT = colors.Color(0.15, 0.35, 0.75)
     SECONDARY = colors.Color(0.45, 0.45, 0.45)
-    GRID_GREY = colors.Color(0.75, 0.75, 0.75)
     # Mirrors Swift Color.gray.opacity(...). SwiftUI's Color.gray is approx
     # RGB (0.5, 0.5, 0.5) at full opacity.
     BG_GREY   = colors.Color(0.5, 0.5, 0.5, 0.07)       # gray opacity 0.07
     BG_LIGHT  = colors.Color(0.5, 0.5, 0.5, 0.06)       # gray opacity 0.06 for sub-tables
     BG_ACCENT = colors.Color(0.15, 0.35, 0.75, 0.07)  # blue accent bg for Gore box
+    DIVIDER   = colors.Color(0.5, 0.5, 0.5, 0.3)
 
-    # ── Style helpers ─────────────────────────────────────────────────────
-    def _style(name, **kw) -> ParagraphStyle:
-        base = ParagraphStyle(name)
-        for k, v in kw.items():
-            setattr(base, k, v)
-        return base
-
-    S_TITLE    = _style("title",    fontSize=22, fontName="Helvetica-Bold",  textColor=ACCENT,     leading=26)
-    S_SUBTITLE = _style("subtitle", fontSize=13, fontName="Helvetica",       textColor=SECONDARY,  leading=16)
-    S_DATE     = _style("date",     fontSize=11, fontName="Helvetica",       textColor=SECONDARY,  leading=14, alignment=TA_RIGHT)
-    S_META_LBL = _style("meta_lbl", fontSize=11, fontName="Helvetica-Bold",  textColor=SECONDARY,  leading=13)
-    S_META_VAL = _style("meta_val", fontSize=11, fontName="Helvetica",       textColor=colors.black, leading=13)
-    S_SECTION  = _style("section",  fontSize=13, fontName="Helvetica-Bold",  textColor=colors.black, leading=16)
-    S_BODY     = _style("body",     fontSize=10, fontName="Helvetica",       textColor=colors.black, leading=12)
-    S_BODY_B   = _style("body_b",   fontSize=10, fontName="Helvetica-Bold",  textColor=colors.black, leading=12)
-    S_SMALL    = _style("small",    fontSize=9,  fontName="Helvetica",       textColor=SECONDARY,  leading=11)
-    S_SMALL_I  = _style("small_i",  fontSize=9,  fontName="Helvetica-Oblique", textColor=SECONDARY, leading=11)
-    S_FOOTER   = _style("footer",   fontSize=9,  fontName="Helvetica",       textColor=SECONDARY,  leading=11)
-    S_BIG_VAL  = _style("bigval",   fontSize=18, fontName="Helvetica-Bold",  textColor=colors.black, leading=22)
-    S_SPEC_HDR = _style("spec_hdr", fontSize=12, fontName="Helvetica-Bold",  textColor=SECONDARY,  leading=14)
+    def _hex(c: colors.Color) -> str:
+        return f"#{int(c.red*255):02x}{int(c.green*255):02x}{int(c.blue*255):02x}"
 
     # ── Quality helpers (mirrors Swift extensions) ────────────────────────
     def _quality_color(label: str) -> colors.Color:
@@ -656,23 +769,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
     # ── Custom Flowables ──────────────────────────────────────────────────
 
-    class _HLine(Flowable):
-        """Thin horizontal rule — mirrors Swift sectionDivider / accentBar."""
-        def __init__(self, width, thickness=1, color=GRID_GREY, spaceAfter=0):
-            super().__init__()
-            self._w = width
-            self._t = thickness
-            self._c = color
-            self.spaceAfter = spaceAfter
-
-        def draw(self):
-            self.canv.setStrokeColor(self._c)
-            self.canv.setLineWidth(self._t)
-            self.canv.line(0, 0, self._w, 0)
-
-        def wrap(self, avail_w, avail_h):
-            return (self._w, self._t)
-
     class _DotFlowable(Flowable):
         """Small filled circle — mirrors Swift Circle().fill(color) in tapInstructionRow."""
         _DOT_SIZE = 7  # 7 pt diameter, matching Swift
@@ -685,43 +781,22 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             r = self._DOT_SIZE / 2
             self.canv.setFillColor(self._color)
             self.canv.setStrokeColor(self._color)
-            # Position dot to align with title text baseline.
-            # wrap() returns height=_DOT_SIZE, VALIGN=TOP places origin at bottom of box.
-            # y=r puts center at mid-height; subtract 2pt for Swift .padding(.top, 2).
+            # The flowable's top is the row's top; Swift's .padding(.top, 2) puts the dot's centre
+            # 2 + r below it, i.e. r - 2 above this 7 pt box's bottom.
             self.canv.circle(r, r - 2, r, fill=1, stroke=0)
 
         def wrap(self, avail_w, avail_h):
             return (self._DOT_SIZE, self._DOT_SIZE)
 
-    class _TwoColRow(Flowable):
-        """Single key:value metadata row — mirrors Swift metaRow."""
-        LBL_W = 120              # 120 pt label column width — fits "Measurement Name:" on one line
-
-        def __init__(self, label: str, value: str, content_w: float):
-            super().__init__()
-            self._label = label + ":"
-            self._value = value
-            self._cw    = content_w
-
-        def draw(self):
-            c = self.canv
-            # Label (semibold secondary) — uses S_META_LBL style
-            c.setFont(S_META_LBL.fontName, S_META_LBL.fontSize)
-            c.setFillColor(S_META_LBL.textColor)
-            c.drawString(0, 0, self._label)
-            # Value (regular black) — uses S_META_VAL style
-            c.setFont(S_META_VAL.fontName, S_META_VAL.fontSize)
-            c.setFillColor(S_META_VAL.textColor)
-            c.drawString(126, 0, self._value)
-
-        def wrap(self, avail_w, avail_h):
-            return (self._cw, 13)
-
     class _AnalysisBox(Flowable):
         """Rounded grey box with a primary value and quality label on the right.
 
-        Mirrors Swift analysisBox().
+        Mirrors Swift analysisBox(): HStack(top) { VStack(spacing 2) { title 10 bold, value 18 bold,
+        subtitle 9 }, VStack(trailing, spacing 2) { detail 10, detailSubtitle 9, hint 9 italic } },
+        padded 10.
         """
+        PAD = 10
+
         def __init__(self, title, value, subtitle, detail, detail_color,
                      detail_subtitle=None, hint=None, width=None):
             super().__init__()
@@ -733,129 +808,190 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             self._dsub     = detail_subtitle
             self._hint     = hint
             self._w        = width or 250
-            self.height    = 64
+            # The left column sets the height: title 10 + 2 + value 18 + 2 + subtitle 9.
+            self.height    = self.PAD + 10 + 2 + 18 + 2 + 9 + self.PAD
+
+        def _at(self, text, x, top, font, size, color, right=False):
+            """Draw ``text`` with its line box's top ``top`` below the box's top, as Swift places a Text."""
+            c = self.canv
+            c.setFont(font, size)
+            c.setFillColor(color)
+            y = self.height - top - _SWIFT_ASCENT * size
+            (c.drawRightString if right else c.drawString)(x, y, text)
 
         def draw(self):
-            c = self.canv
+            P = self.PAD
             # Background rounded rect — uses BG_GREY (Swift Color.gray.opacity(0.07))
-            c.setFillColor(BG_GREY)
-            c.roundRect(0, 0, self._w, self.height, 6, stroke=0, fill=1)
+            self.canv.setFillColor(BG_GREY)
+            self.canv.roundRect(0, 0, self._w, self.height, 6, stroke=0, fill=1)
             # Left side: title → big value → subtitle
-            c.setFont("Helvetica-Bold", 10)
-            c.setFillColor(SECONDARY)
-            c.drawString(10, self.height - 16, self._title)
-            # Big value — uses S_BIG_VAL style (18pt bold black)
-            c.setFont(S_BIG_VAL.fontName, S_BIG_VAL.fontSize)
-            c.setFillColor(S_BIG_VAL.textColor)
-            c.drawString(10, self.height - 38, self._value)
+            self._at(self._title, P, P, "Helvetica-Bold", 10, SECONDARY)
+            self._at(self._value, P, P + 10 + 2, "Helvetica-Bold", 18, colors.black)
             if self._subtitle:
-                c.setFont("Helvetica", 9)
-                c.setFillColor(SECONDARY)
-                c.drawString(10, self.height - 50, self._subtitle)
+                self._at(self._subtitle, P, P + 10 + 2 + 18 + 2, "Helvetica", 9, SECONDARY)
             # Right side: detail quality → detail subtitle → hint
-            c.setFont("Helvetica", 10)
-            c.setFillColor(self._dc)
-            detail_x = self._w - stringWidth(self._detail, "Helvetica", 10) - 10
-            c.drawString(detail_x, self.height - 16, self._detail)
+            right = self._w - P
+            self._at(self._detail, right, P, "Helvetica", 10, self._dc, right=True)
+            top = P + 10 + 2
             if self._dsub:
-                c.setFont("Helvetica", 9)
-                c.setFillColor(SECONDARY)
-                dsub_x = self._w - stringWidth(self._dsub, "Helvetica", 9) - 10
-                c.drawString(dsub_x, self.height - 28, self._dsub)
+                self._at(self._dsub, right, top, "Helvetica", 9, SECONDARY, right=True)
+                top += 9 + 2
             if self._hint:
-                c.setFont("Helvetica-Oblique", 9)
-                c.setFillColor(SECONDARY)
-                hint_x = self._w - stringWidth(self._hint, "Helvetica-Oblique", 9) - 10
-                bottom = 10 if not self._dsub else 8
-                c.drawString(hint_x, bottom, self._hint)
+                self._at(self._hint, right, top, "Helvetica-Oblique", 9, SECONDARY, right=True)
 
         def wrap(self, avail_w, avail_h):
             return (self._w, self.height)
 
+    # ── Section builders (mirror Swift's views) ───────────────────────────
+    def _separator() -> list:
+        """Spacer 14 · sectionDivider · Spacer 14 — between Swift's analysis blocks."""
+        return [Spacer(1, 14), _rule(CONTENT_W, 1, DIVIDER), Spacer(1, 14)]
+
+    def _pprow(label: str, value: str):
+        """Swift platePropRow: HStack(spacing 6) { label 10 secondary, value 10 bold }."""
+        return _text(f"<font color='#737373'>{escape(label)}:</font>  <b>{escape(value)}</b>", 10, markup=True)
+
+    def _qrow(label: str, value: float, quality: str):
+        """Swift specificModulusRow: platePropRow with the value and a 9 pt quality in its colour."""
+        hex_c = _hex(_quality_color(quality))
+        return _text(
+            f"<font color='#737373'>{escape(label)}:</font>  "
+            f"<b><font color='{hex_c}'>{fp.string(value, fp.SPECIFIC_MODULUS)}</font></b>  "
+            f"<font color='{hex_c}' size='9'>({escape(quality)})</font>",
+            10, markup=True,
+        )
+
+    def _grey_box(heading: str, rows: list, col_widths: list, style: list | None = None):
+        """Swift dimensionsSubsection / plateBodyDimensionsPDFSection: VStack(spacing 4) { heading 10
+        bold, rows of 10 pt props }, padded 6 in a grey box."""
+        cells = [[_text(heading, 10, bold=True, color=SECONDARY)] + [[] for _ in col_widths[1:]]] + rows
+        return _grid(cells, col_widths, [
+            ("SPAN",          (0, 0), (-1, 0)),
+            ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
+            ("LEFTPADDING",   (0, 0), (0, -1), 6),
+            ("RIGHTPADDING",  (-1, 0), (-1, -1), 6),
+            ("TOPPADDING",    (0, 0), (-1, 0), 6),
+            ("TOPPADDING",    (0, 1), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
+            ("ROUNDEDCORNERS", [4]),
+            *(style or []),
+        ])
+
+    def _sample_dimensions(dims, density_kg_m3: float):
+        """Swift dimensionsSubsection: Length | Width | Thickness, then Mass | Density, in three equal
+        columns inside the box's 6 pt padding."""
+        col = (CONTENT_W - 12) / 3
+        return _grey_box("Sample Dimensions", [
+            [
+                _pprow("Length", f"{fp.string(dims.length_mm, fp.LINEAR_DIMENSION_MM)} mm") if dims.length_mm else [],
+                _pprow("Width", f"{fp.string(dims.width_mm, fp.LINEAR_DIMENSION_MM)} mm") if dims.width_mm else [],
+                _pprow("Thickness", f"{fp.string(dims.thickness_mm, fp.LINEAR_DIMENSION_MM)} mm") if dims.thickness_mm else [],
+            ],
+            [
+                _pprow("Mass", f"{fp.string(dims.mass_g, fp.MASS_G)} g") if dims.mass_g else [],
+                _pprow("Density", f"{fp.string(density_kg_m3/1000, fp.DENSITY_G_PER_CM3)} g/cm³"),
+                [],
+            ],
+        ], [col + 6, col, col + 6])
+
+    def _overall_quality(value: str, color: colors.Color):
+        """Swift's Overall Quality row: HStack { label 10 bold, value 13 bold }, padded 8 in a grey
+        box; the label is centred on the value's line."""
+        label = "Overall Quality:"
+        label_w = stringWidth(label, "Helvetica-Bold", 10) + 8
+        return _grid(
+            [[[Spacer(1, (13 - 10) / 2), _text(label, 10, bold=True, color=SECONDARY)],
+              _text(value, 13, bold=True, color=color)]],
+            [8 + label_w, CONTENT_W - 8 - label_w],
+            [
+                ("BACKGROUND",    (0, 0), (-1, -1), BG_GREY),
+                ("LEFTPADDING",   (0, 0), (0, -1), 8),
+                ("TOPPADDING",    (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("ROUNDEDCORNERS", [4]),
+            ],
+        )
+
+    def _two_columns(left: list, right: list):
+        """Two side-by-side VStack(spacing 6) columns of 10 pt rows — Swift's property block."""
+        def stack(rows):
+            out: list = []
+            for row in rows:
+                if out:
+                    out.append(Spacer(1, 6))
+                out.append(row)
+            return out
+        return _grid([[stack(left), stack(right)]], [CONTENT_W / 2] * 2)
+
+    def _tap_instructions(title: str, steps: list, foot: str) -> list:
+        """Swift tapInstructionsSection: VStack(spacing 6) { divider, Spacer 6, heading 10 bold, one
+        row per tap, foot 9 italic }, then Spacer 14. A row is HStack(top, spacing 6) { 7 pt dot,
+        VStack(spacing 1) { title 10 bold, detail 9 } }."""
+        out: list = [_rule(CONTENT_W, 1, DIVIDER), Spacer(1, 6 + 6 + 6), _text(title, 10, bold=True)]
+        for dot_color, label, detail in steps:
+            out.append(Spacer(1, 6))
+            out.append(_grid(
+                [[_DotFlowable(dot_color),
+                  [_text(label, 10, bold=True), Spacer(1, 1), _text(detail, 9, color=SECONDARY)]]],
+                [7 + 6, CONTENT_W - 7 - 6],
+            ))
+        out += [Spacer(1, 6), _text(foot, 9, italic=True, color=SECONDARY), Spacer(1, 14)]
+        return out
+
     # ── Build story ───────────────────────────────────────────────────────
-    story: list = []
-
-    # --- HEADER -----------------------------------------------------------
-    # Two-column: app name/subtitle on left, date/time on right.
-    # Implemented as a Table so the right column aligns.
-    header_left = [
-        Paragraph("GuitarTap",                  S_TITLE),
-        Paragraph("Tap Tone Analysis Report",   S_SUBTITLE),
-    ]
-    header_right = [
-        Paragraph(datetime_str, S_DATE),
-    ]
-    header_tbl = Table(
-        [[header_left, header_right]],
-        colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4],
-    )
-    header_tbl.setStyle(TableStyle([
-        ("VALIGN",  (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING",   (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
-    ]))
-    story.append(header_tbl)
-
-    # Blue accent bar (3 pt tall, mirrors Swift accentBar with .padding(.bottom, 12)).
-    # spaceAfter alone gives the 12 pt gap — an extra Spacer here would double it.
-    story.append(_HLine(CONTENT_W, thickness=3, color=ACCENT, spaceAfter=12))
+    story: list = _report_header("Tap Tone Analysis Report", datetime_str, ACCENT, SECONDARY, CONTENT_W)
 
     # --- METADATA ---------------------------------------------------------
-    if data.measurement_name:
-        story.append(_TwoColRow("Measurement Name", data.measurement_name, CONTENT_W))
-        story.append(Spacer(1, 4))
-    story.append(_TwoColRow("Type", mt_str, CONTENT_W))
-    story.append(Spacer(1, 4))
-    if data.notes:
-        story.append(_TwoColRow("Notes", data.notes, CONTENT_W))
-        story.append(Spacer(1, 4))
-    story.append(_TwoColRow(
-        "Frequency Range",
-        f"{_ext.formatted_as_frequency(min_freq)} \u2013 {_ext.formatted_as_frequency(max_freq)}",
-        CONTENT_W,
-    ))
     # No recorded microphone means it is unknown (a played file, say): say so, and keep the calibration.
-    cal_suffix = f" \u00b7 calibrated ({data.calibration_name})" if data.calibration_name else " \u00b7 uncalibrated"
-    story.append(Spacer(1, 4))
-    story.append(_TwoColRow("Microphone", (data.microphone_name or "unknown") + cal_suffix, CONTENT_W))
-
+    cal_suffix = f" · calibrated ({data.calibration_name})" if data.calibration_name else " · uncalibrated"
+    meta = []
+    if data.measurement_name:
+        meta.append(("Measurement Name", data.measurement_name))
+    meta.append(("Type", mt_str))
+    if data.notes:
+        meta.append(("Notes", data.notes))
+    meta.append((
+        "Frequency Range",
+        f"{_ext.formatted_as_frequency(min_freq)} – {_ext.formatted_as_frequency(max_freq)}",
+    ))
+    meta.append(("Microphone", (data.microphone_name or "unknown") + cal_suffix))
+    story += _meta_rows(meta, 120, SECONDARY, colors.black, CONTENT_W)
     story.append(Spacer(1, 14))
 
     # --- SPECTRUM IMAGE ---------------------------------------------------
+    # Swift: VStack(spacing 6) { "Frequency Spectrum" 12 bold, the image }, then Spacer 14.
     if spectrum_image_data:
-        story.append(Paragraph("Frequency Spectrum", S_SPEC_HDR))
+        story.append(_text("Frequency Spectrum", 12, bold=True, color=SECONDARY))
         story.append(Spacer(1, 6))
-        # Dark rounded matte around the image — mirrors Swift .background(white:0.05).cornerRadius(6).
         story.append(_spectrum_image_matte(spectrum_image_data, CONTENT_W))
         story.append(Spacer(1, 14))
 
     # --- SECTION DIVIDER --------------------------------------------------
-    story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
+    story.append(_rule(CONTENT_W, 1, DIVIDER))
     story.append(Spacer(1, 14))
 
     # --- PEAKS TABLE ------------------------------------------------------
+    # Swift peaksSection: VStack(spacing 6) { "Detected Peaks" 13 bold, the header (10 bold, padded 3
+    # vertically and 6 horizontally, 2 below), one row per peak (10, padded 2 / 6) }.
     # Role colors — mirrors Swift .blue / .orange / .purple
     _ROLE_BLUE   = "#0077FF"
     _ROLE_ORANGE = "#FF9500"
     _ROLE_PURPLE = "#AF52DE"
 
-    story.append(Paragraph("Detected Peaks", S_SECTION))
+    story.append(_text("Detected Peaks", 13, bold=True))
     story.append(Spacer(1, 6))
 
     if not visible_peaks:
-        story.append(Paragraph("No peaks detected in this measurement.", S_BODY))
+        story.append(_text("No peaks detected in this measurement.", 11, color=SECONDARY))
     else:
-        # Column widths (mirror Swift .frame widths, scaled to 540 pt content width)
-        # Swift: Freq 90, Mag 80, Note 80, Mode fills rest (290 pt at 540 content).
-        # For plate/brace: Freq 90, Mag 80, Note 80, Q 70, Role fills rest.
+        # Column widths mirror Swift's .frame widths (90 · 80 · 80, then Mode, or Q 70 + Role), the
+        # first widened by the row's 6 pt leading padding.
         is_guitar = mt.is_guitar
         if is_guitar:
-            col_w = [90, 80, 80, CONTENT_W - 250]
+            col_w = [96, 80, 80, CONTENT_W - 256]
             hdr_row = ["Frequency", "Magnitude", "Note", "Mode"]
         else:
-            col_w = [90, 80, 80, 70, CONTENT_W - 320]
+            col_w = [96, 80, 80, 70, CONTENT_W - 326]
             hdr_row = ["Frequency", "Magnitude", "Note", "Q Factor", "Role"]
 
         def _effective_mode_label(peak) -> tuple[str, bool]:
@@ -866,33 +1002,37 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             mode = peak_modes.get(peak.id, GM.GuitarMode.UNKNOWN)
             return mode.display_name if hasattr(mode, "display_name") else str(mode), False
 
-        def _role_para(peak) -> Paragraph:
-            """Return a colored Paragraph for the Role column — mirrors Swift peakRoleCell."""
+        def _colored(text: str, hex_color: str, italic: bool = False):
+            return _text(f"<font color='{hex_color}'>{'<i>' if italic else ''}{escape(text)}{'</i>' if italic else ''}</font>",
+                         10, markup=True)
+
+        def _role_cell(peak):
+            """A coloured Role cell — mirrors Swift peakRoleCell."""
             if mt == MT.MeasurementType.PLATE:
                 if peak.id == data.selected_longitudinal_peak_id:
-                    return Paragraph(f"<font color='{_ROLE_BLUE}'>Longitudinal (fL)</font>", S_BODY)
+                    return _colored("Longitudinal (fL)", _ROLE_BLUE)
                 if peak.id == data.selected_cross_peak_id:
-                    return Paragraph(f"<font color='{_ROLE_ORANGE}'>Cross-grain (fC)</font>", S_BODY)
+                    return _colored("Cross-grain (fC)", _ROLE_ORANGE)
                 if peak.id == data.selected_flc_peak_id:
-                    return Paragraph(f"<font color='{_ROLE_PURPLE}'>Diagonal (fLC)</font>", S_BODY)
-                return Paragraph("\u2013", S_BODY)
+                    return _colored("Diagonal (fLC)", _ROLE_PURPLE)
+                return _text("–", 10)
             elif mt == MT.MeasurementType.BRACE:
                 if peak.id == data.selected_longitudinal_peak_id:
-                    return Paragraph(f"<font color='{_ROLE_BLUE}'>Longitudinal (fL)</font>", S_BODY)
-                return Paragraph("\u2013", S_BODY)
-            return Paragraph("", S_BODY)
+                    return _colored("Longitudinal (fL)", _ROLE_BLUE)
+                return _text("–", 10)
+            return []
 
-        # Build rows
-        peak_rows: list[list] = [hdr_row]
+        peak_rows: list[list] = []
         for peak in visible_peaks:
-            note_str = peak.pitch_note or "\u2013"
-            freq_str = f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz"
-            mag_str  = f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB"
+            cells = [
+                _text(f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz", 10),
+                _text(f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB", 10),
+                _text(peak.pitch_note or "–", 10),
+            ]
             if is_guitar:
                 label, is_ovr = _effective_mode_label(peak)
                 # Color is override-aware too (matching the label): a predefined override → that
-                # mode's color; a freeform label → user-defined teal; else the auto mode. Was using
-                # the auto mode unconditionally — the reported bug.
+                # mode's color; a freeform label → user-defined teal; else the auto mode.
                 _ovr = peak_mode_overrides.get(peak.id)
                 if _ovr:
                     _resolved = GM.GuitarMode.from_mode_string(_ovr)
@@ -903,44 +1043,41 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                         mc = _mode_color(_resolved)
                 else:
                     mc = _mode_color(peak_modes.get(peak.id, GM.GuitarMode.UNKNOWN))
-                mode_para = Paragraph(
-                    f"<font color='#{int(mc.red*255):02x}{int(mc.green*255):02x}{int(mc.blue*255):02x}'>"
-                    f"{'<i>' if is_ovr else ''}{label}{'</i>' if is_ovr else ''}</font>",
-                    S_BODY
-                )
-                peak_rows.append([freq_str, mag_str, note_str, mode_para])
+                cells.append(_colored(label, _hex(mc), italic=is_ovr))
             else:
-                q_str   = f"{fp.string(peak.quality, fp.Q_FACTOR)}"
-                role_para = _role_para(peak)
-                peak_rows.append([freq_str, mag_str, note_str, q_str, role_para])
+                cells.append(_text(f"{fp.string(peak.quality, fp.Q_FACTOR)}", 10))
+                cells.append(_role_cell(peak))
+            peak_rows.append(cells)
 
-        peaks_tbl = Table(peak_rows, colWidths=col_w)
-        hdr_style = [
-            # Header row background
-            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.5, 0.5, 0.5, 0.1)),
-            ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE",   (0, 0), (-1, -1), 10),
-            ("TEXTCOLOR",  (0, 0), (-1, 0), SECONDARY),
-            ("TOPPADDING",    (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.Color(0.97, 0.97, 0.97)]),
-            ("ROUNDEDCORNERS", [4]),
-        ]
-        peaks_tbl.setStyle(TableStyle(hdr_style))
-        story.append(peaks_tbl)
+        story.append(_grid(
+            [[_text(h, 10, bold=True, color=SECONDARY) for h in hdr_row]],
+            col_w,
+            [
+                ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.1)),
+                ("LEFTPADDING",   (0, 0), (0, -1), 6),
+                ("TOPPADDING",    (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("ROUNDEDCORNERS", [4]),
+            ],
+        ))
+        story.append(Spacer(1, 2))
+        # Each row: the stack's 6 pt spacing, then the row's own 2 pt padding above and below.
+        story.append(_grid(peak_rows, col_w, [
+            ("LEFTPADDING",   (0, 0), (0, -1), 6),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6 + 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]))
 
     story.append(Spacer(1, 14))
 
     # --- ANALYSIS RESULTS ------------------------------------------------
     if mt.is_guitar:
-        story.append(Paragraph("Analysis Results", S_SECTION))
+        # Swift guitarAnalysisSection: VStack(spacing 10) { "Analysis Results" 13 bold, HStack(top,
+        # spacing 16) of boxes, each filling its share of the width }.
+        story.append(_text("Analysis Results", 13, bold=True))
         story.append(Spacer(1, 10))
 
-        boxes: list[Flowable] = []
-        box_w = (CONTENT_W - 16) / 2   # two boxes side-by-side with 16 pt gap
-
+        box_specs: list[dict] = []
         if data.decay_time is not None:
             try:
                 decay_label = _ext.decay_quality_label(data.decay_time, gt)
@@ -948,84 +1085,43 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             except Exception:
                 decay_label = ""
                 dc = colors.Color(0.45, 0.45, 0.45)
-            boxes.append(_AnalysisBox(
+            box_specs.append(dict(
                 title="Ring-Out Time",
                 value=f"{fp.string(data.decay_time, fp.DECAY_TIME_S)} s",
                 subtitle="Time to decay 15 dB",
                 detail=decay_label,
                 detail_subtitle="Sustain quality",
                 detail_color=dc,
-                width=box_w,
             ))
 
         ratio = data.tap_tone_ratio
         if ratio is not None:
-            ratio_label = _ext.tap_tone_ratio_quality_label(ratio)
-            ratio_color = colors.HexColor(_ext.tap_tone_ratio_quality_color(ratio).light)
-            boxes.append(_AnalysisBox(
+            box_specs.append(dict(
                 title="Tap Tone Ratio",
                 value=f"{fp.string(ratio, fp.DECAY_RATIO)} : 1",
                 subtitle="Top / Air",
-                detail=ratio_label,
-                detail_color=ratio_color,
-                hint="Ideal: 1.9\u20132.1",
-                width=box_w,
+                detail=_ext.tap_tone_ratio_quality_label(ratio),
+                detail_color=colors.HexColor(_ext.tap_tone_ratio_quality_color(ratio).light),
+                hint="Ideal: 1.9–2.1",
             ))
 
-        if boxes:
+        if box_specs:
+            box_w = (CONTENT_W - 16 * (len(box_specs) - 1)) / len(box_specs)
+            boxes = [_AnalysisBox(width=box_w, **spec) for spec in box_specs]
             if len(boxes) == 2:
-                box_tbl = Table(
-                    [[boxes[0], Spacer(16, 1), boxes[1]]],
-                    colWidths=[box_w, 16, box_w],
-                )
-                box_tbl.setStyle(TableStyle([
-                    ("VALIGN",         (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING",    (0, 0), (-1, -1), 0),
-                    ("RIGHTPADDING",   (0, 0), (-1, -1), 0),
-                    ("TOPPADDING",     (0, 0), (-1, -1), 0),
-                    ("BOTTOMPADDING",  (0, 0), (-1, -1), 0),
-                ]))
-                story.append(box_tbl)
+                story.append(_grid([[boxes[0], Spacer(16, 1), boxes[1]]], [box_w, 16, box_w]))
             else:
                 story.append(boxes[0])
 
     elif mt == MT.MeasurementType.PLATE and plate_props is not None:
         # Material analysis order mirrors Swift analysisSection (plate):
-        #   Sample Dimensions -> Body Dimensions -> Gore Target Thickness -> Plate Properties.
-        _cw3 = CONTENT_W / 3
+        #   Sample Dimensions -> Body Dimensions -> Gore Target Thickness -> Plate Properties,
+        # separated by Spacer 14 · divider · Spacer 14 (also after the Gore slot when there is no target).
         dims = plate_props.dimensions
 
-        # -- Sample Dimensions --------------------------------------------
         if dims:
-            dims_rows = [
-                [Paragraph("Sample Dimensions", S_SMALL), "", ""],
-                [
-                    Paragraph(f"<font color='#737373'>Length:</font>  <b>{fp.string(dims.length_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.length_mm else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Width:</font>  <b>{fp.string(dims.width_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.width_mm else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Thickness:</font>  <b>{fp.string(dims.thickness_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.thickness_mm else "", S_BODY),
-                ],
-                [
-                    Paragraph(f"<font color='#737373'>Mass:</font>  <b>{fp.string(dims.mass_g, fp.MASS_G)} g</b>" if dims.mass_g else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{fp.string(plate_props.density_kg_m3/1000, fp.DENSITY_G_PER_CM3)} g/cm³</b>", S_BODY),
-                    "",
-                ],
-            ]
-            dims_tbl = Table(dims_rows, colWidths=[_cw3] * 3)
-            dims_tbl.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
-                ("SPAN",          (0, 0), (-1, 0)),
-                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-                ("TOPPADDING",    (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                ("TOPPADDING",    (0, 0), (-1, 0), 6),
-                ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
-                ("ROUNDEDCORNERS", [4]),
-            ]))
-            story.append(dims_tbl)
-            story.append(Spacer(1, 14))
-            story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-            story.append(Spacer(1, 14))
+            story.append(_sample_dimensions(dims, plate_props.density_kg_m3))
+            story += _separator()
 
         # -- Body Dimensions (Gore inputs) --------------------------------
         # Mirrors Swift plateBodyDimensionsPDFSection: finished-guitar body dims (a, b)
@@ -1034,358 +1130,133 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             preset_label = f"f_vs = {int(plate_stiffness)} (custom)"
         else:
             preset_label = f"f_vs = {int(plate_stiffness)} ({_preset_str})"
-        body_rows = [
-            [Paragraph("Body Dimensions", S_SMALL), ""],
+        half = (CONTENT_W - 12) / 2
+        story.append(_grey_box("Body Dimensions", [
             [
-                Paragraph(f"<font color='#737373'>Body Length (a):</font>  <b>{fp.string(guitar_body_length, fp.BODY_DIMENSION_MM)} mm</b>", S_BODY),
-                Paragraph(f"<font color='#737373'>Lower Bout Width (b):</font>  <b>{fp.string(guitar_body_width, fp.BODY_DIMENSION_MM)} mm</b>", S_BODY),
+                _pprow("Body Length (a)", f"{fp.string(guitar_body_length, fp.BODY_DIMENSION_MM)} mm"),
+                _pprow("Lower Bout Width (b)", f"{fp.string(guitar_body_width, fp.BODY_DIMENSION_MM)} mm"),
             ],
-            [Paragraph(f"<font color='#737373'>Panel Stiffness:</font>  <b>{preset_label}</b>", S_BODY), ""],
-        ]
-        body_tbl = Table(body_rows, colWidths=[CONTENT_W / 2] * 2)
-        body_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
-            ("SPAN",          (0, 0), (-1, 0)),
-            ("SPAN",          (0, 2), (-1, 2)),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-            ("TOPPADDING",    (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("TOPPADDING",    (0, 0), (-1, 0), 6),
-            ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
-            ("ROUNDEDCORNERS", [4]),
-        ]))
-        story.append(body_tbl)
-        story.append(Spacer(1, 14))
-        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-        story.append(Spacer(1, 14))
+            [_pprow("Panel Stiffness", preset_label), []],
+        ], [half + 6, half + 6], [("SPAN", (0, 2), (-1, 2))]))
+        story += _separator()
 
         # -- Gore Target Thickness (just the number) ----------------------
+        # Swift goreThicknessPDFSection: VStack(spacing 4) { heading 10 bold, the thickness 16 bold },
+        # padded 6 in an accent-tinted box.
         if gore_thickness_mm is not None:
-            S_GORE_VAL = _style(
-                "gore_val", fontSize=16, fontName="Helvetica-Bold",
-                textColor=ACCENT, leading=20,
-            )
-            gore_content = [
-                Paragraph("Gore Target Thickness", S_SMALL),
-                Spacer(1, 4),
-                Paragraph(f"{fp.string(gore_thickness_mm, fp.GORE_THICKNESS_MM)} mm", S_GORE_VAL),
-            ]
-            gore_tbl = Table([[gore_content]])
-            gore_tbl.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, -1), BG_ACCENT),
-                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-                ("TOPPADDING",    (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ("ROUNDEDCORNERS", [4]),
-            ]))
-            story.append(gore_tbl)
-            story.append(Spacer(1, 14))
-            story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-            story.append(Spacer(1, 14))
+            story.append(_grid(
+                [[[_text("Gore Target Thickness", 10, bold=True, color=SECONDARY),
+                   Spacer(1, 4),
+                   _text(f"{fp.string(gore_thickness_mm, fp.GORE_THICKNESS_MM)} mm", 16, bold=True, color=ACCENT)]]],
+                [CONTENT_W],
+                [
+                    ("BACKGROUND",    (0, 0), (-1, -1), BG_ACCENT),
+                    ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+                    ("TOPPADDING",    (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("ROUNDEDCORNERS", [4]),
+                ],
+            ))
+        story += _separator()
 
         # -- Plate Properties ---------------------------------------------
+        # Swift plateSection: VStack(spacing 10) { title 13 bold, two property columns, GLC row,
+        # ratios, Overall Quality }.
         # (fL / fC / fLC are inputs, shown in the Detected Peaks table -- not repeated here.)
-        story.append(Paragraph("Plate Properties", S_SECTION))
+        story.append(_text("Plate Properties", 13, bold=True))
         story.append(Spacer(1, 10))
-
-        def _pprow(label: str, value: str) -> Paragraph:
-            return Paragraph(f"<font color='#737373'>{label}:</font>  <b>{value}</b>", S_BODY)
-
-        def _qrow(label: str, value: float, quality: str) -> Paragraph:
-            qc = _quality_color(quality)
-            hex_c = f"#{int(qc.red*255):02x}{int(qc.green*255):02x}{int(qc.blue*255):02x}"
-            return Paragraph(
-                f"<font color='#737373'>{label}:</font>  "
-                f"<b><font color='{hex_c}'>{fp.string(value, fp.SPECIFIC_MODULUS)}</font></b>  "
-                f"<font color='{hex_c}' size='9'>({quality})</font>",
-                S_BODY,
-            )
-
-        left_col = [
-            _pprow("Speed of Sound (L)", f"{fp.string(plate_props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
-            Spacer(1, 6),
-            _pprow("Speed of Sound (C)", f"{fp.string(plate_props.c_cross_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
-            Spacer(1, 6),
-            _pprow("Young’s Modulus (L)", f"{fp.string(plate_props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
-            Spacer(1, 6),
-            _pprow("Young’s Modulus (C)", f"{fp.string(plate_props.youngsModulusCrossGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
-        ]
-        right_col = [
-            _qrow("Specific Modulus (L)", plate_props.specific_modulus_long, plate_props.quality_long),
-            Spacer(1, 6),
-            _qrow("Specific Modulus (C)", plate_props.specific_modulus_cross, plate_props.quality_cross),
-            Spacer(1, 6),
-            _pprow("Radiation Ratio (L)", f"{fp.string(plate_props.radiation_ratio_long, fp.RADIATION_RATIO)}"),
-            Spacer(1, 6),
-            _pprow("Radiation Ratio (C)", f"{fp.string(plate_props.radiation_ratio_cross, fp.RADIATION_RATIO)}"),
-        ]
-        props_tbl = Table([[left_col, right_col]], colWidths=[CONTENT_W/2]*2)
-        props_tbl.setStyle(TableStyle([
-            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-            ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ]))
-        story.append(props_tbl)
+        story.append(_two_columns(
+            [
+                _pprow("Speed of Sound (L)", f"{fp.string(plate_props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
+                _pprow("Speed of Sound (C)", f"{fp.string(plate_props.c_cross_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
+                _pprow("Young's Modulus (L)", f"{fp.string(plate_props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
+                _pprow("Young's Modulus (C)", f"{fp.string(plate_props.youngsModulusCrossGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
+            ],
+            [
+                _qrow("Specific Modulus (L)", plate_props.specific_modulus_long, plate_props.quality_long),
+                _qrow("Specific Modulus (C)", plate_props.specific_modulus_cross, plate_props.quality_cross),
+                _pprow("Radiation Ratio (L)", f"{fp.string(plate_props.radiation_ratio_long, fp.RADIATION_RATIO)}"),
+                _pprow("Radiation Ratio (C)", f"{fp.string(plate_props.radiation_ratio_cross, fp.RADIATION_RATIO)}"),
+            ],
+        ))
         story.append(Spacer(1, 10))
 
         if glc_pa is not None and glc_pa > 0:
             story.append(_pprow("GLC (Shear Modulus)", f"{fp.string(glc_pa/1e9, fp.SHEAR_MODULUS_GPA)} GPa"))
         else:
-            story.append(Paragraph("GLC assumed 0 — fLC tap not performed", S_SMALL_I))
+            story.append(_text("GLC assumed 0 — fLC tap not performed", 10, italic=True, color=SECONDARY))
         story.append(Spacer(1, 10))
 
-        ratio_tbl = Table([[
+        # Ratios: two side-by-side VStack(spacing 2) { row, typical-range note 9 italic }.
+        story.append(_grid([[
             [
                 _pprow("Cross/Long Ratio", f"{fp.string(plate_props.cross_long_ratio, fp.CROSS_LONG_RATIO)}"),
                 Spacer(1, 2),
-                Paragraph("typical: 0.04–0.08", S_SMALL_I),
+                _text("typical: 0.04–0.08", 9, italic=True, color=SECONDARY),
             ],
             [
                 _pprow("Long/Cross Ratio", f"{fp.string(plate_props.long_cross_ratio, fp.LONG_CROSS_RATIO)}"),
                 Spacer(1, 2),
-                Paragraph("typical: 12–25", S_SMALL_I),
+                _text("typical: 12–25", 9, italic=True, color=SECONDARY),
             ],
-        ]], colWidths=[CONTENT_W/2]*2)
-        ratio_tbl.setStyle(TableStyle([
-            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-            ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ]))
-        story.append(ratio_tbl)
+        ]], [CONTENT_W / 2] * 2))
         story.append(Spacer(1, 10))
-
-        oq = plate_props.overall_quality
-        oq_color = _quality_color(oq)
-        oq_hex = f"#{int(oq_color.red*255):02x}{int(oq_color.green*255):02x}{int(oq_color.blue*255):02x}"
-        S_OQ = _style(
-            "oq", fontSize=10, fontName="Helvetica",
-            textColor=colors.black, leading=16,
-        )
-        oq_tbl = Table([[
-            Paragraph(
-                f"<font color='#737373'><b>Overall Quality:</b></font>  "
-                f"<b><font size='13' color='{oq_hex}'>{oq}</font></b>",
-                S_OQ,
-            )
-        ]])
-        oq_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), BG_GREY),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
-            ("TOPPADDING",    (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ("ROUNDEDCORNERS", [4]),
-        ]))
-        story.append(oq_tbl)
+        story.append(_overall_quality(plate_props.overall_quality, _quality_color(plate_props.overall_quality)))
 
     elif mt == MT.MeasurementType.BRACE and brace_props is not None:
         # Material analysis order mirrors Swift analysisSection (brace):
         #   Sample Dimensions -> Brace Properties.
-        _cw3 = CONTENT_W / 3
         dims = brace_props.dimensions
 
-        # -- Sample Dimensions --------------------------------------------
         if dims:
-            dims_rows = [
-                [Paragraph("Sample Dimensions", S_SMALL), "", ""],
-                [
-                    Paragraph(f"<font color='#737373'>Length:</font>  <b>{fp.string(dims.length_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.length_mm else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Width:</font>  <b>{fp.string(dims.width_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.width_mm else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Thickness:</font>  <b>{fp.string(dims.thickness_mm, fp.LINEAR_DIMENSION_MM)} mm</b>" if dims.thickness_mm else "", S_BODY),
-                ],
-                [
-                    Paragraph(f"<font color='#737373'>Mass:</font>  <b>{fp.string(dims.mass_g, fp.MASS_G)} g</b>" if dims.mass_g else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{fp.string(brace_props.density_kg_m3/1000, fp.DENSITY_G_PER_CM3)} g/cm³</b>", S_BODY),
-                    "",
-                ],
-            ]
-            dims_tbl = Table(dims_rows, colWidths=[_cw3] * 3)
-            dims_tbl.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
-                ("SPAN",          (0, 0), (-1, 0)),
-                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-                ("TOPPADDING",    (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                ("TOPPADDING",    (0, 0), (-1, 0), 6),
-                ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
-                ("ROUNDEDCORNERS", [4]),
-            ]))
-            story.append(dims_tbl)
-            story.append(Spacer(1, 14))
-            story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-            story.append(Spacer(1, 14))
+            story.append(_sample_dimensions(dims, brace_props.density_kg_m3))
+            story += _separator()
 
         # -- Brace Properties ---------------------------------------------
         # (fL is an input, shown in the Detected Peaks table -- not repeated here.)
-        story.append(Paragraph("Brace Properties", S_SECTION))
+        story.append(_text("Brace Properties", 13, bold=True))
         story.append(Spacer(1, 10))
-
-        def _pprow(label, value):
-            return Paragraph(f"<font color='#737373'>{label}:</font>  <b>{value}</b>", S_BODY)
-
-        def _qrow(label, value, quality):
-            qc = _quality_color(quality)
-            hex_c = f"#{int(qc.red*255):02x}{int(qc.green*255):02x}{int(qc.blue*255):02x}"
-            return Paragraph(
-                f"<font color='#737373'>{label}:</font>  "
-                f"<b><font color='{hex_c}'>{fp.string(value, fp.SPECIFIC_MODULUS)}</font></b>  "
-                f"<font color='{hex_c}' size='9'>({quality})</font>",
-                S_BODY,
-            )
-
-        left_col = [
-            _pprow("Speed of Sound", f"{fp.string(brace_props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
-            Spacer(1, 6),
-            _pprow("Young’s Modulus (E)", f"{fp.string(brace_props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
-        ]
-        right_col = [
-            _qrow("Specific Modulus", brace_props.specific_modulus, brace_props.quality),
-            Spacer(1, 6),
-            _pprow("Radiation Ratio", f"{fp.string(brace_props.radiation_ratio, fp.RADIATION_RATIO)}"),
-        ]
-        props_tbl = Table([[left_col, right_col]], colWidths=[CONTENT_W/2]*2)
-        props_tbl.setStyle(TableStyle([
-            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-            ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ]))
-        story.append(props_tbl)
+        story.append(_two_columns(
+            [
+                _pprow("Speed of Sound", f"{fp.string(brace_props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
+                _pprow("Young's Modulus (E)", f"{fp.string(brace_props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
+            ],
+            [
+                _qrow("Specific Modulus", brace_props.specific_modulus, brace_props.quality),
+                _pprow("Radiation Ratio", f"{fp.string(brace_props.radiation_ratio, fp.RADIATION_RATIO)}"),
+            ],
+        ))
         story.append(Spacer(1, 10))
-
-        oq = brace_props.quality
-        oq_color = _quality_color(oq)
-        oq_hex = f"#{int(oq_color.red*255):02x}{int(oq_color.green*255):02x}{int(oq_color.blue*255):02x}"
-        S_OQ = _style(
-            "oq", fontSize=10, fontName="Helvetica",
-            textColor=colors.black, leading=16,
-        )
-        oq_tbl = Table([[
-            Paragraph(
-                f"<font color='#737373'><b>Overall Quality:</b></font>  "
-                f"<b><font size='13' color='{oq_hex}'>{oq}</font></b>",
-                S_OQ,
-            )
-        ]])
-        oq_tbl.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), BG_GREY),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
-            ("TOPPADDING",    (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ("ROUNDEDCORNERS", [4]),
-        ]))
-        story.append(oq_tbl)
+        story.append(_overall_quality(brace_props.quality, _quality_color(brace_props.quality)))
 
     # --- TAP INSTRUCTIONS (plate / brace only, at end — mirrors live view ordering) ---
-    # Swift: VStack(spacing:6) containing sectionDivider, Spacer(6), title, rows, italic text
-    # Then Spacer(height:14) after the VStack.
-    # The tapInstructionsSection is flush (0 gap) against the preceding analysisSection.
+    # Flush (0 gap) against the preceding analysis section, as in Swift.
     if mt == MT.MeasurementType.PLATE:
         has_flc = bool(data.selected_flc_peak_id)
-        tap_title = "Three-Tap Measurement Process:" if has_flc else "Two-Tap Measurement Process:"
-        # Swift: 0pt gap from OQ to sectionDivider (body VStack spacing:0)
-        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-        # Swift: sectionDivider → Spacer(6) → title with VStack spacing:6 between each
-        # = 6 (spacing) + 6 (spacer height) + 6 (spacing) = 18pt total
-        story.append(Spacer(1, 18))
-        story.append(Paragraph(tap_title, S_BODY_B))
-        story.append(Spacer(1, 6))
-
-        def _instr_row(dot_color: str, label: str, detail: str):
-            """Colored-dot instruction row — mirrors Swift tapInstructionRow."""
-            dot = _DotFlowable(dot_color)
-            text_col = [
-                Paragraph(f"<b>{label}</b>", S_BODY),
-                Spacer(1, 1),
-                Paragraph(detail, S_SMALL),
-            ]
-            tbl = Table([[dot, text_col]], colWidths=[13, CONTENT_W - 13])
-            tbl.setStyle(TableStyle([
-                ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-                ("TOPPADDING",    (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ]))
-            return tbl
-
-        story.append(_instr_row(
-            _ROLE_BLUE,
-            "1. Longitudinal (fL) Tap",
-            "Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center.",
-        ))
-        story.append(Spacer(1, 6))
-        story.append(_instr_row(
-            _ROLE_ORANGE,
-            "2. Cross-grain (fC) Tap",
-            "Rotate 90\u00b0. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center.",
-        ))
-        if has_flc:
-            story.append(Spacer(1, 6))
-            story.append(_instr_row(
-                _ROLE_PURPLE,
-                "3. Diagonal (fLC) Tap",
-                "Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures shear stiffness.",
-            ))
-        story.append(Spacer(1, 6))
-        story.append(Paragraph("The strongest peak from each tap is auto-selected.", S_SMALL_I))
-        story.append(Spacer(1, 14))
-
-    elif mt == MT.MeasurementType.BRACE:
-        # Swift: 0pt gap from OQ to sectionDivider
-        story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.3)))
-        story.append(Spacer(1, 18))
-        story.append(Paragraph("Single-Tap Measurement (fL only):", S_BODY_B))
-        story.append(Spacer(1, 6))
-        _brace_dot = _DotFlowable(_ROLE_BLUE)
-        _brace_text = [
-            Paragraph("<b>1. Longitudinal (fL) Tap</b>", S_BODY),
-            Spacer(1, 1),
-            Paragraph("Hold brace at 22% from one end along the length. Tap center.", S_SMALL),
+        steps = [
+            (_ROLE_BLUE, "1. Longitudinal (fL) Tap",
+             "Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center."),
+            (_ROLE_ORANGE, "2. Cross-grain (fC) Tap",
+             "Rotate 90°. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center."),
         ]
-        _brace_tbl = Table([[_brace_dot, _brace_text]], colWidths=[13, CONTENT_W - 13])
-        _brace_tbl.setStyle(TableStyle([
-            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-            ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ]))
-        story.append(_brace_tbl)
-        story.append(Spacer(1, 6))
-        story.append(Paragraph("The strongest peak is auto-selected.", S_SMALL_I))
-        story.append(Spacer(1, 14))
+        if has_flc:
+            steps.append((_ROLE_PURPLE, "3. Diagonal (fLC) Tap",
+                          "Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures shear stiffness."))
+        story += _tap_instructions(
+            "Three-Tap Measurement Process:" if has_flc else "Two-Tap Measurement Process:",
+            steps,
+            "The strongest peak from each tap is auto-selected.",
+        )
+    elif mt == MT.MeasurementType.BRACE:
+        story += _tap_instructions(
+            "Single-Tap Measurement (fL only):",
+            [(_ROLE_BLUE, "1. Longitudinal (fL) Tap", "Hold brace at 22% from one end along the length. Tap center.")],
+            "The strongest peak is auto-selected.",
+        )
 
     # --- FOOTER -----------------------------------------------------------
-    story.append(Spacer(1, 16))
-    story.append(_HLine(CONTENT_W, thickness=1, color=colors.Color(0.5, 0.5, 0.5, 0.2)))
-    story.append(Spacer(1, 8))
-
-    version_str = _app_version
-    from guitar_tap.utilities.date_format import format_display_datetime
-    now_str = format_display_datetime(_dt.now())  # PDF generation time (local)
-    footer_tbl = Table(
-        [[
-            Paragraph(f"Generated by GuitarTap {version_str}", S_FOOTER),
-            Paragraph(now_str, _style("footer_r", fontSize=9, fontName="Helvetica",
-                                      textColor=SECONDARY, leading=11, alignment=TA_RIGHT)),
-        ]],
-        colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4],
-    )
-    footer_tbl.setStyle(TableStyle([
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(footer_tbl)
+    story += _report_footer(f"Generated by GuitarTap Python {_app_version}", SECONDARY, CONTENT_W)
 
     return story
 
@@ -1616,8 +1487,7 @@ def comparison_pdf_report_data_from_measurement(
     If spectrum_image_data is not provided it is rendered from the measurement's
     comparisonEntries.
 
-    Mirrors the reportData construction in Swift exportComparisonPDFReport()
-    (TapToneAnalysisView+Export.swift).
+    Mirrors Swift PDFReportGenerator.comparisonData(for:).
     """
     from guitar_tap.models.guitar_mode import GuitarMode
 
@@ -1644,11 +1514,8 @@ def comparison_pdf_report_data_from_measurement(
             set(),
         ))
 
-    from datetime import datetime, timezone
-    timestamp = datetime.now(timezone.utc).isoformat()
-
     return ComparisonPDFReportData(
-        timestamp=timestamp,
+        timestamp=measurement.timestamp,
         comparison_label=measurement.measurement_name or None,
         notes=measurement.notes or None,
         spectrum_image_data=spectrum_image_data,
@@ -1657,11 +1524,117 @@ def comparison_pdf_report_data_from_measurement(
     )
 
 
+def multi_tap_comparison_pdf_report_data_from_measurement(
+    measurement: TapToneMeasurement,
+    spectrum_image_data: "bytes | None" = None,
+) -> ComparisonPDFReportData:
+    """A multi-tap measurement's per-tap comparison page: one row per tap (each tap's own modes) and the
+    averaged row (the definitive, override-aware modes). Mirrors Swift
+    PDFReportGenerator.multiTapComparisonData(for:)."""
+    from guitar_tap.models.guitar_mode import GuitarMode
+    from guitar_tap.models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
+    from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+    from guitar_tap.utilities.new_uuid import new_uuid
+
+    if spectrum_image_data is None:
+        spectrum_image_data = render_spectrum_image_for_multi_tap(measurement)
+
+    cmp_entries: list[ComparisonEntry] = []
+    for idx, entry in enumerate(measurement.tap_entries or []):
+        r, g, b = MULTI_TAP_PALETTE[idx % len(MULTI_TAP_PALETTE)]
+        sel_ids = set(entry.selected_peak_ids)
+        cmp_entries.append(ComparisonEntry(
+            id=new_uuid(),
+            label=f"Tap {entry.tap_index}",
+            color_components=[r / 255.0, g / 255.0, b / 255.0, 1.0],
+            snapshot=entry.snapshot,
+            peaks=[p for p in entry.peaks if p.id in sel_ids],
+            guitar_type=entry.snapshot.guitar_type if entry.snapshot else None,
+            source_measurement_id=None,
+        ))
+    avg_snap = measurement.spectrum_snapshot
+    if avg_snap is not None:
+        avg_sel_ids = measurement.effective_selected_peak_ids
+        avg_r, avg_g, avg_b = MULTI_TAP_AVG_COLOR
+        cmp_entries.append(ComparisonEntry(
+            id=new_uuid(),
+            label="Averaged",
+            color_components=[avg_r / 255.0, avg_g / 255.0, avg_b / 255.0, 1.0],
+            snapshot=avg_snap,
+            peaks=[p for p in (measurement.peaks or []) if p.id in avg_sel_ids],
+            guitar_type=avg_snap.guitar_type,
+            source_measurement_id=None,
+        ))
+
+    avg_info = measurement.definitive_mode_info()
+    mode_frequencies = []
+    for cmp_entry in cmp_entries:
+        c = cmp_entry.color_components
+        color = (round(c[0] * 255), round(c[1] * 255), round(c[2] * 255))
+        if cmp_entry.label == "Averaged":
+            air_t = avg_info.get(GuitarMode.AIR)
+            top_t = avg_info.get(GuitarMode.TOP)
+            back_t = avg_info.get(GuitarMode.BACK)
+            mode_frequencies.append((
+                cmp_entry.label, color,
+                air_t[0] if air_t is not None else None,
+                top_t[0] if top_t is not None else None,
+                back_t[0] if back_t is not None else None,
+                {mode for mode, (_f, ov) in avg_info.items() if ov},
+            ))
+            continue
+        mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
+            cmp_entry.peaks, guitar_type=cmp_entry.guitar_type
+        )
+        air = mode_peaks.get(GuitarMode.AIR)
+        top = mode_peaks.get(GuitarMode.TOP)
+        back = mode_peaks.get(GuitarMode.BACK)
+        mode_frequencies.append((
+            cmp_entry.label, color,
+            air.frequency if air is not None else None,
+            top.frequency if top is not None else None,
+            back.frequency if back is not None else None,
+            set(),
+        ))
+
+    return ComparisonPDFReportData(
+        timestamp=measurement.timestamp,
+        comparison_label=measurement.measurement_name or None,
+        notes=measurement.notes or None,
+        spectrum_image_data=spectrum_image_data,
+        entries=cmp_entries,
+        mode_frequencies=mode_frequencies,
+    )
+
+
+def report_basename(measurement: TapToneMeasurement) -> str:
+    """The exported report's file name, without extension. Mirrors Swift PDFReportData.baseFilename."""
+    return measurement.export_stem_for("report")
+
+
+def export_report_for_measurement(measurement: TapToneMeasurement, output_path: str) -> None:
+    """Write a saved measurement's PDF report: a multi-tap measurement's two pages (the averaged result,
+    then the per-tap comparison), a comparison's report, or the single report. What the measurement list
+    exports. Mirrors Swift PDFReportGenerator.report(for:)."""
+    if measurement.tap_entries:
+        export_multi_tap_pdf(
+            pdf_report_data_from_measurement(measurement, render_spectrum_image_for_measurement(measurement)),
+            multi_tap_comparison_pdf_report_data_from_measurement(measurement),
+            output_path,
+        )
+    elif measurement.is_comparison:
+        export_comparison_pdf(comparison_pdf_report_data_from_measurement(measurement), output_path)
+    else:
+        export_pdf(
+            pdf_report_data_from_measurement(measurement, render_spectrum_image_for_measurement(measurement)),
+            output_path,
+        )
+
+
 def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     """Build and return the reportlab story list for a comparison report.
 
-    Contains all setup, imports, style definitions, and story-element construction
-    from export_comparison_pdf. Called by export_comparison_pdf and export_multi_tap_pdf.
+    Called by export_comparison_pdf and export_multi_tap_pdf.
 
     Mirrors Swift ComparisonPDFReportContentView (PDFReportGenerator.swift).
     """
@@ -1669,112 +1642,30 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     from reportlab.graphics.shapes import Circle, Drawing
     from reportlab.lib import colors
     from reportlab.lib.colors import HexColor
-    from reportlab.lib.enums import TA_RIGHT
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import (
-        Paragraph,
-        Spacer,
-        Table,
-        TableStyle,
-    )
+    from reportlab.platypus import Spacer
 
-    PAGE_W, PAGE_H = letter  # 612 × 792 pt
+    from guitar_tap._version import __version_string__ as _app_version
+    from guitar_tap.utilities.date_format import format_display_datetime
+
     MARGIN = 36
-    CONTENT_W = PAGE_W - 2 * MARGIN
+    CONTENT_W = 612 - 2 * MARGIN
 
     # ── Colours ───────────────────────────────────────────────────────────────
     BLUE     = HexColor("#2659BF")  # GuitarTap brand blue
     SECONDARY = colors.Color(0.4, 0.4, 0.4)
     DARK     = colors.Color(0.1, 0.1, 0.1)
 
-    # ── Paragraph styles ──────────────────────────────────────────────────────
-    def _style(name, **kw):
-        return ParagraphStyle(name, **kw)
-
-    S_TITLE    = _style("title",    fontSize=22, fontName="Helvetica-Bold",
-                        textColor=BLUE,     leading=26, spaceAfter=2)
-    S_SUBTITLE = _style("subtitle", fontSize=13, fontName="Helvetica",
-                        textColor=SECONDARY, leading=15, spaceAfter=8)
-    S_DATE     = _style("date",     fontSize=11, fontName="Helvetica",
-                        textColor=SECONDARY, leading=13, alignment=TA_RIGHT)
-    S_META_LBL = _style("metalbl",  fontSize=11, fontName="Helvetica-Bold",
-                        textColor=SECONDARY, leading=13)
-    S_META_VAL = _style("metaval",  fontSize=11, fontName="Helvetica",
-                        textColor=DARK,     leading=13)
-    S_SECTION  = _style("section",  fontSize=13, fontName="Helvetica-Bold",
-                        textColor=DARK,     leading=16, spaceBefore=6, spaceAfter=4)
-    S_THEAD    = _style("thead",    fontSize=10, fontName="Helvetica-Bold",
-                        textColor=SECONDARY, leading=12)
-    S_TCELL    = _style("tcell",    fontSize=10, fontName="Helvetica",
-                        textColor=DARK,     leading=12)
-    S_TCELL_DIM = _style("tcell_dim", fontSize=10, fontName="Helvetica",
-                         textColor=SECONDARY, leading=12, alignment=TA_RIGHT)
-    S_TCELL_R  = _style("tcell_r",  fontSize=10, fontName="Helvetica",
-                        textColor=DARK,     leading=12, alignment=TA_RIGHT)
-    # Overridden Averaged value: italic + " *" suffix — mirrors Swift PDFReportGenerator marking an
-    # overrideModes cell with `.italic()` and " *".
-    S_TCELL_R_I = _style("tcell_r_i", fontSize=10, fontName="Helvetica-Oblique",
-                         textColor=DARK, leading=12, alignment=TA_RIGHT)
-    S_FOOTER   = _style("footer",   fontSize=9,  fontName="Helvetica",
-                        textColor=SECONDARY, leading=11)
-
-    story = []
-
-    # ── Header ────────────────────────────────────────────────────────────────
-    try:
-        ts = data.timestamp[:16].replace("T", " ")
-    except Exception:
-        ts = data.timestamp
-
-    header_tbl = Table(
-        [[Paragraph("GuitarTap", S_TITLE),
-          Paragraph(ts, S_DATE)]],
-        colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4],
-    )
-    header_tbl.setStyle(TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(header_tbl)
-    story.append(Paragraph("Comparison Report", S_SUBTITLE))
-
-    # Accent bar
-    accent = Table([[""]], colWidths=[CONTENT_W], rowHeights=[3])
-    accent.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), BLUE),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(accent)
-    story.append(Spacer(1, 12))
+    story: list = _report_header("Comparison Report", format_display_datetime(data.timestamp), BLUE, SECONDARY, CONTENT_W)
 
     # ── Metadata ─────────────────────────────────────────────────────────────
-    def meta_row(label: str, value: str) -> Table:
-        tbl = Table(
-            [[Paragraph(f"{label}:", S_META_LBL),
-              Paragraph(value, S_META_VAL)]],
-            colWidths=[100, CONTENT_W - 100],
-        )
-        tbl.setStyle(TableStyle([
-            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-            ("TOPPADDING",    (0, 0), (-1, -1), 1),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ]))
-        return tbl
-
+    meta = []
     if data.comparison_label:
-        story.append(meta_row("Comparison", data.comparison_label))
+        meta.append(("Comparison", data.comparison_label))
     if data.notes:
-        story.append(meta_row("Notes", data.notes))
+        meta.append(("Notes", data.notes))
     # Use mode_frequencies count for live exports (entries is empty); fall back to entries.
     n = len(data.mode_frequencies) if data.mode_frequencies else len(data.entries)
-    story.append(meta_row("Spectra", f"{n} spectra compared"))
+    meta.append(("Spectra", f"{n} spectra compared"))
 
     # Frequency range from entries
     if data.entries:
@@ -1782,134 +1673,92 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
         try:
             min_f = min(s.min_freq for s in snaps)
             max_f = max(s.max_freq for s in snaps)
-            story.append(meta_row("Frequency Range", f"{min_f:.0f} Hz – {max_f:.0f} Hz"))
+            meta.append((
+                "Frequency Range",
+                f"{_ext.formatted_as_frequency(min_f)} – {_ext.formatted_as_frequency(max_f)}",
+            ))
         except Exception:
             pass
-
+    # The comparison report's label frame is 100 pt (the measurement report's is 120).
+    story += _meta_rows(meta, 100, SECONDARY, DARK, CONTENT_W)
     story.append(Spacer(1, 14))
 
     # ── Spectrum image ────────────────────────────────────────────────────────
     if data.spectrum_image_data:
-        story.append(Paragraph("Frequency Spectrum", S_SECTION))
+        story.append(_text("Frequency Spectrum", 12, bold=True, color=SECONDARY))
+        story.append(Spacer(1, 6))
         try:
-            # Dark rounded matte around the image — mirrors Swift, which applies it at BOTH of its
-            # sites (PDFReportGenerator.swift:405 and :1261).
+            # Dark rounded matte around the image — mirrors Swift, which applies it at both sites.
             story.append(_spectrum_image_matte(data.spectrum_image_data, CONTENT_W))
         except Exception:
             pass
         story.append(Spacer(1, 14))
 
-    # Divider
-    div = Table([[""]], colWidths=[CONTENT_W], rowHeights=[1])
-    div.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.3)),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(div)
+    story.append(_rule(CONTENT_W, 1, colors.Color(0.5, 0.5, 0.5, 0.3)))
     story.append(Spacer(1, 14))
 
     # ── Peak Mode Comparison table ────────────────────────────────────────────
-    story.append(Paragraph("Peak Mode Comparison", S_SECTION))
+    # Swift peakModeTableSection: VStack(spacing 6) { title 13 bold, the header (10 bold, padded 4
+    # vertically), one row per spectrum (10, padded 4, top-aligned: a long name wraps, its dot and values
+    # level with its first line) }. Each frequency column is 90 pt, right-aligned,
+    # with 6 pt after it; the spectrum column takes the rest, padded 6.
+    story.append(_text("Peak Mode Comparison", 13, bold=True, color=DARK))
+    story.append(Spacer(1, 6))
 
-    col_w_label = CONTENT_W - 3 * 90
-    table_data = [
-        [Paragraph("Spectrum", S_THEAD),
-         Paragraph("Air",  S_THEAD),
-         Paragraph("Top",  S_THEAD),
-         Paragraph("Back", S_THEAD)],
+    col_w = [CONTENT_W - 3 * 96, 96, 96, 96]
+    cell_style = [
+        ("LEFTPADDING",   (0, 0), (0, -1), 6),
+        ("RIGHTPADDING",  (1, 0), (-1, -1), 6),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
+    story.append(_grid(
+        [[_text("Spectrum", 10, bold=True, color=SECONDARY)]
+         + [_text(h, 10, bold=True, color=SECONDARY, align="right") for h in ("Air", "Top", "Back")]],
+        col_w,
+        cell_style + [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.9)),
+            ("ROUNDEDCORNERS", [4]),
+        ],
+    ))
 
-    # Inner-cell padding for the dot+label sub-table, so the parent table's
-    # padding settings still control the visible cell margins.
-    _dot_label_style = TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ])
-    # Reserve 13 pt for the circle column (8 pt circle + 5 pt spacing,
-    # mirrors Swift HStack(spacing: 5) { Circle().frame(width: 8, height: 8); Text(...) }).
+    # The dot column: an 8 pt circle and 5 pt spacing, mirroring Swift HStack(spacing: 5) { Circle()
+    # .frame(width: 8, height: 8); Text(...) }, the circle centred on the 10 pt line.
     _dot_col_w = 13.0
 
     from guitar_tap.models.guitar_mode import GuitarMode as _GM_pdf
+    rows: list = []
     for row in data.mode_frequencies:
-        # Tuples are 6-wide (\u2026, override_modes); tolerate legacy 5-wide callers with an empty set.
+        # Tuples are 6-wide (…, override_modes); tolerate legacy 5-wide callers with an empty set.
         label, color_rgb, air_hz, top_hz, back_hz = row[:5]
         override_modes = row[5] if len(row) > 5 else set()
 
         def freq_cell(hz, is_override):
             if hz is None:
-                return Paragraph("\u2014", S_TCELL_DIM)
+                return _text("—", 10, color=SECONDARY, align="right")
             # Overridden Averaged value: italic + " *" (mirrors Swift's overrideModes marking).
             if is_override:
-                return Paragraph(f"{fp.string(hz, fp.PEAK_FREQUENCY_HZ)} Hz *", S_TCELL_R_I)
-            return Paragraph(f"{fp.string(hz, fp.PEAK_FREQUENCY_HZ)} Hz", S_TCELL_R)
+                return _text(f"{fp.string(hz, fp.PEAK_FREQUENCY_HZ)} Hz *", 10, italic=True, color=DARK, align="right")
+            return _text(f"{fp.string(hz, fp.PEAK_FREQUENCY_HZ)} Hz", 10, color=DARK, align="right")
 
-        # Coloured dot mirrors Swift Circle().fill(row.color).frame(width: 8, height: 8).
         r8, g8, b8 = color_rgb
-        dot_color = colors.Color(r8 / 255.0, g8 / 255.0, b8 / 255.0)
         dot = Drawing(8, 8)
-        dot.add(Circle(4, 4, 4, fillColor=dot_color, strokeColor=None))
-        label_para = Paragraph(label, S_TCELL)
-        # HStack equivalent: dot on the left, label on the right, in a borderless sub-table.
-        label_cell = Table(
-            [[dot, label_para]],
-            colWidths=[_dot_col_w, col_w_label - _dot_col_w],
+        dot.add(Circle(4, 4, 4, fillColor=colors.Color(r8 / 255.0, g8 / 255.0, b8 / 255.0), strokeColor=None))
+        label_cell = _grid(
+            [[[Spacer(1, 1), dot], _text(label, 10, color=DARK)]],
+            [_dot_col_w, col_w[0] - 6 - 6 - _dot_col_w],  # the column padded 6 each side,
         )
-        label_cell.setStyle(_dot_label_style)
-        table_data.append([
+        rows.append([
             label_cell,
             freq_cell(air_hz,  _GM_pdf.AIR in override_modes),
             freq_cell(top_hz,  _GM_pdf.TOP in override_modes),
             freq_cell(back_hz, _GM_pdf.BACK in override_modes),
         ])
+    if rows:
+        # Each row: the stack's 6 pt spacing, then the row's own 4 pt padding.
+        story.append(_grid(rows, col_w, cell_style + [("TOPPADDING", (0, 0), (-1, -1), 6 + 4)]))
 
-    mode_tbl = Table(
-        table_data,
-        colWidths=[col_w_label, 90, 90, 90],
-    )
-    mode_tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0),  colors.Color(0.9, 0.9, 0.9)),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.Color(0.97, 0.97, 0.97)]),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN",         (1, 0), (-1, -1), "RIGHT"),
-        ("ROUNDEDCORNERS", [4],),
-    ]))
-    story.append(mode_tbl)
-
-    # ── Footer ────────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 16))
-    footer_div = Table([[""]], colWidths=[CONTENT_W], rowHeights=[1])
-    footer_div.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.2)),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(footer_div)
-    story.append(Spacer(1, 8))
-
-    from guitar_tap.utilities.date_format import format_display_datetime
-    now_str = format_display_datetime(data.timestamp)
-    footer_tbl = Table(
-        [[Paragraph("Generated by GuitarTap", S_FOOTER),
-          Paragraph(now_str, _style("footer_r", fontSize=9, fontName="Helvetica",
-                                    textColor=SECONDARY, leading=11, alignment=TA_RIGHT))]],
-        colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4],
-    )
-    footer_tbl.setStyle(TableStyle([
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(footer_tbl)
-
+    story += _report_footer(f"Generated by GuitarTap Python {_app_version}", SECONDARY, CONTENT_W)
     return story
 
 

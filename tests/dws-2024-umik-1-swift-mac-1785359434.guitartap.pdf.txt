@@ -1,0 +1,19 @@
+0	44.0	<date>
+0	53.0	GuitarTap
+0	70.0	Tap Tone Analysis Report
+0	104.0	Measurement Name: DWS 2024 UMIK-1 Swift Mac
+0	119.0	Type: Generic Guitar
+0	134.0	Frequency Range: 75.0 Hz – 350.0 Hz
+0	149.0	Microphone: Umik-1 Gain: 18dB · calibrated (7108913)
+0	175.0	Frequency Spectrum
+0	661.0	Detected Peaks
+0	681.0	Frequency Magnitude Note Mode
+0	704.0	97.3 Hz -64.2 dB G2 Air (Helmholtz)
+0	724.0	197.9 Hz -45.3 dB G3 Top
+0	744.0	240.1 Hz -58.2 dB B3 Back
+0	772.0	Analysis Results
+0	803.0	Ring-Out Time Short Tap Tone Ratio Ideal
+0	814.0	Sustain quality Ideal: 1.9–2.1
+0	821.0	0.10 s 2.03 : 1
+0	834.0	Time to decay 15 dB Top / Air
+0	878.0	<generated>

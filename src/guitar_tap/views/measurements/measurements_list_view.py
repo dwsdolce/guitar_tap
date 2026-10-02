@@ -28,7 +28,6 @@ from guitar_tap.views import tap_analysis_results_view as M
 from guitar_tap.views.measurements import edit_measurement_view as EMV
 from guitar_tap.views.measurements import measurement_detail_view as MDD
 from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
-from guitar_tap.utilities.new_uuid import new_uuid
 
 # ── Main dialog ───────────────────────────────────────────────────────────────
 
@@ -437,187 +436,19 @@ class MeasurementsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 
     def _export_pdf(self, m: TapToneMeasurement) -> None:
-        """Route PDF export based on measurement type.
-
-        Multi-tap guitar → two-page report (averaged + per-tap comparison).
-        Saved-measurement comparison → single-page comparison report.
-        All others → single-page averaged report.
-
-        Mirrors Swift routing in MeasurementsListView.exportPDFReport(for:).
-        """
-        if m.tap_entries:
-            self._export_multi_tap_pdf(m)
-        elif m.is_comparison:
-            self._export_comparison_pdf_report(m)
-        else:
-            path, _ = QtWidgets.QFileDialog.getSaveFileName(
-                self,
-                "Export PDF Report",
-                os.path.join(M.last_export_dir(), m.export_stem_for("report") + ".pdf"),
-                "PDF files (*.pdf)",
-            )
-            if not path:
-                return
-            M.update_export_dir(path)
-            # Render spectrum image from the saved snapshot (mirrors Swift
-            # renderSpectrumImageForMeasurement called from exportPDFReport).
-            png_data = M.render_spectrum_image_for_measurement(m)
-            try:
-                # Mirrors Swift: PDFReportData.from(measurement:) → PDFReportGenerator.generate(data:)
-                report_data = M.pdf_report_data_from_measurement(m, png_data)
-                M.export_pdf(report_data, path)
-            except Exception as exc:
-                QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
-
-    def _export_multi_tap_pdf(self, m: TapToneMeasurement) -> None:
-        """Export a two-page multi-tap PDF report for a saved multi-tap measurement.
-
-        Page 1 — averaged-result report.
-        Page 2 — per-tap comparison report.
-
-        Mirrors Swift exportMultiTapPDFReport(for:) in MeasurementsListView.swift.
-        """
+        """Export the measurement's PDF report (``export_report_for_measurement`` picks the report for
+        its kind). Mirrors Swift MeasurementsListView.exportPDFReport(for:)."""
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Export Multi-Tap PDF Report",
-            os.path.join(M.last_export_dir(), m.export_stem_for("report") + ".pdf"),
+            "Export PDF Report",
+            os.path.join(M.last_export_dir(), M.report_basename(m) + ".pdf"),
             "PDF files (*.pdf)",
         )
         if not path:
             return
         M.update_export_dir(path)
-
-        avg_png_data = M.render_spectrum_image_for_measurement(m)
-        cmp_png_data = M.render_spectrum_image_for_multi_tap(m)
-
         try:
-            averaged_data = M.pdf_report_data_from_measurement(m, avg_png_data)
-
-            # Build ComparisonPDFReportData from tap_entries + averaged row.
-            import uuid as _uuid
-            from datetime import datetime, timezone
-
-            from guitar_tap.models.guitar_mode import GuitarMode
-            from guitar_tap.models.tap_tone_analyzer_peak_analysis import (
-                TapToneAnalyzerPeakAnalysisMixin,
-            )
-            from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-
-            # Palette and avg color imported from the shared module-level constants — mirrors Swift's
-            # TapToneAnalyzer.multiTapPalette / TapToneAnalyzer.multiTapAvgColor.
-            _PALETTE = M.MULTI_TAP_PALETTE
-            _AVERAGED_COLOR = M.MULTI_TAP_AVG_COLOR
-
-            # Step 1 — Build cmp_entries (mirrors Swift's [ComparisonEntry] build step).
-            # Colors are stored as RGBA 0.0–1.0 inside ComparisonEntry, mirroring Swift's
-            # colorComponents: [Double].
-            cmp_entries: list[ComparisonEntry] = []
-            for idx, entry in enumerate(m.tap_entries):
-                r, g, b = _PALETTE[idx % len(_PALETTE)]
-                color_components = [r / 255.0, g / 255.0, b / 255.0, 1.0]
-                sel_ids = set(entry.selected_peak_ids)
-                sel_peaks = [p for p in entry.peaks if p.id in sel_ids]
-                cmp_entries.append(ComparisonEntry(
-                    id=new_uuid(),
-                    label=f"Tap {entry.tap_index}",
-                    color_components=color_components,
-                    snapshot=entry.snapshot,
-                    peaks=sel_peaks,
-                    guitar_type=entry.snapshot.guitar_type if entry.snapshot else None,
-                    source_measurement_id=None,
-                ))
-            # Averaged entry — mirrors Swift's avgSnap from measurement.spectrumSnapshot + peaks.
-            avg_snap = m.spectrum_snapshot
-            avg_guitar_type_str = avg_snap.guitar_type if avg_snap else None
-            avg_all_peaks = m.peaks or []
-            avg_sel_ids = set(m.selected_peak_ids or [p.id for p in avg_all_peaks])
-            avg_sel_peaks = [p for p in avg_all_peaks if p.id in avg_sel_ids]
-            if avg_snap is not None:
-                avg_r, avg_g, avg_b = _AVERAGED_COLOR
-                avg_color_components = [avg_r / 255.0, avg_g / 255.0, avg_b / 255.0, 1.0]
-                cmp_entries.append(ComparisonEntry(
-                    id=new_uuid(),
-                    label="Averaged",
-                    color_components=avg_color_components,
-                    snapshot=avg_snap,
-                    peaks=avg_sel_peaks,
-                    guitar_type=avg_guitar_type_str,
-                    source_measurement_id=None,
-                ))
-
-            # Step 2 — Map cmp_entries → mode_frequencies tuples (mirrors Swift's map step).
-            # Per-tap rows show each tap's OWN auto-classification; the Averaged row uses the
-            # DEFINITIVE (override-aware) modes and tags any overridden value. Mirrors Swift
-            # MeasurementsListView multi-tap PDF (measurement.definitiveModeInfo()).
-            avg_info = m.definitive_mode_info()
-            mode_frequencies = []
-            for cmp_entry in cmp_entries:
-                c = cmp_entry.color_components
-                color = (round(c[0] * 255), round(c[1] * 255), round(c[2] * 255))
-                if cmp_entry.label == "Averaged":
-                    air_t = avg_info.get(GuitarMode.AIR)
-                    top_t = avg_info.get(GuitarMode.TOP)
-                    back_t = avg_info.get(GuitarMode.BACK)
-                    override_modes = {mode for mode, (_f, ov) in avg_info.items() if ov}
-                    mode_frequencies.append((
-                        cmp_entry.label, color,
-                        air_t[0] if air_t is not None else None,
-                        top_t[0] if top_t is not None else None,
-                        back_t[0] if back_t is not None else None,
-                        override_modes,
-                    ))
-                    continue
-                mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-                    cmp_entry.peaks, guitar_type=cmp_entry.guitar_type
-                )
-                air = mode_peaks.get(GuitarMode.AIR)
-                top = mode_peaks.get(GuitarMode.TOP)
-                back = mode_peaks.get(GuitarMode.BACK)
-                mode_frequencies.append((
-                    cmp_entry.label,
-                    color,
-                    air.frequency if air is not None else None,
-                    top.frequency if top is not None else None,
-                    back.frequency if back is not None else None,
-                    set(),
-                ))
-
-            comparison_data = M.ComparisonPDFReportData(
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                comparison_label=m.measurement_name or None,
-                notes=m.notes or None,
-                spectrum_image_data=cmp_png_data,
-                # Pass cmp_entries so _build_comparison_story can derive the frequency range
-                # metadata row from their snapshots.
-                # Mirrors Swift cmpReportData(entries: cmpEntries) in exportMultiTapPDFReport(for:).
-                entries=cmp_entries,
-                mode_frequencies=mode_frequencies,
-            )
-
-            M.export_multi_tap_pdf(averaged_data, comparison_data, path)
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
-
-    def _export_comparison_pdf_report(self, m: TapToneMeasurement) -> None:
-        """Export a comparison PDF report.
-
-        Mirrors Swift exportComparisonPDFReport(for:) in MeasurementsListView.
-        """
-        # A comparison report is just a report: "report" default, not "measurement".
-        basename = m.export_stem_for("report")
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self,
-            "Export Comparison PDF Report",
-            os.path.join(M.last_export_dir(), basename + ".pdf"),
-            "PDF files (*.pdf)",
-        )
-        if not path:
-            return
-        M.update_export_dir(path)
-        png_data = M.render_spectrum_image_for_comparison(m)
-        try:
-            report_data = M.comparison_pdf_report_data_from_measurement(m, png_data)
-            M.export_comparison_pdf(report_data, path)
+            M.export_report_for_measurement(m, path)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
 

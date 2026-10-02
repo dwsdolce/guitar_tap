@@ -1,0 +1,20 @@
+0	44.0	<date>
+0	53.0	GuitarTap
+0	70.0	Tap Tone Analysis Report
+0	104.0	Measurement Name: Contreras Classical
+0	119.0	Type: Classical Guitar
+0	134.0	Notes: Umik-1
+0	149.0	Frequency Range: 75.0 Hz – 350.0 Hz
+0	164.0	Microphone: MacBook Pro Microphone · uncalibrated
+0	190.0	Frequency Spectrum
+0	676.0	Detected Peaks
+0	696.0	Frequency Magnitude Note Mode
+0	719.0	103.0 Hz -55.7 dB G#2 Air (Helmholtz)
+0	739.0	212.2 Hz -41.4 dB G#3 Top
+0	759.0	275.5 Hz -44.6 dB C#4 Back
+0	787.0	Analysis Results
+0	818.0	Ring-Out Time Very Short Tap Tone Ratio Ideal
+0	829.0	Sustain quality Ideal: 1.9–2.1
+0	836.0	0.09 s 2.06 : 1
+0	849.0	Time to decay 15 dB Top / Air
+0	893.0	<generated>

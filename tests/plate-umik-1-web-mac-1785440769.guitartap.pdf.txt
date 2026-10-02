@@ -1,0 +1,40 @@
+0	44.0	<date>
+0	53.0	GuitarTap
+0	70.0	Tap Tone Analysis Report
+0	104.0	Measurement Name: Plate UMIK-1 Web Mac
+0	119.0	Type: Material (Plate)
+0	134.0	Frequency Range: 20.0 Hz – 200.0 Hz
+0	149.0	Microphone: Umik-1 Gain: 18dB · calibrated (7108913)
+0	175.0	Frequency Spectrum
+0	661.0	Detected Peaks
+0	681.0	Frequency Magnitude Note Q Factor Role
+0	704.0	35.9 Hz -59.0 dB – 8.0 Diagonal (fLC)
+0	724.0	67.0 Hz -50.5 dB – 15.3 Longitudinal (fL)
+0	744.0	117.3 Hz -55.4 dB – 20.0 Cross-grain (fC)
+0	776.0	Sample Dimensions
+0	790.0	Length: 557.50 mm Width: 220.50 mm Thickness: 4.85 mm
+0	804.0	Mass: 208.0 g Density: 0.349 g/cm³
+0	855.0	Body Dimensions
+0	869.0	Body Length (a): 490 mm Lower Bout Width (b): 368 mm
+0	883.0	Panel Stiffness: f_vs = 60 (Classical Top)
+0	934.0	Gore Target Thickness
+0	952.0	2.80 mm
+0	1001.0	Plate Properties
+0	1022.0	Speed of Sound (L): 4180 m/s Specific Modulus (L): 17.5 (Fair)
+0	1038.0	Speed of Sound (C): 1144 m/s Specific Modulus (C): 1.3 (Very Good)
+0	1054.0	Young's Modulus (L): 6.09 GPa Radiation Ratio (L): 12.0
+0	1070.0	Young's Modulus (C): 0.46 GPa Radiation Ratio (C): 3.3
+0	1090.0	GLC (Shear Modulus): 0.350 GPa
+0	1110.0	Cross/Long Ratio: 0.075 Long/Cross Ratio: 13.3
+0	1121.0	typical: 0.04–0.08 typical: 12–25
+0	1151.0	Overall Quality: Good
+0	1189.0	Three-Tap Measurement Process:
+0	1205.0	1. Longitudinal (fL) Tap
+0	1215.0	Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center.
+0	1231.0	2. Cross-grain (fC) Tap
+0	1241.0	Rotate 90°. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center.
+0	1257.0	3. Diagonal (fLC) Tap
+0	1267.0	Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures
+0	1276.0	shear stiffness.
+0	1291.0	The strongest peak from each tap is auto-selected.
+0	1339.0	<generated>

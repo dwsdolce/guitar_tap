@@ -1,0 +1,16 @@
+0	44.0	<date>
+0	53.0	GuitarTap
+0	70.0	Comparison Report
+0	104.0	Comparison: 5 guitar comparison
+0	119.0	Notes: This is a comparison of 5 of the guitar measurements.
+0	134.0	Spectra: 5 spectra compared
+0	149.0	Frequency Range: 75.0 Hz – 350.0 Hz
+0	175.0	Frequency Spectrum
+0	617.0	Peak Mode Comparison
+0	638.0	Spectrum Air Top Back
+0	662.0	DWS 2011 96.8 Hz 199.3 Hz 225.1 Hz
+0	686.0	DWS 2024 96.7 Hz 199.8 Hz 241.1 Hz
+0	710.0	Contreras Classical 103.0 Hz 212.2 Hz 275.5 Hz
+0	734.0	Gore 95.0 Hz 188.0 Hz 238.8 Hz
+0	758.0	Cordoba LH 104.0 Hz 213.8 Hz 241.6 Hz
+0	796.0	<generated>

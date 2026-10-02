@@ -61,6 +61,8 @@ makeExportableSpectrumView:
 - SeeAlso: tap_analysis_results_view.py, tap_tone_analysis_view.py
 """
 
+# @parity view/spectrum-export tests=test/spectrum-export
+
 from __future__ import annotations
 
 from guitar_tap.models import field_precision as fp
@@ -762,16 +764,17 @@ def make_exportable_spectrum_view(
     SCALE         = 2
     CHART_W       = 1400 * SCALE   # chart image width in pixels
     CHART_H       = 800  * SCALE   # chart image height in pixels
-    PADDING       = 24   * SCALE   # outer padding and section gap
-    # Header: title row (36px) + date/range row (28px) + metadata row (24px) + peaks row (24px) = 112px logical → *SCALE
-    HEADER_H      = 112  * SCALE
+    PADDING       = 24   * SCALE   # top padding and section gap
     CHART_TITLE_H = 56   * SCALE   # Text(chartTitle) + .padding(.bottom, 16)
-    # Summary: "Detected Peaks Summary" label (24px) + card row (68px) + bottom gap (PADDING) = 116px
-    SUMMARY_H     = (116 if peaks else 0) * SCALE
     LEGEND_H      = 36   * SCALE   # legend row height
-    TOTAL_W       = CHART_W + PADDING * 2
-    TOTAL_H       = (HEADER_H + CHART_TITLE_H + CHART_H + PADDING
-                     + SUMMARY_H + LEGEND_H + PADDING * 2)
+    # A fixed size, whatever the on-screen chart's: Swift renders its export at 1464 × 1069 pt (the
+    # 1400 × 800 chart frame padded 32 each side, with its header and legend), 119 pt taller with the
+    # peak summary. The bands below are drawn from the top within that size (the header, title, chart,
+    # summary and legend take 1052 pt, 1168 with the summary), so the PNG and the PDF's embedded image
+    # have Swift's proportions.
+    TOTAL_W       = 1464 * SCALE
+    TOTAL_H       = (1188 if peaks else 1069) * SCALE
+    SIDE_PAD      = (TOTAL_W - CHART_W) // 2   # left / right
 
     # Guitar mode legend entries — mirrors ForEach([.air,.top,.back,.dipole,.ringMode])
     GUITAR_MODE_DISPLAY: list[tuple[str, tuple[int, int, int]]] = [
@@ -837,7 +840,7 @@ def make_exportable_spectrum_view(
     painter.setFont(title_font)
     painter.setPen(QtGui.QColor(0, 0, 0))
     painter.drawText(
-        PADDING, y, TOTAL_W - PADDING * 2, 36 * SCALE,
+        SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 36 * SCALE,
         QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
         "Guitar Tap Tone Analysis - Frequency Response",
     )
@@ -851,12 +854,12 @@ def make_exportable_spectrum_view(
     # Swift: HStack { Text("Date:…") Spacer() Text("Range:…") • Text("…dB") }
     if date_label:
         painter.drawText(
-            PADDING, y, TOTAL_W // 2, 28 * SCALE,
+            SIDE_PAD, y, TOTAL_W // 2, 28 * SCALE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
             f"Date: {_format_date_label(date_label)}",
         )
     painter.drawText(
-        PADDING, y, TOTAL_W - PADDING * 2, 28 * SCALE,
+        SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 28 * SCALE,
         QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter,
         f"Range: {_fmt_freq(min_freq)} - {_fmt_freq(max_freq)}"
         f"  \u2022  {int(min_db)} to {int(max_db)} dB",
@@ -886,7 +889,7 @@ def make_exportable_spectrum_view(
     painter.setFont(meta_font)
     painter.setPen(QtGui.QColor(100, 100, 100))
     painter.drawText(
-        PADDING, y, TOTAL_W - PADDING * 2, 24 * SCALE,
+        SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 24 * SCALE,
         QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
         meta_line,
     )
@@ -896,13 +899,13 @@ def make_exportable_spectrum_view(
     #        else if !peaks.isEmpty { Text("Detected Peaks: N") }
     if material_spectra:
         painter.drawText(
-            PADDING, y, TOTAL_W - PADDING * 2, 24 * SCALE,
+            SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 24 * SCALE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
             f"Comparing {len(material_spectra)} measurements",
         )
     elif peaks:
         painter.drawText(
-            PADDING, y, TOTAL_W - PADDING * 2, 24 * SCALE,
+            SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 24 * SCALE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
             f"Detected Peaks: {len(peaks)}",
         )
@@ -915,7 +918,7 @@ def make_exportable_spectrum_view(
     painter.setFont(ct_font)
     painter.setPen(QtGui.QColor(0x33, 0x33, 0x33))
     painter.drawText(
-        PADDING, y, TOTAL_W - PADDING * 2, CHART_TITLE_H,
+        SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, CHART_TITLE_H,
         QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignVCenter,
         chart_title,
     )
@@ -923,7 +926,7 @@ def make_exportable_spectrum_view(
 
     # ── ExportableSpectrumChart — place rendered chart image ──────────────────
     if not chart_img.isNull():
-        painter.drawImage(PADDING, y, chart_img)
+        painter.drawImage(SIDE_PAD, y, chart_img)
     y += CHART_H + PADDING
 
     # ── Detected Peaks Summary — mirrors peak summary VStack + HStack ─────────
@@ -935,7 +938,7 @@ def make_exportable_spectrum_view(
         painter.setPen(QtGui.QColor(0, 0, 0))
         # Swift: Text("Detected Peaks Summary").font(.headline)
         painter.drawText(
-            PADDING, y, TOTAL_W - PADDING * 2, 24 * SCALE,
+            SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 24 * SCALE,
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
             "Detected Peaks Summary",
         )
@@ -944,7 +947,7 @@ def make_exportable_spectrum_view(
         card_w       = 120 * SCALE
         card_h       = 68  * SCALE
         card_spacing = 12  * SCALE
-        x_card = PADDING
+        x_card = SIDE_PAD
         # Swift: peaks.prefix(8).sorted(by: { $0.frequency < $1.frequency })
         sorted_peaks = sorted(peaks[:8], key=lambda p: p.frequency)
         for idx, peak in enumerate(sorted_peaks):
@@ -1005,10 +1008,10 @@ def make_exportable_spectrum_view(
 
     if material_spectra:
         # Swift: HStack { Text("Measurements:") ForEach(materialSpectra) { RoundedRect + label } }
-        painter.drawText(PADDING, y, 120 * SCALE, ROW_H,
+        painter.drawText(SIDE_PAD, y, 120 * SCALE, ROW_H,
                          QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
                          "Measurements:")
-        x_leg = PADDING + 124 * SCALE
+        x_leg = SIDE_PAD + 124 * SCALE
         _LEG_COLOR_MAP = {
             "blue":   (  0, 122, 255),
             "orange": (255, 149,   0),
@@ -1033,10 +1036,10 @@ def make_exportable_spectrum_view(
         # Swift: HStack { Text("Guitar Modes:") ForEach([.air,.top,.back,.dipole,.ringMode]) { Circle + label } }
         # Guitar-mode only — mirrors Swift's else branch gated implicitly by measurementType.isGuitar
         # (for plate/brace, materialSpectra is always populated so this branch is never reached in Swift).
-        painter.drawText(PADDING, y, 120 * SCALE, ROW_H,
+        painter.drawText(SIDE_PAD, y, 120 * SCALE, ROW_H,
                          QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
                          "Guitar Modes:")
-        x_leg = PADDING + 124 * SCALE
+        x_leg = SIDE_PAD + 124 * SCALE
         painter.setFont(label_font)
         for mode_name, (r, g, b) in GUITAR_MODE_DISPLAY:
             painter.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
@@ -1049,6 +1052,12 @@ def make_exportable_spectrum_view(
             x_leg += 180 * SCALE
 
     painter.end()
+
+    # SCALE × 72 pixels per inch, as Swift's ImageRenderer(scale: 2.0) marks its PNG (144, 5669 per
+    # metre): viewers that honour the figure show the 2x pixels at the composite's point size.
+    dots_per_meter = round(72 * SCALE / 0.0254)
+    canvas.setDotsPerMeterX(dots_per_meter)
+    canvas.setDotsPerMeterY(dots_per_meter)
 
     # Save to in-memory buffer — mirrors Swift ImageRenderer returning Data
     # rather than writing to disk.
@@ -1107,7 +1116,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
     # Mirror TapToneAnalyzer.visiblePeaks: filter by annotationVisibilityMode and selectedPeakIDs.
     all_peaks = m.peaks or []
     visibility_mode = AnnotationVisibilityMode.from_string(m.annotation_visibility_mode or "all")
-    selected_ids = set(m.selected_peak_ids or [p.id for p in all_peaks])
+    selected_ids = m.effective_selected_peak_ids
     if visibility_mode == AnnotationVisibilityMode.SELECTED:
         visible_peaks = [p for p in all_peaks if p.id in selected_ids]
     elif visibility_mode == AnnotationVisibilityMode.NONE:
