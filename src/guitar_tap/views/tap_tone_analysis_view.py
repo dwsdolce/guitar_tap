@@ -646,9 +646,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # Audio / FFT parameters
         self.threshold: int = int(AS.AppSettings.peak_min_threshold()) + 100
         self._sampling_rate: int = 48000
-        self._f_range: dict[str, int] = {
-            "f_min": AS.AppSettings.f_min(),
-            "f_max": AS.AppSettings.f_max(),
+        # The chart starts at the current measurement type's saved view — Swift initialises its
+        # @State range from TapDisplaySettings.minFrequency / maxFrequency.
+        self._f_range: dict[str, float] = {
+            "f_min": TDS.min_frequency(),
+            "f_max": TDS.max_frequency(),
         }
 
         # ── Root layout (vertical) ───────────────────────────────────────
@@ -1190,7 +1192,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Row 2: "Showing …" (left) + Deselect All / Reset buttons (right). No Select All.
         freq_row = QtWidgets.QHBoxLayout()
         self.freq_range_label = QtWidgets.QLabel(
-            f"Showing {f_range['f_min']} – {f_range['f_max']} Hz"
+            _ext.display_range_label(f_range['f_min'], f_range['f_max'])
         )
         self.freq_range_label.setFont(small_font)
         freq_row.addWidget(self.freq_range_label, stretch=1)
@@ -2159,7 +2161,12 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         canvas.plateStatusChanged.connect(self._on_plate_status_changed)
-        canvas.materialPeakIdentified.connect(self._on_material_peak_identified)
+        # Widen the chart onto each plate / brace peak as it is identified — Swift's .onReceive of
+        # tap.$selectedLongitudinalPeak / $selectedCrossPeak / $selectedFlcPeak.
+        for _peak_changed in (canvas.analyzer.selectedLongitudinalPeakChanged,
+                              canvas.analyzer.selectedCrossPeakChanged,
+                              canvas.analyzer.selectedFlcPeakChanged):
+            _peak_changed.connect(self._on_material_peak_changed)
         canvas.plateAnalysisComplete.connect(self._on_plate_analysis_complete)
 
         # Peaks table ← canvas
@@ -2259,7 +2266,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tap accumulator
         self.tap_num_spin.valueChanged.connect(self._on_tap_num_changed)
 
-    def _init_state(self, f_range: dict[str, int]) -> None:
+    def _init_state(self, f_range: dict[str, float]) -> None:
         """Restore saved values and initialise display state."""
         canvas = self.fft_canvas
 
@@ -2783,14 +2790,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._material_peak_widget.set_assignment(long_freq, cross_freq,
                                                       flc_freq=flc_freq)
 
-    def _on_canvas_freq_range_changed(self, fmin: int, fmax: int) -> None:
+    def _on_canvas_freq_range_changed(self, fmin: float, fmax: float) -> None:
         """Update freq label and re-filter the results panel when viewport changes."""
-        self.freq_range_label.setText(f"Showing {fmin} – {fmax} Hz")
+        self.freq_range_label.setText(_ext.display_range_label(fmin, fmax))
         self._refresh_results_peaks()
 
     def _update_freq_range_label(self) -> None:
         self.freq_range_label.setText(
-            f"Showing {self.fft_canvas.minFreq} – {self.fft_canvas.maxFreq} Hz"
+            _ext.display_range_label(self.fft_canvas.minFreq, self.fft_canvas.maxFreq)
         )
 
     def _update_save_export_enabled(self) -> None:
@@ -3427,12 +3434,9 @@ class MainWindow(QtWidgets.QMainWindow):
         mt = TDS.measurement_type()
         AS.AppSettings.set_measurement_type(mt)
         self.fft_canvas.set_measurement_type(mt)
-        # Load the persisted axis range for the newly selected measurement type.
-        # Swift initialises @State minFreq/maxFreq from TapDisplaySettings.minFrequency
-        # (a per-type stored value) at startup; when the type changes the stored value
-        # for the new type is the right range to show (e.g. 20–200 Hz for plate, falling
-        # back to the factory default if never explicitly saved by the user).
-        self.fft_canvas._reset_both_to_saved()
+        # The chart's range is not touched here: a load shows the measurement's range, and Settings'
+        # Done moves the chart for a type change (display_range.on_settings_done) — as Swift, whose
+        # .onReceive(tap.$loadedMeasurementType) only sets the type.
         self.reset_auto_selection_btn.setVisible(mt.is_guitar)
         self.peak_min_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
@@ -3777,26 +3781,21 @@ class MainWindow(QtWidgets.QMainWindow):
         # value here (e.g. "Capturing FLC") would clobber the analyzer's "Set up for FLC tap…".
         # (`status` param kept for call-site compatibility.)
 
-    def _on_material_peak_identified(self, frequency: float) -> None:
-        """Widen the chart's frequency axis so a newly identified fL / fC / fFLC is visible.
+    def _on_material_peak_changed(self, peak) -> None:
+        """Apply ``widened_onto`` to the chart's range when a plate or brace peak is identified, so
+        it is in view even if outside the saved range. The saved range is not changed. Mirrors
+        Swift's ``.onReceive(tap.$selected…Peak)`` → ``expandFreqRangeToInclude``."""
+        from guitar_tap.models.display_range import widened_onto
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings
 
-        A plate or brace scans a wide band (brace: 100-1200 Hz) and the display range is
-        per-measurement-type and persisted, so the peak the measurement just produced can land off
-        the edge of the chart. Mirrors Swift's `.onReceive(tap.$autoSelected*PeakID)` ->
-        `expandFreqRangeToInclude`; the rule itself is shared (models/display_range.py).
-
-        Guitar ranges are the user's analysis window and are never widened for them — matching
-        Swift's `guard !measurementType.isGuitar`.
-        """
-        from guitar_tap.models.display_range import expanded_to_include
-        from guitar_tap.views.utilities import tap_settings_view as AS
-
-        if AS.AppSettings.measurement_type().is_guitar:
+        if peak is None:
             return
         canvas = self.fft_canvas
-        lo, hi = expanded_to_include(float(frequency), float(canvas.minFreq), float(canvas.maxFreq))
+        lo, hi = widened_onto(float(peak.frequency), TapDisplaySettings.measurement_type(),
+                              canvas.analyzer.material_peaks_from_load,
+                              float(canvas.minFreq), float(canvas.maxFreq))
         if lo != canvas.minFreq or hi != canvas.maxFreq:
-            canvas.update_axis(int(lo), int(hi))
+            canvas.widen_onto(lo, hi)
             self._update_freq_range_label()
 
     def _on_plate_analysis_complete(self, f_long: float, f_cross: float, f_flc: float) -> None:
@@ -4565,8 +4564,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # that the canvas crosshair snap (_on_mouse_moved) has a matching
             # freq array to index into.
             analyzer.set_frozen_spectrum(freq_arr, mag_arr)
-            canvas.setYRange(snap.min_db, snap.max_db, padding=0)
-            canvas.update_axis(int(snap.min_freq), int(snap.max_freq))
+            # The chart's range came from the analyzer's loadedAxisRangeChanged during the load.
             canvas.set_draw_data(mag_arr, freqs=freq_arr)
 
             # For plate/brace: build material-spectra list for canvas display.
@@ -6316,12 +6314,12 @@ class MainWindow(QtWidgets.QMainWindow):
             vb = self.fft_canvas.getPlotItem().vb
             x_range, y_range = vb.viewRange()
             meas_t = TDS.measurement_type()
-            AS.AppSettings.set_f_min(int(x_range[0]), meas_t)
-            AS.AppSettings.set_f_max(int(x_range[1]), meas_t)
+            AS.AppSettings.set_f_min(x_range[0], meas_t)
+            AS.AppSettings.set_f_max(x_range[1], meas_t)
             AS.AppSettings.set_db_min(y_range[0])
             AS.AppSettings.set_db_max(y_range[1])
-            disp_f_min_field.setText(str(int(x_range[0])))
-            disp_f_max_field.setText(str(int(x_range[1])))
+            disp_f_min_field.setText(fp.string(x_range[0], fp.FREQUENCY_HZ))
+            disp_f_max_field.setText(fp.string(x_range[1], fp.FREQUENCY_HZ))
             disp_db_min_field.setText(f"{y_range[0]:.1f}")
             disp_db_max_field.setText(f"{y_range[1]:.1f}")
 
@@ -6992,37 +6990,36 @@ class MainWindow(QtWidgets.QMainWindow):
             # only when applySettings() is called, never during dialog interaction.
             AS.AppSettings.set_measurement_type(mt_val)
 
-            # Display frequency range — parse the staging text fields and apply to the
-            # canvas + toolbar spinners, mirroring Swift applySettings() which validates
-            # minFreqInput/maxFreqInput Strings and writes through the @Binding to the chart.
-            try:
-                new_f_min = int(float(disp_f_min_field.text()))
-                new_f_max = int(float(disp_f_max_field.text()))
-            except ValueError:
-                new_f_min = int(AS.AppSettings.f_min(mt_val))
-                new_f_max = int(AS.AppSettings.f_max(mt_val))
-            new_f_min, new_f_max = min(new_f_min, new_f_max - 1), max(new_f_min + 1, new_f_max)
+            # Display range — parse and validate the staging fields (Swift applySettings:
+            # validateFrequencyRange / validateMagnitudeRange), persist, and move the chart only if the
+            # saved range changed or the measurement type did (display_range.on_settings_done).
+            # A field left as it was keeps the exact stored value (display_range.entered_value).
+            from guitar_tap.models.display_range import entered_value, on_settings_done
+            previously_saved = self.fft_canvas.saved_chart_range(mt_val)
+            new_f_min = entered_value(disp_f_min_field.text(), previously_saved.min_freq, fp.FREQUENCY_HZ)
+            new_f_max = entered_value(disp_f_max_field.text(), previously_saved.max_freq, fp.FREQUENCY_HZ)
+            if new_f_min is None or new_f_max is None:
+                new_f_min, new_f_max = previously_saved.min_freq, previously_saved.max_freq
+            new_f_min, new_f_max = TDS.validate_frequency_range(new_f_min, new_f_max)
+            new_db_min = entered_value(disp_db_min_field.text(), previously_saved.min_db, fp.MAGNITUDE_DB)
+            new_db_max = entered_value(disp_db_max_field.text(), previously_saved.max_db, fp.MAGNITUDE_DB)
+            if new_db_min is None or new_db_max is None:
+                new_db_min, new_db_max = previously_saved.min_db, previously_saved.max_db
+            new_db_min, new_db_max = TDS.validate_magnitude_range(new_db_min, new_db_max)
             AS.AppSettings.set_f_min(new_f_min, mt_val)
             AS.AppSettings.set_f_max(new_f_max, mt_val)
-            # Update the staging fields to show the validated (possibly clamped) values
-            disp_f_min_field.setText(str(new_f_min))
-            disp_f_max_field.setText(str(new_f_max))
-            self.fft_canvas.update_axis(new_f_min, new_f_max)
-            self._update_freq_range_label()
-
-            # Display magnitude range — parse, persist, and apply to canvas.
-            try:
-                new_db_min = float(disp_db_min_field.text())
-                new_db_max = float(disp_db_max_field.text())
-            except ValueError:
-                new_db_min = AS.AppSettings.db_min()
-                new_db_max = AS.AppSettings.db_max()
-            new_db_min, new_db_max = min(new_db_min, new_db_max - 1), max(new_db_min + 1, new_db_max)
             AS.AppSettings.set_db_min(new_db_min)
             AS.AppSettings.set_db_max(new_db_max)
-            disp_db_min_field.setText(f"{new_db_min:.1f}")
-            disp_db_max_field.setText(f"{new_db_max:.1f}")
-            self.fft_canvas.setYRange(new_db_min, new_db_max, padding=0)
+            saved = self.fft_canvas.saved_chart_range(mt_val)
+            # Update the staging fields to show the validated (possibly clamped) values
+            disp_f_min_field.setText(fp.string(saved.min_freq, fp.FREQUENCY_HZ))
+            disp_f_max_field.setText(fp.string(saved.max_freq, fp.FREQUENCY_HZ))
+            disp_db_min_field.setText(fp.string(saved.min_db, fp.MAGNITUDE_DB))
+            disp_db_max_field.setText(fp.string(saved.max_db, fp.MAGNITUDE_DB))
+            moved_to = on_settings_done(saved, previously_saved, _type_changed)
+            if moved_to is not None:
+                self.fft_canvas.apply_chart_range(moved_to)
+                self._update_freq_range_label()
 
             # Analysis frequency range — not a setting. It is a fixed 30–2000 Hz
             # constant; the analyzer's min_frequency/max_frequency are seeded from it at init and
@@ -7047,14 +7044,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 final_db = int(AS.AppSettings.peak_min_threshold())
             final_db = max(-120, min(0, final_db))
             peak_thresh_field.setText(str(final_db))
-            self.fft_canvas.analyzer.peak_min_threshold = float(final_db)  # the model saves it
+            # The canvas's one Peak Min path (the slider's too): the model saves it and re-projects the
+            # displayed peaks, and the view is told. Peaks are not re-detected — Swift's applySettings
+            # sets peakMinThreshold only.
+            self.fft_canvas.set_threshold(final_db + 100)
             slider_val = max(-100, min(-20, final_db))
             if self.peak_min_slider.value() != slider_val:
                 self.peak_min_slider.setValue(slider_val)
-
-            # Recalculate peaks with the new analysis window, mirroring
-            # Swift's recalculateFrozenPeaksIfNeeded() calls in applySettings().
-            self.fft_canvas.analyzer.recalculate_frozen_peaks_if_needed()
 
             # Plate / brace / gore / f_vs dimensions — parse text fields, mirrors Swift
             # applySettings() which parses plateLengthInput etc. with Float(input) ?? 0.

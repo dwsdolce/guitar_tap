@@ -16,7 +16,21 @@ from guitar_tap.models import microphone_calibration as _mc_mod
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 from guitar_tap.views import peak_annotations as fft_a
+from guitar_tap.views.utilities.extensions import formatted_as_frequency
 
+
+
+from guitar_tap.models import display_range as dr  # noqa: E402
+
+# The narrowest span a zoom gesture may leave — the chart's limits (display_range).
+FREQ_MIN_SPAN = dr.MIN_FREQUENCY_SPAN_HZ
+DB_MIN_SPAN = dr.MIN_MAGNITUDE_SPAN_DB
+
+
+def zoom_keeps_minimum_span(lo: float, hi: float, scale: float, min_span: float) -> bool:
+    """Whether zooming [lo, hi] by *scale* (new span = span × scale) leaves at least *min_span* —
+    a zoom step that does not is refused, as Swift's ``if newMax - newMin >= minSpan``."""
+    return (hi - lo) * scale >= min_span
 
 class _SceneMouseReleaseFilter(QtCore.QObject):
     """Event filter that emits a signal on QGraphicsScene mouse release."""
@@ -201,7 +215,6 @@ class FftCanvas(pg.PlotWidget):
     devicesChanged: QtCore.Signal = QtCore.Signal(list)       # new device-name list
     currentDeviceLost: QtCore.Signal = QtCore.Signal(str)     # lost device name
     plateStatusChanged: QtCore.Signal = QtCore.Signal(str)    # plate capture status
-    materialPeakIdentified: QtCore.Signal = QtCore.Signal(float)  # Hz — widen the axis onto it
     plateAnalysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)  # fL, fC, fFLC
     tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)   # True=paused
     measurementComplete: QtCore.Signal = QtCore.Signal(bool)  # mirrors Swift @Published var isMeasurementComplete
@@ -219,7 +232,7 @@ class FftCanvas(pg.PlotWidget):
     measurementLoaded: QtCore.Signal = QtCore.Signal(object)               # relays TapToneAnalyzer.measurementLoaded
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
     comparisonChanged: QtCore.Signal = QtCore.Signal(bool)         # True=entering, False=leaving
-    freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)      # (fmin, fmax) — pan/zoom
+    freqRangeChanged: QtCore.Signal = QtCore.Signal(float, float)  # (fmin, fmax) — pan/zoom
 
     # Color palette for comparison overlays — mirrors comparisonPalette in TapToneAnalyzer.swift
     _COMPARISON_PALETTE: list[tuple[int, int, int]] = [
@@ -272,18 +285,39 @@ class FftCanvas(pg.PlotWidget):
         self.threshold_x: int = sampling_rate // 2
         self.threshold_y: int = threshold - 100
 
-        # Enforce pan/zoom bounds matching Swift's SpectrumView+GestureHandlers limits:
-        # frequency 0–5000 Hz (min span 50 Hz), magnitude −120–+20 dB (min span 10 dB).
-        self.getPlotItem().vb.setLimits(
-            xMin=0, xMax=5000, minXRange=50,
-            yMin=-120, yMax=20, minYRange=10,
-        )
+        # Pan/zoom within the chart's limits (display_range — the same as Settings' validation and the
+        # widening). The minimum span is checked on zoom gestures, as in Swift.
+        vb = self.getPlotItem().vb
+        vb.setLimits(xMin=dr.MIN_FREQUENCY_HZ, xMax=dr.MAX_FREQUENCY_HZ,
+                     yMin=dr.MIN_MAGNITUDE_DB, yMax=dr.MAX_MAGNITUDE_DB)
+        _scale_by = vb.scaleBy
+
+        def _scale_by_refusing_narrow(s=None, center=None, x=None, y=None):
+            """pyqtgraph's zoom (wheel, drag, axis scroll), refusing a step that would leave the span
+            narrower than the minimum — Swift applyFrequencyZoom / applyMagnitudeZoom."""
+            if s is not None:
+                sx, sy = (s, s) if not isinstance(s, (list, tuple)) else (s[0], s[1])
+            else:
+                sx, sy = x, y
+            (x0, x1), (y0, y1) = vb.viewRange()
+            if sx is not None and not zoom_keeps_minimum_span(x0, x1, sx, FREQ_MIN_SPAN):
+                sx = None
+            if sy is not None and not zoom_keeps_minimum_span(y0, y1, sy, DB_MIN_SPAN):
+                sy = None
+            if sx is None and sy is None:
+                return
+            _scale_by(center=center, x=sx, y=sy)
+
+        vb.scaleBy = _scale_by_refusing_narrow
 
         # Canvas-local display viewport — tracks the visible frequency range for
         # pan/zoom and peak display.  Separate from analyzer.min_frequency/
         # max_frequency, which mirror Swift TapToneAnalyzer.minFrequency and are
         # the analysis window used by find_peaks (never written by canvas pan/zoom).
         self._minFreq: float = float(frange["f_min"])
+        # The range a loaded measurement put on the chart (as widened onto its peaks), while the chart is
+        # still showing it; None when no load is in view. Mirrors Swift's loadedChartRange.
+        self._loaded_chart_range = None
         self._maxFreq: float = float(frange["f_max"])
         self.setXRange(frange["f_min"], frange["f_max"], padding=0)
 
@@ -351,7 +385,6 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.devicesChanged.connect(self.devicesChanged)
         self.analyzer.currentDeviceLost.connect(self.currentDeviceLost)
         self.analyzer.plateStatusChanged.connect(self.plateStatusChanged)
-        self.analyzer.materialPeakIdentified.connect(self.materialPeakIdentified)
         self.analyzer.plateAnalysisComplete.connect(self.plateAnalysisComplete)
         self.analyzer.tapDetectionPaused.connect(self.tapDetectionPaused)
         self.analyzer.measurementComplete.connect(self.measurementComplete)
@@ -587,21 +620,21 @@ class FftCanvas(pg.PlotWidget):
         return _PlateCaptureAdapter(self.analyzer)
 
     @property
-    def minFreq(self) -> int:
+    def minFreq(self) -> float:
         """Display x-axis minimum frequency, in Hz."""
-        return int(self._minFreq)
+        return self._minFreq
 
     @minFreq.setter
-    def minFreq(self, value: int) -> None:
+    def minFreq(self, value: float) -> None:
         self._minFreq = float(value)
 
     @property
-    def maxFreq(self) -> int:
+    def maxFreq(self) -> float:
         """Display x-axis maximum frequency, in Hz."""
-        return int(self._maxFreq)
+        return self._maxFreq
 
     @maxFreq.setter
-    def maxFreq(self, value: int) -> None:
+    def maxFreq(self, value: float) -> None:
         self._maxFreq = float(value)
 
     @property
@@ -884,7 +917,7 @@ class FftCanvas(pg.PlotWidget):
 
         self._crosshair_v.setPos(display_freq)
         self._crosshair_h.setPos(display_db)
-        freq_str = f"{display_freq/1000:.2f} kHz" if display_freq >= 1000 else f"{display_freq:.1f} Hz"
+        freq_str = formatted_as_frequency(display_freq)
         html = (
             f'<center>'
             f'<b style="color:{freq_color};">{freq_str}</b><br/>'
@@ -1139,15 +1172,18 @@ class FftCanvas(pg.PlotWidget):
             ev.accept()
 
         elif mods & (Mod.ControlModifier | Mod.MetaModifier):
-            # Zoom both axes around centre (limits enforced by setLimits).
+            # Zoom both axes around centre; a step that would leave a span narrower than the minimum
+            # is refused for that axis, as in Swift.
             factor = 1.15 ** (delta / 120.0)
             x0, x1 = vb.viewRange()[0]
             y0, y1 = vb.viewRange()[1]
             xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
-            xh = (x1 - x0) / 2 / factor
-            yh = (y1 - y0) / 2 / factor
-            vb.setXRange(xc - xh, xc + xh, padding=0)
-            vb.setYRange(yc - yh, yc + yh, padding=0)
+            if zoom_keeps_minimum_span(x0, x1, 1 / factor, FREQ_MIN_SPAN):
+                xh = (x1 - x0) / 2 / factor
+                vb.setXRange(xc - xh, xc + xh, padding=0)
+            if zoom_keeps_minimum_span(y0, y1, 1 / factor, DB_MIN_SPAN):
+                yh = (y1 - y0) / 2 / factor
+                vb.setYRange(yc - yh, yc + yh, padding=0)
             self._refresh_peaks_for_viewport()
             ev.accept()
 
@@ -1242,14 +1278,13 @@ class FftCanvas(pg.PlotWidget):
             _as.AppSettings.default_db_min(), _as.AppSettings.default_db_max(),
         )
 
-    def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
-        """Update the x-axis frequency range"""
+    def update_axis(self, fmin: float, fmax: float) -> None:
+        """Set the x-axis frequency range. A display change only: the peaks are not re-detected, as
+        Swift's applyAxisRange."""
         if fmin < fmax:
             self._minFreq = float(fmin)
             self._maxFreq = float(fmax)
             self.setXRange(fmin, fmax, padding=0)
-            if not init:
-                self.analyzer.recalculate_frozen_peaks_if_needed()
 
     def _refresh_peaks_for_viewport(self, _vb=None, x_range=None) -> None:
         """Re-emit the existing peaks and update the freq-range label whenever the
@@ -1274,13 +1309,11 @@ class FftCanvas(pg.PlotWidget):
         an explicit Re-analyze; never from zoom or pan.
         """
         vb = self.getPlotItem().vb
-        x0, x1 = vb.viewRange()[0]
-        fmin = int(round(x0))
-        fmax = int(round(x1))
+        fmin, fmax = (float(v) for v in vb.viewRange()[0])
         if fmin >= fmax:
             return
-        self._minFreq = float(fmin)
-        self._maxFreq = float(fmax)
+        self._minFreq = fmin
+        self._maxFreq = fmax
         if self.display_mode != AnalysisDisplayMode.COMPARISON:
             # The measurement's peaks: the Peak-Min projection (guitar) or the identified L/C/FLC
             # (material) — mirrors Swift's views reading the same two.
@@ -1440,7 +1473,7 @@ class FftCanvas(pg.PlotWidget):
         self.comparisonChanged.emit(is_comparing)
 
     def _on_loaded_axis_range_changed(
-        self, min_freq: int, max_freq: int, min_db: float, max_db: float
+        self, min_freq: float, max_freq: float, min_db: float, max_db: float
     ) -> None:
         """Apply all four axis bounds emitted by the model's set_loaded_axis_range().
 
@@ -1452,6 +1485,48 @@ class FftCanvas(pg.PlotWidget):
         """
         self.update_axis(min_freq, max_freq)
         self.setYRange(min_db, max_db, padding=0)
+        self._loaded_chart_range = self.chart_range()
+
+    # ── The chart's range ─────────────────────────────────────────────────────
+
+    def chart_range(self):
+        """The chart's current four bounds. Mirrors Swift TapToneAnalysisView.chartRange."""
+        from guitar_tap.models.display_range import ChartRange
+        db_min, db_max = (float(v) for v in self.getPlotItem().vb.viewRange()[1])
+        return ChartRange(self._minFreq, self._maxFreq, db_min, db_max)
+
+    @staticmethod
+    def saved_chart_range(meas_type=None):
+        """The saved view for *meas_type* (the current measurement type by default). Mirrors Swift
+        savedChartRange."""
+        from guitar_tap.models.display_range import ChartRange
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS
+        t = meas_type if meas_type is not None else TDS.measurement_type()
+        return ChartRange(TDS.min_frequency_for(t), TDS.max_frequency_for(t),
+                          TDS.min_magnitude(), TDS.max_magnitude())
+
+    def apply_chart_range(self, r) -> None:
+        """Set all four bounds."""
+        self._apply_axis_range(r.min_freq, r.max_freq, r.min_db, r.max_db)
+
+    def widen_onto(self, lo: float, hi: float) -> None:
+        """Widen the frequency axis onto an identified plate / brace peak, remembering the widened
+        range as the loaded one if the chart was showing a load. Mirrors Swift
+        expandFreqRangeToInclude."""
+        from guitar_tap.models.display_range import loaded_after_widening
+        before = self.chart_range()
+        self.update_axis(lo, hi)
+        self._loaded_chart_range = loaded_after_widening(self._loaded_chart_range, before,
+                                                         self.chart_range())
+
+    def apply_new_measurement_range(self) -> None:
+        """A new measurement started (New Tap, Play File): apply ``on_new_measurement``. Mirrors
+        Swift applyNewMeasurementRange."""
+        from guitar_tap.models.display_range import on_new_measurement
+        r = on_new_measurement(self.chart_range(), self._loaded_chart_range, self.saved_chart_range())
+        if r is not None:
+            self.apply_chart_range(r)
+        self._loaded_chart_range = None
 
     def set_measurement_complete(self, is_measurement_complete: bool) -> None:
         """Update canvas-side UI for frozen/live state.
@@ -1466,11 +1541,9 @@ class FftCanvas(pg.PlotWidget):
             # clear_comparison was already called by analyzer.set_measurement_complete
             # but we need to clear the view curves too
             self._clear_comparison_view()
-            # Reset the Y range to the full live view so the ambient noise floor
-            # is visible.  The loaded-measurement range (set by setYRange in
-            # _on_measurement_loaded) is appropriate for frozen display but typically
-            # too narrow to show quiet live audio.
-            self.setYRange(-100, 0, padding=0)
+            # A new measurement started: the chart returns to the saved view after a load the user
+            # has not moved, and otherwise stays where it is.
+            self.apply_new_measurement_range()
 
     def _clear_comparison_view(self) -> None:
         """Remove comparison view curves (called when returning to live mode)."""

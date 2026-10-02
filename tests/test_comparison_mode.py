@@ -4,9 +4,8 @@ Port of ComparisonModeTests.swift — comparison overlay loading and clearing.
 
 Mirrors Swift test plan coverage CP-U1–CP-U8 and DisplayModeTransitionTests.
 
-Strategy: rather than instantiating the full TapToneAnalyzer (which requires
-sounddevice, views, Qt widgets), we test the mixin methods directly by creating
-a minimal stub object that owns only the fields the mixin uses.
+Every case runs on the real analyzer (TapToneAnalyzer.for_testing()), as Swift's run on a real
+TapToneAnalyzer — so a change to the analyzer is tested as it is, never through a copy.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtWidgets
 
 _APP: QtWidgets.QApplication | None = None
 
@@ -36,52 +35,14 @@ def qt_app():
 
 
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
-from guitar_tap.models.tap_tone_analyzer_measurement_management import (
-    TapToneAnalyzerMeasurementManagementMixin,
-)
 from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
 from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
 
 
-# ---------------------------------------------------------------------------
-# Minimal stub that exercises the mixin without the full analyzer
-# ---------------------------------------------------------------------------
-
-class _StubAnalyzer(
-    TapToneAnalyzerMeasurementManagementMixin,
-    QtCore.QObject,
-):
-    """Minimal stub that provides just the state the mixin methods touch."""
-
-    comparisonChanged: QtCore.Signal = QtCore.Signal(bool)
-    savedMeasurementsChanged: QtCore.Signal = QtCore.Signal()
-    freqRangeChanged: QtCore.Signal = QtCore.Signal(int, int)
-    loadedMeasurementNameChanged: QtCore.Signal = QtCore.Signal(object)
-    loadedAxisRangeChanged: QtCore.Signal = QtCore.Signal(int, int, float, float)
-
-    def __init__(self) -> None:
-        _get_app()
-        super().__init__(None)
-        self._display_mode = AnalysisDisplayMode.LIVE
-        self._comparison_data: list = []
-        self.comparison_labels: list = []
-        self.comparison_snapshots: list = []
-        self.saved_measurements: list = []
-        self.loaded_measurement_name: str | None = None
-
-    @property
-    def is_comparing(self) -> bool:
-        return self._display_mode == AnalysisDisplayMode.COMPARISON
-
-    def update_axis(self, min_freq: int, max_freq: int) -> None:
-        self.freqRangeChanged.emit(min_freq, max_freq)
-
-    def set_loaded_axis_range(self, min_freq: int, max_freq: int, min_db: float, max_db: float) -> None:
-        self.update_axis(min_freq, max_freq)
-        self.loadedAxisRangeChanged.emit(min_freq, max_freq, min_db, max_db)
-
-    def _persist_measurements(self) -> None:
-        pass  # no-op stub
+def _analyzer():
+    """The real analyzer, on a test FFT engine; saves go to the per-process test sandbox."""
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+    return TapToneAnalyzer.for_testing()
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +81,7 @@ class TestComparisonLoad:
 
     def test_CP_U1_two_measurements_produce_two_entries(self):
         """CP-U1: Loading 2 measurements populates _comparison_data with 2 entries."""
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         m1 = _make_measurement(measurement_name="Bridge")
         m2 = _make_measurement(measurement_name="Neck")
         sut.load_comparison([m1, m2])
@@ -129,14 +90,14 @@ class TestComparisonLoad:
 
     def test_CP_U2_label_uses_measurement_name(self):
         """CP-U2: Label uses measurementName when present."""
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         m = _make_measurement(measurement_name="Bridge Area")
         sut.load_comparison([m])
         assert sut._comparison_data[0]["label"] == "Bridge Area"
 
     def test_CP_U3_skips_measurements_without_snapshot(self):
         """CP-U3: Measurements without a spectrum snapshot are silently filtered out."""
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         with_snap    = _make_measurement(measurement_name="With",    with_snapshot=True)
         without_snap = _make_measurement(measurement_name="Without", with_snapshot=False)
         sut.load_comparison([with_snap, without_snap])
@@ -145,16 +106,16 @@ class TestComparisonLoad:
 
     def test_CP_U4_palette_wraps_for_more_than_5_entries(self):
         """CP-U4: Colors cycle through the 5-color palette without crashing for >5 entries."""
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         measurements = [_make_measurement(measurement_name=f"M{i}") for i in range(1, 7)]
         sut.load_comparison(measurements)   # must not raise
         assert len(sut._comparison_data) == 6
 
     def test_CP_U5_axis_bounds_set_to_union_of_snapshots(self):
         """CP-U5: Axis bounds are set to the union of all snapshot ranges."""
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         axis_events: list[tuple] = []
-        sut.freqRangeChanged.connect(lambda lo, hi: axis_events.append((lo, hi)))
+        sut.loadedAxisRangeChanged.connect(lambda lo, hi, _db0, _db1: axis_events.append((lo, hi)))
 
         m1 = TapToneMeasurement.create(
             peaks=[], measurement_name="A",
@@ -166,7 +127,7 @@ class TestComparisonLoad:
         )
         sut.load_comparison([m1, m2])
 
-        assert len(axis_events) == 1, "Should emit freqRangeChanged once"
+        assert len(axis_events) == 1, "Should publish the loaded range once"
         lo, hi = axis_events[0]
         assert lo == 50, f"minFreq should be 50, got {lo}"
         assert hi == 1200, f"maxFreq should be 1200, got {hi}"
@@ -181,7 +142,7 @@ class TestComparisonClear:
 
     def test_CP_U6_clear_comparison_empties_data(self):
         """CP-U6: clearComparison() empties _comparison_data."""
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         assert len(sut._comparison_data) == 2
 
@@ -192,7 +153,7 @@ class TestComparisonClear:
 
     def test_CP_U7_load_empty_array_produces_empty_data(self):
         """CP-U7: Loading an empty array also clears _comparison_data."""
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         sut.load_comparison([])
         assert sut._comparison_data == []
@@ -200,7 +161,7 @@ class TestComparisonClear:
 
     def test_CP_U8_no_snapshots_leaves_mode_as_live(self):
         """CP-U8: All measurements lacking snapshots → mode stays LIVE."""
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([
             _make_measurement(with_snapshot=False),
             _make_measurement(with_snapshot=False),
@@ -217,50 +178,34 @@ class TestDisplayModeTransitions:
     """Mirrors Swift DisplayModeTransitionTests."""
 
     def test_initial_mode_is_live(self):
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         assert sut._display_mode == AnalysisDisplayMode.LIVE
 
     def test_load_comparison_sets_mode_to_comparison(self):
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         assert sut._display_mode == AnalysisDisplayMode.COMPARISON
 
     def test_clear_comparison_sets_mode_to_live(self):
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         sut.clear_comparison()
         assert sut._display_mode == AnalysisDisplayMode.LIVE
 
     def test_comparison_changed_signal_emitted_on_load(self):
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         events: list[bool] = []
         sut.comparisonChanged.connect(lambda v: events.append(v))
         sut.load_comparison([_make_measurement(), _make_measurement()])
         assert events == [True], f"Should emit True on load; got {events}"
 
     def test_comparison_changed_signal_emitted_on_clear(self):
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         events: list[bool] = []
         sut.comparisonChanged.connect(lambda v: events.append(v))
         sut.clear_comparison()
         assert events == [False], f"Should emit False on clear; got {events}"
-
-
-# ---------------------------------------------------------------------------
-# Extended stub for the save/load tests (requires extra signals + persistence stub)
-# ---------------------------------------------------------------------------
-
-class _FullStubAnalyzer(_StubAnalyzer):
-    """Extends _StubAnalyzer with persistence capture for save/load inspection."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._persisted: list = []   # captures what would be written to disk
-
-    def _persist_measurements(self) -> None:
-        """Captures the list for inspection after save_comparison()."""
-        self._persisted = list(self.saved_measurements)
 
 
 def _make_measurement_with_peaks(
@@ -347,7 +292,7 @@ class TestResolvedModePeaks:
 
     def test_comparison_data_carries_peaks_and_guitar_type(self):
         """After load_comparison, each _comparison_data entry has 'peaks' and 'guitar_type'."""
-        sut = _FullStubAnalyzer()
+        sut = _analyzer()
         m = _make_measurement_with_peaks(measurement_name="Bridge", guitar_type="Classical")
         sut.load_comparison([m])
         assert len(sut._comparison_data) == 1
@@ -366,7 +311,7 @@ class TestSaveComparison:
 
     def test_save_comparison_creates_record(self):
         """save_comparison() appends a measurement with is_comparison == True."""
-        sut = _FullStubAnalyzer()
+        sut = _analyzer()
         m1 = _make_measurement(measurement_name="Bridge")
         m2 = _make_measurement(measurement_name="Neck")
         sut.load_comparison([m1, m2])
@@ -378,7 +323,7 @@ class TestSaveComparison:
 
     def test_save_comparison_entries_count_matches_comparison_data(self):
         """Entry count in the saved record matches the number of loaded spectra."""
-        sut = _FullStubAnalyzer()
+        sut = _analyzer()
         measurements = [_make_measurement(measurement_name=f"M{i}") for i in range(3)]
         sut.load_comparison(measurements)
         sut.save_comparison(measurement_name="Triple", notes=None)
@@ -389,13 +334,13 @@ class TestSaveComparison:
 
     def test_save_comparison_noop_when_no_comparison_data(self):
         """save_comparison() does nothing when _comparison_data is empty."""
-        sut = _FullStubAnalyzer()
+        sut = _analyzer()
         sut.save_comparison(measurement_name="Empty", notes=None)
         assert sut.saved_measurements == []
 
     def test_save_comparison_measurement_name_stored(self):
         """measurement_name argument is stored on the saved measurement."""
-        sut = _FullStubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         sut.save_comparison(measurement_name="My Label", notes="Some notes")
         saved = sut.saved_measurements[0]
@@ -404,7 +349,7 @@ class TestSaveComparison:
 
     def test_save_comparison_color_components_normalised(self):
         """color_components in each entry should be in [0, 1] range."""
-        sut = _FullStubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([_make_measurement(), _make_measurement()])
         sut.save_comparison()
         saved = sut.saved_measurements[0]
@@ -426,26 +371,6 @@ class TestSaveComparison:
 # by the computed property is_saved_measurement_comparison (mirrors Swift
 # isSavedMeasurementComparison: displayMode == .comparison && !showingMultiTapComparison).
 
-class _MultiTapStubAnalyzer(_StubAnalyzer):
-    """Extends _StubAnalyzer with multi-tap comparison fields.
-
-    Mirrors the fields on TapToneAnalyzer that load_comparison() touches:
-      self.tap_entries, self.showing_multi_tap_comparison
-    Plus the computed property is_saved_measurement_comparison from
-    TapToneAnalyzer (Swift isSavedMeasurementComparison).
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.tap_entries: list = []
-        self.showing_multi_tap_comparison: bool = False
-
-    @property
-    def is_saved_measurement_comparison(self) -> bool:
-        """Mirrors Swift TapToneAnalyzer.isSavedMeasurementComparison."""
-        return self.is_comparing and not self.showing_multi_tap_comparison
-
-
 class TestMultiTapToSavedComparisonTransition:
     """MT-SC-U1–MT-SC-U3: model invariants when transitioning from multi-tap to
     saved-measurement comparison.  Mirrors Swift MultiTapToSavedComparisonTransitionTests."""
@@ -456,7 +381,7 @@ class TestMultiTapToSavedComparisonTransition:
 
         Mirrors Swift loadComparison_whileMultiTapActive_resetsMultiTapState.
         """
-        sut = _MultiTapStubAnalyzer()
+        sut = _analyzer()
         # Simulate a completed multi-tap sequence.
         sut.tap_entries = [object(), object()]   # two placeholder entries
         sut.showing_multi_tap_comparison = True
@@ -480,7 +405,7 @@ class TestMultiTapToSavedComparisonTransition:
 
         Mirrors Swift loadComparison_whileMultiTapActive_setsIsSavedMeasurementComparison.
         """
-        sut = _MultiTapStubAnalyzer()
+        sut = _analyzer()
         sut.tap_entries = [object(), object()]
         sut.showing_multi_tap_comparison = True
         sut._display_mode = AnalysisDisplayMode.COMPARISON
@@ -503,7 +428,7 @@ class TestMultiTapToSavedComparisonTransition:
 
         Mirrors Swift loadComparison_withoutMultiTap_isSavedMeasurementComparison.
         """
-        sut = _MultiTapStubAnalyzer()
+        sut = _analyzer()
         assert sut.showing_multi_tap_comparison is False, "Precondition: no multi-tap active"
 
         sut.load_comparison([_make_measurement("X")])
@@ -570,7 +495,7 @@ class TestComparisonDefinitiveModes:
             peak_mode_overrides={far.id: GuitarMode.TOP.display_name},  # far renamed to Top
             guitar_type="Classical",
         )
-        sut = _StubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([source])
 
         mode_ids = sut._comparison_data[0].get("mode_ids") or {}
@@ -593,7 +518,7 @@ class TestComparisonDefinitiveModes:
             peaks=[air, top], spectrum_snapshot=snap,
             selected_peak_ids=[air.id, top.id], guitar_type="Classical",
         )
-        sut = _FullStubAnalyzer()
+        sut = _analyzer()
         sut.load_comparison([source])
         sut.save_comparison(measurement_name="C")
         restored = _cmp_round_trip(sut.saved_measurements[0])
@@ -660,8 +585,8 @@ class TestComparisonDisarmsDetection:
     underneath the overlay, and a tap captures and completes a measurement the user never
     sees being made.
 
-    Uses a real TapToneAnalyzer rather than the stub above, because the behaviour under test
-    IS the detection-state property. Mirrors Swift CP-U9/CP-U10 and web's pair.
+    The behaviour under test is the detection-state property. Mirrors Swift CP-U9/CP-U10 and web's
+    pair.
     """
 
     def _sut(self):

@@ -811,15 +811,9 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     if data.notes:
         story.append(_TwoColRow("Notes", data.notes, CONTENT_W))
         story.append(Spacer(1, 4))
-    def _fmt_freq(f: float) -> str:
-        """Format frequency as Hz or kHz — mirrors Swift Float.formattedAsFrequency()."""
-        if f >= 1000:
-            return f"{f / 1000:.1f} kHz"
-        return f"{f:.1f} Hz"
-
     story.append(_TwoColRow(
         "Frequency Range",
-        f"{_fmt_freq(min_freq)} \u2013 {_fmt_freq(max_freq)}",
+        f"{_ext.formatted_as_frequency(min_freq)} \u2013 {_ext.formatted_as_frequency(max_freq)}",
         CONTENT_W,
     ))
     # No recorded microphone means it is unknown (a played file, say): say so, and keep the calibration.

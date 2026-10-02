@@ -9,6 +9,7 @@ can import them without importing the entire MainWindow module.
 """
 
 # @parity dsp/analysis-quality tests=test/analysis-quality
+# @parity view/frequency-format tests=test/frequency-format
 
 from __future__ import annotations
 
@@ -84,6 +85,21 @@ def tap_tone_ratio_quality_color(ratio: float) -> str:
     if ratio < 2.3:
         return "#FF9500"   # .orange
     return "#FF3B30"       # .red
+
+
+def formatted_as_frequency(hz: float) -> str:
+    """A frequency for display: one decimal, in kHz from 1000 Hz ("440.0 Hz", "2.5 kHz"). Mirrors Swift
+    Float.formattedAsFrequency()."""
+    if hz >= 1000:
+        return f"{hz / 1000:.1f} kHz"
+    return f"{hz:.1f} Hz"
+
+
+def display_range_label(min_freq: float, max_freq: float) -> str:
+    """The line above the guitar peak list: the chart's frequency range, each bound as
+    ``formatted_as_frequency`` (e.g. ``"Showing 25.0 Hz - 45.0 Hz"``). Mirrors Swift
+    displayRangeLabel(minFreq:maxFreq:)."""
+    return f"Showing {formatted_as_frequency(min_freq)} - {formatted_as_frequency(max_freq)}"
 
 
 def vsep() -> QtWidgets.QFrame:

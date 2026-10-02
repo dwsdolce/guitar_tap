@@ -29,6 +29,12 @@ def _meas_key(meas_type) -> str:
     return str(meas_type)
 
 
+
+def _as_float32(v: float) -> float:
+    """*v* at Swift's ``Float`` precision (IEEE-754 binary32), as the display range is stored there."""
+    import numpy as np  # noqa: PLC0415
+    return float(np.float32(v))
+
 class AppSettings:
     """Read/write persistent settings using QSettings.
 
@@ -118,30 +124,28 @@ class AppSettings:
         return 0.0
 
     @classmethod
-    def f_min(cls, meas_type: "str | object" = "") -> int:
-        key_str = _meas_key(meas_type)
-        key = f"display/f_min_{key_str}" if key_str else "display/f_min"
+    def f_min(cls, meas_type: "str | object") -> float:
+        key = f"display/f_min_{_meas_key(meas_type)}"
         default = cls.default_f_min(meas_type)
-        return int(cls._get(key, default))
+        return float(cls._get(key, default))
 
     @classmethod
-    def set_f_min(cls, v: int, meas_type: "str | object" = "") -> None:
-        key_str = _meas_key(meas_type)
-        key = f"display/f_min_{key_str}" if key_str else "display/f_min"
-        cls._set(key, v)
+    def set_f_min(cls, v: float, meas_type: "str | object") -> None:
+        """Stored exactly, as Swift's ``Float``: rounded to 32 bits, as a saved file is. Mirrors Swift
+        TapDisplaySettings.setMinFrequency(_:for:)."""
+        cls._set(f"display/f_min_{_meas_key(meas_type)}", _as_float32(v))
 
     @classmethod
-    def f_max(cls, meas_type: "str | object" = "") -> int:
-        key_str = _meas_key(meas_type)
-        key = f"display/f_max_{key_str}" if key_str else "display/f_max"
+    def f_max(cls, meas_type: "str | object") -> float:
+        key = f"display/f_max_{_meas_key(meas_type)}"
         default = cls.default_f_max(meas_type)
-        return int(cls._get(key, default))
+        return float(cls._get(key, default))
 
     @classmethod
-    def set_f_max(cls, v: int, meas_type: "str | object" = "") -> None:
-        key_str = _meas_key(meas_type)
-        key = f"display/f_max_{key_str}" if key_str else "display/f_max"
-        cls._set(key, v)
+    def set_f_max(cls, v: float, meas_type: "str | object") -> None:
+        """Stored exactly, as Swift's ``Float``: rounded to 32 bits, as a saved file is. Mirrors Swift
+        TapDisplaySettings.setMaxFrequency(_:for:)."""
+        cls._set(f"display/f_max_{_meas_key(meas_type)}", _as_float32(v))
 
     # ------------------------------------------------------------------ #
     # Selected input device (persistent across launches)
@@ -188,7 +192,8 @@ class AppSettings:
 
     @classmethod
     def set_db_min(cls, v: float) -> None:
-        cls._set("display/db_min", v)
+        """Stored exactly, as Swift's ``Float``: rounded to 32 bits."""
+        cls._set("display/db_min", _as_float32(v))
 
     @classmethod
     def db_max(cls) -> float:
@@ -197,7 +202,8 @@ class AppSettings:
 
     @classmethod
     def set_db_max(cls, v: float) -> None:
-        cls._set("display/db_max", v)
+        """Stored exactly, as Swift's ``Float``: rounded to 32 bits."""
+        cls._set("display/db_max", _as_float32(v))
 
     # ------------------------------------------------------------------ #
     # Audio device

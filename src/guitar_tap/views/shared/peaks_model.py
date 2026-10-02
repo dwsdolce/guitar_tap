@@ -11,6 +11,7 @@ from PySide6 import QtCore
 from guitar_tap.models import guitar_mode as gm
 from guitar_tap.models import pitch as pitch_c
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
+from guitar_tap.views.utilities.extensions import formatted_as_frequency
 
 
 class ColumnIndex(Enum):
@@ -408,7 +409,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 f'<span style="color:rgb(120,60,180);">&#9834; {note}&nbsp;&nbsp;{cents:+.0f}&#162;</span>'
             )
 
-        rows.append(f'<span style="color:rgb(50,50,50);">{freq:.1f} Hz</span>')
+        rows.append(f'<span style="color:rgb(50,50,50);">{formatted_as_frequency(freq)}</span>')
         rows.append(f'<span style="color:rgb(110,110,110);">{mag:.1f} dB</span>')
         return '<center>' + '<br/>'.join(rows) + '</center>'
 

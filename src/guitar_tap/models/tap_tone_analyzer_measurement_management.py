@@ -457,8 +457,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
             snaps = [e.snapshot for e in entries]
             if snaps:
                 self.set_loaded_axis_range(
-                    int(min(s.min_freq for s in snaps)),
-                    int(max(s.max_freq for s in snaps)),
+                    float(min(s.min_freq for s in snaps)),
+                    float(max(s.max_freq for s in snaps)),
                     float(min(s.min_db  for s in snaps)),
                     float(max(s.max_db  for s in snaps)),
                 )
@@ -601,6 +601,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
             snap = settings_snapshot
             from .measurement_type import MeasurementType as _MT
             gt_log(f"  📊 Publishing display ranges: {snap.min_freq}-{snap.max_freq} Hz, {snap.min_db}-{snap.max_db} dB")
+            # All four bounds in one signal — the view shows them and remembers them as the loaded
+            # range. Mirrors Swift setLoadedAxisRange(minFreq: snapshot.minFreq, …).
+            self.set_loaded_axis_range(float(snap.min_freq), float(snap.max_freq),
+                                       float(snap.min_db), float(snap.max_db))
             if snap.show_unknown_modes is not None:
                 gt_log(f"  👁️ Publishing showUnknownModes: {snap.show_unknown_modes}")
             if snap.guitar_type is not None:
@@ -646,7 +650,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
                                       else TDS.custom_plate_stiffness()),
                 )
         else:
-            gt_log("  ⚠️ No spectrum snapshot in measurement")
+            # No snapshot: still publish a range — the saved one — so the previous measurement's range
+            # is not left in place. Mirrors Swift's no-snapshot setLoadedAxisRange.
+            gt_log("  ⚠️ No spectrum snapshot in measurement — resetting axis range to defaults")
+            from .tap_display_settings import TapDisplaySettings as _TDS
+            self.set_loaded_axis_range(_TDS.min_frequency(), _TDS.max_frequency(),
+                                       _TDS.min_magnitude(), _TDS.max_magnitude())
 
         # ── Store loaded-measurement metadata ─────────────────────────────────
         # Mirrors Swift: loadedMeasurementName = measurement.measurementName (nil if empty)
@@ -664,6 +673,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         #   selectedLongitudinalPeak = measurement.selectedLongitudinalPeakID
         #       .flatMap { id in measurement.peaks.first(where: { $0.id == id }) }
         _peak_by_id = {(p.id or "").upper(): p for p in (measurement.peaks or [])}
+        self.material_peaks_from_load = True
         self.selected_longitudinal_peak = (
             _peak_by_id.get((measurement.selected_longitudinal_peak_id or "").upper())
         )
@@ -677,11 +687,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
         gt_log(f"  🔵 Restored longitudinal peak: {self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else -1} Hz")
         gt_log(f"  🟠 Restored cross-grain peak: {self.selected_cross_peak.frequency if self.selected_cross_peak else -1} Hz")
         gt_log(f"  🟣 Restored FLC peak: {self.selected_flc_peak.frequency if self.selected_flc_peak else -1} Hz")
-        # Let the view widen the axis onto each restored identified peak — the same channel a phase
-        # completion uses (Swift's selected…Peak change channel fires on a load too; the web widens on
-        # any change of its identified peaks).
-        for _p in self.material_identified_peaks:
-            self.materialPeakIdentified.emit(float(_p.frequency))
 
         # ── Stop tap detection ────────────────────────────────────────────────
         # Mirrors Swift: detectionState = .idle; isMeasurementComplete = true;

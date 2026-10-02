@@ -1563,8 +1563,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         # The phase's peak is the dominant peak of the averaged spectrum.
         self.selected_longitudinal_peak = avg_peak
-        # Let the view widen the axis onto it (mirrors Swift's selectedLongitudinalPeak change channel).
-        self.materialPeakIdentified.emit(float(avg_peak.frequency))
         gt_log(f"🔵 Identified longitudinal peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 
@@ -1690,8 +1688,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             prefer_lowest_significant=prefer_lowest,
         ) or dominant_peak
         self.selected_cross_peak = avg_peak
-        # Let the view widen the axis onto it (mirrors Swift's selectedCrossPeak change channel).
-        self.materialPeakIdentified.emit(float(avg_peak.frequency))
         gt_log(f"🟠 Identified cross-grain peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 
@@ -1788,8 +1784,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             prefer_lowest_significant=prefer_lowest,
         ) or dominant_peak
         self.selected_flc_peak = avg_peak
-        # Let the view widen the axis onto it (mirrors Swift's selectedFlcPeak change channel).
-        self.materialPeakIdentified.emit(float(avg_peak.frequency))
         gt_log(f"🟣 Identified FLC peak: {avg_peak.frequency} Hz")
         self.captured_taps.clear()
 

@@ -153,13 +153,13 @@ class TapToneAnalyzer(
     currentDeviceLost: QtCore.Signal = QtCore.Signal(str)
     # Plate/brace phase status text for display.
     plateStatusChanged: QtCore.Signal = QtCore.Signal(str)
+    # Each material peak, announced on every write (capture, load, redo's clear); payload the
+    # ResonantPeak or None. Mirrors Swift @Published selectedLongitudinalPeak / selectedCrossPeak /
+    # selectedFlcPeak — the view widens the chart onto an identified peak.
+    selectedLongitudinalPeakChanged: QtCore.Signal = QtCore.Signal(object)
+    selectedCrossPeakChanged: QtCore.Signal = QtCore.Signal(object)
+    selectedFlcPeakChanged: QtCore.Signal = QtCore.Signal(object)
     # Plate analysis complete: (fL, fC, fFLC) Hz.
-    # Emitted when a material phase identifies its peak (fL / fC / fFLC), carrying its frequency.
-    # The view widens the chart axis onto it — mirrors Swift's `.onReceive(tap.$autoSelected*PeakID)`,
-    # which is the change channel Swift rides for the same purpose. Per PHASE, not at completion:
-    # plateAnalysisComplete fires once at the end, too late to reveal fL while capturing fC.
-    materialPeakIdentified: QtCore.Signal = QtCore.Signal(float)   # frequency Hz
-
     plateAnalysisComplete: QtCore.Signal = QtCore.Signal(float, float, float)
     # Tap detection pause state changed.
     tapDetectionPaused: QtCore.Signal = QtCore.Signal(bool)
@@ -178,7 +178,7 @@ class TapToneAnalyzer(
     # Payload: (min_freq: int, max_freq: int, min_db: float, max_db: float).
     # Mirrors Swift TapToneAnalyzer.setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:) which
     # publishes loadedAxisRange so TapToneAnalysisView can apply all four bounds in one pass.
-    loadedAxisRangeChanged: QtCore.Signal = QtCore.Signal(int, int, float, float)
+    loadedAxisRangeChanged: QtCore.Signal = QtCore.Signal(float, float, float, float)
     # Peak info for status bar: (peak_hz, peak_db).
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)
     # Human-readable status string for the status bar (mirrors Swift @Published var statusMessage).
@@ -618,6 +618,11 @@ class TapToneAnalyzer(
         # The file name of the last capture audio written, for the "saved" notice; None when none is
         # shown. A new sequence clears it. Mirrors Swift captureAudioSaved.
         self.capture_audio_saved: str | None = None
+        # Whether the plate / brace peaks were restored by a load rather than identified by a capture. A
+        # load shows the range it was saved with, so its peaks do not widen the chart. Set by a load
+        # before it writes the peaks; cleared when a sequence starts. Mirrors Swift
+        # materialPeaksFromLoad.
+        self.material_peaks_from_load: bool = False
         self._session_checkpoints: list = []
         self._session_recording_sample_rate: float = 48000.0
 
@@ -1140,6 +1145,36 @@ class TapToneAnalyzer(
         # Mirrors Swift peakMinThreshold.didSet: save, then refreshDisplayedPeaks().
         _tds.set_peak_min_threshold(value)
         self.refresh_displayed_peaks()
+
+    # The identified peak of each material phase, announced on every write. Mirrors Swift's
+    # @Published selectedLongitudinalPeak / selectedCrossPeak / selectedFlcPeak.
+
+    @property
+    def selected_longitudinal_peak(self):
+        return self._selected_longitudinal_peak
+
+    @selected_longitudinal_peak.setter
+    def selected_longitudinal_peak(self, peak) -> None:
+        self._selected_longitudinal_peak = peak
+        self.selectedLongitudinalPeakChanged.emit(peak)
+
+    @property
+    def selected_cross_peak(self):
+        return self._selected_cross_peak
+
+    @selected_cross_peak.setter
+    def selected_cross_peak(self, peak) -> None:
+        self._selected_cross_peak = peak
+        self.selectedCrossPeakChanged.emit(peak)
+
+    @property
+    def selected_flc_peak(self):
+        return self._selected_flc_peak
+
+    @selected_flc_peak.setter
+    def selected_flc_peak(self, peak) -> None:
+        self._selected_flc_peak = peak
+        self.selectedFlcPeakChanged.emit(peak)
 
     @property
     def detection_state(self) -> DetectionState:

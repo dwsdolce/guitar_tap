@@ -1026,6 +1026,7 @@ class TapToneAnalyzerControlMixin:
         self.source_measurement_timestamp = None
         self.loadedMeasurementNameChanged.emit(None)
         self.dismiss_capture_audio_saved()
+        self.material_peaks_from_load = False
 
         # Also clear the played-file name so the chart title reverts to "New"
         # when the user starts a fresh tap sequence (e.g. by changing
@@ -1380,33 +1381,16 @@ class TapToneAnalyzerControlMixin:
             self.peaks_above_peak_min if _tds.measurement_type().is_guitar else self.material_identified_peaks
         ))
 
-    def set_fmin(self, fmin: int) -> None:
-        self.update_axis(fmin, int(self.max_frequency))
-
-    def set_fmax(self, fmax: int) -> None:
-        self.update_axis(int(self.min_frequency), fmax)
-
-    def update_axis(self, fmin: int, fmax: int, init: bool = False) -> None:
-        """Update the frequency analysis range."""
-        if fmin < fmax:
-            self.min_frequency = float(fmin)
-            self.max_frequency = float(fmax)
-        if not init:
-            self.recalculate_frozen_peaks_if_needed()
-
     def set_loaded_axis_range(
-        self, min_freq: int, max_freq: int, min_db: float, max_db: float
+        self, min_freq: float, max_freq: float, min_db: float, max_db: float
     ) -> None:
         """Publish all four axis bounds atomically via loadedAxisRangeChanged.
 
         Mirrors Swift TapToneAnalyzer.setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:)
         which sets loadedAxisRange (a struct) in a single objectWillChange notification so
-        the view applies all four bounds in one render pass.
-
-        Also calls update_axis() to keep the model's peak-analysis frequency range in sync,
-        matching Swift where minFrequency/maxFrequency track the displayed range.
+        the view applies all four bounds in one render pass. A display range only: the analysis
+        range (min_frequency / max_frequency, the fixed 30–2000 Hz find_peaks searches) is not touched.
         """
-        self.update_axis(min_freq, max_freq)
         self.loadedAxisRangeChanged.emit(min_freq, max_freq, min_db, max_db)
 
     def set_auto_scale(self, enabled: bool) -> None:

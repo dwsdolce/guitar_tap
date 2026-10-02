@@ -24,7 +24,7 @@ Swift uses UserDefaults directly; Python uses QSettings via AppSettings.
 SeeAlso: TapSettingsView, TapToneAnalyzer, SpectrumView
 """
 
-# @parity state/settings-store
+# @parity state/settings-store tests=test/settings-store
 
 from __future__ import annotations
 
@@ -497,7 +497,7 @@ class TapDisplaySettings:
     @classmethod
     def set_min_frequency_for(cls, v: float, meas_type: "str | object") -> None:
         """Mirrors Swift TapDisplaySettings.setMinFrequency(_:for:)."""
-        _app_settings().set_f_min(int(v), meas_type)
+        _app_settings().set_f_min(float(v), meas_type)
 
     @classmethod
     def min_frequency(cls) -> float:
@@ -523,7 +523,7 @@ class TapDisplaySettings:
     @classmethod
     def set_max_frequency_for(cls, v: float, meas_type: "str | object") -> None:
         """Mirrors Swift TapDisplaySettings.setMaxFrequency(_:for:)."""
-        _app_settings().set_f_max(int(v), meas_type)
+        _app_settings().set_f_max(float(v), meas_type)
 
     @classmethod
     def max_frequency(cls) -> float:
@@ -639,9 +639,11 @@ class TapDisplaySettings:
         Mirrors Swift TapDisplaySettings.validateFrequencyRange(minFreq:maxFreq:).
         Returns (min, max) — falls back to persisted display range if invalid.
         """
-        clamped_min = max(20.0, min(min_freq, 20000.0))
-        clamped_max = max(20.0, min(max_freq, 20000.0))
-        if clamped_min < clamped_max and (clamped_max - clamped_min) >= 10.0:
+        from guitar_tap.models import display_range as dr  # noqa: PLC0415
+        lo, hi = dr.MIN_FREQUENCY_HZ, dr.MAX_FREQUENCY_HZ
+        clamped_min = max(lo, min(min_freq, hi))
+        clamped_max = max(lo, min(max_freq, hi))
+        if clamped_min < clamped_max and (clamped_max - clamped_min) >= dr.MIN_FREQUENCY_SPAN_HZ:
             return (clamped_min, clamped_max)
         return (cls.min_frequency(), cls.max_frequency())
 
@@ -652,9 +654,11 @@ class TapDisplaySettings:
         Mirrors Swift TapDisplaySettings.validateMagnitudeRange(minDB:maxDB:).
         Returns (min, max) — falls back to persisted dB range if invalid.
         """
-        clamped_min = max(-120.0, min(min_db, 20.0))
-        clamped_max = max(-120.0, min(max_db, 20.0))
-        if clamped_min < clamped_max and (clamped_max - clamped_min) >= 10.0:
+        from guitar_tap.models import display_range as dr  # noqa: PLC0415
+        lo, hi = dr.MIN_MAGNITUDE_DB, dr.MAX_MAGNITUDE_DB
+        clamped_min = max(lo, min(min_db, hi))
+        clamped_max = max(lo, min(max_db, hi))
+        if clamped_min < clamped_max and (clamped_max - clamped_min) >= dr.MIN_MAGNITUDE_SPAN_DB:
             return (clamped_min, clamped_max)
         return (cls.min_magnitude(), cls.max_magnitude())
 
