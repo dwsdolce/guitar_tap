@@ -317,17 +317,17 @@ def pdf_report_data_from_measurement(
 
     # ── Derive measurement type and guitar type ───────────────────────────
     any_snap = m.spectrum_snapshot or m.longitudinal_snapshot or m.cross_snapshot
-    mt_str = m.measurement_type or (any_snap.measurement_type if any_snap else "Classical")
+    mt_str = m.measurement_type or (any_snap.measurement_type if any_snap else MT.MeasurementType.GENERIC.value)
     try:
         mt = MT.MeasurementType(mt_str)
     except ValueError:
-        mt = MT.MeasurementType.CLASSICAL
+        mt = MT.MeasurementType.GENERIC
 
-    gt_str = m.guitar_type or (any_snap.guitar_type if any_snap else "Classical")
+    gt_str = m.guitar_type or (any_snap.guitar_type if any_snap else GT_module.GuitarType.GENERIC.value)
     try:
         gt = GT_module.GuitarType(gt_str)
     except Exception:
-        gt = GT_module.GuitarType.CLASSICAL
+        gt = GT_module.GuitarType.GENERIC
 
     # ── Display frequency range ───────────────────────────────────────────
     display_snap = m.spectrum_snapshot or any_snap
@@ -575,12 +575,12 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     try:
         mt = MT.MeasurementType(mt_str)
     except ValueError:
-        mt = MT.MeasurementType.CLASSICAL
+        mt = MT.MeasurementType.GENERIC
 
     try:
         gt = GT_module.GuitarType(gt_str)
     except Exception:
-        gt = GT_module.GuitarType.CLASSICAL
+        gt = GT_module.GuitarType.GENERIC
 
     try:
         _preset = PSP.PlateStiffnessPreset(_preset_str)
@@ -944,7 +944,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         if data.decay_time is not None:
             try:
                 decay_label = _ext.decay_quality_label(data.decay_time, gt)
-                dc = colors.HexColor(_ext.decay_quality_color(data.decay_time, gt))
+                dc = colors.HexColor(_ext.decay_quality_color(data.decay_time, gt).light)
             except Exception:
                 decay_label = ""
                 dc = colors.Color(0.45, 0.45, 0.45)
@@ -961,7 +961,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         ratio = data.tap_tone_ratio
         if ratio is not None:
             ratio_label = _ext.tap_tone_ratio_quality_label(ratio)
-            ratio_color = colors.HexColor(_ext.tap_tone_ratio_quality_color(ratio))
+            ratio_color = colors.HexColor(_ext.tap_tone_ratio_quality_color(ratio).light)
             boxes.append(_AnalysisBox(
                 title="Tap Tone Ratio",
                 value=f"{fp.string(ratio, fp.DECAY_RATIO)} : 1",

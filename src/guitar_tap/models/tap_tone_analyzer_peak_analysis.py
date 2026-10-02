@@ -875,7 +875,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
             try:
                 gt = GuitarType(guitar_type)
             except Exception:
-                gt = GuitarType.CLASSICAL
+                gt = GuitarType.GENERIC
 
         mode_map: dict = GuitarMode.classify_all(peaks, gt)
 

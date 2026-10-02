@@ -263,7 +263,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         try:
             mt = MeasurementType(mt_str)
         except ValueError:
-            mt = MeasurementType.CLASSICAL
+            mt = MeasurementType.GENERIC
 
         # Resolve axis range — fall back to TapDisplaySettings when not passed by view.
         # Mirrors Swift: minFreq ?? TapDisplaySettings.minFrequency etc.
@@ -521,7 +521,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         try:
             mt = MeasurementType(mt_str)
         except ValueError:
-            mt = MeasurementType.CLASSICAL
+            mt = MeasurementType.GENERIC
 
         # ── Restore per-phase spectra for plate/brace ─────────────────────────
         # Mirrors Swift: longitudinalSpectrum = (magnitudes:frequencies:) etc.

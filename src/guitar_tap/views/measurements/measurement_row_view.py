@@ -38,7 +38,7 @@ def _resolve_guitar_type(s: str | None) -> GT.GuitarType:
             return GT.GuitarType(s)
         except ValueError:
             pass
-    return GT.GuitarType.CLASSICAL
+    return GT.GuitarType.GENERIC
 
 
 def tap_tone_ratio(m: TapToneMeasurement) -> float | None:

@@ -461,7 +461,7 @@ class TapToneAnalyzer(
         self._auto_scale_db: bool = False
 
         # ── Measurement type ──────────────────────────────────────────────
-        self._measurement_type = _mt_mod.MeasurementType.CLASSICAL
+        self._measurement_type = _mt_mod.MeasurementType.GENERIC
 
         self._current_mag_y = np.array([])
         self._current_mag_y_db = np.array([])

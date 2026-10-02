@@ -535,7 +535,7 @@ class TapToneMeasurement:
         NOTE — Algorithm difference from Swift:
           Python must pass guitar_type explicitly to GuitarMode.classify_all.
           Swift calls GuitarMode.classifyAll(peaks) with auto-resolved guitar type.
-          Python falls back to the guitar_type stored on this measurement, or "Classical".
+          Python falls back to the guitar_type stored on this measurement, or "Generic".
         """
         from . import guitar_mode as gm
         # Definitive Air/Top: the SELECTED peak whose OVERRIDE-AWARE (effective) mode is that mode.
@@ -561,9 +561,9 @@ class TapToneMeasurement:
         if not self.peaks:
             return None
         try:
-            gt = gt_module.GuitarType(self.guitar_type or "Classical")
+            gt = gt_module.GuitarType(self.guitar_type or "Generic")
         except Exception:
-            gt = gt_module.GuitarType.CLASSICAL
+            gt = gt_module.GuitarType.GENERIC
         selected = self.effective_selected_peak_ids
         overrides = self.peak_mode_overrides or {}
         auto_map = gm.GuitarMode.classify_all(self.peaks, gt)
@@ -741,7 +741,7 @@ class TapToneMeasurement:
             try:
                 from .guitar_mode import GuitarMode
                 from .guitar_type import GuitarType
-                gt_enum = GuitarType(resolved_gt) if resolved_gt else GuitarType.CLASSICAL
+                gt_enum = GuitarType(resolved_gt) if resolved_gt else GuitarType.GENERIC
                 mode_map = GuitarMode.classify_all(self.peaks, gt_enum)
             except Exception:
                 mode_map = {}
@@ -1112,9 +1112,9 @@ class TapToneMeasurement:
             from . import guitar_mode as _gm
             from . import guitar_type as _gt_mod
             try:
-                _gt = _gt_mod.GuitarType(d.get("guitarType") or "Classical")
+                _gt = _gt_mod.GuitarType(d.get("guitarType") or "Generic")
             except Exception:
-                _gt = _gt_mod.GuitarType.CLASSICAL
+                _gt = _gt_mod.GuitarType.GENERIC
             _auto = _gm.GuitarMode.classify_all(peaks, _gt)
             _ovr = peak_mode_overrides or {}
             _single = {_gm.GuitarMode.AIR, _gm.GuitarMode.TOP, _gm.GuitarMode.BACK}

@@ -48,13 +48,13 @@ def _mode_qcolor(mode: GM.GuitarMode) -> QtGui.QColor:
 
 
 def _resolve_guitar_type(guitar_type_str: str | None) -> GT.GuitarType:
-    """Convert a guitar_type string to GuitarType enum, defaulting to Classical."""
+    """Convert a guitar_type string to GuitarType enum, defaulting to Generic."""
     if guitar_type_str:
         try:
             return GT.GuitarType(guitar_type_str)
         except ValueError:
             pass
-    return GT.GuitarType.CLASSICAL
+    return GT.GuitarType.GENERIC
 
 
 def _type_name(m) -> str:

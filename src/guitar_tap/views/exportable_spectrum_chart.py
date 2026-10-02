@@ -160,7 +160,7 @@ class ExportableSpectrumChart:
             from guitar_tap.models.guitar_mode import GuitarMode
             from guitar_tap.models.guitar_type import GuitarType
             self._GuitarMode = GuitarMode
-            gt_enum = GuitarType(_derived_guitar_type_str) if _derived_guitar_type_str else GuitarType.CLASSICAL
+            gt_enum = GuitarType(_derived_guitar_type_str) if _derived_guitar_type_str else GuitarType.GENERIC
             self._guitar_type_enum = gt_enum
             if self.is_guitar:
                 # Pass all peaks (not just visible) so the claiming algorithm has the

@@ -238,7 +238,7 @@ class AppSettings:
     # ------------------------------------------------------------------ #
     @classmethod
     def measurement_type(cls) -> "MeasurementType":
-        """Return the saved MeasurementType, defaulting to ACOUSTIC.
+        """Return the saved MeasurementType, defaulting to GENERIC (Swift TapDisplaySettings.measurementType).
 
         Stores the enum raw value ("Classical Guitar", etc.) matching Swift's
         TapDisplaySettings.measurementType which stores newValue.rawValue.
@@ -250,7 +250,7 @@ class AppSettings:
                 return MeasurementType(raw)
             except ValueError:
                 pass
-        return MeasurementType.ACOUSTIC
+        return MeasurementType.GENERIC
 
     @classmethod
     def set_measurement_type(cls, mt: "MeasurementType") -> None:

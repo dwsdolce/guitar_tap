@@ -1718,7 +1718,7 @@ class FftCanvas(pg.PlotWidget):
             try:
                 guitar_type = gt.GuitarType(guitar_type_str)
             except ValueError:
-                guitar_type = gt.GuitarType.CLASSICAL
+                guitar_type = gt.GuitarType.GENERIC
             peaks = gm.GuitarMode.peaks_in_display_range(
                 peaks,
                 self._minFreq,

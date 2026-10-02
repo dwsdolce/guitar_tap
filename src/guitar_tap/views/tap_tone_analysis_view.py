@@ -38,6 +38,7 @@ from guitar_tap.views.plate_body_dimensions_editor import PlateBodyDimensionsEdi
 from guitar_tap.views.shared.loading_overlay import LoadingOverlay
 from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
 from guitar_tap.views.utilities import extensions as _ext
+from guitar_tap.views.utilities import palette
 from guitar_tap.utilities.new_uuid import new_uuid
 
 # Heavy imports deferred to _deferred_canvas_init to reduce startup time:
@@ -49,26 +50,14 @@ basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 
-# Apple systemBlue — the shared cross-platform accent for the tap/phase progress bar and its label.
-#
-# Pinned explicitly on all three platforms (Swift `.tint(.blue)`, here, and the web's `--system-blue`)
-# because each toolkit otherwise inherits a DIFFERENT colour and they can never agree: Swift's untinted
-# ProgressView took the user's macOS *accent* setting, Qt took `palette(highlight)`, and the web used
-# its own `--accent`. Python was even inconsistent with itself — the bar used `palette(highlight)` (a
-# light blue) while the labels beside it were a hardcoded `rgb(40,100,210)` (a dark blue).
-#
-# systemBlue is light/dark adaptive on Apple's side; mirror that adaptivity here.
-#
-# THEME TOKEN: the Light/Dark/System theme work owns swapping these — that is why they are named
-# constants resolved through `_system_blue()`, not literals at the use sites.
-SYSTEM_BLUE_LIGHT = "#007AFF"
-SYSTEM_BLUE_DARK = "#0A84FF"
+# The tap/phase progress bar and its labels are the palette's blue, pinned in all three editions (Swift
+# `Palette.blue`, the web's `--system-blue`): left to the toolkit, each would take a different colour —
+# Swift's ProgressView the macOS accent setting, Qt `palette(highlight)`, the web its own `--accent`.
 
 
 def _system_blue(widget: QtWidgets.QWidget) -> str:
-    """systemBlue for the widget's CURRENT appearance (dark vs light)."""
-    window = widget.palette().color(QtGui.QPalette.ColorRole.Window)
-    return SYSTEM_BLUE_DARK if window.lightness() < 128 else SYSTEM_BLUE_LIGHT
+    """The palette's blue for the background ``widget`` is drawn on."""
+    return palette.BLUE.on(widget)
 
 
 def _vsep() -> QtWidgets.QFrame:
@@ -2461,7 +2450,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._show_summary_value(self._gs_ro_value, self._gs_ro_sub, f"{fp.string(time_s, fp.DECAY_TIME_S)}s", "Waiting\u2026")
         gt = TDS.measurement_type().guitar_type or _GTy.GENERIC
         self._gs_ro_quality.setText(_ext.decay_quality_label(time_s, gt))
-        self._gs_ro_quality.setStyleSheet(f"color: {_ext.decay_quality_color(time_s, gt)};")
+        self._gs_ro_quality.setStyleSheet(f"color: {_ext.decay_quality_color(time_s, gt).on(self)};")
 
     def set_calibration_status(self, name: str) -> None:
         if name:
@@ -2543,7 +2532,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._show_summary_value(self._gs_ratio_value, self._gs_ratio_sub, f"{fp.string(ratio, fp.DECAY_RATIO)}:1", "Need Air & Top")
             self._gs_ratio_quality.setText(_ext.tap_tone_ratio_quality_label(ratio))
             self._gs_ratio_quality.setStyleSheet(
-                f"color: {_ext.tap_tone_ratio_quality_color(ratio)};")
+                f"color: {_ext.tap_tone_ratio_quality_color(ratio).on(self)};")
         else:
             self._show_summary_value(self._gs_ratio_value, self._gs_ratio_sub, None, "Need Air & Top")
             self._gs_ratio_quality.setText("")

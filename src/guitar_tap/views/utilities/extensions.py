@@ -1,11 +1,6 @@
 """
-Reusable Qt widget helpers and free-function utilities.
-
-Mirrors Swift's Extensions.swift — extension methods and small helper
-functions that are used across multiple view files.
-
-These helpers are extracted from guitar_tap.py so that the mixin files
-can import them without importing the entire MainWindow module.
+Reusable Qt widget helpers and free-function utilities. Mirrors Swift's Extensions.swift — extension
+methods and small helper functions used across several view files.
 """
 
 # @parity dsp/analysis-quality tests=test/analysis-quality
@@ -18,23 +13,25 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtWidgets
 
 from guitar_tap.models import field_precision as fp
+from guitar_tap.views.utilities import palette
 
 if TYPE_CHECKING:
     from guitar_tap.models.guitar_type import GuitarType
 
 
 # ── Analysis-quality helpers ─────────────────────────────────────────────────
-# Single Python source for the guitar tap-tone quality labels + colors, mirroring
-# Swift's Float.decayQuality(for:) / decayQualityColor(for:) / tapToneRatioQuality /
-# tapToneRatioQualityColor (Extensions.swift). Python can't extend `float`, so these
-# are module functions taking the value as the first arg (the same shape the web port
-# uses). Decay thresholds come from GuitarType.decay_thresholds — the one place they
-# are defined. Colors are the SwiftUI system-color hexes (what the semantic Swift
-# colors resolve to); the on-screen panel and the PDF both consume these strings.
+# The guitar tap-tone quality labels and colours. Mirrors Swift's Float.decayQuality(for:) /
+# decayQualityColor(for:) / tapToneRatioQuality / tapToneRatioQualityColor (Extensions.swift); Python
+# cannot extend ``float``, so these are functions taking the value first. The thresholds are
+# GuitarType.decay_thresholds. A colour is a ``palette.ColorPair``; the caller takes the value for its
+# background (``on(widget)`` on screen, ``light`` in a PDF). A negative or NaN value is in no band:
+# "Unknown", grey.
 
 def decay_quality_label(decay_time: float, guitar_type: "GuitarType") -> str:
     """Ring-out label for a decay time (s). Mirrors Swift Float.decayQuality(for:)."""
     t = guitar_type.decay_thresholds
+    if not decay_time >= 0:
+        return "Unknown"
     if decay_time < t.very_short:
         return "Very Short"
     if decay_time < t.short:
@@ -46,24 +43,27 @@ def decay_quality_label(decay_time: float, guitar_type: "GuitarType") -> str:
     return "Excellent"
 
 
-def decay_quality_color(decay_time: float, guitar_type: "GuitarType") -> str:
-    """Hex color for the ring-out quality. Mirrors Swift decayQualityColor(for:)
-    (.gray/.orange/.yellow/.green/.blue → SwiftUI system hexes)."""
+def decay_quality_color(decay_time: float, guitar_type: "GuitarType") -> palette.ColorPair:
+    """Colour for the ring-out quality, grey → orange → yellow → green → blue. Mirrors Swift
+    decayQualityColor(for:)."""
     t = guitar_type.decay_thresholds
+    if not decay_time >= 0:
+        return palette.GRAY
     if decay_time < t.very_short:
-        return "#8E8E93"   # .gray
+        return palette.GRAY
     if decay_time < t.short:
-        return "#FF9500"   # .orange
+        return palette.ORANGE
     if decay_time < t.moderate:
-        return "#FFCC00"   # .yellow
+        return palette.YELLOW
     if decay_time < t.good:
-        return "#34C759"   # .green
-    return "#007AFF"       # .blue
+        return palette.GREEN
+    return palette.BLUE
 
 
 def tap_tone_ratio_quality_label(ratio: float) -> str:
-    """Tap-tone-ratio (f_Top / f_Air) label. Mirrors Swift Float.tapToneRatioQuality.
-    Target range 1.9–2.1."""
+    """Tap-tone-ratio (f_Top / f_Air) label, target 1.9–2.1. Mirrors Swift Float.tapToneRatioQuality."""
+    if not ratio >= 0:
+        return "Unknown"
     if ratio < 1.7:
         return "Low"
     if ratio < 1.9:
@@ -75,18 +75,20 @@ def tap_tone_ratio_quality_label(ratio: float) -> str:
     return "High"
 
 
-def tap_tone_ratio_quality_color(ratio: float) -> str:
-    """Hex color for the tap-tone-ratio quality. Mirrors Swift tapToneRatioQualityColor
-    (.red/.orange/.green → SwiftUI system hexes)."""
+def tap_tone_ratio_quality_color(ratio: float) -> palette.ColorPair:
+    """Colour for the tap-tone-ratio quality: green ideal, orange near, red out of range. Mirrors Swift
+    tapToneRatioQualityColor."""
+    if not ratio >= 0:
+        return palette.GRAY
     if ratio < 1.7:
-        return "#FF3B30"   # .red
+        return palette.RED
     if ratio < 1.9:
-        return "#FF9500"   # .orange
+        return palette.ORANGE
     if ratio <= 2.1:
-        return "#34C759"   # .green
+        return palette.GREEN
     if ratio < 2.3:
-        return "#FF9500"   # .orange
-    return "#FF3B30"       # .red
+        return palette.ORANGE
+    return palette.RED
 
 
 def formatted_as_frequency(hz: float) -> str:
