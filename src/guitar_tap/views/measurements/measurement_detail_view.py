@@ -9,6 +9,7 @@ import qtawesome as qta
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import ResonantPeak, TapToneMeasurement
+from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as GM
 from guitar_tap.models import guitar_type as GT
 from guitar_tap.models import pitch as P
@@ -184,7 +185,7 @@ class _PeakRow(QtWidgets.QFrame):
         )
         row1.addWidget(mode_lbl)
         row1.addStretch()
-        freq_lbl = QtWidgets.QLabel(f"{peak.frequency:.1f} Hz")
+        freq_lbl = QtWidgets.QLabel(f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz")
         freq_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
         row1.addWidget(freq_lbl)
         info_col.addLayout(row1)
@@ -216,20 +217,20 @@ class _PeakRow(QtWidgets.QFrame):
         if peak.quality:
             q_lbl = QtWidgets.QLabel(
                 f"<span style='color:grey;font-size:10px;'>Q:</span> "
-                f"<b style='font-size:10px;'>{peak.quality:.1f}</b>"
+                f"<b style='font-size:10px;'>{fp.string(peak.quality, fp.Q_FACTOR)}</b>"
             )
             q_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
             row3.addWidget(q_lbl)
         if peak.bandwidth:
             bw_lbl = QtWidgets.QLabel(
                 f"<span style='color:grey;font-size:10px;'>BW:</span> "
-                f"<b style='font-size:10px;'>{peak.bandwidth:.1f} Hz</b>"
+                f"<b style='font-size:10px;'>{fp.string(peak.bandwidth, fp.BANDWIDTH_HZ)} Hz</b>"
             )
             bw_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
             row3.addWidget(bw_lbl)
         row3.addStretch()
         mag_color = _mag_color(peak.magnitude)
-        mag_lbl = QtWidgets.QLabel(f"{peak.magnitude:.1f} dB")
+        mag_lbl = QtWidgets.QLabel(f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB")
         mag_lbl.setStyleSheet(
             f"font-weight: 600; font-size: 11px; "
             f"color: rgb({mag_color.red()},{mag_color.green()},{mag_color.blue()});"

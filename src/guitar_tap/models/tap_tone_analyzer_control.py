@@ -11,6 +11,7 @@ import time as _time
 
 from guitar_tap.utilities.logging import gt_log
 
+from . import field_precision as fp
 from .detection_state import DetectionState
 
 
@@ -1298,11 +1299,11 @@ class TapToneAnalyzerControlMixin:
         self.finish_session_recording(label="Plate_LC")
 
         fl_str = (
-            f"{self.selected_longitudinal_peak.frequency:.1f}"
+            f"{fp.string(self.selected_longitudinal_peak.frequency, fp.PEAK_FREQUENCY_HZ)}"
             if self.selected_longitudinal_peak else "?"
         )
         fc_str = (
-            f"{self.selected_cross_peak.frequency:.1f}"
+            f"{fp.string(self.selected_cross_peak.frequency, fp.PEAK_FREQUENCY_HZ)}"
             if self.selected_cross_peak else "?"
         )
         self._set_status_message(

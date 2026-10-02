@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import field_precision as fp
+from guitar_tap.views.utilities.extensions import formatted_as_frequency, formatted_as_whole_hertz
 
 if TYPE_CHECKING:
     from guitar_tap.views.fft_canvas import FftCanvas
@@ -145,16 +146,16 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         # ── Analysis Configuration ─────────────────────────────────────────
         # Mirrors Swift GroupBox("Analysis Configuration") { ... }
         self._row_freq_res   = MetricRow("Frequency Resolution", "Hz per bin",
-                                         self._fmt_freq(spectral_res),
+                                         formatted_as_frequency(spectral_res),
                                          self._sub_font, self._mono_font)
         self._row_bin_count  = MetricRow("Bin Count", "FFT output bins (guitar mode only)",
-                                         f"{bin_count:,}",
+                                         QtCore.QLocale().toString(bin_count),
                                          self._sub_font, self._mono_font)
         self._row_sample_rate = MetricRow("Sample Rate", "Hardware capture rate",
-                                          f"{sr:,.0f} Hz",
+                                          formatted_as_whole_hertz(sr),
                                           self._sub_font, self._mono_font)
         self._row_bandwidth  = MetricRow("Bandwidth", "0 Hz to Nyquist",
-                                         self._fmt_freq(bandwidth),
+                                         formatted_as_whole_hertz(bandwidth),
                                          self._sub_font, self._mono_font)
         self._row_sample_len = MetricRow("Sample Length", "Time window duration",
                                          f"{sample_len:.2f} s",
@@ -232,15 +233,6 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
 
     # MARK: - Helper Functions
 
-    def _fmt_freq(self, hz: float) -> str:
-        """Format a frequency value with appropriate units (Hz or kHz).
-
-        Mirrors Swift ``formatFrequency(_:)``.
-        """
-        if hz >= 1000:
-            return f"{hz / 1000:.2f} kHz"
-        return f"{hz:.1f} Hz"
-
     def _processing_time_color(self, time_ms: float, frame_time_ms: float) -> str:
         """Return a CSS colour string indicating processing time health.
 
@@ -313,7 +305,7 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         cpu_pct = (avg_ms / frame_time_ms) * 100
 
         # ── Analysis Configuration (dynamic row only) ──────────────────────
-        self._row_frame_rate.set_value(f"{framerate:.1f} Hz")
+        self._row_frame_rate.set_value(formatted_as_frequency(framerate))
 
         # ── Performance ────────────────────────────────────────────────────
         proc_color = self._processing_time_color(proc_ms, frame_time_ms)
@@ -328,7 +320,7 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         # Mirrors Swift formatFrequency(analyzer.peakFrequency) and
         # FieldPrecision.string(analyzer.peakMagnitude, peakMagnitudeDB) + " dB".
         mic = self._canvas.analyzer.mic
-        self._row_peak_freq.set_value(self._fmt_freq(mic.peak_frequency))
+        self._row_peak_freq.set_value(formatted_as_frequency(mic.peak_frequency))
         self._row_peak_mag.set_value(
             f"{fp.string(mic.peak_magnitude, fp.PEAK_MAGNITUDE_DB)} dB"
         )

@@ -24,6 +24,14 @@ def test_table_matches_canonical_values():
     assert fp.SPEED_OF_SOUND_MS == 0
     assert fp.DENSITY_G_PER_CM3 == 3
     assert fp.DECAY_RATIO == 2
+    assert fp.BANDWIDTH_HZ == 1
+    assert fp.SHEAR_MODULUS_GPA == 3
+    assert fp.SPECIFIC_MODULUS == 1
+    assert fp.RADIATION_RATIO == 1
+    assert fp.CROSS_LONG_RATIO == 3
+    assert fp.LONG_CROSS_RATIO == 1
+    assert fp.GORE_THICKNESS_MM == 2
+    assert fp.DECAY_TIME_S == 2
 
 
 # --- decimals_within (restrict-on-entry predicate) ---
@@ -78,13 +86,13 @@ def test_rounded_half_away_from_zero():
 
 
 def test_rounded_rounds_to_precision():
-    assert abs(fp.rounded(29.356, 2) - 29.36) < 0.001
-    assert abs(fp.rounded(29.354, 2) - 29.35) < 0.001
-    assert abs(fp.rounded(29.35, 2) - 29.35) < 0.001
+    assert abs(fp.rounded(29.356, 2) - 29.36) < 1e-5
+    assert abs(fp.rounded(29.354, 2) - 29.35) < 1e-5
+    assert abs(fp.rounded(29.35, 2) - 29.35) < 1e-5
 
 
 def test_rounded_negative_rounds_away_from_zero():
-    assert abs(fp.rounded(-29.356, 2) - (-29.36)) < 0.001
+    assert abs(fp.rounded(-29.356, 2) - (-29.36)) < 1e-5
 
 
 # --- string (display formatting) ---
@@ -98,6 +106,17 @@ def test_string_formats_at_precision():
 
 def test_string_rounds_for_display():
     assert fp.string(2.678, 2) == "2.68"
+
+
+def test_string_rounds_an_exact_tie_to_even():
+    """An exact tie rounds to even, as C's ``%.Nf`` does: 2.5 → "2", 0.125 → "0.12"."""
+    assert fp.string(2.5, 0) == "2"
+    assert fp.string(0.125, 2) == "0.12"
+
+
+def test_string_formats_the_32_bit_value():
+    """The value is shown as Swift's 32-bit ``Float``: 0.15 is 0.150000006 there, so it reads "0.2"."""
+    assert fp.string(0.15, 1) == "0.2"
 
 
 def test_string_infinity_reads_as_symbol():

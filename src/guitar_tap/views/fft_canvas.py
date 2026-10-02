@@ -10,6 +10,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 import guitar_tap.models.tap_tone_analyzer as td
 import guitar_tap.views.utilities.tap_settings_view as _as
+from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
 from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import microphone_calibration as _mc_mod
@@ -921,7 +922,7 @@ class FftCanvas(pg.PlotWidget):
         html = (
             f'<center>'
             f'<b style="color:{freq_color};">{freq_str}</b><br/>'
-            f'<span style="color:rgb(130,130,130);">{display_db:.1f} dB</span>'
+            f'<span style="color:rgb(130,130,130);">{fp.string(display_db, fp.PEAK_MAGNITUDE_DB)} dB</span>'
             f'</center>'
         )
         self._cursor_label.setHtml(html)

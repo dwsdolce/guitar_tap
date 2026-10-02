@@ -63,6 +63,7 @@ makeExportableSpectrumView:
 
 from __future__ import annotations
 
+from guitar_tap.models import field_precision as fp
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
 
 __all__ = [
@@ -668,7 +669,7 @@ class ExportableSpectrumChart:
             painter.setPen(QtGui.QColor(0, 0, 0))
             painter.drawText(
                 card_x, row_y, ANNOT_W, int(24 * SCALE),
-                QtCore.Qt.AlignmentFlag.AlignCenter, f"{peak.frequency:.1f} Hz",
+                QtCore.Qt.AlignmentFlag.AlignCenter, f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz",
             )
             row_y += int(24 * SCALE)
 
@@ -677,7 +678,7 @@ class ExportableSpectrumChart:
             painter.setPen(QtGui.QColor(100, 100, 100))
             painter.drawText(
                 card_x, row_y, ANNOT_W, int(20 * SCALE),
-                QtCore.Qt.AlignmentFlag.AlignCenter, f"{peak.magnitude:.1f} dB",
+                QtCore.Qt.AlignmentFlag.AlignCenter, f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB",
             )
 
         painter.end()
@@ -964,7 +965,7 @@ def make_exportable_spectrum_view(
             painter.setPen(color)
             painter.drawText(
                 x_card + 4 * SCALE, y + 2 * SCALE, card_w - 8 * SCALE, 22 * SCALE,
-                QtCore.Qt.AlignmentFlag.AlignCenter, f"{peak.frequency:.1f} Hz",
+                QtCore.Qt.AlignmentFlag.AlignCenter, f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz",
             )
 
             # Swift: Text(peakModeLabel(for:)).font(.caption2).foregroundColor(peakColor(for:)).
@@ -983,7 +984,7 @@ def make_exportable_spectrum_view(
             painter.setPen(QtGui.QColor(100, 100, 100))
             painter.drawText(
                 x_card + 4 * SCALE, y + 44 * SCALE, card_w - 8 * SCALE, 18 * SCALE,
-                QtCore.Qt.AlignmentFlag.AlignCenter, f"{peak.magnitude:.1f} dB",
+                QtCore.Qt.AlignmentFlag.AlignCenter, f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB",
             )
 
             x_card += card_w + card_spacing

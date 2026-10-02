@@ -16,14 +16,13 @@ from __future__ import annotations
 # @parity view/peak-card
 # (The `combined_peak_mode_row_view.py` shim re-exports these under the Swift-aligned
 #  name; this module is the real implementation and carries the parity tag.)
-import csv
-import os
 
 import numpy as np
 import numpy.typing as npt
 import qtawesome as qta
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
 from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import pitch as pitch_c
@@ -171,7 +170,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._mode_btn.clicked.connect(self._open_mode_menu)
         r1.addWidget(self._mode_btn, 1)
 
-        self._freq_lbl = QtWidgets.QLabel(f"{self._freq:.1f} Hz")
+        self._freq_lbl = QtWidgets.QLabel(f"{fp.string(self._freq, fp.PEAK_FREQUENCY_HZ)} Hz")
         self._freq_lbl.setFont(_font(10, bold=True))
         self._freq_lbl.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
@@ -201,7 +200,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._qbw_lbl.setFont(_font(9))
         self._qbw_lbl.setStyleSheet("color: rgb(120,120,120);")
         r3.addWidget(self._qbw_lbl, 1)
-        self._mag_lbl = QtWidgets.QLabel(f"{self._mag_db:.1f} dB")
+        self._mag_lbl = QtWidgets.QLabel(f"{fp.string(self._mag_db, fp.PEAK_MAGNITUDE_DB)} dB")
         self._mag_lbl.setFont(_font(10, bold=True))
         self._mag_lbl.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
@@ -300,13 +299,13 @@ class PeakCardWidget(QtWidgets.QFrame):
     def _refresh_qbw(self) -> None:
         if self._q > 0:
             bw = self._freq / self._q
-            self._qbw_lbl.setText(f"Q: {self._q:.1f}  BW: {bw:.1f} Hz")
+            self._qbw_lbl.setText(f"Q: {fp.string(self._q, fp.Q_FACTOR)}  BW: {fp.string(bw, fp.BANDWIDTH_HZ)} Hz")
         else:
             self._qbw_lbl.setText("")
 
     def _refresh_mag(self) -> None:
         color = _mag_color(self._mag_db)
-        self._mag_lbl.setText(f"{self._mag_db:.1f} dB")
+        self._mag_lbl.setText(f"{fp.string(self._mag_db, fp.PEAK_MAGNITUDE_DB)} dB")
         self._mag_lbl.setStyleSheet(
             f"color: rgb({color.red()},{color.green()},{color.blue()});"
         )
@@ -474,7 +473,6 @@ class PeakListWidget(QtWidgets.QWidget):
         self._pitch = pitch_c.Pitch(440)
         self._is_held = False
         self._cards: list[PeakCardWidget] = []
-        self._saved_path: str = ""
 
         # Scroll area
         self._container = _CardContainer()
@@ -751,43 +749,6 @@ class PeakListWidget(QtWidgets.QWidget):
         if self.selected_freq > 0:
             self.select_row(self.selected_freq)
         return True
-
-    def save_peaks(self) -> None:
-        """Prompt for a path and write the peak table to a CSV file."""
-        if not self._saved_path:
-            self._saved_path = os.path.expanduser("~/Documents/GuitarTap")
-        filename, sel_filter = QtWidgets.QFileDialog.getSaveFileName(
-            self,
-            caption="Save Peaks to CSV",
-            directory=self._saved_path,
-            filter="Comma Separated Values (*.csv)",
-            initialFilter="Comma Separated Values (*.csv)",
-        )
-        if not filename or not sel_filter:
-            return
-        self._saved_path = os.path.dirname(filename)
-        n_rows = self.model.rowCount(QtCore.QModelIndex())
-        header = [
-            self.model.headerData(
-                col,
-                QtCore.Qt.Orientation.Horizontal,
-                QtCore.Qt.ItemDataRole.DisplayRole,
-            )
-            for col in range(self.model.columnCount(QtCore.QModelIndex()))
-        ]
-        try:
-            with open(filename, "w", encoding="utf-8-sig") as f:
-                writer = csv.writer(f, dialect="excel", lineterminator="\n")
-                writer.writerow(header)
-                for row in range(n_rows):
-                    writer.writerow(
-                        self.model.data_value(self.model.index(row, col))
-                        for col in range(len(header))
-                    )
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(
-                self, "Error saving peaks", f"Table was not saved\n{str(e)}"
-            )
 
     def restore_focus(self) -> None:
         """Give keyboard focus back to the list."""

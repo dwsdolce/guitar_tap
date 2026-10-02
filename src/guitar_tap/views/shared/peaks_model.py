@@ -9,6 +9,7 @@ import numpy.typing as npt
 from PySide6 import QtCore
 
 from guitar_tap.models import guitar_mode as gm
+from guitar_tap.models import field_precision as fp
 from guitar_tap.models import pitch as pitch_c
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
 from guitar_tap.views.utilities.extensions import formatted_as_frequency
@@ -353,12 +354,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """Return the magnitude value from the correct column for the row"""
         return self._data[index.row()][1]
 
-    def q_value(self, index: QtCore.QModelIndex) -> float:
-        """Return the Q factor for the row (0 if not available)."""
-        if self._data.shape[1] > 2:
-            return float(self._data[index.row()][2])
-        return 0.0
-
     # Material (plate/brace) mode label → RGB colour, matching Swift PeakAnnotations.swift
     _MATERIAL_MODE_COLORS: dict[str, tuple[int, int, int]] = {
         "Longitudinal": (50,  100, 220),   # blue
@@ -410,29 +405,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
             )
 
         rows.append(f'<span style="color:rgb(50,50,50);">{formatted_as_frequency(freq)}</span>')
-        rows.append(f'<span style="color:rgb(110,110,110);">{mag:.1f} dB</span>')
+        rows.append(f'<span style="color:rgb(110,110,110);">{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB</span>')
         return '<center>' + '<br/>'.join(rows) + '</center>'
-
-    def data_value(self, index: QtCore.QModelIndex) -> QtCore.QVariant:
-        """Return the value from the data for cols 1/2 and the value in
-        the table for 3/4.
-        """
-        match index.column():
-            case ColumnIndex.Show.value:
-                value = self.show_value(index)
-            case ColumnIndex.Freq.value:
-                value = self.freq_value(index)
-            case ColumnIndex.Mag.value:
-                value = self.magnitude_value(index)
-            case ColumnIndex.Q.value:
-                value = self.q_value(index)
-            case ColumnIndex.Pitch.value | ColumnIndex.Cents.value:
-                value = self.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
-            case ColumnIndex.Modes.value:
-                value = self.mode_value(index)
-            case _:
-                value = QtCore.QVariant()
-        return value
 
     def data(
         self, index: QtCore.QModelIndex, role: QtCore.Qt.ItemDataRole
@@ -444,17 +418,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 match index.column():
                     case ColumnIndex.Show.value:
                         str_value = ""
-                    case ColumnIndex.Freq.value:
-                        str_value = f"{self.freq_value(index):.1f}"
-                    case ColumnIndex.Mag.value:
-                        str_value = f"{self.magnitude_value(index):.1f}"
-                    case ColumnIndex.Q.value:
-                        q = self.q_value(index)
-                        str_value = f"{q:.0f}" if q > 0 else ""
-                    case ColumnIndex.Pitch.value:
-                        str_value = self.pitch.note(self.freq_value(index))
-                    case ColumnIndex.Cents.value:
-                        str_value = f"{self.pitch.cents(self.freq_value(index)):+.0f}"
                     case ColumnIndex.Modes.value:
                         str_value = self.mode_value(index)
                     case _:

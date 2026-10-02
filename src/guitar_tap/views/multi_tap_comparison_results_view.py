@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from guitar_tap.models import field_precision as fp
+
 if TYPE_CHECKING:
     from guitar_tap.models.tap_tone_measurement import TapEntry
 
@@ -230,4 +232,4 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         """
         if freq is None:
             return "\u2014"   # em dash
-        return f"{freq:.1f} Hz"
+        return f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz"

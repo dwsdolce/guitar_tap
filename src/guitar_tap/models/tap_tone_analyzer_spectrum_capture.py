@@ -54,6 +54,7 @@ from PySide6.QtCore import Slot
 from guitar_tap.utilities.logging import gt_log
 from guitar_tap.utilities.new_uuid import new_uuid
 
+from . import field_precision as fp
 from .detection_state import DetectionState
 
 
@@ -1624,7 +1625,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_material_tap_phase(_MTP.REVIEWING_LONGITUDINAL)
             self.detection_state = DetectionState.IDLE
             self._set_status_message(
-                f"fL: {avg_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
+                f"fL: {fp.string(avg_peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz \u2014 Accept to continue or Redo to re-tap"
             )
             # Show longitudinal overlay — mirrors Swift's @Published longitudinalSpectrum
             # causing materialSpectra to return [("Longitudinal (fL)", .blue, ...)] which
@@ -1723,7 +1724,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_material_tap_phase(_MTP.REVIEWING_CROSS)
             self.detection_state = DetectionState.IDLE
             self._set_status_message(
-                f"fC: {avg_peak.frequency:.1f} Hz \u2014 Accept to continue or Redo to re-tap"
+                f"fC: {fp.string(avg_peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz \u2014 Accept to continue or Redo to re-tap"
             )
 
         # Show longitudinal + cross overlays — mirrors Swift's @Published crossSpectrum
@@ -1803,7 +1804,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             self._set_material_tap_phase(_MTP.REVIEWING_FLC)
             self.detection_state = DetectionState.IDLE
             self._set_status_message(
-                f"fLC: {avg_peak.frequency:.1f} Hz \u2014 Accept to complete or Redo to re-tap"
+                f"fLC: {fp.string(avg_peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz \u2014 Accept to complete or Redo to re-tap"
             )
         # Show longitudinal + cross + FLC overlays — mirrors Swift's @Published flcSpectrum
         # causing materialSpectra to return L + C + FLC series (replaces primary curve).

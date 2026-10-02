@@ -886,8 +886,8 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         peak_rows: list[list] = [hdr_row]
         for peak in visible_peaks:
             note_str = peak.pitch_note or "\u2013"
-            freq_str = f"{peak.frequency:.1f} Hz"
-            mag_str  = f"{peak.magnitude:.1f} dB"
+            freq_str = f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz"
+            mag_str  = f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB"
             if is_guitar:
                 label, is_ovr = _effective_mode_label(peak)
                 # Color is override-aware too (matching the label): a predefined override → that
@@ -910,7 +910,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 )
                 peak_rows.append([freq_str, mag_str, note_str, mode_para])
             else:
-                q_str   = f"{peak.quality:.1f}"
+                q_str   = f"{fp.string(peak.quality, fp.Q_FACTOR)}"
                 role_para = _role_para(peak)
                 peak_rows.append([freq_str, mag_str, note_str, q_str, role_para])
 
@@ -950,7 +950,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 dc = colors.Color(0.45, 0.45, 0.45)
             boxes.append(_AnalysisBox(
                 title="Ring-Out Time",
-                value=f"{data.decay_time:.2f} s",
+                value=f"{fp.string(data.decay_time, fp.DECAY_TIME_S)} s",
                 subtitle="Time to decay 15 dB",
                 detail=decay_label,
                 detail_subtitle="Sustain quality",
@@ -964,7 +964,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             ratio_color = colors.HexColor(_ext.tap_tone_ratio_quality_color(ratio))
             boxes.append(_AnalysisBox(
                 title="Tap Tone Ratio",
-                value=f"{ratio:.2f} : 1",
+                value=f"{fp.string(ratio, fp.DECAY_RATIO)} : 1",
                 subtitle="Top / Air",
                 detail=ratio_label,
                 detail_color=ratio_color,
@@ -1006,7 +1006,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 ],
                 [
                     Paragraph(f"<font color='#737373'>Mass:</font>  <b>{fp.string(dims.mass_g, fp.MASS_G)} g</b>" if dims.mass_g else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{plate_props.density_kg_m3/1000:.3f} g/cm³</b>", S_BODY),
+                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{fp.string(plate_props.density_kg_m3/1000, fp.DENSITY_G_PER_CM3)} g/cm³</b>", S_BODY),
                     "",
                 ],
             ]
@@ -1069,7 +1069,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             gore_content = [
                 Paragraph("Gore Target Thickness", S_SMALL),
                 Spacer(1, 4),
-                Paragraph(f"{gore_thickness_mm:.2f} mm", S_GORE_VAL),
+                Paragraph(f"{fp.string(gore_thickness_mm, fp.GORE_THICKNESS_MM)} mm", S_GORE_VAL),
             ]
             gore_tbl = Table([[gore_content]])
             gore_tbl.setStyle(TableStyle([
@@ -1098,28 +1098,28 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             hex_c = f"#{int(qc.red*255):02x}{int(qc.green*255):02x}{int(qc.blue*255):02x}"
             return Paragraph(
                 f"<font color='#737373'>{label}:</font>  "
-                f"<b><font color='{hex_c}'>{value:.1f}</font></b>  "
+                f"<b><font color='{hex_c}'>{fp.string(value, fp.SPECIFIC_MODULUS)}</font></b>  "
                 f"<font color='{hex_c}' size='9'>({quality})</font>",
                 S_BODY,
             )
 
         left_col = [
-            _pprow("Speed of Sound (L)", f"{plate_props.c_long_m_s:.0f} m/s"),
+            _pprow("Speed of Sound (L)", f"{fp.string(plate_props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
             Spacer(1, 6),
-            _pprow("Speed of Sound (C)", f"{plate_props.c_cross_m_s:.0f} m/s"),
+            _pprow("Speed of Sound (C)", f"{fp.string(plate_props.c_cross_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
             Spacer(1, 6),
-            _pprow("Young’s Modulus (L)", f"{plate_props.youngsModulusLongGPa:.2f} GPa"),
+            _pprow("Young’s Modulus (L)", f"{fp.string(plate_props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
             Spacer(1, 6),
-            _pprow("Young’s Modulus (C)", f"{plate_props.youngsModulusCrossGPa:.2f} GPa"),
+            _pprow("Young’s Modulus (C)", f"{fp.string(plate_props.youngsModulusCrossGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
         ]
         right_col = [
             _qrow("Specific Modulus (L)", plate_props.specific_modulus_long, plate_props.quality_long),
             Spacer(1, 6),
             _qrow("Specific Modulus (C)", plate_props.specific_modulus_cross, plate_props.quality_cross),
             Spacer(1, 6),
-            _pprow("Radiation Ratio (L)", f"{plate_props.radiation_ratio_long:.1f}"),
+            _pprow("Radiation Ratio (L)", f"{fp.string(plate_props.radiation_ratio_long, fp.RADIATION_RATIO)}"),
             Spacer(1, 6),
-            _pprow("Radiation Ratio (C)", f"{plate_props.radiation_ratio_cross:.1f}"),
+            _pprow("Radiation Ratio (C)", f"{fp.string(plate_props.radiation_ratio_cross, fp.RADIATION_RATIO)}"),
         ]
         props_tbl = Table([[left_col, right_col]], colWidths=[CONTENT_W/2]*2)
         props_tbl.setStyle(TableStyle([
@@ -1133,19 +1133,19 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         story.append(Spacer(1, 10))
 
         if glc_pa is not None and glc_pa > 0:
-            story.append(_pprow("GLC (Shear Modulus)", f"{glc_pa/1e9:.3f} GPa"))
+            story.append(_pprow("GLC (Shear Modulus)", f"{fp.string(glc_pa/1e9, fp.SHEAR_MODULUS_GPA)} GPa"))
         else:
             story.append(Paragraph("GLC assumed 0 — fLC tap not performed", S_SMALL_I))
         story.append(Spacer(1, 10))
 
         ratio_tbl = Table([[
             [
-                _pprow("Cross/Long Ratio", f"{plate_props.cross_long_ratio:.3f}"),
+                _pprow("Cross/Long Ratio", f"{fp.string(plate_props.cross_long_ratio, fp.CROSS_LONG_RATIO)}"),
                 Spacer(1, 2),
                 Paragraph("typical: 0.04–0.08", S_SMALL_I),
             ],
             [
-                _pprow("Long/Cross Ratio", f"{plate_props.long_cross_ratio:.1f}"),
+                _pprow("Long/Cross Ratio", f"{fp.string(plate_props.long_cross_ratio, fp.LONG_CROSS_RATIO)}"),
                 Spacer(1, 2),
                 Paragraph("typical: 12–25", S_SMALL_I),
             ],
@@ -1200,7 +1200,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 ],
                 [
                     Paragraph(f"<font color='#737373'>Mass:</font>  <b>{fp.string(dims.mass_g, fp.MASS_G)} g</b>" if dims.mass_g else "", S_BODY),
-                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{brace_props.density_kg_m3/1000:.3f} g/cm³</b>", S_BODY),
+                    Paragraph(f"<font color='#737373'>Density:</font>  <b>{fp.string(brace_props.density_kg_m3/1000, fp.DENSITY_G_PER_CM3)} g/cm³</b>", S_BODY),
                     "",
                 ],
             ]
@@ -1234,20 +1234,20 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             hex_c = f"#{int(qc.red*255):02x}{int(qc.green*255):02x}{int(qc.blue*255):02x}"
             return Paragraph(
                 f"<font color='#737373'>{label}:</font>  "
-                f"<b><font color='{hex_c}'>{value:.1f}</font></b>  "
+                f"<b><font color='{hex_c}'>{fp.string(value, fp.SPECIFIC_MODULUS)}</font></b>  "
                 f"<font color='{hex_c}' size='9'>({quality})</font>",
                 S_BODY,
             )
 
         left_col = [
-            _pprow("Speed of Sound", f"{brace_props.c_long_m_s:.0f} m/s"),
+            _pprow("Speed of Sound", f"{fp.string(brace_props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s"),
             Spacer(1, 6),
-            _pprow("Young’s Modulus (E)", f"{brace_props.youngsModulusLongGPa:.2f} GPa"),
+            _pprow("Young’s Modulus (E)", f"{fp.string(brace_props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa"),
         ]
         right_col = [
             _qrow("Specific Modulus", brace_props.specific_modulus, brace_props.quality),
             Spacer(1, 6),
-            _pprow("Radiation Ratio", f"{brace_props.radiation_ratio:.1f}"),
+            _pprow("Radiation Ratio", f"{fp.string(brace_props.radiation_ratio, fp.RADIATION_RATIO)}"),
         ]
         props_tbl = Table([[left_col, right_col]], colWidths=[CONTENT_W/2]*2)
         props_tbl.setStyle(TableStyle([
@@ -1844,8 +1844,8 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
                 return Paragraph("\u2014", S_TCELL_DIM)
             # Overridden Averaged value: italic + " *" (mirrors Swift's overrideModes marking).
             if is_override:
-                return Paragraph(f"{hz:.1f} Hz *", S_TCELL_R_I)
-            return Paragraph(f"{hz:.1f} Hz", S_TCELL_R)
+                return Paragraph(f"{fp.string(hz, fp.PEAK_FREQUENCY_HZ)} Hz *", S_TCELL_R_I)
+            return Paragraph(f"{fp.string(hz, fp.PEAK_FREQUENCY_HZ)} Hz", S_TCELL_R)
 
         # Coloured dot mirrors Swift Circle().fill(row.color).frame(width: 8, height: 8).
         r8, g8, b8 = color_rgb

@@ -220,13 +220,13 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         tv  = QtWidgets.QVBoxLayout(txt)
         tv.setContentsMargins(0, 0, 0, 0)
         tv.setSpacing(0)
-        f_lbl = QtWidgets.QLabel(f"{freq:.1f} Hz")
+        f_lbl = QtWidgets.QLabel(f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz")
         f_fnt = QtGui.QFont()
         f_fnt.setBold(True)
         f_fnt.setPointSize(11)
         f_lbl.setFont(f_fnt)
         tv.addWidget(f_lbl)
-        m_lbl = QtWidgets.QLabel(f"{mag:.1f} dB")
+        m_lbl = QtWidgets.QLabel(f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB")
         m_fnt = QtGui.QFont()
         m_fnt.setPointSize(9)
         m_lbl.setFont(m_fnt)
@@ -272,13 +272,13 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         tv  = QtWidgets.QVBoxLayout(txt)
         tv.setContentsMargins(0, 0, 0, 0)
         tv.setSpacing(0)
-        f_lbl = QtWidgets.QLabel(f"{freq:.1f} Hz" if found else "\u2014")
+        f_lbl = QtWidgets.QLabel(f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz" if found else "\u2014")
         _f = QtGui.QFont(); _f.setBold(True); _f.setPointSize(11)
         f_lbl.setFont(_f)
         if not found:
             f_lbl.setStyleSheet("color: palette(shadow);")
         tv.addWidget(f_lbl)
-        m_lbl = QtWidgets.QLabel(f"{mag:.1f} dB" if mag is not None else "\u2014")
+        m_lbl = QtWidgets.QLabel(f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB" if mag is not None else "\u2014")
         _m = QtGui.QFont(); _m.setPointSize(9)
         m_lbl.setFont(_m)
         m_lbl.setStyleSheet("color: palette(shadow);")
@@ -2458,7 +2458,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._gs_ro_quality.setText("")
             return
         self._gs_ro_sub.setText(f"\u2013{int(self.fft_canvas.analyzer.decay_threshold)} dB")
-        self._show_summary_value(self._gs_ro_value, self._gs_ro_sub, f"{time_s:.2f}s", "Waiting\u2026")
+        self._show_summary_value(self._gs_ro_value, self._gs_ro_sub, f"{fp.string(time_s, fp.DECAY_TIME_S)}s", "Waiting\u2026")
         gt = TDS.measurement_type().guitar_type or _GTy.GENERIC
         self._gs_ro_quality.setText(_ext.decay_quality_label(time_s, gt))
         self._gs_ro_quality.setStyleSheet(f"color: {_ext.decay_quality_color(time_s, gt)};")
@@ -2479,7 +2479,7 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 level = self.fft_canvas.analyzer.mic.display_level_db
                 self._sb_avg_lbl.setText(f"{fp.string(level, fp.PEAK_MAGNITUDE_DB)} dB")
-            self._sb_peak_lbl.setText(f"Peak: {peak_text} dB @ {peak_hz:.1f} Hz")
+            self._sb_peak_lbl.setText(f"Peak: {peak_text} dB @ {fp.string(peak_hz, fp.PEAK_FREQUENCY_HZ)} Hz")
 
     def _sb_update_frozen_state(self, frozen: bool) -> None:
         if frozen:
@@ -2540,7 +2540,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Mirrors TapAnalysisResultsView.swift:550,620.
         """
         if ratio is not None:
-            self._show_summary_value(self._gs_ratio_value, self._gs_ratio_sub, f"{ratio:.2f}:1", "Need Air & Top")
+            self._show_summary_value(self._gs_ratio_value, self._gs_ratio_sub, f"{fp.string(ratio, fp.DECAY_RATIO)}:1", "Need Air & Top")
             self._gs_ratio_quality.setText(_ext.tap_tone_ratio_quality_label(ratio))
             self._gs_ratio_quality.setStyleSheet(
                 f"color: {_ext.tap_tone_ratio_quality_color(ratio)};")
@@ -3865,14 +3865,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def _populate_brace_section(self, props: PA.BraceProperties) -> None:
         """Fill the brace material properties sub-section and make it visible.
         fL is an input (shown in the peak list), not repeated here as a subtitle."""
-        self._brace_c_long.setText(f"{props.c_long_m_s:.0f} m/s")
-        self._brace_E_long.setText(f"{props.youngsModulusLongGPa:.2f} GPa")
+        self._brace_c_long.setText(f"{fp.string(props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s")
+        self._brace_E_long.setText(f"{fp.string(props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa")
         color = PA.WoodQuality(props.quality).color
-        self._brace_spec_value.setText(f"{props.specific_modulus:.1f}")
+        self._brace_spec_value.setText(f"{fp.string(props.specific_modulus, fp.SPECIFIC_MODULUS)}")
         self._brace_spec_value.setStyleSheet(f"color: {color};")
         self._brace_quality_lbl.setText(props.quality)
         self._brace_quality_lbl.setStyleSheet(f"color: {color};")
-        self._brace_rad_ratio.setText(f"{props.radiation_ratio:.1f}")
+        self._brace_rad_ratio.setText(f"{fp.string(props.radiation_ratio, fp.RADIATION_RATIO)}")
         self._brace_placeholder.setVisible(False)
         self._brace_content.setVisible(True)
         self._brace_section.setVisible(True)
@@ -3887,31 +3887,31 @@ class MainWindow(QtWidgets.QMainWindow):
         not repeated here.
         """
         # Properties (title + L: val  C: val format)
-        self._plate_c_long.setText(f"L: {props.c_long_m_s:.0f} m/s")
-        self._plate_c_cross.setText(f"C: {props.c_cross_m_s:.0f} m/s")
-        self._plate_E_long.setText(f"L: {props.youngsModulusLongGPa:.2f} GPa")
-        self._plate_E_cross.setText(f"C: {props.youngsModulusCrossGPa:.2f} GPa")
+        self._plate_c_long.setText(f"L: {fp.string(props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s")
+        self._plate_c_cross.setText(f"C: {fp.string(props.c_cross_m_s, fp.SPEED_OF_SOUND_MS)} m/s")
+        self._plate_E_long.setText(f"L: {fp.string(props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa")
+        self._plate_E_cross.setText(f"C: {fp.string(props.youngsModulusCrossGPa, fp.YOUNGS_MODULUS_GPA)} GPa")
         # G_LC from props.gore_shear_modulus (mirrors Swift props.goreShearModulus)
         glc_pa = props.gore_shear_modulus
         if glc_pa is not None and glc_pa > 0:
-            self._plate_glc_val.setText(f"{glc_pa / 1e9:.3f} GPa")
+            self._plate_glc_val.setText(f"{fp.string(glc_pa / 1e9, fp.SHEAR_MODULUS_GPA)} GPa")
             self._plate_glc_widget.setVisible(True)
         else:
             self._plate_glc_widget.setVisible(False)
         cl = PA.WoodQuality(props.quality_long).color
         cc = PA.WoodQuality(props.quality_cross).color
-        self._plate_spec_long_value.setText(f"{props.specific_modulus_long:.1f}")
+        self._plate_spec_long_value.setText(f"{fp.string(props.specific_modulus_long, fp.SPECIFIC_MODULUS)}")
         self._plate_spec_long_value.setStyleSheet(f"color: {cl};")
         self._plate_quality_long.setText(props.quality_long)
         self._plate_quality_long.setStyleSheet(f"color: {cl};")
-        self._plate_spec_cross_value.setText(f"{props.specific_modulus_cross:.1f}")
+        self._plate_spec_cross_value.setText(f"{fp.string(props.specific_modulus_cross, fp.SPECIFIC_MODULUS)}")
         self._plate_spec_cross_value.setStyleSheet(f"color: {cc};")
         self._plate_quality_cross.setText(props.quality_cross)
         self._plate_quality_cross.setStyleSheet(f"color: {cc};")
-        self._plate_rad_long.setText(f"L: {props.radiation_ratio_long:.1f}")
-        self._plate_rad_cross.setText(f"C: {props.radiation_ratio_cross:.1f}")
-        self._plate_cross_long.setText(f"{props.cross_long_ratio:.3f}")
-        self._plate_long_cross.setText(f"{props.long_cross_ratio:.1f}")
+        self._plate_rad_long.setText(f"L: {fp.string(props.radiation_ratio_long, fp.RADIATION_RATIO)}")
+        self._plate_rad_cross.setText(f"C: {fp.string(props.radiation_ratio_cross, fp.RADIATION_RATIO)}")
+        self._plate_cross_long.setText(f"{fp.string(props.cross_long_ratio, fp.CROSS_LONG_RATIO)}")
+        self._plate_long_cross.setText(f"{fp.string(props.long_cross_ratio, fp.LONG_CROSS_RATIO)}")
         cov = PA.WoodQuality(props.overall_quality).color
         self._plate_overall_quality.setText(props.overall_quality)
         self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
@@ -3939,7 +3939,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if _thickness_mm is not None and _thickness_mm > 0:
                 # Just the target-thickness result \u2014 the body inputs live in the Body Dimensions box
                 # above and GLC among the moduli below (mirrors Swift's trimmed Gore box).
-                self._gore_thickness_value.setText(f"{_thickness_mm:.2f}")
+                self._gore_thickness_value.setText(f"{fp.string(_thickness_mm, fp.GORE_THICKNESS_MM)}")
                 self._gore_section.setVisible(True)
             else:
                 self._gore_section.setVisible(False)
@@ -6001,7 +6001,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             if L > 0 and W > 0 and T > 0 and m > 0:
                 density = m / ((L / 10) * (W / 10) * (T / 10))
-                plate_density_lbl.setText(f"{density:.3f} g/cm³")
+                plate_density_lbl.setText(f"{fp.string(density, fp.DENSITY_G_PER_CM3)} g/cm³")
             else:
                 plate_density_lbl.setText("—")
 
@@ -6162,7 +6162,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             if L > 0 and W > 0 and T > 0 and m > 0:
                 density = m / ((L / 10) * (W / 10) * (T / 10))
-                brace_density_lbl.setText(f"{density:.3f} g/cm³")
+                brace_density_lbl.setText(f"{fp.string(density, fp.DENSITY_G_PER_CM3)} g/cm³")
             else:
                 brace_density_lbl.setText("—")
 
@@ -6320,8 +6320,8 @@ class MainWindow(QtWidgets.QMainWindow):
             AS.AppSettings.set_db_max(y_range[1])
             disp_f_min_field.setText(fp.string(x_range[0], fp.FREQUENCY_HZ))
             disp_f_max_field.setText(fp.string(x_range[1], fp.FREQUENCY_HZ))
-            disp_db_min_field.setText(f"{y_range[0]:.1f}")
-            disp_db_max_field.setText(f"{y_range[1]:.1f}")
+            disp_db_min_field.setText(f"{fp.string(y_range[0], fp.MAGNITUDE_DB)}")
+            disp_db_max_field.setText(f"{fp.string(y_range[1], fp.MAGNITUDE_DB)}")
 
         save_view_btn.clicked.connect(_save_current_view)
         dg.addWidget(save_view_btn)
@@ -6337,8 +6337,8 @@ class MainWindow(QtWidgets.QMainWindow):
             mt_val = MT.MeasurementType(meas_type_combo.currentText())
             disp_f_min_field.setText(str(AS.AppSettings.default_f_min(mt_val)))
             disp_f_max_field.setText(str(AS.AppSettings.default_f_max(mt_val)))
-            disp_db_min_field.setText(f"{AS.AppSettings.default_db_min():.1f}")
-            disp_db_max_field.setText(f"{AS.AppSettings.default_db_max():.1f}")
+            disp_db_min_field.setText(f"{fp.string(AS.AppSettings.default_db_min(), fp.MAGNITUDE_DB)}")
+            disp_db_max_field.setText(f"{fp.string(AS.AppSettings.default_db_max(), fp.MAGNITUDE_DB)}")
 
         reset_disp_btn.clicked.connect(_reset_display_defaults)
         dg.addWidget(reset_disp_btn)
@@ -6528,7 +6528,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _update_sr_lbl(combo_idx: int) -> None:
             if 0 <= combo_idx < len(input_devices):
-                sr_val.setText(f"{input_devices[combo_idx].sample_rate:.0f} Hz")
+                sr_val.setText(_ext.formatted_as_whole_hertz(input_devices[combo_idx].sample_rate))
             else:
                 sr_val.setText("")
 

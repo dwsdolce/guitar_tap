@@ -119,7 +119,7 @@ class MaterialDimensionsEditor(QtWidgets.QWidget):
         self._on_changed()
 
     def _update_density(self, mi) -> None:
-        self._density_lbl.setText(f"{mi.dimensions.density_g_per_cm3():.3f} g/cm³")
+        self._density_lbl.setText(f"{fp.string(mi.dimensions.density_g_per_cm3(), fp.DENSITY_G_PER_CM3)} g/cm³")
 
     def seed(self) -> None:
         """Refresh the field text from the current inputs. Called when the measurement itself changes

@@ -21,6 +21,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import TapToneMeasurement
+from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as GM
 from guitar_tap.models import guitar_type as GT
 from guitar_tap.utilities.date_format import format_display_datetime
@@ -174,9 +175,9 @@ class MeasurementRowView(QtWidgets.QWidget):
             parts: list[str] = [f"{len(m.peaks)} peaks"]
             ratio = tap_tone_ratio(m)
             if ratio is not None:
-                parts.append(f"Ratio: {ratio:.2f}")
+                parts.append(f"Ratio: {fp.string(ratio, fp.DECAY_RATIO)}")
             if m.decay_time is not None:
-                parts.append(f"Decay: {m.decay_time:.2f}s")
+                parts.append(f"Decay: {fp.string(m.decay_time, fp.DECAY_TIME_S)}s")
             meta = QtWidgets.QLabel("  •  ".join(parts))
         meta.setStyleSheet("color: #888888; font-size: 10px;")
         content.addWidget(meta)

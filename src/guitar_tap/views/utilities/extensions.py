@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
+
+from guitar_tap.models import field_precision as fp
 
 if TYPE_CHECKING:
     from guitar_tap.models.guitar_type import GuitarType
@@ -88,11 +90,11 @@ def tap_tone_ratio_quality_color(ratio: float) -> str:
 
 
 def formatted_as_frequency(hz: float) -> str:
-    """A frequency for display: one decimal, in kHz from 1000 Hz ("440.0 Hz", "2.5 kHz"). Mirrors Swift
-    Float.formattedAsFrequency()."""
+    """A frequency for display: in kHz from 1000 Hz, with ``PEAK_FREQUENCY_HZ``'s decimals ("440.0 Hz",
+    "2.5 kHz"). Mirrors Swift Float.formattedAsFrequency()."""
     if hz >= 1000:
-        return f"{hz / 1000:.1f} kHz"
-    return f"{hz:.1f} Hz"
+        return f"{fp.string(hz / 1000, fp.PEAK_FREQUENCY_HZ)} kHz"
+    return f"{fp.string(hz, fp.PEAK_FREQUENCY_HZ)} Hz"
 
 
 def display_range_label(min_freq: float, max_freq: float) -> str:
@@ -100,6 +102,12 @@ def display_range_label(min_freq: float, max_freq: float) -> str:
     ``formatted_as_frequency`` (e.g. ``"Showing 25.0 Hz - 45.0 Hz"``). Mirrors Swift
     displayRangeLabel(minFreq:maxFreq:)."""
     return f"Showing {formatted_as_frequency(min_freq)} - {formatted_as_frequency(max_freq)}"
+
+
+def formatted_as_whole_hertz(hz: float, locale: "QtCore.QLocale | None" = None) -> str:
+    """A sample rate or bandwidth for display: whole hertz, grouped by the locale's separator
+    ("48,000 Hz"; "48.000 Hz" in German). Mirrors Swift formattedAsWholeHertz(_:locale:)."""
+    return f"{(locale or QtCore.QLocale()).toString(int(fp.rounded(hz, 0)))} Hz"
 
 
 def vsep() -> QtWidgets.QFrame:
