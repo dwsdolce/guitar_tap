@@ -15,6 +15,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -23,7 +24,7 @@ from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer  # noqa:
 sys.path.insert(0, os.path.dirname(__file__))
 
 from gated_signal import gated_magnitude_at, make_gated_test_signal  # noqa: E402
-from parity_oracle import TOLERANCES, calibration, gated  # noqa: E402
+from parity_oracle import ORACLE, TOLERANCES, calibration, gated  # noqa: E402
 
 # The cross-edition tolerance for gated-FFT dB, from the oracle.
 TOL: float = TOLERANCES["gatedFftDb"]
@@ -65,23 +66,16 @@ def _check(name: str) -> None:
 class TestGatedFFTParity:
     """Mirrors Swift GatedFFTParityTests."""
 
-    def test_GFFT1_single_tone_matches_oracle(self):
-        """GFFT1: a single tone."""
-        _check("GFFT1")
-
-    def test_GFFT2_two_tones_match_oracle(self):
-        """GFFT2: two tones at the plate-C capture frequencies that once exposed a discrepancy."""
-        _check("GFFT2")
-
-    def test_GFFT3_bin_centred_two_tones_match_oracle(self):
-        """GFFT3: two tones whose frequencies are exact bin centres (bins 46 and 80 at 32768 points).
-
-        Being bin centres does NOT remove leakage here: the window spans the padded 32768 samples and
-        the signal only the first 19200, so no tone is periodic in the window. The 67 Hz tone reads
-        differently here from GFFT5, where it is alone — that difference is leakage from the 117 Hz
-        tone.
-        """
-        _check("GFFT3")
+    # Every oracle case with tones, by its id — the list is the oracle's, shared by the three editions.
+    # The oracle's tone cases: GFFT1, a single tone; GFFT2, two tones at the plate-C capture
+    # frequencies that once exposed a discrepancy; GFFT3, two tones at exact bin centres (bins 46 and 80 at 32768
+    # points) — being bin centres does NOT remove leakage here: the window spans the padded 32768 samples and the
+    # signal only the first 19200, so no tone is periodic in the window, and the 67 Hz tone reads differently here
+    # from GFFT5, where it is alone; GFFT5, one bin-centred tone, which pins the window's normalisation (Swift's
+    # HANN_NORM instead of HANN_DENORM would read about 4.26 dB high).
+    @pytest.mark.parametrize("name", sorted(k for k, v in ORACLE["gatedFft"].items() if v.get("tones")))
+    def test_tone_case_matches_oracle(self, name):
+        _check(name)
 
     def test_GFFT4_silence_is_minus_infinity_in_every_bin(self):
         """GFFT4: silence reads exactly the oracle's value — -inf in every bin.
@@ -94,11 +88,6 @@ class TestGatedFFTParity:
         expected = float(gated("GFFT4")["maxDb"])
         max_mag = float(max(mags))
         assert max_mag == expected, f"silence must read {expected} dB, got {max_mag}"
-
-    def test_GFFT5_bin_centred_single_tone_matches_oracle(self):
-        """GFFT5: one bin-centred tone. Pins the window's normalisation: Swift's HANN_NORM instead of
-        HANN_DENORM would read about 4.26 dB high."""
-        _check("GFFT5")
 
     def test_gated_window_is_the_periodic_hann(self):
         """The window is the PERIODIC Hann, 0.5·(1 − cos 2πn/N).

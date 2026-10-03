@@ -1,0 +1,203 @@
+{
+ "slug": "test/file-playback",
+ "about": "What each file-playback regression case checks. A case plays its oracle entry (parity-oracle.json filePlayback: fixture, calibration, settings) — or the fixture named here — through the app's file-playback path, then runs its checks. Check kinds: measurementComplete; materialPhaseComplete; capturedTaps / tapEntries (count); peaks — for each role, the identified peak (material: the selected fL / fC / fLC; guitar: the peak for the mode) against the oracle's 'expected' list, comparing 'fields'; perTapPeaks — each tap entry's peaks by role against the oracle's perTap rows; ringOut — the ring-out against the oracle's ringOutSec; phasesCaptured — how many of the material phases produced a spectrum; noiseFloorBetween — the noise-floor estimate, exclusive bounds. Tolerances are the oracle's: Swift, which mints the oracle, asserts at selfTolerances (zero), the others at the cross-edition tolerances.",
+ "cases": [
+  {
+   "id": "REG-B1",
+   "oracle": "REG-B1",
+   "note": "brace, one tap",
+   "checks": [
+    {
+     "kind": "materialPhaseComplete"
+    },
+    {
+     "kind": "measurementComplete"
+    },
+    {
+     "kind": "peaks",
+     "expected": "peaks",
+     "roles": [
+      "longitudinal"
+     ],
+     "fields": [
+      "frequency",
+      "magnitude",
+      "q"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "REG-B2",
+   "oracle": "REG-B2",
+   "note": "brace, three taps averaged: the peak comes off the averaged spectrum, not the last tap (the taps differ by ~6 dB)",
+   "checks": [
+    {
+     "kind": "materialPhaseComplete"
+    },
+    {
+     "kind": "measurementComplete"
+    },
+    {
+     "kind": "peaks",
+     "expected": "peaks",
+     "roles": [
+      "longitudinal"
+     ],
+     "fields": [
+      "frequency",
+      "magnitude",
+      "q"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "REG-G1",
+   "oracle": "REG-G1",
+   "note": "generic guitar, one tap",
+   "checks": [
+    {
+     "kind": "measurementComplete"
+    },
+    {
+     "kind": "capturedTaps",
+     "count": 1
+    },
+    {
+     "kind": "peaks",
+     "expected": "peaks",
+     "roles": [
+      "air",
+      "top",
+      "back"
+     ],
+     "fields": [
+      "frequency",
+      "magnitude"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "REG-G",
+   "oracle": "REG-G1",
+   "note": "the ring-out of REG-G1's tap, on the audio clock",
+   "checks": [
+    {
+     "kind": "ringOut"
+    }
+   ]
+  },
+  {
+   "id": "REG-G2",
+   "oracle": "REG-G2",
+   "note": "generic guitar, eight taps: the averaged peaks and every tap's",
+   "checks": [
+    {
+     "kind": "measurementComplete"
+    },
+    {
+     "kind": "tapEntries",
+     "count": 8
+    },
+    {
+     "kind": "peaks",
+     "expected": "averagedPeaks",
+     "roles": [
+      "air",
+      "top",
+      "back"
+     ],
+     "fields": [
+      "frequency",
+      "magnitude"
+     ]
+    },
+    {
+     "kind": "perTapPeaks",
+     "roles": [
+      "air",
+      "top",
+      "back"
+     ],
+     "fields": [
+      "frequency",
+      "magnitude"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "REG-P1",
+   "oracle": "REG-P1",
+   "note": "plate, a full session through all three phases",
+   "checks": [
+    {
+     "kind": "materialPhaseComplete"
+    },
+    {
+     "kind": "measurementComplete"
+    },
+    {
+     "kind": "peaks",
+     "expected": "peaks",
+     "roles": [
+      "longitudinal",
+      "cross",
+      "flc"
+     ],
+     "fields": [
+      "frequency",
+      "magnitude",
+      "q"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "REG-P2",
+   "oracle": "REG-P2",
+   "note": "plate, three taps per phase averaged",
+   "checks": [
+    {
+     "kind": "materialPhaseComplete"
+    },
+    {
+     "kind": "measurementComplete"
+    },
+    {
+     "kind": "peaks",
+     "expected": "peaks",
+     "roles": [
+      "longitudinal",
+      "cross",
+      "flc"
+     ],
+     "fields": [
+      "frequency",
+      "magnitude",
+      "q"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "OUT-4",
+   "oracle": "REG-P1",
+   "fixture": "plate-umik-1-noisy-52.wav",
+   "note": "REG-P1's session with noise raising its floor to -52 dBFS, above the tap threshold: an absolute detector captures nothing, the noise-floor-relative one all three phases; the floor must have converged (pinned near -100 would mean relative detection is off). Peak values are not compared — the noise moves them.",
+   "checks": [
+    {
+     "kind": "phasesCaptured",
+     "count": 3
+    },
+    {
+     "kind": "noiseFloorBetween",
+     "min": -60,
+     "max": -40
+    }
+   ]
+  }
+ ]
+}

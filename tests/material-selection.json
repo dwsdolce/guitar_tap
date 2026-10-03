@@ -1,0 +1,14 @@
+{
+ "slug": "test/material-selection",
+ "about": "A material (plate / brace) measurement's effective selection ignores the saved selection — the heal for an iPad save that clobbered it. Each case: a fixture, and what it holds and resolves to. Expected values are Swift's.",
+ "cases": [
+  {
+   "fixture": "plate-umik-1-3-tap-swift-ipad-1784314709",
+   "isMaterial": true,
+   "peakCount": 3,
+   "savedSelectionCount": 1,
+   "effectiveSelectionCount": 3,
+   "note": "a genuine iPad plate whose saved selection holds only the cross peak; the effective selection is all three peaks"
+  }
+ ]
+}

@@ -10,6 +10,7 @@ Swift's; Swift PDFReportTests and the web suite have the same cases and the same
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import unicodedata
@@ -27,27 +28,10 @@ from guitar_tap.views import tap_analysis_results_view as reports
 
 TESTS = os.path.dirname(__file__)
 
-# Each fixture, through the report its kind uses.
-FIXTURES = [
-    "5-guitar-comparison-1776708138",
-    "annotation-override-1790037028",
-    "annotation-override-python-1790037332",
-    "brace-umik-1-3-tap-swift-mac-1785359380",
-    "brace-umik-1-python-mac-1785442624",
-    "brace-umik-1-swift-mac-1785359411",
-    "comparison-long-name-1776708138",
-    "contreras-classical-1774731564",
-    "dws-2024-umik-1-3-tap-swift-mac-1785359425",
-    "dws-2024-umik-1-3-tap-web-mac-1785440737",
-    "dws-2024-umik-1-python-mac-1784225140",
-    "dws-2024-umik-1-swift-mac-1784225155",
-    "dws-2024-umik-1-swift-mac-1785359434",
-    "dws-2024-umik-1-web-mac-1784225174",
-    "plate-umik-1-3-tap-swift-ipad-1784314709",
-    "plate-umik-1-3-tap-swift-mac-1785359465",
-    "plate-umik-1-swift-mac-1785359486",
-    "plate-umik-1-web-mac-1785440769",
-]
+# The shared cases: each fixture, through the report its kind uses, and the baseline tolerance.
+with open(os.path.join(TESTS, "pdf-report.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
+FIXTURES = DATA["fixtures"]
 
 
 def lines_of(path: str) -> list[tuple[int, float, str]]:
@@ -119,5 +103,5 @@ def test_report_matches_the_expected_lines(fixture, tmp_path):
                + "\n--- expected\n" + "\n".join(map(show, expected)))
     assert len(actual) == len(expected), f"line count {len(actual)} != {len(expected)}\n{listing}"
     for a, e in zip(actual, expected):
-        assert (a[0] == e[0] and abs(a[1] - e[1]) <= 1 and squeezed([a[2]]) == squeezed([e[2]])), (
+        assert (a[0] == e[0] and abs(a[1] - e[1]) <= DATA["baselineTolerance"] and squeezed([a[2]]) == squeezed([e[2]])), (
             f"{show(a)} != expected {show(e)}\n{listing}")

@@ -6,6 +6,7 @@ peak summary, 2138 without — and states 144 pixels per inch, so a viewer that 
 
 from __future__ import annotations
 
+import json
 import os
 import struct
 import sys
@@ -21,12 +22,9 @@ from guitar_tap.views import tap_analysis_results_view as reports
 
 TESTS = os.path.dirname(__file__)
 
-# Each fixture and the image it exports: pixels wide and high, and pixels per inch.
-CASES = [
-    ("plate-umik-1-3-tap-swift-ipad-1784314709", 2928, 2376, 144),
-    ("dws-2024-umik-1-swift-mac-1785359434", 2928, 2376, 144),
-    ("5-guitar-comparison-1776708138", 2928, 2138, 144),
-]
+# The shared cases: each fixture and the image it exports — pixels wide and high, and pixels per inch.
+with open(os.path.join(TESTS, "spectrum-export.json"), encoding="utf-8") as _f:
+    CASES = [tuple(c) for c in json.load(_f)["cases"]]
 
 
 def png_size_and_ppi(png: bytes) -> tuple[int, int, int | None]:

@@ -1,0 +1,14 @@
+{
+ "slug": "test/peak-heal",
+ "about": "Duplicate peaks are healed on decode: a fixture holding a bit-identical twin decodes with no two peaks closer than 'proximityHz' (findPeaks' own spacing, so any closer pair is corruption), the surviving twin is the selected one, nothing dangles, and the heal is reported but never saved. Expected values are Swift's.",
+ "cases": [
+  {
+   "fixture": "dws-2024-umik-1-swift-mac-1784225155",
+   "peakCount": 49,
+   "twinHz": 240.1017,
+   "twinTolerance": 0.01,
+   "note": "50 peaks saved, one a bit-identical twin at 240.10170 Hz",
+   "proximityHz": 2
+  }
+ ]
+}

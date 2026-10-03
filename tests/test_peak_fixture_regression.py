@@ -41,11 +41,9 @@ MAX_HZ = 2000.0
 PEAK_PROXIMITY_HZ = 2.0
 TOL = 1e-3
 
-FIXTURES = [
-    "dws-2024-umik-1-swift-mac-1784225155.guitartap",
-    "dws-2024-umik-1-python-mac-1784225140.guitartap",
-    "dws-2024-umik-1-web-mac-1784225174.guitartap",
-]
+# The fixtures are the shared expected file's keys, so the three editions run the same list.
+with open(os.path.join(os.path.dirname(__file__), "peak-baseline-expected.json"), encoding="utf-8") as _fh:
+    FIXTURES = sorted(json.load(_fh))
 
 
 def _mode_token(mode) -> str:
