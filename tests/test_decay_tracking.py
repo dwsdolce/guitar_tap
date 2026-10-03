@@ -10,6 +10,7 @@ audio-clock seconds; no audio hardware or real timing is involved.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -58,32 +59,26 @@ def _measure(entries, tap_time: float, threshold: "float | None" = None):
     return sut.measure_decay_time(tap_time)
 
 
+with open(os.path.join(os.path.dirname(__file__), "decay-tracking.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
+
+
+def test_default_threshold():
+    assert _make_sut().decay_threshold == DATA["defaultThreshold"]
+
+
+@pytest.mark.parametrize("row", DATA["measureDecayTime"], ids=lambda r: r["id"])
+def test_measure_decay_time(row):
+    """measure_decay_time on given histories — the shared cases in ``decay-tracking.json`` (DK1–DK5, DK8–DK10)."""
+    t = _measure(_history(row["magnitudes"], row["interval"], row["start"]), row["tapTime"], row.get("threshold"))
+    if row["expect"] is None:
+        assert t is None
+    else:
+        assert t == pytest.approx(row["expect"], abs=DATA["tolerance"])
+
+
 class TestDecayTracking:
     """Mirrors Swift DecayTrackingTests."""
-
-    # ── measure_decay_time ─────────────────────────────────────────────────────────────────────
-
-    def test_DK1_empty_history_returns_none(self):
-        """DK1: An empty history measures nothing."""
-        assert _measure([], 0.0) is None
-
-    def test_DK2_all_samples_before_tap_returns_none(self):
-        """DK2: Every entry before the tap — nothing to measure after it."""
-        assert _measure(_history([-20, -25, -30, -35, -40, -50], start=-1.0), 0.0) is None
-
-    def test_DK3_signal_never_decays_returns_none(self):
-        """DK3: The level never drops by the threshold (30 dB here; it falls 5 dB)."""
-        assert _measure(_history([-20, -22, -24, -25, -25, -25, -25]), 0.0, threshold=30.0) is None
-
-    def test_DK4_normal_decay_is_timed_from_peak_to_crossing(self):
-        """DK4: Peak -10 at 0 s; target -30 (20 dB); the first entry below it is -31 at 0.5 s."""
-        t = _measure(_history([-10, -15, -20, -24, -28, -31, -35]), 0.0, threshold=20.0)
-        assert t == pytest.approx(0.5, abs=EXACT)
-
-    def test_DK5_immediate_decay_is_the_next_entry(self):
-        """DK5: Peak -10 at 0 s; target -20 (10 dB); the very next entry, -21 at 0.1 s, crosses."""
-        t = _measure(_history([-10, -21, -30, -40]), 0.0, threshold=10.0)
-        assert t == pytest.approx(0.1, abs=EXACT)
 
     # ── tracking, driven through production ────────────────────────────────────────────────────
 
@@ -107,24 +102,6 @@ class TestDecayTracking:
             sut._on_chunk_level(-50.0, 0.05 * k)
         assert not sut.is_tracking_decay, "a new sequence stops the ring-out tracking"
         assert sut.current_decay_time is None, "no ring-out is measured from the previous tap"
-
-    # ── measure_decay_time, continued ──────────────────────────────────────────────────────────
-
-    def test_DK8_default_threshold_is_15_db(self):
-        """DK8: The threshold is 15 dB unless set: peak -10 at 0 s; target -25; -26 at 0.3 s crosses."""
-        assert _make_sut().decay_threshold == 15
-        assert _measure(_history([-10, -12, -20, -26, -40]), 0.0) == pytest.approx(0.3, abs=EXACT)
-
-    def test_DK9_rising_transient_is_timed_from_the_peak(self):
-        """DK9: Timed from the post-tap PEAK, not the tap: the level rises to -8 at 0.1 s; target -23;
-        -24 at 0.3 s crosses -> 0.2 s."""
-        assert _measure(_history([-12, -8, -15, -24, -40]), 0.0) == pytest.approx(0.2, abs=EXACT)
-
-    def test_DK10_pre_tap_entries_are_ignored(self):
-        """DK10: An entry before the tap is ignored even when it is loudest: -30 at -0.1 s is skipped;
-        peak -10 at 0 s; -26 at 0.2 s crosses."""
-        t = _measure(_history([-30, -10, -20, -26], start=-0.1), 0.0)
-        assert t == pytest.approx(0.2, abs=EXACT)
 
     # ── tracking, continued ────────────────────────────────────────────────────────────────────
 

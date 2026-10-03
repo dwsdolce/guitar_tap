@@ -1,0 +1,196 @@
+{
+ "slug": "test/settings-store",
+ "about": "The display-range settings: each measurement type's default frequency range; a Settings range field's entered value (an untouched field keeps the exact stored value); and validation of an entered range — each bound clamped (1 Hz–5 kHz, -120–20 dB), at least 10 apart, else the saved range. 'saved' is the range stored before validating, where a case needs one. Measurement types are Swift's case names. The store's read and write cases stay as code (each edition persists differently). Expected values are Swift's. enteredValue rows: [text shown, stored, decimals, expected or null].",
+ "defaults": [
+  [
+   "generic",
+   75,
+   350
+  ],
+  [
+   "acoustic",
+   75,
+   350
+  ],
+  [
+   "classical",
+   75,
+   350
+  ],
+  [
+   "flamenco",
+   75,
+   350
+  ],
+  [
+   "plate",
+   20,
+   200
+  ],
+  [
+   "brace",
+   30,
+   1000
+  ]
+ ],
+ "enteredValue": [
+  [
+   "23",
+   23.37,
+   0,
+   23.37
+  ],
+  [
+   "30",
+   23.37,
+   0,
+   30
+  ],
+  [
+   "abc",
+   23.37,
+   0,
+   null
+  ]
+ ],
+ "validateFrequencyRange": [
+  {
+   "input": [
+    200,
+    3000
+   ],
+   "expect": [
+    200,
+    3000
+   ]
+  },
+  {
+   "input": [
+    0,
+    3000
+   ],
+   "expect": [
+    1,
+    3000
+   ]
+  },
+  {
+   "input": [
+    200,
+    6000
+   ],
+   "expect": [
+    200,
+    5000
+   ]
+  },
+  {
+   "input": [
+    5000,
+    200
+   ],
+   "saved": [
+    100,
+    8000
+   ],
+   "expect": [
+    100,
+    8000
+   ]
+  },
+  {
+   "input": [
+    1000,
+    1005
+   ],
+   "saved": [
+    100,
+    8000
+   ],
+   "expect": [
+    100,
+    8000
+   ]
+  },
+  {
+   "input": [
+    100,
+    110
+   ],
+   "expect": [
+    100,
+    110
+   ]
+  }
+ ],
+ "validateMagnitudeRange": [
+  {
+   "input": [
+    -80,
+    -20
+   ],
+   "expect": [
+    -80,
+    -20
+   ]
+  },
+  {
+   "input": [
+    -150,
+    -20
+   ],
+   "expect": [
+    -120,
+    -20
+   ]
+  },
+  {
+   "input": [
+    -80,
+    50
+   ],
+   "expect": [
+    -80,
+    20
+   ]
+  },
+  {
+   "input": [
+    -20,
+    -80
+   ],
+   "saved": [
+    -100,
+    -10
+   ],
+   "expect": [
+    -100,
+    -10
+   ]
+  },
+  {
+   "input": [
+    -50,
+    -45
+   ],
+   "saved": [
+    -100,
+    -10
+   ],
+   "expect": [
+    -100,
+    -10
+   ]
+  },
+  {
+   "input": [
+    -60,
+    -50
+   ],
+   "expect": [
+    -60,
+    -50
+   ]
+  }
+ ]
+}

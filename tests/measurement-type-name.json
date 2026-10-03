@@ -1,0 +1,158 @@
+{
+ "slug": "test/measurement-type-name",
+ "about": "The Details pane's measurement type — the snapshot's type as one word, 'Comparison', or '—' — and the material flag that reads the same resolution, the same cases in every edition. A snapshot is \"absent\" (none), null (present, no type) or the type's raw value as saved. 'editions' limits a row to the editions that can express it. Expected values are Swift's.",
+ "shortName": [
+  {
+   "id": "MT01",
+   "spectrum": "absent",
+   "longitudinal": "Material (Brace)",
+   "isComparison": false,
+   "expect": "Brace"
+  },
+  {
+   "id": "MT02",
+   "spectrum": "absent",
+   "longitudinal": "Material (Plate)",
+   "isComparison": false,
+   "expect": "Plate"
+  },
+  {
+   "id": "MT03",
+   "spectrum": "Classical Guitar",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "Classical"
+  },
+  {
+   "id": "MT04",
+   "spectrum": "Generic Guitar",
+   "longitudinal": "Material (Brace)",
+   "isComparison": false,
+   "expect": "Generic",
+   "note": "the spectrum snapshot's type is read first"
+  },
+  {
+   "id": "MT05",
+   "spectrum": "Generic Guitar",
+   "longitudinal": "absent",
+   "isComparison": true,
+   "expect": "Comparison",
+   "note": "a comparison short-circuits before any snapshot"
+  },
+  {
+   "id": "MT06",
+   "spectrum": "absent",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "—",
+   "note": "no snapshot"
+  },
+  {
+   "id": "MT07",
+   "spectrum": null,
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "—",
+   "note": "a snapshot with no type"
+  },
+  {
+   "id": "MT08",
+   "spectrum": null,
+   "longitudinal": "Material (Brace)",
+   "isComparison": false,
+   "expect": "Brace",
+   "note": "a spectrum snapshot with no type does not hide the longitudinal snapshot's type (Swift reads type by type)"
+  },
+  {
+   "id": "MT09",
+   "spectrum": "Sousaphone",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "—",
+   "editions": [
+    "python",
+    "web"
+   ],
+   "note": "an unrecognised type; Swift's enum cannot hold one"
+  },
+  {
+   "id": "MT10",
+   "spectrum": "absent",
+   "longitudinal": "Material (Brace)",
+   "isComparison": false,
+   "topLevelType": "Material (Brace)",
+   "expect": "Brace",
+   "editions": [
+    "python",
+    "web"
+   ],
+   "note": "a loaded file's top-level type does not change the answer; Swift's model has no top-level type"
+  },
+  {
+   "id": "MT11",
+   "spectrum": "Classical Guitar",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "topLevelType": "Classical Guitar",
+   "expect": "Classical",
+   "editions": [
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "MT12",
+   "spectrum": "Generic Guitar",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "Generic"
+  },
+  {
+   "id": "MT13",
+   "spectrum": "Acoustic Guitar",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "Acoustic"
+  },
+  {
+   "id": "MT14",
+   "spectrum": "Classical Guitar",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "Classical"
+  },
+  {
+   "id": "MT15",
+   "spectrum": "Flamenco Guitar",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "Flamenco"
+  },
+  {
+   "id": "MT16",
+   "spectrum": "Material (Plate)",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "Plate"
+  },
+  {
+   "id": "MT17",
+   "spectrum": "Material (Brace)",
+   "longitudinal": "absent",
+   "isComparison": false,
+   "expect": "Brace"
+  }
+ ],
+ "isMaterial": [
+  {
+   "longitudinal": "Material (Brace)",
+   "spectrum": "absent",
+   "expect": true
+  },
+  {
+   "spectrum": "Generic Guitar",
+   "longitudinal": "absent",
+   "expect": false
+  }
+ ]
+}

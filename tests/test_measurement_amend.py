@@ -13,8 +13,11 @@ GuitarTapTests/MeasurementAmendTests.swift and web test/measurement-amend.test.t
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -39,42 +42,19 @@ def _make_snapshot() -> SpectrumSnapshot:
     )
 
 
-class TestIsAmended:
-    """The gate on the edit dialog's Save button. Mirrors Swift MeasurementAmendTests."""
+with open(os.path.join(os.path.dirname(__file__), "measurement-amend.json"), encoding="utf-8") as _f:
+    IS_AMENDED = json.load(_f)["isAmended"]
 
-    def test_is_false_when_nothing_differs(self):
-        m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge", notes="Some notes")
-        assert m.is_amended("Bridge", "Some notes") is False
 
-    def test_is_true_when_the_name_differs(self):
-        m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge", notes="Some notes")
-        assert m.is_amended("Neck", "Some notes") is True
-
-    def test_is_true_when_the_notes_differ(self):
-        m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge", notes="Some notes")
-        assert m.is_amended("Bridge", "Edited") is True
-
-    def test_is_true_when_a_field_is_cleared(self):
-        m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge", notes="Some notes")
-        assert m.is_amended("Bridge", None) is True
-        assert m.is_amended(None, "Some notes") is True
-
-    def test_is_false_for_whitespace_only_differences(self):
-        """Whitespace-only retyping is NOT an edit, because both fields normalise the same way.
-
-        This is the case that made the rule worth sharing. This edition stripped in the dialog but
-        not on the save path, so notes saved with surrounding whitespace made Save light up the
-        moment the dialog opened, for a change the user never made.
-        """
-        m = TapToneMeasurement.create(peaks=[], measurement_name="Bridge", notes="Some notes")
-        name = TapToneMeasurement.normalized_name("  Bridge  ")
-        notes = TapToneMeasurement.normalized_notes("\n Some notes \n")
-        assert m.is_amended(name, notes) is False
-
-    def test_handles_a_measurement_with_no_name_or_notes(self):
-        m = TapToneMeasurement.create(peaks=[])
-        assert m.is_amended(None, None) is False
-        assert m.is_amended("Named", None) is True
+@pytest.mark.parametrize("row", IS_AMENDED)
+def test_is_amended(row):
+    """The gate on the edit dialog's Save — the shared cases in ``measurement-amend.json``."""
+    stored, candidate = row["stored"], row["candidate"]
+    m = TapToneMeasurement.create(peaks=[], measurement_name=stored["name"], notes=stored["notes"])
+    name, notes = candidate["name"], candidate["notes"]
+    if row.get("normalize"):
+        name, notes = TapToneMeasurement.normalized_name(name), TapToneMeasurement.normalized_notes(notes)
+    assert m.is_amended(name, notes) is row["expect"]
 
 
 class TestWithMethod:

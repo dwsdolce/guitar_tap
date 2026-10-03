@@ -1,0 +1,329 @@
+{
+ "slug": "test/display-range",
+ "about": "The chart's display range: widening onto a newly identified plate / brace peak (10% padding, never below 1 Hz or above 5 kHz, never narrowed), and when the chart's range moves (Settings Done, a new measurement, a widening while showing a load). Ranges are [minFreq, maxFreq, minDB, maxDB]; null is no range. Measurement types are Swift's case names. Expected values are Swift's. expandedToInclude rows: [hz, min, max, expected min, expected max]; widenedOnto rows: [hz, type, fromLoad, min, max, expected min, expected max].",
+ "expandedToInclude": [
+  [
+   1000,
+   100,
+   800,
+   100,
+   1100
+  ],
+  [
+   50,
+   100,
+   800,
+   45,
+   800
+  ],
+  [
+   400,
+   100,
+   800,
+   100,
+   800
+  ],
+  [
+   0.5,
+   100,
+   800,
+   1,
+   800
+  ],
+  [
+   4900,
+   100,
+   800,
+   100,
+   5000
+  ],
+  [
+   800,
+   100,
+   800,
+   100,
+   800
+  ],
+  [
+   100,
+   100,
+   800,
+   100,
+   800
+  ]
+ ],
+ "widenedOnto": [
+  [
+   1000,
+   "plate",
+   false,
+   100,
+   800,
+   100,
+   1100
+  ],
+  [
+   1000,
+   "brace",
+   false,
+   100,
+   800,
+   100,
+   1100
+  ],
+  [
+   400,
+   "plate",
+   false,
+   100,
+   800,
+   100,
+   800
+  ],
+  [
+   1000,
+   "generic",
+   false,
+   100,
+   800,
+   100,
+   800
+  ],
+  [
+   1000,
+   "acoustic",
+   false,
+   100,
+   800,
+   100,
+   800
+  ],
+  [
+   1000,
+   "classical",
+   false,
+   100,
+   800,
+   100,
+   800
+  ],
+  [
+   1000,
+   "flamenco",
+   false,
+   100,
+   800,
+   100,
+   800
+  ],
+  [
+   1000,
+   "plate",
+   true,
+   100,
+   800,
+   100,
+   800
+  ]
+ ],
+ "onSettingsDone": [
+  {
+   "saved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "previouslySaved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "typeChanged": false,
+   "expect": null
+  },
+  {
+   "saved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "previouslySaved": [
+    20,
+    250,
+    -100,
+    0
+   ],
+   "typeChanged": false,
+   "expect": [
+    20,
+    200,
+    -100,
+    0
+   ]
+  },
+  {
+   "saved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "previouslySaved": [
+    20,
+    200,
+    -80,
+    0
+   ],
+   "typeChanged": false,
+   "expect": [
+    20,
+    200,
+    -100,
+    0
+   ]
+  },
+  {
+   "saved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "previouslySaved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "typeChanged": true,
+   "expect": [
+    20,
+    200,
+    -100,
+    0
+   ]
+  }
+ ],
+ "onNewMeasurement": [
+  {
+   "current": [
+    60,
+    120,
+    -90,
+    -10
+   ],
+   "loaded": null,
+   "saved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "expect": null
+  },
+  {
+   "current": [
+    50,
+    300,
+    -90,
+    -10
+   ],
+   "loaded": [
+    50,
+    300,
+    -90,
+    -10
+   ],
+   "saved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "expect": [
+    20,
+    200,
+    -100,
+    0
+   ]
+  },
+  {
+   "current": [
+    60,
+    120,
+    -90,
+    -10
+   ],
+   "loaded": [
+    50,
+    300,
+    -90,
+    -10
+   ],
+   "saved": [
+    20,
+    200,
+    -100,
+    0
+   ],
+   "expect": null
+  }
+ ],
+ "loadedAfterWidening": [
+  {
+   "loaded": [
+    50,
+    300,
+    -90,
+    -10
+   ],
+   "before": [
+    50,
+    300,
+    -90,
+    -10
+   ],
+   "after": [
+    50,
+    1100,
+    -90,
+    -10
+   ],
+   "expect": [
+    50,
+    1100,
+    -90,
+    -10
+   ]
+  },
+  {
+   "loaded": [
+    50,
+    300,
+    -90,
+    -10
+   ],
+   "before": [
+    60,
+    120,
+    -90,
+    -10
+   ],
+   "after": [
+    60,
+    1100,
+    -90,
+    -10
+   ],
+   "expect": [
+    50,
+    300,
+    -90,
+    -10
+   ]
+  }
+ ]
+}

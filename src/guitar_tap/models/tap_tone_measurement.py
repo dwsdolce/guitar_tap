@@ -41,6 +41,11 @@ from .spectrum_snapshot import SpectrumSnapshot
 from guitar_tap.utilities.new_uuid import new_uuid
 
 
+def _snapshot_field(snapshot, name: str):
+    """A snapshot's field, or None when there is no snapshot — Swift's ``snapshot?.field``."""
+    return getattr(snapshot, name, None) if snapshot is not None else None
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -474,13 +479,28 @@ class TapToneMeasurement:
 
     @property
     def resolved_measurement_type(self) -> str | None:
-        """Measurement type resolved from the stored snapshots (mirrors ``to_dict``);
-        None for legacy files that predate the top-level type.
+        """Measurement type resolved from the stored snapshots, field by field — the spectrum snapshot's type,
+        else the longitudinal snapshot's (mirrors ``to_dict``); None when neither carries one.
 
         Mirrors Swift ``TapToneMeasurement.resolvedMeasurementType``.
         """
-        snap = self.spectrum_snapshot or self.longitudinal_snapshot
-        return (snap.measurement_type if snap else None) or self.measurement_type
+        return _snapshot_field(self.spectrum_snapshot, "measurement_type") or _snapshot_field(
+            self.longitudinal_snapshot, "measurement_type")
+
+    @property
+    def measurement_type_short_name(self) -> str:
+        """The measurement's type as the single word shown in the Details pane: Acoustic / Classical /
+        Flamenco / Generic / Plate / Brace / Comparison — or "—" when no snapshot carries a type it knows.
+
+        Mirrors Swift ``TapToneMeasurement.measurementTypeShortName``.
+        """
+        if self.is_comparison:
+            return "Comparison"
+        from .measurement_type import MeasurementType
+        try:
+            return MeasurementType(self.resolved_measurement_type).short_name
+        except ValueError:
+            return "\u2014"
 
     @property
     def is_material(self) -> bool:
@@ -860,14 +880,10 @@ class TapToneMeasurement:
         # Mirrors Swift encode(to:): resolved from the snapshot, not from stored fields.
         # Swift: resolvedMeasurementType = spectrumSnapshot?.measurementType ?? longitudinalSnapshot?.measurementType
         #        resolvedGuitarType       = spectrumSnapshot?.guitarType      ?? longitudinalSnapshot?.guitarType
-        _snap_for_type = self.spectrum_snapshot or self.longitudinal_snapshot
-        _resolved_mt = (
-            (_snap_for_type.measurement_type if _snap_for_type else None)
-            or self.measurement_type
-        )
+        _resolved_mt = self.resolved_measurement_type
         _resolved_gt = (
-            (_snap_for_type.guitar_type if _snap_for_type else None)
-            or self.guitar_type
+            _snapshot_field(self.spectrum_snapshot, "guitar_type")
+            or _snapshot_field(self.longitudinal_snapshot, "guitar_type")
         )
         if _resolved_mt:
             d["measurementType"] = _resolved_mt

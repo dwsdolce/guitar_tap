@@ -1,0 +1,128 @@
+{
+ "slug": "test/decay-tracking",
+ "about": "Ring-out (decay) time measured on a given history — measureDecayTime(tapTime:) on an analyzer holding the entries (DK1–DK5, DK8–DK10), the same cases in every edition. A history is magnitudes (dB) 'interval' seconds apart from 'start'; 'threshold' is the analyzer's decayThreshold when set (else its default, 'defaultThreshold'); 'expect' is seconds, or null for no measurement, within 'tolerance'. The tracker driven chunk by chunk (DK6, DK7, DK11–DK13) stays as code. Expected values are Swift's.",
+ "defaultThreshold": 15,
+ "tolerance": 1e-06,
+ "measureDecayTime": [
+  {
+   "id": "DK1",
+   "magnitudes": [],
+   "interval": 0.1,
+   "start": 0,
+   "tapTime": 0,
+   "expect": null,
+   "note": "an empty history measures nothing"
+  },
+  {
+   "id": "DK2",
+   "magnitudes": [
+    -20,
+    -25,
+    -30,
+    -35,
+    -40,
+    -50
+   ],
+   "interval": 0.1,
+   "start": -1.0,
+   "tapTime": 0,
+   "expect": null,
+   "note": "every entry before the tap"
+  },
+  {
+   "id": "DK3",
+   "magnitudes": [
+    -20,
+    -22,
+    -24,
+    -25,
+    -25,
+    -25,
+    -25
+   ],
+   "interval": 0.1,
+   "start": 0,
+   "tapTime": 0,
+   "threshold": 30,
+   "expect": null,
+   "note": "the level never drops by the threshold"
+  },
+  {
+   "id": "DK4",
+   "magnitudes": [
+    -10,
+    -15,
+    -20,
+    -24,
+    -28,
+    -31,
+    -35
+   ],
+   "interval": 0.1,
+   "start": 0,
+   "tapTime": 0,
+   "threshold": 20,
+   "expect": 0.5,
+   "note": "timed from the peak to the first entry below it"
+  },
+  {
+   "id": "DK5",
+   "magnitudes": [
+    -10,
+    -21,
+    -30,
+    -40
+   ],
+   "interval": 0.1,
+   "start": 0,
+   "tapTime": 0,
+   "threshold": 10,
+   "expect": 0.1,
+   "note": "the very next entry crosses"
+  },
+  {
+   "id": "DK8",
+   "magnitudes": [
+    -10,
+    -12,
+    -20,
+    -26,
+    -40
+   ],
+   "interval": 0.1,
+   "start": 0,
+   "tapTime": 0,
+   "expect": 0.3,
+   "note": "the default threshold, 15 dB"
+  },
+  {
+   "id": "DK9",
+   "magnitudes": [
+    -12,
+    -8,
+    -15,
+    -24,
+    -40
+   ],
+   "interval": 0.1,
+   "start": 0,
+   "tapTime": 0,
+   "expect": 0.2,
+   "note": "timed from the post-tap peak, not the tap"
+  },
+  {
+   "id": "DK10",
+   "magnitudes": [
+    -30,
+    -10,
+    -20,
+    -26
+   ],
+   "interval": 0.1,
+   "start": -0.1,
+   "tapTime": 0,
+   "expect": 0.2,
+   "note": "an entry before the tap is ignored even when loudest"
+  }
+ ]
+}

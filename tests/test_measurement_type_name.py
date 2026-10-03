@@ -1,132 +1,50 @@
 # @parity test/measurement-type-name
-"""Pin the Details-pane Measurement Type resolution (parity group `view/measurement-detail`).
-
-The type is stored ONLY inside the SpectrumSnapshot — never as a top-level measurement field.
-`TapToneMeasurement.create(...)` deliberately does not set `measurement_type` (see the comment in
-tap_tone_analyzer_measurement_management.py), and `to_dict()` resolves it from the snapshot at save
-time so the JSON matches Swift's format.
-
-So the Details pane MUST resolve from the snapshot, mirroring Swift
-MeasurementDetailView.measurementTypeName:
-
-    let mt = measurement.spectrumSnapshot?.measurementType
-        ?? measurement.longitudinalSnapshot?.measurementType
-    return mt?.shortName ?? "—"
-
-A measurement saved in the CURRENT SESSION has no top-level `measurement_type`; only one loaded
-through `from_dict` has it populated from the file.  A round-trip test loads from a dict and so
-cannot tell the two sources apart — hence the in-memory cases below.
-
-Swift and the web resolve from the snapshot the same way.
-"""
+"""The Details pane's measurement type (``TapToneMeasurement.measurement_type_short_name``) and the material flag
+(``is_material``), both resolved from the snapshots field by field — the type lives only there in memory — against
+the shared case file ``measurement-type-name.json``, the same cases the Swift and web suites run. In-memory
+measurements, the shape a round trip cannot test (loading a file fills the top-level type in)."""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from guitar_tap.views.measurements.measurement_detail_view import _type_name
+from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
+from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
+
+with open(os.path.join(os.path.dirname(__file__), "measurement-type-name.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
 
 
-class _Snap:
-    """Minimal SpectrumSnapshot stand-in — only the field the resolver reads."""
-
-    def __init__(self, measurement_type):
-        self.measurement_type = measurement_type
-
-
-class _M:
-    """Minimal measurement stand-in matching what create(...) produces in memory."""
-
-    def __init__(self, spectrum_snapshot=None, longitudinal_snapshot=None,
-                 measurement_type=None, guitar_type=None, is_comparison=False):
-        self.spectrum_snapshot = spectrum_snapshot
-        self.longitudinal_snapshot = longitudinal_snapshot
-        # Top-level fields are None in memory — the state create(...) leaves them in.
-        self.measurement_type = measurement_type
-        self.guitar_type = guitar_type
-        self.is_comparison = is_comparison
+def _snapshot(v):
+    """A snapshot as the file describes it: "absent" is none, None is one with no type."""
+    if v == "absent":
+        return None
+    return SpectrumSnapshot(frequencies=[], magnitudes=[], min_freq=20, max_freq=200, min_db=-100, max_db=0,
+                            is_logarithmic=False, measurement_type=v)
 
 
-# ── THE REGRESSION: in-memory, exactly as create(...) builds it ──────────────
+def _measurement(row) -> TapToneMeasurement:
+    m = TapToneMeasurement.create(peaks=[])
+    m.spectrum_snapshot = _snapshot(row["spectrum"])
+    m.longitudinal_snapshot = _snapshot(row["longitudinal"])
+    m.measurement_type = row.get("topLevelType")
+    if row.get("isComparison"):
+        m.comparison_entries = []
+    return m
 
 
-def test_material_type_resolves_from_snapshot_when_top_level_field_is_none():
-    """A brace saved this session: top-level field None, type only in the snapshot.
-
-    This is the exact shape that rendered "—" in the Details pane.
-    """
-    m = _M(longitudinal_snapshot=_Snap("Material (Brace)"))
-    assert _type_name(m) == "Brace"
+@pytest.mark.parametrize("row", [r for r in DATA["shortName"] if "python" in r.get("editions", ["python"])],
+                         ids=lambda r: r["id"])
+def test_short_name(row):
+    assert _measurement(row).measurement_type_short_name == row["expect"]
 
 
-def test_plate_type_resolves_from_snapshot_when_top_level_field_is_none():
-    m = _M(longitudinal_snapshot=_Snap("Material (Plate)"))
-    assert _type_name(m) == "Plate"
-
-
-def test_guitar_type_resolves_from_spectrum_snapshot_when_top_level_field_is_none():
-    m = _M(spectrum_snapshot=_Snap("Classical Guitar"))
-    assert _type_name(m) == "Classical"
-
-
-# ── Resolution order + fallbacks (mirrors Swift's ?? chain) ──────────────────
-
-
-def test_spectrum_snapshot_wins_over_longitudinal():
-    """Swift: spectrumSnapshot?.measurementType ?? longitudinalSnapshot?.measurementType."""
-    m = _M(spectrum_snapshot=_Snap("Generic Guitar"),
-           longitudinal_snapshot=_Snap("Material (Brace)"))
-    assert _type_name(m) == "Generic"
-
-
-def test_comparison_short_circuits_before_any_snapshot_lookup():
-    m = _M(spectrum_snapshot=_Snap("Generic Guitar"), is_comparison=True)
-    assert _type_name(m) == "Comparison"
-
-
-def test_no_snapshot_falls_back_to_em_dash_without_raising():
-    """Swift returns "—" when neither snapshot carries a type. Must not raise."""
-    assert _type_name(_M()) == "—"
-
-
-def test_unrecognised_snapshot_type_falls_back_to_em_dash():
-    assert _type_name(_M(spectrum_snapshot=_Snap("Ukulele"))) == "—"
-
-
-def test_none_snapshot_type_falls_back_to_em_dash():
-    assert _type_name(_M(spectrum_snapshot=_Snap(None))) == "—"
-
-
-# ── The loaded-from-file path must keep working ─────────────────────────────
-
-
-def test_loaded_measurement_still_resolves():
-    """After from_dict the top-level field is set too, but the snapshot remains the source."""
-    m = _M(longitudinal_snapshot=_Snap("Material (Brace)"),
-           measurement_type="Material (Brace)", guitar_type="Classical")
-    assert _type_name(m) == "Brace"
-
-
-# ── Every type's short name, shared with Swift and the web ──────────────────
-
-
-def test_every_type_resolves_to_its_short_name():
-    """The 6-type table. Mirrors Swift everyTypeResolvesToItsShortName.
-
-    Only Swift pinned this, so a short name that drifted in one edition would have gone
-    unnoticed. The three tables agree today: Generic, Acoustic, Classical, Flamenco, Plate,
-    Brace.
-    """
-    cases = [
-        ("Generic Guitar", "Generic"),
-        ("Acoustic Guitar", "Acoustic"),
-        ("Classical Guitar", "Classical"),
-        ("Flamenco Guitar", "Flamenco"),
-        ("Material (Plate)", "Plate"),
-        ("Material (Brace)", "Brace"),
-    ]
-    for raw, short in cases:
-        assert _type_name(_M(spectrum_snapshot=_Snap(raw))) == short, f"{raw} should be {short}"
+@pytest.mark.parametrize("row", DATA["isMaterial"], ids=lambda r: str(r["expect"]))
+def test_is_material(row):
+    assert _measurement(row).is_material is row["expect"]

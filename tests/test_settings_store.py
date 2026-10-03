@@ -9,6 +9,7 @@ validated before it is stored. Mirrors Swift SettingsStoreTests / web settings-s
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -35,14 +36,14 @@ def restore_plate_and_brace():
         (tds.set_min_frequency_for if b == "min" else tds.set_max_frequency_for)(v, t)
 
 
-def test_per_type_defaults_match_canonical():
-    for t in (MT.GENERIC, MT.ACOUSTIC, MT.CLASSICAL, MT.FLAMENCO):
-        assert tds.default_min_frequency(t) == 75.0
-        assert tds.default_max_frequency(t) == 350.0
-    assert tds.default_min_frequency(MT.PLATE) == 20.0
-    assert tds.default_max_frequency(MT.PLATE) == 200.0
-    assert tds.default_min_frequency(MT.BRACE) == 30.0
-    assert tds.default_max_frequency(MT.BRACE) == 1000.0
+with open(os.path.join(os.path.dirname(__file__), "settings-store.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
+
+
+@pytest.mark.parametrize("type_,lo,hi", DATA["defaults"])
+def test_per_type_defaults(type_, lo, hi):
+    """The shared cases in ``settings-store.json``."""
+    assert (tds.default_min_frequency(MT[type_.upper()]), tds.default_max_frequency(MT[type_.upper()])) == (lo, hi)
 
 
 def test_a_type_with_nothing_stored_reads_its_default():
@@ -82,23 +83,11 @@ def test_a_stored_range_keeps_its_exact_value(restore_plate_and_brace):
 
 # A Settings range field: untouched keeps the exact stored value.
 
-def test_entered_value_untouched_field_keeps_the_exact_stored_value():
-    from guitar_tap.models import field_precision as fp
+@pytest.mark.parametrize("shown,stored,decimals,expected", DATA["enteredValue"])
+def test_entered_value(shown, stored, decimals, expected):
+    """A Settings range field: untouched keeps the exact stored value, edited is the number typed."""
     from guitar_tap.models.display_range import entered_value
-    shown = fp.string(23.37, fp.FREQUENCY_HZ)   # "23"
-    assert entered_value(shown, 23.37, fp.FREQUENCY_HZ) == 23.37
-
-
-def test_entered_value_edited_field_is_the_number_typed():
-    from guitar_tap.models import field_precision as fp
-    from guitar_tap.models.display_range import entered_value
-    assert entered_value("30", 23.37, fp.FREQUENCY_HZ) == 30.0
-
-
-def test_entered_value_not_a_number_is_none():
-    from guitar_tap.models import field_precision as fp
-    from guitar_tap.models.display_range import entered_value
-    assert entered_value("abc", 23.37, fp.FREQUENCY_HZ) is None
+    assert entered_value(shown, stored, decimals) == expected
 
 
 # Settings validates an entered range: each bound clamped, and the two at least 10 apart; otherwise
@@ -114,58 +103,17 @@ def restore_saved_range():
     tds.set_max_magnitude(saved[3])
 
 
-def test_frequency_range_valid_is_unchanged():
-    assert tds.validate_frequency_range(200.0, 3000.0) == pytest.approx((200.0, 3000.0))
+@pytest.mark.parametrize("row", DATA["validateFrequencyRange"], ids=lambda r: str(r["input"]))
+def test_validate_frequency_range(row, restore_saved_range):
+    if "saved" in row:
+        tds.set_min_frequency(row["saved"][0])
+        tds.set_max_frequency(row["saved"][1])
+    assert tds.validate_frequency_range(*map(float, row["input"])) == pytest.approx(tuple(row["expect"]))
 
 
-def test_frequency_range_below_1_hz_is_clamped():
-    assert tds.validate_frequency_range(0.0, 3000.0) == pytest.approx((1.0, 3000.0))
-
-
-def test_frequency_range_above_5_khz_is_clamped():
-    assert tds.validate_frequency_range(200.0, 6000.0) == pytest.approx((200.0, 5000.0))
-
-
-def test_frequency_range_inverted_reads_the_saved_range(restore_saved_range):
-    tds.set_min_frequency(100.0)
-    tds.set_max_frequency(8000.0)
-    assert tds.validate_frequency_range(5000.0, 200.0) == pytest.approx((100.0, 8000.0))
-
-
-def test_frequency_range_too_narrow_reads_the_saved_range(restore_saved_range):
-    tds.set_min_frequency(100.0)
-    tds.set_max_frequency(8000.0)
-    assert tds.validate_frequency_range(1000.0, 1005.0) == pytest.approx((100.0, 8000.0))
-
-
-def test_frequency_range_exactly_10_hz_apart_is_accepted():
-    assert tds.validate_frequency_range(100.0, 110.0) == pytest.approx((100.0, 110.0))
-
-
-def test_magnitude_range_valid_is_unchanged():
-    assert tds.validate_magnitude_range(-80.0, -20.0) == pytest.approx((-80.0, -20.0))
-
-
-def test_magnitude_range_below_minus_120_db_is_clamped():
-    assert tds.validate_magnitude_range(-150.0, -20.0) == pytest.approx((-120.0, -20.0))
-
-
-def test_magnitude_range_above_20_db_is_clamped():
-    assert tds.validate_magnitude_range(-80.0, 50.0) == pytest.approx((-80.0, 20.0))
-
-
-def test_magnitude_range_inverted_reads_the_saved_range(restore_saved_range):
-    tds.set_min_magnitude(-100.0)
-    tds.set_max_magnitude(-10.0)
-    assert tds.validate_magnitude_range(-20.0, -80.0) == pytest.approx((-100.0, -10.0))
-
-
-def test_magnitude_range_too_narrow_reads_the_saved_range(restore_saved_range):
-    tds.set_min_magnitude(-100.0)
-    tds.set_max_magnitude(-10.0)
-    assert tds.validate_magnitude_range(-50.0, -45.0) == pytest.approx((-100.0, -10.0))
-
-
-def test_magnitude_range_exactly_10_db_apart_is_accepted():
-    assert tds.validate_magnitude_range(-60.0, -50.0) == pytest.approx((-60.0, -50.0))
-
+@pytest.mark.parametrize("row", DATA["validateMagnitudeRange"], ids=lambda r: str(r["input"]))
+def test_validate_magnitude_range(row, restore_saved_range):
+    if "saved" in row:
+        tds.set_min_magnitude(row["saved"][0])
+        tds.set_max_magnitude(row["saved"][1])
+    assert tds.validate_magnitude_range(*map(float, row["input"])) == pytest.approx(tuple(row["expect"]))

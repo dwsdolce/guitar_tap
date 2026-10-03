@@ -1,0 +1,96 @@
+{
+ "slug": "test/measurement-amend",
+ "about": "isAmended — the gate on the edit sheet's Save: whether a candidate name and notes differ from what a measurement stores. null is no value. A row with 'normalize' passes its candidate through the production normalisers (normalizedName / normalizedNotes) first, as the edit sheet does. The amend itself (a new id) stays as code. Expected values are Swift's.",
+ "isAmended": [
+  {
+   "stored": {
+    "name": "Bridge",
+    "notes": "Some notes"
+   },
+   "candidate": {
+    "name": "Bridge",
+    "notes": "Some notes"
+   },
+   "expect": false
+  },
+  {
+   "stored": {
+    "name": "Bridge",
+    "notes": "Some notes"
+   },
+   "candidate": {
+    "name": "Neck",
+    "notes": "Some notes"
+   },
+   "expect": true
+  },
+  {
+   "stored": {
+    "name": "Bridge",
+    "notes": "Some notes"
+   },
+   "candidate": {
+    "name": "Bridge",
+    "notes": "Edited"
+   },
+   "expect": true
+  },
+  {
+   "stored": {
+    "name": "Bridge",
+    "notes": "Some notes"
+   },
+   "candidate": {
+    "name": "Bridge",
+    "notes": null
+   },
+   "expect": true
+  },
+  {
+   "stored": {
+    "name": "Bridge",
+    "notes": "Some notes"
+   },
+   "candidate": {
+    "name": null,
+    "notes": "Some notes"
+   },
+   "expect": true
+  },
+  {
+   "stored": {
+    "name": "Bridge",
+    "notes": "Some notes"
+   },
+   "candidate": {
+    "name": "  Bridge  ",
+    "notes": "\n Some notes \n"
+   },
+   "normalize": true,
+   "expect": false,
+   "note": "whitespace-only retyping is not an edit: the candidate goes through the name and notes normalisers first"
+  },
+  {
+   "stored": {
+    "name": null,
+    "notes": null
+   },
+   "candidate": {
+    "name": null,
+    "notes": null
+   },
+   "expect": false
+  },
+  {
+   "stored": {
+    "name": null,
+    "notes": null
+   },
+   "candidate": {
+    "name": "Named",
+    "notes": null
+   },
+   "expect": true
+  }
+ ]
+}

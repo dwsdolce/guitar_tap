@@ -1,0 +1,249 @@
+{
+ "slug": "test/button-enablement",
+ "about": "The Pause / New Tap / Cancel enablement rule (buttonRule), B1–B16, the same cases in every edition. 'state' gives only the fields a case sets; the rest take each edition's defaults (isReadyForDetection true, fftIsRunning true, measurementType generic, materialTapPhase notStarted, numberOfTaps 1, isPlayingFile false), so the run also checks the defaults agree. 'expect' lists the outputs a case checks. Names are Swift's. Expected values are Swift's.",
+ "buttonRule": [
+  {
+   "id": "B1",
+   "name": "guitar, disarmed idle: New Tap enabled to re-arm",
+   "state": {
+    "detectionState": "idle",
+    "isMeasurementComplete": false,
+    "displayMode": "live"
+   },
+   "expect": {
+    "pauseEnabled": false,
+    "newTapDisabled": false,
+    "cancelEnabled": false
+   }
+  },
+  {
+   "id": "B2",
+   "name": "guitar single tap, listening: Pause only",
+   "state": {
+    "detectionState": "listening",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "numberOfTaps": 1
+   },
+   "expect": {
+    "pauseEnabled": true,
+    "newTapDisabled": true,
+    "cancelEnabled": false
+   }
+  },
+  {
+   "id": "B3",
+   "name": "guitar single tap, complete: New Tap only",
+   "state": {
+    "detectionState": "idle",
+    "isMeasurementComplete": true,
+    "displayMode": "live",
+    "numberOfTaps": 1
+   },
+   "expect": {
+    "pauseEnabled": false,
+    "newTapDisabled": false,
+    "cancelEnabled": false
+   }
+  },
+  {
+   "id": "B4",
+   "name": "the impossible detecting-and-complete state: New Tap disabled, Pause on",
+   "state": {
+    "detectionState": "listening",
+    "isMeasurementComplete": true,
+    "displayMode": "live"
+   },
+   "expect": {
+    "pauseEnabled": true,
+    "newTapDisabled": true,
+    "cancelEnabled": false
+   }
+  },
+  {
+   "id": "B5",
+   "name": "guitar mid multi-tap: Pause and Cancel",
+   "state": {
+    "detectionState": "listening",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "numberOfTaps": 3
+   },
+   "expect": {
+    "pauseEnabled": true,
+    "newTapDisabled": true,
+    "cancelEnabled": true
+   }
+  },
+  {
+   "id": "B6",
+   "name": "guitar multi-tap paused: Cancel still enabled",
+   "state": {
+    "detectionState": "paused",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "numberOfTaps": 3
+   },
+   "expect": {
+    "pauseEnabled": true,
+    "newTapDisabled": true,
+    "cancelEnabled": true
+   }
+  },
+  {
+   "id": "B7",
+   "name": "plate reviewing: Accept and Redo",
+   "state": {
+    "detectionState": "idle",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "measurementType": "plate",
+    "materialTapPhase": "reviewingLongitudinal"
+   },
+   "expect": {
+    "pauseEnabled": true,
+    "newTapDisabled": true,
+    "cancelEnabled": true
+   }
+  },
+  {
+   "id": "B8",
+   "name": "plate capturing: Pause and Cancel",
+   "state": {
+    "detectionState": "listening",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "measurementType": "plate",
+    "materialTapPhase": "capturingLongitudinal"
+   },
+   "expect": {
+    "pauseEnabled": true,
+    "newTapDisabled": true,
+    "cancelEnabled": true
+   }
+  },
+  {
+   "id": "B9",
+   "name": "FFT not running: New Tap disabled",
+   "state": {
+    "detectionState": "idle",
+    "isMeasurementComplete": true,
+    "fftIsRunning": false,
+    "displayMode": "live"
+   },
+   "expect": {
+    "newTapDisabled": true
+   }
+  },
+  {
+   "id": "B10",
+   "name": "comparison: New Tap enabled",
+   "state": {
+    "detectionState": "idle",
+    "isMeasurementComplete": false,
+    "displayMode": "comparison"
+   },
+   "expect": {
+    "newTapDisabled": false
+   }
+  },
+  {
+   "id": "B11",
+   "name": "brace single tap capturing: Pause only",
+   "state": {
+    "detectionState": "listening",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "measurementType": "brace",
+    "materialTapPhase": "capturingLongitudinal",
+    "numberOfTaps": 1
+   },
+   "expect": {
+    "pauseEnabled": true,
+    "newTapDisabled": true,
+    "cancelEnabled": false
+   }
+  },
+  {
+   "id": "B12",
+   "name": "brace multi-tap capturing: Pause and Cancel",
+   "state": {
+    "detectionState": "listening",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "measurementType": "brace",
+    "materialTapPhase": "capturingLongitudinal",
+    "numberOfTaps": 3
+   },
+   "expect": {
+    "pauseEnabled": true,
+    "newTapDisabled": true,
+    "cancelEnabled": true
+   }
+  },
+  {
+   "id": "B13",
+   "name": "plate, disarmed idle: New Tap enabled to re-arm",
+   "state": {
+    "detectionState": "idle",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "measurementType": "plate",
+    "materialTapPhase": "notStarted"
+   },
+   "expect": {
+    "pauseEnabled": false,
+    "newTapDisabled": false,
+    "cancelEnabled": false
+   }
+  },
+  {
+   "id": "B14",
+   "name": "file playback, guitar listening: Cancel only",
+   "state": {
+    "detectionState": "listening",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "isPlayingFile": true
+   },
+   "expect": {
+    "pauseEnabled": false,
+    "newTapDisabled": true,
+    "cancelEnabled": true
+   }
+  },
+  {
+   "id": "B15",
+   "name": "file playback, guitar between taps: Cancel only",
+   "state": {
+    "detectionState": "idle",
+    "isMeasurementComplete": false,
+    "displayMode": "live",
+    "numberOfTaps": 8,
+    "isPlayingFile": true
+   },
+   "expect": {
+    "pauseEnabled": false,
+    "newTapDisabled": true,
+    "cancelEnabled": true
+   }
+  },
+  {
+   "id": "B16",
+   "name": "file playback, plate complete while the file plays: Cancel only",
+   "state": {
+    "detectionState": "idle",
+    "isMeasurementComplete": true,
+    "displayMode": "live",
+    "measurementType": "plate",
+    "materialTapPhase": "complete",
+    "isPlayingFile": true
+   },
+   "expect": {
+    "pauseEnabled": false,
+    "newTapDisabled": true,
+    "cancelEnabled": true
+   }
+  }
+ ]
+}
