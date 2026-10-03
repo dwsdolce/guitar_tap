@@ -122,14 +122,6 @@ class MaterialDimensions:
         """
         return self.density() / 1000.0
 
-    def is_valid(self) -> bool:
-        """Return True when all dimensions and mass are positive."""
-        return (
-            self.length_mm > 0
-            and self.width_mm > 0
-            and self.thickness_mm > 0
-            and self.mass_g > 0
-        )
 
 
 # Backward-compatible alias — existing callers that used PlateDimensions will continue to work.
@@ -576,7 +568,7 @@ class PlateProperties:
 
         Mirrors Swift PlateProperties.goreShearModulus.
         """
-        if self.f_flc is None or self.f_flc <= 0:
+        if self.f_flc is None:
             return None
         t = self.dimensions.thickness()
         rho = self.dimensions.density()
@@ -586,6 +578,58 @@ class PlateProperties:
         W = self.dimensions.width()
         coef = 12.0 / (math.pi ** 2)
         return coef * rho * L**2 * W**2 * self.f_flc**2 / (t * t)
+
+    # MARK: - Gore Target Thickness
+
+    def gore_target_thickness(
+        self, body_length_mm: float, body_width_mm: float, vibrational_stiffness: float
+    ) -> Optional[float]:
+        """Target thickness for the finished guitar plate, in mm — from Gore Equation 4.5-7.
+
+        Uses the Gore plate moduli (E_L, E_C, G_LC) together with the guitar body geometry and a
+        target vibrational stiffness (f_vs). When the FLC tap has not been performed, G_LC is
+        treated as 0.
+
+        Numerator:   Coef₂ × f_vs × a² × √ρ
+        Denominator: √(E_L + (a/b)⁴·E_C + (a/b)²·(Coef₃·E_L + Coef₄·G_LC))
+
+        - Parameters:
+          - body_length_mm: Guitar body length (neck joint to tail block) in mm.
+          - body_width_mm: Guitar lower-bout width in mm.
+          - vibrational_stiffness: Target vibrational stiffness (f_vs).
+        - Returns: Target plate thickness in mm, or None if any input is zero or invalid.
+
+        Mirrors Swift PlateProperties.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:).
+        """
+        if body_length_mm <= 0 or body_width_mm <= 0 or vibrational_stiffness <= 0:
+            return None
+        rho = self.dimensions.density()
+        if rho <= 0:
+            return None
+
+        a = body_length_mm / 1000.0   # Guitar body length in metres
+        b = body_width_mm / 1000.0    # Lower bout width in metres
+
+        # Moduli in GPa for the denominator; the result is in Pa via ×10⁹.
+        el_gpa = self.gore_E_long_pa / 1.0e9
+        ec_gpa = self.gore_E_cross_pa / 1.0e9
+        # G_LC from the FLC tap; 0 when the tap was not performed.
+        glc_gpa = (self.gore_shear_modulus or 0.0) / 1.0e9
+
+        numerator = self._gore_coef2 * vibrational_stiffness * a * a * math.sqrt(rho)
+
+        a_over_b = a / b
+        a_over_b2 = a_over_b * a_over_b
+        a_over_b4 = a_over_b2 * a_over_b2
+        denominator_gpa = (
+            el_gpa
+            + a_over_b4 * ec_gpa
+            + a_over_b2 * (self._gore_coef3 * el_gpa + self._gore_coef4 * glc_gpa)
+        )
+        if denominator_gpa <= 0:
+            return None
+
+        return numerator / math.sqrt(denominator_gpa * 1.0e9) * 1000.0
 
 
 # MARK: - BraceProperties
@@ -741,114 +785,3 @@ def _euler_bernoulli_e(rho: float, f: float, L: float, t: float, beta_l_sq: floa
     E = 48 × π² × ρ × f² × L⁴ / (βL × t)²
     """
     return 48.0 * math.pi**2 * rho * f**2 * L**4 / (beta_l_sq * t) ** 2
-
-
-# MARK: - Calculation Functions
-
-def calculate_brace_properties(dims: MaterialDimensions, f_long_hz: float) -> BraceProperties:
-    """Create a BraceProperties from dimensions and a single longitudinal tap frequency.
-
-    Thin constructor — validation only.  All acoustic results are computed lazily by
-    BraceProperties as @property accessors, mirroring Swift BraceProperties.
-
-    - Parameters:
-      - dims: Physical dimensions and mass of the brace sample.
-      - f_long_hz: Along-grain fundamental frequency in Hz.
-    - Returns: BraceProperties instance.
-
-    Mirrors Swift BraceProperties.init(dimensions:fundamentalFrequencyLong:).
-    """
-    if not dims.is_valid():
-        raise ValueError("Brace dimensions must all be positive.")
-    if f_long_hz <= 0:
-        raise ValueError("Tap frequency must be positive.")
-    return BraceProperties(dimensions=dims, f_long=f_long_hz)
-
-
-def calculate_plate_properties(
-    dims: MaterialDimensions,
-    f_long_hz: float,
-    f_cross_hz: float,
-    f_flc_hz: Optional[float] = None,
-) -> PlateProperties:
-    """Create a PlateProperties from dimensions and tap frequencies.
-
-    Thin constructor — validation only.  All acoustic results are computed lazily by
-    PlateProperties as @property accessors, mirroring Swift PlateProperties.
-
-    - Parameters:
-      - dims: Physical dimensions and mass of the plate sample.
-      - f_long_hz: Along-grain fundamental frequency in Hz.
-      - f_cross_hz: Cross-grain fundamental frequency in Hz.
-      - f_flc_hz: Optional FLC diagonal frequency in Hz.
-    - Returns: PlateProperties instance.
-
-    Mirrors Swift PlateProperties.init(dimensions:fundamentalFrequencyLong:fundamentalFrequencyCross:fundamentalFrequencyFlc:).
-    """
-    if not dims.is_valid():
-        raise ValueError("Plate dimensions must all be positive.")
-    if f_long_hz <= 0 or f_cross_hz <= 0:
-        raise ValueError("Tap frequencies must be positive.")
-    return PlateProperties(dimensions=dims, f_long=f_long_hz, f_cross=f_cross_hz, f_flc=f_flc_hz)
-
-
-def calculate_gore_target_thickness(
-    props: PlateProperties,
-    body_length_mm: float,
-    body_width_mm: float,
-    fvs: float,
-) -> float | None:
-    """Calculate Gore target thickness (Eq. 4.5-7) in mm, or None if inputs are invalid.
-
-    Mirrors Swift PlateProperties.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:)
-    exactly — same signature shape, same return type (Float? → float | None), same algorithm.
-
-    G_LC is read exclusively from props.gore_shear_modulus (derived from the FLC tap);
-    falls back to 0 when the tap was not performed — mirrors Swift's `(goreShearModulus ?? 0)`.
-
-    Numerator:   Coef₂ × f_vs × a² × √ρ
-    Denominator: √(E_L_GPa + (a/b)⁴·E_C_GPa + (a/b)²·(Coef₃·E_L_GPa + Coef₄·G_LC_GPa)) × √1e9
-
-    - Parameters:
-      - props: Plate properties (Gore plate moduli and density are used).
-      - body_length_mm: Guitar body length (neck joint to tail block) in mm.
-      - body_width_mm: Guitar lower-bout width in mm.
-      - fvs: Target vibrational stiffness (f_vs).
-    - Returns: Target plate thickness in mm, or None if any input is zero or invalid.
-    """
-    if body_length_mm <= 0 or body_width_mm <= 0 or fvs <= 0:
-        return None
-    if props.density_kg_m3 <= 0:
-        return None
-
-    a   = body_length_mm / 1000.0   # Guitar body length in metres
-    b   = body_width_mm  / 1000.0   # Lower bout width in metres
-    rho = props.density_kg_m3
-
-    # Convert moduli to GPa for the denominator calculation; result is in Pa via ×10⁹.
-    # Mirrors Swift lines 464-467.
-    el_gpa  = props.gore_E_long_pa  / 1.0e9
-    ec_gpa  = props.gore_E_cross_pa / 1.0e9
-    glc_gpa = (props.gore_shear_modulus or 0.0) / 1.0e9
-
-    # Numerator: scale target stiffness by body area and root-density.
-    # Mirrors Swift line 470.
-    numerator = props._gore_coef2 * fvs * a * a * math.sqrt(rho)
-
-    # Denominator: anisotropic stiffness sum scaled by body aspect ratio.
-    # Mirrors Swift lines 473-478.
-    a_over_b  = a / b
-    a_over_b2 = a_over_b  * a_over_b
-    a_over_b4 = a_over_b2 * a_over_b2
-    denominator_gpa = (
-        el_gpa
-        + a_over_b4 * ec_gpa
-        + a_over_b2 * (props._gore_coef3 * el_gpa + props._gore_coef4 * glc_gpa)
-    )
-    if denominator_gpa <= 0:
-        return None
-
-    # Convert denominator GPa → Pa, then compute thickness in mm.
-    # Mirrors Swift lines 482-483.
-    denominator_pa = denominator_gpa * 1.0e9
-    return numerator / math.sqrt(denominator_pa) * 1000.0

@@ -1,0 +1,990 @@
+{
+ "slug": "test/plate",
+ "about": "Plate material properties (PlateProperties, MaterialDimensions, WoodQuality). The union of the three editions' cases; the expected values are Swift's (MaterialProperties.swift, in 32-bit Float — the others compute in doubles, so numbers are compared at 'tolerance': |actual - expected| <= relative * |expected| + absolute). 'plates': a sample (mm, g) and its fL / fC / fLC (Hz; fLC null when not tapped) → every property; 'goreTargetThickness' lists body outlines and stiffness targets with the thickness (mm, null when an input is invalid). 'woodQuality': the grade for a specific modulus, direction and wood type. 'numericScore': each grade's score. 'from' notes which editions' tests a case came from.",
+ "tolerance": {
+  "relative": 1e-05,
+  "absolute": 1e-09
+ },
+ "plates": [
+  {
+   "id": "real plate (the committed measurement)",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 557.5,
+    "massG": 208,
+    "thicknessMm": 4.85,
+    "widthMm": 220.5
+   },
+   "fL": 67.11537,
+   "fC": 116.27016,
+   "fLC": 35.353745,
+   "expect": {
+    "crossLongRatio": 0.07344251126050949,
+    "density": 348.8736267089844,
+    "densityGPerCm3": 0.3488736152648926,
+    "goreShearModulus": 340599552,
+    "goreYoungsModulusCross": 446229504,
+    "goreYoungsModulusLong": 6075901952,
+    "longCrossRatio": 13.61609172821045,
+    "overallQuality": "Good",
+    "radiationRatioCross": 3.2507245540618896,
+    "radiationRatioLong": 11.995169639587402,
+    "specificModulusCross": 1.28616464138031,
+    "specificModulusLong": 17.512535095214844,
+    "speedOfSoundCross": 1134.092041015625,
+    "speedOfSoundLong": 4184.79833984375,
+    "spruceQualityCross": "Very Good",
+    "spruceQualityLong": "Fair",
+    "volume": 0.0005962044233456254,
+    "youngsModulusCross": 448708896,
+    "youngsModulusCrossGPa": 0.4487088918685913,
+    "youngsModulusLong": 6109661696,
+    "youngsModulusLongGPa": 6.10966157913208
+   },
+   "goreTargetThickness": [
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": 2.8758668899536133,
+     "vibrationalStiffness": 60
+    },
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": 2.636211395263672,
+     "vibrationalStiffness": 55
+    },
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": 3.5948333740234375,
+     "vibrationalStiffness": 75
+    },
+    {
+     "bodyLengthMm": 0,
+     "bodyWidthMm": 390,
+     "expect": null,
+     "vibrationalStiffness": 60
+    },
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 0,
+     "expect": null,
+     "vibrationalStiffness": 60
+    },
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": null,
+     "vibrationalStiffness": 0
+    }
+   ]
+  },
+  {
+   "id": "real plate without the fLC tap",
+   "from": "web",
+   "sample": {
+    "lengthMm": 557.5,
+    "massG": 208,
+    "thicknessMm": 4.85,
+    "widthMm": 220.5
+   },
+   "fL": 67.11537,
+   "fC": 116.27016,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0.07344251126050949,
+    "density": 348.8736267089844,
+    "densityGPerCm3": 0.3488736152648926,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 446229504,
+    "goreYoungsModulusLong": 6075901952,
+    "longCrossRatio": 13.61609172821045,
+    "overallQuality": "Good",
+    "radiationRatioCross": 3.2507245540618896,
+    "radiationRatioLong": 11.995169639587402,
+    "specificModulusCross": 1.28616464138031,
+    "specificModulusLong": 17.512535095214844,
+    "speedOfSoundCross": 1134.092041015625,
+    "speedOfSoundLong": 4184.79833984375,
+    "spruceQualityCross": "Very Good",
+    "spruceQualityLong": "Fair",
+    "volume": 0.0005962044233456254,
+    "youngsModulusCross": 448708896,
+    "youngsModulusCrossGPa": 0.4487088918685913,
+    "youngsModulusLong": 6109661696,
+    "youngsModulusLongGPa": 6.10966157913208
+   },
+   "goreTargetThickness": [
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": 2.989657402038574,
+     "vibrationalStiffness": 60
+    }
+   ]
+  },
+  {
+   "id": "real plate, an fLC of 0 Hz",
+   "from": "new: G_LC is 0, not missing",
+   "sample": {
+    "lengthMm": 557.5,
+    "massG": 208,
+    "thicknessMm": 4.85,
+    "widthMm": 220.5
+   },
+   "fL": 67.11537,
+   "fC": 116.27016,
+   "fLC": 0,
+   "expect": {
+    "crossLongRatio": 0.07344251126050949,
+    "density": 348.8736267089844,
+    "densityGPerCm3": 0.3488736152648926,
+    "goreShearModulus": 0,
+    "goreYoungsModulusCross": 446229504,
+    "goreYoungsModulusLong": 6075901952,
+    "longCrossRatio": 13.61609172821045,
+    "overallQuality": "Good",
+    "radiationRatioCross": 3.2507245540618896,
+    "radiationRatioLong": 11.995169639587402,
+    "specificModulusCross": 1.28616464138031,
+    "specificModulusLong": 17.512535095214844,
+    "speedOfSoundCross": 1134.092041015625,
+    "speedOfSoundLong": 4184.79833984375,
+    "spruceQualityCross": "Very Good",
+    "spruceQualityLong": "Fair",
+    "volume": 0.0005962044233456254,
+    "youngsModulusCross": 448708896,
+    "youngsModulusCrossGPa": 0.4487088918685913,
+    "youngsModulusLong": 6109661696,
+    "youngsModulusLongGPa": 6.10966157913208
+   },
+   "goreTargetThickness": [
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": 2.989657402038574,
+     "vibrationalStiffness": 60
+    }
+   ]
+  },
+  {
+   "id": "real plate, zero thickness",
+   "from": "web",
+   "sample": {
+    "lengthMm": 557.5,
+    "massG": 208,
+    "thicknessMm": 0,
+    "widthMm": 220.5
+   },
+   "fL": 67.11537,
+   "fC": 116.27016,
+   "fLC": 35.353745,
+   "expect": {
+    "crossLongRatio": 0,
+    "density": 0,
+    "densityGPerCm3": 0,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 0,
+    "goreYoungsModulusLong": 0,
+    "longCrossRatio": 0,
+    "overallQuality": "Poor",
+    "radiationRatioCross": 0,
+    "radiationRatioLong": 0,
+    "specificModulusCross": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundCross": 0,
+    "speedOfSoundLong": 0,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Poor",
+    "volume": 0,
+    "youngsModulusCross": 0,
+    "youngsModulusCrossGPa": 0,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   },
+   "goreTargetThickness": [
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": null,
+     "vibrationalStiffness": 60
+    }
+   ]
+  },
+  {
+   "id": "real plate, zero mass",
+   "from": "web",
+   "sample": {
+    "lengthMm": 557.5,
+    "massG": 0,
+    "thicknessMm": 4.85,
+    "widthMm": 220.5
+   },
+   "fL": 67.11537,
+   "fC": 116.27016,
+   "fLC": 35.353745,
+   "expect": {
+    "crossLongRatio": 0,
+    "density": 0,
+    "densityGPerCm3": 0,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 0,
+    "goreYoungsModulusLong": 0,
+    "longCrossRatio": 0,
+    "overallQuality": "Poor",
+    "radiationRatioCross": 0,
+    "radiationRatioLong": 0,
+    "specificModulusCross": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundCross": 0,
+    "speedOfSoundLong": 0,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Poor",
+    "volume": 0.0005962044233456254,
+    "youngsModulusCross": 0,
+    "youngsModulusCrossGPa": 0,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "synthetic plate, 85 / 50 Hz",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 120,
+    "thicknessMm": 3,
+    "widthMm": 200
+   },
+   "fL": 85,
+   "fC": 50,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0.008858131244778633,
+    "density": 399.9999694824219,
+    "densityGPerCm3": 0.3999999761581421,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 167370912,
+    "goreYoungsModulusLong": 18894606336,
+    "longCrossRatio": 112.890625,
+    "overallQuality": "Very Good",
+    "radiationRatioCross": 1.6216356754302979,
+    "radiationRatioLong": 17.22987937927246,
+    "specificModulusCross": 0.42075225710868835,
+    "specificModulusLong": 47.498985290527344,
+    "speedOfSoundCross": 648.6542358398438,
+    "speedOfSoundLong": 6891.951171875,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Excellent",
+    "volume": 0.0003000000142492354,
+    "youngsModulusCross": 168300896,
+    "youngsModulusCrossGPa": 0.16830089688301086,
+    "youngsModulusLong": 18999592960,
+    "youngsModulusLongGPa": 18.99959373474121
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "synthetic plate, 170 / 100 Hz",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 120,
+    "thicknessMm": 3,
+    "widthMm": 200
+   },
+   "fL": 170,
+   "fC": 100,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0.008858131244778633,
+    "density": 399.9999694824219,
+    "densityGPerCm3": 0.3999999761581421,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 669483648,
+    "goreYoungsModulusLong": 75578425344,
+    "longCrossRatio": 112.890625,
+    "overallQuality": "Excellent",
+    "radiationRatioCross": 3.2432713508605957,
+    "radiationRatioLong": 34.45975875854492,
+    "specificModulusCross": 1.6830090284347534,
+    "specificModulusLong": 189.99594116210938,
+    "speedOfSoundCross": 1297.3084716796875,
+    "speedOfSoundLong": 13783.90234375,
+    "spruceQualityCross": "Excellent",
+    "spruceQualityLong": "Excellent",
+    "volume": 0.0003000000142492354,
+    "youngsModulusCross": 673203584,
+    "youngsModulusCrossGPa": 0.6732035875320435,
+    "youngsModulusLong": 75998371840,
+    "youngsModulusLongGPa": 75.99837493896484
+   },
+   "goreTargetThickness": [
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": 0.8925577998161316,
+     "vibrationalStiffness": 55
+    },
+    {
+     "bodyLengthMm": 490,
+     "bodyWidthMm": 390,
+     "expect": 1.217124104499817,
+     "vibrationalStiffness": 75
+    },
+    {
+     "bodyLengthMm": 0,
+     "bodyWidthMm": 390,
+     "expect": null,
+     "vibrationalStiffness": 75
+    }
+   ]
+  },
+  {
+   "id": "synthetic plate, 100 / 80 Hz",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 120,
+    "thicknessMm": 3,
+    "widthMm": 200
+   },
+   "fL": 100,
+   "fC": 80,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0.016383999958634377,
+    "density": 399.9999694824219,
+    "densityGPerCm3": 0.3999999761581421,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 428469536,
+    "goreYoungsModulusLong": 26151706624,
+    "longCrossRatio": 61.03515625,
+    "overallQuality": "Very Good",
+    "radiationRatioCross": 2.5946168899536133,
+    "radiationRatioLong": 20.270444869995117,
+    "specificModulusCross": 1.0771257877349854,
+    "specificModulusLong": 65.74253845214844,
+    "speedOfSoundCross": 1037.8466796875,
+    "speedOfSoundLong": 8108.17724609375,
+    "spruceQualityCross": "Good",
+    "spruceQualityLong": "Excellent",
+    "volume": 0.0003000000142492354,
+    "youngsModulusCross": 430850272,
+    "youngsModulusCrossGPa": 0.4308502674102783,
+    "youngsModulusLong": 26297014272,
+    "youngsModulusLongGPa": 26.297014236450195
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "synthetic plate, 200 / 80 Hz",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 120,
+    "thicknessMm": 3,
+    "widthMm": 200
+   },
+   "fL": 200,
+   "fC": 80,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0.004095999989658594,
+    "density": 399.9999694824219,
+    "densityGPerCm3": 0.3999999761581421,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 428469536,
+    "goreYoungsModulusLong": 104606826496,
+    "longCrossRatio": 244.140625,
+    "overallQuality": "Very Good",
+    "radiationRatioCross": 2.5946168899536133,
+    "radiationRatioLong": 40.540889739990234,
+    "specificModulusCross": 1.0771257877349854,
+    "specificModulusLong": 262.97015380859375,
+    "speedOfSoundCross": 1037.8466796875,
+    "speedOfSoundLong": 16216.3544921875,
+    "spruceQualityCross": "Good",
+    "spruceQualityLong": "Excellent",
+    "volume": 0.0003000000142492354,
+    "youngsModulusCross": 430850272,
+    "youngsModulusCrossGPa": 0.4308502674102783,
+    "youngsModulusLong": 105188057088,
+    "youngsModulusLongGPa": 105.18805694580078
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "half-length synthetic plate, same density, 85 / 50 Hz",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 250,
+    "massG": 60,
+    "thicknessMm": 3,
+    "widthMm": 200
+   },
+   "fL": 85,
+   "fC": 50,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0.14173009991645813,
+    "density": 399.9999694824219,
+    "densityGPerCm3": 0.3999999761581421,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 167370912,
+    "goreYoungsModulusLong": 1180912896,
+    "longCrossRatio": 7.0556640625,
+    "overallQuality": "Poor",
+    "radiationRatioCross": 1.6216356754302979,
+    "radiationRatioLong": 4.307469844818115,
+    "specificModulusCross": 0.42075225710868835,
+    "specificModulusLong": 2.968686580657959,
+    "speedOfSoundCross": 648.6542358398438,
+    "speedOfSoundLong": 1722.98779296875,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Poor",
+    "volume": 0.0001500000071246177,
+    "youngsModulusCross": 168300896,
+    "youngsModulusCrossGPa": 0.16830089688301086,
+    "youngsModulusLong": 1187474560,
+    "youngsModulusLongGPa": 1.1874746084213257
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "thin light plate, 200 / 100 Hz",
+   "from": "Python",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 60,
+    "thicknessMm": 2,
+    "widthMm": 200
+   },
+   "fL": 200,
+   "fC": 100,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0.006399999838322401,
+    "density": 299.9999694824219,
+    "densityGPerCm3": 0.29999998211860657,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 1129753600,
+    "goreYoungsModulusLong": 176524001280,
+    "longCrossRatio": 156.25001525878906,
+    "overallQuality": "Excellent",
+    "radiationRatioCross": 6.486542224884033,
+    "radiationRatioLong": 81.08177947998047,
+    "specificModulusCross": 3.7867696285247803,
+    "specificModulusLong": 591.6828002929688,
+    "speedOfSoundCross": 1945.9625244140625,
+    "speedOfSoundLong": 24324.53125,
+    "spruceQualityCross": "Excellent",
+    "spruceQualityLong": "Excellent",
+    "volume": 0.00020000000949949026,
+    "youngsModulusCross": 1136030848,
+    "youngsModulusCrossGPa": 1.1360307931900024,
+    "youngsModulusLong": 177504829440,
+    "youngsModulusLongGPa": 177.5048370361328
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "500 x 200 x 3 mm, 100 g",
+   "from": "Swift, Python",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 100,
+    "thicknessMm": 3,
+    "widthMm": 200
+   },
+   "fL": 85,
+   "fC": 50,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0.008858132176101208,
+    "density": 333.33331298828125,
+    "densityGPerCm3": 0.3333333134651184,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 139475776,
+    "goreYoungsModulusLong": 15745506304,
+    "longCrossRatio": 112.89061737060547,
+    "overallQuality": "Very Good",
+    "radiationRatioCross": 1.9459627866744995,
+    "radiationRatioLong": 20.675853729248047,
+    "specificModulusCross": 0.42075228691101074,
+    "specificModulusLong": 47.49898147583008,
+    "speedOfSoundCross": 648.6542358398438,
+    "speedOfSoundLong": 6891.95068359375,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Excellent",
+    "volume": 0.0003000000142492354,
+    "youngsModulusCross": 140250752,
+    "youngsModulusCrossGPa": 0.14025075733661652,
+    "youngsModulusLong": 15832993792,
+    "youngsModulusLongGPa": 15.832993507385254
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "zero thickness, 120 g",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 120,
+    "thicknessMm": 0,
+    "widthMm": 200
+   },
+   "fL": 85,
+   "fC": 50,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0,
+    "density": 0,
+    "densityGPerCm3": 0,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 0,
+    "goreYoungsModulusLong": 0,
+    "longCrossRatio": 0,
+    "overallQuality": "Poor",
+    "radiationRatioCross": 0,
+    "radiationRatioLong": 0,
+    "specificModulusCross": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundCross": 0,
+    "speedOfSoundLong": 0,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Poor",
+    "volume": 0,
+    "youngsModulusCross": 0,
+    "youngsModulusCrossGPa": 0,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "zero thickness, 100 g",
+   "from": "Swift, Python",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 100,
+    "thicknessMm": 0,
+    "widthMm": 200
+   },
+   "fL": 170,
+   "fC": 100,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0,
+    "density": 0,
+    "densityGPerCm3": 0,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 0,
+    "goreYoungsModulusLong": 0,
+    "longCrossRatio": 0,
+    "overallQuality": "Poor",
+    "radiationRatioCross": 0,
+    "radiationRatioLong": 0,
+    "specificModulusCross": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundCross": 0,
+    "speedOfSoundLong": 0,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Poor",
+    "volume": 0,
+    "youngsModulusCross": 0,
+    "youngsModulusCrossGPa": 0,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "zero thickness and mass",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 0,
+    "thicknessMm": 0,
+    "widthMm": 200
+   },
+   "fL": 170,
+   "fC": 100,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0,
+    "density": 0,
+    "densityGPerCm3": 0,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 0,
+    "goreYoungsModulusLong": 0,
+    "longCrossRatio": 0,
+    "overallQuality": "Poor",
+    "radiationRatioCross": 0,
+    "radiationRatioLong": 0,
+    "specificModulusCross": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundCross": 0,
+    "speedOfSoundLong": 0,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Poor",
+    "volume": 0,
+    "youngsModulusCross": 0,
+    "youngsModulusCrossGPa": 0,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   },
+   "goreTargetThickness": []
+  },
+  {
+   "id": "zero mass",
+   "from": "Swift, Python",
+   "sample": {
+    "lengthMm": 500,
+    "massG": 0,
+    "thicknessMm": 3,
+    "widthMm": 200
+   },
+   "fL": 85,
+   "fC": 50,
+   "fLC": null,
+   "expect": {
+    "crossLongRatio": 0,
+    "density": 0,
+    "densityGPerCm3": 0,
+    "goreShearModulus": null,
+    "goreYoungsModulusCross": 0,
+    "goreYoungsModulusLong": 0,
+    "longCrossRatio": 0,
+    "overallQuality": "Poor",
+    "radiationRatioCross": 0,
+    "radiationRatioLong": 0,
+    "specificModulusCross": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundCross": 0,
+    "speedOfSoundLong": 0,
+    "spruceQualityCross": "Poor",
+    "spruceQualityLong": "Poor",
+    "volume": 0.0003000000142492354,
+    "youngsModulusCross": 0,
+    "youngsModulusCrossGPa": 0,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   },
+   "goreTargetThickness": []
+  }
+ ],
+ "woodQuality": [
+  {
+   "direction": "longitudinal",
+   "expect": "Excellent",
+   "from": "Swift, Python, web",
+   "specificModulus": 30,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Excellent",
+   "from": "Swift, Python",
+   "specificModulus": 25,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Very Good",
+   "from": "Swift, Python",
+   "specificModulus": 22,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Good",
+   "from": "Swift, Python",
+   "specificModulus": 19,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Fair",
+   "from": "Swift, Python",
+   "specificModulus": 16,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Poor",
+   "from": "Swift, Python",
+   "specificModulus": 10,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "cross",
+   "expect": "Excellent",
+   "from": "Swift, Python",
+   "specificModulus": 1.5,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "cross",
+   "expect": "Very Good",
+   "from": "Swift, Python",
+   "specificModulus": 1.2,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "cross",
+   "expect": "Good",
+   "from": "Swift, Python",
+   "specificModulus": 0.9,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "cross",
+   "expect": "Fair",
+   "from": "Swift, Python",
+   "specificModulus": 0.6,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "cross",
+   "expect": "Poor",
+   "from": "Swift, Python",
+   "specificModulus": 0.3,
+   "woodType": "spruce"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Excellent",
+   "from": "new: every ladder",
+   "specificModulus": 22,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Very Good",
+   "from": "new: every ladder",
+   "specificModulus": 19,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Good",
+   "from": "new: every ladder",
+   "specificModulus": 16,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Fair",
+   "from": "new: every ladder",
+   "specificModulus": 13,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Poor",
+   "from": "new: every ladder",
+   "specificModulus": 12.9,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "cross",
+   "expect": "Excellent",
+   "from": "new: every ladder",
+   "specificModulus": 1.3,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "cross",
+   "expect": "Very Good",
+   "from": "new: every ladder",
+   "specificModulus": 1,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "cross",
+   "expect": "Good",
+   "from": "new: every ladder",
+   "specificModulus": 0.7,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "cross",
+   "expect": "Fair",
+   "from": "new: every ladder",
+   "specificModulus": 0.5,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "cross",
+   "expect": "Poor",
+   "from": "new: every ladder",
+   "specificModulus": 0.4,
+   "woodType": "cedar"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Excellent",
+   "from": "new: every ladder",
+   "specificModulus": 20,
+   "woodType": "maple"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Very Good",
+   "from": "new: every ladder",
+   "specificModulus": 16,
+   "woodType": "maple"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Good",
+   "from": "new: every ladder",
+   "specificModulus": 12,
+   "woodType": "maple"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Fair",
+   "from": "new: every ladder",
+   "specificModulus": 8,
+   "woodType": "maple"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Poor",
+   "from": "new: every ladder",
+   "specificModulus": 7.9,
+   "woodType": "maple"
+  },
+  {
+   "direction": "cross",
+   "expect": "Excellent",
+   "from": "new: every ladder",
+   "specificModulus": 20,
+   "woodType": "maple"
+  },
+  {
+   "direction": "cross",
+   "expect": "Very Good",
+   "from": "new: every ladder",
+   "specificModulus": 16,
+   "woodType": "maple"
+  },
+  {
+   "direction": "cross",
+   "expect": "Good",
+   "from": "new: every ladder",
+   "specificModulus": 12,
+   "woodType": "maple"
+  },
+  {
+   "direction": "cross",
+   "expect": "Fair",
+   "from": "new: every ladder",
+   "specificModulus": 8,
+   "woodType": "maple"
+  },
+  {
+   "direction": "cross",
+   "expect": "Poor",
+   "from": "new: every ladder",
+   "specificModulus": 7.9,
+   "woodType": "maple"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Excellent",
+   "from": "new: every ladder",
+   "specificModulus": 20,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Very Good",
+   "from": "new: every ladder",
+   "specificModulus": 16,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Good",
+   "from": "new: every ladder",
+   "specificModulus": 12,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Fair",
+   "from": "new: every ladder",
+   "specificModulus": 8,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "longitudinal",
+   "expect": "Poor",
+   "from": "new: every ladder",
+   "specificModulus": 7.9,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "cross",
+   "expect": "Excellent",
+   "from": "new: every ladder",
+   "specificModulus": 20,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "cross",
+   "expect": "Very Good",
+   "from": "new: every ladder",
+   "specificModulus": 16,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "cross",
+   "expect": "Good",
+   "from": "new: every ladder",
+   "specificModulus": 12,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "cross",
+   "expect": "Fair",
+   "from": "new: every ladder",
+   "specificModulus": 8,
+   "woodType": "rosewood"
+  },
+  {
+   "direction": "cross",
+   "expect": "Poor",
+   "from": "new: every ladder",
+   "specificModulus": 7.9,
+   "woodType": "rosewood"
+  }
+ ],
+ "numericScore": [
+  {
+   "expect": 5,
+   "quality": "Excellent"
+  },
+  {
+   "expect": 4,
+   "quality": "Very Good"
+  },
+  {
+   "expect": 3,
+   "quality": "Good"
+  },
+  {
+   "expect": 2,
+   "quality": "Fair"
+  },
+  {
+   "expect": 1,
+   "quality": "Poor"
+  }
+ ]
+}

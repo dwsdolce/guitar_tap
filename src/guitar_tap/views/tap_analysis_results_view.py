@@ -313,9 +313,9 @@ def pdf_report_data_from_measurement(
     from guitar_tap.models import measurement_type as MT
     from guitar_tap.models import plate_stiffness_preset as PSP
     from guitar_tap.models.material_properties import (
+        BraceProperties,
         MaterialDimensions,
-        calculate_brace_properties,
-        calculate_plate_properties,
+        PlateProperties,
     )
 
     m = measurement
@@ -375,14 +375,11 @@ def pdf_report_data_from_measurement(
                 thickness_mm = snap_for_dims.plate_thickness or 0,
                 mass_g       = snap_for_dims.plate_mass      or 0,
             )
-            if dims.is_valid():
-                try:
-                    plate_props = calculate_plate_properties(
-                        dims, long_peak.frequency, cross_peak.frequency,
-                        f_flc_hz=flc_peak.frequency if flc_peak else None,
-                    )
-                except Exception:
-                    pass
+            if dims.length_mm > 0 and dims.mass_g > 0:
+                plate_props = PlateProperties(
+                    dims, long_peak.frequency, cross_peak.frequency,
+                    flc_peak.frequency if flc_peak else None,
+                )
 
     elif mt == MT.MeasurementType.BRACE:
         long_peak = next((p for p in m.peaks if p.id == m.selected_longitudinal_peak_id), None)
@@ -393,11 +390,8 @@ def pdf_report_data_from_measurement(
                 thickness_mm = snap_for_dims.brace_thickness or 0,
                 mass_g       = snap_for_dims.brace_mass      or 0,
             )
-            if dims.is_valid():
-                try:
-                    brace_props = calculate_brace_properties(dims, long_peak.frequency)
-                except Exception:
-                    pass
+            if dims.length_mm > 0 and dims.mass_g > 0:
+                brace_props = BraceProperties(dims, long_peak.frequency)
 
     # ── Gore settings (plate only) ────────────────────────────────────────
     snap_for_gore = m.longitudinal_snapshot or any_snap
@@ -673,7 +667,6 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     from guitar_tap.models import guitar_type as GT_module
     from guitar_tap.models import measurement_type as MT
     from guitar_tap.models import plate_stiffness_preset as PSP
-    from guitar_tap.models.material_properties import calculate_gore_target_thickness
 
     # ── Unpack PDFReportData into local names used by the story builder ───
     mt_str           = data.measurement_type_str
@@ -697,12 +690,9 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     # props.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:).
     gore_thickness_mm: float | None = None
     if plate_props is not None:
-        try:
-            gore_thickness_mm = calculate_gore_target_thickness(
-                plate_props, guitar_body_length, guitar_body_width, plate_stiffness,
-            )
-        except Exception:
-            gore_thickness_mm = None
+        gore_thickness_mm = plate_props.gore_target_thickness(
+            guitar_body_length, guitar_body_width, plate_stiffness,
+        )
 
     try:
         mt = MT.MeasurementType(mt_str)

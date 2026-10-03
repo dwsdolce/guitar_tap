@@ -1,0 +1,164 @@
+{
+ "slug": "test/brace",
+ "about": "Brace material properties (BraceProperties). The union of the three editions' cases; the expected values are Swift's (MaterialProperties.swift, in 32-bit Float), compared at 'tolerance' as in plate.json. Each brace: a sample (mm, g) and its fL (Hz) → every property.",
+ "tolerance": {
+  "relative": 1e-05,
+  "absolute": 1e-09
+ },
+ "braces": [
+  {
+   "id": "real brace",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 556,
+    "massG": 128,
+    "thicknessMm": 29.4,
+    "widthMm": 20.4
+   },
+   "fL": 512.6888,
+   "expect": {
+    "density": 383.84661865234375,
+    "densityGPerCm3": 0.38384661078453064,
+    "radiationRatioLong": 13.662758827209473,
+    "specificModulusLong": 27.50377082824707,
+    "speedOfSoundLong": 5244.40380859375,
+    "spruceQuality": "Excellent",
+    "volume": 0.00033346653799526393,
+    "youngsModulusLong": 10557229056,
+    "youngsModulusLongGPa": 10.557229042053223
+   }
+  },
+  {
+   "id": "real brace, doubled fL",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 556,
+    "massG": 128,
+    "thicknessMm": 29.4,
+    "widthMm": 20.4
+   },
+   "fL": 1025.3776,
+   "expect": {
+    "density": 383.84661865234375,
+    "densityGPerCm3": 0.38384661078453064,
+    "radiationRatioLong": 27.325517654418945,
+    "specificModulusLong": 110.01508331298828,
+    "speedOfSoundLong": 10488.8076171875,
+    "spruceQuality": "Excellent",
+    "volume": 0.00033346653799526393,
+    "youngsModulusLong": 42228916224,
+    "youngsModulusLongGPa": 42.22891616821289
+   }
+  },
+  {
+   "id": "real brace, halved fL",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 556,
+    "massG": 128,
+    "thicknessMm": 29.4,
+    "widthMm": 20.4
+   },
+   "fL": 256.3444,
+   "expect": {
+    "density": 383.84661865234375,
+    "densityGPerCm3": 0.38384661078453064,
+    "radiationRatioLong": 6.831379413604736,
+    "specificModulusLong": 6.875942707061768,
+    "speedOfSoundLong": 2622.201904296875,
+    "spruceQuality": "Poor",
+    "volume": 0.00033346653799526393,
+    "youngsModulusLong": 2639307264,
+    "youngsModulusLongGPa": 2.6393072605133057
+   }
+  },
+  {
+   "id": "double-length brace, same density",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 1112,
+    "massG": 256,
+    "thicknessMm": 29.4,
+    "widthMm": 20.4
+   },
+   "fL": 512.6888,
+   "expect": {
+    "density": 383.84661865234375,
+    "densityGPerCm3": 0.38384661078453064,
+    "radiationRatioLong": 54.65103530883789,
+    "specificModulusLong": 440.0603332519531,
+    "speedOfSoundLong": 20977.615234375,
+    "spruceQuality": "Excellent",
+    "volume": 0.0006669330759905279,
+    "youngsModulusLong": 168915664896,
+    "youngsModulusLongGPa": 168.91566467285156
+   }
+  },
+  {
+   "id": "zero thickness",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 556,
+    "massG": 128,
+    "thicknessMm": 0,
+    "widthMm": 20.4
+   },
+   "fL": 512.6888,
+   "expect": {
+    "density": 0,
+    "densityGPerCm3": 0,
+    "radiationRatioLong": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundLong": 0,
+    "spruceQuality": "Poor",
+    "volume": 0,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   }
+  },
+  {
+   "id": "zero mass",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 556,
+    "massG": 0,
+    "thicknessMm": 29.4,
+    "widthMm": 20.4
+   },
+   "fL": 512.6888,
+   "expect": {
+    "density": 0,
+    "densityGPerCm3": 0,
+    "radiationRatioLong": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundLong": 0,
+    "spruceQuality": "Poor",
+    "volume": 0.00033346653799526393,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   }
+  },
+  {
+   "id": "zero thickness and mass",
+   "from": "Swift, Python, web",
+   "sample": {
+    "lengthMm": 556,
+    "massG": 0,
+    "thicknessMm": 0,
+    "widthMm": 20.4
+   },
+   "fL": 512.6888,
+   "expect": {
+    "density": 0,
+    "densityGPerCm3": 0,
+    "radiationRatioLong": 0,
+    "specificModulusLong": 0,
+    "speedOfSoundLong": 0,
+    "spruceQuality": "Poor",
+    "volume": 0,
+    "youngsModulusLong": 0,
+    "youngsModulusLongGPa": 0
+   }
+  }
+ ]
+}

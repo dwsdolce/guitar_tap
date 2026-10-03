@@ -3790,14 +3790,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_plate_analysis_complete(self, f_long: float, f_cross: float, f_flc: float) -> None:
         """Auto-compute material properties and display in results panel."""
         mt = TDS.measurement_type()
-        dims = self._get_current_dims()
-        if dims is None or not dims.is_valid():
-            QtWidgets.QMessageBox.warning(
-                self, "Missing Dimensions",
-                "Plate/brace dimensions are required.\n"
-                "Please enter them in Settings → Measurement Type.",
-            )
-            return
         # The plateAnalysisComplete signal carries the exact selected peak frequencies
         # from the model's selected_longitudinal_peak / selected_cross_peak /
         # selected_flc_peak. Use them directly — mirrors Swift passing
@@ -3832,19 +3824,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.peak_widget.model.refresh_annotations()
 
-        try:
-            if mt.is_brace:
-                self._populate_brace_section(PA.calculate_brace_properties(dims, f_long))
-            else:
-                self._populate_plate_section(
-                    PA.calculate_plate_properties(
-                        dims, f_long, f_cross,
-                        f_flc_hz=actual_flc if actual_flc > 0 else None,
-                    ),
-                )
-        except ValueError as exc:
-            QtWidgets.QMessageBox.warning(self, "Calculation Error", str(exc))
-            return
+        self._show_material_properties(mt)
 
         self.set_measurement_complete(True)
         # Store B was just seeded from settings at the complete-freeze — fill the editor fields.
@@ -3922,9 +3902,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 except (ValueError, KeyError):
                     _preset = PSP.PlateStiffnessPreset.STEEL_STRING_TOP
             # Mirrors Swift: props.goreTargetThickness(bodyLengthMm:bodyWidthMm:vibrationalStiffness:)
-            _thickness_mm = PA.calculate_gore_target_thickness(
-                props, _body_l, _body_w, _fvs
-            )
+            _thickness_mm = props.gore_target_thickness(_body_l, _body_w, _fvs)
             if _thickness_mm is not None and _thickness_mm > 0:
                 # Just the target-thickness result \u2014 the body inputs live in the Body Dimensions box
                 # above and GLC among the moduli below (mirrors Swift's trimmed Gore box).
@@ -3958,22 +3936,7 @@ class MainWindow(QtWidgets.QMainWindow):
         mt = TDS.measurement_type()
         if mt.is_guitar:
             return
-        f_long = analyzer.selected_longitudinal_peak.frequency if analyzer.selected_longitudinal_peak else 0.0
-        f_cross = analyzer.selected_cross_peak.frequency if analyzer.selected_cross_peak else 0.0
-        f_flc = analyzer.selected_flc_peak.frequency if analyzer.selected_flc_peak else 0.0
-        if f_long <= 0:
-            return
-        dims = self._get_current_dims()
-        if dims is None or not dims.is_valid():
-            return
-        try:
-            if mt.is_brace:
-                self._populate_brace_section(PA.calculate_brace_properties(dims, f_long))
-            elif f_cross > 0:
-                self._populate_plate_section(PA.calculate_plate_properties(
-                    dims, f_long, f_cross, f_flc_hz=f_flc if f_flc > 0 else None))
-        except ValueError:
-            pass
+        self._show_material_properties(mt)
 
     def _seed_material_editors(self) -> None:
         """Re-seed the Results-panel dimension editors from Store B — called when a measurement freshly
@@ -3983,6 +3946,47 @@ class MainWindow(QtWidgets.QMainWindow):
             editor = getattr(self, name, None)
             if editor is not None:
                 editor.seed()
+
+    def _calculated_plate_properties(self) -> PA.PlateProperties | None:
+        """The plate's properties from the identified peaks (fL, fC and the optional fLC) and the
+        measurement's own dimensions (Store B); None without fL, fC or Store B.
+        Mirrors Swift TapAnalysisResultsView.calculatedPlateProperties."""
+        az = self.fft_canvas.analyzer
+        long_peak, cross_peak = az.selected_longitudinal_peak, az.selected_cross_peak
+        if long_peak is None or cross_peak is None:
+            return None
+        inputs = az.material_inputs
+        if inputs is None:
+            return None
+        flc_peak = az.selected_flc_peak
+        return PA.PlateProperties(
+            inputs.dimensions, long_peak.frequency, cross_peak.frequency,
+            flc_peak.frequency if flc_peak else None,
+        )
+
+    def _calculated_brace_properties(self) -> PA.BraceProperties | None:
+        """The brace's properties from the identified fL peak and the measurement's own dimensions
+        (Store B); None without fL or Store B. Mirrors Swift TapAnalysisResultsView.calculatedBraceProperties."""
+        az = self.fft_canvas.analyzer
+        long_peak = az.selected_longitudinal_peak
+        if long_peak is None:
+            return None
+        inputs = az.material_inputs
+        if inputs is None:
+            return None
+        return PA.BraceProperties(inputs.dimensions, long_peak.frequency)
+
+    def _show_material_properties(self, mt) -> None:
+        """Fill the Results panel's plate or brace section from the calculated properties, when there are
+        any — Swift's sections read calculatedPlateProperties / calculatedBraceProperties."""
+        if mt.is_brace:
+            brace = self._calculated_brace_properties()
+            if brace is not None:
+                self._populate_brace_section(brace)
+        else:
+            plate = self._calculated_plate_properties()
+            if plate is not None:
+                self._populate_plate_section(plate)
 
     def _get_current_dims(self) -> PA.PlateDimensions | None:
         """Return the current material measurement's own dimensions — Store B
@@ -4601,28 +4605,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Compute and display material properties (plate/brace) ─────────────
         if not _restored_mt.is_guitar:
-            _f_long  = analyzer.selected_longitudinal_peak.frequency if analyzer.selected_longitudinal_peak else 0.0
-            _f_cross = analyzer.selected_cross_peak.frequency        if analyzer.selected_cross_peak        else 0.0
-            _f_flc   = analyzer.selected_flc_peak.frequency          if analyzer.selected_flc_peak          else 0.0
-            if _f_long > 0:
-                _dims = self._get_current_dims()
-                if _dims and _dims.is_valid():
-                    try:
-                        if _restored_mt.is_brace:
-                            self._populate_brace_section(
-                                PA.calculate_brace_properties(_dims, _f_long)
-                            )
-                        elif _f_cross > 0:
-                            self._populate_plate_section(
-                                PA.calculate_plate_properties(
-                                    _dims, _f_long, _f_cross,
-                                    f_flc_hz=_f_flc if _f_flc > 0 else None,
-                                ),
-                            )
-                        # Store B was set from the loaded snapshot — fill the editor fields.
-                        self._seed_material_editors()
-                    except ValueError:
-                        pass
+            self._show_material_properties(_restored_mt)
+            # Store B was set from the loaded snapshot — fill the editor fields.
+            self._seed_material_editors()
 
         # ── Chart title ───────────────────────────────────────────────────────
         # loadedMeasurementNameChanged signal emitted by _load_measurement_body()
@@ -4962,23 +4947,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 flc_peak   = next((p for p in all_peaks if p.id == sel_flc_id),   None) if sel_flc_id else None
                 if long_peak and cross_peak:
                     dims = self._get_current_dims()  # Store B (analyzer.material_inputs)
-                    if dims is not None and dims.is_valid():
-                        try:
-                            plate_props = PA.calculate_plate_properties(
-                                dims, long_peak.frequency, cross_peak.frequency,
-                                f_flc_hz=flc_peak.frequency if flc_peak else None,
-                            )
-                        except Exception:
-                            pass
+                    if dims is not None and dims.length_mm > 0 and dims.mass_g > 0:
+                        plate_props = PA.PlateProperties(
+                            dims, long_peak.frequency, cross_peak.frequency,
+                            flc_peak.frequency if flc_peak else None,
+                        )
             elif mt == MT.MeasurementType.BRACE:
                 long_peak = next((p for p in all_peaks if p.id == sel_long_id), None)
                 if long_peak:
                     dims = self._get_current_dims()  # Store B (analyzer.material_inputs)
-                    if dims is not None and dims.is_valid():
-                        try:
-                            brace_props = PA.calculate_brace_properties(dims, long_peak.frequency)
-                        except Exception:
-                            pass
+                    if dims is not None and dims.length_mm > 0 and dims.mass_g > 0:
+                        brace_props = PA.BraceProperties(dims, long_peak.frequency)
 
             # ── Gore / plate stiffness — Store B (the measurement's own body dims + f_vs), never the
             # live Settings template. Mirrors Swift reading analyzer.materialInputs for the report. ──
@@ -5416,23 +5395,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 flc_peak   = next((p for p in all_peaks if p.id == sel_flc_id),   None) if sel_flc_id else None
                 if long_peak and cross_peak:
                     dims = self._get_current_dims()  # Store B (analyzer.material_inputs)
-                    if dims is not None and dims.is_valid():
-                        try:
-                            plate_props = PA.calculate_plate_properties(
-                                dims, long_peak.frequency, cross_peak.frequency,
-                                f_flc_hz=flc_peak.frequency if flc_peak else None,
-                            )
-                        except Exception:
-                            pass
+                    if dims is not None and dims.length_mm > 0 and dims.mass_g > 0:
+                        plate_props = PA.PlateProperties(
+                            dims, long_peak.frequency, cross_peak.frequency,
+                            flc_peak.frequency if flc_peak else None,
+                        )
             elif mt == MT.MeasurementType.BRACE:
                 long_peak = next((p for p in all_peaks if p.id == sel_long_id), None)
                 if long_peak:
                     dims = self._get_current_dims()  # Store B (analyzer.material_inputs)
-                    if dims is not None and dims.is_valid():
-                        try:
-                            brace_props = PA.calculate_brace_properties(dims, long_peak.frequency)
-                        except Exception:
-                            pass
+                    if dims is not None and dims.length_mm > 0 and dims.mass_g > 0:
+                        brace_props = PA.BraceProperties(dims, long_peak.frequency)
 
             # Gore / plate stiffness — Store B (the measurement's own body dims + f_vs), never the
             # live Settings template. Mirrors Swift reading analyzer.materialInputs for the report.
@@ -7098,40 +7071,12 @@ class MainWindow(QtWidgets.QMainWindow):
             # identifiedModes @Published → SwiftUI re-evaluates calculatedBraceProperties
             # (computed property that reads TapDisplaySettings + effectiveLongitudinalPeakID).
             #
-            # Python has no reactive computed properties, so we mirror the Swift computed
-            # property directly: read effective peak IDs from the analyzer, look up peak
-            # objects from the phase-specific lists (live) or peaks_above_peak_min (restored),
-            # read fresh dimensions from AppSettings, then repopulate the section.
+            # Python has no reactive computed properties, so the section is repopulated from
+            # _calculated_plate_properties / _calculated_brace_properties, the ports of Swift's.
             if (mt_val is MT.MeasurementType.BRACE or mt_val is MT.MeasurementType.PLATE) \
                     and self._is_measurement_complete:
-                _az = self.fft_canvas.analyzer
-                # The identified peaks, live or loaded (mirrors Swift calculatedPlate/BraceProperties).
-                _long_peak = _az.selected_longitudinal_peak
-                if _long_peak:
-                    _dims = self._get_current_dims()
-                    if _dims and _dims.is_valid():
-                        try:
-                            if mt_val is MT.MeasurementType.BRACE:
-                                self._populate_brace_section(
-                                    PA.calculate_brace_properties(
-                                        _dims, _long_peak.frequency
-                                    )
-                                )
-                            else:
-                                _cross_peak = _az.selected_cross_peak
-                                _flc_peak = _az.selected_flc_peak
-                                if _cross_peak:
-                                    self._populate_plate_section(
-                                        PA.calculate_plate_properties(
-                                            _dims,
-                                            _long_peak.frequency,
-                                            _cross_peak.frequency,
-                                            f_flc_hz=_flc_peak.frequency if _flc_peak else None,
-                                        )
-                                    )
-                            self._seed_material_editors()
-                        except ValueError:
-                            pass
+                self._show_material_properties(mt_val)
+                self._seed_material_editors()
 
             dlg.accept()
 
