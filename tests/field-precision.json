@@ -1,0 +1,285 @@
+{
+ "slug": "test/field-precision",
+ "about": "The numeric-precision table and its helpers, the same cases in every edition. Field names are Swift's (FieldPrecision's static lets); each runner maps them. Values are Swift 32-bit Floats; infinity is written \"Infinity\" / \"-Infinity\". Expected values are Swift's.",
+ "table": [
+  [
+   "linearDimensionMM",
+   2
+  ],
+  [
+   "massG",
+   1
+  ],
+  [
+   "bodyDimensionMM",
+   0
+  ],
+  [
+   "frequencyHz",
+   0
+  ],
+  [
+   "magnitudeDB",
+   0
+  ],
+  [
+   "stiffness",
+   0
+  ],
+  [
+   "peakFrequencyHz",
+   1
+  ],
+  [
+   "peakMagnitudeDB",
+   1
+  ],
+  [
+   "qFactor",
+   1
+  ],
+  [
+   "youngsModulusGPa",
+   2
+  ],
+  [
+   "speedOfSoundMS",
+   0
+  ],
+  [
+   "densityGPerCm3",
+   3
+  ],
+  [
+   "decayRatio",
+   2
+  ],
+  [
+   "bandwidthHz",
+   1
+  ],
+  [
+   "shearModulusGPa",
+   3
+  ],
+  [
+   "specificModulus",
+   1
+  ],
+  [
+   "radiationRatio",
+   1
+  ],
+  [
+   "crossLongRatio",
+   3
+  ],
+  [
+   "longCrossRatio",
+   1
+  ],
+  [
+   "goreThicknessMM",
+   2
+  ],
+  [
+   "decayTimeS",
+   2
+  ]
+ ],
+ "decimalsWithin": [
+  [
+   "29.35",
+   2,
+   true
+  ],
+  [
+   "29.3",
+   2,
+   true
+  ],
+  [
+   "29",
+   2,
+   true
+  ],
+  [
+   "29.356",
+   2,
+   false
+  ],
+  [
+   "29.35",
+   1,
+   false
+  ],
+  [
+   "29.",
+   2,
+   true
+  ],
+  [
+   "495.",
+   0,
+   false
+  ],
+  [
+   "495.5",
+   0,
+   false
+  ],
+  [
+   "495",
+   0,
+   true
+  ],
+  [
+   "",
+   2,
+   true
+  ],
+  [
+   "-",
+   2,
+   true
+  ],
+  [
+   "",
+   0,
+   true
+  ],
+  [
+   "-",
+   0,
+   true
+  ],
+  [
+   "-45",
+   0,
+   true
+  ],
+  [
+   "-45.5",
+   1,
+   true
+  ],
+  [
+   "-45.55",
+   1,
+   false
+  ],
+  [
+   "4a",
+   0,
+   false
+  ],
+  [
+   "abc",
+   2,
+   false
+  ],
+  [
+   "2..5",
+   2,
+   false
+  ]
+ ],
+ "rounded": [
+  {
+   "value": 2.5,
+   "decimals": 0,
+   "expect": 3
+  },
+  {
+   "value": 0.5,
+   "decimals": 0,
+   "expect": 1
+  },
+  {
+   "value": -2.5,
+   "decimals": 0,
+   "expect": -3
+  },
+  {
+   "value": -0.5,
+   "decimals": 0,
+   "expect": -1
+  },
+  {
+   "value": 29.356,
+   "decimals": 2,
+   "expect": 29.36,
+   "tolerance": 1e-05
+  },
+  {
+   "value": 29.354,
+   "decimals": 2,
+   "expect": 29.35,
+   "tolerance": 1e-05
+  },
+  {
+   "value": 29.35,
+   "decimals": 2,
+   "expect": 29.35,
+   "tolerance": 1e-05
+  },
+  {
+   "value": -29.356,
+   "decimals": 2,
+   "expect": -29.36,
+   "tolerance": 1e-05
+  }
+ ],
+ "string": [
+  [
+   29.4,
+   2,
+   "29.40"
+  ],
+  [
+   29,
+   0,
+   "29"
+  ],
+  [
+   -100,
+   0,
+   "-100"
+  ],
+  [
+   2.5,
+   1,
+   "2.5"
+  ],
+  [
+   2.678,
+   2,
+   "2.68"
+  ],
+  [
+   2.5,
+   0,
+   "2"
+  ],
+  [
+   0.125,
+   2,
+   "0.12"
+  ],
+  [
+   0.15,
+   1,
+   "0.2"
+  ],
+  [
+   "-Infinity",
+   1,
+   "-∞"
+  ],
+  [
+   "Infinity",
+   1,
+   "∞"
+  ]
+ ]
+}

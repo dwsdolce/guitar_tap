@@ -1,0 +1,31 @@
+{
+ "slug": "test/quality-colors",
+ "about": "The wood-quality grades: each grade's label and its absolute colour (the light value), the same in every edition. Grade names are Swift's WoodQuality case names. Expected values are Swift's.",
+ "grades": [
+  [
+   "excellent",
+   "Excellent",
+   "#34C759"
+  ],
+  [
+   "veryGood",
+   "Very Good",
+   "#00C7BE"
+  ],
+  [
+   "good",
+   "Good",
+   "#007AFF"
+  ],
+  [
+   "fair",
+   "Fair",
+   "#FF9500"
+  ],
+  [
+   "poor",
+   "Poor",
+   "#FF3B30"
+  ]
+ ]
+}

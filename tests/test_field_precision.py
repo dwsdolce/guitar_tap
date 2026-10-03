@@ -1,125 +1,61 @@
 # @parity test/field-precision
-"""Mirror of Swift ``FieldPrecisionTests`` / web ``field-precision.test.ts``.
+"""The numeric-precision table and its helpers (``field_precision``) against the shared case file,
+``field-precision.json`` — the same cases the Swift and web suites run. Field names are Swift's; ``FIELDS``
+maps them to this module's constants."""
 
-Pins the numeric-precision single source of truth (``field_precision``): the per-field decimal
-table, the restrict-on-entry predicate (``decimals_within``), half-away-from-zero rounding
-(``rounded``), and display formatting (``string``). Keep these cases identical across the three
-editions so the table, regex, and rounding can never quietly drift apart.
-"""
+from __future__ import annotations
+
+import json
+import os
+
+import pytest
+
 from guitar_tap.models import field_precision as fp
 
-# --- Precision table ---
-
-def test_table_matches_canonical_values():
-    assert fp.LINEAR_DIMENSION_MM == 2
-    assert fp.MASS_G == 1
-    assert fp.BODY_DIMENSION_MM == 0
-    assert fp.FREQUENCY_HZ == 0
-    assert fp.MAGNITUDE_DB == 0
-    assert fp.STIFFNESS == 0
-    assert fp.PEAK_FREQUENCY_HZ == 1
-    assert fp.PEAK_MAGNITUDE_DB == 1
-    assert fp.Q_FACTOR == 1
-    assert fp.YOUNGS_MODULUS_GPA == 2
-    assert fp.SPEED_OF_SOUND_MS == 0
-    assert fp.DENSITY_G_PER_CM3 == 3
-    assert fp.DECAY_RATIO == 2
-    assert fp.BANDWIDTH_HZ == 1
-    assert fp.SHEAR_MODULUS_GPA == 3
-    assert fp.SPECIFIC_MODULUS == 1
-    assert fp.RADIATION_RATIO == 1
-    assert fp.CROSS_LONG_RATIO == 3
-    assert fp.LONG_CROSS_RATIO == 1
-    assert fp.GORE_THICKNESS_MM == 2
-    assert fp.DECAY_TIME_S == 2
+with open(os.path.join(os.path.dirname(__file__), "field-precision.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
 
 
-# --- decimals_within (restrict-on-entry predicate) ---
-
-def test_decimals_within_accepts_within_precision():
-    assert fp.decimals_within("29.35", 2)
-    assert fp.decimals_within("29.3", 2)
-    assert fp.decimals_within("29", 2)
-
-
-def test_decimals_within_rejects_over_precision():
-    assert not fp.decimals_within("29.356", 2)
-    assert not fp.decimals_within("29.35", 1)
-
-
-def test_decimals_within_accepts_trailing_dot_while_typing():
-    assert fp.decimals_within("29.", 2)
+# Swift's field names → this module's constants.
+FIELDS = {
+    "linearDimensionMM": fp.LINEAR_DIMENSION_MM, "massG": fp.MASS_G, "bodyDimensionMM": fp.BODY_DIMENSION_MM,
+    "frequencyHz": fp.FREQUENCY_HZ, "magnitudeDB": fp.MAGNITUDE_DB, "stiffness": fp.STIFFNESS,
+    "peakFrequencyHz": fp.PEAK_FREQUENCY_HZ, "peakMagnitudeDB": fp.PEAK_MAGNITUDE_DB, "qFactor": fp.Q_FACTOR,
+    "youngsModulusGPa": fp.YOUNGS_MODULUS_GPA, "speedOfSoundMS": fp.SPEED_OF_SOUND_MS,
+    "densityGPerCm3": fp.DENSITY_G_PER_CM3, "decayRatio": fp.DECAY_RATIO, "bandwidthHz": fp.BANDWIDTH_HZ,
+    "shearModulusGPa": fp.SHEAR_MODULUS_GPA, "specificModulus": fp.SPECIFIC_MODULUS,
+    "radiationRatio": fp.RADIATION_RATIO, "crossLongRatio": fp.CROSS_LONG_RATIO,
+    "longCrossRatio": fp.LONG_CROSS_RATIO, "goreThicknessMM": fp.GORE_THICKNESS_MM, "decayTimeS": fp.DECAY_TIME_S,
+}
 
 
-def test_decimals_within_rejects_dot_at_zero_decimals():
-    assert not fp.decimals_within("495.", 0)
-    assert not fp.decimals_within("495.5", 0)
-    assert fp.decimals_within("495", 0)
+def _number(v) -> float:
+    return float("-inf") if v == "-Infinity" else float("inf") if v == "Infinity" else float(v)
 
 
-def test_decimals_within_accepts_in_progress_empty_and_minus():
-    assert fp.decimals_within("", 2)
-    assert fp.decimals_within("-", 2)
-    assert fp.decimals_within("", 0)
-    assert fp.decimals_within("-", 0)
+@pytest.mark.parametrize("name,decimals", DATA["table"])
+def test_table(name, decimals):
+    assert FIELDS[name] == decimals
 
 
-def test_decimals_within_accepts_negative():
-    assert fp.decimals_within("-45", 0)
-    assert fp.decimals_within("-45.5", 1)
-    assert not fp.decimals_within("-45.55", 1)
+def test_table_names_every_field():
+    assert sorted(FIELDS) == sorted(name for name, _ in DATA["table"])
 
 
-def test_decimals_within_rejects_non_numeric():
-    assert not fp.decimals_within("4a", 0)
-    assert not fp.decimals_within("abc", 2)
-    assert not fp.decimals_within("2..5", 2)
+@pytest.mark.parametrize("text,decimals,expected", DATA["decimalsWithin"])
+def test_decimals_within(text, decimals, expected):
+    assert fp.decimals_within(text, decimals) is expected
 
 
-# --- rounded (half away from zero) ---
-
-def test_rounded_half_away_from_zero():
-    assert fp.rounded(2.5, 0) == 3
-    assert fp.rounded(0.5, 0) == 1
-    assert fp.rounded(-2.5, 0) == -3
-    assert fp.rounded(-0.5, 0) == -1
-
-
-def test_rounded_rounds_to_precision():
-    assert abs(fp.rounded(29.356, 2) - 29.36) < 1e-5
-    assert abs(fp.rounded(29.354, 2) - 29.35) < 1e-5
-    assert abs(fp.rounded(29.35, 2) - 29.35) < 1e-5
+@pytest.mark.parametrize("row", DATA["rounded"], ids=lambda r: f'{r["value"]}@{r["decimals"]}')
+def test_rounded(row):
+    result = fp.rounded(_number(row["value"]), row["decimals"])
+    if "tolerance" in row:
+        assert abs(result - _number(row["expect"])) < row["tolerance"]
+    else:
+        assert result == _number(row["expect"])
 
 
-def test_rounded_negative_rounds_away_from_zero():
-    assert abs(fp.rounded(-29.356, 2) - (-29.36)) < 1e-5
-
-
-# --- string (display formatting) ---
-
-def test_string_formats_at_precision():
-    assert fp.string(29.4, 2) == "29.40"
-    assert fp.string(29, 0) == "29"
-    assert fp.string(-100, 0) == "-100"
-    assert fp.string(2.5, 1) == "2.5"
-
-
-def test_string_rounds_for_display():
-    assert fp.string(2.678, 2) == "2.68"
-
-
-def test_string_rounds_an_exact_tie_to_even():
-    """An exact tie rounds to even, as C's ``%.Nf`` does: 2.5 → "2", 0.125 → "0.12"."""
-    assert fp.string(2.5, 0) == "2"
-    assert fp.string(0.125, 2) == "0.12"
-
-
-def test_string_formats_the_32_bit_value():
-    """The value is shown as Swift's 32-bit ``Float``: 0.15 is 0.150000006 there, so it reads "0.2"."""
-    assert fp.string(0.15, 1) == "0.2"
-
-
-def test_string_infinity_reads_as_symbol():
-    """A silent input's peak is -∞ dB: it reads "-∞" (as Swift's status bar draws it), not "-inf"."""
-    assert fp.string(float("-inf"), 1) == "-∞"
-    assert fp.string(float("inf"), 1) == "∞"
+@pytest.mark.parametrize("value,decimals,expected", DATA["string"])
+def test_string(value, decimals, expected):
+    assert fp.string(_number(value), decimals) == expected

@@ -1,0 +1,146 @@
+{
+ "slug": "test/export-filename",
+ "about": "The export filename stem shared by every artifact — the slugged name or the artifact's default word, then whole Unix seconds — and a saved measurement's base filename, the same cases in every edition. null is no name. Expected values are Swift's.",
+ "stem": [
+  {
+   "name": "Martin 000-28",
+   "seconds": 1784060789,
+   "unnamed": "measurement",
+   "expect": "martin-000-28-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": "Martin 000-28",
+   "seconds": 1784060789,
+   "unnamed": "report",
+   "expect": "martin-000-28-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": "Martin 000-28",
+   "seconds": 1784060789,
+   "unnamed": "spectrum",
+   "expect": "martin-000-28-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": null,
+   "seconds": 1784060789,
+   "unnamed": "measurement",
+   "expect": "measurement-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": null,
+   "seconds": 1784060789,
+   "unnamed": "report",
+   "expect": "report-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": null,
+   "seconds": 1784060789,
+   "unnamed": "spectrum",
+   "expect": "spectrum-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": "",
+   "seconds": 1784060789,
+   "unnamed": "measurement",
+   "expect": "measurement-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": "Bridge/Plate Top",
+   "seconds": 1784060789,
+   "unnamed": "report",
+   "expect": "bridge-plate-top-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": "RAMÍREZ 1975",
+   "seconds": 1784060789,
+   "unnamed": "measurement",
+   "expect": "ramírez-1975-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": "x",
+   "seconds": 1784060789.123456,
+   "unnamed": "measurement",
+   "expect": "x-1784060789",
+   "from": [
+    "swift"
+   ],
+   "note": "the discriminator is whole seconds"
+  }
+ ],
+ "measurementBaseFilename": [
+  {
+   "name": "Martin",
+   "timestamp": "2026-07-14T20:26:29Z",
+   "expect": "martin-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": null,
+   "timestamp": "2026-07-14T20:26:29Z",
+   "expect": "measurement-1784060789",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "name": "Martin 000-28",
+   "timestamp": "2026-07-14T20:26:29.789Z",
+   "expect": "martin-000-28-1784060789",
+   "from": [
+    "web"
+   ],
+   "note": "a fractional timestamp still gives whole seconds"
+  }
+ ]
+}

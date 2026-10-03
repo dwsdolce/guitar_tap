@@ -1,0 +1,150 @@
+{
+ "slug": "test/measurement-name",
+ "about": "The required-name rule — what enables Save, what is stored for the name and the notes — the same cases in every edition. The candidates that close each list are run through all three functions, so the name and notes rules agree and validity agrees with storage. null is no stored value. Expected values are Swift's.",
+ "isValidName": [
+  [
+   "",
+   false
+  ],
+  [
+   "   ",
+   false
+  ],
+  [
+   "\t\n ",
+   false
+  ],
+  [
+   "x",
+   true
+  ],
+  [
+   "Martin 000-28",
+   true
+  ],
+  [
+   "  padded  ",
+   true
+  ],
+  [
+   "",
+   false
+  ],
+  [
+   "  ",
+   false
+  ],
+  [
+   "\n",
+   false
+  ],
+  [
+   "a",
+   true
+  ],
+  [
+   "  a  ",
+   true
+  ],
+  [
+   "Spruce Top",
+   true
+  ],
+  [
+   " multi word \n",
+   true
+  ]
+ ],
+ "normalizedName": [
+  [
+   "  Martin 000-28  ",
+   "Martin 000-28"
+  ],
+  [
+   "Ramírez",
+   "Ramírez"
+  ],
+  [
+   "",
+   null
+  ],
+  [
+   "   ",
+   null
+  ],
+  [
+   "",
+   null
+  ],
+  [
+   "  ",
+   null
+  ],
+  [
+   "\n",
+   null
+  ],
+  [
+   "a",
+   "a"
+  ],
+  [
+   "  a  ",
+   "a"
+  ],
+  [
+   "Spruce Top",
+   "Spruce Top"
+  ],
+  [
+   " multi word \n",
+   "multi word"
+  ]
+ ],
+ "normalizedNotes": [
+  [
+   "  Tapped cold  ",
+   "Tapped cold"
+  ],
+  [
+   "line one\nline two",
+   "line one\nline two"
+  ],
+  [
+   "",
+   null
+  ],
+  [
+   "   \n  ",
+   null
+  ],
+  [
+   "",
+   null
+  ],
+  [
+   "  ",
+   null
+  ],
+  [
+   "\n",
+   null
+  ],
+  [
+   "a",
+   "a"
+  ],
+  [
+   "  a  ",
+   "a"
+  ],
+  [
+   "Spruce Top",
+   "Spruce Top"
+  ],
+  [
+   " multi word \n",
+   "multi word"
+  ]
+ ]
+}

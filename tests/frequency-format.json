@@ -1,0 +1,65 @@
+{
+ "slug": "test/frequency-format",
+ "about": "A frequency for display (one decimal, kHz from 1000 Hz), the range line above the guitar peak list, and a sample rate or bandwidth in whole hertz grouped by the locale — the same cases in every edition. Locales are written as Swift's identifiers (en_US). Expected values are Swift's.",
+ "formattedAsFrequency": [
+  [
+   440,
+   "440.0 Hz"
+  ],
+  [
+   25.37,
+   "25.4 Hz"
+  ],
+  [
+   999.9,
+   "999.9 Hz"
+  ],
+  [
+   1000,
+   "1.0 kHz"
+  ],
+  [
+   2500,
+   "2.5 kHz"
+  ]
+ ],
+ "displayRangeLabel": [
+  [
+   25,
+   45,
+   "Showing 25.0 Hz - 45.0 Hz"
+  ],
+  [
+   25.37,
+   44.81,
+   "Showing 25.4 Hz - 44.8 Hz"
+  ],
+  [
+   800,
+   1200,
+   "Showing 800.0 Hz - 1.2 kHz"
+  ]
+ ],
+ "formattedAsWholeHertz": [
+  [
+   48000,
+   "en_US",
+   "48,000 Hz"
+  ],
+  [
+   22050,
+   "en_US",
+   "22,050 Hz"
+  ],
+  [
+   48000,
+   "de_DE",
+   "48.000 Hz"
+  ],
+  [
+   44100.4,
+   "en_US",
+   "44,100 Hz"
+  ]
+ ]
+}

@@ -1,66 +1,34 @@
 # @parity test/measurement-name
-"""Pin the required-name rule.
-
-A measurement name must be non-empty after trimming before Save is allowed, and the stored name
-is trimmed. Three-way with Swift MeasurementNameTests.swift and web measurement-name.test.ts.
-"""
+"""The required-name rule — what enables Save (is_valid_name) and what is stored for the name and the notes
+(normalized_name, normalized_notes) — against the shared case file ``measurement-name.json``, the same cases
+the Swift and web suites run."""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from guitar_tap.models.tap_tone_measurement import TapToneMeasurement as M
 
-
-# ── is_valid_name — what enables Save ───────────────────────────────────────
-
-def test_empty_and_whitespace_are_invalid():
-    assert M.is_valid_name("") is False
-    assert M.is_valid_name("   ") is False
-    assert M.is_valid_name("\t\n ") is False
+with open(os.path.join(os.path.dirname(__file__), "measurement-name.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
 
 
-def test_any_real_text_is_valid():
-    assert M.is_valid_name("x") is True
-    assert M.is_valid_name("Martin 000-28") is True
-    assert M.is_valid_name("  padded  ") is True
+@pytest.mark.parametrize("text,expected", DATA["isValidName"])
+def test_is_valid_name(text, expected):
+    assert M.is_valid_name(text) is expected
 
 
-# ── normalized_name — what gets stored ──────────────────────────────────────
-
-def test_normalized_trims_and_blanks_to_none():
-    assert M.normalized_name("  Martin 000-28  ") == "Martin 000-28"
-    assert M.normalized_name("Ramírez") == "Ramírez"
-    assert M.normalized_name("") is None
-    assert M.normalized_name("   ") is None
+@pytest.mark.parametrize("text,expected", DATA["normalizedName"])
+def test_normalized_name(text, expected):
+    assert M.normalized_name(text) == expected
 
 
-# ── normalized_notes — the other user-entered field, normalized the same way ─
-
-def test_normalized_notes_trims_and_blanks_to_none():
-    """Notes trim exactly as the name does.
-
-    This edition stripped notes in the edit dialog but NOT on the save path, so notes saved with
-    surrounding whitespace read as an edit the moment the dialog reopened — a change the user never
-    made. Both paths go through the model rule now.
-    """
-    assert M.normalized_notes("  Tapped cold  ") == "Tapped cold"
-    assert M.normalized_notes("line one\nline two") == "line one\nline two"
-    assert M.normalized_notes("") is None
-    assert M.normalized_notes("   \n  ") is None
-
-
-def test_both_fields_normalize_identically():
-    """Or a round trip through one of them looks like an edit."""
-    for candidate in ["", "  ", "\n", "a", "  a  ", "Spruce Top", " multi word \n"]:
-        assert M.normalized_name(candidate) == M.normalized_notes(candidate)
-
-
-# ── validity agrees with storage ────────────────────────────────────────────
-
-def test_validity_matches_storage():
-    for candidate in ["", "  ", "\n", "a", "  a  ", "Spruce Top"]:
-        assert M.is_valid_name(candidate) == (M.normalized_name(candidate) is not None)
+@pytest.mark.parametrize("text,expected", DATA["normalizedNotes"])
+def test_normalized_notes(text, expected):
+    assert M.normalized_notes(text) == expected

@@ -8,7 +8,7 @@ Mirrors Swift ``ExportFilename.stem``.
 from __future__ import annotations
 
 
-def export_stem(name: "str | None", epoch_seconds: int, unnamed: str) -> str:
+def export_stem(name: "str | None", epoch_seconds: float, unnamed: str) -> str:
     """The filename stem shared by every exported artifact — ``.guitartap``, PDF, spectrum PNG.
 
     Rule::
@@ -17,7 +17,8 @@ def export_stem(name: "str | None", epoch_seconds: int, unnamed: str) -> str:
 
     - The name is slugged: spaces and ``/`` become ``-``, then lowercased.
     - ``epoch_seconds`` is a **discriminator**, not part of the name — two measurements may share a
-      name — and is always integer seconds.
+      name — and is written in whole seconds: a fraction is dropped here, as Swift's
+      ``Int(timestamp.timeIntervalSince1970)``.
     - ``unnamed`` is the per-artifact default word, used only when there is no name (empty or None):
       ``"measurement"`` for ``.guitartap``, ``"report"`` for PDF, ``"spectrum"`` for PNG. It is a
       default **name**, never an infix.
@@ -26,4 +27,4 @@ def export_stem(name: "str | None", epoch_seconds: int, unnamed: str) -> str:
     some sites not slugging ``/``).
     """
     slug = (name or "").replace(" ", "-").replace("/", "-").lower()
-    return f"{slug or unnamed}-{epoch_seconds}"
+    return f"{slug or unnamed}-{int(epoch_seconds)}"
