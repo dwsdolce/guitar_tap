@@ -26,11 +26,6 @@ Mode Map (approximate detection ranges, guitar-type-dependent):
   (Generic is the default guitar type — the union of the three, widened to catch outliers.)
 
 Exact boundaries are defined in GuitarType.mode_ranges.
-
-Legacy Cases:
-  Four legacy raw values are retained for backward compatibility with
-  measurements saved under older naming conventions.  They are mapped to
-  their modern equivalents by the ``normalized`` property and ``display_name``.
 """
 
 from __future__ import annotations
@@ -48,7 +43,7 @@ def get_bands(
 
     Uses the same modeRanges as Swift — a single unified set of bands for both
     display and auto-classification.  *mode_value* is the GuitarMode raw value
-    string (e.g. ``"Air (Helmholtz)"``), accepted by ``GuitarMode.from_mode_string``.
+    string (e.g. ``"Air (Helmholtz)"``), its display name, accepted by ``GuitarMode.from_display_name``.
 
     Mirrors Swift GuitarMode.classifyAll(_:guitarType:) default parameter:
     guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
@@ -75,47 +70,31 @@ def get_bands(
 def in_mode_range(freq: float, mode_str: str, guitar_type: "GuitarType | None" = None) -> bool:
     """Return True if *freq* falls within the mode_ranges window for *mode_str*.
 
-    Accepts GuitarMode raw values (e.g. ``"Air (Helmholtz)"``), legacy Python
-    mode strings (e.g. ``"Helmholtz T(1,1)_1"``), and custom labels.
-    Returns False for unrecognised / UNKNOWN modes.
+    Accepts display names (e.g. ``"Air (Helmholtz)"``), the academic labels (e.g.
+    ``"Helmholtz T(1,1)_1"``), and custom labels. Returns False for unrecognised / UNKNOWN modes.
 
     guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
     """
     if guitar_type is None:
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         guitar_type = _tds.guitar_type()
-    mode = GuitarMode.from_mode_string(mode_str)
-    if mode is GuitarMode.UNKNOWN:
+    mode = GuitarMode.from_display_name(mode_str)
+    if mode is None or mode is GuitarMode.UNKNOWN:
         return False
     lo, hi = mode.mode_range(guitar_type)
     return lo <= freq <= hi
 
 
-def classify_peak(freq: float, guitar_type: "GuitarType | None" = None) -> str:
-    """Return the GuitarMode raw value string for *freq* using *guitar_type*'s mode ranges.
-
-    Delegates to ``GuitarMode.classify`` — uses the same unified bands as Swift.
-    Returns ``""`` (unknown) if no band matches.
-
-    guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
-    """
-    if guitar_type is None:
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-        guitar_type = _tds.guitar_type()
-    mode = GuitarMode.classify(freq, guitar_type)
-    return mode.value
-
-
 def mode_display_name(mode_str: str) -> str:
     """Return the human-readable display name for any stored mode string.
 
-    Handles GuitarMode raw values, legacy Python mode strings, and custom
-    labels.  Custom labels (unrecognised strings) are returned unchanged.
+    Handles display names, the academic labels, and custom labels. Custom labels
+    (unrecognised strings) are returned unchanged.
     """
     if not mode_str:
         return ""
-    mode = GuitarMode.from_mode_string(mode_str)
-    if mode is not GuitarMode.UNKNOWN:
+    mode = GuitarMode.from_display_name(mode_str)
+    if mode is not None and mode is not GuitarMode.UNKNOWN:
         return mode.display_name
     return mode_str  # custom label — show as-is
 
@@ -127,9 +106,7 @@ class GuitarMode(Enum):
 
     Mirrors Swift GuitarMode enum (GuitarMode.swift).
 
-    Use classify() or classify_all() to map a detected peak frequency to
-    the appropriate mode.  The ``normalized`` property converts any legacy
-    case to its modern equivalent for programmatic comparisons.
+    Use classify_all() to map detected peaks to the appropriate modes.
 
     See Also: GuitarType for the frequency-band definitions used during classification.
     See Also: UserAssignedMode for overriding the displayed label without changing the mode.
@@ -161,15 +138,6 @@ class GuitarMode(Enum):
     # Frequency falls outside all defined mode ranges.
     UNKNOWN     = "Unknown"
 
-    # MARK: - Legacy Cases (Backward Compatibility)
-    # Warning: these cases exist only for decoding measurements saved under old
-    # naming conventions.  Use the current cases for all new code.
-
-    HELMHOLTZ   = "Helmholtz (Air)"   # Legacy name for AIR. normalized → AIR.
-    CROSS_GRAIN = "Cross-Grain"       # Legacy name for AIR. normalized → AIR.
-    LONG_GRAIN  = "Long-Grain"        # Legacy name for TOP. normalized → TOP.
-    MONOPOLE    = "Monopole"          # Legacy name for BACK. normalized → BACK.
-
     # MARK: - Current Case Enumeration
 
     # current_cases and additional_mode_labels are set as class attributes
@@ -179,8 +147,9 @@ class GuitarMode(Enum):
     # MARK: - Classification
 
     @classmethod
-    def classify(cls, freq: float, guitar_type: "GuitarType | None" = None) -> "GuitarMode":
-        """Classify a frequency into a guitar mode for a specific guitar type.
+    def _classify(cls, freq: float, guitar_type: "GuitarType | None" = None) -> "GuitarMode":
+        """Classify a frequency into a guitar mode for a specific guitar type — the per-frequency band
+        lookup inside ``classify_all``, private as Swift's.
 
         - Parameters:
           - freq: The peak frequency to classify, in Hz.
@@ -188,7 +157,7 @@ class GuitarMode(Enum):
             Defaults to TapDisplaySettings.guitarType when not supplied.
         - Returns: The matching GuitarMode, or UNKNOWN if no band matches.
 
-        Mirrors Swift GuitarMode.classify(frequency:guitarType:).
+        Mirrors Swift GuitarMode.classify(frequency:guitarType:) (private there too).
         """
         if guitar_type is None:
             from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
@@ -222,7 +191,7 @@ class GuitarMode(Enum):
           type that Swift uses so call sites can look up a mode by peak ID directly
           without any index-to-id translation layer.
 
-        Unlike classify(), which maps each frequency independently, this method processes
+        Unlike _classify(), which maps each frequency independently, this method processes
         all peaks together so that overlapping mode ranges (e.g. the Top/Back overlap
         zone for classical guitar) resolve correctly: the first peak claimed by a
         lower-frequency mode cannot be re-claimed by a higher-frequency mode.
@@ -285,7 +254,7 @@ class GuitarMode(Enum):
 
         # Classify unclaimed peaks.  Special case: if Top was already claimed,
         # peaks in the Top/Back overlap zone above the claimed Top frequency
-        # should be classified as Back rather than Top.  The naive classify()
+        # should be classified as Back rather than Top.  The naive _classify()
         # checks Top before Back, so without this guard overlap-zone peaks
         # always land on Top.
         back_lo, back_hi = cls.BACK.mode_range(guitar_type)
@@ -296,66 +265,7 @@ class GuitarMode(Enum):
                         and back_lo <= peak.frequency <= back_hi):
                     result[peak.id] = cls.BACK
                 else:
-                    result[peak.id] = cls.classify(peak.frequency, guitar_type)
-
-        return result
-
-    @classmethod
-    def _classify_all_tuples(
-        cls,
-        peaks: list[tuple[float, float]],
-        guitar_type: "GuitarType | None" = None,
-    ) -> dict[int, "GuitarMode"]:
-        """Classify (frequency, magnitude) tuples, returning {index: GuitarMode}.
-
-        Internal helper for call sites that have no peak UUIDs (e.g. live numpy data
-        in PeaksModel).  All code that works with ResonantPeak objects should use
-        classify_all() instead so that the return type matches Swift's [UUID: GuitarMode].
-
-        guitar_type defaults to TapDisplaySettings.guitarType when not supplied.
-        """
-        if guitar_type is None:
-            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-            guitar_type = _tds.guitar_type()
-        ordered_modes = sorted(
-            [cls.AIR, cls.TOP, cls.BACK, cls.DIPOLE, cls.RING_MODE, cls.UPPER_MODES],
-            key=lambda m: m.mode_range(guitar_type)[0],
-        )
-        result: dict[int, GuitarMode] = {}
-        claimed: set[int] = set()
-        claimed_top_frequency: float | None = None
-
-        for mode in ordered_modes:
-            lo, hi = mode.mode_range(guitar_type)
-            effective_lo = (
-                max(lo, claimed_top_frequency + 1.0)
-                if mode is cls.BACK and claimed_top_frequency is not None
-                else lo
-            )
-            candidates = [
-                (i, mag) for i, (freq, mag) in enumerate(peaks)
-                if effective_lo <= freq <= hi and i not in claimed
-            ]
-            if not candidates:
-                continue
-            best_i = max(candidates, key=lambda x: x[1])[0]
-            result[best_i] = mode
-            claimed.add(best_i)
-            if mode is cls.TOP:
-                claimed_top_frequency = peaks[best_i][0]
-
-        # Same Top/Back overlap guard as classify_all: a peak above the claimed
-        # Top frequency and within the Back range resolves to BACK rather than the
-        # earlier/lower mode classify() would pick.
-        back_lo, back_hi = cls.BACK.mode_range(guitar_type)
-        for i, (freq, _) in enumerate(peaks):
-            if i not in result:
-                if (claimed_top_frequency is not None
-                        and freq > claimed_top_frequency
-                        and back_lo <= freq <= back_hi):
-                    result[i] = cls.BACK
-                else:
-                    result[i] = cls.classify(freq, guitar_type)
+                    result[peak.id] = cls._classify(peak.frequency, guitar_type)
 
         return result
 
@@ -462,7 +372,6 @@ class GuitarMode(Enum):
             from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
             guitar_type = _tds.guitar_type()
         ranges = guitar_type.mode_ranges
-        n = self.normalized
         _range_map = {
             GuitarMode.AIR:         ranges.air,
             GuitarMode.TOP:         ranges.top,
@@ -471,7 +380,7 @@ class GuitarMode(Enum):
             GuitarMode.RING_MODE:   ranges.ring_mode,
             GuitarMode.UPPER_MODES: ranges.upper_modes,
         }
-        return _range_map.get(n, (0.0, 20000.0))
+        return _range_map.get(self, (0.0, 20000.0))
 
     # MARK: - Display
 
@@ -479,20 +388,12 @@ class GuitarMode(Enum):
     def display_name(self) -> str:
         """The human-readable mode name shown in the UI.
 
-        All legacy cases are mapped to their modern display string so that
-        measurements saved under the old naming convention render correctly
-        after an upgrade.
-
         Mirrors Swift GuitarMode.displayName.
         """
         _names = {
             GuitarMode.AIR:         "Air (Helmholtz)",
-            GuitarMode.HELMHOLTZ:   "Air (Helmholtz)",
-            GuitarMode.CROSS_GRAIN: "Air (Helmholtz)",
             GuitarMode.TOP:         "Top",
-            GuitarMode.LONG_GRAIN:  "Top",
             GuitarMode.BACK:        "Back",
-            GuitarMode.MONOPOLE:    "Back",
             GuitarMode.DIPOLE:      "Dipole",
             GuitarMode.RING_MODE:   "Ring Mode",
             GuitarMode.UPPER_MODES: "Upper Modes",
@@ -502,12 +403,11 @@ class GuitarMode(Enum):
 
     @property
     def hex(self) -> str:
-        """Display colour for a guitar mode as an absolute sRGB hex, from self.normalized.
+        """Display colour for a guitar mode as an absolute sRGB hex.
 
         Mirrors Swift ``GuitarMode.hex``: Swift is canonical and these are its values. UPPER_MODES
         and UNKNOWN are distinct greys, so the two categories stay distinguishable on the chart.
         """
-        n = self.normalized
         _hexes = {
             GuitarMode.AIR:         "#00C0E8",
             GuitarMode.TOP:         "#34C759",
@@ -517,7 +417,7 @@ class GuitarMode(Enum):
             GuitarMode.UPPER_MODES: "#8E8E93",
             GuitarMode.UNKNOWN:     "#808080",
         }
-        return _hexes.get(n, "#808080")
+        return _hexes.get(self, "#808080")
 
     @property
     def color(self) -> tuple[int, int, int]:
@@ -535,7 +435,6 @@ class GuitarMode(Enum):
 
         Mirrors Swift GuitarMode.abbreviation.
         """
-        n = self.normalized
         _abbr = {
             GuitarMode.AIR:         "Air",
             GuitarMode.TOP:         "Top",
@@ -545,7 +444,7 @@ class GuitarMode(Enum):
             GuitarMode.UPPER_MODES: "Upper",
             GuitarMode.UNKNOWN:     "?",
         }
-        return _abbr.get(n, "?")
+        return _abbr.get(self, "?")
 
     @property
     def description(self) -> str:
@@ -553,7 +452,6 @@ class GuitarMode(Enum):
 
         Mirrors Swift GuitarMode.description.
         """
-        n = self.normalized
         _desc = {
             GuitarMode.AIR:         "Air resonance (Helmholtz) - the 'breathing' of the guitar body",
             GuitarMode.TOP:         "Main top plate resonance",
@@ -563,7 +461,7 @@ class GuitarMode(Enum):
             GuitarMode.UPPER_MODES: "Upper harmonic modes",
             GuitarMode.UNKNOWN:     "Unclassified frequency",
         }
-        return _desc.get(n, "Unclassified frequency")
+        return _desc.get(self, "Unclassified frequency")
 
     @property
     def icon(self) -> str:
@@ -580,7 +478,6 @@ class GuitarMode(Enum):
 
         Mirrors Swift GuitarMode.icon.
         """
-        n = self.normalized
         _icons = {
             GuitarMode.AIR:         "fa5s.wind",
             GuitarMode.TOP:         "fa5s.arrows-alt-v",
@@ -590,73 +487,41 @@ class GuitarMode(Enum):
             GuitarMode.UPPER_MODES: "fa5s.wave-square",
             GuitarMode.UNKNOWN:     "fa5s.question-circle",
         }
-        return _icons.get(n, "fa5s.question-circle")
-
-    # MARK: - Normalisation
-
-    @property
-    def normalized(self) -> GuitarMode:
-        """Convert any legacy case to its current equivalent for programmatic comparisons.
-
-        Use this property whenever you need to compare two GuitarMode values for
-        semantic equality, since e.g. HELMHOLTZ == AIR is False as raw-value enums
-        but HELMHOLTZ.normalized == AIR.normalized is True.
-
-        Current cases are returned unchanged.
-
-        Mirrors Swift GuitarMode.normalized.
-        """
-        _map = {
-            GuitarMode.HELMHOLTZ:   GuitarMode.AIR,
-            GuitarMode.CROSS_GRAIN: GuitarMode.AIR,
-            GuitarMode.LONG_GRAIN:  GuitarMode.TOP,
-            GuitarMode.MONOPOLE:    GuitarMode.BACK,
-        }
-        return _map.get(self, self)
-
-    # MARK: - Conversion from Legacy Python Strings (Python-only, no Swift equivalent)
+        return _icons.get(self, "fa5s.question-circle")
 
     @classmethod
-    def from_mode_string(cls, mode_str: str) -> GuitarMode:
-        """Convert any stored mode string to a GuitarMode.
+    def from_display_name(cls, name: str) -> "GuitarMode | None":
+        """The mode a display name or an academic T(m,n) label names, or ``None`` for any other label.
 
-        Accepts three kinds of strings:
-        - GuitarMode raw values (e.g. "Air (Helmholtz)", "Top") — returned directly.
-        - Legacy Python mode strings (e.g. "Helmholtz T(1,1)_1") — mapped via
-          ``_PYTHON_STR_TO_MODE``.
-        - Custom / unrecognised strings — returns ``UNKNOWN``.
-
-        Python-only: Swift stores GuitarMode as a Codable raw-value enum and does
-        not need a separate string-conversion method.
+        Checks the current cases' display names first, then ``additional_mode_labels``. Mirrors Swift
+        ``GuitarMode.fromDisplayName(_:)``.
         """
-        # Try as a GuitarMode raw value first (new-style strings)
-        try:
-            return cls(mode_str)
-        except ValueError:
-            pass
-        # Fall back to the legacy Python string mapping
-        return _PYTHON_STR_TO_MODE.get(mode_str, cls.UNKNOWN)
+        for mode in cls.current_cases:
+            if mode.display_name == name:
+                return mode
+        return _MODE_BY_ADDITIONAL_LABEL.get(name)
 
     @staticmethod
     def effective_mode(override: "str | None", auto: "GuitarMode") -> "GuitarMode":
         """The **effective** mode of a peak: a user override wins over auto-classification.
 
         The single definition of "what mode is this peak, really." A resolvable override label (one
-        that ``from_mode_string`` recognises) yields that mode; a freeform label yields ``UNKNOWN``
+        that ``from_display_name`` recognises) yields that mode; a freeform label yields ``UNKNOWN``
         (the user named it something that is not a mode); with no override the auto-classified ``auto``
         value stands. Every surface that answers "which peak is the Air / Top / Back" routes through
         this so they cannot disagree — ``peak_mode``, the saved measurement's ratio, and the static
         ``resolved_mode_peaks``. Mirrors Swift ``GuitarMode.effectiveMode(override:auto:)``.
         """
-        if override:
-            return GuitarMode.from_mode_string(override)  # returns UNKNOWN for a freeform label
+        if override is not None:
+            mode = GuitarMode.from_display_name(override)
+            return mode if mode is not None else GuitarMode.UNKNOWN
         return auto
 
 
-# Mapping from PeaksModel mode strings to GuitarMode cases.
-# Defined after the class so enum members are available.
-_PYTHON_STR_TO_MODE: dict[str, GuitarMode] = {
-    "Helmholtz T(1,1)_1":   GuitarMode.HELMHOLTZ,   # normalises → AIR
+# The academic T(m,n) labels (additional_mode_labels) and the modes they name, as Swift's
+# fromDisplayName. Defined after the class so enum members are available.
+_MODE_BY_ADDITIONAL_LABEL: dict[str, GuitarMode] = {
+    "Helmholtz T(1,1)_1":   GuitarMode.AIR,
     "Top T(1,1)_2":         GuitarMode.TOP,
     "Back T(1,1)_3":        GuitarMode.BACK,
     "Cross Dipole T(2,1)":  GuitarMode.DIPOLE,
@@ -672,9 +537,7 @@ _PYTHON_STR_TO_MODE: dict[str, GuitarMode] = {
 # Defined after the class body because Python Enum members cannot reference
 # their own enum type at class-body evaluation time.
 
-# All current (non-legacy) cases in display order.
-# Use this instead of iterating all cases (which includes legacy backward-compatibility
-# cases) for pickers, suggestion lists, and anywhere the full canonical set is needed.
+# Every case, in display order — for pickers, suggestion lists, and anywhere the full set is needed.
 # Mirrors Swift GuitarMode.currentCases.
 GuitarMode.current_cases = [
     GuitarMode.AIR, GuitarMode.TOP, GuitarMode.BACK, GuitarMode.DIPOLE,

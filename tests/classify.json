@@ -1,0 +1,1235 @@
+{
+ "slug": "test/classify",
+ "about": "Guitar mode classification, the same cases in every edition. Spellings are Swift's (GuitarType and GuitarMode case names); each runner maps them. 'from' records which editions' tests a case came from. Expected values are Swift's production answers.",
+ "classifyAll": [
+  {
+   "id": "CA01",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     90,
+     -20
+    ]
+   ],
+   "expect": [
+    "air"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA02",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     100,
+     -20
+    ]
+   ],
+   "expect": [
+    "air"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA03",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     120,
+     -20
+    ]
+   ],
+   "expect": [
+    "air"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA04",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     180,
+     -20
+    ]
+   ],
+   "expect": [
+    "top"
+   ],
+   "from": [
+    "swift",
+    "web",
+    "python"
+   ]
+  },
+  {
+   "id": "CA05",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     250,
+     -20
+    ]
+   ],
+   "expect": [
+    "back"
+   ],
+   "from": [
+    "swift",
+    "web",
+    "python"
+   ]
+  },
+  {
+   "id": "CA06",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     400,
+     -20
+    ]
+   ],
+   "expect": [
+    "dipole"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA07",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     700,
+     -20
+    ]
+   ],
+   "expect": [
+    "ringMode"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA08",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     1200,
+     -20
+    ]
+   ],
+   "expect": [
+    "upperModes"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA09",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     320,
+     -20
+    ]
+   ],
+   "expect": [
+    "unknown"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA10",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     105,
+     -20
+    ]
+   ],
+   "expect": [
+    "air"
+   ],
+   "from": [
+    "python"
+   ]
+  },
+  {
+   "id": "CA11",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     95,
+     -20
+    ]
+   ],
+   "expect": [
+    "air"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA12",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     200,
+     -20
+    ]
+   ],
+   "expect": [
+    "top"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA13",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     240,
+     -20
+    ]
+   ],
+   "expect": [
+    "back"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA14",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     380,
+     -20
+    ]
+   ],
+   "expect": [
+    "dipole"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA15",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     700,
+     -20
+    ]
+   ],
+   "expect": [
+    "ringMode"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA16",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     1000,
+     -20
+    ]
+   ],
+   "expect": [
+    "upperModes"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA17",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     140,
+     -20
+    ]
+   ],
+   "expect": [
+    "unknown"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA18",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     210,
+     -20
+    ]
+   ],
+   "expect": [
+    "top"
+   ],
+   "from": [
+    "swift"
+   ]
+  },
+  {
+   "id": "CA19",
+   "guitarType": "flamenco",
+   "peaks": [
+    [
+     100,
+     -20
+    ]
+   ],
+   "expect": [
+    "air"
+   ],
+   "from": [
+    "swift",
+    "python"
+   ]
+  },
+  {
+   "id": "CA20",
+   "guitarType": "flamenco",
+   "peaks": [
+    [
+     185,
+     -20
+    ]
+   ],
+   "expect": [
+    "top"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA21",
+   "guitarType": "flamenco",
+   "peaks": [
+    [
+     190,
+     -20
+    ]
+   ],
+   "expect": [
+    "top"
+   ],
+   "from": [
+    "python"
+   ]
+  },
+  {
+   "id": "CA22",
+   "guitarType": "flamenco",
+   "peaks": [
+    [
+     240,
+     -20
+    ]
+   ],
+   "expect": [
+    "back"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA23",
+   "guitarType": "flamenco",
+   "peaks": [
+    [
+     210,
+     -20
+    ]
+   ],
+   "expect": [
+    "top"
+   ],
+   "from": [
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA24",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     95,
+     -20
+    ]
+   ],
+   "expect": [
+    "air"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA25",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     250,
+     -20
+    ]
+   ],
+   "expect": [
+    "top"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA26",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     290,
+     -20
+    ]
+   ],
+   "expect": [
+    "back"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA27",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     1000,
+     -20
+    ]
+   ],
+   "expect": [
+    "upperModes"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA28",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     40,
+     -20
+    ]
+   ],
+   "expect": [
+    "unknown"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA29",
+   "guitarType": "flamenco",
+   "peaks": [
+    [
+     190,
+     -40
+    ],
+    [
+     230,
+     -50
+    ]
+   ],
+   "expect": [
+    "top",
+    "back"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ],
+   "note": "Top is claimed below Back"
+  },
+  {
+   "id": "CA30",
+   "guitarType": "flamenco",
+   "peaks": [
+    [
+     200,
+     -40
+    ],
+    [
+     230,
+     -50
+    ]
+   ],
+   "expect": [
+    "top",
+    "back"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA31",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     200,
+     -40
+    ],
+    [
+     230,
+     -50
+    ]
+   ],
+   "expect": [
+    "top",
+    "back"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA32",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     200,
+     -40
+    ],
+    [
+     230,
+     -50
+    ]
+   ],
+   "expect": [
+    "top",
+    "back"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA33",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     210,
+     -18
+    ],
+    [
+     225,
+     -25
+    ]
+   ],
+   "expect": [
+    "top",
+    "back"
+   ],
+   "from": [
+    "swift"
+   ]
+  },
+  {
+   "id": "CA34",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     195,
+     -20
+    ],
+    [
+     205,
+     -30
+    ]
+   ],
+   "expect": [
+    "top",
+    "back"
+   ],
+   "from": [
+    "swift"
+   ]
+  },
+  {
+   "id": "CA35",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     210,
+     -20
+    ],
+    [
+     220,
+     -35
+    ]
+   ],
+   "expect": [
+    "top",
+    "back"
+   ],
+   "from": [
+    "python"
+   ]
+  },
+  {
+   "id": "CA36",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     205,
+     -40
+    ],
+    [
+     270,
+     -25
+    ]
+   ],
+   "expect": [
+    "top",
+    "back"
+   ],
+   "from": [
+    "python"
+   ],
+   "note": "Python accepted Top or Back for the 205 Hz peak"
+  },
+  {
+   "id": "CA37",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     320,
+     -30
+    ]
+   ],
+   "expect": [
+    "unknown"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA38",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     100,
+     -30
+    ],
+    [
+     180,
+     -25
+    ],
+    [
+     250,
+     -28
+    ]
+   ],
+   "expect": [
+    "air",
+    "top",
+    "back"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA39",
+   "guitarType": "classical",
+   "peaks": [
+    [
+     95,
+     -30
+    ],
+    [
+     200,
+     -30
+    ],
+    [
+     260,
+     -30
+    ],
+    [
+     380,
+     -30
+    ],
+    [
+     700,
+     -30
+    ],
+    [
+     1000,
+     -30
+    ]
+   ],
+   "expect": [
+    "air",
+    "top",
+    "back",
+    "dipole",
+    "ringMode",
+    "upperModes"
+   ],
+   "from": [
+    "python"
+   ]
+  },
+  {
+   "id": "CA40",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     95,
+     -30
+    ],
+    [
+     190,
+     -25
+    ],
+    [
+     250,
+     -35
+    ]
+   ],
+   "expect": [
+    "air",
+    "top",
+    "back"
+   ],
+   "from": [
+    "web"
+   ],
+   "note": "a peak in the overlap above the claimed Top is Back"
+  },
+  {
+   "id": "CA41",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     200,
+     -40
+    ],
+    [
+     205,
+     -20
+    ]
+   ],
+   "expect": [
+    "top",
+    "top"
+   ],
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "CA42",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     95,
+     -15
+    ],
+    [
+     110,
+     -28
+    ]
+   ],
+   "expect": [
+    "air",
+    "air"
+   ],
+   "from": [
+    "swift",
+    "web"
+   ],
+   "note": "the second peak in a band classifies by range"
+  },
+  {
+   "id": "CA43",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     95,
+     -20
+    ],
+    [
+     100,
+     -20
+    ]
+   ],
+   "expect": [
+    "air",
+    "air"
+   ],
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "id": "CA44",
+   "guitarType": "acoustic",
+   "peaks": [],
+   "expect": [],
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "id": "CA45",
+   "guitarType": "classical",
+   "peaks": [],
+   "expect": [],
+   "from": [
+    "python"
+   ]
+  }
+ ],
+ "resolvedModePeaks": [
+  {
+   "id": "RM01",
+   "guitarType": "acoustic",
+   "peaks": [
+    [
+     95,
+     -20
+    ],
+    [
+     100,
+     -20
+    ]
+   ],
+   "expect": {
+    "air": 0
+   },
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ],
+   "note": "on equal magnitude the first peak wins the band"
+  },
+  {
+   "id": "RM02",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     95,
+     -30
+    ],
+    [
+     190,
+     -25
+    ],
+    [
+     250,
+     -35
+    ]
+   ],
+   "expect": {
+    "air": 0,
+    "top": 1,
+    "back": 2
+   },
+   "from": [
+    "web"
+   ]
+  },
+  {
+   "id": "RM03",
+   "guitarType": "generic",
+   "peaks": [
+    [
+     200,
+     -40
+    ],
+    [
+     205,
+     -20
+    ]
+   ],
+   "expect": {
+    "top": 1
+   },
+   "from": [
+    "web"
+   ],
+   "note": "the louder peak is the band's peak"
+  }
+ ],
+ "bands": {
+  "generic": [
+   [
+    "air",
+    70,
+    135
+   ],
+   [
+    "top",
+    140,
+    260
+   ],
+   [
+    "back",
+    180,
+    300
+   ],
+   [
+    "dipole",
+    310,
+    460
+   ],
+   [
+    "ringMode",
+    580,
+    880
+   ],
+   [
+    "upperModes",
+    880,
+    20000
+   ]
+  ],
+  "acoustic": [
+   [
+    "air",
+    90,
+    120
+   ],
+   [
+    "top",
+    150,
+    210
+   ],
+   [
+    "back",
+    210,
+    290
+   ],
+   [
+    "dipole",
+    360,
+    460
+   ],
+   [
+    "ringMode",
+    620,
+    880
+   ],
+   [
+    "upperModes",
+    880,
+    20000
+   ]
+  ],
+  "classical": [
+   [
+    "air",
+    80,
+    110
+   ],
+   [
+    "top",
+    170,
+    230
+   ],
+   [
+    "back",
+    190,
+    280
+   ],
+   [
+    "dipole",
+    330,
+    430
+   ],
+   [
+    "ringMode",
+    580,
+    820
+   ],
+   [
+    "upperModes",
+    820,
+    20000
+   ]
+  ],
+  "flamenco": [
+   [
+    "air",
+    85,
+    115
+   ],
+   [
+    "top",
+    180,
+    220
+   ],
+   [
+    "back",
+    200,
+    250
+   ],
+   [
+    "dipole",
+    350,
+    450
+   ],
+   [
+    "ringMode",
+    600,
+    850
+   ],
+   [
+    "upperModes",
+    850,
+    20000
+   ]
+  ]
+ },
+ "fromDisplayName": [
+  [
+   "Air (Helmholtz)",
+   "air"
+  ],
+  [
+   "Top",
+   "top"
+  ],
+  [
+   "Back",
+   "back"
+  ],
+  [
+   "Dipole",
+   "dipole"
+  ],
+  [
+   "Ring Mode",
+   "ringMode"
+  ],
+  [
+   "Upper Modes",
+   "upperModes"
+  ],
+  [
+   "Unknown",
+   "unknown"
+  ],
+  [
+   "Helmholtz T(1,1)_1",
+   "air"
+  ],
+  [
+   "Top T(1,1)_2",
+   "top"
+  ],
+  [
+   "Back T(1,1)_3",
+   "back"
+  ],
+  [
+   "Cross Dipole T(2,1)",
+   "dipole"
+  ],
+  [
+   "Long Dipole T(1,2)",
+   "dipole"
+  ],
+  [
+   "Quadrapole T(2,2)",
+   "ringMode"
+  ],
+  [
+   "Cross Tripole T(3,1)",
+   "ringMode"
+  ],
+  [
+   "Wolf note",
+   null
+  ]
+ ],
+ "additionalModeLabels": [
+  "Helmholtz T(1,1)_1",
+  "Top T(1,1)_2",
+  "Back T(1,1)_3",
+  "Cross Dipole T(2,1)",
+  "Long Dipole T(1,2)",
+  "Quadrapole T(2,2)",
+  "Cross Tripole T(3,1)"
+ ],
+ "effectiveMode": [
+  {
+   "override": "Wolf note",
+   "auto": "top",
+   "expect": "unknown",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "override": null,
+   "auto": "top",
+   "expect": "top",
+   "from": [
+    "swift",
+    "python",
+    "web"
+   ]
+  },
+  {
+   "override": null,
+   "auto": "back",
+   "expect": "back",
+   "from": [
+    "swift",
+    "web"
+   ]
+  },
+  {
+   "override": "",
+   "auto": "back",
+   "expect": "unknown",
+   "from": [
+    "python"
+   ],
+   "note": "Python's test expects back (an empty label is no override)"
+  },
+  {
+   "override": "Quadrapole T(2,2)",
+   "auto": "air",
+   "expect": "ringMode",
+   "from": [
+    "web"
+   ]
+  }
+ ],
+ "displayName": [
+  [
+   "air",
+   "Air (Helmholtz)"
+  ],
+  [
+   "top",
+   "Top"
+  ],
+  [
+   "back",
+   "Back"
+  ],
+  [
+   "dipole",
+   "Dipole"
+  ],
+  [
+   "ringMode",
+   "Ring Mode"
+  ],
+  [
+   "upperModes",
+   "Upper Modes"
+  ],
+  [
+   "unknown",
+   "Unknown"
+  ]
+ ],
+ "abbreviation": [
+  [
+   "air",
+   "Air"
+  ],
+  [
+   "top",
+   "Top"
+  ],
+  [
+   "back",
+   "Back"
+  ],
+  [
+   "dipole",
+   "DP"
+  ],
+  [
+   "ringMode",
+   "Ring"
+  ],
+  [
+   "upperModes",
+   "Upper"
+  ],
+  [
+   "unknown",
+   "?"
+  ]
+ ]
+}

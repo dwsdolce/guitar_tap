@@ -229,14 +229,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if not self.is_guitar or self._data.shape[0] == 0:
             self._auto_mode_map = {}
             return
-        peaks = [(float(self._data[i, 0]), float(self._data[i, 1]))
-                 for i in range(self._data.shape[0])]
-        idx_map = gm.GuitarMode._classify_all_tuples(peaks)
-        self._auto_mode_map = {
-            self._peaks[i].id: mode
-            for i, mode in idx_map.items()
-            if i < len(self._peaks)
-        }
+        self._auto_mode_map = gm.GuitarMode.classify_all(self._peaks)
 
     def _peak_id_at(self, index: QtCore.QModelIndex) -> str:
         """Peak id for a row, or "" when out of range. The key for every per-peak lookup."""
@@ -384,12 +377,11 @@ class PeaksModel(QtCore.QAbstractTableModel):
         else:
             # Guitar: use GuitarMode classifier for colour and display name.
             # Freeform user-defined labels → distinct teal colour.
-            guitar_mode = gm.GuitarMode.from_mode_string(mode)
-            if (guitar_mode is gm.GuitarMode.UNKNOWN
-                    and mode and mode != "Unknown"):
+            guitar_mode = gm.GuitarMode.from_display_name(mode)
+            if guitar_mode is None and mode:
                 r, g, b = gm.GuitarMode.USER_DEFINED_COLOR
             else:
-                r, g, b = guitar_mode.color
+                r, g, b = (guitar_mode or gm.GuitarMode.UNKNOWN).color
             display = gm.mode_display_name(mode) or ""
             if display:
                 if is_override:

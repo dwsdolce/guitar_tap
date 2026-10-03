@@ -18,7 +18,7 @@ Persistence:
 
 Label Stability:
   .assigned labels are literal strings and survive app updates unchanged.
-  .auto labels are re-evaluated at display time by GuitarMode.classify(), so
+  .auto labels are re-evaluated at display time by GuitarMode.classify_all(), so
   they may change if classification boundaries shift in a future release.
   Peaks near a boundary carry the highest risk of reclassification; prefer
   .assigned for long-term stability.
@@ -54,7 +54,7 @@ class UserAssignedMode:
 
     @classmethod
     def auto(cls) -> "UserAssignedMode":
-        """Use the auto-detected label produced by ``GuitarMode.classify()`` at display time.
+        """Use the auto-detected label produced by ``GuitarMode.classify_all()`` at display time.
 
         Warning: This label is not stored and may differ from what was shown when the
         measurement was originally saved if classification boundaries change in a future

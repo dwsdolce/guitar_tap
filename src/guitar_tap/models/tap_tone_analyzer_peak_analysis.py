@@ -644,11 +644,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
         candidates = peaks if peaks is not None else self.all_peaks
         guitar_type = _tds_gms.guitar_type()
 
-        # Use classify_all (claiming algorithm) — mirrors Swift guitarModeSelectedPeakIDs(from:)
-        # which calls GuitarMode.classifyAll(candidates).  Using classify_peak (simple range
-        # lookup) is wrong because overlapping TOP/BACK ranges (e.g. 180–260 Hz) cause
-        # classify_peak to always return TOP for peaks in the overlap zone, making BACK
-        # unselectable when it falls below 260 Hz.
+        # The claiming algorithm (classify_all) — mirrors Swift guitarModeSelectedPeakIDs(from:),
+        # which calls GuitarMode.classifyAll(candidates). A per-frequency lookup would return TOP
+        # for every peak in the overlapping TOP/BACK ranges (e.g. 180–260 Hz), making BACK
+        # unselectable there.
         claimed_modes = {GuitarMode.AIR, GuitarMode.TOP, GuitarMode.BACK,
                          GuitarMode.DIPOLE, GuitarMode.RING_MODE, GuitarMode.UPPER_MODES}
         mode_map = GuitarMode.classify_all(candidates, guitar_type)
@@ -869,7 +868,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         ovr = overrides or {}
 
-        # Resolve guitar_type string to enum value, falling back to Classical.
+        # Resolve guitar_type string to enum value, falling back to Generic.
         gt: "GuitarType | None" = None
         if guitar_type is not None:
             try:

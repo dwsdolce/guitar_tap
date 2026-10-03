@@ -757,7 +757,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         return colors.HexColor(_WQ(label).color)
 
     def _mode_color(mode: GM.GuitarMode) -> colors.Color:
-        norm = mode.normalized if hasattr(mode, "normalized") else mode
+        norm = mode
         map_ = {
             GM.GuitarMode.AIR:      colors.Color(0.0, 0.5, 0.8),
             GM.GuitarMode.TOP:      colors.Color(0.2, 0.65, 0.2),
@@ -1035,8 +1035,8 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 # mode's color; a freeform label → user-defined teal; else the auto mode.
                 _ovr = peak_mode_overrides.get(peak.id)
                 if _ovr:
-                    _resolved = GM.GuitarMode.from_mode_string(_ovr)
-                    if _resolved is GM.GuitarMode.UNKNOWN and _ovr != "Unknown":
+                    _resolved = GM.GuitarMode.from_display_name(_ovr)
+                    if _resolved is None:
                         _uc = GM.GuitarMode.USER_DEFINED_COLOR
                         mc = colors.Color(_uc[0] / 255.0, _uc[1] / 255.0, _uc[2] / 255.0)
                     else:

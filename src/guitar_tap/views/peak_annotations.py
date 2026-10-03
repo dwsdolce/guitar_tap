@@ -238,11 +238,11 @@ class FftAnnotations(QtCore.QObject):
         mat = PeaksModel._MATERIAL_MODE_COLORS.get(mode_str)
         if mat is not None:
             return mat
-        resolved = gm.GuitarMode.from_mode_string(mode_str)
-        if resolved is gm.GuitarMode.UNKNOWN and mode_str and mode_str != "Unknown":
+        resolved = gm.GuitarMode.from_display_name(mode_str)
+        if resolved is None and mode_str:
             # Freeform user-defined label → distinct teal color.
             return gm.GuitarMode.USER_DEFINED_COLOR
-        return resolved.color
+        return (resolved or gm.GuitarMode.UNKNOWN).color
 
     def _make_text_item(
         self,

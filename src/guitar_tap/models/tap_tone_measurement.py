@@ -572,7 +572,7 @@ class TapToneMeasurement:
             if p.id in selected
             and gm.GuitarMode.effective_mode(
                 overrides.get(p.id), auto_map.get(p.id, gm.GuitarMode.UNKNOWN)
-            ).normalized == mode.normalized
+            ) == mode
         ]
         if not candidates:
             return None
@@ -1122,7 +1122,7 @@ class TapToneMeasurement:
             def _eff(p):
                 return _gm.GuitarMode.effective_mode(
                     _ovr.get(p.id), _auto.get(p.id, _gm.GuitarMode.UNKNOWN)
-                ).normalized
+                )
 
             if selected_ids_raw is None:
                 # Auto-select the strongest peak per (effective) mode.

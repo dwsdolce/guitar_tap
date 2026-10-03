@@ -1553,7 +1553,7 @@ class TapToneAnalyzer(
         """
         from .guitar_mode import GuitarMode
         return (
-            self.peak_mode(peak).normalized == GuitarMode.UNKNOWN
+            self.peak_mode(peak) == GuitarMode.UNKNOWN
             and not self.has_manual_override(peak.id)
         )
 
@@ -1619,13 +1619,13 @@ class TapToneAnalyzer(
         # Resolve through peak_mode() — the OVERRIDE-AWARE path. identified_modes is built from
         # classify_all alone and never consults overrides, so using it here would silently ignore a
         # mode the user assigned by hand.
-        mode = self.peak_mode(winner).normalized
+        mode = self.peak_mode(winner)
         if mode not in self.single_holder_modes:
             return
         for other in self.all_peaks:
             if (other.id != preferring
                     and other.id in self.selected_peak_ids
-                    and self.peak_mode(other).normalized == mode):
+                    and self.peak_mode(other) == mode):
                 self.selected_peak_ids.discard(other.id)
 
     def select_no_peaks(self) -> None:

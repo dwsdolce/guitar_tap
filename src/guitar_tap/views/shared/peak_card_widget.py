@@ -32,8 +32,8 @@ from guitar_tap.views.shared import peaks_model as pm
 def _short_mode(mode: str) -> str:
     if not mode:
         return gm.GuitarMode.UNKNOWN.display_name  # "Unknown"
-    gmode = gm.GuitarMode.from_mode_string(mode)
-    if gmode is not gm.GuitarMode.UNKNOWN:
+    gmode = gm.GuitarMode.from_display_name(mode)
+    if gmode is not None and gmode is not gm.GuitarMode.UNKNOWN:
         return gmode.abbreviation
     return mode  # custom label — show as-is
 
@@ -62,12 +62,12 @@ def _mode_color(mode_str: str) -> QtGui.QColor:
     if mat is not None:
         r, g, b = mat
         return QtGui.QColor(r, g, b)
-    resolved = gm.GuitarMode.from_mode_string(mode_str)
-    if resolved is gm.GuitarMode.UNKNOWN and mode_str and mode_str != "Unknown":
+    resolved = gm.GuitarMode.from_display_name(mode_str)
+    if resolved is None and mode_str:
         # Freeform user-defined label → distinct teal color.
         r, g, b = gm.GuitarMode.USER_DEFINED_COLOR
     else:
-        r, g, b = resolved.color
+        r, g, b = (resolved or gm.GuitarMode.UNKNOWN).color
     return QtGui.QColor(r, g, b)
 
 
@@ -249,12 +249,11 @@ class PeakCardWidget(QtWidgets.QFrame):
         r, g, b = color.red(), color.green(), color.blue()
 
         # Mode icon chip — freeform user-defined labels use a tag icon.
-        guitar_mode = gm.GuitarMode.from_mode_string(self._mode)
-        if (guitar_mode is gm.GuitarMode.UNKNOWN
-                and self._mode and self._mode != "Unknown"):
+        guitar_mode = gm.GuitarMode.from_display_name(self._mode)
+        if guitar_mode is None and self._mode:
             icon_name = gm.GuitarMode.USER_DEFINED_ICON
         else:
-            icon_name = guitar_mode.icon
+            icon_name = (guitar_mode or gm.GuitarMode.UNKNOWN).icon
         pixmap = qta.icon(icon_name, color=QtGui.QColor(r, g, b)).pixmap(
             QtCore.QSize(22, 22)
         )
@@ -278,8 +277,8 @@ class PeakCardWidget(QtWidgets.QFrame):
         # Range badge — mirrors Swift, which shows it only for a classified mode that
         # is neither Unknown nor Upper Modes, and keys it off the AUTO-classified mode
         # (analyzer.peakMode(for:) -> self._auto_mode), NOT any manual override label.
-        auto_gmode = gm.GuitarMode.from_mode_string(self._auto_mode)
-        if auto_gmode not in (gm.GuitarMode.UNKNOWN, gm.GuitarMode.UPPER_MODES):
+        auto_gmode = gm.GuitarMode.from_display_name(self._auto_mode)
+        if auto_gmode not in (None, gm.GuitarMode.UNKNOWN, gm.GuitarMode.UPPER_MODES):
             in_range = gm.in_mode_range(self._freq, self._auto_mode, self._guitar_type)
             self._badge.setText("✓" if in_range else "⚠")
             self._badge.setStyleSheet(
@@ -359,9 +358,9 @@ class PeakCardWidget(QtWidgets.QFrame):
             return
 
         if chosen is reset_action:
-            # Don't set self._mode using classify_peak here — that uses a simple
-            # range lookup which can be wrong in the TOP/BACK overlap zone.
-            # Instead just clear the manual flag and emit modeReset; the model's
+            # Don't set self._mode here from a per-frequency range lookup — it can be
+            # wrong in the TOP/BACK overlap zone. Instead just clear the manual flag and
+            # emit modeReset; the model's
             # _on_mode_reset handler will remove the override and push the correct
             # auto-classified mode back via dataChanged → set_mode (which uses
             # _auto_mode_map built by classify_all — the claiming algorithm).

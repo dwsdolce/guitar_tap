@@ -261,8 +261,8 @@ class ExportableSpectrumChart:
             peak_id = getattr(peak, "id", None)
             override_label = self.mode_overrides.get(peak_id)
             if override_label and self._GuitarMode is not None:
-                resolved = self._GuitarMode.from_mode_string(override_label)
-                if resolved is self._GuitarMode.UNKNOWN and override_label != "Unknown":
+                resolved = self._GuitarMode.from_display_name(override_label)
+                if resolved is None:
                     r, g, b = self._GuitarMode.USER_DEFINED_COLOR
                     return QtGui.QColor(r, g, b)
                 r, g, b = resolved.color

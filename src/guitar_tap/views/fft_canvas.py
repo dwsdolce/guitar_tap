@@ -789,7 +789,7 @@ class FftCanvas(pg.PlotWidget):
         for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):
             r, g, b, _ = rgba
             pen = pg.mkPen((r, g, b), width=1, style=QtCore.Qt.PenStyle.DashLine)
-            abbrev = gm.GuitarMode.from_mode_string(mode_name).abbreviation
+            abbrev = gm.GuitarMode.from_display_name(mode_name).abbreviation
             lbl_opts = {"position": 0.96, "color": (r, g, b), "anchors": [(0, 1), (0, 1)]}
 
             lo_line = pg.InfiniteLine(

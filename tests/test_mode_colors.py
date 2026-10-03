@@ -37,14 +37,6 @@ def test_every_mode_has_its_own_colour():
         "Upper Modes and Unknown must stay distinguishable"
 
 
-def test_legacy_cases_share_their_canonical_colour():
-    """Legacy cases collapse to their canonical equivalent's colour, via normalized."""
-    assert GuitarMode.HELMHOLTZ.hex   == GuitarMode.AIR.hex
-    assert GuitarMode.CROSS_GRAIN.hex == GuitarMode.AIR.hex
-    assert GuitarMode.LONG_GRAIN.hex  == GuitarMode.TOP.hex
-    assert GuitarMode.MONOPOLE.hex    == GuitarMode.BACK.hex
-
-
 def test_rgb_tuple_is_derived_from_the_hex():
     """color is the (r, g, b) form of hex, so the Qt drawing calls cannot diverge from it."""
     for m in GuitarMode.current_cases:

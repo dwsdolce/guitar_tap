@@ -396,7 +396,7 @@ class TestDefinitiveModeUniqueness:
 
         sut.toggle_peak_selection(top_b.id)
         assert sut.selected_peak_ids == {top_b.id}, "only one definitive Top — selecting B displaces A"
-        assert sut.peak_mode(top_a).normalized == GuitarMode.TOP, (
+        assert sut.peak_mode(top_a) == GuitarMode.TOP, (
             "the displaced peak is STILL a Top peak; deselecting does not relabel it"
         )
 
@@ -406,7 +406,7 @@ class TestDefinitiveModeUniqueness:
         d2 = _make_peak_live(400, -25)
         sut.all_peaks = [d1, d2]
         sut.reclassify_peaks()
-        assert sut.peak_mode(d1).normalized == GuitarMode.DIPOLE, "fixture precondition"
+        assert sut.peak_mode(d1) == GuitarMode.DIPOLE, "fixture precondition"
 
         sut.toggle_peak_selection(d1.id)
         sut.toggle_peak_selection(d2.id)
@@ -428,7 +428,7 @@ class TestDefinitiveModeUniqueness:
         assert sut.selected_peak_ids == {air.id}, (
             "the relabelled peak becomes the definitive Top; the previous holder is displaced"
         )
-        assert sut.peak_mode(top).normalized == GuitarMode.TOP, (
+        assert sut.peak_mode(top) == GuitarMode.TOP, (
             "the displaced peak keeps its Top classification"
         )
 
@@ -444,7 +444,7 @@ class TestDefinitiveModeUniqueness:
         assert sut.selected_peak_ids == {top.id}, (
             "overriding an unselected peak must not touch selection"
         )
-        assert sut.peak_mode(air).normalized == GuitarMode.TOP, "…though it IS now a Top candidate"
+        assert sut.peak_mode(air) == GuitarMode.TOP, "…though it IS now a Top candidate"
 
     def test_D15_overriding_the_definitive_top_away_leaves_top_with_no_holder(self):
         sut = _make_sut()
@@ -455,7 +455,7 @@ class TestDefinitiveModeUniqueness:
         sut.toggle_peak_selection(top_a.id)
 
         sut.set_mode_override("Wolf note", top_a.id)
-        assert sut.peak_mode(top_a).normalized == GuitarMode.UNKNOWN, "freeform label, no longer Top"
+        assert sut.peak_mode(top_a) == GuitarMode.UNKNOWN, "freeform label, no longer Top"
         assert top_b.id not in sut.selected_peak_ids, "top_b must NOT be auto-promoted to definitive Top"
         assert sut.selected_peak_ids == {top_a.id}, (
             "the relabelled peak stays selected — it is simply no longer a Top"
@@ -472,8 +472,8 @@ class TestDefinitiveModeUniqueness:
 
         sut.select_no_peaks()
         assert sut.selected_peak_ids == set(), "Select None clears every definitive peak"
-        assert sut.peak_mode(top).normalized == GuitarMode.TOP, "classification survives Select None"
-        assert sut.peak_mode(air).normalized == GuitarMode.AIR
+        assert sut.peak_mode(top) == GuitarMode.TOP, "classification survives Select None"
+        assert sut.peak_mode(air) == GuitarMode.AIR
 
 
 class TestAutoDetectedMode:
@@ -492,11 +492,11 @@ class TestAutoDetectedMode:
         air = _make_peak_live(100, -30)   # classifies Air for generic
         sut.all_peaks = [air]
         sut.reclassify_peaks()
-        assert sut.auto_detected_mode(air).normalized == GuitarMode.AIR, "precondition: auto-detects Air"
+        assert sut.auto_detected_mode(air) == GuitarMode.AIR, "precondition: auto-detects Air"
 
         sut.set_mode_override(GuitarMode.TOP.display_name, air.id)
-        assert sut.peak_mode(air).normalized == GuitarMode.TOP, "override is in effect (current label)"
-        assert sut.auto_detected_mode(air).normalized == GuitarMode.AIR, (
+        assert sut.peak_mode(air) == GuitarMode.TOP, "override is in effect (current label)"
+        assert sut.auto_detected_mode(air) == GuitarMode.AIR, (
             "auto_detected_mode ignores the override — it names the reset target"
         )
 

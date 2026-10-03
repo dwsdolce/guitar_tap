@@ -29,7 +29,7 @@ Analyser modules (NOT imported here — import directly to avoid circular deps):
 
 from .analysis_display_mode import AnalysisDisplayMode
 from .audio_device import AudioDevice
-from .guitar_mode import GuitarMode, classify_peak, get_bands, in_mode_range, mode_display_name
+from .guitar_mode import GuitarMode, get_bands, in_mode_range, mode_display_name
 from .guitar_type import DecayThresholds, GuitarType, ModeRanges
 from .material_tap_phase import MaterialTapPhase
 from .measurement_type import MeasurementType
@@ -46,7 +46,7 @@ __all__ = [
     "AnalysisDisplayMode",
     "AudioDevice",
     "GuitarType", "ModeRanges", "DecayThresholds",
-    "GuitarMode", "get_bands", "in_mode_range", "classify_peak", "mode_display_name",
+    "GuitarMode", "get_bands", "in_mode_range", "mode_display_name",
     "MaterialTapPhase",
     "MeasurementType",
     "Pitch",

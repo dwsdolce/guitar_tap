@@ -23,7 +23,7 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         If the user has overridden this peak's mode to a predefined GuitarMode,
         return that mode so color/icon update everywhere.  Freeform labels that
         do not match any predefined mode return UNKNOWN; views detect the
-        freeform case separately via has_manual_override + from_mode_string.
+        freeform case separately via has_manual_override + from_display_name.
 
         Reads ``identified_modes`` (populated by the classify pass). A peak with no entry there
         has no mode and resolves to UNKNOWN — see the comment below for why it does not guess.
@@ -66,7 +66,7 @@ class TapToneAnalyzerAnalysisHelpersMixin:
         candidates = [
             p for p in self.all_peaks
             if p.id in self.selected_peak_ids
-            and self.peak_mode(p).normalized == mode.normalized
+            and self.peak_mode(p) == mode
         ]
         if not candidates:
             return None
