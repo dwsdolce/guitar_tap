@@ -19,8 +19,16 @@ Algorithm Overview:
 Reference: https://www.johndcook.com/blog/2016/02/10/musical-pitch-notation/
 """
 
-from math import isfinite, log2
+from math import floor, isfinite, log2
 from math import pow as mpow
+
+
+def _round_half_away_from_zero(x: float) -> int:
+    """Round to the nearest whole number, a half away from zero — Swift's ``round``. Python's ``round``
+    sends a half to the even neighbour, which names a different note at an exact half-step tie."""
+    whole = floor(x)
+    fraction = x - whole
+    return int(whole + 1 if fraction > 0.5 or (fraction == 0.5 and x > 0) else whole)
 
 
 class Pitch:
@@ -95,7 +103,7 @@ class Pitch:
         if not self.has_pitch(frequency):
             return 0, 0
         # Count half-steps above C0; rounding snaps to the nearest semitone.
-        half_steps = int(round(12 * log2(frequency / self.c0)))
+        half_steps = _round_half_away_from_zero(12 * log2(frequency / self.c0))
         octave = half_steps // 12
         note = half_steps % 12
         return note, octave
@@ -197,10 +205,21 @@ class Pitch:
         """
         if not self.has_pitch(frequency):
             return ""
-        note_str = self.note(frequency)
-        c = self.cents(frequency)
-        sign = "+" if c >= 0 else ""
-        return f"{note_str} ({sign}{c:.0f} cents)"
+        return f"{self.note(frequency)} ({Pitch.format_cents(self.cents(frequency))} cents)"
+
+    @staticmethod
+    def format_cents(cents: float) -> str:
+        """Return a cents offset as a signed whole number: "+23", "-5", "+0".
+
+        A half rounds to the even neighbour (2.5 -> "+2"), as C's ``%.0f`` does.
+
+        - Parameter cents: The cents offset.
+        - Returns: The offset rounded to a whole number, with ``+`` when it is zero or positive.
+
+        Mirrors Swift Pitch.formatCents(_:).
+        """
+        sign = "+" if cents >= 0 else ""
+        return f"{sign}{cents:.0f}"
 
     def is_in_tune(self, frequency: float, threshold: float = 10.0) -> bool:
         """Return True if the frequency is within *threshold* cents of any pitch.

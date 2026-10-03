@@ -1,0 +1,1120 @@
+{
+ "slug": "test/pitch",
+ "about": "Equal-temperament pitch. The union of the three editions' cases; the expected values are Swift's (Pitch.swift). 'frequencies': each function's answer for one frequency at the given A4 — hasPitch, pitch (note index and octave), note, cents, freq0, pitchRange, formattedNote, isInTune at the default 10-cent threshold. 'isInTune': a frequency at a given threshold. 'isInTuneAtOwnCents': in tune at exactly its own cents offset (the comparison is inclusive), not at a hair less. 'freq': a note's frequency. 'formatCents': a cents offset as a signed whole number, a half rounding to even. Numbers are compared at 'tolerance'; NaN and Infinity are written as strings. 'from' notes which editions' tests a case came from.",
+ "tolerance": 1e-09,
+ "frequencies": [
+  {
+   "id": "A4",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 440.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 3.8441118045779003e-13,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A4 +8 cents (442 Hz)",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 442.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 7.851415040126504,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+8 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A4 -8 cents (438 Hz)",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 438.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": -7.8871847081831925,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 439.99999999999994,
+     "lower": 415.30469757994507
+    },
+    "formattedNote": "A4 (-8 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A4 +16 cents (444 Hz)",
+   "from": "Swift",
+   "a4": 440.0,
+   "frequency": 444.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 15.667383390535921,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+16 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "436 Hz",
+   "from": "Python",
+   "a4": 440.0,
+   "frequency": 436.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": -15.81046649727961,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 439.99999999999994,
+     "lower": 415.30469757994507
+    },
+    "formattedNote": "A4 (-16 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "500 Hz",
+   "from": "Python",
+   "a4": 440.0,
+   "frequency": 500.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 11,
+     "octave": 4
+    },
+    "note": "B4",
+    "cents": 21.30948536491286,
+    "freq0": 493.8833012561241,
+    "pitchRange": {
+     "upper": 523.2511306011972,
+     "lower": 493.8833012561241
+    },
+    "formattedNote": "B4 (+21 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "A5",
+   "from": "Swift, Python",
+   "a4": 440.0,
+   "frequency": 880.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 5
+    },
+    "note": "A5",
+    "cents": 3.8441118045779003e-13,
+    "freq0": 879.9999999999999,
+    "pitchRange": {
+     "upper": 932.3275230361797,
+     "lower": 879.9999999999999
+    },
+    "formattedNote": "A5 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A3",
+   "from": "Swift, Python",
+   "a4": 440.0,
+   "frequency": 220.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 3
+    },
+    "note": "A3",
+    "cents": 3.8441118045779003e-13,
+    "freq0": 219.99999999999997,
+    "pitchRange": {
+     "upper": 233.08188075904494,
+     "lower": 219.99999999999997
+    },
+    "formattedNote": "A3 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "C4 from A4",
+   "from": "Swift",
+   "a4": 440.0,
+   "frequency": 261.6255653005986,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 4
+    },
+    "note": "C4",
+    "cents": 0.0,
+    "freq0": 261.6255653005986,
+    "pitchRange": {
+     "upper": 277.1826309768721,
+     "lower": 261.6255653005986
+    },
+    "formattedNote": "C4 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "C4 from freq(0, 4)",
+   "from": "Python",
+   "a4": 440.0,
+   "frequency": 261.6255653005986,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 4
+    },
+    "note": "C4",
+    "cents": 0.0,
+    "freq0": 261.6255653005986,
+    "pitchRange": {
+     "upper": 277.1826309768721,
+     "lower": 261.6255653005986
+    },
+    "formattedNote": "C4 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A#4",
+   "from": "Swift, Python",
+   "a4": 440.0,
+   "frequency": 466.1637615180899,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 10,
+     "octave": 4
+    },
+    "note": "A#4",
+    "cents": 3.8441118045779003e-13,
+    "freq0": 466.16376151808987,
+    "pitchRange": {
+     "upper": 493.8833012561241,
+     "lower": 466.16376151808987
+    },
+    "formattedNote": "A#4 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "50 cents above A4 (a tie: 57.5 half-steps)",
+   "from": "Swift",
+   "a4": 440.0,
+   "frequency": 452.8929841231365,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 10,
+     "octave": 4
+    },
+    "note": "A#4",
+    "cents": -49.999999999999815,
+    "freq0": 466.16376151808987,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A#4 (-50 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "49 cents above A4",
+   "from": "Python",
+   "a4": 440.0,
+   "frequency": 452.63145841612703,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 49.00000000000005,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+49 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "50 cents below A4 (a tie: 56.5 half-steps)",
+   "from": "new: the half-step rounding",
+   "a4": 440.0,
+   "frequency": 427.4740541075866,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": -49.999999999999815,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 439.99999999999994,
+     "lower": 415.30469757994507
+    },
+    "formattedNote": "A4 (-50 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "1% sharp of B4 (upper bound in the next octave)",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 498.8221342686853,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 11,
+     "octave": 4
+    },
+    "note": "B4",
+    "cents": 17.226351572483683,
+    "freq0": 493.8833012561241,
+    "pitchRange": {
+     "upper": 523.2511306011972,
+     "lower": 493.8833012561241
+    },
+    "formattedNote": "B4 (+17 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "1% flat of C5 (lower bound in the previous octave)",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 518.0186192951853,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 5
+    },
+    "note": "C5",
+    "cents": -17.399483634137912,
+    "freq0": 523.2511306011972,
+    "pitchRange": {
+     "upper": 523.2511306011972,
+     "lower": 493.8833012561241
+    },
+    "formattedNote": "C5 (-17 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "82.41 Hz",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 82.41,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 4,
+     "octave": 2
+    },
+    "note": "E2",
+    "cents": 0.06535099715359867,
+    "freq0": 82.40688922821748,
+    "pitchRange": {
+     "upper": 87.30705785825097,
+     "lower": 82.40688922821748
+    },
+    "formattedNote": "E2 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "1046.5 Hz",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 1046.5,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 6
+    },
+    "note": "C6",
+    "cents": -0.0037407227404289336,
+    "freq0": 1046.5022612023945,
+    "pitchRange": {
+     "upper": 1046.5022612023945,
+     "lower": 987.7666025122483
+    },
+    "formattedNote": "C6 (-0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "65.406 Hz",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 65.406,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 2
+    },
+    "note": "C2",
+    "cents": -0.010357970165820143,
+    "freq0": 65.40639132514966,
+    "pitchRange": {
+     "upper": 65.40639132514966,
+     "lower": 61.735412657015516
+    },
+    "formattedNote": "C2 (-0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "87.30731 Hz",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 87.30731,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 5,
+     "octave": 2
+    },
+    "note": "F2",
+    "cents": 0.004999776209243454,
+    "freq0": 87.30705785825097,
+    "pitchRange": {
+     "upper": 92.4986056779086,
+     "lower": 87.30705785825097
+    },
+    "formattedNote": "F2 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "164.09756 Hz",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 164.09756,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 4,
+     "octave": 3
+    },
+    "note": "E3",
+    "cents": -7.539683757830267,
+    "freq0": 164.81377845643496,
+    "pitchRange": {
+     "upper": 164.81377845643496,
+     "lower": 155.56349186104043
+    },
+    "formattedNote": "E3 (-8 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "240.5668 Hz",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 240.5668,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 11,
+     "octave": 3
+    },
+    "note": "B3",
+    "cents": -45.27916411809037,
+    "freq0": 246.94165062806206,
+    "pitchRange": {
+     "upper": 246.94165062806206,
+     "lower": 233.08188075904494
+    },
+    "formattedNote": "B3 (-45 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "512.6888 Hz",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 512.6888,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 5
+    },
+    "note": "C5",
+    "cents": -35.30417066986441,
+    "freq0": 523.2511306011972,
+    "pitchRange": {
+     "upper": 523.2511306011972,
+     "lower": 493.8833012561241
+    },
+    "formattedNote": "C5 (-35 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "67.11537 Hz",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 67.11537,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 2
+    },
+    "note": "C2",
+    "cents": 44.65389031521741,
+    "freq0": 65.40639132514966,
+    "pitchRange": {
+     "upper": 69.29565774421802,
+     "lower": 65.40639132514966
+    },
+    "formattedNote": "C2 (+45 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "A4 +5 cents",
+   "from": "Swift, Python",
+   "a4": 440.0,
+   "frequency": 441.2726066625215,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 5.000000000000096,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+5 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A4 +9.5 cents",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 442.42109939244204,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 9.50000000000012,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+10 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A4 +9.9 cents",
+   "from": "Swift, Python",
+   "a4": 440.0,
+   "frequency": 442.52333218160356,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 9.900000000000459,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+10 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A4 +10 cents",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 442.5488940698555,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 10.0000000000004,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+10 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "A4 +11 cents",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 442.80459417698654,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 11.000000000000105,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+11 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "A4 +15 cents",
+   "from": "Swift",
+   "a4": 440.0,
+   "frequency": 443.82887286777554,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 14.999999999999966,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 466.16376151808987,
+     "lower": 439.99999999999994
+    },
+    "formattedNote": "A4 (+15 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "A4 -8 cents",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 437.9714588054208,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": -7.999999999999607,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 439.99999999999994,
+     "lower": 415.30469757994507
+    },
+    "formattedNote": "A4 (-8 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A4 -15 cents",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 436.2041584835713,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": -14.999999999999858,
+    "freq0": 439.99999999999994,
+    "pitchRange": {
+     "upper": 439.99999999999994,
+     "lower": 415.30469757994507
+    },
+    "formattedNote": "A4 (-15 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "16 Hz (just below C0, rounds to C0)",
+   "from": "new: below C0",
+   "a4": 440.0,
+   "frequency": 16.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 0
+    },
+    "note": "C0",
+    "cents": -37.63165622959142,
+    "freq0": 16.351597831287414,
+    "pitchRange": {
+     "upper": 16.351597831287414,
+     "lower": 15.433853164253879
+    },
+    "formattedNote": "C0 (-38 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "15.9 Hz",
+   "from": "new: below C0",
+   "a4": 440.0,
+   "frequency": 15.9,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": 0
+    },
+    "note": "C0",
+    "cents": -48.48582375319985,
+    "freq0": 16.351597831287414,
+    "pitchRange": {
+     "upper": 16.351597831287414,
+     "lower": 15.433853164253879
+    },
+    "formattedNote": "C0 (-48 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "12 Hz (octave -1)",
+   "from": "new: below C0",
+   "a4": 440.0,
+   "frequency": 12.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 7,
+     "octave": -1
+    },
+    "note": "G-1",
+    "cents": -35.67665536420391,
+    "freq0": 12.249857374429665,
+    "pitchRange": {
+     "upper": 12.249857374429665,
+     "lower": 11.562325709738575
+    },
+    "formattedNote": "G-1 (-36 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "10 Hz (octave -1)",
+   "from": "new: below C0",
+   "a4": 440.0,
+   "frequency": 10.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 3,
+     "octave": -1
+    },
+    "note": "D#-1",
+    "cents": 48.68205763524341,
+    "freq0": 9.722718241315027,
+    "pitchRange": {
+     "upper": 10.300861153527185,
+     "lower": 9.722718241315027
+    },
+    "formattedNote": "D#-1 (+49 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "1 Hz (the analysis range's floor)",
+   "from": "new: below C0",
+   "a4": 440.0,
+   "frequency": 1.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 0,
+     "octave": -4
+    },
+    "note": "C-4",
+    "cents": -37.63165622959142,
+    "freq0": 1.0219748644554634,
+    "pitchRange": {
+     "upper": 1.0219748644554634,
+     "lower": 0.9646158227658674
+    },
+    "formattedNote": "C-4 (-38 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "0 Hz: no pitch",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": 0.0,
+   "expect": {
+    "hasPitch": false,
+    "pitch": {
+     "note": 0,
+     "octave": 0
+    },
+    "note": "",
+    "cents": 0.0,
+    "freq0": 0.0,
+    "pitchRange": {
+     "upper": 0.0,
+     "lower": 0.0
+    },
+    "formattedNote": "",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "-5 Hz: no pitch",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": -5.0,
+   "expect": {
+    "hasPitch": false,
+    "pitch": {
+     "note": 0,
+     "octave": 0
+    },
+    "note": "",
+    "cents": 0.0,
+    "freq0": 0.0,
+    "pitchRange": {
+     "upper": 0.0,
+     "lower": 0.0
+    },
+    "formattedNote": "",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "NaN: no pitch",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": "NaN",
+   "expect": {
+    "hasPitch": false,
+    "pitch": {
+     "note": 0,
+     "octave": 0
+    },
+    "note": "",
+    "cents": 0.0,
+    "freq0": 0.0,
+    "pitchRange": {
+     "upper": 0.0,
+     "lower": 0.0
+    },
+    "formattedNote": "",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "Infinity: no pitch",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "frequency": "Infinity",
+   "expect": {
+    "hasPitch": false,
+    "pitch": {
+     "note": 0,
+     "octave": 0
+    },
+    "note": "",
+    "cents": 0.0,
+    "freq0": 0.0,
+    "pitchRange": {
+     "upper": 0.0,
+     "lower": 0.0
+    },
+    "formattedNote": "",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "A4 = 432: 432 Hz",
+   "from": "Swift, Python",
+   "a4": 432.0,
+   "frequency": 432.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 0.0,
+    "freq0": 432.0,
+    "pitchRange": {
+     "upper": 457.68805676321557,
+     "lower": 432.0
+    },
+    "formattedNote": "A4 (+0 cents)",
+    "isInTune": true
+   }
+  },
+  {
+   "id": "A4 = 432: 440 Hz is sharp",
+   "from": "Swift",
+   "a4": 432.0,
+   "frequency": 440.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 31.766653633429414,
+    "freq0": 432.0,
+    "pitchRange": {
+     "upper": 457.68805676321557,
+     "lower": 432.0
+    },
+    "formattedNote": "A4 (+32 cents)",
+    "isInTune": false
+   }
+  },
+  {
+   "id": "A4 = 432: 436 Hz is sharp",
+   "from": "Python",
+   "a4": 432.0,
+   "frequency": 436.0,
+   "expect": {
+    "hasPitch": true,
+    "pitch": {
+     "note": 9,
+     "octave": 4
+    },
+    "note": "A4",
+    "cents": 15.956187136149447,
+    "freq0": 432.0,
+    "pitchRange": {
+     "upper": 457.68805676321557,
+     "lower": 432.0
+    },
+    "formattedNote": "A4 (+16 cents)",
+    "isInTune": false
+   }
+  }
+ ],
+ "isInTune": [
+  {
+   "id": "+5 cents at threshold 10",
+   "from": "Swift, Python",
+   "a4": 440.0,
+   "frequency": 441.2726066625215,
+   "threshold": 10.0,
+   "expect": true
+  },
+  {
+   "id": "+5 cents at threshold 4",
+   "from": "Swift, Python",
+   "a4": 440.0,
+   "frequency": 441.2726066625215,
+   "threshold": 4.0,
+   "expect": false
+  },
+  {
+   "id": "442 Hz at threshold 5",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 442.0,
+   "threshold": 5.0,
+   "expect": false
+  },
+  {
+   "id": "442 Hz at threshold 10",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 442.0,
+   "threshold": 10.0,
+   "expect": true
+  },
+  {
+   "id": "442 Hz at threshold 50",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 442.0,
+   "threshold": 50.0,
+   "expect": true
+  }
+ ],
+ "isInTuneAtOwnCents": [
+  {
+   "id": "+10 cents at its own offset (inclusive)",
+   "from": "web",
+   "a4": 440.0,
+   "frequency": 442.5488940698555,
+   "cents": 10.0000000000004,
+   "expectAtCents": true,
+   "expectJustUnder": false
+  }
+ ],
+ "freq": [
+  {
+   "id": "B4",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "note": 11,
+   "octave": 4,
+   "expect": 493.8833012561241
+  },
+  {
+   "id": "C5",
+   "from": "Swift, Python, web",
+   "a4": 440.0,
+   "note": 0,
+   "octave": 5,
+   "expect": 523.2511306011972
+  },
+  {
+   "id": "C4",
+   "from": "Python",
+   "a4": 440.0,
+   "note": 0,
+   "octave": 4,
+   "expect": 261.6255653005986
+  },
+  {
+   "id": "A4",
+   "from": "new",
+   "a4": 440.0,
+   "note": 9,
+   "octave": 4,
+   "expect": 439.99999999999994
+  },
+  {
+   "id": "A4 at 432",
+   "from": "new",
+   "a4": 432.0,
+   "note": 9,
+   "octave": 4,
+   "expect": 432.0
+  }
+ ],
+ "formatCents": [
+  {
+   "cents": 0.5,
+   "expect": "+0"
+  },
+  {
+   "cents": 1.5,
+   "expect": "+2"
+  },
+  {
+   "cents": 2.5,
+   "expect": "+2"
+  },
+  {
+   "cents": -0.5,
+   "expect": "-0"
+  },
+  {
+   "cents": -1.5,
+   "expect": "-2"
+  },
+  {
+   "cents": -0.4,
+   "expect": "-0"
+  },
+  {
+   "cents": 0.4,
+   "expect": "+0"
+  },
+  {
+   "cents": 23.5,
+   "expect": "+24"
+  },
+  {
+   "cents": -23.5,
+   "expect": "-24"
+  },
+  {
+   "cents": 0.0,
+   "expect": "+0"
+  },
+  {
+   "cents": 7.85,
+   "expect": "+8"
+  },
+  {
+   "cents": -7.89,
+   "expect": "-8"
+  }
+ ]
+}
