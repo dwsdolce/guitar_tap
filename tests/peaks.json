@@ -1,0 +1,820 @@
+{
+ "slug": "test/peaks",
+ "about": "Peak finding, near-duplicate removal, spectrum averaging, guitar auto-selection and the full-set save, on TapToneAnalyzer. The union of the three editions' cases; the expected values are Swift's (its production code, run by a minting test), in 32-bit Float — numbers are compared at 'tolerance': |actual - expected| <= relative * |expected| + absolute; strings and counts exactly. 'findPeaks': a spectrum — 'gaussians' (each peak 'peakDB' + -(f - peakHz)^2 / (2 sigma^2), sigma = halfWidthHz / 2.355, floored at noiseFloor, the element-wise maximum of the peaks; bins at i * (sampleRate / 2) / (binCount - 1)), 'flat' (one value; bins binSpacingHz apart, or as for gaussians), or 'triangle' (peakDB - slopeDBPerBin * |i - peakBin|, bins binSpacingHz apart) — with the analyzer's peakMinThreshold, minFrequency, maxFrequency and an optional peakMinOverride → every peak returned, in order (frequency, magnitude, quality, bandwidth, pitchNote, pitchCents, pitchFrequency). 'removeDuplicatePeaks': peaks in → the indices of those kept, in order. 'averageSpectra': taps → the averaged magnitudes and frequencies. 'autoSelection': a findPeaks case's peaks under a guitar type → each peak's mode (classifyAll) and the indices guitarModeSelectedPeakIDs selects. 'fullSetSave': a fixture's spectrum, frozen, its full set found at the -100 dB floor, Peak Min applied → the displayed and saved counts, whether the Air peak (within 1 Hz of airHz) is in each, whether every displayed peak is saved, whether every saved peak has its own id; then the durable set replaced by its first 'loadedFirst' peaks, as a loaded measurement's → that set is saved as it is. 'from' notes which editions' tests a case came from.",
+ "tolerance": {
+  "relative": 1e-05,
+  "absolute": 0.0001
+ },
+ "findPeaks": [
+  {
+   "id": "F10 one tone at 1000 Hz, 20 Hz wide",
+   "from": "Swift, web",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 1000,
+      "peakDB": -20,
+      "halfWidthHz": 20
+     }
+    ]
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 50,
+   "maxFrequency": 2000,
+   "expect": [
+    {
+     "bandwidth": 58.62237548828125,
+     "frequency": 1000,
+     "magnitude": -20,
+     "pitchCents": 21.30948536491324,
+     "pitchFrequency": 987.7666025122481,
+     "pitchNote": "B5",
+     "quality": 17
+    }
+   ]
+  },
+  {
+   "id": "F10 one tone at 1000 Hz, 15 Hz wide",
+   "from": "Python",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 1000,
+      "peakDB": -20,
+      "halfWidthHz": 15
+     }
+    ]
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 50,
+   "maxFrequency": 2000,
+   "expect": [
+    {
+     "bandwidth": 46.89788818359375,
+     "frequency": 1000,
+     "magnitude": -20,
+     "pitchCents": 21.30948536491324,
+     "pitchFrequency": 987.7666025122481,
+     "pitchNote": "B5",
+     "quality": 21.2500057220459
+    }
+   ]
+  },
+  {
+   "id": "F17 a tone at 440 Hz carries its pitch",
+   "from": "Swift, Python, web",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 440,
+      "peakDB": -20,
+      "halfWidthHz": 20
+     }
+    ]
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 50,
+   "maxFrequency": 2000,
+   "expect": [
+    {
+     "bandwidth": 58.62237548828125,
+     "frequency": 440,
+     "magnitude": -20.000001907348633,
+     "pitchCents": 3.8441118045779003e-13,
+     "pitchFrequency": 439.99999999999994,
+     "pitchNote": "A4",
+     "quality": 7.599999904632568
+    }
+   ]
+  },
+  {
+   "id": "F11 silence, 1024 bins 23.4375 Hz apart",
+   "from": "Swift, web",
+   "spectrum": {
+    "kind": "flat",
+    "value": -100,
+    "binCount": 1024,
+    "binSpacingHz": 23.4375
+   },
+   "peakMinThreshold": -80,
+   "minFrequency": 50,
+   "maxFrequency": 1000,
+   "expect": []
+  },
+  {
+   "id": "F11 silence, 2048 bins",
+   "from": "Python",
+   "spectrum": {
+    "kind": "flat",
+    "value": -100,
+    "binCount": 2048,
+    "sampleRate": 48000
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 30,
+   "maxFrequency": 2000,
+   "expect": []
+  },
+  {
+   "id": "F12 flat at 0 dB (clipped), 1024 bins",
+   "from": "Swift, web",
+   "spectrum": {
+    "kind": "flat",
+    "value": 0,
+    "binCount": 1024,
+    "binSpacingHz": 23.4375
+   },
+   "peakMinThreshold": -80,
+   "minFrequency": 50,
+   "maxFrequency": 1000,
+   "expect": []
+  },
+  {
+   "id": "F12 flat at -20 dB, 2048 bins",
+   "from": "Python",
+   "spectrum": {
+    "kind": "flat",
+    "value": -20,
+    "binCount": 2048,
+    "sampleRate": 48000
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 30,
+   "maxFrequency": 2000,
+   "expect": []
+  },
+  {
+   "id": "F13 three tones",
+   "from": "Swift, Python, web",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 400,
+      "peakDB": -20,
+      "halfWidthHz": 15
+     },
+     {
+      "peakHz": 700,
+      "peakDB": -22,
+      "halfWidthHz": 15
+     },
+     {
+      "peakHz": 1000,
+      "peakDB": -25,
+      "halfWidthHz": 15
+     }
+    ]
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 50,
+   "maxFrequency": 2000,
+   "expect": [
+    {
+     "bandwidth": 46.89788818359375,
+     "frequency": 400,
+     "magnitude": -20,
+     "pitchCents": 34.995771500078234,
+     "pitchFrequency": 391.99543598174927,
+     "pitchNote": "G4",
+     "quality": 8.500001907348633
+    },
+    {
+     "bandwidth": 46.89788818359375,
+     "frequency": 700,
+     "magnitude": -22,
+     "pitchCents": 3.8216779692029266,
+     "pitchFrequency": 698.4564628660078,
+     "pitchNote": "F5",
+     "quality": 15.000003814697266
+    },
+    {
+     "bandwidth": 46.89788818359375,
+     "frequency": 1000,
+     "magnitude": -25,
+     "pitchCents": 21.30948536491324,
+     "pitchFrequency": 987.7666025122481,
+     "pitchNote": "B5",
+     "quality": 21.2500057220459
+    }
+   ]
+  },
+  {
+   "id": "two unequal tones at threshold -60",
+   "from": "Swift, web",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 400,
+      "peakDB": -20,
+      "halfWidthHz": 15
+     },
+     {
+      "peakHz": 900,
+      "peakDB": -55,
+      "halfWidthHz": 15
+     }
+    ]
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 50,
+   "maxFrequency": 2000,
+   "expect": [
+    {
+     "bandwidth": 46.89788818359375,
+     "frequency": 400,
+     "magnitude": -20,
+     "pitchCents": 34.995771500078234,
+     "pitchFrequency": 391.99543598174927,
+     "pitchNote": "G4",
+     "quality": 8.500001907348633
+    },
+    {
+     "bandwidth": 46.89788818359375,
+     "frequency": 900,
+     "magnitude": -55,
+     "pitchCents": 38.90577323085329,
+     "pitchFrequency": 879.9999999999999,
+     "pitchNote": "A5",
+     "quality": 19.250003814697266
+    }
+   ]
+  },
+  {
+   "id": "two unequal tones at threshold -40",
+   "from": "Swift, web",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 400,
+      "peakDB": -20,
+      "halfWidthHz": 15
+     },
+     {
+      "peakHz": 900,
+      "peakDB": -55,
+      "halfWidthHz": 15
+     }
+    ]
+   },
+   "peakMinThreshold": -40,
+   "minFrequency": 50,
+   "maxFrequency": 2000,
+   "expect": [
+    {
+     "bandwidth": 46.89788818359375,
+     "frequency": 400,
+     "magnitude": -20,
+     "pitchCents": 34.995771500078234,
+     "pitchFrequency": 391.99543598174927,
+     "pitchNote": "G4",
+     "quality": 8.500001907348633
+    }
+   ]
+  },
+  {
+   "id": "F14 a -30 dB tone at 200 Hz under threshold -10",
+   "from": "Swift",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 200,
+      "peakDB": -30,
+      "halfWidthHz": 5
+     }
+    ]
+   },
+   "peakMinThreshold": -10,
+   "minFrequency": 50,
+   "maxFrequency": 500,
+   "expect": []
+  },
+  {
+   "id": "F14 a -30 dB tone at 1000 Hz under threshold -10",
+   "from": "Python",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 1000,
+      "peakDB": -30,
+      "halfWidthHz": 5
+     }
+    ]
+   },
+   "peakMinThreshold": -10,
+   "minFrequency": 30,
+   "maxFrequency": 2000,
+   "expect": []
+  },
+  {
+   "id": "F14 a -30 dB tone at 1000 Hz, 20 Hz wide, under threshold -20",
+   "from": "web",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 2048,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 1000,
+      "peakDB": -30,
+      "halfWidthHz": 20
+     }
+    ]
+   },
+   "peakMinThreshold": -20,
+   "minFrequency": 50,
+   "maxFrequency": 2000,
+   "expect": []
+  },
+  {
+   "id": "a 1 dB-per-bin triangle at 350 Hz (Q 350/60)",
+   "from": "web",
+   "spectrum": {
+    "kind": "triangle",
+    "binCount": 64,
+    "binSpacingHz": 10,
+    "peakBin": 35,
+    "peakDB": -20,
+    "slopeDBPerBin": 1
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 50,
+   "maxFrequency": 2000,
+   "expect": [
+    {
+     "bandwidth": 60,
+     "frequency": 350,
+     "magnitude": -20,
+     "pitchCents": 3.8216779692029266,
+     "pitchFrequency": 349.2282314330039,
+     "pitchNote": "F4",
+     "quality": 5.833333492279053
+    }
+   ]
+  },
+  {
+   "id": "D2 the Top/Back overlap, 32768 bins",
+   "from": "Swift, Python, web",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 32768,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 195,
+      "peakDB": -40,
+      "halfWidthHz": 4
+     },
+     {
+      "peakHz": 210,
+      "peakDB": -56,
+      "halfWidthHz": 4
+     },
+     {
+      "peakHz": 240,
+      "peakDB": -50,
+      "halfWidthHz": 4
+     }
+    ]
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 30,
+   "maxFrequency": 2000,
+   "expect": [
+    {
+     "bandwidth": 8.789321899414062,
+     "frequency": 195,
+     "magnitude": -40,
+     "pitchCents": -8.835279730058554,
+     "pitchFrequency": 195.99771799087463,
+     "pitchNote": "G3",
+     "quality": 22.166688919067383
+    },
+    {
+     "bandwidth": 9.521774291992188,
+     "frequency": 240,
+     "magnitude": -50,
+     "pitchCents": -49.36294149936922,
+     "pitchFrequency": 246.94165062806204,
+     "pitchNote": "B3",
+     "quality": 25.230770111083984
+    },
+    {
+     "bandwidth": 8.789321899414062,
+     "frequency": 210,
+     "magnitude": -56,
+     "pitchCents": 19.462964969755973,
+     "pitchFrequency": 207.65234878997254,
+     "pitchNote": "G#3",
+     "quality": 23.916690826416016
+    }
+   ]
+  },
+  {
+   "id": "the full set below Peak Min: the overlap at the -100 dB floor",
+   "from": "new",
+   "spectrum": {
+    "kind": "gaussians",
+    "binCount": 32768,
+    "sampleRate": 48000,
+    "noiseFloor": -100,
+    "peaks": [
+     {
+      "peakHz": 195,
+      "peakDB": -40,
+      "halfWidthHz": 4
+     },
+     {
+      "peakHz": 210,
+      "peakDB": -56,
+      "halfWidthHz": 4
+     },
+     {
+      "peakHz": 240,
+      "peakDB": -50,
+      "halfWidthHz": 4
+     }
+    ]
+   },
+   "peakMinThreshold": -60,
+   "minFrequency": 30,
+   "maxFrequency": 2000,
+   "peakMinOverride": -100,
+   "expect": [
+    {
+     "bandwidth": 8.789321899414062,
+     "frequency": 195,
+     "magnitude": -40,
+     "pitchCents": -8.835279730058554,
+     "pitchFrequency": 195.99771799087463,
+     "pitchNote": "G3",
+     "quality": 22.166688919067383
+    },
+    {
+     "bandwidth": 9.521774291992188,
+     "frequency": 240,
+     "magnitude": -50,
+     "pitchCents": -49.36294149936922,
+     "pitchFrequency": 246.94165062806204,
+     "pitchNote": "B3",
+     "quality": 25.230770111083984
+    },
+    {
+     "bandwidth": 8.789321899414062,
+     "frequency": 210,
+     "magnitude": -56,
+     "pitchCents": 19.462964969755973,
+     "pitchFrequency": 207.65234878997254,
+     "pitchNote": "G#3",
+     "quality": 23.916690826416016
+    }
+   ]
+  }
+ ],
+ "removeDuplicatePeaks": [
+  {
+   "id": "F15 0.5 Hz apart: the louder survives",
+   "from": "Swift",
+   "peaks": [
+    {
+     "frequency": 200,
+     "magnitude": -25
+    },
+    {
+     "frequency": 200.5,
+     "magnitude": -20
+    }
+   ],
+   "expect": [1]
+  },
+  {
+   "id": "F15 1 Hz apart: the louder survives",
+   "from": "Python, web",
+   "peaks": [
+    {
+     "frequency": 440,
+     "magnitude": -30
+    },
+    {
+     "frequency": 441,
+     "magnitude": -20
+    }
+   ],
+   "expect": [1]
+  },
+  {
+   "id": "F15 1 Hz apart, near 100 Hz",
+   "from": "web",
+   "peaks": [
+    {
+     "frequency": 100.5,
+     "magnitude": -30
+    },
+    {
+     "frequency": 101.5,
+     "magnitude": -20
+    }
+   ],
+   "expect": [1]
+  },
+  {
+   "id": "F16 5 Hz apart: both kept",
+   "from": "Swift",
+   "peaks": [
+    {
+     "frequency": 200,
+     "magnitude": -25
+    },
+    {
+     "frequency": 205,
+     "magnitude": -28
+    }
+   ],
+   "expect": [0, 1]
+  },
+  {
+   "id": "F16 5 Hz apart, the second louder: both kept",
+   "from": "Python",
+   "peaks": [
+    {
+     "frequency": 440,
+     "magnitude": -30
+    },
+    {
+     "frequency": 445,
+     "magnitude": -20
+    }
+   ],
+   "expect": [0, 1]
+  },
+  {
+   "id": "F16 10 Hz apart: both kept",
+   "from": "web",
+   "peaks": [
+    {
+     "frequency": 100,
+     "magnitude": -30
+    },
+    {
+     "frequency": 110,
+     "magnitude": -20
+    }
+   ],
+   "expect": [0, 1]
+  }
+ ],
+ "averageSpectra": [
+  {
+   "id": "A1 two identical spectra",
+   "from": "Swift",
+   "taps": [
+    {
+     "magnitudes": [-20, -30, -40],
+     "frequencies": [100, 200, 300]
+    },
+    {
+     "magnitudes": [-20, -30, -40],
+     "frequencies": [100, 200, 300]
+    }
+   ],
+   "expect": {
+    "frequencies": [100, 200, 300],
+    "magnitudes": [-20, -30, -40]
+   }
+  },
+  {
+   "id": "A1 three identical spectra",
+   "from": "Python",
+   "taps": [
+    {
+     "magnitudes": [-30, -40, -50, -35],
+     "frequencies": [0.0, 10.0, 20.0, 30.0]
+    },
+    {
+     "magnitudes": [-30, -40, -50, -35],
+     "frequencies": [0.0, 10.0, 20.0, 30.0]
+    },
+    {
+     "magnitudes": [-30, -40, -50, -35],
+     "frequencies": [0.0, 10.0, 20.0, 30.0]
+    }
+   ],
+   "expect": {
+    "frequencies": [0, 10, 20, 30],
+    "magnitudes": [-30, -40, -50, -35]
+   }
+  },
+  {
+   "id": "A1 two identical, two bins",
+   "from": "web",
+   "taps": [
+    {
+     "magnitudes": [-10, -40],
+     "frequencies": [0.0, 10.0]
+    },
+    {
+     "magnitudes": [-10, -40],
+     "frequencies": [0.0, 10.0]
+    }
+   ],
+   "expect": {
+    "frequencies": [0, 10],
+    "magnitudes": [-10, -40]
+   }
+  },
+  {
+   "id": "A2 -10 and -30 dB",
+   "from": "Swift",
+   "taps": [
+    {
+     "magnitudes": [-10],
+     "frequencies": [200]
+    },
+    {
+     "magnitudes": [-30],
+     "frequencies": [200]
+    }
+   ],
+   "expect": {
+    "frequencies": [200],
+    "magnitudes": [-12.967085838317871]
+   }
+  },
+  {
+   "id": "A2 -10 and -20 dB",
+   "from": "Python, web",
+   "taps": [
+    {
+     "magnitudes": [-10],
+     "frequencies": [0.0]
+    },
+    {
+     "magnitudes": [-20],
+     "frequencies": [0.0]
+    }
+   ],
+   "expect": {
+    "frequencies": [0],
+    "magnitudes": [-12.596373558044434]
+   }
+  },
+  {
+   "id": "A3 no taps",
+   "from": "Swift, Python",
+   "taps": [],
+   "expect": {
+    "frequencies": [],
+    "magnitudes": []
+   }
+  },
+  {
+   "id": "A4 one tap",
+   "from": "Swift",
+   "taps": [
+    {
+     "magnitudes": [-15, -25, -35, -45],
+     "frequencies": [100, 200, 300, 400]
+    }
+   ],
+   "expect": {
+    "frequencies": [100, 200, 300, 400],
+    "magnitudes": [-15, -25, -35, -45]
+   }
+  },
+  {
+   "id": "A4 one tap, another",
+   "from": "Python",
+   "taps": [
+    {
+     "magnitudes": [-25, -30, -45, -60],
+     "frequencies": [0.0, 10.0, 20.0, 30.0]
+    }
+   ],
+   "expect": {
+    "frequencies": [0, 10, 20, 30],
+    "magnitudes": [-25, -30, -45, -60]
+   }
+  },
+  {
+   "id": "A4 one tap, three bins",
+   "from": "web",
+   "taps": [
+    {
+     "magnitudes": [-10, -20, -30],
+     "frequencies": [0.0, 10.0, 20.0]
+    }
+   ],
+   "expect": {
+    "frequencies": [0, 10, 20],
+    "magnitudes": [-10, -20, -30]
+   }
+  },
+  {
+   "id": "A5 a louder spectrum dominates",
+   "from": "Python",
+   "taps": [
+    {
+     "magnitudes": [-10, -10, -10, -10, -10, -10, -10, -10],
+     "frequencies": [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0]
+    },
+    {
+     "magnitudes": [-40, -40, -40, -40, -40, -40, -40, -40],
+     "frequencies": [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0]
+    }
+   ],
+   "expect": {
+    "frequencies": [0, 10, 20, 30, 40, 50, 60, 70],
+    "magnitudes": [-13.005958557128906, -13.005958557128906, -13.005958557128906, -13.005958557128906, -13.005958557128906, -13.005958557128906, -13.005958557128906, -13.005958557128906]
+   }
+  },
+  {
+   "id": "different lengths: the first tap",
+   "from": "web",
+   "taps": [
+    {
+     "magnitudes": [-10, -20],
+     "frequencies": [0.0, 10.0]
+    },
+    {
+     "magnitudes": [-10],
+     "frequencies": [0.0]
+    }
+   ],
+   "expect": {
+    "frequencies": [0, 10],
+    "magnitudes": [-10, -20]
+   }
+  }
+ ],
+ "autoSelection": [
+  {
+   "id": "D2b / D4 the Top/Back overlap, Generic",
+   "from": "Swift, Python, web",
+   "findPeaks": "D2 the Top/Back overlap, 32768 bins",
+   "guitarType": "generic",
+   "expect": {
+    "modes": [
+     "top",
+     "back",
+     "back"
+    ],
+    "selected": [0, 1]
+   }
+  }
+ ],
+ "fullSetSave": [
+  {
+   "id": "the real swift-mac capture at Peak Min -60",
+   "from": "Swift, Python, web",
+   "fixture": "dws-2024-umik-1-swift-mac-1784225155.guitartap",
+   "peakMinThreshold": -60,
+   "minFrequency": 30,
+   "maxFrequency": 2000,
+   "airHz": 97.26,
+   "loadedFirst": 5,
+   "expect": {
+    "airDisplayed": false,
+    "airSaved": true,
+    "displayedAmongSaved": true,
+    "displayedCount": 5,
+    "loadedSavedCount": 5,
+    "loadedSavedSame": true,
+    "savedCount": 111,
+    "savedDistinctIds": true
+   }
+  }
+ ]
+}
