@@ -341,8 +341,6 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         try:
             from guitar_tap.utilities.logging import TAP_DEBUG as _td
 
-            from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
-
             n_samples = len(samples)
             my_generation = self._file_playback_generation
             self.rate = sample_rate
@@ -416,11 +414,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 # any active gated capture with duplicate/zero data.  The gated
                 # capture is flushed separately by _on_pre_mic_restart below.
                 _td("file_playback", f"PARTIAL_FLUSH_EMIT | emitting FFT frame with {len(partial)} samples")
-                mag_y_db, mag_y, peak_db = _perform_fft(self, partial, fft_size)
+                mag_y_db, peak_db = self.perform_fft(partial)
 
                 # One delivery, as every frame — mirrors Swift performFFT(on:) publishing the magnitudes
                 # for the analyzer's main-thread sink.
-                self.proc_thread.fftFrameReady.emit(mag_y_db, mag_y, peak_db, 0.0, 0.0, 0.0)
+                self.proc_thread.fftFrameReady.emit(mag_y_db, peak_db, 0.0, 0.0, 0.0)
                 _td("file_playback", "PARTIAL_FLUSH_DONE")
             # Clear the input buffer so the caller starts from a clean slate.
             self._input_buffer = []

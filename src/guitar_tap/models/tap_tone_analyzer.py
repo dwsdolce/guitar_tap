@@ -290,7 +290,7 @@ class TapToneAnalyzer(
 
         # ── FFT configuration ──────────────────────────────────────────────
         if self.mic is not None:
-            x_axis = np.arange(0, self.mic.h_fft_size + 1)
+            x_axis = np.arange(0, self.mic.h_fft_size)
             self.freq = x_axis * self.mic.rate / self.mic.fft_size
         else:
             self.freq = np.array([])
@@ -463,7 +463,6 @@ class TapToneAnalyzer(
         # ── Measurement type ──────────────────────────────────────────────
         self._measurement_type = _mt_mod.MeasurementType.GENERIC
 
-        self._current_mag_y = np.array([])
         self._current_mag_y_db = np.array([])
         # Instantaneous RMS level in dBFS — mirrors Swift fftAnalyzer.inputLevelDB.
         # Updated every ~23 ms by _on_rms_level_changed; used by _do_reenable_detection
@@ -1395,7 +1394,7 @@ class TapToneAnalyzer(
         (hardware_rate / file_rate) during file playback.
         """
         import numpy as _np
-        x_axis = _np.arange(0, self.mic.h_fft_size + 1)
+        x_axis = _np.arange(0, self.mic.h_fft_size)
         self.freq = x_axis * self.mic.rate / self.mic.fft_size
 
     # ------------------------------------------------------------------ #

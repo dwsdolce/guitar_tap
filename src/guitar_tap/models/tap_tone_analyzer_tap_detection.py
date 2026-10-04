@@ -483,7 +483,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     def on_fft_frame(
         self,
         mag_y_db,
-        mag_y,
         peak_db: float,
         fps: float,
         sample_dt: float,
@@ -501,7 +500,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
         Args:
             mag_y_db:     FFT magnitude spectrum in dBFS (ndarray).
-            mag_y:        FFT linear magnitude spectrum (ndarray).
             peak_db:      The spectrum's peak in dBFS, as a float (Swift ``peakMagnitude``).
             fps, sample_dt, processing_dt: Diagnostics.
         """
@@ -510,7 +508,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         from guitar_tap.models.measurement_type import MeasurementType as _MT
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
-        self._current_mag_y = mag_y
         self._current_mag_y_db = mag_y_db
 
         # Cache instantaneous FFT peak magnitude — mirrors Swift fftAnalyzer.peakMagnitude.

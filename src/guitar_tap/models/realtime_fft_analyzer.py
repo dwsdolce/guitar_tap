@@ -24,12 +24,9 @@ This Python package mirrors that structure using four modules:
       mirrors RealtimeFFTAnalyzer+EngineControl.swift
       Methods: new_frame, get_frames, start, stop, start_from_file, close
 
-  realtime_fft_analyzer_fft_processing.py → module-level FFT functions
+  realtime_fft_analyzer_fft_processing.py → RealtimeFFTAnalyzerFFTProcessingMixin
       mirrors RealtimeFFTAnalyzer+FFTProcessing.swift
-      Key correspondence: dft_anal ↔ computeFFT(on:) (pure DSP core).
-      Swift's performFFT(on:) is now a thin wrapper around computeFFT that only
-      dispatches results to @Published; Python's equivalent thin wrapper is the
-      dft_anal call + fftFrameReady.emit inside _FftProcessingThread.run().
+      Methods: compute_fft (computeFFT(on:)), perform_fft (performFFT(on:))
 
   realtime_fft_analyzer_device_management.py → RealtimeFFTAnalyzerDeviceManagementMixin
       mirrors RealtimeFFTAnalyzer+DeviceManagement.swift
@@ -38,9 +35,6 @@ This file (realtime_fft_analyzer.py) contains:
   - The RealtimeFFTAnalyzer class declaration and stored properties / __init__
     (mirrors the top of Swift RealtimeFFTAnalyzer.swift)
   - _FftProcessingThread (Python-only private inner class — off-main-thread DSP loop)
-  - Re-export of all FFT functions from realtime_fft_analyzer_fft_processing for
-    backward compatibility (callers that do `import models.realtime_fft_analyzer as f_a`
-    and call `f_a.dft_anal(...)` continue to work unchanged)
   - Microphone alias for backward compatibility with existing import sites
 
 Python ↔ Swift correspondence:
@@ -96,14 +90,7 @@ from guitar_tap.utilities.logging import gt_log
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
 from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
 
-# ── FFT function re-exports (backward compatibility) ─────────────────────────
-# Existing code that does:
-#   import models.realtime_fft_analyzer as f_a
-#   f_a.dft_anal(...)
-# continues to work unchanged.
-from .realtime_fft_analyzer_fft_processing import (
-    dft_anal,
-)
+from .realtime_fft_analyzer_fft_processing import RealtimeFFTAnalyzerFFTProcessingMixin
 
 if platform.system() == "Darwin":
     from guitar_tap.views.utilities import platform_adapters as mac_access
@@ -162,13 +149,11 @@ class _FftProcessingThread(QtCore.QThread):
     runOnMainBlocking: QtCore.Signal = QtCore.Signal(object)
     runOnMain: QtCore.Signal = QtCore.Signal(object)
 
-    # (mag_y_db, mag_y, peak_db, fps, sample_dt, processing_dt). The ONE delivery of a frame to the
+    # (mag_y_db, peak_db, fps, sample_dt, processing_dt). The ONE delivery of a frame to the
     # analyzer: connected to on_fft_frame, which therefore runs on the main thread — Swift's analyzer
     # takes frames through a Combine sink `.receive(on: DispatchQueue.main)`. The peak travels as float
     # dB (Swift's `peakMagnitude`), unrounded.
-    fftFrameReady: QtCore.Signal = QtCore.Signal(
-        np.ndarray, np.ndarray, float, float, float, float
-    )
+    fftFrameReady: QtCore.Signal = QtCore.Signal(np.ndarray, float, float, float, float)
 
     # Per-chunk RMS level in dB, every audio chunk — for the UI (the threshold meter) ONLY. Tap
     # detection takes the level from the direct rms_level_handler on this thread instead, as Swift's
@@ -265,7 +250,11 @@ class _FftProcessingThread(QtCore.QThread):
             mic._recent_peak_time = 0.0
 
 
-class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnalyzerDeviceManagementMixin):
+class RealtimeFFTAnalyzer(
+    RealtimeFFTAnalyzerEngineControlMixin,
+    RealtimeFFTAnalyzerDeviceManagementMixin,
+    RealtimeFFTAnalyzerFFTProcessingMixin,
+):
     """Real-time FFT audio analyser using PortAudio/sounddevice.
 
     Captures audio from a selected input device, delivers raw PCM chunks via
@@ -613,6 +602,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # same, published at the frame rate by perform_fft). True silence is -inf on the readout;
         # detection reads the per-chunk level, which stays -100 on silence.
         self.readout_level_db: float = -100.0
+        # The last chunk's level in dBFS (silence -100), for detection, the meter and decay. Swift inputLevelDB.
+        self.input_level_db: float = -100.0
         self.display_level_db: float = -100.0
 
         # Level-crossing detection.
@@ -748,8 +739,6 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         7. Recent peak history update
         8. Input buffer accumulation → FFT → fftFrameReady Qt signal (the analyzer's one frame delivery)
         """
-        from .realtime_fft_analyzer_fft_processing import perform_fft as _perform_fft
-
         enter_now = time.time()
         chunk_f32 = chunk.astype(np.float32)
 
@@ -774,6 +763,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
         # different level on true digital silence than Swift's did.
         rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
         level_db = 20.0 * math.log10(rms) if rms > 0 else -100.0
+        self.input_level_db = level_db
         # The READOUT's level — Swift readoutLevelDB: the same value, except true silence is -inf,
         # because -100 dB is a real level a quiet UMIK-1 reaches. Detection keeps level_db.
         self.readout_level_db = level_db if rms > 0 else float("-inf")
@@ -895,9 +885,8 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             sample_dt = enter_now - self._last_fft_time
             self._last_fft_time = enter_now
 
-            # FFT + post-processing — perform_fft now reads calibration
-            # from self (the analyzer) instead of the thread.
-            mag_y_db, mag_y, peak_db = _perform_fft(self, samples, fft_size)
+            # FFT + post-processing (calibration, the live peak).
+            mag_y_db, peak_db = self.perform_fft(samples)
 
             exit_now = time.time()
             processing_dt = exit_now - enter_now
@@ -906,9 +895,7 @@ class RealtimeFFTAnalyzer(RealtimeFFTAnalyzerEngineControlMixin, RealtimeFFTAnal
             # The ONE delivery of this frame to the analyzer (see fftFrameReady). Live, it is queued to
             # the main thread; in tests and inline file playback the emitter and receiver share a thread,
             # so Qt delivers it synchronously.
-            self.proc_thread.fftFrameReady.emit(
-                mag_y_db, mag_y, peak_db, fps, sample_dt, processing_dt,
-            )
+            self.proc_thread.fftFrameReady.emit(mag_y_db, peak_db, fps, sample_dt, processing_dt)
 
     # MARK: - Calibration (formerly on _FftProcessingThread)
 

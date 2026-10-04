@@ -833,8 +833,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         from guitar_tap.models.measurement_type import MeasurementType as _MT
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
-        from .realtime_fft_analyzer_fft_processing import dft_anal as _dft_anal
-
         if self.mic is None:
             return
 
@@ -906,8 +904,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         from . import capture_probe
         capture_probe.record(samples, chunk)
 
-        window_fcn = self.mic.window_fcn  # rectangular (np.ones(fft_size))
-        magnitudes_db, _ = _dft_anal(chunk, window_fcn, fft_size)
+        # The live path's rectangular window and fft_size, so the spectrum is bin-compatible with
+        # the live frames. Mirrors Swift fftAnalyzer.computeFFT(on: chunk).
+        magnitudes_db = self.mic.compute_fft(chunk)
 
         # Apply per-bin calibration if present — mirrors what
         # process_raw_samples does on every live FFT frame.
@@ -920,7 +919,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Build the matching frequency axis.  Use the same self.freq array
         # the live path uses so downstream peak detection sees identical bins.
         freqs = list(self.freq) if self.freq is not None else (
-            [i * float(sample_rate) / fft_size for i in range(fft_size // 2 + 1)]
+            [i * float(sample_rate) / fft_size for i in range(fft_size // 2)]
         )
 
         import datetime as _dt

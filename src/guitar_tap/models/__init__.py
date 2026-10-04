@@ -23,7 +23,7 @@ Data model modules (safe to import anywhere):
   user_assigned_mode     → UserAssignedMode
 
 Analyser modules (NOT imported here — import directly to avoid circular deps):
-  realtime_fft_analyzer  → RealtimeFFTAnalyzer (Microphone alias), dft_anal, ...
+  realtime_fft_analyzer  → RealtimeFFTAnalyzer (Microphone alias)
   tap_tone_analyzer      → TapToneAnalyzer, AnalysisDisplayMode, ...
 """
 

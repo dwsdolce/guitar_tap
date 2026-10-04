@@ -351,7 +351,7 @@ class FftCanvas(pg.PlotWidget):
             if _cal is not None:
                 # FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
                 _fft_size = 65536
-                _x = np.arange(0, _fft_size // 2 + 1)
+                _x = np.arange(0, _fft_size // 2)
                 _freq_tmp = _x * _mic.rate // _fft_size
                 _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
                 _initial_calibration_name = _cal.name

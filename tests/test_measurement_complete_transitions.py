@@ -132,7 +132,6 @@ class TestGuitarSingleTapCompletion:
         live_mag, _live_freqs, _live_ts = _fake_spectrum(peak_db=-20.0)  # distinctly different from frozen
         sut.on_fft_frame(
             mag_y_db=live_mag,
-            mag_y=np.power(10.0, live_mag / 20.0),
             peak_db=-20.0,
             fps=2.7,
             sample_dt=0.37,
