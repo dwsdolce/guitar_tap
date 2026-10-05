@@ -105,6 +105,14 @@ class PeaksModel(QtCore.QAbstractTableModel):
         # Whether this model is displaying guitar peaks or plate/brace peaks.
         # Mirrors Swift measurementType.isGuitar guard in modeLabel / modeColor.
         self.is_guitar: bool = True
+        # The peak dots and annotation cards are drawn here, not by a stylesheet: redraw them in
+        # every new scheme.
+        palette.notifier().scheme_changed.connect(self._on_scheme_changed)
+
+    def _on_scheme_changed(self, _scheme) -> None:
+        """Redraw the peak dots and annotation cards in the new scheme's colours."""
+        self._emit_mode_colors()
+        self.refresh_annotations()
 
     # MARK: - Annotation mode (reactive, mirrors Swift @Published annotationVisibilityMode)
 
@@ -203,17 +211,17 @@ class PeaksModel(QtCore.QAbstractTableModel):
             }
         else:
             color_map: dict[float, tuple[int, int, int]] = {}
-            mc = self._MATERIAL_MODE_COLORS
+            mc = self._MATERIAL_MODE_ROLES
             for i, peak in enumerate(self._peaks):
                 pid = peak.id
                 if pid == self.selected_longitudinal_peak_id:
-                    color_map[peak.frequency] = mc["Longitudinal"]
+                    color_map[peak.frequency] = palette.rgb(mc["Longitudinal"])
                 elif pid == self.selected_cross_peak_id:
-                    color_map[peak.frequency] = mc["Cross-grain"]
+                    color_map[peak.frequency] = palette.rgb(mc["Cross-grain"])
                 elif pid == self.selected_flc_peak_id:
-                    color_map[peak.frequency] = mc["Diagonal"]
+                    color_map[peak.frequency] = palette.rgb(mc["Diagonal"])
                 else:
-                    color_map[peak.frequency] = mc["Peak"]
+                    color_map[peak.frequency] = palette.rgb(mc["Peak"])
         self.modeColorsChanged.emit(color_map)
 
     def _recompute_auto_modes(self) -> None:
@@ -348,12 +356,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """Return the magnitude value from the correct column for the row"""
         return self._data[index.row()][1]
 
-    # Material (plate/brace) mode label → RGB colour, matching Swift PeakAnnotations.swift
-    _MATERIAL_MODE_COLORS: dict[str, tuple[int, int, int]] = {
-        "Longitudinal": (50,  100, 220),   # blue
-        "Cross-grain":  (220, 130,  0),    # orange
-        "Diagonal":          (150,  50, 200),   # purple
-        "Peak":         (150, 150, 150),   # secondary grey
+    # Material (plate/brace) mode label → colour role, matching Swift PeakAnnotations.swift
+    _MATERIAL_MODE_ROLES: dict[str, palette.Role] = {
+        "Longitudinal": palette.Role.MATERIAL_LONGITUDINAL,
+        "Cross-grain":  palette.Role.MATERIAL_CROSS,
+        "Diagonal":     palette.Role.MATERIAL_FLC,
+        "Peak":         palette.Role.MATERIAL_UNSELECTED,
     }
 
     def annotation_html(self, freq: float, mag: float, mode: str,
@@ -371,9 +379,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """
         rows: list[str] = []
 
-        if mode in self._MATERIAL_MODE_COLORS:
+        if mode in self._MATERIAL_MODE_ROLES:
             # Plate / brace: label by phase (no pitch row — not meaningful for material)
-            r, g, b = self._MATERIAL_MODE_COLORS[mode]
+            r, g, b = palette.rgb(self._MATERIAL_MODE_ROLES[mode])
             rows.append(f'<b style="color:rgb({r},{g},{b});">{mode}</b>')
         else:
             # Guitar: use GuitarMode classifier for colour and display name.
@@ -393,12 +401,17 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     rows.append(f'<b style="color:rgb({r},{g},{b});">{display}</b>')
             note  = self.pitch.note(freq)
             cents = self.pitch.cents(freq)
+            pitch_color = palette.qss(palette.Role.PEAK_PITCH)
             rows.append(
-                f'<span style="color:rgb(120,60,180);">&#9834; {note}&nbsp;&nbsp;{cents:+.0f}&#162;</span>'
+                f'<span style="color:{pitch_color};">'
+                f'&#9834; {note}&nbsp;&nbsp;{cents:+.0f}&#162;</span>'
             )
 
-        rows.append(f'<span style="color:rgb(50,50,50);">{formatted_as_frequency(freq)}</span>')
-        rows.append(f'<span style="color:rgb(110,110,110);">{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB</span>')
+        freq_color = palette.qss(palette.Role.CHART_TITLE)
+        db_color = palette.qss(palette.Role.CHART_AXIS)
+        rows.append(f'<span style="color:{freq_color};">{formatted_as_frequency(freq)}</span>')
+        db_text = f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB"
+        rows.append(f'<span style="color:{db_color};">{db_text}</span>')
         return '<center>' + '<br/>'.join(rows) + '</center>'
 
     def data(

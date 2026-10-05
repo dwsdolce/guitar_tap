@@ -20,7 +20,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import guitar_mode as gm
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
-from guitar_tap.views.utilities import palette
+from guitar_tap.views.utilities import chart_style, palette
 
 # Type alias for the annotation dict stored in FftAnnotations.annotations
 _AnnDict = dict[str, Any]
@@ -100,14 +100,11 @@ class DraggableTextItem(pg.TextItem):
     def restyle(self, mode_color: tuple[int, int, int]) -> None:
         """Update fill and border colours when the mode changes.
 
-        Mirrors Swift PeakAnnotationLabel which uses .background(.background.secondary)
-        — an opaque system background — with a coloured border stroke.
+        Mirrors Swift PeakAnnotationLabel: the chart's readout background with a coloured border.
         """
         r, g, b = mode_color
-        # Opaque system-background fill (mirrors Swift .background.secondary).
-        bg = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Window)
-        self.fill        = pg.mkBrush(bg)
-        self._border_pen = pg.mkPen((r, g, b, 255), width=1.5)
+        self.fill        = pg.mkBrush(palette.color(palette.Role.CHART_READOUT_BACKGROUND))
+        self._border_pen = chart_style.pen((r, g, b), chart_style.SCREEN.label_border_width)
         self.update()
 
     # ── arrow line ────────────────────────────────────────────────────────────
@@ -236,9 +233,9 @@ class FftAnnotations(QtCore.QObject):
         # Plate/brace material labels — mirrors Swift DraggablePeakAnnotation.modeColor
         # which checks measurementType.isGuitar before using guitar colours.
         from guitar_tap.views.shared.peaks_model import PeaksModel
-        mat = PeaksModel._MATERIAL_MODE_COLORS.get(mode_str)
+        mat = PeaksModel._MATERIAL_MODE_ROLES.get(mode_str)
         if mat is not None:
-            return mat
+            return palette.rgb(mat)
         resolved = gm.GuitarMode.from_display_name(mode_str)
         if resolved is None and mode_str:
             # Freeform user-defined label → distinct teal color.
@@ -252,11 +249,10 @@ class FftAnnotations(QtCore.QObject):
         mode_color: tuple[int, int, int],
     ) -> DraggableTextItem:
         r, g, b = mode_color
-        bg = QtWidgets.QApplication.palette().color(QtGui.QPalette.ColorRole.Window)
         item = DraggableTextItem(
             anchor=(0.5, 0.5),
-            fill=pg.mkBrush(bg),
-            border=pg.mkPen((r, g, b, 255), width=1.5),
+            fill=pg.mkBrush(palette.color(palette.Role.CHART_READOUT_BACKGROUND)),
+            border=chart_style.pen((r, g, b), chart_style.SCREEN.label_border_width),
         )
         item.set_html(html)
         item.setPos(xy_text[0], xy_text[1])
@@ -273,11 +269,10 @@ class FftAnnotations(QtCore.QObject):
         return pg.PlotDataItem(
             [freq, xy_text[0]],
             [mag,  xy_text[1]],
-            pen=pg.mkPen(
-                (r, g, b, 100),
-                width=1.5,
-                style=QtCore.Qt.PenStyle.DashLine,
-            ),
+            pen=chart_style.pen(
+                (r, g, b), chart_style.SCREEN.leader_width, chart_style.SCREEN.leader_dash,
+                chart_style.SCREEN.leader_opacity),
+            antialias=True,
         )
 
     # ── annotation lifecycle ──────────────────────────────────────────────────
@@ -333,10 +328,9 @@ class FftAnnotations(QtCore.QObject):
                 ann_dict["annotation"].set_html(html)
                 ann_dict["annotation"].restyle(color)
                 r, g, b = color
-                ann_dict["arrow_line"].setPen(
-                    pg.mkPen((r, g, b, 100), width=1.5,
-                             style=QtCore.Qt.PenStyle.DashLine)
-                )
+                ann_dict["arrow_line"].setPen(chart_style.pen(
+                    (r, g, b), chart_style.SCREEN.leader_width, chart_style.SCREEN.leader_dash,
+                    chart_style.SCREEN.leader_opacity))
         else:
             # Restore saved offset from the analyzer if the user previously dragged
             # this annotation — keyed by peak_id (UUID), mirrors Swift peakAnnotationOffsets.

@@ -59,10 +59,9 @@ def _mag_color(mag_db: float) -> QtGui.QColor:
 def _mode_color(mode_str: str) -> QtGui.QColor:
     # Plate/brace material labels — mirrors Swift DraggablePeakAnnotation.modeColor.
     from guitar_tap.views.shared.peaks_model import PeaksModel
-    mat = PeaksModel._MATERIAL_MODE_COLORS.get(mode_str)
+    mat = PeaksModel._MATERIAL_MODE_ROLES.get(mode_str)
     if mat is not None:
-        r, g, b = mat
-        return QtGui.QColor(r, g, b)
+        return palette.color(mat)
     resolved = gm.GuitarMode.from_display_name(mode_str)
     if resolved is None and mode_str:
         # Freeform user-defined label → distinct teal color.

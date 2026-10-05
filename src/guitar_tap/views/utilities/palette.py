@@ -290,6 +290,18 @@ def mode_role(mode: GuitarMode) -> Role:
     return _MODE_ROLES[mode]
 
 
+# The multi-tap and comparison series, by slot; a slot past the last starts again at the first.
+SERIES_ROLES: list[Role] = [
+    Role.SERIES_1, Role.SERIES_2, Role.SERIES_3, Role.SERIES_4, Role.SERIES_5,
+    Role.SERIES_6, Role.SERIES_7, Role.SERIES_8, Role.SERIES_9, Role.SERIES_10,
+]
+
+
+def series_role(index: int) -> Role:
+    """The role of series slot ``index`` (0-based). Mirrors Swift ``Palette.series``."""
+    return SERIES_ROLES[index % len(SERIES_ROLES)]
+
+
 def quality_role(quality: WoodQuality) -> Role:
     """The role of a wood-quality grade's colour. Mirrors Swift ``Palette.role(_: WoodQuality)``."""
     return _QUALITY_ROLES[quality]

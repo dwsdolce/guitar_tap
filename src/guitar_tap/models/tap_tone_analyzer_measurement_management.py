@@ -14,7 +14,13 @@ from guitar_tap.utilities.logging import gt_log
 from .analysis_display_mode import AnalysisDisplayMode
 from .detection_state import DetectionState
 from guitar_tap.utilities.new_uuid import new_uuid
+from guitar_tap.models.appearance import Scheme
+from guitar_tap.views.utilities import palette
 
+# The plate/brace phase colours, by role.
+_FL = palette.Role.MATERIAL_LONGITUDINAL
+_FC = palette.Role.MATERIAL_CROSS
+_FLC = palette.Role.MATERIAL_FLC
 
 
 
@@ -565,13 +571,13 @@ class TapToneAnalyzerMeasurementManagementMixin:
             spectra = []
             if self.longitudinal_spectrum is not None:
                 l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)))
+                spectra.append(("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)))
             if self.cross_spectrum is not None:
                 c_mags, c_freqs = self.cross_spectrum
-                spectra.append(("Cross-grain (fC)", (255, 149, 0), list(c_freqs), list(c_mags)))
+                spectra.append(("Cross-grain (fC)", _FC, list(c_freqs), list(c_mags)))
             if self.flc_spectrum is not None:
                 f_mags, f_freqs = self.flc_spectrum
-                spectra.append(("Diagonal (fLC)", (175, 82, 222), list(f_freqs), list(f_mags)))
+                spectra.append(("Diagonal (fLC)", _FLC, list(f_freqs), list(f_mags)))
             self.set_material_spectra(spectra)
         else:
             # Guitar (or no-snapshot) measurement: clear any stale material spectra
@@ -894,19 +900,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     # ── Multi-Tap Comparison Overlays ──────────────────────────────────────────
 
-    # Comparison palette — mirrors Swift TapToneAnalyzer.comparisonPalette ([.blue, .orange, .green, .purple, .teal]).
-    # This is the single authoritative definition; all export sites import it from here.
-    _MULTI_TAP_PALETTE: list[tuple[int, int, int]] = [
-        (0,   122, 255),   # .blue
-        (255, 149,   0),   # .orange
-        (52,  199,  89),   # .green
-        (175,  82, 222),   # .purple
-        (48,  176, 199),   # .teal
-    ]
-    # Averaged-row color — mirrors Swift TapToneAnalyzer.multiTapAvgColor (Color(red: 1.0, green: 0.85, blue: 0.0)).
-    # This is the single authoritative definition; all export sites import it from here.
-    _MULTI_TAP_AVG_COLOR: tuple[int, int, int] = (255, 217, 0)
-
     def apply_multi_tap_comparison_overlays(self, enabled: bool) -> None:
         """Populate or clear chart overlay entries for the multi-tap comparison view.
 
@@ -944,9 +937,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         labels: list = []
         snapshots: list = []
 
-        palette = self._MULTI_TAP_PALETTE
         for idx, tap_entry in enumerate(self.tap_entries):
-            color = palette[idx % len(palette)]
+            role = palette.series_role(idx)
+            color = palette.rgb(role, Scheme.LIGHT)
             label = f"Tap {tap_entry.tap_index}"
             snap = tap_entry.snapshot
             freqs = _np.array(snap.frequencies, dtype=_np.float64)
@@ -954,6 +947,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             entries.append({
                 "label":      label,
                 "color":      color,
+                "role":       role,
                 "freqs":      freqs,
                 "mags":       mags,
                 "snapshot":   snap,
@@ -964,8 +958,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
             labels.append((label, color))
             snapshots.append(snap)
 
-        # Averaged row — uses bold yellow, matches Swift's avgColor.
-        avg_color = (255, 217, 0)   # rgb(1.0, 0.85, 0.0) → 255, 217, 0
+        # Averaged row — the series average role, matches Swift's Palette.seriesAverage.
+        avg_color = palette.rgb(palette.Role.SERIES_AVERAGE, Scheme.LIGHT)
         avg_label = "Averaged"
         avg_freqs = self.frozen_frequencies
         avg_mags  = self.frozen_magnitudes
@@ -992,6 +986,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             entries.append({
                 "label":      avg_label,
                 "color":      avg_color,
+                "role":       palette.Role.SERIES_AVERAGE,
                 "freqs":      _np.array(avg_freqs, dtype=_np.float64),
                 "mags":       _np.array(avg_mags,  dtype=_np.float64),
                 "snapshot":   avg_snap,
@@ -1100,14 +1095,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self._comparison_data.clear()
         self.comparison_labels.clear()
 
-        _PALETTE = [
-            (0,   122, 255),
-            (255, 149,   0),
-            (52,  199,  89),
-            (175,  82, 222),
-            (48,  176, 199),
-        ]
-
         with_snapshots = [m for m in measurements if m.spectrum_snapshot is not None]
 
         # Build base labels then disambiguate duplicates so the legend is unambiguous.
@@ -1130,7 +1117,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
         result = []
         for idx, m in enumerate(with_snapshots):
             snap = m.spectrum_snapshot
-            color = _PALETTE[idx % len(_PALETTE)]
+            role = palette.series_role(idx)
+            color = palette.rgb(role, Scheme.LIGHT)
             freq_arr = np.array(snap.frequencies, dtype=np.float64)
             mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
             label = unique_labels[idx]
@@ -1149,7 +1137,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     mode_ids[_mode.value] = _p.id
             self.comparison_labels.append((label, color))
             self._comparison_data.append({
-                "label": label, "color": color,
+                "label": label, "color": color, "role": role,
                 "freqs": freq_arr, "mags": mag_arr,
                 "snapshot": snap,
                 "peaks": selected_peaks,

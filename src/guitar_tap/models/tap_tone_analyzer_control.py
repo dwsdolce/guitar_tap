@@ -10,9 +10,15 @@ from __future__ import annotations
 import time as _time
 
 from guitar_tap.utilities.logging import gt_log
+from guitar_tap.views.utilities import palette
 
 from . import field_precision as fp
 from .detection_state import DetectionState
+
+# The plate/brace phase colours, by role.
+_FL = palette.Role.MATERIAL_LONGITUDINAL
+_FC = palette.Role.MATERIAL_CROSS
+_FLC = palette.Role.MATERIAL_FLC
 
 
 class TapToneAnalyzerControlMixin:
@@ -1229,7 +1235,7 @@ class TapToneAnalyzerControlMixin:
             spectra = []
             if self.longitudinal_spectrum:
                 l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)))
+                spectra.append(("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)))
             self.set_material_spectra(spectra)
 
         elif phase == _MTP.REVIEWING_FLC:
@@ -1251,10 +1257,10 @@ class TapToneAnalyzerControlMixin:
             spectra = []
             if self.longitudinal_spectrum:
                 l_mags, l_freqs = self.longitudinal_spectrum
-                spectra.append(("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)))
+                spectra.append(("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)))
             if self.cross_spectrum:
                 c_mags, c_freqs = self.cross_spectrum
-                spectra.append(("Cross-grain (fC)", (255, 149, 0), list(c_freqs), list(c_mags)))
+                spectra.append(("Cross-grain (fC)", _FC, list(c_freqs), list(c_mags)))
             self.set_material_spectra(spectra)
 
         else:
@@ -1315,8 +1321,8 @@ class TapToneAnalyzerControlMixin:
         l_mags, l_freqs = self.longitudinal_spectrum
         c_mags, c_freqs = self.cross_spectrum
         self.set_material_spectra([
-            ("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)),
-            ("Cross-grain (fC)",  (255, 149, 0), list(c_freqs), list(c_mags)),
+            ("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)),
+            ("Cross-grain (fC)",  _FC, list(c_freqs), list(c_mags)),
         ])
 
         fl = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0
@@ -1346,9 +1352,9 @@ class TapToneAnalyzerControlMixin:
         c_mags, c_freqs = self.cross_spectrum
         f_mags, f_freqs = self.flc_spectrum
         self.set_material_spectra([
-            ("Longitudinal (fL)", (0, 122, 255), list(l_freqs), list(l_mags)),
-            ("Cross-grain (fC)",  (255, 149, 0), list(c_freqs), list(c_mags)),
-            ("Diagonal (fLC)",              (175, 82, 222), list(f_freqs), list(f_mags)),
+            ("Longitudinal (fL)", _FL, list(l_freqs), list(l_mags)),
+            ("Cross-grain (fC)",  _FC, list(c_freqs), list(c_mags)),
+            ("Diagonal (fLC)",              _FLC, list(f_freqs), list(f_mags)),
         ])
 
         l_freq = self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else 0.0

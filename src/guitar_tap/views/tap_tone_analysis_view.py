@@ -42,6 +42,11 @@ from guitar_tap.views.utilities import extensions as _ext
 from guitar_tap.views.utilities import palette
 from guitar_tap.utilities.new_uuid import new_uuid
 
+# The plate/brace phase colours, by role.
+_FL = palette.Role.MATERIAL_LONGITUDINAL
+_FC = palette.Role.MATERIAL_CROSS
+_FLC = palette.Role.MATERIAL_FLC
+
 # Heavy imports deferred to _deferred_canvas_init to reduce startup time:
 #   fft_canvas — pulls in pyqtgraph (~4 s) and sounddevice (~0.4 s)
 #   MD, SMD, HD, FMV — injected into the module namespace after the window is first shown
@@ -4568,15 +4573,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 _phase_spectra: list = []
                 if m.longitudinal_snapshot is not None:
                     ls = m.longitudinal_snapshot
-                    _phase_spectra.append(("Longitudinal (fL)", (0, 122, 255),
+                    _phase_spectra.append(("Longitudinal (fL)", _FL,
                                            list(ls.frequencies), list(ls.magnitudes)))
                 if _restored_mt.is_plate and m.cross_snapshot is not None:
                     cs = m.cross_snapshot
-                    _phase_spectra.append(("Cross-grain (fC)", (255, 149, 0),
+                    _phase_spectra.append(("Cross-grain (fC)", _FC,
                                            list(cs.frequencies), list(cs.magnitudes)))
                 if _restored_mt.is_plate and m.flc_snapshot is not None:
                     fs = m.flc_snapshot
-                    _phase_spectra.append(("Diagonal (fLC)", (175, 82, 222),
+                    _phase_spectra.append(("Diagonal (fLC)", _FLC,
                                            list(fs.frequencies), list(fs.magnitudes)))
                 canvas.analyzer.set_material_spectra(_phase_spectra)
         else:
@@ -4772,25 +4777,20 @@ class MainWindow(QtWidgets.QMainWindow):
                     if m_exp.longitudinal_snapshot is not None:
                         ls = m_exp.longitudinal_snapshot
                         _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                    "color": "blue", "label": "Longitudinal (fL)"})
+                                    "color": _FL, "label": "Longitudinal (fL)"})
                     if m_exp.cross_snapshot is not None:
                         cs = m_exp.cross_snapshot
                         _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                    "color": "orange", "label": "Cross-grain (fC)"})
+                                    "color": _FC, "label": "Cross-grain (fC)"})
                     if m_exp.flc_snapshot is not None:
                         fs = m_exp.flc_snapshot
                         _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                    "color": "purple", "label": "Diagonal (fLC)"})
+                                    "color": _FLC, "label": "Diagonal (fLC)"})
                 else:
                     # Live measurement: read per-phase spectra from the analyzer.
-                    # _material_spectra is a list of (label, (r,g,b), freqs, mags) tuples.
-                    _COLOR_NAMES = {
-                        (0, 122, 255): "blue",
-                        (255, 149, 0): "orange",
-                        (175, 82, 222): "purple",
-                    }
-                    for _label, _rgb, _mfreqs, _mmags in getattr(canvas.analyzer, "_material_spectra", []):
-                        _color = _COLOR_NAMES.get(tuple(_rgb), "blue")
+                    # _material_spectra is a list of (label, colour role, freqs, mags) tuples.
+                    _phases = getattr(canvas.analyzer, "_material_spectra", [])
+                    for _label, _color, _mfreqs, _mmags in _phases:
                         _ms.append({"frequencies": list(_mfreqs), "magnitudes": list(_mmags),
                                     "color": _color, "label": _label})
                 if _ms:
@@ -5009,24 +5009,19 @@ class MainWindow(QtWidgets.QMainWindow):
                     if m_exp.longitudinal_snapshot is not None:
                         ls = m_exp.longitudinal_snapshot
                         _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                    "color": "blue", "label": "Longitudinal (fL)"})
+                                    "color": _FL, "label": "Longitudinal (fL)"})
                     if m_exp.cross_snapshot is not None:
                         cs = m_exp.cross_snapshot
                         _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                    "color": "orange", "label": "Cross-grain (fC)"})
+                                    "color": _FC, "label": "Cross-grain (fC)"})
                     if m_exp.flc_snapshot is not None:
                         fs = m_exp.flc_snapshot
                         _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                    "color": "purple", "label": "Diagonal (fLC)"})
+                                    "color": _FLC, "label": "Diagonal (fLC)"})
                 else:
                     # Live measurement: read per-phase spectra from the analyzer.
-                    _COLOR_NAMES = {
-                        (0, 122, 255): "blue",
-                        (255, 149, 0): "orange",
-                        (175, 82, 222): "purple",
-                    }
-                    for _label, _rgb, _mfreqs, _mmags in getattr(analyzer, "_material_spectra", []):
-                        _color = _COLOR_NAMES.get(tuple(_rgb), "blue")
+                    _phases = getattr(analyzer, "_material_spectra", [])
+                    for _label, _color, _mfreqs, _mmags in _phases:
                         _ms.append({"frequencies": list(_mfreqs), "magnitudes": list(_mmags),
                                     "color": _color, "label": _label})
                 if _ms:
@@ -5296,23 +5291,18 @@ class MainWindow(QtWidgets.QMainWindow):
                     if m_exp.longitudinal_snapshot is not None:
                         ls = m_exp.longitudinal_snapshot
                         _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                    "color": "blue", "label": "Longitudinal (fL)"})
+                                    "color": _FL, "label": "Longitudinal (fL)"})
                     if m_exp.cross_snapshot is not None:
                         cs = m_exp.cross_snapshot
                         _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                    "color": "orange", "label": "Cross-grain (fC)"})
+                                    "color": _FC, "label": "Cross-grain (fC)"})
                     if m_exp.flc_snapshot is not None:
                         fs = m_exp.flc_snapshot
                         _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                    "color": "purple", "label": "Diagonal (fLC)"})
+                                    "color": _FLC, "label": "Diagonal (fLC)"})
                 else:
-                    _COLOR_NAMES = {
-                        (0, 122, 255): "blue",
-                        (255, 149, 0): "orange",
-                        (175, 82, 222): "purple",
-                    }
-                    for _label, _rgb, _mfreqs, _mmags in getattr(analyzer, "_material_spectra", []):
-                        _color = _COLOR_NAMES.get(tuple(_rgb), "blue")
+                    _phases = getattr(analyzer, "_material_spectra", [])
+                    for _label, _color, _mfreqs, _mmags in _phases:
                         _ms.append({"frequencies": list(_mfreqs), "magnitudes": list(_mmags),
                                     "color": _color, "label": _label})
                 if _ms:
@@ -5482,8 +5472,8 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
             # ── Page 2: per-tap comparison — mirrors Swift createMultiTapComparisonSpectrumView() ──
-            # Palette and avg color imported from the shared module-level constants — mirrors Swift's
-            # TapToneAnalyzer.multiTapPalette / TapToneAnalyzer.multiTapAvgColor.
+            # Each slot's series colour and the average's, light — mirrors Swift's
+            # Palette.series / Palette.seriesAverage in the report's light scheme.
             _PALETTE = M.MULTI_TAP_PALETTE
             _AVERAGED_COLOR = M.MULTI_TAP_AVG_COLOR
 

@@ -1,16 +1,86 @@
+# @parity view/axis-ticks tests=test/axis-ticks
 """
 Axis tick calculation helpers.
 
-Mirrors Swift's AxisTickGenerator.swift.
-
-In Swift, AxisTickGenerator produces custom tick values and labels for the
-frequency (x) and magnitude (y/dB) axes of the spectrum chart.  In Python,
-pyqtgraph handles tick generation automatically; this module provides the
-helper functions that map between FFT bin indices and Hz/dB values, which are
-used by FftCanvas.update_axis() and _refresh_peaks_for_viewport().
+Mirrors Swift's AxisTickGenerator.swift: the tick values and labels of the spectrum chart's
+frequency and magnitude axes, which are also its grid lines (one per tick, no minor lines);
+plus the helpers that map between FFT bin indices and Hz, used by FftCanvas.update_axis() and
+_refresh_peaks_for_viewport().
 """
 
 from __future__ import annotations
+
+import math
+
+
+def generate_ticks(min_: float, max_: float, max_ticks: int = 10) -> list[float]:
+    """Tick positions for [min_, max_] by the nice-number algorithm: the spacing is the rough
+    spacing range / (max_ticks - 1) rounded up to {1, 2, 5} × 10ⁿ, and the bounds are extended
+    outward to multiples of it. Mirrors Swift ``AxisTickGenerator.generateTicks``."""
+    if not min_ < max_:
+        return [min_]
+    spacing = _nice_number((max_ - min_) / (max_ticks - 1), round_=False)
+    nice_min = math.floor(min_ / spacing) * spacing
+    nice_max = math.ceil(max_ / spacing) * spacing
+    ticks: list[float] = []
+    tick = nice_min
+    while tick <= nice_max + spacing * 0.01:
+        ticks.append(tick)
+        tick += spacing
+    return ticks
+
+
+def _nice_number(x: float, round_: bool) -> float:
+    exponent = math.floor(math.log10(x))
+    fraction = x / math.pow(10, exponent)
+    if round_:
+        nice = 1 if fraction < 1.5 else 2 if fraction < 3 else 5 if fraction < 7 else 10
+    else:
+        nice = 1 if fraction <= 1 else 2 if fraction <= 2 else 5 if fraction <= 5 else 10
+    return nice * math.pow(10, exponent)
+
+
+def format_tick_labels(values: list[float]) -> dict[float, str]:
+    """The screen's frequency labels: whole Hz below 1 kHz, kHz above, with more decimals until
+    every label is different. Mirrors Swift ``AxisTickGenerator.formatTickLabels``."""
+    if not values:
+        return {}
+    for extra in range(4):
+        labels = {v: _frequency_label(v, 1 + extra) for v in values}
+        if len(set(labels.values())) == len(labels):
+            return labels
+    return {v: "%.1f Hz" % v for v in values}
+
+
+def _frequency_label(value: float, khz_decimals: int) -> str:
+    if value >= 1000:
+        return "%.*f kHz" % (khz_decimals, value / 1000)
+    return "%.0f Hz" % value
+
+
+def format_tick_label(value: float) -> str:
+    """The exported image's compact frequency label. Mirrors Swift
+    ``AxisTickGenerator.formatTickLabel``."""
+    magnitude = abs(value)
+    if magnitude == 0:
+        return "0"
+    if magnitude >= 1000:
+        return "%.1fk" % (value / 1000)
+    if magnitude >= 10:
+        return "%.0f" % value
+    if magnitude >= 0.1:
+        return "%.1f" % value
+    return "%.2f" % value
+
+
+def magnitude_stride(range_: float) -> float:
+    """The screen's magnitude tick spacing (dB) for a visible range of ``range_`` dB: the smallest
+    of 1, 2, 5, 10, 20 and 50 giving at most 8 ticks. Mirrors Swift
+    ``AxisTickGenerator.magnitudeStride``."""
+    for stride in (1.0, 2.0, 5.0, 10.0, 20.0, 50.0):
+        if range_ / stride <= 8:
+            return stride
+    return 50.0
 
 
 def freq_bin_range(

@@ -20,23 +20,10 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import field_precision as fp
+from guitar_tap.views.utilities import palette
 
 if TYPE_CHECKING:
     from guitar_tap.models.tap_tone_measurement import TapEntry
-
-
-# Comparison palette — mirrors TapToneAnalyzer.multiTapPalette (Swift: [.blue, .orange, .green, .purple, .teal]).
-# RGB tuples in 0–255 range.
-_PALETTE: list[tuple[int, int, int]] = [
-    (0,   122, 255),   # .blue
-    (255, 149,   0),   # .orange
-    (52,  199,  89),   # .green
-    (175,  82, 222),   # .purple
-    (90,  200, 250),   # .teal
-]
-
-# Averaged row color — mirrors Swift Color(red: 1.0, green: 0.85, blue: 0.0) (bold yellow).
-_AVERAGED_COLOR: tuple[int, int, int] = (255, 217, 0)
 
 
 class MultiTapComparisonResultsView(QtWidgets.QWidget):
@@ -139,7 +126,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
 
         # Per-tap rows
         for row, entry in enumerate(tap_entries):
-            color_rgb = _PALETTE[row % len(_PALETTE)]
+            color_rgb = palette.rgb(palette.series_role(row))
             label = f"Tap {entry.tap_index}"
 
             mode_peaks = entry.resolved_mode_peaks(guitar_type=guitar_type)
@@ -162,7 +149,8 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         # a " *" suffix — the same convention the peak table uses — so it is not read as the averaged
         # spectrum's auto-detected peak. Mirrors Swift MultiTapComparisonResultsView Averaged row.
         avg_row = len(tap_entries)
-        avg_label_widget = self._make_label_cell("Averaged", _AVERAGED_COLOR, bold=True)
+        avg_label_widget = self._make_label_cell(
+            "Averaged", palette.rgb(palette.Role.SERIES_AVERAGE), bold=True)
         self._table.setCellWidget(avg_row, 0, avg_label_widget)
 
         for col, mode in mode_for_col.items():

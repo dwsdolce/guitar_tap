@@ -79,3 +79,33 @@ def test_scheme_changed_fires_only_when_the_scheme_changes(monkeypatch):
         assert palette.color(palette.Role.MODE_AIR).name() == "#00b0dc"
     finally:
         palette.notifier().scheme_changed.disconnect(seen.append)
+
+
+def test_peak_label_follows_the_scheme(monkeypatch):
+    """A peak label is drawn in the scheme's chart roles: pitch, frequency and dB."""
+    import numpy as np
+
+    from guitar_tap.views.shared.peaks_model import PeaksModel
+
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    monkeypatch.setattr(palette, "os_scheme", lambda: Scheme.LIGHT)
+    monkeypatch.setattr(palette, "_apply_linux_fallback", lambda *_: None)
+    model = PeaksModel(np.zeros((0, 3)))
+    try:
+        for appearance, scheme in ((Appearance.DARK, "dark"), (Appearance.LIGHT, "light")):
+            palette.apply(appearance)
+            html = model.annotation_html(196.0, -32.0, "Top")
+            for role in (
+                palette.Role.PEAK_PITCH, palette.Role.CHART_TITLE, palette.Role.CHART_AXIS,
+            ):
+                assert getattr(palette.pair(role), scheme).lower() in html, (role, scheme)
+            top = "rgb({},{},{})".format(*palette.rgb(palette.Role.MODE_TOP))
+            assert top in html
+    finally:
+        palette.apply(Appearance.SYSTEM)
+
+
+def test_series_slots():
+    """The series are series.1 … series.10 in slot order, and slot 11 starts again at series.1."""
+    assert [r.value for r in palette.SERIES_ROLES] == [f"series.{i}" for i in range(1, 11)]
+    assert palette.series_role(10) is palette.Role.SERIES_1

@@ -1,0 +1,68 @@
+{
+ "slug": "test/chart-style",
+ "about": "How the spectrum chart draws its lines and points, on screen and in the exported image: widths and dashes in points, opacities 0–1 (applied to the line's colour role), point sizes as areas in pt² (a dot's diameter is 2·√(area/π)), and the export's fixed magnitude tick spacing (dB; null on screen, where axis-ticks.json chooses it). These do not change with the colour scheme. Expected values are Swift's.",
+ "screen": {
+  "spectrumWidth": 1,
+  "overlayWidth": 1.5,
+  "gridWidth": 1,
+  "modeBoundaryWidth": 1.5,
+  "modeBoundaryDash": [
+   5,
+   5
+  ],
+  "modeBoundaryOpacity": 0.3,
+  "peakMinWidth": 1.5,
+  "peakMinDash": [
+   8,
+   3
+  ],
+  "peakMinOpacity": 0.7,
+  "crosshairWidth": 1,
+  "crosshairDash": [
+   4,
+   3
+  ],
+  "leaderWidth": 1.5,
+  "leaderDash": [
+   4,
+   3
+  ],
+  "leaderOpacity": 0.4,
+  "labelBorderWidth": 1.5,
+  "dotArea": 40,
+  "highlightedDotArea": 120,
+  "magnitudeStride": null
+ },
+ "export": {
+  "spectrumWidth": 2,
+  "overlayWidth": 2,
+  "gridWidth": 1,
+  "modeBoundaryWidth": 2,
+  "modeBoundaryDash": [
+   8,
+   8
+  ],
+  "modeBoundaryOpacity": 0.3,
+  "peakMinWidth": 1.5,
+  "peakMinDash": [
+   8,
+   3
+  ],
+  "peakMinOpacity": 0.7,
+  "crosshairWidth": 1,
+  "crosshairDash": [
+   4,
+   3
+  ],
+  "leaderWidth": 2,
+  "leaderDash": [
+   5,
+   4
+  ],
+  "leaderOpacity": 0.5,
+  "labelBorderWidth": 1.5,
+  "dotArea": 200,
+  "highlightedDotArea": 200,
+  "magnitudeStride": 20
+ }
+}

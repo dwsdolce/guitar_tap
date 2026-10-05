@@ -65,8 +65,20 @@ makeExportableSpectrumView:
 
 from __future__ import annotations
 
+import math
+
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
+
+
+def _series_rgb(series: dict) -> tuple[int, int, int]:
+    """A series' colour in the export: its role's light value (a plate/brace phase), or the
+    (r, g, b) it carries (a comparison entry's stored colour)."""
+    from guitar_tap.models.appearance import Scheme
+    from guitar_tap.views.utilities import palette
+
+    color = series["color"]
+    return palette.rgb(color, Scheme.LIGHT) if isinstance(color, palette.Role) else tuple(color)
 
 __all__ = [
     "ExportableSpectrumChart",
@@ -367,7 +379,8 @@ class ExportableSpectrumChart:
         from PySide6 import QtCore, QtGui, QtWidgets
 
         from guitar_tap.models.appearance import Scheme
-        from guitar_tap.views.utilities import palette
+        from guitar_tap.views.utilities import axis_tick_generator as atg
+        from guitar_tap.views.utilities import chart_style, palette
 
         if QtWidgets.QApplication.instance() is None:
             QtWidgets.QApplication([])
@@ -390,48 +403,56 @@ class ExportableSpectrumChart:
         # resize() alone does not take effect on an unshown widget.
         plot = pg.PlotWidget()
         plot.setFixedSize(WIDGET_W, WIDGET_H)
-        plot.setBackground("w")
+        style = chart_style.EXPORT
+        plot.setBackground(palette.color(palette.Role.CHART_BACKGROUND, in_scheme=Scheme.LIGHT))
         plot.setLabel("bottom", "Frequency (Hz)")    # mirrors chartXAxisLabel
         plot.setLabel("left",   "FFT Magnitude (dB)")  # mirrors chartYAxisLabel
 
-        # Show all four borders — mirrors .chartPlotStyle { plotArea in plotArea.border(Color.gray, width:1) }
+        # The plot's border — mirrors .chartPlotStyle { plotArea.border(chart.border) } — and one
+        # grid line per axis tick in chart.grid, no minor lines (mirrors AxisGridLine).
         pi_setup = plot.getPlotItem()
-        pi_setup.showAxis("top")
-        pi_setup.showAxis("right")
-        pi_setup.getAxis("top").setStyle(showValues=False)
-        pi_setup.getAxis("right").setStyle(showValues=False)
-        pi_setup.getAxis("top").setPen(pg.mkPen((180, 180, 180), width=1))
-        pi_setup.getAxis("right").setPen(pg.mkPen((180, 180, 180), width=1))
-        pi_setup.getAxis("bottom").setPen(pg.mkPen((180, 180, 180), width=1))
-        pi_setup.getAxis("left").setPen(pg.mkPen((180, 180, 180), width=1))
-
-        # Grid lines — mirrors the live canvas: self.showGrid(x=True, y=True, alpha=0.15).
-        plot.showGrid(x=True, y=True, alpha=0.15)
+        pi_setup.getViewBox().setBorder(
+            chart_style.pen(palette.color(palette.Role.CHART_BORDER, in_scheme=Scheme.LIGHT), 1,
+                            pixels_per_point=SCALE))
+        grid_pen = chart_style.pen(
+            palette.color(palette.Role.CHART_GRID, in_scheme=Scheme.LIGHT), style.grid_width,
+            pixels_per_point=SCALE)
+        axis_text = palette.color(palette.Role.CHART_AXIS, in_scheme=Scheme.LIGHT)
+        for name in ("bottom", "left"):
+            pi_setup.getAxis(name).setPen(grid_pen)
+            pi_setup.getAxis(name).setTextPen(axis_text)
+        plot.showGrid(x=True, y=True, alpha=1.0)
+        visible = [
+            t for t in atg.generate_ticks(self.min_freq, self.max_freq, max_ticks=8)
+            if self.min_freq <= t <= self.max_freq
+        ]
+        pi_setup.getAxis("bottom").setTicks([[(t, atg.format_tick_label(t)) for t in visible]])
+        stride = style.magnitude_stride or atg.magnitude_stride(self.max_db - self.min_db)
+        pi_setup.getAxis("left").setTicks([[
+            (k * stride, f"{k * stride:g}")
+            for k in range(math.ceil(self.min_db / stride), math.floor(self.max_db / stride) + 1)
+        ]])
 
         if self.material_spectra:
             # Mirrors: ForEach(materialSpectra) { LineMark.foregroundStyle(by: .value("Series", series.label)) }
             # Each series carries its own color — use it directly rather than a positional palette.
-            # Color strings "blue"/"orange"/"purple" match Swift's .blue/.orange/.purple system colors.
-            _COLOR_MAP = {
-                "blue":   (  0, 122, 255),   # Swift .blue  (iOS/macOS system blue)
-                "orange": (255, 149,   0),   # Swift .orange
-                "purple": (175,  82, 222),   # Swift .purple
-                "red":    (255,  59,  48),   # Swift .red
-                "green":  ( 52, 199,  89),   # Swift .green
-            }
             for series in self.material_spectra:
                 sf = series.get("frequencies", [])
                 sm = series.get("magnitudes", [])
                 if sf and sm:
                     sc = [max(self.min_db, min(self.max_db, v)) for v in sm]
-                    color_key = series.get("color", "blue")
-                    # color may be an (r,g,b) tuple (comparison path) or a string (plate/brace path)
-                    rgb = color_key if isinstance(color_key, tuple) else _COLOR_MAP.get(color_key, (0, 122, 255))
-                    plot.plot(sf, sc, pen=pg.mkPen(rgb, width=2))
+                    rgb = _series_rgb(series)
+                    plot.plot(
+                        sf, sc, antialias=True,
+                        pen=chart_style.pen(rgb, style.overlay_width, pixels_per_point=SCALE))
         else:
-            # Mirrors: LineMark(...).foregroundStyle(.red)
+            # Mirrors: LineMark(...).foregroundStyle(chart.spectrum)
             clamped = [max(self.min_db, min(self.max_db, v)) for v in self.magnitudes]
-            plot.plot(self.frequencies, clamped, pen=pg.mkPen((210, 50, 50), width=2))
+            spectrum = palette.color(palette.Role.CHART_SPECTRUM, in_scheme=Scheme.LIGHT)
+            plot.plot(
+                self.frequencies, clamped,
+                pen=chart_style.pen(spectrum, style.spectrum_width, pixels_per_point=SCALE),
+                antialias=True)
 
         # Mirrors: if showModeBoundaries { ForEach(visibleModeBoundaries) { RuleMark } }
         # visibleModeBoundaries already returns [] when not is_guitar, but also gate here
@@ -439,10 +460,9 @@ class ExportableSpectrumChart:
         if self.show_mode_boundaries and self.is_guitar and not self.material_spectra:
             for freq_b, mode_b in self.visible_mode_boundaries:
                 r, g, b = palette.rgb(palette.mode_role(mode_b), Scheme.LIGHT)
-                pen_b = pg.mkPen(
-                    QtGui.QColor(r, g, b, 80), width=2,
-                    style=QtCore.Qt.PenStyle.DashLine,
-                )
+                pen_b = chart_style.pen(
+                    (r, g, b), style.mode_boundary_width, style.mode_boundary_dash,
+                    style.mode_boundary_opacity, pixels_per_point=SCALE)
                 plot.addItem(pg.InfiniteLine(pos=freq_b, angle=90, pen=pen_b))
 
         # Mirrors: ForEach(visiblePeaks) { PointMark(...).foregroundStyle(peakColor(for:)) }
@@ -450,7 +470,8 @@ class ExportableSpectrumChart:
             color = self.peak_color(peak, idx)
             plot.plot(
                 [peak.frequency], [peak.magnitude],
-                pen=None, symbol="o", symbolSize=10,
+                pen=None, symbol="o", symbolSize=chart_style.diameter(style.dot_area),
+                antialias=True,
                 symbolBrush=pg.mkBrush(color.red(), color.green(), color.blue()),
                 symbolPen=None,
             )
@@ -560,7 +581,8 @@ class ExportableSpectrumChart:
         # ── Right axis border — pyqtgraph showAxis("right") doesn't reliably paint a border line.
         # Draw it directly with QPainter at x = AXIS_LEFT + PLOT_W.
         right_x = AXIS_LEFT + PLOT_W
-        border_pen = QtGui.QPen(QtGui.QColor(180, 180, 180), 1)
+        border_pen = QtGui.QPen(
+            palette.color(palette.Role.CHART_BORDER, in_scheme=Scheme.LIGHT), SCALE)
         painter.setPen(border_pen)
         painter.drawLine(right_x, AXIS_TOP, right_x, AXIS_TOP + PLOT_H)
 
@@ -625,9 +647,11 @@ class ExportableSpectrumChart:
             card_y = max(AXIS_TOP,  min(card_y, CHART_H - AXIS_BOTTOM - ANNOT_H))
 
             # Dashed connection line — mirrors ConnectionLineShape stroke
-            line_pen = QtGui.QPen(QtGui.QColor(color.red(), color.green(), color.blue(), 128))
-            line_pen.setWidth(int(2 * SCALE))
-            line_pen.setStyle(QtCore.Qt.PenStyle.DashLine)
+            leader = chart_style.EXPORT
+            line_color = QtGui.QColor(color)
+            line_color.setAlphaF(leader.leader_opacity)
+            line_pen = QtGui.QPen(line_color, leader.leader_width * SCALE)
+            line_pen.setDashPattern([d / leader.leader_width for d in leader.leader_dash])
             painter.setPen(line_pen)
             painter.drawLine(card_x + ANNOT_W // 2, card_y + ANNOT_H, px, py)
 
@@ -1019,18 +1043,9 @@ def make_exportable_spectrum_view(
                          QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
                          "Measurements:")
         x_leg = SIDE_PAD + 124 * SCALE
-        _LEG_COLOR_MAP = {
-            "blue":   (  0, 122, 255),
-            "orange": (255, 149,   0),
-            "purple": (175,  82, 222),
-            "red":    (255,  59,  48),
-            "green":  ( 52, 199,  89),
-        }
         painter.setFont(label_font)
         for series in material_spectra[:5]:
-            color_key = series.get("color", "blue")
-            # color may be an (r,g,b) tuple (comparison path) or a string (plate/brace path)
-            r, g, b = color_key if isinstance(color_key, tuple) else _LEG_COLOR_MAP.get(color_key, (0, 122, 255))
+            r, g, b = _series_rgb(series)
             lbl = series.get("label", "?")
             painter.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
@@ -1087,6 +1102,8 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
 
     Returns PNG bytes, or None if the measurement has no spectrum snapshot.
     """
+    from guitar_tap.views.utilities import palette
+
     primary_snapshot = m.spectrum_snapshot or m.longitudinal_snapshot
     if primary_snapshot is None:
         return None
@@ -1100,7 +1117,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         material_spectra.append({
             "frequencies": ls.frequencies,
             "magnitudes": ls.magnitudes,
-            "color": "blue",
+            "color": palette.Role.MATERIAL_LONGITUDINAL,
             "label": "Longitudinal (fL)",
         })
     if m.cross_snapshot:
@@ -1108,7 +1125,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         material_spectra.append({
             "frequencies": cs.frequencies,
             "magnitudes": cs.magnitudes,
-            "color": "orange",
+            "color": palette.Role.MATERIAL_CROSS,
             "label": "Cross-grain (fC)",
         })
     if m.flc_snapshot:
@@ -1116,7 +1133,7 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         material_spectra.append({
             "frequencies": fs.frequencies,
             "magnitudes": fs.magnitudes,
-            "color": "purple",
+            "color": palette.Role.MATERIAL_FLC,
             "label": "Diagonal (fLC)",
         })
 

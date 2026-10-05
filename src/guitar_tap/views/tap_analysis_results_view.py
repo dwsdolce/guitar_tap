@@ -59,22 +59,19 @@ __all__ = [
 ]
 
 # ── Multi-tap comparison palette and averaged color ───────────────────────────
-# Both re-exported from TapToneAnalyzerMeasurementManagementMixin, which is the
-# single authoritative definition — mirrors Swift's TapToneAnalyzer.multiTapPalette
-# and TapToneAnalyzer.multiTapAvgColor.
-from guitar_tap.models.tap_tone_analyzer_measurement_management import (  # noqa: E402
-    TapToneAnalyzerMeasurementManagementMixin as _AnalyzerMixin,
-)
+# Each series slot's role and the average's, light — the report is drawn on white. Mirrors Swift's
+# Palette.series / Palette.seriesAverage resolved in the light scheme.
+from guitar_tap.models.appearance import Scheme  # noqa: E402
+from guitar_tap.views.utilities import palette  # noqa: E402
 
-MULTI_TAP_PALETTE = _AnalyzerMixin._MULTI_TAP_PALETTE
-MULTI_TAP_AVG_COLOR = _AnalyzerMixin._MULTI_TAP_AVG_COLOR
+MULTI_TAP_PALETTE = [palette.rgb(role, Scheme.LIGHT) for role in palette.SERIES_ROLES]
+MULTI_TAP_AVG_COLOR = palette.rgb(palette.Role.SERIES_AVERAGE, Scheme.LIGHT)
 
 # Spectrum image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
 from guitar_tap.views.exportable_spectrum_chart import (
     render_spectrum_image_for_measurement,  # noqa: E402
 )
 from guitar_tap.views.utilities import extensions as _ext  # noqa: E402
-from guitar_tap.views.utilities import palette  # noqa: E402
 
 # ── Export directory tracking ─────────────────────────────────────────────────
 # Mirrors MeasurementFileExporter.lastUsedDirectory in Swift: remembers the

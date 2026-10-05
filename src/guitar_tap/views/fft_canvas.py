@@ -3,6 +3,8 @@
 """
 
 
+import math
+
 import numpy as np
 import numpy.typing as npt
 import pyqtgraph as pg
@@ -12,6 +14,8 @@ import guitar_tap.models.tap_tone_analyzer as td
 import guitar_tap.views.utilities.tap_settings_view as _as
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
+from guitar_tap.views.utilities import axis_tick_generator as atg
+from guitar_tap.views.utilities import chart_style
 from guitar_tap.views.utilities import palette
 from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import microphone_calibration as _mc_mod
@@ -236,15 +240,6 @@ class FftCanvas(pg.PlotWidget):
     comparisonChanged: QtCore.Signal = QtCore.Signal(bool)         # True=entering, False=leaving
     freqRangeChanged: QtCore.Signal = QtCore.Signal(float, float)  # (fmin, fmax) — pan/zoom
 
-    # Color palette for comparison overlays — mirrors comparisonPalette in TapToneAnalyzer.swift
-    _COMPARISON_PALETTE: list[tuple[int, int, int]] = [
-        (0,   122, 255),   # blue
-        (255, 149,   0),   # orange
-        (52,  199,  89),   # green
-        (175,  82, 222),   # purple
-        (48,  176, 199),   # teal
-    ]
-
     def __init__(
         self,
         sampling_rate: int,
@@ -254,11 +249,10 @@ class FftCanvas(pg.PlotWidget):
         super().__init__()
 
         # Configure plot appearance
-        self.setBackground("w")
-        self.showGrid(x=True, y=True, alpha=0.15)
-        self.setLabel("left", "FFT Magnitude (dB)")
-        self.setLabel("bottom", "Frequency (Hz)")
-        self.setTitle("FFT Peaks", color="#333333")
+        # Colours come from the palette's chart roles in _apply_scheme (end of __init__ and on every
+        # scheme change); grid alpha 1 so the grid is chart.grid exactly.
+        self.showGrid(x=True, y=True, alpha=1.0)
+        self._title_text = "FFT Peaks"
         # Restore persisted dB range — mirrors Swift's @State minDB/maxDB initialized
         # from TapDisplaySettings.minMagnitude / TapDisplaySettings.maxMagnitude.
         import guitar_tap.views.utilities.tap_settings_view as _as_init
@@ -414,16 +408,17 @@ class FftCanvas(pg.PlotWidget):
 
         # FFT line
         self.fft_line: pg.PlotDataItem = self.plot(
-            [], [], pen=pg.mkPen("r", width=1)
+            [], [], pen=pg.mkPen(None), antialias=True
         )
 
         # Peak scatter points
         self.points: pg.ScatterPlotItem = pg.ScatterPlotItem(
-            size=8, pen=pg.mkPen(None), brush=pg.mkBrush(30, 100, 200, 200)
+            size=chart_style.diameter(chart_style.SCREEN.dot_area), pen=pg.mkPen(None),
+            antialias=True
         )
         self.selected_point: pg.ScatterPlotItem = pg.ScatterPlotItem(
-            size=16, pen=pg.mkPen((180, 0, 0, 220), width=1),
-            brush=pg.mkBrush(220, 30, 30, 220), symbol='star',
+            size=chart_style.diameter(chart_style.SCREEN.highlighted_dot_area), pen=pg.mkPen(None),
+            symbol='star', antialias=True,
         )
         self.addItem(self.points)
         self.addItem(self.selected_point)
@@ -437,13 +432,13 @@ class FftCanvas(pg.PlotWidget):
         # Label opts: anchors are (x, y) where x=0 left-align, x=1 right-align;
         #             y=0 text below position, y=1 text above position.
         # Right-aligned, above the line, at the right edge — matches Swift's .trailing/.top.
-        _lbl_opts_peak = {"position": 0.99, "color": (0, 200, 0), "anchors": [(1, 1), (1, 1)]}
+        _lbl_opts_peak = {"position": 0.99, "anchors": [(1, 1), (1, 1)]}
 
         # Peak-minimum line (green dashed) — "Peak: x dB", right, above (matches Swift's
         # thresholdLinesContent RuleMark: green, width 1.5, dash [8, 3], label .top/.trailing).
         self.line_threshold = pg.InfiniteLine(
             pos=_peak_y, angle=0,
-            pen=pg.mkPen("g", width=1, dash=[8, 3]),
+            pen=pg.mkPen(None),
             label=f"Peak: {_peak_y} dB",
             labelOpts=_lbl_opts_peak,
         )
@@ -476,16 +471,14 @@ class FftCanvas(pg.PlotWidget):
         # Hover cursor readout
         self._cursor_label = pg.TextItem(
             html="", anchor=(0.0, 1.0),
-            fill=pg.mkBrush(255, 255, 255, 180),
         )
         self._cursor_label.setZValue(200)
         self.addItem(self._cursor_label)
         self._cursor_label.setVisible(False)
 
         # Crosshair lines — follow mouse when free, snap to curve when held
-        _cross_pen = pg.mkPen((80, 80, 80, 180), width=1)
-        self._crosshair_v = pg.InfiniteLine(angle=90, movable=False, pen=_cross_pen)
-        self._crosshair_h = pg.InfiniteLine(angle=0,  movable=False, pen=_cross_pen)
+        self._crosshair_v = pg.InfiniteLine(angle=90, movable=False)
+        self._crosshair_h = pg.InfiniteLine(angle=0,  movable=False)
         self._crosshair_v.setZValue(150)
         self._crosshair_h.setZValue(150)
         self._crosshair_v.setVisible(False)
@@ -496,6 +489,8 @@ class FftCanvas(pg.PlotWidget):
         self.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
         self.getPlotItem().vb.sigXRangeChanged.connect(self._refresh_peaks_for_viewport)
+        # The axis ticks — and so the grid lines — are Swift's, recomputed when the view moves.
+        self.getPlotItem().vb.sigRangeChanged.connect(lambda *_: self._update_ticks())
 
         # Initialise mode bands for the saved guitar type
         self.set_guitar_type_bands(guitar_type_str)
@@ -504,7 +499,6 @@ class FftCanvas(pg.PlotWidget):
         self._overlay_label = pg.TextItem(
             text="Press Start to begin",
             anchor=(0.5, 0.5),
-            color=(120, 120, 120),
         )
         self._overlay_label.setZValue(300)
         font = QtGui.QFont()
@@ -518,11 +512,6 @@ class FftCanvas(pg.PlotWidget):
         self._info_btn = QtWidgets.QToolButton(self)
         self._info_btn.setText("ⓘ")
         self._info_btn.setFixedSize(22, 22)
-        self._info_btn.setStyleSheet(
-            "QToolButton { border: none; background: transparent;"
-            " color: rgba(120,120,120,180); font-size: 15px; }"
-            "QToolButton:hover { color: rgba(60,60,60,220); }"
-        )
         self._info_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._info_btn.setToolTip("Zoom & Pan Controls")
         self._info_btn.clicked.connect(self._show_zoom_help)
@@ -533,11 +522,6 @@ class FftCanvas(pg.PlotWidget):
         self._options_btn = QtWidgets.QToolButton(self)
         self._options_btn.setText("⋯")
         self._options_btn.setFixedSize(22, 22)
-        self._options_btn.setStyleSheet(
-            "QToolButton { border: none; background: transparent;"
-            " color: rgba(120,120,120,180); font-size: 15px; }"
-            "QToolButton:hover { color: rgba(60,60,60,220); }"
-        )
         self._options_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._options_btn.setToolTip("Chart options")
         self._options_btn.clicked.connect(self._show_chart_options)
@@ -547,6 +531,9 @@ class FftCanvas(pg.PlotWidget):
 
         # Comparison overlay state — mirrors comparisonSpectra in TapToneAnalyzer.swift
         self._comparison_curves: list[pg.PlotDataItem] = []
+        # Each comparison / material curve's colour: a palette role (drawn in the current scheme) or
+        # a stored (r, g, b), in the same order as _comparison_curves.
+        self._comparison_curve_colors: list = []
         self._comparison_legend: QtWidgets.QWidget | None = None
         # True when _comparison_curves contains material phase overlays (L/C/FLC)
         # rather than user-loaded comparison files.  When True, fft_line must still
@@ -573,6 +560,119 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.mic.set_calibration(
             self.analyzer._calibration_corrections,
             profile=self.analyzer._calibration_profile)
+
+        # Draw in the scheme the app is drawn in, and again on every change of it.
+        self._apply_scheme()
+        palette.notifier().scheme_changed.connect(lambda _scheme: self._apply_scheme())
+
+    # ------------------------------------------------------------------ #
+    # Colour scheme
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _curve_rgb(color) -> tuple[int, int, int]:
+        """A comparison / material curve's colour: its role in the current scheme, or its stored
+        rgb."""
+        return palette.rgb(color) if isinstance(color, palette.Role) else tuple(color)
+
+    def _apply_scheme(self) -> None:
+        """Take every chart colour from its role in the current scheme. Mirrors Swift's chart, whose
+        palette colours resolve in the scheme they are drawn in."""
+        self.setBackground(palette.color(palette.Role.CHART_BACKGROUND))
+        plot = self.getPlotItem()
+        style = chart_style.SCREEN
+        plot.vb.setBorder(chart_style.pen(palette.color(palette.Role.CHART_BORDER), 1))
+        for name in ("left", "bottom"):
+            axis = plot.getAxis(name)
+            axis.setPen(chart_style.pen(palette.color(palette.Role.CHART_GRID), style.grid_width))
+            axis.setTextPen(pg.mkPen(palette.color(palette.Role.CHART_AXIS)))
+        axis_color = palette.qss(palette.Role.CHART_AXIS)
+        self.setLabel("left", "FFT Magnitude (dB)", color=axis_color)
+        self.setLabel("bottom", "Frequency (Hz)", color=axis_color)
+        self.setTitle(self._title_text, color=palette.qss(palette.Role.CHART_TITLE))
+        self.fft_line.setPen(
+            chart_style.pen(palette.color(palette.Role.CHART_SPECTRUM), style.spectrum_width))
+        highlighted = palette.color(palette.Role.CHART_HIGHLIGHTED_PEAK)
+        self.selected_point.setPen(pg.mkPen(highlighted, width=1))
+        self.selected_point.setBrush(pg.mkBrush(highlighted))
+        peak_min = palette.color(palette.Role.CHART_PEAK_MIN)
+        self.line_threshold.setPen(chart_style.pen(
+            peak_min, style.peak_min_width, style.peak_min_dash, style.peak_min_opacity))
+        self.line_threshold.label.setColor(peak_min)
+        self._cursor_label.fill = pg.mkBrush(palette.color(palette.Role.CHART_READOUT_BACKGROUND))
+        self._cursor_label.update()
+        crosshair = chart_style.pen(
+            palette.color(palette.Role.CHART_CROSSHAIR_LINE),
+            style.crosshair_width, style.crosshair_dash)
+        self._crosshair_v.setPen(crosshair)
+        self._crosshair_h.setPen(crosshair)
+        self._overlay_label.setColor(palette.color(palette.Role.TEXT_SECONDARY))
+        button_style = (
+            "QToolButton { border: none; background: transparent;"
+            f" color: {palette.qss(palette.Role.TEXT_SECONDARY)}; font-size: 15px; }}"
+            f"QToolButton:hover {{ color: {palette.qss(palette.Role.TEXT_PRIMARY)}; }}"
+        )
+        self._info_btn.setStyleSheet(button_style)
+        self._options_btn.setStyleSheet(button_style)
+        if getattr(self, "_bands_guitar_type", None):
+            self.set_guitar_type_bands(self._bands_guitar_type)
+        for curve, color in zip(self._comparison_curves, self._comparison_curve_colors):
+            curve.setPen(chart_style.pen(self._curve_rgb(color), style.overlay_width))
+        if self._comparison_legend is not None:
+            self._build_comparison_legend(self._comparison_legend_labels, font_size=10)
+        self._update_ticks()
+
+    def _update_ticks(self) -> None:
+        """Set both axes' ticks — and so the grid lines, one per tick — to Swift's: the
+        frequency ticks of generateTicks (8 at most) labelled by format_tick_labels, and a
+        magnitude tick every magnitude_stride dB. Mirrors Swift SpectrumView's xAxisContent /
+        yAxisContent."""
+        plot = self.getPlotItem()
+        (x_min, x_max), (y_min, y_max) = plot.vb.viewRange()
+        visible = [t for t in atg.generate_ticks(x_min, x_max, max_ticks=8) if x_min <= t <= x_max]
+        labels = atg.format_tick_labels(visible)
+        plot.getAxis("bottom").setTicks([[(t, labels[t]) for t in visible]])
+        stride = chart_style.SCREEN.magnitude_stride or atg.magnitude_stride(y_max - y_min)
+        first = math.ceil(y_min / stride)
+        last = math.floor(y_max / stride)
+        plot.getAxis("left").setTicks(
+            [[(k * stride, f"{k * stride:g}") for k in range(first, last + 1)]])
+        # pyqtgraph's grid is drawn by all four axes; only the bottom and left carry the ticks.
+        plot.getAxis("top").setGrid(False)
+        plot.getAxis("right").setGrid(False)
+
+    def _build_comparison_legend(self, labels: list[str], font_size: int) -> None:
+        """The horizontal legend over the top-right of the plot: one swatch and label per
+        comparison / material curve, in the curve's colour, on the readout background."""
+        if self._comparison_legend is not None:
+            self._comparison_legend.deleteLater()
+        legend = QtWidgets.QWidget(self)
+        legend.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        legend.setStyleSheet(
+            f"background: {palette.qss(palette.Role.CHART_READOUT_BACKGROUND)}; border-radius: 6px;"
+        )
+        row = QtWidgets.QHBoxLayout(legend)
+        row.setContentsMargins(8, 4, 8, 4)
+        row.setSpacing(12)
+        for label, color in zip(labels, self._comparison_curve_colors):
+            r, g, b = self._curve_rgb(color)
+            swatch = QtWidgets.QLabel()
+            swatch.setFixedSize(16, 2)
+            swatch.setStyleSheet(f"background: rgb({r},{g},{b}); border-radius: 1px;")
+            text = QtWidgets.QLabel(label)
+            text.setStyleSheet(
+                f"color: rgb({r},{g},{b}); font-size: {font_size}px; background: transparent;"
+            )
+            entry = QtWidgets.QHBoxLayout()
+            entry.setSpacing(4)
+            entry.addWidget(swatch, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+            entry.addWidget(text,   0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+            row.addLayout(entry)
+        legend.adjustSize()
+        legend.show()
+        self._comparison_legend = legend
+        self._comparison_legend_labels = list(labels)
+        self._reposition_comparison_legend()
 
     # ------------------------------------------------------------------ #
     # Backward-compatibility properties — guitar_tap.py reads these directly
@@ -780,6 +880,7 @@ class FftCanvas(pg.PlotWidget):
 
     def set_guitar_type_bands(self, guitar_type_str: str) -> None:
         """Rebuild the mode band overlays for the given guitar type."""
+        self._bands_guitar_type = guitar_type_str
         self._remove_mode_bands()
         try:
             guitar_type = gt.GuitarType(guitar_type_str)
@@ -789,7 +890,10 @@ class FftCanvas(pg.PlotWidget):
         is_guitar = _tds.measurement_type().is_guitar
         for lo, hi, mode_name in gm.get_bands(guitar_type):
             r, g, b = palette.rgb(palette.mode_role(gm.GuitarMode.from_display_name(mode_name)))
-            pen = pg.mkPen((r, g, b), width=1, style=QtCore.Qt.PenStyle.DashLine)
+            style = chart_style.SCREEN
+            pen = chart_style.pen(
+                (r, g, b), style.mode_boundary_width, style.mode_boundary_dash,
+                style.mode_boundary_opacity)
             abbrev = gm.GuitarMode.from_display_name(mode_name).abbreviation
             lbl_opts = {"position": 0.96, "color": (r, g, b), "anchors": [(0, 1), (0, 1)]}
 
@@ -847,7 +951,7 @@ class FftCanvas(pg.PlotWidget):
         mouse_freq = float(view_pos.x())
         mouse_db   = float(view_pos.y())
 
-        freq_color = "rgb(220,50,50)"   # default red
+        freq_color = palette.qss(palette.Role.CHART_CROSSHAIR_FREQUENCY)
 
         # Material spectra overlays (plate/brace review states) are stored in
         # _comparison_curves even when is_comparing is False.  Snap to them
@@ -895,7 +999,7 @@ class FftCanvas(pg.PlotWidget):
                 display_freq = mouse_freq
                 display_db   = mouse_db
 
-            r, g, b = self._COMPARISON_PALETTE[locked % len(self._COMPARISON_PALETTE)]
+            r, g, b = self._curve_rgb(self._comparison_curve_colors[locked])
             freq_color = f"rgb({r},{g},{b})"
 
         elif self.is_measurement_complete and np.any(self.saved_mag_y_db):
@@ -923,7 +1027,8 @@ class FftCanvas(pg.PlotWidget):
         html = (
             f'<center>'
             f'<b style="color:{freq_color};">{freq_str}</b><br/>'
-            f'<span style="color:rgb(130,130,130);">{fp.string(display_db, fp.PEAK_MAGNITUDE_DB)} dB</span>'
+            f'<span style="color:{palette.qss(palette.Role.CHART_AXIS)};">'
+            f'{fp.string(display_db, fp.PEAK_MAGNITUDE_DB)} dB</span>'
             f'</center>'
         )
         self._cursor_label.setHtml(html)
@@ -971,7 +1076,8 @@ class FftCanvas(pg.PlotWidget):
         Mirrors Swift: chartTitle = fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
         If a file is currently playing its name takes priority over the loaded measurement name.
         """
-        self.setTitle(self.chart_title, color="#333333")
+        self._title_text = self.chart_title
+        self.setTitle(self._title_text, color=palette.qss(palette.Role.CHART_TITLE))
 
     def set_playing_file_name(self, name: str | None) -> None:
         """Update the chart title to reflect the playing file name, or revert to
@@ -980,7 +1086,8 @@ class FftCanvas(pg.PlotWidget):
         Mirrors Swift: chartTitle = fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
         Connected to playingFileNameChanged signal.
         """
-        self.setTitle(self.chart_title, color="#333333")
+        self._title_text = self.chart_title
+        self.setTitle(self._title_text, color=palette.qss(palette.Role.CHART_TITLE))
 
     def cancel_tap_sequence(self) -> None:
         """Cancel the current tap sequence and restart warmup — matches Swift cancelTapSequence."""
@@ -1379,43 +1486,21 @@ class FftCanvas(pg.PlotWidget):
         """
         for entry in self.analyzer._comparison_data:
             label    = entry["label"]
-            color    = entry["color"]
+            color    = entry.get("role", entry["color"])
             freq_arr = entry["freqs"]
             mag_arr  = entry["mags"]
             curve = pg.PlotDataItem(
                 freq_arr, mag_arr,
-                pen=pg.mkPen(color, width=1.5),
-                name=label,
+                pen=chart_style.pen(self._curve_rgb(color), chart_style.SCREEN.overlay_width),
+                name=label, antialias=True,
             )
             self.addItem(curve)
             self._comparison_curves.append(curve)
+            self._comparison_curve_colors.append(color)
 
         if self._comparison_curves:
-            # Legend — horizontal overlay, top-right
-            legend = QtWidgets.QWidget(self)
-            legend.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            legend.setStyleSheet(
-                "background: rgba(240,240,240,210); border-radius: 6px;"
-            )
-            row = QtWidgets.QHBoxLayout(legend)
-            row.setContentsMargins(8, 4, 8, 4)
-            row.setSpacing(12)
-            for label, (r, g, b) in self.analyzer.comparison_labels:
-                swatch = QtWidgets.QLabel()
-                swatch.setFixedSize(16, 2)
-                swatch.setStyleSheet(f"background: rgb({r},{g},{b}); border-radius: 1px;")
-                text = QtWidgets.QLabel(label)
-                css_font = "font-size: 10px;"
-                text.setStyleSheet(f"color: rgb({r},{g},{b}); {css_font} background: transparent;")
-                entry = QtWidgets.QHBoxLayout()
-                entry.setSpacing(4)
-                entry.addWidget(swatch, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
-                entry.addWidget(text,   0, QtCore.Qt.AlignmentFlag.AlignVCenter)
-                row.addLayout(entry)
-            legend.adjustSize()
-            legend.show()
-            self._comparison_legend = legend
-            self._reposition_comparison_legend()
+            self._build_comparison_legend(
+                [entry["label"] for entry in self.analyzer._comparison_data], font_size=10)
 
         # Clear the main spectrum line — only comparison curves should be visible.
         self.fft_line.setData([], [])
@@ -1434,6 +1519,7 @@ class FftCanvas(pg.PlotWidget):
         for curve in self._comparison_curves:
             self.removeItem(curve)
         self._comparison_curves.clear()
+        self._comparison_curve_colors.clear()
         if self._comparison_legend is not None:
             self._comparison_legend.deleteLater()
             self._comparison_legend = None
@@ -1553,6 +1639,7 @@ class FftCanvas(pg.PlotWidget):
         for curve in self._comparison_curves:
             self.removeItem(curve)
         self._comparison_curves.clear()
+        self._comparison_curve_colors.clear()
         self._has_material_spectra = False
         if self._comparison_legend is not None:
             self._comparison_legend.deleteLater()
@@ -1560,7 +1647,7 @@ class FftCanvas(pg.PlotWidget):
 
     def load_material_spectra(
         self,
-        spectra: "list[tuple[str, tuple[int,int,int], list, list]]",
+        spectra: "list[tuple[str, palette.Role, list, list]]",
     ) -> None:
         """Display per-phase plate/brace spectra as overlaid colored curves.
 
@@ -1595,43 +1682,19 @@ class FftCanvas(pg.PlotWidget):
         if self.analyzer.material_tap_phase.is_reviewing:
             self.fft_line.setData([], [])
 
-        for label, (r, g, b), freq_list, mag_list in spectra:
+        for label, role, freq_list, mag_list in spectra:
             freq_arr = np.array(freq_list, dtype=np.float64)
             mag_arr  = np.array(mag_list,  dtype=np.float64)
             curve = pg.PlotDataItem(
                 freq_arr, mag_arr,
-                pen=pg.mkPen((r, g, b), width=2),
-                name=label,
+                pen=chart_style.pen(palette.rgb(role), chart_style.SCREEN.overlay_width),
+                name=label, antialias=True,
             )
             self.addItem(curve)
             self._comparison_curves.append(curve)
+            self._comparison_curve_colors.append(role)
 
-        # Build legend — mirrors load_comparison legend layout.
-        legend = QtWidgets.QWidget(self)
-        legend.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        legend.setStyleSheet(
-            "background: rgba(240,240,240,210); border-radius: 6px;"
-        )
-        row = QtWidgets.QHBoxLayout(legend)
-        row.setContentsMargins(8, 4, 8, 4)
-        row.setSpacing(12)
-        for label, (r, g, b), _f, _m in spectra:
-            swatch = QtWidgets.QLabel()
-            swatch.setFixedSize(16, 2)
-            swatch.setStyleSheet(f"background: rgb({r},{g},{b}); border-radius: 1px;")
-            text = QtWidgets.QLabel(label)
-            text.setStyleSheet(
-                f"color: rgb({r},{g},{b}); font-size: 10px; background: transparent;"
-            )
-            entry = QtWidgets.QHBoxLayout()
-            entry.setSpacing(4)
-            entry.addWidget(swatch, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
-            entry.addWidget(text,   0, QtCore.Qt.AlignmentFlag.AlignVCenter)
-            row.addLayout(entry)
-        legend.adjustSize()
-        legend.show()
-        self._comparison_legend = legend
-        self._reposition_comparison_legend()
+        self._build_comparison_legend([label for label, _role, _f, _m in spectra], font_size=10)
 
         # fft_line is cleared above when entering a review phase (mirrors Swift hiding
         # spectrumLineContent when isReviewingMaterialPhase is true).  During capture
@@ -1677,7 +1740,7 @@ class FftCanvas(pg.PlotWidget):
         """Return a list of QBrush objects, one per peak, coloured by mode."""
         brushes = []
         for f in freqs:
-            r, g, b = self._mode_color_map.get(float(f), (30, 100, 200))
+            r, g, b = self._mode_color_map.get(float(f), palette.rgb(palette.Role.MODE_UNKNOWN))
             brushes.append(pg.mkBrush(r, g, b, 200))
         return brushes
 

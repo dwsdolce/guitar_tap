@@ -315,7 +315,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
                 peaks_vbox.addWidget(QtWidgets.QLabel("No identified peaks"))
             else:
                 from guitar_tap.views.shared.peaks_model import PeaksModel
-                mat_colors = PeaksModel._MATERIAL_MODE_COLORS
+                mat_roles = PeaksModel._MATERIAL_MODE_ROLES
                 gt = _resolve_guitar_type(m.guitar_type)
                 is_material = (
                     m.longitudinal_snapshot is not None
@@ -332,7 +332,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
                             label = "Diagonal"
                         else:
                             label = "Peak"
-                        rgb = mat_colors.get(label, (150, 150, 150))
+                        rgb = palette.rgb(mat_roles.get(label, palette.Role.MATERIAL_UNSELECTED))
                         row = _PeakRow(
                             peak, GM.GuitarMode.UNKNOWN, label, gt,
                             label_color=QtGui.QColor(*rgb),
