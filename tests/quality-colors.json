@@ -1,31 +1,26 @@
 {
  "slug": "test/quality-colors",
- "about": "The wood-quality grades: each grade's label and its absolute colour (the light value), the same in every edition. Grade names are Swift's WoodQuality case names. Expected values are Swift's.",
+ "about": "The wood-quality grades: each grade's label, the same in every edition; each grade's colour is the wood.* role of theme.json with the grade's name. Grade names are Swift's WoodQuality case names. Expected values are Swift's.",
  "grades": [
   [
    "excellent",
-   "Excellent",
-   "#34C759"
+   "Excellent"
   ],
   [
    "veryGood",
-   "Very Good",
-   "#00C7BE"
+   "Very Good"
   ],
   [
    "good",
-   "Good",
-   "#007AFF"
+   "Good"
   ],
   [
    "fair",
-   "Fair",
-   "#FF9500"
+   "Fair"
   ],
   [
    "poor",
-   "Poor",
-   "#FF3B30"
+   "Poor"
   ]
  ]
 }

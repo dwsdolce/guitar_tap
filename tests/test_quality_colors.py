@@ -1,6 +1,6 @@
 # @parity test/quality-colors
-"""The wood-quality grades — label and absolute colour — against the shared case file
-``quality-colors.json``, the same cases the Swift and web suites run. Grade names are Swift's."""
+"""The wood-quality grades — label against the shared case file ``quality-colors.json``, colour against the
+grade's ``wood.*`` role in ``theme.json`` — the same cases the Swift and web suites run. Grade names are Swift's."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from guitar_tap.models.material_properties import WoodQuality
+from guitar_tap.views.utilities import palette
 
 with open(os.path.join(os.path.dirname(__file__), "quality-colors.json"), encoding="utf-8") as _f:
     GRADES = json.load(_f)["grades"]
@@ -23,10 +24,10 @@ def _grade(name: str) -> WoodQuality:
     return WoodQuality[re.sub(r"(?<=[a-z])(?=[A-Z])", "_", name).upper()]
 
 
-@pytest.mark.parametrize("name,label,hex_", GRADES)
-def test_label_and_hex(name, label, hex_):
+@pytest.mark.parametrize("name,label", GRADES)
+def test_label_and_hex(name, label):
     assert _grade(name).value == label
-    assert _grade(name).color == hex_
+    assert _grade(name).color == palette.pair(palette.Role("wood." + name)).light
 
 
 def test_every_grade_has_its_own_colour():

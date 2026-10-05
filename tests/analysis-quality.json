@@ -1,6 +1,6 @@
 {
  "slug": "test/analysis-quality",
- "about": "The guitar tap-tone quality helpers — per-type ring-out thresholds, their labels and colours, the tap-tone-ratio bands, values outside every band, and the pinned palette — the same cases in every edition. Guitar types and palette names are Swift's; values are Swift 32-bit Floats; NaN is written \"NaN\". Expected values are Swift's.",
+ "about": "The guitar tap-tone quality helpers — per-type ring-out thresholds, their labels and colours, the tap-tone-ratio bands, values outside every band — the same cases in every edition. Guitar types are Swift's; colour names are the quality.* roles of theme.json; values are Swift 32-bit Floats; NaN is written \"NaN\". Expected values are Swift's.",
  "decayThresholds": [
   [
    "classical",
@@ -261,37 +261,5 @@
   "guitarType": "classical",
   "label": "Unknown",
   "color": "gray"
- },
- "palette": [
-  [
-   "gray",
-   "#8E8E93",
-   "#8E8E93"
-  ],
-  [
-   "orange",
-   "#FF9500",
-   "#FF9F0A"
-  ],
-  [
-   "yellow",
-   "#FFCC00",
-   "#FFD60A"
-  ],
-  [
-   "green",
-   "#34C759",
-   "#30D158"
-  ],
-  [
-   "blue",
-   "#007AFF",
-   "#0A84FF"
-  ],
-  [
-   "red",
-   "#FF3B30",
-   "#FF453A"
-  ]
- ]
+ }
 }
