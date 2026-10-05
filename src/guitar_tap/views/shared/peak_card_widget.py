@@ -24,6 +24,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
+from guitar_tap.views.utilities import palette
 from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import pitch as pitch_c
 from guitar_tap.views.shared import peaks_model as pm
@@ -65,9 +66,9 @@ def _mode_color(mode_str: str) -> QtGui.QColor:
     resolved = gm.GuitarMode.from_display_name(mode_str)
     if resolved is None and mode_str:
         # Freeform user-defined label → distinct teal color.
-        r, g, b = gm.GuitarMode.USER_DEFINED_COLOR
+        r, g, b = palette.rgb(palette.Role.MODE_USER_DEFINED)
     else:
-        r, g, b = (resolved or gm.GuitarMode.UNKNOWN).color
+        r, g, b = palette.rgb(palette.mode_role(resolved or gm.GuitarMode.UNKNOWN))
     return QtGui.QColor(r, g, b)
 
 

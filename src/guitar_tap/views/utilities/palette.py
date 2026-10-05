@@ -1,4 +1,4 @@
-# @parity view/palette tests=test/theme,test/analysis-quality
+# @parity view/palette tests=test/theme,test/analysis-quality,test/mode-colors,test/quality-colors
 """Every colour the app draws itself, as a functional role.
 
 A role names what the colour is for (secondary text, the fL curve, the Peak Min line) and has one
@@ -17,6 +17,8 @@ from enum import Enum
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models.appearance import Appearance, Scheme
+from guitar_tap.models.guitar_mode import GuitarMode
+from guitar_tap.models.material_properties import WoodQuality
 
 
 @dataclass(frozen=True)
@@ -264,6 +266,35 @@ def pair(role: Role) -> ColorPair:
     return PAIRS[role]
 
 
+_MODE_ROLES: dict[GuitarMode, Role] = {
+    GuitarMode.AIR: Role.MODE_AIR,
+    GuitarMode.TOP: Role.MODE_TOP,
+    GuitarMode.BACK: Role.MODE_BACK,
+    GuitarMode.DIPOLE: Role.MODE_DIPOLE,
+    GuitarMode.RING_MODE: Role.MODE_RING,
+    GuitarMode.UPPER_MODES: Role.MODE_UPPER,
+    GuitarMode.UNKNOWN: Role.MODE_UNKNOWN,
+}
+
+_QUALITY_ROLES: dict[WoodQuality, Role] = {
+    WoodQuality.EXCELLENT: Role.WOOD_EXCELLENT,
+    WoodQuality.VERY_GOOD: Role.WOOD_VERY_GOOD,
+    WoodQuality.GOOD: Role.WOOD_GOOD,
+    WoodQuality.FAIR: Role.WOOD_FAIR,
+    WoodQuality.POOR: Role.WOOD_POOR,
+}
+
+
+def mode_role(mode: GuitarMode) -> Role:
+    """The role of a guitar mode's colour. Mirrors Swift ``Palette.role(_: GuitarMode)``."""
+    return _MODE_ROLES[mode]
+
+
+def quality_role(quality: WoodQuality) -> Role:
+    """The role of a wood-quality grade's colour. Mirrors Swift ``Palette.role(_: WoodQuality)``."""
+    return _QUALITY_ROLES[quality]
+
+
 # --------------------------------------------------------------------------------------------------
 # The resolved scheme. Swift's palette colours resolve themselves when drawn; Qt's stylesheets and
 # pyqtgraph items do not, so everything this edition draws itself connects to ``scheme_changed`` and
@@ -394,14 +425,23 @@ def _qcolor(hex_: str) -> QtGui.QColor:
     return color
 
 
-def color(role: Role, opacity: Opacity | None = None) -> QtGui.QColor:
-    """The colour of ``role`` in the scheme the app is drawn in, at the scheme's ``opacity`` when
-    given."""
-    result = _qcolor(getattr(PAIRS[role], _scheme.value))
+def color(
+    role: Role, opacity: Opacity | None = None, in_scheme: Scheme | None = None,
+) -> QtGui.QColor:
+    """The colour of ``role`` in the scheme the app is drawn in (or ``in_scheme`` — an export
+    passes light), at that scheme's ``opacity`` when given."""
+    s = in_scheme or _scheme
+    result = _qcolor(getattr(PAIRS[role], s.value))
     if opacity is not None:
         light, dark = OPACITIES[opacity]
-        result.setAlphaF(result.alphaF() * (dark if _scheme is Scheme.DARK else light))
+        result.setAlphaF(result.alphaF() * (dark if s is Scheme.DARK else light))
     return result
+
+
+def rgb(role: Role, in_scheme: Scheme | None = None) -> tuple[int, int, int]:
+    """``color(role)`` as an (r, g, b) tuple, for the pyqtgraph and painter calls."""
+    c = color(role, in_scheme=in_scheme)
+    return (c.red(), c.green(), c.blue())
 
 
 def qss(role: Role, opacity: Opacity | None = None) -> str:

@@ -1,8 +1,4 @@
 # @parity dsp/material-properties tests=test/brace,test/plate
-# @parity model/quality-colors tests=test/quality-colors — `WoodQuality.color` only. Mirrors the guitar_mode.py pattern, where
-# the colour concern is its own slug (`model/mode-colors`) because the web extracts it into its
-# presentation layer (`src/presentation/qualityColors.ts`). See that file: hanging a colour off the
-# model enum is a layer violation the natives should shed when the theme work lands.
 """
 Plate and brace acoustic material-property calculations.
 
@@ -165,25 +161,6 @@ class WoodQuality(Enum):
             WoodQuality.GOOD:      3.0,
             WoodQuality.FAIR:      2.0,
             WoodQuality.POOR:      1.0,
-        }[self]
-
-    # MARK: - Color
-
-    @property
-    def color(self) -> str:
-        """Hex display colour for quality labels and PDF report cells.
-
-        Single source of truth — mirrors Swift WoodQuality.color.
-        Hex values are the closest system-colour equivalents for:
-          .green (#34C759), .mint (#00C7BE), .blue (#007AFF),
-          .orange (#FF9500), .red (#FF3B30).
-        """
-        return {
-            WoodQuality.EXCELLENT: "#34C759",   # SwiftUI .green
-            WoodQuality.VERY_GOOD: "#00C7BE",   # SwiftUI .mint
-            WoodQuality.GOOD:      "#007AFF",   # SwiftUI .blue
-            WoodQuality.FAIR:      "#FF9500",   # SwiftUI .orange
-            WoodQuality.POOR:      "#FF3B30",   # SwiftUI .red
         }[self]
 
     # MARK: - Supporting Enums

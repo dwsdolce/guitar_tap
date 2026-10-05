@@ -9,7 +9,7 @@ GuitarMode classifier (.auto) or from a user-supplied string (.assigned).
 When the override label matches a predefined GuitarMode.display_name, the
 peak's colour, icon, and in-range indicator update to match the overridden
 mode.  When the label is freeform text that does not match any predefined
-mode, a distinct user-defined colour (GuitarMode.USER_DEFINED_COLOR) and
+mode, a distinct user-defined colour (the palette's mode.userDefined role) and
 icon (GuitarMode.USER_DEFINED_ICON) are used instead.
 
 Persistence:

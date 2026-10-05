@@ -12,6 +12,7 @@ import guitar_tap.models.tap_tone_analyzer as td
 import guitar_tap.views.utilities.tap_settings_view as _as
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
+from guitar_tap.views.utilities import palette
 from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import microphone_calibration as _mc_mod
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
@@ -786,8 +787,8 @@ class FftCanvas(pg.PlotWidget):
             return
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         is_guitar = _tds.measurement_type().is_guitar
-        for lo, hi, mode_name, rgba in gm.get_bands(guitar_type):
-            r, g, b, _ = rgba
+        for lo, hi, mode_name in gm.get_bands(guitar_type):
+            r, g, b = palette.rgb(palette.mode_role(gm.GuitarMode.from_display_name(mode_name)))
             pen = pg.mkPen((r, g, b), width=1, style=QtCore.Qt.PenStyle.DashLine)
             abbrev = gm.GuitarMode.from_display_name(mode_name).abbreviation
             lbl_opts = {"position": 0.96, "color": (r, g, b), "anchors": [(0, 1), (0, 1)]}

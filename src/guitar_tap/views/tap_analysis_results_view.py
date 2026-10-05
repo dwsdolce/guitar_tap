@@ -74,6 +74,7 @@ from guitar_tap.views.exportable_spectrum_chart import (
     render_spectrum_image_for_measurement,  # noqa: E402
 )
 from guitar_tap.views.utilities import extensions as _ext  # noqa: E402
+from guitar_tap.views.utilities import palette  # noqa: E402
 
 # ── Export directory tracking ─────────────────────────────────────────────────
 # Mirrors MeasurementFileExporter.lastUsedDirectory in Swift: remembers the
@@ -738,24 +739,16 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
     # ── Quality helpers (mirrors Swift extensions) ────────────────────────
     def _quality_color(label: str) -> colors.Color:
-        """Map a WoodQuality label to a reportlab Color.
-
-        Mirrors Swift PDFReportGenerator which uses WoodQuality.color directly —
-        the single source of truth in MaterialProperties. No fallback, matching Swift.
-        """
+        """A WoodQuality label's colour: its role's light value (the report is drawn on white)."""
         from guitar_tap.models.material_properties import WoodQuality as _WQ
-        return colors.HexColor(_WQ(label).color)
+        return _light(palette.quality_role(_WQ(label)))
 
     def _mode_color(mode: GM.GuitarMode) -> colors.Color:
-        norm = mode
-        map_ = {
-            GM.GuitarMode.AIR:      colors.Color(0.0, 0.5, 0.8),
-            GM.GuitarMode.TOP:      colors.Color(0.2, 0.65, 0.2),
-            GM.GuitarMode.BACK:     colors.Color(0.8, 0.4, 0.0),
-            GM.GuitarMode.DIPOLE:   colors.Color(0.6, 0.0, 0.8),
-            GM.GuitarMode.RING_MODE: colors.Color(0.8, 0.0, 0.4),
-        }
-        return map_.get(norm, SECONDARY)
+        """A guitar mode's colour: its role's light value. Mirrors Swift PDFReportGenerator."""
+        return _light(palette.mode_role(mode))
+
+    def _light(role: palette.Role) -> colors.Color:
+        return colors.HexColor(palette.pair(role).light)
 
     # ── Custom Flowables ──────────────────────────────────────────────────
 
@@ -1027,8 +1020,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 if _ovr:
                     _resolved = GM.GuitarMode.from_display_name(_ovr)
                     if _resolved is None:
-                        _uc = GM.GuitarMode.USER_DEFINED_COLOR
-                        mc = colors.Color(_uc[0] / 255.0, _uc[1] / 255.0, _uc[2] / 255.0)
+                        mc = _light(palette.Role.MODE_USER_DEFINED)
                     else:
                         mc = _mode_color(_resolved)
                 else:

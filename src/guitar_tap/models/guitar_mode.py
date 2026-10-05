@@ -1,4 +1,3 @@
-# @parity model/mode-colors tests=test/mode-colors
 # @parity model/guitar-mode-classify tests=test/classify
 # @parity dsp/guitar-modes tests=test/classify
 """
@@ -38,8 +37,8 @@ from .guitar_type import GuitarType
 
 def get_bands(
     guitar_type: "GuitarType | None" = None,
-) -> list[tuple[float, float, str, tuple[int, int, int, int]]]:
-    """Return (lo_hz, hi_hz, mode_value, rgba) for every band of *guitar_type*.
+) -> list[tuple[float, float, str]]:
+    """Return (lo_hz, hi_hz, mode_value) for every band of *guitar_type*.
 
     Uses the same modeRanges as Swift — a single unified set of bands for both
     display and auto-classification.  *mode_value* is the GuitarMode raw value
@@ -62,8 +61,7 @@ def get_bands(
     ]
     result = []
     for mode, (lo, hi) in entries:
-        rv, gv, bv = mode.color
-        result.append((lo, hi, mode.value, (rv, gv, bv, 35)))
+        result.append((lo, hi, mode.value))
     return result
 
 
@@ -402,34 +400,6 @@ class GuitarMode(Enum):
         return _names.get(self, "Unknown")
 
     @property
-    def hex(self) -> str:
-        """Display colour for a guitar mode as an absolute sRGB hex.
-
-        Mirrors Swift ``GuitarMode.hex``: Swift is canonical and these are its values. UPPER_MODES
-        and UNKNOWN are distinct greys, so the two categories stay distinguishable on the chart.
-        """
-        _hexes = {
-            GuitarMode.AIR:         "#00C0E8",
-            GuitarMode.TOP:         "#34C759",
-            GuitarMode.BACK:        "#FF8D28",
-            GuitarMode.DIPOLE:      "#FF383C",
-            GuitarMode.RING_MODE:   "#CB30E0",
-            GuitarMode.UPPER_MODES: "#8E8E93",
-            GuitarMode.UNKNOWN:     "#808080",
-        }
-        return _hexes.get(self, "#808080")
-
-    @property
-    def color(self) -> tuple[int, int, int]:
-        """Display colour as an (r, g, b) tuple, for the Qt drawing calls.
-
-        Derived from :attr:`hex` so there is one place the value lives.
-        Mirrors Swift ``GuitarMode.color``.
-        """
-        h = self.hex.lstrip("#")
-        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-
-    @property
     def abbreviation(self) -> str:
         """Short mode abbreviation for compact UI display (e.g., "Air", "DP").
 
@@ -552,11 +522,6 @@ GuitarMode.additional_mode_labels = [
     "Helmholtz T(1,1)_1", "Top T(1,1)_2", "Back T(1,1)_3",
     "Cross Dipole T(2,1)", "Long Dipole T(1,2)", "Quadrapole T(2,2)", "Cross Tripole T(3,1)",
 ]
-
-# Display color for peaks with a freeform user-defined mode label
-# that does not match any predefined GuitarMode.
-# Mirrors Swift GuitarMode.userDefinedColor (.teal).
-GuitarMode.USER_DEFINED_COLOR = (0, 128, 128)
 
 # qtawesome icon for peaks with a freeform user-defined mode label.
 # Mirrors Swift GuitarMode.userDefinedIcon ("tag.fill").

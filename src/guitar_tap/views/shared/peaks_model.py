@@ -9,6 +9,7 @@ import numpy.typing as npt
 from PySide6 import QtCore
 
 from guitar_tap.models import guitar_mode as gm
+from guitar_tap.views.utilities import palette
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models import pitch as pitch_c
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
@@ -196,7 +197,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             # The signal's contract is frequency-keyed; build it from the id-keyed map so the
             # storage is identity-based while consumers are unchanged.
             color_map = {
-                p.frequency: self._auto_mode_map[p.id].color
+                p.frequency: palette.rgb(palette.mode_role(self._auto_mode_map[p.id]))
                 for p in self._peaks
                 if p.id in self._auto_mode_map
             }
@@ -379,9 +380,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
             # Freeform user-defined labels → distinct teal colour.
             guitar_mode = gm.GuitarMode.from_display_name(mode)
             if guitar_mode is None and mode:
-                r, g, b = gm.GuitarMode.USER_DEFINED_COLOR
+                r, g, b = palette.rgb(palette.Role.MODE_USER_DEFINED)
             else:
-                r, g, b = (guitar_mode or gm.GuitarMode.UNKNOWN).color
+                r, g, b = palette.rgb(palette.mode_role(guitar_mode or gm.GuitarMode.UNKNOWN))
             display = gm.mode_display_name(mode) or ""
             if display:
                 if is_override:

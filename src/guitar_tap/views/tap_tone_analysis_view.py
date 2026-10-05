@@ -3837,7 +3837,7 @@ class MainWindow(QtWidgets.QMainWindow):
         fL is an input (shown in the peak list), not repeated here as a subtitle."""
         self._brace_c_long.setText(f"{fp.string(props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s")
         self._brace_E_long.setText(f"{fp.string(props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa")
-        color = PA.WoodQuality(props.quality).color
+        color = palette.qss(palette.quality_role(PA.WoodQuality(props.quality)))
         self._brace_spec_value.setText(f"{fp.string(props.specific_modulus, fp.SPECIFIC_MODULUS)}")
         self._brace_spec_value.setStyleSheet(f"color: {color};")
         self._brace_quality_lbl.setText(props.quality)
@@ -3868,8 +3868,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._plate_glc_widget.setVisible(True)
         else:
             self._plate_glc_widget.setVisible(False)
-        cl = PA.WoodQuality(props.quality_long).color
-        cc = PA.WoodQuality(props.quality_cross).color
+        cl = palette.qss(palette.quality_role(PA.WoodQuality(props.quality_long)))
+        cc = palette.qss(palette.quality_role(PA.WoodQuality(props.quality_cross)))
         self._plate_spec_long_value.setText(f"{fp.string(props.specific_modulus_long, fp.SPECIFIC_MODULUS)}")
         self._plate_spec_long_value.setStyleSheet(f"color: {cl};")
         self._plate_quality_long.setText(props.quality_long)
@@ -3882,7 +3882,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_rad_cross.setText(f"C: {fp.string(props.radiation_ratio_cross, fp.RADIATION_RATIO)}")
         self._plate_cross_long.setText(f"{fp.string(props.cross_long_ratio, fp.CROSS_LONG_RATIO)}")
         self._plate_long_cross.setText(f"{fp.string(props.long_cross_ratio, fp.LONG_CROSS_RATIO)}")
-        cov = PA.WoodQuality(props.overall_quality).color
+        cov = palette.qss(palette.quality_role(PA.WoodQuality(props.overall_quality)))
         self._plate_overall_quality.setText(props.overall_quality)
         self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
         # Gore Target Thickness — Store B (the measurement's own body dims + f_vs), never the live

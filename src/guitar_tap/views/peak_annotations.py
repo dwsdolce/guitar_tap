@@ -20,6 +20,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import guitar_mode as gm
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
+from guitar_tap.views.utilities import palette
 
 # Type alias for the annotation dict stored in FftAnnotations.annotations
 _AnnDict = dict[str, Any]
@@ -241,8 +242,8 @@ class FftAnnotations(QtCore.QObject):
         resolved = gm.GuitarMode.from_display_name(mode_str)
         if resolved is None and mode_str:
             # Freeform user-defined label → distinct teal color.
-            return gm.GuitarMode.USER_DEFINED_COLOR
-        return (resolved or gm.GuitarMode.UNKNOWN).color
+            return palette.rgb(palette.Role.MODE_USER_DEFINED)
+        return palette.rgb(palette.mode_role(resolved or gm.GuitarMode.UNKNOWN))
 
     def _make_text_item(
         self,

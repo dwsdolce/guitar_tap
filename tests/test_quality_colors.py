@@ -26,12 +26,14 @@ def _grade(name: str) -> WoodQuality:
 
 
 @pytest.mark.parametrize("name,label", GRADES)
-def test_label_and_hex(name, label):
+def test_label_and_role(name, label):
     assert _grade(name).value == label
-    assert _grade(name).color == palette.pair(palette.Role("wood." + name)).light
+    assert palette.quality_role(_grade(name)).value == "wood." + name
 
 
-def test_every_grade_has_its_own_colour():
-    """The file names every grade, and five grades are five distinguishable colours."""
+def test_every_grade_has_its_own_colour_in_each_scheme():
+    """The file names every grade, and five grades are five colours, told apart in each scheme."""
     assert len(GRADES) == len(WoodQuality)
-    assert len({q.color for q in WoodQuality}) == len(WoodQuality)
+    roles = [palette.quality_role(q) for q in WoodQuality]
+    assert len({palette.pair(r).light for r in roles}) == len(roles)
+    assert len({palette.pair(r).dark for r in roles}) == len(roles)

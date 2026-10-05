@@ -254,6 +254,9 @@ class ExportableSpectrumChart:
     def peak_color(self, peak, idx: int):
         """Mirrors ``private func peakColor(for peak: ResonantPeak) -> Color``."""
         from PySide6 import QtGui
+
+        from guitar_tap.models.appearance import Scheme
+        from guitar_tap.views.utilities import palette
         if self.is_guitar:
             # Override wins for colour (like the label): a predefined override → THAT mode's colour;
             # a freeform label → distinct user-defined teal. Was falling through to the auto colour
@@ -263,15 +266,12 @@ class ExportableSpectrumChart:
             if override_label and self._GuitarMode is not None:
                 resolved = self._GuitarMode.from_display_name(override_label)
                 if resolved is None:
-                    r, g, b = self._GuitarMode.USER_DEFINED_COLOR
-                    return QtGui.QColor(r, g, b)
-                r, g, b = resolved.color
-                return QtGui.QColor(r, g, b)
+                    return palette.color(palette.Role.MODE_USER_DEFINED, in_scheme=Scheme.LIGHT)
+                return palette.color(palette.mode_role(resolved), in_scheme=Scheme.LIGHT)
             # _mode_map is {peak.id: GuitarMode} — mirrors Swift [UUID: GuitarMode].
             mode = self._mode_map.get(peak_id)
             if mode is not None and self._GuitarMode is not None:
-                r, g, b = mode.color
-                return QtGui.QColor(r, g, b)
+                return palette.color(palette.mode_role(mode), in_scheme=Scheme.LIGHT)
         else:
             if peak.id == self.selected_longitudinal_peak_id:
                 return QtGui.QColor(0, 100, 200)
@@ -366,6 +366,9 @@ class ExportableSpectrumChart:
         from pyqtgraph.exporters import ImageExporter
         from PySide6 import QtCore, QtGui, QtWidgets
 
+        from guitar_tap.models.appearance import Scheme
+        from guitar_tap.views.utilities import palette
+
         if QtWidgets.QApplication.instance() is None:
             QtWidgets.QApplication([])
 
@@ -435,7 +438,7 @@ class ExportableSpectrumChart:
         # to match Swift's guard measurementType.isGuitar else { return [] }.
         if self.show_mode_boundaries and self.is_guitar and not self.material_spectra:
             for freq_b, mode_b in self.visible_mode_boundaries:
-                r, g, b = mode_b.color
+                r, g, b = palette.rgb(palette.mode_role(mode_b), Scheme.LIGHT)
                 pen_b = pg.mkPen(
                     QtGui.QColor(r, g, b, 80), width=2,
                     style=QtCore.Qt.PenStyle.DashLine,
@@ -578,7 +581,7 @@ class ExportableSpectrumChart:
                     continue
                 abbrev = mode_b.abbreviation
                 bx = _freq_to_x(freq_b)
-                r, g, b = mode_b.color
+                r, g, b = palette.rgb(palette.mode_role(mode_b), Scheme.LIGHT)
                 mode_color = QtGui.QColor(r, g, b)
                 text_w = abbrev_fm.horizontalAdvance(abbrev)
                 chip_w = text_w + chip_pad_h * 2
@@ -754,6 +757,10 @@ def make_exportable_spectrum_view(
     """
     from PySide6 import QtCore, QtGui, QtWidgets
 
+    from guitar_tap.models.appearance import Scheme
+    from guitar_tap.models.guitar_mode import GuitarMode
+    from guitar_tap.views.utilities import palette
+
     if QtWidgets.QApplication.instance() is None:
         QtWidgets.QApplication([])
 
@@ -778,11 +785,11 @@ def make_exportable_spectrum_view(
 
     # Guitar mode legend entries — mirrors ForEach([.air,.top,.back,.dipole,.ringMode])
     GUITAR_MODE_DISPLAY: list[tuple[str, tuple[int, int, int]]] = [
-        ("Air (Helmholtz)", (  0, 183, 235)),
-        ("Top",             ( 40, 160,  40)),
-        ("Back",            (220, 120,  40)),
-        ("Dipole",          (210,  50,  50)),
-        ("Ring Mode",       (130,  60, 200)),
+        (m.value, palette.rgb(palette.mode_role(m), Scheme.LIGHT))
+        for m in (
+            GuitarMode.AIR, GuitarMode.TOP, GuitarMode.BACK,
+            GuitarMode.DIPOLE, GuitarMode.RING_MODE,
+        )
     ]
 
     # Build ExportableSpectrumChart and render the chart image

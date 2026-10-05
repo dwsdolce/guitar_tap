@@ -1,6 +1,6 @@
 {
  "slug": "test/theme",
- "about": "Every colour role of the theme (docs/THEME-SPEC.md §5): its light and its dark value, as #RRGGBB, or #RRGGBBAA where the role has an opacity (the alpha byte is round(opacity × 255)). Opacities applied to another role's colour (the peak-row tint, message backgrounds) are listed separately. Each edition's palette holds exactly these roles with these values. Role names are Swift's Palette.Role raw values. 'appearance' is the Appearance setting: its values (stored value, label) in picker order, and its default. 'resolve' is the scheme drawn for each setting and each scheme the OS reports (\"unknown\" when it reports none): the setting when Light or Dark, else the OS's, with unknown taken as light.",
+ "about": "Every colour role of the theme (docs/THEME-SPEC.md §5): its light and its dark value, as #RRGGBB, or #RRGGBBAA where the role has an opacity (the alpha byte is round(opacity × 255)). Opacities applied to another role's colour (the peak-row tint, message backgrounds) are listed separately. Each edition's palette holds exactly these roles with these values. Role names are Swift's Palette.Role raw values. 'appearance' is the Appearance setting: its values (stored value, label) in picker order, and its default. 'resolve' is the scheme drawn for each setting and each scheme the OS reports (\"unknown\" when it reports none): the setting when Light or Dark, else the OS's, with unknown taken as light. 'modeRoles' is each guitar mode's role (Swift GuitarMode case names); a freeform mode label is mode.userDefined. Each wood-quality grade's role is wood.<grade name>.",
  "roles": [
   [
    "background.window",
@@ -592,6 +592,36 @@
    "dark",
    "unknown",
    "dark"
+  ]
+ ],
+ "modeRoles": [
+  [
+   "air",
+   "mode.air"
+  ],
+  [
+   "top",
+   "mode.top"
+  ],
+  [
+   "back",
+   "mode.back"
+  ],
+  [
+   "dipole",
+   "mode.dipole"
+  ],
+  [
+   "ringMode",
+   "mode.ring"
+  ],
+  [
+   "upperModes",
+   "mode.upper"
+  ],
+  [
+   "unknown",
+   "mode.unknown"
   ]
  ]
 }

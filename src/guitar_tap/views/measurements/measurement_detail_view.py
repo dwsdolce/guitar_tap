@@ -14,6 +14,7 @@ from guitar_tap.models import guitar_mode as GM
 from guitar_tap.models import guitar_type as GT
 from guitar_tap.models import pitch as P
 from guitar_tap.utilities.date_format import format_display_datetime
+from guitar_tap.views.utilities import palette
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,8 +44,7 @@ def _mag_color(mag: float) -> QtGui.QColor:
 
 
 def _mode_qcolor(mode: GM.GuitarMode) -> QtGui.QColor:
-    r, g, b = mode.color
-    return QtGui.QColor(r, g, b)
+    return palette.color(palette.mode_role(mode))
 
 
 def _resolve_guitar_type(guitar_type_str: str | None) -> GT.GuitarType:
