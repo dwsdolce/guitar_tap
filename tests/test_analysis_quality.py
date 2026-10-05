@@ -1,6 +1,7 @@
 # @parity test/analysis-quality
-"""The guitar tap-tone quality helpers against the shared case file ``analysis-quality.json`` — the same cases
-the Swift and web suites run. Guitar types are Swift's; colour names are the quality roles of ``theme.json``."""
+"""The guitar tap-tone quality helpers against the shared case file ``analysis-quality.json`` — the
+same cases the Swift and web suites run. Guitar types are Swift's; colour names are the quality
+roles of ``theme.json``."""
 
 from __future__ import annotations
 

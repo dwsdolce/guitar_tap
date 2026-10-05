@@ -1,19 +1,22 @@
 # @parity view/palette tests=test/theme,test/analysis-quality
 """Every colour the app draws itself, as a functional role.
 
-A role names what the colour is for (secondary text, the fL curve, the Peak Min line) and has one light value and
-one dark value; two roles may share a value without being linked. The values are pinned rather than taken from a
-platform palette, so every edition shows the same colours on every OS. The colour only tells values apart; the exact
-shade does not matter, but it must be the same everywhere. Exports are drawn on white, so they use the light values.
-Mirrors Swift ``Palette``.
+A role names what the colour is for (secondary text, the fL curve, the Peak Min line) and has one
+light value and one dark value; two roles may share a value without being linked. The values are
+pinned rather than taken from a platform palette, so every edition shows the same colours on every
+OS. The colour only tells values apart; the exact shade does not matter, but it must be the same
+everywhere. Exports are drawn on white, so they use the light values. Mirrors Swift ``Palette``.
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from enum import Enum
 
-from PySide6 import QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from guitar_tap.models.appearance import Appearance, Scheme
 
 
 @dataclass(frozen=True)
@@ -259,6 +262,154 @@ OPACITIES: dict[Opacity, tuple[float, float]] = {
 def pair(role: Role) -> ColorPair:
     """The light and dark values of ``role``."""
     return PAIRS[role]
+
+
+# --------------------------------------------------------------------------------------------------
+# The resolved scheme. Swift's palette colours resolve themselves when drawn; Qt's stylesheets and
+# pyqtgraph items do not, so everything this edition draws itself connects to ``scheme_changed`` and
+# redraws from the palette.
+# --------------------------------------------------------------------------------------------------
+
+
+class _SchemeNotifier(QtCore.QObject):
+    """Emits ``scheme_changed(Scheme)`` when the resolved scheme changes — the one signal every
+    redraw follows."""
+
+    scheme_changed = QtCore.Signal(object)
+
+
+_notifier: _SchemeNotifier | None = None
+_appearance = Appearance.SYSTEM
+_scheme = Scheme.LIGHT
+_following_os = False
+_native_style: str | None = None
+
+
+def notifier() -> _SchemeNotifier:
+    """The object whose ``scheme_changed`` signal fires on every change of the resolved scheme."""
+    global _notifier
+    if _notifier is None:
+        _notifier = _SchemeNotifier()
+    return _notifier
+
+
+def scheme() -> Scheme:
+    """The scheme the app is drawn in."""
+    return _scheme
+
+
+def os_scheme() -> Scheme | None:
+    """The scheme the operating system reports, or ``None`` when it reports none (Qt's Unknown)."""
+    app = QtGui.QGuiApplication.instance()
+    if app is None:
+        return None
+    return {QtCore.Qt.ColorScheme.Light: Scheme.LIGHT, QtCore.Qt.ColorScheme.Dark: Scheme.DARK}.get(
+        app.styleHints().colorScheme())
+
+
+def apply(appearance: Appearance) -> None:
+    """Draw the app — its windows, controls and the palette's colours — in the scheme ``appearance``
+    resolves to: the operating system's own for System. Mirrors Swift ``Palette.apply``."""
+    global _appearance, _following_os
+    _appearance = appearance
+    app = QtWidgets.QApplication.instance()
+    if app is not None:
+        hints = app.styleHints()
+        if not _following_os:
+            hints.colorSchemeChanged.connect(_on_os_scheme_changed)
+            _following_os = True
+        if appearance is Appearance.SYSTEM:
+            hints.unsetColorScheme()
+        else:
+            scheme_ = QtCore.Qt.ColorScheme
+            dark = appearance is Appearance.DARK
+            hints.setColorScheme(scheme_.Dark if dark else scheme_.Light)
+        _apply_linux_fallback(app, appearance)
+    _update()
+
+
+def _on_os_scheme_changed(_scheme: QtCore.Qt.ColorScheme) -> None:
+    if _appearance is Appearance.SYSTEM:
+        _update()
+
+
+def _update() -> None:
+    """Re-resolve the scheme; announce it when it changed."""
+    global _scheme
+    resolved = _appearance.resolved(os_scheme() if _appearance is Appearance.SYSTEM else None)
+    if resolved is not _scheme:
+        _scheme = resolved
+        notifier().scheme_changed.emit(resolved)
+
+
+def _apply_linux_fallback(app: QtWidgets.QApplication, appearance: Appearance) -> None:
+    """On a Linux desktop that ignores Qt's scheme request, draw the widgets with the Fusion style
+    and a palette built from the role table, so they follow the setting too; back to the native
+    style for System."""
+    global _native_style
+    if not sys.platform.startswith("linux"):
+        return
+    requested = {Appearance.LIGHT: QtCore.Qt.ColorScheme.Light,
+                 Appearance.DARK: QtCore.Qt.ColorScheme.Dark}.get(appearance)
+    if requested is not None and app.styleHints().colorScheme() != requested:
+        if _native_style is None:
+            _native_style = app.style().name()
+        app.setStyle("Fusion")
+        dark = appearance is Appearance.DARK
+        app.setPalette(_widget_palette(Scheme.DARK if dark else Scheme.LIGHT))
+    elif _native_style is not None:
+        app.setStyle(_native_style)
+        _native_style = None
+        app.setPalette(app.style().standardPalette())
+
+
+def _widget_palette(s: Scheme) -> QtGui.QPalette:
+    """A Qt widget palette for scheme ``s``, from the role table."""
+    def c(role: Role) -> QtGui.QColor:
+        return _qcolor(getattr(PAIRS[role], s.value))
+    R = QtGui.QPalette.ColorRole
+    p = QtGui.QPalette()
+    for qt_role, role in (
+        (R.Window, Role.BACKGROUND_WINDOW), (R.WindowText, Role.TEXT_PRIMARY),
+        (R.Base, Role.BACKGROUND_CONTROL), (R.AlternateBase, Role.BACKGROUND_PANEL),
+        (R.ToolTipBase, Role.BACKGROUND_PANEL), (R.ToolTipText, Role.TEXT_PRIMARY),
+        (R.PlaceholderText, Role.TEXT_SECONDARY), (R.Text, Role.TEXT_PRIMARY),
+        (R.Button, Role.BACKGROUND_CONTROL), (R.ButtonText, Role.TEXT_PRIMARY),
+        (R.Highlight, Role.ACCENT), (R.Link, Role.ACCENT_TEXT),
+        (R.Mid, Role.SEPARATOR), (R.Midlight, Role.SEPARATOR), (R.Dark, Role.SEPARATOR),
+        (R.Light, Role.BACKGROUND_PANEL), (R.Shadow, Role.SEPARATOR),
+    ):
+        p.setColor(qt_role, c(role))
+    p.setColor(R.HighlightedText, _qcolor(PAIRS[Role.BACKGROUND_PANEL].light))
+    for qt_role in (R.WindowText, R.Text, R.ButtonText):
+        p.setColor(QtGui.QPalette.ColorGroup.Disabled, qt_role, c(Role.TEXT_SECONDARY))
+    return p
+
+
+def _qcolor(hex_: str) -> QtGui.QColor:
+    """``"#RRGGBB"`` or ``"#RRGGBBAA"`` as a QColor (Qt reads eight digits as ``#AARRGGBB``)."""
+    color = QtGui.QColor(hex_[:7])
+    if len(hex_) == 9:
+        color.setAlpha(int(hex_[7:], 16))
+    return color
+
+
+def color(role: Role, opacity: Opacity | None = None) -> QtGui.QColor:
+    """The colour of ``role`` in the scheme the app is drawn in, at the scheme's ``opacity`` when
+    given."""
+    result = _qcolor(getattr(PAIRS[role], _scheme.value))
+    if opacity is not None:
+        light, dark = OPACITIES[opacity]
+        result.setAlphaF(result.alphaF() * (dark if _scheme is Scheme.DARK else light))
+    return result
+
+
+def qss(role: Role, opacity: Opacity | None = None) -> str:
+    """``color(role, opacity)`` written for a Qt stylesheet."""
+    c = color(role, opacity)
+    if c.alpha() == 255:
+        return c.name()
+    return f"rgba({c.red()}, {c.green()}, {c.blue()}, {c.alpha()})"
 
 
 GRAY = PAIRS[Role.QUALITY_GRAY]

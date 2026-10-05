@@ -160,6 +160,21 @@ class TapDisplaySettings:
         """Mirrors Swift TapDisplaySettings.measurementType setter."""
         _app_settings().set_measurement_type(mt)
 
+    # MARK: - Appearance
+
+    @classmethod
+    def appearance(cls) -> "Appearance":
+        """The Appearance setting: follow the operating system (the default), or always Light, or always Dark.
+
+        Mirrors Swift TapDisplaySettings.appearance.
+        """
+        return _app_settings().appearance()
+
+    @classmethod
+    def set_appearance(cls, appearance: "Appearance") -> None:
+        """Mirrors Swift TapDisplaySettings.appearance setter."""
+        _app_settings().set_appearance(appearance)
+
     # MARK: - Guitar Type (backward compatibility)
 
     @classmethod

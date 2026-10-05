@@ -1,6 +1,6 @@
 {
  "slug": "test/theme",
- "about": "Every colour role of the theme (docs/THEME-SPEC.md §5): its light and its dark value, as #RRGGBB, or #RRGGBBAA where the role has an opacity (the alpha byte is round(opacity × 255)). Opacities applied to another role's colour (the peak-row tint, message backgrounds) are listed separately. Each edition's palette holds exactly these roles with these values. Role names are Swift's Palette.Role raw values.",
+ "about": "Every colour role of the theme (docs/THEME-SPEC.md §5): its light and its dark value, as #RRGGBB, or #RRGGBBAA where the role has an opacity (the alpha byte is round(opacity × 255)). Opacities applied to another role's colour (the peak-row tint, message backgrounds) are listed separately. Each edition's palette holds exactly these roles with these values. Role names are Swift's Palette.Role raw values. 'appearance' is the Appearance setting: its values (stored value, label) in picker order, and its default. 'resolve' is the scheme drawn for each setting and each scheme the OS reports (\"unknown\" when it reports none): the setting when Light or Dark, else the OS's, with unknown taken as light.",
  "roles": [
   [
    "background.window",
@@ -528,6 +528,70 @@
    "status.messageBackground",
    0.12,
    0.12
+  ]
+ ],
+ "appearance": {
+  "default": "system",
+  "values": [
+   [
+    "system",
+    "System"
+   ],
+   [
+    "light",
+    "Light"
+   ],
+   [
+    "dark",
+    "Dark"
+   ]
+  ]
+ },
+ "resolve": [
+  [
+   "system",
+   "light",
+   "light"
+  ],
+  [
+   "system",
+   "dark",
+   "dark"
+  ],
+  [
+   "system",
+   "unknown",
+   "light"
+  ],
+  [
+   "light",
+   "light",
+   "light"
+  ],
+  [
+   "light",
+   "dark",
+   "light"
+  ],
+  [
+   "light",
+   "unknown",
+   "light"
+  ],
+  [
+   "dark",
+   "light",
+   "dark"
+  ],
+  [
+   "dark",
+   "dark",
+   "dark"
+  ],
+  [
+   "dark",
+   "unknown",
+   "dark"
   ]
  ]
 }

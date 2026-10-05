@@ -1,6 +1,8 @@
 # @parity test/theme
-"""The palette against the shared case file ``theme.json`` — every colour role with its light and dark value, and
-the opacities applied to other roles — the same cases the Swift and web suites run. Role names are Swift's."""
+"""The palette against the shared case file ``theme.json`` — every colour role with its light and
+dark value, the opacities applied to other roles, and the Appearance setting with the scheme each
+setting resolves to — the same cases the Swift and web suites run. Role names are Swift's. And what
+only this edition needs: ``scheme_changed`` fires exactly when the resolved scheme changes."""
 
 from __future__ import annotations
 
@@ -9,9 +11,12 @@ import os
 import sys
 
 import pytest
+from PySide6 import QtWidgets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from guitar_tap.models.appearance import Appearance, Scheme
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
 from guitar_tap.views.utilities import palette
 
 with open(os.path.join(os.path.dirname(__file__), "theme.json"), encoding="utf-8") as _f:
@@ -34,3 +39,43 @@ def test_opacity(name, light, dark):
 
 def test_every_opacity_in_the_file_order():
     assert [o.value for o in palette.Opacity] == [row[0] for row in DATA["opacities"]]
+
+
+def test_appearance_values_and_default():
+    a = DATA["appearance"]
+    assert [[x.value, x.label] for x in Appearance] == a["values"]
+    TapDisplaySettings.set_appearance(Appearance(a["default"]))
+    assert TapDisplaySettings.appearance().value == a["default"]
+    TapDisplaySettings.set_appearance(Appearance.DARK)
+    assert TapDisplaySettings.appearance() is Appearance.DARK
+    TapDisplaySettings.set_appearance(Appearance.SYSTEM)
+
+
+@pytest.mark.parametrize("appearance,os_reports,expected", DATA["resolve"])
+def test_resolved_scheme(appearance, os_reports, expected):
+    os_scheme = None if os_reports == "unknown" else Scheme(os_reports)
+    assert Appearance(appearance).resolved(os_scheme).value == expected
+
+
+def test_scheme_changed_fires_only_when_the_scheme_changes(monkeypatch):
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    os_reports = {"scheme": Scheme.LIGHT}
+    monkeypatch.setattr(palette, "os_scheme", lambda: os_reports["scheme"])
+    monkeypatch.setattr(palette, "_apply_linux_fallback", lambda *_: None)
+    palette.apply(Appearance.SYSTEM)
+    seen: list[Scheme] = []
+    palette.notifier().scheme_changed.connect(seen.append)
+    try:
+        os_reports["scheme"] = Scheme.DARK
+        palette._on_os_scheme_changed(None)      # System follows the OS: dark
+        palette._on_os_scheme_changed(None)      # the same again: nothing
+        palette.apply(Appearance.DARK)           # forced dark, already dark: nothing
+        assert palette.color(palette.Role.MODE_AIR).name() == "#64d2ff"
+        os_reports["scheme"] = Scheme.LIGHT
+        palette._on_os_scheme_changed(None)      # forced: the OS does not matter
+        palette.apply(Appearance.LIGHT)          # forced light: light
+        palette.apply(Appearance.SYSTEM)         # the OS is light too: nothing
+        assert seen == [Scheme.DARK, Scheme.LIGHT]
+        assert palette.color(palette.Role.MODE_AIR).name() == "#00b0dc"
+    finally:
+        palette.notifier().scheme_changed.disconnect(seen.append)

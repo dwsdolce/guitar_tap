@@ -29,6 +29,7 @@ from guitar_tap.models import plate_stiffness_preset as PSP
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
 from guitar_tap.models.guitar_type import GuitarType as _GTy
+from guitar_tap.models.appearance import Appearance
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS
 from guitar_tap.views.comparison_results_view import ComparisonResultsView
 from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
@@ -6250,6 +6251,25 @@ class MainWindow(QtWidgets.QMainWindow):
         disp_db_max_field = ValidatedNumberField(
             fp.MAGNITUDE_DB, value=AS.AppSettings.db_max(), width=_tf_width)
 
+        # Appearance — mirrors Swift displayRangeSectionContent's Appearance picker; applied
+        # on Done.
+        appearance_combo = QtWidgets.QComboBox()
+        for _appearance in Appearance:
+            appearance_combo.addItem(_appearance.label, _appearance)
+        appearance_combo.setCurrentIndex(list(Appearance).index(TDS.appearance()))
+        appearance_row = QtWidgets.QHBoxLayout()
+        appearance_lbl = QtWidgets.QLabel("Appearance")
+        appearance_lbl.setFont(hdr_font)
+        appearance_row.addWidget(appearance_lbl)
+        appearance_row.addWidget(appearance_combo)
+        appearance_row.addStretch()
+        dg.addLayout(appearance_row)
+        appearance_desc = QtWidgets.QLabel(
+            "System follows the operating system's Light or Dark setting")
+        appearance_desc.setFont(caption)
+        dg.addWidget(appearance_desc)
+        dg.addWidget(_hsep())
+
         _range_block(
             dg,
             "Frequency Range",
@@ -6951,6 +6971,12 @@ class MainWindow(QtWidgets.QMainWindow):
             # selectedMeasurementType (local @State) is written to TapDisplaySettings
             # only when applySettings() is called, never during dialog interaction.
             AS.AppSettings.set_measurement_type(mt_val)
+
+            # Appearance — mirrors Swift applySettings: saved and applied only when it changed.
+            _appearance = appearance_combo.currentData()
+            if _appearance is not TDS.appearance():
+                TDS.set_appearance(_appearance)
+                palette.apply(_appearance)
 
             # Display range — parse and validate the staging fields (Swift applySettings:
             # validateFrequencyRange / validateMagnitudeRange), persist, and move the chart only if the

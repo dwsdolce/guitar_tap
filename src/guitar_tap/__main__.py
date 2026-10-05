@@ -77,8 +77,10 @@ _release_guard.enforce()
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from guitar_tap.models.tap_display_settings import TapDisplaySettings
 from guitar_tap.utilities.logging import gt_log
 from guitar_tap.views.tap_tone_analysis_view import MainWindow, basedir
+from guitar_tap.views.utilities import palette
 
 if os.name == "nt":
     from ctypes import windll
@@ -175,6 +177,9 @@ if __name__ == "__main__":
     rc = 0
     try:
         app = MainWindow()
+        # Draw the app in the scheme the Appearance setting resolves to — mirrors Swift's root
+        # onAppear.
+        palette.apply(TapDisplaySettings.appearance())
         app.setWindowIcon(QtGui.QIcon(os.path.join(basedir, "icons/guitar-tap.svg")))
         app.show()
         app.apply_saved_geometry()

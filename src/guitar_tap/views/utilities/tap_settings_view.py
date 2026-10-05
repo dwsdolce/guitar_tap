@@ -280,6 +280,26 @@ class AppSettings:
         cls._set("analysis/show_unknown_modes", v)
 
     # ------------------------------------------------------------------ #
+    # Appearance  (mirrors Swift TapDisplaySettings.appearance)
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def appearance(cls) -> "Appearance":
+        """Return the saved Appearance, defaulting to SYSTEM (Swift TapDisplaySettings.appearance)."""
+        from guitar_tap.models.appearance import Appearance  # noqa: PLC0415
+        raw = cls._get("display/appearance", None)
+        if raw:
+            try:
+                return Appearance(raw)
+            except ValueError:
+                pass
+        return Appearance.SYSTEM
+
+    @classmethod
+    def set_appearance(cls, appearance: "Appearance") -> None:
+        """Persist an Appearance by its raw value, matching Swift."""
+        cls._set("display/appearance", appearance.value)
+
+    # ------------------------------------------------------------------ #
     # Dump capture audio (diagnostics)
     # ------------------------------------------------------------------ #
     @classmethod

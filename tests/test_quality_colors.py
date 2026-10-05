@@ -1,6 +1,7 @@
 # @parity test/quality-colors
-"""The wood-quality grades — label against the shared case file ``quality-colors.json``, colour against the
-grade's ``wood.*`` role in ``theme.json`` — the same cases the Swift and web suites run. Grade names are Swift's."""
+"""The wood-quality grades — label against the shared case file ``quality-colors.json``, colour
+against the grade's ``wood.*`` role in ``theme.json`` — the same cases the Swift and web suites run.
+Grade names are Swift's."""
 
 from __future__ import annotations
 
