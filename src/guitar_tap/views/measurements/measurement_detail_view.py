@@ -31,18 +31,6 @@ def _pitch_str(freq: float) -> str:
         return ""
 
 
-def _mag_color(mag: float) -> QtGui.QColor:
-    """Color-code magnitude dB like Swift magnitudeColor()."""
-    if mag >= -40:
-        return QtGui.QColor(40, 160, 40)     # green
-    elif mag >= -60:
-        return QtGui.QColor(60, 120, 220)    # blue
-    elif mag >= -80:
-        return QtGui.QColor(210, 130, 40)    # orange
-    else:
-        return QtGui.QColor(200, 50, 50)     # red
-
-
 def _mode_qcolor(mode: GM.GuitarMode) -> QtGui.QColor:
     return palette.color(palette.mode_role(mode))
 
@@ -97,10 +85,12 @@ class _PeakRow(QtWidgets.QFrame):
         color = label_color if label_color is not None else _mode_qcolor(mode)
         r, g, b = color.red(), color.green(), color.blue()
 
-        # Tinted background (label colour at ~5% opacity)
+        # Tinted background: the label colour at the scheme's peak-row opacity.
         self.setAutoFillBackground(True)
         pal = self.palette()
-        pal.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor(r, g, b, 13))
+        tint = QtGui.QColor(r, g, b)
+        tint.setAlphaF(palette.opacity(palette.Opacity.PEAK_ROW_TINT))
+        pal.setColor(QtGui.QPalette.ColorRole.Window, tint)
         self.setPalette(pal)
         self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
         self.setFrameShadow(QtWidgets.QFrame.Shadow.Plain)
@@ -128,10 +118,8 @@ class _PeakRow(QtWidgets.QFrame):
             lo, hi = mode.mode_range(guitar_type)
             in_range = lo <= peak.frequency <= hi
             badge = QtWidgets.QLabel("✔" if in_range else "⚠")
-            badge.setStyleSheet(
-                "color: #28a028; font-size: 9px;" if in_range
-                else "color: #d07020; font-size: 9px;"
-            )
+            badge_role = palette.Role.PEAK_IN_RANGE if in_range else palette.Role.PEAK_OUT_OF_RANGE
+            badge.setStyleSheet(f"color: {palette.qss(badge_role)}; font-size: 9px;")
             badge.setToolTip(
                 "Frequency is within the expected mode range"
                 if in_range
@@ -158,7 +146,8 @@ class _PeakRow(QtWidgets.QFrame):
         row1.addWidget(mode_lbl)
         row1.addStretch()
         freq_lbl = QtWidgets.QLabel(f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz")
-        freq_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
+        freq_lbl.setStyleSheet(
+            f"font-weight: bold; font-size: 13px; color: {palette.qss(palette.Role.TEXT_PRIMARY)};")
         row1.addWidget(freq_lbl)
         info_col.addLayout(row1)
 
@@ -173,11 +162,12 @@ class _PeakRow(QtWidgets.QFrame):
             row2 = QtWidgets.QHBoxLayout()
             row2.setSpacing(4)
             note_icon = QtWidgets.QLabel("♪")
-            note_icon.setStyleSheet("color: #8844cc; font-size: 10px;")
+            pitch_color = palette.qss(palette.Role.PEAK_PITCH)
+            note_icon.setStyleSheet(f"color: {pitch_color}; font-size: 10px;")
             row2.addWidget(note_icon)
             pitch_lbl = QtWidgets.QLabel(pitch_str)
             pitch_lbl.setStyleSheet(
-                "color: #8844cc; font-size: 11px; font-weight: 600;"
+                f"color: {pitch_color}; font-size: 11px; font-weight: 600;"
             )
             row2.addWidget(pitch_lbl)
             row2.addStretch()
@@ -188,25 +178,24 @@ class _PeakRow(QtWidgets.QFrame):
         row3.setSpacing(10)
         if peak.quality:
             q_lbl = QtWidgets.QLabel(
-                f"<span style='color:grey;font-size:10px;'>Q:</span> "
+                f"<span style='color:{palette.qss(palette.Role.TEXT_SECONDARY)};"
+                f"font-size:10px;'>Q:</span> "
                 f"<b style='font-size:10px;'>{fp.string(peak.quality, fp.Q_FACTOR)}</b>"
             )
             q_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
             row3.addWidget(q_lbl)
         if peak.bandwidth:
             bw_lbl = QtWidgets.QLabel(
-                f"<span style='color:grey;font-size:10px;'>BW:</span> "
+                f"<span style='color:{palette.qss(palette.Role.TEXT_SECONDARY)};"
+                f"font-size:10px;'>BW:</span> "
                 f"<b style='font-size:10px;'>{fp.string(peak.bandwidth, fp.BANDWIDTH_HZ)} Hz</b>"
             )
             bw_lbl.setTextFormat(QtCore.Qt.TextFormat.RichText)
             row3.addWidget(bw_lbl)
         row3.addStretch()
-        mag_color = _mag_color(peak.magnitude)
         mag_lbl = QtWidgets.QLabel(f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB")
-        mag_lbl.setStyleSheet(
-            f"font-weight: 600; font-size: 11px; "
-            f"color: rgb({mag_color.red()},{mag_color.green()},{mag_color.blue()});"
-        )
+        mag_role = palette.magnitude_role(peak.magnitude)
+        mag_lbl.setStyleSheet(f"font-weight: 600; font-size: 11px; color: {palette.qss(mag_role)};")
         row3.addWidget(mag_lbl)
         info_col.addLayout(row3)
 

@@ -1,6 +1,6 @@
 {
  "slug": "test/theme",
- "about": "Every colour role of the theme (docs/THEME-SPEC.md §5): its light and its dark value, as #RRGGBB, or #RRGGBBAA where the role has an opacity (the alpha byte is round(opacity × 255)). Opacities applied to another role's colour (the peak-row tint, message backgrounds) are listed separately. Each edition's palette holds exactly these roles with these values. Role names are Swift's Palette.Role raw values. 'appearance' is the Appearance setting: its values (stored value, label) in picker order, and its default. 'resolve' is the scheme drawn for each setting and each scheme the OS reports (\"unknown\" when it reports none): the setting when Light or Dark, else the OS's, with unknown taken as light. 'modeRoles' is each guitar mode's role (Swift GuitarMode case names); a freeform mode label is mode.userDefined. Each wood-quality grade's role is wood.<grade name>.",
+ "about": "Every colour role of the theme (docs/THEME-SPEC.md §5): its light and its dark value, as #RRGGBB, or #RRGGBBAA where the role has an opacity (the alpha byte is round(opacity × 255)). Opacities applied to another role's colour (the peak-row tint, message backgrounds) are listed separately. Each edition's palette holds exactly these roles with these values. Role names are Swift's Palette.Role raw values. 'appearance' is the Appearance setting: its values (stored value, label) in picker order, and its default. 'resolve' is the scheme drawn for each setting and each scheme the OS reports (\"unknown\" when it reports none): the setting when Light or Dark, else the OS's, with unknown taken as light. 'modeRoles' is each guitar mode's role (Swift GuitarMode case names); a freeform mode label is mode.userDefined. Each wood-quality grade's role is wood.<grade name>. 'magnitudeRoles' is the role of a peak's magnitude (dB) in a peak list: strong from −40 dB, moderate from −60, weak from −80, faint below.",
  "roles": [
   [
    "background.window",
@@ -622,6 +622,40 @@
   [
    "unknown",
    "mode.unknown"
+  ]
+ ],
+ "magnitudeRoles": [
+  [
+   -12.5,
+   "peak.magnitude.strong"
+  ],
+  [
+   -40,
+   "peak.magnitude.strong"
+  ],
+  [
+   -40.01,
+   "peak.magnitude.moderate"
+  ],
+  [
+   -60,
+   "peak.magnitude.moderate"
+  ],
+  [
+   -60.01,
+   "peak.magnitude.weak"
+  ],
+  [
+   -80,
+   "peak.magnitude.weak"
+  ],
+  [
+   -80.01,
+   "peak.magnitude.faint"
+  ],
+  [
+   -140,
+   "peak.magnitude.faint"
   ]
  ]
 }

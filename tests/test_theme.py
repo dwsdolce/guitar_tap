@@ -109,3 +109,8 @@ def test_series_slots():
     """The series are series.1 … series.10 in slot order, and slot 11 starts again at series.1."""
     assert [r.value for r in palette.SERIES_ROLES] == [f"series.{i}" for i in range(1, 11)]
     assert palette.series_role(10) is palette.Role.SERIES_1
+
+
+@pytest.mark.parametrize("magnitude,role", DATA["magnitudeRoles"])
+def test_magnitude_role(magnitude, role):
+    assert palette.magnitude_role(magnitude).value == role

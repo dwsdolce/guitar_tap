@@ -46,16 +46,6 @@ def _font(pt: int, bold: bool = False) -> QtGui.QFont:
     return f
 
 
-def _mag_color(mag_db: float) -> QtGui.QColor:
-    if mag_db >= -40.0:
-        return QtGui.QColor(40, 160, 40)
-    if mag_db >= -60.0:
-        return QtGui.QColor(40, 100, 210)
-    if mag_db >= -80.0:
-        return QtGui.QColor(200, 120, 30)
-    return QtGui.QColor(200, 40, 40)
-
-
 def _mode_color(mode_str: str) -> QtGui.QColor:
     # Plate/brace material labels — mirrors Swift DraggablePeakAnnotation.modeColor.
     from guitar_tap.views.shared.peaks_model import PeaksModel
@@ -116,6 +106,12 @@ class PeakCardWidget(QtWidgets.QFrame):
 
         self.setObjectName("PeakCard")
         self._build_ui()
+        self._refresh()
+        # Drawn here, not by a stylesheet: redraw in every new scheme. A bound method, so Qt
+        # disconnects it when the card is destroyed.
+        palette.notifier().scheme_changed.connect(self._on_scheme_changed)
+
+    def _on_scheme_changed(self, _scheme) -> None:
         self._refresh()
 
     # ── layout ───────────────────────────────────────────────────────────────
@@ -180,16 +176,16 @@ class PeakCardWidget(QtWidgets.QFrame):
 
         # Row 2 — pitch + cents (guitar mode only — mirrors Swift measurementType.isGuitar guard)
         self._pitch_lbl = None
+        self._note_icon = None
         if self._show_pitch:
             r2 = QtWidgets.QHBoxLayout()
             r2.setSpacing(3)
             note_icon = QtWidgets.QLabel("♪")
             note_icon.setFont(_font(9))
-            note_icon.setStyleSheet("color: rgb(130,60,200);")
+            self._note_icon = note_icon
             r2.addWidget(note_icon)
             self._pitch_lbl = QtWidgets.QLabel()
             self._pitch_lbl.setFont(_font(9, bold=True))
-            self._pitch_lbl.setStyleSheet("color: rgb(130,60,200);")
             r2.addWidget(self._pitch_lbl, 1)
             info.addLayout(r2)
 
@@ -198,7 +194,6 @@ class PeakCardWidget(QtWidgets.QFrame):
         r3.setSpacing(4)
         self._qbw_lbl = QtWidgets.QLabel()
         self._qbw_lbl.setFont(_font(9))
-        self._qbw_lbl.setStyleSheet("color: rgb(120,120,120);")
         r3.addWidget(self._qbw_lbl, 1)
         self._mag_lbl = QtWidgets.QLabel(f"{fp.string(self._mag_db, fp.PEAK_MAGNITUDE_DB)} dB")
         self._mag_lbl.setFont(_font(10, bold=True))
@@ -220,25 +215,49 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._refresh_qbw()
         self._refresh_mag()
 
+    # A highlighted row's fill under its tint, and its border — mirrors Swift
+    # TapAnalysisResultsView.
+    _HIGHLIGHT_OPACITY = 0.12
+    _HIGHLIGHT_BORDER_WIDTH = 2
+
     def _refresh_bg(self) -> None:
-        color = _mode_color(self._mode)
-        r, g, b = color.red(), color.green(), color.blue()
+        """The row's tint — its mode colour at the scheme's peak-row opacity — and, when it is
+        highlighted, the mode colour's border and fill under the tint. Mirrors Swift
+        CombinedPeakModeRowView / TapAnalysisResultsView."""
+        tint = palette.color(self._mode_role(), palette.Opacity.PEAK_ROW_TINT)
+        mode = _mode_color(self._mode)
         if self._is_selected:
-            border = "border: 2px solid rgba(40,100,255,200);"
+            under = self._HIGHLIGHT_OPACITY
+            tint.setAlphaF(1 - (1 - tint.alphaF()) * (1 - under))
+            border = mode.name()
         else:
-            border = "border: 1px solid rgba(180,180,180,80);"
+            border = "transparent"
+        r, g, b, a = tint.red(), tint.green(), tint.blue(), tint.alpha()
         self.setStyleSheet(
             f"QFrame#PeakCard {{"
-            f"  background: rgba({r},{g},{b},20);"
-            f"  {border}"
+            f"  background: rgba({r},{g},{b},{a});"
+            f"  border: {self._HIGHLIGHT_BORDER_WIDTH}px solid {border};"
             f"  border-radius: 8px;"
             f"}}"
         )
 
+    def _mode_role(self) -> palette.Role:
+        """The role of the card's effective mode colour: a freeform label's, or its mode's."""
+        from guitar_tap.views.shared.peaks_model import PeaksModel
+
+        resolved = gm.GuitarMode.from_display_name(self._mode)
+        mat = PeaksModel._MATERIAL_MODE_ROLES.get(self._mode)
+        if mat is not None:
+            return mat
+        if resolved is None and self._mode:
+            return palette.Role.MODE_USER_DEFINED
+        return palette.mode_role(resolved or gm.GuitarMode.UNKNOWN)
+
     def _refresh_star(self) -> None:
         on = self._show == "on"
         self._star_btn.setText("★" if on else "☆")
-        star_color = "rgb(30,120,255)" if on else "rgb(160,160,160)"
+        star_color = palette.qss(
+            palette.Role.PEAK_SELECTED_STAR if on else palette.Role.PEAK_UNSELECTED_STAR)
         self._star_btn.setStyleSheet(
             f"QToolButton {{ border: none; background: transparent; color: {star_color}; }}"
         )
@@ -281,9 +300,9 @@ class PeakCardWidget(QtWidgets.QFrame):
         if auto_gmode not in (None, gm.GuitarMode.UNKNOWN, gm.GuitarMode.UPPER_MODES):
             in_range = gm.in_mode_range(self._freq, self._auto_mode, self._guitar_type)
             self._badge.setText("✓" if in_range else "⚠")
-            self._badge.setStyleSheet(
-                "color: rgb(40,160,40);" if in_range else "color: rgb(200,120,30);"
-            )
+            badge_role = (
+                palette.Role.PEAK_IN_RANGE if in_range else palette.Role.PEAK_OUT_OF_RANGE)
+            self._badge.setStyleSheet(f"color: {palette.qss(badge_role)};")
             self._badge.setVisible(True)
         else:
             self._badge.setVisible(False)
@@ -294,8 +313,12 @@ class PeakCardWidget(QtWidgets.QFrame):
         note = self._pitch.note(self._freq)
         cents = self._pitch.cents(self._freq)
         self._pitch_lbl.setText(f"{note}  {cents:+.0f}¢")
+        pitch_color = f"color: {palette.qss(palette.Role.PEAK_PITCH)};"
+        self._pitch_lbl.setStyleSheet(pitch_color)
+        self._note_icon.setStyleSheet(pitch_color)
 
     def _refresh_qbw(self) -> None:
+        self._qbw_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.TEXT_SECONDARY)};")
         if self._q > 0:
             bw = self._freq / self._q
             self._qbw_lbl.setText(f"Q: {fp.string(self._q, fp.Q_FACTOR)}  BW: {fp.string(bw, fp.BANDWIDTH_HZ)} Hz")
@@ -303,11 +326,10 @@ class PeakCardWidget(QtWidgets.QFrame):
             self._qbw_lbl.setText("")
 
     def _refresh_mag(self) -> None:
-        color = _mag_color(self._mag_db)
         self._mag_lbl.setText(f"{fp.string(self._mag_db, fp.PEAK_MAGNITUDE_DB)} dB")
-        self._mag_lbl.setStyleSheet(
-            f"color: rgb({color.red()},{color.green()},{color.blue()});"
-        )
+        role = palette.magnitude_role(self._mag_db)
+        self._mag_lbl.setStyleSheet(f"color: {palette.qss(role)};")
+        self._freq_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.TEXT_PRIMARY)};")
 
     # ── event handlers ────────────────────────────────────────────────────────
 

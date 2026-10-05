@@ -563,7 +563,7 @@ class FftCanvas(pg.PlotWidget):
 
         # Draw in the scheme the app is drawn in, and again on every change of it.
         self._apply_scheme()
-        palette.notifier().scheme_changed.connect(lambda _scheme: self._apply_scheme())
+        palette.notifier().scheme_changed.connect(self._on_scheme_changed)
 
     # ------------------------------------------------------------------ #
     # Colour scheme
@@ -574,6 +574,9 @@ class FftCanvas(pg.PlotWidget):
         """A comparison / material curve's colour: its role in the current scheme, or its stored
         rgb."""
         return palette.rgb(color) if isinstance(color, palette.Role) else tuple(color)
+
+    def _on_scheme_changed(self, _scheme) -> None:
+        self._apply_scheme()
 
     def _apply_scheme(self) -> None:
         """Take every chart colour from its role in the current scheme. Mirrors Swift's chart, whose

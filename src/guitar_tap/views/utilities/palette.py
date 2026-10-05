@@ -302,6 +302,18 @@ def series_role(index: int) -> Role:
     return SERIES_ROLES[index % len(SERIES_ROLES)]
 
 
+def magnitude_role(magnitude: float) -> Role:
+    """The role of a peak's magnitude (dB) in a peak list: strong from −40 dB, moderate from −60,
+    weak from −80, faint below. Mirrors Swift ``Palette.role(magnitude:)``."""
+    if magnitude >= -40:
+        return Role.PEAK_MAGNITUDE_STRONG
+    if magnitude >= -60:
+        return Role.PEAK_MAGNITUDE_MODERATE
+    if magnitude >= -80:
+        return Role.PEAK_MAGNITUDE_WEAK
+    return Role.PEAK_MAGNITUDE_FAINT
+
+
 def quality_role(quality: WoodQuality) -> Role:
     """The role of a wood-quality grade's colour. Mirrors Swift ``Palette.role(_: WoodQuality)``."""
     return _QUALITY_ROLES[quality]
@@ -448,6 +460,12 @@ def color(
         light, dark = OPACITIES[opacity]
         result.setAlphaF(result.alphaF() * (dark if s is Scheme.DARK else light))
     return result
+
+
+def opacity(which: Opacity, in_scheme: Scheme | None = None) -> float:
+    """``which`` opacity in the scheme the app is drawn in (or ``in_scheme``)."""
+    light, dark = OPACITIES[which]
+    return dark if (in_scheme or _scheme) is Scheme.DARK else light
 
 
 def rgb(role: Role, in_scheme: Scheme | None = None) -> tuple[int, int, int]:
