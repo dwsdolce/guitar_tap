@@ -71,9 +71,13 @@ if sys.platform != "win32" and _fh_target is not None:
 # is a plain stderr message rather than a half-started GUI, and before anything
 # can put a wrong version number on screen. No-ops in a shipped build (no git
 # repository to check). See _release_guard.py for the rule and the fix.
-from guitar_tap import _release_guard
+#
+# Likewise refuse to run one that writes a colour outside the palette — it would not
+# follow the Appearance setting. See _colour_guard.py.
+from guitar_tap import _colour_guard, _release_guard
 
 _release_guard.enforce()
+_colour_guard.enforce()
 
 from PySide6 import QtCore, QtGui, QtWidgets
 

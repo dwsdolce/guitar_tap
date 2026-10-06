@@ -26,6 +26,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
 from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
+from guitar_tap.views.utilities import palette
 
 
 class EditMeasurementView(QtWidgets.QDialog):
@@ -110,7 +111,7 @@ class EditMeasurementView(QtWidgets.QDialog):
         caption_font = caption.font()
         caption_font.setPointSize(max(8, caption_font.pointSize() - 2))
         caption.setFont(caption_font)
-        caption.setStyleSheet("color: gray")
+        palette.tag(caption, color=palette.Role.TEXT_SECONDARY)
         notes_group.addWidget(caption)
 
         outer.addLayout(notes_group)

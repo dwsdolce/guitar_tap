@@ -48,14 +48,11 @@ def _resolve_guitar_type(guitar_type_str: str | None) -> GT.GuitarType:
 def _comparison_data(m) -> "list[dict]":
     """Build ComparisonResultsView rows from a saved comparison's entries."""
     data = []
-    for e in (m.comparison_entries or []):
-        comps = list(e.color_components or [])[:3]
-        while len(comps) < 3:
-            comps.append(0.0)
-        rgb = tuple(int(c * 255) for c in comps)
-        data.append(
-            {"label": e.label, "color": rgb, "peaks": e.peaks, "guitar_type": e.guitar_type}
-        )
+    for index, e in enumerate(m.comparison_entries or []):
+        data.append({
+            "label": e.label, "role": palette.comparison_role(index, e.label), "peaks": e.peaks,
+            "guitar_type": e.guitar_type,
+        })
     return data
 
 

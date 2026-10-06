@@ -437,16 +437,16 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.comparison_labels.clear()
             self.comparison_snapshots.clear()
 
-            for entry in entries:
-                comps = (entry.color_components + [1.0])[:4]
-                r, g, b, _a = comps
-                color = (int(r * 255), int(g * 255), int(b * 255))
+            for index, entry in enumerate(entries):
+                role = palette.comparison_role(index, entry.label)
+                color = palette.rgb(role, Scheme.LIGHT)
                 snap = entry.snapshot
                 freq_arr = np.array(snap.frequencies, dtype=np.float64)
                 mag_arr  = np.array(snap.magnitudes,  dtype=np.float64)
                 self._comparison_data.append({
                     "label": entry.label,
                     "color": color,
+                    "role": role,
                     "freqs": freq_arr,
                     "mags":  mag_arr,
                     "snapshot": snap,

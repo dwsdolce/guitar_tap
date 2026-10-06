@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
+from guitar_tap.views.utilities import palette
+
 
 class EmptyStateView(QtWidgets.QWidget):
     """Centred placeholder shown when a list is empty."""
@@ -41,5 +43,5 @@ class EmptyStateView(QtWidgets.QWidget):
         label = QtWidgets.QLabel(text)
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         label.setWordWrap(True)
-        label.setStyleSheet("color: #888888;")
+        palette.tag(label, color=palette.Role.TEXT_SECONDARY)
         layout.addWidget(label)

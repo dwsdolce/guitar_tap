@@ -28,6 +28,7 @@ from guitar_tap.views import tap_analysis_results_view as M
 from guitar_tap.views.measurements import edit_measurement_view as EMV
 from guitar_tap.views.measurements import measurement_detail_view as MDD
 from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
+from guitar_tap.views.utilities import palette
 
 # ── Main dialog ───────────────────────────────────────────────────────────────
 
@@ -70,7 +71,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         # ── Count label ───────────────────────────────────────────────────────
         self._count_lbl = QtWidgets.QLabel()
-        self._count_lbl.setStyleSheet("color: #888888; font-size: 10px;")
+        self._count_lbl.setStyleSheet("font-size: 10px;")
+        palette.tag(self._count_lbl, color=palette.Role.TEXT_SECONDARY)
         root.addWidget(self._count_lbl)
 
         # ── List ──────────────────────────────────────────────────────────────
@@ -90,7 +92,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             "Tap the guitar and click Save to store measurements for comparison."
         )
         self._empty_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self._empty_lbl.setStyleSheet("color: #888888;")
+        palette.tag(self._empty_lbl, color=palette.Role.TEXT_SECONDARY)
         root.addWidget(self._empty_lbl)
 
         # ── Bottom button bar ─────────────────────────────────────────────────
@@ -327,9 +329,9 @@ class MeasurementsDialog(QtWidgets.QDialog):
         right-click handler and the row's ``⋯`` button (see MeasurementRowView)."""
         menu = QtWidgets.QMenu(self)
 
-        # Tint the qtawesome glyphs with the palette text colour so they read in light and
-        # dark themes. Icons mirror the Swift SF Symbols on the same actions.
-        c = self.palette().color(QtGui.QPalette.ColorRole.WindowText)
+        # The qtawesome glyphs in text.primary so they read in either scheme. Icons mirror the
+        # Swift SF Symbols on the same actions.
+        c = palette.color(palette.Role.TEXT_PRIMARY)
 
         def _ico(name: str) -> QtGui.QIcon:
             return qta.icon(name, color=c)

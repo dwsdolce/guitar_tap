@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import field_precision as fp
+from guitar_tap.views.utilities import palette
 
 if TYPE_CHECKING:
     pass
@@ -40,6 +41,12 @@ class ComparisonResultsView(QtWidgets.QWidget):
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._build_ui()
+        self._data: list[dict] = []
+        # Drawn here, not by a stylesheet: rebuild in every new scheme.
+        palette.notifier().scheme_changed.connect(self._on_scheme_changed)
+
+    def _on_scheme_changed(self, _scheme) -> None:
+        self._rebuild(self._data)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -54,6 +61,7 @@ class ComparisonResultsView(QtWidgets.QWidget):
         Mirrors the analogous binding in Swift ComparisonResultsView where
         spectra is read from TapToneAnalyzer.comparisonSpectra.
         """
+        self._data = comparison_data
         self._rebuild(comparison_data)
 
     # ------------------------------------------------------------------ #
@@ -109,7 +117,8 @@ class ComparisonResultsView(QtWidgets.QWidget):
         self._table.setRowCount(len(comparison_data))
         for row, entry in enumerate(comparison_data):
             label = entry.get("label", "")
-            color_rgb = entry.get("color", (0, 122, 255))  # (r, g, b) 0–255
+            role = entry.get("role")
+            color_rgb = palette.rgb(role) if role is not None else entry.get("color", (0, 122, 255))
             peaks = entry.get("peaks", [])
             guitar_type = entry.get("guitar_type")
             mode_ids = entry.get("mode_ids") or {}
@@ -144,7 +153,7 @@ class ComparisonResultsView(QtWidgets.QWidget):
                     int(QtCore.Qt.AlignmentFlag.AlignCenter)
                 )
                 if freq is None:
-                    item.setForeground(QtGui.QColor(150, 150, 150))
+                    item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
                 self._table.setItem(row, col, item)
 
         self._table.resizeRowsToContents()

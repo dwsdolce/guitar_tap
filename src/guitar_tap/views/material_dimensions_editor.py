@@ -18,6 +18,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import field_precision as fp
 from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
+from guitar_tap.views.utilities import palette
 
 
 class MaterialDimensionsEditor(QtWidgets.QWidget):
@@ -65,7 +66,7 @@ class MaterialDimensionsEditor(QtWidgets.QWidget):
         _drow = QtWidgets.QHBoxLayout()
         _dtitle = QtWidgets.QLabel("Calculated Density:")
         _dtitle.setFont(small_font)
-        _dtitle.setStyleSheet("color: palette(mid);")
+        palette.tag(_dtitle, color=palette.Role.TEXT_SECONDARY)
         _drow.addWidget(_dtitle)
         _drow.addStretch()
         _drow.addWidget(self._density_lbl)
@@ -100,7 +101,7 @@ class MaterialDimensionsEditor(QtWidgets.QWidget):
         row.addWidget(widget)
         unit_lbl = QtWidgets.QLabel(unit)
         unit_lbl.setFont(self._small_font)
-        unit_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(unit_lbl, color=palette.Role.TEXT_SECONDARY)
         row.addWidget(unit_lbl)
         return row
 

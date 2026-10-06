@@ -13,7 +13,6 @@ The class is split across several mixin-style logical sections (matching Swift
 import os
 
 import numpy as np
-import qtawesome as qta
 from PySide6 import QtCore, QtGui, QtWidgets
 
 import guitar_tap.models.material_properties as PA
@@ -54,16 +53,6 @@ _FLC = palette.Role.MATERIAL_FLC
 # Package root: src/guitar_tap/views/ → src/guitar_tap/
 basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-
-
-# The tap/phase progress bar and its labels are the palette's blue, pinned in all three editions (Swift
-# `Palette.blue`, the web's `--system-blue`): left to the toolkit, each would take a different colour —
-# Swift's ProgressView the macOS accent setting, Qt `palette(highlight)`, the web its own `--accent`.
-
-
-def _system_blue(widget: QtWidgets.QWidget) -> str:
-    """The palette's blue for the background ``widget`` is drawn on."""
-    return palette.BLUE.on(widget)
 
 
 def _vsep() -> QtWidgets.QFrame:
@@ -203,11 +192,11 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         star = QtWidgets.QLabel("★" if is_sel else "☆")
         star.setFixedSize(24, 24)
         star.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        star_color = "rgb(30,120,255)" if is_sel else "rgb(160,160,160)"
         star_fnt = QtGui.QFont()
         star_fnt.setPointSize(14)
         star.setFont(star_fnt)
-        star.setStyleSheet(f"color: {star_color};")
+        palette.tag(star, color=palette.Role.PEAK_SELECTED_STAR if is_sel
+                    else palette.Role.PEAK_UNSELECTED_STAR)
         hl.addWidget(star)
 
         # Frequency + magnitude labels
@@ -225,23 +214,23 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         m_fnt = QtGui.QFont()
         m_fnt.setPointSize(9)
         m_lbl.setFont(m_fnt)
-        m_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(m_lbl, color=palette.Role.TEXT_SECONDARY)
         tv.addWidget(m_lbl)
         hl.addWidget(txt, stretch=1)
 
         # L badge (always shown) — display-only, shows auto-identified peak
         is_l = (freq == self._long_freq)
-        hl.addWidget(self._mode_btn("fL", is_l, "#1976D2"))
+        hl.addWidget(self._mode_btn("fL", is_l, _FL))
 
         # C badge (plate only)
         if self._show_cross:
             is_c = (freq == self._cross_freq)
-            hl.addWidget(self._mode_btn("fC", is_c, "#E65100"))
+            hl.addWidget(self._mode_btn("fC", is_c, _FC))
 
         # FLC badge (plate + FLC only)
         if self._show_flc:
             is_flc = (freq == self._flc_freq)
-            hl.addWidget(self._mode_btn("fLC", is_flc, "#7B1FA2", width=42))
+            hl.addWidget(self._mode_btn("fLC", is_flc, _FLC, width=42))
 
         return w
 
@@ -259,7 +248,8 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         star.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         _sf = QtGui.QFont(); _sf.setPointSize(14)
         star.setFont(_sf)
-        star.setStyleSheet(f"color: {'rgb(30,120,255)' if found else 'rgb(160,160,160)'};")
+        palette.tag(star, color=palette.Role.PEAK_SELECTED_STAR if found
+                    else palette.Role.PEAK_UNSELECTED_STAR)
         hl.addWidget(star)
 
         # Frequency + magnitude — dashes until captured.
@@ -271,25 +261,25 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         _f = QtGui.QFont(); _f.setBold(True); _f.setPointSize(11)
         f_lbl.setFont(_f)
         if not found:
-            f_lbl.setStyleSheet("color: palette(shadow);")
+            palette.tag(f_lbl, color=palette.Role.TEXT_SECONDARY)
         tv.addWidget(f_lbl)
         m_lbl = QtWidgets.QLabel(f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB" if mag is not None else "\u2014")
         _m = QtGui.QFont(); _m.setPointSize(9)
         m_lbl.setFont(_m)
-        m_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(m_lbl, color=palette.Role.TEXT_SECONDARY)
         tv.addWidget(m_lbl)
         hl.addWidget(txt, stretch=1)
 
         # Phase badges — this row's bubble is active only once its peak is found.
-        hl.addWidget(self._mode_btn("fL", role == "L" and found, "#1976D2"))
+        hl.addWidget(self._mode_btn("fL", role == "L" and found, _FL))
         if self._show_cross:
-            hl.addWidget(self._mode_btn("fC", role == "C" and found, "#E65100"))
+            hl.addWidget(self._mode_btn("fC", role == "C" and found, _FC))
         if self._show_flc:
-            hl.addWidget(self._mode_btn("fLC", role == "FLC" and found, "#7B1FA2", width=42))
+            hl.addWidget(self._mode_btn("fLC", role == "FLC" and found, _FLC, width=42))
         return w
 
     @staticmethod
-    def _mode_btn(label: str, active: bool, color: str,
+    def _mode_btn(label: str, active: bool, role: palette.Role,
                   width: int = 36) -> QtWidgets.QPushButton:
         btn = QtWidgets.QPushButton(label)
         fnt = QtGui.QFont()
@@ -297,11 +287,11 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         fnt.setPointSize(10 if len(label) <= 1 else 8)
         btn.setFont(fnt)
         btn.setFixedSize(width, 32)
-        bg  = color if active else "rgba(128,128,128,0.2)"
-        clr = "white" if active else "palette(text)"
-        btn.setStyleSheet(
-            f"QPushButton {{background-color: {bg}; color: {clr};"
-            "border-radius: 6px; border: none;}"
+        btn.setStyleSheet("QPushButton {border-radius: 6px; border: none;}")
+        palette.tag(
+            btn,
+            color=palette.Role.TEXT_ON_COLOR if active else palette.Role.TEXT_PRIMARY,
+            background=role if active else palette.Role.MATERIAL_PHASE_INACTIVE,
         )
         return btn
 
@@ -340,7 +330,7 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
         self._instr_footer = QtWidgets.QLabel()
         self._instr_footer.setFont(_italic9)
         self._instr_footer.setWordWrap(True)
-        self._instr_footer.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._instr_footer, color=palette.Role.TEXT_SECONDARY)
         il.addWidget(self._instr_footer)
 
         self._rebuild()
@@ -350,7 +340,7 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
         self._show_flc   = show_flc
         self._rebuild()
 
-    def _step_row(self, dot_color: str, bold_title: str, body: str) -> QtWidgets.QWidget:
+    def _step_row(self, dot_role: palette.Role, bold_title: str, body: str) -> QtWidgets.QWidget:
         """One instruction step: colored circle + bold title + body text."""
         _sm = QtGui.QFont()
         _sm.setPointSize(9)
@@ -365,9 +355,8 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
 
         dot = QtWidgets.QLabel()
         dot.setFixedSize(8, 8)
-        dot.setStyleSheet(
-            f"QLabel {{ background-color: {dot_color}; border-radius: 4px; }}"
-        )
+        dot.setStyleSheet("QLabel { border-radius: 4px; }")
+        palette.tag(dot, background=dot_role)
         hl.addWidget(dot, 0, QtCore.Qt.AlignmentFlag.AlignTop)
 
         txt_vbox = QtWidgets.QVBoxLayout()
@@ -379,7 +368,7 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
         body_lbl = QtWidgets.QLabel(body)
         body_lbl.setFont(_sm)
         body_lbl.setWordWrap(True)
-        body_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(body_lbl, color=palette.Role.TEXT_SECONDARY)
         txt_vbox.addWidget(body_lbl)
         hl.addLayout(txt_vbox, stretch=1)
         return w
@@ -397,25 +386,25 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
                 else "Two-Tap Measurement Process:"
             )
             self._instr_steps_layout.addWidget(self._step_row(
-                "#1976D2", "1. Longitudinal (fL) Tap",
+                _FL, "1. Longitudinal (fL) Tap",
                 "Hold plate at 22% from one end along the length, near one long edge "
                 "(not at the width node). Tap center.",
             ))
             self._instr_steps_layout.addWidget(self._step_row(
-                "#E65100", "2. Cross-grain (fC) Tap",
+                _FC, "2. Cross-grain (fC) Tap",
                 "Rotate 90°. Hold plate at 22% from one end along the width, near one "
                 "short edge (not at the length node). Tap center.",
             ))
             if has_flc:
                 self._instr_steps_layout.addWidget(self._step_row(
-                    "#7B1FA2", "3. Diagonal (fLC) Tap",
+                    _FLC, "3. Diagonal (fLC) Tap",
                     "Hold plate at the midpoint of one long edge. Tap near the opposite "
                     "corner (~22% from both the end and the side). Measures shear stiffness.",
                 ))
         else:
             self._instr_title.setText("Single-Tap Measurement (fL only):")
             self._instr_steps_layout.addWidget(self._step_row(
-                "#1976D2", "1. Longitudinal (fL) Tap",
+                _FL, "1. Longitudinal (fL) Tap",
                 "Hold brace at 22% from one end along the length. Tap center.",
             ))
         self._instr_footer.setText(
@@ -734,19 +723,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         banner = QtWidgets.QFrame()
         banner.setObjectName("updateBanner")
-        banner.setStyleSheet(
-            "#updateBanner {"
-            "  background-color: rgba(10, 132, 255, 0.12);"
-            "  border: 1px solid rgba(10, 132, 255, 0.45);"
-            "  border-radius: 6px;"
-            "}"
-        )
+        palette.tag(banner, message=palette.Role.STATUS_INFO)
         row = QtWidgets.QHBoxLayout(banner)
         row.setContentsMargins(10, 6, 8, 6)
         row.setSpacing(8)
 
         icon = QtWidgets.QLabel()
-        icon.setPixmap(qta.icon("mdi.arrow-up-bold-circle-outline").pixmap(16, 16))
+        palette.set_icon(icon, "mdi.arrow-up-bold-circle-outline", palette.Role.STATUS_INFO, 16)
         row.addWidget(icon)
 
         self._update_banner_label = QtWidgets.QLabel("")
@@ -864,44 +847,18 @@ class MainWindow(QtWidgets.QMainWindow):
         """Top button bar: display toggles, save, measurements."""
         bar = QtWidgets.QWidget()
         bar.setObjectName("toolbar")
-        # Blue-tinted bordered button style — mirrors Swift .buttonStyle(.bordered).tint(.blue).
-        # Applied to the toolbar container so all child QPushButtons inherit it.
-        # The play-file button overrides this to orange while a file is playing.
-        bar.setStyleSheet(
-            "#toolbar { border-bottom: 1px solid palette(mid); }"
-            "QPushButton {"
-            "  background-color: rgba(0, 122, 255, 0.12);"
-            "  border: 1px solid rgba(0, 122, 255, 0.35);"
-            "  border-radius: 6px;"
-            "  padding: 3px 8px;"
-            "  color: rgb(0, 100, 220);"
-            "}"
-            "QPushButton:hover {"
-            "  background-color: rgba(0, 122, 255, 0.20);"
-            "  border-color: rgba(0, 122, 255, 0.55);"
-            "}"
-            "QPushButton:pressed {"
-            "  background-color: rgba(0, 122, 255, 0.30);"
-            "}"
-            "QPushButton:checked {"
-            "  background-color: rgba(0, 122, 255, 0.28);"
-            "  border-color: rgba(0, 122, 255, 0.60);"
-            "}"
-            "QPushButton:disabled {"
-            "  background-color: rgba(0, 122, 255, 0.05);"
-            "  border-color: rgba(0, 122, 255, 0.15);"
-            "  color: rgba(0, 100, 220, 0.40);"
-            "}"
-        )
+        # Its buttons are Swift's .buttonStyle(.bordered).tint(.accent) — tagged below — and its bottom
+        # edge is the separator.
+        bar.setStyleSheet("#toolbar { border-bottom-width: 1px; border-bottom-style: solid; }")
+        palette.tag(bar, border=palette.Role.SEPARATOR)
         hl = QtWidgets.QHBoxLayout(bar)
         hl.setContentsMargins(8, 4, 8, 4)
         hl.setSpacing(6)
 
         hl.addStretch()
 
-        self._play_file_btn = QtWidgets.QPushButton(
-            qta.icon("fa5s.file-audio"), "Play File\u2026"
-        )
+        self._play_file_btn = QtWidgets.QPushButton("Play File\u2026")
+        palette.set_icon(self._play_file_btn, "fa5s.file-audio", palette.Role.ACCENT)
         self._play_file_btn.setToolTip(
             "Feed an audio file through the analysis pipeline\n"
             "(WAV, AIFF, FLAC \u2014 same pipeline as microphone, for cross-platform comparison)"
@@ -911,9 +868,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hl.addSpacing(4)
 
-        self.auto_db_btn = QtWidgets.QPushButton(
-            qta.icon("mdi.swap-vertical-circle-outline"), "Auto dB"
-        )
+        self.auto_db_btn = QtWidgets.QPushButton("Auto dB")
+        palette.set_icon(self.auto_db_btn, "mdi.swap-vertical-circle-outline", palette.Role.ACCENT)
         self.auto_db_btn.setCheckable(True)
         self.auto_db_btn.setChecked(False)
         self.auto_db_btn.setToolTip("Automatically scale the dB axis to the spectrum floor")
@@ -926,9 +882,8 @@ class MainWindow(QtWidgets.QMainWindow):
             (i for i, mode in enumerate(self._ANN_MODES) if mode == _saved_mode), 0
         )
         self._ann_mode_idx: int = _saved_idx
-        self.annotations_btn = QtWidgets.QPushButton(
-            qta.icon(self._ANN_MODES[_saved_idx].icon_name), "Annotations"
-        )
+        self.annotations_btn = QtWidgets.QPushButton("Annotations")
+        palette.set_icon(self.annotations_btn, self._ANN_MODES[_saved_idx].icon_name, palette.Role.ACCENT)
         self.annotations_btn.setToolTip(
             f"Annotation visibility: {_saved_mode.label}\n"
             "Click to cycle: Selected → None → All"
@@ -937,42 +892,43 @@ class MainWindow(QtWidgets.QMainWindow):
 
         hl.addSpacing(4)
 
-        self.save_measurement_btn = QtWidgets.QPushButton(
-            qta.icon("fa5.save"), "Save"
-        )
+        self.save_measurement_btn = QtWidgets.QPushButton("Save")
+        palette.set_icon(self.save_measurement_btn, "fa5.save", palette.Role.ACCENT)
         self.save_measurement_btn.setToolTip("Save the current held peaks to a JSON file")
         self.save_measurement_btn.setEnabled(False)
         hl.addWidget(self.save_measurement_btn)
 
-        self.open_measurements_btn = QtWidgets.QPushButton(
-            qta.icon("fa5s.clipboard-list"), "Measurements"
-        )
+        self.open_measurements_btn = QtWidgets.QPushButton("Measurements")
+        palette.set_icon(self.open_measurements_btn, "fa5s.clipboard-list", palette.Role.ACCENT)
         self.open_measurements_btn.setToolTip("Browse, load, or delete saved measurements")
         hl.addWidget(self.open_measurements_btn)
 
-        metrics_btn = QtWidgets.QPushButton(qta.icon("fa5.chart-bar"), "Metrics")
+        metrics_btn = QtWidgets.QPushButton("Metrics")
+        palette.set_icon(metrics_btn, "fa5.chart-bar", palette.Role.ACCENT)
         metrics_btn.setToolTip("Show FFT diagnostics: frame rate, sample time, processing time")
         metrics_btn.clicked.connect(self._show_metrics)
         hl.addWidget(metrics_btn)
 
         hl.addWidget(_vsep())
 
-        settings_btn = QtWidgets.QPushButton(qta.icon("fa5s.cog"), "Settings")
+        settings_btn = QtWidgets.QPushButton("Settings")
+        palette.set_icon(settings_btn, "fa5s.cog", palette.Role.ACCENT)
         settings_btn.setToolTip(
             "Frequency range, spectrum averaging, audio and calibration settings"
         )
         settings_btn.clicked.connect(self._show_settings)
         hl.addWidget(settings_btn)
 
+        for button in bar.findChildren(QtWidgets.QPushButton):
+            palette.tag(button, tint=palette.Role.ACCENT)
         return bar
 
     def _build_controls_bar(self) -> QtWidgets.QWidget:
         """Controls bar: Taps | Threshold | Peak Min || New Tap | Pause | Cancel"""
         bar = QtWidgets.QWidget()
         bar.setObjectName("controls_bar")
-        bar.setStyleSheet(
-            "#controls_bar { border-bottom: 1px solid palette(mid); }"
-        )
+        bar.setStyleSheet("#controls_bar { border-bottom-width: 1px; border-bottom-style: solid; }")
+        palette.tag(bar, border=palette.Role.SEPARATOR)
         hl = QtWidgets.QHBoxLayout(bar)
         hl.setContentsMargins(6, 2, 6, 2)
         hl.setSpacing(4)
@@ -1024,7 +980,7 @@ class MainWindow(QtWidgets.QMainWindow):
             hl.addWidget(readout)
 
             reset_btn = QtWidgets.QToolButton()
-            reset_btn.setIcon(qta.icon("mdi.undo"))
+            palette.set_icon(reset_btn, "mdi.undo", palette.Role.TEXT_SECONDARY)
             reset_btn.setStyleSheet("border: none")
             reset_btn.setToolTip(f"Reset to default ({default_val - 100} dB)")
             reset_btn.setFixedSize(18, 18)
@@ -1083,21 +1039,24 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── New Tap ───────────────────────────────────────────────────────
         self.new_tap_btn = QtWidgets.QPushButton("New Tap")
-        self.new_tap_btn.setIcon(qta.icon("mdi.gesture-tap"))
+        palette.set_icon(self.new_tap_btn, "mdi.gesture-tap", palette.Role.TEXT_ON_COLOR)
+        palette.tag(self.new_tap_btn, prominent=palette.Role.ACCENT)
         self.new_tap_btn.setToolTip("Clear held results and listen for the next tap")
         self.new_tap_btn.setEnabled(False)
         hl.addWidget(self.new_tap_btn)
 
         # ── Pause / Resume ────────────────────────────────────────────────
         self.pause_tap_btn = QtWidgets.QPushButton("Pause")
-        self.pause_tap_btn.setIcon(qta.icon("fa5.pause-circle"))
+        palette.set_icon(self.pause_tap_btn, "fa5.pause-circle", palette.Role.ACCENT)
+        palette.tag(self.pause_tap_btn, tint=palette.Role.ACCENT)
         self.pause_tap_btn.setToolTip("Pause tap detection (spectrum keeps updating)")
         self.pause_tap_btn.setEnabled(False)
         hl.addWidget(self.pause_tap_btn)
 
         # ── Cancel ────────────────────────────────────────────────────────
         self.cancel_tap_btn = QtWidgets.QPushButton("Cancel")
-        self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle"))
+        palette.set_icon(self.cancel_tap_btn, "fa5.times-circle", palette.Role.TOOLBAR_INACTIVE)
+        palette.tag(self.cancel_tap_btn, tint=palette.Role.TOOLBAR_INACTIVE)
         self.cancel_tap_btn.setToolTip("Cancel the current multi-tap sequence")
         self.cancel_tap_btn.setEnabled(False)
         hl.addWidget(self.cancel_tap_btn)
@@ -1116,6 +1075,9 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Policy.Preferred,
             QtWidgets.QSizePolicy.Policy.Expanding,
         )
+        # The panel's own surface and text — the app draws them, not the platform.
+        panel.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        palette.tag(panel, color=palette.Role.TEXT_PRIMARY, background=palette.Role.BACKGROUND_PANEL)
         vbox = QtWidgets.QVBoxLayout(panel)
         vbox.setContentsMargins(6, 4, 6, 4)
         vbox.setSpacing(4)
@@ -1135,10 +1097,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.measurement_type_badge.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignCenter
         )
-        self.measurement_type_badge.setStyleSheet(
-            "background: rgba(0,100,255,0.15); border-radius: 4px;"
-            "padding: 1px 6px;"
-        )
+        self.measurement_type_badge.setStyleSheet("border-radius: 4px; padding: 1px 6px;")
+        palette.tag(self.measurement_type_badge, background=palette.Role.BADGE_GUITAR)
         # Multi-tap toggle button — visible only for completed multi-tap guitar sequences.
         # Mirrors Swift TapAnalysisResultsView header toggle buttons.
         # Position: before the measurement type badge (matches Swift header layout).
@@ -1152,7 +1112,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # default type). Corrected on the first badge / completion refresh.
         self._multi_tap_toggle_btn.setVisible(True)
         self._multi_tap_toggle_btn.setEnabled(False)
-        self._multi_tap_toggle_btn.setIcon(qta.icon("fa5s.layer-group", color="gray"))
+        palette.set_icon(self._multi_tap_toggle_btn, "fa5s.layer-group", palette.Role.ACCENT)
+        palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
         title_row.addWidget(self._multi_tap_toggle_btn)
 
         title_row.addWidget(self.measurement_type_badge)
@@ -1165,14 +1126,14 @@ class MainWindow(QtWidgets.QMainWindow):
         mic_row.setContentsMargins(0, 0, 0, 0)
         self._mic_name_label = QtWidgets.QLabel("")
         self._mic_name_label.setFont(small_font)
-        self._mic_name_label.setStyleSheet("color: gray;")
+        palette.tag(self._mic_name_label, color=palette.Role.TEXT_SECONDARY)
         mic_row.addWidget(self._mic_name_label, stretch=1)
 
         # Re-analyze: re-run find_peaks() on the frozen spectrum using the
         # current analysis settings (Peak Min, analysis range, guitar type) — lets
         # the user retune a saved measurement without re-tapping.  Mirrors reanalyzePeaks().
         self._reanalyze_btn = QtWidgets.QToolButton()
-        self._reanalyze_btn.setIcon(qta.icon("fa5s.sync-alt", color="gray"))
+        palette.set_icon(self._reanalyze_btn, "fa5s.sync-alt", palette.Role.TEXT_SECONDARY)
         self._reanalyze_btn.setIconSize(QtCore.QSize(14, 14))
         self._reanalyze_btn.setFixedSize(22, 22)
         self._reanalyze_btn.setToolTip(
@@ -1197,7 +1158,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # deliberately no "Select All": Air, Top and Back can each have at most ONE definitive peak,
         # so selecting "all" is meaningless.
         self.deselect_all_btn = QtWidgets.QToolButton()
-        self.deselect_all_btn.setIcon(qta.icon("fa5s.times-circle", color="gray"))
+        palette.set_icon(self.deselect_all_btn, "fa5s.times-circle", palette.Role.TEXT_SECONDARY)
         self.deselect_all_btn.setIconSize(QtCore.QSize(14, 14))
         self.deselect_all_btn.setFixedSize(22, 22)
         self.deselect_all_btn.setToolTip("Deselect all peaks")
@@ -1205,7 +1166,7 @@ class MainWindow(QtWidgets.QMainWindow):
         freq_row.addWidget(self.deselect_all_btn)
 
         self.reset_auto_selection_btn = QtWidgets.QToolButton()
-        self.reset_auto_selection_btn.setIcon(qta.icon("fa5s.magic", color="gray"))
+        palette.set_icon(self.reset_auto_selection_btn, "fa5s.magic", palette.Role.TEXT_SECONDARY)
         self.reset_auto_selection_btn.setIconSize(QtCore.QSize(14, 14))
         self.reset_auto_selection_btn.setFixedSize(22, 22)
         self.reset_auto_selection_btn.setToolTip("Reset to automatic mode selection")
@@ -1260,14 +1221,14 @@ class MainWindow(QtWidgets.QMainWindow):
             parent.addWidget(_hsep())
             hdr = QtWidgets.QLabel(title)
             hdr.setFont(_mat_title_font)
+            palette.tag(hdr, color=palette.Role.TEXT_PRIMARY)
             parent.addWidget(hdr)
             frame = QtWidgets.QFrame()
-            # objectName selector so the fill applies to THIS frame only, not child QFrames
-            # (the separators / nested boxes). An explicit translucent gray is theme-agnostic and
-            # visible on both light and dark, unlike palette(alternateBase) which matched the panel bg.
+            # objectName selector so the shape applies to THIS frame only, not child QFrames
+            # (the separators / nested boxes).
             frame.setObjectName("mat_section_box")
-            frame.setStyleSheet(
-                "#mat_section_box { background-color: rgba(127,127,127,0.12); border-radius: 6px; }")
+            frame.setStyleSheet("#mat_section_box { border-radius: 6px; }")
+            palette.tag(frame, background=palette.Role.BACKGROUND_SUBTLE)
             inner = QtWidgets.QVBoxLayout(frame)
             inner.setContentsMargins(10, 8, 10, 8)
             inner.setSpacing(6)
@@ -1298,12 +1259,12 @@ class MainWindow(QtWidgets.QMainWindow):
         _bp_vbox.setContentsMargins(0, 8, 0, 8)
         _bp_p1 = QtWidgets.QLabel("Select the fL (L) peak above to calculate properties")
         _bp_p1.setWordWrap(True)
-        _bp_p1.setStyleSheet("color: palette(shadow);")
+        palette.tag(_bp_p1, color=palette.Role.TEXT_SECONDARY)
         _bp_p1.setFont(small_font)
         _bp_vbox.addWidget(_bp_p1)
         _bp_p2 = QtWidgets.QLabel("Tip: The dominant peak is auto-selected after tapping")
         _bp_p2.setWordWrap(True)
-        _bp_p2.setStyleSheet("color: palette(shadow);")
+        palette.tag(_bp_p2, color=palette.Role.TEXT_SECONDARY)
         _bp_p2.setFont(small_font)
         _bp_vbox.addWidget(_bp_p2)
         bs_vbox.addWidget(self._brace_placeholder)
@@ -1332,10 +1293,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Specific modulus (nested highlight box)
         _spec_frame_b = QtWidgets.QFrame()
         _spec_frame_b.setObjectName("mat_spec_box")
-        _spec_frame_b.setStyleSheet(
-            "#mat_spec_box { background-color: rgba(127,127,127,0.10);"
-            " border: none; border-radius: 4px; }"
-        )
+        _spec_frame_b.setStyleSheet("#mat_spec_box { border: none; border-radius: 4px; }")
+        palette.tag(_spec_frame_b, background=palette.Role.BACKGROUND_SUBTLE)
         _sfb_vbox = QtWidgets.QVBoxLayout(_spec_frame_b)
         _sfb_vbox.setContentsMargins(6, 4, 6, 4)
         _sfb_vbox.setSpacing(2)
@@ -1350,7 +1309,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._brace_spec_value.setFont(_big_font)
         _sfb_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
         _sfb_unit.setFont(small_font)
-        _sfb_unit.setStyleSheet("color: palette(shadow);")
+        palette.tag(_sfb_unit, color=palette.Role.TEXT_SECONDARY)
         _sfb_row.addWidget(self._brace_spec_value)
         _sfb_row.addWidget(_sfb_unit)
         _sfb_row.addStretch()
@@ -1377,14 +1336,14 @@ class MainWindow(QtWidgets.QMainWindow):
             "Select peaks above to calculate properties"
         )
         self._plate_placeholder_lbl.setWordWrap(True)
-        self._plate_placeholder_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._plate_placeholder_lbl, color=palette.Role.TEXT_SECONDARY)
         self._plate_placeholder_lbl.setFont(small_font)
         _pp_vbox.addWidget(self._plate_placeholder_lbl)
         _pp_p2 = QtWidgets.QLabel(
             "Tip: The longitudinal mode is typically the higher frequency peak"
         )
         _pp_p2.setWordWrap(True)
-        _pp_p2.setStyleSheet("color: palette(shadow);")
+        palette.tag(_pp_p2, color=palette.Role.TEXT_SECONDARY)
         _pp_p2.setFont(small_font)
         _pp_vbox.addWidget(_pp_p2)
         ps_vbox.addWidget(self._plate_placeholder)
@@ -1421,12 +1380,12 @@ class MainWindow(QtWidgets.QMainWindow):
         _gs_v.addWidget(_hsep())
         _gore_hdr = QtWidgets.QLabel("Gore Target Thickness")
         _gore_hdr.setFont(_mat_title_font)
+        palette.tag(_gore_hdr, color=palette.Role.TEXT_PRIMARY)
         _gs_v.addWidget(_gore_hdr)
         self._gore_frame = QtWidgets.QFrame()
         self._gore_frame.setObjectName("gore_frame")
-        self._gore_frame.setStyleSheet(
-            "#gore_frame { background-color: rgba(0,122,255,0.10); border-radius: 6px; }"
-        )
+        self._gore_frame.setStyleSheet("#gore_frame { border-radius: 6px; }")
+        palette.tag(self._gore_frame, background=palette.Role.MATERIAL_GORE_BOX)
         _gf_vbox = QtWidgets.QVBoxLayout(self._gore_frame)
         _gf_vbox.setContentsMargins(10, 8, 10, 8)
         _gf_vbox.setSpacing(3)
@@ -1437,13 +1396,13 @@ class MainWindow(QtWidgets.QMainWindow):
         _gv_fnt.setPointSize(28)
         _gv_fnt.setBold(True)
         self._gore_thickness_value.setFont(_gv_fnt)
-        self._gore_thickness_value.setStyleSheet("color: #007AFF;")
+        palette.tag(self._gore_thickness_value, color=palette.Role.ACCENT_TEXT)
         _gore_val_row.addWidget(self._gore_thickness_value)
         _gore_mm_lbl = QtWidgets.QLabel("mm")
         _gore_mm_fnt = QtGui.QFont()
         _gore_mm_fnt.setPointSize(small_font.pointSize() + 2)
         _gore_mm_lbl.setFont(_gore_mm_fnt)
-        _gore_mm_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(_gore_mm_lbl, color=palette.Role.TEXT_SECONDARY)
         _gore_val_row.addWidget(_gore_mm_lbl)
         _gore_val_row.addStretch()
         _gf_vbox.addLayout(_gore_val_row)
@@ -1470,10 +1429,10 @@ class MainWindow(QtWidgets.QMainWindow):
             inner = QtWidgets.QHBoxLayout()
             val_l = QtWidgets.QLabel("L: —")
             val_l.setFont(small_font)
-            val_l.setStyleSheet("color: palette(shadow);")
+            palette.tag(val_l, color=palette.Role.TEXT_SECONDARY)
             val_c = QtWidgets.QLabel("C: —")
             val_c.setFont(small_font)
-            val_c.setStyleSheet("color: palette(shadow);")
+            palette.tag(val_c, color=palette.Role.TEXT_SECONDARY)
             inner.addWidget(val_l)
             inner.addStretch()
             inner.addWidget(val_c)
@@ -1491,10 +1450,10 @@ class MainWindow(QtWidgets.QMainWindow):
         _glc_hl.setSpacing(4)
         self._plate_glc_lbl = QtWidgets.QLabel("GLC (Shear):")
         self._plate_glc_lbl.setFont(small_font)
-        self._plate_glc_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._plate_glc_lbl, color=palette.Role.TEXT_SECONDARY)
         self._plate_glc_val = QtWidgets.QLabel("—")
         self._plate_glc_val.setFont(small_font)
-        self._plate_glc_val.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._plate_glc_val, color=palette.Role.TEXT_SECONDARY)
         _glc_hl.addWidget(self._plate_glc_lbl)
         _glc_hl.addStretch()
         _glc_hl.addWidget(self._plate_glc_val)
@@ -1504,10 +1463,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Specific modulus box for plate (two-column)
         _spec_frame_p = QtWidgets.QFrame()
         _spec_frame_p.setObjectName("mat_spec_box")
-        _spec_frame_p.setStyleSheet(
-            "#mat_spec_box { background-color: rgba(127,127,127,0.10);"
-            " border: none; border-radius: 4px; }"
-        )
+        _spec_frame_p.setStyleSheet("#mat_spec_box { border: none; border-radius: 4px; }")
+        palette.tag(_spec_frame_p, background=palette.Role.BACKGROUND_SUBTLE)
         _sfp_vbox = QtWidgets.QVBoxLayout(_spec_frame_p)
         _sfp_vbox.setContentsMargins(6, 4, 6, 4)
         _sfp_vbox.setSpacing(2)
@@ -1521,14 +1478,14 @@ class MainWindow(QtWidgets.QMainWindow):
         _sfp_l_vbox = QtWidgets.QVBoxLayout()
         _sfp_l_cap = QtWidgets.QLabel("Longitudinal:")
         _sfp_l_cap.setFont(small_font)
-        _sfp_l_cap.setStyleSheet("color: palette(shadow);")
+        palette.tag(_sfp_l_cap, color=palette.Role.TEXT_SECONDARY)
         _sfp_l_vbox.addWidget(_sfp_l_cap)
         _sfp_l_row = QtWidgets.QHBoxLayout()
         self._plate_spec_long_value = QtWidgets.QLabel("—")
         self._plate_spec_long_value.setFont(_big_font)
         _sfp_l_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
         _sfp_l_unit.setFont(small_font)
-        _sfp_l_unit.setStyleSheet("color: palette(shadow);")
+        palette.tag(_sfp_l_unit, color=palette.Role.TEXT_SECONDARY)
         _sfp_l_row.addWidget(self._plate_spec_long_value)
         _sfp_l_row.addWidget(_sfp_l_unit)
         _sfp_l_row.addStretch()
@@ -1542,14 +1499,14 @@ class MainWindow(QtWidgets.QMainWindow):
         _sfp_c_vbox = QtWidgets.QVBoxLayout()
         _sfp_c_cap = QtWidgets.QLabel("Cross-grain:")
         _sfp_c_cap.setFont(small_font)
-        _sfp_c_cap.setStyleSheet("color: palette(shadow);")
+        palette.tag(_sfp_c_cap, color=palette.Role.TEXT_SECONDARY)
         _sfp_c_vbox.addWidget(_sfp_c_cap)
         _sfp_c_row = QtWidgets.QHBoxLayout()
         self._plate_spec_cross_value = QtWidgets.QLabel("—")
         self._plate_spec_cross_value.setFont(_big_font)
         _sfp_c_unit = QtWidgets.QLabel("GPa/(g/cm\u00b3)")
         _sfp_c_unit.setFont(small_font)
-        _sfp_c_unit.setStyleSheet("color: palette(shadow);")
+        palette.tag(_sfp_c_unit, color=palette.Role.TEXT_SECONDARY)
         _sfp_c_row.addWidget(self._plate_spec_cross_value)
         _sfp_c_row.addWidget(_sfp_c_unit)
         _sfp_c_vbox.addLayout(_sfp_c_row)
@@ -1570,7 +1527,7 @@ class MainWindow(QtWidgets.QMainWindow):
             val.setFont(small_font)
             hint_lbl = QtWidgets.QLabel(hint)
             hint_lbl.setFont(small_font)
-            hint_lbl.setStyleSheet("color: palette(shadow);")
+            palette.tag(hint_lbl, color=palette.Role.TEXT_SECONDARY)
             row.addStretch()
             row.addWidget(val)
             row.addWidget(hint_lbl)
@@ -1617,8 +1574,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _mp_v.addWidget(_mp_hdr)
         _mp_frame = QtWidgets.QFrame()
         _mp_frame.setObjectName("mat_section_box")
-        _mp_frame.setStyleSheet(
-            "#mat_section_box { background-color: rgba(127,127,127,0.12); border-radius: 6px; }")
+        _mp_frame.setStyleSheet("#mat_section_box { border-radius: 6px; }")
+        palette.tag(_mp_frame, background=palette.Role.BACKGROUND_SUBTLE)
         _mp_inner = QtWidgets.QVBoxLayout(_mp_frame)
         _mp_inner.setContentsMargins(10, 8, 10, 8)
         _mp_inner.addWidget(self._material_instr_widget)
@@ -1633,6 +1590,9 @@ class MainWindow(QtWidgets.QMainWindow):
         _mat_vbox.addWidget(self._material_instr_section)
         _mat_vbox.addStretch()
 
+        _mat_container.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        palette.tag(_mat_container, color=palette.Role.TEXT_PRIMARY,
+                    background=palette.Role.BACKGROUND_PANEL)
         self._material_scroll = QtWidgets.QScrollArea()
         self._material_scroll.setWidgetResizable(True)
         self._material_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
@@ -1649,9 +1609,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # views/utilities/extensions.py (decay_quality_* / tap_tone_ratio_quality_*)).
         self._guitar_summary = QtWidgets.QFrame()
         self._guitar_summary.setObjectName("guitar_summary")
-        self._guitar_summary.setStyleSheet(
-            "#guitar_summary { background-color: palette(alternateBase); border-radius: 8px; }"
-        )
+        self._guitar_summary.setStyleSheet("#guitar_summary { border-radius: 8px; }")
+        palette.tag(self._guitar_summary, background=palette.Role.BACKGROUND_SUBTLE)
         _gsum_hl = QtWidgets.QHBoxLayout(self._guitar_summary)
         _gsum_hl.setContentsMargins(8, 6, 8, 6)
         _gsum_hl.setSpacing(12)
@@ -1667,7 +1626,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _ro_col.setSpacing(2)
         _ro_cap = QtWidgets.QLabel("Ring-Out")
         _ro_cap.setFont(_tiny_font)
-        _ro_cap.setStyleSheet("color: palette(shadow);")
+        palette.tag(_ro_cap, color=palette.Role.TEXT_SECONDARY)
         _ro_col.addWidget(_ro_cap)
         _ro_val_row = QtWidgets.QHBoxLayout()
         _ro_val_row.setSpacing(4)
@@ -1680,7 +1639,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _ro_col.addLayout(_ro_val_row)
         self._gs_ro_sub = QtWidgets.QLabel()
         self._gs_ro_sub.setFont(_tiny_font)
-        self._gs_ro_sub.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._gs_ro_sub, color=palette.Role.TEXT_SECONDARY)
         _ro_col.addWidget(self._gs_ro_sub)
         _gsum_hl.addLayout(_ro_col)
 
@@ -1695,7 +1654,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _ratio_col.setSpacing(2)
         _ratio_cap = QtWidgets.QLabel("Tap Ratio")
         _ratio_cap.setFont(_tiny_font)
-        _ratio_cap.setStyleSheet("color: palette(shadow);")
+        palette.tag(_ratio_cap, color=palette.Role.TEXT_SECONDARY)
         _ratio_col.addWidget(_ratio_cap)
         _ratio_val_row = QtWidgets.QHBoxLayout()
         _ratio_val_row.setSpacing(4)
@@ -1708,7 +1667,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _ratio_col.addLayout(_ratio_val_row)
         self._gs_ratio_sub = QtWidgets.QLabel("Ideal: 1.9\u20132.1")
         self._gs_ratio_sub.setFont(_tiny_font)
-        self._gs_ratio_sub.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._gs_ratio_sub, color=palette.Role.TEXT_SECONDARY)
         _ratio_col.addWidget(self._gs_ratio_sub)
         _gsum_hl.addLayout(_ratio_col)
         # A value is bold; with no value the box shows only a small grey placeholder, no second line.
@@ -1727,12 +1686,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._results_status_dot = QtWidgets.QLabel("\u25cf")
         self._results_status_dot.setFont(small_font)
-        self._results_status_dot.setStyleSheet("color: gray;")
+        palette.tag(self._results_status_dot, color=palette.Role.STATUS_STOPPED)
         _footer_row.addWidget(self._results_status_dot)
 
         self._results_status_lbl = QtWidgets.QLabel("Stopped")
         self._results_status_lbl.setFont(small_font)
-        self._results_status_lbl.setStyleSheet("color: gray;")
+        palette.tag(self._results_status_lbl, color=palette.Role.TEXT_SECONDARY)
         _footer_row.addWidget(self._results_status_lbl)
 
         _footer_row.addStretch()
@@ -1755,7 +1714,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """Bottom status bar matching the Swift fullStatusBar layout."""
         bar = QtWidgets.QWidget()
         bar.setObjectName("bottom_status_bar")
-        bar.setStyleSheet("#bottom_status_bar { border-top: 1px solid palette(mid); }")
+        bar.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        bar.setStyleSheet("#bottom_status_bar { border-top-width: 1px; border-top-style: solid; }")
+        palette.tag(bar, background=palette.Role.BACKGROUND_SUBTLE, border=palette.Role.SEPARATOR)
 
         vl = QtWidgets.QVBoxLayout(bar)
         vl.setContentsMargins(8, 3, 8, 3)
@@ -1766,15 +1727,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_progress.setRange(0, 100)
         self._sb_progress.setFixedHeight(6)
         self._sb_progress.setTextVisible(False)
-        # chunk = systemBlue, NOT palette(highlight) — the theme's highlight is a different blue on
-        # every platform/theme and matched neither Swift's bar nor the labels beside it. The track
-        # stays palette(mid).
-        self._sb_progress.setStyleSheet(
-            "QProgressBar { border: none; border-radius: 3px;"
-            " background: palette(mid); }"
-            "QProgressBar::chunk { background: " + _system_blue(self) + ";"
-            " border-radius: 3px; }"
-        )
+        palette.tag(self._sb_progress, tint=palette.Role.STATUS_PROGRESS)
         self._sb_progress.setVisible(False)
         vl.addWidget(self._sb_progress)
 
@@ -1808,7 +1761,7 @@ class MainWindow(QtWidgets.QMainWindow):
         #   showingMultiTapComparison ? "Press 'Taps' to return…" : "Press 'New Tap' for a new measurement"
         self._sb_compare_exit = QtWidgets.QLabel("")
         self._sb_compare_exit.setFont(small)
-        self._sb_compare_exit.setStyleSheet("color: gray;")
+        palette.tag(self._sb_compare_exit, color=palette.Role.TEXT_SECONDARY)
         _cmp_hl.addWidget(self._sb_compare_exit)
         self._sb_compare_wgt.setVisible(False)
         hl.addWidget(self._sb_compare_wgt)
@@ -1828,25 +1781,25 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tap detection dot
         self._sb_tap_dot = QtWidgets.QLabel("●")
         self._sb_tap_dot.setFont(caption)
-        self._sb_tap_dot.setStyleSheet("color: gray;")
+        palette.tag(self._sb_tap_dot, color=palette.Role.STATUS_INACTIVE_DOT)
         hl.addWidget(self._sb_tap_dot)
 
         # Tap message
         self._sb_tap_msg = QtWidgets.QLabel("Waiting for tap…")
         self._sb_tap_msg.setFont(small)
-        self._sb_tap_msg.setStyleSheet("color: gray;")
+        palette.tag(self._sb_tap_msg, color=palette.Role.TEXT_SECONDARY)
         _norm_hl.addWidget(self._sb_tap_msg)
 
         # Bullet separator
         _b1 = QtWidgets.QLabel("•")
         _b1.setFont(caption)
-        _b1.setStyleSheet("color: gray;")
+        palette.tag(_b1, color=palette.Role.TEXT_SECONDARY)
         _norm_hl.addWidget(_b1)
 
         # Average magnitude
         self._sb_avg_lbl = QtWidgets.QLabel("-100.0 dB")
         self._sb_avg_lbl.setFont(small)
-        self._sb_avg_lbl.setStyleSheet("color: gray;")
+        palette.tag(self._sb_avg_lbl, color=palette.Role.TEXT_SECONDARY)
         _norm_hl.addWidget(self._sb_avg_lbl)
 
         _norm_hl.addStretch(1)
@@ -1858,15 +1811,15 @@ class MainWindow(QtWidgets.QMainWindow):
         frozen_hl.setSpacing(3)
         _frozen_icon = QtWidgets.QLabel("⏸")
         _frozen_icon.setFont(caption)
-        _frozen_icon.setStyleSheet("color: orange;")
+        palette.tag(_frozen_icon, color=palette.Role.STATUS_WARNING)
         frozen_hl.addWidget(_frozen_icon)
         _frozen_txt = QtWidgets.QLabel("Complete")
         _frozen_txt.setFont(caption)
-        _frozen_txt.setStyleSheet("color: orange;")
+        palette.tag(_frozen_txt, color=palette.Role.STATUS_WARNING)
         frozen_hl.addWidget(_frozen_txt)
         _frozen_sep = QtWidgets.QLabel("•")
         _frozen_sep.setFont(caption)
-        _frozen_sep.setStyleSheet("color: gray;")
+        palette.tag(_frozen_sep, color=palette.Role.TEXT_SECONDARY)
         frozen_hl.addWidget(_frozen_sep)
         self._sb_frozen_wgt.setVisible(False)
         _norm_hl.addWidget(self._sb_frozen_wgt)
@@ -1874,25 +1827,26 @@ class MainWindow(QtWidgets.QMainWindow):
         # Peak info
         self._sb_peak_lbl = QtWidgets.QLabel("")
         self._sb_peak_lbl.setFont(caption)
-        self._sb_peak_lbl.setStyleSheet(f"color: {_system_blue(self)};")
+        palette.tag(self._sb_peak_lbl, color=palette.Role.STATUS_PEAK_READOUT)
         _norm_hl.addWidget(self._sb_peak_lbl)
 
         # Detection state dot
         self._sb_detect_dot = QtWidgets.QLabel("●")
         self._sb_detect_dot.setFont(caption)
-        self._sb_detect_dot.setStyleSheet("color: orange;")
+        palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_PAUSED)
         _norm_hl.addWidget(self._sb_detect_dot)
 
         # Status message
         self._sb_detect_msg = QtWidgets.QLabel("Stopped")
         self._sb_detect_msg.setFont(caption)
-        self._sb_detect_msg.setStyleSheet("color: orange;")
+        palette.tag(self._sb_detect_msg, color=palette.Role.STATUS_WARNING)
         _norm_hl.addWidget(self._sb_detect_msg)
 
         # Tap count (hidden by default)
         self._sb_tap_count = QtWidgets.QLabel("")
         self._sb_tap_count.setFont(caption)
-        self._sb_tap_count.setStyleSheet(f"color: {_system_blue(self)}; font-weight: bold;")
+        self._sb_tap_count.setStyleSheet("font-weight: bold;")
+        palette.tag(self._sb_tap_count, color=palette.Role.STATUS_TAP_COUNT)
         self._sb_tap_count.setVisible(False)
         _norm_hl.addWidget(self._sb_tap_count)
 
@@ -1900,7 +1854,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Wide enough to fit "Phase 1/2 · Tap 3/5" when numberOfTaps > 1.
         self._sb_plate_step_lbl = QtWidgets.QLabel("")
         self._sb_plate_step_lbl.setFont(caption)
-        self._sb_plate_step_lbl.setStyleSheet(f"color: {_system_blue(self)}; font-weight: bold;")
+        self._sb_plate_step_lbl.setStyleSheet("font-weight: bold;")
+        palette.tag(self._sb_plate_step_lbl, color=palette.Role.STATUS_TAP_COUNT)
         self._sb_plate_step_lbl.setVisible(False)
         _norm_hl.addWidget(self._sb_plate_step_lbl)
 
@@ -1911,16 +1866,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # above the normal status row; the normal row stays unchanged.
         self._sb_warning_wgt = QtWidgets.QWidget()
         self._sb_warning_wgt.setObjectName("sb_warning_wgt")
-        self._sb_warning_wgt.setStyleSheet(
-            "#sb_warning_wgt { background: rgba(255,165,0,31);"
-            " border-radius: 4px; }"
-        )
+        palette.tag(self._sb_warning_wgt, message=palette.Role.STATUS_WARNING)
         _warn_hl = QtWidgets.QHBoxLayout(self._sb_warning_wgt)
         _warn_hl.setContentsMargins(6, 2, 6, 2)
         _warn_hl.setSpacing(5)
         self._sb_warning_icon = QtWidgets.QLabel()
-        _warn_pix = qta.icon("fa5s.exclamation-triangle", color="orange").pixmap(14, 14)
-        self._sb_warning_icon.setPixmap(_warn_pix)
+        palette.set_icon(
+            self._sb_warning_icon, "fa5s.exclamation-triangle", palette.Role.STATUS_WARNING, 14)
         self._sb_warning_icon.setFixedSize(14, 14)
         # Opacity effect drives the pulse animation (works on pixmap labels)
         self._warn_opacity_effect = QtWidgets.QGraphicsOpacityEffect(self._sb_warning_icon)
@@ -1929,7 +1881,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _warn_hl.addWidget(self._sb_warning_icon)
         self._sb_warning_msg = QtWidgets.QLabel("")
         self._sb_warning_msg.setFont(caption)
-        self._sb_warning_msg.setStyleSheet("color: orange; font-weight: bold;")
+        self._sb_warning_msg.setStyleSheet("font-weight: bold;")
+        palette.tag(self._sb_warning_msg, color=palette.Role.STATUS_WARNING)
         _warn_hl.addWidget(self._sb_warning_msg)
         _warn_hl.addStretch()
         self._sb_warning_wgt.setVisible(False)
@@ -1939,19 +1892,17 @@ class MainWindow(QtWidgets.QMainWindow):
         # setting left on is noticed. Mirrors Swift's row in fullStatusBar.
         self._sb_saved_wgt = QtWidgets.QWidget()
         self._sb_saved_wgt.setObjectName("sb_saved_wgt")
-        self._sb_saved_wgt.setStyleSheet(
-            "#sb_saved_wgt { background: rgba(0,122,255,31); border-radius: 4px; }"
-        )
+        palette.tag(self._sb_saved_wgt, message=palette.Role.STATUS_SAVED)
         _saved_hl = QtWidgets.QHBoxLayout(self._sb_saved_wgt)
         _saved_hl.setContentsMargins(6, 2, 6, 2)
         _saved_hl.setSpacing(5)
         self._sb_saved_msg = QtWidgets.QLabel("")
         self._sb_saved_msg.setFont(caption)
-        self._sb_saved_msg.setStyleSheet("color: rgb(0,122,255);")
+        palette.tag(self._sb_saved_msg, color=palette.Role.STATUS_SAVED)
         _saved_hl.addWidget(self._sb_saved_msg)
         _saved_hl.addStretch()
         _saved_close = QtWidgets.QToolButton()
-        _saved_close.setIcon(qta.icon("fa5s.times", color="gray"))
+        palette.set_icon(_saved_close, "fa5s.times", palette.Role.TEXT_SECONDARY)
         _saved_close.setToolTip("Dismiss")
         _saved_close.setAutoRaise(True)
         _saved_close.clicked.connect(lambda: self.fft_canvas.analyzer.dismiss_capture_audio_saved())
@@ -1990,8 +1941,10 @@ class MainWindow(QtWidgets.QMainWindow):
         frame = QtWidgets.QFrame()
         frame.setObjectName("material_instr_panel")
         frame.setStyleSheet(
-            "#material_instr_panel { border-top: 1px solid palette(mid); }"
+            "#material_instr_panel { border-top-width: 1px; border-top-style: solid; }"
         )
+        palette.tag(frame, color=palette.Role.TEXT_PRIMARY, background=palette.Role.BACKGROUND_PANEL,
+                    border=palette.Role.SEPARATOR)
         vl = QtWidgets.QVBoxLayout(frame)
         vl.setContentsMargins(8, 6, 8, 6)
         vl.setSpacing(4)
@@ -2002,7 +1955,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _title_font.setBold(True)
         self._mip_group_title_lbl = QtWidgets.QLabel("Plate Measurement")
         self._mip_group_title_lbl.setFont(_title_font)
-        self._mip_group_title_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._mip_group_title_lbl, color=palette.Role.TEXT_SECONDARY)
         vl.addWidget(self._mip_group_title_lbl)
 
         # ── Row 1: dot + shortStatus + spacer + step counter ────────────
@@ -2013,9 +1966,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Phase colour dot
         self._mip_dot = QtWidgets.QLabel()
         self._mip_dot.setFixedSize(10, 10)
-        self._mip_dot.setStyleSheet(
-            "QLabel { background-color: gray; border-radius: 5px; }"
-        )
+        self._mip_dot.setStyleSheet("QLabel { border-radius: 5px; }")
+        palette.tag(self._mip_dot, background=palette.Role.PHASE_NOT_STARTED)
         row1.addWidget(self._mip_dot, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
 
         # Short status text — e.g. "fL tap...", "Review fL" (colored like the dot)
@@ -2024,7 +1976,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _bold9.setBold(True)
         self._mip_short_status_lbl = QtWidgets.QLabel("Ready")
         self._mip_short_status_lbl.setFont(_bold9)
-        self._mip_short_status_lbl.setStyleSheet("color: gray;")
+        palette.tag(self._mip_short_status_lbl, color=palette.Role.PHASE_NOT_STARTED)
         row1.addWidget(self._mip_short_status_lbl)
 
         row1.addStretch(1)
@@ -2034,7 +1986,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _sm9.setPointSize(9)
         self._mip_step_lbl = QtWidgets.QLabel("")
         self._mip_step_lbl.setFont(_sm9)
-        self._mip_step_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._mip_step_lbl, color=palette.Role.TEXT_SECONDARY)
         self._mip_step_lbl.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
@@ -2077,7 +2029,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "Press 'New Tap' to start the plate measurement."
         )
         self._mip_body_lbl.setFont(_cap9)
-        self._mip_body_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(self._mip_body_lbl, color=palette.Role.TEXT_SECONDARY)
         self._mip_body_lbl.setWordWrap(True)
         txt.addWidget(self._mip_body_lbl)
 
@@ -2355,7 +2307,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_running(self, running: bool) -> None:
         if running:
-            self._sb_detect_dot.setStyleSheet("color: green;")
+            palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_RUNNING)
             # SYNC the status-bar message to the analyzer's CURRENT status_message.
             # statusMessageChanged fires only on CHANGE, so if the arm prompt was set before
             # the view connected the signal (app startup), the label would keep its init
@@ -2364,9 +2316,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_detect_msg.setText(self.fft_canvas.analyzer.status_message)
             self._apply_status_message_color()
         else:
-            self._sb_detect_dot.setStyleSheet("color: orange;")
+            palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_PAUSED)
             self._sb_detect_msg.setText("Stopped")
-            self._sb_detect_msg.setStyleSheet("color: orange;")
+            palette.tag(self._sb_detect_msg, color=palette.Role.STATUS_WARNING)
         self._update_tap_buttons()
 
     def _on_detection_state_changed(self, _state: object) -> None:
@@ -2439,7 +2391,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if text is None:
             value_label.setText(placeholder)
             value_label.setFont(self._gs_placeholder_font)
-            value_label.setStyleSheet("color: palette(shadow);")
+            palette.tag(value_label, color=palette.Role.TEXT_SECONDARY)
             sub_label.setVisible(False)
         else:
             value_label.setText(text)
@@ -2456,7 +2408,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._show_summary_value(self._gs_ro_value, self._gs_ro_sub, f"{fp.string(time_s, fp.DECAY_TIME_S)}s", "Waiting\u2026")
         gt = TDS.measurement_type().guitar_type or _GTy.GENERIC
         self._gs_ro_quality.setText(_ext.decay_quality_label(time_s, gt))
-        self._gs_ro_quality.setStyleSheet(f"color: {_ext.decay_quality_color(time_s, gt).on(self)};")
+        palette.tag(self._gs_ro_quality,
+                    color=palette.role_of(_ext.decay_quality_color(time_s, gt)))
 
     def set_calibration_status(self, name: str) -> None:
         if name:
@@ -2478,17 +2431,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _sb_update_frozen_state(self, frozen: bool) -> None:
         if frozen:
-            self._sb_tap_dot.setStyleSheet("color: green;")
+            palette.tag(self._sb_tap_dot, color=palette.Role.STATUS_COMPLETE)
             self._sb_tap_msg.setText("Tap Detected!")
-            self._sb_tap_msg.setStyleSheet("color: green;")
+            palette.tag(self._sb_tap_msg, color=palette.Role.STATUS_TAP_DETECTED)
             # Mirrors Swift: phase/tap count labels are guarded by tap.isDetecting.
             # When frozen, isDetecting is false → labels are hidden.
             self._sb_tap_count.setVisible(False)
             self._sb_plate_step_lbl.setVisible(False)
         else:
-            self._sb_tap_dot.setStyleSheet("color: rgba(128,128,128,77);")
+            palette.tag(self._sb_tap_dot, color=palette.Role.STATUS_INACTIVE_DOT)
             self._sb_tap_msg.setText("Waiting for tap…")
-            self._sb_tap_msg.setStyleSheet("color: gray;")
+            palette.tag(self._sb_tap_msg, color=palette.Role.TEXT_SECONDARY)
 
     def _on_menu_auto_db(self, checked: bool) -> None:
         """Toggle Auto dB from the View menu; keeps the toolbar button in sync."""
@@ -2496,9 +2449,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_auto_db_toggled(self, enabled: bool) -> None:
         if enabled:
-            self.auto_db_btn.setIcon(qta.icon("mdi.swap-vertical-circle", color="#27ae60"))
+            palette.set_icon(self.auto_db_btn, "mdi.swap-vertical-circle", palette.Role.ACCENT)
         else:
-            self.auto_db_btn.setIcon(qta.icon("mdi.swap-vertical-circle-outline"))
+            palette.set_icon(self.auto_db_btn, "mdi.swap-vertical-circle-outline", palette.Role.ACCENT)
         # Keep the View menu checkmark in sync with the toolbar button state.
         self._menu_auto_db_action.setChecked(enabled)
 
@@ -2521,12 +2474,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Update the results-panel running / stopped status indicator
         if self._is_running:
-            self._results_status_dot.setStyleSheet("color: green;")
-            self._results_status_lbl.setStyleSheet("color: palette(text);")
+            palette.tag(self._results_status_dot, color=palette.Role.STATUS_RUNNING)
             self._results_status_lbl.setText("Analyzing")
         else:
-            self._results_status_dot.setStyleSheet("color: gray;")
-            self._results_status_lbl.setStyleSheet("color: gray;")
+            palette.tag(self._results_status_dot, color=palette.Role.STATUS_STOPPED)
             self._results_status_lbl.setText("Stopped")
 
     def update_tap_tone_ratio(self, ratio: "float | None") -> None:
@@ -2537,8 +2488,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if ratio is not None:
             self._show_summary_value(self._gs_ratio_value, self._gs_ratio_sub, f"{fp.string(ratio, fp.DECAY_RATIO)}:1", "Need Air & Top")
             self._gs_ratio_quality.setText(_ext.tap_tone_ratio_quality_label(ratio))
-            self._gs_ratio_quality.setStyleSheet(
-                f"color: {_ext.tap_tone_ratio_quality_color(ratio).on(self)};")
+            palette.tag(self._gs_ratio_quality,
+                        color=palette.role_of(_ext.tap_tone_ratio_quality_color(ratio)))
         else:
             self._show_summary_value(self._gs_ratio_value, self._gs_ratio_sub, None, "Need Air & Top")
             self._gs_ratio_quality.setText("")
@@ -2561,7 +2512,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # time SwiftUI re-renders Text(tap.statusMessage) the isDetecting flag is
         # already updated, so the foregroundColor(.orange) modifier sees the correct
         # state.  In Python the signal order is serial, so we refresh here.
-        self._sb_detect_msg.setStyleSheet("color: orange;" if checked else "")
+        palette.tag(self._sb_detect_msg,
+                    color=palette.Role.STATUS_WARNING if checked else palette.Role.TEXT_PRIMARY)
         self._update_mic_name_label()
 
         self.peak_widget.data_held(checked)
@@ -2611,9 +2563,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._multi_tap_toggle_btn.blockSignals(True)
             self._multi_tap_toggle_btn.setChecked(False)
             self._multi_tap_toggle_btn.blockSignals(False)
-            import qtawesome as _qta
-            self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="gray"))
-            self._multi_tap_toggle_btn.setStyleSheet("")
+            palette.set_icon(self._multi_tap_toggle_btn, "fa5s.layer-group", palette.Role.ACCENT)
+            palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
             self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
             # If the multi-tap table was visible (a new tap sequence is starting),
             # hide it and restore the peak widget — mirrors what _on_comparison_changed
@@ -2830,7 +2781,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_cycle_annotation_mode(self) -> None:
         self._ann_mode_idx = (self._ann_mode_idx + 1) % len(self._ANN_MODES)
         next_mode = self._ANN_MODES[self._ann_mode_idx]
-        self.annotations_btn.setIcon(qta.icon(next_mode.icon_name))
+        palette.set_icon(self.annotations_btn, next_mode.icon_name, palette.Role.ACCENT)
         self.annotations_btn.setToolTip(
             f"Annotation visibility: {next_mode.label}\n"
             "Click to cycle: Selected → None → All"
@@ -3037,8 +2988,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if in_review:
             # Relabel Pause → Accept (green) and Cancel → Redo <phase> (orange).
             self.pause_tap_btn.setText("Accept")
-            self.pause_tap_btn.setIcon(qta.icon("fa5.check-circle", color="green"))
-            self.pause_tap_btn.setStyleSheet("color: green;")
+            palette.set_icon(self.pause_tap_btn, "fa5.check-circle", palette.Role.STATUS_COMPLETE)
+            palette.tag(self.pause_tap_btn, tint=palette.Role.STATUS_COMPLETE)
 
             from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
             phase = self.fft_canvas.analyzer.material_tap_phase
@@ -3048,26 +2999,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 _MTP.REVIEWING_FLC:          "Redo FLC",
             }
             self.cancel_tap_btn.setText(redo_labels.get(phase, "Redo"))
-            self.cancel_tap_btn.setIcon(qta.icon("fa5s.undo", color="orange"))
-            self.cancel_tap_btn.setStyleSheet("color: orange;")
+            palette.set_icon(self.cancel_tap_btn, "fa5s.undo", palette.Role.STATUS_WARNING)
+            palette.tag(self.cancel_tap_btn, tint=palette.Role.STATUS_WARNING)
         else:
             # Standard labels.
             if is_paused:
                 self.pause_tap_btn.setText("Resume")
-                self.pause_tap_btn.setIcon(qta.icon("fa5.play-circle"))
+                palette.set_icon(self.pause_tap_btn, "fa5.play-circle", palette.Role.ACCENT)
             else:
                 self.pause_tap_btn.setText("Pause")
-                self.pause_tap_btn.setIcon(qta.icon("fa5.pause-circle"))
-            self.pause_tap_btn.setStyleSheet("")
+                palette.set_icon(self.pause_tap_btn, "fa5.pause-circle", palette.Role.ACCENT)
+            palette.tag(self.pause_tap_btn, tint=palette.Role.ACCENT)
             self.cancel_tap_btn.setText("Cancel")
-            # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? .orange : .gray)
-            self.cancel_tap_btn.setStyleSheet(
-                "color: orange;" if out.cancel_enabled else "color: gray;"
-            )
-            if out.cancel_enabled:
-                self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle", color="orange"))
-            else:
-                self.cancel_tap_btn.setIcon(qta.icon("fa5.times-circle"))
+            # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? statusWarning : toolbarInactive)
+            cancel_role = (palette.Role.STATUS_WARNING if out.cancel_enabled
+                           else palette.Role.TOOLBAR_INACTIVE)
+            palette.set_icon(self.cancel_tap_btn, "fa5.times-circle", cancel_role)
+            palette.tag(self.cancel_tap_btn, tint=cancel_role)
 
     # ================================================================
     # Pause / Cancel tap detection
@@ -3105,13 +3053,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(False)
             self._sb_tap_count.setVisible(False)
             # Mirrors Swift: Circle().fill(tap.isDetecting ? .green : .orange)
-            self._sb_detect_dot.setStyleSheet("color: orange;")
+            palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_PAUSED)
         else:
             # Resuming — restore phase/tap labels via set_tap_count which
             # re-evaluates visibility using analyzer.is_detecting (now True).
             self.set_tap_count(self._tap_count_captured, self._tap_count_total)
             self._update_plate_phase_ui()
-            self._sb_detect_dot.setStyleSheet("color: green;")
+            palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_RUNNING)
         self._apply_status_message_color()
         self._update_tap_buttons()
 
@@ -3182,28 +3130,19 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
     def _on_playing_file_changed(self, name: "str | None") -> None:
-        """Tint the Play File button orange while a file is playing, clear tint when done.
+        """Tint the Play File button status.playingFile while a file is playing, accent otherwise.
 
-        Mirrors Swift .tint(fft.isPlayingFile ? .orange : .blue) on the Play File buttons.
-        Receives the filename when playback starts (orange) and None when playback ends
-        (tint cleared). The chart title is NOT affected here — chart_title reads
+        Mirrors Swift .tint(fft.isPlayingFile ? .statusPlayingFile : .accent) on the Play File
+        buttons. Receives the filename when playback starts and None when playback ends. The
+        chart title is NOT affected here — chart_title reads
         mic.playing_file_name directly, which stays set until stop().
         """
         if name is not None:
-            # Override to orange while a file is playing —
-            # mirrors Swift .tint(fft.isPlayingFile ? .orange : .blue).
-            self._play_file_btn.setStyleSheet(
-                "QPushButton {"
-                "  background-color: rgba(255, 149, 0, 0.15);"
-                "  border: 1px solid rgba(255, 149, 0, 0.45);"
-                "  border-radius: 6px;"
-                "  padding: 3px 8px;"
-                "  color: rgb(200, 100, 0);"
-                "}"
-            )
+            role = palette.Role.STATUS_PLAYING_FILE
         else:
-            # Clear override — button reverts to the toolbar-inherited blue style.
-            self._play_file_btn.setStyleSheet("")
+            role = palette.Role.ACCENT
+        palette.tag(self._play_file_btn, tint=role)
+        palette.set_icon(self._play_file_btn, "fa5s.file-audio", role)
         # Playback changes which of Pause / New Tap / Cancel are available, and whose microphone the
         # result is.
         self._update_tap_buttons()
@@ -3234,9 +3173,8 @@ class MainWindow(QtWidgets.QMainWindow):
         regardless of local signal ordering.
         """
         is_detecting = self.fft_canvas.analyzer.is_detecting
-        self._sb_detect_msg.setStyleSheet(
-            "" if is_detecting else "color: orange;"
-        )
+        palette.tag(self._sb_detect_msg,
+                    color=palette.Role.TEXT_PRIMARY if is_detecting else palette.Role.STATUS_WARNING)
 
     def _on_new_tap(self) -> None:
         """Request a new tap sequence. Mirrors Swift New Tap button action: tap.requestStartTapSequence().
@@ -3519,16 +3457,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_multi_tap_toggle_state()
         if self.fft_canvas.analyzer.is_saved_measurement_comparison:
             self.measurement_type_badge.setText("Comparison")
-            self.measurement_type_badge.setStyleSheet(
-                "background: rgba(160,32,240,0.20); border-radius: 4px; padding: 1px 6px;"
-            )
+            palette.tag(self.measurement_type_badge, background=palette.Role.BADGE_COMPARISON)
             return
         mt = TDS.measurement_type()
         self.measurement_type_badge.setText(mt.short_name)
-        self.measurement_type_badge.setStyleSheet(
-            "background: rgba(0,100,255,0.15); border-radius: 4px; padding: 1px 6px;"
-            if mt.is_guitar else
-            "background: rgba(255,140,0,0.20); border-radius: 4px; padding: 1px 6px;"
+        palette.tag(
+            self.measurement_type_badge,
+            background=palette.Role.BADGE_GUITAR if mt.is_guitar else palette.Role.BADGE_MATERIAL,
         )
 
     def _on_plate_status_changed(self, status: str) -> None:
@@ -3614,7 +3549,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Mirrors Swift materialInstructionsView computed properties.
 
         if state == State.IDLE:
-            color_hex  = "gray"
+            phase_role = palette.Role.PHASE_NOT_STARTED
             short_status = "Ready"
             step_text  = f"Phase\u00a01/{total}"  # Swift: materialPhaseStep returns 1 for notStarted
             icon_name  = "fa5s.hand-point-up"
@@ -3628,7 +3563,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(False)
 
         elif state == State.WAITING_L:
-            color_hex  = "#1976D2"
+            phase_role = _FL
             short_status = "fL tap..."
             step_text  = f"Phase\u00a01/{total}"
             icon_name  = "fa5s.wave-square"
@@ -3646,7 +3581,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(True)
 
         elif state == State.REVIEWING_L:
-            color_hex  = "#1976D2"
+            phase_role = _FL
             short_status = "Review fL"
             step_text  = f"Phase\u00a01/{total}"
             icon_name  = "fa5.check-circle"
@@ -3659,7 +3594,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(False)
 
         elif state == State.WAITING_C:
-            color_hex  = "#E65100"
+            phase_role = _FC
             short_status = "fC tap..."
             step_text  = f"Phase\u00a02/{total}"
             icon_name  = "fa5s.wave-square"
@@ -3672,7 +3607,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(True)
 
         elif state == State.REVIEWING_C:
-            color_hex  = "#E65100"
+            phase_role = _FC
             short_status = "Review fC"
             step_text  = f"Phase\u00a02/{total}"
             icon_name  = "fa5.check-circle"
@@ -3685,7 +3620,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(False)
 
         elif state == State.WAITING_FLC:
-            color_hex  = "#7B1FA2"
+            phase_role = _FLC
             step_text  = f"Phase\u00a03/{total}"
             self._sb_plate_step_lbl.setText(self._plate_step_label(3, total))
             self._sb_plate_step_lbl.setVisible(True)
@@ -3712,7 +3647,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
 
         elif state == State.REVIEWING_FLC:
-            color_hex  = "#7B1FA2"
+            phase_role = _FLC
             short_status = "Review fLC"
             step_text  = f"Phase\u00a03/{total}"
             icon_name  = "fa5.check-circle"
@@ -3725,7 +3660,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(False)
 
         else:  # COMPLETE
-            color_hex  = "#388E3C"
+            phase_role = palette.Role.PHASE_COMPLETE
             short_status = "Done"
             last_step  = total if measure_flc else (1 if is_brace else 2)
             step_text  = f"Phase\u00a0{last_step}/{total}"
@@ -3745,13 +3680,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_plate_step_lbl.setVisible(False)
 
         # Apply dot color
-        self._mip_dot.setStyleSheet(
-            f"QLabel {{ background-color: {color_hex}; border-radius: 5px; }}"
-        )
+        palette.tag(self._mip_dot, background=phase_role)
 
         # Apply shortStatus text + matching color
         self._mip_short_status_lbl.setText(short_status)
-        self._mip_short_status_lbl.setStyleSheet(f"color: {color_hex};")
+        palette.tag(self._mip_short_status_lbl, color=phase_role)
 
         # Apply phase counter label (secondary color, "Phase N/M" format).
         # Hidden for brace (total == 1) — one phase only, label is redundant.
@@ -3760,8 +3693,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Apply phase icon (qtawesome equivalent of SF Symbol name)
         try:
-            icon_px = qta.icon(icon_name, color=color_hex).pixmap(24, 24)
-            self._mip_icon_lbl.setPixmap(icon_px)
+            palette.set_icon(self._mip_icon_lbl, icon_name, phase_role, 24)
         except Exception:
             self._mip_icon_lbl.clear()
 
@@ -3842,11 +3774,11 @@ class MainWindow(QtWidgets.QMainWindow):
         fL is an input (shown in the peak list), not repeated here as a subtitle."""
         self._brace_c_long.setText(f"{fp.string(props.c_long_m_s, fp.SPEED_OF_SOUND_MS)} m/s")
         self._brace_E_long.setText(f"{fp.string(props.youngsModulusLongGPa, fp.YOUNGS_MODULUS_GPA)} GPa")
-        color = palette.qss(palette.quality_role(PA.WoodQuality(props.quality)))
+        q_role = palette.quality_role(PA.WoodQuality(props.quality))
         self._brace_spec_value.setText(f"{fp.string(props.specific_modulus, fp.SPECIFIC_MODULUS)}")
-        self._brace_spec_value.setStyleSheet(f"color: {color};")
+        palette.tag(self._brace_spec_value, color=q_role)
         self._brace_quality_lbl.setText(props.quality)
-        self._brace_quality_lbl.setStyleSheet(f"color: {color};")
+        palette.tag(self._brace_quality_lbl, color=q_role)
         self._brace_rad_ratio.setText(f"{fp.string(props.radiation_ratio, fp.RADIATION_RATIO)}")
         self._brace_placeholder.setVisible(False)
         self._brace_content.setVisible(True)
@@ -3873,23 +3805,24 @@ class MainWindow(QtWidgets.QMainWindow):
             self._plate_glc_widget.setVisible(True)
         else:
             self._plate_glc_widget.setVisible(False)
-        cl = palette.qss(palette.quality_role(PA.WoodQuality(props.quality_long)))
-        cc = palette.qss(palette.quality_role(PA.WoodQuality(props.quality_cross)))
+        cl = palette.quality_role(PA.WoodQuality(props.quality_long))
+        cc = palette.quality_role(PA.WoodQuality(props.quality_cross))
         self._plate_spec_long_value.setText(f"{fp.string(props.specific_modulus_long, fp.SPECIFIC_MODULUS)}")
-        self._plate_spec_long_value.setStyleSheet(f"color: {cl};")
+        palette.tag(self._plate_spec_long_value, color=cl)
         self._plate_quality_long.setText(props.quality_long)
-        self._plate_quality_long.setStyleSheet(f"color: {cl};")
+        palette.tag(self._plate_quality_long, color=cl)
         self._plate_spec_cross_value.setText(f"{fp.string(props.specific_modulus_cross, fp.SPECIFIC_MODULUS)}")
-        self._plate_spec_cross_value.setStyleSheet(f"color: {cc};")
+        palette.tag(self._plate_spec_cross_value, color=cc)
         self._plate_quality_cross.setText(props.quality_cross)
-        self._plate_quality_cross.setStyleSheet(f"color: {cc};")
+        palette.tag(self._plate_quality_cross, color=cc)
         self._plate_rad_long.setText(f"L: {fp.string(props.radiation_ratio_long, fp.RADIATION_RATIO)}")
         self._plate_rad_cross.setText(f"C: {fp.string(props.radiation_ratio_cross, fp.RADIATION_RATIO)}")
         self._plate_cross_long.setText(f"{fp.string(props.cross_long_ratio, fp.CROSS_LONG_RATIO)}")
         self._plate_long_cross.setText(f"{fp.string(props.long_cross_ratio, fp.LONG_CROSS_RATIO)}")
-        cov = palette.qss(palette.quality_role(PA.WoodQuality(props.overall_quality)))
+        cov = palette.quality_role(PA.WoodQuality(props.overall_quality))
         self._plate_overall_quality.setText(props.overall_quality)
-        self._plate_overall_quality.setStyleSheet(f"color: {cov}; font-weight: bold;")
+        self._plate_overall_quality.setStyleSheet("font-weight: bold;")
+        palette.tag(self._plate_overall_quality, color=cov)
         # Gore Target Thickness — Store B (the measurement's own body dims + f_vs), never the live
         # Settings template. Mirrors Swift goreThicknessView reading analyzer.materialInputs.
         try:
@@ -4212,7 +4145,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._multi_tap_toggle_btn.blockSignals(True)
             self._multi_tap_toggle_btn.setChecked(False)
             self._multi_tap_toggle_btn.blockSignals(False)
-            self._multi_tap_toggle_btn.setStyleSheet("")
+            palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
             self._multi_tap_toggle_btn.setVisible(False)
             self._multi_tap_results_view.setVisible(False)
 
@@ -4326,23 +4259,13 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer.showing_multi_tap_comparison = checked
         analyzer.apply_multi_tap_comparison_overlays(enabled=checked)
 
-        # Mirror Swift .tint(.orange): orange background + border + text when active.
-        import qtawesome as _qta
+        # Mirror Swift .tint(showing ? resultsTapsActive : accent) on a bordered button.
+        tint = palette.Role.RESULTS_TAPS_ACTIVE if checked else palette.Role.ACCENT
+        palette.set_icon(self._multi_tap_toggle_btn, "fa5s.layer-group", tint)
+        palette.tag(self._multi_tap_toggle_btn, tint=tint)
         if checked:
-            self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="rgb(200,100,0)"))
-            self._multi_tap_toggle_btn.setStyleSheet(
-                "QPushButton {"
-                "  background-color: rgba(255, 149, 0, 0.15);"
-                "  border: 1px solid rgba(255, 149, 0, 0.45);"
-                "  border-radius: 4px;"
-                "  padding: 2px 6px;"
-                "  color: rgb(200, 100, 0);"
-                "}"
-            )
             self._multi_tap_toggle_btn.setToolTip("Show averaged result only")
         else:
-            self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="gray"))
-            self._multi_tap_toggle_btn.setStyleSheet("")
             self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
             # Remove the overlay curves from the canvas — apply_multi_tap_comparison_overlays
             # clears the model state and emits comparisonChanged(False) but does not remove
@@ -4441,12 +4364,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # guard) because a stale-but-not-effectively-visible widget must be cleared too.
         # Same reset as _on_multi_tap_toggled's `if not checked:` branch.
         if not analyzer.showing_multi_tap_comparison:
-            import qtawesome as _qta
             self._multi_tap_toggle_btn.blockSignals(True)
             self._multi_tap_toggle_btn.setChecked(False)
             self._multi_tap_toggle_btn.blockSignals(False)
-            self._multi_tap_toggle_btn.setIcon(_qta.icon("fa5s.layer-group", color="gray"))
-            self._multi_tap_toggle_btn.setStyleSheet("")
+            palette.set_icon(self._multi_tap_toggle_btn, "fa5s.layer-group", palette.Role.ACCENT)
+            palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
             self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
             self._multi_tap_results_view.setVisible(False)
 
@@ -4545,7 +4467,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._ann_mode_idx,
         )
         self._ann_mode_idx = target_idx
-        self.annotations_btn.setIcon(qta.icon(self._ANN_MODES[target_idx].icon_name))
+        palette.set_icon(self.annotations_btn, self._ANN_MODES[target_idx].icon_name, palette.Role.ACCENT)
         # Set annotation mode directly on the private attribute so the public setter's
         # no-op guard and premature update_data call are both bypassed.
         peak_model._annotation_mode = target_mode
@@ -4807,7 +4729,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 max_db=export_max_db,
                 peaks=peaks_list,
                 annotation_positions=_annotation_positions,
-                measurement_type_str=mt.value if not is_guitar else None,
+                measurement_type_str=mt.value,
                 selected_longitudinal_peak_id=_sel_long_id,
                 selected_cross_peak_id=_sel_cross_id,
                 selected_flc_peak_id=_sel_flc_id,
@@ -5065,7 +4987,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         min_db=min_db_val,    max_db=max_db_val,
                         peaks=vis_peaks,
                         annotation_positions=annotation_positions,
-                        measurement_type_str=mt.value if not is_guitar else None,
+                        measurement_type_str=mt.value,
                         selected_longitudinal_peak_id=sel_long_id,
                         selected_cross_peak_id=sel_cross_id,
                         selected_flc_peak_id=sel_flc_id,
@@ -5576,9 +5498,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # table's rule. Mirrors Swift exportMultiTapPDFReport (+Export.swift).
             avg_info = analyzer.definitive_mode_info()
             mode_frequencies = []
-            for cmp_entry in cmp_entries:
-                c = cmp_entry.color_components
-                color = (round(c[0] * 255), round(c[1] * 255), round(c[2] * 255))
+            for index, cmp_entry in enumerate(cmp_entries):
+                color = palette.rgb(
+                    palette.comparison_role(index, cmp_entry.label), palette.Scheme.LIGHT)
                 if cmp_entry.label == "Averaged":
                     air_t = avg_info.get(GuitarMode.AIR)
                     top_t = avg_info.get(GuitarMode.TOP)
@@ -5757,9 +5679,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
         )
         help_layout.addWidget(back_btn)
-        help_browser = QtWidgets.QTextBrowser()
-        help_browser.setOpenExternalLinks(True)
-        help_browser.setHtml(_HD.get_help_html())
+        help_browser = _HD.HelpBrowser()
         help_layout.addWidget(help_browser)
         stack.addWidget(help_page)       # index 1
 
@@ -5792,7 +5712,7 @@ class MainWindow(QtWidgets.QMainWindow):
             row.setContentsMargins(0, 2, 0, 4)
             row.setSpacing(6)
             icon_lbl = QtWidgets.QLabel()
-            icon_lbl.setPixmap(qta.icon(icon_name).pixmap(16, 16))
+            palette.set_icon(icon_lbl, icon_name, palette.Role.TEXT_PRIMARY, 16)
             row.addWidget(icon_lbl)
             title_lbl = QtWidgets.QLabel(text)
             title_lbl.setFont(hdr_font)
@@ -5936,7 +5856,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         _density_row = QtWidgets.QHBoxLayout()
         _plate_density_title = QtWidgets.QLabel("Calculated Density:")
-        _plate_density_title.setStyleSheet("color: palette(mid);")
+        palette.tag(_plate_density_title, color=palette.Role.TEXT_SECONDARY)
         plate_density_lbl.setStyleSheet("font-weight: 500;")
         _density_row.addWidget(_plate_density_title)
         _density_row.addStretch()
@@ -6097,7 +6017,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         _brace_density_row = QtWidgets.QHBoxLayout()
         _brace_density_title = QtWidgets.QLabel("Calculated Density:")
-        _brace_density_title.setStyleSheet("color: palette(mid);")
+        palette.tag(_brace_density_title, color=palette.Role.TEXT_SECONDARY)
         brace_density_lbl.setStyleSheet("font-weight: 500;")
         _brace_density_row.addWidget(_brace_density_title)
         _brace_density_row.addStretch()
@@ -6436,7 +6356,8 @@ class MainWindow(QtWidgets.QMainWindow):
         an.addWidget(dump_audio_widget)
         an.addWidget(_hsep())
 
-        reset_analysis_btn = QtWidgets.QPushButton(qta.icon("mdi.undo"), "Reset Analysis Settings")
+        reset_analysis_btn = QtWidgets.QPushButton("Reset Analysis Settings")
+        palette.set_icon(reset_analysis_btn, "mdi.undo", palette.Role.TEXT_PRIMARY)
 
         def _reset_analysis_settings() -> None:
             peak_thresh_field.setText("-60")
@@ -6667,9 +6588,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.set_calibration_status(cal.name)
             _update_cal_display()
 
-        import_btn = QtWidgets.QPushButton(
-            qta.icon("mdi.file-plus-outline"), "Import Calibration File..."
-        )
+        import_btn = QtWidgets.QPushButton("Import Calibration File...")
+        palette.set_icon(import_btn, "mdi.file-plus-outline", palette.Role.TEXT_PRIMARY)
         import_btn.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
         )
@@ -6727,9 +6647,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         _update_cal_meta()
 
-        delete_cal_btn = QtWidgets.QPushButton(
-            qta.icon("mdi.trash-can-outline"), "Delete All Calibrations"
-        )
+        delete_cal_btn = QtWidgets.QPushButton("Delete All Calibrations")
+        palette.set_icon(delete_cal_btn, "mdi.trash-can-outline", palette.Role.TEXT_PRIMARY)
         delete_cal_btn.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
         )
@@ -6859,12 +6778,12 @@ class MainWindow(QtWidgets.QMainWindow):
         hr_layout = QtWidgets.QHBoxLayout(help_row)
         hr_layout.setContentsMargins(0, 4, 0, 4)
         hr_icon = QtWidgets.QLabel()
-        hr_icon.setPixmap(qta.icon("mdi.help-circle-outline").pixmap(16, 16))
+        palette.set_icon(hr_icon, "mdi.help-circle-outline", palette.Role.ACCENT_TEXT, 16)
         hr_layout.addWidget(hr_icon)
         hr_layout.addWidget(QtWidgets.QLabel("Quick Start Guide"))
         hr_layout.addStretch()
         hr_chevron = QtWidgets.QLabel()
-        hr_chevron.setPixmap(qta.icon("mdi.chevron-right").pixmap(16, 16))
+        palette.set_icon(hr_chevron, "mdi.chevron-right", palette.Role.TEXT_SECONDARY, 16)
         hr_layout.addWidget(hr_chevron)
         help_row.mousePressEvent = lambda _ev: _show_help_page()
         ab.addWidget(help_row)
@@ -6874,12 +6793,12 @@ class MainWindow(QtWidgets.QMainWindow):
         um_layout = QtWidgets.QHBoxLayout(user_manual_row)
         um_layout.setContentsMargins(0, 4, 0, 4)
         um_icon = QtWidgets.QLabel()
-        um_icon.setPixmap(qta.icon("mdi.book-open-variant").pixmap(16, 16))
+        palette.set_icon(um_icon, "mdi.book-open-variant", palette.Role.ACCENT_TEXT, 16)
         um_layout.addWidget(um_icon)
         um_layout.addWidget(QtWidgets.QLabel("User Manual"))
         um_layout.addStretch()
         um_chevron = QtWidgets.QLabel()
-        um_chevron.setPixmap(qta.icon("mdi.open-in-new").pixmap(16, 16))
+        palette.set_icon(um_chevron, "mdi.open-in-new", palette.Role.TEXT_SECONDARY, 16)
         um_layout.addWidget(um_chevron)
         user_manual_row.mousePressEvent = lambda _ev: self._open_user_manual()
         ab.addWidget(user_manual_row)
@@ -7248,7 +7167,8 @@ class _PlayFileDialog(QtWidgets.QDialog):
         hint = QtWidgets.QLabel(
             "Select the calibration file that was active when the recording was made"
         )
-        hint.setStyleSheet("color: gray; font-size: 11px;")
+        hint.setStyleSheet("font-size: 11px;")
+        palette.tag(hint, color=palette.Role.TEXT_SECONDARY)
         layout.addWidget(hint)
 
         # --- Button box ---

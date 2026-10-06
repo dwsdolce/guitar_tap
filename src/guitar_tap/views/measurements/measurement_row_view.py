@@ -25,10 +25,11 @@ from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as GM
 from guitar_tap.models import guitar_type as GT
 from guitar_tap.utilities.date_format import format_display_datetime
+from guitar_tap.views.utilities import palette
 
-# "⋯" actions button: transparent text when idle, grey on hover (no layout shift).
-_ELLIPSIS_IDLE_QSS = "QToolButton { color: rgba(136,136,136,0); border: none; font-size: 11px; padding: 0 2px; }"
-_ELLIPSIS_HOVER_QSS = "QToolButton { color: rgba(136,136,136,255); border: none; font-size: 11px; padding: 0 2px; }"
+# "⋯" actions button: transparent text when idle, text.secondary on hover (no layout shift).
+_ELLIPSIS_IDLE_QSS = "QToolButton { color: transparent; border: none; font-size: 11px; padding: 0 2px; }"
+_ELLIPSIS_HOVER_QSS = "QToolButton { border: none; font-size: 11px; padding: 0 2px; }"
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -106,10 +107,9 @@ class MeasurementRowView(QtWidgets.QWidget):
         self._compare_eligible = compare_eligible
         if compare_mode:
             circle = QtWidgets.QLabel("●" if compare_selected else "○")
-            color = "#3478f6" if compare_selected else (
-                "#888888" if compare_eligible else "#cccccc"
-            )
-            circle.setStyleSheet(f"color: {color}; font-size: 18px;")
+            circle.setStyleSheet("font-size: 18px;")
+            palette.tag(circle, color=palette.Role.ACCENT_TEXT if compare_selected
+                        else palette.Role.TEXT_SECONDARY)
             circle.setFixedWidth(22)
             top_hbox.addWidget(circle)
             self._compare_circle = circle
@@ -135,18 +135,21 @@ class MeasurementRowView(QtWidgets.QWidget):
             line1.addWidget(chart_icon)
         elif m.spectrum_snapshot is not None:
             wave = QtWidgets.QLabel("〜")
-            wave.setStyleSheet("color: #28a028; font-size: 11px;")
+            wave.setStyleSheet("font-size: 11px;")
+            palette.tag(wave, color=palette.Role.STATUS_COMPLETE)
             wave.setToolTip("Has spectrum snapshot")
             line1.addWidget(wave)
 
         time_lbl = QtWidgets.QLabel(format_display_datetime(m.timestamp))
-        time_lbl.setStyleSheet("color: #888888; font-size: 10px;")
+        time_lbl.setStyleSheet("font-size: 10px;")
+        palette.tag(time_lbl, color=palette.Role.TEXT_SECONDARY)
         line1.addWidget(time_lbl)
 
         # Disclosure chevron — matches Image(systemName: "chevron.right") in Swift
         if not compare_mode:
             chevron = QtWidgets.QLabel("›")
-            chevron.setStyleSheet("color: #888888; font-size: 13px;")
+            chevron.setStyleSheet("font-size: 13px;")
+            palette.tag(chevron, color=palette.Role.TEXT_SECONDARY)
             line1.addWidget(chevron)
 
             # Ellipsis hint — transparent when idle, visible on hover to signal RMB menu
@@ -160,6 +163,7 @@ class MeasurementRowView(QtWidgets.QWidget):
             self._ellipsis_btn.setToolTip("Actions")
             self._ellipsis_btn.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
             self._ellipsis_btn.setStyleSheet(_ELLIPSIS_IDLE_QSS)
+            palette.tag(self._ellipsis_btn, color=palette.Role.TEXT_SECONDARY)
             self._ellipsis_btn.clicked.connect(self._on_ellipsis_clicked)
             line1.addWidget(self._ellipsis_btn)
         else:
@@ -179,13 +183,15 @@ class MeasurementRowView(QtWidgets.QWidget):
             if m.decay_time is not None:
                 parts.append(f"Decay: {fp.string(m.decay_time, fp.DECAY_TIME_S)}s")
             meta = QtWidgets.QLabel("  •  ".join(parts))
-        meta.setStyleSheet("color: #888888; font-size: 10px;")
+        meta.setStyleSheet("font-size: 10px;")
+        palette.tag(meta, color=palette.Role.TEXT_SECONDARY)
         content.addWidget(meta)
 
         # Line 3: notes (word-wrapped, expands to fit)
         if m.notes:
             notes_lbl = QtWidgets.QLabel(m.notes)
-            notes_lbl.setStyleSheet("color: #888888; font-size: 10px;")
+            notes_lbl.setStyleSheet("font-size: 10px;")
+            palette.tag(notes_lbl, color=palette.Role.TEXT_SECONDARY)
             notes_lbl.setWordWrap(True)
             content.addWidget(notes_lbl)
 
@@ -202,10 +208,8 @@ class MeasurementRowView(QtWidgets.QWidget):
         if self._compare_circle is None:
             return
         self._compare_circle.setText("●" if selected else "○")
-        color = "#3478f6" if selected else (
-            "#888888" if self._compare_eligible else "#cccccc"
-        )
-        self._compare_circle.setStyleSheet(f"color: {color}; font-size: 18px;")
+        palette.tag(self._compare_circle,
+                    color=palette.Role.ACCENT_TEXT if selected else palette.Role.TEXT_SECONDARY)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
@@ -235,7 +239,7 @@ class MeasurementRowView(QtWidgets.QWidget):
     def enterEvent(self, event) -> None:
         self.setAutoFillBackground(True)
         p = self.palette()
-        p.setColor(self.backgroundRole(), QtGui.QColor(0, 0, 0, 10))
+        p.setColor(self.backgroundRole(), palette.color(palette.Role.BACKGROUND_SUBTLE))
         self.setPalette(p)
         if self._ellipsis_btn is not None:
             self._ellipsis_btn.setStyleSheet(_ELLIPSIS_HOVER_QSS)

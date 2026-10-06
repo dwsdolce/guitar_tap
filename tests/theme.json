@@ -38,6 +38,11 @@
    "#8A96A5"
   ],
   [
+   "text.onColor",
+   "#FFFFFF",
+   "#FFFFFF"
+  ],
+  [
    "accent",
    "#007AFF",
    "#0A84FF"
@@ -48,9 +53,19 @@
    "#409CFF"
   ],
   [
+   "toolbar.inactive",
+   "#8E8E93",
+   "#8E8E93"
+  ],
+  [
    "scrim",
    "#0000004D",
    "#00000080"
+  ],
+  [
+   "overlay.card",
+   "#3A3A3CCC",
+   "#3A3A3CCC"
   ],
   [
    "chart.background",
@@ -168,6 +183,16 @@
    "#8A96A5"
   ],
   [
+   "material.phaseInactive",
+   "#8E8E9333",
+   "#8E8E9333"
+  ],
+  [
+   "material.goreBox",
+   "#007AFF14",
+   "#0A84FF14"
+  ],
+  [
    "phase.notStarted",
    "#8E8E93",
    "#8E8E93"
@@ -276,6 +301,26 @@
    "wood.poor",
    "#FF3B30",
    "#FF453A"
+  ],
+  [
+   "badge.guitar",
+   "#007AFF33",
+   "#0A84FF33"
+  ],
+  [
+   "badge.material",
+   "#FF950033",
+   "#FF9F0A33"
+  ],
+  [
+   "badge.comparison",
+   "#AF52DE33",
+   "#BF5AF233"
+  ],
+  [
+   "results.tapsActive",
+   "#FF9500",
+   "#FF9F0A"
   ],
   [
    "series.1",
@@ -408,6 +453,11 @@
    "#FF453A"
   ],
   [
+   "status.inactiveDot",
+   "#8E8E934D",
+   "#8E8E934D"
+  ],
+  [
    "meter.groove",
    "#EBEBEB",
    "#0A0D12"
@@ -444,8 +494,13 @@
   ],
   [
    "meter.peakHold",
-   "#FFD900",
-   "#FFD900"
+   "#FFC700",
+   "#FFC700"
+  ],
+  [
+   "meter.peakHoldBorder",
+   "#FFFFFFD9",
+   "#FFFFFFD9"
   ],
   [
    "meter.thresholdHandle",

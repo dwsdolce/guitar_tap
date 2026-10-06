@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from guitar_tap.models import field_precision as fp
 from guitar_tap.views.utilities import palette
@@ -39,6 +39,12 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._build_ui()
+        self._data: tuple = ([], {}, None)
+        # Drawn here, not by a stylesheet: rebuild in every new scheme.
+        palette.notifier().scheme_changed.connect(self._on_scheme_changed)
+
+    def _on_scheme_changed(self, _scheme) -> None:
+        self._rebuild(*self._data)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -69,6 +75,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         Mirrors the SwiftUI view's ``tapEntries``, ``averagedModes``, and
         ``guitarType`` inputs.
         """
+        self._data = (tap_entries, averaged_modes, guitar_type)
         self._rebuild(tap_entries, averaged_modes, guitar_type)
 
     # ------------------------------------------------------------------ #
@@ -140,7 +147,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
                 item = QtWidgets.QTableWidgetItem(self._freq_text(freq))
                 item.setTextAlignment(int(QtCore.Qt.AlignmentFlag.AlignCenter))
                 if freq is None:
-                    item.setForeground(QtGui.QColor(150, 150, 150))
+                    item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
                 self._table.setItem(row, col, item)
 
         # Averaged row — bold yellow indicator + semibold text.
@@ -163,7 +170,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
             item = QtWidgets.QTableWidgetItem(text)
             item.setTextAlignment(int(QtCore.Qt.AlignmentFlag.AlignCenter))
             if freq is None:
-                item.setForeground(QtGui.QColor(150, 150, 150))
+                item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
             _f = item.font()
             _f.setBold(True)
             _f.setItalic(is_override)

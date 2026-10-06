@@ -67,6 +67,14 @@ from guitar_tap.views.utilities import palette  # noqa: E402
 MULTI_TAP_PALETTE = [palette.rgb(role, Scheme.LIGHT) for role in palette.SERIES_ROLES]
 MULTI_TAP_AVG_COLOR = palette.rgb(palette.Role.SERIES_AVERAGE, Scheme.LIGHT)
 
+
+def _pdf(role: palette.Role):
+    """``role``'s light value as a reportlab colour — the report is always drawn light. Mirrors
+    Swift PDFReportGenerator's Palette.color(role) rendered in the light scheme."""
+    from reportlab.lib import colors
+
+    return colors.HexColor(palette.pair(role).light)
+
 # Spectrum image rendering lives in exportable_spectrum_chart.py (mirrors ExportableSpectrumChart.swift).
 from guitar_tap.views.exportable_spectrum_chart import (
     render_spectrum_image_for_measurement,  # noqa: E402
@@ -471,7 +479,6 @@ def _text(text: str, size: float, *, bold: bool = False, italic: bool = False, c
     global _swift_text_cls
     from xml.sax.saxutils import escape
 
-    from reportlab.lib import colors
     from reportlab.lib.enums import TA_LEFT, TA_RIGHT
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import Paragraph
@@ -506,7 +513,7 @@ def _text(text: str, size: float, *, bold: bool = False, italic: bool = False, c
     font = "Helvetica-Oblique" if italic else "Helvetica-Bold" if bold else "Helvetica"
     style = ParagraphStyle(
         "swift", fontName=font, fontSize=size, leading=size,
-        textColor=color if color is not None else colors.black,
+        textColor=color if color is not None else _pdf(palette.Role.PDF_TEXT),
         alignment=TA_RIGHT if align == "right" else TA_LEFT,
     )
     return _swift_text_cls(text if markup else escape(text), style)
@@ -572,7 +579,6 @@ def _report_footer(generated_by: str, secondary, content_w: float) -> list:
     generation, 9 pt."""
     from datetime import datetime as _dt
 
-    from reportlab.lib import colors
     from reportlab.platypus import Spacer
 
     from guitar_tap.utilities.date_format import format_display_datetime
@@ -580,7 +586,7 @@ def _report_footer(generated_by: str, secondary, content_w: float) -> list:
     now_str = format_display_datetime(_dt.now())  # PDF generation time (local)
     return [
         Spacer(1, 16),
-        _rule(content_w, 1, colors.Color(0.5, 0.5, 0.5, 0.2)),
+        _rule(content_w, 1, _pdf(palette.Role.PDF_DIVIDER)),
         Spacer(1, 8),
         _grid(
             [[_text(generated_by, 9, color=secondary), _text(now_str, 9, color=secondary, align="right")]],
@@ -621,7 +627,6 @@ def _spectrum_image_matte(image_data: bytes, content_w: float):
     import io as _io
 
     from PIL import Image as _PILImage
-    from reportlab.lib import colors
     from reportlab.platypus import Image as _RLImg
     from reportlab.platypus import Table, TableStyle
 
@@ -636,7 +641,7 @@ def _spectrum_image_matte(image_data: bytes, content_w: float):
 
     cell = Table([[img]], colWidths=[content_w], rowHeights=[frame_h])
     cell.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.05, 0.05, 0.05)),
+        ("BACKGROUND",    (0, 0), (-1, -1), _pdf(palette.Role.PDF_CHART_MATTE)),
         ("LEFTPADDING",   (0, 0), (-1, -1), side),
         ("RIGHTPADDING",  (0, 0), (-1, -1), side),
         ("TOPPADDING",    (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
@@ -721,15 +726,14 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     MARGIN        = 36             # 36 pt on every side (pt == 1 in reportlab)
     CONTENT_W     = 612 - 2 * MARGIN   # 540 pt
 
-    # ── Accent colour (matches Swift Color(red:0.15, green:0.35, blue:0.75)) ──
-    ACCENT = colors.Color(0.15, 0.35, 0.75)
-    SECONDARY = colors.Color(0.45, 0.45, 0.45)
-    # Mirrors Swift Color.gray.opacity(...). SwiftUI's Color.gray is approx
-    # RGB (0.5, 0.5, 0.5) at full opacity.
-    BG_GREY   = colors.Color(0.5, 0.5, 0.5, 0.07)       # gray opacity 0.07
-    BG_LIGHT  = colors.Color(0.5, 0.5, 0.5, 0.06)       # gray opacity 0.06 for sub-tables
-    BG_ACCENT = colors.Color(0.15, 0.35, 0.75, 0.07)  # blue accent bg for Gore box
-    DIVIDER   = colors.Color(0.5, 0.5, 0.5, 0.3)
+    # ── Colours: the pdf.* roles, light (mirrors Swift PDFReportGenerator) ──
+    ACCENT    = _pdf(palette.Role.PDF_ACCENT)
+    SECONDARY = _pdf(palette.Role.PDF_SECONDARY)
+    TEXT      = _pdf(palette.Role.PDF_TEXT)
+    BG_BOX    = _pdf(palette.Role.PDF_BOX)
+    BG_PILL   = _pdf(palette.Role.PDF_PILL)
+    BG_GORE   = _pdf(palette.Role.PDF_GORE_BOX)
+    DIVIDER   = _pdf(palette.Role.PDF_DIVIDER)
 
     def _hex(c: colors.Color) -> str:
         return f"#{int(c.red*255):02x}{int(c.green*255):02x}{int(c.blue*255):02x}"
@@ -745,7 +749,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         return _light(palette.mode_role(mode))
 
     def _light(role: palette.Role) -> colors.Color:
-        return colors.HexColor(palette.pair(role).light)
+        return _pdf(role)
 
     # ── Custom Flowables ──────────────────────────────────────────────────
 
@@ -801,12 +805,12 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
         def draw(self):
             P = self.PAD
-            # Background rounded rect — uses BG_GREY (Swift Color.gray.opacity(0.07))
-            self.canv.setFillColor(BG_GREY)
+            # Background rounded rect — pdf.box
+            self.canv.setFillColor(BG_BOX)
             self.canv.roundRect(0, 0, self._w, self.height, 6, stroke=0, fill=1)
             # Left side: title → big value → subtitle
             self._at(self._title, P, P, "Helvetica-Bold", 10, SECONDARY)
-            self._at(self._value, P, P + 10 + 2, "Helvetica-Bold", 18, colors.black)
+            self._at(self._value, P, P + 10 + 2, "Helvetica-Bold", 18, TEXT)
             if self._subtitle:
                 self._at(self._subtitle, P, P + 10 + 2 + 18 + 2, "Helvetica", 9, SECONDARY)
             # Right side: detail quality → detail subtitle → hint
@@ -829,13 +833,13 @@ def _build_averaged_story(data: "PDFReportData") -> list:
 
     def _pprow(label: str, value: str):
         """Swift platePropRow: HStack(spacing 6) { label 10 secondary, value 10 bold }."""
-        return _text(f"<font color='#737373'>{escape(label)}:</font>  <b>{escape(value)}</b>", 10, markup=True)
+        return _text(f"<font color='{_hex(SECONDARY)}'>{escape(label)}:</font>  <b>{escape(value)}</b>", 10, markup=True)
 
     def _qrow(label: str, value: float, quality: str):
         """Swift specificModulusRow: platePropRow with the value and a 9 pt quality in its colour."""
         hex_c = _hex(_quality_color(quality))
         return _text(
-            f"<font color='#737373'>{escape(label)}:</font>  "
+            f"<font color='{_hex(SECONDARY)}'>{escape(label)}:</font>  "
             f"<b><font color='{hex_c}'>{fp.string(value, fp.SPECIFIC_MODULUS)}</font></b>  "
             f"<font color='{hex_c}' size='9'>({escape(quality)})</font>",
             10, markup=True,
@@ -847,7 +851,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         cells = [[_text(heading, 10, bold=True, color=SECONDARY)] + [[] for _ in col_widths[1:]]] + rows
         return _grid(cells, col_widths, [
             ("SPAN",          (0, 0), (-1, 0)),
-            ("BACKGROUND",    (0, 0), (-1, -1), BG_LIGHT),
+            ("BACKGROUND",    (0, 0), (-1, -1), BG_BOX),
             ("LEFTPADDING",   (0, 0), (0, -1), 6),
             ("RIGHTPADDING",  (-1, 0), (-1, -1), 6),
             ("TOPPADDING",    (0, 0), (-1, 0), 6),
@@ -884,7 +888,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
               _text(value, 13, bold=True, color=color)]],
             [8 + label_w, CONTENT_W - 8 - label_w],
             [
-                ("BACKGROUND",    (0, 0), (-1, -1), BG_GREY),
+                ("BACKGROUND",    (0, 0), (-1, -1), BG_BOX),
                 ("LEFTPADDING",   (0, 0), (0, -1), 8),
                 ("TOPPADDING",    (0, 0), (-1, -1), 8),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
@@ -935,7 +939,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
         f"{_ext.formatted_as_frequency(min_freq)} – {_ext.formatted_as_frequency(max_freq)}",
     ))
     meta.append(("Microphone", (data.microphone_name or "unknown") + cal_suffix))
-    story += _meta_rows(meta, 120, SECONDARY, colors.black, CONTENT_W)
+    story += _meta_rows(meta, 120, SECONDARY, TEXT, CONTENT_W)
     story.append(Spacer(1, 14))
 
     # --- SPECTRUM IMAGE ---------------------------------------------------
@@ -953,10 +957,10 @@ def _build_averaged_story(data: "PDFReportData") -> list:
     # --- PEAKS TABLE ------------------------------------------------------
     # Swift peaksSection: VStack(spacing 6) { "Detected Peaks" 13 bold, the header (10 bold, padded 3
     # vertically and 6 horizontally, 2 below), one row per peak (10, padded 2 / 6) }.
-    # Role colors — mirrors Swift .blue / .orange / .purple
-    _ROLE_BLUE   = "#0077FF"
-    _ROLE_ORANGE = "#FF9500"
-    _ROLE_PURPLE = "#AF52DE"
+    # Role colors — the material roles, light. Mirrors Swift peakRoleCell.
+    _ROLE_BLUE   = _hex(_light(palette.Role.MATERIAL_LONGITUDINAL))
+    _ROLE_ORANGE = _hex(_light(palette.Role.MATERIAL_CROSS))
+    _ROLE_PURPLE = _hex(_light(palette.Role.MATERIAL_FLC))
 
     story.append(_text("Detected Peaks", 13, bold=True))
     story.append(Spacer(1, 6))
@@ -1032,7 +1036,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
             [[_text(h, 10, bold=True, color=SECONDARY) for h in hdr_row]],
             col_w,
             [
-                ("BACKGROUND",    (0, 0), (-1, -1), colors.Color(0.5, 0.5, 0.5, 0.1)),
+                ("BACKGROUND",    (0, 0), (-1, -1), BG_PILL),
                 ("LEFTPADDING",   (0, 0), (0, -1), 6),
                 ("TOPPADDING",    (0, 0), (-1, -1), 3),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
@@ -1063,7 +1067,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                 dc = colors.HexColor(_ext.decay_quality_color(data.decay_time, gt).light)
             except Exception:
                 decay_label = ""
-                dc = colors.Color(0.45, 0.45, 0.45)
+                dc = SECONDARY
             box_specs.append(dict(
                 title="Ring-Out Time",
                 value=f"{fp.string(data.decay_time, fp.DECAY_TIME_S)} s",
@@ -1129,7 +1133,7 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                    _text(f"{fp.string(gore_thickness_mm, fp.GORE_THICKNESS_MM)} mm", 16, bold=True, color=ACCENT)]]],
                 [CONTENT_W],
                 [
-                    ("BACKGROUND",    (0, 0), (-1, -1), BG_ACCENT),
+                    ("BACKGROUND",    (0, 0), (-1, -1), BG_GORE),
                     ("LEFTPADDING",   (0, 0), (-1, -1), 6),
                     ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
                     ("TOPPADDING",    (0, 0), (-1, -1), 6),
@@ -1323,11 +1327,8 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
     # Build comparison_spectra list matching the format expected by make_exportable_spectrum_view
     # when passed as material_spectra (each with frequencies, magnitudes, color, label).
     comparison_spectra = []
-    for entry in entries:
-        comps = (entry.color_components + [1.0])[:4]
-        r, g, b, _a = comps
-        # make_exportable_spectrum_view accepts color as an (r,g,b) tuple or named color string.
-        color = (int(r * 255), int(g * 255), int(b * 255))
+    for index, entry in enumerate(entries):
+        color = palette.rgb(palette.comparison_role(index, entry.label), Scheme.LIGHT)
         comparison_spectra.append({
             "frequencies": list(entry.snapshot.frequencies),
             "magnitudes":  list(entry.snapshot.magnitudes),
@@ -1476,10 +1477,8 @@ def comparison_pdf_report_data_from_measurement(
         spectrum_image_data = render_spectrum_image_for_comparison(measurement)
 
     mode_frequencies = []
-    for entry in entries:
-        comps = (entry.color_components + [1.0])[:4]
-        r, g, b, _a = comps
-        color_rgb = (int(r * 255), int(g * 255), int(b * 255))
+    for index, entry in enumerate(entries):
+        color_rgb = palette.rgb(palette.comparison_role(index, entry.label), Scheme.LIGHT)
         # Values come from the entry's stored definitive modes (self-describing, override-correct);
         # `mode_frequency` falls back to a positional re-derive only for a map-less entry. No override
         # tag on comparison rows (that marking is the multi-tap Averaged row's concern). Mirrors Swift
@@ -1547,9 +1546,8 @@ def multi_tap_comparison_pdf_report_data_from_measurement(
 
     avg_info = measurement.definitive_mode_info()
     mode_frequencies = []
-    for cmp_entry in cmp_entries:
-        c = cmp_entry.color_components
-        color = (round(c[0] * 255), round(c[1] * 255), round(c[2] * 255))
+    for index, cmp_entry in enumerate(cmp_entries):
+        color = palette.rgb(palette.comparison_role(index, cmp_entry.label), Scheme.LIGHT)
         if cmp_entry.label == "Averaged":
             air_t = avg_info.get(GuitarMode.AIR)
             top_t = avg_info.get(GuitarMode.TOP)
@@ -1620,7 +1618,6 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
 
     from reportlab.graphics.shapes import Circle, Drawing
     from reportlab.lib import colors
-    from reportlab.lib.colors import HexColor
     from reportlab.platypus import Spacer
 
     from guitar_tap._version import __version_string__ as _app_version
@@ -1630,9 +1627,9 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     CONTENT_W = 612 - 2 * MARGIN
 
     # ── Colours ───────────────────────────────────────────────────────────────
-    BLUE     = HexColor("#2659BF")  # GuitarTap brand blue
-    SECONDARY = colors.Color(0.4, 0.4, 0.4)
-    DARK     = colors.Color(0.1, 0.1, 0.1)
+    BLUE      = _pdf(palette.Role.PDF_ACCENT)
+    SECONDARY = _pdf(palette.Role.PDF_SECONDARY)
+    DARK      = _pdf(palette.Role.PDF_TEXT)
 
     story: list = _report_header("Comparison Report", format_display_datetime(data.timestamp), BLUE, SECONDARY, CONTENT_W)
 
@@ -1673,7 +1670,7 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
             pass
         story.append(Spacer(1, 14))
 
-    story.append(_rule(CONTENT_W, 1, colors.Color(0.5, 0.5, 0.5, 0.3)))
+    story.append(_rule(CONTENT_W, 1, _pdf(palette.Role.PDF_DIVIDER)))
     story.append(Spacer(1, 14))
 
     # ── Peak Mode Comparison table ────────────────────────────────────────────
@@ -1696,7 +1693,7 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
          + [_text(h, 10, bold=True, color=SECONDARY, align="right") for h in ("Air", "Top", "Back")]],
         col_w,
         cell_style + [
-            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.9)),
+            ("BACKGROUND", (0, 0), (-1, 0), _pdf(palette.Role.PDF_PILL)),
             ("ROUNDEDCORNERS", [4]),
         ],
     ))

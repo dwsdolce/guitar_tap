@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import field_precision as fp
+from guitar_tap.views.utilities import palette
 from guitar_tap.views.utilities.extensions import formatted_as_frequency, formatted_as_whole_hertz
 
 if TYPE_CHECKING:
@@ -68,7 +69,7 @@ class MetricRow:
         sub = QtWidgets.QLabel(subtitle)
         if sub_font:
             sub.setFont(sub_font)
-        sub.setStyleSheet("color: gray")
+        palette.tag(sub, color=palette.Role.TEXT_SECONDARY)
         lv.addWidget(sub)
         self._layout.addLayout(lv)
         self._layout.addStretch()
@@ -84,13 +85,10 @@ class MetricRow:
     def layout(self) -> QtWidgets.QHBoxLayout:
         return self._layout
 
-    def set_value(self, text: str, color: str = "") -> None:
-        """Update the displayed value and optional colour."""
+    def set_value(self, text: str, color: palette.Role = palette.Role.TEXT_PRIMARY) -> None:
+        """Update the displayed value and its colour role."""
         self.value_label.setText(text)
-        style = "font-weight: bold"
-        if color:
-            style += f"; color: {color}"
-        self.value_label.setStyleSheet(style)
+        palette.tag(self.value_label, color=color)
 
 
 # ---------------------------------------------------------------------------
@@ -197,14 +195,14 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         ]))
 
         # ── Status indicator ───────────────────────────────────────────────
-        # Mirrors Swift HStack { Circle().fill(isRunning ? .green : .gray) ... }
+        # Mirrors Swift HStack { Circle().fill(isRunning ? .statusRunning : .statusStopped) ... }
         status_row = QtWidgets.QHBoxLayout()
         self._status_dot = QtWidgets.QLabel("●")
         self._status_dot.setFont(self._sub_font)
         status_row.addWidget(self._status_dot)
         self._status_label = QtWidgets.QLabel("Stopped")
         self._status_label.setFont(self._sub_font)
-        self._status_label.setStyleSheet("color: gray")
+        palette.tag(self._status_label, color=palette.Role.TEXT_SECONDARY)
         status_row.addWidget(self._status_label)
         status_row.addStretch()
         outer.addLayout(status_row)
@@ -233,8 +231,8 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
 
     # MARK: - Helper Functions
 
-    def _processing_time_color(self, time_ms: float, frame_time_ms: float) -> str:
-        """Return a CSS colour string indicating processing time health.
+    def _processing_time_color(self, time_ms: float, frame_time_ms: float) -> palette.Role:
+        """Return the colour role indicating processing time health.
 
         Mirrors Swift ``processingTimeColor(_:)``::
 
@@ -245,25 +243,25 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         """
         ratio = time_ms / frame_time_ms if frame_time_ms > 0 else 0
         if ratio < 0.5:
-            return "green"
+            return palette.Role.METRIC_GOOD
         if ratio < 0.8:
-            return "yellow"
+            return palette.Role.METRIC_FAIR
         if ratio < 0.95:
-            return "orange"
-        return "red"
+            return palette.Role.METRIC_HIGH
+        return palette.Role.METRIC_OVERLOAD
 
-    def _cpu_usage_color(self, usage: float) -> str:
-        """Return a CSS colour string indicating CPU usage level.
+    def _cpu_usage_color(self, usage: float) -> palette.Role:
+        """Return the colour role indicating CPU usage level.
 
         Mirrors Swift ``cpuUsageColor(_:)``.
         """
         if usage < 50:
-            return "green"
+            return palette.Role.METRIC_GOOD
         if usage < 80:
-            return "yellow"
+            return palette.Role.METRIC_FAIR
         if usage < 95:
-            return "orange"
-        return "red"
+            return palette.Role.METRIC_HIGH
+        return palette.Role.METRIC_OVERLOAD
 
     # MARK: - Reactive Update
 
@@ -326,10 +324,10 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         )
 
         # ── Status indicator ───────────────────────────────────────────────
-        # Mirrors Swift Circle().fill(analyzer.isRunning ? .green : .gray)
+        # Mirrors Swift Circle().fill(analyzer.isRunning ? .statusRunning : .statusStopped)
         if is_running:
-            self._status_dot.setStyleSheet("color: green")
+            palette.tag(self._status_dot, color=palette.Role.STATUS_RUNNING)
             self._status_label.setText("Analyzing")
         else:
-            self._status_dot.setStyleSheet("color: gray")
+            palette.tag(self._status_dot, color=palette.Role.STATUS_STOPPED)
             self._status_label.setText("Stopped")

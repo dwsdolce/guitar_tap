@@ -28,10 +28,9 @@ class ColorPair:
     light: str
     dark: str
 
-    def on(self, widget: QtWidgets.QWidget) -> str:
-        """The value for the background ``widget`` is drawn on: dark when its window is dark."""
-        window = widget.palette().color(QtGui.QPalette.ColorRole.Window)
-        return self.dark if window.lightness() < 128 else self.light
+    def on(self, _widget: QtWidgets.QWidget | None = None) -> str:
+        """The value for the scheme the app is drawn in."""
+        return self.dark if _scheme is Scheme.DARK else self.light
 
 
 class Role(Enum):
@@ -44,9 +43,12 @@ class Role(Enum):
     SEPARATOR = "separator"
     TEXT_PRIMARY = "text.primary"
     TEXT_SECONDARY = "text.secondary"
+    TEXT_ON_COLOR = "text.onColor"
     ACCENT = "accent"
     ACCENT_TEXT = "accent.text"
+    TOOLBAR_INACTIVE = "toolbar.inactive"
     SCRIM = "scrim"
+    OVERLAY_CARD = "overlay.card"
     CHART_BACKGROUND = "chart.background"
     CHART_GRID = "chart.grid"
     CHART_BORDER = "chart.border"
@@ -70,6 +72,8 @@ class Role(Enum):
     MATERIAL_CROSS = "material.cross"
     MATERIAL_FLC = "material.flc"
     MATERIAL_UNSELECTED = "material.unselected"
+    MATERIAL_PHASE_INACTIVE = "material.phaseInactive"
+    MATERIAL_GORE_BOX = "material.goreBox"
     PHASE_NOT_STARTED = "phase.notStarted"
     PHASE_COMPLETE = "phase.complete"
     PEAK_MAGNITUDE_STRONG = "peak.magnitude.strong"
@@ -92,6 +96,10 @@ class Role(Enum):
     WOOD_GOOD = "wood.good"
     WOOD_FAIR = "wood.fair"
     WOOD_POOR = "wood.poor"
+    BADGE_GUITAR = "badge.guitar"
+    BADGE_MATERIAL = "badge.material"
+    BADGE_COMPARISON = "badge.comparison"
+    RESULTS_TAPS_ACTIVE = "results.tapsActive"
     SERIES_1 = "series.1"
     SERIES_2 = "series.2"
     SERIES_3 = "series.3"
@@ -118,6 +126,7 @@ class Role(Enum):
     STATUS_TAP_COUNT = "status.tapCount"
     STATUS_PEAK_READOUT = "status.peakReadout"
     STATUS_ERROR = "status.error"
+    STATUS_INACTIVE_DOT = "status.inactiveDot"
     METER_GROOVE = "meter.groove"
     METER_GROOVE_BORDER = "meter.grooveBorder"
     METER_LEVEL_TOP = "meter.levelTop"
@@ -126,6 +135,7 @@ class Role(Enum):
     METER_CLIP = "meter.clip"
     METER_TICKS = "meter.ticks"
     METER_PEAK_HOLD = "meter.peakHold"
+    METER_PEAK_HOLD_BORDER = "meter.peakHoldBorder"
     METER_THRESHOLD_HANDLE = "meter.thresholdHandle"
     METER_THRESHOLD_HANDLE_BORDER = "meter.thresholdHandleBorder"
     METRIC_GOOD = "metric.good"
@@ -157,9 +167,12 @@ PAIRS: dict[Role, ColorPair] = {
     Role.SEPARATOR: ColorPair("#D8DEE6", "#222A33"),
     Role.TEXT_PRIMARY: ColorPair("#1A2330", "#E7EBF0"),
     Role.TEXT_SECONDARY: ColorPair("#6B7785", "#8A96A5"),
+    Role.TEXT_ON_COLOR: ColorPair("#FFFFFF", "#FFFFFF"),
     Role.ACCENT: ColorPair("#007AFF", "#0A84FF"),
     Role.ACCENT_TEXT: ColorPair("#007AFF", "#409CFF"),
+    Role.TOOLBAR_INACTIVE: ColorPair("#8E8E93", "#8E8E93"),
     Role.SCRIM: ColorPair("#0000004D", "#00000080"),
+    Role.OVERLAY_CARD: ColorPair("#3A3A3CCC", "#3A3A3CCC"),
     Role.CHART_BACKGROUND: ColorPair("#FFFFFF", "#0E1116"),
     Role.CHART_GRID: ColorPair("#E3E8EE", "#1C242E"),
     Role.CHART_BORDER: ColorPair("#C2CAD4", "#2A3543"),
@@ -183,6 +196,8 @@ PAIRS: dict[Role, ColorPair] = {
     Role.MATERIAL_CROSS: ColorPair("#FF9500", "#FF9F0A"),
     Role.MATERIAL_FLC: ColorPair("#AF52DE", "#BF5AF2"),
     Role.MATERIAL_UNSELECTED: ColorPair("#6B7785", "#8A96A5"),
+    Role.MATERIAL_PHASE_INACTIVE: ColorPair("#8E8E9333", "#8E8E9333"),
+    Role.MATERIAL_GORE_BOX: ColorPair("#007AFF14", "#0A84FF14"),
     Role.PHASE_NOT_STARTED: ColorPair("#8E8E93", "#8E8E93"),
     Role.PHASE_COMPLETE: ColorPair("#34C759", "#30D158"),
     Role.PEAK_MAGNITUDE_STRONG: ColorPair("#34C759", "#30D158"),
@@ -205,6 +220,10 @@ PAIRS: dict[Role, ColorPair] = {
     Role.WOOD_GOOD: ColorPair("#007AFF", "#0A84FF"),
     Role.WOOD_FAIR: ColorPair("#FF9500", "#FF9F0A"),
     Role.WOOD_POOR: ColorPair("#FF3B30", "#FF453A"),
+    Role.BADGE_GUITAR: ColorPair("#007AFF33", "#0A84FF33"),
+    Role.BADGE_MATERIAL: ColorPair("#FF950033", "#FF9F0A33"),
+    Role.BADGE_COMPARISON: ColorPair("#AF52DE33", "#BF5AF233"),
+    Role.RESULTS_TAPS_ACTIVE: ColorPair("#FF9500", "#FF9F0A"),
     Role.SERIES_1: ColorPair("#007AFF", "#0A84FF"),
     Role.SERIES_2: ColorPair("#E07800", "#FF9F0A"),
     Role.SERIES_3: ColorPair("#269342", "#30D158"),
@@ -231,6 +250,7 @@ PAIRS: dict[Role, ColorPair] = {
     Role.STATUS_TAP_COUNT: ColorPair("#007AFF", "#0A84FF"),
     Role.STATUS_PEAK_READOUT: ColorPair("#007AFF", "#0A84FF"),
     Role.STATUS_ERROR: ColorPair("#FF3B30", "#FF453A"),
+    Role.STATUS_INACTIVE_DOT: ColorPair("#8E8E934D", "#8E8E934D"),
     Role.METER_GROOVE: ColorPair("#EBEBEB", "#0A0D12"),
     Role.METER_GROOVE_BORDER: ColorPair("#8E8E9399", "#8E8E9373"),
     Role.METER_LEVEL_TOP: ColorPair("#66CCFF", "#66CCFF"),
@@ -238,7 +258,8 @@ PAIRS: dict[Role, ColorPair] = {
     Role.METER_LEVEL_BOTTOM: ColorPair("#001E50", "#001E50"),
     Role.METER_CLIP: ColorPair("#FF3B30D9", "#FF453AD9"),
     Role.METER_TICKS: ColorPair("#3D8C3DB3", "#3D8C3DB3"),
-    Role.METER_PEAK_HOLD: ColorPair("#FFD900", "#FFD900"),
+    Role.METER_PEAK_HOLD: ColorPair("#FFC700", "#FFC700"),
+    Role.METER_PEAK_HOLD_BORDER: ColorPair("#FFFFFFD9", "#FFFFFFD9"),
     Role.METER_THRESHOLD_HANDLE: ColorPair("#FF3B30", "#FF453A"),
     Role.METER_THRESHOLD_HANDLE_BORDER: ColorPair("#800000", "#800000"),
     Role.METRIC_GOOD: ColorPair("#34C759", "#30D158"),
@@ -300,6 +321,13 @@ SERIES_ROLES: list[Role] = [
 def series_role(index: int) -> Role:
     """The role of series slot ``index`` (0-based). Mirrors Swift ``Palette.series``."""
     return SERIES_ROLES[index % len(SERIES_ROLES)]
+
+
+def comparison_role(index: int, label: str) -> Role:
+    """The role a saved comparison's entry ``index`` is drawn in: its series slot, or the average
+    for the "Averaged" entry — never the colour stored with it. Mirrors Swift
+    ``Palette.comparisonColor(index:label:)``."""
+    return Role.SERIES_AVERAGE if label == "Averaged" else series_role(index)
 
 
 def magnitude_role(magnitude: float) -> Role:
@@ -372,6 +400,7 @@ def apply(appearance: Appearance) -> None:
         hints = app.styleHints()
         if not _following_os:
             hints.colorSchemeChanged.connect(_on_os_scheme_changed)
+            app.installEventFilter(_palette_follower())
             _following_os = True
         if appearance is Appearance.SYSTEM:
             hints.unsetColorScheme()
@@ -383,18 +412,175 @@ def apply(appearance: Appearance) -> None:
     _update()
 
 
+class _PaletteFollower(QtCore.QObject):
+    """Re-applies the application stylesheet when Qt's own palette changes. Qt changes it a moment
+    after a scheme request, after the stylesheet was set; a widget polished in between would keep
+    the previous scheme's platform colours."""
+
+    _busy = False
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 — Qt's name
+        if (event.type() == QtCore.QEvent.Type.ApplicationPaletteChange
+                and not self._busy and obj is QtWidgets.QApplication.instance()):
+            self._busy = True
+            try:
+                obj.setStyleSheet("")
+                obj.setStyleSheet(_application_stylesheet())
+            finally:
+                self._busy = False
+        return False
+
+
+_follower: _PaletteFollower | None = None
+
+
+def _palette_follower() -> _PaletteFollower:
+    global _follower
+    if _follower is None:
+        _follower = _PaletteFollower()
+    return _follower
+
+
 def _on_os_scheme_changed(_scheme: QtCore.Qt.ColorScheme) -> None:
     if _appearance is Appearance.SYSTEM:
         _update()
 
 
 def _update() -> None:
-    """Re-resolve the scheme; announce it when it changed."""
-    global _scheme
+    """Re-resolve the scheme; set the application stylesheet for it and announce it when it
+    changed."""
+    global _scheme, _stylesheet_scheme
     resolved = _appearance.resolved(os_scheme() if _appearance is Appearance.SYSTEM else None)
-    if resolved is not _scheme:
-        _scheme = resolved
+    changed = resolved is not _scheme
+    _scheme = resolved
+    app = QtWidgets.QApplication.instance()
+    if app is not None and _stylesheet_scheme is not resolved:
+        app.setStyleSheet(_application_stylesheet())
+        _stylesheet_scheme = resolved
+    if changed:
+        _redraw_icons()
         notifier().scheme_changed.emit(resolved)
+
+
+# The role a widget's text or background takes, as a Qt property the application stylesheet
+# selects on: a widget names its role, the stylesheet gives it the scheme's value.
+COLOR_PROPERTY = "colorRole"
+BACKGROUND_PROPERTY = "backgroundRole"
+# A bordered button tinted by a role — Swift's .buttonStyle(.bordered) with .tint(role): the role's
+# colour as text, at TINT_FILL as the fill and TINT_BORDER as the border.
+TINT_PROPERTY = "tintRole"
+TINT_FILL = 0.12
+TINT_BORDER = 0.35
+# A widget's border colour (a divider drawn as a bar's edge).
+BORDER_PROPERTY = "borderRole"
+# A status message's box — Swift's
+# .background(Palette.color(role, opacity: .statusMessageBackground)): the role at that opacity as
+# the fill.
+MESSAGE_PROPERTY = "messageRole"
+# A button filled with a role — Swift's .buttonStyle(.borderedProminent): the role as the fill,
+# text.onColor as the text.
+PROMINENT_PROPERTY = "prominentRole"
+_stylesheet_scheme: Scheme | None = None
+
+
+def tag(
+    widget: QtWidgets.QWidget, color: Role | None = None, background: Role | None = None,
+    tint: Role | None = None, border: Role | None = None, prominent: Role | None = None,
+    message: Role | None = None,
+) -> None:
+    """Give ``widget``'s text and / or background a role, or tint a button with one. The
+    application stylesheet colours it in the current scheme, and again on every change of it.
+    Mirrors a Swift view naming ``Palette.color(role)``."""
+    widget.setProperty(COLOR_PROPERTY, color.value if color is not None else "")
+    widget.setProperty(BACKGROUND_PROPERTY, background.value if background is not None else "")
+    widget.setProperty(TINT_PROPERTY, tint.value if tint is not None else "")
+    widget.setProperty(BORDER_PROPERTY, border.value if border is not None else "")
+    widget.setProperty(PROMINENT_PROPERTY, prominent.value if prominent is not None else "")
+    widget.setProperty(MESSAGE_PROPERTY, message.value if message is not None else "")
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
+
+
+# Icons drawn in a role: qtawesome bakes the colour into the image, so every one set through
+# set_icon is drawn again for a new scheme.
+_icons: dict[int, tuple[QtWidgets.QWidget, str, Role, int | None]] = {}
+
+
+def set_icon(widget: QtWidgets.QWidget, name: str, role: Role, size: int | None = None) -> None:
+    """Draw the qtawesome icon ``name`` in ``role`` on a button (its icon) or a label (a pixmap of
+    ``size``), and again on every change of scheme."""
+    import qtawesome as qta
+
+    icon = qta.icon(name, color=color(role))
+    if isinstance(widget, QtWidgets.QAbstractButton):
+        widget.setIcon(icon)
+    else:
+        widget.setPixmap(icon.pixmap(size or 16, size or 16))
+    key = id(widget)
+    if key not in _icons:
+        widget.destroyed.connect(lambda *_: _icons.pop(key, None))
+    _icons[key] = (widget, name, role, size)
+
+
+def _redraw_icons() -> None:
+    for widget, name, role, size in list(_icons.values()):
+        set_icon(widget, name, role, size)
+
+
+def role_of(pair_: ColorPair) -> Role:
+    """The role whose values ``pair_`` holds (an analysis-quality colour)."""
+    return next(role for role, p in PAIRS.items() if p is pair_)
+
+
+def _rgba(c: QtGui.QColor, alpha: float) -> str:
+    return f"rgba({c.red()}, {c.green()}, {c.blue()}, {round(c.alpha() * alpha)})"
+
+
+def _application_stylesheet() -> str:
+    """One rule per role: a widget tagged with it takes the role's value in the current scheme. A
+    label's text is text.primary unless tagged otherwise — text the app draws is never left to the
+    platform."""
+    rules = [f"QLabel {{ color: {qss(Role.TEXT_PRIMARY)}; }}"]
+    for role in Role:
+        value = qss(role)
+        rules.append(f'*[{COLOR_PROPERTY}="{role.value}"] {{ color: {value}; }}')
+        rules.append(f'*[{BACKGROUND_PROPERTY}="{role.value}"] {{ background-color: {value}; }}')
+        rules.append(f'*[{BORDER_PROPERTY}="{role.value}"] {{ border-color: {value}; }}')
+        rules.append(
+            f'*[{MESSAGE_PROPERTY}="{role.value}"] {{ background-color:'
+            f' {qss(role, Opacity.STATUS_MESSAGE_BACKGROUND)}; border-radius: 6px; }}')
+        on_color = color(Role.TEXT_ON_COLOR)
+        prominent = f'QPushButton[{PROMINENT_PROPERTY}="{role.value}"]'
+        rules.append(
+            f'{prominent} {{ color: {on_color.name()}; background-color: {value}; border: none;'
+            f' border-radius: 6px; padding: 4px 10px; }}')
+        rules.append(f'{prominent}:hover {{ background-color: {_rgba(color(role), 0.85)}; }}')
+        rules.append(
+            f'{prominent}:disabled {{ background-color: {_rgba(color(role), 0.30)};'
+            f' color: {_rgba(on_color, 0.70)}; }}')
+        c = color(role)
+        tinted = f'QPushButton[{TINT_PROPERTY}="{role.value}"]'
+        rules.append(
+            f'{tinted} {{ color: {value}; background-color: {_rgba(c, TINT_FILL)};'
+            f' border: 1px solid {_rgba(c, TINT_BORDER)}; border-radius: 6px;'
+            f' padding: 3px 8px; }}')
+        rules.append(
+            f'{tinted}:hover {{ background-color: {_rgba(c, 0.20)};'
+            f' border-color: {_rgba(c, 0.55)}; }}')
+        rules.append(f'{tinted}:pressed {{ background-color: {_rgba(c, 0.30)}; }}')
+        rules.append(
+            f'{tinted}:checked {{ background-color: {_rgba(c, 0.28)};'
+            f' border-color: {_rgba(c, 0.60)}; }}')
+        rules.append(
+            f'{tinted}:disabled {{ background-color: {_rgba(c, 0.05)};'
+            f' border-color: {_rgba(c, 0.15)}; color: {_rgba(c, 0.40)}; }}')
+        bar = f'QProgressBar[{TINT_PROPERTY}="{role.value}"]'
+        rules.append(
+            f'{bar} {{ border: none; border-radius: 3px;'
+            f' background-color: {qss(Role.SEPARATOR)}; }}')
+        rules.append(f'{bar}::chunk {{ background-color: {value}; border-radius: 3px; }}')
+    return "\n".join(rules)
 
 
 def _apply_linux_fallback(app: QtWidgets.QApplication, appearance: Appearance) -> None:

@@ -114,3 +114,37 @@ def test_series_slots():
 @pytest.mark.parametrize("magnitude,role", DATA["magnitudeRoles"])
 def test_magnitude_role(magnitude, role):
     assert palette.magnitude_role(magnitude).value == role
+
+
+def test_a_tagged_widget_takes_its_role_in_each_scheme(monkeypatch):
+    """A widget tagged with a role is coloured by the application stylesheet, which follows the
+    scheme — what a Swift view's Palette.color(role) does by itself."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    monkeypatch.setattr(palette, "os_scheme", lambda: Scheme.LIGHT)
+    monkeypatch.setattr(palette, "_apply_linux_fallback", lambda *_: None)
+    label = QtWidgets.QLabel("caption")
+    palette.tag(
+        label, color=palette.Role.TEXT_SECONDARY, background=palette.Role.BACKGROUND_SUBTLE)
+    assert label.property(palette.COLOR_PROPERTY) == "text.secondary"
+    assert label.property(palette.BACKGROUND_PROPERTY) == "background.subtle"
+    try:
+        for appearance, scheme in ((Appearance.DARK, "dark"), (Appearance.LIGHT, "light")):
+            palette.apply(appearance)
+            value = getattr(palette.pair(palette.Role.TEXT_SECONDARY), scheme).lower()
+            assert f'*[colorRole="text.secondary"] {{ color: {value}; }}' in app.styleSheet()
+    finally:
+        palette.apply(Appearance.SYSTEM)
+
+
+def test_role_of_a_quality_colour():
+    assert palette.role_of(palette.GRAY) is palette.Role.QUALITY_GRAY
+    assert palette.role_of(palette.RED) is palette.Role.QUALITY_RED
+
+
+def test_a_saved_comparison_is_drawn_by_slot():
+    """A saved comparison's entry takes its series slot's role, and the "Averaged" entry the
+    average's — never the colour stored with it."""
+    assert palette.comparison_role(0, "Top plate") is palette.Role.SERIES_1
+    assert palette.comparison_role(11, "Back") is palette.Role.SERIES_2
+    assert palette.comparison_role(3, "Averaged") is palette.Role.SERIES_AVERAGE
+

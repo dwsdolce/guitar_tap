@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from guitar_tap.views.utilities import palette
+
 
 class LoadingOverlay(QtWidgets.QWidget):
     """A semi-transparent full-parent-size overlay with a centred spinner card.
@@ -27,7 +29,7 @@ class LoadingOverlay(QtWidgets.QWidget):
 
     The overlay:
       - Fills its parent widget completely (resizes on parent resize events).
-      - Shows a dark semi-transparent background (mirrors Color.black.opacity(0.3)).
+      - Shows the scrim over the parent (mirrors Palette.color(.scrim)).
       - Displays a centred rounded card containing a QMovie spinner and a
         message label (mirrors VStack { ProgressView() · Text(message) }).
       - Blocks all mouse/keyboard events from reaching widgets beneath it.
@@ -43,12 +45,8 @@ class LoadingOverlay(QtWidgets.QWidget):
         # ── Card ──────────────────────────────────────────────────────────────
         card = QtWidgets.QFrame(self)
         card.setObjectName("loadingCard")
-        card.setStyleSheet(
-            "#loadingCard {"
-            "  background: rgba(80, 80, 80, 200);"   # mirrors Color.secondary.opacity(0.8)
-            "  border-radius: 12px;"
-            "}"
-        )
+        card.setStyleSheet("#loadingCard { border-radius: 12px; }")
+        palette.tag(card, background=palette.Role.OVERLAY_CARD)
 
         card_layout = QtWidgets.QVBoxLayout(card)
         card_layout.setContentsMargins(30, 30, 30, 30)
@@ -61,15 +59,7 @@ class LoadingOverlay(QtWidgets.QWidget):
         self._spinner.setTextVisible(False)
         self._spinner.setFixedHeight(6)
         self._spinner.setMinimumWidth(160)
-        self._spinner.setStyleSheet(
-            "QProgressBar {"
-            "  border: none; border-radius: 3px;"
-            "  background: rgba(255,255,255,60);"
-            "}"
-            "QProgressBar::chunk {"
-            "  background: white; border-radius: 3px;"
-            "}"
-        )
+        palette.tag(self._spinner, tint=palette.Role.TEXT_ON_COLOR)
         card_layout.addWidget(self._spinner, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
 
         # Message label
@@ -79,7 +69,7 @@ class LoadingOverlay(QtWidgets.QWidget):
         font.setPointSize(font.pointSize() + 1)
         font.setBold(True)
         self._label.setFont(font)
-        self._label.setStyleSheet("color: white;")
+        palette.tag(self._label, color=palette.Role.TEXT_ON_COLOR)
         card_layout.addWidget(self._label)
 
         # ── Center the card ───────────────────────────────────────────────────
@@ -127,9 +117,9 @@ class LoadingOverlay(QtWidgets.QWidget):
         if parent is not None:
             self.setGeometry(0, 0, parent.width(), parent.height())
 
-    # ── Painting — semi-transparent dark background ───────────────────────────
+    # ── Painting — the scrim ──────────────────────────────────────────────────
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         painter = QtGui.QPainter(self)
-        painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 76))  # opacity ~0.3
+        painter.fillRect(self.rect(), palette.color(palette.Role.SCRIM))
         painter.end()

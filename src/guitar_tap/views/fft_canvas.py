@@ -16,6 +16,7 @@ from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
 from guitar_tap.views.utilities import axis_tick_generator as atg
 from guitar_tap.views.utilities import chart_style
+from guitar_tap.views.utilities.magnitude_axis import MagnitudeAxis
 from guitar_tap.views.utilities import palette
 from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import microphone_calibration as _mc_mod
@@ -110,7 +111,7 @@ class _ZoomPanPopup(QtWidgets.QFrame):
                 key_lbl.setMinimumWidth(130)
                 desc_lbl = QtWidgets.QLabel(desc)
                 desc_lbl.setFont(_desc_font)
-                desc_lbl.setStyleSheet("color: gray;")
+                palette.tag(desc_lbl, color=palette.Role.TEXT_SECONDARY)
                 hl.addWidget(key_lbl)
                 hl.addWidget(desc_lbl, 1)
                 layout.addLayout(hl)
@@ -246,7 +247,7 @@ class FftCanvas(pg.PlotWidget):
         frange: dict[str, int],
         threshold: int,
     ) -> None:
-        super().__init__()
+        super().__init__(axisItems={"left": MagnitudeAxis("left")})
 
         # Configure plot appearance
         # Colours come from the palette's chart roles in _apply_scheme (end of __init__ and on every

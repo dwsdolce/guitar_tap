@@ -20,6 +20,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models.plate_stiffness_preset import PlateStiffnessPreset
 from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
+from guitar_tap.views.utilities import palette
 
 
 class PlateBodyDimensionsEditor(QtWidgets.QWidget):
@@ -102,7 +103,7 @@ class PlateBodyDimensionsEditor(QtWidgets.QWidget):
         row.addWidget(widget)
         unit_lbl = QtWidgets.QLabel(unit)
         unit_lbl.setFont(self._small_font)
-        unit_lbl.setStyleSheet("color: palette(shadow);")
+        palette.tag(unit_lbl, color=palette.Role.TEXT_SECONDARY)
         row.addWidget(unit_lbl)
         return row
 

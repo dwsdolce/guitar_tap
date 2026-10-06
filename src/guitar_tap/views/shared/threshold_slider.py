@@ -23,25 +23,28 @@ import time
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from guitar_tap.views.utilities import palette
 
-_STYLE_SHEET = """
-    QSlider::groove:horizontal {
-        border: 1px solid palette(mid);
-        background: palette(base);
+Role = palette.Role
+
+
+def _style_sheet() -> str:
+    """The groove and the threshold handle, in the meter roles of the current scheme."""
+    return f"""
+    QSlider::groove:horizontal {{
+        border: 1px solid {palette.qss(Role.METER_GROOVE_BORDER)};
+        background: {palette.qss(Role.METER_GROOVE)};
         height: 14px;
         margin: 2px 0;
         border-radius: 2px;
-    }
-    QSlider::handle:horizontal {
-        background: red;
-        border: 1px solid #800;
+    }}
+    QSlider::handle:horizontal {{
+        background: {palette.qss(Role.METER_THRESHOLD_HANDLE)};
+        border: 1px solid {palette.qss(Role.METER_THRESHOLD_HANDLE_BORDER)};
         width: 4px;
         margin: -3px 0;
         border-radius: 1px;
-    }
-    QSlider::handle:horizontal:hover {
-        background: #f44;
-    }
+    }}
 """
 
 
@@ -87,7 +90,8 @@ class ThresholdSlider(QtWidgets.QSlider):
 
     def __init__(self, parent: "QtWidgets.QWidget | None" = None) -> None:
         super().__init__(QtCore.Qt.Orientation.Horizontal, parent)
-        self.setStyleSheet(_STYLE_SHEET)
+        self.setStyleSheet(_style_sheet())
+        palette.notifier().scheme_changed.connect(self._on_scheme_changed)
         # Hold a Python reference to the proxy style — QWidget.setStyle() does
         # NOT take Python ownership, so without this the proxy is garbage
         # collected and the next paintEvent dereferences a freed pointer.
@@ -140,6 +144,10 @@ class ThresholdSlider(QtWidgets.QSlider):
             self._is_clipping = clipping
             self.update()
 
+    def _on_scheme_changed(self, _scheme: object) -> None:
+        self.setStyleSheet(_style_sheet())
+        self.update()
+
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
@@ -161,8 +169,8 @@ class ThresholdSlider(QtWidgets.QSlider):
         """Custom-paint the groove, level fill, clip zone, 10 dB ticks, peak dot, and handle.
 
         Mirrors the Swift `ThresholdSlider` body: draws the background groove, the
-        cyan→blue level fill up to the current level, the red clipping zone, the
-        green tick marks, the amber peak-hold dot, then the standard slider handle.
+        level fill up to the current level, the clipping zone, the tick marks, the peak-hold
+        dot, then the standard slider handle — each in its meter role.
         """
         qp = QtWidgets.QStylePainter(self)
         opt = QtWidgets.QStyleOptionSlider()
@@ -178,11 +186,11 @@ class ThresholdSlider(QtWidgets.QSlider):
         qp.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
 
         # ── Background groove ─────────────────────────────────────────
-        qp.setPen(QtGui.QPen(self.palette().color(QtGui.QPalette.ColorRole.Mid), 1))
-        qp.setBrush(self.palette().color(QtGui.QPalette.ColorRole.Base))
+        qp.setPen(QtGui.QPen(palette.color(Role.METER_GROOVE_BORDER), 1))
+        qp.setBrush(palette.color(Role.METER_GROOVE))
         qp.drawRoundedRect(groove_rect.adjusted(0, 0, -1, -1), 2, 2)
 
-        # ── Level fill (cyan→blue gradient from min to current level) ─
+        # ── Level fill (top→middle→bottom gradient from min to current level) ─
         fill_x = self._db_to_x(self._level_db, groove_rect)
         if fill_x > groove_rect.left():
             level_rect = QtCore.QRect(
@@ -190,9 +198,9 @@ class ThresholdSlider(QtWidgets.QSlider):
                 fill_x - groove_rect.left(), groove_rect.height() - 2,
             )
             grad = QtGui.QLinearGradient(0, level_rect.top(), 0, level_rect.bottom())
-            grad.setColorAt(0.0, QtGui.QColor(102, 204, 255))
-            grad.setColorAt(0.7, QtGui.QColor(0, 102, 204))
-            grad.setColorAt(1.0, QtGui.QColor(0, 30, 80))
+            grad.setColorAt(0.0, palette.color(Role.METER_LEVEL_TOP))
+            grad.setColorAt(0.5, palette.color(Role.METER_LEVEL_MIDDLE))
+            grad.setColorAt(1.0, palette.color(Role.METER_LEVEL_BOTTOM))
             qp.setPen(QtCore.Qt.PenStyle.NoPen)
             qp.setBrush(QtGui.QBrush(grad))
             qp.drawRect(level_rect)
@@ -205,29 +213,29 @@ class ThresholdSlider(QtWidgets.QSlider):
                 clip_w, groove_rect.height() - 2,
             )
             qp.setPen(QtCore.Qt.PenStyle.NoPen)
-            qp.setBrush(QtGui.QColor(220, 40, 40, 220))
+            qp.setBrush(palette.color(Role.METER_CLIP))
             qp.drawRect(clip_rect)
 
         # ── Tick marks every 10 dB ────────────────────────────────────
         tick_step_db = 10
         rng = self.maximum() - self.minimum()
         if rng > 0:
-            qp.setPen(QtGui.QPen(QtGui.QColor(60, 140, 60, 180), 1))
+            qp.setPen(QtGui.QPen(palette.color(Role.METER_TICKS), 1))
             db = self.minimum() + tick_step_db
             while db < self.maximum():
                 x = self._db_to_x(db, groove_rect)
                 qp.drawLine(x, groove_rect.top() + 2, x, groove_rect.bottom() - 2)
                 db += tick_step_db
 
-        # ── Peak-hold dot (bright amber, decays back toward level) ────
+        # ── Peak-hold dot (decays back toward level) ────
         if self._peak_hold_db > self.minimum():
             peak_x = self._db_to_x(self._peak_hold_db, groove_rect)
             mid_y = (groove_rect.top() + groove_rect.bottom()) // 2
-            qp.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 220), 1))
-            qp.setBrush(QtGui.QColor(255, 200, 0, 240))
+            qp.setPen(QtGui.QPen(palette.color(Role.METER_PEAK_HOLD_BORDER), 1))
+            qp.setBrush(palette.color(Role.METER_PEAK_HOLD))
             qp.drawEllipse(QtCore.QPoint(peak_x, mid_y), 3, 3)
 
-        # ── Standard slider handle (red vertical line via stylesheet) ──
+        # ── Standard slider handle (meter.thresholdHandle via stylesheet) ──
         opt.subControls = QtWidgets.QStyle.SubControl.SC_SliderHandle
         if self.isSliderDown():
             opt.state |= QtWidgets.QStyle.StateFlag.State_Sunken

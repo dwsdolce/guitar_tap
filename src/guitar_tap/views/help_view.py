@@ -2,9 +2,9 @@
 """
     Help window — QDialog with QTextBrowser showing HTML reference content.
 
-    _HELP_HTML is built once on first import, embedding qtawesome icons as
+    The help HTML is built once per colour scheme, embedding qtawesome icons as
     inline base64 PNG data-URIs so the same icons used in the app appear in
-    the help text.
+    the help text; a HelpBrowser shows it again in the new scheme on every change.
 """
 
 from __future__ import annotations
@@ -12,13 +12,16 @@ from __future__ import annotations
 import qtawesome as qta
 from PySide6 import QtCore, QtWidgets
 
+from guitar_tap.views.utilities import palette
+from guitar_tap.views.utilities.palette import Role, Scheme
+
 # ---------------------------------------------------------------------------
 # Icon-to-HTML helpers
 # ---------------------------------------------------------------------------
 
-def _icon_img(name: str, size: int = 14, color: str = "#444444") -> str:
-    """Render a qtawesome icon and return an inline <img> data-URI tag."""
-    pixmap = qta.icon(name, color=color).pixmap(size, size)
+def _icon_img(name: str, size: int, role: Role) -> str:
+    """Render a qtawesome icon in ``role`` and return an inline <img> data-URI tag."""
+    pixmap = qta.icon(name, color=palette.color(role)).pixmap(size, size)
     ba = QtCore.QByteArray()
     buf = QtCore.QBuffer(ba)
     buf.open(QtCore.QIODevice.OpenModeFlag.WriteOnly)
@@ -32,12 +35,12 @@ def _icon_img(name: str, size: int = 14, color: str = "#444444") -> str:
 
 def _h2(icon_name: str, title: str) -> str:
     """Section header with icon."""
-    return f'<h2>{_icon_img(icon_name, 16, "#555555")}&nbsp;{title}</h2>\n'
+    return f'<h2>{_icon_img(icon_name, 16, Role.TEXT_SECONDARY)}&nbsp;{title}</h2>\n'
 
 
 def _row(title: str, body: str, icons: list[str] | None = None) -> str:
     """Help row: bold title (optionally preceded by icons) + gray body."""
-    icon_html = "".join(_icon_img(i, 13, "#0066CC") for i in (icons or []))
+    icon_html = "".join(_icon_img(i, 13, Role.ACCENT_TEXT) for i in (icons or []))
     if icon_html:
         icon_html += "&nbsp;"
     return (
@@ -53,22 +56,25 @@ def _row(title: str, body: str, icons: list[str] | None = None) -> str:
 # ---------------------------------------------------------------------------
 
 def _build_help_html() -> str:
-    CSS = """\
+    primary = palette.qss(Role.TEXT_PRIMARY)
+    secondary = palette.qss(Role.TEXT_SECONDARY)
+    separator = palette.qss(Role.SEPARATOR)
+    CSS = f"""\
 <style>
-  body       { font-size: 13px; margin: 16px; }
-  h1         { font-size: 18px; margin-bottom: 4px; }
-  h2         { font-size: 14px; margin-top: 20px; margin-bottom: 6px;
-               border-bottom: 1px solid #ccc; padding-bottom: 3px; color: #333; }
-  .row       { margin-bottom: 10px; }
-  .row-title { font-weight: bold; font-size: 13px; margin: 0 0 2px 0; }
-  .row-body  { color: #555; margin: 0; line-height: 1.5; }
-  p, li      { margin: 4px 0; line-height: 1.5; }
-  ul         { margin: 4px 0; padding-left: 20px; }
+  body       {{ font-size: 13px; margin: 16px; color: {primary}; }}
+  h1         {{ font-size: 18px; margin-bottom: 4px; }}
+  h2         {{ font-size: 14px; margin-top: 20px; margin-bottom: 6px;
+               border-bottom: 1px solid {separator}; padding-bottom: 3px; color: {secondary}; }}
+  .row       {{ margin-bottom: 10px; }}
+  .row-title {{ font-weight: bold; font-size: 13px; margin: 0 0 2px 0; }}
+  .row-body  {{ color: {secondary}; margin: 0; line-height: 1.5; }}
+  p, li      {{ margin: 4px 0; line-height: 1.5; }}
+  ul         {{ margin: 4px 0; padding-left: 20px; }}
 </style>"""
 
     parts: list[str] = [
         "<!DOCTYPE html><html><head>", CSS, "</head><body>\n",
-        f'<h1>{_icon_img("mdi.waveform", 18, "#333")}&nbsp;Quick-Start Guide</h1>\n',
+        f'<h1>{_icon_img("mdi.waveform", 18, Role.TEXT_PRIMARY)}&nbsp;Quick-Start Guide</h1>\n',
     ]
 
     # ── What Guitar Tap Does ──────────────────────────────────────────────
@@ -691,15 +697,31 @@ def _build_help_html() -> str:
     return "".join(parts)
 
 
-_HELP_HTML: str | None = None  # built lazily on first call to get_help_html()
+_HELP_HTML: dict[Scheme, str] = {}  # built lazily, per scheme, by get_help_html()
 
 
 def get_help_html() -> str:
-    """Return the help HTML, building it on first call (requires QApplication)."""
-    global _HELP_HTML
-    if _HELP_HTML is None:
-        _HELP_HTML = _build_help_html()
-    return _HELP_HTML
+    """Return the help HTML in the current scheme, building it on first call for that scheme
+    (requires QApplication)."""
+    scheme = palette.scheme()
+    if scheme not in _HELP_HTML:
+        _HELP_HTML[scheme] = _build_help_html()
+    return _HELP_HTML[scheme]
+
+
+class HelpBrowser(QtWidgets.QTextBrowser):
+    """The help HTML, shown again in the new scheme on every change of it."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setOpenExternalLinks(True)
+        self.setHtml(get_help_html())
+        palette.notifier().scheme_changed.connect(self._on_scheme_changed)
+
+    def _on_scheme_changed(self, _scheme: object) -> None:
+        position = self.verticalScrollBar().value()
+        self.setHtml(get_help_html())
+        self.verticalScrollBar().setValue(position)
 
 
 class HelpDialog(QtWidgets.QDialog):
@@ -713,9 +735,7 @@ class HelpDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 8)
 
-        browser = QtWidgets.QTextBrowser()
-        browser.setOpenExternalLinks(True)
-        browser.setHtml(get_help_html())
+        browser = HelpBrowser()
         layout.addWidget(browser)
 
         close_btn = QtWidgets.QPushButton("Close")

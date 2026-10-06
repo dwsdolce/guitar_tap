@@ -80,6 +80,14 @@ def _series_rgb(series: dict) -> tuple[int, int, int]:
     color = series["color"]
     return palette.rgb(color, Scheme.LIGHT) if isinstance(color, palette.Role) else tuple(color)
 
+
+def _light(role):
+    """``role``'s light value as a QColor — the exported image is always drawn light."""
+    from guitar_tap.models.appearance import Scheme
+    from guitar_tap.views.utilities import palette
+
+    return palette.color(role, in_scheme=Scheme.LIGHT)
+
 __all__ = [
     "ExportableSpectrumChart",
     "make_exportable_spectrum_view",
@@ -265,8 +273,6 @@ class ExportableSpectrumChart:
 
     def peak_color(self, peak, idx: int):
         """Mirrors ``private func peakColor(for peak: ResonantPeak) -> Color``."""
-        from PySide6 import QtGui
-
         from guitar_tap.models.appearance import Scheme
         from guitar_tap.views.utilities import palette
         if self.is_guitar:
@@ -286,12 +292,12 @@ class ExportableSpectrumChart:
                 return palette.color(palette.mode_role(mode), in_scheme=Scheme.LIGHT)
         else:
             if peak.id == self.selected_longitudinal_peak_id:
-                return QtGui.QColor(0, 100, 200)
+                return _light(palette.Role.MATERIAL_LONGITUDINAL)
             if peak.id == self.selected_cross_peak_id:
-                return QtGui.QColor(220, 120, 40)
+                return _light(palette.Role.MATERIAL_CROSS)
             if peak.id == self.selected_flc_peak_id:
-                return QtGui.QColor(130, 60, 200)
-        return QtGui.QColor(130, 130, 130)
+                return _light(palette.Role.MATERIAL_FLC)
+        return _light(palette.Role.MATERIAL_UNSELECTED)
 
     def is_override(self, peak) -> bool:
         """True when *peak* carries a manual (user-assigned) mode override — for the italic + " *"
@@ -401,7 +407,9 @@ class ExportableSpectrumChart:
         # makeExportableSpectrumView where Text(chartTitle) sits above the Chart.
         # setFixedSize ensures the off-screen widget has the exact pixel dimensions;
         # resize() alone does not take effect on an unshown widget.
-        plot = pg.PlotWidget()
+        from guitar_tap.views.utilities.magnitude_axis import MagnitudeAxis
+
+        plot = pg.PlotWidget(axisItems={"left": MagnitudeAxis("left")})
         plot.setFixedSize(WIDGET_W, WIDGET_H)
         style = chart_style.EXPORT
         plot.setBackground(palette.color(palette.Role.CHART_BACKGROUND, in_scheme=Scheme.LIGHT))
@@ -411,6 +419,8 @@ class ExportableSpectrumChart:
         # The plot's border — mirrors .chartPlotStyle { plotArea.border(chart.border) } — and one
         # grid line per axis tick in chart.grid, no minor lines (mirrors AxisGridLine).
         pi_setup = plot.getPlotItem()
+        # Room above the plot for the top magnitude label (0 dB), which is centred on the top edge.
+        pi_setup.layout.setContentsMargins(0, 8, 0, 0)
         pi_setup.getViewBox().setBorder(
             chart_style.pen(palette.color(palette.Role.CHART_BORDER, in_scheme=Scheme.LIGHT), 1,
                             pixels_per_point=SCALE))
@@ -545,27 +555,30 @@ class ExportableSpectrumChart:
             frac = 1.0 - (db - self.min_db) / max(self.max_db - self.min_db, 1e-6)
             return AXIS_TOP + int(frac * PLOT_H)
 
-        # Card geometry — mirrors Swift VStack annotation at annotationY = peakY - 70.
-        # All pixel dimensions AND font sizes scale with SCALE.  setPixelSize() sets
-        # the font height in device pixels directly, so * SCALE produces the correct
-        # apparent size on the 2x canvas — matching Swift's ImageRenderer(scale: 2.0).
-        # Card height: mode(28) + pitch(24, guitar only) + freq(24) + db(20) + padding = ~120 with pitch, ~96 without
-        ANNOT_W      = int(160 * SCALE)
-        ANNOT_H_PITCH   = int(120 * SCALE)   # with pitch note row (guitar mode)
-        ANNOT_H_NOPITCH = int(96  * SCALE)   # without pitch note row
-        ANNOT_OFFS_Y = int(70  * SCALE)
-        ANNOT_CORNER = int(10  * SCALE)
+        # Card geometry — mirrors Swift's annotation VStack(spacing: 6) .padding(10): the card fits
+        # its text and is centred 70 pt above the peak (annotationPosition). All pixel dimensions
+        # AND font sizes scale with SCALE: setPixelSize() sets the font height in device pixels, so
+        # * SCALE gives the apparent size on the 2x canvas, as Swift's ImageRenderer(scale: 2.0).
+        ANNOT_OFFS_Y  = int(70 * SCALE)
+        ANNOT_PAD     = int(10 * SCALE)
+        ANNOT_SPACING = int(6 * SCALE)
+        ANNOT_CORNER  = int(10 * SCALE)
+        LEADER_FROM   = int(50 * SCALE)   # ConnectionLineShape from: annotation centre + 50
 
         annot_font_mode = QtGui.QFont()
         annot_font_mode.setPixelSize(16 * SCALE)  # mirrors .font(.system(size: 16, weight: .bold))
         annot_font_mode.setBold(True)
 
+        # The pitch row — mirrors HStack(spacing: 4) { Image("music.note").font(.system(size: 14))
+        # Text(pitchNote).font(.system(size: 16, weight: .bold)) Text(cents).font(.system(size: 14))
+        # .opacity(0.8) }.
+        annot_font_pitch_icon = QtGui.QFont()
+        annot_font_pitch_icon.setPixelSize(14 * SCALE)
         annot_font_pitch = QtGui.QFont()
-        annot_font_pitch.setPixelSize(14 * SCALE)  # mirrors .font(.system(size: 14/16, weight: .bold)) for pitch
+        annot_font_pitch.setPixelSize(16 * SCALE)
         annot_font_pitch.setBold(True)
-
         annot_font_pitch_sm = QtGui.QFont()
-        annot_font_pitch_sm.setPixelSize(13 * SCALE)  # mirrors .font(.system(size: 14)) for cents
+        annot_font_pitch_sm.setPixelSize(14 * SCALE)
 
         annot_font_freq = QtGui.QFont()
         annot_font_freq.setPixelSize(14 * SCALE)  # mirrors .font(.system(size: 14, weight: .medium))
@@ -621,94 +634,91 @@ class ExportableSpectrumChart:
                     QtCore.Qt.AlignmentFlag.AlignCenter, abbrev,
                 )
 
+        def _width(font, text: str) -> int:
+            return QtGui.QFontMetrics(font).horizontalAdvance(text)
+
+        def _height(font) -> int:
+            return QtGui.QFontMetrics(font).height()
+
+        # One card per visible peak: its rows (each a list of (font, colour, text) runs drawn side
+        # by side, 4 pt apart), its size, and where it sits.
+        cards = []
         for idx, peak in enumerate(self.visible_peaks):
             px = _freq_to_x(peak.frequency)
             py = _db_to_y(peak.magnitude)
             color = self.peak_color(peak, idx)
-            label = self.peak_mode_label(peak, idx)
-
-            # Determine if pitch note is available for this peak (guitar mode only)
+            mode_font = QtGui.QFont(annot_font_mode)
+            # Italic when overridden (the label already carries the trailing " *").
+            mode_font.setItalic(self.is_override(peak))
+            rows = [[(mode_font, color, self.peak_mode_label(peak, idx))]]
+            # Pitch only for guitar measurements with a pitch note.
             pitch_note  = getattr(peak, "pitch_note",  None) or getattr(peak, "pitchNote",  None)
             pitch_cents = getattr(peak, "pitch_cents", None) or getattr(peak, "pitchCents", None)
-            has_pitch = self.is_guitar and pitch_note is not None
-
-            ANNOT_H = ANNOT_H_PITCH if has_pitch else ANNOT_H_NOPITCH
-
-            # Position the annotation card — mirrors annotationPosition(for:peakPosition:frame:).
-            # default_offset_y places the card center at ANNOT_OFFS_Y + ANNOT_H//2 above the peak,
-            # which is equivalent to the card top edge being ANNOT_OFFS_Y + ANNOT_H above the peak.
+            if self.is_guitar and pitch_note is not None:
+                purple = _light(palette.Role.PEAK_PITCH)
+                faded = QtGui.QColor(purple)
+                faded.setAlphaF(0.8)
+                row = [(annot_font_pitch_icon, purple, "\u266a"),
+                       (annot_font_pitch, purple, pitch_note)]
+                if pitch_cents is not None:
+                    sign = "+" if pitch_cents >= 0 else ""
+                    cents = f"{sign}{int(round(pitch_cents))} \u00a2"
+                    row.append((annot_font_pitch_sm, faded, cents))
+                rows.append(row)
+            rows.append([(annot_font_freq, _light(palette.Role.TEXT_PRIMARY),
+                          f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz")])
+            rows.append([(annot_font_db, _light(palette.Role.TEXT_SECONDARY),
+                          f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB")])
+            run_gap = int(4 * SCALE)
+            row_w = [sum(_width(f, t) for f, _c, t in r) + run_gap * (len(r) - 1) for r in rows]
+            row_h = [max(_height(f) for f, _c, _t in r) for r in rows]
+            card_w = max(row_w) + ANNOT_PAD * 2
+            card_h = sum(row_h) + ANNOT_SPACING * (len(rows) - 1) + ANNOT_PAD * 2
             ann_cx, ann_cy = self.annotation_position(
-                peak, (px, py), _freq_to_x, _db_to_y, ANNOT_OFFS_Y + ANNOT_H // 2
-            )
-            card_x = int(ann_cx) - ANNOT_W // 2
-            card_y = int(ann_cy) - ANNOT_H // 2
-            # Clamp inside plot area — mirrors Swift .position(x: annotationX, y: annotationY)
-            card_x = max(AXIS_LEFT, min(card_x, CHART_W - AXIS_RIGHT - ANNOT_W))
-            card_y = max(AXIS_TOP,  min(card_y, CHART_H - AXIS_BOTTOM - ANNOT_H))
+                peak, (px, py), _freq_to_x, _db_to_y, ANNOT_OFFS_Y)
+            cards.append((peak, color, rows, row_w, row_h, card_w, card_h,
+                          int(ann_cx), int(ann_cy), px, py))
 
-            # Dashed connection line — mirrors ConnectionLineShape stroke
-            leader = chart_style.EXPORT
+        # Leaders first, beneath every card — mirrors the connection-lines layer: from 50 pt below
+        # the card's centre to the peak, in the peak's colour.
+        leader = chart_style.EXPORT
+        for _peak, color, _rows, _rw, _rh, _w, _h, cx, cy, px, py in cards:
             line_color = QtGui.QColor(color)
             line_color.setAlphaF(leader.leader_opacity)
             line_pen = QtGui.QPen(line_color, leader.leader_width * SCALE)
             line_pen.setDashPattern([d / leader.leader_width for d in leader.leader_dash])
             painter.setPen(line_pen)
-            painter.drawLine(card_x + ANNOT_W // 2, card_y + ANNOT_H, px, py)
+            painter.drawLine(cx, cy + LEADER_FROM, px, py)
 
-            # Card background — mirrors ExportableSpectrumChart.swift:
-            #   .background(Color.white.opacity(0.95)).cornerRadius(10)
-            # Note: PeakAnnotationLabel (live view) uses .background.secondary + modeColor border,
-            # but ExportableSpectrumChart (export path, both Swift and Python) uses white.
-            painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255, 242)))
-            painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 38), SCALE))
-            painter.drawRoundedRect(card_x, card_y, ANNOT_W, ANNOT_H, ANNOT_CORNER, ANNOT_CORNER)
-
-            row_y = card_y + int(4 * SCALE)
-
-            # Mode label — mirrors Text(peakModeLabel(for:)).font(.system(size:16,weight:.bold)).
-            # Italic when overridden (label already carries the trailing " *").
-            mode_lbl_font = QtGui.QFont(annot_font_mode)
-            mode_lbl_font.setItalic(self.is_override(peak))
-            painter.setFont(mode_lbl_font)
-            painter.setPen(color)
-            painter.drawText(
-                card_x, row_y, ANNOT_W, int(28 * SCALE),
-                QtCore.Qt.AlignmentFlag.AlignCenter, label,
-            )
-            row_y += int(28 * SCALE)
-
-            # Pitch note + cents — mirrors HStack { Image("music.note") Text(pitchNote) Text(centsStr) }
-            # Only shown for guitar measurements when pitchNote is available.
-            if has_pitch:
-                purple = QtGui.QColor(130, 60, 200)
-                cents_val = pitch_cents if pitch_cents is not None else 0
-                sign = "+" if cents_val >= 0 else ""
-                cents_str = f"{sign}{int(round(cents_val))} ¢"
-                pitch_str = f"♪ {pitch_note}  {cents_str}"
-                painter.setFont(annot_font_pitch)
-                painter.setPen(purple)
-                painter.drawText(
-                    card_x, row_y, ANNOT_W, int(24 * SCALE),
-                    QtCore.Qt.AlignmentFlag.AlignCenter, pitch_str,
-                )
-                row_y += int(24 * SCALE)
-
-            # Frequency — mirrors Text(peak.frequency.formattedAsFrequency())
-            painter.setFont(annot_font_freq)
-            painter.setPen(QtGui.QColor(0, 0, 0))
-            painter.drawText(
-                card_x, row_y, ANNOT_W, int(24 * SCALE),
-                QtCore.Qt.AlignmentFlag.AlignCenter, f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz",
-            )
-            row_y += int(24 * SCALE)
-
-            # dB — mirrors Text("…dB").foregroundColor(.secondary)
-            painter.setFont(annot_font_db)
-            painter.setPen(QtGui.QColor(100, 100, 100))
-            painter.drawText(
-                card_x, row_y, ANNOT_W, int(20 * SCALE),
-                QtCore.Qt.AlignmentFlag.AlignCenter, f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB",
-            )
+        # Cards — mirrors .padding(10).background(chart.readout.background).cornerRadius(10)
+        # .shadow(color: scrim.opacity(0.5), radius: 4, x: 0, y: 2): no border.
+        shadow = _light(palette.Role.SCRIM)
+        for _peak, _color, rows, row_w, row_h, card_w, card_h, cx, cy, _px, _py in cards:
+            card_x = cx - card_w // 2
+            card_y = cy - card_h // 2
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            for spread in range(4, 0, -1):
+                layer = QtGui.QColor(shadow)
+                layer.setAlphaF(shadow.alphaF() * 0.5 / 4)
+                painter.setBrush(QtGui.QBrush(layer))
+                grow = spread * SCALE
+                painter.drawRoundedRect(
+                    card_x - grow, card_y - grow + 2 * SCALE, card_w + 2 * grow, card_h + 2 * grow,
+                    ANNOT_CORNER + grow, ANNOT_CORNER + grow)
+            painter.setBrush(QtGui.QBrush(_light(palette.Role.CHART_READOUT_BACKGROUND)))
+            painter.drawRoundedRect(card_x, card_y, card_w, card_h, ANNOT_CORNER, ANNOT_CORNER)
+            row_y = card_y + ANNOT_PAD
+            for row, w, h in zip(rows, row_w, row_h):
+                run_x = card_x + (card_w - w) // 2
+                for font, colour, text in row:
+                    painter.setFont(font)
+                    painter.setPen(colour)
+                    painter.drawText(
+                        run_x, row_y, _width(font, text), h,
+                        QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
+                        text)
+                    run_x += _width(font, text) + int(4 * SCALE)
+                row_y += h + ANNOT_SPACING
 
         painter.end()
         return chart_img
@@ -841,9 +851,14 @@ def make_exportable_spectrum_view(
     chart_img = chart.render()
 
     # ── Compose full image ────────────────────────────────────────────────────
-    canvas = QtGui.QImage(TOTAL_W, TOTAL_H, QtGui.QImage.Format.Format_RGB32)
-    canvas.fill(QtGui.QColor(255, 255, 255))
+    # The content on chart.background, inside a clear 16 pt margin — Swift's
+    # .background(chart.background).padding() leaves the padding transparent.
+    OUTER_PAD = 16 * SCALE
+    canvas = QtGui.QImage(TOTAL_W, TOTAL_H, QtGui.QImage.Format.Format_ARGB32)
+    canvas.fill(0)  # every pixel 0: fully transparent in ARGB32
     painter = QtGui.QPainter(canvas)
+    painter.fillRect(OUTER_PAD, OUTER_PAD, TOTAL_W - 2 * OUTER_PAD, TOTAL_H - 2 * OUTER_PAD,
+                     _light(palette.Role.CHART_BACKGROUND))
     painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
     painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
 
@@ -869,7 +884,7 @@ def make_exportable_spectrum_view(
     title_font.setPixelSize(20 * SCALE)  # mirrors .font(.title).fontWeight(.bold)
     title_font.setBold(True)
     painter.setFont(title_font)
-    painter.setPen(QtGui.QColor(0, 0, 0))
+    painter.setPen(_light(palette.Role.TEXT_PRIMARY))
     painter.drawText(
         SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 36 * SCALE,
         QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
@@ -880,7 +895,7 @@ def make_exportable_spectrum_view(
     sub_font = QtGui.QFont()
     sub_font.setPixelSize(12 * SCALE)  # mirrors .font(.subheadline)
     painter.setFont(sub_font)
-    painter.setPen(QtGui.QColor(100, 100, 100))
+    painter.setPen(_light(palette.Role.TEXT_SECONDARY))
 
     # Swift: HStack { Text("Date:…") Spacer() Text("Range:…") • Text("…dB") }
     if date_label:
@@ -889,41 +904,62 @@ def make_exportable_spectrum_view(
             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
             f"Date: {_format_date_label(date_label)}",
         )
-    painter.drawText(
-        SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 28 * SCALE,
-        QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter,
-        f"Range: {_fmt_freq(min_freq)} - {_fmt_freq(max_freq)}"
-        f"  \u2022  {int(min_db)} to {int(max_db)} dB",
-    )
+    # Range and the dB span semibold in the text colour, the bullet secondary; right-aligned.
+    value_font = QtGui.QFont(sub_font)
+    value_font.setWeight(QtGui.QFont.Weight.DemiBold)
+    _right = TOTAL_W - SIDE_PAD
+    for font, role, text in reversed([
+        (value_font, palette.Role.TEXT_PRIMARY,
+         f"Range: {_fmt_freq(min_freq)} - {_fmt_freq(max_freq)}"),
+        (sub_font, palette.Role.TEXT_SECONDARY, "\u2022"),
+        (value_font, palette.Role.TEXT_PRIMARY, f"{int(min_db)} to {int(max_db)} dB"),
+    ]):
+        w = QtGui.QFontMetrics(font).horizontalAdvance(text)
+        painter.setFont(font)
+        painter.setPen(_light(role))
+        painter.drawText(_right - w, y, w, 28 * SCALE,
+                         QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter, text)
+        _right -= w + 8 * SCALE
     y += 28 * SCALE
 
-    # Swift: HStack { Type • Platform • GuitarTap vX.Y (build) }
-    meta_parts: list[str] = []
-    if measurement_type_str:
-        meta_parts.append(f"Type: {measurement_type_str}")
+    # Swift: HStack(spacing: 16) { Type: value • Platform: value • GuitarTap vX.Y (build) } —
+    # each label secondary, each value medium in the text colour.
     if platform_str is None:
         import platform as _platform
         _sys = _platform.system()
         platform_str = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}.get(_sys, _sys)
-    meta_parts.append(f"Platform: {platform_str}")
     if software_version is None:
         try:
             from guitar_tap._version import __version_string__ as _v
             software_version = _v
         except ImportError:
             software_version = ""
+    meta_items: list[tuple[str, str]] = []
+    if measurement_type_str:
+        meta_items.append(("Type:", measurement_type_str))
+    meta_items.append(("Platform:", platform_str))
     if software_version:
-        meta_parts.append(f"GuitarTap v{software_version}")
-    meta_line = "  \u2022  ".join(meta_parts)
+        meta_items.append(("GuitarTap", f"v{software_version}"))
     meta_font = QtGui.QFont()
     meta_font.setPixelSize(12 * SCALE)
+    meta_value_font = QtGui.QFont(meta_font)
+    meta_value_font.setWeight(QtGui.QFont.Weight.Medium)
+    runs: list[tuple] = []
+    for n, (label, value) in enumerate(meta_items):
+        if n:
+            runs.append((meta_font, palette.Role.TEXT_SECONDARY, "\u2022", 16))
+        runs.append((meta_font, palette.Role.TEXT_SECONDARY, label, 4))
+        runs.append((meta_value_font, palette.Role.TEXT_PRIMARY, value, 16))
+    _x = SIDE_PAD
+    for font, role, text, gap in runs:
+        w = QtGui.QFontMetrics(font).horizontalAdvance(text)
+        painter.setFont(font)
+        painter.setPen(_light(role))
+        painter.drawText(_x, y, w, 24 * SCALE,
+                         QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter, text)
+        _x += w + gap * SCALE
     painter.setFont(meta_font)
-    painter.setPen(QtGui.QColor(100, 100, 100))
-    painter.drawText(
-        SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 24 * SCALE,
-        QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
-        meta_line,
-    )
+    painter.setPen(_light(palette.Role.TEXT_SECONDARY))
     y += 24 * SCALE
 
     # Swift: if !materialSpectra.isEmpty { Text("Comparing N measurements") }
@@ -947,7 +983,7 @@ def make_exportable_spectrum_view(
     ct_font.setPixelSize(24 * SCALE)  # mirrors .font(.system(size: 24, weight: .semibold))
     ct_font.setWeight(QtGui.QFont.Weight.DemiBold)
     painter.setFont(ct_font)
-    painter.setPen(QtGui.QColor(0x33, 0x33, 0x33))
+    painter.setPen(_light(palette.Role.CHART_TITLE))
     painter.drawText(
         SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, CHART_TITLE_H,
         QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignVCenter,
@@ -966,7 +1002,7 @@ def make_exportable_spectrum_view(
         hdr_font.setPixelSize(13 * SCALE)  # mirrors .font(.headline)
         hdr_font.setBold(True)
         painter.setFont(hdr_font)
-        painter.setPen(QtGui.QColor(0, 0, 0))
+        painter.setPen(_light(palette.Role.TEXT_PRIMARY))
         # Swift: Text("Detected Peaks Summary").font(.headline)
         painter.drawText(
             SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 24 * SCALE,
@@ -975,53 +1011,49 @@ def make_exportable_spectrum_view(
         )
         y += 24 * SCALE
 
-        card_w       = 120 * SCALE
-        card_h       = 68  * SCALE
-        card_spacing = 12  * SCALE
+        # Swift: HStack(spacing: 20) { VStack(spacing: 4) { freq .caption bold, label .caption2 in
+        # the peak's colour, dB .caption2 secondary }.padding(8).background(colour.opacity(0.1))
+        # .cornerRadius(6) } — each chip fits its text; no border.
+        freq_font = QtGui.QFont()
+        freq_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption)
+        freq_font.setBold(True)
+        small_font = QtGui.QFont()
+        small_font.setPixelSize(9 * SCALE)  # mirrors .font(.caption2)
+        chip_pad, chip_gap, chip_spacing = 8 * SCALE, 4 * SCALE, 20 * SCALE
+        fh = QtGui.QFontMetrics(freq_font).height()
+        sh = QtGui.QFontMetrics(small_font).height()
+        card_h = chip_pad * 2 + fh + sh * 2 + chip_gap * 2
         x_card = SIDE_PAD
         # Swift: peaks.prefix(8).sorted(by: { $0.frequency < $1.frequency })
         sorted_peaks = sorted(peaks[:8], key=lambda p: p.frequency)
         for idx, peak in enumerate(sorted_peaks):
             color = chart.peak_color(peak, idx)
             label = chart.peak_mode_label(peak, idx)
-
+            # Italic + trailing " *" when overridden (peak_mode_label carries the " *").
+            label_font = QtGui.QFont(small_font)
+            label_font.setItalic(chart.is_override(peak))
+            rows = [
+                (freq_font, _light(palette.Role.TEXT_PRIMARY),
+                 f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz", fh),
+                (label_font, color, label, sh),
+                (small_font, _light(palette.Role.TEXT_SECONDARY),
+                 f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB", sh),
+            ]
+            inner_w = max(QtGui.QFontMetrics(f).horizontalAdvance(t) for f, _c, t, _h in rows)
+            card_w = inner_w + chip_pad * 2
             bg = QtGui.QColor(color)
-            bg.setAlpha(30)
+            bg.setAlphaF(0.1)
             painter.setBrush(QtGui.QBrush(bg))
-            painter.setPen(QtGui.QPen(color, SCALE))
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.drawRoundedRect(x_card, y, card_w, card_h, 6 * SCALE, 6 * SCALE)
-
-            # Swift: Text("…Hz").font(.caption).fontWeight(.bold)
-            freq_font = QtGui.QFont()
-            freq_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption)
-            freq_font.setBold(True)
-            painter.setFont(freq_font)
-            painter.setPen(color)
-            painter.drawText(
-                x_card + 4 * SCALE, y + 2 * SCALE, card_w - 8 * SCALE, 22 * SCALE,
-                QtCore.Qt.AlignmentFlag.AlignCenter, f"{fp.string(peak.frequency, fp.PEAK_FREQUENCY_HZ)} Hz",
-            )
-
-            # Swift: Text(peakModeLabel(for:)).font(.caption2).foregroundColor(peakColor(for:)).
-            # Override-aware label + color (peak_mode_label / peak_color read mode_overrides),
-            # italic + trailing " *" when overridden — matches the on-graph annotation and the list.
-            mode_font = QtGui.QFont()
-            mode_font.setPixelSize(9 * SCALE)  # mirrors .font(.caption2)
-            mode_font.setItalic(chart.is_override(peak))
-            painter.setFont(mode_font)
-            painter.drawText(
-                x_card + 4 * SCALE, y + 24 * SCALE, card_w - 8 * SCALE, 18 * SCALE,
-                QtCore.Qt.AlignmentFlag.AlignCenter, label,
-            )
-
-            # Swift: Text("…dB").font(.caption2).foregroundColor(.secondary)
-            painter.setPen(QtGui.QColor(100, 100, 100))
-            painter.drawText(
-                x_card + 4 * SCALE, y + 44 * SCALE, card_w - 8 * SCALE, 18 * SCALE,
-                QtCore.Qt.AlignmentFlag.AlignCenter, f"{fp.string(peak.magnitude, fp.PEAK_MAGNITUDE_DB)} dB",
-            )
-
-            x_card += card_w + card_spacing
+            row_y = y + chip_pad
+            for font, colour, text, h in rows:
+                painter.setFont(font)
+                painter.setPen(colour)
+                painter.drawText(
+                    x_card, row_y, card_w, h, QtCore.Qt.AlignmentFlag.AlignCenter, text)
+                row_y += h + chip_gap
+            x_card += card_w + chip_spacing
 
         y += card_h + PADDING
 
@@ -1030,7 +1062,7 @@ def make_exportable_spectrum_view(
     legend_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption).fontWeight(.semibold)
     legend_font.setBold(True)
     painter.setFont(legend_font)
-    painter.setPen(QtGui.QColor(0, 0, 0))
+    painter.setPen(_light(palette.Role.TEXT_PRIMARY))
 
     label_font = QtGui.QFont()
     label_font.setPixelSize(10 * SCALE)   # mirrors .font(.caption)
@@ -1039,39 +1071,46 @@ def make_exportable_spectrum_view(
 
     if material_spectra:
         # Swift: HStack { Text("Measurements:") ForEach(materialSpectra) { RoundedRect + label } }
-        painter.drawText(SIDE_PAD, y, 120 * SCALE, ROW_H,
+        # Each entry fits its text, 20 pt apart: a 24 x 4 pt bar, 4 pt, the label.
+        heading = "Measurements:"
+        painter.drawText(SIDE_PAD, y, 160 * SCALE, ROW_H,
                          QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
-                         "Measurements:")
-        x_leg = SIDE_PAD + 124 * SCALE
+                         heading)
+        x_leg = SIDE_PAD + QtGui.QFontMetrics(legend_font).horizontalAdvance(heading) + 20 * SCALE
         painter.setFont(label_font)
-        for series in material_spectra[:5]:
+        for series in material_spectra:
             r, g, b = _series_rgb(series)
             lbl = series.get("label", "?")
             painter.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(x_leg, y + ROW_H // 2 - 3 * SCALE, 28 * SCALE, 6 * SCALE, 3 * SCALE, 3 * SCALE)
-            painter.setPen(QtGui.QColor(0, 0, 0))
-            painter.drawText(x_leg + 32 * SCALE, y, 160 * SCALE, ROW_H,
+            painter.drawRoundedRect(
+                x_leg, y + ROW_H // 2 - 2 * SCALE, 24 * SCALE, 4 * SCALE, 2 * SCALE, 2 * SCALE)
+            painter.setPen(_light(palette.Role.TEXT_PRIMARY))
+            text_w = QtGui.QFontMetrics(label_font).horizontalAdvance(lbl)
+            painter.drawText(x_leg + 28 * SCALE, y, text_w, ROW_H,
                              QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter, lbl)
-            x_leg += 200 * SCALE
+            x_leg += 28 * SCALE + text_w + 20 * SCALE
     elif chart.is_guitar:
         # Swift: HStack { Text("Guitar Modes:") ForEach([.air,.top,.back,.dipole,.ringMode]) { Circle + label } }
         # Guitar-mode only — mirrors Swift's else branch gated implicitly by measurementType.isGuitar
         # (for plate/brace, materialSpectra is always populated so this branch is never reached in Swift).
-        painter.drawText(SIDE_PAD, y, 120 * SCALE, ROW_H,
+        # Each entry fits its text, 20 pt apart: a 12 pt circle, 4 pt, the name.
+        heading = "Guitar Modes:"
+        painter.drawText(SIDE_PAD, y, 160 * SCALE, ROW_H,
                          QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
-                         "Guitar Modes:")
-        x_leg = SIDE_PAD + 124 * SCALE
+                         heading)
+        x_leg = SIDE_PAD + QtGui.QFontMetrics(legend_font).horizontalAdvance(heading) + 20 * SCALE
         painter.setFont(label_font)
         for mode_name, (r, g, b) in GUITAR_MODE_DISPLAY:
             painter.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
-            painter.drawEllipse(x_leg, y + ROW_H // 2 - 7 * SCALE, 14 * SCALE, 14 * SCALE)
-            painter.setPen(QtGui.QColor(0, 0, 0))
-            painter.drawText(x_leg + 18 * SCALE, y, 160 * SCALE, ROW_H,
+            painter.drawEllipse(x_leg, y + ROW_H // 2 - 6 * SCALE, 12 * SCALE, 12 * SCALE)
+            painter.setPen(_light(palette.Role.TEXT_PRIMARY))
+            text_w = QtGui.QFontMetrics(label_font).horizontalAdvance(mode_name)
+            painter.drawText(x_leg + 16 * SCALE, y, text_w, ROW_H,
                              QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
                              mode_name)
-            x_leg += 180 * SCALE
+            x_leg += 16 * SCALE + text_w + 20 * SCALE
 
     painter.end()
 
