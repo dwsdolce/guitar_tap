@@ -30,13 +30,9 @@ from guitar_tap.models import pitch as pitch_c
 from guitar_tap.views.shared import peaks_model as pm
 
 
-def _short_mode(mode: str) -> str:
-    if not mode:
-        return gm.GuitarMode.UNKNOWN.display_name  # "Unknown"
-    gmode = gm.GuitarMode.from_display_name(mode)
-    if gmode is not None and gmode is not gm.GuitarMode.UNKNOWN:
-        return gmode.abbreviation
-    return mode  # custom label — show as-is
+def _mode_name(mode: str) -> str:
+    """The card's mode label: the mode's name ("Air (Helmholtz)"), or a custom label as written."""
+    return mode or gm.GuitarMode.UNKNOWN.display_name
 
 
 def _font(pt: int, bold: bool = False) -> QtGui.QFont:
@@ -76,6 +72,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         freq: float,
         mag_db: float,
         q: float,
+        bandwidth: float,
         guitar_type: gt.GuitarType,
         mode: str,
         auto_mode: str,
@@ -89,6 +86,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._freq = freq
         self._mag_db = mag_db
         self._q = q
+        self._bandwidth = bandwidth
         self._guitar_type = guitar_type
         self._mode = mode
         # Context-aware auto-classified mode label from the model's _auto_mode_map
@@ -118,7 +116,9 @@ class PeakCardWidget(QtWidgets.QFrame):
 
     def _build_ui(self) -> None:
         outer = QtWidgets.QHBoxLayout(self)
-        outer.setContentsMargins(6, 5, 6, 5)
+        # Swift's 6 × 5 padding, less the 2 px highlight border the card always reserves (Swift draws
+        # its border over the row).
+        outer.setContentsMargins(4, 3, 4, 3)
         outer.setSpacing(6)
 
         # Star button
@@ -154,17 +154,19 @@ class PeakCardWidget(QtWidgets.QFrame):
         # Row 1 — mode label (left) + freq (right)
         r1 = QtWidgets.QHBoxLayout()
         r1.setSpacing(4)
+        # The name on the left, the frequency on the right — mirrors Swift's
+        # HStack { label Spacer() freq }.
         self._mode_btn = QtWidgets.QToolButton()
-        self._mode_btn.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.Preferred,
-        )
         self._mode_btn.setFont(_font(10, bold=True))
+        # As tall as its text, as Swift's label is — a tool button's own padding made the card
+        # taller.
+        self._mode_btn.setFixedHeight(QtGui.QFontMetrics(self._mode_btn.font()).height())
         self._mode_btn.setToolButtonStyle(
             QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly
         )
         self._mode_btn.clicked.connect(self._open_mode_menu)
-        r1.addWidget(self._mode_btn, 1)
+        r1.addWidget(self._mode_btn)
+        r1.addStretch(1)
 
         self._freq_lbl = QtWidgets.QLabel(f"{fp.string(self._freq, fp.PEAK_FREQUENCY_HZ)} Hz")
         self._freq_lbl.setFont(_font(10, bold=True))
@@ -180,8 +182,9 @@ class PeakCardWidget(QtWidgets.QFrame):
         if self._show_pitch:
             r2 = QtWidgets.QHBoxLayout()
             r2.setSpacing(3)
-            note_icon = QtWidgets.QLabel("♪")
-            note_icon.setFont(_font(9))
+            # Swift's music.note symbol, as an icon in the pitch colour.
+            note_icon = QtWidgets.QLabel()
+            note_icon.setFixedSize(10, 12)
             self._note_icon = note_icon
             r2.addWidget(note_icon)
             self._pitch_lbl = QtWidgets.QLabel()
@@ -274,7 +277,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         else:
             icon_name = (guitar_mode or gm.GuitarMode.UNKNOWN).icon
         pixmap = qta.icon(icon_name, color=QtGui.QColor(r, g, b)).pixmap(
-            QtCore.QSize(22, 22)
+            QtCore.QSize(18, 18)
         )
         self._chip.setPixmap(pixmap)
         self._chip.setStyleSheet("")
@@ -282,7 +285,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         # Mode button label — a manual override is shown italic with a trailing " *",
         # the one convention used everywhere (list, annotation, PDF, tables). No glyph:
         # at label size it was unreadable. Mirrors Swift/web.
-        display = _short_mode(self._mode)
+        display = _mode_name(self._mode)
         if self._is_manual:
             display = f"{display} *"
         italic = "italic" if self._is_manual else "normal"
@@ -312,16 +315,19 @@ class PeakCardWidget(QtWidgets.QFrame):
             return
         note = self._pitch.note(self._freq)
         cents = self._pitch.cents(self._freq)
-        self._pitch_lbl.setText(f"{note}  {cents:+.0f}¢")
-        pitch_color = f"color: {palette.qss(palette.Role.PEAK_PITCH)};"
-        self._pitch_lbl.setStyleSheet(pitch_color)
-        self._note_icon.setStyleSheet(pitch_color)
+        # Mirrors Swift ResonantPeak.formattedPitch: "G2 (-10 ¢)".
+        self._pitch_lbl.setText(f"{note} ({'+' if cents >= 0 else ''}{cents:.0f} ¢)")
+        self._pitch_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.PEAK_PITCH)};")
+        self._note_icon.setPixmap(
+            qta.icon("mdi.music-note", color=palette.color(palette.Role.PEAK_PITCH)).pixmap(10, 12))
 
     def _refresh_qbw(self) -> None:
         self._qbw_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.TEXT_SECONDARY)};")
         if self._q > 0:
-            bw = self._freq / self._q
-            self._qbw_lbl.setText(f"Q: {fp.string(self._q, fp.Q_FACTOR)}  BW: {fp.string(bw, fp.BANDWIDTH_HZ)} Hz")
+            # The peak's own bandwidth, as Swift and the web show it.
+            self._qbw_lbl.setText(
+                f"Q: {fp.string(self._q, fp.Q_FACTOR)}  "
+                f"BW: {fp.string(self._bandwidth, fp.BANDWIDTH_HZ)} Hz")
         else:
             self._qbw_lbl.setText("")
 
@@ -567,10 +573,13 @@ class PeakListWidget(QtWidgets.QWidget):
             show = self.model.show_value(src_idx)
             is_manual = freq in self.model.modes
 
+            peak = self.model._peaks[int(i)] if int(i) < len(self.model._peaks) else None
             card = PeakCardWidget(
                 freq=freq,
                 mag_db=mag_db,
                 q=q,
+                bandwidth=(float(peak.bandwidth) if peak is not None
+                           else (freq / q if q > 0 else 0.0)),
                 guitar_type=_gt,
                 mode=mode,
                 auto_mode=auto_mode,

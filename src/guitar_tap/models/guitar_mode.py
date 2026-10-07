@@ -437,27 +437,28 @@ class GuitarMode(Enum):
     def icon(self) -> str:
         """qtawesome icon name representing this guitar mode visually.
 
-        Maps to equivalent SF Symbols names used in Swift (GuitarMode.icon):
-          wind → fa5s.wind
-          arrow.up.and.down → fa5s.arrows-alt-v
-          square.fill → fa5s.square
-          circle.lefthalf.filled → fa5s.adjust
-          circle.dashed → fa5s.circle-notch
-          waveform → fa5s.wave-square
-          questionmark.circle → fa5s.question-circle
+        Maps to the nearest Material Design icons to the SF Symbols used in Swift (GuitarMode.icon),
+        outline where Swift's are outline:
+          wind → mdi.weather-windy
+          arrow.up.and.down → mdi.arrow-up-down
+          square.fill → mdi.square
+          circle.lefthalf.filled → mdi.circle-half-full
+          circle.dashed → fa5s.circle-notch (no dashed circle in qtawesome)
+          waveform → mdi.waveform
+          questionmark.circle → mdi.help-circle-outline
 
         Mirrors Swift GuitarMode.icon.
         """
         _icons = {
-            GuitarMode.AIR:         "fa5s.wind",
-            GuitarMode.TOP:         "fa5s.arrows-alt-v",
-            GuitarMode.BACK:        "fa5s.square",
-            GuitarMode.DIPOLE:      "fa5s.adjust",
+            GuitarMode.AIR:         "mdi.weather-windy",
+            GuitarMode.TOP:         "mdi.arrow-up-down",
+            GuitarMode.BACK:        "mdi.square",
+            GuitarMode.DIPOLE:      "mdi.circle-half-full",
             GuitarMode.RING_MODE:   "fa5s.circle-notch",
-            GuitarMode.UPPER_MODES: "fa5s.wave-square",
-            GuitarMode.UNKNOWN:     "fa5s.question-circle",
+            GuitarMode.UPPER_MODES: "mdi.waveform",
+            GuitarMode.UNKNOWN:     "mdi.help-circle-outline",
         }
-        return _icons.get(self, "fa5s.question-circle")
+        return _icons.get(self, "mdi.help-circle-outline")
 
     @classmethod
     def from_display_name(cls, name: str) -> "GuitarMode | None":

@@ -93,6 +93,14 @@ All dependencies (runtime + optional extras) are declared in [pyproject.toml](py
 * Launch the app:
 	- `python -m guitar_tap`
 
+## Fast test run
+
+`Tooling/test-fast.sh` runs the whole pytest suite except the two tests that replay every recording —
+the playback regression (`tests/test_file_playback_regression.py`) and the self-regression
+(`tests/test_self_regression.py`), which are most of the suite's time — for use while working.
+Run the full suite (`pytest`) before a commit. The same split: web `npm run test:fast`, Swift
+`Tooling/test-fast.sh`.
+
 ## Soak / stress testing
 
 `Tooling/soak.sh` is an on-demand **dev tool** (not CI) that loops the fast pytest

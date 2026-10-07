@@ -71,6 +71,24 @@ def _hsep() -> QtWidgets.QFrame:
     return sep
 
 
+def _section_sep() -> QtWidgets.QFrame:
+    """The line between the plate / brace panel's sections — divider.section, plain enough to group
+    the sections without competing with them."""
+    sep = QtWidgets.QFrame()
+    sep.setFixedHeight(1)
+    palette.tag(sep, background=palette.Role.DIVIDER_SECTION)
+    return sep
+
+
+def _header_footer_sep() -> QtWidgets.QFrame:
+    """The line under the results header and above its footer — divider.headerFooter, brighter than
+    the section lines, so the header, the scrolling body and the footer read as three parts."""
+    sep = QtWidgets.QFrame()
+    sep.setFixedHeight(1)
+    palette.tag(sep, background=palette.Role.DIVIDER_HEADER_FOOTER)
+    return sep
+
+
 class MaterialPeakListWidget(QtWidgets.QWidget):
     """Plate/brace peak list with L/C/FLC mode indicators.
 
@@ -204,6 +222,8 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         tv  = QtWidgets.QVBoxLayout(txt)
         tv.setContentsMargins(0, 0, 0, 0)
         tv.setSpacing(0)
+        # Centred at their own height, as Swift's VStack, not spread over the badges' height.
+        tv.addStretch()
         f_lbl = QtWidgets.QLabel(f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz")
         f_fnt = QtGui.QFont()
         f_fnt.setBold(True)
@@ -216,6 +236,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         m_lbl.setFont(m_fnt)
         palette.tag(m_lbl, color=palette.Role.TEXT_SECONDARY)
         tv.addWidget(m_lbl)
+        tv.addStretch()
         hl.addWidget(txt, stretch=1)
 
         # L badge (always shown) — display-only, shows auto-identified peak
@@ -257,6 +278,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         tv  = QtWidgets.QVBoxLayout(txt)
         tv.setContentsMargins(0, 0, 0, 0)
         tv.setSpacing(0)
+        tv.addStretch()
         f_lbl = QtWidgets.QLabel(f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz" if found else "\u2014")
         _f = QtGui.QFont(); _f.setBold(True); _f.setPointSize(11)
         f_lbl.setFont(_f)
@@ -268,6 +290,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         m_lbl.setFont(_m)
         palette.tag(m_lbl, color=palette.Role.TEXT_SECONDARY)
         tv.addWidget(m_lbl)
+        tv.addStretch()
         hl.addWidget(txt, stretch=1)
 
         # Phase badges — this row's bubble is active only once its peak is found.
@@ -357,7 +380,12 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
         dot.setFixedSize(8, 8)
         dot.setStyleSheet("QLabel { border-radius: 4px; }")
         palette.tag(dot, background=dot_role)
-        hl.addWidget(dot, 0, QtCore.Qt.AlignmentFlag.AlignTop)
+        # 2 px down from the top, centring the dot on the title line — Swift's `.padding(.top, 2)`.
+        dot_col = QtWidgets.QVBoxLayout()
+        dot_col.setContentsMargins(0, 2, 0, 0)
+        dot_col.addWidget(dot)
+        dot_col.addStretch()
+        hl.addLayout(dot_col)
 
         txt_vbox = QtWidgets.QVBoxLayout()
         txt_vbox.setContentsMargins(0, 0, 0, 0)
@@ -407,8 +435,10 @@ class MaterialInstructionsWidget(QtWidgets.QWidget):
                 _FL, "1. Longitudinal (fL) Tap",
                 "Hold brace at 22% from one end along the length. Tap center.",
             ))
+        # A plate takes several taps; a brace one. Mirrors Swift's two footers.
         self._instr_footer.setText(
-            "The strongest peak is auto-selected. Redo if needed."
+            "The strongest peak from each tap is auto-selected. Redo if needed." if self._show_cross
+            else "The strongest peak is auto-selected. Redo if needed."
         )
 
 
@@ -858,7 +888,7 @@ class MainWindow(QtWidgets.QMainWindow):
         hl.addStretch()
 
         self._play_file_btn = QtWidgets.QPushButton("Play File\u2026")
-        palette.set_icon(self._play_file_btn, "fa5s.file-audio", palette.Role.ACCENT)
+        palette.set_icon(self._play_file_btn, "mdi.waveform", palette.Role.ACCENT)
         self._play_file_btn.setToolTip(
             "Feed an audio file through the analysis pipeline\n"
             "(WAV, AIFF, FLAC \u2014 same pipeline as microphone, for cross-platform comparison)"
@@ -883,7 +913,8 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self._ann_mode_idx: int = _saved_idx
         self.annotations_btn = QtWidgets.QPushButton("Annotations")
-        palette.set_icon(self.annotations_btn, self._ANN_MODES[_saved_idx].icon_name, palette.Role.ACCENT)
+        palette.set_icon(
+            self.annotations_btn, self._ANN_MODES[_saved_idx].icon_name, palette.Role.ACCENT)
         self.annotations_btn.setToolTip(
             f"Annotation visibility: {_saved_mode.label}\n"
             "Click to cycle: Selected → None → All"
@@ -893,18 +924,19 @@ class MainWindow(QtWidgets.QMainWindow):
         hl.addSpacing(4)
 
         self.save_measurement_btn = QtWidgets.QPushButton("Save")
-        palette.set_icon(self.save_measurement_btn, "fa5.save", palette.Role.ACCENT)
+        palette.set_icon(self.save_measurement_btn, "mdi.download-outline", palette.Role.ACCENT)
         self.save_measurement_btn.setToolTip("Save the current held peaks to a JSON file")
         self.save_measurement_btn.setEnabled(False)
         hl.addWidget(self.save_measurement_btn)
 
         self.open_measurements_btn = QtWidgets.QPushButton("Measurements")
-        palette.set_icon(self.open_measurements_btn, "fa5s.clipboard-list", palette.Role.ACCENT)
+        palette.set_icon(
+            self.open_measurements_btn, "mdi.clipboard-list-outline", palette.Role.ACCENT)
         self.open_measurements_btn.setToolTip("Browse, load, or delete saved measurements")
         hl.addWidget(self.open_measurements_btn)
 
         metrics_btn = QtWidgets.QPushButton("Metrics")
-        palette.set_icon(metrics_btn, "fa5.chart-bar", palette.Role.ACCENT)
+        palette.set_icon(metrics_btn, "mdi.chart-bar", palette.Role.ACCENT)
         metrics_btn.setToolTip("Show FFT diagnostics: frame rate, sample time, processing time")
         metrics_btn.clicked.connect(self._show_metrics)
         hl.addWidget(metrics_btn)
@@ -912,7 +944,7 @@ class MainWindow(QtWidgets.QMainWindow):
         hl.addWidget(_vsep())
 
         settings_btn = QtWidgets.QPushButton("Settings")
-        palette.set_icon(settings_btn, "fa5s.cog", palette.Role.ACCENT)
+        palette.set_icon(settings_btn, "mdi.cog-outline", palette.Role.ACCENT)
         settings_btn.setToolTip(
             "Frequency range, spectrum averaging, audio and calibration settings"
         )
@@ -980,7 +1012,7 @@ class MainWindow(QtWidgets.QMainWindow):
             hl.addWidget(readout)
 
             reset_btn = QtWidgets.QToolButton()
-            palette.set_icon(reset_btn, "mdi.undo", palette.Role.TEXT_SECONDARY)
+            palette.set_icon(reset_btn, "mdi.restore", palette.Role.TEXT_SECONDARY)
             reset_btn.setStyleSheet("border: none")
             reset_btn.setToolTip(f"Reset to default ({default_val - 100} dB)")
             reset_btn.setFixedSize(18, 18)
@@ -1047,7 +1079,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Pause / Resume ────────────────────────────────────────────────
         self.pause_tap_btn = QtWidgets.QPushButton("Pause")
-        palette.set_icon(self.pause_tap_btn, "fa5.pause-circle", palette.Role.ACCENT)
+        palette.set_icon(self.pause_tap_btn, "mdi.pause-circle-outline", palette.Role.ACCENT)
         palette.tag(self.pause_tap_btn, tint=palette.Role.ACCENT)
         self.pause_tap_btn.setToolTip("Pause tap detection (spectrum keeps updating)")
         self.pause_tap_btn.setEnabled(False)
@@ -1055,7 +1087,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Cancel ────────────────────────────────────────────────────────
         self.cancel_tap_btn = QtWidgets.QPushButton("Cancel")
-        palette.set_icon(self.cancel_tap_btn, "fa5.times-circle", palette.Role.TOOLBAR_INACTIVE)
+        palette.set_icon(
+            self.cancel_tap_btn, "mdi.close-circle-outline", palette.Role.TOOLBAR_INACTIVE)
         palette.tag(self.cancel_tap_btn, tint=palette.Role.TOOLBAR_INACTIVE)
         self.cancel_tap_btn.setToolTip("Cancel the current multi-tap sequence")
         self.cancel_tap_btn.setEnabled(False)
@@ -1104,15 +1137,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # Position: before the measurement type badge (matches Swift header layout).
         self._multi_tap_toggle_btn = QtWidgets.QPushButton("Taps")
         self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
-        self._multi_tap_toggle_btn.setCheckable(True)
-        self._multi_tap_toggle_btn.setChecked(False)
         self._multi_tap_toggle_btn.setFont(small_font)
         # Shown in the guitar context, enabled only when functional (see
         # _update_multi_tap_toggle_state); starts visible-but-disabled (guitar is the
         # default type). Corrected on the first badge / completion refresh.
         self._multi_tap_toggle_btn.setVisible(True)
         self._multi_tap_toggle_btn.setEnabled(False)
-        palette.set_icon(self._multi_tap_toggle_btn, "fa5s.layer-group", palette.Role.ACCENT)
+        palette.set_icon(self._multi_tap_toggle_btn, "mdi.waveform", palette.Role.ACCENT)
         palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
         title_row.addWidget(self._multi_tap_toggle_btn)
 
@@ -1133,7 +1164,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # current analysis settings (Peak Min, analysis range, guitar type) — lets
         # the user retune a saved measurement without re-tapping.  Mirrors reanalyzePeaks().
         self._reanalyze_btn = QtWidgets.QToolButton()
-        palette.set_icon(self._reanalyze_btn, "fa5s.sync-alt", palette.Role.TEXT_SECONDARY)
+        palette.set_icon(self._reanalyze_btn, "mdi.refresh", palette.Role.TEXT_SECONDARY)
+        # Swift's small bordered button: a grey rounded square.
+        self._reanalyze_btn.setStyleSheet("QToolButton { border: none; border-radius: 5px; }")
+        palette.tag(self._reanalyze_btn, background=palette.Role.BACKGROUND_SUBTLE)
         self._reanalyze_btn.setIconSize(QtCore.QSize(14, 14))
         self._reanalyze_btn.setFixedSize(22, 22)
         self._reanalyze_btn.setToolTip(
@@ -1151,6 +1185,7 @@ class MainWindow(QtWidgets.QMainWindow):
             _ext.display_range_label(f_range['f_min'], f_range['f_max'])
         )
         self.freq_range_label.setFont(small_font)
+        palette.tag(self.freq_range_label, color=palette.Role.TEXT_SECONDARY)
         freq_row.addWidget(self.freq_range_label, stretch=1)
 
         # qtawesome icons (not Qt's SP_Dialog* standard pixmaps — those render blank on the macOS
@@ -1158,15 +1193,23 @@ class MainWindow(QtWidgets.QMainWindow):
         # deliberately no "Select All": Air, Top and Back can each have at most ONE definitive peak,
         # so selecting "all" is meaningless.
         self.deselect_all_btn = QtWidgets.QToolButton()
-        palette.set_icon(self.deselect_all_btn, "fa5s.times-circle", palette.Role.TEXT_SECONDARY)
+        palette.set_icon(
+            self.deselect_all_btn, "mdi.close-circle-outline", palette.Role.TEXT_SECONDARY)
+        # Swift's small bordered button: a grey rounded square.
+        self.deselect_all_btn.setStyleSheet("QToolButton { border: none; border-radius: 5px; }")
+        palette.tag(self.deselect_all_btn, background=palette.Role.BACKGROUND_SUBTLE)
         self.deselect_all_btn.setIconSize(QtCore.QSize(14, 14))
         self.deselect_all_btn.setFixedSize(22, 22)
         self.deselect_all_btn.setToolTip("Deselect all peaks")
         self.deselect_all_btn.setEnabled(False)
+        self.deselect_all_btn.setVisible(False)
         freq_row.addWidget(self.deselect_all_btn)
 
         self.reset_auto_selection_btn = QtWidgets.QToolButton()
-        palette.set_icon(self.reset_auto_selection_btn, "fa5s.magic", palette.Role.TEXT_SECONDARY)
+        palette.set_icon(self.reset_auto_selection_btn, "mdi.auto-fix", palette.Role.TEXT_SECONDARY)
+        # Swift's small bordered button: a grey rounded square.
+        self.reset_auto_selection_btn.setStyleSheet("QToolButton { border: none; border-radius: 5px; }")
+        palette.tag(self.reset_auto_selection_btn, background=palette.Role.BACKGROUND_SUBTLE)
         self.reset_auto_selection_btn.setIconSize(QtCore.QSize(14, 14))
         self.reset_auto_selection_btn.setFixedSize(22, 22)
         self.reset_auto_selection_btn.setToolTip("Reset to automatic mode selection")
@@ -1176,7 +1219,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         vbox.addLayout(freq_row)
 
-        vbox.addWidget(_hsep())
+        vbox.addWidget(_header_footer_sep())
 
         # Comparison mode grid — replaces peak list while comparing.
         # Shows Air / Top / Back frequencies per spectrum (mirrors Swift ComparisonResultsView).
@@ -1217,12 +1260,18 @@ class MainWindow(QtWidgets.QMainWindow):
         def _titled_box(parent: QtWidgets.QVBoxLayout, title: str) -> QtWidgets.QVBoxLayout:
             """A separator line, a bold section header, then a rounded gray content box; returns the
             box's inner layout. Mirrors Swift: a divider above the header, the header on the plain
-            background, and the section body in a gray box."""
-            parent.addWidget(_hsep())
+            background, and the section body in a gray box — 12 px from the line to the header and
+            4 px from the header to its box, as Swift's section stack and materialSection."""
+            group = QtWidgets.QWidget()
+            gv = QtWidgets.QVBoxLayout(group)
+            gv.setContentsMargins(0, 0, 0, 0)
+            gv.setSpacing(4)
+            gv.addWidget(_section_sep())
+            gv.addSpacing(8)
             hdr = QtWidgets.QLabel(title)
             hdr.setFont(_mat_title_font)
             palette.tag(hdr, color=palette.Role.TEXT_PRIMARY)
-            parent.addWidget(hdr)
+            gv.addWidget(hdr)
             frame = QtWidgets.QFrame()
             # objectName selector so the shape applies to THIS frame only, not child QFrames
             # (the separators / nested boxes).
@@ -1232,7 +1281,8 @@ class MainWindow(QtWidgets.QMainWindow):
             inner = QtWidgets.QVBoxLayout(frame)
             inner.setContentsMargins(10, 8, 10, 8)
             inner.setSpacing(6)
-            parent.addWidget(frame)
+            gv.addWidget(frame)
+            parent.addWidget(group)
             return inner
 
         def _ms_row(label: str, parent: QtWidgets.QVBoxLayout) -> QtWidgets.QLabel:
@@ -1240,7 +1290,10 @@ class MainWindow(QtWidgets.QMainWindow):
             lbl = QtWidgets.QLabel(label)
             lbl.setFont(small_font)
             val = QtWidgets.QLabel("—")
-            val.setFont(small_font)
+            # Regular label, bold value — as the plate's ratio rows.
+            val_font = QtGui.QFont(small_font)
+            val_font.setBold(True)
+            val.setFont(val_font)
             val.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
             row.addWidget(lbl)
             row.addWidget(val)
@@ -1299,7 +1352,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _sfb_vbox.setContentsMargins(6, 4, 6, 4)
         _sfb_vbox.setSpacing(2)
         _sfb_title = QtWidgets.QLabel("Specific Modulus (E/\u03c1)")
-        _sfb_title.setFont(small_font)
+        _sfb_title.setFont(_mat_title_font)
         _sfb_vbox.addWidget(_sfb_title)
         _sfb_row = QtWidgets.QHBoxLayout()
         _big_font = QtGui.QFont()
@@ -1377,7 +1430,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _gs_v = QtWidgets.QVBoxLayout(self._gore_section)
         _gs_v.setContentsMargins(0, 0, 0, 0)
         _gs_v.setSpacing(4)
-        _gs_v.addWidget(_hsep())
+        _gs_v.addWidget(_section_sep())
+        _gs_v.addSpacing(8)
         _gore_hdr = QtWidgets.QLabel("Gore Target Thickness")
         _gore_hdr.setFont(_mat_title_font)
         palette.tag(_gore_hdr, color=palette.Role.TEXT_PRIMARY)
@@ -1454,9 +1508,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plate_glc_val = QtWidgets.QLabel("—")
         self._plate_glc_val.setFont(small_font)
         palette.tag(self._plate_glc_val, color=palette.Role.TEXT_SECONDARY)
+        # One line, the value beside its label — as Swift's "GLC (Shear): 0.359 GPa".
         _glc_hl.addWidget(self._plate_glc_lbl)
-        _glc_hl.addStretch()
         _glc_hl.addWidget(self._plate_glc_val)
+        _glc_hl.addStretch()
         self._plate_glc_widget.setVisible(False)
         ps_vbox.addWidget(self._plate_glc_widget)
 
@@ -1469,7 +1524,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _sfp_vbox.setContentsMargins(6, 4, 6, 4)
         _sfp_vbox.setSpacing(2)
         _sfp_title = QtWidgets.QLabel("Specific Modulus (E/\u03c1)")
-        _sfp_title.setFont(small_font)
+        _sfp_title.setFont(_mat_title_font)
         _sfp_vbox.addWidget(_sfp_title)
 
         _sfp_cols = QtWidgets.QHBoxLayout()
@@ -1518,11 +1573,13 @@ class MainWindow(QtWidgets.QMainWindow):
         _sfp_vbox.addLayout(_sfp_cols)
         ps_vbox.addWidget(_spec_frame_p)
 
-        self._plate_rad_long, self._plate_rad_cross = _plate_row("Radiation Ratio (R):")
+        self._plate_rad_long, self._plate_rad_cross = _plate_row("Radiation Ratio (R)")
 
         def _ratio_row(label: str, hint: str) -> QtWidgets.QLabel:
             row = QtWidgets.QHBoxLayout()
-            row.addWidget(QtWidgets.QLabel(label))
+            lbl = QtWidgets.QLabel(label)
+            lbl.setFont(small_font)
+            row.addWidget(lbl)
             val = QtWidgets.QLabel("—")
             val.setFont(small_font)
             hint_lbl = QtWidgets.QLabel(hint)
@@ -1534,10 +1591,8 @@ class MainWindow(QtWidgets.QMainWindow):
             ps_vbox.addLayout(row)
             return val
 
-        self._plate_cross_long = _ratio_row("Cross/Long ratio:", "(typical: 0.04–0.08)")
-        self._plate_long_cross = _ratio_row("Long/Cross ratio:", "(typical: 12–25)")
-
-        ps_vbox.addWidget(_hsep())
+        self._plate_cross_long = _ratio_row("Cross/Long Ratio:", "(typical: 0.04–0.08)")
+        self._plate_long_cross = _ratio_row("Long/Cross Ratio:", "(typical: 12–25)")
 
         _overall_row = QtWidgets.QHBoxLayout()
         _overall_lbl = QtWidgets.QLabel("Overall Quality:")
@@ -1568,7 +1623,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _mp_v = QtWidgets.QVBoxLayout(self._material_instr_section)
         _mp_v.setContentsMargins(0, 0, 0, 0)
         _mp_v.setSpacing(4)
-        _mp_v.addWidget(_hsep())
+        _mp_v.addWidget(_section_sep())
+        _mp_v.addSpacing(8)
         _mp_hdr = QtWidgets.QLabel("Measurement Process")
         _mp_hdr.setFont(_mat_title_font)
         _mp_v.addWidget(_mp_hdr)
@@ -1600,8 +1656,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._material_scroll.setVisible(False)
         vbox.addWidget(self._material_scroll, stretch=1)
 
-        # ── Footer separator (matches Swift's Divider between scroll area and footer) ──
-        vbox.addWidget(_hsep())
+        # ── Footer separator (matches Swift's line between the scroll area and the footer) ──
+        vbox.addWidget(_header_footer_sep())
 
         # ── Guitar compact summary (guitar only) — matches Swift guitarAnalysisSummary ──
         # @parity view/guitar-summary — Ring-Out + Tap-Ratio bar (built inline in the monolith;
@@ -1696,12 +1752,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
         _footer_row.addStretch()
 
+        # Swift: Label(…, systemImage:) at .controlSize(.small).
         self.export_spectrum_btn = QtWidgets.QPushButton("Export Spectrum")
+        self.export_spectrum_btn.setFont(small_font)
+        palette.set_icon(self.export_spectrum_btn, "mdi.chart-line", palette.Role.TEXT_PRIMARY)
         self.export_spectrum_btn.setEnabled(False)
         self.export_spectrum_btn.setToolTip("Export the current spectrum as a PNG image")
         _footer_row.addWidget(self.export_spectrum_btn)
 
         self.export_pdf_btn = QtWidgets.QPushButton("Export PDF")
+        self.export_pdf_btn.setFont(small_font)
+        palette.set_icon(
+            self.export_pdf_btn, "mdi.file-document-outline", palette.Role.TEXT_PRIMARY)
         self.export_pdf_btn.setEnabled(False)
         self.export_pdf_btn.setToolTip("Export the current measurement to a PDF report")
         _footer_row.addWidget(self.export_pdf_btn)
@@ -1753,6 +1815,10 @@ class MainWindow(QtWidgets.QMainWindow):
         _cmp_hl = QtWidgets.QHBoxLayout(self._sb_compare_wgt)
         _cmp_hl.setContentsMargins(0, 0, 0, 0)
         _cmp_hl.setSpacing(6)
+        # Swift's waveform.path icon in accent.text.
+        _cmp_icon = QtWidgets.QLabel()
+        palette.set_icon(_cmp_icon, "mdi.waveform", palette.Role.ACCENT_TEXT, 14)
+        _cmp_hl.addWidget(_cmp_icon)
         self._sb_compare_msg = QtWidgets.QLabel("Comparing 0 measurements")
         self._sb_compare_msg.setFont(small)
         _cmp_hl.addWidget(self._sb_compare_msg)
@@ -1872,7 +1938,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _warn_hl.setSpacing(5)
         self._sb_warning_icon = QtWidgets.QLabel()
         palette.set_icon(
-            self._sb_warning_icon, "fa5s.exclamation-triangle", palette.Role.STATUS_WARNING, 14)
+            self._sb_warning_icon, "mdi.alert", palette.Role.STATUS_WARNING, 14)
         self._sb_warning_icon.setFixedSize(14, 14)
         # Opacity effect drives the pulse animation (works on pixmap labels)
         self._warn_opacity_effect = QtWidgets.QGraphicsOpacityEffect(self._sb_warning_icon)
@@ -1902,7 +1968,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _saved_hl.addWidget(self._sb_saved_msg)
         _saved_hl.addStretch()
         _saved_close = QtWidgets.QToolButton()
-        palette.set_icon(_saved_close, "fa5s.times", palette.Role.TEXT_SECONDARY)
+        palette.set_icon(_saved_close, "mdi.close", palette.Role.TEXT_SECONDARY)
         _saved_close.setToolTip("Dismiss")
         _saved_close.setAutoRaise(True)
         _saved_close.clicked.connect(lambda: self.fft_canvas.analyzer.dismiss_capture_audio_saved())
@@ -2138,7 +2204,13 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.comparisonChanged.connect(self._on_comparison_changed)
 
         # Multi-tap toggle button
-        self._multi_tap_toggle_btn.toggled.connect(self._on_multi_tap_toggled)
+        # A plain button whose click flips the analyzer's state, as Swift's — not a checkable one,
+        # whose checked style would draw it stronger than the other tinted buttons.
+        self._multi_tap_toggle_btn.clicked.connect(
+            lambda: self._on_multi_tap_toggled(
+                not self.fft_canvas.analyzer.showing_multi_tap_comparison
+            )
+        )
 
         # Peaks table → canvas annotations
         model = self.peak_widget.model
@@ -2357,7 +2429,11 @@ class MainWindow(QtWidgets.QMainWindow):
         mt = TDS.measurement_type()
         is_detecting = self.fft_canvas.analyzer.is_detecting
         is_plate_or_brace = not mt.is_guitar
-        show_bar = captured > 0
+        # Never in a comparison: Swift draws the bar only in the status bar's non-comparison branch.
+        show_bar = (
+            captured > 0
+            and self.fft_canvas.analyzer.display_mode != AnalysisDisplayMode.COMPARISON
+        )
         show = is_detecting and (is_plate_or_brace or captured > 0)
         # For plate mode the standalone tap count label is never shown.
         # When numberOfTaps > 1 the tap counter is embedded in the phase label
@@ -2396,7 +2472,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             value_label.setText(text)
             value_label.setFont(self._gs_value_font)
-            value_label.setStyleSheet("")
+            palette.tag(value_label, color=palette.Role.TEXT_PRIMARY)
             sub_label.setVisible(True)
 
     def set_ring_out(self, time_s: "float | None") -> None:
@@ -2451,7 +2527,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if enabled:
             palette.set_icon(self.auto_db_btn, "mdi.swap-vertical-circle", palette.Role.ACCENT)
         else:
-            palette.set_icon(self.auto_db_btn, "mdi.swap-vertical-circle-outline", palette.Role.ACCENT)
+            palette.set_icon(
+                self.auto_db_btn, "mdi.swap-vertical-circle-outline", palette.Role.ACCENT)
         # Keep the View menu checkmark in sync with the toolbar button state.
         self._menu_auto_db_action.setChecked(enabled)
 
@@ -2526,19 +2603,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.auto_db_btn.setChecked(False)
 
         self._update_save_export_enabled()
+        self._refresh_selection_buttons()
         if checked:
-            self.deselect_all_btn.setEnabled(mt.is_guitar)
-            self.reset_auto_selection_btn.setEnabled(
-                mt.is_guitar and self.peak_widget.model.user_has_modified_peak_selection
-            )
             # Enabled exactly when the peaks on screen are NOT the auto-found peaks for the
             # current settings — the analyzer owns that rule (can_reanalyze) so all three
             # platforms answer it identically. Covers both "peaks came from a file" and
             # "the guitar type changed since find_peaks last ran".
             self._reanalyze_btn.setEnabled(self.fft_canvas.analyzer.can_reanalyze)
         else:
-            self.deselect_all_btn.setEnabled(False)
-            self.reset_auto_selection_btn.setEnabled(False)
             self._reanalyze_btn.setEnabled(False)
             # Reset guitar summary to waiting state
             self.set_ring_out(None)
@@ -2560,11 +2632,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if not checked:
             # Reset toggle silently (block signals to avoid triggering the
             # toggled handler which would call apply_multi_tap_comparison_overlays).
-            self._multi_tap_toggle_btn.blockSignals(True)
-            self._multi_tap_toggle_btn.setChecked(False)
-            self._multi_tap_toggle_btn.blockSignals(False)
-            palette.set_icon(self._multi_tap_toggle_btn, "fa5s.layer-group", palette.Role.ACCENT)
+            palette.set_icon(self._multi_tap_toggle_btn, "mdi.waveform", palette.Role.ACCENT)
             palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
+            palette.set_on(self._multi_tap_toggle_btn, False)
             self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
             # If the multi-tap table was visible (a new tap sequence is starting),
             # hide it and restore the peak widget — mirrors what _on_comparison_changed
@@ -2596,6 +2666,35 @@ class MainWindow(QtWidgets.QMainWindow):
         az = self.fft_canvas.analyzer
         shown = az.peaks_above_peak_min if TDS.measurement_type().is_guitar else az.material_identified_peaks
         self.annotations_btn.setEnabled(bool(shown) and not az.is_saved_measurement_comparison)
+
+    def _refresh_material_instructions(self) -> None:
+        """Show the plate / brace phase and instructions under the chart for a plate or brace, never
+        during a comparison. Mirrors Swift's
+        `!measurementType.isGuitar && displayMode != .comparison` and the web's `material && !comparison`.
+        """
+        self._material_instr_panel.setVisible(
+            not TDS.measurement_type().is_guitar
+            and self.fft_canvas.analyzer.display_mode != AnalysisDisplayMode.COMPARISON
+        )
+
+    def _refresh_selection_buttons(self) -> None:
+        """Show Deselect All and Reset to Auto when the results list has peaks to act on, for a
+        guitar only and not while the per-tap table is up; Deselect All is enabled while a peak is
+        selected, Reset to Auto while the selection differs from the automatic one. Mirrors Swift's
+        `measurementType.isGuitar && !sortedPeaksWithModes.isEmpty && !showingMultiTapComparison`
+        and the buttons' `.disabled` rules. The results list is the one _refresh_results_peaks
+        builds, Python's sortedPeaksWithModes.
+        """
+        az = self.fft_canvas.analyzer
+        shown = (
+            TDS.measurement_type().is_guitar
+            and self.peak_widget.model.rowCount(QtCore.QModelIndex()) > 0
+            and not az.showing_multi_tap_comparison
+        )
+        self.deselect_all_btn.setVisible(shown)
+        self.reset_auto_selection_btn.setVisible(shown)
+        self.deselect_all_btn.setEnabled(bool(az.selected_peak_ids))
+        self.reset_auto_selection_btn.setEnabled(az.user_has_modified_peak_selection)
 
     def _on_peaks_changed_results(self, peaks: object) -> None:
         """Filter all peaks to the current viewport and forward to the results panel.
@@ -2688,8 +2787,12 @@ class MainWindow(QtWidgets.QMainWindow):
               : true    // plate/brace: never filter by display range
         """
         peaks = self._peaks_above_peak_min
-        if not peaks:
+        # Empty during a saved-measurement comparison, but not a multi-tap comparison, whose
+        # averaged peaks still apply — as Swift's
+        # `guard displayMode != .comparison || showingMultiTapComparison else { return [] }`.
+        if not peaks or self.fft_canvas.analyzer.is_saved_measurement_comparison:
             self.peak_widget.update_data_with_modes([])
+            self._refresh_selection_buttons()
             return
         mt = TDS.measurement_type()
         analyzer = self.fft_canvas.analyzer
@@ -2735,6 +2838,7 @@ class MainWindow(QtWidgets.QMainWindow):
             flc_freq   = float(analyzer.selected_flc_peak.frequency) if analyzer.selected_flc_peak else 0.0
             self._material_peak_widget.set_assignment(long_freq, cross_freq,
                                                       flc_freq=flc_freq)
+        self._refresh_selection_buttons()
 
     def _on_canvas_freq_range_changed(self, fmin: float, fmax: float) -> None:
         """Update freq label and re-filter the results panel when viewport changes."""
@@ -2988,7 +3092,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if in_review:
             # Relabel Pause → Accept (green) and Cancel → Redo <phase> (orange).
             self.pause_tap_btn.setText("Accept")
-            palette.set_icon(self.pause_tap_btn, "fa5.check-circle", palette.Role.STATUS_COMPLETE)
+            palette.set_icon(
+                self.pause_tap_btn, "mdi.check-circle-outline", palette.Role.STATUS_COMPLETE)
             palette.tag(self.pause_tap_btn, tint=palette.Role.STATUS_COMPLETE)
 
             from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
@@ -2999,22 +3104,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 _MTP.REVIEWING_FLC:          "Redo FLC",
             }
             self.cancel_tap_btn.setText(redo_labels.get(phase, "Redo"))
-            palette.set_icon(self.cancel_tap_btn, "fa5s.undo", palette.Role.STATUS_WARNING)
+            palette.set_icon(self.cancel_tap_btn, "mdi.restore", palette.Role.STATUS_WARNING)
             palette.tag(self.cancel_tap_btn, tint=palette.Role.STATUS_WARNING)
         else:
             # Standard labels.
             if is_paused:
                 self.pause_tap_btn.setText("Resume")
-                palette.set_icon(self.pause_tap_btn, "fa5.play-circle", palette.Role.ACCENT)
+                palette.set_icon(self.pause_tap_btn, "mdi.play-circle-outline", palette.Role.ACCENT)
             else:
                 self.pause_tap_btn.setText("Pause")
-                palette.set_icon(self.pause_tap_btn, "fa5.pause-circle", palette.Role.ACCENT)
+                palette.set_icon(
+                    self.pause_tap_btn, "mdi.pause-circle-outline", palette.Role.ACCENT)
             palette.tag(self.pause_tap_btn, tint=palette.Role.ACCENT)
             self.cancel_tap_btn.setText("Cancel")
             # Mirrors Swift: .foregroundStyle(cancelButtonEnabled ? statusWarning : toolbarInactive)
             cancel_role = (palette.Role.STATUS_WARNING if out.cancel_enabled
                            else palette.Role.TOOLBAR_INACTIVE)
-            palette.set_icon(self.cancel_tap_btn, "fa5.times-circle", cancel_role)
+            palette.set_icon(self.cancel_tap_btn, "mdi.close-circle-outline", cancel_role)
             palette.tag(self.cancel_tap_btn, tint=cancel_role)
 
     # ================================================================
@@ -3142,7 +3248,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             role = palette.Role.ACCENT
         palette.tag(self._play_file_btn, tint=role)
-        palette.set_icon(self._play_file_btn, "fa5s.file-audio", role)
+        palette.set_icon(self._play_file_btn, "mdi.waveform", role)
         # Playback changes which of Pause / New Tap / Cancel are available, and whose microphone the
         # result is.
         self._update_tap_buttons()
@@ -3314,10 +3420,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # model directly — mirrors Swift @Published selectedPeakIDs propagation.
         analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
-    def _on_user_modified_selection_changed(self, modified: bool) -> None:
-        self.reset_auto_selection_btn.setEnabled(
-            modified and self._is_measurement_complete
-        )
+    def _on_user_modified_selection_changed(self, _modified: bool) -> None:
+        self._refresh_selection_buttons()
 
     def _on_reanalyze_peaks(self) -> None:
         """Re-run peak detection on the frozen spectrum.
@@ -3370,7 +3474,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # The chart's range is not touched here: a load shows the measurement's range, and Settings'
         # Done moves the chart for a type change (display_range.on_settings_done) — as Swift, whose
         # .onReceive(tap.$loadedMeasurementType) only sets the type.
-        self.reset_auto_selection_btn.setVisible(mt.is_guitar)
         self.peak_min_slider.setEnabled(mt.is_guitar)
         self.peak_min_readout.setEnabled(mt.is_guitar)
         self.peak_min_reset_btn.setEnabled(mt.is_guitar)
@@ -3385,7 +3488,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Toggle peak list: guitar → PeakListWidget; plate/brace → MaterialPeakListWidget
         self.peak_widget.setVisible(mt.is_guitar)
         self._material_scroll.setVisible(not mt.is_guitar)
-        self._material_instr_panel.setVisible(not mt.is_guitar)
+        self._refresh_material_instructions()
+        self._refresh_selection_buttons()
         if mt.is_guitar:
             gt = mt.guitar_type
             if gt is not None:
@@ -3552,7 +3656,7 @@ class MainWindow(QtWidgets.QMainWindow):
             phase_role = palette.Role.PHASE_NOT_STARTED
             short_status = "Ready"
             step_text  = f"Phase\u00a01/{total}"  # Swift: materialPhaseStep returns 1 for notStarted
-            icon_name  = "fa5s.hand-point-up"
+            icon_name  = "mdi.gesture-tap"
             title      = "Press \u2018New Tap\u2019 to Begin"
             tap_word   = "three-tap" if measure_flc else "two-tap"
             body       = (
@@ -3566,7 +3670,7 @@ class MainWindow(QtWidgets.QMainWindow):
             phase_role = _FL
             short_status = "fL tap..."
             step_text  = f"Phase\u00a01/{total}"
-            icon_name  = "fa5s.wave-square"
+            icon_name  = "mdi.waveform"
             title      = (
                 "Step 1: Longitudinal (fL) Mode" if is_brace
                 else "Step 1: Longitudinal (fL) Mode"
@@ -3584,7 +3688,7 @@ class MainWindow(QtWidgets.QMainWindow):
             phase_role = _FL
             short_status = "Review fL"
             step_text  = f"Phase\u00a01/{total}"
-            icon_name  = "fa5.check-circle"
+            icon_name  = "mdi.check-circle-outline"
             title      = "Review fL Tap \u2014 Accept or Redo"
             body       = (
                 "fL tap captured. Review the spectrum \u2014 press Accept to continue "
@@ -3597,7 +3701,7 @@ class MainWindow(QtWidgets.QMainWindow):
             phase_role = _FC
             short_status = "fC tap..."
             step_text  = f"Phase\u00a02/{total}"
-            icon_name  = "fa5s.wave-square"
+            icon_name  = "mdi.waveform"
             title      = "Step 2: Cross-grain (fC) Mode"
             body       = (
                 "Hold plate at 22% from one end along the width, near one short edge "
@@ -3610,7 +3714,7 @@ class MainWindow(QtWidgets.QMainWindow):
             phase_role = _FC
             short_status = "Review fC"
             step_text  = f"Phase\u00a02/{total}"
-            icon_name  = "fa5.check-circle"
+            icon_name  = "mdi.check-circle-outline"
             title      = "Review fC Tap \u2014 Accept or Redo"
             body       = (
                 "fC tap captured. Review the spectrum \u2014 press Accept to continue, "
@@ -3630,7 +3734,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if mtp == _MTPLocal.CAPTURING_FLC:
                 # Swift capturingFlc: actively capturing the FLC tap
                 short_status = "fLC tap..."
-                icon_name    = "fa5s.wave-square"
+                icon_name    = "mdi.waveform"
                 title        = "Step 3: Diagonal (fLC) Mode"
                 body         = (
                     "Hold plate at the midpoint of one long edge. Tap near the opposite corner "
@@ -3639,7 +3743,7 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 # Swift waitingForFlcTap: C captured, user repositioning for FLC
                 short_status = "Tap for fLC"
-                icon_name    = "fa5s.sync-alt"
+                icon_name    = "mdi.rotate-3d-variant"
                 title        = "fC Captured \u2014 Prepare for Step 3"
                 body         = (
                     "Cross-grain mode captured! Now hold plate at the midpoint of one long edge. "
@@ -3650,7 +3754,7 @@ class MainWindow(QtWidgets.QMainWindow):
             phase_role = _FLC
             short_status = "Review fLC"
             step_text  = f"Phase\u00a03/{total}"
-            icon_name  = "fa5.check-circle"
+            icon_name  = "mdi.check-circle-outline"
             title      = "Review fLC Tap \u2014 Accept or Redo"
             body       = (
                 "fLC tap captured. Review the spectrum \u2014 press Accept to complete "
@@ -3664,7 +3768,7 @@ class MainWindow(QtWidgets.QMainWindow):
             short_status = "Done"
             last_step  = total if measure_flc else (1 if is_brace else 2)
             step_text  = f"Phase\u00a0{last_step}/{total}"
-            icon_name  = "fa5s.check-circle"
+            icon_name  = "mdi.check-circle"
             title      = "Measurement Complete"
             if is_brace:
                 body = (
@@ -4087,6 +4191,10 @@ class MainWindow(QtWidgets.QMainWindow):
         _is_saved_comparison = canvas.analyzer.is_saved_measurement_comparison
         _is_multi_tap_comparison = is_comparing and not _is_saved_comparison
         self._sb_normal_wgt.setVisible(not is_comparing)
+        # The tap progress bar follows the comparison (hidden in one, back after it).
+        self.set_tap_count(self._tap_count_captured, self._tap_count_total)
+        # The tap dot belongs to the normal state — Swift's comparison bar has none.
+        self._sb_tap_dot.setVisible(not is_comparing)
         self._sb_compare_wgt.setVisible(is_comparing)
         # Warning banner: suppress during saved-measurement comparison (the comparison panel
         # replaces this context entirely); keep visible during multi-tap comparison because
@@ -4142,10 +4250,8 @@ class MainWindow(QtWidgets.QMainWindow):
             # which would call _on_multi_tap_toggled → apply_multi_tap_comparison_overlays(False)
             # → comparisonChanged(False), undoing the saved-comparison state we just set up.
             analyzer.showing_multi_tap_comparison = False
-            self._multi_tap_toggle_btn.blockSignals(True)
-            self._multi_tap_toggle_btn.setChecked(False)
-            self._multi_tap_toggle_btn.blockSignals(False)
             palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
+            palette.set_on(self._multi_tap_toggle_btn, False)
             self._multi_tap_toggle_btn.setVisible(False)
             self._multi_tap_results_view.setVisible(False)
 
@@ -4159,18 +4265,10 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         # Scroll area (plate/brace) only visible in plate/brace mode and not while comparing
         self._material_scroll.setVisible(not is_comparing and not TDS.measurement_type().is_guitar)
-        # Peak selection buttons hidden when there are no peaks to act on or during
-        # multi-tap comparison — mirrors Swift:
-        # `if !sortedPeaksWithModes.isEmpty && !analyzer.showingMultiTapComparison`
-        _has_peaks = (
-            not is_comparing
-            and not _is_multi_tap_initiated
-            and self.peak_widget.model.rowCount(QtCore.QModelIndex()) > 0
-        )
-        self.deselect_all_btn.setVisible(_has_peaks)
-        self.reset_auto_selection_btn.setVisible(
-            _has_peaks and TDS.measurement_type().is_guitar
-        )
+        self._refresh_material_instructions()
+        # The results list is empty during a saved-measurement comparison; rebuild it as one starts
+        # or ends (this also refreshes the selection buttons).
+        self._refresh_results_peaks()
         # Guitar summary (Ring-Out, Tap Ratio) — mirrors
         # `measurementType.isGuitar && (displayMode != .comparison || showingMultiTapComparison)` in Swift.
         # Show during multi-tap comparison (analyzer is in COMPARISON for chart purposes but
@@ -4205,13 +4303,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # PDF writes the comparison report). Mirrors Swift.
         self.export_pdf_btn.setVisible(True)
         self._update_save_export_enabled()
-
-        # ── Peak-selection buttons ─────────────────────────────────────────────
-        can_select = self._is_measurement_complete and not is_comparing and TDS.measurement_type().is_guitar
-        self.deselect_all_btn.setEnabled(can_select)
-        self.reset_auto_selection_btn.setEnabled(
-            can_select and self.peak_widget.model.user_has_modified_peak_selection
-        )
 
         # ── Threshold / Peak Min controls ──────────────────────────────────────
         # Threshold remains enabled during comparison so the user can adjust it
@@ -4258,11 +4349,13 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer = self.fft_canvas.analyzer
         analyzer.showing_multi_tap_comparison = checked
         analyzer.apply_multi_tap_comparison_overlays(enabled=checked)
+        self._refresh_selection_buttons()
 
         # Mirror Swift .tint(showing ? resultsTapsActive : accent) on a bordered button.
         tint = palette.Role.RESULTS_TAPS_ACTIVE if checked else palette.Role.ACCENT
-        palette.set_icon(self._multi_tap_toggle_btn, "fa5s.layer-group", tint)
+        palette.set_icon(self._multi_tap_toggle_btn, "mdi.waveform", tint)
         palette.tag(self._multi_tap_toggle_btn, tint=tint)
+        palette.set_on(self._multi_tap_toggle_btn, checked)
         if checked:
             self._multi_tap_toggle_btn.setToolTip("Show averaged result only")
         else:
@@ -4364,11 +4457,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # guard) because a stale-but-not-effectively-visible widget must be cleared too.
         # Same reset as _on_multi_tap_toggled's `if not checked:` branch.
         if not analyzer.showing_multi_tap_comparison:
-            self._multi_tap_toggle_btn.blockSignals(True)
-            self._multi_tap_toggle_btn.setChecked(False)
-            self._multi_tap_toggle_btn.blockSignals(False)
-            palette.set_icon(self._multi_tap_toggle_btn, "fa5s.layer-group", palette.Role.ACCENT)
+            palette.set_icon(self._multi_tap_toggle_btn, "mdi.waveform", palette.Role.ACCENT)
             palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
+            palette.set_on(self._multi_tap_toggle_btn, False)
             self._multi_tap_toggle_btn.setToolTip("Compare individual taps")
             self._multi_tap_results_view.setVisible(False)
 
@@ -4467,7 +4558,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._ann_mode_idx,
         )
         self._ann_mode_idx = target_idx
-        palette.set_icon(self.annotations_btn, self._ANN_MODES[target_idx].icon_name, palette.Role.ACCENT)
+        palette.set_icon(
+            self.annotations_btn, self._ANN_MODES[target_idx].icon_name, palette.Role.ACCENT)
         # Set annotation mode directly on the private attribute so the public setter's
         # no-op guard and premature update_data call are both bypassed.
         peak_model._annotation_mode = target_mode
@@ -6357,7 +6449,7 @@ class MainWindow(QtWidgets.QMainWindow):
         an.addWidget(_hsep())
 
         reset_analysis_btn = QtWidgets.QPushButton("Reset Analysis Settings")
-        palette.set_icon(reset_analysis_btn, "mdi.undo", palette.Role.TEXT_PRIMARY)
+        palette.set_icon(reset_analysis_btn, "mdi.restore", palette.Role.TEXT_PRIMARY)
 
         def _reset_analysis_settings() -> None:
             peak_thresh_field.setText("-60")

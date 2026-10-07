@@ -41,6 +41,8 @@ class Role(Enum):
     BACKGROUND_CONTROL = "background.control"
     BACKGROUND_SUBTLE = "background.subtle"
     SEPARATOR = "separator"
+    DIVIDER_SECTION = "divider.section"
+    DIVIDER_HEADER_FOOTER = "divider.headerFooter"
     TEXT_PRIMARY = "text.primary"
     TEXT_SECONDARY = "text.secondary"
     TEXT_ON_COLOR = "text.onColor"
@@ -165,6 +167,8 @@ PAIRS: dict[Role, ColorPair] = {
     Role.BACKGROUND_CONTROL: ColorPair("#FFFFFF", "#11161D"),
     Role.BACKGROUND_SUBTLE: ColorPair("#8E8E9314", "#8E8E931A"),
     Role.SEPARATOR: ColorPair("#D8DEE6", "#222A33"),
+    Role.DIVIDER_SECTION: ColorPair("#1A233059", "#FFFFFF59"),
+    Role.DIVIDER_HEADER_FOOTER: ColorPair("#1A2330", "#E7EBF0"),
     Role.TEXT_PRIMARY: ColorPair("#1A2330", "#E7EBF0"),
     Role.TEXT_SECONDARY: ColorPair("#6B7785", "#8A96A5"),
     Role.TEXT_ON_COLOR: ColorPair("#FFFFFF", "#FFFFFF"),
@@ -467,10 +471,12 @@ def _update() -> None:
 COLOR_PROPERTY = "colorRole"
 BACKGROUND_PROPERTY = "backgroundRole"
 # A bordered button tinted by a role — Swift's .buttonStyle(.bordered) with .tint(role): the role's
-# colour as text, at TINT_FILL as the fill and TINT_BORDER as the border.
+# colour as text and at TINT_FILL as the fill (measured from Swift's), with no outline.
 TINT_PROPERTY = "tintRole"
-TINT_FILL = 0.12
-TINT_BORDER = 0.35
+TINT_FILL = 0.05
+# A tinted button that is a two-state toggle but not a checkable QPushButton (its state lives in the
+# model, as Swift's Toggle binds to it) marks itself on with this property; drawn as :checked.
+ON_PROPERTY = "toggleOn"
 # A widget's border colour (a divider drawn as a bar's edge).
 BORDER_PROPERTY = "borderRole"
 # A status message's box — Swift's
@@ -505,6 +511,14 @@ def tag(
 # Icons drawn in a role: qtawesome bakes the colour into the image, so every one set through
 # set_icon is drawn again for a new scheme.
 _icons: dict[int, tuple[QtWidgets.QWidget, str, Role, int | None]] = {}
+
+
+def set_on(widget: QtWidgets.QWidget, on: bool) -> None:
+    """Draw a tinted two-state toggle as on (the checked fill) or off."""
+    widget.setProperty(ON_PROPERTY, "true" if on else "false")
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
 
 
 def set_icon(widget: QtWidgets.QWidget, name: str, role: Role, size: int | None = None) -> None:
@@ -563,18 +577,19 @@ def _application_stylesheet() -> str:
         tinted = f'QPushButton[{TINT_PROPERTY}="{role.value}"]'
         rules.append(
             f'{tinted} {{ color: {value}; background-color: {_rgba(c, TINT_FILL)};'
-            f' border: 1px solid {_rgba(c, TINT_BORDER)}; border-radius: 6px;'
-            f' padding: 3px 8px; }}')
+            f' border: 1px solid transparent; border-radius: 6px; padding: 3px 8px; }}')
+        # Hover lifts the fill by 10 points, on or off — as Swift's wash over its button.
+        rules.append(f'{tinted}:hover {{ background-color: {_rgba(c, 0.15)}; }}')
+        rules.append(f'{tinted}:pressed {{ background-color: {_rgba(c, 0.22)}; }}')
         rules.append(
-            f'{tinted}:hover {{ background-color: {_rgba(c, 0.20)};'
-            f' border-color: {_rgba(c, 0.55)}; }}')
-        rules.append(f'{tinted}:pressed {{ background-color: {_rgba(c, 0.30)}; }}')
+            f'{tinted}:checked, {tinted}[{ON_PROPERTY}="true"] {{'
+            f' background-color: {_rgba(c, 0.28)}; }}')
         rules.append(
-            f'{tinted}:checked {{ background-color: {_rgba(c, 0.28)};'
-            f' border-color: {_rgba(c, 0.60)}; }}')
+            f'{tinted}:checked:hover, {tinted}[{ON_PROPERTY}="true"]:hover {{'
+            f' background-color: {_rgba(c, 0.38)}; }}')
         rules.append(
-            f'{tinted}:disabled {{ background-color: {_rgba(c, 0.05)};'
-            f' border-color: {_rgba(c, 0.15)}; color: {_rgba(c, 0.40)}; }}')
+            f'{tinted}:disabled {{ background-color: {_rgba(c, 0.03)};'
+            f' color: {_rgba(c, 0.40)}; }}')
         bar = f'QProgressBar[{TINT_PROPERTY}="{role.value}"]'
         rules.append(
             f'{bar} {{ border: none; border-radius: 3px;'

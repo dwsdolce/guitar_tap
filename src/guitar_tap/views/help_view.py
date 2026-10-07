@@ -186,7 +186,7 @@ def _build_help_html() -> str:
         "Click the button again to return to the normal averaged view. "
         "The per-tap data is saved with the measurement and reloads correctly &mdash; "
         "the Taps button reappears whenever a measurement with multi-tap data is loaded.",
-        ["fa5s.layer-group"]
+        ["mdi.waveform"]
     ))
     parts.append(_row(
         "Overriding Mode Classification",
@@ -336,7 +336,7 @@ def _build_help_html() -> str:
         "for review. While in a review state the button changes to Accept. Click "
         "Accept to confirm the captured spectrum and advance to the next phase "
         "(or complete the measurement if it was the last phase).",
-        ["fa5.pause-circle", "fa5.play-circle", "fa5s.check-circle"]
+        ["mdi.pause-circle-outline", "mdi.play-circle-outline", "mdi.check-circle-outline"]
     ))
     parts.append(_row(
         "Cancel &bull; Redo (plate/brace review)",
@@ -347,7 +347,7 @@ def _build_help_html() -> str:
         "to Redo. Click Redo to discard only the current phase&rsquo;s data and "
         "re-capture it, preserving earlier phases. Either way the detector re-arms "
         "immediately.",
-        ["fa5.times-circle", "fa5s.undo"]
+        ["mdi.close-circle-outline", "mdi.restore"]
     ))
     parts.append(_row(
         "Analysis Results",
@@ -356,7 +356,7 @@ def _build_help_html() -> str:
         "contains Export Spectrum and Export PDF Report buttons. On iPhone, tap the "
         "Results button (doc icon) in the toolbar to open the panel as a sheet. On iPad "
         "and desktop, the panel is permanently visible on the right side of the window.",
-        ["fa5s.file-alt"]
+        ["mdi.file-document-outline"]
     ))
     parts.append(_row(
         "Re-analyze Peaks",
@@ -367,7 +367,7 @@ def _build_help_html() -> str:
         "one may end up deselected. Useful for trying a different guitar type without "
         "re-tapping, or for a clean classification after manual changes. It no longer disables "
         "itself after one press, and does not apply to Plate or Brace measurements.",
-        ["fa5s.sync-alt"]
+        ["mdi.refresh"]
     ))
     parts.append(_row(
         "Auto dB",
@@ -380,7 +380,7 @@ def _build_help_html() -> str:
         "Cycles through three label modes: All peaks annotated, Selected peaks only, or None. "
         "For plate and brace there is no per-peak selection, so All and Selected show the same "
         "thing — all three identified frequencies (Longitudinal, Cross-grain, and Diagonal) — while None hides them.",
-        ["fa5.eye", "fa5.star", "fa5.eye-slash"]
+        ["mdi.eye-outline", "mdi.star", "mdi.eye-off-outline"]
     ))
     parts.append(_row(
         "Peak Labels",
@@ -404,14 +404,14 @@ def _build_help_html() -> str:
         "tap falls inside that opening half-second the tap is treated as part of the settling "
         "period, is not detected, and nothing is captured &mdash; re-record with a moment of "
         "silence in front of the first tap. Guitar files are unaffected.",
-        ["fa5.play-circle"]
+        ["mdi.play-circle-outline"]
     ))
     parts.append(_row(
         "Save",
         "Saves the current measurement &mdash; enabled when the spectrum is frozen, peaks "
         "have been detected, and you have entered a measurement name (the name is required; "
         "notes are optional).",
-        ["fa5.save"]
+        ["mdi.download-outline"]
     ))
     parts.append(_row(
         "Measurements",
@@ -428,7 +428,7 @@ def _build_help_html() -> str:
         "measurements on the main chart for side-by-side comparison. The measurement "
         "name and notes can also be edited from the Edit button in the Measurement "
         "Details dialog.",
-        ["fa5s.clipboard-list"]
+        ["mdi.clipboard-list-outline"]
     ))
     parts.append(_row(
         "Compare Measurements",
@@ -452,7 +452,7 @@ def _build_help_html() -> str:
         "Metrics",
         "Shows FFT engine statistics: frame rate, bin width (Hz/bin), sample rate, "
         "and buffer size.",
-        ["fa5.chart-bar"]
+        ["mdi.chart-bar"]
     ))
     parts.append(_row(
         "Menu Bar",
@@ -541,7 +541,7 @@ def _build_help_html() -> str:
     ))
 
     # ── Settings Reference ────────────────────────────────────────────────
-    parts.append(_h2("fa5s.cog", "Settings Reference"))
+    parts.append(_h2("mdi.cog-outline", "Settings Reference"))
     parts.append(_row(
         "Audio Input &amp; Calibration",
         "Shown at the top of Settings. Select your microphone or audio interface here. "

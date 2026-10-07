@@ -102,6 +102,8 @@ class MaterialDimensionsEditor(QtWidgets.QWidget):
         unit_lbl = QtWidgets.QLabel(unit)
         unit_lbl.setFont(self._small_font)
         palette.tag(unit_lbl, color=palette.Role.TEXT_SECONDARY)
+        # A fixed-width unit column, so "g" and "mm" leave the fields above one another.
+        unit_lbl.setFixedWidth(20)
         row.addWidget(unit_lbl)
         return row
 

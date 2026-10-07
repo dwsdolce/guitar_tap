@@ -58,9 +58,9 @@ class AnnotationVisibilityMode(str, Enum):
         Python maps to QtAwesome fa5 equivalents.
         """
         _map = {
-            AnnotationVisibilityMode.ALL:      "fa5.eye",
-            AnnotationVisibilityMode.SELECTED: "fa5.star",
-            AnnotationVisibilityMode.NONE:     "fa5.eye-slash",
+            AnnotationVisibilityMode.ALL:      "mdi.eye-outline",
+            AnnotationVisibilityMode.SELECTED: "mdi.star",
+            AnnotationVisibilityMode.NONE:     "mdi.eye-off-outline",
         }
         return _map[self]
 

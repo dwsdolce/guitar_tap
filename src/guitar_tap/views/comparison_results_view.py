@@ -25,6 +25,25 @@ if TYPE_CHECKING:
     pass
 
 
+def apply_results_table_style(table: QtWidgets.QTableWidget) -> None:
+    """Swift's results tables (comparison and per-tap): grey semibold column titles with no header
+    bar or column lines, a line under the titles and between the rows, none under the last, and
+    24 px rows (a caption line with 5 pt above and below). Each row draws the line ABOVE it (a
+    stylesheet cannot single out the last row), so the first row's is the one under the titles.
+    Colours from the palette — call again on every change of scheme."""
+    sep = palette.color(palette.Role.SEPARATOR).name()
+    secondary = palette.color(palette.Role.TEXT_SECONDARY).name()
+    table.setStyleSheet(
+        "QTableWidget { border: none; background: transparent; }"
+        f"QTableWidget::item {{ border-top: 1px solid {sep}; }}"
+        "QHeaderView { background: transparent; }"
+        "QHeaderView::section { background: transparent; border: none;"
+        f" color: {secondary}; font-weight: 600; padding: 4px 0px; }}"
+    )
+    table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Fixed)
+    table.verticalHeader().setDefaultSectionSize(24)
+
+
 class ComparisonResultsView(QtWidgets.QWidget):
     """Grid showing Air, Top, Back resonance frequencies for each comparison spectrum.
 
@@ -46,7 +65,11 @@ class ComparisonResultsView(QtWidgets.QWidget):
         palette.notifier().scheme_changed.connect(self._on_scheme_changed)
 
     def _on_scheme_changed(self, _scheme) -> None:
+        self._apply_style()
         self._rebuild(self._data)
+
+    def _apply_style(self) -> None:
+        apply_results_table_style(self._table)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -70,7 +93,8 @@ class ComparisonResultsView(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # 8 px below the header line, as Swift's results scroll.
+        layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(0)
 
         self._table = QtWidgets.QTableWidget(0, 4, self)
@@ -96,8 +120,7 @@ class ComparisonResultsView(QtWidgets.QWidget):
         caption_font.setPointSize(10)
         self._table.setFont(caption_font)
         self._table.horizontalHeader().setFont(caption_font)
-        # Match surrounding panel's background.
-        self._table.setStyleSheet("QTableWidget { border: none; }")
+        self._apply_style()
 
         layout.addWidget(self._table)
 
@@ -156,7 +179,6 @@ class ComparisonResultsView(QtWidgets.QWidget):
                     item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
                 self._table.setItem(row, col, item)
 
-        self._table.resizeRowsToContents()
 
         # Measure column 0 width using font metrics on the exact 10pt font used
         # in _make_label_cell, then add the fixed chrome (dot + spacing + margins).
@@ -169,8 +191,8 @@ class ComparisonResultsView(QtWidgets.QWidget):
              for entry in comparison_data),
             default=0,
         )
-        # dot(10) + spacing(6) + text + left-margin(6) + right-margin(4)
-        _col0_w = min(10 + 6 + _max_text_w + 6 + 4, 190)
+        # dot(8) + spacing(6) + text + left-margin(6) + right-margin(4)
+        _col0_w = min(8 + 6 + _max_text_w + 6 + 4, 190)
         self._table.setColumnWidth(0, _col0_w)
 
     @staticmethod
@@ -186,10 +208,10 @@ class ComparisonResultsView(QtWidgets.QWidget):
 
         # Coloured dot — mirrors Swift Circle().fill(color).
         dot = QtWidgets.QLabel()
-        dot.setFixedSize(10, 10)
+        dot.setFixedSize(8, 8)
         r, g, b = color_rgb
         dot.setStyleSheet(
-            f"background-color: rgb({r},{g},{b}); border-radius: 5px;"
+            f"background-color: rgb({r},{g},{b}); border-radius: 4px;"
         )
 
         # Label text — elide at tail when the column is too narrow to show the

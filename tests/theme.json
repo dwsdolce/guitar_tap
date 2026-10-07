@@ -28,6 +28,16 @@
    "#222A33"
   ],
   [
+   "divider.section",
+   "#1A233059",
+   "#FFFFFF59"
+  ],
+  [
+   "divider.headerFooter",
+   "#1A2330",
+   "#E7EBF0"
+  ],
+  [
    "text.primary",
    "#1A2330",
    "#E7EBF0"

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtWidgets
 
 from guitar_tap.models import field_precision as fp
+from guitar_tap.views.comparison_results_view import apply_results_table_style
 from guitar_tap.views.utilities import palette
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         palette.notifier().scheme_changed.connect(self._on_scheme_changed)
 
     def _on_scheme_changed(self, _scheme) -> None:
+        apply_results_table_style(self._table)
         self._rebuild(*self._data)
 
     # ------------------------------------------------------------------ #
@@ -84,7 +86,8 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # 8 px below the header line, as Swift's results scroll.
+        layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(0)
 
         # Four columns: Tap label | Air | Top | Back
@@ -110,7 +113,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         caption_font.setPointSize(10)
         self._table.setFont(caption_font)
         self._table.horizontalHeader().setFont(caption_font)
-        self._table.setStyleSheet("QTableWidget { border: none; }")
+        apply_results_table_style(self._table)
 
         layout.addWidget(self._table)
 
@@ -177,7 +180,6 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
             item.setFont(_f)
             self._table.setItem(avg_row, col, item)
 
-        self._table.resizeRowsToContents()
 
     @staticmethod
     def _make_label_cell(
@@ -196,9 +198,9 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
         # Coloured indicator — circle for tap rows, rectangle for Averaged row.
         # Mirrors Swift: Circle().fill(color) vs Rectangle().fill(color).
         dot = QtWidgets.QLabel()
-        dot.setFixedSize(10, 10)
+        dot.setFixedSize(8, 8)
         r, g, b = color_rgb
-        border_radius = "0px" if bold else "5px"
+        border_radius = "0px" if bold else "4px"
         dot.setStyleSheet(
             f"background-color: rgb({r},{g},{b}); border-radius: {border_radius};"
         )
