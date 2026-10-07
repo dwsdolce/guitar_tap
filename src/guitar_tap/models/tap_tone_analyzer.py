@@ -1648,6 +1648,7 @@ class TapToneAnalyzer(
         self.frozen_frequencies = frequencies
         self.frozen_magnitudes = magnitudes
 
+    # @parity state/visible-peaks tests=test/annotation-state
     def cycle_annotation_visibility(self) -> None:
         """Advance annotation_visibility_mode: all → selected → none → all.
 

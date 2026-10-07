@@ -39,6 +39,7 @@ from guitar_tap.views.shared.loading_overlay import LoadingOverlay
 from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
 from guitar_tap.views.utilities import extensions as _ext
 from guitar_tap.views.utilities import palette
+from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole, phase_badge
 from guitar_tap.utilities.new_uuid import new_uuid
 
 # The plate/brace phase colours, by role.
@@ -241,17 +242,17 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
 
         # L badge (always shown) — display-only, shows auto-identified peak
         is_l = (freq == self._long_freq)
-        hl.addWidget(self._mode_btn("fL", is_l, _FL))
+        hl.addWidget(phase_badge(MaterialPeakRole.LONGITUDINAL, is_l))
 
         # C badge (plate only)
         if self._show_cross:
             is_c = (freq == self._cross_freq)
-            hl.addWidget(self._mode_btn("fC", is_c, _FC))
+            hl.addWidget(phase_badge(MaterialPeakRole.CROSS, is_c))
 
         # FLC badge (plate + FLC only)
         if self._show_flc:
             is_flc = (freq == self._flc_freq)
-            hl.addWidget(self._mode_btn("fLC", is_flc, _FLC, width=42))
+            hl.addWidget(phase_badge(MaterialPeakRole.FLC, is_flc))
 
         return w
 
@@ -294,29 +295,12 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         hl.addWidget(txt, stretch=1)
 
         # Phase badges — this row's bubble is active only once its peak is found.
-        hl.addWidget(self._mode_btn("fL", role == "L" and found, _FL))
+        hl.addWidget(phase_badge(MaterialPeakRole.LONGITUDINAL, role == "L" and found))
         if self._show_cross:
-            hl.addWidget(self._mode_btn("fC", role == "C" and found, _FC))
+            hl.addWidget(phase_badge(MaterialPeakRole.CROSS, role == "C" and found))
         if self._show_flc:
-            hl.addWidget(self._mode_btn("fLC", role == "FLC" and found, _FLC, width=42))
+            hl.addWidget(phase_badge(MaterialPeakRole.FLC, role == "FLC" and found))
         return w
-
-    @staticmethod
-    def _mode_btn(label: str, active: bool, role: palette.Role,
-                  width: int = 36) -> QtWidgets.QPushButton:
-        btn = QtWidgets.QPushButton(label)
-        fnt = QtGui.QFont()
-        fnt.setBold(True)
-        fnt.setPointSize(10 if len(label) <= 1 else 8)
-        btn.setFont(fnt)
-        btn.setFixedSize(width, 32)
-        btn.setStyleSheet("QPushButton {border-radius: 6px; border: none;}")
-        palette.tag(
-            btn,
-            color=palette.Role.TEXT_ON_COLOR if active else palette.Role.TEXT_PRIMARY,
-            background=role if active else palette.Role.MATERIAL_PHASE_INACTIVE,
-        )
-        return btn
 
 class MaterialInstructionsWidget(QtWidgets.QWidget):
     """Process instructions shown at the bottom of the material scroll view.

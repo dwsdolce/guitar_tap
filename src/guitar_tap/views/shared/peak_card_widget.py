@@ -25,6 +25,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
 from guitar_tap.views.utilities import palette
+from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole, phase_badge
 from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import pitch as pitch_c
 from guitar_tap.views.shared import peaks_model as pm
@@ -80,9 +81,13 @@ class PeakCardWidget(QtWidgets.QFrame):
         is_held: bool,
         pitch_obj: pitch_c.Pitch,
         show_pitch: bool = True,
+        read_only: bool = False,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        # A card that only shows its peak (Measurement Details): no star, no mode menu —
+        # Swift's CombinedPeakModeRowView with no onToggleSelection or onSetModeOverride.
+        self._read_only = read_only
         self._freq = freq
         self._mag_db = mag_db
         self._q = q
@@ -126,6 +131,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._star_btn.setFixedSize(24, 24)
         self._star_btn.setFont(_font(14))
         self._star_btn.clicked.connect(self._toggle_show)
+        self._star_btn.setVisible(not self._read_only)
         outer.addWidget(self._star_btn, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
 
         # Mode colour chip + range badge
@@ -137,6 +143,12 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._chip.setFixedSize(26, 26)
         self._chip.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         chip_col.addWidget(self._chip, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
+        # A plate / brace peak shows its role's badge in place of the mode icon — Swift's card with
+        # a materialRole.
+        material_role = MaterialPeakRole.from_display_name(self._mode)
+        if material_role is not None:
+            self._chip.setVisible(False)
+            chip_col.addWidget(phase_badge(material_role), 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
 
         self._badge = QtWidgets.QLabel()
         self._badge.setFixedHeight(12)
@@ -340,7 +352,7 @@ class PeakCardWidget(QtWidgets.QFrame):
     # ── event handlers ────────────────────────────────────────────────────────
 
     def _toggle_show(self) -> None:
-        if not self._is_held:
+        if not self._is_held or self._read_only:
             return
         new_val = "off" if self._show == "on" else "on"
         self._show = new_val
@@ -348,7 +360,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self.showChanged.emit(self._freq, new_val)
 
     def _open_mode_menu(self) -> None:
-        if not self._is_held:
+        if not self._is_held or self._read_only:
             return
 
         menu = QtWidgets.QMenu(self)
