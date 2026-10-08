@@ -569,8 +569,15 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Advanced (collapsed section)",
-        "Click the Advanced row to expand Display Settings, Analysis Settings, and FFT "
-        "Processing. These options rarely need changing after initial setup."
+        "Click the Advanced row to expand Display Settings and Analysis Settings. These "
+        "options rarely need changing after initial setup."
+    ))
+    parts.append(_row(
+        "Appearance",
+        "Advanced &rarr; Display Settings, the first row. System (the default) follows the "
+        "operating system&rsquo;s Light or Dark setting and changes when it does; Light and Dark "
+        "keep the app in that scheme whatever the system does. Exported images and PDF reports "
+        "are always drawn light, whatever the setting."
     ))
     parts.append(_row(
         "Show Unknown Modes",
