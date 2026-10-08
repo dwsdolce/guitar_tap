@@ -73,8 +73,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
 
     header_names: list[str] = [e.name for e in ColumnIndex]
 
-    def __init__(self, data: npt.NDArray) -> None:
-        super().__init__()
+    def __init__(self, data: npt.NDArray, parent: QtCore.QObject | None = None) -> None:
+        super().__init__(parent)
         self._peaks: list = []  # list[ResonantPeak] — authoritative peak objects
         # Optional back-reference to the analyzer, set by the view (as it does for the annotation
         # layer). Used ONLY to resolve the override-BLIND auto mode for the "Reset to Auto-Detected"

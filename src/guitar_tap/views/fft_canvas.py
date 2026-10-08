@@ -22,6 +22,7 @@ from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import microphone_calibration as _mc_mod
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+from guitar_tap.utilities.logging import gt_log
 from guitar_tap.views import peak_annotations as fft_a
 from guitar_tap.views.utilities.extensions import formatted_as_frequency
 
@@ -554,8 +555,20 @@ class FftCanvas(pg.PlotWidget):
         import numpy as _np
         self._saved_peaks_array: "npt.NDArray" = _np.zeros((0, 3), dtype=_np.float64)
 
-        # Start the microphone (always running; processing thread gated by start_analyzer())
-        self.mic.start()
+        # Start the microphone (always running; processing thread gated by start_analyzer()). A
+        # start that fails — no input device, or one that cannot be opened — leaves the app running
+        # without one, and the window reports it as Swift's view does (its engineStartError →
+        # "Audio Engine Error").
+        self.engine_start_error: str | None = None
+        try:
+            self.mic.start()
+        except Exception as exc:  # noqa: BLE001 — any start failure is reported, never fatal
+            code = exc.args[1] if len(exc.args) > 1 else -1
+            self.engine_start_error = (
+                f"The audio engine could not start (error {code}). Try switching the audio input "
+                f"device in Settings, or restart the app.\n\n"
+                f"Details: {exc.args[0] if exc.args else exc}")
+            gt_log(f"❌ Audio engine could not start: {exc}")
 
         # Apply the initial calibration to the analyzer if one was loaded above.
         self.analyzer.mic.set_calibration(

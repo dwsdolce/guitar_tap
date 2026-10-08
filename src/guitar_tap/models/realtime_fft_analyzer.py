@@ -659,13 +659,9 @@ class RealtimeFFTAnalyzer(
             self.device_index = selected.index
             self.rate = int(selected.sample_rate)
 
-        # Open the sounddevice stream (WASAPI RAW on Windows); Swift opens AVAudioEngine in start()
-        from .realtime_fft_analyzer_device_management import _log_stream_diagnostics, _open_input_stream
-        self.stream: sd.InputStream = _open_input_stream(
-            self.device_index, self.rate, self.chunksize, self.new_frame)
-
-        # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
-        self.rate = _log_stream_diagnostics(self.stream, self.rate)
+        # The stream is opened by start(), as Swift opens AVAudioEngine in start(), so an analyzer
+        # exists — and the app runs — when no input device can be opened.
+        self.stream: sd.InputStream | None = None
 
         # Start the hot-plug device monitor.
         self._start_hotplug_monitor()

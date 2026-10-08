@@ -189,7 +189,8 @@ class FftAnnotations(QtCore.QObject):
     _LABEL_OFFSET_DB: float = 14.0
 
     def __init__(self, plot_widget: pg.PlotWidget, analyzer=None):
-        super().__init__()
+        # Owned by the chart, so it is deleted with it and its connections go too.
+        super().__init__(plot_widget)
         self.plot_item = plot_widget.getPlotItem()
         self.annotations: list[_AnnDict] = []
         # Reference to the TapToneAnalyzer — used to persist dragged annotation

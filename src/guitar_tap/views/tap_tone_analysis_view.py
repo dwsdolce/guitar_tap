@@ -2359,6 +2359,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._init_state(self._f_range)
         finally:
             self._loading_overlay.hide()
+        error = getattr(getattr(self, "fft_canvas", None), "engine_start_error", None)
+        if error:
+            QtWidgets.QMessageBox.warning(self, "Audio Engine Error", error)
 
     # ================================================================
     # State update methods (formerly in PeakControls)

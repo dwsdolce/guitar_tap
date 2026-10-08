@@ -62,15 +62,17 @@ Swift ``start()`` (~108 lines) does:
 
 Python ``start()``:
 
+    if self.stream is None:
+        self.stream = _open_input_stream(...)
     self.stream.start()
 
 PortAudio's ``sounddevice.InputStream`` encapsulates steps 1–6 and 9–10
 entirely:
-- Device selection was applied at stream construction time (``__init__`` or
-  ``set_device()``), not at start time — equivalent to Swift's AUHAL device
-  property set before ``audioEngine.start()``.
-- Permission handling is implicit; PortAudio returns an error at stream-open
-  time (in ``__init__``) rather than at start time.
+- The device chosen at construction (or by a device switch) is the one the
+  stream is opened on — equivalent to Swift's AUHAL device property set
+  before ``audioEngine.start()``.
+- Permission handling is implicit; PortAudio returns an error when the stream
+  is opened, which ``start()`` raises as Swift's ``start()`` throws.
 - There is no equivalent to Swift's TCC-cache silence check because PortAudio
   does not silently deliver zero samples on permission denial.
 - There is no iOS audio session configuration (Python targets macOS/desktop).
@@ -281,9 +283,20 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
         Mirrors Swift RealtimeFFTAnalyzer.start() (+EngineControl.swift).
         Swift starts AVAudioEngine and installs the input tap after checking
-        microphone permission; Python starts the PortAudio InputStream directly.
+        microphone permission; Python opens the PortAudio InputStream when there is none
+        (WASAPI RAW on Windows) and starts it. Raises sd.PortAudioError when no input
+        can be opened, as Swift's start() throws; the view reports it.
         """
         gt_log("🎤 === Starting Audio Engine ===")
+        if self.stream is None:
+            from .realtime_fft_analyzer_device_management import (
+                _log_stream_diagnostics,
+                _open_input_stream,
+            )
+            self.stream = _open_input_stream(
+                self.device_index, self.rate, self.chunksize, self.new_frame)
+            # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
+            self.rate = _log_stream_diagnostics(self.stream, self.rate)
         self.stream.start()
         gt_log("🎤 Audio engine started")
         gt_log(f"🎤 Hardware sample rate: {self.rate} Hz, hardware channels: 1 (tap will use mono)")
@@ -310,7 +323,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self.playing_file_name = None  # Mirrors Swift stop(): self?.playingFileName = nil
         self.peak_magnitude = -100.0   # Mirrors Swift stop(): peakMagnitude = -100 (silent state)
         self.peak_frequency = 0.0      # Mirrors Swift stop(): peakFrequency = 0
-        self.stream.abort()
+        if self.stream is not None:
+            self.stream.abort()
 
     # MARK: - WAV File Playback (mirrors Swift startFromFile(_ url:))
 

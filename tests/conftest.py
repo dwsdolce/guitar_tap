@@ -32,6 +32,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 # would be too late: collection imports test modules, and those import the analyzer.
 os.environ.setdefault("GT_TEST_SANDBOX", str(os.getpid()))
 
+# Draw off-screen, as a CI runner with no display must: no windows open during a run, and every
+# machine draws the same way. QT_QPA_PLATFORM=cocoa (or xcb, windows) shows them instead.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _clear_test_sandbox():

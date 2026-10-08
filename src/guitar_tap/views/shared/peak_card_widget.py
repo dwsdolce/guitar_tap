@@ -508,7 +508,8 @@ class PeakListWidget(QtWidgets.QWidget):
         self._last_data: "npt.NDArray | None" = None
 
         data: npt.NDArray = np.vstack(([], [])).T
-        self.model = pm.PeaksModel(data)
+        # Owned by this widget, so it is deleted with it and its connections go too.
+        self.model = pm.PeaksModel(data, self)
         self._pitch = pitch_c.Pitch(440)
         self._is_held = False
         self._cards: list[PeakCardWidget] = []
