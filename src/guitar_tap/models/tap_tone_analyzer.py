@@ -610,6 +610,10 @@ class TapToneAnalyzer(
         # Access is protected by _gated_lock (shared with the gated-capture state).
         self._session_recording_buffer: list = []
         self._is_session_recording: bool = False
+        # Whether this sequence is recorded at all — decided when it starts, from Dump Capture
+        # Audio. Resuming after a pause records again only when it is; turning the setting on
+        # mid-sequence takes effect from the next sequence. Mirrors Swift isSessionRecordingEnabled.
+        self._is_session_recording_enabled: bool = False
         # Recordings that could not be written when their measurement finished (the chosen folder
         # was no longer at its path, or the write failed). Held until the user chooses a folder or
         # lets them go. Mirrors Swift heldCaptureRecordings.

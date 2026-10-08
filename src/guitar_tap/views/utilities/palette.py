@@ -40,6 +40,7 @@ class Role(Enum):
     BACKGROUND_PANEL = "background.panel"
     BACKGROUND_CONTROL = "background.control"
     BACKGROUND_SUBTLE = "background.subtle"
+    BACKGROUND_PICKER = "background.picker"
     SEPARATOR = "separator"
     DIVIDER_SECTION = "divider.section"
     DIVIDER_HEADER_FOOTER = "divider.headerFooter"
@@ -166,6 +167,7 @@ PAIRS: dict[Role, ColorPair] = {
     Role.BACKGROUND_PANEL: ColorPair("#FFFFFF", "#141A22"),
     Role.BACKGROUND_CONTROL: ColorPair("#FFFFFF", "#11161D"),
     Role.BACKGROUND_SUBTLE: ColorPair("#8E8E9314", "#8E8E931A"),
+    Role.BACKGROUND_PICKER: ColorPair("#00000014", "#FFFFFF14"),
     Role.SEPARATOR: ColorPair("#D8DEE6", "#222A33"),
     Role.DIVIDER_SECTION: ColorPair("#1A233059", "#FFFFFF59"),
     Role.DIVIDER_HEADER_FOOTER: ColorPair("#1A2330", "#E7EBF0"),

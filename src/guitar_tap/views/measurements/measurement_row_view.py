@@ -33,6 +33,16 @@ _ELLIPSIS_HOVER_QSS = "QToolButton { border: none; font-size: 11px; padding: 0 2
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
+def _draw_compare_circle(label: QtWidgets.QLabel, selected: bool) -> None:
+    """The compare-mode mark — Swift's circle / checkmark.circle.fill: an empty circle in the
+    secondary colour, or the accent with a check."""
+    if selected:
+        palette.set_icon(label, "mdi.check-circle", palette.Role.ACCENT_TEXT, 18)
+    else:
+        palette.set_icon(
+            label, "mdi.checkbox-blank-circle-outline", palette.Role.TEXT_SECONDARY, 18)
+
+
 def _resolve_guitar_type(s: str | None) -> GT.GuitarType:
     if s:
         try:
@@ -91,6 +101,12 @@ class MeasurementRowView(QtWidgets.QWidget):
     ) -> None:
         super().__init__(parent)
         self._pressed = False
+        # A line under the row, in the separator role — Swift's list row separators.
+        self.setObjectName("measurement_row")
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            "#measurement_row { border-bottom-width: 1px; border-bottom-style: solid; }")
+        palette.tag(self, border=palette.Role.SEPARATOR)
 
         if not compare_mode:
             self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
@@ -106,10 +122,8 @@ class MeasurementRowView(QtWidgets.QWidget):
         self._compare_circle: QtWidgets.QLabel | None = None
         self._compare_eligible = compare_eligible
         if compare_mode:
-            circle = QtWidgets.QLabel("●" if compare_selected else "○")
-            circle.setStyleSheet("font-size: 18px;")
-            palette.tag(circle, color=palette.Role.ACCENT_TEXT if compare_selected
-                        else palette.Role.TEXT_SECONDARY)
+            circle = QtWidgets.QLabel()
+            _draw_compare_circle(circle, compare_selected)
             circle.setFixedWidth(22)
             top_hbox.addWidget(circle)
             self._compare_circle = circle
@@ -124,19 +138,20 @@ class MeasurementRowView(QtWidgets.QWidget):
         loc = QtWidgets.QLabel(m.measurement_name or ("Comparison" if m.is_comparison else "Measurement"))
         loc.setStyleSheet("font-weight: bold; font-size: 13px;")
         loc.setWordWrap(True)
-        line1.addWidget(loc)
-        line1.addStretch()
+        # The name takes the free width, so it wraps only when the row has no room for it — as
+        # Swift's Text beside a Spacer.
+        line1.addWidget(loc, 1)
 
         if m.is_comparison:
-            # Chart icon — mirrors SF Symbol "chart.bar.doc.horizontal" used in Swift
-            chart_icon = QtWidgets.QLabel("📊")
-            chart_icon.setStyleSheet("font-size: 11px;")
+            # Swift's chart.bar.doc.horizontal, in the accent.
+            chart_icon = QtWidgets.QLabel()
+            palette.set_icon(chart_icon, "mdi.file-chart-outline", palette.Role.ACCENT_TEXT, 12)
             chart_icon.setToolTip("Comparison record")
             line1.addWidget(chart_icon)
         elif m.spectrum_snapshot is not None:
-            wave = QtWidgets.QLabel("〜")
-            wave.setStyleSheet("font-size: 11px;")
-            palette.tag(wave, color=palette.Role.STATUS_COMPLETE)
+            # Swift's waveform, in status.complete.
+            wave = QtWidgets.QLabel()
+            palette.set_icon(wave, "mdi.waveform", palette.Role.STATUS_COMPLETE, 12)
             wave.setToolTip("Has spectrum snapshot")
             line1.addWidget(wave)
 
@@ -145,13 +160,14 @@ class MeasurementRowView(QtWidgets.QWidget):
         palette.tag(time_lbl, color=palette.Role.TEXT_SECONDARY)
         line1.addWidget(time_lbl)
 
-        # Disclosure chevron — matches Image(systemName: "chevron.right") in Swift
-        if not compare_mode:
-            chevron = QtWidgets.QLabel("›")
-            chevron.setStyleSheet("font-size: 13px;")
-            palette.tag(chevron, color=palette.Role.TEXT_SECONDARY)
-            line1.addWidget(chevron)
+        # Disclosure chevron — matches Image(systemName: "chevron.right") in Swift, which keeps it
+        # in compare mode too.
+        chevron = QtWidgets.QLabel("›")
+        chevron.setStyleSheet("font-size: 13px;")
+        palette.tag(chevron, color=palette.Role.TEXT_SECONDARY)
+        line1.addWidget(chevron)
 
+        if not compare_mode:
             # Ellipsis hint — transparent when idle, visible on hover to signal RMB menu
             # Matches Image(systemName: "ellipsis.circle").opacity(isHovered ? 1 : 0) in Swift
             # Always occupies space (no layout shift) — only color alpha changes.
@@ -207,9 +223,7 @@ class MeasurementRowView(QtWidgets.QWidget):
         """Update the compare-mode circle indicator in place (no rebuild)."""
         if self._compare_circle is None:
             return
-        self._compare_circle.setText("●" if selected else "○")
-        palette.tag(self._compare_circle,
-                    color=palette.Role.ACCENT_TEXT if selected else palette.Role.TEXT_SECONDARY)
+        _draw_compare_circle(self._compare_circle, selected)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:

@@ -145,6 +145,8 @@ class ExportableSpectrumChart:
         self.max_db = max_db
         self.peaks = peaks or []
         self.show_mode_boundaries = show_mode_boundaries
+        # The chart image's height (pt); the composite sets it so the plot lands where Swift's does.
+        self.chart_height = 800
         self.annotation_positions = annotation_positions or {}
         self.show_unknown_modes = show_unknown_modes
         self.measurement_type_str = measurement_type_str
@@ -394,12 +396,12 @@ class ExportableSpectrumChart:
         # Layout constants — mirrors .frame(width: 1400, height: 800) at ImageRenderer(scale: 2.0)
         SCALE    = 2
         CHART_W  = 1400 * SCALE   # final PNG pixel width
-        CHART_H  = 800  * SCALE   # final PNG pixel height
+        CHART_H  = self.chart_height * SCALE   # final PNG pixel height
         # Widget size at 1x: pyqtgraph scene coordinates are in logical (1x) pixels.
         # We set the widget to exactly 1400×800 so scene-space insets are integers
         # and png_scale = CHART_W / widget_w = exactly 2.0 — no floating-point drift.
         WIDGET_W = 1400
-        WIDGET_H = 800
+        WIDGET_H = self.chart_height
 
         # ── Chart (mirrors Chart { } block) ───────────────────────────────────
         # No setTitle() — title is painted by the caller above the chart image,
@@ -413,8 +415,12 @@ class ExportableSpectrumChart:
         plot.setFixedSize(WIDGET_W, WIDGET_H)
         style = chart_style.EXPORT
         plot.setBackground(palette.color(palette.Role.CHART_BACKGROUND, in_scheme=Scheme.LIGHT))
-        plot.setLabel("bottom", "Frequency (Hz)")    # mirrors chartXAxisLabel
-        plot.setLabel("left",   "FFT Magnitude (dB)")  # mirrors chartYAxisLabel
+        # Swift's export axis titles: ChartAxisTitle(font: .system(size: 16, weight: .medium)) in
+        # chart.axis.
+        _axis_color = palette.color(palette.Role.CHART_AXIS, in_scheme=Scheme.LIGHT).name()
+        _axis_title = {"font-size": "16px", "font-weight": "500", "color": _axis_color}
+        plot.setLabel("bottom", "Frequency (Hz)", **_axis_title)    # mirrors chartXAxisLabel
+        plot.setLabel("left",   "FFT Magnitude (dB)", **_axis_title)  # mirrors chartYAxisLabel
 
         # The plot's border — mirrors .chartPlotStyle { plotArea.border(chart.border) } — and one
         # grid line per axis tick in chart.grid, no minor lines (mirrors AxisGridLine).
@@ -467,7 +473,7 @@ class ExportableSpectrumChart:
         # Mirrors: if showModeBoundaries { ForEach(visibleModeBoundaries) { RuleMark } }
         # visibleModeBoundaries already returns [] when not is_guitar, but also gate here
         # to match Swift's guard measurementType.isGuitar else { return [] }.
-        if self.show_mode_boundaries and self.is_guitar and not self.material_spectra:
+        if self.show_mode_boundaries and self.is_guitar:
             for freq_b, mode_b in self.visible_mode_boundaries:
                 r, g, b = palette.rgb(palette.mode_role(mode_b), Scheme.LIGHT)
                 pen_b = chart_style.pen(
@@ -603,7 +609,7 @@ class ExportableSpectrumChart:
         # Swift draws Text(mode.abbreviation) chips at the top of each boundary line.
         # We paint them directly onto the chart image at the correct x position, just below AXIS_TOP.
         # Guitar-only — mirrors Swift's guard measurementType.isGuitar else { return [] }.
-        if self.show_mode_boundaries and self.is_guitar and not self.material_spectra:
+        if self.show_mode_boundaries and self.is_guitar:
             abbrev_font = QtGui.QFont()
             abbrev_font.setPixelSize(14 * SCALE)   # mirrors .font(.system(size: 14, weight: .semibold))
             abbrev_font.setBold(True)
@@ -749,6 +755,7 @@ def make_exportable_spectrum_view(
     guitar_type_str: str | None = None,
     software_version: str | None = None,
     platform_str: str | None = None,
+    type_label: str | None = None,
 ) -> bytes:
     """Python port of ``func makeExportableSpectrumView(...)`` in ExportableSpectrumChart.swift.
 
@@ -804,9 +811,14 @@ def make_exportable_spectrum_view(
     # correct apparent size on the 2x canvas — matching Swift's ImageRenderer(scale: 2.0).
     SCALE         = 2
     CHART_W       = 1400 * SCALE   # chart image width in pixels
-    CHART_H       = 800  * SCALE   # chart image height in pixels
     PADDING       = 24   * SCALE   # top padding and section gap
-    CHART_TITLE_H = 56   * SCALE   # Text(chartTitle) + .padding(.bottom, 16)
+    # Swift's chart frame top: the padded header, then the 16 pt spacing.
+    FRAME_TOP     = 169  * SCALE
+    FRAME_H       = 800  * SCALE   # Swift's chart frame: .frame(width: 1400, height: 800)
+    # The title band at the frame's top (Swift's title centred 21 pt in).
+    CHART_TITLE_H = 42   * SCALE
+    CHART_IMAGE_TOP = 212          # pt: the chart image under the title band
+    CHART_IMAGE_H   = 759          # pt: puts the plot at Swift's 219.5–930 pt
     LEGEND_H      = 36   * SCALE   # legend row height
     # A fixed size, whatever the on-screen chart's: Swift renders its export at 1464 × 1069 pt (the
     # 1400 × 800 chart frame padded 32 each side, with its header and legend), 119 pt taller with the
@@ -848,6 +860,11 @@ def make_exportable_spectrum_view(
         chart_title=chart_title,
         guitar_type_str=guitar_type_str,
     )
+    # Swift's chart frame is 800 pt from its top at 169 pt (the padded header, then 16 pt),
+    # the title centred 21 pt into it; the plot runs from 219.5 to 930 pt. The chart image here
+    # holds the plot and its axes below the title, so it is CHART_IMAGE_H tall and starts at
+    # CHART_IMAGE_TOP.
+    chart.chart_height = CHART_IMAGE_H
     chart_img = chart.render()
 
     # ── Compose full image ────────────────────────────────────────────────────
@@ -881,19 +898,19 @@ def make_exportable_spectrum_view(
 
     # ── Header — mirrors makeExportableSpectrumView VStack(alignment:.leading) header block ──
     title_font = QtGui.QFont()
-    title_font.setPixelSize(20 * SCALE)  # mirrors .font(.title).fontWeight(.bold)
+    title_font.setPixelSize(22 * SCALE)  # mirrors .font(.title).fontWeight(.bold) — 22 pt
     title_font.setBold(True)
     painter.setFont(title_font)
     painter.setPen(_light(palette.Role.TEXT_PRIMARY))
     painter.drawText(
-        SIDE_PAD, y, TOTAL_W - SIDE_PAD * 2, 36 * SCALE,
+        SIDE_PAD, y + 2 * SCALE, TOTAL_W - SIDE_PAD * 2, 36 * SCALE,
         QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
         "Guitar Tap Tone Analysis - Frequency Response",
     )
     y += 36 * SCALE
 
     sub_font = QtGui.QFont()
-    sub_font.setPixelSize(12 * SCALE)  # mirrors .font(.subheadline)
+    sub_font.setPixelSize(11 * SCALE)  # mirrors .font(.subheadline) — 11 pt
     painter.setFont(sub_font)
     painter.setPen(_light(palette.Role.TEXT_SECONDARY))
 
@@ -934,14 +951,16 @@ def make_exportable_spectrum_view(
             software_version = _v
         except ImportError:
             software_version = ""
+    # The Type is always shown, as Swift's: type_label when given ("Comparison" for an overlay of
+    # saved measurements, which may be of different guitar types), else the measurement type,
+    # Generic Guitar by default.
     meta_items: list[tuple[str, str]] = []
-    if measurement_type_str:
-        meta_items.append(("Type:", measurement_type_str))
+    meta_items.append(("Type:", type_label or measurement_type_str or "Generic Guitar"))
     meta_items.append(("Platform:", platform_str))
     if software_version:
         meta_items.append(("GuitarTap", f"v{software_version}"))
     meta_font = QtGui.QFont()
-    meta_font.setPixelSize(12 * SCALE)
+    meta_font.setPixelSize(11 * SCALE)  # .subheadline
     meta_value_font = QtGui.QFont(meta_font)
     meta_value_font.setWeight(QtGui.QFont.Weight.Medium)
     runs: list[tuple] = []
@@ -979,6 +998,7 @@ def make_exportable_spectrum_view(
     y += 24 * SCALE
 
     # ── Chart title — mirrors Text(chartTitle).frame(maxWidth:.infinity, alignment:.center) ──
+    y = FRAME_TOP
     ct_font = QtGui.QFont()
     ct_font.setPixelSize(24 * SCALE)  # mirrors .font(.system(size: 24, weight: .semibold))
     ct_font.setWeight(QtGui.QFont.Weight.DemiBold)
@@ -993,8 +1013,9 @@ def make_exportable_spectrum_view(
 
     # ── ExportableSpectrumChart — place rendered chart image ──────────────────
     if not chart_img.isNull():
-        painter.drawImage(SIDE_PAD, y, chart_img)
-    y += CHART_H + PADDING
+        painter.drawImage(SIDE_PAD, CHART_IMAGE_TOP * SCALE, chart_img)
+    # After the frame: its 16 pt padding and the stack's 16 pt spacing, as Swift's.
+    y = FRAME_TOP + FRAME_H + 32 * SCALE
 
     # ── Detected Peaks Summary — mirrors peak summary VStack + HStack ─────────
     if peaks:
@@ -1058,6 +1079,9 @@ def make_exportable_spectrum_view(
         y += card_h + PADDING
 
     # ── Legend — mirrors makeExportableSpectrumView legend HStack ─────────────
+    # Swift's legend row is .padding()-ed: its centre 29 pt below where it starts (16 + half a
+    # line), where this row's centre is ROW_H / 2 = 18 pt down.
+    y += 11 * SCALE
     legend_font = QtGui.QFont()
     legend_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption).fontWeight(.semibold)
     legend_font.setBold(True)

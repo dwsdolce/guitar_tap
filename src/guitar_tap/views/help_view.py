@@ -34,20 +34,33 @@ def _icon_img(name: str, size: int, role: Role) -> str:
 
 
 def _h2(icon_name: str, title: str) -> str:
-    """Section header with icon."""
-    return f'<h2>{_icon_img(icon_name, 16, Role.TEXT_SECONDARY)}&nbsp;{title}</h2>\n'
+    """Section header with icon — Swift's list section header: small, secondary, a line under it.
+    A styled paragraph rather than <h2>, whose size Qt's rich text fixes by heading level; the line
+    is an <hr>, since Qt draws no borders on paragraphs."""
+    return (
+        f'<p class="h"><a name="{_SECTION_ANCHOR}{icon_name}|{title}"></a>'
+        f'{_icon_img(icon_name, 14, Role.TEXT_SECONDARY)}&nbsp;{title}</p>'
+        f'<hr>\n'
+    )
+
+
+# Each section header carries an anchor naming its icon and title, so the browser can find the
+# headers in the laid-out document and pin the current one (HelpBrowser).
+_SECTION_ANCHOR = "section:"
 
 
 def _row(title: str, body: str, icons: list[str] | None = None) -> str:
-    """Help row: bold title (optionally preceded by icons) + gray body."""
-    icon_html = "".join(_icon_img(i, 13, Role.ACCENT_TEXT) for i in (icons or []))
+    """Help row: bold title (optionally preceded by icons) + gray body, and a line under it —
+    Swift's list rows."""
+    # Swift sets each icon in a 20 pt slot, 6 pt apart; Qt's rich text ignores image margins, so the
+    # gaps are non-breaking spaces.
+    icon_html = "&nbsp;&nbsp;&nbsp;".join(_icon_img(i, 13, Role.ACCENT_TEXT) for i in (icons or []))
     if icon_html:
-        icon_html += "&nbsp;"
+        icon_html = "&nbsp;" + icon_html + "&nbsp;&nbsp;&nbsp;"
     return (
-        f'<div class="row">'
         f'<p class="row-title">{icon_html}{title}</p>'
         f'<p class="row-body">{body}</p>'
-        f'</div>\n'
+        f'<hr>\n'
     )
 
 
@@ -62,19 +75,16 @@ def _build_help_html() -> str:
     CSS = f"""\
 <style>
   body       {{ font-size: 13px; margin: 16px; color: {primary}; }}
-  h1         {{ font-size: 18px; margin-bottom: 4px; }}
-  h2         {{ font-size: 14px; margin-top: 20px; margin-bottom: 6px;
-               border-bottom: 1px solid {separator}; padding-bottom: 3px; color: {secondary}; }}
-  .row       {{ margin-bottom: 10px; }}
-  .row-title {{ font-weight: bold; font-size: 13px; margin: 0 0 2px 0; }}
-  .row-body  {{ color: {secondary}; margin: 0; line-height: 1.5; }}
-  p, li      {{ margin: 4px 0; line-height: 1.5; }}
+  .h         {{ font-size: 11px; font-weight: 600; color: {secondary}; margin: 14px 0 0 0; }}
+  .row-title {{ font-weight: 600; font-size: 11px; margin: 4px 0 2px 0; }}
+  .row-body  {{ font-size: 10px; color: {secondary}; margin: 0 0 4px 0; }}
+  hr         {{ color: {separator}; background-color: {separator}; height: 1px; border: 0; }}
+  p, li      {{ margin: 4px 0; }}
   ul         {{ margin: 4px 0; padding-left: 20px; }}
 </style>"""
 
     parts: list[str] = [
         "<!DOCTYPE html><html><head>", CSS, "</head><body>\n",
-        f'<h1>{_icon_img("mdi.waveform", 18, Role.TEXT_PRIMARY)}&nbsp;Quick-Start Guide</h1>\n',
     ]
 
     # ── What Guitar Tap Does ──────────────────────────────────────────────
@@ -85,10 +95,11 @@ def _build_help_html() -> str:
         "resolution) reveals the resonant peaks that carry information about structural "
         "modes and material stiffness.</p>\n"
         "<p>Three main workflows are supported:<br>"
-        "&bull; <b>Guitar mode</b> &mdash; classify resonant modes of a completed instrument.<br>"
-        "&bull; <b>Plate mode</b> &mdash; measure Young&rsquo;s modulus and quality of a raw tonewood plate.<br>"
-        "&bull; <b>Brace mode</b> &mdash; measure Young&rsquo;s modulus and quality of a brace strip "
+        "&bull; Guitar mode &mdash; classify resonant modes of a completed instrument.<br>"
+        "&bull; Plate mode &mdash; measure Young&rsquo;s modulus and quality of a raw tonewood plate.<br>"
+        "&bull; Brace mode &mdash; measure Young&rsquo;s modulus and quality of a brace strip "
         "(single longitudinal tap).</p>\n"
+        "<hr>\n"
     )
 
     # ── First-Time Setup ──────────────────────────────────────────────────
@@ -126,7 +137,7 @@ def _build_help_html() -> str:
     ))
 
     # ── Guitar Mode ───────────────────────────────────────────────────────
-    parts.append(_h2("mdi.music", "Guitar Mode"))
+    parts.append(_h2("mdi.guitar-acoustic", "Guitar Mode"))
     parts.append(_row(
         "Overview",
         "Guitar mode identifies the key structural resonances of a completed body: "
@@ -205,7 +216,7 @@ def _build_help_html() -> str:
     ))
 
     # ── Plate Mode ────────────────────────────────────────────────────────
-    parts.append(_h2("mdi.layers", "Plate Mode"))
+    parts.append(_h2("mdi.layers-triple-outline", "Plate Mode"))
     parts.append(_row(
         "Overview",
         "Plate material mode measures the stiffness of a rectangular tonewood sample using "
@@ -353,9 +364,8 @@ def _build_help_html() -> str:
         "Analysis Results",
         "The Analysis Results panel shows the peak list, decay time, plate properties, "
         "quality rating, and (for Plate mode) the Gore target thickness. It also "
-        "contains Export Spectrum and Export PDF Report buttons. On iPhone, tap the "
-        "Results button (doc icon) in the toolbar to open the panel as a sheet. On iPad "
-        "and desktop, the panel is permanently visible on the right side of the window.",
+        "contains Export Spectrum and Export PDF Report buttons. The panel is permanently "
+        "visible on the right side of the window.",
         ["mdi.file-document-outline"]
     ))
     parts.append(_row(
@@ -487,7 +497,7 @@ def _build_help_html() -> str:
         ["mdi.book-open-variant"]
     ))
     parts.append(_row(
-        "Chart Options (&#8943;)",
+        "Chart Options",
         "The ellipsis (&#8943;) button in the top-right corner of the spectrum opens the "
         "Chart Options menu. From here you can reset either or both axes to the values you "
         "last saved in Settings (&ldquo;Reset to Saved&rdquo;), or restore the factory "
@@ -498,14 +508,15 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Zoom &amp; Pan Help",
-        "Scroll over the chart to zoom &mdash; the axis depends on where the pointer is: "
-        "over the plot area it zooms both axes; over the frequency axis (bottom) it zooms "
-        "frequency only; over the magnitude axis (left) it zooms magnitude only. "
-        "Drag to pan the same way. Modifier keys: Shift+Scroll &mdash; pan frequency; "
-        "Alt+Scroll &mdash; pan magnitude; Cmd/Ctrl+Scroll &mdash; zoom both axes. "
-        "To reset the axes, click the &#8943; Chart Options button (top-right) or "
-        "right-click anywhere inside the chart.",
-        ["mdi.information"]
+        "The info (&#9432;) button in the top-right corner of the spectrum shows a full "
+        "reference card for navigating the chart. Scroll wheel and drag gestures are "
+        "context-sensitive: position the pointer over the plot to operate on both axes, over "
+        "the frequency axis (bottom) to operate on frequency only, or over the magnitude axis "
+        "(left) to operate on magnitude only. Modifier-key shortcuts are also available: "
+        "Shift+Scroll &mdash; pan frequency; Alt+Scroll &mdash; pan magnitude; "
+        "Cmd/Ctrl+Scroll &mdash; zoom both axes. Right-click the chart area to reset axes and "
+        "labels; right-click a label to reset just that label&rsquo;s position.",
+        ["mdi.information-outline"]
     ))
 
     # ── Tap Controls ─────────────────────────────────────────────────────
@@ -551,8 +562,9 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Measurement Type",
-        "Shown below Audio Input. Choose Generic Guitar (the default), Acoustic/Steel "
-        "String, Classical, Flamenco, Material (Plate), or Material (Brace). "
+        "Shown below Audio Input. Choose Generic Guitar (broad ranges covering all guitar "
+        "types, default), Acoustic/Steel String, Classical, Flamenco, Material (Plate), or "
+        "Material (Brace). "
         "Determines which mode frequency windows are applied and which calculations appear in Results."
     ))
     parts.append(_row(
@@ -618,7 +630,8 @@ def _build_help_html() -> str:
         "Save a measurement for each build stage or measurement name with a descriptive label. "
         "Use the Measurements list Compare button to overlay 2&ndash;5 saved guitar "
         "measurements as colour-coded spectra on the main chart &mdash; ideal for tracking "
-        "how bracing or finishing changes the resonant modes over time."
+        "how bracing or finishing changes the resonant modes over time. Export "
+        "measurements as .guitartap files for transfer between devices."
     ))
     parts.append(_row(
         "PDF Reports",
@@ -639,11 +652,11 @@ def _build_help_html() -> str:
         "Alt+Scroll &mdash; pan magnitude; Cmd/Ctrl+Scroll &mdash; zoom both axes. "
         "To reset the axes, click the &#8943; Chart Options button (top-right) or "
         "right-click anywhere inside the chart.",
-        ["mdi.information"]
+        ["mdi.information-outline"]
     ))
 
     # ── Glossary ──────────────────────────────────────────────────────────
-    parts.append(_h2("mdi.book-open-outline", "Glossary"))
+    parts.append(_h2("mdi.book-outline", "Glossary"))
     parts.append(_row("Air (Helmholtz) mode",
         "The resonance of the air mass in the sound hole, analogous to blowing across a "
         "bottle. Typically 80&ndash;110&nbsp;Hz for classical guitar."))
@@ -710,7 +723,11 @@ def get_help_html() -> str:
 
 
 class HelpBrowser(QtWidgets.QTextBrowser):
-    """The help HTML, shown again in the new scheme on every change of it."""
+    """The help HTML, shown again in the new scheme on every change of it.
+
+    The header of the section being read stays pinned at the top while it scrolls, and the next
+    section's header replaces it — Swift's list section headers. Qt's rich text cannot pin, so a
+    strip over the top of the view shows the last header scrolled past."""
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -718,10 +735,74 @@ class HelpBrowser(QtWidgets.QTextBrowser):
         self.setHtml(get_help_html())
         palette.notifier().scheme_changed.connect(self._on_scheme_changed)
 
+        self._pinned = QtWidgets.QWidget(self)
+        self._pinned.setObjectName("help_pinned")
+        self._pinned.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._pinned.setStyleSheet(
+            "#help_pinned { border-bottom-width: 1px; border-bottom-style: solid; }")
+        palette.tag(self._pinned, background=Role.BACKGROUND_PANEL, border=Role.SEPARATOR)
+        row = QtWidgets.QHBoxLayout(self._pinned)
+        row.setContentsMargins(20, 6, 16, 6)
+        row.setSpacing(4)
+        self._pinned_icon = QtWidgets.QLabel()
+        self._pinned_title = QtWidgets.QLabel()
+        self._pinned_title.setStyleSheet("font-size: 11px; font-weight: 600;")
+        palette.tag(self._pinned_title, color=Role.TEXT_SECONDARY)
+        row.addWidget(self._pinned_icon)
+        row.addWidget(self._pinned_title)
+        row.addStretch()
+        self._pinned.hide()
+        self._pinned_key = ""
+        self.verticalScrollBar().valueChanged.connect(self._update_pinned)
+
     def _on_scheme_changed(self, _scheme: object) -> None:
         position = self.verticalScrollBar().value()
         self.setHtml(get_help_html())
         self.verticalScrollBar().setValue(position)
+        self._update_pinned()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_pinned()
+
+    def _section_headers(self) -> list[tuple[float, str]]:
+        """Each section header's top in the laid-out document, with its "icon|title" key."""
+        doc = self.document()
+        layout = doc.documentLayout()
+        headers: list[tuple[float, str]] = []
+        block = doc.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                for name in it.fragment().charFormat().anchorNames():
+                    if name.startswith(_SECTION_ANCHOR):
+                        top = layout.blockBoundingRect(block).top()
+                        headers.append((top, name[len(_SECTION_ANCHOR):]))
+                it += 1
+            block = block.next()
+        return headers
+
+    def _update_pinned(self, *_args) -> None:
+        position = self.verticalScrollBar().value()
+        current = ""
+        for top, key in self._section_headers():
+            if top < position:
+                current = key
+            else:
+                break
+        if not current:
+            self._pinned.hide()
+            return
+        if current != self._pinned_key:
+            self._pinned_key = current
+            icon_name, title = current.split("|", 1)
+            palette.set_icon(self._pinned_icon, icon_name, Role.TEXT_SECONDARY, 14)
+            self._pinned_title.setText(title)
+        viewport = self.viewport().geometry()
+        self._pinned.setGeometry(
+            viewport.x(), viewport.y(), viewport.width(), self._pinned.sizeHint().height())
+        self._pinned.show()
+        self._pinned.raise_()
 
 
 class HelpDialog(QtWidgets.QDialog):

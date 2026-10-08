@@ -343,6 +343,21 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         )
 
     # ------------------------------------------------------------------ #
+    # cancel_session_recording
+    # Mirrors Swift TapToneAnalyzer.cancelSessionRecording()
+    # ------------------------------------------------------------------ #
+
+    def cancel_session_recording(self) -> None:
+        """End the session without writing — a loaded measurement or comparison has replaced the
+        sequence, which can no longer finish. Without this the buffer would keep every sample from
+        then until the next New Tap. Mirrors Swift cancelSessionRecording()."""
+        with self._gated_lock:
+            self._is_session_recording = False
+            self._is_session_recording_enabled = False
+            self._session_recording_buffer = []
+            self._session_checkpoints = []
+
+    # ------------------------------------------------------------------ #
     # capture_window_profile
     # Mirrors Swift TapToneAnalyzer.captureWindowProfile(_:label:segmentSize:)
     # ------------------------------------------------------------------ #

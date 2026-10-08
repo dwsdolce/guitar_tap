@@ -27,9 +27,10 @@ from guitar_tap.models import microphone_calibration as _mc_mod
 from guitar_tap.models import plate_stiffness_preset as PSP
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
-from guitar_tap.models.guitar_type import GuitarType as _GTy
 from guitar_tap.models.appearance import Appearance
+from guitar_tap.models.guitar_type import GuitarType as _GTy
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS
+from guitar_tap.utilities.new_uuid import new_uuid
 from guitar_tap.views.comparison_results_view import ComparisonResultsView
 from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
 from guitar_tap.views.material_dimensions_editor import MaterialDimensionsEditor
@@ -40,7 +41,7 @@ from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
 from guitar_tap.views.utilities import extensions as _ext
 from guitar_tap.views.utilities import palette
 from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole, phase_badge
-from guitar_tap.utilities.new_uuid import new_uuid
+from guitar_tap.views.utilities.menu_picker import MenuPicker
 
 # The plate/brace phase colours, by role.
 _FL = palette.Role.MATERIAL_LONGITUDINAL
@@ -1765,8 +1766,8 @@ class MainWindow(QtWidgets.QMainWindow):
         palette.tag(bar, background=palette.Role.BACKGROUND_SUBTLE, border=palette.Role.SEPARATOR)
 
         vl = QtWidgets.QVBoxLayout(bar)
-        vl.setContentsMargins(8, 3, 8, 3)
-        vl.setSpacing(2)
+        vl.setContentsMargins(16, 8, 16, 8)
+        vl.setSpacing(6)
 
         # ── Optional progress bar (shown when currentTapCount > 0) ──────
         self._sb_progress = QtWidgets.QProgressBar()
@@ -1780,7 +1781,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # ── Main row ──────────────────────────────────────────────────────
         hl = QtWidgets.QHBoxLayout()
         hl.setContentsMargins(0, 0, 0, 0)
-        hl.setSpacing(6)
+        hl.setSpacing(12)
 
         small = QtGui.QFont()
         small.setPointSize(12)
@@ -1826,7 +1827,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         _norm_hl = QtWidgets.QHBoxLayout(self._sb_normal_wgt)
         _norm_hl.setContentsMargins(0, 0, 0, 0)
-        _norm_hl.setSpacing(4)
+        _norm_hl.setSpacing(12)
 
         # Tap detection dot
         self._sb_tap_dot = QtWidgets.QLabel("●")
@@ -1858,10 +1859,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_frozen_wgt = QtWidgets.QWidget()
         frozen_hl = QtWidgets.QHBoxLayout(self._sb_frozen_wgt)
         frozen_hl.setContentsMargins(0, 0, 0, 0)
-        frozen_hl.setSpacing(3)
-        _frozen_icon = QtWidgets.QLabel("⏸")
-        _frozen_icon.setFont(caption)
-        palette.tag(_frozen_icon, color=palette.Role.STATUS_WARNING)
+        frozen_hl.setSpacing(4)
+        # Swift's pause.circle.fill.
+        _frozen_icon = QtWidgets.QLabel()
+        palette.set_icon(_frozen_icon, "mdi.pause-circle", palette.Role.STATUS_WARNING, 14)
         frozen_hl.addWidget(_frozen_icon)
         _frozen_txt = QtWidgets.QLabel("Complete")
         _frozen_txt.setFont(caption)
@@ -1870,6 +1871,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _frozen_sep = QtWidgets.QLabel("•")
         _frozen_sep.setFont(caption)
         palette.tag(_frozen_sep, color=palette.Role.TEXT_SECONDARY)
+        # The row's spacing before the separator, as it sits in Swift's row.
+        frozen_hl.addSpacing(8)
         frozen_hl.addWidget(_frozen_sep)
         self._sb_frozen_wgt.setVisible(False)
         _norm_hl.addWidget(self._sb_frozen_wgt)
@@ -2363,7 +2366,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_running(self, running: bool) -> None:
         if running:
-            palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_RUNNING)
             # SYNC the status-bar message to the analyzer's CURRENT status_message.
             # statusMessageChanged fires only on CHANGE, so if the arm prompt was set before
             # the view connected the signal (app startup), the label would keep its init
@@ -2378,14 +2380,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_tap_buttons()
 
     def _on_detection_state_changed(self, _state: object) -> None:
-        """Detection state changed → re-evaluate the status-bar tap count + progress.
+        """Detection state changed → re-evaluate the status-bar tap count, progress and colours.
 
         Mirrors Swift, where the status bar is bound to the @Published `detectionState` and
         re-renders on every change. Re-runs set_tap_count with the CURRENT counts so the label's
         visibility and text track the detection state instead of freezing at whatever they were on
-        the last tapCountChanged.
+        the last tapCountChanged; and recolours the message and its dot, which a message set during
+        the per-tap cooldown would otherwise keep in the not-detecting orange after re-arming.
         """
         self.set_tap_count(self._tap_count_captured, self._tap_count_total)
+        self._apply_status_message_color()
 
     def _on_ready_for_detection_changed(self, _ready: bool) -> None:
         """Engine readiness changed → re-evaluate the button row.
@@ -2437,7 +2441,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # text only when `show` was true froze this label at its armed value ("0/3") for the whole
         # sequence, because `show` samples is_detecting, which is False at every tap-completion.
         if not is_plate:
-            self._sb_tap_count.setText(f"{captured}/{total}")
+            self._sb_tap_count.setText(f"Tap {captured}/{total}")
         self._sb_progress.setVisible(show_bar)
         self._sb_tap_count.setVisible(show and not is_plate)
         # Refresh the phase label text to embed the updated tap count (when visible on plate).
@@ -3142,14 +3146,11 @@ class MainWindow(QtWidgets.QMainWindow):
             # which is False when paused → labels hidden.
             self._sb_plate_step_lbl.setVisible(False)
             self._sb_tap_count.setVisible(False)
-            # Mirrors Swift: Circle().fill(tap.isDetecting ? .green : .orange)
-            palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_PAUSED)
         else:
             # Resuming — restore phase/tap labels via set_tap_count which
             # re-evaluates visibility using analyzer.is_detecting (now True).
             self.set_tap_count(self._tap_count_captured, self._tap_count_total)
             self._update_plate_phase_ui()
-            palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_RUNNING)
         self._apply_status_message_color()
         self._update_tap_buttons()
 
@@ -3256,13 +3257,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_status_message_color()
 
     def _apply_status_message_color(self) -> None:
-        """Set orange/default colour on the status-bar message label.
+        """Colour the status-bar message and its dot from detection.
 
-        Mirrors Swift: .foregroundColor(tap.isDetecting ? .primary : .orange)
-        Uses the analyzer's is_detecting directly so the colour is correct
-        regardless of local signal ordering.
+        Mirrors Swift: the dot .fill(tap.isDetecting ? .statusRunning : .statusPaused) and the
+        message .foregroundColor(tap.isDetecting ? .textPrimary : .statusWarning). Uses the
+        analyzer's is_detecting directly so the colours are correct regardless of local signal
+        ordering — a completed measurement stops detection without a pause.
         """
         is_detecting = self.fft_canvas.analyzer.is_detecting
+        dot = palette.Role.STATUS_RUNNING if is_detecting else palette.Role.STATUS_PAUSED
+        palette.tag(self._sb_detect_dot, color=dot)
         palette.tag(self._sb_detect_msg,
                     color=palette.Role.TEXT_PRIMARY if is_detecting else palette.Role.STATUS_WARNING)
 
@@ -4684,7 +4688,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 min_db   = float(min(s.min_db   for s in snaps)) if snaps else -100.0
                 max_db   = float(max(s.max_db   for s in snaps)) if snaps else 0.0
                 _loc = (analyzer.loaded_measurement_name or self._measurement_name or "").strip()
-                chart_title = f"Comparison \u2014 {_loc}" if _loc else "Comparison"
+                # The live chart's title, as Swift's createExportableSpectrumView.
+                chart_title = f"FFT Peaks \u2014 {_loc or 'New'}"
                 from datetime import datetime, timezone
                 date_label = datetime.now(timezone.utc).isoformat()
                 png_bytes = _mev(
@@ -4695,6 +4700,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     material_spectra=comparison_spectra if comparison_spectra else None,
                     chart_title=chart_title,
                     date_label=date_label,
+                    # A comparison may hold different guitar types — Swift's typeLabel.
+                    type_label="Comparison",
                 )
                 with open(path, "wb") as f:
                     f.write(png_bytes)
@@ -5171,7 +5178,10 @@ class MainWindow(QtWidgets.QMainWindow):
             loc = self._measurement_name or None
             if loc is None and analyzer.loaded_measurement_name:
                 loc = analyzer.loaded_measurement_name
-            chart_title = f"Comparison — {loc}" if loc else "Comparison"
+            # The live chart's title, as Swift's main-view export.
+            chart_title = f"FFT Peaks — {loc or 'New'}"
+            from datetime import datetime as _dt
+            _dt_now = _dt.now
 
             png_data = make_exportable_spectrum_view(
                 frequencies=[], magnitudes=[],
@@ -5179,7 +5189,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 min_db=min_db,     max_db=max_db,
                 peaks=[],
                 material_spectra=comparison_spectra if comparison_spectra else None,
+                date_label=_dt_now().isoformat(),
                 chart_title=chart_title,
+                type_label="Comparison",
             )
 
             # Build mode_frequencies list from live _comparison_data.
@@ -5208,9 +5220,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = mp.get(mode)
                 return p.frequency if p is not None else None
 
+            # The live comparison's entries, rebuilt from its snapshots for the report's metadata
+            # (the Frequency Range) — as Swift's exportComparisonPDFReport does.
+            from guitar_tap.models.tap_tone_measurement import ComparisonEntry
+            live_entries = []
             mode_frequencies = []
             for entry in analyzer._comparison_data:
                 r, g, b = entry["color"]
+                if entry.get("snapshot") is not None:
+                    live_entries.append(ComparisonEntry(
+                        id=new_uuid(), label=entry["label"],
+                        color_components=[r / 255, g / 255, b / 255, 1.0],
+                        snapshot=entry["snapshot"], peaks=list(entry.get("peaks", []))))
                 # Comparison rows: no override tag (that marking is the multi-tap Averaged row's).
                 mode_frequencies.append((
                     entry["label"],
@@ -5229,7 +5250,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 comparison_label=loc,
                 notes=self._notes or None,
                 spectrum_image_data=png_data,
-                entries=[],   # entries not needed for live export (no saved ComparisonEntry objects)
+                entries=live_entries,
                 mode_frequencies=mode_frequencies,
             )
 
@@ -5509,7 +5530,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 min_freq=cmp_min_freq, max_freq=cmp_max_freq,
                 min_db=cmp_min_db,     max_db=cmp_max_db,
                 peaks=[],
-                measurement_type_str="classical",
+                # The current measurement type, as Swift's TapDisplaySettings.measurementType.
+                measurement_type_str=TDS.measurement_type().value,
                 material_spectra=comparison_spectra if comparison_spectra else None,
                 chart_title=cmp_chart_title,
             )
@@ -5721,7 +5743,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Top-level layout contains a QStackedWidget:
         #   page 0 — settings (scroll area + Cancel/Done buttons)
-        #   page 1 — in-panel Quick-Start Guide (back button + QTextBrowser)
+        #   page 1 — in-panel Quick Start Guide (back button + QTextBrowser)
         outer = QtWidgets.QVBoxLayout(dlg)
         outer.setContentsMargins(0, 0, 0, 0)
 
@@ -5744,7 +5766,7 @@ class MainWindow(QtWidgets.QMainWindow):
         settings_outer.addWidget(scroll)
         stack.addWidget(settings_page)   # index 0
 
-        # ── Page 1: Quick-Start Guide ─────────────────────────────────────
+        # ── Page 1: Quick Start Guide ─────────────────────────────────────
         import guitar_tap.views.help_view as _HD
         help_page = QtWidgets.QWidget()
         help_layout = QtWidgets.QVBoxLayout(help_page)
@@ -5761,17 +5783,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def _show_help_page() -> None:
             stack.setCurrentIndex(1)
-            dlg.setWindowTitle("Quick-Start Guide")
+            dlg.setWindowTitle("Quick Start Guide")
 
         def _show_settings_page() -> None:
             stack.setCurrentIndex(0)
             dlg.setWindowTitle("Tap Settings")
 
         back_btn.clicked.connect(_show_settings_page)
-
-        # Vertical gap between sub-section separators (mirrors Swift explicit
-        # Divider() spacing).  Adjust this single value to tune all gaps.
-        _SECTION_GAP = 12
 
         # Shared font helpers
         small = QtGui.QFont(dlg.font())
@@ -5794,14 +5812,62 @@ class MainWindow(QtWidgets.QMainWindow):
             title_lbl.setFont(hdr_font)
             row.addWidget(title_lbl)
             row.addStretch()
+            w.icon_lbl = icon_lbl  # type: ignore[attr-defined]
             return w
+
+        def _settings_box() -> tuple[QtWidgets.QFrame, QtWidgets.QVBoxLayout]:
+            """A section's rows in a grey rounded box, no lines between them — Swift's grouped
+            Form section with its row separators hidden."""
+            box = QtWidgets.QFrame()
+            box.setObjectName("settings_box")
+            box.setStyleSheet("#settings_box { border-radius: 8px; }")
+            palette.tag(box, background=palette.Role.BACKGROUND_SUBTLE)
+            lay = QtWidgets.QVBoxLayout(box)
+            lay.setContentsMargins(12, 8, 12, 8)
+            lay.setSpacing(6)
+            return box, lay
+
+        def _toggle_row(cb: QtWidgets.QCheckBox,
+                        desc: QtWidgets.QLabel | None = None) -> QtWidgets.QWidget:
+            """A setting that is on or off: its label and description on the left, the checkbox
+            right-aligned — as every other control. A click on the label toggles it too."""
+            w = QtWidgets.QWidget()
+            hl = QtWidgets.QHBoxLayout(w)
+            hl.setContentsMargins(0, 0, 0, 0)
+            hl.setSpacing(8)
+            left = QtWidgets.QVBoxLayout()
+            left.setSpacing(2)
+            lbl = QtWidgets.QLabel(cb.text())
+            lbl.mousePressEvent = lambda _ev: cb.toggle()
+            left.addWidget(lbl)
+            if desc is not None:
+                desc.setWordWrap(True)
+                left.addWidget(desc)
+            hl.addLayout(left, 1)
+            cb.setText("")
+            _align = QtCore.Qt.AlignmentFlag
+            hl.addWidget(cb, 0, _align.AlignTop | _align.AlignRight)
+            return w
+
+        def _group_title(text: str) -> QtWidgets.QLabel:
+            """A group's title over its box — bold, without the section's icon."""
+            lbl = QtWidgets.QLabel(text)
+            lbl.setFont(hdr_font)
+            lbl.setContentsMargins(0, 6, 0, 2)
+            return lbl
+
+        def _titled_group(parent: QtWidgets.QVBoxLayout, title: str) -> QtWidgets.QVBoxLayout:
+            """A group title, then its box; returns the box's layout."""
+            parent.addWidget(_group_title(title))
+            box, lay = _settings_box()
+            parent.addWidget(box)
+            return lay
 
         # =====================================================
         # 1. Measurement Type Section
         # =====================================================
-        meas_group = QtWidgets.QGroupBox("")
-        mg = QtWidgets.QVBoxLayout(meas_group)
-        meas_header = _group_header("mdi.music", "Measurement Type")
+        meas_group, mg = _settings_box()
+        meas_header = _group_header("mdi.guitar-acoustic", "Measurement Type")
 
         MEAS_TYPES = [mt.value for mt in MT.MeasurementType]
 
@@ -5809,42 +5875,26 @@ class MainWindow(QtWidgets.QMainWindow):
         cur_unified = TDS.measurement_type().value
 
         meas_type_row = QtWidgets.QHBoxLayout()
-        meas_type_row.addWidget(QtWidgets.QLabel("Measurement Type:"))
-        meas_type_combo = QtWidgets.QComboBox()
+        meas_type_row.addWidget(QtWidgets.QLabel("Measurement Type"))
+        meas_type_combo = MenuPicker()
         meas_type_combo.addItems(MEAS_TYPES)
         meas_type_combo.setCurrentText(cur_unified)
-        meas_type_combo.setEditable(True)
-        meas_type_combo.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
-        )
-        meas_type_combo.setSizeAdjustPolicy(
-            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
-        )
-        le = meas_type_combo.lineEdit()
-        if le is not None:
-            le.setAlignment(
-                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
-            )
-            le.setReadOnly(True)
         meas_type_row.addWidget(meas_type_combo)
         mg.addLayout(meas_type_row)
-        mg.addWidget(_hsep())
 
         meas_desc_lbl = QtWidgets.QLabel(MT.MeasurementType(cur_unified).description)
         meas_desc_lbl.setFont(caption)
+        palette.tag(meas_desc_lbl, color=palette.Role.TEXT_SECONDARY)
+        meas_desc_lbl.setContentsMargins(0, 0, 0, 2)
         meas_desc_lbl.setWordWrap(True)
         mg.addWidget(meas_desc_lbl)
-        mg.addWidget(_hsep())
 
         # ---- Guitar-specific content ----
         guitar_widget = QtWidgets.QWidget()
-        guitar_layout = QtWidgets.QVBoxLayout(guitar_widget)
-        guitar_layout.setContentsMargins(0, 4, 0, 0)
-        guitar_layout.setSpacing(4)
-
-        mode_header = QtWidgets.QLabel("Mode Frequency Ranges")
-        mode_header.setFont(hdr_font)
-        guitar_layout.addWidget(mode_header)
+        _guitar_outer = QtWidgets.QVBoxLayout(guitar_widget)
+        _guitar_outer.setContentsMargins(0, 0, 0, 0)
+        _guitar_outer.setSpacing(4)
+        guitar_layout = _titled_group(_guitar_outer, "Mode Frequency Ranges")
 
         mode_ranges_widget = QtWidgets.QWidget()
         _mr_hbox = QtWidgets.QHBoxLayout(mode_ranges_widget)
@@ -5880,20 +5930,13 @@ class MainWindow(QtWidgets.QMainWindow):
         _mr_hbox.addLayout(_mr_right_grid)
         guitar_layout.addWidget(mode_ranges_widget)
 
-        mg.addWidget(guitar_widget)
 
         # ---- Plate-specific content ----
         plate_widget = QtWidgets.QWidget()
-        plate_layout = QtWidgets.QVBoxLayout(plate_widget)
-        plate_layout.setContentsMargins(0, 0, 0, 0)
-        plate_layout.setSpacing(4)
-        plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
-        plate_layout.addWidget(_hsep())
-
-        plate_dims_hdr = QtWidgets.QLabel("Sample Dimensions")
-        plate_dims_hdr.setFont(hdr_font)
-        plate_layout.addWidget(plate_dims_hdr)
-        plate_layout.addWidget(_hsep())
+        _plate_outer = QtWidgets.QVBoxLayout(plate_widget)
+        _plate_outer.setContentsMargins(0, 0, 0, 0)
+        _plate_outer.setSpacing(4)
+        plate_layout = _titled_group(_plate_outer, "Sample Dimensions")
 
         def _dim_field(unit: str, value: float, decimals: int) -> QtWidgets.QLineEdit:
             """Text field for a dimension value, restricted to `decimals` fractional digits and
@@ -5907,7 +5950,11 @@ class MainWindow(QtWidgets.QMainWindow):
             row.addStretch()
             row.addWidget(widget)
             if unit:
-                row.addWidget(QtWidgets.QLabel(unit))
+                # A fixed unit column, so "g" and "mm" leave the fields above one another.
+                unit_lbl = QtWidgets.QLabel(unit)
+                unit_lbl.setFixedWidth(unit_lbl.fontMetrics().horizontalAdvance("mm") + 4)
+                palette.tag(unit_lbl, color=palette.Role.TEXT_SECONDARY)
+                row.addWidget(unit_lbl)
             return row
 
         plate_length_field = _dim_field("mm", TDS.plate_length(), fp.LINEAR_DIMENSION_MM)
@@ -5915,25 +5962,23 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_thick_field = _dim_field("mm", TDS.plate_thickness(), fp.LINEAR_DIMENSION_MM)
         plate_mass_field = _dim_field("g", TDS.plate_mass(), fp.MASS_G)
 
+        # The density value is semibold at the rows' size, as Swift's.
+        _density_font = QtGui.QFont(dlg.font())
+        _density_font.setWeight(QtGui.QFont.Weight.DemiBold)
         plate_density_lbl = QtWidgets.QLabel("—")
-        plate_density_lbl.setFont(small)
+        plate_density_lbl.setFont(_density_font)
         plate_density_lbl.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
 
-        plate_layout.addLayout(_dim_row("Length (along grain):", plate_length_field, "mm"))
-        plate_layout.addWidget(_hsep())
-        plate_layout.addLayout(_dim_row("Width (cross grain):", plate_width_field, "mm"))
-        plate_layout.addWidget(_hsep())
-        plate_layout.addLayout(_dim_row("Thickness:", plate_thick_field, "mm"))
-        plate_layout.addWidget(_hsep())
-        plate_layout.addLayout(_dim_row("Mass:", plate_mass_field, "g"))
-        plate_layout.addWidget(_hsep())
+        plate_layout.addLayout(_dim_row("Length (along grain)", plate_length_field, "mm"))
+        plate_layout.addLayout(_dim_row("Width (cross grain)", plate_width_field, "mm"))
+        plate_layout.addLayout(_dim_row("Thickness", plate_thick_field, "mm"))
+        plate_layout.addLayout(_dim_row("Mass", plate_mass_field, "g"))
 
         _density_row = QtWidgets.QHBoxLayout()
-        _plate_density_title = QtWidgets.QLabel("Calculated Density:")
+        _plate_density_title = QtWidgets.QLabel("Calculated Density")
         palette.tag(_plate_density_title, color=palette.Role.TEXT_SECONDARY)
-        plate_density_lbl.setStyleSheet("font-weight: 500;")
         _density_row.addWidget(_plate_density_title)
         _density_row.addStretch()
         _density_row.addWidget(plate_density_lbl)
@@ -5960,9 +6005,6 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_mass_field.textChanged.connect(lambda _: _update_plate_density())
         _update_plate_density()
 
-        plate_layout.addWidget(_hsep())
-        plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
-        plate_layout.addWidget(_hsep())
 
         measure_flc_cb = QtWidgets.QCheckBox("Measure Diagonal (fLC) Tap")
         measure_flc_cb.setChecked(AS.AppSettings.measure_flc())
@@ -5971,60 +6013,37 @@ class MainWindow(QtWidgets.QMainWindow):
             "Measures shear stiffness for Gore target thickness."
         )
         flc_desc.setFont(caption)
+        palette.tag(flc_desc, color=palette.Role.TEXT_SECONDARY)
+        flc_desc.setContentsMargins(0, 0, 0, 2)
         flc_desc.setWordWrap(True)
-        plate_layout.addWidget(measure_flc_cb)
-        plate_layout.addWidget(flc_desc)
-        plate_layout.addWidget(_hsep())
-        plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
-        plate_layout.addWidget(_hsep())
+        plate_layout.addWidget(_toggle_row(measure_flc_cb, flc_desc))
 
-        gore_hdr = QtWidgets.QLabel("Gore Target Thickness — Body Dimensions")
-        gore_hdr.setFont(hdr_font)
-        plate_layout.addWidget(gore_hdr)
+        plate_layout = _titled_group(_plate_outer, "Gore Target Thickness — Body Dimensions")
         gore_desc = QtWidgets.QLabel(
             "Finished guitar body dimensions used in Gore's Eq. 4.5-7 to calculate target plate thickness."
         )
         gore_desc.setFont(caption)
+        palette.tag(gore_desc, color=palette.Role.TEXT_SECONDARY)
+        gore_desc.setContentsMargins(0, 0, 0, 2)
         gore_desc.setWordWrap(True)
         plate_layout.addWidget(gore_desc)
-        plate_layout.addWidget(_hsep())
 
         gore_body_len_field = _dim_field("mm", TDS.guitar_body_length(), fp.BODY_DIMENSION_MM)
         gore_body_wid_field = _dim_field("mm", TDS.guitar_body_width(), fp.BODY_DIMENSION_MM)
-        plate_layout.addLayout(_dim_row("Body Length (a):", gore_body_len_field, "mm"))
-        plate_layout.addWidget(_hsep())
-        plate_layout.addLayout(_dim_row("Lower Bout Width (b):", gore_body_wid_field, "mm"))
-        plate_layout.addWidget(_hsep())
-        plate_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
-        plate_layout.addWidget(_hsep())
+        plate_layout.addLayout(_dim_row("Body Length (a)", gore_body_len_field, "mm"))
+        plate_layout.addLayout(_dim_row("Lower Bout Width (b)", gore_body_wid_field, "mm"))
 
-        fvs_hdr = QtWidgets.QLabel("Plate Vibrational Stiffness (f_vs)")
-        fvs_hdr.setFont(hdr_font)
-        plate_layout.addWidget(fvs_hdr)
-        plate_layout.addWidget(_hsep())
+        plate_layout = _titled_group(_plate_outer, "Plate Vibrational Stiffness (f_vs)")
 
         PRESET_DISPLAY_NAMES = [p.short_name for p in PSP.PlateStiffnessPreset]
         PRESET_STORAGE_NAMES = [p._value_ for p in PSP.PlateStiffnessPreset]
-        fvs_combo = QtWidgets.QComboBox()
+        fvs_combo = MenuPicker()
         fvs_combo.addItems(PRESET_DISPLAY_NAMES)
-        fvs_combo.setEditable(True)
-        _fvs_le = fvs_combo.lineEdit()
-        if _fvs_le is not None:
-            _fvs_le.setAlignment(
-                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
-            )
-            _fvs_le.setReadOnly(True)
         saved_preset = AS.AppSettings.plate_stiffness_preset()
         if saved_preset in PRESET_STORAGE_NAMES:
             fvs_combo.setCurrentIndex(PRESET_STORAGE_NAMES.index(saved_preset))
-        fvs_combo.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
-        )
-        fvs_combo.setSizeAdjustPolicy(
-            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
-        )
         _panel_type_row = QtWidgets.QHBoxLayout()
-        _panel_type_row.addWidget(QtWidgets.QLabel("Panel Type:"))
+        _panel_type_row.addWidget(QtWidgets.QLabel("Panel Type"))
         _panel_type_row.addStretch()
         _panel_type_row.addWidget(fvs_combo)
         plate_layout.addLayout(_panel_type_row)
@@ -6032,7 +6051,7 @@ class MainWindow(QtWidgets.QMainWindow):
         custom_fvs_widget = QtWidgets.QWidget()
         custom_fvs_row = QtWidgets.QHBoxLayout(custom_fvs_widget)
         custom_fvs_row.setContentsMargins(0, 0, 0, 0)
-        custom_fvs_row.addWidget(QtWidgets.QLabel("Custom f_vs value:"))
+        custom_fvs_row.addWidget(QtWidgets.QLabel("Custom f_vs value"))
         custom_fvs_field = ValidatedNumberField(fp.STIFFNESS, value=TDS.custom_plate_stiffness(), width=80)
         custom_fvs_row.addWidget(custom_fvs_field)
         custom_fvs_widget.setVisible(fvs_combo.currentText() == "Custom")
@@ -6040,20 +6059,13 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda t: custom_fvs_widget.setVisible(t == "Custom")
         )
         plate_layout.addWidget(custom_fvs_widget)
-        mg.addWidget(plate_widget)
 
         # ---- Brace-specific content ----
         brace_widget = QtWidgets.QWidget()
-        brace_layout = QtWidgets.QVBoxLayout(brace_widget)
-        brace_layout.setContentsMargins(0, 0, 0, 0)
-        brace_layout.setSpacing(4)
-        brace_layout.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
-        brace_layout.addWidget(_hsep())
-
-        brace_dims_hdr = QtWidgets.QLabel("Brace Dimensions")
-        brace_dims_hdr.setFont(hdr_font)
-        brace_layout.addWidget(brace_dims_hdr)
-        brace_layout.addWidget(_hsep())
+        _brace_outer = QtWidgets.QVBoxLayout(brace_widget)
+        _brace_outer.setContentsMargins(0, 0, 0, 0)
+        _brace_outer.setSpacing(4)
+        brace_layout = _titled_group(_brace_outer, "Brace Dimensions")
 
         brace_length_field = _dim_field("mm", TDS.brace_length(), fp.LINEAR_DIMENSION_MM)
         brace_width_field = _dim_field("mm", TDS.brace_width(), fp.LINEAR_DIMENSION_MM)
@@ -6061,40 +6073,28 @@ class MainWindow(QtWidgets.QMainWindow):
         brace_mass_field = _dim_field("g", TDS.brace_mass(), fp.MASS_G)
 
         brace_density_lbl = QtWidgets.QLabel("—")
-        brace_density_lbl.setFont(small)
+        brace_density_lbl.setFont(_density_font)
         brace_density_lbl.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
 
-        brace_layout.addLayout(_dim_row("Length (along grain):", brace_length_field, "mm"))
-        brace_layout.addWidget(_hsep())
-        brace_layout.addLayout(_dim_row("Width (breadth):", brace_width_field, "mm"))
-        brace_layout.addWidget(_hsep())
-        # Height row: title + description stacked on the left, field on the right
-        height_row = QtWidgets.QHBoxLayout()
-        height_left = QtWidgets.QVBoxLayout()
-        height_left.setSpacing(2)
-        height_title = QtWidgets.QLabel("Height (tap direction):")
-        height_left.addWidget(height_title)
+        brace_layout.addLayout(_dim_row("Length (along grain)", brace_length_field, "mm"))
+        brace_layout.addLayout(_dim_row("Width (breadth)", brace_width_field, "mm"))
+        brace_layout.addLayout(_dim_row("Height (tap direction)", brace_thick_field, "mm"))
         height_note = QtWidgets.QLabel(
             "Brace height when lying flat — this is the t dimension in the stiffness formula"
         )
         height_note.setFont(caption)
+        palette.tag(height_note, color=palette.Role.TEXT_SECONDARY)
+        height_note.setContentsMargins(0, 0, 0, 2)
         height_note.setWordWrap(True)
-        height_left.addWidget(height_note)
-        height_row.addLayout(height_left, 1)
-        height_row.addWidget(brace_thick_field)
-        height_row.addWidget(QtWidgets.QLabel("mm"))
-        brace_layout.addLayout(height_row)
+        brace_layout.addWidget(height_note)
 
-        brace_layout.addWidget(_hsep())
-        brace_layout.addLayout(_dim_row("Mass:", brace_mass_field, "g"))
-        brace_layout.addWidget(_hsep())
+        brace_layout.addLayout(_dim_row("Mass", brace_mass_field, "g"))
 
         _brace_density_row = QtWidgets.QHBoxLayout()
-        _brace_density_title = QtWidgets.QLabel("Calculated Density:")
+        _brace_density_title = QtWidgets.QLabel("Calculated Density")
         palette.tag(_brace_density_title, color=palette.Role.TEXT_SECONDARY)
-        brace_density_lbl.setStyleSheet("font-weight: 500;")
         _brace_density_row.addWidget(_brace_density_title)
         _brace_density_row.addStretch()
         _brace_density_row.addWidget(brace_density_lbl)
@@ -6120,7 +6120,6 @@ class MainWindow(QtWidgets.QMainWindow):
         brace_thick_field.textChanged.connect(lambda _: _update_brace_density())
         brace_mass_field.textChanged.connect(lambda _: _update_brace_density())
         _update_brace_density()
-        mg.addWidget(brace_widget)
 
         # ---- Measurement type footer (conditional) ----
         _GUITAR_FOOTER = "Select your guitar type for accurate mode classification."
@@ -6134,6 +6133,8 @@ class MainWindow(QtWidgets.QMainWindow):
             _GUITAR_FOOTER if _is_guitar_initial else _PLATE_FOOTER
         )
         meas_footer_lbl.setFont(caption)
+        palette.tag(meas_footer_lbl, color=palette.Role.TEXT_SECONDARY)
+        meas_footer_lbl.setContentsMargins(0, 0, 0, 2)
         meas_footer_lbl.setWordWrap(True)
 
         # ---- Mode ranges display ----
@@ -6148,11 +6149,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             r = guitar_type.mode_ranges
             entries = [
-                ("Air",    f"{int(r.air[0])}–{int(r.air[1])} Hz"),
-                ("Top",    f"{int(r.top[0])}–{int(r.top[1])} Hz"),
-                ("Back",   f"{int(r.back[0])}–{int(r.back[1])} Hz"),
-                ("DP",     f"{int(r.dipole[0])}–{int(r.dipole[1])} Hz"),
-                ("Ring",   f"{int(r.ring_mode[0])}–{int(r.ring_mode[1])} Hz"),
+                ("Air",    f"{int(r.air[0])}-{int(r.air[1])} Hz"),
+                ("Top",    f"{int(r.top[0])}-{int(r.top[1])} Hz"),
+                ("Back",   f"{int(r.back[0])}-{int(r.back[1])} Hz"),
+                ("Dipole", f"{int(r.dipole[0])}-{int(r.dipole[1])} Hz"),
+                ("Ring",   f"{int(r.ring_mode[0])}-{int(r.ring_mode[1])} Hz"),
             ]
             for i, (nl, rl) in enumerate(zip(_mode_name_labels, _mode_range_labels)):
                 if i < len(entries):
@@ -6168,11 +6169,17 @@ class MainWindow(QtWidgets.QMainWindow):
             is_guitar = mt_val.is_guitar
             meas_desc_lbl.setText(mt_val.description)
             meas_footer_lbl.setText(_GUITAR_FOOTER if is_guitar else _PLATE_FOOTER)
+            palette.set_icon(meas_header.icon_lbl,  # type: ignore[attr-defined]
+                             "mdi.guitar-acoustic" if is_guitar else "mdi.layers-triple-outline",
+                             palette.Role.TEXT_PRIMARY, 16)
             guitar_widget.setVisible(is_guitar)
             plate_widget.setVisible(mt_val is MT.MeasurementType.PLATE)
             brace_widget.setVisible(mt_val is MT.MeasurementType.BRACE)
             show_unknown_widget.setVisible(is_guitar)
             peak_thresh_widget.setEnabled(is_guitar)
+            # The whole row dims when off, as Swift's .opacity(0.4) — its label and note are
+            # palette-coloured, so disabling alone leaves them looking active.
+            peak_thresh_dim.setEnabled(not is_guitar)
             if is_guitar:
                 _update_mode_ranges(unified)
             # Reload the frequency text fields from the stored values for the newly
@@ -6187,8 +6194,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # =====================================================
         # 2. Display Settings Section
         # =====================================================
-        disp_group = QtWidgets.QGroupBox("")
-        dg = QtWidgets.QVBoxLayout(disp_group)
+        disp_group, dg = _settings_box()
         disp_header = _group_header("mdi.chart-line", "Display Settings")
 
         def _range_block(
@@ -6199,22 +6205,24 @@ class MainWindow(QtWidgets.QMainWindow):
             unit: str,
             description: str,
         ) -> None:
-            title_lbl = QtWidgets.QLabel(title)
-            title_lbl.setFont(hdr_font)
-            layout.addWidget(title_lbl)
-
+            # The title and its fields on one row, the fields right-aligned, as every other setting.
             row = QtWidgets.QHBoxLayout()
-            row.addWidget(QtWidgets.QLabel("Min"))
-            row.addWidget(min_widget)
-            row.addWidget(QtWidgets.QLabel("to"))
-            row.addWidget(QtWidgets.QLabel("Max"))
-            row.addWidget(max_widget)
-            row.addWidget(QtWidgets.QLabel(unit))
+            row.addWidget(QtWidgets.QLabel(title))
             row.addStretch()
+            row.addWidget(min_widget)
+            _to = QtWidgets.QLabel("to")
+            palette.tag(_to, color=palette.Role.TEXT_SECONDARY)
+            row.addWidget(_to)
+            row.addWidget(max_widget)
+            _unit = QtWidgets.QLabel(unit)
+            palette.tag(_unit, color=palette.Role.TEXT_SECONDARY)
+            row.addWidget(_unit)
             layout.addLayout(row)
 
             desc_lbl = QtWidgets.QLabel(description)
             desc_lbl.setFont(caption)
+            palette.tag(desc_lbl, color=palette.Role.TEXT_SECONDARY)
+            desc_lbl.setContentsMargins(0, 0, 0, 2)
             layout.addWidget(desc_lbl)
 
         # Local staging text fields — mirrors Swift's @State String vars
@@ -6239,22 +6247,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Appearance — mirrors Swift displayRangeSectionContent's Appearance picker; applied
         # on Done.
-        appearance_combo = QtWidgets.QComboBox()
+        appearance_combo = MenuPicker()
         for _appearance in Appearance:
             appearance_combo.addItem(_appearance.label, _appearance)
         appearance_combo.setCurrentIndex(list(Appearance).index(TDS.appearance()))
         appearance_row = QtWidgets.QHBoxLayout()
         appearance_lbl = QtWidgets.QLabel("Appearance")
-        appearance_lbl.setFont(hdr_font)
         appearance_row.addWidget(appearance_lbl)
-        appearance_row.addWidget(appearance_combo)
         appearance_row.addStretch()
+        appearance_row.addWidget(appearance_combo)
         dg.addLayout(appearance_row)
         appearance_desc = QtWidgets.QLabel(
             "System follows the operating system's Light or Dark setting")
         appearance_desc.setFont(caption)
+        palette.tag(appearance_desc, color=palette.Role.TEXT_SECONDARY)
+        appearance_desc.setContentsMargins(0, 0, 0, 2)
         dg.addWidget(appearance_desc)
-        dg.addWidget(_hsep())
 
         _range_block(
             dg,
@@ -6263,7 +6271,6 @@ class MainWindow(QtWidgets.QMainWindow):
             "Hz",
             "Frequency range shown in the spectrum chart",
         )
-        dg.addWidget(_hsep())
         _range_block(
             dg,
             "Magnitude Range",
@@ -6271,11 +6278,12 @@ class MainWindow(QtWidgets.QMainWindow):
             "dB",
             "Magnitude range shown in the spectrum chart",
         )
-        dg.addWidget(_hsep())
 
         # All display range values applied on Done only (see _apply_settings)
 
         save_view_btn = QtWidgets.QPushButton("Save Current View")
+        palette.set_icon(save_view_btn, "mdi.download-outline", palette.Role.ACCENT)
+        palette.tag(save_view_btn, tint=palette.Role.ACCENT)
         save_view_btn.setToolTip("Persist the current pan/zoom state as the default view")
 
         def _save_current_view() -> None:
@@ -6292,10 +6300,14 @@ class MainWindow(QtWidgets.QMainWindow):
             disp_db_max_field.setText(f"{fp.string(y_range[1], fp.MAGNITUDE_DB)}")
 
         save_view_btn.clicked.connect(_save_current_view)
-        dg.addWidget(save_view_btn)
-        dg.addWidget(_hsep())
+        # Save Current View and Reset to Defaults on one row.
+        _disp_btn_row = QtWidgets.QHBoxLayout()
+        _disp_btn_row.addWidget(save_view_btn)
+        dg.addLayout(_disp_btn_row)
 
         reset_disp_btn = QtWidgets.QPushButton("Reset to Defaults")
+        palette.set_icon(reset_disp_btn, "mdi.restore", palette.Role.ACCENT)
+        palette.tag(reset_disp_btn, tint=palette.Role.ACCENT)
         reset_disp_btn.setToolTip("Restore factory display settings for the current measurement type")
 
         def _reset_display_defaults() -> None:
@@ -6309,13 +6321,13 @@ class MainWindow(QtWidgets.QMainWindow):
             disp_db_max_field.setText(f"{fp.string(AS.AppSettings.default_db_max(), fp.MAGNITUDE_DB)}")
 
         reset_disp_btn.clicked.connect(_reset_display_defaults)
-        dg.addWidget(reset_disp_btn)
+        _disp_btn_row.addWidget(reset_disp_btn)
+        _disp_btn_row.addStretch()
 
         # =====================================================
         # 3. Analysis Settings Section
         # =====================================================
-        analysis_group = QtWidgets.QGroupBox("")
-        an = QtWidgets.QVBoxLayout(analysis_group)
+        analysis_group, an = _settings_box()
         analysis_header = _group_header("mdi.pulse", "Analysis Settings")
 
         # Show Unknown Modes (guitar only) — first, matching Swift order
@@ -6329,10 +6341,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # show_unknown persisted on Apply only
         unknown_desc = QtWidgets.QLabel("Display peaks that don't fall within known mode ranges")
         unknown_desc.setFont(caption)
-        su_layout.addWidget(show_unknown_cb)
-        su_layout.addWidget(unknown_desc)
+        palette.tag(unknown_desc, color=palette.Role.TEXT_SECONDARY)
+        unknown_desc.setContentsMargins(0, 0, 0, 2)
+        su_layout.addWidget(_toggle_row(show_unknown_cb, unknown_desc))
         an.addWidget(show_unknown_widget)
-        an.addWidget(_hsep())
 
         # The analysis frequency range is not a setting: it is a fixed 30–2000 Hz constant
         # (TapDisplaySettings.analysis_min/max_frequency) that bounds detection. The display/pan-zoom
@@ -6343,27 +6355,30 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_layout = QtWidgets.QVBoxLayout(peak_thresh_widget)
         pt_layout.setContentsMargins(0, 4, 0, 0)
         pt_layout.setSpacing(4)
-        pt_hdr = QtWidgets.QLabel("Peak Detection Minimum")
-        pt_hdr.setFont(hdr_font)
-        pt_layout.addWidget(pt_hdr)
         pt_row = QtWidgets.QHBoxLayout()
+        pt_row.addWidget(QtWidgets.QLabel("Peak Detection Minimum"))
+        pt_row.addStretch()
         peak_thresh_field = ValidatedNumberField(
             fp.MAGNITUDE_DB, value=AS.AppSettings.peak_min_threshold(), width=_tf_width)
         pt_row.addWidget(peak_thresh_field)
-        pt_row.addWidget(QtWidgets.QLabel("dB"))
-        pt_row.addStretch()
+        _pt_unit = QtWidgets.QLabel("dB")
+        palette.tag(_pt_unit, color=palette.Role.TEXT_SECONDARY)
+        pt_row.addWidget(_pt_unit)
         pt_layout.addLayout(pt_row)
         pt_desc = QtWidgets.QLabel("Minimum magnitude for peak detection. Typical range: -60 to -40 dB")
         pt_desc.setFont(caption)
+        palette.tag(pt_desc, color=palette.Role.TEXT_SECONDARY)
+        pt_desc.setContentsMargins(0, 0, 0, 2)
         pt_desc.setWordWrap(True)
         pt_layout.addWidget(pt_desc)
         # peak_thresh persisted on Apply only
+        peak_thresh_dim = QtWidgets.QGraphicsOpacityEffect(peak_thresh_widget)
+        peak_thresh_dim.setOpacity(0.4)
+        peak_thresh_dim.setEnabled(False)
+        peak_thresh_widget.setGraphicsEffect(peak_thresh_dim)
         an.addWidget(peak_thresh_widget)
 
         # Separator above Dump Capture Audio (mirrors Swift Divider())
-        an.addWidget(_hsep())
-        an.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
-        an.addWidget(_hsep())
 
         # Dump Capture Audio (diagnostics)
         dump_audio_widget = QtWidgets.QWidget()
@@ -6377,8 +6392,9 @@ class MainWindow(QtWidgets.QMainWindow):
         dump_audio_cb.setChecked(AS.AppSettings.dump_capture_audio())
         dump_audio_desc = QtWidgets.QLabel("Save the captured audio of each measurement as a WAV file")
         dump_audio_desc.setFont(caption)
-        da_layout.addWidget(dump_audio_cb)
-        da_layout.addWidget(dump_audio_desc)
+        palette.tag(dump_audio_desc, color=palette.Role.TEXT_SECONDARY)
+        dump_audio_desc.setContentsMargins(0, 0, 0, 2)
+        da_layout.addWidget(_toggle_row(dump_audio_cb, dump_audio_desc))
 
         # WAV-dump folder: where recordings go, with Open / Change… / Use Default.
         # Mirrors the Swift Settings folder row. Visible only while Dump Capture Audio is on.
@@ -6391,6 +6407,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         df_path_lbl = QtWidgets.QLabel()
         df_path_lbl.setFont(caption)
+        palette.tag(df_path_lbl, color=palette.Role.TEXT_SECONDARY)
+        df_path_lbl.setContentsMargins(0, 0, 0, 2)
         df_path_lbl.setWordWrap(True)
         df_path_lbl.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
 
@@ -6430,45 +6448,34 @@ class MainWindow(QtWidgets.QMainWindow):
         da_layout.addWidget(dump_folder_widget)
 
         an.addWidget(dump_audio_widget)
-        an.addWidget(_hsep())
 
         reset_analysis_btn = QtWidgets.QPushButton("Reset Analysis Settings")
-        palette.set_icon(reset_analysis_btn, "mdi.restore", palette.Role.TEXT_PRIMARY)
+        palette.set_icon(reset_analysis_btn, "mdi.restore", palette.Role.ACCENT)
+        palette.tag(reset_analysis_btn, tint=palette.Role.ACCENT)
 
         def _reset_analysis_settings() -> None:
             peak_thresh_field.setText("-60")
 
         reset_analysis_btn.clicked.connect(_reset_analysis_settings)
-        an.addWidget(reset_analysis_btn)
+        _an_btn_row = QtWidgets.QHBoxLayout()
+        _an_btn_row.addWidget(reset_analysis_btn)
+        _an_btn_row.addStretch()
+        an.addLayout(_an_btn_row)
 
         # =====================================================
         # 4. Audio Input & Calibration Section
         # =====================================================
-        audio_group = QtWidgets.QGroupBox("")
-        aud = QtWidgets.QVBoxLayout(audio_group)
+        audio_group, aud = _settings_box()
         audio_header = _group_header("mdi.microphone", "Audio Input & Calibration")
 
         dev_row = QtWidgets.QHBoxLayout()
-        dev_row.addWidget(QtWidgets.QLabel("Audio Input Device:"))
-        device_combo = QtWidgets.QComboBox()
+        dev_row.addWidget(QtWidgets.QLabel("Audio Input Device"))
+        device_combo = MenuPicker()
         device_combo.setToolTip("Select the microphone or audio input device to use")
-        device_combo.setEditable(True)
-        device_combo.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed
-        )
-        device_combo.setSizeAdjustPolicy(
-            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
+        # A long device name is cut short with an ellipsis rather than widening the sheet.
         device_combo.setMaximumWidth(300)
-        le = device_combo.lineEdit()
-        if le is not None:
-            le.setAlignment(
-                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
-            )
-            le.setReadOnly(True)
         dev_row.addWidget(device_combo)
         aud.addLayout(dev_row)
-        aud.addWidget(_hsep())
 
         # The engine's device list — kept current by its hot-plug handling. Opening Settings
         # neither re-enumerates nor selects. Mirrors Swift's picker over availableInputDevices.
@@ -6486,7 +6493,7 @@ class MainWindow(QtWidgets.QMainWindow):
             device_combo.setCurrentIndex(current_dev_idx)
 
         sr_row = QtWidgets.QHBoxLayout()
-        sr_lbl = QtWidgets.QLabel("Sample Rate:")
+        sr_lbl = QtWidgets.QLabel("Sample Rate")
         sr_lbl.setFont(small)
         sr_val = QtWidgets.QLabel()
         sr_val.setFont(small)
@@ -6572,30 +6579,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
         dlg.finished.connect(_disconnect_device_signal)
 
-        aud.addWidget(_hsep())
-        aud.addItem(QtWidgets.QSpacerItem(0, _SECTION_GAP))
-        aud.addWidget(_hsep())
 
         # Calibration picker
         cal_row = QtWidgets.QHBoxLayout()
-        cal_row.addWidget(QtWidgets.QLabel("Calibration:"))
-        cal_combo = QtWidgets.QComboBox()
-        cal_combo.setEditable(True)
-        cal_combo.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
-        )
-        cal_combo.setSizeAdjustPolicy(
-            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
-        )
-        le = cal_combo.lineEdit()
-        if le is not None:
-            le.setAlignment(
-                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
-            )
-            le.setReadOnly(True)
+        cal_row.addWidget(QtWidgets.QLabel("Calibration"))
+        cal_combo = MenuPicker()
         cal_row.addWidget(cal_combo)
         aud.addLayout(cal_row)
-        aud.addWidget(_hsep())
 
         def _rebuild_cal_combo() -> None:
             cal_combo.blockSignals(True)
@@ -6663,16 +6653,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.fft_canvas.choose_calibration(cal)
             self.set_calibration_status(cal.name)
             _update_cal_display()
+            _refresh_delete_all()
 
-        import_btn = QtWidgets.QPushButton("Import Calibration File...")
-        palette.set_icon(import_btn, "mdi.file-plus-outline", palette.Role.TEXT_PRIMARY)
+        import_btn = QtWidgets.QPushButton("Import Calibration File…")
+        palette.set_icon(import_btn, "mdi.file-plus-outline", palette.Role.ACCENT)
+        palette.tag(import_btn, tint=palette.Role.ACCENT)
         import_btn.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
         )
         import_btn.clicked.connect(_import_cal)
+        # Import and Delete All on one row (Delete All is added to it below).
         import_row = QtWidgets.QHBoxLayout()
         import_row.addWidget(import_btn)
-        import_row.addStretch()
         aud.addLayout(import_row)
 
         # Calibration metadata display
@@ -6698,7 +6690,6 @@ class MainWindow(QtWidgets.QMainWindow):
         cal_meta_layout.addWidget(cal_meta_range_lbl)
         cal_meta_widget.setVisible(False)
         aud.addWidget(cal_meta_widget)
-        aud.addWidget(_hsep())
 
         def _update_cal_meta() -> None:
             cal_id = cal_combo.itemData(cal_combo.currentIndex())
@@ -6724,7 +6715,8 @@ class MainWindow(QtWidgets.QMainWindow):
         _update_cal_meta()
 
         delete_cal_btn = QtWidgets.QPushButton("Delete All Calibrations")
-        palette.set_icon(delete_cal_btn, "mdi.trash-can-outline", palette.Role.TEXT_PRIMARY)
+        palette.set_icon(delete_cal_btn, "mdi.trash-can-outline", palette.Role.ACCENT)
+        palette.tag(delete_cal_btn, tint=palette.Role.ACCENT)
         delete_cal_btn.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
         )
@@ -6753,12 +6745,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 _mc_mod.CalibrationStorage.delete(cal)
             self.set_calibration_status("")
             _update_cal_display()
+            _refresh_delete_all()
 
         delete_cal_btn.clicked.connect(_delete_all_calibrations)
-        delete_row = QtWidgets.QHBoxLayout()
-        delete_row.addWidget(delete_cal_btn)
-        delete_row.addStretch()
-        aud.addLayout(delete_row)
+
+        def _refresh_delete_all() -> None:
+            delete_cal_btn.setVisible(bool(_mc_mod.CalibrationStorage.load_all()))
+
+        _refresh_delete_all()
+        import_row.addWidget(delete_cal_btn)
+        import_row.addStretch()
 
         cal_footer = QtWidgets.QLabel(
             "Audio input and calibration changes take effect immediately and are "
@@ -6766,26 +6762,27 @@ class MainWindow(QtWidgets.QMainWindow):
             "with each device."
         )
         cal_footer.setFont(caption)
+        palette.tag(cal_footer, color=palette.Role.TEXT_SECONDARY)
+        cal_footer.setContentsMargins(0, 0, 0, 2)
         cal_footer.setWordWrap(True)
 
         # =====================================================
         # 5. About & Help Section
         # =====================================================
-        about_group = QtWidgets.QGroupBox("")
-        ab = QtWidgets.QVBoxLayout(about_group)
-        about_header = _group_header("mdi.information", "About & Help")
+        about_group, ab = _settings_box()
+        about_header = _group_header("mdi.information-outline", "About & Help")
 
         from guitar_tap._version import __version_string__
         ver_row = QtWidgets.QHBoxLayout()
         ver_lbl = QtWidgets.QLabel("Version")
         ver_val = QtWidgets.QLabel(__version_string__)
+        palette.tag(ver_val, color=palette.Role.TEXT_SECONDARY)
         ver_val.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )
         ver_row.addWidget(ver_lbl)
         ver_row.addWidget(ver_val, stretch=1)
         ab.addLayout(ver_row)
-        ab.addWidget(_hsep())
 
         # ---- Update check (Python edition only) ----
         # Opt-out: on by default.  The check contacts GitHub's public release
@@ -6794,12 +6791,15 @@ class MainWindow(QtWidgets.QMainWindow):
         upd_chk = QtWidgets.QCheckBox("Check for updates at startup")
         upd_chk.setChecked(AS.AppSettings.check_updates_at_startup())
         upd_chk.toggled.connect(AS.AppSettings.set_check_updates_at_startup)
-        ab.addWidget(upd_chk)
+        ab.addWidget(_toggle_row(upd_chk))
 
         upd_row = QtWidgets.QHBoxLayout()
         upd_now_btn = QtWidgets.QPushButton("Check Now")
+        palette.tag(upd_now_btn, tint=palette.Role.ACCENT)
         upd_status = QtWidgets.QLabel("")
         upd_status.setFont(caption)
+        palette.tag(upd_status, color=palette.Role.TEXT_SECONDARY)
+        upd_status.setContentsMargins(0, 0, 0, 2)
         upd_status.setWordWrap(True)
 
         def _check_now() -> None:
@@ -6839,15 +6839,15 @@ class MainWindow(QtWidgets.QMainWindow):
         upd_row.addWidget(upd_now_btn)
         upd_row.addWidget(upd_status, stretch=1)
         ab.addLayout(upd_row)
-        ab.addWidget(_hsep())
 
         copyright_lbl = QtWidgets.QLabel(
             "Copyright \u00a9 2026 David W. Smith dba Dolce Sfogato"
         )
         copyright_lbl.setFont(caption)
+        palette.tag(copyright_lbl, color=palette.Role.TEXT_SECONDARY)
+        copyright_lbl.setContentsMargins(0, 0, 0, 2)
         copyright_lbl.setWordWrap(True)
         ab.addWidget(copyright_lbl)
-        ab.addWidget(_hsep())
 
         help_row = QtWidgets.QWidget()
         help_row.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
@@ -6895,15 +6895,32 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(meas_header)
         vbox.addWidget(meas_group)
         vbox.addWidget(meas_footer_lbl)
+        # The type's groups, each a titled box — Swift's separate sections.
+        vbox.addWidget(guitar_widget)
+        vbox.addWidget(plate_widget)
+        vbox.addWidget(brace_widget)
 
         # Advanced collapsible section header — flat QPushButton avoids QToolButton sizing issues
-        adv_btn = QtWidgets.QPushButton("\u25b6  Advanced")
-        adv_btn.setCheckable(True)
-        adv_btn.setChecked(False)
-        adv_btn.setFlat(True)
-        adv_btn.setFont(hdr_font)
-        adv_btn.setStyleSheet("QPushButton { text-align: left; padding: 4px 6px; }")
-        vbox.addWidget(adv_btn)
+        # Advanced: Swift's disclosure row in its own box — the icon and label, then the chevron at
+        # the right edge (down closed, up open); a click anywhere on the row toggles it.
+        adv_box, adv_box_layout = _settings_box()
+        adv_row = QtWidgets.QWidget()
+        adv_row.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        adv_hl = QtWidgets.QHBoxLayout(adv_row)
+        adv_hl.setContentsMargins(0, 2, 0, 2)
+        adv_hl.setSpacing(6)
+        adv_icon = QtWidgets.QLabel()
+        palette.set_icon(adv_icon, "mdi.cogs", palette.Role.TEXT_PRIMARY, 16)
+        adv_hl.addWidget(adv_icon)
+        adv_lbl = QtWidgets.QLabel("Advanced")
+        adv_lbl.setFont(hdr_font)
+        adv_hl.addWidget(adv_lbl)
+        adv_hl.addStretch()
+        adv_chevron = QtWidgets.QLabel()
+        palette.set_icon(adv_chevron, "mdi.chevron-down", palette.Role.TEXT_SECONDARY, 16)
+        adv_hl.addWidget(adv_chevron)
+        adv_box_layout.addWidget(adv_row)
+        vbox.addWidget(adv_box)
 
         # Advanced collapsible content (Display, Analysis)
         adv_content = QtWidgets.QWidget()
@@ -6917,11 +6934,13 @@ class MainWindow(QtWidgets.QMainWindow):
         adv_content.setVisible(False)
         vbox.addWidget(adv_content)
 
-        def _toggle_advanced(checked: bool) -> None:
-            adv_btn.setText("\u25bc  Advanced" if checked else "\u25b6  Advanced")
-            adv_content.setVisible(checked)
+        def _toggle_advanced() -> None:
+            opened = not adv_content.isVisible()
+            adv_content.setVisible(opened)
+            palette.set_icon(adv_chevron, "mdi.chevron-up" if opened else "mdi.chevron-down",
+                             palette.Role.TEXT_SECONDARY, 16)
 
-        adv_btn.toggled.connect(_toggle_advanced)
+        adv_row.mousePressEvent = lambda _ev: _toggle_advanced()
 
         vbox.addWidget(about_header)
         vbox.addWidget(about_group)
@@ -7102,6 +7121,9 @@ class MainWindow(QtWidgets.QMainWindow):
         cancel_btn.clicked.connect(_cancel_settings)
         apply_btn = QtWidgets.QPushButton("Done")
         apply_btn.setDefault(True)
+        # Done commits the changes beside Cancel: Swift's .confirmationAction — the accent with
+        # white text.
+        palette.tag(apply_btn, prominent=palette.Role.ACCENT)
         apply_btn.clicked.connect(_apply_settings)
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(apply_btn)
@@ -7199,10 +7221,13 @@ class _PlayFileDialog(QtWidgets.QDialog):
     may optionally provide a calibration file (.txt, .cal) that was active
     when the recording was made.
 
-    Layout:
-        Audio File:        [path display] [Browse...]
-        Calibration File:  [path display] [Browse...] [Clear]
-        [OK] [Cancel]
+    Layout (Swift's PlayFileSheet):
+        Audio File
+        file name ................................ [Browse…]
+        Calibration File (Optional)
+        file name ....................... [Clear] [Browse…]
+        hint
+                                          [Cancel] [Play]
     """
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
@@ -7210,57 +7235,74 @@ class _PlayFileDialog(QtWidgets.QDialog):
         self.setWindowTitle("Play Audio File")
         self.setMinimumWidth(500)
 
+        # Swift's PlayFileSheet: a bold title above each row; the file's name (secondary while
+        # there is none) with Browse… at the right — and Clear once a calibration is chosen;
+        # the hint under the calibration; Cancel and Play at the bottom right.
+        from guitar_tap.views.save_measurement_sheet import (
+            caption_label,
+            section_label,
+            set_commit_enabled,
+        )
+        self._set_commit_enabled = set_commit_enabled
+
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 16)
+        layout.setSpacing(6)
 
-        # --- Audio file row ---
-        audio_group = QtWidgets.QGroupBox("Audio File")
-        audio_layout = QtWidgets.QHBoxLayout(audio_group)
-        self._audio_edit = QtWidgets.QLineEdit()
-        self._audio_edit.setReadOnly(True)
-        self._audio_edit.setPlaceholderText("No file selected")
-        audio_layout.addWidget(self._audio_edit, 1)
+        layout.addWidget(section_label("Audio File"))
+        audio_row = QtWidgets.QHBoxLayout()
+        self._audio_name = QtWidgets.QLabel()
+        audio_row.addWidget(self._audio_name, 1)
         audio_browse = QtWidgets.QPushButton("Browse\u2026")
+        audio_browse.setAutoDefault(False)
         audio_browse.clicked.connect(self._browse_audio)
-        audio_layout.addWidget(audio_browse)
-        layout.addWidget(audio_group)
+        audio_row.addWidget(audio_browse)
+        layout.addLayout(audio_row)
+        layout.addSpacing(10)
 
-        # --- Calibration file row ---
-        cal_group = QtWidgets.QGroupBox("Calibration File (Optional)")
-        cal_layout = QtWidgets.QHBoxLayout(cal_group)
-        self._cal_edit = QtWidgets.QLineEdit()
-        self._cal_edit.setReadOnly(True)
-        self._cal_edit.setPlaceholderText("None")
-        cal_layout.addWidget(self._cal_edit, 1)
-        cal_browse = QtWidgets.QPushButton("Browse\u2026")
-        cal_browse.clicked.connect(self._browse_calibration)
-        cal_layout.addWidget(cal_browse)
+        layout.addWidget(section_label("Calibration File (Optional)"))
+        cal_row = QtWidgets.QHBoxLayout()
+        self._cal_name = QtWidgets.QLabel()
+        cal_row.addWidget(self._cal_name, 1)
         self._cal_clear = QtWidgets.QPushButton("Clear")
+        self._cal_clear.setAutoDefault(False)
         self._cal_clear.clicked.connect(self._clear_calibration)
-        self._cal_clear.setEnabled(False)
-        cal_layout.addWidget(self._cal_clear)
-        layout.addWidget(cal_group)
+        cal_row.addWidget(self._cal_clear)
+        cal_browse = QtWidgets.QPushButton("Browse\u2026")
+        cal_browse.setAutoDefault(False)
+        cal_browse.clicked.connect(self._browse_calibration)
+        cal_row.addWidget(cal_browse)
+        layout.addLayout(cal_row)
+        layout.addWidget(caption_label(
+            "Select the calibration file that was active when the recording was made"))
+        layout.addStretch()
+        layout.addSpacing(10)
 
-        hint = QtWidgets.QLabel(
-            "Select the calibration file that was active when the recording was made"
-        )
-        hint.setStyleSheet("font-size: 11px;")
-        palette.tag(hint, color=palette.Role.TEXT_SECONDARY)
-        layout.addWidget(hint)
-
-        # --- Button box ---
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Ok
-            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-        self._ok_btn = buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Ok)
-        self._ok_btn.setText("Play")
-        self._ok_btn.setEnabled(False)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.addStretch()
+        cancel = QtWidgets.QPushButton("Cancel")
+        cancel.setAutoDefault(False)
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        self._ok_btn = QtWidgets.QPushButton("Play")
+        self._ok_btn.setDefault(True)
+        self._ok_btn.clicked.connect(self.accept)
+        buttons.addWidget(self._ok_btn)
+        layout.addLayout(buttons)
 
         self._audio_path: str = ""
         self._cal_path: str = ""
+        self._refresh()
+
+    def _refresh(self) -> None:
+        """Show the chosen files' names, or "No file selected" / "None" in the secondary colour."""
+        for label, path, empty in ((self._audio_name, self._audio_path, "No file selected"),
+                                   (self._cal_name, self._cal_path, "None")):
+            label.setText(os.path.basename(path) if path else empty)
+            role = palette.Role.TEXT_PRIMARY if path else palette.Role.TEXT_SECONDARY
+            palette.tag(label, color=role)
+        self._cal_clear.setVisible(bool(self._cal_path))
+        self._set_commit_enabled(self._ok_btn, bool(self._audio_path))
 
     # -- Public accessors --
 
@@ -7285,8 +7327,7 @@ class _PlayFileDialog(QtWidgets.QDialog):
         )
         if path:
             self._audio_path = path
-            self._audio_edit.setText(os.path.basename(path))
-            self._ok_btn.setEnabled(True)
+            self._refresh()
             AS.AppSettings.set_audio_path(os.path.dirname(path))
 
     def _browse_calibration(self) -> None:
@@ -7299,8 +7340,7 @@ class _PlayFileDialog(QtWidgets.QDialog):
         )
         if path:
             self._cal_path = path
-            self._cal_edit.setText(os.path.basename(path))
-            self._cal_clear.setEnabled(True)
+            self._refresh()
             # Persist the directory so the next browse — here or via Import
             # Calibration — opens at the same place.  Mirrors the
             # Import-Calibration code path which already does this.
@@ -7308,5 +7348,4 @@ class _PlayFileDialog(QtWidgets.QDialog):
 
     def _clear_calibration(self) -> None:
         self._cal_path = ""
-        self._cal_edit.clear()
-        self._cal_clear.setEnabled(False)
+        self._refresh()

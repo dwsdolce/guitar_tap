@@ -706,6 +706,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # re-render until run-loop end.  This is why the assignment is used directly rather
         # than set_measurement_complete(), which emits immediately.
         self.detection_state = DetectionState.IDLE
+        self.cancel_session_recording()
         self.is_measurement_complete = True  # set early; signal fires at end of method
         self.current_tap_count = 0
         self.tap_progress = 0.0
@@ -1176,6 +1177,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # Empty data means we stayed LIVE, so there is nothing to freeze and nothing to
             # disarm. Mirrors Swift load_comparison / web loadComparison.
             self.detection_state = DetectionState.IDLE
+            self.cancel_session_recording()
             self.comparisonChanged.emit(True)
         else:
             self._display_mode = AnalysisDisplayMode.LIVE

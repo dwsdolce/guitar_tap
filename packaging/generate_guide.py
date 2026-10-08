@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate the Guitar Tap Quick-Start Guide as HTML and PDF.
+Generate the Guitar Tap Quick Start Guide as HTML and PDF.
 
 Requires WeasyPrint and Pango (the PDF step only):
     macOS:  brew install pango
@@ -71,7 +71,7 @@ def _enhanced_css() -> str:
     size: A4;
     margin: 20mm 20mm 22mm 20mm;
     @bottom-center {
-      content: "Guitar Tap Quick-Start Guide — page " counter(page) " of " counter(pages);
+      content: "Guitar Tap Quick Start Guide — page " counter(page) " of " counter(pages);
       font-size: 9px;
       color: #888;
     }

@@ -208,6 +208,8 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         outer.addLayout(status_row)
 
         close_btn = QtWidgets.QPushButton("Done")
+        # Done only closes: a plain button, not the dialog's default (Swift's .cancellationAction).
+        close_btn.setAutoDefault(False)
         close_btn.clicked.connect(self.accept)
         outer.addWidget(close_btn)
 

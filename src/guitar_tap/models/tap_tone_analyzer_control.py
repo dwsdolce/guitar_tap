@@ -687,7 +687,7 @@ class TapToneAnalyzerControlMixin:
         self.detect_tap_consecutive_above = 0
 
         # Resume accumulating audio after pause — mirrors Swift resumeTapDetection.
-        self._is_session_recording = True
+        self._is_session_recording = self._is_session_recording_enabled
         self.detection_state = DetectionState.LISTENING
 
         # Restore a context-appropriate prompt. The same derivation the device-change settle uses.
@@ -930,9 +930,11 @@ class TapToneAnalyzerControlMixin:
             # re_enable_detection_for_next_plate_tap.
             self._gated_capture_id = 0
             self._last_level_crossing_capture_id = -1
+            # With Dump Capture Audio off nothing is kept.
             self._session_recording_buffer = []
             self._session_checkpoints = [0]
-            self._is_session_recording = True
+            self._is_session_recording_enabled = _tds.dump_capture_audio()
+            self._is_session_recording = self._is_session_recording_enabled
             self._session_pre_roll_active = True  # bound the pre-first-tap audio to ~2 s
             self._session_recording_sample_rate = (
                 self._mpm_sample_rate if self._mpm_sample_rate > 0 else 48000.0

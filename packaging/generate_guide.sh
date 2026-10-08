@@ -1,5 +1,5 @@
 #!/bin/bash
-# Generate the Guitar Tap Quick-Start Guide (HTML + PDF).
+# Generate the Guitar Tap Quick Start Guide (HTML + PDF).
 #
 # Prerequisites (one-time):
 #   macOS:  brew install pango

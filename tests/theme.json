@@ -23,6 +23,11 @@
    "#8E8E931A"
   ],
   [
+   "background.picker",
+   "#00000014",
+   "#FFFFFF14"
+  ],
+  [
    "separator",
    "#D8DEE6",
    "#222A33"

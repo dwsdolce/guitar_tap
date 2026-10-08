@@ -77,6 +77,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
 
         # ── List ──────────────────────────────────────────────────────────────
         self._list = QtWidgets.QListWidget()
+        # Plain rows on the panel, as Swift's List: no frame; each row draws its own line.
+        self._list.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self._list.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.NoSelection
         )
@@ -106,14 +108,19 @@ class MeasurementsDialog(QtWidgets.QDialog):
             "Select two or more measurements with spectrum snapshots to compare"
         )
         self._compare_btn.clicked.connect(self._on_compare_clicked)
+        # The buttons carry Swift's toolbar icons (waveform.path, square.and.arrow.down / up,
+        # trash).
+        palette.set_icon(self._compare_btn, "mdi.waveform", palette.Role.TEXT_PRIMARY)
         btn_row.addWidget(self._compare_btn)
 
-        self._import_btn = QtWidgets.QPushButton("Import…")
+        self._import_btn = QtWidgets.QPushButton("Import")
+        palette.set_icon(self._import_btn, "mdi.download-outline", palette.Role.TEXT_PRIMARY)
         self._import_btn.setToolTip("Import measurements from a .json or .guitartap file (one or many)")
         self._import_btn.clicked.connect(self._on_import)
         btn_row.addWidget(self._import_btn)
 
         self._export_all_btn = QtWidgets.QPushButton("Export All")
+        palette.set_icon(self._export_all_btn, "mdi.upload-outline", palette.Role.TEXT_PRIMARY)
         self._export_all_btn.setToolTip(
             "Export the whole library as one .guitartap file (backup / move to another machine)"
         )
@@ -121,6 +128,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         btn_row.addWidget(self._export_all_btn)
 
         self._delete_all_btn = QtWidgets.QPushButton("Delete All")
+        palette.set_icon(self._delete_all_btn, "mdi.trash-can-outline", palette.Role.TEXT_PRIMARY)
         self._delete_all_btn.setToolTip("Delete all saved measurements")
         self._delete_all_btn.clicked.connect(self._on_delete_all)
         btn_row.addWidget(self._delete_all_btn)
@@ -128,9 +136,16 @@ class MeasurementsDialog(QtWidgets.QDialog):
         btn_row.addStretch()
 
         self._done_btn = QtWidgets.QPushButton("Done")
-        self._done_btn.setDefault(True)
         self._done_btn.clicked.connect(self._on_done)
         btn_row.addWidget(self._done_btn)
+
+        # No default button, as Swift's list: Done only closes (.cancellationAction) and the
+        # others act on a click. A dialog makes every button auto-default, which draws the
+        # focused one — Compare… — as the default; so none is.
+        for btn in (self._compare_btn, self._import_btn, self._export_all_btn,
+                    self._delete_all_btn, self._done_btn):
+            btn.setAutoDefault(False)
+            btn.setDefault(False)
 
         root.addLayout(btn_row)
 

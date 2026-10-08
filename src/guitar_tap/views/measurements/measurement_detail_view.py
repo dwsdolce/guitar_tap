@@ -5,7 +5,7 @@ Matches MeasurementDetailView.swift / CombinedPeakModeRowView.swift.
 
 # @parity view/measurement-detail
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import TapToneMeasurement
 from guitar_tap.models import guitar_mode as GM
@@ -70,6 +70,8 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
 
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
+        # No frame: the group boxes sit on the window, as Swift's.
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         inner = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(inner)
         vbox.setContentsMargins(8, 8, 8, 8)
@@ -80,39 +82,56 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         m = self._m
 
         # ── Measurement Info ─────────────────────────────────────────────────
+        # Swift's GroupBox rows: a small secondary "Label:" then the value at body size, left to
+        # right; the box fits its content.
         info_group = QtWidgets.QGroupBox("Measurement Info")
-        info_layout = QtWidgets.QFormLayout(info_group)
-        info_layout.setHorizontalSpacing(16)
-        info_layout.setVerticalSpacing(6)
+        info_group.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Preferred)
+        info_rows = QtWidgets.QVBoxLayout(info_group)
+        info_rows.setSpacing(8)
+        caption = QtGui.QFont(self.font())
+        caption.setPointSize(max(8, self.font().pointSize() - 3))
+
+        def _add_row(label: str, value: QtWidgets.QLabel) -> None:
+            row = QtWidgets.QHBoxLayout()
+            row.setSpacing(6)
+            lbl = QtWidgets.QLabel(label)
+            lbl.setFont(caption)
+            palette.tag(lbl, color=palette.Role.TEXT_SECONDARY)
+            row.addWidget(lbl, 0, QtCore.Qt.AlignmentFlag.AlignBaseline)
+            row.addWidget(value, 1, QtCore.Qt.AlignmentFlag.AlignBaseline)
+            info_rows.addLayout(row)
 
         if m.measurement_name:
             loc = QtWidgets.QLabel(m.measurement_name)
-            loc.setStyleSheet("font-weight: bold;")
-            info_layout.addRow("Measurement Name:", loc)
+            name_font = QtGui.QFont(self.font())
+            name_font.setWeight(QtGui.QFont.Weight.Medium)
+            loc.setFont(name_font)
+            _add_row("Measurement Name:", loc)
 
-        info_layout.addRow("Date:", QtWidgets.QLabel(format_display_datetime(m.timestamp)))
+        _add_row("Date:", QtWidgets.QLabel(format_display_datetime(m.timestamp)))
 
-        info_layout.addRow("Measurement Type:", QtWidgets.QLabel(m.measurement_type_short_name))
+        _add_row("Measurement Type:", QtWidgets.QLabel(m.measurement_type_short_name))
         if m.number_of_taps is not None:
-            info_layout.addRow(
+            _add_row(
                 "Number of Taps:", QtWidgets.QLabel(str(m.number_of_taps))
             )
         # No recorded microphone means it is unknown (a played file, say). A comparison has no
         # microphone of its own. Mirrors Swift MeasurementDetailView.
         if not m.is_comparison:
-            info_layout.addRow(
+            _add_row(
                 "Microphone:", QtWidgets.QLabel(m.microphone_name or "unknown")
             )
         if m.calibration_name:
-            info_layout.addRow(
+            _add_row(
                 "Calibration:", QtWidgets.QLabel(m.calibration_name)
             )
         if m.notes:
             notes_label = QtWidgets.QLabel(m.notes)
             notes_label.setWordWrap(True)
-            info_layout.addRow("Notes:", notes_label)
+            _add_row("Notes:", notes_label)
 
-        vbox.addWidget(info_group)
+        vbox.addWidget(info_group, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
 
         # Comparison records show the per-spectrum Air/Top/Back table; everything
         # else shows the identified (selected) peaks only.
@@ -202,11 +221,13 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         # The detail view is read-only.  Load / Export / Export PDF Report
         # are all available from the row's popup menu in the Measurements
         # list (see MeasurementsListView), so no duplicate controls are
-        # presented here.  Only the Close button remains.
+        # presented here.  Only Done remains: bottom right, a plain button since it only closes
+        # (Swift's Done).
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch()
 
-        close_btn = QtWidgets.QPushButton("Close")
+        close_btn = QtWidgets.QPushButton("Done")
+        close_btn.setAutoDefault(False)
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
 

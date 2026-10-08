@@ -457,9 +457,8 @@ def pdf_report_data_from_measurement(
     )
 
 
-# Spectrum-image matte (pt). Mirrors Swift PDFReportGenerator.swift:405-410 —
+# Spectrum-image matte corner (pt). Mirrors Swift PDFReportGenerator —
 # `.background(Color(white: 0.05)).cornerRadius(6)` behind the chart image.
-_SPECTRUM_MATTE_PT = 5
 _SPECTRUM_CORNER_PT = 6
 
 # SwiftUI lays out a line of Helvetica text in a box exactly its font size tall, with the baseline 0.77 ×
@@ -608,11 +607,10 @@ def _spectrum_image_matte(image_data: bytes, content_w: float):
             .background(Color(white: 0.05))
             .cornerRadius(6)
 
-    On Swift the frame is not a stroke: its chart PNG carries transparent padding (hence the
-    DeviceGray alpha mask in its PDF) and the near-black background shows *through* it. Our chart
-    image is opaque, so the same look is drawn deliberately — a near-black rounded cell the size of
-    Swift's image (the content width, at the image's proportions), with the image inset by
-    ``_SPECTRUM_MATTE_PT``.
+    The frame is not a stroke: the chart PNG carries a transparent 16 pt margin (Swift's padding
+    outside its background — the same image Export Spectrum makes), and the near-black background
+    shows *through* it. So the image fills the cell at the content width, exactly as Swift's does;
+    an inset here would add a second frame inside that margin.
 
     Shared by both story builders (`_build_averaged_story` / `_build_comparison_story`), as Swift has
     the matte at both of its sites.
@@ -634,18 +632,15 @@ def _spectrum_image_matte(image_data: bytes, content_w: float):
     w_px, h_px = _pil.size
     aspect = h_px / w_px if w_px > 0 else 0.5
     frame_h = content_w * aspect
-    inner_h = frame_h - _SPECTRUM_MATTE_PT * 2
-    inner_w = inner_h / aspect
-    side = (content_w - inner_w) / 2
-    img = _RLImg(_io.BytesIO(image_data), width=inner_w, height=inner_h)
+    img = _RLImg(_io.BytesIO(image_data), width=content_w, height=frame_h)
 
     cell = Table([[img]], colWidths=[content_w], rowHeights=[frame_h])
     cell.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, -1), _pdf(palette.Role.PDF_CHART_MATTE)),
-        ("LEFTPADDING",   (0, 0), (-1, -1), side),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), side),
-        ("TOPPADDING",    (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), _SPECTRUM_MATTE_PT),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("ROUNDEDCORNERS", [_SPECTRUM_CORNER_PT] * 4),
     ]))
@@ -1343,7 +1338,8 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
     max_db   = float(max(s.max_db   for s in snaps))
 
     loc = measurement.measurement_name
-    chart_title = f"Comparison — {loc}" if (loc and loc.strip()) else "Comparison"
+    # The live chart's title, so the image reads the same from the list as from the main view.
+    chart_title = f"FFT Peaks — {loc}" if (loc and loc.strip()) else "FFT Peaks — New"
     date_label = str(measurement.timestamp) if measurement.timestamp else ""
 
     return make_exportable_spectrum_view(
@@ -1357,6 +1353,7 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
         material_spectra=comparison_spectra,
         date_label=date_label,
         chart_title=chart_title,
+        type_label="Comparison",
     )
 
 
@@ -1412,7 +1409,8 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
         min_db=min_db,
         max_db=max_db,
         peaks=[],
-        measurement_type_str="classical",
+        # Swift's renderSpectrumImageForMultiTap passes .generic.
+        measurement_type_str="Generic Guitar",
         material_spectra=comparison_spectra,
         date_label=date_label,
         chart_title=chart_title,

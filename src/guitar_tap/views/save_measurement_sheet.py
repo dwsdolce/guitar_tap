@@ -4,11 +4,41 @@ Modal dialog for entering Measurement Name and notes before saving a measurement
 Matches SaveMeasurementSheet.swift.
 """
 
-from PySide6 import QtWidgets
+from PySide6 import QtGui, QtWidgets
+
+from guitar_tap.views.utilities import palette
+
+
+def section_label(text: str) -> QtWidgets.QLabel:
+    """A field's title above it — Swift's .headline: bold, at body size."""
+    label = QtWidgets.QLabel(text)
+    font = QtGui.QFont(label.font())
+    font.setBold(True)
+    label.setFont(font)
+    return label
+
+
+def caption_label(text: str) -> QtWidgets.QLabel:
+    """A hint under a field — Swift's .caption in the secondary colour."""
+    label = QtWidgets.QLabel(text)
+    font = QtGui.QFont(label.font())
+    font.setPointSize(max(8, font.pointSize() - 3))
+    label.setFont(font)
+    label.setWordWrap(True)
+    palette.tag(label, color=palette.Role.TEXT_SECONDARY)
+    return label
+
+
+def set_commit_enabled(button: QtWidgets.QPushButton, enabled: bool) -> None:
+    """A button that commits (Save, Play) — Swift's .confirmationAction: the accent with white
+    text while it can act, a plain grey button while it cannot."""
+    button.setEnabled(enabled)
+    palette.tag(button, prominent=palette.Role.ACCENT if enabled else None)
 
 
 class SaveMeasurementDialog(QtWidgets.QDialog):
-    """Gather optional measurement_name and notes before saving. 450×250 minimum."""
+    """Gather the measurement name and notes before saving — Swift's SaveMeasurementSheet: a bold
+    title above each field, the notes hint under its box, Cancel and Save at the bottom right."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -16,38 +46,34 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         self.setMinimumSize(450, 250)
 
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 16)
+        layout.setSpacing(6)
 
-        # Measurement Name
-        loc_group = QtWidgets.QGroupBox("Measurement Name")
-        loc_layout = QtWidgets.QVBoxLayout(loc_group)
+        layout.addWidget(section_label("Measurement Name"))
         self._location_edit = QtWidgets.QLineEdit()
         self._location_edit.setPlaceholderText("e.g. Martin 000-28, Spruce Top")
-        loc_layout.addWidget(self._location_edit)
-        layout.addWidget(loc_group)
+        layout.addWidget(self._location_edit)
+        layout.addSpacing(10)
 
-        # Notes
-        notes_group = QtWidgets.QGroupBox("Notes (Optional)")
-        notes_layout = QtWidgets.QVBoxLayout(notes_group)
+        layout.addWidget(section_label("Notes (Optional)"))
         self._notes_edit = QtWidgets.QTextEdit()
-        self._notes_edit.setFixedHeight(100)
-        self._notes_edit.setPlaceholderText(
-            "Add any observations about this measurement"
-        )
-        notes_layout.addWidget(self._notes_edit)
-        layout.addWidget(notes_group)
+        self._notes_edit.setMinimumHeight(100)
+        layout.addWidget(self._notes_edit, 1)
+        layout.addWidget(caption_label("Add any observations about this measurement"))
+        layout.addSpacing(10)
 
-        # Buttons
-        btns = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Save
-            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.addStretch()
+        cancel = QtWidgets.QPushButton("Cancel")
+        cancel.setAutoDefault(False)
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        self._save_btn = QtWidgets.QPushButton("Save")
+        self._save_btn.setDefault(True)
+        self._save_btn.clicked.connect(self.accept)
+        buttons.addWidget(self._save_btn)
+        layout.addLayout(buttons)
 
-        # A name must be entered before Save is allowed. The rule lives on the model so all
-        # three platforms agree; the view only binds the button's enabled state to it.
-        self._save_btn = btns.button(QtWidgets.QDialogButtonBox.StandardButton.Save)
         self._location_edit.textChanged.connect(self._update_save_enabled)
         self._update_save_enabled()
 
@@ -55,7 +81,8 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
 
     def _update_save_enabled(self) -> None:
         from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
-        self._save_btn.setEnabled(TapToneMeasurement.is_valid_name(self._location_edit.text()))
+        set_commit_enabled(
+            self._save_btn, TapToneMeasurement.is_valid_name(self._location_edit.text()))
 
     @property
     def measurement_name(self) -> str:
