@@ -41,36 +41,23 @@ def _nice_number(x: float, round_: bool) -> float:
 
 
 def format_tick_labels(values: list[float]) -> dict[float, str]:
-    """The screen's frequency labels: whole Hz below 1 kHz, kHz above, with more decimals until
-    every label is different. Mirrors Swift ``AxisTickGenerator.formatTickLabels``."""
+    """The frequency ticks' labels — the same on screen and in the exported image: whole hertz below
+    1 kHz and thousands with a k above (``1.2k``), the axis title carrying the unit; with more
+    decimals until every label is different. Mirrors Swift
+    ``AxisTickGenerator.formatTickLabels``."""
     if not values:
         return {}
     for extra in range(4):
         labels = {v: _frequency_label(v, 1 + extra) for v in values}
         if len(set(labels.values())) == len(labels):
             return labels
-    return {v: "%.1f Hz" % v for v in values}
+    return {v: "%.1f" % v for v in values}
 
 
-def _frequency_label(value: float, khz_decimals: int) -> str:
+def _frequency_label(value: float, thousands_decimals: int) -> str:
     if value >= 1000:
-        return "%.*f kHz" % (khz_decimals, value / 1000)
-    return "%.0f Hz" % value
-
-
-def format_tick_label(value: float) -> str:
-    """The exported image's compact frequency label. Mirrors Swift
-    ``AxisTickGenerator.formatTickLabel``."""
-    magnitude = abs(value)
-    if magnitude == 0:
-        return "0"
-    if magnitude >= 1000:
-        return "%.1fk" % (value / 1000)
-    if magnitude >= 10:
-        return "%.0f" % value
-    if magnitude >= 0.1:
-        return "%.1f" % value
-    return "%.2f" % value
+        return "%.*fk" % (thousands_decimals, value / 1000)
+    return "%.0f" % value
 
 
 def magnitude_stride(range_: float) -> float:

@@ -994,11 +994,11 @@ def _build_averaged_story(data: "PDFReportData") -> list:
                     return _colored("Cross-grain (fC)", _ROLE_ORANGE)
                 if peak.id == data.selected_flc_peak_id:
                     return _colored("Diagonal (fLC)", _ROLE_PURPLE)
-                return _text("–", 10)
+                return _text("–", 10, color=SECONDARY)  # an unassigned peak, secondary as Swift's
             elif mt == MT.MeasurementType.BRACE:
                 if peak.id == data.selected_longitudinal_peak_id:
                     return _colored("Longitudinal (fL)", _ROLE_BLUE)
-                return _text("–", 10)
+                return _text("–", 10, color=SECONDARY)
             return []
 
         peak_rows: list[list] = []

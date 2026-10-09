@@ -1,0 +1,9 @@
+{
+ "about": "Points, and 0–1 for a PDF line's colour. Set from measured differences between the editions' exports, tight enough that a moved, missing or resized part, a wrong argument on an export path, a wrong weight or a wrong colour fails.",
+ "size": 2,
+ "position": 3,
+ "label_centring": 1,
+ "pdf_line": 3,
+ "pdf_image": 2,
+ "pdf_colour": 0.02
+}

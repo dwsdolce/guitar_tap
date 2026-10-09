@@ -1,6 +1,6 @@
 {
  "slug": "test/axis-ticks",
- "about": "The spectrum chart's axis ticks, which are also its grid lines. 'frequency': for a visible range [min, max] Hz, the ticks generateTicks gives with maxTicks 8 (the nice-number algorithm, bounds extended outward), then the labels of the ticks inside the range — on screen (formatTickLabels: whole Hz, kHz with more decimals until unique) and in the exported image (formatTickLabel: compact). 'magnitude': for a visible range [min, max] dB, the screen's tick spacing (the smallest of 1, 2, 5, 10, 20, 50 giving at most 8 ticks); the export's is chart-style.json's. Expected values are Swift's.",
+ "about": "The spectrum chart's axis ticks, which are also its grid lines. 'frequency': for a visible range [min, max] Hz, the ticks generateTicks gives with maxTicks 8 (the nice-number algorithm, bounds extended outward), then the labels of the ticks inside the range, the same on screen and in the exported image (formatTickLabels: whole hertz below 1 kHz, thousands with a k, with more decimals until every label is different; no unit — the axis title carries it). 'magnitude': for a visible range [min, max] dB, the screen's tick spacing (the smallest of 1, 2, 5, 10, 20, 50 giving at most 8 ticks); the export's is chart-style.json's. Expected values are Swift's.",
  "frequency": [
   [
    [
@@ -15,14 +15,6 @@
     250,
     300,
     350
-   ],
-   [
-    "100 Hz",
-    "150 Hz",
-    "200 Hz",
-    "250 Hz",
-    "300 Hz",
-    "350 Hz"
    ],
    [
     "100",
@@ -46,12 +38,6 @@
     200
    ],
    [
-    "50 Hz",
-    "100 Hz",
-    "150 Hz",
-    "200 Hz"
-   ],
-   [
     "50",
     "100",
     "150",
@@ -70,13 +56,6 @@
     600,
     800,
     1000
-   ],
-   [
-    "200 Hz",
-    "400 Hz",
-    "600 Hz",
-    "800 Hz",
-    "1.0 kHz"
    ],
    [
     "200",
@@ -98,14 +77,6 @@
     3000,
     4000,
     5000
-   ],
-   [
-    "0 Hz",
-    "1.0 kHz",
-    "2.0 kHz",
-    "3.0 kHz",
-    "4.0 kHz",
-    "5.0 kHz"
    ],
    [
     "0",
@@ -130,13 +101,6 @@
     5000
    ],
    [
-    "1.0 kHz",
-    "2.0 kHz",
-    "3.0 kHz",
-    "4.0 kHz",
-    "5.0 kHz"
-   ],
-   [
     "1.0k",
     "2.0k",
     "3.0k",
@@ -156,14 +120,6 @@
     106,
     108,
     110
-   ],
-   [
-    "100 Hz",
-    "102 Hz",
-    "104 Hz",
-    "106 Hz",
-    "108 Hz",
-    "110 Hz"
    ],
    [
     "100",
@@ -189,18 +145,11 @@
     1060
    ],
    [
-    "960 Hz",
-    "980 Hz",
-    "1.00 kHz",
-    "1.02 kHz",
-    "1.04 kHz"
-   ],
-   [
     "960",
     "980",
-    "1.0k",
-    "1.0k",
-    "1.0k"
+    "1.00k",
+    "1.02k",
+    "1.04k"
    ]
   ],
   [
@@ -217,20 +166,12 @@
     1010
    ],
    [
-    "1.000 kHz",
-    "1.002 kHz",
-    "1.004 kHz",
-    "1.006 kHz",
-    "1.008 kHz",
-    "1.010 kHz"
-   ],
-   [
-    "1.0k",
-    "1.0k",
-    "1.0k",
-    "1.0k",
-    "1.0k",
-    "1.0k"
+    "1.000k",
+    "1.002k",
+    "1.004k",
+    "1.006k",
+    "1.008k",
+    "1.010k"
    ]
   ],
   [
@@ -245,12 +186,6 @@
     400,
     500,
     600
-   ],
-   [
-    "200 Hz",
-    "300 Hz",
-    "400 Hz",
-    "500 Hz"
    ],
    [
     "200",
@@ -272,18 +207,11 @@
     82
    ],
    [
-    "80.0 Hz",
-    "80.5 Hz",
-    "81.0 Hz",
-    "81.5 Hz",
-    "82.0 Hz"
-   ],
-   [
-    "80",
-    "80",
-    "81",
-    "82",
-    "82"
+    "80.0",
+    "80.5",
+    "81.0",
+    "81.5",
+    "82.0"
    ]
   ],
   [
@@ -300,16 +228,6 @@
     3000,
     3500,
     4000
-   ],
-   [
-    "500 Hz",
-    "1.0 kHz",
-    "1.5 kHz",
-    "2.0 kHz",
-    "2.5 kHz",
-    "3.0 kHz",
-    "3.5 kHz",
-    "4.0 kHz"
    ],
    [
     "500",

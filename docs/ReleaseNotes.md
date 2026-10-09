@@ -5,6 +5,8 @@
 ## Version {{version}} · Build {{build}}
 ### What's New Since Build {{since}}
 
+<!-- Notes reviewed through commit 7c01f74 (2026-10-07). The next update reads only `git log 7c01f74..HEAD`, then moves this line to the newest commit it covered. -->
+
 ---
 
 ## New Features

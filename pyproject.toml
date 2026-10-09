@@ -25,6 +25,7 @@ dev = [
     "pytest>=9.0",
     "pytest-cov>=7.1",
     "pytest-qt>=4.5",
+    "pdfminer.six>=20250000",
     "pypdf>=6.19",
     "mypy>=1.19",
     "ruff>=0.15",

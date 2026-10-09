@@ -4642,13 +4642,30 @@ class MainWindow(QtWidgets.QMainWindow):
         # as its last action (after all state is restored), which drives
         # set_measurement_complete() via the canvas.measurementComplete signal connection.
 
+    def _export_timestamp(self) -> str:
+        """When the result on screen was measured, if it is a saved one (loaded, or just saved): its
+        exports show this date and are named by it; otherwise the time of export. Mirrors Swift
+        ``tap.sourceMeasurementTimestamp ?? Date()``."""
+        from datetime import datetime, timezone
+        return (self.fft_canvas.analyzer.source_measurement_timestamp
+                or datetime.now(timezone.utc).isoformat())
+
+    def _export_seconds(self) -> int:
+        """The export timestamp in whole Unix seconds, for a file name."""
+        from datetime import datetime
+        return int(datetime.fromisoformat(self._export_timestamp()).timestamp())
+
+    def _export_notes(self) -> "str | None":
+        """The notes an export shows: the save form's, else the loaded measurement's. Mirrors Swift
+        ``notes.isEmpty ? tap.loadedNotes : notes``."""
+        return self._notes or self.fft_canvas.analyzer.loaded_notes or None
+
     def _on_export_spectrum(self) -> None:
-        import time as _time
 
         # Name: live name → loaded name → "spectrum" default. Mirrors Swift exportCurrentSpectrum().
         from guitar_tap.models.export_filename import export_stem
         _name = self._measurement_name.strip() or (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
-        suggested_name = f"{export_stem(_name, int(_time.time()), 'spectrum')}.png"
+        suggested_name = f"{export_stem(_name, self._export_seconds(), 'spectrum')}.png"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -4693,8 +4710,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 _loc = (analyzer.loaded_measurement_name or self._measurement_name or "").strip()
                 # The live chart's title, as Swift's createExportableSpectrumView.
                 chart_title = f"FFT Peaks \u2014 {_loc or 'New'}"
-                from datetime import datetime, timezone
-                date_label = datetime.now(timezone.utc).isoformat()
+                date_label = self._export_timestamp()
                 png_bytes = _mev(
                     frequencies=[], magnitudes=[],
                     min_freq=min_freq, max_freq=max_freq,
@@ -4720,8 +4736,7 @@ class MainWindow(QtWidgets.QMainWindow):
             mt = TDS.measurement_type()
             is_guitar = mt.is_guitar
 
-            from datetime import datetime, timezone
-            date_label = datetime.now(timezone.utc).isoformat()
+            date_label = self._export_timestamp()
 
             # Mirror Swift createExportableSpectrumView() exactly:
             #   peaks: isComparing ? [] : tap.visiblePeaks
@@ -4833,7 +4848,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._loading_overlay.hide()
 
     def _on_export_pdf(self) -> None:
-        import time as _time
 
         # Multi-tap guitar measurement — always produce a two-page report regardless
         # of which view is currently displayed.
@@ -4853,7 +4867,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Name: live name → loaded name → "report" default. Mirrors Swift exportPDFReport().
         from guitar_tap.models.export_filename import export_stem
         _name = self._measurement_name.strip() or (self.fft_canvas.analyzer.loaded_measurement_name or "").strip()
-        suggested_name = f"{export_stem(_name, int(_time.time()), 'report')}.pdf"
+        suggested_name = f"{export_stem(_name, self._export_seconds(), 'report')}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -4881,7 +4895,7 @@ class MainWindow(QtWidgets.QMainWindow):
             loc = self._measurement_name if self._measurement_name else None
             if loc is None:
                 loc = analyzer.loaded_measurement_name or None
-            notes_val = self._notes if self._notes else None
+            notes_val = self._export_notes()
 
             # ── Frequency / dB range from visible axis — mirrors Swift minFreq/maxFreq ────────
             min_freq_val = float(canvas.minFreq)
@@ -5134,13 +5148,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         Mirrors Swift exportComparisonPDFReport() in TapToneAnalysisView+Export.swift.
         """
-        import time as _time
 
-        # A comparison report is just a report. Name: loaded name → live name → "report".
-        # Mirrors Swift: label = tap.loadedMeasurementName ?? measurementName.
+        # A comparison report is just a report. Name: live name → loaded name → "report".
+        # Mirrors Swift: measurementName.isEmpty ? tap.loadedMeasurementName : measurementName.
         from guitar_tap.models.export_filename import export_stem
-        _name = (self.fft_canvas.analyzer.loaded_measurement_name or self._measurement_name or "").strip()
-        suggested_name = f"{export_stem(_name, int(_time.time()), 'report')}.pdf"
+        _loaded = self.fft_canvas.analyzer.loaded_measurement_name
+        _name = (self._measurement_name or _loaded or "").strip()
+        suggested_name = f"{export_stem(_name, self._export_seconds(), 'report')}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -5183,8 +5197,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 loc = analyzer.loaded_measurement_name
             # The live chart's title, as Swift's main-view export.
             chart_title = f"FFT Peaks — {loc or 'New'}"
-            from datetime import datetime as _dt
-            _dt_now = _dt.now
 
             png_data = make_exportable_spectrum_view(
                 frequencies=[], magnitudes=[],
@@ -5192,7 +5204,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 min_db=min_db,     max_db=max_db,
                 peaks=[],
                 material_spectra=comparison_spectra if comparison_spectra else None,
-                date_label=_dt_now().isoformat(),
+                date_label=self._export_timestamp(),
                 chart_title=chart_title,
                 type_label="Comparison",
             )
@@ -5245,13 +5257,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     set(),
                 ))
 
-            from datetime import datetime, timezone
-            timestamp = datetime.now(timezone.utc).isoformat()
+            timestamp = self._export_timestamp()
 
             report_data = M.ComparisonPDFReportData(
                 timestamp=timestamp,
                 comparison_label=loc,
-                notes=self._notes or None,
+                notes=self._export_notes(),
                 spectrum_image_data=png_data,
                 entries=live_entries,
                 mode_frequencies=mode_frequencies,
@@ -5274,14 +5285,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         Mirrors Swift exportMultiTapPDFReport() in TapToneAnalysisView+Export.swift.
         """
-        import time as _time
 
-        _label = (self.fft_canvas.analyzer.loaded_measurement_name or self._measurement_name or "").strip()
-        suggested_name = (
-            (_label.replace(" ", "-").replace("/", "-").lower() + f"-{int(_time.time())}.pdf")
-            if _label
-            else f"report-{int(_time.time())}.pdf"
-        )
+        from guitar_tap.models.export_filename import export_stem
+        _loaded = self.fft_canvas.analyzer.loaded_measurement_name
+        _label = (self._measurement_name or _loaded or "").strip()
+        suggested_name = f"{export_stem(_label, self._export_seconds(), 'report')}.pdf"
         suggested_path = os.path.join(M.last_export_dir(), suggested_name)
 
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -5335,7 +5343,7 @@ class MainWindow(QtWidgets.QMainWindow):
             loc = self._measurement_name if self._measurement_name else None
             if loc is None:
                 loc = analyzer.loaded_measurement_name or None
-            notes_val = self._notes if self._notes else None
+            notes_val = self._export_notes()
 
             min_freq_val = float(canvas.minFreq)
             max_freq_val = float(canvas.maxFreq)
@@ -5536,6 +5544,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 # The current measurement type, as Swift's TapDisplaySettings.measurementType.
                 measurement_type_str=TDS.measurement_type().value,
                 material_spectra=comparison_spectra if comparison_spectra else None,
+                date_label=date_label,
                 chart_title=cmp_chart_title,
             )
 

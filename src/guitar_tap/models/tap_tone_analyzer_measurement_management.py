@@ -387,6 +387,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
             tap_entries=tap_entries_to_save,
         )
         self.saved_measurements.append(measurement)
+        # The result on screen is now this saved measurement: its exports show its date and are
+        # named by it. Mirrors Swift saveMeasurement.
+        self.source_measurement_timestamp = measurement.timestamp
         self._persist_measurements()
 
     def load_measurement(self, measurement) -> None:
@@ -476,6 +479,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # preserves the notes (R10).
             _notes = measurement.notes
             self.loaded_notes = (_notes if (_notes and _notes.strip()) else None)
+            # The saved comparison's own date, which its exports show and are named by. Mirrors
+            # Swift.
+            self.source_measurement_timestamp = measurement.timestamp
             # Clear per-tap entries and multi-tap state after building comparison
             # data but before setting displayMode — mirrors Swift ordering:
             #   tapEntries = []; showingMultiTapComparison = false; displayMode = .comparison
@@ -1152,6 +1158,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # setting loadedMeasurementName = nil after building comparisonSpectra).
         self.loaded_measurement_name = None
         self.loaded_notes = None
+        # An unsaved comparison has no date of its own: its exports use the time of export.
+        self.source_measurement_timestamp = None
         self.loadedMeasurementNameChanged.emit(None)
 
         if with_snapshots:
@@ -1241,6 +1249,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
             comparison_entries=entries,
         )
         self.saved_measurements.append(m)
+        # The comparison on screen is now this saved one: its exports show its date and are named by
+        # it. Mirrors Swift saveComparison.
+        self.source_measurement_timestamp = m.timestamp
         self._persist_measurements()
 
     def loaded_comparison_snapshots(self) -> list:

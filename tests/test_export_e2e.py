@@ -10,6 +10,8 @@ Everything between the click and the file is the app's own code.
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -38,6 +40,18 @@ class _Edges:
         self.saved: list[Path] = []
         self.messages: list[tuple[str, str]] = []
 
+    def export_to(self, case: str, path: str) -> None:
+        """Save a case's exports from one path: with GT_EXPORT_DIR set, in the export checker's
+        layout ``<dir>/<case>/<main|saved>/<file>``; otherwise in the test's own folder, prefixed by
+        the path."""
+        root = os.environ.get("GT_EXPORT_DIR")
+        if root:
+            self.out_dir = Path(root) / case / path
+            self.out_dir.mkdir(parents=True, exist_ok=True)
+            self.prefix = ""
+        else:
+            self.prefix = f"{path}-"
+
     def get_open(self, *_args, **_kwargs):
         return self.open_path, ""
 
@@ -52,7 +66,7 @@ class _Edges:
 
 
 @pytest.fixture
-def edges(monkeypatch, tmp_path) -> _Edges:
+def edges(monkeypatch, tmp_path):
     e = _Edges(tmp_path)
     monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", staticmethod(e.get_open))
     monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", staticmethod(e.get_save))
@@ -70,7 +84,14 @@ def edges(monkeypatch, tmp_path) -> _Edges:
 
     monkeypatch.setattr(sounddevice, "InputStream", no_stream)
     monkeypatch.setattr(sounddevice, "query_devices", no_devices)
-    return e
+
+    # Dates print in the local time zone; UTC, so an export's date is the same on any machine and
+    # the export checker can compare it.
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    yield e
+    monkeypatch.undo()
+    time.tzset()
 
 
 @pytest.fixture
@@ -191,7 +212,7 @@ def _saved_once(edges: _Edges, before: int, suffix: str) -> Path:
 @pytest.mark.parametrize(("name", "fixture"), CASES, ids=[c[0] for c in CASES])
 def test_export_from_main_window(qtbot, window, edges, name, fixture):
     _import(qtbot, window, edges, fixture)
-    edges.prefix = "main-"
+    edges.export_to(name, "main")
 
     qtbot.waitUntil(window.export_spectrum_btn.isEnabled, timeout=10_000)
     before = len(edges.saved)
@@ -206,13 +227,13 @@ def test_export_from_main_window(qtbot, window, edges, name, fixture):
 @pytest.mark.parametrize(("name", "fixture"), CASES, ids=[c[0] for c in CASES])
 def test_export_from_saved_measurements(qtbot, window, edges, name, fixture):
     _import(qtbot, window, edges, fixture)
-    edges.prefix = "saved-"
+    edges.export_to(name, "saved")
 
     stem = Path(fixture).stem
     before = len(edges.saved)
     _row_menu_export(qtbot, window, edges, "Export Spectrum")
-    assert _saved_once(edges, before, ".png").stem == f"saved-{stem}"
+    assert _saved_once(edges, before, ".png").stem == f"{edges.prefix}{stem}"
 
     before = len(edges.saved)
     _row_menu_export(qtbot, window, edges, "Export PDF Report")
-    assert _saved_once(edges, before, ".pdf").stem == f"saved-{stem}"
+    assert _saved_once(edges, before, ".pdf").stem == f"{edges.prefix}{stem}"

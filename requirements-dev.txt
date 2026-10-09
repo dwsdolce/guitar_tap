@@ -6,6 +6,7 @@ pyinstaller>=6.0
 pytest==9.0.2
 pytest-cov==7.1.0
 pytest-qt==4.5.0
+pdfminer.six==20260107
 pypdf==6.19.0
 mypy==1.19.1
 ruff==0.15.6

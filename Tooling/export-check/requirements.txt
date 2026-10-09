@@ -1,0 +1,4 @@
+# The export checker's own dependencies (pip install -r requirements.txt).
+numpy>=2.0
+pillow>=11.0
+pdfminer.six>=20250000
