@@ -27,11 +27,11 @@ mono (what PortAudio does for the ``gtap`` stream) cancels the signal.
 
 Everything lands in a folder and a .zip on the Desktop.
 
-    python Tooling/mic-probe/mic_probe.py                 # interactive
-    python Tooling/mic-probe/mic_probe.py --list          # devices only
-    python Tooling/mic-probe/mic_probe.py --device 3 --seconds 20 --yes
+    .venv/bin/python Tooling/mic-probe/mic_probe.py                 # interactive
+    .venv/bin/python Tooling/mic-probe/mic_probe.py --list          # devices only
+    .venv/bin/python Tooling/mic-probe/mic_probe.py --device 3 --seconds 20 --yes
 
-Build a Windows exe with Tooling/mic-probe/build_win.bat — build it from the SAME
+Build the exe with Tooling/mic-probe/build.sh (on Windows, from Cygwin bash) — it builds from the SAME
 .venv as the release, so it carries the same sounddevice/PortAudio DLL.
 
 Python-only diagnostic; no Swift counterpart.

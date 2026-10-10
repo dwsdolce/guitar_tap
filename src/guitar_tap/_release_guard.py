@@ -29,7 +29,7 @@ refuse to start over this.
 
 Used two ways, one implementation:
   - imported by __main__.py, so `python -m guitar_tap` fails before the UI opens;
-  - run as a script by every platform build — `python3 src/guitar_tap/_release_guard.py`
+  - run as a script by every platform build — `.venv/bin/python src/guitar_tap/_release_guard.py`
     (stdlib only, no PYTHONPATH needed, identical on Windows).
 """
 

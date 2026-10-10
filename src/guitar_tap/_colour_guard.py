@@ -15,7 +15,7 @@ source to scan, so the guard allows it.
 
 Used two ways, one implementation:
   - imported by __main__.py, so `python -m guitar_tap` fails before the UI opens;
-  - run as a script — `python3 src/guitar_tap/_colour_guard.py` (stdlib only).
+  - run as a script — `.venv/bin/python src/guitar_tap/_colour_guard.py` (stdlib only).
 """
 
 import os

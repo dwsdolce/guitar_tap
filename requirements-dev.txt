@@ -1,12 +1,10 @@
-# Development and testing dependencies
-# pip install -r requirements.txt -r requirements-dev.txt
-# To build installers:
-# pip install -r requirements.txt -r requirements-dev.txt -r requirements-macos.txt
-pyinstaller>=6.0
+# Testing: everything for running from source, plus the test tools, the Quick Start Guide generator, and the
+# export checker.
+#   .venv/bin/pip install -r requirements-dev.txt && .venv/bin/pip install -e . --no-deps
+-r requirements.txt
 pytest==9.0.2
 pytest-cov==7.1.0
 pytest-qt==4.5.0
-pdfminer.six==20260107
 pypdf==6.19.0
 mypy==1.19.1
 ruff==0.15.6
@@ -17,3 +15,7 @@ setuptools==82.0.1
 #   Linux:   sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0
 #   Windows: install GTK runtime — see packaging/generate_guide.py docstring
 weasyprint
+
+# The export checker's packages (NumPy, Pillow, pdfminer.six), pinned once for all three editions (synced from
+# the hub).
+-r Tooling/export-check/requirements.txt

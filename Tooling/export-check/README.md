@@ -25,7 +25,7 @@ The drivers run the apps in UTC, so a measurement's date prints the same on ever
 | `check_exports.py` | the checker |
 | `expected.json` | Swift's measurements of its own exports, and the tolerances — regenerate with `mint` |
 | `tolerances.json` | the tolerances, in points, copied into `expected.json` when it is minted |
-| `requirements.txt` | NumPy, Pillow, pdfminer.six |
+| `requirements.txt` | NumPy, Pillow, pdfminer.six, pinned — included by each edition's `requirements-dev.txt` |
 | `sync.sh` | hub only: copy the checker into the editions, or `--check` that their copies match |
 
 The hub holds the source of truth. Each edition holds a byte-identical copy (`Tooling/export-check/` in Swift and
@@ -33,9 +33,14 @@ Python, `tooling/export-check/` on the web) and runs it without the hub.
 
 ## Running
 
-    pip install -r requirements.txt
-    python3 check_exports.py check <folder>        # judge an edition's exports against expected.json
-    python3 check_exports.py show <file>           # one file's measurements
+Each edition runs the checker with its own `.venv`, set up from its `requirements-dev.txt` (which includes this
+`requirements.txt`) — from the edition's root:
+
+    python3.14 -m venv .venv
+    .venv/bin/pip install -r requirements-dev.txt
+
+    .venv/bin/python <export-check>/check_exports.py check <folder>   # judge an edition's exports against expected.json
+    .venv/bin/python <export-check>/check_exports.py show <file>      # one file's measurements
 
 Each edition's runner produces the folder and runs the check:
 
@@ -45,9 +50,9 @@ Each edition's runner produces the folder and runs the check:
 
 ## When Swift's exports change on purpose
 
-Run Swift's export tests, then from the hub:
+Run Swift's export tests, then from the hub (its `.venv`, set up from its `requirements-dev.txt`):
 
-    python3 tooling/export-check/check_exports.py mint <swift-folder>
+    .venv/bin/python tooling/export-check/check_exports.py mint <swift-folder>
     tooling/export-check/sync.sh
 
 and commit the new `expected.json` in the hub and in each edition.

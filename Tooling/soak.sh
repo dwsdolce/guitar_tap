@@ -19,8 +19,8 @@
 #   - FAIL — pytest exits non-zero (a failed test, or a C++/Qt crash aborting the run). The tail of the
 #            failing run is printed.
 #   - HANG — a fully-wedged run is killed by the per-run wall-clock cap (macOS has no `timeout`, so the
-#            cap is a background killer). NOTE: for finer PER-TEST hang detection, `pip install
-#            pytest-timeout` and add `--timeout=<secs>` below — it is not a dependency of this script.
+#            cap is a background killer). NOTE: for finer PER-TEST hang detection, add pytest-timeout
+#            to .venv and add `--timeout=<secs>` below — it is not a dependency of this script.
 #
 # Usage:  Tooling/soak.sh [N]        (default N=100)
 #         SOAK_RUN_TIMEOUT=<seconds>  caps one fully-wedged run (default 180).
@@ -31,14 +31,19 @@ cd "$(dirname "$0")/.." || exit 1
 
 N="${1:-100}"
 RUN_TIMEOUT="${SOAK_RUN_TIMEOUT:-180}"
-# Pick the interpreter: an explicit PYTEST override, else the venv (Unix bin/ or Windows Scripts/),
-# else whatever `python` is on PATH.
+# Pick the interpreter: an explicit PYTEST override, else this repo's .venv (Unix bin/ or Windows Scripts/).
 if [ -z "${PYTEST:-}" ]; then
-  if   [ -x .venv/bin/python ];         then PYTEST=".venv/bin/python -m pytest"
-  elif [ -x .venv/Scripts/python.exe ]; then PYTEST=".venv/Scripts/python.exe -m pytest"
-  elif [ -x .venv/Scripts/python ];     then PYTEST=".venv/Scripts/python -m pytest"
-  else                                       PYTEST="python -m pytest"
+  # Python: this repo's own .venv (.venv/bin on macOS and Linux, .venv/Scripts on Windows); PYTHON names another.
+  if [ -z "${PYTHON:-}" ]; then
+      for candidate in .venv/bin/python .venv/Scripts/python.exe .venv/Scripts/python; do
+          if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
+      done
   fi
+  if [ -z "${PYTHON:-}" ]; then
+      echo "No .venv: set it up as the README's \"Setting up on a new machine\" says." >&2
+      exit 1
+  fi
+  PYTEST="$PYTHON -m pytest"
 fi
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT

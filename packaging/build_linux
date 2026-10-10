@@ -4,6 +4,17 @@
 # Run from the project root regardless of where this script is invoked from.
 cd "$(dirname "$0")/.."
 
+# Python: this repo's own .venv (.venv/bin on macOS and Linux, .venv/Scripts on Windows); PYTHON names another.
+if [ -z "${PYTHON:-}" ]; then
+    for candidate in .venv/bin/python .venv/Scripts/python.exe .venv/Scripts/python; do
+        if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
+    done
+fi
+if [ -z "${PYTHON:-}" ]; then
+    echo "No .venv: set it up as the README's \"Setting up on a new machine\" says." >&2
+    exit 1
+fi
+
 echo "Running build for `arch` architecure"
 
 #===============================================
@@ -27,7 +38,7 @@ fi
 # after it. Same guard the app itself runs at startup, so a build can never be
 # the first thing to notice. It prints what is wrong and how to fix it.
 #===============================================
-python3 src/guitar_tap/_release_guard.py || exit 1
+"$PYTHON" src/guitar_tap/_release_guard.py || exit 1
 
 #===============================================
 # Run pyinstaller
@@ -37,7 +48,7 @@ VERSION="`cat src/guitar_tap/version`"
 VERSION_BUILD="`cat src/guitar_tap/version_build`"
 VERSION="${VERSION}.${VERSION_BUILD}"
 echo "Creating installer for version ${VERSION}"
-pyinstaller -y packaging/guitar-tap.spec
+"$PYTHON" -m PyInstaller -y packaging/guitar-tap.spec
 if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"
     exit 1

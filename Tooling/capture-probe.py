@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write this edition's capture-window fingerprints for the REG-G2 per-tap case.
 
-    python Tooling/capture-probe.py [-o out.json]
+    .venv/bin/python Tooling/capture-probe.py [-o out.json]
 
 Companion to Swift's CaptureProbeTests. Compare the two files with
 guitar-tap-project/tooling/compare-capture-probes.py — see capture_probe.py for what the

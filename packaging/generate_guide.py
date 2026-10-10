@@ -6,10 +6,10 @@ Requires WeasyPrint and Pango (the PDF step only):
     macOS:  brew install pango
     Linux:  sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0
     Windows: install GTK runtime from https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer
-    Then:   pip install weasyprint
+    WeasyPrint itself comes with requirements-dev.txt and requirements-packaging.txt.
 
 Run from the project root:
-    python packaging/generate_guide.py
+    .venv/bin/python packaging/generate_guide.py   (or packaging/generate_guide.sh)
 
 Outputs:
     docs/GuitarTap-Quick-Start-Guide.html
@@ -122,7 +122,7 @@ def main() -> None:
             "    macOS:   brew install pango\n"
             "    Linux:   sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0\n"
             "    Windows: install GTK runtime, see packaging/generate_guide.py docstring\n"
-            "Then: pip install weasyprint\n\n"
+            "Then set up .venv from requirements-dev.txt (it includes WeasyPrint).\n\n"
             "The HTML file was written successfully and can be printed to PDF from a browser."
         )
         sys.exit(1)

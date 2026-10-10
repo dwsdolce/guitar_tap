@@ -8,19 +8,25 @@
 #
 # The same split in the other editions: web `npm run test:fast`, Swift `Tooling/test-fast.sh`.
 #
-# Portable bash: macOS, Linux, and Windows under Cygwin/Git-Bash. The interpreter is auto-detected
-# (Unix .venv/bin vs Windows .venv/Scripts, else PATH); override with PYTEST="…".
+# Portable bash: macOS, Linux, and Windows under Cygwin/Git-Bash. The interpreter is this repo's .venv
+# (Unix .venv/bin vs Windows .venv/Scripts); override with PYTHON="…", or the whole command with PYTEST="…".
 #
 # Usage:  Tooling/test-fast.sh [pytest args…]      e.g. Tooling/test-fast.sh -q -x
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
 if [ -z "${PYTEST:-}" ]; then
-  if   [ -x .venv/bin/python ];         then PYTEST=".venv/bin/python -m pytest"
-  elif [ -x .venv/Scripts/python.exe ]; then PYTEST=".venv/Scripts/python.exe -m pytest"
-  elif [ -x .venv/Scripts/python ];     then PYTEST=".venv/Scripts/python -m pytest"
-  else                                       PYTEST="python -m pytest"
+  # Python: this repo's own .venv (.venv/bin on macOS and Linux, .venv/Scripts on Windows); PYTHON names another.
+  if [ -z "${PYTHON:-}" ]; then
+      for candidate in .venv/bin/python .venv/Scripts/python.exe .venv/Scripts/python; do
+          if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
+      done
   fi
+  if [ -z "${PYTHON:-}" ]; then
+      echo "No .venv: set it up as the README's \"Setting up on a new machine\" says." >&2
+      exit 1
+  fi
+  PYTEST="$PYTHON -m pytest"
 fi
 
 # $PYTEST is intentionally unquoted so bash word-splits "…/python -m pytest" into its parts.

@@ -96,11 +96,19 @@ def edges(monkeypatch, tmp_path):
 
 @pytest.fixture
 def window(qtbot, edges):
-    from guitar_tap.models.settings_scope import measurements_dir
+    from guitar_tap.models.settings_scope import APP, ORG, measurements_dir, settings_org
     from guitar_tap.views.tap_tone_analysis_view import MainWindow
 
-    # Each test starts with an empty library, so the list's one row is the measurement it imported.
+    # The app keeps what a user leaves behind — the imported measurement's type and thresholds, the
+    # export folder, the library — in the session's settings and files, which every later test in the
+    # run shares. Put both back as they were afterwards, as each Swift UI-test launch gets a fresh
+    # sandbox: a brace import left the next tests' analyzers measuring a brace.
+    settings = QtCore.QSettings(settings_org(ORG), APP)
+    saved_settings = {key: settings.value(key) for key in settings.allKeys()}
     library = Path(measurements_dir("")) / "saved_measurements.json"
+    saved_library = library.read_bytes() if library.exists() else None
+
+    # Each test starts with an empty library, so the list's one row is the measurement it imported.
     library.unlink(missing_ok=True)
 
     w = MainWindow()
@@ -118,6 +126,15 @@ def window(qtbot, edges):
     w.close()
     w.deleteLater()
     QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+
+    settings.clear()
+    for key, value in saved_settings.items():
+        settings.setValue(key, value)
+    settings.sync()
+    if saved_library is None:
+        library.unlink(missing_ok=True)
+    else:
+        library.write_bytes(saved_library)
 
 
 def _when(qtbot, find, act, timeout_ms: int = 10_000) -> None:

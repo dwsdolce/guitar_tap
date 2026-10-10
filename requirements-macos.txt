@@ -1,3 +1,0 @@
-# macOS-specific dependencies — install after requirements.txt
-# pip install -r requirements.txt -r requirements-macos.txt
-pyobjc==12.1

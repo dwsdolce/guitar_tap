@@ -2,9 +2,9 @@
 # @parity tooling/mint-baseline
 """Mint this configuration's self-baseline — the zero-tolerance regression reference.
 
-    python Tooling/mint-baseline.py           # mint (prompts before overwriting)
-    python Tooling/mint-baseline.py --yes     # don't prompt
-    python Tooling/mint-baseline.py --check   # print the diff, write nothing
+    .venv/bin/python Tooling/mint-baseline.py           # mint (prompts before overwriting)
+    .venv/bin/python Tooling/mint-baseline.py --yes     # don't prompt
+    .venv/bin/python Tooling/mint-baseline.py --check   # print the diff, write nothing
 
 Deliberately separate from the test run. A suite that minted its own expectations could
 never fail — delete the file, run the tests, and whatever the machine produces today

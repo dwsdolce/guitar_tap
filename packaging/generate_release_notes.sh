@@ -31,7 +31,17 @@ cd "$(dirname "$0")/.."
 # {{placeholder}} section still holds already-shipped content. Without this a
 # "1.0.3" build would silently generate 1.0.2's notes. (set -e makes the
 # non-zero exit fatal; the guard prints the reason and the fix.)
-python3 src/guitar_tap/_release_guard.py
+# Python: this repo's own .venv (.venv/bin on macOS and Linux, .venv/Scripts on Windows); PYTHON names another.
+if [ -z "${PYTHON:-}" ]; then
+    for candidate in .venv/bin/python .venv/Scripts/python.exe .venv/Scripts/python; do
+        if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
+    done
+fi
+if [ -z "${PYTHON:-}" ]; then
+    echo "No .venv: set it up as the README's \"Setting up on a new machine\" says." >&2
+    exit 1
+fi
+"$PYTHON" src/guitar_tap/_release_guard.py
 
 SRC="docs/ReleaseNotes.md"
 VERSION="$(cat src/guitar_tap/version)"
@@ -58,7 +68,19 @@ sed -e "s/{{version}}/${VERSION}/g" \
     -e "s/{{since}}/${SINCE}/g" \
     "$SRC" > "$OUT_MD"
 
-pandoc "$OUT_MD" -o "$OUT_PDF"
+# xelatex with Arial, as Swift: the notes hold Unicode ("−∞", "→", "·") that pandoc's default engine cannot
+# set, and Arial has every character they use ("→" included, which Helvetica lacks). A character the font
+# lacks is only a warning to xelatex and would vanish from the PDF, so it is an error here.
+LOG="$(mktemp)"
+if ! pandoc "$OUT_MD" --pdf-engine=xelatex --variable "mainfont=Arial" -o "$OUT_PDF" 2> "$LOG"; then
+    cat "$LOG" >&2; rm -f "$LOG"
+    echo "generate_release_notes.sh: pandoc could not make $OUT_PDF (see above)." >&2; exit 1
+fi
+if grep -q "Missing character" "$LOG"; then
+    cat "$LOG" >&2; rm -f "$LOG" "$OUT_PDF"
+    echo "generate_release_notes.sh: the font has no glyph for a character in the notes (see above)." >&2; exit 1
+fi
+rm -f "$LOG"
 
 echo "generate_release_notes.sh: wrote $OUT_MD and $OUT_PDF"
 echo "  version=${VERSION} build=${BUILD} since=${SINCE} (previous tag ${LAST_TAG})"

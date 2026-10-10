@@ -1,0 +1,7 @@
+# Building installers (packaging/build_mac, build_linux, build_win.bat): everything for running from source,
+# plus PyInstaller and the Quick Start Guide generator the macOS build runs.
+#   .venv/bin/pip install -r requirements-packaging.txt
+-r requirements.txt
+pyinstaller>=6.0
+# packaging/generate_guide.py — needs a native Pango library too (see requirements-dev.txt).
+weasyprint
