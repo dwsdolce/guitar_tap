@@ -148,7 +148,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
                 peak = mode_peaks.get(mode)
                 freq = peak.frequency if peak is not None else None
                 item = QtWidgets.QTableWidgetItem(self._freq_text(freq))
-                item.setTextAlignment(int(QtCore.Qt.AlignmentFlag.AlignCenter))
+                item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
                 if freq is None:
                     item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
                 self._table.setItem(row, col, item)
@@ -171,7 +171,7 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
             if freq is not None and is_override:
                 text = f"{text} *"
             item = QtWidgets.QTableWidgetItem(text)
-            item.setTextAlignment(int(QtCore.Qt.AlignmentFlag.AlignCenter))
+            item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             if freq is None:
                 item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
             _f = item.font()
