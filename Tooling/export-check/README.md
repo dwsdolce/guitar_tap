@@ -44,7 +44,8 @@ Each edition runs the checker with its own `.venv`, set up from its `requirement
 
 Each edition's runner produces the folder and runs the check:
 
-- Swift — `Tooling/run-export-uitests.sh` (the XCUITest export tests; they take over the mouse and keyboard).
+- Swift — `Tooling/run-export-uitests.sh` (the XCUITest export tests; on the Mac they take over the mouse and keyboard),
+  and `--simulator <name>` for an iPad or iPhone simulator.
 - Python — `Tooling/run-export-check.sh` (the `pytest-qt` export tests).
 - Web — `npm run test:exports` (the Playwright export tests).
 
