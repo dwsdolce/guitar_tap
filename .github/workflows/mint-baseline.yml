@@ -1,0 +1,51 @@
+# Mint each runner's self-baseline — the zero-tolerance regression reference — by hand, never as a side
+# effect of a test run. Nothing is committed here: each job uploads the new
+# tests/self-baseline-<os>-<arch>.json and the diff mint-baseline.py printed against the committed one;
+# review the diff, then commit the file. Run it twice and compare the two before trusting a runner's bits.
+name: Mint self-baselines
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mint:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: System packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+      - name: Python environment
+        run: |
+          python -m venv .venv
+          bin=.venv/bin; [ -d .venv/Scripts ] && bin=.venv/Scripts
+          "$bin/python" -m pip install --upgrade pip
+          "$bin/python" -m pip install -r requirements-dev.txt
+          "$bin/python" -m pip install -e . --no-deps
+
+      - name: Mint
+        run: |
+          bin=.venv/bin; [ -d .venv/Scripts ] && bin=.venv/Scripts
+          "$bin/python" Tooling/mint-baseline.py --yes 2>&1 | tee mint.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: self-baseline-${{ runner.os }}
+          path: |
+            tests/self-baseline-*.json
+            mint.log
