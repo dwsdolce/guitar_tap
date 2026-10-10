@@ -81,6 +81,45 @@ def _series_rgb(series: dict) -> tuple[int, int, int]:
     return palette.rgb(color, Scheme.LIGHT) if isinstance(color, palette.Role) else tuple(color)
 
 
+# Linux has no standard font the size of the system fonts Swift and the other platforms draw the export
+# in, and its desktops' defaults (DejaVu Sans, Noto Sans) are larger, which moves every row of the
+# export. There it is drawn in Liberation Sans — metric-compatible with Helvetica and Arial — shipped
+# in fonts/ (SIL Open Font License); elsewhere in the system font, as before.
+_EXPORT_FAMILY_LINUX = "Liberation Sans"
+_export_fonts_registered = False
+
+
+def _export_family() -> str | None:
+    """The family the export draws its text in: None for the system font."""
+    import sys
+
+    if not sys.platform.startswith("linux"):
+        return None
+    global _export_fonts_registered
+    if not _export_fonts_registered:
+        import glob
+        import os
+
+        from PySide6 import QtGui
+
+        fonts = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
+        for path in sorted(glob.glob(os.path.join(fonts, "LiberationSans-*.ttf"))):
+            QtGui.QFontDatabase.addApplicationFont(path)
+        _export_fonts_registered = True
+    return _EXPORT_FAMILY_LINUX
+
+
+def _export_font():
+    """A font for the export's text: the system font, or Liberation Sans on Linux."""
+    from PySide6 import QtGui
+
+    font = QtGui.QFont()
+    family = _export_family()
+    if family:
+        font.setFamily(family)
+    return font
+
+
 def _light(role):
     """``role``'s light value as a QColor — the exported image is always drawn light."""
     from guitar_tap.models.appearance import Scheme
@@ -398,6 +437,9 @@ class ExportableSpectrumChart:
         # Swift's export sets "Frequency (Hz)" 4 pt lower than pyqtgraph places an axis title; the
         # bottom axis and the image grow by as much, so the plot stays where it is.
         AXIS_TITLE_DROP = 4
+        # And its frequency labels 3 pt lower than pyqtgraph does: the bottom axis grows by that itself,
+        # so it is taken out of the title's drop, which stays 4 in all.
+        TICK_LABEL_DROP = 3
         PLOT_LEFT = 59
         CHART_W  = 1400 * SCALE   # final PNG pixel width
         CHART_H  = (self.chart_height + AXIS_TITLE_DROP) * SCALE   # final PNG pixel height
@@ -440,6 +482,8 @@ class ExportableSpectrumChart:
         # chart.axis.
         _axis_color = palette.color(palette.Role.CHART_AXIS, in_scheme=Scheme.LIGHT).name()
         _axis_title = {"font-size": "16px", "font-weight": "500", "color": _axis_color}
+        if _export_family():
+            _axis_title["font-family"] = _export_family()
         plot.setLabel("bottom", "Frequency (Hz)", **_axis_title)    # mirrors chartXAxisLabel
         plot.setLabel("left",   "FFT Magnitude (dB)", **_axis_title)  # mirrors chartYAxisLabel
 
@@ -458,6 +502,12 @@ class ExportableSpectrumChart:
         for name in ("bottom", "left"):
             pi_setup.getAxis(name).setPen(grid_pen)
             pi_setup.getAxis(name).setTextPen(axis_text)
+            if _export_family():
+                # At Swift's size (frequencyLabelSize, 12 pt): the app's default size is the
+                # desktop's choice on Linux.
+                tick_font = _export_font()
+                tick_font.setPixelSize(12)
+                pi_setup.getAxis(name).setStyle(tickFont=tick_font)
         plot.showGrid(x=True, y=True, alpha=1.0)
         visible = [
             t for t in atg.generate_ticks(self.min_freq, self.max_freq, max_ticks=8)
@@ -465,6 +515,8 @@ class ExportableSpectrumChart:
         ]
         labels = atg.format_tick_labels(visible)
         pi_setup.getAxis("bottom").setTicks([[(t, labels[t]) for t in visible]])
+        bottom_offset = pi_setup.getAxis("bottom").style["tickTextOffset"][1]
+        pi_setup.getAxis("bottom").setStyle(tickTextOffset=bottom_offset + TICK_LABEL_DROP)
         stride = style.magnitude_stride or atg.magnitude_stride(self.max_db - self.min_db)
         pi_setup.getAxis("left").setTicks([[
             (k * stride, f"{k * stride:g}")
@@ -537,7 +589,7 @@ class ExportableSpectrumChart:
         left_axis = plot.getAxis("left")
         left_axis.setWidth(left_axis.width() + (PLOT_LEFT - vb_setup.sceneBoundingRect().left()))
         bottom_axis = plot.getAxis("bottom")
-        bottom_axis.setHeight(bottom_axis.height() + AXIS_TITLE_DROP)
+        bottom_axis.setHeight(bottom_axis.height() + AXIS_TITLE_DROP - TICK_LABEL_DROP)
         plot.setFixedSize(WIDGET_W, WIDGET_H + AXIS_TITLE_DROP)
         vb_setup.disableAutoRange()
         vb_setup.setRange(
@@ -600,26 +652,26 @@ class ExportableSpectrumChart:
         ANNOT_CORNER  = int(10 * SCALE)
         LEADER_FROM   = int(50 * SCALE)   # ConnectionLineShape from: annotation centre + 50
 
-        annot_font_mode = QtGui.QFont()
+        annot_font_mode = _export_font()
         annot_font_mode.setPixelSize(16 * SCALE)  # mirrors .font(.system(size: 16, weight: .bold))
         annot_font_mode.setBold(True)
 
         # The pitch row — mirrors HStack(spacing: 4) { Image("music.note").font(.system(size: 14))
         # Text(pitchNote).font(.system(size: 16, weight: .bold)) Text(cents).font(.system(size: 14))
         # .opacity(0.8) }.
-        annot_font_pitch_icon = QtGui.QFont()
+        annot_font_pitch_icon = _export_font()
         annot_font_pitch_icon.setPixelSize(14 * SCALE)
-        annot_font_pitch = QtGui.QFont()
+        annot_font_pitch = _export_font()
         annot_font_pitch.setPixelSize(16 * SCALE)
         annot_font_pitch.setBold(True)
-        annot_font_pitch_sm = QtGui.QFont()
+        annot_font_pitch_sm = _export_font()
         annot_font_pitch_sm.setPixelSize(14 * SCALE)
 
-        annot_font_freq = QtGui.QFont()
+        annot_font_freq = _export_font()
         annot_font_freq.setPixelSize(14 * SCALE)  # mirrors .font(.system(size: 14, weight: .medium))
         annot_font_freq.setWeight(QtGui.QFont.Weight.Medium)
 
-        annot_font_db = QtGui.QFont()
+        annot_font_db = _export_font()
         annot_font_db.setPixelSize(13 * SCALE)    # mirrors .font(.system(size: 13))
 
         painter = QtGui.QPainter(chart_img)
@@ -639,7 +691,7 @@ class ExportableSpectrumChart:
         # We paint them directly onto the chart image at the correct x position, just below AXIS_TOP.
         # Guitar-only — mirrors Swift's guard measurementType.isGuitar else { return [] }.
         if self.show_mode_boundaries and self.is_guitar:
-            abbrev_font = QtGui.QFont()
+            abbrev_font = _export_font()
             abbrev_font.setPixelSize(14 * SCALE)   # mirrors .font(.system(size: 14, weight: .semibold))
             abbrev_font.setBold(True)
             abbrev_fm = QtGui.QFontMetrics(abbrev_font)
@@ -939,7 +991,7 @@ def make_exportable_spectrum_view(
         return format_display_datetime(raw)
 
     # ── Header — mirrors makeExportableSpectrumView VStack(alignment:.leading) header block ──
-    title_font = QtGui.QFont()
+    title_font = _export_font()
     title_font.setPixelSize(22 * SCALE)  # mirrors .font(.title).fontWeight(.bold) — 22 pt
     title_font.setBold(True)
     painter.setFont(title_font)
@@ -951,7 +1003,7 @@ def make_exportable_spectrum_view(
     )
     y += 36 * SCALE
 
-    sub_font = QtGui.QFont()
+    sub_font = _export_font()
     sub_font.setPixelSize(11 * SCALE)  # mirrors .font(.subheadline) — 11 pt
     painter.setFont(sub_font)
     painter.setPen(_light(palette.Role.TEXT_SECONDARY))
@@ -1004,7 +1056,7 @@ def make_exportable_spectrum_view(
     meta_items.append(("Platform:", platform_str))
     if software_version:
         meta_items.append(("GuitarTap", f"v{software_version}"))
-    meta_font = QtGui.QFont()
+    meta_font = _export_font()
     meta_font.setPixelSize(11 * SCALE)  # .subheadline
     meta_value_font = QtGui.QFont(meta_font)
     meta_value_font.setWeight(QtGui.QFont.Weight.Medium)
@@ -1044,7 +1096,7 @@ def make_exportable_spectrum_view(
 
     # ── Chart title — mirrors Text(chartTitle).frame(maxWidth:.infinity, alignment:.center) ──
     y = FRAME_TOP
-    ct_font = QtGui.QFont()
+    ct_font = _export_font()
     ct_font.setPixelSize(24 * SCALE)  # mirrors .font(.system(size: 24, weight: .semibold))
     ct_font.setWeight(QtGui.QFont.Weight.DemiBold)
     painter.setFont(ct_font)
@@ -1063,7 +1115,7 @@ def make_exportable_spectrum_view(
 
     # ── Detected Peaks Summary — mirrors peak summary VStack + HStack ─────────
     if peaks:
-        hdr_font = QtGui.QFont()
+        hdr_font = _export_font()
         hdr_font.setPixelSize(13 * SCALE)  # mirrors .font(.headline)
         hdr_font.setBold(True)
         painter.setFont(hdr_font)
@@ -1079,10 +1131,10 @@ def make_exportable_spectrum_view(
         # Swift: HStack(spacing: 20) { VStack(spacing: 4) { freq .caption bold, label .caption2 in
         # the peak's colour, dB .caption2 secondary }.padding(8).background(colour.opacity(0.1))
         # .cornerRadius(6) } — each chip fits its text; no border.
-        freq_font = QtGui.QFont()
+        freq_font = _export_font()
         freq_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption)
         freq_font.setBold(True)
-        small_font = QtGui.QFont()
+        small_font = _export_font()
         small_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption2), 10 pt on macOS
         x_card = SIDE_PAD
         # Swift: peaks.prefix(8).sorted(by: { $0.frequency < $1.frequency })
@@ -1121,13 +1173,13 @@ def make_exportable_spectrum_view(
     # ── Legend — mirrors makeExportableSpectrumView legend HStack ─────────────
     # Swift's legend row is .padding()-ed: one caption line, 16 pt inside its block.
     y += 16 * SCALE
-    legend_font = QtGui.QFont()
+    legend_font = _export_font()
     legend_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption).fontWeight(.semibold)
     legend_font.setBold(True)
     painter.setFont(legend_font)
     painter.setPen(_light(palette.Role.TEXT_PRIMARY))
 
-    label_font = QtGui.QFont()
+    label_font = _export_font()
     label_font.setPixelSize(10 * SCALE)   # mirrors .font(.caption)
 
     ROW_H = CAPTION_LINE   # the legend's line

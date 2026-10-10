@@ -28,6 +28,8 @@ print(f'Creating build for version {package_version}')
 added_files = [
     (os.path.join(project_root, 'src/guitar_tap/icons/guitar-tap.ico'), '.'),
     (os.path.join(project_root, 'src/guitar_tap/icons'), 'icons'),
+    # Liberation Sans, the font Linux draws the export in (SIL Open Font License).
+    (os.path.join(project_root, 'src/guitar_tap/fonts'), 'fonts'),
     (os.path.join(project_root, 'src/guitar_tap/version'), '.'),
 ]
 
