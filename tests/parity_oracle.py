@@ -27,6 +27,27 @@ with open(ORACLE_PATH, encoding="utf-8") as _fh:
 
 TOLERANCES: dict[str, float] = ORACLE["tolerances"]
 
+# The same-configuration bar (the self-regression tests), by class.
+SELF_TOLERANCES: dict[str, float] = ORACLE["selfTolerances"]
+
+# Which tolerance class governs a value, by the leaf its path ends in — the hub's parity-report.py
+# uses the same table.
+TOLERANCE_CLASS = {
+    "frequency": "freqHz",
+    "magnitude": "magDb",
+    "q": "q",
+    "ringOutSec": "ringOutSec",
+    "db": "gatedFftDb",
+    "deltaDb": "gatedFftDb",
+    "maxDb": "gatedFftDb",
+}
+
+
+def self_tolerance(path: str) -> float:
+    """The same-configuration bar for one value, by its path; a leaf with no class is held exactly."""
+    kind = TOLERANCE_CLASS.get(path.rsplit("/", 1)[-1])
+    return SELF_TOLERANCES[kind] if kind else 0.0
+
 
 def case(name: str) -> dict[str, Any]:
     """One filePlayback case (REG-G1, REG-G2, REG-B1, REG-P1, REG-P2)."""

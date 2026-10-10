@@ -20,5 +20,10 @@ if [ -z "${PYTHON:-}" ]; then
 fi
 rm -rf "$out"
 # UTC before Python starts: Windows' C runtime reads TZ only then (the tests set it themselves elsewhere).
+# On Windows, Qt's native mode, as a user runs the app: off-screen there has no access to Windows' fonts
+# or their substitution, so its exports are ones no user gets. Elsewhere the tests' default, off-screen.
+case "$(uname -s)" in
+    CYGWIN*|MINGW*|MSYS*) export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-windows}" ;;
+esac
 TZ=UTC0 GT_EXPORT_DIR="$out" "$PYTHON" -m pytest -q tests/test_export_e2e.py
 "$PYTHON" Tooling/export-check/check_exports.py check "$out"

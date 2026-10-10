@@ -1,5 +1,5 @@
 # @parity test/self-regression
-"""Zero-tolerance regression check against this configuration's own baseline.
+"""Regression check against this configuration's own baseline, at the same-configuration bar.
 
 The parity suites ask whether Python still agrees with Swift, and must allow 1 dB /
 1 Hz to do it — the editions genuinely differ. That looseness is not a bar the Python
@@ -8,9 +8,11 @@ a drift of exactly that size sat in the Swift goldens undetected until the oracl
 re-minted.
 
 So this compares what Python computes now against what Python computed when this
-machine's baseline was minted, and allows **nothing**. Any movement at all is either a
-deliberate algorithm change — in which case re-mint, review the diff, and commit it —
-or a regression.
+configuration's baseline was minted, and allows only the oracle's ``selfTolerances`` (1e-12):
+the last-bit differences between CPUs of one configuration (GitHub's runners, different
+people's machines), a million times below any real change. Any larger movement is either a
+deliberate algorithm change — in which case re-mint, review the diff, and commit it — or a
+regression.
 
 Minting is never automatic (``Tooling/mint-baseline.py``). A suite that wrote its own
 expectations could not fail: delete the file, run the tests, and today's output becomes
@@ -27,6 +29,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 
 import self_baseline
+from parity_oracle import self_tolerance
 from parity_runner import compute_all
 
 _BASELINE = self_baseline.load()
@@ -67,11 +70,13 @@ def test_baseline_covers_every_computed_value(computed, expected):
 
 
 def test_every_value_is_unchanged(computed, expected):
-    """Zero tolerance. Swift is bit-reproducible on a fixed machine; so is this."""
+    """At the same-configuration bar: equal (-inf too), or within selfTolerances."""
     drifted = [
         (key, expected[key], computed[key])
         for key in sorted(expected)
-        if key in computed and computed[key] != expected[key]
+        if key in computed
+        and computed[key] != expected[key]
+        and not abs(computed[key] - expected[key]) <= self_tolerance(key)
     ]
     if drifted:
         lines = "\n".join(

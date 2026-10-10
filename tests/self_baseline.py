@@ -6,8 +6,9 @@ Two different bars guard the numbers, and conflating them is what let a real dri
   * The **parity** bar (``parity-oracle.json`` ``tolerances``, 1 dB / 1 Hz) asks whether
     the editions agree. It is necessarily loose — Python and Swift are different FFT
     implementations on different runtimes and genuinely differ.
-  * The **regression** bar, here, asks whether *this* edition on *this* machine still
-    computes what it computed before. Nothing legitimately moves it, so it is **zero**.
+  * The **regression** bar, here, asks whether *this* edition on *this* configuration still
+    computes what it computed before. Nothing legitimately moves it, so it is the oracle's
+    ``selfTolerances`` (1e-12): only the last-bit differences between CPUs of one configuration.
 
 Python cannot use the oracle for the second question: the oracle holds Swift's numbers,
 and the distance to them is the very thing the parity bar measures. So each
