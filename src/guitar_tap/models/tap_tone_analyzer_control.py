@@ -611,9 +611,10 @@ class TapToneAnalyzerControlMixin:
 
         from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
 
-        # Guard: stream may have been stopped again before the timer fired.
+        # Guard: stream may have been stopped again before the timer fired, or the microphone
+        # released (None) since the route change.
         # Mirrors Swift: guard self.fftAnalyzer.isRunning else { return }.
-        if self.mic.is_stopped:
+        if self.mic is None or self.mic.is_stopped:
             return
 
         # Re-anchor is_above_threshold to the current FFT peak magnitude.

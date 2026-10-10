@@ -16,7 +16,9 @@ babel>=2.12
 # cfgmgr32 device-interface notification fires earlier, before PortAudio can enumerate
 # the device - see MIC-SELECTION.md.
 comtypes>=1.4.17; sys_platform == "win32"
-# macOS only, installed automatically by the marker: Foundation's NSProcessInfo, which keeps App Nap from
-# throttling a measurement (utilities/timing_activity.py). Foundation is in the Cocoa framework package; the
+# macOS only, installed automatically by the marker: the two frameworks the app imports — Foundation
+# (NSProcessInfo, which keeps App Nap from throttling a measurement: utilities/timing_activity.py; in the
+# Cocoa package) and AVFoundation (the microphone permission: views/utilities/platform_adapters.py). The
 # whole of pyobjc would add some 150 framework bindings the app never imports.
 pyobjc-framework-Cocoa>=12.1; sys_platform == "darwin"
+pyobjc-framework-AVFoundation>=12.1; sys_platform == "darwin"

@@ -19,5 +19,6 @@ if [ -z "${PYTHON:-}" ]; then
     exit 1
 fi
 rm -rf "$out"
-GT_EXPORT_DIR="$out" "$PYTHON" -m pytest -q tests/test_export_e2e.py
+# UTC before Python starts: Windows' C runtime reads TZ only then (the tests set it themselves elsewhere).
+TZ=UTC0 GT_EXPORT_DIR="$out" "$PYTHON" -m pytest -q tests/test_export_e2e.py
 "$PYTHON" Tooling/export-check/check_exports.py check "$out"

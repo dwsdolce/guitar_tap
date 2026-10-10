@@ -8,6 +8,8 @@ SR1–SR3: a re-initialise skipped for a pending close is owed, and asked for ag
 when the stuck close finishes, or on a watchdog tick.
 SR4–SR6: the recovery follows Swift's ordering — it closes the stream when it schedules its restart; a refresh
 while the restart is pending only updates the selection; the restart opens the selected device at its rate.
+SR7: a route change's restore, three seconds later, finds no stream when the microphone has been released
+meanwhile — Swift's analyzer always exists, Python's can be gone — and does nothing.
 """
 
 from __future__ import annotations
@@ -182,3 +184,15 @@ def test_SR6_the_restart_opens_the_selected_device_at_its_rate(monkeypatch):
     assert mic.device_index == UMIK.index
     assert mic.rate == 48000
     assert reopened == [48000]
+
+
+def test_SR7_the_route_change_restore_does_nothing_once_the_microphone_is_released():
+    """SR7: the restore a route change schedules returns quietly when, by the time it runs, the analyzer
+    has no microphone — as Swift's returns when the stream is not running."""
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+
+    sut = TapToneAnalyzer()
+    sut.mic = None
+    before = sut.is_detecting
+    sut._restore_detection_after_route_change(True, True)
+    assert sut.is_detecting == before

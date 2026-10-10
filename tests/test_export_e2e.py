@@ -86,12 +86,15 @@ def edges(monkeypatch, tmp_path):
     monkeypatch.setattr(sounddevice, "query_devices", no_devices)
 
     # Dates print in the local time zone; UTC, so an export's date is the same on any machine and
-    # the export checker can compare it.
-    monkeypatch.setenv("TZ", "UTC")
-    time.tzset()
+    # the export checker can compare it. Windows has no tzset: its C runtime reads TZ when Python
+    # starts, so Tooling/run-export-check.sh and CI set TZ=UTC0 before it does.
+    monkeypatch.setenv("TZ", "UTC0")
+    if hasattr(time, "tzset"):
+        time.tzset()
     yield e
     monkeypatch.undo()
-    time.tzset()
+    if hasattr(time, "tzset"):
+        time.tzset()
 
 
 @pytest.fixture
