@@ -21,7 +21,11 @@ jobs:
       run:
         shell: bash
     steps:
+      # The whole history and its tags: the build number is the commit count, and the release guard
+      # compares the version with the last release's tag.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
