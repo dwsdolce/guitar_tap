@@ -3,7 +3,9 @@
 # only there.
 #   .venv/bin/pip install -r requirements.txt && .venv/bin/pip install -e . --no-deps
 PySide6>=6.11.0
-numpy>=2.4.2
+# One numpy everywhere — running from source, the tests, the installers, the export checker
+# (Tooling/export-check/requirements.txt pins the same): the baselines are only repeatable on one.
+numpy==2.5.3
 sounddevice>=0.5.5
 pyqtgraph>=0.14.0
 QtAwesome>=1.4.1

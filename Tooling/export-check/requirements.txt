@@ -1,5 +1,5 @@
 # The export checker's own dependencies, pinned: the same versions in every edition. Each edition's
 # requirements-dev.txt includes this file (-r), so they are installed into that edition's .venv with the rest.
-numpy==2.4.2
-pillow==12.2.0
+numpy==2.5.3
+pillow==12.3.0
 pdfminer.six==20260107
