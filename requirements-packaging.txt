@@ -2,6 +2,6 @@
 # plus PyInstaller and the Quick Start Guide generator the macOS build runs.
 #   .venv/bin/pip install -r requirements-packaging.txt
 -r requirements.txt
-pyinstaller>=6.0
+pyinstaller>=6.22.3
 # packaging/generate_guide.py — needs a native Pango library too (see requirements-dev.txt).
 weasyprint
