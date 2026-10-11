@@ -131,8 +131,10 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._star_btn.setFixedSize(24, 24)
         self._star_btn.setFont(_font(14))
         self._star_btn.clicked.connect(self._toggle_show)
-        self._star_btn.setVisible(not self._read_only)
+        # Shown only once it is in the layout: shown with no parent it is a window of its own for
+        # a moment, and a window appearing closes any open popup or menu.
         outer.addWidget(self._star_btn, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self._star_btn.setVisible(not self._read_only)
 
         # Mode colour chip + range badge
         chip_col = QtWidgets.QVBoxLayout()
