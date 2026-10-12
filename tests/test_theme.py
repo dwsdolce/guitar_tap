@@ -11,7 +11,7 @@ import os
 import sys
 
 import pytest
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -79,6 +79,35 @@ def test_scheme_changed_fires_only_when_the_scheme_changes(monkeypatch):
         assert palette.color(palette.Role.MODE_AIR).name() == "#00b0dc"
     finally:
         palette.notifier().scheme_changed.disconnect(seen.append)
+
+
+def test_a_burst_of_palette_changes_restyles_the_app_once(monkeypatch):
+    """One scheme change brings a burst of application palette-change events (fifteen on macOS), and
+    restyling the application touches every widget. The burst must restyle it once — not once per
+    event, which made a switch take seconds — and a burst that changes nothing must not restyle it."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    palette.apply(Appearance.SYSTEM)   # installs the follower
+    app.processEvents()
+
+    calls: list[str] = []
+    original = QtWidgets.QApplication.setStyleSheet
+    monkeypatch.setattr(QtWidgets.QApplication, "setStyleSheet",
+                        lambda self, s: (calls.append(s), original(self, s))[1])
+
+    def burst() -> None:
+        for _ in range(15):
+            QtCore.QCoreApplication.sendEvent(app, QtCore.QEvent(QtCore.QEvent.Type.ApplicationPaletteChange))
+        for _ in range(5):
+            app.processEvents()
+
+    app.setPalette(QtGui.QPalette(QtGui.QColor("#123456")))   # a palette the stylesheet has not seen
+    calls.clear()
+    burst()
+    assert len(calls) <= 2, f"a burst restyled the application {len(calls)} times"
+    calls.clear()
+    burst()                                                    # the same palette again
+    assert calls == [], f"a burst with no palette change restyled the application {len(calls)} times"
+    app.setPalette(app.style().standardPalette())
 
 
 def test_peak_label_follows_the_scheme(monkeypatch):

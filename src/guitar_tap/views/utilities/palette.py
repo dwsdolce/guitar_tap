@@ -421,20 +421,40 @@ def apply(appearance: Appearance) -> None:
 class _PaletteFollower(QtCore.QObject):
     """Re-applies the application stylesheet when Qt's own palette changes. Qt changes it a moment
     after a scheme request, after the stylesheet was set; a widget polished in between would keep
-    the previous scheme's platform colours."""
+    the previous scheme's platform colours.
 
-    _busy = False
+    Restyling the application touches every widget, and one scheme change brings a burst of
+    palette-change events — fifteen on macOS, and the re-application's own stylesheet adds more.
+    So a burst is answered once, on the next pass of the event loop, and only when the palette is
+    not the one the stylesheet was last applied against."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._pending = False
+        self._applied_palette: tuple | None = None
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 — Qt's name
         if (event.type() == QtCore.QEvent.Type.ApplicationPaletteChange
-                and not self._busy and obj is QtWidgets.QApplication.instance()):
-            self._busy = True
-            try:
-                obj.setStyleSheet("")
-                obj.setStyleSheet(_application_stylesheet())
-            finally:
-                self._busy = False
+                and not self._pending and obj is QtWidgets.QApplication.instance()):
+            self._pending = True
+            QtCore.QTimer.singleShot(0, self._reapply)
         return False
+
+    def _reapply(self) -> None:
+        self._pending = False
+        app = QtWidgets.QApplication.instance()
+        if app is None or _palette_key(app.palette()) == self._applied_palette:
+            return
+        app.setStyleSheet("")
+        app.setStyleSheet(_application_stylesheet())
+        self._applied_palette = _palette_key(app.palette())
+
+
+def _palette_key(p: QtGui.QPalette) -> tuple:
+    """The palette's colours, to tell a real palette change from a repeat of the same one."""
+    groups = (QtGui.QPalette.ColorGroup.Active, QtGui.QPalette.ColorGroup.Disabled)
+    roles = [r for r in QtGui.QPalette.ColorRole if r != QtGui.QPalette.ColorRole.NColorRoles]
+    return tuple(p.color(g, r).rgba() for g in groups for r in roles)
 
 
 _follower: _PaletteFollower | None = None
