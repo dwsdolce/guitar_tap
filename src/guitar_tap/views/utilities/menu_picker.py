@@ -25,7 +25,7 @@ class MenuPicker(QtWidgets.QComboBox):
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Fixed)
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         # The width follows the longest item, so the layout is told whenever the items change.
         model = self.model()
