@@ -5067,26 +5067,23 @@ class MainWindow(QtWidgets.QMainWindow):
             # via material_spectra (per-phase overlays). Swift has no "if freqs and mags" guard.
             png_data: bytes | None = None
             if freqs or _material_spectra:
-                try:
-                    png_data = make_exportable_spectrum_view(
-                        frequencies=freqs, magnitudes=mags,
-                        min_freq=min_freq_val, max_freq=max_freq_val,
-                        min_db=min_db_val,    max_db=max_db_val,
-                        peaks=vis_peaks,
-                        annotation_positions=annotation_positions,
-                        measurement_type_str=mt.value,
-                        selected_longitudinal_peak_id=sel_long_id,
-                        selected_cross_peak_id=sel_cross_id,
-                        selected_flc_peak_id=sel_flc_id,
-                        mode_overrides=mode_overrides,
-                        peak_modes=peak_modes,
-                        material_spectra=_material_spectra,
-                        guitar_type_str=gt_str,
-                        date_label=date_label,
-                        chart_title=chart_title,
-                    )
-                except Exception:
-                    pass
+                png_data = make_exportable_spectrum_view(
+                    frequencies=freqs, magnitudes=mags,
+                    min_freq=min_freq_val, max_freq=max_freq_val,
+                    min_db=min_db_val,    max_db=max_db_val,
+                    peaks=vis_peaks,
+                    annotation_positions=annotation_positions,
+                    measurement_type_str=mt.value,
+                    selected_longitudinal_peak_id=sel_long_id,
+                    selected_cross_peak_id=sel_cross_id,
+                    selected_flc_peak_id=sel_flc_id,
+                    mode_overrides=mode_overrides,
+                    peak_modes=peak_modes,
+                    material_spectra=_material_spectra,
+                    guitar_type_str=gt_str,
+                    date_label=date_label,
+                    chart_title=chart_title,
+                )
 
             # ── Build PDFReportData directly — mirrors Swift PDFReportData(...) init ─────────
             report_data = M.PDFReportData(
@@ -5440,25 +5437,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
             avg_png_data: bytes | None = None
             if freqs or _material_spectra:
-                try:
-                    avg_png_data = make_exportable_spectrum_view(
-                        frequencies=freqs, magnitudes=mags,
-                        min_freq=min_freq_val, max_freq=max_freq_val,
-                        min_db=min_db_val,    max_db=max_db_val,
-                        peaks=vis_peaks,
-                        annotation_positions=annotation_positions,
-                        measurement_type_str=mt.value,
-                        selected_longitudinal_peak_id=sel_long_id,
-                        selected_cross_peak_id=sel_cross_id,
-                        selected_flc_peak_id=sel_flc_id,
-                        mode_overrides=mode_overrides,
-                        peak_modes=peak_modes,
-                        material_spectra=_material_spectra,
-                        date_label=date_label,
-                        chart_title=chart_title,
-                    )
-                except Exception:
-                    pass
+                avg_png_data = make_exportable_spectrum_view(
+                    frequencies=freqs, magnitudes=mags,
+                    min_freq=min_freq_val, max_freq=max_freq_val,
+                    min_db=min_db_val,    max_db=max_db_val,
+                    peaks=vis_peaks,
+                    annotation_positions=annotation_positions,
+                    measurement_type_str=mt.value,
+                    selected_longitudinal_peak_id=sel_long_id,
+                    selected_cross_peak_id=sel_cross_id,
+                    selected_flc_peak_id=sel_flc_id,
+                    mode_overrides=mode_overrides,
+                    peak_modes=peak_modes,
+                    material_spectra=_material_spectra,
+                    date_label=date_label,
+                    chart_title=chart_title,
+                )
 
             averaged_data = M.PDFReportData(
                 timestamp=date_label,

@@ -25,6 +25,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import TapToneMeasurement
 from guitar_tap.views import tap_analysis_results_view as M
+from guitar_tap.views.exportable_spectrum_chart import ExportRenderError
 from guitar_tap.views.measurements import edit_measurement_view as EMV
 from guitar_tap.views.measurements import measurement_detail_view as MDD
 from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
@@ -439,10 +440,14 @@ class MeasurementsDialog(QtWidgets.QDialog):
         if not path.endswith(".png"):
             path += ".png"
         M.update_export_dir(path)
-        if m.is_comparison:
-            png_data = M.render_spectrum_image_for_comparison(m)
-        else:
-            png_data = M.render_spectrum_image_for_measurement(m)
+        try:
+            if m.is_comparison:
+                png_data = M.render_spectrum_image_for_comparison(m)
+            else:
+                png_data = M.render_spectrum_image_for_measurement(m)
+        except ExportRenderError as exc:
+            QtWidgets.QMessageBox.warning(self, "Export Failed", str(exc))
+            return
         if png_data is None:
             QtWidgets.QMessageBox.warning(self, "Export Error", "This measurement has no spectrum snapshot.")
             return

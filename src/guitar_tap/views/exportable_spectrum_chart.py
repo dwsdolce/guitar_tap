@@ -813,6 +813,15 @@ class ExportableSpectrumChart:
 
 # MARK: - Shared Export View Builder
 
+# What the user is told when an export's chart cannot be drawn. Mirrors Swift ExportRenderError.message.
+EXPORT_RENDER_FAILED = "The chart could not be drawn, so nothing was saved. Please try again."
+
+
+class ExportRenderError(Exception):
+    """An export's chart could not be drawn; the export is refused rather than written without it.
+    Mirrors Swift ``ExportRenderError``."""
+
+
 def make_exportable_spectrum_view(
     *,
     frequencies: list,
@@ -1109,8 +1118,11 @@ def make_exportable_spectrum_view(
     y += CHART_TITLE_H
 
     # ── ExportableSpectrumChart — place rendered chart image ──────────────────
-    if not chart_img.isNull():
-        painter.drawImage(SIDE_PAD, CHART_IMAGE_TOP * SCALE, chart_img)
+    # An export without its chart is refused, not written: mirrors Swift renderExportPNG.
+    if chart_img.isNull():
+        painter.end()
+        raise ExportRenderError(EXPORT_RENDER_FAILED)
+    painter.drawImage(SIDE_PAD, CHART_IMAGE_TOP * SCALE, chart_img)
     y = FRAME_TOP + FRAME_H + BELOW_CHART
 
     # ── Detected Peaks Summary — mirrors peak summary VStack + HStack ─────────
@@ -1241,8 +1253,10 @@ def make_exportable_spectrum_view(
     buf = QByteArray()
     qbuf = QBuffer(buf)
     qbuf.open(QIODevice.OpenModeFlag.WriteOnly)
-    canvas.save(qbuf, "PNG")
+    saved = canvas.save(qbuf, "PNG")
     qbuf.close()
+    if not saved:
+        raise ExportRenderError(EXPORT_RENDER_FAILED)
     return bytes(buf)
 
 

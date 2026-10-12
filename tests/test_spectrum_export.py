@@ -16,8 +16,9 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from PySide6 import QtWidgets
+from PySide6 import QtGui, QtWidgets
 
+from guitar_tap.views import exportable_spectrum_chart as chart_module
 from guitar_tap.views import tap_analysis_results_view as reports
 
 TESTS = os.path.dirname(__file__)
@@ -53,3 +54,16 @@ def test_export_size_and_pixels_per_inch(fixture, width, height, ppi):
     png = (reports.render_spectrum_image_for_comparison(measurement) if measurement.is_comparison
            else reports.render_spectrum_image_for_measurement(measurement))
     assert png_size_and_ppi(png) == (width, height, ppi)
+
+
+def test_a_chart_that_cannot_be_drawn_stops_the_export(monkeypatch):
+    """A chart that renders to nothing stops the export with ExportRenderError, rather than saving the
+    image without its chart."""
+    with open(os.path.join(TESTS, CASES[0][0] + ".guitartap"), "rb") as f:
+        measurement = reports.measurements_from_json(f.read())[0]
+    monkeypatch.setattr(chart_module.ExportableSpectrumChart, "render", lambda self: QtGui.QImage())
+    with pytest.raises(chart_module.ExportRenderError, match="could not be drawn"):
+        if measurement.is_comparison:
+            reports.render_spectrum_image_for_comparison(measurement)
+        else:
+            reports.render_spectrum_image_for_measurement(measurement)
