@@ -114,30 +114,38 @@ def window(qtbot, edges):
     # Each test starts with an empty library, so the list's one row is the measurement it imported.
     library.unlink(missing_ok=True)
 
+    # Everything after the window exists is undone in `finally`, so a window that fails to start is
+    # still deleted and the settings and library still restored: left alive, a half-built window is
+    # torn down by PySide at interpreter exit, which can crash the process after the run and bury
+    # the real failure under a segfault.
     w = MainWindow()
-    w.resize(1400, 900)
-    w.show()
-    qtbot.waitExposed(w)
-    # The canvas and the analyzer are built on the first event-loop pass after the window shows.
-    qtbot.waitUntil(lambda: hasattr(w, "fft_canvas"), timeout=20_000)
-    # With no microphone the app starts and reports it, as Swift's view does.
-    assert any(title == "Audio Engine Error" for title, _ in edges.messages), edges.messages
-    yield w
-    # Delete the window, not just close it: in the app, closing it quits, but here the process
-    # goes on and a closed window's handlers would still answer app-wide signals (a scheme change)
-    # for the tests that follow.
-    w.close()
-    w.deleteLater()
-    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+    try:
+        w.resize(1400, 900)
+        w.show()
+        qtbot.waitExposed(w)
+        # The canvas and the analyzer are built on the first event-loop pass after the window shows.
+        qtbot.waitUntil(lambda: hasattr(w, "fft_canvas"), timeout=20_000)
+        # With no microphone the app starts and reports it, as Swift's view does.
+        assert any(title == "Audio Engine Error" for title, _ in edges.messages), edges.messages
+        yield w
+    finally:
+        # Delete the window, not just close it: in the app, closing it quits, but here the process
+        # goes on and a closed window's handlers would still answer app-wide signals (a scheme
+        # change) for the tests that follow. Closing stops the audio engine, so it needs the canvas;
+        # a window that never built one is only deleted.
+        if hasattr(w, "fft_canvas"):
+            w.close()
+        w.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
 
-    settings.clear()
-    for key, value in saved_settings.items():
-        settings.setValue(key, value)
-    settings.sync()
-    if saved_library is None:
-        library.unlink(missing_ok=True)
-    else:
-        library.write_bytes(saved_library)
+        settings.clear()
+        for key, value in saved_settings.items():
+            settings.setValue(key, value)
+        settings.sync()
+        if saved_library is None:
+            library.unlink(missing_ok=True)
+        else:
+            library.write_bytes(saved_library)
 
 
 def _when(qtbot, find, act, timeout_ms: int = 10_000) -> None:
