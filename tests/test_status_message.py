@@ -129,6 +129,26 @@ class TestStatusMessage:
         _settle(sut)
         assert sut.status_message == "Tap the guitar 3 times..."
 
+    # ── two writes in one pass settle on the second ─────────────────────────
+    def test_two_writes_in_one_pass_settle_on_the_second_and_stay(self):
+        """Arming straight after the analyzer is made writes the armed prompt in the same pass as the
+        initial status. The status must settle on the prompt and stay there — Swift's once alternated
+        between the two for good. Mirrors Swift twoWritesInOnePass_settleOnTheSecondAndStay."""
+        app = _get_app()
+        sut = TapToneAnalyzer()
+        sut.number_of_taps = 1
+        sut.start_tap_sequence(skip_warmup=True)
+        app.processEvents()
+        assert sut.status_message == "Tap the guitar..."
+
+        writes: list[str] = []
+        sut.statusMessageChanged.connect(writes.append)
+        deadline = time.monotonic() + 0.05
+        while time.monotonic() < deadline:
+            app.processEvents()
+        assert sut.status_message == "Tap the guitar..."
+        assert writes == [], f"the status kept changing with nothing happening: {len(writes)} writes"
+
     # ── clipping override / restore ─────────────────────────────────────────
     def test_clipping_overrides_and_restores_latest_real_status(self):
         sut = _make_sut(1)

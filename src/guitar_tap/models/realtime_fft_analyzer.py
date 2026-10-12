@@ -85,6 +85,7 @@ import sounddevice as sd
 from PySide6 import QtCore
 
 from guitar_tap.models.dead_input import BUFFER_DELIVERY_TIMEOUT, DEAD_INPUT_DWELL
+from guitar_tap.models.input_level import InputLevel
 from guitar_tap.utilities.logging import gt_log
 
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
@@ -126,8 +127,8 @@ class _FftProcessingThread(QtCore.QThread):
     For file playback, ``process_file_data`` calls ``process_raw_samples``
     inline without using this thread or the queue.
 
-    It also carries the pipeline's Qt signals (``fftFrameReady``, ``rmsLevelChanged``,
-    ``gatedCaptureComplete`` and the rest): ``RealtimeFFTAnalyzer`` is not a QObject, so it cannot own
+    It also carries the pipeline's Qt signals (``fftFrameReady``, ``gatedCaptureComplete`` and the
+    rest — the input level's are on ``mic.level``): ``RealtimeFFTAnalyzer`` is not a QObject, so it cannot own
     signals, and this thread object does. So the object is created once, with the mic, and never
     replaced: a replacement would start with no connections. And each ``connect()`` ADDS a receiver, so
     connecting a signal twice delivers every emission twice. Both are guarded by the pipeline
@@ -155,17 +156,9 @@ class _FftProcessingThread(QtCore.QThread):
     # dB (Swift's `peakMagnitude`), unrounded.
     fftFrameReady: QtCore.Signal = QtCore.Signal(np.ndarray, float, float, float, float)
 
-    # Per-chunk RMS level in dB, every audio chunk — for the UI (the threshold meter) ONLY. Tap
-    # detection takes the level from the direct rms_level_handler on this thread instead, as Swift's
-    # does from rmsLevelHandler on the audio queue, so each chunk reaches detection exactly once.
-    rmsLevelChanged: QtCore.Signal = QtCore.Signal(float, float)  # (level_db, audio_time)
-
-    # Edge-triggered clipping signal.
-    clippingChanged: QtCore.Signal = QtCore.Signal(bool)
-
     # Edge-triggered dead-input signal: True while buffers arrive carrying no
-    # signal. Lives here for the same reason clippingChanged does — RealtimeFFTAnalyzer
-    # is not a QObject, so the QThread owns Qt signal delivery.
+    # signal. Lives here because RealtimeFFTAnalyzer is not a QObject, so the QThread owns
+    # Qt signal delivery. (The input level and clipping have their own object, ``mic.level``.)
     inputAppearsDeadChanged: QtCore.Signal = QtCore.Signal(bool)
 
     # Emitted when a gated capture window fills.
@@ -246,7 +239,7 @@ class _FftProcessingThread(QtCore.QThread):
         mic._input_buffer = []
         mic._input_buffer_len = 0
         with mic._recent_peak_lock:
-            mic._recent_peak_db = -100.0
+            mic.level.recent_peak_level_db = -100.0
             mic._recent_peak_time = 0.0
 
 
@@ -584,11 +577,14 @@ class RealtimeFFTAnalyzer(
         self._calibration: npt.NDArray | None = None
         self._calibration_profile: object | None = None
 
-        # Recent peak level — Swift recentPeakLevelDB: latch the running max, release to the current
-        # level only after `_recent_peak_window` seconds without a higher peak (peak-hold, NOT a sliding
-        # window). Window = Swift peakHoldDuration (2.0 s); the old 0.5 s came from a stale Swift comment.
+        # The latest buffer's input level — level, clipping, recent peak — on an object of its own so
+        # that only the threshold meter observes it. Swift `level`.
+        self.level = InputLevel()
+
+        # Recent peak level (`level.recent_peak_level_db`) — Swift recentPeakLevelDB: latch the running
+        # max, release to the current level only after `_recent_peak_window` seconds without a higher
+        # peak (peak-hold, NOT a sliding window). Window = Swift peakHoldDuration (2.0 s).
         self._recent_peak_lock = threading.Lock()
-        self._recent_peak_db: float = -100.0
         self._recent_peak_window: float = 2.0
         self._recent_peak_time: float = 0.0
 
@@ -602,8 +598,6 @@ class RealtimeFFTAnalyzer(
         # same, published at the frame rate by perform_fft). True silence is -inf on the readout;
         # detection reads the per-chunk level, which stays -100 on silence.
         self.readout_level_db: float = -100.0
-        # The last chunk's level in dBFS (silence -100), for detection, the meter and decay. Swift inputLevelDB.
-        self.input_level_db: float = -100.0
         self.display_level_db: float = -100.0
 
         # Level-crossing detection.
@@ -622,7 +616,6 @@ class RealtimeFFTAnalyzer(
         # Input clipping detection.
         self._clip_hold_seconds: float = 1.5
         self._last_clip_time: float | None = None
-        self._is_clipping_state: bool = False
 
         # Diagnostic counters.
         self._fft_frame_counter: int = 0
@@ -730,8 +723,8 @@ class RealtimeFFTAnalyzer(
         2. raw_sample_handler (gated sample delivery)
         3. RMS calculation
         4. Level-crossing detection → _level_crossing_handler callback
-        5. rms_level_handler callback + rmsLevelChanged Qt signal
-        6. Clipping detection → clippingChanged Qt signal
+        5. rms_level_handler callback + level.inputLevelChanged Qt signal
+        6. Clipping detection → level.clippingChanged Qt signal
         7. Recent peak history update
         8. Input buffer accumulation → FFT → fftFrameReady Qt signal (the analyzer's one frame delivery)
         """
@@ -759,7 +752,7 @@ class RealtimeFFTAnalyzer(
         # different level on true digital silence than Swift's did.
         rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
         level_db = 20.0 * math.log10(rms) if rms > 0 else -100.0
-        self.input_level_db = level_db
+        self.level.input_level_db = level_db
         # The READOUT's level — Swift readoutLevelDB: the same value, except true silence is -inf,
         # because -100 dB is a real level a quiet UMIK-1 reaches. Detection keeps level_db.
         self.readout_level_db = level_db if rms > 0 else float("-inf")
@@ -839,7 +832,7 @@ class RealtimeFFTAnalyzer(
             rms_handler(level_db, self.audio_elapsed)
 
         # Qt signal — the UI's copy (threshold meter). Detection used the direct handler above.
-        self.proc_thread.rmsLevelChanged.emit(level_db, self.audio_elapsed)
+        self.level.inputLevelChanged.emit(level_db)
 
         # Accumulate samples — mirrors Swift bufferAccessQueue.sync { inputBuffer.append }.
         # In Swift this comes after the level-crossing and rmsLevelHandler blocks.
@@ -855,18 +848,18 @@ class RealtimeFFTAnalyzer(
             self._last_clip_time is not None
             and (enter_now - self._last_clip_time) < self._clip_hold_seconds
         )
-        if new_clip_state != self._is_clipping_state:
-            self._is_clipping_state = new_clip_state
-            self.proc_thread.clippingChanged.emit(new_clip_state)
+        if new_clip_state != self.level.is_clipping:
+            self.level.is_clipping = new_clip_state
+            self.level.clippingChanged.emit(new_clip_state)
 
         # Update recent peak (Swift recentPeakLevelDB): latch the max; release to the current level
         # only after `_recent_peak_window` (2.0 s) without a higher peak.
         with self._recent_peak_lock:
             if (
-                level_db > self._recent_peak_db
+                level_db > self.level.recent_peak_level_db
                 or (enter_now - self._recent_peak_time) > self._recent_peak_window
             ):
-                self._recent_peak_db = level_db
+                self.level.recent_peak_level_db = level_db
                 self._recent_peak_time = enter_now
 
         # Fire an FFT for each complete fft_size-sample chunk available.
@@ -1006,12 +999,6 @@ class RealtimeFFTAnalyzer(
                 mag_db = mag_db + corrections
 
         return list(mag_db), list(freqs_arr)
-
-    @property
-    def recent_peak_level_db(self) -> float:
-        """Rolling maximum RMS level over the last 2.0 s, in dBFS."""
-        with self._recent_peak_lock:
-            return self._recent_peak_db
 
     # MARK: - Engine Control
     # All engine control methods live in realtime_fft_analyzer_engine_control.py

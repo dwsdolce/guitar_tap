@@ -350,9 +350,6 @@ class TapToneAnalyzer(
         self.saved_measurements: list = []                                 # mirrors savedMeasurements
 
         # MARK: - Detection State
-        # Most recent average FFT magnitude, in dBFS. Used by the hysteresis detector
-        # and exposed for the level-meter view.
-        self.average_magnitude: float = -100.0      # mirrors averageMagnitude
         # mirrors detectionState; is_detecting / is_detection_paused derive from it
         self._detection_state: DetectionState = DetectionState.IDLE
         # True while a device/route change settles and the chart should show nothing. A flag of its
@@ -894,10 +891,11 @@ class TapToneAnalyzer(
         Direct handlers on the mic: ``rms_level_handler`` (the queued ``_rmsLevelOnMain``, so each
         chunk's level reaches detection on the main thread), ``raw_sample_handler`` and
         ``_level_crossing_handler``. Signals on the processing thread object: ``gatedCaptureComplete``,
-        ``clippingChanged``, ``inputAppearsDeadChanged`` and ``fftFrameReady``.
+        ``inputAppearsDeadChanged`` and ``fftFrameReady``; on the mic's input level (``mic.level``):
+        ``clippingChanged``.
 
-        The signals are connected to the processing thread object, once. It is created with the mic and
-        never replaced, so these connections hold for the whole run. A second ``connect()`` on it would
+        The signals are connected once. The processing thread object and the input level are created
+        with the mic and never replaced, so these connections hold for the whole run. A second ``connect()`` on it would
         deliver every emission twice.
 
         Mirrors Swift ``TapToneAnalyzer.setupSubscriptions()``.
@@ -914,7 +912,8 @@ class TapToneAnalyzer(
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
 
         # ── Input-clipping signal (Qt — UI only) ────────────────────────
-        self.mic.proc_thread.clippingChanged.connect(self._set_clipping)
+        # Swift: fftAnalyzer.level.$isClipping sink.
+        self.mic.level.clippingChanged.connect(self._set_clipping)
         self.mic.proc_thread.inputAppearsDeadChanged.connect(self._set_input_appears_dead)
 
         # ── Raw-sample handler ───────────────────────────────────────────
@@ -1031,7 +1030,8 @@ class TapToneAnalyzer(
         # ── FFT frame → peak analysis: ONE delivery, the Qt signal ───────
         # So on_fft_frame runs on the main thread, as Swift's analyzer takes frames through a Combine
         # sink `.receive(on: DispatchQueue.main)`. Each frame arrives once, by this signal alone.
-        # rmsLevelChanged is not connected here: it is the UI's copy of the level (the threshold meter).
+        # level.inputLevelChanged is not connected here: it is the UI's copy of the level (the threshold
+        # meter).
         self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
 
     # The pre-roll buffer starts empty (cleared by start_tap_sequence) and fills

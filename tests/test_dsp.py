@@ -105,7 +105,7 @@ def test_signal(row):
         assert _close(a.peak_magnitude, e["peakMagnitude"]), f"peak_magnitude {a.peak_magnitude}"
     elif path == "processRawSamples":
         a.process_raw_samples(samples)
-        assert _close(a.input_level_db, e["inputLevelDB"]), f"input_level_db {a.input_level_db}"
+        assert _close(a.level.input_level_db, e["inputLevelDB"]), f"input_level_db {a.level.input_level_db}"
         assert _close(a.readout_level_db, e["readoutLevelDB"]), f"readout_level_db {a.readout_level_db}"
     else:
         pytest.fail(f"unknown path {path!r}")

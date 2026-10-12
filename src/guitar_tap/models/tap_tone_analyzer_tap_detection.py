@@ -227,14 +227,14 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     self.detect_tap_consecutive_above = 0
                     # Capture the recent peak input level for decay tracking
                     # reference.  Mirrors Swift TapToneAnalyzer+TapDetection.swift:
-                    #   tapPeakLevel = fftAnalyzer.recentPeakLevelDB
+                    #   tapPeakLevel = fftAnalyzer.level.recentPeakLevelDB
                     # (2.0 s peak-hold).  This is the CORRECT intentional use
                     # of recentPeakLevelDB: at tap-fire time the peak-hold
                     # captures the actual tap transient even though FFT
                     # detection lags by up to one FFT frame.  Fall back to
                     # level when mic is None (tests, no audio hardware).
-                    if self.mic is not None and hasattr(self.mic, "recent_peak_level_db"):
-                        self.tap_peak_level = self.mic.recent_peak_level_db
+                    if self.mic is not None and hasattr(self.mic, "level"):
+                        self.tap_peak_level = self.mic.level.recent_peak_level_db
                     else:
                         self.tap_peak_level = level
                     self._handle_tap_detection(mag_y_db, freq, audio_time)

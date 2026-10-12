@@ -20,10 +20,14 @@ against.
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.views.utilities import palette
+
+if TYPE_CHECKING:
+    from guitar_tap.models.input_level import InputLevel
 
 Role = palette.Role
 
@@ -75,10 +79,9 @@ class ThresholdSlider(QtWidgets.QSlider):
         the groove red.
 
     Wire up:
-      - ``set_level_db(db)`` from ``RealtimeFFTAnalyzer.rmsLevelChanged``
-        (per-chunk RMS, ~43 Hz).
-      - ``set_clipping(bool)`` from ``RealtimeFFTAnalyzer.clippingChanged``
-        (edge-triggered).
+      - ``set_input_level(level)`` with the engine's ``InputLevel`` (``mic.level``): the slider
+        observes it alone — ``set_level_db`` on every buffer, ``set_clipping`` on each change —
+        as Swift's ``ThresholdSlider`` observes ``inputLevel``.
     """
 
     # Peak-hold behaviour.
@@ -137,6 +140,14 @@ class ThresholdSlider(QtWidgets.QSlider):
         self._level_db = db
         self._last_update_time = now
         self.update()
+
+    def set_input_level(self, level: "InputLevel") -> None:
+        """Observe the engine's input level: its level on every buffer, its clipping on each change.
+        Mirrors Swift ``ThresholdSlider``'s ``@ObservedObject var inputLevel``."""
+        level.inputLevelChanged.connect(self.set_level_db)
+        level.clippingChanged.connect(self.set_clipping)
+        self.set_level_db(level.input_level_db)
+        self.set_clipping(level.is_clipping)
 
     def set_clipping(self, clipping: bool) -> None:
         """Toggle the clipping indicator (red zone at the right edge)."""

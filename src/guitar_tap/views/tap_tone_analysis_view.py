@@ -2120,16 +2120,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tap detection threshold slider (dB) ↔ canvas (0-100 scale)
         self.tap_threshold_slider.valueChanged.connect(self._on_tap_threshold_changed)
 
-        # Threshold-slider live level meter — wire RMS level + clipping signals
-        # so the slider's groove shows real-time input level, peak-hold, and
-        # clipping indicator alongside the threshold handle.  Uses
-        # hasattr() so the connection is a no-op if the slider is the stock
-        # QSlider (e.g. in tests that bypass the with_level_meter path).
-        proc_thread = canvas.analyzer.mic.proc_thread
-        if hasattr(self.tap_threshold_slider, "set_level_db"):
-            proc_thread.rmsLevelChanged.connect(self._on_rms_level_for_threshold_meter)
-        if hasattr(self.tap_threshold_slider, "set_clipping"):
-            proc_thread.clippingChanged.connect(self.tap_threshold_slider.set_clipping)
+        # Threshold-slider live level meter: the slider observes the engine's input level itself, so
+        # the groove shows the real-time level, peak-hold and clipping alongside the threshold handle.
+        # Uses hasattr() so the connection is a no-op if the slider is the stock QSlider (e.g. in
+        # tests that bypass the with_level_meter path).
+        if hasattr(self.tap_threshold_slider, "set_input_level"):
+            self.tap_threshold_slider.set_input_level(canvas.analyzer.mic.level)
 
         # Pause / Cancel / tap-detection-paused
         self.pause_tap_btn.clicked.connect(self._on_pause_tap)
@@ -2985,15 +2981,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_tap_threshold_changed(self, db_val: int) -> None:
         self.fft_canvas.set_tap_threshold(db_val + 100)  # the model saves it (tap_detection_threshold)
         self.tap_threshold_readout.setText(f"{db_val} dB")
-
-    @QtCore.Slot(float, float)
-    def _on_rms_level_for_threshold_meter(self, level_db: float, _audio_time: float) -> None:
-        """Forward the per-chunk RMS level (dB, exact) to the threshold slider's level meter.
-
-        Mirrors Swift's `$inputLevelDB` binding to ThresholdSlider.level.
-        """
-        if hasattr(self.tap_threshold_slider, "set_level_db"):
-            self.tap_threshold_slider.set_level_db(level_db)
 
     def _on_tap_num_changed(self, n: int) -> None:
         self.fft_canvas.set_tap_num(n)
@@ -6608,19 +6595,22 @@ class MainWindow(QtWidgets.QMainWindow):
             cal_combo.blockSignals(False)
 
         def _update_cal_display() -> None:
+            """Show the model's active calibration — the picker's selection and its details — as
+            Swift's picker and details show fftAnalyzer.activeCalibration."""
             _rebuild_cal_combo()
-            # The model's active calibration (Swift's picker shows fftAnalyzer.activeCalibration).
             active = self.fft_canvas.analyzer._calibration_profile
+            index = 0
+            if active:
+                for i in range(cal_combo.count()):
+                    if cal_combo.itemData(i) == active.id:
+                        index = i
+                        break
             cal_combo.blockSignals(True)
             try:
-                if active:
-                    for i in range(cal_combo.count()):
-                        if cal_combo.itemData(i) == active.id:
-                            cal_combo.setCurrentIndex(i)
-                            return
-                cal_combo.setCurrentIndex(0)
+                cal_combo.setCurrentIndex(index)
             finally:
                 cal_combo.blockSignals(False)
+            _update_cal_meta(active)
 
         def _on_cal_selected(index: int) -> None:
             """Activate the selected calibration for the current device."""
@@ -6639,7 +6629,6 @@ class MainWindow(QtWidgets.QMainWindow):
             _update_cal_display()
 
         cal_combo.currentIndexChanged.connect(_on_cal_selected)
-        _update_cal_display()
 
         def _import_cal() -> None:
             start_dir = AS.AppSettings.calibration_path() or os.path.expanduser("~")
@@ -6703,14 +6692,9 @@ class MainWindow(QtWidgets.QMainWindow):
         cal_meta_widget.setVisible(False)
         aud.addWidget(cal_meta_widget)
 
-        def _update_cal_meta() -> None:
-            cal_id = cal_combo.itemData(cal_combo.currentIndex())
-            if not cal_id:
-                cal_meta_widget.setVisible(False)
-                return
-            cal = next(
-                (c for c in _mc_mod.CalibrationStorage.load_all() if c.id == cal_id), None
-            )
+        def _update_cal_meta(cal: "_mc_mod.MicrophoneCalibration | None") -> None:
+            """The active calibration's details, or none. Swift: `if let calibration =
+            activeCalibration`."""
             if cal is None:
                 cal_meta_widget.setVisible(False)
                 return
@@ -6724,7 +6708,8 @@ class MainWindow(QtWidgets.QMainWindow):
             cal_meta_range_lbl.setText(f"{fr[0]:.0f}–{fr[1]:.0f} Hz" if fr else "")
             cal_meta_widget.setVisible(True)
 
-        _update_cal_meta()
+        # The picker and the details, once both exist; every later change refreshes them the same way.
+        _update_cal_display()
 
         delete_cal_btn = QtWidgets.QPushButton("Delete All Calibrations")
         palette.set_icon(delete_cal_btn, "mdi.trash-can-outline", palette.Role.ACCENT)
