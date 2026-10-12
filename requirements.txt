@@ -16,7 +16,7 @@ babel>=2.12
 # Windows only, installed automatically by the marker: COM access to the MMDevice API
 # (IMMNotificationClient), which reports when an audio ENDPOINT becomes active. The
 # cfgmgr32 device-interface notification fires earlier, before PortAudio can enumerate
-# the device - see MIC-SELECTION.md.
+# the device.
 comtypes>=1.4.17; sys_platform == "win32"
 # macOS only, installed automatically by the marker: the two frameworks the app imports — Foundation
 # (NSProcessInfo, which keeps App Nap from throttling a measurement: utilities/timing_activity.py; in the

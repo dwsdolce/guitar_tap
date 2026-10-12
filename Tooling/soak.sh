@@ -6,8 +6,7 @@
 # Loops the FAST pytest suite (playback excluded) N times with a per-run wall-clock cap, hunting
 # nondeterministic FAILURES and HANGS that a single run hides. This is the Python analog of the Swift
 # Combine-`deinit` race (../GuitarTap Tooling/deinit-soak.sh) and the web React-effect-cleanup race —
-# here the class is the QObject GC / teardown race (e.g. the playback weakref fix). See the web repo's
-# Development/SOAK-STRESS-HARNESS.md for the shared rationale.
+# here the class is the QObject GC / teardown race (e.g. the playback weakref fix).
 #
 # Three caveats (baked into the design):
 #   1. Optional/on-demand, NOT CI — it is N× slower and probabilistic.
@@ -23,6 +22,7 @@
 #            to .venv and add `--timeout=<secs>` below — it is not a dependency of this script.
 #
 # Usage:  Tooling/soak.sh [N]        (default N=100)
+#         A real soak is a few hundred to ~1000 runs; 100 is a quick check.
 #         SOAK_RUN_TIMEOUT=<seconds>  caps one fully-wedged run (default 180).
 #
 # Exits 0 only if every run passed with no failures and no hangs.

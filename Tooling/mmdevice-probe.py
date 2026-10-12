@@ -16,10 +16,9 @@ mic in, wait, unplug it. Ctrl-C to stop.
 
     .venv/Scripts/python.exe -u Tooling/mmdevice-probe.py
 
-It answered #21 step 2 on Windows; the measurements and what they settled are written up
-in the hub as MIC-SELECTION.md item 19. Keep it for the next Windows machine: whether an
-endpoint event coincides with PortAudio seeing the device is a per-machine question, and
-this is what answers it without touching the app.
+Keep it for the next Windows machine: whether an endpoint event coincides with PortAudio
+seeing the device is a per-machine question, and this is what answers it without touching
+the app.
 
 v2: the callbacks now print IMMEDIATELY and do no work of their own - they put the event
 on a queue for the main thread. v1 re-initialised PortAudio inside the COM callback and

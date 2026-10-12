@@ -191,7 +191,7 @@ def main() -> int:
         if not lines and checked_against != current_oracle:
             # Same values, but the baseline names a different oracle than the one it was just checked
             # against — e.g. a -dirty mint superseded by a clean one. Rewrite so the provenance names
-            # an oracle anyone can check out; no value changes (#17 F44).
+            # an oracle anyone can check out; no value changes.
             print(f"\nEvery value is identical, but the baseline names oracle {checked_against}, not the")
             print(f"current {current_oracle}. Re-minting rewrites the provenance; no value changes.")
             if args.check:
@@ -200,7 +200,7 @@ def main() -> int:
             # Same values, stale FILE: Python's reader accepts the bare, non-standard `-Infinity`
             # token, so a file written before non-finite numbers were stored as strings loads and
             # compares identical — and would never be rewritten. Mint it again so the file is valid
-            # JSON and its provenance names the oracle it was actually checked against (#17 F44).
+            # JSON and its provenance names the oracle it was actually checked against.
             print("\nEvery value is identical, but the file stores a non-finite number in the old,")
             print("non-standard form rather than as its string. Re-minting rewrites the encoding and")
             print("the provenance; no value changes.")
