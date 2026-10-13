@@ -138,20 +138,55 @@ def _wasapi_raw_settings(device_index: "int | None") -> "sd.WasapiSettings | Non
         return None
 
 
-def _open_input_stream(device_index: "int | None", rate: int, blocksize: int, callback) -> "sd.InputStream":
+def _open_input_stream(device_index: "int | None", rate: int, blocksize: int, callback,
+                       expected_name: "str | None" = None) -> "sd.InputStream":
     """Open (not start) the mono float32 input stream — in WASAPI RAW mode on Windows, falling
-    back to a plain open if the device refuses RAW. Raises sd.PortAudioError if neither opens."""
+    back to a plain open if the device refuses RAW. Raises sd.PortAudioError if neither opens, or
+    if the device opened is not *expected_name* (see ``_verify_opened_device``)."""
     kw = dict(device=device_index, channels=1, samplerate=rate, dtype=np.float32,
               blocksize=blocksize, callback=callback)
     raw = _wasapi_raw_settings(device_index)
+    stream = None
     if raw is not None:
         try:
             stream = sd.InputStream(extra_settings=raw, **kw)
             gt_log("🎤 WASAPI RAW stream (Windows audio effects bypassed)")
-            return stream
         except sd.PortAudioError as exc:
             gt_log(f"⚠️ WASAPI RAW open failed ({exc}) — opening without RAW")
-    return sd.InputStream(**kw)
+    if stream is None:
+        stream = sd.InputStream(**kw)
+    _verify_opened_device(stream, device_index, expected_name)
+    return stream
+
+
+def _verify_opened_device(stream: "sd.InputStream", device_index: "int | None",
+                          expected_name: "str | None") -> None:
+    """Check that the device the stream was opened on is the one meant, by name.
+
+    A stream is opened by PortAudio's device index — a position in its device list, which changes
+    whenever PortAudio is re-initialised. An index taken from a list read before that opens
+    whatever device now sits at the position, and delivers its audio as healthy as any other, so
+    nothing else would show it. A stream on another device is closed and reported as a failed
+    open (sd.PortAudioError), which every caller already handles: the previous device is kept.
+
+    Nothing is checked when no name is expected, or the opened device cannot be read.
+    """
+    if expected_name is None:
+        return
+    try:
+        opened_index = getattr(stream, "device", device_index)
+        opened_name = sd.query_devices(opened_index, "input")["name"]
+    except Exception:  # noqa: BLE001 — unreadable: nothing to compare
+        return
+    if opened_name == expected_name:
+        return
+    gt_log(f"❌ Device index {opened_index} is '{opened_name}', not '{expected_name}' — "
+           f"the device list was renumbered; stream closed")
+    try:
+        stream.close()
+    except Exception:  # noqa: BLE001
+        pass
+    raise sd.PortAudioError(f"device {opened_index} is '{opened_name}', not '{expected_name}'")
 
 
 def input_device_to_use(devices: list, saved_fingerprint: "str | None",
@@ -395,7 +430,8 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         with self._stop_lock:
             self.is_stopped = False
         try:
-            self.stream = _open_input_stream(self.device_index, self.rate, self.chunksize, self.new_frame)
+            self.stream = _open_input_stream(self.device_index, self.rate, self.chunksize, self.new_frame,
+                                             expected_name=device.name)
             self.stream.start()
         except sd.PortAudioError:
             self.stream = None
@@ -436,7 +472,8 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         try:
             with self._stop_lock:
                 self.is_stopped = False
-            self.stream = _open_input_stream(self.device_index, self.rate, self.chunksize, self.new_frame)
+            self.stream = _open_input_stream(self.device_index, self.rate, self.chunksize, self.new_frame,
+                                             expected_name=fresh.name)
             self.stream.start()
         except sd.PortAudioError as exc:
             self.stream = None

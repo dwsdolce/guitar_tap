@@ -293,8 +293,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 _log_stream_diagnostics,
                 _open_input_stream,
             )
+            selected = self._selected_input_device
             self.stream = _open_input_stream(
-                self.device_index, self.rate, self.chunksize, self.new_frame)
+                self.device_index, self.rate, self.chunksize, self.new_frame,
+                expected_name=(selected.name if selected is not None
+                               and selected.index == self.device_index else None))
             # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
             self.rate = _log_stream_diagnostics(self.stream, self.rate)
         self.stream.start()

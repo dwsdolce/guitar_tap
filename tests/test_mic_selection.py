@@ -56,6 +56,24 @@ UMIK = AudioDevice(name="UMIK-1", index=3, sample_rate=48000)
 USB2 = AudioDevice(name="USB Mic 2", index=4, sample_rate=48000)
 
 
+def _device_table(*devices: AudioDevice):
+    """A stand-in for sd.query_devices(index, kind) that describes *devices* by their index."""
+    by_index = {d.index: d for d in devices}
+
+    def query(index=None, kind=None):
+        return {"name": by_index[index].name, "hostapi": 0}
+
+    return query
+
+
+@pytest.fixture(autouse=True)
+def _fake_device_table(monkeypatch):
+    """PortAudio's device table is this file's four devices, so a stream opened on one of their
+    indices is on that device — the tests' streams are stand-ins, and the real table is the
+    machine's."""
+    monkeypatch.setattr(dm.sd, "query_devices", _device_table(BUILT_IN, BLACK_HOLE, UMIK, USB2))
+
+
 def _saved() -> str | None:
     return AppSettings.selected_input_device_fingerprint()
 
@@ -487,3 +505,57 @@ def test_MS28_a_failed_watchdog_restart_retries():
     sut._do_watchdog_restart()
     assert attempts == ["retry"]
     assert sut._is_recovering is True
+
+
+# MARK: - The device opened is the device selected
+
+class _StreamOn:
+    """An InputStream stand-in that records the index it was opened on and whether it was closed."""
+
+    samplerate = 48000
+    opened: list = []
+
+    def __init__(self, **kwargs):
+        self.device = kwargs.get("device")
+        self.closed = False
+        _StreamOn.opened.append(self)
+
+    def start(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+def test_MS32_a_stale_index_never_opens_another_device(monkeypatch):
+    """MS32: PortAudio renumbered its devices, so the index a listed device carries now belongs to
+    another device. Switching to the listed device does not leave the stream on that other
+    device: the stream is closed, the previous device stays selected and saved, and the failure
+    is reported."""
+    _StreamOn.opened = []
+    monkeypatch.setattr(dm.sd, "InputStream", _StreamOn)
+    sut = _make_sut(saved=BUILT_IN)
+    sut.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
+    # The UMIK's index (3) now belongs to BlackHole; the list the UMIK entry came from is stale.
+    moved = AudioDevice(name=BLACK_HOLE.name, index=UMIK.index, sample_rate=48000)
+    monkeypatch.setattr(dm.sd, "query_devices", _device_table(BUILT_IN, moved))
+
+    with pytest.raises(dm.InputDeviceOpenError):
+        sut.set_device(UMIK)
+
+    on_umik_index = [s for s in _StreamOn.opened if s.device == UMIK.index]
+    assert on_umik_index and all(s.closed for s in on_umik_index), \
+        "REGRESSION: a stream was left open on another device's index"
+    assert sut.selected_input_device == BUILT_IN
+    assert _saved() == BUILT_IN.fingerprint
+
+
+def test_MS33_the_index_of_the_selected_device_opens(monkeypatch):
+    """MS33: With the list current, the device at the index is the device selected, and it opens."""
+    _StreamOn.opened = []
+    monkeypatch.setattr(dm.sd, "InputStream", _StreamOn)
+    sut = _make_sut(saved=BUILT_IN)
+    sut.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
+    sut.set_device(UMIK)
+    assert sut.selected_input_device == UMIK
+    assert _StreamOn.opened[-1].device == UMIK.index and not _StreamOn.opened[-1].closed
