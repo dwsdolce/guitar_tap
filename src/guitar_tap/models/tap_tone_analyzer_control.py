@@ -940,6 +940,8 @@ class TapToneAnalyzerControlMixin:
             self._session_recording_sample_rate = (
                 self._mpm_sample_rate if self._mpm_sample_rate > 0 else 48000.0
             )
+        from . import capture_probe
+        capture_probe.begin_live_session(_tds.dump_capture_audio())  # diagnostic
 
         # Seed the noise-floor estimate so the first relative-threshold
         # calculation has a reasonable baseline.  Seed from the current input level; the warm-up's EMA

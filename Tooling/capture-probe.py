@@ -13,7 +13,6 @@ three outcomes mean.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 
@@ -22,7 +21,6 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "tests"))
 
 from guitar_tap.models import capture_probe  # noqa: E402
-from self_baseline import arch_name, os_name  # noqa: E402
 
 
 def main() -> int:
@@ -38,18 +36,11 @@ def main() -> int:
     finally:
         capture_probe.enabled = False
 
-    document = {
-        "edition": "python",
-        "os": os_name(),
-        "arch": arch_name(),
-        "caseName": "REG-G2",
-        "records": list(capture_probe.records),
-    }
+    records = list(capture_probe.records)
     with open(args.out, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(document, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+        fh.write(capture_probe.encoded("REG-G2", records))
     print(f"CAPTURE_PROBE_WROTE {args.out}")
-    for index, record in enumerate(document["records"], start=1):
+    for index, record in enumerate(records, start=1):
         print(f"  tap {index}: buffer {record['bufferCount']} {record['bufferHash']}"
               f"  window {record['windowCount']} {record['windowHash']}")
     return 0

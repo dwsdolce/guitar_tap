@@ -27,6 +27,10 @@ and its version is correct by construction; the guard silently allows anything
 it cannot evaluate (frozen bundle, no git, no tags) so a released app can never
 refuse to start over this.
 
+A packaging build also checks that the capture probe's developer switch is off
+(``_check_probe_off``); a run of the app does not, since that switch is turned on for
+diagnostic runs.
+
 Used two ways, one implementation:
   - imported by __main__.py, so `python -m guitar_tap` fails before the UI opens;
   - run as a script by every platform build — `.venv/bin/python src/guitar_tap/_release_guard.py`
@@ -196,5 +200,41 @@ def enforce() -> None:
     sys.exit(1)
 
 
-if __name__ == "__main__":
+def _check_probe_off(root: str) -> str | None:
+    """Fail when the capture probe's developer switch is on.
+
+    ``capture_probe.LIVE_PROBE`` makes the app write a diagnostic file beside every capture
+    recording. It is switched on in the source for a diagnostic run, which must not be blocked, so
+    this is checked for a packaging build only — never when the app starts. The source is read as
+    text, so this file stays stdlib-only.
+    """
+    probe = os.path.join("src", "guitar_tap", "models", "capture_probe.py")
+    try:
+        with open(os.path.join(root, probe), encoding="utf-8") as f:
+            on = any(line.replace(" ", "").startswith("LIVE_PROBE:bool=True") for line in f)
+    except OSError:
+        return None
+    if not on:
+        return None
+    return (
+        f"CAPTURE PROBE SWITCHED ON\n"
+        f"\n"
+        f"  {probe} has LIVE_PROBE = True, so the packaged app would write a\n"
+        f"  diagnostic file beside every capture recording.\n"
+        f"\n"
+        f"  FIX: set LIVE_PROBE to False."
+    )
+
+
+def enforce_for_packaging() -> None:
+    """The packaging builds' check: everything ``enforce`` checks, and the capture probe off."""
+    probe = _check_probe_off(_repo_root())
+    if probe:
+        bar = "=" * 70
+        print(f"{bar}\nBLOCKED — this tree is not ready to be packaged.\n\n{probe}\n{bar}", file=sys.stderr)
+        sys.exit(1)
     enforce()
+
+
+if __name__ == "__main__":
+    enforce_for_packaging()

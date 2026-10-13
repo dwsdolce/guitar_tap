@@ -130,6 +130,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # the very beginning of the transient is captured.
     ONSET_BACKUP_SAMPLES: int = 32
 
+    # Samples left between the noise re-measured before the tap and the tap's first sample above
+    # the threshold, so the measured stretch holds none of the tap's own rise.
+    ONSET_NOISE_GUARD_SAMPLES: int = 256
+
+    # How many times the onset may be found again from the noise just before it. It settles in
+    # one or two.
+    ONSET_REFINEMENT_PASSES: int = 4
+
     @property
     def _pre_roll_samples(self) -> int:
         """Number of pre-roll samples at the current hardware sample rate.
@@ -141,6 +149,27 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         source, matching Swift's stored mpmSampleRate property.
         """
         return int(self._mpm_sample_rate * self._pre_roll_seconds)
+
+    def guitar_window_audio_samples(self, sample_rate: float) -> int:
+        """How many samples of a guitar tap's FFT window are audio; the rest of the window, to
+        fft_size, is always zeros.
+
+        A guitar capture is fft_size samples beginning _pre_roll_samples before the trigger, and
+        align_capture_to_onset starts the window PRE_ONSET_DURATION before the onset — so the
+        window starts up to (pre-roll − pre-onset) into the capture, depending on how long after
+        the onset the trigger's chunk boundary fell, and that many samples short of its end the
+        capture runs out. Ending the audio that margin before the window's end, always, makes the
+        window the same samples wherever the boundary fell: the same tap gives the same spectrum
+        on every run and in every edition. What is left out is the last tenth of a second of a
+        1.4-second window.
+
+        - Parameter sample_rate: The capture's sample rate in Hz.
+        - Returns: The number of leading samples of the window that are audio.
+
+        Mirrors Swift guitarWindowAudioSamples(sampleRate:).
+        """
+        margin = int(sample_rate * self._pre_roll_seconds) - int(sample_rate * self.PRE_ONSET_DURATION)
+        return int(self.mic.fft_size) - max(0, margin)
 
     @property
     def _gated_sample_rate(self) -> float:
@@ -259,6 +288,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                 f.write(pcm)
             gt_log(f"📦 WAV dump: {path} ({n_samples} samples, {sr} Hz)")
             self._set_capture_audio_saved(name)
+            from . import capture_probe
+            capture_probe.write_live_records(path)  # diagnostic; inert in a released build
             return True
         except Exception as e:
             gt_log(f"⚠️ WAV dump failed: {e}")
@@ -917,6 +948,14 @@ class TapToneAnalyzerSpectrumCaptureMixin:
                  np.zeros(fft_size - len(aligned), dtype=np.float32)]
             )
 
+        # The window's audio ends at a fixed length, and zeros follow: where the capture ran out
+        # depends on the trigger's chunk boundary, and the window must not.
+        # Mirrors Swift finishGuitarGatedCapture.
+        audio_samples = self.guitar_window_audio_samples(sample_rate)
+        if audio_samples < len(chunk):
+            chunk = chunk.copy()
+            chunk[audio_samples:] = 0.0
+
         # Diagnostic for cross-edition capture differences: fingerprint the buffer on both
         # sides of where the alignment step WOULD be, so a cross-edition comparison can say
         # whether the editions captured the same samples, windowed them differently, or
@@ -1052,29 +1091,41 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         if n < self.ONSET_NOISE_ESTIMATE_SAMPLES:
             return leading_window()  # buffer too short for noise estimation
 
-        # 1. Estimate noise floor from the first N samples (pre-onset silence).
-        noise_region = arr[: self.ONSET_NOISE_ESTIMATE_SAMPLES]
-        noise_rms = float(math.sqrt(float(np.mean(noise_region.astype(np.float64) ** 2))))
-
-        # 2. Onset threshold: 10× noise RMS, floored at ONSET_MIN_THRESHOLD.
-        threshold = max(
-            noise_rms * self.ONSET_THRESHOLD_MULTIPLIER,
-            self.ONSET_MIN_THRESHOLD,
-        )
-
-        # 3. Scan forward for the first sample exceeding the threshold.
         abs_arr = np.abs(arr)
-        above = np.where(abs_arr > threshold)[0]
-        if above.size == 0:
+
+        def threshold_for_noise_at(start: int) -> float:
+            """The onset threshold for a stretch of noise: 10× its RMS, floored at
+            ONSET_MIN_THRESHOLD for digital silence."""
+            region = arr[start : start + self.ONSET_NOISE_ESTIMATE_SAMPLES]
+            noise_rms = float(math.sqrt(float(np.mean(region.astype(np.float64) ** 2))))
+            return max(noise_rms * self.ONSET_THRESHOLD_MULTIPLIER, self.ONSET_MIN_THRESHOLD)
+
+        def first_sample_above(threshold: float) -> "int | None":
+            above = np.where(abs_arr > threshold)[0]
+            return int(above[0]) if above.size else None
+
+        # 1–3. A first estimate: the noise at the start of the buffer (pre-onset silence), and the
+        # first sample above its threshold.
+        crossing = first_sample_above(threshold_for_noise_at(0))
+        if crossing is None:
             # No onset found (noise-only capture) — the start of the buffer, window-sized.
-            _td_align(
-                "onsetAlign",
-                f"NO_ONSET | noiseRMS={noise_rms:.6f} "
-                f"threshold={threshold:.6f} len={n}",
-            )
+            _td_align("onsetAlign", f"NO_ONSET | len={n}")
             return leading_window()
 
-        onset = int(above[0])
+        # Then the noise is measured again just before the tap, and the onset found again, until it
+        # stops moving. Where the buffer starts depends on the chunk boundary the trigger fired on,
+        # so the noise at its start is a different stretch of audio from one capture of a tap to
+        # another, and its threshold can put the onset a sample or two apart. The noise just before
+        # the tap is the same stretch whichever capture it is. Mirrors Swift alignCaptureToOnset.
+        for _ in range(self.ONSET_REFINEMENT_PASSES):
+            noise_start = crossing - self.ONSET_NOISE_GUARD_SAMPLES - self.ONSET_NOISE_ESTIMATE_SAMPLES
+            if noise_start < 0:
+                break
+            refined = first_sample_above(threshold_for_noise_at(noise_start))
+            if refined is None or refined == crossing:
+                break
+            crossing = refined
+        onset = crossing
 
         # 4. Back up slightly to catch the very start of the transient.
         onset = max(0, onset - self.ONSET_BACKUP_SAMPLES)
@@ -1113,8 +1164,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         _td_align(
             "onsetAlign",
             f"ALIGNED | onset={onset} extractStart={extract_start} "
-            f"preOnset={pre_onset_samples} noiseRMS={noise_rms:.6f} "
-            f"threshold={threshold:.6f} inLen={n} outLen={int(result.shape[0])}",
+            f"preOnset={pre_onset_samples} inLen={n} outLen={int(result.shape[0])}",
         )
 
         return result
