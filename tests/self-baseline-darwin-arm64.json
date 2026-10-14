@@ -6,9 +6,9 @@
     "os": "darwin"
   },
   "provenance": {
-    "mintedAt": "2026-10-14T02:22:12Z",
+    "mintedAt": "2026-10-14T19:14:03Z",
     "numpy": "2.5.4",
-    "oracleVersion": "6489b1b",
+    "oracleVersion": "777a951",
     "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
     "processor": "arm",
     "python": "3.14.8"
@@ -53,7 +53,7 @@
             "role": "back"
           }
         ],
-        "ringOutSec": 0.08533333333333334
+        "ringOutSec": 0.07610081848675977
       },
       "REG-G2": {
         "averagedPeaks": [

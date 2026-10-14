@@ -55,7 +55,7 @@
       }
     },
     "REG-G1" : {
-      "_ringOutNote" : "Post-tap level decaying to peak-15 dB. The web is audio-clock-deterministic; Swift and Python reach the same crossing because file playback runs at real-time pace. The loose tolerance covers per-platform chunk granularity + clock jitter (web 0.0853, Python ~0.091).",
+      "_ringOutNote" : "The tap's ring-out, measured from its FFT window: the level over a sliding 1024-sample window from the onset, peak to 15 dB below it, interpolated between samples. It does not depend on where the chunk boundaries fall, so the editions agree to rounding.",
       "calibration" : null,
       "fixture" : "Recording 5.wav",
       "peaks" : [
@@ -75,7 +75,7 @@
           "role" : "back"
         }
       ],
-      "ringOutSec" : 0.085333329999999999,
+      "ringOutSec" : 0.07610082,
       "settings" : {
         "fftSize" : 65536,
         "measurementType" : "Generic Guitar",
@@ -421,8 +421,8 @@
       ]
     }
   },
-  "generatedAt" : "2026-10-14T00:38:11Z",
-  "oracleVersion" : "6489b1b",
+  "generatedAt" : "2026-10-14T19:09:57Z",
+  "oracleVersion" : "777a951",
   "selfTolerances" : {
     "freqHz" : 9.9999999999999998e-13,
     "gatedFftDb" : 9.9999999999999998e-13,
