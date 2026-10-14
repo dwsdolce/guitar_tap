@@ -7,7 +7,7 @@ to the next (and from one edition to the next) for the same tap. The window is a
 onset, which takes that out of its start — but the capture is exactly as long as the window, so it
 runs out before the window's end, by an amount that depends on the boundary. The window's audio
 therefore ends at a fixed length, short of the window's end by the most that amount can be, and
-zeros follow: the same tap, the same window.
+zeros follow: the same tap, the same window — and, measured from that window, the same ring-out.
 
 Mirrors: GuitarTapTests/GuitarCaptureWindowTests.swift · test/guitar-capture-window.test.ts
 """
@@ -46,10 +46,10 @@ def recording() -> np.ndarray:
     return noise
 
 
-def window_fingerprint(tmp_path, samples: np.ndarray, dropped: int) -> "str | None":
+def capture(tmp_path, samples: np.ndarray, dropped: int) -> "tuple[str | None, float | None]":
     """Play the recording with its first *dropped* samples removed — the same tap, its chunk
     boundaries *dropped* samples elsewhere — and return the fingerprint of the window the capture
-    handed to the transform."""
+    handed to the transform, and the ring-out measured."""
     path = str(tmp_path / f"guitar-window-{dropped}.wav")
     sf.write(path, samples[dropped:], SAMPLE_RATE, subtype="FLOAT")
 
@@ -59,7 +59,8 @@ def window_fingerprint(tmp_path, samples: np.ndarray, dropped: int) -> "str | No
         sut = TapToneAnalyzer.for_testing(sample_rate=SAMPLE_RATE)
         sut.tap_detection_threshold = -40.0
         play_file_and_wait(sut, path=path, measurement_type=MeasurementType.GENERIC, number_of_taps=1)
-        return capture_probe.records[0]["windowHash"] if capture_probe.records else None
+        window = capture_probe.records[0]["windowHash"] if capture_probe.records else None
+        return window, sut.current_decay_time
     finally:
         capture_probe.enabled = False
 
@@ -68,9 +69,18 @@ def test_GW1_same_tap_same_window_wherever_the_chunk_boundaries_fall(tmp_path):
     """GW1: the same tap, with its chunk boundaries at four different places, reaches the transform
     as the same window."""
     samples = recording()
-    seen = {dropped: window_fingerprint(tmp_path, samples, dropped) for dropped in (0, 300, 700, 1000)}
+    seen = {dropped: capture(tmp_path, samples, dropped)[0] for dropped in (0, 300, 700, 1000)}
     assert all(seen.values()), f"no capture for some chunk boundary: {seen}"
     assert len(set(seen.values())) == 1, f"REGRESSION: the window differs with the chunk boundary — {seen}"
+
+
+def test_GW3_same_tap_same_ring_out_wherever_the_chunk_boundaries_fall(tmp_path):
+    """GW3: the same tap, with its chunk boundaries at four different places, measures the same
+    ring-out."""
+    samples = recording()
+    seen = {dropped: capture(tmp_path, samples, dropped)[1] for dropped in (0, 300, 700, 1000)}
+    assert all(v is not None for v in seen.values()), f"no ring-out for some chunk boundary: {seen}"
+    assert len(set(seen.values())) == 1, f"REGRESSION: the ring-out differs with the chunk boundary — {seen}"
 
 
 def onset_test_signal(length: int = 40_000, tap: int = 12_000) -> np.ndarray:

@@ -106,14 +106,6 @@ class TestDetectorDecisions:
         _chunks(sut, -35.0, _CONFIRM)
         assert sut._gated_capture_active, "a tap should start a capture after crossing the rising threshold"
 
-    def test_T1b_the_tap_is_stamped_with_the_confirming_chunks_audio_time(self):
-        """T1b: the tap is stamped with the AUDIO time of the chunk that confirmed it."""
-        sut = _armed(-40.0)
-        _settled(sut)
-        _chunks(sut, -35.0, _CONFIRM)
-        assert sut.decay_tap_audio_time == sut.last_audio_time, \
-            "the tap's time is the confirming chunk's audio time"
-
     # T1c–T1e: the detector uses the threshold the APPLICATION configured — tap_detection_threshold, which
     # the slider writes, not a value left behind in the engine's config at the -40 dB default.
 
@@ -425,8 +417,8 @@ class TestPipelineDeliversOnceAndExact:
         import threading
         sut = self._sut()
         seen: list = []
-        original = sut.track_decay_fast   # runs once per chunk delivered, after detection
-        sut.track_decay_fast = lambda *a, **k: (seen.append(threading.current_thread()), original(*a, **k))
+        original = sut._on_rms_level_changed   # detection: runs once per chunk delivered
+        sut._on_rms_level_changed = lambda *a, **k: (seen.append(threading.current_thread()), original(*a, **k))
         worker = threading.Thread(target=lambda: sut.mic.process_raw_samples(self._tone(-50.0)))
         worker.start()
         worker.join()
@@ -437,8 +429,8 @@ class TestPipelineDeliversOnceAndExact:
     def test_one_chunk_runs_detection_once(self):
         sut = self._sut()
         calls: list = []
-        original = sut.track_decay_fast   # runs once per chunk delivered, after detection
-        sut.track_decay_fast = lambda *a, **k: (calls.append(a), original(*a, **k))
+        original = sut._on_rms_level_changed   # detection: runs once per chunk delivered
+        sut._on_rms_level_changed = lambda *a, **k: (calls.append(a), original(*a, **k))
         sut.mic.process_raw_samples(self._tone(-50.0))
         QtWidgets.QApplication.processEvents()  # deliver anything that was queued
         assert len(calls) == 1, f"detection ran {len(calls)} times for one chunk"

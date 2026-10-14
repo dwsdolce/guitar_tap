@@ -1,128 +1,109 @@
 {
  "slug": "test/decay-tracking",
- "about": "Ring-out (decay) time measured on a given history — measureDecayTime(tapTime:) on an analyzer holding the entries (DK1–DK5, DK8–DK10), the same cases in every edition. A history is magnitudes (dB) 'interval' seconds apart from 'start'; 'threshold' is the analyzer's decayThreshold when set (else its default, 'defaultThreshold'); 'expect' is seconds, or null for no measurement, within 'tolerance'. The tracker driven chunk by chunk (DK6, DK7, DK11–DK13) stays as code. Expected values are Swift's.",
+ "about": "Ring-out time measured on given audio — ringOutTime(samples, from: start, to: end, sampleRate:, threshold:) — the same cases in every edition. Each case's audio is generated from 'signal': 'length' samples at 'sampleRate', silent before 'onset', then amplitude·exp(−n/(timeConstant·sampleRate)) (amplitude 0.5 unless given), scaled up linearly over the first 'attack' samples when given, stored as 32-bit floats. 'threshold' is the decay threshold in dB when given (else 'defaultThreshold', the analyzer's default); 'expect' is seconds, or null for no ring-out, within 'tolerance'. The level is the energy of every 'windowSamples'-sample window.",
  "defaultThreshold": 15,
+ "windowSamples": 1024,
+ "sampleRate": 48000,
  "tolerance": 1e-06,
- "measureDecayTime": [
+ "ringOutTime": [
   {
    "id": "DK1",
-   "magnitudes": [],
-   "interval": 0.1,
+   "note": "an exponential decay from the onset: its level falls in a straight line in dB, so the crossing is exact — 15 dB below the peak at 0.75·ln10·τ",
+   "signal": {
+    "length": 24000,
+    "onset": 0,
+    "timeConstant": 0.02
+   },
    "start": 0,
-   "tapTime": 0,
-   "expect": null,
-   "note": "an empty history measures nothing"
+   "end": 24000,
+   "expect": 0.03453877642
   },
   {
    "id": "DK2",
-   "magnitudes": [
-    -20,
-    -25,
-    -30,
-    -35,
-    -40,
-    -50
-   ],
-   "interval": 0.1,
-   "start": -1.0,
-   "tapTime": 0,
-   "expect": null,
-   "note": "every entry before the tap"
+   "note": "the same decay with a 20 dB threshold: 1·ln10·τ",
+   "signal": {
+    "length": 24000,
+    "onset": 0,
+    "timeConstant": 0.02
+   },
+   "start": 0,
+   "end": 24000,
+   "threshold": 20,
+   "expect": 0.04605170186
   },
   {
    "id": "DK3",
-   "magnitudes": [
-    -20,
-    -22,
-    -24,
-    -25,
-    -25,
-    -25,
-    -25
-   ],
-   "interval": 0.1,
+   "note": "silence before the onset, measured from before it: the windows that reach into the silence hold less energy, so the peak and the crossing are those of DK1",
+   "signal": {
+    "length": 26000,
+    "onset": 2000,
+    "timeConstant": 0.02
+   },
    "start": 0,
-   "tapTime": 0,
-   "threshold": 30,
-   "expect": null,
-   "note": "the level never drops by the threshold"
+   "end": 26000,
+   "expect": 0.03453877642
   },
   {
    "id": "DK4",
-   "magnitudes": [
-    -10,
-    -15,
-    -20,
-    -24,
-    -28,
-    -31,
-    -35
-   ],
-   "interval": 0.1,
+   "note": "an attack — the level rises for 10 ms before it decays: the peak is after the onset, and the ring-out is measured from it",
+   "signal": {
+    "length": 24000,
+    "onset": 0,
+    "timeConstant": 0.02,
+    "attack": 480
+   },
    "start": 0,
-   "tapTime": 0,
-   "threshold": 20,
-   "expect": 0.5,
-   "note": "timed from the peak to the first entry below it"
+   "end": 24000,
+   "expect": 0.03817712826
   },
   {
    "id": "DK5",
-   "magnitudes": [
-    -10,
-    -21,
-    -30,
-    -40
-   ],
-   "interval": 0.1,
+   "note": "a decay too slow to fall 15 dB before the end: no ring-out",
+   "signal": {
+    "length": 24000,
+    "onset": 0,
+    "timeConstant": 1.0
+   },
    "start": 0,
-   "tapTime": 0,
-   "threshold": 10,
-   "expect": 0.1,
-   "note": "the very next entry crosses"
+   "end": 24000,
+   "expect": null
+  },
+  {
+   "id": "DK6",
+   "note": "silence: no ring-out",
+   "signal": {
+    "length": 24000,
+    "onset": 0,
+    "timeConstant": 0.02,
+    "amplitude": 0
+   },
+   "start": 0,
+   "end": 24000,
+   "expect": null
+  },
+  {
+   "id": "DK7",
+   "note": "no more audio than one window: no ring-out",
+   "signal": {
+    "length": 1024,
+    "onset": 0,
+    "timeConstant": 0.02
+   },
+   "start": 0,
+   "end": 1024,
+   "expect": null
   },
   {
    "id": "DK8",
-   "magnitudes": [
-    -10,
-    -12,
-    -20,
-    -26,
-    -40
-   ],
-   "interval": 0.1,
+   "note": "the end is where the audio is cut: a decay that crosses after it measures nothing",
+   "signal": {
+    "length": 24000,
+    "onset": 0,
+    "timeConstant": 0.02
+   },
    "start": 0,
-   "tapTime": 0,
-   "expect": 0.3,
-   "note": "the default threshold, 15 dB"
-  },
-  {
-   "id": "DK9",
-   "magnitudes": [
-    -12,
-    -8,
-    -15,
-    -24,
-    -40
-   ],
-   "interval": 0.1,
-   "start": 0,
-   "tapTime": 0,
-   "expect": 0.2,
-   "note": "timed from the post-tap peak, not the tap"
-  },
-  {
-   "id": "DK10",
-   "magnitudes": [
-    -30,
-    -10,
-    -20,
-    -26
-   ],
-   "interval": 0.1,
-   "start": -0.1,
-   "tapTime": 0,
-   "expect": 0.2,
-   "note": "an entry before the tap is ignored even when loudest"
+   "end": 2500,
+   "expect": null
   }
  ]
 }

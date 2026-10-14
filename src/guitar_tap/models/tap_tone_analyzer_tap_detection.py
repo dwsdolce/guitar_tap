@@ -54,7 +54,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self.noise_floor_alpha: float             (EMA coefficient = 0.05)
         self.warmup_period: float                 (seconds = 0.5)
         self.tap_cooldown: float                  (seconds = 0.5)
-        self.tap_peak_level: float                (dBFS at moment of tap)
         self.is_detecting: bool                   (via Published)
         self.is_detection_paused: bool            (via Published)
         self.current_tap_count: int               (via Published)
@@ -225,19 +224,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
                     )
                     self.is_above_threshold = True
                     self.detect_tap_consecutive_above = 0
-                    # Capture the recent peak input level for decay tracking
-                    # reference.  Mirrors Swift TapToneAnalyzer+TapDetection.swift:
-                    #   tapPeakLevel = fftAnalyzer.level.recentPeakLevelDB
-                    # (2.0 s peak-hold).  This is the CORRECT intentional use
-                    # of recentPeakLevelDB: at tap-fire time the peak-hold
-                    # captures the actual tap transient even though FFT
-                    # detection lags by up to one FFT frame.  Fall back to
-                    # level when mic is None (tests, no audio hardware).
-                    if self.mic is not None and hasattr(self.mic, "level"):
-                        self.tap_peak_level = self.mic.level.recent_peak_level_db
-                    else:
-                        self.tap_peak_level = level
-                    self._handle_tap_detection(mag_y_db, freq, audio_time)
+                    self._handle_tap_detection(mag_y_db, freq)
                 else:
                     # Pending — waiting for more above-threshold chunks.
                     if is_file_playback and self.detect_tap_consecutive_above == 1:
@@ -260,12 +247,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     # _handle_tap_detection — mirrors Swift handleTapDetection(magnitudes:frequencies:time:)
     # ------------------------------------------------------------------ #
 
-    def _handle_tap_detection(self, mag_y_db, freq, audio_time: float) -> None:
+    def _handle_tap_detection(self, mag_y_db, freq) -> None:
         """Dispatch a confirmed tap to the appropriate capture handler.
 
-        Mirrors Swift handleTapDetection(magnitudes:frequencies:time:audioTime:). audio_time (the
-        tap's audio-clock time) seeds ring-out decay tracking so it is measured in audio time.
-        Guitar mode: accumulates spectra, starts decay tracking, starts capture-window timer.
+        Mirrors Swift handleTapDetection(magnitudes:frequencies:time:).
+        Guitar mode: starts the gated capture of the tap, whose window gives both its spectrum and its
+        ring-out.
         Plate/brace mode: delegates to handle_plate_tap_detection().
         """
         from guitar_tap.models.measurement_type import MeasurementType as _MT
@@ -302,10 +289,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             f"GUITAR — starting gated capture "
             f"capturedTaps={len(self.captured_taps)}/{self.number_of_taps}"
         )
-
-        # Start decay tracking immediately (still uses RMS level, independent of
-        # spectrum capture). Mirrors Swift startDecayTracking(tapAudioTime:) at tap-fire time.
-        self.start_decay_tracking(tap_audio_time=audio_time)
 
         # Provisional status update — final status is emitted after gated capture
         # completes and the captured_taps list grows.  (current_tap_count == len(captured_taps)

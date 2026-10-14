@@ -468,8 +468,7 @@ class TapToneAnalyzer(
         # Instantaneous FFT peak magnitude in dBFS — mirrors Swift fftAnalyzer.peakMagnitude.
         # Updated every ~370 ms (at FFT rate) by on_fft_frame; used by guitar-mode _reenable()
         # which mirrors Swift handleTapDetection's re-enable closure using fftAnalyzer.peakMagnitude.
-        # Distinct from _current_input_level_db (inputLevelDB/RMS) and from tap_peak_level
-        # (recentPeakLevelDB, captured at tap-fire time).
+        # Distinct from _current_input_level_db (inputLevelDB/RMS).
         self._current_peak_magnitude_db: float = -100.0
 
         # ── Per-phase material spectra ────────────────────────────────────
@@ -560,20 +559,6 @@ class TapToneAnalyzer(
         # the signal is below threshold (between taps) so tap energy does not
         # contaminate it. Mirrors noiseFloorEstimate.
         self.noise_floor_estimate: float = -60.0
-        # Input level (dBFS) at the moment the most recent tap was detected; the
-        # reference magnitude for ring-out time computation. Mirrors tapPeakLevel.
-        self.tap_peak_level: float = -100.0
-
-        # ── Decay tracking state (mirrors Swift TapToneAnalyzer stored properties)
-        # peak_magnitude_history holds (audio_time, magnitude_dBFS) pairs — the AUDIO clock
-        # (seconds since engine start), carried with each sample, NOT wall-clock. This makes the
-        # ring-out invariant to main-thread scheduling jitter under load.
-        self.peak_magnitude_history: list = []
-        # Audio-clock time of the tap that started the current decay window — the time-zero
-        # reference for measure_decay_time.
-        self.decay_tap_audio_time: "float | None" = None
-        self.is_tracking_decay: bool = False
-
         # ── Gated FFT capture state ────────────────────────────────────────
         # Mirrors Swift TapToneAnalyzer stored properties for gated capture:
         #   preRollBuffer: [Float]     — ring buffer of recent raw PCM
@@ -702,12 +687,6 @@ class TapToneAnalyzer(
         the taps are averaged (``after_audio``, released at file end). Mirrors Swift
         ``captureWindow``."""
         return 0.2
-
-    @property
-    def decay_tracking_duration(self) -> float:
-        """How long after a tap the ring-out is tracked, in seconds of AUDIO. Mirrors Swift
-        ``decayTrackingDuration``."""
-        return 3.0
 
     # ------------------------------------------------------------------ #
     # number_of_taps — mirrors Swift @Published var numberOfTaps { didSet { … } }
@@ -1039,16 +1018,12 @@ class TapToneAnalyzer(
     # would dilute the gated capture signal by ~50% (~6 dB of spectral magnitude).
 
     def _on_chunk_level(self, level_db: float, audio_time: float) -> None:
-        """One chunk's level, on the main thread: detection, then ring-out tracking — the per-chunk entry.
+        """One chunk's level, on the main thread — the per-chunk entry.
 
         Swift ``onChunkLevel`` (the body of its rmsLevelHandler hop), the web's ``processAudioFrame``;
-        tests feed audio through it. ``onRmsLevelChanged`` and then ``trackDecayFast``, both with THIS
-        chunk's audio time. Ring-out tracking runs after detection, so a tap confirmed on this chunk
-        records the chunk into its new ring-out, and outside detection's guards, so it runs on past the
-        measurement's completion — the window it measures. It gates itself on is_tracking_decay.
+        tests feed audio through it.
         """
         self._on_rms_level_changed(level_db, audio_time)
-        self.track_decay_fast(level_db, audio_time)
 
     # ------------------------------------------------------------------ #
     # is_detecting property — mirrors Swift @Published var isDetecting

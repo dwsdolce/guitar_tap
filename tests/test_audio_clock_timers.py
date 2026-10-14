@@ -73,7 +73,7 @@ class TestAudioClockTimers:
             sut.tap_detection_threshold = -90.0   # accept the synthetic tap
             sut.start_tap_sequence()
             # A detected tap, as detection delivers it: detection stops and the gated capture opens...
-            sut._handle_tap_detection(np.array([]), np.array([]), sut.last_audio_time)
+            sut._handle_tap_detection(np.array([]), np.array([]))
             # ...and the capture completes through the real path.
             sut.finish_gated_fft_capture(_tap_samples(60.0, 24_000), 48000.0,
                                          MaterialTapPhase.CAPTURING_LONGITUDINAL)
@@ -213,7 +213,7 @@ class TestAudioClockTimers:
             sut.tap_detection_threshold = -90.0   # accept the synthetic tap
             sut.start_tap_sequence()
             warmup_anchor = sut.warmup_start_audio_time
-            sut._handle_tap_detection(np.array([]), np.array([]), sut.last_audio_time)
+            sut._handle_tap_detection(np.array([]), np.array([]))
             sut.finish_gated_fft_capture(_tap_samples(60.0, 24_000), 48000.0,
                                          MaterialTapPhase.CAPTURING_LONGITUDINAL)
 
@@ -223,18 +223,3 @@ class TestAudioClockTimers:
             assert sut.warmup_start_audio_time == warmup_anchor, "the warm-up is not restarted"
         finally:
             _restore()
-
-    def test_ring_out_tracking_stops_on_the_audio_clock(self):
-        """T7: ring-out tracking stops once a chunk arrives decay_tracking_duration of audio after the
-        tap, and that chunk is not applied."""
-        sut = _make_sut(MeasurementType.GENERIC, 1)
-        sut.start_decay_tracking(10.0)
-        end = 10.0 + sut.decay_tracking_duration
-
-        sut.track_decay_fast(-40.0, end - 0.01)
-        assert sut.is_tracking_decay, "still inside the window"
-        samples_before = len(sut.peak_magnitude_history)
-
-        sut.track_decay_fast(-40.0, end)
-        assert not sut.is_tracking_decay, "stopped by the audio clock alone"
-        assert len(sut.peak_magnitude_history) == samples_before, "the stopping chunk is not applied"

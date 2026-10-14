@@ -985,6 +985,12 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         import datetime as _dt
         self.captured_taps.append((list(magnitudes_db), freqs, _dt.datetime.now()))
 
+        # The ring-out, from the window's audio: from the onset to where the audio ends.
+        # Mirrors Swift finishGuitarGatedCapture.
+        self.current_decay_time = self.ring_out_time(
+            chunk, int(sample_rate * self.PRE_ONSET_DURATION), min(audio_samples, len(chunk)),
+            sample_rate, self.decay_threshold)
+
         peak_db = float(np.max(magnitudes_db))
         # DIAG: spectrum fingerprint — sum of first 100 magnitude bins
         _diag_spec_hash = float(np.sum(magnitudes_db[:100]))

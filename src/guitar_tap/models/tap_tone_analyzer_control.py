@@ -853,7 +853,7 @@ class TapToneAnalyzerControlMixin:
 
         Mirrors Swift startTapSequence() including:
         - Seeds noise_floor_estimate from the current ambient level (fftAnalyzer.inputLevelDB).
-        - Calls _reset_decay_tracking().
+        - Clears the last ring-out (current_decay_time).
         - Calls _reset_material_phase_state() for plate/brace.
         - Sets is_detecting = True.
         - Sets context-appropriate status_message.
@@ -959,8 +959,6 @@ class TapToneAnalyzerControlMixin:
         self.noise_floor_estimate = -100.0 if skip_warmup else self._current_input_level_db
 
         self.current_decay_time = None
-        self.peak_magnitude_history = []
-        self._reset_decay_tracking()
 
         # Reset material phase state: a material sequence starts at its first phase (mirrors Swift
         # resetMaterialPhaseState(to:)).
@@ -1458,7 +1456,3 @@ class TapToneAnalyzerControlMixin:
     def reset_plate_analysis(self) -> None:
         """Abort the current plate/brace tap sequence and return to idle."""
         self.cancel_tap_sequence()
-
-    def _reset_decay_tracking(self) -> None:
-        """Stop any active decay tracking. Mirrors Swift private func resetDecayTracking()."""
-        self.is_tracking_decay = False

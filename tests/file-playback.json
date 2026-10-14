@@ -82,7 +82,7 @@
   {
    "id": "REG-G",
    "oracle": "REG-G1",
-   "note": "the ring-out of REG-G1's tap, on the audio clock",
+   "note": "the ring-out of REG-G1's tap, measured from its window",
    "checks": [
     {
      "kind": "ringOut"
