@@ -6,9 +6,9 @@
     "os": "darwin"
   },
   "provenance": {
-    "mintedAt": "2026-10-14T00:07:12Z",
+    "mintedAt": "2026-10-14T02:22:12Z",
     "numpy": "2.5.4",
-    "oracleVersion": "698ce7a",
+    "oracleVersion": "6489b1b",
     "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
     "processor": "arm",
     "python": "3.14.8"
