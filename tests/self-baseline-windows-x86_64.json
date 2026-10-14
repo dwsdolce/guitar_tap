@@ -6,12 +6,12 @@
     "os": "windows"
   },
   "provenance": {
-    "mintedAt": "2026-10-14T01:36:41Z",
+    "mintedAt": "2026-10-14T19:32:38Z",
     "numpy": "2.5.4",
-    "oracleVersion": "6489b1b",
+    "oracleVersion": "777a951",
     "platform": "Windows-2025Server-10.0.26100-SP0",
-    "processor": "AMD64 Family 25 Model 1 Stepping 1, AuthenticAMD",
-    "python": "3.14.7"
+    "processor": "AMD64 Family 26 Model 2 Stepping 1, AuthenticAMD",
+    "python": "3.14.8"
   },
   "values": {
     "filePlayback": {
@@ -53,7 +53,7 @@
             "role": "back"
           }
         ],
-        "ringOutSec": 0.08533333333333334
+        "ringOutSec": 0.07610081848675977
       },
       "REG-G2": {
         "averagedPeaks": [

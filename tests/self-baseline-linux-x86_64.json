@@ -6,9 +6,9 @@
     "os": "linux"
   },
   "provenance": {
-    "mintedAt": "2026-10-14T01:36:22Z",
+    "mintedAt": "2026-10-14T19:32:47Z",
     "numpy": "2.5.4",
-    "oracleVersion": "6489b1b",
+    "oracleVersion": "777a951",
     "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
     "processor": "x86_64",
     "python": "3.14.8"
@@ -53,7 +53,7 @@
             "role": "back"
           }
         ],
-        "ringOutSec": 0.08533333333333334
+        "ringOutSec": 0.07610081848675977
       },
       "REG-G2": {
         "averagedPeaks": [
