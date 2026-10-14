@@ -42,7 +42,7 @@
       "peaks" : [
         {
           "frequency" : 553.63189999999997,
-          "magnitude" : -65.490769999999998,
+          "magnitude" : -65.491264000000001,
           "q" : 94.5,
           "role" : "longitudinal"
         }
@@ -88,18 +88,18 @@
       "_perTapNote" : "Taps 1 and 7 select 296.5 Hz as Back rather than ~240.6 Hz. That is the real behaviour of the shared peak-selection path on this fixture, not a transcription slip - it is pinned deliberately so a change in selection shows up.",
       "averagedPeaks" : [
         {
-          "frequency" : 87.233069999999998,
-          "magnitude" : -44.344329999999999,
+          "frequency" : 87.233109999999996,
+          "magnitude" : -44.345550000000003,
           "role" : "air"
         },
         {
-          "frequency" : 164.04660000000001,
-          "magnitude" : -35.105483999999997,
+          "frequency" : 164.04666,
+          "magnitude" : -35.105587,
           "role" : "top"
         },
         {
-          "frequency" : 240.57167000000001,
-          "magnitude" : -55.152526999999999,
+          "frequency" : 240.57105999999999,
+          "magnitude" : -55.152366999999998,
           "role" : "back"
         }
       ],
@@ -109,18 +109,18 @@
         {
           "peaks" : [
             {
-              "frequency" : 87.203445000000002,
-              "magnitude" : -46.083159999999999,
+              "frequency" : 87.203239999999994,
+              "magnitude" : -46.085487000000001,
               "role" : "air"
             },
             {
-              "frequency" : 164.15758,
-              "magnitude" : -37.157344999999999,
+              "frequency" : 164.15752000000001,
+              "magnitude" : -37.157409999999999,
               "role" : "top"
             },
             {
-              "frequency" : 296.58071999999999,
-              "magnitude" : -57.113174000000001,
+              "frequency" : 296.57979999999998,
+              "magnitude" : -57.113486999999999,
               "role" : "back"
             }
           ],
@@ -129,18 +129,18 @@
         {
           "peaks" : [
             {
-              "frequency" : 87.219989999999996,
-              "magnitude" : -43.713794999999998,
+              "frequency" : 87.219999999999999,
+              "magnitude" : -43.714751999999997,
               "role" : "air"
             },
             {
-              "frequency" : 163.98955000000001,
-              "magnitude" : -34.961933000000002,
+              "frequency" : 163.98957999999999,
+              "magnitude" : -34.962085999999999,
               "role" : "top"
             },
             {
-              "frequency" : 240.63219000000001,
-              "magnitude" : -54.931614000000003,
+              "frequency" : 240.63088999999999,
+              "magnitude" : -54.931579999999997,
               "role" : "back"
             }
           ],
@@ -149,18 +149,18 @@
         {
           "peaks" : [
             {
-              "frequency" : 87.216094999999996,
-              "magnitude" : -44.397877000000001,
+              "frequency" : 87.216049999999996,
+              "magnitude" : -44.399259999999998,
               "role" : "air"
             },
             {
-              "frequency" : 164.00632999999999,
-              "magnitude" : -36.064284999999998,
+              "frequency" : 164.00621000000001,
+              "magnitude" : -36.064247000000002,
               "role" : "top"
             },
             {
-              "frequency" : 240.54317,
-              "magnitude" : -56.383409999999998,
+              "frequency" : 240.54433,
+              "magnitude" : -56.383296999999999,
               "role" : "back"
             }
           ],
@@ -169,18 +169,18 @@
         {
           "peaks" : [
             {
-              "frequency" : 87.233536000000001,
-              "magnitude" : -43.929634,
+              "frequency" : 87.233680000000007,
+              "magnitude" : -43.93159,
               "role" : "air"
             },
             {
-              "frequency" : 164.0231,
-              "magnitude" : -34.729312999999998,
+              "frequency" : 164.02314999999999,
+              "magnitude" : -34.729477000000003,
               "role" : "top"
             },
             {
-              "frequency" : 240.58780999999999,
-              "magnitude" : -55.048008000000003,
+              "frequency" : 240.58833000000001,
+              "magnitude" : -55.048251999999998,
               "role" : "back"
             }
           ],
@@ -189,18 +189,18 @@
         {
           "peaks" : [
             {
-              "frequency" : 87.239265000000003,
-              "magnitude" : -44.447330000000001,
+              "frequency" : 87.239369999999994,
+              "magnitude" : -44.448853,
               "role" : "air"
             },
             {
-              "frequency" : 164.09743,
-              "magnitude" : -36.649796000000002,
+              "frequency" : 164.09741,
+              "magnitude" : -36.650215000000003,
               "role" : "top"
             },
             {
-              "frequency" : 240.53252000000001,
-              "magnitude" : -54.570549999999997,
+              "frequency" : 240.53121999999999,
+              "magnitude" : -54.570520000000002,
               "role" : "back"
             }
           ],
@@ -209,18 +209,18 @@
         {
           "peaks" : [
             {
-              "frequency" : 87.258255000000005,
-              "magnitude" : -44.088250000000002,
+              "frequency" : 87.258483999999996,
+              "magnitude" : -44.089005,
               "role" : "air"
             },
             {
-              "frequency" : 164.05695,
-              "magnitude" : -34.240389999999998,
+              "frequency" : 164.05692999999999,
+              "magnitude" : -34.240352999999999,
               "role" : "top"
             },
             {
-              "frequency" : 240.63032999999999,
-              "magnitude" : -54.848106000000001,
+              "frequency" : 240.62960000000001,
+              "magnitude" : -54.847168000000003,
               "role" : "back"
             }
           ],
@@ -229,18 +229,18 @@
         {
           "peaks" : [
             {
-              "frequency" : 87.243210000000005,
-              "magnitude" : -43.968780000000002,
+              "frequency" : 87.243260000000006,
+              "magnitude" : -43.970511999999999,
               "role" : "air"
             },
             {
-              "frequency" : 164.05475999999999,
-              "magnitude" : -33.775351999999998,
+              "frequency" : 164.05484000000001,
+              "magnitude" : -33.775620000000004,
               "role" : "top"
             },
             {
-              "frequency" : 296.51931999999999,
-              "magnitude" : -54.026325,
+              "frequency" : 296.51929999999999,
+              "magnitude" : -54.02572,
               "role" : "back"
             }
           ],
@@ -249,18 +249,18 @@
         {
           "peaks" : [
             {
-              "frequency" : 87.243706000000003,
-              "magnitude" : -44.522938000000003,
+              "frequency" : 87.243579999999994,
+              "magnitude" : -44.522255000000001,
               "role" : "air"
             },
             {
-              "frequency" : 164.03644,
-              "magnitude" : -34.412149999999997,
+              "frequency" : 164.0368,
+              "magnitude" : -34.412050000000001,
               "role" : "top"
             },
             {
-              "frequency" : 240.49254999999999,
-              "magnitude" : -54.850017999999999,
+              "frequency" : 240.49146999999999,
+              "magnitude" : -54.849350000000001,
               "role" : "back"
             }
           ],
@@ -421,14 +421,14 @@
       ]
     }
   },
-  "generatedAt" : "2026-09-24T05:50:06Z",
-  "oracleVersion" : "068f814",
+  "generatedAt" : "2026-10-14T00:38:11Z",
+  "oracleVersion" : "6489b1b",
   "selfTolerances" : {
-    "freqHz" : 1e-12,
-    "gatedFftDb" : 1e-12,
-    "magDb" : 1e-12,
-    "q" : 1e-12,
-    "ringOutSec" : 1e-12
+    "freqHz" : 9.9999999999999998e-13,
+    "gatedFftDb" : 9.9999999999999998e-13,
+    "magDb" : 9.9999999999999998e-13,
+    "q" : 9.9999999999999998e-13,
+    "ringOutSec" : 9.9999999999999998e-13
   },
   "tolerances" : {
     "freqHz" : 0.02,

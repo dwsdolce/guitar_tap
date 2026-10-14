@@ -1,5 +1,5 @@
 # @parity dsp/spectrum-average
-# @parity dsp/gated-capture tests=test/file-playback,test/tap-decisions
+# @parity dsp/gated-capture tests=test/file-playback,test/tap-decisions,test/guitar-capture-window
 # @parity dsp/gated-fft tests=test/gated-fft
 """
 TapToneAnalyzer+SpectrumCapture — gated-FFT capture pipeline for plate/brace
