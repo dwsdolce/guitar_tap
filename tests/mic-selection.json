@@ -1,0 +1,73 @@
+{
+ "slug": "test/mic-selection",
+ "about": "The input device used at start: the saved device when it is connected, otherwise the system default, otherwise the first device; nothing when there are none (Swift inputDeviceToUse(in:savedUID:systemDefaultUID:), Python input_device_to_use). Each case: the connected 'devices' in order, the 'saved' device and the system 'default' (null: none), and the device 'expect'ed (null: none). Devices are named by the keys of 'devices'; each edition maps a key to a device of its own. 'editions' limits a row to the editions that can express it: the web asks the browser for the saved device, then for the default, and the browser always resolves a default itself — so it has no first-device step, and with no inputs nothing can be opened. The web runs its rows through its engine with a fake browser. Expected values are Swift's. The rest of test/mic-selection (MS6 on) drives the engine and stays as code.",
+ "devices": {
+  "builtIn": "MacBook Pro Microphone",
+  "blackHole": "BlackHole 2ch",
+  "umik": "UMIK-1",
+  "usb2": "USB Mic 2"
+ },
+ "inputDeviceToUse": [
+  {
+   "id": "MS1",
+   "devices": [
+    "blackHole",
+    "builtIn",
+    "umik"
+   ],
+   "saved": "builtIn",
+   "default": "umik",
+   "expect": "builtIn",
+   "note": "the saved device wins when it is present — over the system default, and over any other device"
+  },
+  {
+   "id": "MS2",
+   "devices": [
+    "blackHole",
+    "builtIn"
+   ],
+   "saved": "umik",
+   "default": "builtIn",
+   "expect": "builtIn",
+   "note": "the saved device is not connected — the system default"
+  },
+  {
+   "id": "MS3",
+   "devices": [
+    "blackHole",
+    "builtIn"
+   ],
+   "saved": null,
+   "default": "builtIn",
+   "expect": "builtIn",
+   "note": "nothing saved — the system default, not a device listed ahead of it (BlackHole)"
+  },
+  {
+   "id": "MS4",
+   "devices": [
+    "umik",
+    "builtIn"
+   ],
+   "saved": null,
+   "default": null,
+   "expect": "umik",
+   "editions": [
+    "swift",
+    "python"
+   ],
+   "note": "no usable system default — the first device; the browser always resolves a default"
+  },
+  {
+   "id": "MS5",
+   "devices": [],
+   "saved": "builtIn",
+   "default": "builtIn",
+   "expect": null,
+   "editions": [
+    "swift",
+    "python"
+   ],
+   "note": "no devices — nothing; in the browser, with no inputs nothing can be opened"
+  }
+ ]
+}

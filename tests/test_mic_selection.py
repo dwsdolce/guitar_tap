@@ -1,10 +1,10 @@
 # @parity test/mic-selection
 """
-Which input device the engine uses and what it saves: the launch rule input_device_to_use (MS1–MS5),
-the engine driven through apply_input_device_list, a Settings selection and set_device (MS6–MS11), a
-measurement load switching to its recorded microphone (MS14–MS17), choosing a calibration for the
-selected device (MS18–MS20), the thresholds a load restores, saved as a setting (MS21–MS22), and a
-device that cannot be opened (MS23–MS25).
+Which input device the engine uses and what it saves: the launch rule input_device_to_use (MS1–MS5,
+the shared cases in mic-selection.json), the engine driven through apply_input_device_list, a Settings
+selection and set_device (MS6–MS11), a measurement load switching to its recorded microphone
+(MS14–MS17), choosing a calibration for the selected device (MS18–MS20), the thresholds a load
+restores, saved as a setting (MS21–MS22), and a device that cannot be opened (MS23–MS25).
 
 The rules: at launch, the saved device when it is present, otherwise the system default input,
 otherwise the first device; a device connected while running is selected; the device in use
@@ -19,6 +19,7 @@ its own), and PortAudio's device numbering and re-initialising.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -88,35 +89,27 @@ def _make_sut(saved: AudioDevice | None) -> RealtimeFFTAnalyzer:
     return RealtimeFFTAnalyzer.for_testing()
 
 
-# MARK: - The rule
+# MARK: - The rule — the shared cases in mic-selection.json (MS1–MS5)
 
-def test_MS1_saved_present_wins():
-    """MS1: The saved device wins when it is present — over the system default, and over any other
-    device (the built-in mic is kept although a USB mic and BlackHole are listed)."""
-    chosen = input_device_to_use([BLACK_HOLE, BUILT_IN, UMIK], BUILT_IN.fingerprint, UMIK.fingerprint)
-    assert chosen == BUILT_IN
+with open(os.path.join(os.path.dirname(__file__), "mic-selection.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
 
-
-def test_MS2_saved_absent_uses_system_default():
-    """MS2: The saved device is not connected — the system default."""
-    chosen = input_device_to_use([BLACK_HOLE, BUILT_IN], UMIK.fingerprint, BUILT_IN.fingerprint)
-    assert chosen == BUILT_IN
+_DEVICES = {"builtIn": BUILT_IN, "blackHole": BLACK_HOLE, "umik": UMIK, "usb2": USB2}
 
 
-def test_MS3_nothing_saved_uses_system_default():
-    """MS3: Nothing saved — the system default, not a device listed ahead of it (BlackHole)."""
-    chosen = input_device_to_use([BLACK_HOLE, BUILT_IN], None, BUILT_IN.fingerprint)
-    assert chosen == BUILT_IN
+def _device(key: "str | None") -> "AudioDevice | None":
+    """This file's device for a case file's device key."""
+    return _DEVICES[key] if key is not None else None
 
 
-def test_MS4_no_default_uses_first_device():
-    """MS4: No usable system default — the first device."""
-    assert input_device_to_use([UMIK, BUILT_IN], None, None) == UMIK
-
-
-def test_MS5_no_devices_selects_nothing():
-    """MS5: No devices — nothing."""
-    assert input_device_to_use([], BUILT_IN.fingerprint, BUILT_IN.fingerprint) is None
+@pytest.mark.parametrize("row", [r for r in DATA["inputDeviceToUse"] if "python" in r.get("editions", ["python"])],
+                         ids=lambda r: r["id"])
+def test_input_device_to_use(row):
+    saved, default = _device(row["saved"]), _device(row["default"])
+    chosen = input_device_to_use([_device(k) for k in row["devices"]],
+                                 saved.fingerprint if saved else None,
+                                 default.fingerprint if default else None)
+    assert chosen == _device(row["expect"]), f"{row['id']}: {row['note']}"
 
 
 # MARK: - The engine: what is selected, and what is saved
