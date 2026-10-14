@@ -6,9 +6,9 @@
     "os": "linux"
   },
   "provenance": {
-    "mintedAt": "2026-10-10T19:51:05Z",
-    "numpy": "2.5.3",
-    "oracleVersion": "068f814",
+    "mintedAt": "2026-10-14T01:36:22Z",
+    "numpy": "2.5.4",
+    "oracleVersion": "6489b1b",
     "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
     "processor": "x86_64",
     "python": "3.14.8"
@@ -28,8 +28,8 @@
       "REG-B2": {
         "peaks": [
           {
-            "frequency": 553.631874428381,
-            "magnitude": -65.49075978876658,
+            "frequency": 553.6318796222525,
+            "magnitude": -65.49125604951087,
             "q": 94.5,
             "role": "longitudinal"
           }
@@ -58,18 +58,18 @@
       "REG-G2": {
         "averagedPeaks": [
           {
-            "frequency": 87.23306740505562,
-            "magnitude": -44.344326732040564,
+            "frequency": 87.23310474088579,
+            "magnitude": -44.34555098764267,
             "role": "air"
           },
           {
-            "frequency": 164.04660668577793,
-            "magnitude": -35.10548071629822,
+            "frequency": 164.04665893628527,
+            "magnitude": -35.105584760565314,
             "role": "top"
           },
           {
-            "frequency": 240.57166896299248,
-            "magnitude": -55.152521535324844,
+            "frequency": 240.5710592238444,
+            "magnitude": -55.152366014758435,
             "role": "back"
           }
         ],
@@ -77,18 +77,18 @@
           {
             "peaks": [
               {
-                "frequency": 87.20344435797253,
-                "magnitude": -46.08315556157411,
+                "frequency": 87.2032357631527,
+                "magnitude": -46.08548058450811,
                 "role": "air"
               },
               {
-                "frequency": 164.15758371631648,
-                "magnitude": -37.157342064522076,
+                "frequency": 164.15750853758078,
+                "magnitude": -37.15740597393058,
                 "role": "top"
               },
               {
-                "frequency": 296.58072248462713,
-                "magnitude": -57.11316975043762,
+                "frequency": 296.57980577846723,
+                "magnitude": -57.113481871911,
                 "role": "back"
               }
             ],
@@ -97,18 +97,18 @@
           {
             "peaks": [
               {
-                "frequency": 87.21999199586774,
-                "magnitude": -43.71379254093657,
+                "frequency": 87.21999921196307,
+                "magnitude": -43.71474898319579,
                 "role": "air"
               },
               {
-                "frequency": 163.9895396740998,
-                "magnitude": -34.96192911603846,
+                "frequency": 163.98957863606856,
+                "magnitude": -34.96208184347199,
                 "role": "top"
               },
               {
-                "frequency": 240.6321952557151,
-                "magnitude": -54.931607247742235,
+                "frequency": 240.63088858503,
+                "magnitude": -54.931573696487625,
                 "role": "back"
               }
             ],
@@ -117,18 +117,18 @@
           {
             "peaks": [
               {
-                "frequency": 87.21609815449335,
-                "magnitude": -44.397873612106245,
+                "frequency": 87.21605124398,
+                "magnitude": -44.399261319417484,
                 "role": "air"
               },
               {
-                "frequency": 164.0063348293601,
-                "magnitude": -36.06428129198627,
+                "frequency": 164.00620861604727,
+                "magnitude": -36.06424503384702,
                 "role": "top"
               },
               {
-                "frequency": 240.54317055487266,
-                "magnitude": -56.383405345786116,
+                "frequency": 240.5443210505843,
+                "magnitude": -56.383292086658095,
                 "role": "back"
               }
             ],
@@ -137,18 +137,18 @@
           {
             "peaks": [
               {
-                "frequency": 87.23353266219343,
-                "magnitude": -43.92963000002063,
+                "frequency": 87.23368181190432,
+                "magnitude": -43.93158697959949,
                 "role": "air"
               },
               {
-                "frequency": 164.02309860517204,
-                "magnitude": -34.72930970234106,
+                "frequency": 164.0231392824978,
+                "magnitude": -34.72947405807193,
                 "role": "top"
               },
               {
-                "frequency": 240.58782717465184,
-                "magnitude": -55.04801200225605,
+                "frequency": 240.58833086835332,
+                "magnitude": -55.048249895924684,
                 "role": "back"
               }
             ],
@@ -157,18 +157,18 @@
           {
             "peaks": [
               {
-                "frequency": 87.23926664312687,
-                "magnitude": -44.44732820712656,
+                "frequency": 87.23937258872334,
+                "magnitude": -44.44885238245906,
                 "role": "air"
               },
               {
-                "frequency": 164.09742753021237,
-                "magnitude": -36.64979316110471,
+                "frequency": 164.09741299753188,
+                "magnitude": -36.650214012224886,
                 "role": "top"
               },
               {
-                "frequency": 240.5325130153488,
-                "magnitude": -54.570544163348046,
+                "frequency": 240.5312270590262,
+                "magnitude": -54.57050844999628,
                 "role": "back"
               }
             ],
@@ -177,18 +177,18 @@
           {
             "peaks": [
               {
-                "frequency": 87.25825838176436,
-                "magnitude": -44.08824737941076,
+                "frequency": 87.25848553970461,
+                "magnitude": -44.08899872599088,
                 "role": "air"
               },
               {
-                "frequency": 164.05694641366728,
-                "magnitude": -34.24038932634025,
+                "frequency": 164.05693126773212,
+                "magnitude": -34.240352354666136,
                 "role": "top"
               },
               {
-                "frequency": 240.63031486688283,
-                "magnitude": -54.848099694955984,
+                "frequency": 240.62958917056787,
+                "magnitude": -54.84716365223052,
                 "role": "back"
               }
             ],
@@ -197,18 +197,18 @@
           {
             "peaks": [
               {
-                "frequency": 87.24321092409058,
-                "magnitude": -43.96877562797298,
+                "frequency": 87.24326045922179,
+                "magnitude": -43.97051063532335,
                 "role": "air"
               },
               {
-                "frequency": 164.05476111846855,
-                "magnitude": -33.77534825048168,
+                "frequency": 164.05484626353999,
+                "magnitude": -33.775616944322294,
                 "role": "top"
               },
               {
-                "frequency": 296.5193200637379,
-                "magnitude": -54.026319201519755,
+                "frequency": 296.5193000987578,
+                "magnitude": -54.02571465297759,
                 "role": "back"
               }
             ],
@@ -217,18 +217,18 @@
           {
             "peaks": [
               {
-                "frequency": 87.24370213808967,
-                "magnitude": -44.52293424175727,
+                "frequency": 87.24358643382146,
+                "magnitude": -44.522256683309095,
                 "role": "air"
               },
               {
-                "frequency": 164.03644386933294,
-                "magnitude": -34.41215036784208,
+                "frequency": 164.03679990237956,
+                "magnitude": -34.41204947021343,
                 "role": "top"
               },
               {
-                "frequency": 240.49254678507623,
-                "magnitude": -54.85000563786908,
+                "frequency": 240.49147121816418,
+                "magnitude": -54.84934496672492,
                 "role": "back"
               }
             ],
