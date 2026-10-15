@@ -3299,6 +3299,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.fft_canvas.restart_tap_sequence()   # retry — arms if now reachable
         elif clicked is off_btn:
             TapDisplaySettings.set_dump_capture_audio(False)
+            self.fft_canvas.analyzer.apply_dump_capture_audio_setting()
             self.fft_canvas.start_tap_sequence()     # dump now off → arm directly
 
     def _on_capture_audio_saved_changed(self, name) -> None:
@@ -3341,6 +3342,7 @@ class MainWindow(QtWidgets.QMainWindow):
             analyzer.save_held_capture_recordings()   # asks again if still not written
         elif clicked is off_btn:
             TapDisplaySettings.set_dump_capture_audio(False)
+            analyzer.apply_dump_capture_audio_setting()
             analyzer.discard_held_capture_recordings()
         else:
             analyzer.discard_held_capture_recordings()
@@ -5482,155 +5484,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 spectrum_image_data=avg_png_data,
             )
 
-            # ── Page 2: per-tap comparison — mirrors Swift createMultiTapComparisonSpectrumView() ──
-            # Each slot's series colour and the average's, light — mirrors Swift's
-            # Palette.series / Palette.seriesAverage in the report's light scheme.
-            _PALETTE = M.MULTI_TAP_PALETTE
-            _AVERAGED_COLOR = M.MULTI_TAP_AVG_COLOR
-
-            tap_entries = analyzer.tap_entries
-            comparison_spectra = []
-            for idx, entry in enumerate(tap_entries):
-                color = _PALETTE[idx % len(_PALETTE)]
-                comparison_spectra.append({
-                    "frequencies": list(entry.snapshot.frequencies),
-                    "magnitudes":  list(entry.snapshot.magnitudes),
-                    "color": color,
-                    "label": f"Tap {entry.tap_index}",
-                })
-            # Append averaged entry using frozen spectrum.
-            if freqs:
-                comparison_spectra.append({
-                    "frequencies": freqs,
-                    "magnitudes":  mags,
-                    "color": _AVERAGED_COLOR,
-                    "label": "Averaged",
-                })
-
-            snaps = [e.snapshot for e in tap_entries]
-            cmp_min_freq = float(min(s.min_freq for s in snaps)) if snaps else min_freq_val
-            cmp_max_freq = float(max(s.max_freq for s in snaps)) if snaps else max_freq_val
-            cmp_min_db   = float(min(s.min_db   for s in snaps)) if snaps else min_db_val
-            cmp_max_db   = float(max(s.max_db   for s in snaps)) if snaps else max_db_val
-
-            # Mirrors Swift: subtitle = measurementName.isEmpty ? (tap.loadedMeasurementName ?? "Multi-Tap") : measurementName
-            _cmp_subtitle = loc or analyzer.loaded_measurement_name or "Multi-Tap"
-            cmp_chart_title = f"Tap Comparison — {_cmp_subtitle}"
-
-            cmp_png_data = make_exportable_spectrum_view(
-                frequencies=[], magnitudes=[],
-                min_freq=cmp_min_freq, max_freq=cmp_max_freq,
-                min_db=cmp_min_db,     max_db=cmp_max_db,
-                peaks=[],
-                # The current measurement type, as Swift's TapDisplaySettings.measurementType.
-                measurement_type_str=TDS.measurement_type().value,
-                material_spectra=comparison_spectra if comparison_spectra else None,
-                date_label=date_label,
-                chart_title=cmp_chart_title,
+            # ── Page 2: the tap comparison — from the measurement this result would be saved as, by
+            # the same code as a saved measurement's report, so the two cannot differ. Mirrors Swift
+            # exportMultiTapPDFReport.
+            current = analyzer.make_measurement(
+                measurement_name=loc, notes=notes_val,
+                min_freq=min_freq_val, max_freq=max_freq_val, min_db=min_db_val, max_db=max_db_val,
+                timestamp=_src_ts,
             )
-
-            import uuid as _uuid
-
-            from guitar_tap.models.guitar_mode import GuitarMode
-            from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot as _SpectrumSnapshot
-            from guitar_tap.models.tap_tone_analyzer_peak_analysis import (
-                TapToneAnalyzerPeakAnalysisMixin,
-            )
-            from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-
-            # Step 1 — Build cmp_entries (mirrors Swift's [ComparisonEntry] build step).
-            # Colors are stored as RGBA 0.0–1.0 inside ComparisonEntry, mirroring Swift's
-            # colorComponents: [Double].
-            cmp_entries: list[ComparisonEntry] = []
-            for idx, entry in enumerate(tap_entries):
-                r, g, b = _PALETTE[idx % len(_PALETTE)]
-                color_components = [r / 255.0, g / 255.0, b / 255.0, 1.0]
-                sel_ids = set(entry.selected_peak_ids)
-                sel_peaks = [p for p in entry.peaks if p.id in sel_ids]
-                cmp_entries.append(ComparisonEntry(
-                    id=new_uuid(),
-                    label=f"Tap {entry.tap_index}",
-                    color_components=color_components,
-                    snapshot=entry.snapshot,
-                    peaks=sel_peaks,
-                    guitar_type=entry.snapshot.guitar_type if entry.snapshot else None,
-                    source_measurement_id=None,
-                ))
-            # Averaged entry — mirrors Swift's avgSnap build from frozenFrequencies/frozenMagnitudes.
-            avg_r, avg_g, avg_b = _AVERAGED_COLOR
-            avg_color_components = [avg_r / 255.0, avg_g / 255.0, avg_b / 255.0, 1.0]
-            # Averaged row: the definitive selected peaks over the DURABLE set (same property the
-            # on-screen table uses), so the PDF cannot disagree and neither changes with Peak Min.
-            # Mirrors Swift `avgSelectedPeaks = tap.selectedPeaks`.
-            avg_sel_peaks = analyzer.selected_peaks
-            avg_snap = _SpectrumSnapshot(
-                frequencies=freqs,
-                magnitudes=mags,
-                min_freq=min_freq_val,
-                max_freq=max_freq_val,
-                min_db=min_db_val,
-                max_db=max_db_val,
-                guitar_type=TDS.guitar_type(),
-                measurement_type=mt.value,
-            )
-            cmp_entries.append(ComparisonEntry(
-                id=new_uuid(),
-                label="Averaged",
-                color_components=avg_color_components,
-                snapshot=avg_snap,
-                peaks=avg_sel_peaks,
-                guitar_type=TDS.guitar_type(),
-                source_measurement_id=None,
-            ))
-
-            # Step 2 — Map cmp_entries → mode_frequencies tuples (mirrors Swift's map step).
-            # Per-tap rows show each tap's OWN auto-classification; the Averaged row uses the
-            # DEFINITIVE (override-aware) modes and tags any overridden value — the multi-tap taps
-            # table's rule. Mirrors Swift exportMultiTapPDFReport (+Export.swift).
-            avg_info = analyzer.definitive_mode_info()
-            mode_frequencies = []
-            for index, cmp_entry in enumerate(cmp_entries):
-                color = palette.rgb(
-                    palette.comparison_role(index, cmp_entry.label), palette.Scheme.LIGHT)
-                if cmp_entry.label == "Averaged":
-                    air_t = avg_info.get(GuitarMode.AIR)
-                    top_t = avg_info.get(GuitarMode.TOP)
-                    back_t = avg_info.get(GuitarMode.BACK)
-                    override_modes = {m for m, (_f, ov) in avg_info.items() if ov}
-                    mode_frequencies.append((
-                        cmp_entry.label, color,
-                        air_t[0] if air_t is not None else None,
-                        top_t[0] if top_t is not None else None,
-                        back_t[0] if back_t is not None else None,
-                        override_modes,
-                    ))
-                    continue
-                mode_peaks = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-                    cmp_entry.peaks, guitar_type=cmp_entry.guitar_type
-                )
-                air = mode_peaks.get(GuitarMode.AIR)
-                top = mode_peaks.get(GuitarMode.TOP)
-                back = mode_peaks.get(GuitarMode.BACK)
-                mode_frequencies.append((
-                    cmp_entry.label,
-                    color,
-                    air.frequency if air is not None else None,
-                    top.frequency if top is not None else None,
-                    back.frequency if back is not None else None,
-                    set(),
-                ))
-
-            comparison_data = M.ComparisonPDFReportData(
-                timestamp=date_label,
-                comparison_label=loc,
-                notes=notes_val,
-                spectrum_image_data=cmp_png_data,
-                # Pass cmp_entries so _build_comparison_story can derive the frequency range
-                # metadata row from their snapshots.
-                # Mirrors Swift cmpReportData(entries: cmpEntries) in exportMultiTapPDFReport().
-                entries=cmp_entries,
-                mode_frequencies=mode_frequencies,
-            )
+            comparison_data = M.multi_tap_comparison_pdf_report_data_from_measurement(current)
 
             M.export_multi_tap_pdf(averaged_data, comparison_data, path)
         except Exception as exc:
@@ -6592,7 +6454,7 @@ class MainWindow(QtWidgets.QMainWindow):
             """Show the model's active calibration — the picker's selection and its details — as
             Swift's picker and details show fftAnalyzer.activeCalibration."""
             _rebuild_cal_combo()
-            active = self.fft_canvas.analyzer._calibration_profile
+            active = self.fft_canvas.analyzer.mic.active_calibration
             index = 0
             if active:
                 for i in range(cal_combo.count()):
@@ -7017,8 +6879,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 list(self.fft_canvas.analyzer.peaks_above_peak_min)
             )
 
-            # Dump Capture Audio
+            # Dump Capture Audio — the analyzer applies it to the sequence in progress.
             AS.AppSettings.set_dump_capture_audio(dump_audio_cb.isChecked())
+            self.fft_canvas.analyzer.apply_dump_capture_audio_setting()
 
             # Peak threshold → AppSettings + main-window slider + graph
             try:

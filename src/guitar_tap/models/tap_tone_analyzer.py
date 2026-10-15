@@ -296,12 +296,9 @@ class TapToneAnalyzer(
             self.freq = np.array([])
 
         # ── Calibration ────────────────────────────────────────────────────
-        self._calibration_corrections = None
-        self._calibration_profile: object | None = None  # raw MicrophoneCalibration
+        # The calibration lives on the engine (self.mic.active_calibration / calibration_corrections),
+        # as Swift's on fftAnalyzer.
         self._calibration_device_name: str = ""
-        # Name of the currently active calibration profile (device-specific or
-        # manually selected).  Mirrors Swift RealtimeFFTAnalyzer.activeCalibration?.name.
-        self._active_calibration_name: "str | None" = None
 
         # ── Display mode (mirrors Swift AnalysisDisplayMode) ───────────────
         self._display_mode: AnalysisDisplayMode = AnalysisDisplayMode.LIVE
@@ -591,10 +588,16 @@ class TapToneAnalyzer(
         #
         # Access is protected by _gated_lock (shared with the gated-capture state).
         self._session_recording_buffer: list = []
+        # True from the start of a sequence, whatever Dump Capture Audio says — the bounded pre-roll
+        # is kept either way. False during pause, at the first tap when the sequence is not being
+        # saved, when Dump Capture Audio is turned off after the first tap, when a loaded measurement
+        # or comparison ends the sequence, or when the measurement completes.
         self._is_session_recording: bool = False
-        # Whether this sequence is recorded at all — decided when it starts, from Dump Capture
-        # Audio. Resuming after a pause records again only when it is; turning the setting on
-        # mid-sequence takes effect from the next sequence. Mirrors Swift isSessionRecordingEnabled.
+        # Whether this sequence's recording is saved — read from Dump Capture Audio when the sequence
+        # starts, and again when the setting changes before the first tap (until then only the
+        # pre-roll exists, so it is still the start). Turning the setting on after the first tap
+        # takes effect from the next sequence; turning it off stops the recording at any point.
+        # Mirrors Swift isSessionRecordingEnabled.
         self._is_session_recording_enabled: bool = False
         # Recordings that could not be written when their measurement finished (the chosen folder
         # was no longer at its path, or the write failed). Held until the user chooses a folder or
@@ -614,7 +617,9 @@ class TapToneAnalyzer(
         # Bounded pre-roll for the session WAV. True from
         # start_tap_sequence until the first gated capture begins, then False for the rest of the
         # session. While True, the session buffer keeps only the last SESSION_PRE_ROLL_DURATION of
-        # audio; after the first tap it grows straight through. Mirrors Swift sessionPreRollActive.
+        # audio — with Dump Capture Audio off too, so turning the setting on before the first tap
+        # saves the same recording as having it on from the start; after the first tap it grows
+        # straight through. Mirrors Swift sessionPreRollActive.
         self._session_pre_roll_active: bool = False
 
         # Monotonic capture identity — incremented at every start_*_gated_capture
@@ -1252,9 +1257,6 @@ class TapToneAnalyzer(
     def start(
         self,
         parent_widget,
-        calibration_corrections=None,
-        calibration_name: "str | None" = None,
-        calibration_profile: object | None = None,
     ) -> None:
         """Complete view-layer wiring and load persisted state.
 
@@ -1272,10 +1274,7 @@ class TapToneAnalyzer(
         ``__init__`` needs.
 
         Args:
-            parent_widget:           The FftCanvas (QObject parent).
-            calibration_corrections: ndarray of per-bin dB corrections, or None.
-            calibration_name:        Human-readable calibration name, or None.
-            calibration_profile:     Full CalibrationProfile object, or None.
+            parent_widget: The FftCanvas (QObject parent).
         """
         import sounddevice as _sd
 
@@ -1291,18 +1290,14 @@ class TapToneAnalyzer(
         # Wire the hotplug signal now that the Qt object hierarchy is valid.
         self._devicesRefreshed.connect(self._on_devices_refreshed)
 
-        # Wire device-change and calibration-change callbacks on the mic.
-        # These were deferred from mic construction (passed as None) because
-        # self._devicesRefreshed and self._on_mic_calibration_changed require
-        # the Qt signal system to be wired, which needs setParent() first.
+        # Wire the device-change callbacks on the mic. These were deferred from mic construction
+        # (passed as None) because self._devicesRefreshed requires the Qt signal system to be wired,
+        # which needs setParent() first.
         self.mic._on_devices_changed = self._devicesRefreshed.emit
-        self.mic._on_calibration_changed = self._on_mic_calibration_changed
         self.mic._on_stream_reopened = self._on_stream_reopened
 
         # ── Calibration ───────────────────────────────────────────────────
-        self._calibration_corrections = calibration_corrections
-        self._calibration_profile = calibration_profile
-        self._active_calibration_name = calibration_name
+        # The engine applied the selected device's calibration when it selected the device.
         audio_device = self.mic._selected_input_device
         self._calibration_device_name = audio_device.name if audio_device else ""
 

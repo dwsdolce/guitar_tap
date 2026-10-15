@@ -19,7 +19,7 @@
 
 - With **Dump Capture Audio** on, the status bar now names the file just written ("Capture audio saved: …") until you dismiss it or start a new measurement.
 - If the capture folder has been moved or deleted by the time a measurement finishes, the recording is kept and you are asked to choose a new location, turn saving off, or cancel — it is never silently lost. The folder button is now **Open Folder**, and opens the folder itself.
-- A measurement is recorded only when the setting is on as it starts; turning it on part-way takes effect from the next measurement.
+- A measurement is recorded when the setting is on as it starts, or is turned on before its first tap; turned on after that, it takes effect from the next measurement.
 
 ### Microphone Unavailable
 

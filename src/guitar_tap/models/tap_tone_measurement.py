@@ -525,7 +525,8 @@ class TapToneMeasurement:
     def effective_selected_peak_ids(self) -> set[str]:
         """Peak IDs to render, annotate, and export for this measurement.
 
-        - Guitar: the saved selection (``selected_peak_ids``), or all ``peaks`` when none saved.
+        - Guitar: the saved selection (``selected_peak_ids``) — empty for Select None — or all
+          ``peaks`` when a legacy file saved none.
         - Material: **always all of ``peaks``.** Plate/brace have no per-peak selection, and the
           saved aggregate can be corrupted by an intermittent phase-transition write (an iPad-only
           Swift glitch), so it is ignored on read. Heals existing corrupt files at render time —
@@ -535,7 +536,9 @@ class TapToneMeasurement:
         """
         if self.is_material:
             return {p.id for p in self.peaks}
-        return set(self.selected_peak_ids or [p.id for p in self.peaks])
+        if self.selected_peak_ids is None:
+            return {p.id for p in self.peaks}
+        return set(self.selected_peak_ids)
 
     @property
     def tap_tone_ratio(self) -> float | None:
@@ -550,12 +553,8 @@ class TapToneMeasurement:
 
         Returns ``None`` when either an Air or a Top peak cannot be found in ``peaks``.
 
-        Mirrors Swift TapToneMeasurement.tapToneRatio.
-
-        NOTE — Algorithm difference from Swift:
-          Python must pass guitar_type explicitly to GuitarMode.classify_all.
-          Swift calls GuitarMode.classifyAll(peaks) with auto-resolved guitar type.
-          Python falls back to the guitar_type stored on this measurement, or "Generic".
+        Mirrors Swift TapToneMeasurement.tapToneRatio. Peaks are classified with
+        ``classification_guitar_type`` (see ``auto_modes``).
         """
         from . import guitar_mode as gm
         # Definitive Air/Top: the SELECTED peak whose OVERRIDE-AWARE (effective) mode is that mode.
@@ -577,16 +576,11 @@ class TapToneMeasurement:
         ``max`` guards the legacy case. Mirrors Swift ``TapToneMeasurement.definitivePeak(for:)``.
         """
         from . import guitar_mode as gm
-        from . import guitar_type as gt_module
         if not self.peaks:
             return None
-        try:
-            gt = gt_module.GuitarType(self.guitar_type or "Generic")
-        except Exception:
-            gt = gt_module.GuitarType.GENERIC
         selected = self.effective_selected_peak_ids
         overrides = self.peak_mode_overrides or {}
-        auto_map = gm.GuitarMode.classify_all(self.peaks, gt)
+        auto_map = self.auto_modes
         candidates = [
             p for p in self.peaks
             if p.id in selected
@@ -597,6 +591,42 @@ class TapToneMeasurement:
         if not candidates:
             return None
         return max(candidates, key=lambda p: p.magnitude)
+
+    @property
+    def multi_tap_comparison_entries(self) -> "list[ComparisonEntry]":
+        """A multi-tap measurement as a comparison: one entry per tap — "Tap N", the tap's own
+        spectrum and its selected peaks — and last "Averaged", the measurement's own spectrum and
+        selected peaks. Empty when the measurement has no taps. The one builder of these entries:
+        the on-screen tap comparison, its chart and the report's comparison page read it, live and
+        saved alike. Mirrors Swift ``multiTapComparisonEntries``."""
+        if not self.tap_entries:
+            return []
+        from guitar_tap.views.utilities import palette
+
+        def stored(role) -> list:
+            r, g, b = palette.rgb(role, palette.Scheme.LIGHT)
+            return [r / 255.0, g / 255.0, b / 255.0, 1.0]
+
+        entries = []
+        for index, entry in enumerate(self.tap_entries):
+            selected = set(entry.selected_peak_ids)
+            entries.append(ComparisonEntry(
+                id=new_uuid(), label=f"Tap {entry.tap_index}",
+                color_components=stored(palette.series_role(index)), snapshot=entry.snapshot,
+                peaks=[p for p in entry.peaks if p.id in selected],
+                guitar_type=entry.snapshot.guitar_type if entry.snapshot else None,
+                source_measurement_id=None,
+            ))
+        averaged = self.spectrum_snapshot
+        if averaged is not None:
+            selected = self.effective_selected_peak_ids
+            entries.append(ComparisonEntry(
+                id=new_uuid(), label="Averaged",
+                color_components=stored(palette.Role.SERIES_AVERAGE), snapshot=averaged,
+                peaks=[p for p in (self.peaks or []) if p.id in selected],
+                guitar_type=averaged.guitar_type, source_measurement_id=None,
+            ))
+        return entries
 
     def definitive_mode_info(self) -> dict:
         """The definitive Air/Top/Back for this measurement, each with a flag for whether it is the
@@ -738,56 +768,56 @@ class TapToneMeasurement:
 
     # MARK: - Serialisation (Python-only)
 
-    def _resolve_peak_mode_labels(
-        self, resolved_mt: "str | None", resolved_gt: "str | None"
-    ) -> "list[str]":
-        """Resolved human-readable mode label for each top-level peak, in order.
+    @property
+    def classification_guitar_type(self):
+        """The guitar type this measurement's peaks are classified with: the type its snapshot
+        records, otherwise Generic — never the app's current setting, so a saved measurement's modes
+        are the same whatever the app is set to. Mirrors Swift ``classificationGuitarType``."""
+        from .guitar_type import GuitarType
+        raw = (_snapshot_field(self.spectrum_snapshot, "guitar_type")
+               or _snapshot_field(self.longitudinal_snapshot, "guitar_type"))
+        try:
+            return GuitarType(raw) if raw else GuitarType.GENERIC
+        except ValueError:
+            return GuitarType.GENERIC
 
-        Mirrors Swift TapToneMeasurement.encode(to:)'s PeakExportCodingKeys loop:
-        guitar peaks are classified by GuitarMode (with any user override applied);
-        plate/brace peaks get their role name (Longitudinal / Cross-grain / FLC / Peak).
-        Called only from to_dict() so persistence, single export, and Export All all
-        share this one resolution path — exactly like Swift's single encoder.
-        """
-        is_guitar = True
-        if resolved_mt:
-            try:
-                from .measurement_type import MeasurementType
-                is_guitar = MeasurementType(resolved_mt).is_guitar
-            except Exception:
-                pass
+    @property
+    def auto_modes(self) -> dict:
+        """Each peak's automatic mode, classified among ALL of the measurement's peaks with
+        ``classification_guitar_type`` — the rule the live analyzer applies (``reclassify_peaks``).
+        The Top and Back bands overlap and peaks compete for them, so classifying a subset (the
+        selected peaks, the peaks on screen) can turn a Back into a Top. Empty for a material
+        measurement. Mirrors Swift ``autoModes``."""
+        if self.is_material or not self.peaks:
+            return {}
+        from .guitar_mode import GuitarMode
+        return GuitarMode.classify_all(self.peaks, self.classification_guitar_type)
 
-        if is_guitar and self.peaks:
-            try:
-                from .guitar_mode import GuitarMode
-                from .guitar_type import GuitarType
-                gt_enum = GuitarType(resolved_gt) if resolved_gt else GuitarType.GENERIC
-                mode_map = GuitarMode.classify_all(self.peaks, gt_enum)
-            except Exception:
-                mode_map = {}
-            overrides = self.peak_mode_overrides or {}
-            guitar_labels: list[str] = []
+    @property
+    def peak_mode_labels(self) -> dict:
+        """The label each peak is shown and written with, by peak id: for a guitar, its override,
+        otherwise its automatic mode (``auto_modes``); for plate/brace, the role it fills. The one
+        rule for the file's ``modeLabel`` and the Details pane, so the two cannot disagree. Mirrors
+        Swift ``peakModeLabels``."""
+        labels: dict = {}
+        if self.is_material:
             for peak in self.peaks:
-                override = overrides.get(peak.id)
-                if override:
-                    guitar_labels.append(override)
+                if peak.id == self.selected_longitudinal_peak_id:
+                    labels[peak.id] = "Longitudinal"
+                elif peak.id == self.selected_cross_peak_id:
+                    labels[peak.id] = "Cross-grain"
+                elif peak.id == self.selected_flc_peak_id:
+                    labels[peak.id] = "Diagonal"
                 else:
-                    mode = mode_map.get(peak.id)
-                    guitar_labels.append(mode.display_name if mode else "Unknown")
-            return guitar_labels
-
-        # Plate / brace: label by which selected-peak role each peak fills.
-        role_labels: list[str] = []
+                    labels[peak.id] = "Peak"
+            return labels
+        from .guitar_mode import GuitarMode
+        modes = self.auto_modes
+        overrides = self.peak_mode_overrides or {}
         for peak in self.peaks:
-            if peak.id == self.selected_longitudinal_peak_id:
-                role_labels.append("Longitudinal")
-            elif peak.id == self.selected_cross_peak_id:
-                role_labels.append("Cross-grain")
-            elif peak.id == self.selected_flc_peak_id:
-                role_labels.append("Diagonal")
-            else:
-                role_labels.append("Peak")
-        return role_labels
+            auto = modes.get(peak.id, GuitarMode.UNKNOWN)
+            labels[peak.id] = overrides.get(peak.id) or auto.display_name
+        return labels
 
     def to_dict(self) -> dict[str, Any]:
         """Encode this measurement as a JSON-compatible dict using Swift field names.
@@ -846,9 +876,10 @@ class TapToneMeasurement:
             d["crossSnapshot"] = self.cross_snapshot.to_dict()
         if self.flc_snapshot is not None:
             d["flcSnapshot"] = self.flc_snapshot.to_dict()
-        if self.selected_peak_ids:
+        # An empty selection is written: it is Select None. Absent is a legacy file's (healed on read).
+        if self.selected_peak_ids is not None:
             d["selectedPeakIDs"] = self.selected_peak_ids
-        if self.selected_peak_frequencies:
+        if self.selected_peak_frequencies is not None:
             # Swift [Float] -> quantise each to float32.
             d["selectedPeakFrequencies"] = f32_list(self.selected_peak_frequencies)
         if self.user_modified_selection is not None:
@@ -896,10 +927,9 @@ class TapToneMeasurement:
         # export-only function) is what makes persistence and every export path
         # byte-identical, matching Swift's one-encoder design.
         peak_dicts = [p.to_dict() for p in self.peaks]
-        for peak_d, label in zip(
-            peak_dicts, self._resolve_peak_mode_labels(_resolved_mt, _resolved_gt)
-        ):
-            peak_d["modeLabel"] = label
+        labels = self.peak_mode_labels
+        for peak, peak_d in zip(self.peaks, peak_dicts):
+            peak_d["modeLabel"] = labels.get(peak.id, "Unknown")
         d["peaks"] = peak_dicts
 
         # Comparison entries — omitted (encodeIfPresent) when None.
@@ -1127,9 +1157,12 @@ class TapToneMeasurement:
         if not _is_material_at_decode and peaks:
             from . import guitar_mode as _gm
             from . import guitar_type as _gt_mod
+            # The same guitar type as classification_guitar_type: the snapshot's, otherwise Generic.
+            _gt_raw = (_snapshot_field(snapshot, "guitar_type")
+                       or _snapshot_field(long_snap, "guitar_type"))
             try:
-                _gt = _gt_mod.GuitarType(d.get("guitarType") or "Generic")
-            except Exception:
+                _gt = _gt_mod.GuitarType(_gt_raw) if _gt_raw else _gt_mod.GuitarType.GENERIC
+            except ValueError:
                 _gt = _gt_mod.GuitarType.GENERIC
             _auto = _gm.GuitarMode.classify_all(peaks, _gt)
             _ovr = peak_mode_overrides or {}
@@ -1266,8 +1299,8 @@ class TapToneMeasurement:
             notes=TapToneMeasurement.normalized_notes(notes) if notes else None,
             spectrum_snapshot=spectrum_snapshot,
             annotation_offsets=annotation_offsets or None,
-            selected_peak_ids=selected_peak_ids or None,
-            selected_peak_frequencies=selected_peak_frequencies or None,
+            selected_peak_ids=selected_peak_ids,
+            selected_peak_frequencies=selected_peak_frequencies,
             user_modified_selection=user_modified_selection,
             annotation_visibility_mode=annotation_visibility_mode,
             tap_detection_threshold=tap_detection_threshold,

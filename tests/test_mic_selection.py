@@ -227,9 +227,8 @@ def _load(monkeypatch, mic: AudioDevice, calibration_name: str | None = None):
     monkeypatch.setattr(dm.sd, "InputStream", _FakeStream)
     AppSettings.set_audio_device(BUILT_IN)
     sut = TapToneAnalyzer.for_testing()
-    sut.mic._on_calibration_changed = sut._on_mic_calibration_changed  # as start() wires it
     sut.mic.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
-    sut.set_temporary_calibration(MicrophoneCalibration(
+    sut.mic.set_temporary_calibration(MicrophoneCalibration(
         id=str(uuid.uuid4()), name="Built-in room", sensitivity_factor=None, reference_level=None,
         correction_points=[{"frequency": 20.0, "correction": 0.0},
                            {"frequency": 20000.0, "correction": 0.0}],
@@ -257,7 +256,7 @@ def test_MS15_load_check_reads_the_recorded_microphone(monkeypatch):
     """MS15: The calibration check compares the recorded microphone's calibration (none) — not that
     of the microphone switched away from ("Built-in room") — so no warning."""
     sut = _load_recorded_with_usb_mic(monkeypatch)
-    assert sut._active_calibration_name is None
+    assert sut.mic.active_calibration is None
     assert sut.microphone_warning is None
 
 
@@ -306,7 +305,6 @@ def _analyzer_with_stored_calibration():
     CalibrationStorage.save(room)
     AppSettings.set_audio_device(BUILT_IN)
     sut = TapToneAnalyzer.for_testing()
-    sut.mic._on_calibration_changed = sut._on_mic_calibration_changed  # as start() wires it
     sut.mic.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
     return sut, room, CalibrationStorage
 
@@ -315,32 +313,32 @@ def test_MS18_chosen_calibration_is_saved_for_the_device():
     """MS18: A calibration chosen for the selected device is saved for it (and as the last chosen);
     switching to another device and back restores it."""
     sut, room, storage = _analyzer_with_stored_calibration()
-    sut.choose_calibration(room)
+    sut.mic.set_active_calibration(room)
     assert storage.calibration_for_device(BUILT_IN.name).id == room.id
     assert storage.active_calibration_id() == room.id
     sut.mic.selected_input_device = UMIK
-    assert sut._calibration_profile is None
+    assert sut.mic.active_calibration is None
     sut.mic.selected_input_device = BUILT_IN
-    assert sut._calibration_profile.id == room.id
+    assert sut.mic.active_calibration.id == room.id
 
 
 def test_MS19_choosing_none_removes_the_devices_calibration():
     """MS19: Choosing no calibration removes the device's: switching away and back gives none."""
     sut, room, storage = _analyzer_with_stored_calibration()
-    sut.choose_calibration(room)
-    sut.choose_calibration(None)
+    sut.mic.set_active_calibration(room)
+    sut.mic.set_active_calibration(None)
     assert storage.calibration_for_device(BUILT_IN.name) is None
     assert storage.active_calibration_id() is None
     sut.mic.selected_input_device = UMIK
     sut.mic.selected_input_device = BUILT_IN
-    assert sut._calibration_profile is None
+    assert sut.mic.active_calibration is None
 
 
 def test_MS20_temporary_calibration_saves_nothing():
     """MS20: A file playback's calibration (temporary) is applied but saves nothing."""
     sut, room, storage = _analyzer_with_stored_calibration()
-    sut.set_temporary_calibration(room)
-    assert sut._calibration_profile.id == room.id
+    sut.mic.set_temporary_calibration(room)
+    assert sut.mic.active_calibration.id == room.id
     assert storage.calibration_for_device(BUILT_IN.name) is None
     assert storage.active_calibration_id() is None
 

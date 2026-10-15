@@ -154,7 +154,8 @@ class TapToneAnalyzerAnnotationManagementMixin:
         ``captureCalibrationName``."""
         if self.result_provenance is not None:
             return self.result_provenance.calibration_name
-        return self._active_calibration_name or None
+        active = self.mic.active_calibration if self.mic is not None else None
+        return getattr(active, "name", None) or None
 
     @property
     def capture_sample_rate(self) -> "float | None":

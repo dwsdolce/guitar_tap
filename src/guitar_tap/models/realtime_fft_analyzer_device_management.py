@@ -20,9 +20,9 @@ Swift ↔ Python method correspondence:
   handleRouteChange(notification:)  ↔  (iOS-only — not applicable)
   restartEngineAfterRouteChange()   ↔  (iOS-only — not applicable)
   setInputDevice(_:)                ↔  set_device()
-  setCalibrationWithoutSavingDeviceMapping ↔ _on_calibration_changed callback fired
-                                              from set_device(); handler lives in
-                                              tap_tone_analyzer_control._on_mic_calibration_changed()
+  setCalibrationWithoutSavingDeviceMapping ↔ set_calibration_without_saving_device_mapping()
+                                              (realtime_fft_analyzer.py), called by the
+                                              selected_input_device setter
 """
 
 from __future__ import annotations

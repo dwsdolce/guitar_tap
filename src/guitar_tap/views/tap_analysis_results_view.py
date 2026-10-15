@@ -59,13 +59,8 @@ __all__ = [
 ]
 
 # ── Multi-tap comparison palette and averaged color ───────────────────────────
-# Each series slot's role and the average's, light — the report is drawn on white. Mirrors Swift's
-# Palette.series / Palette.seriesAverage resolved in the light scheme.
 from guitar_tap.models.appearance import Scheme  # noqa: E402
 from guitar_tap.views.utilities import palette  # noqa: E402
-
-MULTI_TAP_PALETTE = [palette.rgb(role, Scheme.LIGHT) for role in palette.SERIES_ROLES]
-MULTI_TAP_AVG_COLOR = palette.rgb(palette.Role.SERIES_AVERAGE, Scheme.LIGHT)
 
 
 def _pdf(role: palette.Role):
@@ -314,7 +309,6 @@ def pdf_report_data_from_measurement(
                            classification are preserved.  Pass ``None`` (default)
                            when building from a saved measurement.
     """
-    from guitar_tap.models import guitar_mode as GM
     from guitar_tap.models import guitar_type as GT_module
     from guitar_tap.models import measurement_type as MT
     from guitar_tap.models import plate_stiffness_preset as PSP
@@ -335,10 +329,6 @@ def pdf_report_data_from_measurement(
         mt = MT.MeasurementType.GENERIC
 
     gt_str = m.guitar_type or (any_snap.guitar_type if any_snap else GT_module.GuitarType.GENERIC.value)
-    try:
-        gt = GT_module.GuitarType(gt_str)
-    except Exception:
-        gt = GT_module.GuitarType.GENERIC
 
     # ── Display frequency range ───────────────────────────────────────────
     display_snap = m.spectrum_snapshot or any_snap
@@ -350,20 +340,12 @@ def pdf_report_data_from_measurement(
     selected_ids = m.effective_selected_peak_ids
 
     # ── Mode classification ───────────────────────────────────────────────
-    visible_peaks = sorted(
-        [p for p in range_peaks if p.id in selected_ids],
-        key=lambda p: p.frequency,
-    )
-    # Use caller-supplied peak_modes (from live analyzer.identified_modes) when
-    # available — mirrors Swift peakModes: Dictionary(uniqueKeysWithValues:
-    # tap.identifiedModes.map { ($0.peak.id, $0.mode) }).
-    # Fall back to classify_all for saved measurements without a live analyzer.
+    # Use caller-supplied peak_modes (from live analyzer.identified_modes) when available — mirrors
+    # Swift peakModes: Dictionary(uniqueKeysWithValues: tap.identifiedModes.map { ($0.peak.id, $0.mode) }).
+    # A saved measurement's own modes otherwise — classified among all its peaks, as the file, the
+    # Details pane and the live screen have them; never among the peaks in range. Mirrors Swift.
     if peak_modes is None:
-        peak_modes = {}
-        try:
-            peak_modes = GM.GuitarMode.classify_all(visible_peaks, gt)
-        except Exception:
-            pass
+        peak_modes = m.auto_modes
 
     # ── Derive material properties ────────────────────────────────────────
     plate_props = None
@@ -1366,30 +1348,21 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
     """
     from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
 
-    tap_entries = measurement.tap_entries
-    if not tap_entries:
+    entries = measurement.multi_tap_comparison_entries
+    if not entries:
         return None
-
-    comparison_spectra = []
-    for idx, entry in enumerate(tap_entries):
-        color = MULTI_TAP_PALETTE[idx % len(MULTI_TAP_PALETTE)]
-        comparison_spectra.append({
+    comparison_spectra = [
+        {
             "frequencies": list(entry.snapshot.frequencies),
             "magnitudes":  list(entry.snapshot.magnitudes),
-            "color": color,
-            "label": f"Tap {entry.tap_index}",
-        })
+            "color": palette.rgb(palette.comparison_role(idx, entry.label), Scheme.LIGHT),
+            "label": entry.label,
+        }
+        for idx, entry in enumerate(entries)
+    ]
 
-    # Append averaged entry using the measurement's spectrum snapshot
-    if measurement.spectrum_snapshot:
-        avg_snap = measurement.spectrum_snapshot
-        comparison_spectra.append({
-            "frequencies": list(avg_snap.frequencies),
-            "magnitudes":  list(avg_snap.magnitudes),
-            "color": MULTI_TAP_AVG_COLOR,
-            "label": "Averaged",
-        })
-
+    # The chart's range spans the taps' spectra.
+    tap_entries = measurement.tap_entries
     snaps = [e.snapshot for e in tap_entries]
     min_freq = float(min(s.min_freq for s in snaps))
     max_freq = float(max(s.max_freq for s in snaps))
@@ -1409,8 +1382,11 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
         min_db=min_db,
         max_db=max_db,
         peaks=[],
-        # Swift's renderSpectrumImageForMultiTap passes .generic.
-        measurement_type_str="Generic Guitar",
+        # The measurement's own type, as Swift's renderSpectrumImageForMultiTap.
+        measurement_type_str=(measurement.spectrum_snapshot.measurement_type
+                              if measurement.spectrum_snapshot is not None
+                              and measurement.spectrum_snapshot.measurement_type
+                              else "Generic Guitar"),
         material_spectra=comparison_spectra,
         date_label=date_label,
         chart_title=chart_title,
@@ -1509,38 +1485,11 @@ def multi_tap_comparison_pdf_report_data_from_measurement(
     PDFReportGenerator.multiTapComparisonData(for:)."""
     from guitar_tap.models.guitar_mode import GuitarMode
     from guitar_tap.models.tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
-    from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-    from guitar_tap.utilities.new_uuid import new_uuid
 
     if spectrum_image_data is None:
         spectrum_image_data = render_spectrum_image_for_multi_tap(measurement)
 
-    cmp_entries: list[ComparisonEntry] = []
-    for idx, entry in enumerate(measurement.tap_entries or []):
-        r, g, b = MULTI_TAP_PALETTE[idx % len(MULTI_TAP_PALETTE)]
-        sel_ids = set(entry.selected_peak_ids)
-        cmp_entries.append(ComparisonEntry(
-            id=new_uuid(),
-            label=f"Tap {entry.tap_index}",
-            color_components=[r / 255.0, g / 255.0, b / 255.0, 1.0],
-            snapshot=entry.snapshot,
-            peaks=[p for p in entry.peaks if p.id in sel_ids],
-            guitar_type=entry.snapshot.guitar_type if entry.snapshot else None,
-            source_measurement_id=None,
-        ))
-    avg_snap = measurement.spectrum_snapshot
-    if avg_snap is not None:
-        avg_sel_ids = measurement.effective_selected_peak_ids
-        avg_r, avg_g, avg_b = MULTI_TAP_AVG_COLOR
-        cmp_entries.append(ComparisonEntry(
-            id=new_uuid(),
-            label="Averaged",
-            color_components=[avg_r / 255.0, avg_g / 255.0, avg_b / 255.0, 1.0],
-            snapshot=avg_snap,
-            peaks=[p for p in (measurement.peaks or []) if p.id in avg_sel_ids],
-            guitar_type=avg_snap.guitar_type,
-            source_measurement_id=None,
-        ))
+    cmp_entries = measurement.multi_tap_comparison_entries
 
     avg_info = measurement.definitive_mode_info()
     mode_frequencies = []

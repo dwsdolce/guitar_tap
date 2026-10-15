@@ -122,8 +122,8 @@ class TestGatedFFTParity:
 
         analyzer = _analyzer()
         plain, freqs = analyzer.compute_gated_fft(signal, SAMPLE_RATE)
-        # The gated path reads only the profile; the live-bin corrections are not involved.
-        analyzer.set_calibration(None, profile=cal)
+        # The gated path lays the profile on its own bins.
+        analyzer.set_temporary_calibration(cal)
         calibrated, cal_freqs = analyzer.compute_gated_fft(signal, SAMPLE_RATE)
 
         assert list(cal_freqs) == list(freqs)

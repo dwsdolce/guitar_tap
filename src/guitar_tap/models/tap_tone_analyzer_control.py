@@ -353,91 +353,6 @@ class TapToneAnalyzerControlMixin:
         if prev_name and prev_name not in names:
             self.currentDeviceLost.emit(prev_name)
 
-    # ------------------------------------------------------------------ #
-    # Calibration
-    # ------------------------------------------------------------------ #
-
-    def load_calibration(self, path: str) -> bool:
-        """Load and interpolate a calibration file onto the FFT bin grid."""
-        import os
-
-        import guitar_tap.models.microphone_calibration as _mc
-        try:
-            cal_data = _mc.parse_cal_file(path)
-            self._calibration_corrections = _mc.interpolate_to_bins(cal_data, self.freq)
-            # Try to build a MicrophoneCalibration profile for gated-FFT use.
-            try:
-                profile = _mc.MicrophoneCalibration.from_path(path)
-            except Exception:
-                profile = None
-            self._calibration_profile = profile
-            self.mic.set_calibration(self._calibration_corrections,
-                                     profile=profile)
-            # Track the calibration name (file stem) so it is saved with
-            # measurements — mirrors load_calibration_from_profile().
-            self._active_calibration_name = os.path.splitext(os.path.basename(path))[0] or None
-            return True
-        except Exception:
-            return False
-
-    def load_calibration_from_profile(self, cal) -> None:
-        """Apply a pre-parsed MicrophoneCalibration profile to the FFT pipeline."""
-        self._calibration_corrections = cal.interpolate_to_bins(self.freq)
-        self._calibration_profile = cal
-        self.mic.set_calibration(self._calibration_corrections,
-                                 profile=cal)
-        # Track the name so _on_export_pdf can report it — mirrors Swift activeCalibration?.name.
-        self._active_calibration_name = getattr(cal, "name", None)
-
-    def choose_calibration(self, cal) -> None:
-        """Apply *cal* (None: no calibration) as the user's choice and save it — as the last
-        chosen (the global active id) and for the selected input device, so it loads whenever
-        that device is selected.
-
-        Mirrors Swift assigning RealtimeFFTAnalyzer.activeCalibration, whose didSet saves both. A
-        device's own calibration loading when the input switches (_on_mic_calibration_changed)
-        and a file playback's (set_temporary_calibration) save nothing.
-        """
-        from guitar_tap.models.microphone_calibration import CalibrationStorage
-
-        if cal is not None:
-            self.load_calibration_from_profile(cal)
-        else:
-            self.clear_calibration()
-        cal_id = cal.id if cal is not None else None
-        CalibrationStorage.set_active_calibration_id(cal_id)
-        device = self.mic.selected_input_device
-        if device is not None:
-            # The map is keyed by device name; the lookup tries the fingerprint first, so any
-            # fingerprint entry for this device is removed.
-            CalibrationStorage.set_calibration_for_device(device.fingerprint, None)
-            CalibrationStorage.set_calibration_for_device(device.name, cal_id)
-
-    def set_temporary_calibration(self, cal) -> None:
-        """Apply calibration for file playback without persisting to storage.
-
-        Unlike ``load_calibration_from_profile``, this does not save the
-        calibration to ``CalibrationStorage`` or associate it with a device.
-        Mirrors Swift ``RealtimeFFTAnalyzer.setTemporaryCalibration(_:)``.
-        """
-        if cal is not None:
-            self._calibration_corrections = cal.interpolate_to_bins(self.freq)
-            self._calibration_profile = cal
-            self.mic.set_calibration(self._calibration_corrections, profile=cal)
-            self._active_calibration_name = getattr(cal, "name", None)
-        else:
-            self._calibration_corrections = None
-            self._calibration_profile = None
-            self._active_calibration_name = None
-            self.mic.set_calibration(None)
-
-    def clear_calibration(self) -> None:
-        """Remove the active calibration."""
-        self._calibration_corrections = None
-        self._calibration_profile = None
-        self._active_calibration_name = None
-        self.mic.set_calibration(None)
-
     def current_calibration_device(self) -> str:
         """Device name the active calibration is associated with."""
         return self._calibration_device_name
@@ -471,7 +386,7 @@ class TapToneAnalyzerControlMixin:
         """Switch to a different input device.
 
         Delegates to RealtimeFFTAnalyzer.set_device(), which owns the stream
-        restart and calibration auto-load (via _on_mic_calibration_changed).
+        restart and the device's calibration (set_calibration_without_saving_device_mapping).
         _gated_sample_rate and _pre_roll_samples are computed properties that
         read self.mic.rate directly, so they automatically reflect the new
         device rate — mirrors Swift where preRollSamples and gatedCaptureSamples
@@ -493,18 +408,6 @@ class TapToneAnalyzerControlMixin:
             # restarts with the new device — ensures the frequency axis matches
             # the actual hardware sample rate.
             self._update_frequency_bins()
-
-    def _on_mic_calibration_changed(self, cal) -> None:
-        """Apply the calibration profile emitted by RealtimeFFTAnalyzer.set_device().
-
-        Mirrors Swift setCalibrationWithoutSavingDeviceMapping(_:) called from
-        selectedInputDevice.didSet.  Receives a MicrophoneCalibration profile
-        (or None) and applies or clears it on the FFT pipeline.
-        """
-        if cal is not None:
-            self.load_calibration_from_profile(cal)
-        else:
-            self.clear_calibration()
 
     def handle_route_change_restart(self) -> None:
         """Respond to an audio-engine restart triggered by a device or route change.
@@ -687,8 +590,11 @@ class TapToneAnalyzerControlMixin:
         # after it, or a single loud chunk could fire one. The web behaves the same.
         self.detect_tap_consecutive_above = 0
 
-        # Resume accumulating audio after pause — mirrors Swift resumeTapDetection.
-        self._is_session_recording = self._is_session_recording_enabled
+        # Resume accumulating audio after pause — the saved recording, or the pre-roll before the
+        # first tap. Mirrors Swift resumeTapDetection.
+        self._is_session_recording = (
+            self._is_session_recording_enabled or self._session_pre_roll_active
+        )
         self.detection_state = DetectionState.LISTENING
 
         # Restore a context-appropriate prompt. The same derivation the device-change settle uses.
@@ -735,24 +641,17 @@ class TapToneAnalyzerControlMixin:
 
         # The playback uses the file's calibration, or none. The microphone the file was recorded with is
         # unknown, so the live input's calibration never applies to it.
-        previous = (self._calibration_profile, self._calibration_corrections, self._active_calibration_name)
+        previous = self.mic.active_calibration
         playback_calibration = None
         if calibration_path:
             try:
                 playback_calibration = _mc.MicrophoneCalibration.from_path(calibration_path)
             except Exception as exc:  # noqa: BLE001 — an unreadable calibration file must not stop playback
                 gt_log(f"⚠️ Could not parse calibration file: {exc}")
-        self.set_temporary_calibration(playback_calibration)
+        self.mic.set_temporary_calibration(playback_calibration)
 
         def _restore_calibration() -> None:
-            profile, corrections, name = previous
-            self._calibration_profile = profile
-            self._calibration_corrections = corrections
-            self._active_calibration_name = name
-            if corrections is not None:
-                self.mic.set_calibration(corrections, profile=profile)
-            else:
-                self.mic.set_calibration(None)
+            self.mic.set_temporary_calibration(previous)
 
         def _finished() -> None:
             _restore_calibration()
@@ -931,11 +830,13 @@ class TapToneAnalyzerControlMixin:
             # re_enable_detection_for_next_plate_tap.
             self._gated_capture_id = 0
             self._last_level_crossing_capture_id = -1
-            # With Dump Capture Audio off nothing is kept.
+            # Session recording: clear the buffer and begin recording. With Dump Capture Audio off
+            # only the bounded pre-roll is kept, and it is dropped at the first tap unless the
+            # setting has been turned on by then.
             self._session_recording_buffer = []
             self._session_checkpoints = [0]
             self._is_session_recording_enabled = _tds.dump_capture_audio()
-            self._is_session_recording = self._is_session_recording_enabled
+            self._is_session_recording = True
             self._session_pre_roll_active = True  # bound the pre-first-tap audio to ~2 s
             self._session_recording_sample_rate = (
                 self._mpm_sample_rate if self._mpm_sample_rate > 0 else 48000.0

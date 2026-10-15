@@ -201,9 +201,10 @@ def test_held_recording_is_discarded_when_the_user_lets_it_go(folder, dump_on):
     assert _wavs("held", WavDumpFolder.default_folder()) == []
 
 
-# Recording is decided when a sequence starts, from the saving setting: with it off nothing is
-# kept, and turning it on mid-sequence takes effect from the next sequence. A loaded measurement
-# or comparison ends the sequence and its recording. Mirrors Swift WavDumpFolderTests.
+# Whether the recording is saved is read from the saving setting when a sequence starts, and again
+# when the setting changes before the first tap (the shared cases in session-pre-roll.json). A
+# loaded measurement or comparison ends the sequence and its recording. Mirrors Swift
+# WavDumpFolderTests.
 
 
 def _chunk():
@@ -228,7 +229,7 @@ def test_saving_off_records_nothing():
         TapDisplaySettings.set_dump_capture_audio(saved)
 
 
-def test_saving_turned_on_after_arming_takes_effect_from_the_next_sequence():
+def test_saving_turned_on_after_the_first_tap_takes_effect_from_the_next_sequence():
     from guitar_tap.models.tap_display_settings import TapDisplaySettings
     from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
     saved = TapDisplaySettings.dump_capture_audio()
@@ -236,7 +237,10 @@ def test_saving_turned_on_after_arming_takes_effect_from_the_next_sequence():
     try:
         sut = TapToneAnalyzer.for_testing()
         sut.start_tap_sequence()
+        sut._gated_capture_active = True
+        sut._maintain_session_recording(_chunk())
         TapDisplaySettings.set_dump_capture_audio(True)
+        sut.apply_dump_capture_audio_setting()
         # A pause and resume does not start it either.
         sut.pause_tap_detection()
         sut.resume_tap_detection()
@@ -249,6 +253,7 @@ def test_saving_turned_on_after_arming_takes_effect_from_the_next_sequence():
         assert set(_wavs("session_Guitar_1tap", folder)) - before == set()
         # The next sequence records.
         sut.start_tap_sequence()
+        assert sut._is_session_recording_enabled
         assert sut._is_session_recording
     finally:
         TapDisplaySettings.set_dump_capture_audio(saved)

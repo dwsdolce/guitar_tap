@@ -1,0 +1,435 @@
+{
+ "slug": "test/measurement-codable",
+ "about": "A saved measurement's own logic — the same cases in every edition. Every case is a classical guitar measurement (guitarType 'Classical', measurementType 'Classical Guitar') holding 'peaks' (id, frequency in Hz, magnitude in dB), the 'selected' peak ids (null: no selection saved — a legacy file; []: Select None) and mode 'overrides' (peak id → label). tapToneRatio: the measurement's ratio, f(Top) / f(Air) over the definitive peaks — 'expect' within 'ratioTolerance', or null for none; 'live' rows are also given to a live analyzer with the same peaks, selection and overrides, which must give the same ratio. modeLabels: the label each peak is written with, in peak order — and the label the measurement gives it for display (the Details pane's), which must be the same; 'storedLabels' are labels the file already carries. selectionHeal: the measurement written and read back — whether the read flags it healed, and the selection it holds; 'material' rows are a material measurement (a longitudinal snapshot, no guitar spectrum). Expected values are Swift's.",
+ "guitarType": "Classical",
+ "measurementType": "Classical Guitar",
+ "ratioTolerance": 1e-06,
+ "tapToneRatio": [
+  {
+   "id": "TR1",
+   "note": "Air and a Top in the classical Top/Back overlap zone, nothing selected: the Top is found",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 210,
+     "magnitude": -20
+    }
+   ],
+   "selected": null,
+   "expect": 2.21052631579,
+   "overrides": {}
+  },
+  {
+   "id": "TR2",
+   "note": "no peaks: no ratio",
+   "peaks": [],
+   "selected": null,
+   "expect": null,
+   "overrides": {}
+  },
+  {
+   "id": "TR3",
+   "note": "no Air peak (250 Hz is Back for classical): no ratio",
+   "peaks": [
+    {
+     "id": "back",
+     "frequency": 250,
+     "magnitude": -20
+    }
+   ],
+   "selected": null,
+   "expect": null,
+   "overrides": {}
+  },
+  {
+   "id": "TR4",
+   "note": "only the selected peaks count: Air and Top selected, a 500 Hz peak not",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 200,
+     "magnitude": -20
+    },
+    {
+     "id": "noise",
+     "frequency": 500,
+     "magnitude": -50
+    }
+   ],
+   "selected": [
+    "air",
+    "top"
+   ],
+   "expect": 2.10526315789,
+   "live": true,
+   "overrides": {}
+  },
+  {
+   "id": "TR5",
+   "note": "the Top renamed to a freeform label is no longer the definitive Top: no ratio",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 210,
+     "magnitude": -20
+    }
+   ],
+   "selected": [
+    "air",
+    "top"
+   ],
+   "overrides": {
+    "top": "Wolf note"
+   },
+   "expect": null,
+   "live": true
+  },
+  {
+   "id": "TR6",
+   "note": "an override that makes a peak Top retargets the ratio onto it",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "far",
+     "frequency": 400,
+     "magnitude": -20
+    }
+   ],
+   "selected": [
+    "air",
+    "far"
+   ],
+   "overrides": {
+    "far": "Top"
+   },
+   "expect": 4.21052631579,
+   "live": true
+  },
+  {
+   "id": "TR7",
+   "note": "a Top that is not selected is not the definitive Top: no ratio",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 210,
+     "magnitude": -20
+    }
+   ],
+   "selected": [
+    "air"
+   ],
+   "expect": null,
+   "live": true,
+   "overrides": {}
+  },
+  {
+   "id": "TR8",
+   "note": "two peaks in the overlap zone: the stronger is Top, and the ratio uses it alone",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 205,
+     "magnitude": -18
+    },
+    {
+     "id": "back",
+     "frequency": 220,
+     "magnitude": -25
+    }
+   ],
+   "selected": null,
+   "expect": 2.15789473684,
+   "overrides": {}
+  },
+  {
+   "id": "TR9",
+   "note": "Select None: nothing is selected, so there is no definitive Air or Top — no ratio",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 210,
+     "magnitude": -20
+    }
+   ],
+   "selected": [],
+   "expect": null,
+   "live": true,
+   "overrides": {}
+  }
+ ],
+ "modeLabels": [
+  {
+   "id": "ML1",
+   "note": "two peaks in the overlap zone get distinct labels: the stronger Top, the weaker Back",
+   "peaks": [
+    {
+     "id": "strong",
+     "frequency": 210,
+     "magnitude": -18
+    },
+    {
+     "id": "weak",
+     "frequency": 220,
+     "magnitude": -26
+    }
+   ],
+   "selected": null,
+   "storedLabels": [
+    null,
+    null
+   ],
+   "overrides": {},
+   "expect": [
+    "Top",
+    "Back"
+   ]
+  },
+  {
+   "id": "ML2",
+   "note": "a stale label carried in the file does not win: the stronger peak, saved as Back, is reclassified",
+   "peaks": [
+    {
+     "id": "strong",
+     "frequency": 210,
+     "magnitude": -18
+    },
+    {
+     "id": "weak",
+     "frequency": 220,
+     "magnitude": -26
+    }
+   ],
+   "selected": null,
+   "storedLabels": [
+    "Back",
+    null
+   ],
+   "overrides": {},
+   "expect": [
+    "Top",
+    "Back"
+   ]
+  },
+  {
+   "id": "ML3",
+   "note": "a user override does win",
+   "peaks": [
+    {
+     "id": "strong",
+     "frequency": 210,
+     "magnitude": -18
+    },
+    {
+     "id": "weak",
+     "frequency": 220,
+     "magnitude": -26
+    }
+   ],
+   "selected": null,
+   "storedLabels": [
+    null,
+    null
+   ],
+   "overrides": {
+    "strong": "Dipole"
+   },
+   "expect": [
+    "Dipole",
+    "Back"
+   ]
+  },
+  {
+   "id": "ML4",
+   "note": "the selection does not change a peak's mode: with Air and 220 Hz selected, 220 Hz is still Back — classified among all the peaks, as the live view did",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "strong",
+     "frequency": 210,
+     "magnitude": -18
+    },
+    {
+     "id": "weak",
+     "frequency": 220,
+     "magnitude": -26
+    }
+   ],
+   "selected": [
+    "air",
+    "weak"
+   ],
+   "storedLabels": [
+    null,
+    null,
+    null
+   ],
+   "overrides": {},
+   "expect": [
+    "Air (Helmholtz)",
+    "Top",
+    "Back"
+   ]
+  }
+ ],
+ "selectionHeal": [
+  {
+   "id": "SH1",
+   "note": "nothing selected: healed to the definitive set (strongest per mode), flagged, and the ratio is available",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 210,
+     "magnitude": -20
+    }
+   ],
+   "selected": null,
+   "overrides": {},
+   "expectHealed": true,
+   "expectSelected": [
+    "air",
+    "top"
+   ]
+  },
+  {
+   "id": "SH2",
+   "note": "two Tops selected (175 and 185 Hz are both Top-only for classical): pruned to the stronger; the Air is untouched",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "weakTop",
+     "frequency": 175,
+     "magnitude": -30
+    },
+    {
+     "id": "loudTop",
+     "frequency": 185,
+     "magnitude": -18
+    }
+   ],
+   "selected": [
+    "air",
+    "weakTop",
+    "loudTop"
+   ],
+   "overrides": {},
+   "expectHealed": true,
+   "expectSelected": [
+    "air",
+    "loudTop"
+   ]
+  },
+  {
+   "id": "SH3",
+   "note": "a valid one-per-mode selection is not flagged as healed",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 210,
+     "magnitude": -20
+    }
+   ],
+   "selected": [
+    "air",
+    "top"
+   ],
+   "overrides": {},
+   "expectHealed": false,
+   "expectSelected": [
+    "air",
+    "top"
+   ]
+  },
+  {
+   "id": "SH4",
+   "note": "a material measurement is never touched by the selection heal",
+   "material": true,
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    }
+   ],
+   "selected": [
+    "air"
+   ],
+   "overrides": {},
+   "expectHealed": false,
+   "expectSelected": [
+    "air"
+   ]
+  },
+  {
+   "id": "SH5",
+   "note": "Select None is kept: an empty saved selection is not healed, and reads back as nothing selected",
+   "peaks": [
+    {
+     "id": "air",
+     "frequency": 95,
+     "magnitude": -28
+    },
+    {
+     "id": "top",
+     "frequency": 210,
+     "magnitude": -20
+    }
+   ],
+   "selected": [],
+   "overrides": {},
+   "expectHealed": false,
+   "expectSelected": []
+  }
+ ]
+}

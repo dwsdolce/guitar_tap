@@ -309,14 +309,15 @@ class TestAnnotationOffsets:
 
 # ---------------------------------------------------------------------------
 # Peak selection on TapToneMeasurement (moved from test_annotation_state.py)
-# Mirrors Swift TapToneRatioTests: tapToneRatio_usesSelectedPeaksWhenSet
+# Mirrors Swift PeakSelectionOnMeasurementTests (D3)
 # ---------------------------------------------------------------------------
 
 class TestPeakSelection:
-    """TapToneMeasurement selected_peak_ids storage and tap_tone_ratio filtering.
+    """TapToneMeasurement selected_peak_ids storage.
 
     Moved from test_annotation_state.py — tests TapToneMeasurement fields.
-    Mirrors Swift AnnotationStateTests D3/D3b.
+    Mirrors Swift PeakSelectionOnMeasurementTests D3. The ratio over the selection is the shared
+    cases (test_tap_tone_ratio).
     """
 
     def test_D3_selected_peak_ids_stored(self):
@@ -331,29 +332,6 @@ class TestPeakSelection:
         restored = _round_trip(m)
         assert restored.selected_peak_ids == [p1.id]
         assert restored.selected_peak_frequencies == [95.0]
-
-    def test_D3b_tap_tone_ratio_uses_only_selected_peaks(self):
-        """D3b: tap_tone_ratio skips deselected peaks."""
-        air = _make_peak(freq=95.0, mag=-25.0)
-        top = _make_peak(freq=195.0, mag=-28.0)
-        noise = _make_peak(freq=500.0, mag=-50.0)
-        m = TapToneMeasurement.create(
-            peaks=[air, top, noise],
-            selected_peak_ids=[air.id, top.id],
-            guitar_type="Classical",
-        )
-        ratio = m.tap_tone_ratio
-        assert ratio is not None
-        assert abs(ratio - (195.0 / 95.0)) < 0.1
-
-    def test_selected_peak_ids_none_uses_all_peaks(self):
-        """When selected_peak_ids is None, all peaks contribute to tap_tone_ratio."""
-        air = _make_peak(freq=95.0, mag=-25.0)
-        top = _make_peak(freq=195.0, mag=-28.0)
-        m = TapToneMeasurement.create(
-            peaks=[air, top], selected_peak_ids=None, guitar_type="Classical",
-        )
-        assert m.tap_tone_ratio is not None
 
 
 # ---------------------------------------------------------------------------
@@ -491,10 +469,10 @@ class TestPeakSelectionTracking:
         restored = _round_trip(m)
         assert restored.selected_peak_frequencies == [440.0]
 
-    def test_PS6_empty_selection_list_round_trips_to_none(self):
-        """PS6: An empty selected_peak_ids list is treated as 'not set' on decode."""
+    def test_PS6_empty_selection_round_trips_as_select_none(self):
+        """PS6: An empty selection is Select None — it reads back empty, not as 'no selection saved'."""
         m = TapToneMeasurement.create(peaks=[], selected_peak_ids=[])
-        assert m.selected_peak_ids is None
+        assert _round_trip(m).selected_peak_ids == []
 
 
 # ---------------------------------------------------------------------------
@@ -524,53 +502,7 @@ class TestLiveTapPath:
 
 
 # ---------------------------------------------------------------------------
-# TapToneRatio
-# ---------------------------------------------------------------------------
-
-class TestTapToneRatio:
-    """Mirrors Swift TapToneRatioTests."""
-
-    def test_ratio_is_none_when_no_peaks(self):
-        m = TapToneMeasurement.create(peaks=[], guitar_type="Classical")
-        assert m.tap_tone_ratio is None
-
-    def test_ratio_computed_for_air_and_top(self):
-        """With an Air peak at 95 Hz and Top peak at 190 Hz, ratio ≈ 2.0."""
-        air = _make_peak(freq=95.0, mag=-25.0)   # in classical Air range (80-110)
-        top = _make_peak(freq=190.0, mag=-28.0)  # in classical Top range (170-230)
-        m = TapToneMeasurement.create(
-            peaks=[air, top],
-            guitar_type="Classical",
-        )
-        ratio = m.tap_tone_ratio
-        assert ratio is not None, "tap_tone_ratio should not be None"
-        assert abs(ratio - 2.0) < 0.1, f"Expected ratio ~2.0; got {ratio:.3f}"
-
-    def test_ratio_is_none_when_air_missing(self):
-        """Without an Air peak, ratio cannot be computed → None."""
-        top = _make_peak(freq=195.0, mag=-28.0)
-        m = TapToneMeasurement.create(peaks=[top], guitar_type="Classical")
-        assert m.tap_tone_ratio is None
-
-    def test_ratio_uses_selected_peaks_when_set(self):
-        """tap_tone_ratio uses only selectedPeakIDs when present."""
-        air = _make_peak(freq=95.0, mag=-25.0)
-        top = _make_peak(freq=190.0, mag=-28.0)
-        # Select only the Air peak — ratio cannot be computed
-        m = TapToneMeasurement.create(
-            peaks=[air, top],
-            guitar_type="Classical",
-            selected_peak_ids=[air.id],
-        )
-        # With only Air selected, Top is excluded → ratio = None
-        assert m.tap_tone_ratio is None, (
-            "ratio should be None when Top peak is not in selected peaks"
-        )
-
-
-# ---------------------------------------------------------------------------
-# ComparisonEntry and TapToneMeasurement with comparisonEntries
-# Mirrors Swift ComparisonEntryCodableTests
+# Comparison entries
 # ---------------------------------------------------------------------------
 
 class TestComparisonEntryCodable:
@@ -842,124 +774,97 @@ class TestFixtureLoading:
 
 
 # ---------------------------------------------------------------------------
-# modeLabel is derived, never carried through
+# The measurement's logic — the shared cases in measurement-codable.json
 #
-# A decoded label is never preferred over reclassifying, on EXPORT or on DISPLAY
-# (measurement_detail_view.py), so a loaded file's stale label is never shown.
-#
-# modeLabel is an export-only convenience injected at serialisation time; Swift has no such
-# field on ResonantPeak. Deriving it afresh is the design.
+# The tap-tone ratio (TR), the mode label each peak is written with (ML), and the selection heal on
+# decode (SH): the same cases as Swift and the web. Mirrors Swift MeasurementLogicTests.
 # ---------------------------------------------------------------------------
 
-class TestModeLabelIsDerived:
-    """Mirrors Swift MeasurementExportModeLabelTests and web's equivalent block."""
-
-    @staticmethod
-    def _overlap_measurement(stale_label_on_stronger: str = ""):
-        """Two classical peaks in the Top/Back overlap; the stronger claims Top."""
-        from guitar_tap.models.resonant_peak import ResonantPeak
-
-        stronger = ResonantPeak(frequency=210.0, magnitude=-18.0)
-        weaker = ResonantPeak(frequency=220.0, magnitude=-26.0)
-        stronger.mode_label = stale_label_on_stronger
-        m = TapToneMeasurement(
-            id=str(uuid.uuid4()),
-            timestamp="2026-01-01T00:00:00Z",
-            peaks=[stronger, weaker],
-            guitar_type="Classical",
-            measurement_type="Classical Guitar",
-        )
-        return m, stronger, weaker
-
-    def _labels(self, m) -> list:
-        return [p["modeLabel"] for p in m.to_dict()["peaks"]]
-
-    def test_overlap_zone_peaks_get_distinct_labels(self):
-        """classifyAll gives the stronger overlap peak Top and the weaker Back."""
-        m, _, _ = self._overlap_measurement()
-        assert self._labels(m) == ["Top", "Back"]
-
-    def test_stale_carried_through_label_does_not_win(self):
-        """The stronger peak carries a stale "Back" from an older save; it is reclassified.
-
-        This is the case the web diverged on — it wrote Back and kept writing it, because the
-        label was read on decode and preferred on encode.
-        """
-        m, _, _ = self._overlap_measurement("Back")
-        assert self._labels(m) == ["Top", "Back"]
-
-    def test_user_override_does_win(self):
-        m, stronger, _ = self._overlap_measurement()
-        m.peak_mode_overrides = {stronger.id: "Dipole"}
-        assert self._labels(m) == ["Dipole", "Back"]
+with open(os.path.join(os.path.dirname(__file__), "measurement-codable.json"), encoding="utf-8") as _f:
+    LOGIC = json.load(_f)
 
 
-# ---------------------------------------------------------------------------
-# Definitive tap-tone ratio + guitar decode heal
-# ---------------------------------------------------------------------------
-
-from guitar_tap.models.guitar_mode import GuitarMode as _GM6
-
-
-def _rp6(freq, mag=-20.0, pid=None):
-    return ResonantPeak(id=pid or str(uuid.uuid4()), frequency=freq, magnitude=mag,
-                        quality=10.0, bandwidth=freq / 10.0)
-
-
-def _guitar_measurement6(peaks, selected_ids, overrides=None):
-    return TapToneMeasurement(
-        id=str(uuid.uuid4()),
-        timestamp="2026-01-01T00:00:00Z",
+def _case_measurement(row: dict) -> "tuple[TapToneMeasurement, dict]":
+    """A case's measurement, and its peaks by the case's peak ids."""
+    by_name = {p["id"]: ResonantPeak(id=str(uuid.uuid4()), frequency=p["frequency"], magnitude=p["magnitude"])
+               for p in row["peaks"]}
+    peaks = [by_name[p["id"]] for p in row["peaks"]]
+    selected = [by_name[n].id for n in row["selected"]] if row["selected"] is not None else None
+    overrides = {by_name[n].id: label for n, label in row["overrides"].items()} or None
+    material = row.get("material", False)
+    guitar_type = None if material else LOGIC["guitarType"]
+    measurement_type = None if material else LOGIC["measurementType"]
+    snapshot = SpectrumSnapshot(frequencies=[], magnitudes=[], min_freq=50, max_freq=500, min_db=-100, max_db=0,
+                                guitar_type=guitar_type, measurement_type=measurement_type)
+    m = TapToneMeasurement.create(
         peaks=peaks,
-        selected_peak_ids=selected_ids,
+        spectrum_snapshot=None if material else snapshot,
+        longitudinal_snapshot=snapshot if material else None,
+        selected_peak_ids=selected,
         peak_mode_overrides=overrides,
-        guitar_type="Generic",
-        measurement_type="Generic",
+        guitar_type=guitar_type,
+        measurement_type=measurement_type,
     )
+    return m, by_name
 
 
-class TestPhase6StructRatio:
-    """TapToneMeasurement.tap_tone_ratio reads the definitive (selected + override-aware) peak."""
-
-    def test_tap_tone_ratio_freeform_override_on_top_returns_nil(self):
-        air, top = _rp6(100), _rp6(150)
-        m = _guitar_measurement6([air, top], [air.id, top.id], {top.id: "Wolf note"})
-        assert m.tap_tone_ratio is None
-
-    def test_tap_tone_ratio_override_retargets_top(self):
-        air, other = _rp6(100), _rp6(320)   # 320 = dipole band, not Top
-        m = _guitar_measurement6([air, other], [air.id, other.id], {other.id: _GM6.TOP.display_name})
-        r = m.tap_tone_ratio
-        assert r is not None and abs(r - (320.0 / 100.0)) < 1e-6
-
-    def test_tap_tone_ratio_deselected_top_returns_nil(self):
-        air, top = _rp6(100), _rp6(150)
-        m = _guitar_measurement6([air, top], [air.id])   # Top not selected
-        assert m.tap_tone_ratio is None
+def _ratio_matches(ratio, expected) -> bool:
+    if expected is None:
+        return ratio is None
+    return ratio is not None and abs(ratio - expected) <= LOGIC["ratioTolerance"]
 
 
-class TestPhase6DecodeHeal:
-    """from_dict heals the guitar definitive selection (auto-select nil; prune duplicate holders)."""
+@pytest.mark.parametrize("row", LOGIC["tapToneRatio"], ids=lambda r: r["id"])
+def test_tap_tone_ratio(row):
+    m, by_name = _case_measurement(row)
+    assert _ratio_matches(m.tap_tone_ratio, row["expect"]), f"{row['id']}: saved ratio {m.tap_tone_ratio} — {row['note']}"
+    if not row.get("live"):
+        return
+    from guitar_tap.models.guitar_mode import GuitarMode
+    from guitar_tap.models.measurement_type import MeasurementType
+    from guitar_tap.models.tap_display_settings import TapDisplaySettings
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+    saved_type = TapDisplaySettings.measurement_type()
+    TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+    try:
+        from PySide6 import QtWidgets
+        QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        sut = TapToneAnalyzer()
+        sut.all_peaks = list(m.peaks)
+        sut.reclassify_peaks()
+        sut.selected_peak_ids = set(m.selected_peak_ids or [])
+        for name, label in row["overrides"].items():
+            sut.set_mode_override(label, by_name[name].id)
+        live = sut.calculate_tap_tone_ratio()
+        assert _ratio_matches(live, row["expect"]), f"{row['id']}: live ratio {live} — the saved and live ratios must agree"
+    finally:
+        TapDisplaySettings.set_measurement_type(saved_type)
 
-    def test_nil_selection_is_healed_to_definitive_set(self):
-        air, top = _rp6(100), _rp6(150)
-        d = _guitar_measurement6([air, top], None).to_dict()
+
+@pytest.mark.parametrize("row", LOGIC["modeLabels"], ids=lambda r: r["id"])
+def test_mode_labels(row):
+    m, _ = _case_measurement(row)
+    # A file whose peaks already carry `storedLabels`: written, the labels set, read back.
+    d = m.to_dict()
+    for peak, label in zip(d["peaks"], row["storedLabels"]):
+        if label is None:
+            peak.pop("modeLabel", None)
+        else:
+            peak["modeLabel"] = label
+    read = TapToneMeasurement.from_dict(d)
+    labels = [p.get("modeLabel") for p in read.to_dict()["peaks"]]
+    assert labels == row["expect"], f"{row['id']}: written — {row['note']}"
+    shown = read.peak_mode_labels
+    assert [shown.get(p.id) for p in read.peaks] == row["expect"], f"{row['id']}: displayed — {row['note']}"
+
+
+@pytest.mark.parametrize("row", LOGIC["selectionHeal"], ids=lambda r: r["id"])
+def test_selection_heal(row):
+    m, by_name = _case_measurement(row)
+    d = m.to_dict()
+    if row["selected"] is None:
         d.pop("selectedPeakIDs", None)
-        healed = TapToneMeasurement.from_dict(d)
-        assert healed.was_healed
-        assert set(healed.selected_peak_ids or []) == {air.id, top.id}
-
-    def test_two_selected_tops_pruned_to_the_stronger(self):
-        air, weak_top, loud_top = _rp6(100), _rp6(150, -35), _rp6(170, -20)
-        d = _guitar_measurement6([air, weak_top, loud_top],
-                                 [air.id, weak_top.id, loud_top.id]).to_dict()
-        healed = TapToneMeasurement.from_dict(d)
-        assert healed.was_healed
-        sel = set(healed.selected_peak_ids or [])
-        assert loud_top.id in sel and weak_top.id not in sel and air.id in sel
-
-    def test_valid_selection_is_not_healed(self):
-        air, top = _rp6(100), _rp6(150)
-        d = _guitar_measurement6([air, top], [air.id, top.id]).to_dict()
-        healed = TapToneMeasurement.from_dict(d)
-        assert not healed.was_healed
+    read = TapToneMeasurement.from_dict(d)
+    assert read.was_healed == row["expectHealed"], f"{row['id']}: healed — {row['note']}"
+    assert set(read.selected_peak_ids or []) == {by_name[n].id for n in row["expectSelected"]}, \
+        f"{row['id']}: selection — {row['note']}"

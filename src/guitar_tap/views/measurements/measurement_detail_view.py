@@ -9,26 +9,14 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import TapToneMeasurement
 from guitar_tap.models import guitar_mode as GM
-from guitar_tap.models import guitar_type as GT
 from guitar_tap.models import pitch as P
 from guitar_tap.utilities.date_format import format_display_datetime
 from guitar_tap.views.shared.peak_card_widget import PeakCardWidget
 from guitar_tap.views.utilities import palette
-from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 _PITCH = P.Pitch(440)
-
-def _resolve_guitar_type(guitar_type_str: str | None) -> GT.GuitarType:
-    """Convert a guitar_type string to GuitarType enum, defaulting to Generic."""
-    if guitar_type_str:
-        try:
-            return GT.GuitarType(guitar_type_str)
-        except ValueError:
-            pass
-    return GT.GuitarType.GENERIC
-
 
 def _comparison_data(m) -> "list[dict]":
     """Build ComparisonResultsView rows from a saved comparison's entries."""
@@ -161,26 +149,20 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             if not shown:
                 peaks_vbox.addWidget(QtWidgets.QLabel("No identified peaks"))
             else:
-                gt = _resolve_guitar_type(m.guitar_type)
-                is_material = (
-                    m.longitudinal_snapshot is not None
-                    or m.selected_longitudinal_peak_id is not None
-                )
-                id_map = {} if is_material else GM.GuitarMode.classify_all(shown, gt)
+                # The measurement's own modes and labels — classified among all its peaks, as the
+                # file is written and the live view showed them, not among the shown ones.
+                gt = m.classification_guitar_type
+                is_material = m.is_material
+                id_map = m.auto_modes
+                labels = m.peak_mode_labels
                 pitch = P.Pitch(440)
                 for peak in shown:
                     # The results panel's peak card, read-only — as Swift's Details reuses
                     # CombinedPeakModeRowView.
                     override = None
+                    fallback = "Peak" if is_material else GM.GuitarMode.UNKNOWN.display_name
+                    label = labels.get(peak.id, fallback)
                     if is_material:
-                        if peak.id == m.selected_longitudinal_peak_id:
-                            label = MaterialPeakRole.LONGITUDINAL.display_name
-                        elif peak.id == m.selected_cross_peak_id:
-                            label = MaterialPeakRole.CROSS.display_name
-                        elif peak.id == m.selected_flc_peak_id:
-                            label = MaterialPeakRole.FLC.display_name
-                        else:
-                            label = "Peak"
                         auto_label = ""
                     else:
                         mode = id_map.get(peak.id, GM.GuitarMode.UNKNOWN)
@@ -188,13 +170,6 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
                             m.peak_mode_overrides.get(peak.id)
                             if m.peak_mode_overrides else None
                         )
-                        # override > classification. NOT peak.mode_label: that is an
-                        # export-only convenience injected at serialisation time, not stored
-                        # state, and preferring it here showed a label this app's own writer
-                        # would never save — a loaded file's stale label outlived the
-                        # reclassification that replaced it. Swift derives at display time for
-                        # the same reason (MeasurementDetailView).
-                        label = override or mode.display_name
                         auto_label = mode.display_name
                     q = float(peak.quality)
                     row = PeakCardWidget(

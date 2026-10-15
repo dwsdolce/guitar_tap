@@ -374,7 +374,6 @@ class RealtimeFFTAnalyzer(
 
     def __init__(self, parent, rate: int = 44100, chunksize: int = 1024,
                  on_devices_changed: Callable[[], None] | None = None,
-                 on_calibration_changed: "Callable[[object | None], None] | None" = None,
                  for_testing: bool = False):
         """Create a new real-time FFT analyser.
 
@@ -395,12 +394,6 @@ class RealtimeFFTAnalyzer(
             chunksize:               PortAudio block size in frames (Python-only; Swift uses 1024).
             on_devices_changed:      Callback fired on hot-plug connect/disconnect events.
                                      Mirrors Swift's @Published availableInputDevices update.
-            on_calibration_changed:  Callback fired by set_device() after auto-loading the
-                                     device-specific calibration.  Receives the loaded
-                                     MicrophoneCalibration profile, or None if no calibration
-                                     exists for the new device.
-                                     Mirrors Swift selectedInputDevice.didSet calling
-                                     setCalibrationWithoutSavingDeviceMapping(_:).
             for_testing:             When True, skip all audio hardware setup.
                                      Mirrors Swift ``init(forTesting:)``.
         """
@@ -545,9 +538,6 @@ class RealtimeFFTAnalyzer(
         self._mm_client: object | None = None
         self._mm_enumerator: object | None = None
 
-        # Calibration-change callback.
-        self._on_calibration_changed: "Callable[[object | None], None] | None" = on_calibration_changed
-
         # Raw-sample handler callback.
         # Mirrors Swift RealtimeFFTAnalyzer.rawSampleHandler.
         # Set by TapToneAnalyzer._wire_pipeline_signals() to _accumulate_gated_samples.
@@ -574,8 +564,11 @@ class RealtimeFFTAnalyzer(
 
         # Thread-safe settings (calibration).
         self._settings_lock = threading.Lock()
+        # The active calibration and the corrections the engine computed from it, for the bins of
+        # `_calibration_rate` (see `calibration_corrections`).
         self._calibration: npt.NDArray | None = None
         self._calibration_profile: object | None = None
+        self._calibration_rate: "int | None" = None
 
         # The latest buffer's input level — level, clipping, recent peak — on an object of its own so
         # that only the threshold meter observes it. Swift `level`.
@@ -691,22 +684,20 @@ class RealtimeFFTAnalyzer(
         except Exception:
             pass
 
-        # Automatically load device-specific calibration when device changes.
-        # Mirrors Swift selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
-        on_cal = getattr(self, "_on_calibration_changed", None)
-        if on_cal is not None:
-            try:
-                from guitar_tap.models.microphone_calibration import CalibrationStorage as _CS
-                cal = _CS.calibration_for_device(device.fingerprint)
-                if cal is None:
-                    cal = _CS.calibration_for_device(device.name)
-                if cal is not None:
-                    gt_log(f"📊 Auto-loaded calibration for device '{device.name}'")
-                else:
-                    gt_log(f"📊 No calibration for device '{device.name}' - using uncalibrated mode")
-                on_cal(cal)
-            except Exception:
-                pass
+        # The device's own calibration, applied by the engine itself — at launch too. Mirrors Swift
+        # selectedInputDevice.didSet → setCalibrationWithoutSavingDeviceMapping(_:).
+        try:
+            from guitar_tap.models.microphone_calibration import CalibrationStorage as _CS
+            cal = _CS.calibration_for_device(device.fingerprint)
+            if cal is None:
+                cal = _CS.calibration_for_device(device.name)
+        except Exception:  # noqa: BLE001 — unreadable storage means no calibration, never a failed selection
+            cal = None
+        if cal is not None:
+            gt_log(f"📊 Auto-loaded calibration for device '{device.name}'")
+        else:
+            gt_log(f"📊 No calibration for device '{device.name}' - using uncalibrated mode")
+        self.set_calibration_without_saving_device_mapping(cal)
 
     # MARK: - process_raw_samples (mirrors Swift processRawSamples)
 
@@ -886,19 +877,70 @@ class RealtimeFFTAnalyzer(
             # so Qt delivers it synchronously.
             self.proc_thread.fftFrameReady.emit(mag_y_db, peak_db, fps, sample_dt, processing_dt)
 
-    # MARK: - Calibration (formerly on _FftProcessingThread)
+    # MARK: - Calibration
+    #
+    # The engine owns the calibration, as Swift's RealtimeFFTAnalyzer does: it holds the active
+    # profile, computes the per-bin corrections from its own bins, and applies them. The analyzer
+    # only reads them.
 
-    def set_calibration(self, arr: npt.NDArray | None,
-                        profile: object | None = None) -> None:
-        """Update the per-bin dB calibration correction array.
+    @property
+    def active_calibration(self):
+        """The active microphone calibration, or None. Mirrors Swift ``activeCalibration``."""
+        with self._settings_lock:
+            return self._calibration_profile
 
-        Args:
-            arr:     Pre-interpolated dB corrections for the live FFT bins.
-            profile: Raw MicrophoneCalibration object (optional).
+    def set_active_calibration(self, cal) -> None:
+        """Make *cal* (None: no calibration) the user's choice and save it — as the last chosen (the
+        global active id) and for the selected input, so it loads whenever that input is selected.
+
+        Mirrors Swift assigning ``activeCalibration``, whose didSet saves both. A device's own
+        calibration loading when the input switches (``set_calibration_without_saving_device_mapping``)
+        and a file playback's (``set_temporary_calibration``) save nothing.
+        """
+        from guitar_tap.models.microphone_calibration import CalibrationStorage
+
+        self._apply_calibration(cal)
+        cal_id = cal.id if cal is not None else None
+        CalibrationStorage.set_active_calibration_id(cal_id)
+        device = self._selected_input_device
+        if device is not None:
+            # The map is keyed by device name; the lookup tries the fingerprint first, so any
+            # fingerprint entry for this device is removed.
+            CalibrationStorage.set_calibration_for_device(device.fingerprint, None)
+            CalibrationStorage.set_calibration_for_device(device.name, cal_id)
+
+    def set_calibration_without_saving_device_mapping(self, cal) -> None:
+        """Apply *cal* without saving it — a device's own calibration, loaded when it is selected.
+        Mirrors Swift ``setCalibrationWithoutSavingDeviceMapping(_:)``."""
+        self._apply_calibration(cal)
+
+    def set_temporary_calibration(self, cal) -> None:
+        """Apply *cal* for a file playback, saving nothing; the caller restores the previous one.
+        Mirrors Swift ``setTemporaryCalibration(_:)``."""
+        self._apply_calibration(cal)
+
+    def _apply_calibration(self, cal) -> None:
+        with self._settings_lock:
+            self._calibration_profile = cal
+            self._calibration = None
+            self._calibration_rate = None
+
+    @property
+    def calibration_corrections(self) -> "npt.NDArray | None":
+        """The active calibration's per-bin dB corrections, or None without one.
+
+        Computed by the engine from its own bin frequencies — ``i · rate / fft_size``, the exact
+        frequency of each bin — and computed again when the sample rate changes. Mirrors Swift
+        ``calibrationCorrections`` (``updateCalibrationCorrections``).
         """
         with self._settings_lock:
-            self._calibration = arr
-            self._calibration_profile = profile
+            if self._calibration_profile is None:
+                return None
+            if self._calibration is None or self._calibration_rate != self.rate:
+                bins = np.arange(self.h_fft_size) * float(self.rate) / self.fft_size
+                self._calibration = self._calibration_profile.interpolate_to_bins(bins)
+                self._calibration_rate = self.rate
+            return self._calibration
 
     # MARK: - Gated FFT Compute
 

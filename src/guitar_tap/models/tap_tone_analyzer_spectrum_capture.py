@@ -319,7 +319,8 @@ class TapToneAnalyzerSpectrumCaptureMixin:
           session_pre_roll_samples (~2 s). The tap is always in the tail, so trimming the head never
           eats it — this just discards accumulated idle.
         - The first tap (_gated_capture_active True): freeze — the latch drops to False for the rest
-          of the session.
+          of the session. A sequence that is not being saved (Dump Capture Audio off) stops
+          recording here and drops what it kept.
         - Everything after (subsequent taps, plate phases C/FLC, the gaps between them): completely
           live — the trim is skipped, so every tap, phase and redo checkpoint is preserved. Only
           redo of the *first* phase re-arms the latch. Mirrors Swift maintainSessionRecording.
@@ -331,6 +332,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             return  # frozen after the first tap -> fully live
         if self._gated_capture_active:
             self._session_pre_roll_active = False  # first tap started -> freeze the pre-roll
+            if not self._is_session_recording_enabled:
+                self._is_session_recording = False
+                self._session_recording_buffer = []
         else:
             excess = len(self._session_recording_buffer) - self.session_pre_roll_samples
             if excess > 0:
@@ -359,13 +363,16 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         import numpy as np
 
         with self._gated_lock:
+            was_enabled = self._is_session_recording_enabled
             self._is_session_recording = False
+            self._is_session_recording_enabled = False
+            self._session_pre_roll_active = False
             samples = self._session_recording_buffer
             sample_rate = self._session_recording_sample_rate
             self._session_recording_buffer = []
             self._session_checkpoints = []
 
-        if not samples:
+        if not was_enabled or not samples:
             return
         self._dump_capture_wav(
             np.asarray(samples, dtype=np.float32),
@@ -385,8 +392,44 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         with self._gated_lock:
             self._is_session_recording = False
             self._is_session_recording_enabled = False
+            self._session_pre_roll_active = False
             self._session_recording_buffer = []
             self._session_checkpoints = []
+
+    # ------------------------------------------------------------------ #
+    # apply_dump_capture_audio_setting
+    # Mirrors Swift TapToneAnalyzer.applyDumpCaptureAudioSetting()
+    # ------------------------------------------------------------------ #
+
+    def apply_dump_capture_audio_setting(self) -> None:
+        """Apply a change of Dump Capture Audio to the sequence in progress. Called whenever the
+        setting is changed.
+
+        - Turned on before the first tap: this sequence is saved. Only the pre-roll exists so far,
+          and it has been kept, so the recording is the same as if the setting had been on when the
+          sequence started.
+        - Turned on after the first tap: nothing changes; it takes effect when the next sequence
+          starts (New Tap, Cancel, or anything else that starts one).
+        - Turned off: this sequence is not saved. After the first tap the recording stops and what it
+          held is dropped; before it, the pre-roll is still kept in case it is turned on again.
+
+        Mirrors Swift applyDumpCaptureAudioSetting().
+        """
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+
+        from . import capture_probe
+
+        with self._gated_lock:
+            if _tds.dump_capture_audio():
+                if self._session_pre_roll_active and not self._is_session_recording_enabled:
+                    self._is_session_recording_enabled = True
+                    capture_probe.begin_live_session(True)  # diagnostic
+            else:
+                self._is_session_recording_enabled = False
+                capture_probe.begin_live_session(False)  # diagnostic
+                if not self._session_pre_roll_active:
+                    self._is_session_recording = False
+                    self._session_recording_buffer = []
 
     # ------------------------------------------------------------------ #
     # capture_window_profile
@@ -970,9 +1013,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         # Apply per-bin calibration if present — mirrors what
         # process_raw_samples does on every live FFT frame.
-        cal = None
-        with self.mic._settings_lock:
-            cal = self.mic._calibration
+        cal = self.mic.calibration_corrections
         if cal is not None and len(cal) == len(magnitudes_db):
             magnitudes_db = magnitudes_db + cal
 

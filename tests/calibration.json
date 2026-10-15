@@ -1,0 +1,52 @@
+{
+ "slug": "test/calibration",
+ "about": "The engine's calibration corrections — the same cases in every edition. The engine holds the active calibration (the file 'calibrationFile') and computes its per-bin dB corrections from its own bins: bin i is at i × sampleRate / fftSize Hz, its exact frequency. Each case: the engine at 'sampleRate' (after 'fromSampleRate', when given — the corrections must follow a rate change), with the calibration applied; 'bins' are bin indices and 'expect' the correction at each, within 'tolerance' dB. Expected values are the calibration file interpolated at the exact bin frequency; a correction taken at the whole hertz below (the fault this guards) is 1.06 dB away at bin 15.",
+ "calibrationFile": "7108913.txt",
+ "fftSize": 65536,
+ "tolerance": 0.0001,
+ "cases": [
+  {
+   "id": "CAL1",
+   "note": "the corrections are the calibration at each bin's exact frequency (10.99, 11.72, 12.45, 88.62, 1000.49 and 15000 Hz)",
+   "sampleRate": 48000,
+   "bins": [
+    15,
+    16,
+    17,
+    121,
+    1366,
+    20480
+   ],
+   "expect": [
+    -2.61797,
+    -1.947149,
+    -1.38816,
+    0.869532,
+    0.018727,
+    -0.424329
+   ]
+  },
+  {
+   "id": "CAL2",
+   "note": "after the sample rate changes from 48 kHz to 44.1 kHz, the corrections follow the new bins",
+   "fromSampleRate": 48000,
+   "sampleRate": 44100,
+   "bins": [
+    15,
+    16,
+    17,
+    121,
+    1366,
+    20480
+   ],
+   "expect": [
+    -3.624087,
+    -2.844839,
+    -2.188444,
+    0.899852,
+    0.042555,
+    -0.033284
+   ]
+  }
+ ]
+}

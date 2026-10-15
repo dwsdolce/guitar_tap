@@ -1034,6 +1034,29 @@ class TestPeakMinDurability:
             "the loaded peaks are the saved ones, by identity"
         )
 
+    def test_PR46_load_measurement_classifies_under_the_measurements_own_type(self, qt_app):
+        """PR46: a load classifies the saved peaks under the measurement's own guitar type, not the
+        app's. 88 Hz is Air for Generic (70–135 Hz) but outside Acoustic's Air band (90–120 Hz).
+        Mirrors Swift PR46_loadMeasurement_classifiesUnderTheMeasurementsOwnType.
+        """
+        from guitar_tap.models.guitar_mode import GuitarMode
+        saved_type = TapDisplaySettings.measurement_type()
+        saved_guitar = TapDisplaySettings.guitar_type()
+        TapDisplaySettings.set_measurement_type(MeasurementType.ACOUSTIC)
+        TapDisplaySettings.set_guitar_type("Acoustic")
+        try:
+            sut = TapToneAnalyzer()
+            air = _peak(88.0, -25.0)
+            snap = SpectrumSnapshot(
+                frequencies=[100.0, 200.0, 300.0, 400.0], magnitudes=[-40.0, -20.0, -50.0, -60.0],
+                guitar_type="Generic", measurement_type=MeasurementType.GENERIC.value,
+            )
+            sut.load_measurement(TapToneMeasurement.create(peaks=[air], spectrum_snapshot=snap))
+            assert sut.peak_mode(air) == GuitarMode.AIR, "classified under the measurement's Generic bands"
+        finally:
+            TapDisplaySettings.set_measurement_type(saved_type)
+            TapDisplaySettings.set_guitar_type(saved_guitar.value if hasattr(saved_guitar, "value") else saved_guitar)
+
     def test_PR41_reanalyze_drops_the_loaded_peaks_and_re_detects(self, qt_app):
         """PR41: Re-analyze drops a loaded measurement's peaks and re-detects the frozen spectrum. The
         saved 777 Hz peak is absent from the spectrum, so it can only survive if the loaded peaks were

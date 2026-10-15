@@ -1332,6 +1332,9 @@ def render_spectrum_image_for_measurement(m) -> "bytes | None":
         selected_cross_peak_id=m.selected_cross_peak_id,
         selected_flc_peak_id=m.selected_flc_peak_id,
         mode_overrides=m.peak_mode_overrides or {},
+        # The measurement's own modes — classified among all its peaks, as the file, the Details pane
+        # and the live screen have them; never among the visible peaks. Mirrors Swift.
+        peak_modes=m.auto_modes,
         material_spectra=material_spectra if material_spectra else None,
         date_label=str(m.timestamp) if m.timestamp else "",
         chart_title=f"FFT Peaks — {m.measurement_name or 'New'}",

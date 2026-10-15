@@ -300,7 +300,7 @@ class TestFilePlaybackRegression:
         sut = TapToneAnalyzer.for_testing(sample_rate=_wav_rate(GUITAR_WAV))
         sut.peak_min_threshold = GUITAR_PEAK_MIN_THRESHOLD
         sut.tap_detection_threshold = GUITAR_TAP_THRESHOLD
-        sut.set_temporary_calibration(input_calibration)
+        sut.mic.set_temporary_calibration(input_calibration)
         TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
         sut.number_of_taps = 8
         finished = threading.Event()
@@ -328,7 +328,7 @@ class TestFilePlaybackRegression:
         assert not sut.mic.is_playing_file, "the file is stopped"
         assert sut.mic.playing_file_name is None, "the chart no longer names the file"
         assert finished, "the playback's finished callback ran"
-        assert sut._calibration_profile is input_calibration, "the input's calibration is back"
+        assert sut.mic.active_calibration is input_calibration, "the input's calibration is back"
         assert sut.detection_state == DetectionState.LISTENING, "a fresh sequence is armed"
         assert sut.current_tap_count == 0 and not sut.captured_taps, "the partial result is discarded"
         # The rest of the file must not reach the fresh sequence.
@@ -427,7 +427,7 @@ class TestFilePlaybackRegression:
         sut.peak_min_threshold = G1_PEAK_MIN_THRESHOLD
         sut.tap_detection_threshold = G1_TAP_THRESHOLD
         input_calibration = MicrophoneCalibration.from_path(CALIBRATION_FILE)
-        sut.set_temporary_calibration(input_calibration)
+        sut.mic.set_temporary_calibration(input_calibration)
         play_file_and_wait(sut, path=G1_WAV, measurement_type=MeasurementType.GENERIC, number_of_taps=1)
         assert sut.capture_calibration_name is None, "precondition: the file played uncalibrated"
 
@@ -473,15 +473,15 @@ class TestFilePlaybackRegression:
         from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
         app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         sut = TapToneAnalyzer.for_testing(sample_rate=_wav_rate(G1_WAV))
-        sut.set_temporary_calibration(input_calibration)
+        sut.mic.set_temporary_calibration(input_calibration)
         TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
         ended = threading.Event()
         sut.play_file(G1_WAV, calibration_path=calibration_path, on_finished=ended.set)
-        during = sut._calibration_profile
+        during = sut.mic.active_calibration
         while not ended.is_set():
             app.processEvents()
             time.sleep(0.005)
-        return during, sut._calibration_profile
+        return during, sut.mic.active_calibration
 
     def test_playback_without_a_calibration_file_is_uncalibrated_and_the_inputs_calibration_returns(self):
         from guitar_tap.models.microphone_calibration import MicrophoneCalibration

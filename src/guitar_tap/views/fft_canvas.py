@@ -332,33 +332,11 @@ class FftCanvas(pg.PlotWidget):
             rate=sampling_rate,
             chunksize=1024,
             on_devices_changed=None,       # wired by start() below
-            on_calibration_changed=None,   # wired by start() below
         )
 
-        # The selected device's calibration, so the analyzer starts with its corrections. Try
-        # the fingerprint key first, then the name-only key of profiles saved before fingerprints.
-        _device = _mic.selected_input_device
-        _cal = None
-        _initial_calibration = None
-        _initial_calibration_name = None
-        if _device is not None:
-            _cal = _mc_mod.CalibrationStorage.calibration_for_device(_device.fingerprint)
-            if _cal is None:
-                _cal = _mc_mod.CalibrationStorage.calibration_for_device(_device.name)
-            if _cal is not None:
-                # FFT size is a constant (65536) inside RealtimeFFTAnalyzer.
-                _fft_size = 65536
-                _x = np.arange(0, _fft_size // 2)
-                _freq_tmp = _x * _mic.rate // _fft_size
-                _initial_calibration = _cal.interpolate_to_bins(_freq_tmp)
-                _initial_calibration_name = _cal.name
         self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(fft_analyzer=_mic)
-        self.analyzer.start(
-            parent_widget=self,
-            calibration_corrections=_initial_calibration,
-            calibration_name=_initial_calibration_name,
-            calibration_profile=_cal,
-        )
+        # The engine applied the selected device's calibration when it selected the device.
+        self.analyzer.start(parent_widget=self)
         # Wire the analyzer into FftAnnotations so dragged positions are persisted
         # in the model and survive pan/zoom annotation rebuilds.
         self.annotations._analyzer = self.analyzer
@@ -569,11 +547,6 @@ class FftCanvas(pg.PlotWidget):
                 f"device in Settings, or restart the app.\n\n"
                 f"Details: {exc.args[0] if exc.args else exc}")
             gt_log(f"❌ Audio engine could not start: {exc}")
-
-        # Apply the initial calibration to the analyzer if one was loaded above.
-        self.analyzer.mic.set_calibration(
-            self.analyzer._calibration_corrections,
-            profile=self.analyzer._calibration_profile)
 
         # Draw in the scheme the app is drawn in, and again on every change of it.
         self._apply_scheme()
@@ -1061,13 +1034,10 @@ class FftCanvas(pg.PlotWidget):
     # Microphone calibration (delegates to analyzer)
     # ------------------------------------------------------------------ #
 
-    def load_calibration(self, path: str) -> bool:
-        """Load and pre-interpolate a calibration file onto the FFT bin grid."""
-        return self.analyzer.load_calibration(path)
-
     def choose_calibration(self, cal: "_mc_mod.MicrophoneCalibration | None") -> None:
-        """Apply and save the user's calibration choice (None: none) for the selected device."""
-        self.analyzer.choose_calibration(cal)
+        """Apply and save the user's calibration choice (None: none) for the selected device — the
+        engine's active calibration, as Swift's Settings assigns fftAnalyzer.activeCalibration."""
+        self.analyzer.mic.set_active_calibration(cal)
 
     def current_calibration_device(self) -> str:
         """Device name the active calibration is associated with."""

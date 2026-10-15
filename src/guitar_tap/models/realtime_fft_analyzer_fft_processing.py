@@ -97,10 +97,9 @@ class RealtimeFFTAnalyzerFFTProcessingMixin:
 
         Mirrors Swift ``RealtimeFFTAnalyzer.performFFT(on:)``.
         """
-        # Snapshot the calibration under the settings lock. Mirrors Swift reading
-        # calibrationCorrections inside performFFT.
-        with self._settings_lock:
-            calibration = self._calibration
+        # The engine's corrections for its bins. Mirrors Swift reading calibrationCorrections inside
+        # performFFT.
+        calibration = self.calibration_corrections
 
         magnitudes_db = self.compute_fft(samples)
         if calibration is not None:

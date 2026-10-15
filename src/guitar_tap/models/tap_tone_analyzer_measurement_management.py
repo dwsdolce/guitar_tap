@@ -7,6 +7,8 @@ Mirrors Swift TapToneAnalyzer+MeasurementManagement.swift.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from guitar_tap.utilities.logging import gt_log
@@ -16,6 +18,9 @@ from .detection_state import DetectionState
 from guitar_tap.utilities.new_uuid import new_uuid
 from guitar_tap.models.appearance import Scheme
 from guitar_tap.views.utilities import palette
+
+if TYPE_CHECKING:
+    from .tap_tone_measurement import TapToneMeasurement
 
 # The plate/brace phase colours, by role.
 _FL = palette.Role.MATERIAL_LONGITUDINAL
@@ -248,7 +253,31 @@ class TapToneAnalyzerMeasurementManagementMixin:
         min_db: "float | None" = None,
         max_db: "float | None" = None,
     ) -> None:
-        """Assemble a new measurement from the analyzer's state, then persist.
+        """Assemble a new measurement from the analyzer's state (``make_measurement``), then persist.
+
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(...)``.
+        """
+        measurement = self.make_measurement(measurement_name, notes, min_freq, max_freq, min_db, max_db)
+        self.saved_measurements.append(measurement)
+        # The result on screen is now this saved measurement: its exports show its date and are
+        # named by it. Mirrors Swift saveMeasurement.
+        self.source_measurement_timestamp = measurement.timestamp
+        self._persist_measurements()
+
+    def make_measurement(
+        self,
+        measurement_name: "str | None" = None,
+        notes: "str | None" = None,
+        min_freq: "float | None" = None,
+        max_freq: "float | None" = None,
+        min_db: "float | None" = None,
+        max_db: "float | None" = None,
+        timestamp: "str | None" = None,
+    ) -> "TapToneMeasurement":
+        """The measurement the analyzer holds — what ``save_measurement`` saves, built without saving it.
+        A live export reads it too, so the live report and the report of the saved measurement are
+        built from the same measurement by the same code. *timestamp* is the measurement's time; now
+        when None.
 
         Everything but the view's own state is read from the model: the peaks and selection, the
         identified material peaks, overrides, annotation offsets, the ring-out, the spectra, and the
@@ -258,7 +287,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         are built from ``longitudinal_spectrum``, ``cross_spectrum`` and ``flc_spectrum`` using
         ``_make_phase_snapshot``. The view passes the name, the notes and the displayed axis range.
 
-        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.saveMeasurement(...)``.
+        Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.makeMeasurement(...)``.
         """
         from .measurement_type import MeasurementType
         from .spectrum_snapshot import SpectrumSnapshot
@@ -326,16 +355,15 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         offsets = dict(self.peak_annotation_offsets)
 
-        # selectedPeakIDs / selectedPeakFrequencies
-        # Mirrors Swift: selectedPeakIDs.isEmpty ? nil : Array(selectedPeakIDs)
-        # and currentPeaks.filter { selectedPeakIDs.contains($0.id) }.map { $0.frequency }
-        # Material (plate/brace) has no per-peak selection: every identified peak is marked
-        # selected. Guitar persists the user's selection. Mirrors Swift/web.
+        # selectedPeakIDs / selectedPeakFrequencies. Material (plate/brace) has no per-peak
+        # selection: every identified peak is marked selected. Guitar persists the user's selection,
+        # always — empty when the user chose Select None, which must read back as nothing selected;
+        # an absent selection is a legacy file's, healed on read. Mirrors Swift/web.
         persisted_ids = set(self.selected_peak_ids) if mt.is_guitar else {p.id for p in peaks}
-        sel_ids = list(persisted_ids) if persisted_ids else None
+        sel_ids = list(persisted_ids) if (mt.is_guitar or persisted_ids) else None
         sel_freqs = (
             [p.frequency for p in peaks if p.id in persisted_ids]
-            if sel_ids else None
+            if sel_ids is not None else None
         )
 
         ann_vis = getattr(self, "annotation_visibility_mode", None)
@@ -365,7 +393,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             cross_snapshot=cross_snapshot,
             flc_snapshot=flc_snapshot,
             annotation_offsets=offsets or None,
-            selected_peak_ids=sel_ids or None,
+            selected_peak_ids=sel_ids,
             selected_peak_frequencies=sel_freqs,
             # Persist whether the guitar selection was hand-modified, so a reloaded measurement
             # re-runs auto-selection on Peak Min change (like live) when automatic, or carries it
@@ -386,11 +414,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
             sample_rate=self.capture_sample_rate,
             tap_entries=tap_entries_to_save,
         )
-        self.saved_measurements.append(measurement)
-        # The result on screen is now this saved measurement: its exports show its date and are
-        # named by it. Mirrors Swift saveMeasurement.
-        self.source_measurement_timestamp = measurement.timestamp
-        self._persist_measurements()
+        if timestamp is not None:
+            measurement.timestamp = timestamp
+        return measurement
 
     def load_measurement(self, measurement) -> None:
         """Restore full analyser state from a saved measurement.
@@ -840,7 +866,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 else:
                     # Same microphone — flag calibration / sample-rate differences (mirrors
                     # the Swift tiered warning): a new tap would then not match this measurement.
-                    current_cal = getattr(self, "_active_calibration_name", None)
+                    active = mic.active_calibration if mic is not None else None
+                    current_cal = getattr(active, "name", None)
                     calibration_differs = measurement.calibration_name != current_cal
                     rec_rate = measurement.sample_rate
                     cur_rate = getattr(mic, "rate", None)
@@ -911,9 +938,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
         """Populate or clear chart overlay entries for the multi-tap comparison view.
 
         When ``enabled``:
-          - Builds one _comparison_data / comparison_labels entry per TapEntry
-            (colors from the fixed palette, labels "Tap 1" … "Tap N").
-          - Appends an Averaged entry in bold yellow using the current frozen spectrum.
+          - Builds the _comparison_data / comparison_labels entries from the current measurement's
+            ``multi_tap_comparison_entries`` ("Tap 1" … "Tap N", then "Averaged").
           - Sets display_mode = COMPARISON so the chart's materialSpectra picks up the
             overlays (mirrors Swift's applyMultiTapComparisonOverlays(enabled:true)).
 
@@ -940,68 +966,27 @@ class TapToneAnalyzerMeasurementManagementMixin:
         if not self.tap_entries:
             return
 
+        # The measurement's tap comparison — the same entries its report and its saved form show.
+        comparison = self.make_measurement().multi_tap_comparison_entries
         entries: list = []
         labels: list = []
         snapshots: list = []
-
-        for idx, tap_entry in enumerate(self.tap_entries):
-            role = palette.series_role(idx)
+        for idx, entry in enumerate(comparison):
+            role = palette.comparison_role(idx, entry.label)
             color = palette.rgb(role, Scheme.LIGHT)
-            label = f"Tap {tap_entry.tap_index}"
-            snap = tap_entry.snapshot
-            freqs = _np.array(snap.frequencies, dtype=_np.float64)
-            mags  = _np.array(snap.magnitudes,  dtype=_np.float64)
+            snap = entry.snapshot
             entries.append({
-                "label":      label,
+                "label":      entry.label,
                 "color":      color,
                 "role":       role,
-                "freqs":      freqs,
-                "mags":       mags,
+                "freqs":      _np.array(snap.frequencies, dtype=_np.float64),
+                "mags":       _np.array(snap.magnitudes,  dtype=_np.float64),
                 "snapshot":   snap,
-                "peaks":      [p for p in tap_entry.peaks
-                               if p.id in set(tap_entry.selected_peak_ids)],
-                "guitar_type": snap.guitar_type,
+                "peaks":      list(entry.peaks),
+                "guitar_type": entry.guitar_type,
             })
-            labels.append((label, color))
+            labels.append((entry.label, color))
             snapshots.append(snap)
-
-        # Averaged row — the series average role, matches Swift's Palette.seriesAverage.
-        avg_color = palette.rgb(palette.Role.SERIES_AVERAGE, Scheme.LIGHT)
-        avg_label = "Averaged"
-        avg_freqs = self.frozen_frequencies
-        avg_mags  = self.frozen_magnitudes
-        if avg_freqs is not None and len(avg_freqs) > 0:
-            # Build a minimal snapshot for axis-range computation.
-            from .spectrum_snapshot import SpectrumSnapshot as _SS
-            from .tap_display_settings import TapDisplaySettings as _tds3
-            avg_snap = _SS(
-                frequencies=list(avg_freqs),
-                magnitudes=list(avg_mags),
-                min_freq=_tds3.min_frequency(),
-                max_freq=_tds3.max_frequency(),
-                min_db=_tds3.min_magnitude(),
-                max_db=0.0,
-                is_logarithmic=False,
-                show_unknown_modes=_tds3.show_unknown_modes(),
-                guitar_type=_tds3.guitar_type().value,
-                measurement_type=_tds3.measurement_type().value,
-            )
-            # Selected (mode-identified) averaged peaks only — resolved over the durable set via the
-            # shared `selected_peaks` property, the same rule the on-screen table and PDF use, so the
-            # overlay does not lose a selected peak when Peak Min rises above it. Mirrors Swift.
-            avg_sel_peaks = list(self.selected_peaks)
-            entries.append({
-                "label":      avg_label,
-                "color":      avg_color,
-                "role":       palette.Role.SERIES_AVERAGE,
-                "freqs":      _np.array(avg_freqs, dtype=_np.float64),
-                "mags":       _np.array(avg_mags,  dtype=_np.float64),
-                "snapshot":   avg_snap,
-                "peaks":      avg_sel_peaks,
-                "guitar_type": getattr(self, "guitar_type", None),
-            })
-            labels.append((avg_label, avg_color))
-            snapshots.append(avg_snap)
 
         self._comparison_data = entries
         self.comparison_labels = labels

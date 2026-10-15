@@ -22,8 +22,6 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import TapToneMeasurement
 from guitar_tap.models import field_precision as fp
-from guitar_tap.models import guitar_mode as GM
-from guitar_tap.models import guitar_type as GT
 from guitar_tap.utilities.date_format import format_display_datetime
 from guitar_tap.views.utilities import palette
 
@@ -41,39 +39,6 @@ def _draw_compare_circle(label: QtWidgets.QLabel, selected: bool) -> None:
     else:
         palette.set_icon(
             label, "mdi.checkbox-blank-circle-outline", palette.Role.TEXT_SECONDARY, 18)
-
-
-def _resolve_guitar_type(s: str | None) -> GT.GuitarType:
-    if s:
-        try:
-            return GT.GuitarType(s)
-        except ValueError:
-            pass
-    return GT.GuitarType.GENERIC
-
-
-def tap_tone_ratio(m: TapToneMeasurement) -> float | None:
-    """Compute the AIR:TOP frequency ratio for a measurement, or None."""
-    if not m.peaks:
-        return None
-    try:
-        gt = _resolve_guitar_type(m.guitar_type)
-        id_map = GM.GuitarMode.classify_all(m.peaks, gt)
-        air = next(
-            (p.frequency for p in m.peaks
-             if id_map.get(p.id, GM.GuitarMode.UNKNOWN) == GM.GuitarMode.AIR),
-            None,
-        )
-        top = next(
-            (p.frequency for p in m.peaks
-             if id_map.get(p.id, GM.GuitarMode.UNKNOWN) == GM.GuitarMode.TOP),
-            None,
-        )
-        if air and top and air > 0:
-            return top / air
-    except Exception:
-        pass
-    return None
 
 
 # ── Widget ────────────────────────────────────────────────────────────────────
@@ -193,7 +158,7 @@ class MeasurementRowView(QtWidgets.QWidget):
             meta = QtWidgets.QLabel(f"{n} spectra compared")
         else:
             parts: list[str] = [f"{len(m.peaks)} peaks"]
-            ratio = tap_tone_ratio(m)
+            ratio = m.tap_tone_ratio
             if ratio is not None:
                 parts.append(f"Ratio: {fp.string(ratio, fp.DECAY_RATIO)}")
             if m.decay_time is not None:
