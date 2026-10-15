@@ -105,10 +105,12 @@ class TapToneAnalyzerPeakAnalysisMixin:
     # ------------------------------------------------------------------ #
 
     def recalculate_frozen_peaks_if_needed(self) -> None:
-        """Refresh peak display after threshold or frequency-axis change.
+        """Re-analyze's re-detection: re-run peak finding on the frozen spectrum and carry per-peak
+        state (offsets, overrides, selection) onto the new peaks by frequency.
 
-        Single unified path for both live and frozen/loaded measurements —
-        mirrors Swift recalculateFrozenPeaksIfNeeded().
+        Reached only through ``reanalyze_peaks`` (Peak Min only projects the durable set). A loaded
+        measurement's saved peaks are never re-detected here: Re-analyze drops them first. Mirrors
+        Swift recalculateFrozenPeaksIfNeeded().
         """
         if getattr(self, "is_loading_measurement", False):
             return
@@ -149,61 +151,12 @@ class TapToneAnalyzerPeakAnalysisMixin:
         if is_guitar and self.user_has_modified_peak_selection:
             if self.selected_peak_frequencies:
                 previously_selected_freqs = list(self.selected_peak_frequencies)
-            elif self.loaded_measurement_peaks:
-                previously_selected_freqs = [
-                    p.frequency
-                    for p in self.loaded_measurement_peaks
-                    if p.id in self.selected_peak_ids
-                ]
             else:
                 previously_selected_freqs = [
                     p.frequency
                     for p in self.all_peaks
                     if p.id in self.selected_peak_ids
                 ]
-
-        if self.loaded_measurement_peaks is not None:
-            # Mirrors Swift: allPeaks = savedPeaks (the FULL saved set — never a filtered
-            # view). peaks_above_peak_min is its Peak-Min projection via the all_peaks setter.
-            self.all_peaks = list(self.loaded_measurement_peaks)
-            peaks = self.all_peaks
-            if not peaks:
-                self.identified_modes = []
-                self.peaksChanged.emit([])
-                return
-
-            modes_by_freq = [
-                (entry["peak"].frequency, entry["mode"])
-                for entry in self.identified_modes
-                if "peak" in entry and "mode" in entry
-            ]
-            if not modes_by_freq:
-                from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_rfp
-
-                from .guitar_mode import GuitarMode
-                # Use classify_all (claiming algorithm) not GuitarMode.classify (simple
-                # range lookup per peak) — mirrors Swift GuitarMode.classifyAll(peaks).
-                _gt = _tds_rfp.guitar_type()
-                _cand = self.loaded_measurement_peaks
-                _mode_map = GuitarMode.classify_all(_cand, _gt)
-                modes_by_freq = [
-                    (p.frequency, _mode_map.get(p.id, GuitarMode.UNKNOWN))
-                    for p in _cand
-                ]
-
-            self._apply_frozen_peak_state(
-                peaks=peaks,
-                modes_by_freq=modes_by_freq,
-                offsets_by_freq=offsets_by_freq,
-                overrides_by_freq=overrides_by_freq,
-                previously_selected_freqs=previously_selected_freqs,
-                is_guitar=is_guitar,
-                tolerance=tolerance,
-            )
-            # TapEntry peaks are computed once, at capture, and are durable; a display recalc never
-            # re-derives them.
-            self.peaksChanged.emit(self.peaks_above_peak_min)
-            return
 
         modes_by_freq = [
             (entry["peak"].frequency, entry["mode"])
@@ -296,9 +249,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
         """Re-run peak detection on the frozen spectrum using the current analysis settings.
 
         Lets the user retune a saved measurement (Peak Min, analysis range, guitar
-        type) without re-tapping.  Clears ``loaded_measurement_peaks`` so that
-        ``recalculate_frozen_peaks_if_needed()`` falls through to the live-tap
-        path which calls ``find_peaks()`` on the frozen spectrum.
+        type) without re-tapping.  Clears ``loaded_measurement_peaks`` — the
+        re-detected peaks replace the saved ones — and calls
+        ``recalculate_frozen_peaks_if_needed()``, which runs ``find_peaks()`` on the
+        frozen spectrum.
 
         Also re-claims the mode assignments from scratch: ``identified_modes`` is
         cleared, so the carry-forward in ``_apply_frozen_peak_state`` has nothing to
@@ -319,9 +273,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         ):
             return
 
-        # Clear loadedMeasurementPeaks so recalculate_frozen_peaks_if_needed()
-        # falls through to the live-tap path, which calls find_peaks() on the
-        # frozen spectrum.
+        # The re-detected peaks replace the saved ones.
         self.loaded_measurement_peaks = None
         self.user_has_modified_peak_selection = False
         self.selected_peak_frequencies = []

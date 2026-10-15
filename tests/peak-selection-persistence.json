@@ -1,0 +1,61 @@
+{
+ "slug": "test/peak-selection-persistence",
+ "about": "Whether a guitar measurement's peak selection was the user's own (manual) or the app's (automatic) is saved with it. The measurement in every case is built the same way in each edition from the spectrum of 'fixture' (a Generic guitar): its peaks are every peak found at -100 dB between 'minHz' and 'maxHz', and its saved selection is the automatic one at Peak Min 'savedPeakMin', which leaves out the Air peak at 'airHz' (-64.21 dB). 'userModified' is the flag saved with it (null: a file saved before the flag existed). load: the measurement is loaded into an analyzer. 'expectManual' is whether the analyzer then holds the selection as the user's — which is what enables the Reset to automatic selection (wand) button — and 'expectAirSelected' whether the Air peak is in the loaded selection. Then the wand's action runs: the selection is automatic again ('expectManualAfterReset') and is the automatic one over all the measurement's peaks, so it holds the Air peak ('expectAirSelectedAfterReset'). roundTrip: the measurement written and read back — 'expectWritten' is whether the flag appears in the file, 'expectRead' the flag read back. Expected values are Swift's.",
+ "fixture": "dws-2024-umik-1-swift-mac-1784225155.guitartap",
+ "minHz": 30,
+ "maxHz": 2000,
+ "savedPeakMin": -60,
+ "airHz": 97.26,
+ "load": [
+  {
+   "id": "PSP1",
+   "note": "saved automatic: loads automatic, so the wand is disabled; the saved selection is kept as it is",
+   "userModified": false,
+   "expectManual": false,
+   "expectAirSelected": false,
+   "expectManualAfterReset": false,
+   "expectAirSelectedAfterReset": true
+  },
+  {
+   "id": "PSP2",
+   "note": "saved manual: loads manual, so the wand is enabled; the wand makes it automatic",
+   "userModified": true,
+   "expectManual": true,
+   "expectAirSelected": false,
+   "expectManualAfterReset": false,
+   "expectAirSelectedAfterReset": true
+  },
+  {
+   "id": "PSP3",
+   "note": "saved before the flag existed: loads as manual, so the wand is enabled",
+   "userModified": null,
+   "expectManual": true,
+   "expectAirSelected": false,
+   "expectManualAfterReset": false,
+   "expectAirSelectedAfterReset": true
+  }
+ ],
+ "roundTrip": [
+  {
+   "id": "PSP4",
+   "note": "manual is written and read back",
+   "userModified": true,
+   "expectWritten": true,
+   "expectRead": true
+  },
+  {
+   "id": "PSP5",
+   "note": "automatic is written and read back",
+   "userModified": false,
+   "expectWritten": true,
+   "expectRead": false
+  },
+  {
+   "id": "PSP6",
+   "note": "no flag is not written, and reads back as none",
+   "userModified": null,
+   "expectWritten": false,
+   "expectRead": null
+  }
+ ]
+}
