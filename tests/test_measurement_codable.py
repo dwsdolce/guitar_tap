@@ -83,23 +83,6 @@ def _make_peak(
 class TestSpectrumSnapshotCodable:
     """Mirrors Swift SpectrumSnapshotCodableTests."""
 
-    def test_binary_round_trip_preserves_values(self):
-        """Encode then decode via Base64 binary format preserves data within float32 precision."""
-        snap = _make_snapshot(
-            freqs=[100.0, 200.0, 300.0],
-            mags=[-30.0, -35.0, -40.0],
-        )
-        d = snap.to_dict()
-        assert "frequenciesData" in d, "Should use compact binary format"
-        assert "magnitudesData" in d
-
-        restored = SpectrumSnapshot.from_dict(d)
-        # float32 precision: ±0.001 Hz / dB tolerance
-        for orig, got in zip(snap.frequencies, restored.frequencies):
-            assert abs(orig - got) < 0.1, f"Frequency {orig} → {got} too large error"
-        for orig, got in zip(snap.magnitudes, restored.magnitudes):
-            assert abs(orig - got) < 0.01, f"Magnitude {orig} → {got} too large error"
-
     def test_axis_ranges_preserved(self):
         """min/max freq/db round-trip exactly."""
         snap = _make_snapshot(min_freq=50.0, max_freq=1500.0, min_db=-100.0, max_db=0.0)
@@ -108,21 +91,6 @@ class TestSpectrumSnapshotCodable:
         assert restored.max_freq == 1500.0
         assert restored.min_db == -100.0
         assert restored.max_db == 0.0
-
-    def test_legacy_plain_array_format_decoded(self):
-        """from_dict accepts legacy 'frequencies'/'magnitudes' plain-float-array format."""
-        d = {
-            "frequencies": [100.0, 200.0],
-            "magnitudes": [-30.0, -40.0],
-            "minFreq": 80.0,
-            "maxFreq": 500.0,
-            "minDB": -90.0,
-            "maxDB": -10.0,
-            "isLogarithmic": False,
-        }
-        snap = SpectrumSnapshot.from_dict(d)
-        assert snap.frequencies == [100.0, 200.0]
-        assert snap.magnitudes == [-30.0, -40.0]
 
     def test_binary_smaller_than_equivalent_json_array(self):
         """Binary Base64 encoding should produce a shorter string than a JSON float array."""
@@ -206,16 +174,6 @@ class TestTapToneMeasurementCodable:
         assert len(restored.peaks) == 1
         assert abs(restored.peaks[0].frequency - 200.0) < 0.001
         assert restored.sample_rate == 48000
-
-    def test_missing_sample_rate_decodes_as_none(self):
-        """A nil sample_rate is omitted from JSON; a file with no sampleRate key
-        (saved before the field existed) decodes to None — backward compatible.
-        Mirrors Swift missingSampleRate_decodesAsNil."""
-        m = TapToneMeasurement.create(peaks=[_make_peak()])  # sample_rate defaults to None
-        d = m.to_dict()
-        assert "sampleRate" not in d, "None sample_rate must be omitted from JSON"
-        restored = TapToneMeasurement.from_dict(json.loads(json.dumps(d)))
-        assert restored.sample_rate is None
 
     def test_annotation_offsets_round_trip(self):
         """Annotation offsets survive a JSON round-trip using the Swift flat-array format."""
@@ -360,12 +318,6 @@ class TestAnnotationVisibilityMode:
                 f"Visibility mode '{mode}' did not survive round-trip"
             )
 
-    def test_D6_none_visibility_mode_not_written(self):
-        """D6: When annotation_visibility_mode is None, key absent from JSON."""
-        m = TapToneMeasurement.create(peaks=[], annotation_visibility_mode=None)
-        d = m.to_dict()
-        assert "annotationVisibilityMode" not in d
-
     def test_CI5_visibility_mode_cycle(self):
         """CI5: All three visibility mode strings can be stored on the measurement."""
         modes = ["showAll", "showSelected", "hideAll"]
@@ -401,20 +353,6 @@ class TestModeOverrides:
         restored = _round_trip(m)
         assert restored.peak_mode_overrides is not None
         assert restored.peak_mode_overrides.get(p.id) == "Dipole"
-
-    def test_empty_overrides_not_written(self):
-        """Empty peak_mode_overrides should not write the key to JSON."""
-        m = TapToneMeasurement.create(peaks=[], peak_mode_overrides=None)
-        d = m.to_dict()
-        assert "peakModeOverrides" not in d
-
-    def test_auto_type_entries_not_decoded(self):
-        """Entries with type=='auto' in the JSON are ignored on decode (no override)."""
-        p = _make_peak()
-        d = TapToneMeasurement.create(peaks=[p]).to_dict()
-        d["peakModeOverrides"] = {p.id: {"type": "auto", "label": "Air (Helmholtz)"}}
-        restored = TapToneMeasurement.from_dict(d)
-        assert restored.peak_mode_overrides is None or p.id not in (restored.peak_mode_overrides or {})
 
 
 # ---------------------------------------------------------------------------
@@ -502,187 +440,11 @@ class TestLiveTapPath:
 
 
 # ---------------------------------------------------------------------------
-# Comparison entries
-# ---------------------------------------------------------------------------
-
-class TestComparisonEntryCodable:
-    """JSON round-trip tests for ComparisonEntry and TapToneMeasurement.comparisonEntries.
-
-    Mirrors Swift ComparisonEntryCodableTests.
-    """
-
-    def _make_entry(
-        self,
-        label: str = "Bridge",
-        guitar_type: str | None = "Classical",
-    ):
-        """Create a minimal ComparisonEntry for testing."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        snap = _make_snapshot()
-        peak = _make_peak()
-        return ComparisonEntry(
-            id=str(uuid.uuid4()),
-            label=label,
-            color_components=[0.2, 0.4, 0.8, 1.0],
-            snapshot=snap,
-            peaks=[peak],
-            guitar_type=guitar_type,
-            source_measurement_id=None,
-        )
-
-    def test_comparison_entry_to_dict_has_required_keys(self):
-        """ComparisonEntry.to_dict() should include id, label, colorComponents, snapshot, peaks."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry()
-        d = entry.to_dict()
-        assert "id" in d
-        assert "label" in d
-        assert "colorComponents" in d
-        assert "snapshot" in d
-        assert "peaks" in d
-
-    def test_comparison_entry_round_trip_preserves_id(self):
-        """ComparisonEntry id survives to_dict() / from_dict() round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry()
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        assert restored.id == entry.id
-
-    def test_comparison_entry_round_trip_preserves_label(self):
-        """ComparisonEntry label survives round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry(label="Neck Joint")
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        assert restored.label == "Neck Joint"
-
-    def test_comparison_entry_round_trip_preserves_color_components(self):
-        """color_components [r,g,b,a] survive round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry()
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        for orig, rt in zip(entry.color_components, restored.color_components):
-            assert abs(orig - rt) < 1e-9
-
-    def test_comparison_entry_round_trip_preserves_guitar_type(self):
-        """guitar_type string survives round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry(guitar_type="Acoustic")
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        assert restored.guitar_type == "Acoustic"
-
-    def test_comparison_entry_none_guitar_type_omitted_from_dict(self):
-        """guitar_type=None should not write the 'guitarType' key to the dict."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry(guitar_type=None)
-        d = entry.to_dict()
-        assert "guitarType" not in d
-
-    def test_comparison_entry_round_trip_preserves_peak_count(self):
-        """Peak list length is preserved through round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        snap = _make_snapshot()
-        peaks = [_make_peak(freq=100.0 + i * 50.0) for i in range(3)]
-        entry = ComparisonEntry(
-            id=str(uuid.uuid4()), label="Multi",
-            color_components=[0.0, 0.0, 1.0, 1.0],
-            snapshot=snap, peaks=peaks, guitar_type="Classical",
-            source_measurement_id=None,
-        )
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        assert len(restored.peaks) == 3
-
-    def test_tap_tone_measurement_round_trip_with_comparison_entries(self):
-        """A TapToneMeasurement with comparisonEntries serialises and deserialises correctly."""
-        entry1 = self._make_entry(label="Bridge")
-        entry2 = self._make_entry(label="Neck")
-        m = TapToneMeasurement.create(
-            peaks=[],
-            measurement_name="My Comparison",
-            comparison_entries=[entry1, entry2],
-        )
-        restored = _round_trip(m)
-        assert restored.is_comparison
-        assert restored.comparison_entries is not None
-        assert len(restored.comparison_entries) == 2
-        labels = [e.label for e in restored.comparison_entries]
-        assert "Bridge" in labels
-        assert "Neck" in labels
-
-    def test_measurement_without_comparison_entries_has_none(self):
-        """A regular measurement (no comparisonEntries key in JSON) decodes with None."""
-        m = TapToneMeasurement.create(peaks=[])
-        d = m.to_dict()
-        assert "comparisonEntries" not in d
-        restored = TapToneMeasurement.from_dict(d)
-        assert restored.comparison_entries is None
-        assert not restored.is_comparison
-
-    def test_is_comparison_property_true_for_comparison_record(self):
-        """is_comparison returns True when comparison_entries is not None."""
-        m = TapToneMeasurement.create(peaks=[], comparison_entries=[self._make_entry()])
-        assert m.is_comparison
-
-    def test_is_comparison_property_false_for_regular_measurement(self):
-        """is_comparison returns False for a regular tap measurement."""
-        m = TapToneMeasurement.create(peaks=[])
-        assert not m.is_comparison
-
-
-# ---------------------------------------------------------------------------
 # Fixture loading (skipped if file not present)
 # ---------------------------------------------------------------------------
 
 class TestFixtureLoading:
     """Mirrors Swift FixtureLoadingTests — skipped when fixture not found."""
-
-    # Mode overrides, read from files the APPS actually wrote — one saved by Swift, one by Python —
-    # so the reader is tested against real overrides, not only hand-built fixtures.
-    @pytest.mark.parametrize("fixture_name,expected_label", [
-        ("annotation-override-1790037028.guitartap", "Fred"),          # written by Swift
-        ("annotation-override-python-1790037332.guitartap", "Fred2"),  # written by Python
-    ])
-    def test_real_override_fixture_decodes_its_label(self, fixture_name, expected_label):
-        here = os.path.dirname(os.path.abspath(__file__))
-        path = os.path.join(here, fixture_name)
-        if not os.path.exists(path):
-            pytest.skip(f"Fixture '{fixture_name}' not found; skipping fixture test")
-
-        with open(path, encoding="utf-8") as f:
-            raw = json.load(f)
-        measurements = [TapToneMeasurement.from_dict(d) for d in raw]
-
-        overrides = measurements[0].peak_mode_overrides
-        assert overrides, "the fixture must carry peakModeOverrides"
-        assert len(overrides) == 1
-        assert list(overrides.values())[0] == expected_label, (
-            "the label must survive the wire shape, in memory, as the label alone"
-        )
-        peak_id = list(overrides.keys())[0]
-        assert any(p.id == peak_id for p in measurements[0].peaks), (
-            "the override must key a peak the file still contains"
-        )
-
-    def test_fixture_loads_and_decodes(self):
-        fixture_name = "contreras-classical-1774731564.guitartap"
-        # Mirror Swift: look next to the test file (same directory as __file__),
-        # mirroring `URL(fileURLWithPath: #file).deletingLastPathComponent()`.
-        here = os.path.dirname(os.path.abspath(__file__))
-        fixture_path_candidate = os.path.join(here, fixture_name)
-        fixture_path = fixture_path_candidate if os.path.exists(fixture_path_candidate) else None
-
-        if fixture_path is None:
-            pytest.skip(f"Fixture '{fixture_name}' not found; skipping fixture test")
-
-        with open(fixture_path, encoding="utf-8") as f:
-            raw = json.load(f)
-
-        measurements = [TapToneMeasurement.from_dict(d) for d in raw]
-        assert len(measurements) > 0, "Fixture should contain at least one measurement"
-        for m in measurements:
-            for peak in m.peaks:
-                assert 0 < peak.frequency < 20000, (
-                    f"Peak frequency {peak.frequency} Hz out of valid audio range"
-                )
 
     @staticmethod
     def _load_raw() -> list:
@@ -728,36 +490,6 @@ class TestFixtureLoading:
         assert again.spectrum_snapshot.frequencies == m.spectrum_snapshot.frequencies
         assert again.spectrum_snapshot.magnitudes == m.spectrum_snapshot.magnitudes
         assert [p.frequency for p in again.peaks] == [p.frequency for p in m.peaks]
-
-    def test_legacy_tap_location_key_decodes_as_measurement_name(self):
-        """Old files naming the measurement with the pre-rename "tapLocation" key still decode.
-
-        Covered only by ACCIDENT until 2026-07-21: this repo's copy of the contreras fixture
-        still carried "tapLocation" while the Swift and web copies had been updated to
-        "measurementName", so the three platforms' "same" parity test silently exercised
-        different branches. The fixture is now byte-identical everywhere and the fallback is
-        pinned deliberately, here and in the Swift/web twins.
-        """
-        legacy = {
-            "id": "6B29FC40-CA47-1067-B31D-00DD010662DA",
-            "timestamp": 1774731564,
-            "peaks": [],
-            "tapLocation": "Contreras Classical",
-        }
-        m = TapToneMeasurement.from_dict(legacy)
-        assert m.measurement_name == "Contreras Classical"
-
-    def test_legacy_tap_location_key_is_never_written_back(self):
-        """Reader is tolerant, writer is minimal-canonical — the legacy key is never re-emitted."""
-        legacy = {
-            "id": "6B29FC40-CA47-1067-B31D-00DD010662DA",
-            "timestamp": 1774731564,
-            "peaks": [],
-            "tapLocation": "Contreras Classical",
-        }
-        d = TapToneMeasurement.from_dict(legacy).to_dict()
-        assert "tapLocation" not in d
-        assert d["measurementName"] == "Contreras Classical"
 
     def test_contreras_writer_emits_canonical_keys_only(self):
         """to_dict writes only current keys, never legacy ones (writer = minimal
@@ -868,3 +600,136 @@ def test_selection_heal(row):
     assert read.was_healed == row["expectHealed"], f"{row['id']}: healed — {row['note']}"
     assert set(read.selected_peak_ids or []) == {by_name[n].id for n in row["expectSelected"]}, \
         f"{row['id']}: selection — {row['note']}"
+
+
+# ---------------------------------------------------------------------------
+# The file format — the shared cases in measurement-codable.json
+#
+# The spectrum's bytes (SB), what a file reads to (DC), what the writer emits (WR), and the real
+# fixtures every edition carries: the same cases as Swift and the web. Mirrors Swift
+# MeasurementCodecTests.
+# ---------------------------------------------------------------------------
+
+import re  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+from guitar_tap.views.tap_analysis_results_view import measurements_from_json, measurements_to_json  # noqa: E402
+
+_LEGACY_KEYS = ("tapLocation", "peakThreshold", "hysteresisMargin", "maxPeaks")
+
+
+def _has_key(key: str, value) -> bool:
+    """Whether ``key`` appears anywhere in a JSON document."""
+    if isinstance(value, dict):
+        return key in value or any(_has_key(key, v) for v in value.values())
+    if isinstance(value, list):
+        return any(_has_key(key, v) for v in value)
+    return False
+
+
+def _present(path: str, doc) -> bool:
+    """``peaks[].k`` — the key on every peak of every measurement; otherwise the key anywhere."""
+    if path.startswith("peaks[]."):
+        k = path[len("peaks[]."):]
+        peaks = [p for m in doc for p in m.get("peaks", [])]
+        return bool(peaks) and all(k in p for p in peaks)
+    return _has_key(path, doc)
+
+
+def _f32(values) -> list:
+    return [float(np.float32(v)) for v in values]
+
+
+@pytest.mark.parametrize("row", LOGIC["snapshotBytes"], ids=lambda r: r["id"])
+def test_snapshot_bytes(row):
+    snap = SpectrumSnapshot(frequencies=row["frequencies"], magnitudes=row["magnitudes"],
+                            min_freq=50, max_freq=500, min_db=-100, max_db=0)
+    d = snap.to_dict()
+    assert d["frequenciesData"] == row["frequenciesData"]
+    assert d["magnitudesData"] == row["magnitudesData"]
+    assert "frequencies" not in d and "magnitudes" not in d
+    back = SpectrumSnapshot.from_dict(d)
+    assert _f32(back.frequencies) == _f32(row["frequencies"])
+    assert _f32(back.magnitudes) == _f32(row["magnitudes"])
+
+
+@pytest.mark.parametrize("row", LOGIC["decode"], ids=lambda r: r["id"])
+def test_decode(row):
+    m = measurements_from_json(json.dumps(row["file"]))[0]
+    for field, want in row["expect"].items():
+        if field == "measurementName":
+            assert m.measurement_name == want, field
+        elif field == "peakMinThreshold":
+            assert m.peak_min_threshold == want, field
+        elif field == "sampleRate":
+            assert m.sample_rate == want, field
+        elif field == "frequencies":
+            assert _f32(m.spectrum_snapshot.frequencies) == _f32(want), field
+        elif field == "magnitudes":
+            assert _f32(m.spectrum_snapshot.magnitudes) == _f32(want), field
+        elif field == "overrides":
+            got = {k.lower(): v for k, v in (m.peak_mode_overrides or {}).items()}
+            assert got == {k.lower(): v for k, v in want.items()}, field
+        elif field == "peakCount":
+            assert len(m.peaks) == want, field
+        elif field == "pitchNote":
+            assert m.peaks[0].pitch_note == want, field
+        elif field == "annotationVisibilityMode":
+            assert m.annotation_visibility_mode == want, field
+        else:
+            pytest.fail(f"unknown field {field}")
+
+
+@pytest.mark.parametrize("row", LOGIC["write"], ids=lambda r: r["id"])
+def test_write(row):
+    text = measurements_to_json(measurements_from_json(json.dumps(row["file"])))
+    doc = json.loads(text)
+    for key in row.get("present", []):
+        assert _present(key, doc), f"{key} written"
+    for key in row.get("absent", []):
+        assert not _has_key(key, doc), f"{key} not written"
+    for key, number in row.get("text", {}).items():
+        found = re.search(rf'"{re.escape(key)}":\s*([^,}}\]\s]+)', text)
+        assert found and found.group(1) == number, f"{key} written as {number}"
+    compact = json.dumps(doc, separators=(",", ":"), ensure_ascii=False)
+    for s in row.get("contains", []):
+        assert s in compact, f"contains {s}"
+
+
+@pytest.mark.parametrize("row", LOGIC["fixtures"], ids=lambda r: r["file"])
+def test_fixture(row):
+    with open(os.path.join(os.path.dirname(__file__), row["file"]), encoding="utf-8") as f:
+        ms = measurements_from_json(f.read())
+    assert len(ms) == row["measurements"]
+    m = ms[0]
+    assert m.measurement_name == row["measurementName"]
+    assert len(m.peaks) == row["peakCount"]
+    assert m.sample_rate == row["sampleRate"]
+    assert m.is_comparison == row["isComparison"]
+    assert sorted((m.peak_mode_overrides or {}).values()) == sorted(row["overrideLabels"])
+    peak_ids = {p.id.lower() for p in m.peaks}
+    for peak_id in (m.peak_mode_overrides or {}):
+        assert peak_id.lower() in peak_ids, "the override names a peak the file contains"
+
+    text = measurements_to_json(ms)
+    doc = json.loads(text)
+    for legacy in _LEGACY_KEYS:
+        assert not _has_key(legacy, doc), f"{legacy} not written"
+    with open(os.path.join(os.path.dirname(__file__), row["file"]), encoding="utf-8") as f:
+        original = json.load(f)
+    for written, read in zip(doc, original):
+        read_snap = read.get("spectrumSnapshot") or {}
+        if "frequenciesData" not in read_snap:
+            continue
+        for key in ("frequenciesData", "magnitudesData"):
+            assert written["spectrumSnapshot"][key] == read_snap[key], f"{key} written as read"
+    again = measurements_from_json(text)
+    assert len(again) == len(ms)
+    for a, b in zip(again, ms):
+        assert _f32(p.frequency for p in a.peaks) == _f32(p.frequency for p in b.peaks)
+        sa, sb = a.spectrum_snapshot, b.spectrum_snapshot
+        assert (sa is None) == (sb is None)
+        if sa is not None:
+            assert _f32(sa.frequencies) == _f32(sb.frequencies)
+            assert _f32(sa.magnitudes) == _f32(sb.magnitudes)
