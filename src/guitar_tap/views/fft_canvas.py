@@ -211,8 +211,6 @@ class FftCanvas(pg.PlotWidget):
 
     hold: bool = False
 
-    peakDeselected: QtCore.Signal = QtCore.Signal()
-    peakSelected: QtCore.Signal = QtCore.Signal(float)
     peaksChanged: QtCore.Signal = QtCore.Signal(np.ndarray)
     framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
     newSample: QtCore.Signal = QtCore.Signal(bool)
@@ -385,6 +383,7 @@ class FftCanvas(pg.PlotWidget):
         # both the scatter plot and the results panel.
         self.analyzer.spectrumUpdated.connect(self._on_spectrum_updated)
         self.analyzer.peaksChanged.connect(self._on_peaks_changed_scatter)
+        self.analyzer.highlightedPeakChanged.connect(lambda _id: self._draw_highlight())
 
         # FFT line
         self.fft_line: pg.PlotDataItem = self.plot(
@@ -767,18 +766,6 @@ class FftCanvas(pg.PlotWidget):
             return (None, None)
         return (self.analyzer.freq, None)
 
-    @property
-    def _loaded_measurement_peaks(self):
-        return self.analyzer.loaded_measurement_peaks
-
-    @_loaded_measurement_peaks.setter
-    def _loaded_measurement_peaks(self, value) -> None:
-        self.analyzer.loaded_measurement_peaks = value
-
-    def _emit_loaded_peaks_at_threshold(self) -> None:
-        """Delegate to analyzer — called by guitar_tap.py after loading a measurement."""
-        self.analyzer._emit_loaded_peaks_at_threshold()
-
     # ------------------------------------------------------------------ #
     # Analyzer start / stop
     # ------------------------------------------------------------------ #
@@ -949,7 +936,7 @@ class FftCanvas(pg.PlotWidget):
         # when isMeasurementComplete || !materialSpectra.isEmpty.
         has_material_curves = bool(self._comparison_curves)
 
-        if (self.is_comparing or (has_material_curves and not self.is_measurement_complete)) and self._comparison_curves:
+        if self.is_comparing or has_material_curves:
             # Snap to the nearest comparison/material curve by screen-Y distance (mirrors
             # Swift's nearestSeriesIndex() with curveGravityThreshold = 12 pt).
             best_idx   = getattr(self, "_locked_series_index", 0)
@@ -1084,9 +1071,9 @@ class FftCanvas(pg.PlotWidget):
         """Set how many taps to accumulate before freezing (1 = immediate freeze)."""
         self.analyzer.set_tap_num(n)
 
-    def set_measurement_type(self, measurement_type) -> None:
-        """Switch between Guitar / Plate / Brace analysis modes."""
-        self.analyzer.set_measurement_type(measurement_type)
+    def apply_measurement_type(self, measurement_type) -> None:
+        """Show the chart for a measurement type — the guitar-only mode bands and threshold line.
+        The type itself is the model's (the saved setting)."""
         is_guitar = measurement_type.is_guitar
         # Mode bands and peak threshold line are guitar-only — mirrors Swift's
         # showModeBoundaries && measurementType.isGuitar and isGuitar threshold line guard.
@@ -1141,51 +1128,30 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.set_device(device)
 
     # ------------------------------------------------------------------ #
-    # Peak selection (view-level — updates scatter point)
+    # The highlighted peak (the model's highlighted_peak_id)
     # ------------------------------------------------------------------ #
 
-    def select_peak(self, freq: float) -> None:
-        """Select the peak (scatter point) with the specified frequency."""
-        if not self.is_measurement_complete:
-            return
-        # Resolve the magnitude to draw the highlight point. Prefer the dot set
-        # (_all_peaks_in_range) — populated for BOTH live and loaded measurements and the set the
-        # click originates from; fall back to saved_peaks (loaded-only, but holds every saved peak so
-        # a results-panel selection outside the current viewport still resolves). Guard the no-match
-        # case: saved_peaks is empty after a LIVE capture, and looking freq up there previously
-        # crashed with an IndexError on the very first click.
-        magdb = None
-        peak = next((p for p in self._all_peaks_in_range if p.frequency == freq), None)
-        if peak is not None:
-            magdb = peak.magnitude
-        elif self.saved_peaks.shape[0] > 0:
-            row = np.where(self.saved_peaks[:, 0] == freq)[0]
-            if len(row) > 0:
-                magdb = self.saved_peaks[row[0]][1]
-        if magdb is None:
-            return
-        self.selected_point.setData(x=[freq], y=[magdb])
-        self.analyzer.selected_peak = freq
-
-    def deselect_peak(self, _freq: float) -> None:
-        """Deselect the peak (scatter point) with the specified frequency"""
-        self.selected_point.setData(x=[], y=[])
-
-    def clear_selected_peak(self) -> None:
-        """Reset the selected peak."""
-        self.analyzer.selected_peak = -1.0
+    def _draw_highlight(self) -> None:
+        """Draw the star on the highlighted peak's dot — the model's ``highlighted_peak_id``, among the
+        dots shown. A highlight whose peak is not shown (another measurement's, or hidden) draws
+        nothing. Mirrors Swift's chart drawing from ``highlightedPeakID``."""
+        peak_id = self.analyzer.highlighted_peak_id
+        peak = next((p for p in self._all_peaks_in_range if p.id == peak_id), None) if peak_id else None
+        if peak is None:
+            self.selected_point.setData(x=[], y=[])
+        else:
+            self.selected_point.setData(x=[peak.frequency], y=[peak.magnitude])
 
     def point_picked(
         self, scatter: pg.ScatterPlotItem, points: list, ev
     ) -> None:
-        """Handle scatter point click: emit peakSelected if within frequency range."""
+        """A click on a peak's dot toggles the model's highlighted peak (Swift's dot tap)."""
         if self.is_measurement_complete and len(points) > 0:
             if self.annotations.select_annotation(scatter):
                 return
             index0 = points[0].index()
             if self._all_peaks_in_range and index0 < len(self._all_peaks_in_range):
-                freq = float(self._all_peaks_in_range[index0].frequency)
-                self.peakSelected.emit(freq)
+                self.analyzer.toggle_highlighted_peak(self._all_peaks_in_range[index0].id)
 
     # ── info button & zoom/pan help ───────────────────────────────────────────
 
@@ -1612,7 +1578,6 @@ class FftCanvas(pg.PlotWidget):
         """
         if not is_measurement_complete:
             self.selected_point.setData(x=[], y=[])
-            self.clear_selected_peak()
             # clear_comparison was already called by analyzer.set_measurement_complete
             # but we need to clear the view curves too
             self._clear_comparison_view()
@@ -1702,12 +1667,6 @@ class FftCanvas(pg.PlotWidget):
         """
         self.analyzer.peak_min_threshold = float(threshold - 100)
 
-        self.threshold_x = self.analyzer.mic.rate // 2
-        self.threshold_y = threshold - 100
-
-        self.line_threshold.setPos(self.threshold_y)
-        self.line_threshold.label.setText(f"Peak: {self.threshold_y} dB")
-
         # The projection updated when peak_min_threshold was assigned at the top of this method
         # (property setter, mirroring Swift peakMinThreshold.didSet). peaks_above_peak_min is a plain
         # attr, not @Published, so the view must be told explicitly. Safe here: display-only,
@@ -1716,12 +1675,16 @@ class FftCanvas(pg.PlotWidget):
             self.analyzer.peaks_above_peak_min if _tds.measurement_type().is_guitar
             else self.analyzer.material_identified_peaks
         ))
+        self.show_peak_min(self.analyzer.peak_min_threshold)
 
-        self.selected_point.setData(x=[], y=[])
-        self.peakDeselected.emit()
-        if self._all_peaks_in_range and self.analyzer.selected_peak > 0:
-            if self.analyzer.selected_peak in [p.frequency for p in self._all_peaks_in_range]:
-                self.peakSelected.emit(self.analyzer.selected_peak)
+    def show_peak_min(self, db: float) -> None:
+        """Show a Peak Min on the chart — the dashed line and its label. Writes no state: after a load
+        the model already holds the measurement's Peak Min, and this only brings the chart up to it."""
+        self.threshold_x = self.analyzer.mic.rate // 2
+        self.threshold_y = int(round(db))
+
+        self.line_threshold.setPos(self.threshold_y)
+        self.line_threshold.label.setText(f"Peak: {self.threshold_y} dB")
 
     def _peak_brushes(self, freqs) -> list:
         """Return a list of QBrush objects, one per peak, coloured by mode."""
@@ -1788,6 +1751,7 @@ class FftCanvas(pg.PlotWidget):
         else:
             self._all_peaks_in_range = []
             self.points.setData(x=[], y=[])
+        self._draw_highlight()
 
     def set_draw_data(self, mag_db, freqs=None) -> None:
         """Update the spectrum line and auto-scale the Y axis if enabled.

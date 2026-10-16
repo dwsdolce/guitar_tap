@@ -496,14 +496,10 @@ class PeakListWidget(QtWidgets.QWidget):
     """Card-based peak list widget."""
 
     clearPeaks    = QtCore.Signal()
-    peakSelected  = QtCore.Signal(float)
-    peakDeselected = QtCore.Signal(float)
 
     def __init__(self) -> None:
         super().__init__()
 
-        self.selected_freq: float = 0.0
-        self.selected_freq_index: int = -1
         # Mirrors Swift measurementType.isGuitar — controls pitch row visibility in cards.
         self._is_guitar: bool = True
         self._last_peaks: list = []  # list[ResonantPeak]
@@ -612,7 +608,7 @@ class PeakListWidget(QtWidgets.QWidget):
             card.showChanged.connect(self._on_show_changed)
             card.modeChanged.connect(self._on_mode_changed)
             card.modeReset.connect(self._on_mode_reset)
-            card.cardClicked.connect(self._on_card_clicked)
+            card.cardClicked.connect(lambda _freq, c=card: self._on_card_clicked(c))
 
             self._vbox.insertWidget(len(self._cards), card)
             self._cards.append(card)
@@ -709,33 +705,26 @@ class PeakListWidget(QtWidgets.QWidget):
             self.model.dataChanged.emit(src_idx, src_idx, [QtCore.Qt.ItemDataRole.DisplayRole])
             self.model.update_annotation(src_idx)
 
-    def _on_card_clicked(self, freq: float) -> None:
-        prev = self.selected_freq
-        if prev == freq:
-            # clicking the already-selected card deselects it
-            card = self._card_for_freq(freq)
-            if card:
-                card.set_selected(False)
-            self.selected_freq = 0.0
-            self.selected_freq_index = -1
-            self.peakDeselected.emit(freq)
-            return
+    def _on_card_clicked(self, card: "PeakCardWidget") -> None:
+        """A click on a card toggles the model's highlighted peak (Swift's results-row tap)."""
+        analyzer = self.model._analyzer
+        if analyzer is not None and card.peak_id:
+            analyzer.toggle_highlighted_peak(card.peak_id)
 
-        # Deselect previous
-        if prev:
-            old_card = self._card_for_freq(prev)
-            if old_card:
-                old_card.set_selected(False)
-            self.peakDeselected.emit(prev)
+    def show_highlight(self, peak_id) -> None:
+        """Highlight the card of the model's highlighted peak (none: no card), scrolling it into view.
+        Writes no state."""
+        target = self._card_for_peak_id(peak_id) if peak_id else None
+        for card in self._cards:
+            card.set_selected(card is target)
+        if target is not None:
+            scroll = self._find_scroll_area()
+            if scroll:
+                scroll.ensureWidgetVisible(target)
 
-        # Select new
-        card = self._card_for_freq(freq)
-        if card:
-            card.set_selected(True)
-        self.selected_freq = freq
-        idx = self.model.freq_index(freq)
-        self.selected_freq_index = int(idx) if idx >= 0 else -1
-        self.peakSelected.emit(freq)
+    def _show_model_highlight(self) -> None:
+        analyzer = self.model._analyzer
+        self.show_highlight(analyzer.highlighted_peak_id if analyzer is not None else None)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -767,8 +756,7 @@ class PeakListWidget(QtWidgets.QWidget):
         self._last_data = data
         self.model.update_data(peaks)
         self._rebuild_cards(data)
-        if self.selected_freq > 0:
-            self.select_row(self.selected_freq)
+        self._show_model_highlight()
         return True
 
     def update_data_with_modes(self, peaks_with_modes: list) -> bool:  # list[(ResonantPeak, GuitarMode)]
@@ -791,33 +779,12 @@ class PeakListWidget(QtWidgets.QWidget):
         self._last_data = data
         self.model.update_data_with_modes(peaks_with_modes)
         self._rebuild_cards(data)
-        if self.selected_freq > 0:
-            self.select_row(self.selected_freq)
+        self._show_model_highlight()
         return True
 
     def restore_focus(self) -> None:
         """Give keyboard focus back to the list."""
         self.setFocus()
-
-    def select_row(self, freq: float) -> None:
-        """Select the card for *freq*, scrolling it into view."""
-        # Deselect current
-        if self.selected_freq and self.selected_freq != freq:
-            old = self._card_for_freq(self.selected_freq)
-            if old:
-                old.set_selected(False)
-
-        card = self._card_for_freq(freq)
-        if card:
-            card.set_selected(True)
-            # Scroll the card into view
-            scroll = self._find_scroll_area()
-            if scroll:
-                scroll.ensureWidgetVisible(card)
-
-        self.selected_freq = freq
-        idx = self.model.freq_index(freq)
-        self.selected_freq_index = int(idx) if idx >= 0 else -1
 
     def _find_scroll_area(self) -> QtWidgets.QScrollArea | None:
         p = self.parent()
@@ -830,15 +797,6 @@ class PeakListWidget(QtWidgets.QWidget):
             return child
         return None
 
-    def clear_selection(self) -> None:
-        """Deselect the current card (no signal emitted)."""
-        if self.selected_freq:
-            card = self._card_for_freq(self.selected_freq)
-            if card:
-                card.set_selected(False)
-        self.selected_freq = 0.0
-        self.selected_freq_index = -1
-
     def data_held(self, held: bool) -> None:
         """Set the held state on every card (enables stars/menus when held)."""
         self._is_held = held
@@ -847,11 +805,5 @@ class PeakListWidget(QtWidgets.QWidget):
         self.model.data_held(held)
 
     def new_data(self, held: bool) -> None:
-        """Reset the model for a fresh capture and clear the selection."""
+        """Reset the model for a fresh capture."""
         self.model.new_data(held)
-        self.clear_selected_peak()
-
-    def clear_selected_peak(self) -> None:
-        """Clear the selected-peak state."""
-        self.selected_freq = 0.0
-        self.selected_freq_index = -1

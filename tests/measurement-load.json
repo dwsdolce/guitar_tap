@@ -1,0 +1,193 @@
+{
+ "slug": "test/measurement-load",
+ "about": "Loading a saved measurement: the whole load is the model's. Each case starts a fresh analyzer and runs its 'steps' in order: {\"newTap\": true} starts a tap sequence (detection armed); {\"peakMin\": dB} sets Peak Min as the user would; {\"load\": file} loads a measurement — a fixture every edition carries, or 'inline' (the 'files' entry of that name, a .guitartap array); {\"compare\": [files]} compares those fixtures, as a multi-select in the measurements list does; {\"highlightFirstPeak\": true} highlights the first peak shown, as a click on its dot or card does. 'expect' is what the analyzer holds after the last step: 'measurementType' (the file's type name, e.g. 'Generic Guitar', 'Material (Plate)'), 'peakMinThreshold', 'tapDetectionThreshold' and 'showUnknownModes' (the settings now in effect — the measurement's own), 'shownPeaks' (the peaks shown: for a guitar those at or above Peak Min, for a plate or brace its identified L/C/FLC), 'frozenSpectrum' (a guitar spectrum is held), 'phaseSpectra' (the plate/brace phase spectra held), 'complete' (the measurement is complete), 'detecting' (tap detection is armed), 'comparison' (a comparison is shown), 'microphoneWarning' (a microphone warning is up — no fixture's microphone is connected in a test, so a fixture that names one warns), 'labelPositions' (dragged label positions held), 'recordedMicrophone' (the result carries a recorded microphone — a comparison has none of its own), 'highlightedPeak' (a peak is highlighted). Expected values are Swift's.",
+ "files": {
+  "inline-no-microphone": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000AB",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0
+     ],
+     "magnitudes": [
+      -60.0,
+      -40.0,
+      -70.0
+     ],
+     "minFreq": 75,
+     "maxFreq": 350,
+     "minDB": -100,
+     "maxDB": 0,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ]
+ },
+ "cases": [
+  {
+   "id": "LD1",
+   "note": "a guitar measurement: its own settings, its peaks shown under its own Peak Min, its spectrum, its label positions; complete, not detecting",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "peakMin": -40
+    },
+    {
+     "load": "annotation-override-1790037028.guitartap"
+    }
+   ],
+   "expect": {
+    "measurementType": "Generic Guitar",
+    "peakMinThreshold": -77,
+    "tapDetectionThreshold": -49.5708,
+    "showUnknownModes": true,
+    "shownPeaks": 33,
+    "frozenSpectrum": true,
+    "phaseSpectra": 0,
+    "complete": true,
+    "detecting": false,
+    "comparison": false,
+    "microphoneWarning": true,
+    "labelPositions": 2
+   }
+  },
+  {
+   "id": "LD2",
+   "note": "a measurement with no saved label positions leaves none from the one before",
+   "steps": [
+    {
+     "load": "annotation-override-1790037028.guitartap"
+    },
+    {
+     "load": "dws-2024-umik-1-python-mac-1784225140.guitartap"
+    }
+   ],
+   "expect": {
+    "measurementType": "Generic Guitar",
+    "peakMinThreshold": -77,
+    "tapDetectionThreshold": -49,
+    "labelPositions": 0,
+    "frozenSpectrum": true
+   }
+  },
+  {
+   "id": "LD3",
+   "note": "a measurement that recorded no microphone leaves no warning from the one before",
+   "steps": [
+    {
+     "load": "annotation-override-1790037028.guitartap"
+    },
+    {
+     "load": "inline-no-microphone"
+    }
+   ],
+   "expect": {
+    "microphoneWarning": false,
+    "complete": true
+   }
+  },
+  {
+   "id": "LD4",
+   "note": "a plate: its own settings and threshold; its identified peaks and phase spectra; no guitar spectrum",
+   "steps": [
+    {
+     "load": "annotation-override-1790037028.guitartap"
+    },
+    {
+     "load": "plate-umik-1-swift-mac-1785359486.guitartap"
+    }
+   ],
+   "expect": {
+    "measurementType": "Material (Plate)",
+    "peakMinThreshold": -78,
+    "tapDetectionThreshold": -56.47168,
+    "shownPeaks": 3,
+    "frozenSpectrum": false,
+    "phaseSpectra": 3,
+    "complete": true,
+    "detecting": false,
+    "labelPositions": 0
+   }
+  },
+  {
+   "id": "LD5",
+   "note": "a brace: its one identified peak and its one phase spectrum",
+   "steps": [
+    {
+     "load": "brace-umik-1-swift-mac-1785359411.guitartap"
+    }
+   ],
+   "expect": {
+    "measurementType": "Material (Brace)",
+    "tapDetectionThreshold": -54.762207,
+    "shownPeaks": 1,
+    "frozenSpectrum": false,
+    "phaseSpectra": 1,
+    "complete": true,
+    "detecting": false
+   }
+  },
+  {
+   "id": "LD6",
+   "note": "a saved comparison loaded while a tap sequence is armed: shown as a comparison, and tap detection stops",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "load": "5-guitar-comparison-1776708138.guitartap"
+    }
+   ],
+   "expect": {
+    "comparison": true,
+    "detecting": false,
+    "recordedMicrophone": false
+   }
+  },
+  {
+   "id": "LD7",
+   "note": "comparing measurements after a load keeps no microphone from the loaded one",
+   "steps": [
+    {
+     "load": "annotation-override-1790037028.guitartap"
+    },
+    {
+     "compare": [
+      "dws-2024-umik-1-swift-mac-1785359434.guitartap",
+      "dws-2024-umik-1-3-tap-swift-mac-1785359425.guitartap"
+     ]
+    }
+   ],
+   "expect": {
+    "comparison": true,
+    "recordedMicrophone": false
+   }
+  },
+  {
+   "id": "LD8",
+   "note": "a load leaves no peak highlighted from the measurement before",
+   "steps": [
+    {
+     "load": "annotation-override-1790037028.guitartap"
+    },
+    {
+     "highlightFirstPeak": true
+    },
+    {
+     "load": "dws-2024-umik-1-swift-mac-1785359434.guitartap"
+    }
+   ],
+   "expect": {
+    "highlightedPeak": false
+   }
+  }
+ ]
+}

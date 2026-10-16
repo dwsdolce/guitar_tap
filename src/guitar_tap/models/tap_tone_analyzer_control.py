@@ -1271,11 +1271,13 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
 
     def set_measurement_type(self, measurement_type) -> None:
-        """Switch between Guitar / Plate / Brace analysis modes."""
+        """Switch between Guitar / Plate / Brace analysis modes — sets the saved measurement type,
+        which the analyzer reads (``_measurement_type``)."""
         import guitar_tap.models.measurement_type as _mt_mod
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         if isinstance(measurement_type, str):
             measurement_type = _mt_mod.MeasurementType.from_combo_values(measurement_type, "")
-        self._measurement_type = measurement_type
+        _tds.set_measurement_type(measurement_type)
 
     # ------------------------------------------------------------------ #
     # Axis and parameter setters

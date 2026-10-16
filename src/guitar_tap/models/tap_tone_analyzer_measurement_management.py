@@ -423,15 +423,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         Mirrors Swift ``TapToneAnalyzer+MeasurementManagement.loadMeasurement(_:)``.
 
-        Sets all model-owned state — peaks, spectra, selections, annotation
-        offsets, analysis settings, detection flags — and writes display
-        settings to AppSettings (the Python equivalent of Swift's ``loaded*``
-        published properties, which the view's ``.onReceive`` handlers propagate
-        to ``TapDisplaySettings``).
-
-        The calling view is responsible for all Qt widget updates, canvas
-        drawing calls, and the mic auto-select block (which requires access to
-        canvas and label widgets).
+        The whole load is done here: the measurement's own settings (type, guitar type, Show
+        Unknown Modes, Peak Min, plate/brace dimensions) are applied and saved before the peaks;
+        then peaks, spectra, selection, annotation offsets, analysis settings, detection state and
+        the microphone. The views only display the result: Qt is not reactive, so the signals
+        emitted here — ending with the peaks to show — tell them what changed.
         """
 
         # Suppress recalculate_frozen_peaks_if_needed() for the duration of the
@@ -443,6 +439,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
         finally:
             self.is_loading_measurement = False
         self.measurementLoaded.emit(measurement)
+        # The peaks to show, announced last — after the view has the measurement — as Swift's
+        # views read peaksAbovePeakMin / materialIdentifiedPeaks once the load has published.
+        if not measurement.is_comparison:
+            self._emit_displayed_peaks()
 
     def _load_measurement_body(self, measurement) -> None:
         """Inner implementation called by load_measurement(); guards isLoadingMeasurement."""
@@ -515,6 +515,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.showing_multi_tap_comparison = False
             self._display_mode = AnalysisDisplayMode.COMPARISON
             self.result_provenance = None  # a comparison has no microphone of its own
+            self.set_highlighted_peak(None)
+            self.detection_state = DetectionState.IDLE
+            self.cancel_session_recording()
             self.comparisonChanged.emit(True)
             return
 
@@ -540,16 +543,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # is_measurement_complete is set, not because of the mode.
         self._display_mode = AnalysisDisplayMode.LIVE
 
-        # ── Restore peaks ─────────────────────────────────────────────────────
-        # Mirrors Swift: allPeaks = measurement.isMaterial ? [] : measurement.peaks (the durable
-        # full set). all_peaks is guitar-only: a material measurement's peaks are its identified
-        # L/C/FLC, restored into the selected_* peaks below. peaks_above_peak_min becomes
-        # its Peak-Min projection via the all_peaks setter.
-        self.all_peaks = [] if measurement.is_material else (list(measurement.peaks) if measurement.peaks else [])
-
-        # ── Restore decay time ────────────────────────────────────────────────
-        self.current_decay_time = measurement.decay_time
-
         # ── Determine measurement type ────────────────────────────────────────
         # Use the RESOLVED type — a saved measurement stores its type inside the snapshot, not the
         # top-level `measurement_type` field (which is None for save-created files), so the raw field
@@ -560,6 +553,88 @@ class TapToneAnalyzerMeasurementManagementMixin:
             mt = MeasurementType(mt_str)
         except ValueError:
             mt = MeasurementType.GENERIC
+
+        # ── The measurement's own settings become the app's ───────────────────
+        # Show Unknown Modes, guitar type and measurement type (which the analyzer reads), applied
+        # before the peaks so they are shown and classified under this measurement's settings from
+        # the start. Mirrors Swift loadMeasurement.
+        from guitar_tap.views.utilities.tap_settings_view import AppSettings as AS
+        settings_snapshot = measurement.longitudinal_snapshot or measurement.spectrum_snapshot
+        if settings_snapshot is not None:
+            snap = settings_snapshot
+            from .measurement_type import MeasurementType as _MT
+            gt_log(f"  📊 Publishing display ranges: {snap.min_freq}-{snap.max_freq} Hz, {snap.min_db}-{snap.max_db} dB")
+            # All four bounds in one signal — the view shows them and remembers them as the loaded
+            # range. Mirrors Swift setLoadedAxisRange(minFreq: snapshot.minFreq, …).
+            self.set_loaded_axis_range(float(snap.min_freq), float(snap.max_freq),
+                                       float(snap.min_db), float(snap.max_db))
+            if snap.show_unknown_modes is not None:
+                AS.set_show_unknown_modes(bool(snap.show_unknown_modes))
+            if snap.guitar_type is not None:
+                gt_log(f"  🎸 Publishing guitarType: {snap.guitar_type}")
+                try:
+                    AS.set_guitar_type(snap.guitar_type)
+                except Exception:
+                    pass
+            if snap.measurement_type is not None:
+                gt_log(f"  📐 Publishing measurementType: {snap.measurement_type}")
+                try:
+                    mt_enum = _MT(snap.measurement_type) if isinstance(snap.measurement_type, str) else snap.measurement_type
+                    AS.set_measurement_type(mt_enum)
+                except (ValueError, KeyError):
+                    pass
+            # Store B ← the file's own material inputs (never the live Settings defaults). The calc,
+            # Results panel, and Save all read this, so a loaded measurement's numbers come from the
+            # file and loading never disturbs the Settings defaults (Store A). Replaces the old
+            # snapshot-dims → AppSettings writes that used to clobber the user's defaults on every load.
+            # Mirrors Swift loadMeasurement.
+            if not mt.is_guitar:
+                from .material_measurement_inputs import MaterialMeasurementInputs
+                from .plate_stiffness_preset import PlateStiffnessPreset
+                from .tap_display_settings import TapDisplaySettings as TDS
+                brace = mt.is_brace
+                try:
+                    _preset = (PlateStiffnessPreset(snap.plate_stiffness_preset)
+                               if snap.plate_stiffness_preset is not None
+                               else PlateStiffnessPreset(TDS.plate_stiffness_preset()))
+                except ValueError:
+                    _preset = PlateStiffnessPreset.CUSTOM
+                self.material_inputs = MaterialMeasurementInputs(
+                    length_mm=(snap.brace_length if brace else snap.plate_length) or 0,
+                    width_mm=(snap.brace_width if brace else snap.plate_width) or 0,
+                    thickness_mm=(snap.brace_thickness if brace else snap.plate_thickness) or 0,
+                    mass_g=(snap.brace_mass if brace else snap.plate_mass) or 0,
+                    body_length_mm=(snap.guitar_body_length if snap.guitar_body_length is not None
+                                    else TDS.guitar_body_length()),
+                    body_width_mm=(snap.guitar_body_width if snap.guitar_body_width is not None
+                                   else TDS.guitar_body_width()),
+                    stiffness_preset=_preset,
+                    custom_stiffness=(snap.custom_plate_stiffness if snap.custom_plate_stiffness is not None
+                                      else TDS.custom_plate_stiffness()),
+                )
+        else:
+            # No snapshot: still publish a range — the saved one — so the previous measurement's range
+            # is not left in place. Mirrors Swift's no-snapshot setLoadedAxisRange.
+            gt_log("  ⚠️ No spectrum snapshot in measurement — resetting axis range to defaults")
+            from .tap_display_settings import TapDisplaySettings as _TDS
+            self.set_loaded_axis_range(_TDS.min_frequency(), _TDS.max_frequency(),
+                                       _TDS.min_magnitude(), _TDS.max_magnitude())
+
+        # Peak Min, before the peaks are assigned, so they are shown under this measurement's value.
+        if measurement.peak_min_threshold is not None:
+            val = float(measurement.peak_min_threshold)
+            # Exactly as saved, as Swift restores it; only the old 0–100 scale is converted to dB.
+            self.peak_min_threshold = val if val < 0 else val - 100
+
+        # ── Restore peaks ─────────────────────────────────────────────────────
+        # Mirrors Swift: allPeaks = measurement.isMaterial ? [] : measurement.peaks (the durable
+        # full set). all_peaks is guitar-only: a material measurement's peaks are its identified
+        # L/C/FLC, restored into the selected_* peaks below. peaks_above_peak_min becomes
+        # its Peak-Min projection via the all_peaks setter.
+        self.all_peaks = [] if measurement.is_material else (list(measurement.peaks) if measurement.peaks else [])
+
+        # ── Restore decay time ────────────────────────────────────────────────
+        self.current_decay_time = measurement.decay_time
 
         # ── Restore per-phase spectra for plate/brace ─────────────────────────
         # Mirrors Swift: longitudinalSpectrum = (magnitudes:frequencies:) etc.
@@ -629,72 +704,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             else:
                 self.set_frozen_spectrum(np.array([]), np.array([]))
 
-        # ── Restore display settings → AppSettings ────────────────────────────
-        # Mirrors Swift's loaded* @Published properties + .onReceive handlers
-        # that write to TapDisplaySettings.  In Python TapDisplaySettings is
-        # AppSettings, so we write there directly.
-        from guitar_tap.views.utilities.tap_settings_view import AppSettings as AS
-        settings_snapshot = measurement.longitudinal_snapshot or measurement.spectrum_snapshot
-        if settings_snapshot is not None:
-            snap = settings_snapshot
-            from .measurement_type import MeasurementType as _MT
-            gt_log(f"  📊 Publishing display ranges: {snap.min_freq}-{snap.max_freq} Hz, {snap.min_db}-{snap.max_db} dB")
-            # All four bounds in one signal — the view shows them and remembers them as the loaded
-            # range. Mirrors Swift setLoadedAxisRange(minFreq: snapshot.minFreq, …).
-            self.set_loaded_axis_range(float(snap.min_freq), float(snap.max_freq),
-                                       float(snap.min_db), float(snap.max_db))
-            if snap.show_unknown_modes is not None:
-                gt_log(f"  👁️ Publishing showUnknownModes: {snap.show_unknown_modes}")
-            if snap.guitar_type is not None:
-                gt_log(f"  🎸 Publishing guitarType: {snap.guitar_type}")
-                try:
-                    AS.set_guitar_type(snap.guitar_type)
-                except Exception:
-                    pass
-            if snap.measurement_type is not None:
-                gt_log(f"  📐 Publishing measurementType: {snap.measurement_type}")
-                try:
-                    mt_enum = _MT(snap.measurement_type) if isinstance(snap.measurement_type, str) else snap.measurement_type
-                    AS.set_measurement_type(mt_enum)
-                except (ValueError, KeyError):
-                    pass
-            # Store B ← the file's own material inputs (never the live Settings defaults). The calc,
-            # Results panel, and Save all read this, so a loaded measurement's numbers come from the
-            # file and loading never disturbs the Settings defaults (Store A). Replaces the old
-            # snapshot-dims → AppSettings writes that used to clobber the user's defaults on every load.
-            # Mirrors Swift loadMeasurement.
-            if not mt.is_guitar:
-                from .material_measurement_inputs import MaterialMeasurementInputs
-                from .plate_stiffness_preset import PlateStiffnessPreset
-                from .tap_display_settings import TapDisplaySettings as TDS
-                brace = mt.is_brace
-                try:
-                    _preset = (PlateStiffnessPreset(snap.plate_stiffness_preset)
-                               if snap.plate_stiffness_preset is not None
-                               else PlateStiffnessPreset(TDS.plate_stiffness_preset()))
-                except ValueError:
-                    _preset = PlateStiffnessPreset.CUSTOM
-                self.material_inputs = MaterialMeasurementInputs(
-                    length_mm=(snap.brace_length if brace else snap.plate_length) or 0,
-                    width_mm=(snap.brace_width if brace else snap.plate_width) or 0,
-                    thickness_mm=(snap.brace_thickness if brace else snap.plate_thickness) or 0,
-                    mass_g=(snap.brace_mass if brace else snap.plate_mass) or 0,
-                    body_length_mm=(snap.guitar_body_length if snap.guitar_body_length is not None
-                                    else TDS.guitar_body_length()),
-                    body_width_mm=(snap.guitar_body_width if snap.guitar_body_width is not None
-                                   else TDS.guitar_body_width()),
-                    stiffness_preset=_preset,
-                    custom_stiffness=(snap.custom_plate_stiffness if snap.custom_plate_stiffness is not None
-                                      else TDS.custom_plate_stiffness()),
-                )
-        else:
-            # No snapshot: still publish a range — the saved one — so the previous measurement's range
-            # is not left in place. Mirrors Swift's no-snapshot setLoadedAxisRange.
-            gt_log("  ⚠️ No spectrum snapshot in measurement — resetting axis range to defaults")
-            from .tap_display_settings import TapDisplaySettings as _TDS
-            self.set_loaded_axis_range(_TDS.min_frequency(), _TDS.max_frequency(),
-                                       _TDS.min_magnitude(), _TDS.max_magnitude())
-
         # ── Store loaded-measurement metadata ─────────────────────────────────
         # Mirrors Swift: loadedMeasurementName = measurement.measurementName (nil if empty)
         #                loadedNotes = measurement.notes (nil if empty)
@@ -744,11 +753,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.tap_progress = 0.0
         gt_log("  🧊 Spectrum frozen, tap detection disabled")
 
-        # ── Retain the saved guitar peaks as the authoritative set (Re-analyze drops them) ──
-        # Mirrors Swift: loadedMeasurementPeaks = measurement.isMaterial ? nil : measurement.peaks
-        self.loaded_measurement_peaks = (
-            None if measurement.is_material else (list(measurement.peaks) if measurement.peaks else [])
-        )
+        # A newly loaded measurement has no highlighted peak.
+        self.set_highlighted_peak(None)
 
         # ── Restore annotation offsets ────────────────────────────────────────
         # Mirrors Swift: peakAnnotationOffsets = measurement.peakAnnotationOffsets
@@ -812,8 +818,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # (Python has no separate loaded* properties; write directly to model attrs)
         if measurement.tap_detection_threshold is not None:
             val = float(measurement.tap_detection_threshold)
-            db = int(val) if val < 0 else int(val - 100)
-            self.tap_detection_threshold = float(max(-80, min(-20, db)))
+            # Exactly as saved, as Swift restores it; only the old 0–100 scale is converted to dB.
+            self.tap_detection_threshold = val if val < 0 else val - 100
             gt_log(f"  🎯 Publishing tap threshold: {self.tap_detection_threshold} dB")
         else:
             gt_log("  ⚠️ No tap threshold in measurement")
@@ -822,13 +828,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
             gt_log(f"  🔢 Publishing number of taps: {self.number_of_taps}")
         else:
             gt_log("  ⚠️ No number of taps in measurement")
-        if measurement.peak_min_threshold is not None:
-            val = float(measurement.peak_min_threshold)
-            db = int(val) if val < 0 else int(val - 100)
-            self.peak_min_threshold = float(max(-100, min(-20, db)))
-            gt_log(f"  📊 Publishing peak min threshold: {self.peak_min_threshold} dB")
-        else:
-            gt_log("  ⚠️ No peak threshold in measurement")
 
         # ── Auto-select the recorded microphone ───────────────────────────────
         # Mirrors Swift loadMeasurement(_:) device-restore block: only a measurement that
@@ -895,6 +894,10 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 self.microphone_warning = warning
                 if not getattr(self, "_suppress_mic_warning_signal", False):
                     self.microphoneWarningChanged.emit(warning)
+        elif self.microphone_warning is not None:
+            # No microphone recorded: no warning from an earlier load stays. Mirrors Swift.
+            self.microphone_warning = None
+            self.microphoneWarningChanged.emit(None)
 
         # ── Arm loaded-settings warning ───────────────────────────────────────
         # Mirrors Swift: showLoadedSettingsWarning = true (last statement in loadMeasurement)
@@ -1083,6 +1086,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # coherent state transition (comparisonChanged(True) at the end).
         self.tap_entries = []
         self.showing_multi_tap_comparison = False
+        self.result_provenance = None  # a comparison has no microphone of its own
 
         self._comparison_data.clear()
         self.comparison_labels.clear()

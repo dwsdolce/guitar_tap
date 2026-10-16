@@ -143,6 +143,15 @@ class TestRecalculateFrozenPeaksIfNeeded:
     pipeline helpers directly.
     """
 
+    @pytest.fixture(autouse=True)
+    def _generic_guitar(self):
+        """Peak Min is a guitar control, and the measurement type is the saved setting the analyzer
+        reads — pin a guitar type and put the setting back after, as Swift's tests pin it."""
+        saved = TapDisplaySettings.measurement_type()
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
+        yield
+        TapDisplaySettings.set_measurement_type(saved)
+
     # Helper: build a synthetic spectrum with one clear peak at freq_hz.
     @staticmethod
     def _make_spectrum_with_peak(
@@ -160,7 +169,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
         return freqs, mag
 
     def test_PR01_frozen_spectrum_path_detects_peak(self, qt_app):
-        """PR-A1: When loaded_measurement_peaks is None, uses frozen spectrum.
+        """PR-A1: the recalculation detects on the frozen spectrum.
 
         Mirrors Swift recalculateFrozenPeaksIfNeeded — frozen path calls
         findPeaks on frozenMagnitudes and updates currentPeaks.
@@ -174,7 +183,6 @@ class TestRecalculateFrozenPeaksIfNeeded:
         sut.peak_min_threshold = -60.0
         sut.min_frequency = 80.0
         sut.max_frequency = 1200.0
-        sut.loaded_measurement_peaks = None
 
         sut.recalculate_frozen_peaks_if_needed()
 
@@ -200,7 +208,6 @@ class TestRecalculateFrozenPeaksIfNeeded:
         sut.is_measurement_complete = True
         sut.min_frequency = 80.0
         sut.max_frequency = 1200.0
-        sut.loaded_measurement_peaks = None
 
         # Low threshold: peak should be detected.
         sut.peak_min_threshold = -60.0
@@ -275,7 +282,6 @@ class TestRecalculateFrozenPeaksIfNeeded:
         sut = TapToneAnalyzer()
         sut.freq = np.array([])
         sut.frozen_magnitudes = np.array([])
-        sut.loaded_measurement_peaks = None
         sut.peak_min_threshold = -60.0
 
         sut.recalculate_frozen_peaks_if_needed()   # must not raise
@@ -296,7 +302,7 @@ class TestRecalculateFrozenPeaksIfNeeded:
 # pointless click. So: any complete guitar measurement with a frozen spectrum; never
 # material.
 #
-# This replaces `loaded_measurement_peaks is not None`, a proxy for "the peaks are stale"
+# This replaced "a measurement is loaded", a proxy for "the peaks are stale"
 # that was wrong in both directions — it disabled itself after one press, and never lit up
 # for a live capture whose mode assignments had drifted.
 #
@@ -328,7 +334,6 @@ class TestPR8CanReanalyze:
         """
         sut = self._frozen(MeasurementType.CLASSICAL)
         sut.peaks_above_peak_min = [_peak(200.0)]
-        sut.loaded_measurement_peaks = None      # never loaded — a fresh capture
 
         assert sut.can_reanalyze is True
 
@@ -337,25 +342,22 @@ class TestPR8CanReanalyze:
         sut = self._frozen(MeasurementType.CLASSICAL)
         saved_peaks = [_peak(200.0)]
         sut.peaks_above_peak_min = saved_peaks
-        sut.loaded_measurement_peaks = saved_peaks
 
         assert sut.can_reanalyze is True
 
     def test_PR35_reanalyze_is_not_a_one_shot(self, qt_app):
         """THE ONE-SHOT REGRESSION.
 
-        reanalyze_peaks() clears loaded_measurement_peaks, which used to be the button's
-        ONLY enabling condition — so a single press disabled it forever.
+        Re-analyze used to be offered only while a measurement was loaded, and a press ended
+        that — so a single press disabled it forever.
         """
         sut = self._frozen(MeasurementType.CLASSICAL)
         saved_peaks = [_peak(200.0)]
         sut.peaks_above_peak_min = saved_peaks
-        sut.loaded_measurement_peaks = saved_peaks
         assert sut.can_reanalyze is True
 
         sut.reanalyze_peaks()
 
-        assert sut.loaded_measurement_peaks is None, "Re-analyze drops the saved peaks"
         assert sut.can_reanalyze is True, (
             "Re-analyze must remain available after a press — it is a reset, not a one-shot"
         )
@@ -368,7 +370,6 @@ class TestPR8CanReanalyze:
         """
         for mtype in (MeasurementType.PLATE, MeasurementType.BRACE):
             sut = self._frozen(mtype)                      # even WITH a frozen spectrum…
-            sut.loaded_measurement_peaks = [_peak(200.0)]  # …and loaded peaks
             assert sut.can_reanalyze is False, (
                 f"Re-analyze is meaningless for {mtype} and must never be offered"
             )
@@ -411,9 +412,7 @@ class TestPeakMinProjection:
     def _frozen(self, mtype: MeasurementType) -> TapToneAnalyzer:
         """A complete measurement on a FLAT frozen spectrum, so detection would find nothing.
 
-        Two stores must agree: the analyzer keeps its own `_measurement_type` (read by the recalc)
-        while the display projection reads TapDisplaySettings. The view sets both — see
-        `_apply_measurement_type_to_ui` — so the tests do too, through the production setters.
+        The measurement type is the saved setting, which the analyzer reads.
         """
         TapDisplaySettings.set_measurement_type(mtype)
         sut = TapToneAnalyzer()
@@ -757,6 +756,7 @@ class TestPeakMinDurability:
         ``reanalyzePreservesStateOfPeaksHiddenByPeakMin``. Asserts its own preconditions so it cannot
         rot into a vacuous pass through the flat-spectrum trap.
         """
+        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)  # Peak Min is guitar-only (Swift pins it)
         sut = TapToneAnalyzer()
         # A loud 200 Hz peak and a quiet 400 Hz peak, detected on a real spectrum.
         _freeze_on_real_spectrum(sut, [(200.0, -20.0), (400.0, -55.0)])
@@ -1021,11 +1021,9 @@ class TestPeakMinDurability:
         _freeze_on_real_spectrum(sut, [(200.0, -20.0)])
         saved = _peak(777.0, -30.0)
         sut.all_peaks = [saved]
-        sut.loaded_measurement_peaks = [saved]
 
         sut.reanalyze_peaks()
 
-        assert sut.loaded_measurement_peaks is None, "Re-analyze drops the loaded peaks"
         assert saved.id not in {p.id for p in sut.all_peaks}, "the saved peak is gone"
         assert any(abs(p.frequency - 200.0) < 5.0 for p in sut.all_peaks), "the spectrum's peak is re-detected"
 
@@ -1225,9 +1223,9 @@ class TestMaterialPeakIdentity:
         assert list(saved.selected_peak_ids or []) == [f_l.id], "and it is marked selected"
 
     def test_material_load_delivers_its_identified_peaks_to_the_view(self, qt_app):
-        """A loaded material measurement's identified peaks reach the view's peak list: the view's load
-        handler asks for the loaded peaks (``_emit_loaded_peaks_at_threshold``), and peaksChanged carries
-        the identified L / C / FLC. Python-specific: the Swift and web views read the analyzer's state."""
+        """A loaded material measurement's identified peaks reach the view's peak list: the load ends by
+        announcing the peaks to show, and for a material measurement peaksChanged carries the identified
+        L / C / FLC. Python-specific: the Swift and web views read the analyzer's state."""
         TapDisplaySettings.set_measurement_type(MeasurementType.BRACE)
         source = TapToneAnalyzer()
         source.set_measurement_type(MeasurementType.BRACE)
@@ -1237,12 +1235,11 @@ class TestMaterialPeakIdentity:
         saved = source.saved_measurements[-1]
 
         sut = TapToneAnalyzer()
-        sut.load_measurement(saved)
         emitted = []
         sut.peaksChanged.connect(lambda peaks: emitted.append([p.id for p in peaks]))
-        sut._emit_loaded_peaks_at_threshold()  # what the view's load handler calls
+        sut.load_measurement(saved)
 
-        assert emitted == [[f_l.id]], f"the identified fL reaches the view, got {emitted}"
+        assert emitted and emitted[-1] == [f_l.id], f"the identified fL reaches the view, got {emitted}"
 
     def test_PR43_material_load_restores_the_identified_peaks_only(self, qt_app):
         """PR43: loading a material measurement restores its identified peaks by id from the file, and

@@ -222,6 +222,9 @@ class TapToneAnalyzer(
     # STARTING exists because two view steps must precede the load's own signals (see the view).
     measurementLoadStarting: QtCore.Signal = QtCore.Signal()
     measurementLoaded: QtCore.Signal = QtCore.Signal(object)   # the TapToneMeasurement just loaded
+    # The highlighted peak's id changed (None: none). The chart's star and the peak list's highlighted card
+    # draw from it — Swift's views read @Published highlightedPeakID.
+    highlightedPeakChanged: QtCore.Signal = QtCore.Signal(object)
     # Internal: fired from hotplug monitor thread → main thread (no-arg).
     _devicesRefreshed: QtCore.Signal = QtCore.Signal()
     # Internal: cross-thread DispatchQueue.main.asyncAfter equivalent.
@@ -253,7 +256,6 @@ class TapToneAnalyzer(
         import numpy as np
 
         from guitar_tap.models import guitar_mode as _gm
-        from guitar_tap.models import measurement_type as _mt_mod
         from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 
@@ -422,8 +424,6 @@ class TapToneAnalyzer(
         self.source_measurement_timestamp: "str | None" = None  # ISO-8601 string
 
         # ── Additional peak analysis state ────────────────────────────────
-        self.loaded_measurement_peaks: "list[ResonantPeak] | None" = None
-        self.selected_peak: float = 0.0
         # Whether the user has manually changed peak selection since last auto-run.
         # Mirrors Swift TapToneAnalyzer.userHasModifiedPeakSelection.
         self.user_has_modified_peak_selection: bool = False
@@ -453,9 +453,6 @@ class TapToneAnalyzer(
 
         # ── Auto-scale ────────────────────────────────────────────────────
         self._auto_scale_db: bool = False
-
-        # ── Measurement type ──────────────────────────────────────────────
-        self._measurement_type = _mt_mod.MeasurementType.GENERIC
 
         self._current_mag_y_db = np.array([])
         # Instantaneous RMS level in dBFS — mirrors Swift fftAnalyzer.inputLevelDB.
@@ -658,6 +655,14 @@ class TapToneAnalyzer(
     # Constants — Swift declares these `let`, so they are read-only here: a property with no setter,
     # so writing one raises AttributeError.
     # ------------------------------------------------------------------ #
+
+    @property
+    def _measurement_type(self):
+        """The measurement type — the saved setting itself, as Swift's analyzer reads
+        ``TapDisplaySettings.measurementType``. One store: a load, Settings and the analyzer all
+        read and write the same value."""
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+        return _tds.measurement_type()
 
     @property
     def hysteresis_margin(self) -> float:
@@ -1621,6 +1626,19 @@ class TapToneAnalyzer(
         """
         self.frozen_frequencies = frequencies
         self.frozen_magnitudes = magnitudes
+
+    def set_highlighted_peak(self, peak_id) -> None:
+        """Highlight a peak by id, or none — the chart-dot ↔ peak-list cross-highlight. Transient view
+        state: not selection, not saved. Mirrors Swift ``highlightedPeakID``."""
+        if self.highlighted_peak_id == peak_id:
+            return
+        self.highlighted_peak_id = peak_id
+        self.highlightedPeakChanged.emit(peak_id)
+
+    def toggle_highlighted_peak(self, peak_id) -> None:
+        """Clicking a peak's chart dot or its card: the same peak again clears the highlight, another
+        moves it. Mirrors Swift's dot and row taps (both toggle) and the web's toggleHighlightedPeak."""
+        self.set_highlighted_peak(None if self.highlighted_peak_id == peak_id else peak_id)
 
     # @parity state/visible-peaks tests=test/annotation-state
     def cycle_annotation_visibility(self) -> None:

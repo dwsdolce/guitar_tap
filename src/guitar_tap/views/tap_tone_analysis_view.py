@@ -957,6 +957,7 @@ class MainWindow(QtWidgets.QMainWindow):
         def _lbl(text: str) -> QtWidgets.QLabel:
             w = QtWidgets.QLabel(text)
             w.setFont(caption_font)
+            palette.tag(w, color=palette.Role.TEXT_SECONDARY)
             return w
 
         def _db_slider_group(
@@ -966,9 +967,12 @@ class MainWindow(QtWidgets.QMainWindow):
             current_val: int,   # canvas 0-100 scale
             default_val: int,   # canvas 0-100 scale
             tip: str,
+            value_role: palette.Role,
             with_level_meter: bool = False,
-        ) -> tuple[QtWidgets.QSlider, QtWidgets.QLabel, QtWidgets.QToolButton]:
-            """Add label + slider + dB readout + reset button to hl; return (slider, readout, reset).
+        ) -> tuple[QtWidgets.QWidget, QtWidgets.QSlider, QtWidgets.QLabel, QtWidgets.QToolButton]:
+            """Add label + slider + dB readout + reset button to hl, as one widget so the field can be
+            disabled and dimmed as a whole (Swift's HStack); return (group, slider, readout, reset).
+            The readout is drawn medium weight in ``value_role``, as Swift.
 
             When ``with_level_meter`` is True the slider is a custom
             ``ThresholdSlider`` that displays the live input RMS level inside
@@ -976,7 +980,12 @@ class MainWindow(QtWidgets.QMainWindow):
             the tap-detection threshold so the user can see the audio signal
             relative to the threshold setting; mirrors Swift ThresholdSlider.
             """
-            hl.addWidget(_lbl(label))
+            group = QtWidgets.QWidget()
+            gl = QtWidgets.QHBoxLayout(group)
+            gl.setContentsMargins(0, 0, 0, 0)
+            gl.setSpacing(4)
+            hl.addWidget(group)
+            gl.addWidget(_lbl(label))
             if with_level_meter:
                 from guitar_tap.views.shared.threshold_slider import ThresholdSlider as _TS
                 slider = _TS()
@@ -986,24 +995,27 @@ class MainWindow(QtWidgets.QMainWindow):
             slider.setValue(current_val - 100)   # convert to dB
             slider.setFixedWidth(160 if with_level_meter else 80)
             slider.setToolTip(tip)
-            hl.addWidget(slider)
+            gl.addWidget(slider)
 
             readout = QtWidgets.QLabel(f"{current_val - 100} dB")
-            readout.setFont(caption_font)
+            value_font = QtGui.QFont(caption_font)
+            value_font.setWeight(QtGui.QFont.Weight.Medium)
+            readout.setFont(value_font)
+            palette.tag(readout, color=value_role)
             readout.setMinimumWidth(40)
             readout.setAlignment(
                 QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
             )
-            hl.addWidget(readout)
+            gl.addWidget(readout)
 
             reset_btn = QtWidgets.QToolButton()
             palette.set_icon(reset_btn, "mdi.restore", palette.Role.TEXT_SECONDARY)
             reset_btn.setStyleSheet("border: none")
             reset_btn.setToolTip(f"Reset to default ({default_val - 100} dB)")
             reset_btn.setFixedSize(18, 18)
-            hl.addWidget(reset_btn)
+            gl.addWidget(reset_btn)
 
-            return slider, readout, reset_btn
+            return group, slider, readout, reset_btn
 
         # ── Taps ──────────────────────────────────────────────────────────
         # The label is kept as an attribute so it can be dimmed WITH the spinner. SwiftUI's
@@ -1030,12 +1042,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # clipping indicator — wired to the live RMS signal below so the user
         # can see the input level relative to the threshold setting.
         tap_thresh_val = AS.AppSettings.tap_threshold()   # 0-100 scale
-        self.tap_threshold_slider, self.tap_threshold_readout, self.tap_threshold_reset_btn = \
+        _, self.tap_threshold_slider, self.tap_threshold_readout, self.tap_threshold_reset_btn = \
             _db_slider_group(
                 "Threshold:", -80, -20, tap_thresh_val, 60,
                 "Signal level that triggers tap detection.\n"
                 "Bar shows live input RMS level; amber dot is peak-hold;\n"
                 "right edge turns red when input is clipping.",
+                palette.Role.ACCENT_TEXT,
                 with_level_meter=True,
             )
         self.tap_threshold_reset_btn.clicked.connect(lambda: self.tap_threshold_slider.setValue(-40))
@@ -1044,12 +1057,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Peak Min ──────────────────────────────────────────────────────
         peak_min_val = int(AS.AppSettings.peak_min_threshold()) + 100   # 0-100 scale
-        self.peak_min_slider, self.peak_min_readout, self.peak_min_reset_btn = \
+        self._peak_min_group, self.peak_min_slider, self.peak_min_readout, self.peak_min_reset_btn = \
             _db_slider_group(
                 "Peak Min:", -100, -20, peak_min_val, 40,
                 "Minimum magnitude a spectral peak must have to be reported\n"
                 "(shown as green line on the spectrum)",
+                palette.Role.CHART_PEAK_MIN,
             )
+        # Disabled, the whole field is drawn at 40% opacity, as Swift's .opacity(... ? 1 : 0.4) — Qt's
+        # own disabled look leaves a coloured label crisp.
+        self._peak_min_dim = QtWidgets.QGraphicsOpacityEffect(self._peak_min_group)
+        self._peak_min_dim.setOpacity(0.4)
+        self._peak_min_dim.setEnabled(False)
+        self._peak_min_group.setGraphicsEffect(self._peak_min_dim)
         self.peak_min_reset_btn.clicked.connect(lambda: self.peak_min_slider.setValue(-60))
 
         hl.addStretch()
@@ -2174,12 +2194,9 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.peaksChanged.connect(self._on_peaks_changed_ratios)
         canvas.peaksChanged.connect(self._material_peak_widget.update_peaks)
         canvas.peaksChanged.connect(self._on_peaks_changed_multi_tap)
-        canvas.peakSelected.connect(self.peak_widget.select_row)
-        # A dot click must also draw the graph's red-star highlight, exactly as a table click does.
-        # Without this the canvas signal only reached select_row (table row), never _on_peak_selected
-        # (which calls fft_canvas.select_peak) — so clicking a dot updated the table but not the star.
-        canvas.peakSelected.connect(self._on_peak_selected)
-        canvas.peakDeselected.connect(self.peak_widget.clear_selection)
+        # The highlighted peak is the model's: a dot or card click toggles it, and the chart's star and
+        # the highlighted card both draw from it. Mirrors Swift's highlightedPeakID.
+        canvas.analyzer.highlightedPeakChanged.connect(self.peak_widget.show_highlight)
         canvas.framerateUpdate.connect(self._on_framerate_update)
         canvas.peakInfoChanged.connect(self._on_peak_info)
         canvas.newSample.connect(self.peak_widget.new_data)
@@ -2204,10 +2221,8 @@ class MainWindow(QtWidgets.QMainWindow):
         model.hideAnnotations.connect(canvas.annotations.hide_annotations)
         model.modeColorsChanged.connect(canvas.update_mode_colors)
 
-        self.peak_widget.clearPeaks.connect(canvas.clear_selected_peak)
-        self.peak_widget.clearPeaks.connect(self.peak_widget.clear_selected_peak)
-        self.peak_widget.peakSelected.connect(self._on_peak_selected)
-        self.peak_widget.peakDeselected.connect(self._on_peak_deselected)
+        # A click on the list's background clears the highlight.
+        self.peak_widget.clearPeaks.connect(lambda: canvas.analyzer.set_highlighted_peak(None))
 
         canvas.statusMessageChanged.connect(self._on_status_message_changed)
         # Initial pull: the signal fires only on CHANGE, so seed the label from the analyzer's
@@ -2850,9 +2865,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_mic_name_label(self) -> None:
         """Show the microphone the result was captured with in the Analysis Results header: the input for a
         live result, the recorded one — or "unknown" — for a played file or a loaded measurement. Mirrors
-        Swift ``TapAnalysisResultsView`` reading ``analyzer.captureMicrophoneName``.
+        Swift ``TapAnalysisResultsView`` reading ``analyzer.captureMicrophoneName``. None for a comparison:
+        it has no microphone of its own.
         """
         analyzer = self.fft_canvas.analyzer
+        if analyzer.is_saved_measurement_comparison:
+            self._mic_name_label.setText("")
+            return
         name = analyzer.capture_microphone_name
         if name is None and analyzer.result_provenance is not None:
             name = "unknown"
@@ -3381,12 +3400,6 @@ class MainWindow(QtWidgets.QMainWindow):
         analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_reset_auto_selection(self) -> None:
-        # Swift Fix 3: do NOT clear _loaded_measurement_peaks here.
-        # Clearing it would cause subsequent threshold slider moves to switch to
-        # spectrum re-analysis, losing peaks that only exist in the saved data.
-        # The loaded peaks remain authoritative for the lifetime of the loaded
-        # measurement — only unfreezing (returning to live capture) clears them.
-        #
         # Delegate to the analyzer (mirrors Swift resetToAutoSelection()), which
         # runs against ALL peaks_above_peak_min regardless of the display viewport.
         # The previous approach called peak_widget.model.auto_select_peaks_by_mode()
@@ -3406,14 +3419,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_reanalyze_peaks(self) -> None:
         """Re-run peak detection on the frozen spectrum.
 
-        Mirrors Swift ``analyzer.reanalyzePeaks()`` button action.
-        After re-analysis, ``loaded_measurement_peaks`` is ``None`` so the
-        button disables itself.
+        Mirrors Swift ``analyzer.reanalyzePeaks()`` button action. Re-analyze is a reset, not a
+        one-shot: the button stays as ``can_reanalyze`` says.
         """
         analyzer = self.fft_canvas.analyzer
         analyzer.reanalyze_peaks()
-        # loaded_measurement_peaks is now None — disable the button.
-        self._reanalyze_btn.setEnabled(False)
+        self._reanalyze_btn.setEnabled(analyzer.can_reanalyze)
 
     # ================================================================
     # Peaks / ratios
@@ -3426,37 +3437,28 @@ class MainWindow(QtWidgets.QMainWindow):
         ratio = self.fft_canvas.analyzer.calculate_tap_tone_ratio()
         self.update_tap_tone_ratio(ratio)
 
-    def _on_peak_selected(self, freq: float) -> None:
-        self.fft_canvas.select_peak(freq)
-        self.peak_widget.selected_freq = freq
-        idx = self.peak_widget.model.freq_index(freq)
-        self.peak_widget.selected_freq_index = int(idx) if idx >= 0 else -1
-
-    def _on_peak_deselected(self, freq: float) -> None:
-        self.fft_canvas.deselect_peak(freq)
-
     # ================================================================
     # Measurement type / plate analysis
     # ================================================================
 
-    def _apply_measurement_type_to_ui(self) -> None:
-        """Update all UI elements that depend on the current measurement type.
+    def _set_peak_min_enabled(self, enabled: bool) -> None:
+        """Enable or disable the whole Peak Min field — label, slider, value and reset — dimming it when
+        disabled. Mirrors Swift's .disabled / .opacity pair on the Peak Min HStack."""
+        self._peak_min_group.setEnabled(enabled)
+        self._peak_min_dim.setEnabled(not enabled)
 
-        This is the load-path equivalent of Swift's .onReceive(tap.$loadedMeasurementType)
-        handler — it propagates a measurement-type change to every bound control and
-        widget WITHOUT restarting the tap sequence.  Called from both the load path
-        (_on_loaded_measurement_type) and the settings-apply path
-        (_on_measurement_type_changed), mirroring how Swift separates the two concerns.
+    def _apply_measurement_type_to_ui(self) -> None:
+        """Bring every widget that depends on the measurement type up to the current type (the
+        saved setting, which the model owns) — what SwiftUI does by re-rendering. Writes no state.
+        Called after a load (_on_measurement_loaded) and after Settings changes the type
+        (_on_measurement_type_changed); neither restarts the tap sequence here.
         """
         mt = TDS.measurement_type()
-        AS.AppSettings.set_measurement_type(mt)
-        self.fft_canvas.set_measurement_type(mt)
+        self.fft_canvas.apply_measurement_type(mt)
         # The chart's range is not touched here: a load shows the measurement's range, and Settings'
         # Done moves the chart for a type change (display_range.on_settings_done) — as Swift, whose
         # .onReceive(tap.$loadedMeasurementType) only sets the type.
-        self.peak_min_slider.setEnabled(mt.is_guitar)
-        self.peak_min_readout.setEnabled(mt.is_guitar)
-        self.peak_min_reset_btn.setEnabled(mt.is_guitar)
+        self._set_peak_min_enabled(mt.is_guitar)
         # Threshold slider controls the RMS rising-edge tap detection trigger
         # and is active in all measurement modes (guitar, plate, brace).
         self.tap_threshold_slider.setEnabled(True)
@@ -3488,15 +3490,6 @@ class MainWindow(QtWidgets.QMainWindow):
             # build time — no shared top title to update here.)
             self._update_plate_phase_ui()   # Reset panel to IDLE/COMPLETE state for type
         self._update_measurement_badge()
-
-    def _on_loaded_measurement_type(self, _: str) -> None:
-        """Handle a measurement-type change that originated from loading a saved measurement.
-
-        Mirrors Swift's .onReceive(tap.$loadedMeasurementType) handler: updates all
-        bound controls and widgets for the new type but does NOT restart the tap
-        sequence — the loaded measurement state must be preserved.
-        """
-        self._apply_measurement_type_to_ui()
 
     def _on_measurement_type_changed(
         self, _: str, crosses_boundary: bool = True, guitar_type_changed: bool = False
@@ -4162,6 +4155,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Mirrors TapToneAnalysisView+Controls.swift (status bar swap, button states)
         and TapAnalysisResultsView.swift (Comparing N measurements label).
         """
+        self._update_mic_name_label()  # a comparison shows no microphone; leaving one shows it again
         canvas = self.fft_canvas
         n = canvas.comparison_count
         # ── Status bar: swap normal widgets ↔ comparison info ────────────────
@@ -4294,9 +4288,7 @@ class MainWindow(QtWidgets.QMainWindow):
         #   .disabled(!isGuitar || displayMode == .comparison) on Peak Min HStack.
         mt = TDS.measurement_type()
         _peak_min_enabled = mt.is_guitar and not is_comparing
-        self.peak_min_slider.setEnabled(_peak_min_enabled)
-        self.peak_min_readout.setEnabled(_peak_min_enabled)
-        self.peak_min_reset_btn.setEnabled(_peak_min_enabled)
+        self._set_peak_min_enabled(_peak_min_enabled)
 
         self._update_tap_buttons()
 
@@ -4447,23 +4439,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loaded_resonant_peaks = list(m.peaks) if m.peaks else []
         self._loaded_measurement = m
 
-        # Use the RESOLVED type — a measurement's type lives in its snapshot, not the top-level
-        # `measurement_type` field, which is None for a freshly-saved in-memory measurement (only a
-        # disk/settings re-read via from_dict populates it). Reading the raw field made a same-session
-        # load of a plate/brace fall back to guitar and skip the type switch. Mirrors Swift reading
-        # snapshot.measurementType.
-        _resolved_type_str = m.resolved_measurement_type or ""
-        _restored_mt = MT.MeasurementType.from_string(_resolved_type_str)
+        # A saved comparison is shown by the comparison handlers; there is no measurement to show.
+        if m.is_comparison:
+            return
 
-        # ── Propagate measurement type to TapDisplaySettings ──────────────────
-        # AppSettings was already updated by load_measurement(); call
-        # _on_loaded_measurement_type to propagate the loaded type to the UI —
-        # mirrors Swift .onReceive(tap.$loadedMeasurementType) which updates the
-        # bound picker without restarting the tap sequence.
-        if _resolved_type_str:
-            _mt = MT.MeasurementType.from_string(_resolved_type_str)
-            AS.AppSettings.set_measurement_type(_mt)
-            self._on_loaded_measurement_type(_mt.short_name)
+        # The type the model restored (the saved setting): bring the type-dependent widgets up to it.
+        _restored_mt = TDS.measurement_type()
+        self._apply_measurement_type_to_ui()
 
         # ── Sync canvas saved_peaks array (used for scatter-plot drawing) ─────
         if m.peaks:
@@ -4475,61 +4457,25 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             peaks_array = np.zeros((0, 3), dtype=np.float64)
         canvas.saved_peaks = peaks_array
-        # canvas._loaded_measurement_peaks mirrors analyzer.loaded_measurement_peaks
-        # (already set by load_measurement) — keep in sync for threshold slider use.
-        canvas._loaded_measurement_peaks = analyzer.loaded_measurement_peaks or []
 
-        # ── Update peak_model view state ──────────────────────────────────────
+        # ── The peak list: the model's labels and manual flag ─────────────────
+        # (Its selection comes with the model's peaksChanged, which follows this handler.)
         peak_model = self.peak_widget.model
-
-        if not _restored_mt.is_guitar:
-            _plate_selected_ids: set[str] = set()
-            for _pid in (
-                m.selected_longitudinal_peak_id,
-                m.selected_cross_peak_id,
-                m.selected_flc_peak_id,
-            ):
-                if _pid:
-                    _plate_selected_ids.add(_pid.upper())
-            # Pass IDs directly — mirrors Swift selectedPeakIDs.contains($0.id).
-            peak_model.selected_peak_ids = {
-                p.id for p in m.peaks
-                if (p.id or "").upper() in _plate_selected_ids
-            }
-            peak_model.selected_longitudinal_peak_id = m.selected_longitudinal_peak_id
-            peak_model.selected_cross_peak_id        = m.selected_cross_peak_id
-            peak_model.selected_flc_peak_id          = m.selected_flc_peak_id
-        else:
-            # Pass IDs directly — mirrors Swift selectedPeakIDs.contains($0.id).
-            peak_model.selected_peak_ids = set(
-                m.selected_peak_ids if m.selected_peak_ids is not None
-                else [p.id for p in m.peaks]
-            )
         peak_model.is_live = False
-
-        # ── Restore peak mode labels into peak_model.modes ────────────────────
         if not _restored_mt.is_guitar:
-            _id_to_label: dict[str, str] = {}
-            if m.selected_longitudinal_peak_id:
-                _id_to_label[m.selected_longitudinal_peak_id.upper()] = "Longitudinal"
-            if m.selected_cross_peak_id:
-                _id_to_label[m.selected_cross_peak_id.upper()] = "Cross-grain"
-            if m.selected_flc_peak_id:
-                _id_to_label[m.selected_flc_peak_id.upper()] = "Diagonal"
-            peak_model.modes = {}
-            for p in m.peaks:
-                peak_model.modes[p.frequency] = _id_to_label.get(
-                    (p.id or "").upper(), "Peak"
-                )
-        elif m.peak_mode_overrides:
-            peak_model.modes = {}
-            for p in m.peaks:
-                if p.id in m.peak_mode_overrides:
-                    peak_model.modes[p.frequency] = m.peak_mode_overrides[p.id]
+            _labels = (
+                (analyzer.selected_longitudinal_peak, "Longitudinal"),
+                (analyzer.selected_cross_peak, "Cross-grain"),
+                (analyzer.selected_flc_peak, "Diagonal"),
+            )
+            _by_id = {pk.id: label for pk, label in _labels if pk is not None}
+            peak_model.modes = {p.frequency: _by_id.get(p.id, "Peak") for p in (m.peaks or [])}
         else:
-            peak_model.modes = {}
-
-        peak_model._set_user_modified(True)
+            peak_model.modes = {
+                p.frequency: analyzer.peak_mode_overrides[p.id]
+                for p in analyzer.all_peaks if p.id in analyzer.peak_mode_overrides
+            }
+        peak_model._set_user_modified(analyzer.user_has_modified_peak_selection)
 
         # ── Restore annotation visibility mode into peak_model ────────────────
         target_mode = analyzer.annotation_visibility_mode
@@ -4544,49 +4490,22 @@ class MainWindow(QtWidgets.QMainWindow):
         # no-op guard and premature update_data call are both bypassed.
         peak_model._annotation_mode = target_mode
 
-        # ── Draw spectrum on canvas ───────────────────────────────────────────
-        _snap = m.spectrum_snapshot or m.longitudinal_snapshot
-        if _snap is not None:
-            snap = _snap
-            freq_arr = np.array(snap.frequencies, dtype=np.float64)
-            mag_arr  = np.array(snap.magnitudes, dtype=np.float64)
-            # set_frozen_spectrum keeps frozen_frequencies and frozen_magnitudes in
-            # sync.  For plate/brace measurements load_measurement() clears
-            # frozen_frequencies (plate mode doesn't use the combined frozen
-            # spectrum for model purposes), so we must re-populate it here so
-            # that the canvas crosshair snap (_on_mouse_moved) has a matching
-            # freq array to index into.
-            analyzer.set_frozen_spectrum(freq_arr, mag_arr)
-            # The chart's range came from the analyzer's loadedAxisRangeChanged during the load.
-            canvas.set_draw_data(mag_arr, freqs=freq_arr)
+        # ── Draw the model's frozen spectrum (none for plate/brace, whose phase spectra the
+        # model has already published) ──────────────────────────────────────────
+        canvas.set_draw_data(np.asarray(analyzer.frozen_magnitudes, dtype=np.float64),
+                             freqs=np.asarray(analyzer.frozen_frequencies, dtype=np.float64))
 
-            # For plate/brace: build material-spectra list for canvas display.
-            # The per-phase spectra were already restored onto the analyzer by
-            # load_measurement(); read them back to build the canvas overlay list.
-            if not _restored_mt.is_guitar:
-                _phase_spectra: list = []
-                if m.longitudinal_snapshot is not None:
-                    ls = m.longitudinal_snapshot
-                    _phase_spectra.append(("Longitudinal (fL)", _FL,
-                                           list(ls.frequencies), list(ls.magnitudes)))
-                if _restored_mt.is_plate and m.cross_snapshot is not None:
-                    cs = m.cross_snapshot
-                    _phase_spectra.append(("Cross-grain (fC)", _FC,
-                                           list(cs.frequencies), list(cs.magnitudes)))
-                if _restored_mt.is_plate and m.flc_snapshot is not None:
-                    fs = m.flc_snapshot
-                    _phase_spectra.append(("Diagonal (fLC)", _FLC,
-                                           list(fs.frequencies), list(fs.magnitudes)))
-                canvas.analyzer.set_material_spectra(_phase_spectra)
-        else:
-            canvas._emit_loaded_peaks_at_threshold()
-
-        # ── Restore analysis settings sliders/spinners ────────────────────────
-        # load_measurement() already wrote the model attrs; read them back to
-        # drive the Qt widgets — mirrors Swift .onReceive on loaded* properties.
-        self.tap_threshold_slider.setValue(int(analyzer.tap_detection_threshold))
-        self.peak_min_slider.setValue(int(analyzer.peak_min_threshold))
-        self.tap_num_spin.setValue(analyzer.number_of_taps)
+        # ── Analysis settings sliders/spinners, from the model, without writing back ──
+        for _w, _v in ((self.tap_threshold_slider, int(analyzer.tap_detection_threshold)),
+                       (self.peak_min_slider, int(analyzer.peak_min_threshold)),
+                       (self.tap_num_spin, analyzer.number_of_taps)):
+            _w.blockSignals(True)
+            _w.setValue(_v)
+            _w.blockSignals(False)
+        self.tap_threshold_readout.setText(f"{int(analyzer.tap_detection_threshold)} dB")
+        self.peak_min_readout.setText(f"{int(analyzer.peak_min_threshold)} dB")
+        self._tap_count_total = analyzer.number_of_taps
+        canvas.show_peak_min(analyzer.peak_min_threshold)
 
         # ── Configure material peak widget columns ────────────────────────────
         if not _restored_mt.is_guitar:
@@ -4600,8 +4519,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 show_cross=not _restored_mt.is_brace,
                 show_flc=_show_flc,
             )
-
-        canvas._emit_loaded_peaks_at_threshold()
 
         # ── Compute and display material properties (plate/brace) ─────────────
         if not _restored_mt.is_guitar:

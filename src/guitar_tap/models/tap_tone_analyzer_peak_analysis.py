@@ -219,10 +219,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         recomputation they want, and has no other route to it), while a wrongly-ENABLED
         one costs a click that recomputes the same answer.
 
-        (The previous rule, ``loaded_measurement_peaks is not None``, was a proxy for
-        "the peaks are stale" and was wrong in both directions: it disabled itself after
-        a single press, and never lit up for a live capture whose mode assignments had
-        drifted.)
+        (The previous rule, "a measurement is loaded", was a proxy for "the peaks are
+        stale" and was wrong in both directions: it disabled itself after a single press,
+        and never lit up for a live capture whose mode assignments had drifted.)
 
         Never for plate/brace: material peaks come from the per-phase captures, and
         running ``find_peaks`` over them would destroy the saved L / C / FLC peaks.
@@ -249,10 +248,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         """Re-run peak detection on the frozen spectrum using the current analysis settings.
 
         Lets the user retune a saved measurement (Peak Min, analysis range, guitar
-        type) without re-tapping.  Clears ``loaded_measurement_peaks`` — the
-        re-detected peaks replace the saved ones — and calls
-        ``recalculate_frozen_peaks_if_needed()``, which runs ``find_peaks()`` on the
-        frozen spectrum.
+        type) without re-tapping: ``recalculate_frozen_peaks_if_needed()`` runs
+        ``find_peaks()`` on the frozen spectrum, and the re-detected peaks replace the
+        saved ones.
 
         Also re-claims the mode assignments from scratch: ``identified_modes`` is
         cleared, so the carry-forward in ``_apply_frozen_peak_state`` has nothing to
@@ -273,8 +271,6 @@ class TapToneAnalyzerPeakAnalysisMixin:
         ):
             return
 
-        # The re-detected peaks replace the saved ones.
-        self.loaded_measurement_peaks = None
         self.user_has_modified_peak_selection = False
         self.selected_peak_frequencies = []
         self.identified_modes = []
@@ -771,26 +767,16 @@ class TapToneAnalyzerPeakAnalysisMixin:
         return quality, bandwidth
 
 
-    def _emit_loaded_peaks_at_threshold(self) -> None:
-        """Emit a loaded measurement's peaks as peaksChanged — the view's peak list, chart markers and
-        annotations take them from this signal.
-
-        Guitar: the full loaded set becomes the durable ``all_peaks``, and its Peak-Min projection
-        (``peaks_above_peak_min``) is emitted. Material (plate/brace): the identified L / C / FLC peaks are
-        emitted unfiltered — they ARE the result, and Peak Min is a guitar control, so a loaded fL below
-        the saved Peak Min still shows. The capture path emits the same way (``_emit_peaks_array``).
+    def _emit_displayed_peaks(self) -> None:
+        """Announce the peaks to show as ``peaksChanged`` — the view's peak list, chart markers and
+        annotations take them from this signal. Guitar: the Peak-Min projection of the durable set.
+        Material (plate/brace): the identified L / C / FLC peaks, unfiltered — they ARE the result,
+        and Peak Min is a guitar control. The capture path emits the same way (``_emit_peaks_array``).
         Mirrors Swift's views reading ``peaksAbovePeakMin`` / ``materialIdentifiedPeaks``.
         """
         if not self._tds.measurement_type().is_guitar:
-            # A loaded material measurement's peaks are its identified L / C / FLC, unfiltered; it keeps no
-            # guitar peak set (loaded_measurement_peaks is None, all_peaks empty).
             self.peaksChanged.emit(list(self.material_identified_peaks))
             return
-        assert self.loaded_measurement_peaks is not None
-        # Mirrors Swift: store the FULL loaded set as the durable all_peaks; peaks_above_peak_min is
-        # its Peak-Min projection (guitar filters; material passes through). Emitting the
-        # projection keeps the view filtered without all_peaks ever holding a filtered view.
-        self.all_peaks = list(self.loaded_measurement_peaks)
         self.peaksChanged.emit(self.peaks_above_peak_min)
 
     @staticmethod

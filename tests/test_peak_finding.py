@@ -133,7 +133,6 @@ def test_full_set_save(row):
         return abs(p.frequency - row["airHz"]) < 1
 
     displayed = list(sut.peaks_above_peak_min)
-    sut.loaded_measurement_peaks = None
     saved = sut.guitar_full_save_peaks()
     e = row["expect"]
     assert len(displayed) == e["displayedCount"]
@@ -145,7 +144,6 @@ def test_full_set_save(row):
 
     loaded = list(sut.all_peaks)[: row["loadedFirst"]]
     sut.all_peaks = loaded
-    sut.loaded_measurement_peaks = loaded
     saved_loaded = sut.guitar_full_save_peaks()
     assert len(saved_loaded) == e["loadedSavedCount"]
     assert ([p.id for p in saved_loaded] == [p.id for p in loaded]) == e["loadedSavedSame"]

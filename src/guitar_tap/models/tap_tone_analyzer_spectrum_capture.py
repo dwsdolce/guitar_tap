@@ -2072,7 +2072,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.all_peaks = peaks
         self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
         self.user_has_modified_peak_selection = False
-        self.loaded_measurement_peaks = None
         self.selected_peak_frequencies = []
 
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_sc
