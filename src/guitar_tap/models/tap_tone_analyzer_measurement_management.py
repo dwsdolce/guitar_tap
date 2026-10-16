@@ -498,13 +498,15 @@ class TapToneAnalyzerMeasurementManagementMixin:
                     float(max(s.max_db  for s in snaps)),
                 )
 
+            from .tap_tone_measurement import TapToneMeasurement
             _name = measurement.measurement_name
-            self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)
+            self.loaded_measurement_name = TapToneMeasurement.normalized_name(_name) if _name is not None else None
             self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
-            # Mirrors Swift: loadedNotes = measurement.notes (nil if empty) — kept so a re-save
-            # preserves the notes (R10).
+            # Kept so a re-save preserves the notes, normalized as every stored note is.
+            # Mirrors Swift: loadedNotes = measurement.notes.flatMap(TapToneMeasurement.normalizedNotes).
+            from .tap_tone_measurement import TapToneMeasurement
             _notes = measurement.notes
-            self.loaded_notes = (_notes if (_notes and _notes.strip()) else None)
+            self.loaded_notes = TapToneMeasurement.normalized_notes(_notes) if _notes is not None else None
             # The saved comparison's own date, which its exports show and are named by. Mirrors
             # Swift.
             self.source_measurement_timestamp = measurement.timestamp
@@ -705,13 +707,14 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 self.set_frozen_spectrum(np.array([]), np.array([]))
 
         # ── Store loaded-measurement metadata ─────────────────────────────────
-        # Mirrors Swift: loadedMeasurementName = measurement.measurementName (nil if empty)
-        #                loadedNotes = measurement.notes (nil if empty)
+        # Mirrors Swift: loadedMeasurementName = measurement.measurementName normalized (normalizedName)
+        #                loadedNotes = measurement.notes normalized (normalizedNotes)
         #                sourceMeasurementTimestamp = measurement.timestamp
+        from .tap_tone_measurement import TapToneMeasurement
         _name = measurement.measurement_name
-        self.loaded_measurement_name = (_name if (_name and _name.strip()) else None)
+        self.loaded_measurement_name = TapToneMeasurement.normalized_name(_name) if _name is not None else None
         _notes = measurement.notes
-        self.loaded_notes = (_notes if (_notes and _notes.strip()) else None)
+        self.loaded_notes = TapToneMeasurement.normalized_notes(_notes) if _notes is not None else None
         self.source_measurement_timestamp = measurement.timestamp
         self.loadedMeasurementNameChanged.emit(self.loaded_measurement_name)
 

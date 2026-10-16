@@ -1,7 +1,7 @@
 # @parity test/measurement-load
 """Loading a saved measurement: the whole load is the model's — its own settings, its peaks shown under
 them, its spectra, label positions and microphone warning, and the detection state. The shared cases in
-measurement-load.json (LD1-LD6), the same as Swift and the web. Mirrors Swift MeasurementLoadTests.
+measurement-load.json (LD1-LD11), the same as Swift and the web. Mirrors Swift MeasurementLoadTests.
 """
 from __future__ import annotations
 
@@ -36,10 +36,14 @@ def _restore_settings():
     AS.set_annotation_visibility_mode(saved[4])
 
 
-def _measurement(name: str):
-    """The measurement a load step names: an inline file of the case table, or a fixture."""
+def _measurement(name: str, renamed: "str | None" = None):
+    """The measurement a load step names: an inline file of the case table, or a fixture — with its
+    name replaced when the step gives one (inline files only)."""
     inline = DATA.get("files", {}).get(name)
     if inline is not None:
+        inline = json.loads(json.dumps(inline))
+        if renamed is not None:
+            inline[0]["measurementName"] = renamed
         return measurements_from_json(json.dumps(inline))[0]
     with open(os.path.join(_HERE, name), encoding="utf-8") as f:
         return measurements_from_json(f.read())[0]
@@ -55,7 +59,7 @@ def test_load(row, qapp):
         elif "peakMin" in step:
             sut.peak_min_threshold = float(step["peakMin"])
         elif "load" in step:
-            sut.load_measurement(_measurement(step["load"]))
+            sut.load_measurement(_measurement(step["load"], step.get("name")))
         elif step.get("highlightFirstPeak"):
             sut.toggle_highlighted_peak(sut.peaks_above_peak_min[0].id)
             assert sut.highlighted_peak_id is not None, "precondition: a peak is highlighted"
@@ -91,6 +95,8 @@ def test_load(row, qapp):
             assert (sut.highlighted_peak_id is not None) is want, field
         elif field == "recordedMicrophone":
             assert (sut.result_provenance is not None) is want, field
+        elif field == "loadedName":
+            assert sut.loaded_measurement_name == want, f"{field}: {sut.loaded_measurement_name!r}"
         elif field == "labelPositions":
             assert len(sut.peak_annotation_offsets) == want, field
         else:

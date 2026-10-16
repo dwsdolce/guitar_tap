@@ -1,6 +1,6 @@
 {
  "slug": "test/measurement-load",
- "about": "Loading a saved measurement: the whole load is the model's. Each case starts a fresh analyzer and runs its 'steps' in order: {\"newTap\": true} starts a tap sequence (detection armed); {\"peakMin\": dB} sets Peak Min as the user would; {\"load\": file} loads a measurement — a fixture every edition carries, or 'inline' (the 'files' entry of that name, a .guitartap array); {\"compare\": [files]} compares those fixtures, as a multi-select in the measurements list does; {\"highlightFirstPeak\": true} highlights the first peak shown, as a click on its dot or card does. 'expect' is what the analyzer holds after the last step: 'measurementType' (the file's type name, e.g. 'Generic Guitar', 'Material (Plate)'), 'peakMinThreshold', 'tapDetectionThreshold' and 'showUnknownModes' (the settings now in effect — the measurement's own), 'shownPeaks' (the peaks shown: for a guitar those at or above Peak Min, for a plate or brace its identified L/C/FLC), 'frozenSpectrum' (a guitar spectrum is held), 'phaseSpectra' (the plate/brace phase spectra held), 'complete' (the measurement is complete), 'detecting' (tap detection is armed), 'comparison' (a comparison is shown), 'microphoneWarning' (a microphone warning is up — no fixture's microphone is connected in a test, so a fixture that names one warns), 'labelPositions' (dragged label positions held), 'recordedMicrophone' (the result carries a recorded microphone — a comparison has none of its own), 'highlightedPeak' (a peak is highlighted). Expected values are Swift's.",
+ "about": "Loading a saved measurement: the whole load is the model's. Each case starts a fresh analyzer and runs its 'steps' in order: {\"newTap\": true} starts a tap sequence (detection armed); {\"peakMin\": dB} sets Peak Min as the user would; {\"load\": file, \"name\"?: text} loads a measurement — a fixture every edition carries, or 'inline' (the 'files' entry of that name, a .guitartap array) — with its name replaced when 'name' is given; {\"compare\": [files]} compares those fixtures, as a multi-select in the measurements list does; {\"highlightFirstPeak\": true} highlights the first peak shown, as a click on its dot or card does. 'expect' is what the analyzer holds after the last step: 'measurementType' (the file's type name, e.g. 'Generic Guitar', 'Material (Plate)'), 'peakMinThreshold', 'tapDetectionThreshold' and 'showUnknownModes' (the settings now in effect — the measurement's own), 'shownPeaks' (the peaks shown: for a guitar those at or above Peak Min, for a plate or brace its identified L/C/FLC), 'frozenSpectrum' (a guitar spectrum is held), 'phaseSpectra' (the plate/brace phase spectra held), 'complete' (the measurement is complete), 'detecting' (tap detection is armed), 'comparison' (a comparison is shown), 'microphoneWarning' (a microphone warning is up — no fixture's microphone is connected in a test, so a fixture that names one warns), 'labelPositions' (dragged label positions held), 'recordedMicrophone' (the result carries a recorded microphone — a comparison has none of its own), 'highlightedPeak' (a peak is highlighted), 'loadedName' (the name a re-save would start from, null for none). Expected values are Swift's.",
  "files": {
   "inline-no-microphone": [
    {
@@ -187,6 +187,45 @@
    ],
    "expect": {
     "highlightedPeak": false
+   }
+  },
+  {
+   "id": "LD9",
+   "note": "an empty name loads as none",
+   "steps": [
+    {
+     "load": "inline-no-microphone",
+     "name": ""
+    }
+   ],
+   "expect": {
+    "loadedName": null
+   }
+  },
+  {
+   "id": "LD10",
+   "note": "a name of only spaces and newlines loads as none (normalizedName)",
+   "steps": [
+    {
+     "load": "inline-no-microphone",
+     "name": "  \n "
+    }
+   ],
+   "expect": {
+    "loadedName": null
+   }
+  },
+  {
+   "id": "LD11",
+   "note": "a name loads trimmed (normalizedName)",
+   "steps": [
+    {
+     "load": "inline-no-microphone",
+     "name": "  Spruce top \n"
+    }
+   ],
+   "expect": {
+    "loadedName": "Spruce top"
    }
   }
  ]

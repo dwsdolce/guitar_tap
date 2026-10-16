@@ -1,0 +1,437 @@
+{
+ "slug": "test/material-measurement-inputs",
+ "about": "A material measurement's own dimensions (Store B, the analyzer's material inputs) and its notes: taken from the Settings defaults (Store A) when the measurement completes, from the file on a load — which never writes the Settings defaults — and written by a save. Each case starts a fresh analyzer and runs its 'steps' in order: {\"settings\": {...}} sets those settings as Settings does (names as Swift's TapDisplaySettings; 'measurementType' and 'plateStiffnessPreset' by their saved names); {\"complete\": true} marks the measurement complete, as a capture does; {\"loading\": bool} sets whether a load is in progress; {\"clearInputs\": true} clears the measurement's dimensions; {\"hasInputs\": bool} checks whether it has them (a precondition); {\"load\": file, \"notes\"?: text} loads that inline file, with its notes replaced when 'notes' is given; {\"save\": true} builds the record a save writes. 'expect' after the last step: 'inputs' (null, or the measurement's dimensions — lengthMM, widthMM, thicknessMM, massG, bodyLengthMM, bodyWidthMM, stiffnessPreset by its saved name, customStiffness — only those named are checked), 'settings' (those settings' values), 'saved' (those fields of the saved record's longitudinal snapshot), 'loadedNotes' (the notes a re-save would start from, null for none). Expected values are Swift's.",
+ "files": {
+  "inline-plate": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000C1",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "longitudinalSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0
+     ],
+     "magnitudes": [
+      -10.0,
+      -20.0
+     ],
+     "minFreq": 50,
+     "maxFreq": 300,
+     "minDB": -100,
+     "maxDB": 0,
+     "isLogarithmic": false,
+     "measurementType": "Material (Plate)",
+     "plateLength": 111,
+     "plateWidth": 222,
+     "plateThickness": 3.33,
+     "plateMass": 44,
+     "guitarBodyLength": 480,
+     "guitarBodyWidth": 370,
+     "plateStiffnessPreset": "Classical Top",
+     "customPlateStiffness": 60
+    }
+   }
+  ],
+  "inline-brace": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000C2",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "longitudinalSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0
+     ],
+     "magnitudes": [
+      -10.0,
+      -20.0
+     ],
+     "minFreq": 50,
+     "maxFreq": 300,
+     "minDB": -100,
+     "maxDB": 0,
+     "isLogarithmic": false,
+     "measurementType": "Material (Brace)",
+     "braceLength": 300,
+     "braceWidth": 25,
+     "braceThickness": 6,
+     "braceMass": 12
+    }
+   }
+  ],
+  "inline-plate-no-body": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000C3",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "longitudinalSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0
+     ],
+     "magnitudes": [
+      -10.0,
+      -20.0
+     ],
+     "minFreq": 50,
+     "maxFreq": 300,
+     "minDB": -100,
+     "maxDB": 0,
+     "isLogarithmic": false,
+     "measurementType": "Material (Plate)",
+     "plateLength": 111,
+     "plateWidth": 222,
+     "plateThickness": 3.33,
+     "plateMass": 44
+    }
+   }
+  ]
+ },
+ "cases": [
+  {
+   "id": "M1",
+   "note": "a plate measurement completing takes its own dimensions from the Settings defaults; none before it completes",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)",
+      "plateLength": 501,
+      "plateWidth": 201,
+      "plateThickness": 4.5,
+      "plateMass": 210,
+      "guitarBodyLength": 480,
+      "guitarBodyWidth": 370,
+      "plateStiffnessPreset": "Classical Top"
+     }
+    },
+    {
+     "hasInputs": false
+    },
+    {
+     "complete": true
+    }
+   ],
+   "expect": {
+    "inputs": {
+     "lengthMM": 501,
+     "widthMM": 201,
+     "thicknessMM": 4.5,
+     "massG": 210,
+     "bodyLengthMM": 480,
+     "bodyWidthMM": 370,
+     "stiffnessPreset": "Classical Top"
+    }
+   }
+  },
+  {
+   "id": "M2",
+   "note": "a guitar measurement completing has no material dimensions",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Generic Guitar"
+     }
+    },
+    {
+     "complete": true
+    }
+   ],
+   "expect": {
+    "inputs": null
+   }
+  },
+  {
+   "id": "M3",
+   "note": "completing while a load is in progress takes nothing from Settings — the load sets the dimensions from the file",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)",
+      "plateLength": 501,
+      "plateWidth": 201,
+      "plateThickness": 4.5,
+      "plateMass": 210,
+      "guitarBodyLength": 480,
+      "guitarBodyWidth": 370,
+      "plateStiffnessPreset": "Classical Top"
+     }
+    },
+    {
+     "loading": true
+    },
+    {
+     "complete": true
+    },
+    {
+     "loading": false
+    }
+   ],
+   "expect": {
+    "inputs": null
+   }
+  },
+  {
+   "id": "M4",
+   "note": "the seed is the completion transition: completing again with no transition does not re-seed cleared dimensions",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)",
+      "plateLength": 501,
+      "plateWidth": 201,
+      "plateThickness": 4.5,
+      "plateMass": 210,
+      "guitarBodyLength": 480,
+      "guitarBodyWidth": 370,
+      "plateStiffnessPreset": "Classical Top"
+     }
+    },
+    {
+     "complete": true
+    },
+    {
+     "hasInputs": true
+    },
+    {
+     "clearInputs": true
+    },
+    {
+     "complete": true
+    }
+   ],
+   "expect": {
+    "inputs": null
+   }
+  },
+  {
+   "id": "M5",
+   "note": "a brace measurement completing takes the brace defaults, not the plate ones",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Brace)",
+      "braceLength": 300,
+      "braceWidth": 25,
+      "braceThickness": 6,
+      "braceMass": 12,
+      "plateLength": 999,
+      "plateWidth": 999,
+      "plateThickness": 9.9,
+      "plateMass": 999
+     }
+    },
+    {
+     "complete": true
+    }
+   ],
+   "expect": {
+    "inputs": {
+     "lengthMM": 300,
+     "widthMM": 25,
+     "thicknessMM": 6,
+     "massG": 12
+    }
+   }
+  },
+  {
+   "id": "M6",
+   "note": "a plate load takes the file's own dimensions and leaves the Settings defaults untouched (the origin bug)",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)",
+      "plateLength": 999,
+      "plateWidth": 999,
+      "plateThickness": 9.9,
+      "plateMass": 999
+     }
+    },
+    {
+     "load": "inline-plate"
+    }
+   ],
+   "expect": {
+    "inputs": {
+     "lengthMM": 111,
+     "widthMM": 222,
+     "thicknessMM": 3.33,
+     "massG": 44,
+     "bodyLengthMM": 480,
+     "bodyWidthMM": 370,
+     "stiffnessPreset": "Classical Top"
+    },
+    "settings": {
+     "plateLength": 999,
+     "plateWidth": 999,
+     "plateThickness": 9.9,
+     "plateMass": 999
+    }
+   }
+  },
+  {
+   "id": "M7",
+   "note": "a brace load takes the file's own brace dimensions and leaves the brace defaults untouched",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Brace)",
+      "braceLength": 999,
+      "braceWidth": 999,
+      "braceThickness": 9.9,
+      "braceMass": 999
+     }
+    },
+    {
+     "load": "inline-brace"
+    }
+   ],
+   "expect": {
+    "inputs": {
+     "lengthMM": 300,
+     "widthMM": 25,
+     "thicknessMM": 6,
+     "massG": 12
+    },
+    "settings": {
+     "braceLength": 999,
+     "braceWidth": 999,
+     "braceThickness": 9.9,
+     "braceMass": 999
+    }
+   }
+  },
+  {
+   "id": "M8",
+   "note": "a save writes the measurement's own dimensions, not the Settings defaults",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)",
+      "plateLength": 999,
+      "plateWidth": 999,
+      "plateThickness": 9.9,
+      "plateMass": 999
+     }
+    },
+    {
+     "load": "inline-plate"
+    },
+    {
+     "save": true
+    }
+   ],
+   "expect": {
+    "saved": {
+     "plateLength": 111,
+     "plateWidth": 222,
+     "plateThickness": 3.33,
+     "plateMass": 44,
+     "guitarBodyLength": 480,
+     "guitarBodyWidth": 370,
+     "plateStiffnessPreset": "Classical Top"
+    }
+   }
+  },
+  {
+   "id": "M9",
+   "note": "a load restores the notes, so a re-save keeps them",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)"
+     }
+    },
+    {
+     "load": "inline-plate",
+     "notes": "spruce, tight grain"
+    }
+   ],
+   "expect": {
+    "loadedNotes": "spruce, tight grain"
+   }
+  },
+  {
+   "id": "M10",
+   "note": "empty notes load as none",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)"
+     }
+    },
+    {
+     "load": "inline-plate",
+     "notes": ""
+    }
+   ],
+   "expect": {
+    "loadedNotes": null
+   }
+  },
+  {
+   "id": "M11",
+   "note": "notes of only spaces and newlines load as none (normalizedNotes)",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)"
+     }
+    },
+    {
+     "load": "inline-plate",
+     "notes": "  \n "
+    }
+   ],
+   "expect": {
+    "loadedNotes": null
+   }
+  },
+  {
+   "id": "M12",
+   "note": "notes load trimmed (normalizedNotes)",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)"
+     }
+    },
+    {
+     "load": "inline-plate",
+     "notes": "  spruce \n"
+    }
+   ],
+   "expect": {
+    "loadedNotes": "spruce"
+   }
+  },
+  {
+   "id": "M13",
+   "note": "a plate file without its body size, stiffness preset or custom stiffness takes those from Settings (its own dimensions still from the file)",
+   "steps": [
+    {
+     "settings": {
+      "measurementType": "Material (Plate)",
+      "guitarBodyLength": 500,
+      "guitarBodyWidth": 390,
+      "plateStiffnessPreset": "Steel String Back",
+      "customPlateStiffness": 55
+     }
+    },
+    {
+     "load": "inline-plate-no-body"
+    }
+   ],
+   "expect": {
+    "inputs": {
+     "lengthMM": 111,
+     "widthMM": 222,
+     "bodyLengthMM": 500,
+     "bodyWidthMM": 390,
+     "stiffnessPreset": "Steel String Back",
+     "customStiffness": 55
+    }
+   }
+  }
+ ]
+}
