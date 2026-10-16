@@ -932,6 +932,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         """
         import numpy as _np
 
+        self.showing_multi_tap_comparison = enabled
         if not enabled:
             self._comparison_data = []
             self.comparison_labels = []
@@ -1067,6 +1068,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         self._comparison_data.clear()
         self.comparison_labels.clear()
+        self.comparison_snapshots = []
 
         with_snapshots = [m for m in measurements if m.spectrum_snapshot is not None]
 
@@ -1135,8 +1137,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # bounds are published atomically. Using set_loaded_axis_range() here keeps
             # the model as the single source of truth (vs computing the union in the canvas).
             self.set_loaded_axis_range(
-                int(min(s.min_freq for s in snaps)),
-                int(max(s.max_freq for s in snaps)),
+                float(min(s.min_freq for s in snaps)),
+                float(max(s.max_freq for s in snaps)),
                 float(min(s.min_db  for s in snaps)),
                 float(max(s.max_db  for s in snaps)),
             )

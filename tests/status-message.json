@@ -1,0 +1,877 @@
+{
+ "slug": "test/status-message",
+ "about": "The status line's words, each reached through the app's own path. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, setPeakMin, newTap, pause, resume, guitarTap, materialTap — at 0 Hz, a silent tap — accept, redo, advance with 'level' / 'extra', audioChunks), and {\"clipping\": bool} (the input starts or stops clipping), {\"deviceChange\": true} (the audio device changes), {\"load\": file}, {\"playingFile\": true} (the engine reports a file playing), {\"check\": {...}}. Fields: 'statusMessage' (exact), 'statusPrefix' / 'statusSuffix' / 'statusContains', 'statusUnchangedByLastStep', 'detecting', 'tapCount'. Expected values are Swift's.",
+ "files": {
+  "loaded": [
+   {
+    "id": "00000000-0000-0000-0000-000000000E51",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "Loaded",
+    "numberOfTaps": 1,
+    "spectrumSnapshot": {
+     "frequencies": [
+      0.0,
+      31.25,
+      62.5,
+      93.75,
+      125.0,
+      156.25,
+      187.5,
+      218.75,
+      250.0,
+      281.25,
+      312.5,
+      343.75,
+      375.0,
+      406.25,
+      437.5,
+      468.75,
+      500.0,
+      531.25,
+      562.5,
+      593.75,
+      625.0,
+      656.25,
+      687.5,
+      718.75,
+      750.0,
+      781.25,
+      812.5,
+      843.75,
+      875.0,
+      906.25,
+      937.5,
+      968.75,
+      1000.0,
+      1031.25,
+      1062.5,
+      1093.75,
+      1125.0,
+      1156.25,
+      1187.5,
+      1218.75,
+      1250.0,
+      1281.25,
+      1312.5,
+      1343.75,
+      1375.0,
+      1406.25,
+      1437.5,
+      1468.75,
+      1500.0,
+      1531.25,
+      1562.5,
+      1593.75,
+      1625.0,
+      1656.25,
+      1687.5,
+      1718.75,
+      1750.0,
+      1781.25,
+      1812.5,
+      1843.75,
+      1875.0,
+      1906.25,
+      1937.5,
+      1968.75
+     ],
+     "magnitudes": [
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -30.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0
+     ],
+     "minFreq": 0,
+     "maxFreq": 2000,
+     "minDB": -90,
+     "maxDB": -20,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ]
+ },
+ "cases": [
+  {
+   "id": "SM1",
+   "note": "a fresh analyzer asks for the first tap",
+   "steps": [],
+   "expect": {
+    "statusMessage": "Tap the guitar to begin"
+   }
+  },
+  {
+   "id": "SM2",
+   "note": "armed for one tap, past the warm-up",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap the guitar..."
+   }
+  },
+  {
+   "id": "SM3",
+   "note": "armed for three taps, past the warm-up",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap the guitar 3 times..."
+   }
+  },
+  {
+   "id": "SM4",
+   "note": "clipping shows the warning over the status; a status written meanwhile shows when it clears",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "clipping": true
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ Input clipping — reduce mic gain"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ Input clipping — reduce mic gain"
+     }
+    },
+    {
+     "clipping": false
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap the guitar 3 times..."
+   }
+  },
+  {
+   "id": "SM5",
+   "note": "a device change shows that the audio is reinitializing",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "deviceChange": true
+    }
+   ],
+   "expect": {
+    "statusMessage": "Audio device changed - reinitializing..."
+   }
+  },
+  {
+   "id": "SM6",
+   "note": "Pause shows the paused prompt; Resume brings the tap prompt back",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "pause": true
+    },
+    {
+     "check": {
+      "statusMessage": "Detection paused – tap freely, then resume"
+     }
+    },
+    {
+     "resume": true
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap the guitar..."
+   }
+  },
+  {
+   "id": "SM7",
+   "note": "completion is announced once and stays through a Peak Min change",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "check": {
+      "statusPrefix": "Analysis complete! ",
+      "statusSuffix": " (from 2 averaged taps)."
+     }
+    },
+    {
+     "setPeakMin": -30
+    }
+   ],
+   "expect": {
+    "statusUnchangedByLastStep": true
+   }
+  },
+  {
+   "id": "SM8",
+   "note": "a loaded measurement shows the frozen prompt, through a Peak Min change",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "loaded"
+    },
+    {
+     "check": {
+      "statusMessage": "Loaded measurement (frozen). Press ‘New Tap’ to start a new measurement."
+     }
+    },
+    {
+     "setPeakMin": -30
+    }
+   ],
+   "expect": {
+    "statusMessage": "Loaded measurement (frozen). Press ‘New Tap’ to start a new measurement."
+   }
+  },
+  {
+   "id": "SM9",
+   "note": "a plate without FLC completes with its fL and fC",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    }
+   ],
+   "expect": {
+    "statusPrefix": "Complete — fL: ",
+    "statusContains": " Hz, fC: ",
+    "statusSuffix": " Hz"
+   }
+  },
+  {
+   "id": "SM10",
+   "note": "a plate with FLC completes with a pointer to the results",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "materialTap": {
+      "phase": "FLC",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    }
+   ],
+   "expect": {
+    "statusMessage": "Complete - check Results"
+   }
+  },
+  {
+   "id": "SM11",
+   "note": "the fL prompt stays through the warm-up",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "check": {
+      "statusMessage": "Ready for fL tap"
+     }
+    },
+    {
+     "audioChunks": 1,
+     "level": -80
+    }
+   ],
+   "expect": {
+    "statusMessage": "Ready for fL tap"
+   }
+  },
+  {
+   "id": "SM12",
+   "note": "Accept on fL asks for the rotation, and that stays through the warm-up",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "check": {
+      "statusMessage": "Rotate 90° and tap for fC"
+     }
+    },
+    {
+     "audioChunks": 1,
+     "level": -80
+    }
+   ],
+   "expect": {
+    "statusMessage": "Rotate 90° and tap for fC"
+   }
+  },
+  {
+   "id": "SM13",
+   "note": "Accept on fC (FLC on) asks to set up for fLC, and that stays",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "check": {
+      "statusMessage": "Set up for fLC tap, then tap"
+     }
+    },
+    {
+     "audioChunks": 1,
+     "level": -80
+    }
+   ],
+   "expect": {
+    "statusMessage": "Set up for fLC tap, then tap"
+   }
+  },
+  {
+   "id": "SM14",
+   "note": "the re-arm after a guitar tap's rest leaves the status the capture set",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "check": {
+      "statusMessage": "Tap 1/3 captured. Tap again..."
+     }
+    },
+    {
+     "advance": "tapCooldown",
+     "level": -20
+    }
+   ],
+   "expect": {
+    "detecting": true,
+    "statusMessage": "Tap 1/3 captured. Tap again..."
+   }
+  },
+  {
+   "id": "SM15",
+   "note": "a detected tap shows it is capturing",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap 1/3 capturing..."
+   }
+  },
+  {
+   "id": "SM16",
+   "note": "the last tap's capture announces processing",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    }
+   ],
+   "expect": {
+    "statusMessage": "All taps captured. Processing..."
+   }
+  },
+  {
+   "id": "SM17",
+   "note": "Redo on fL asks for the tap again",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "redo": true
+    }
+   ],
+   "expect": {
+    "statusMessage": "Ready for fL tap — tap again"
+   }
+  },
+  {
+   "id": "SM18",
+   "note": "Redo on fC asks for the tap again",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "redo": true
+    }
+   ],
+   "expect": {
+    "statusMessage": "Ready for fC tap — tap again"
+   }
+  },
+  {
+   "id": "SM19",
+   "note": "a material tap short of the phase's count counts and asks for another",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 150
+     }
+    }
+   ],
+   "expect": {
+    "statusMessage": "fL tap 1/3 captured. Tap again..."
+   }
+  },
+  {
+   "id": "SM20",
+   "note": "a plate's L taps count up, then the phase is ready to review",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "statusMessage": "fL tap 1/3 captured. Tap again..."
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "statusMessage": "fL tap 2/3 captured. Tap again..."
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    }
+   ],
+   "expect": {
+    "statusMessage": "fL: 60.0 Hz — Accept to continue or Redo to re-tap"
+   }
+  },
+  {
+   "id": "SM21",
+   "note": "a tap with nothing in the phase's band asks again and does not count",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 0
+     }
+    }
+   ],
+   "expect": {
+    "statusMessage": "No resonance detected — tap again",
+    "tapCount": 0
+   }
+  },
+  {
+   "id": "SM22",
+   "note": "playing a file, fL's completion announces the move on to fC",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "playingFile": true
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    }
+   ],
+   "expect": {
+    "statusMessage": "File: fL complete, capturing fC..."
+   }
+  },
+  {
+   "id": "SM23",
+   "note": "a brace completes",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 150
+     }
+    }
+   ],
+   "expect": {
+    "statusMessage": "Complete - check Results"
+   }
+  }
+ ]
+}

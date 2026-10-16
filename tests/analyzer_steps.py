@@ -6,7 +6,7 @@ steps; this runs one. Mirrors Swift GuitarTapTests/AnalyzerSteps.swift and web t
 """
 from __future__ import annotations
 
-from audio_clock_feed import advance_audio
+from audio_clock_feed import AUDIO_FEED_CHUNK_SECONDS, advance_audio
 from synthetic_tap import synthetic_tap
 
 from guitar_tap.models.material_tap_phase import MaterialTapPhase
@@ -24,11 +24,14 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
     - ``{"settings": {"type": saved name, "measureFlc": bool}}`` — as Settings writes them
     - ``{"setTaps": n}`` — the Taps control
     - ``{"setThreshold": dB}`` — the Threshold control
+    - ``{"setPeakMin": dB}`` — the Peak Min control
     - ``{"newTap": true}``, ``{"pause": true}``, ``{"resume": true}``, ``{"cancel": true}``
     - ``{"guitarTap": hz}`` — a guitar capture finished on a synthetic tap one capture long
     - ``{"materialTap": {"phase": "L" | "C" | "FLC", "hz": hz}}`` — a material capture on a 0.5 s tap
     - ``{"accept": true}``, ``{"redo": true}`` — the phase under review
-    - ``{"advance": "tapCooldown" | "captureWindow" | seconds, "fraction"?: f}`` — quiet audio
+    - ``{"advance": "tapCooldown" | "captureWindow" | "warmupPeriod" | seconds, "fraction"?: f, "extra"?: s,
+      "level"?: dB}`` — that much audio (quiet unless ``level`` is given)
+    - ``{"audioChunks": n, "level": dB}`` — n chunks of audio at that level (two loud ones are a tap)
     """
     if "settings" in step:
         settings = step["settings"]
@@ -40,6 +43,8 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
         sut.set_tap_num(step["setTaps"])
     elif "setThreshold" in step:
         sut.tap_detection_threshold = float(step["setThreshold"])
+    elif "setPeakMin" in step:
+        sut.peak_min_threshold = float(step["setPeakMin"])
     elif step.get("newTap"):
         sut.start_tap_sequence()
     elif step.get("pause"):
@@ -59,8 +64,11 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
         sut.redo_current_phase()
     elif "advance" in step:
         advance = step["advance"]
-        seconds = {"tapCooldown": sut.tap_cooldown, "captureWindow": sut.capture_window}.get(advance, advance)
-        advance_audio(sut, seconds * step.get("fraction", 1.0))
+        seconds = {"tapCooldown": sut.tap_cooldown, "captureWindow": sut.capture_window,
+                   "warmupPeriod": sut.warmup_period}.get(advance, advance)
+        advance_audio(sut, seconds * step.get("fraction", 1.0) + step.get("extra", 0.0), step.get("level", -90.0))
+    elif "audioChunks" in step:
+        advance_audio(sut, step["audioChunks"] * AUDIO_FEED_CHUNK_SECONDS, step["level"])
     else:
         return False
     return True

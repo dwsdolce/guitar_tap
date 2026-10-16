@@ -4221,12 +4221,11 @@ class MainWindow(QtWidgets.QMainWindow):
         _is_saved_measurement = analyzer.is_saved_measurement_comparison
         _is_multi_tap_initiated = analyzer.showing_multi_tap_comparison
         if is_comparing and _is_saved_measurement:
-            # Entering saved-measurement comparison — model already reset these, but
-            # also uncheck and hide the toggle button and ensure the multi-tap panel is hidden.
+            # Entering saved-measurement comparison — the model has already turned the per-tap
+            # overlay off; uncheck and hide the toggle button and ensure the multi-tap panel is hidden.
             # Block signals on the button so setChecked(False) does NOT fire toggled(),
             # which would call _on_multi_tap_toggled → apply_multi_tap_comparison_overlays(False)
             # → comparisonChanged(False), undoing the saved-comparison state we just set up.
-            analyzer.showing_multi_tap_comparison = False
             palette.tag(self._multi_tap_toggle_btn, tint=palette.Role.ACCENT)
             palette.set_on(self._multi_tap_toggle_btn, False)
             self._multi_tap_toggle_btn.setVisible(False)
@@ -4322,7 +4321,6 @@ class MainWindow(QtWidgets.QMainWindow):
         Mirrors Swift TapAnalysisResultsView multi-tap toggle button action.
         """
         analyzer = self.fft_canvas.analyzer
-        analyzer.showing_multi_tap_comparison = checked
         analyzer.apply_multi_tap_comparison_overlays(enabled=checked)
         self._refresh_selection_buttons()
 

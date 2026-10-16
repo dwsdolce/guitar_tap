@@ -1,0 +1,134 @@
+{
+ "slug": "test/effective-peak-id",
+ "about": "The id each material phase's peak is saved and exported under (Swift effectiveLongitudinalPeakID / effectiveCrossPeakID / effectiveFlcPeakID): none until the phase's peak is chosen, then that peak's id. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, newTap, materialTap, accept, advance). 'expect' per phase (L, C, FLC): null — no id — or 'selected' — the id of that phase's selected peak, which is there. Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "EP1",
+   "note": "before any phase finalises, no phase has a peak id",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "L": null,
+    "C": null,
+    "FLC": null
+   }
+  },
+  {
+   "id": "EP2",
+   "note": "after the L taps, the fL id is the chosen fL peak's",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    }
+   ],
+   "expect": {
+    "L": "selected",
+    "C": null,
+    "FLC": null
+   }
+  },
+  {
+   "id": "EP3",
+   "note": "after Accept and the C taps, the fC id is the chosen fC peak's",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    }
+   ],
+   "expect": {
+    "L": "selected",
+    "C": "selected",
+    "FLC": null
+   }
+  },
+  {
+   "id": "EP4",
+   "note": "after the FLC taps, the FLC id is the chosen FLC peak's",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "materialTap": {
+      "phase": "FLC",
+      "hz": 60
+     }
+    }
+   ],
+   "expect": {
+    "L": "selected",
+    "C": "selected",
+    "FLC": "selected"
+   }
+  }
+ ]
+}

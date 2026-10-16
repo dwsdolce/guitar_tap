@@ -1,6 +1,6 @@
 {
  "slug": "test/measurement-codable",
- "about": "A saved measurement's own logic — the same cases in every edition. Every case is a classical guitar measurement (guitarType 'Classical', measurementType 'Classical Guitar') holding 'peaks' (id, frequency in Hz, magnitude in dB), the 'selected' peak ids (null: no selection saved — a legacy file; []: Select None) and mode 'overrides' (peak id → label). tapToneRatio: the measurement's ratio, f(Top) / f(Air) over the definitive peaks — 'expect' within 'ratioTolerance', or null for none; 'live' rows are also given to a live analyzer with the same peaks, selection and overrides, which must give the same ratio. modeLabels: the label each peak is written with, in peak order — and the label the measurement gives it for display (the Details pane's), which must be the same; 'storedLabels' are labels the file already carries. selectionHeal: the measurement written and read back — whether the read flags it healed, and the selection it holds; 'material' rows are a material measurement (a longitudinal snapshot, no guitar spectrum). Expected values are Swift's. snapshotBytes: the spectrum written as base64 'frequenciesData' / 'magnitudesData' — exact text — and read back to the same float32 values. decode: a 'file' (the .guitartap array) and the fields it must read to: measurementName, peakMinThreshold, sampleRate (null: unknown), the snapshot's frequencies and magnitudes, overrides (peak id → label, ids compared ignoring case; {} for none), peakCount, the first peak's pitchNote, annotationVisibilityMode. write: a 'file' read and written again by the edition's writer — the keys that must be 'present' and 'absent' (a key anywhere in the document; 'peaks[].modeLabel' on every peak), the exact number 'text' written for a key, and text the output 'contains' once compact. fixtures: the real files every edition carries — each read to the facts given (the first measurement's name, peak count, sample rate, whether it is a comparison, its override labels), each override naming a peak the file contains, written again with no legacy key and with the spectrum's 'frequenciesData' / 'magnitudesData' exactly as the file has them, and read back with the same peaks and spectrum.",
+ "about": "A saved measurement's own logic — the same cases in every edition. Every case is a classical guitar measurement (guitarType 'Classical', measurementType 'Classical Guitar') holding 'peaks' (id, frequency in Hz, magnitude in dB), the 'selected' peak ids (null: no selection saved — a legacy file; []: Select None) and mode 'overrides' (peak id → label). tapToneRatio: the measurement's ratio, f(Top) / f(Air) over the definitive peaks — 'expect' within 'ratioTolerance', or null for none; 'live' rows are also given to a live analyzer with the same peaks, selection and overrides, which must give the same ratio. modeLabels: the label each peak is written with, in peak order — and the label the measurement gives it for display (the Details pane's), which must be the same; 'storedLabels' are labels the file already carries. selectionHeal: the measurement written and read back — whether the read flags it healed, and the selection it holds; 'material' rows are a material measurement (a longitudinal snapshot, no guitar spectrum). Expected values are Swift's. snapshotBytes: the spectrum written as base64 'frequenciesData' / 'magnitudesData' — exact text — and read back to the same float32 values. decode: a 'file' (the .guitartap array) and the fields it must read to: measurementName, peakMinThreshold, sampleRate (null: unknown), the snapshot's frequencies and magnitudes, overrides (peak id → label, ids compared ignoring case; {} for none), peakCount, the first peak's pitchNote, annotationVisibilityMode. write: a 'file' read and written again by the edition's writer — the keys that must be 'present' and 'absent' (a key anywhere in the document; 'peaks[].modeLabel' on every peak), the exact number 'text' written for a key, and text the output 'contains' once compact. fixtures: the real files every edition carries — each read to the facts given (the first measurement's name, peak count, sample rate, whether it is a comparison, its override labels), each override naming a peak the file contains, written again with no legacy key and with the spectrum's 'frequenciesData' / 'magnitudesData' exactly as the file has them, and read back with the same peaks and spectrum. comparison: a 'file' holding a comparison record, read (and, with 'roundTrip', written by the edition's writer and read again); 'expect' — 'isComparison', 'healed' (the reading healed something and flags the record to be saved again), 'entries' (per entry, in order, the fields named: id, label, colorComponents, guitarType — null for none — peakCount, modePeakIds: the stored map, mode display name → peak id, ids compared ignoring case; or null for no entries), 'modeFrequency' (the first entry's stored modes read back as frequencies), 'absent' (keys the written document does not contain).",
  "guitarType": "Classical",
  "measurementType": "Classical Guitar",
  "ratioTolerance": 1e-06,
@@ -427,6 +427,15 @@
     }
    ],
    "selected": [],
+   "overrides": {},
+   "expectHealed": false,
+   "expectSelected": []
+  },
+  {
+   "id": "SH6",
+   "note": "no peaks and no selection saved (a comparison record, or nothing detected): nothing to select, so not healed",
+   "peaks": [],
+   "selected": null,
    "overrides": {},
    "expectHealed": false,
    "expectSelected": []
@@ -977,6 +986,378 @@
    "sampleRate": 48000,
    "isComparison": false,
    "overrideLabels": []
+  }
+ ],
+ "comparison": [
+  {
+   "id": "CR1",
+   "note": "a comparison record written and read back keeps each entry — id, label, colour, guitar type, peaks and stored modes",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F21",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "measurementName": "Pair",
+     "comparisonEntries": [
+      {
+       "id": "00000000-0000-0000-0000-000000000F11",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F02",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
+        "Top": "00000000-0000-0000-0000-000000000F02"
+       }
+      },
+      {
+       "id": "00000000-0000-0000-0000-000000000F12",
+       "label": "B",
+       "colorComponents": [
+        1,
+        0.5,
+        0,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F03",
+         "frequency": 98.0,
+         "magnitude": -26.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F04",
+         "frequency": 205.0,
+         "magnitude": -22.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F03",
+        "Top": "00000000-0000-0000-0000-000000000F04"
+       }
+      }
+     ]
+    }
+   ],
+   "roundTrip": true,
+   "expect": {
+    "isComparison": true,
+    "healed": false,
+    "entries": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F11",
+      "label": "A",
+      "colorComponents": [
+       0,
+       0,
+       1,
+       1
+      ],
+      "guitarType": "Classical",
+      "peakCount": 2,
+      "modePeakIds": {
+       "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
+       "Top": "00000000-0000-0000-0000-000000000F02"
+      }
+     },
+     {
+      "id": "00000000-0000-0000-0000-000000000F12",
+      "label": "B",
+      "colorComponents": [
+       1,
+       0.5,
+       0,
+       1
+      ],
+      "guitarType": "Classical",
+      "peakCount": 2,
+      "modePeakIds": {
+       "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F03",
+       "Top": "00000000-0000-0000-0000-000000000F04"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "CR2",
+   "note": "an entry with no guitar type is written without one",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F22",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "measurementName": "Pair",
+     "comparisonEntries": [
+      {
+       "id": "00000000-0000-0000-0000-000000000F11",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01"
+       }
+      }
+     ]
+    }
+   ],
+   "roundTrip": true,
+   "expect": {
+    "absent": [
+     "guitarType"
+    ],
+    "entries": [
+     {
+      "guitarType": null
+     }
+    ]
+   }
+  },
+  {
+   "id": "CR3",
+   "note": "an entry saved before the stored modes existed is healed by position on reading, and flagged to be saved again",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F23",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "measurementName": "Pair",
+     "comparisonEntries": [
+      {
+       "id": "00000000-0000-0000-0000-000000000F11",
+       "label": "legacy",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F02",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical"
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "healed": true,
+    "entries": [
+     {
+      "modePeakIds": {
+       "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
+       "Top": "00000000-0000-0000-0000-000000000F02"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "CR4",
+   "note": "the stored modes are read back as stored — not classified again — even where classification would differ",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F24",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "measurementName": "Pair",
+     "comparisonEntries": [
+      {
+       "id": "00000000-0000-0000-0000-000000000F11",
+       "label": "x",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F02",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Top": "00000000-0000-0000-0000-000000000F01"
+       }
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "modeFrequency": {
+     "Top": 95
+    }
+   }
+  },
+  {
+   "id": "CR5",
+   "note": "an ordinary measurement is not a comparison",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F25",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": []
+    }
+   ],
+   "expect": {
+    "isComparison": false,
+    "entries": null
+   }
   }
  ]
 }

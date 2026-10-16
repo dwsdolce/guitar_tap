@@ -921,6 +921,16 @@
     "web"
    ],
    "note": "the louder peak is the band's peak"
+  },
+  {
+   "id": "RM04",
+   "guitarType": "classical",
+   "peaks": [],
+   "expect": {},
+   "from": [
+    "python"
+   ],
+   "note": "no peaks, no modes"
   }
  ],
  "bands": {

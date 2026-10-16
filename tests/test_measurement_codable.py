@@ -605,9 +605,9 @@ def test_selection_heal(row):
 # ---------------------------------------------------------------------------
 # The file format — the shared cases in measurement-codable.json
 #
-# The spectrum's bytes (SB), what a file reads to (DC), what the writer emits (WR), and the real
-# fixtures every edition carries: the same cases as Swift and the web. Mirrors Swift
-# MeasurementCodecTests.
+# The spectrum's bytes (SB), what a file reads to (DC), what the writer emits (WR), a comparison
+# record (CR) and the real fixtures every edition carries: the same cases as Swift and the web.
+# Mirrors Swift MeasurementCodecTests.
 # ---------------------------------------------------------------------------
 
 import re  # noqa: E402
@@ -695,6 +695,54 @@ def test_write(row):
     compact = json.dumps(doc, separators=(",", ":"), ensure_ascii=False)
     for s in row.get("contains", []):
         assert s in compact, f"contains {s}"
+
+
+@pytest.mark.parametrize("row", LOGIC["comparison"], ids=lambda r: r["id"])
+def test_comparison(row):
+    from guitar_tap.models.guitar_mode import GuitarMode
+    first = measurements_from_json(json.dumps(row["file"]))[0]
+    m, doc = first, None
+    if row.get("roundTrip"):
+        text = measurements_to_json([first])
+        doc = json.loads(text)
+        m = measurements_from_json(text)[0]
+    for field, want in row["expect"].items():
+        if field == "isComparison":
+            assert m.is_comparison == want, field
+        elif field == "healed":
+            assert first.was_healed == want, field
+        elif field == "entries":
+            if want is None:
+                assert m.comparison_entries is None, field
+                continue
+            assert len(m.comparison_entries) == len(want), f"{field}: count"
+            for e, w in zip(m.comparison_entries, want):
+                for key, value in w.items():
+                    if key == "id":
+                        assert e.id.lower() == value.lower(), "entry id"
+                    elif key == "label":
+                        assert e.label == value, "entry label"
+                    elif key == "colorComponents":
+                        assert list(e.color_components) == value, "entry colour"
+                    elif key == "guitarType":
+                        assert e.guitar_type == value, "entry guitarType"
+                    elif key == "peakCount":
+                        assert len(e.peaks) == value, "entry peakCount"
+                    elif key == "modePeakIds":
+                        got = {k: v.lower() for k, v in (e.mode_peak_ids or {}).items()}
+                        assert got == {k: v.lower() for k, v in value.items()}, "entry modePeakIds"
+                    else:
+                        pytest.fail(f"unknown entry field {key}")
+        elif field == "modeFrequency":
+            e = m.comparison_entries[0]
+            for name, hz in want.items():
+                assert e.mode_frequency(GuitarMode(name)) == hz, f"{field} {name}"
+        elif field == "absent":
+            assert doc is not None, "absent needs roundTrip"
+            for key in want:
+                assert not _has_key(key, doc), f"{key} not written"
+        else:
+            pytest.fail(f"unknown field {field}")
 
 
 @pytest.mark.parametrize("row", LOGIC["fixtures"], ids=lambda r: r["file"])

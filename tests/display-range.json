@@ -1,6 +1,6 @@
 {
  "slug": "test/display-range",
- "about": "The chart's display range: widening onto a newly identified plate / brace peak (10% padding, never below 1 Hz or above 5 kHz, never narrowed), and when the chart's range moves (Settings Done, a new measurement, a widening while showing a load). Ranges are [minFreq, maxFreq, minDB, maxDB]; null is no range. Measurement types are Swift's case names. Expected values are Swift's. expandedToInclude rows: [hz, min, max, expected min, expected max]; widenedOnto rows: [hz, type, fromLoad, min, max, expected min, expected max].",
+ "about": "The chart's display range: widening onto a newly identified plate / brace peak (10% padding, never below 1 Hz or above 5 kHz, never narrowed), and when the chart's range moves (Settings Done, a new measurement, a widening while showing a load). Ranges are [minFreq, maxFreq, minDB, maxDB]; null is no range. Measurement types are Swift's case names. Expected values are Swift's. expandedToInclude rows: [hz, min, max, expected min, expected max]; widenedOnto rows: [hz, type, fromLoad, min, max, expected min, expected max]. 'scenarios' are cases on the analyzer, each from a fresh one (threshold −40, Taps 1), as steps: the shared steps of tooling/analyzer-steps, {\"load\": file} — a 'files' entry, loaded as the app loads a file — {\"listen\": true}, from which the material peaks' announcements are recorded, and {\"check\": {...}}. Fields: 'loadedRange' (the range a load publishes for the chart, [minFreq, maxFreq, minDB, maxDB], or 'saved' — the saved display range in the settings), 'analysisRange' ([min, max] Hz peaks are searched in), 'lastAnnounced' (each phase's last announced peak frequency), 'announced' (each phase's announcements since listening, in order — a frequency, or null for cleared), 'peaksFromLoad', 'sequenceStarts' (the web's own count). 'only' marks a case for one edition.",
  "expandedToInclude": [
   [
    1000,
@@ -324,6 +324,224 @@
     -90,
     -10
    ]
+  }
+ ],
+ "files": {
+  "plate-range": [
+   {
+    "id": "00000000-0000-0000-0000-000000000D10",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "longitudinalSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0
+     ],
+     "magnitudes": [
+      -10.0,
+      -20.0
+     ],
+     "minFreq": 24.37,
+     "maxFreq": 46.81,
+     "minDB": -75.5,
+     "maxDB": -61.25,
+     "isLogarithmic": false,
+     "measurementType": "Material (Plate)"
+    }
+   }
+  ],
+  "plate-peaks": [
+   {
+    "id": "00000000-0000-0000-0000-000000000D11",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [
+     {
+      "id": "00000000-0000-0000-0000-000000000D01",
+      "frequency": 1500.0,
+      "magnitude": -20.0,
+      "quality": 20.0,
+      "bandwidth": 5.0,
+      "timestamp": "2026-01-01T00:00:00Z"
+     },
+     {
+      "id": "00000000-0000-0000-0000-000000000D02",
+      "frequency": 180.0,
+      "magnitude": -25.0,
+      "quality": 20.0,
+      "bandwidth": 5.0,
+      "timestamp": "2026-01-01T00:00:00Z"
+     },
+     {
+      "id": "00000000-0000-0000-0000-000000000D03",
+      "frequency": 410.0,
+      "magnitude": -30.0,
+      "quality": 20.0,
+      "bandwidth": 5.0,
+      "timestamp": "2026-01-01T00:00:00Z"
+     }
+    ],
+    "longitudinalSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0
+     ],
+     "magnitudes": [
+      -10.0,
+      -20.0
+     ],
+     "minFreq": 50,
+     "maxFreq": 300,
+     "minDB": -100,
+     "maxDB": 0,
+     "isLogarithmic": false,
+     "measurementType": "Material (Plate)"
+    },
+    "selectedLongitudinalPeakID": "00000000-0000-0000-0000-000000000D01",
+    "selectedCrossPeakID": "00000000-0000-0000-0000-000000000D02",
+    "selectedFlcPeakID": "00000000-0000-0000-0000-000000000D03"
+   }
+  ],
+  "no-spectrum": [
+   {
+    "id": "00000000-0000-0000-0000-000000000D12",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": []
+   }
+  ]
+ },
+ "scenarios": [
+  {
+   "id": "DR1",
+   "note": "loading a plate publishes its snapshot's range, exactly",
+   "steps": [
+    {
+     "load": "plate-range"
+    }
+   ],
+   "expect": {
+    "loadedRange": [
+     24.37,
+     46.81,
+     -75.5,
+     -61.25
+    ]
+   }
+  },
+  {
+   "id": "DR2",
+   "note": "loading a measurement with no spectrum publishes the saved range",
+   "steps": [
+    {
+     "load": "no-spectrum"
+    }
+   ],
+   "expect": {
+    "loadedRange": "saved"
+   }
+  },
+  {
+   "id": "DR3",
+   "note": "a load leaves the analysis range — the fixed 30–2000 Hz peaks are searched in",
+   "steps": [
+    {
+     "load": "plate-range"
+    }
+   ],
+   "expect": {
+    "analysisRange": [
+     30,
+     2000
+    ]
+   }
+  },
+  {
+   "id": "DR4",
+   "note": "loading a plate announces each of its peaks",
+   "steps": [
+    {
+     "listen": true
+    },
+    {
+     "load": "plate-peaks"
+    }
+   ],
+   "expect": {
+    "lastAnnounced": {
+     "L": 1500,
+     "C": 180,
+     "FLC": 410
+    }
+   }
+  },
+  {
+   "id": "DR5",
+   "note": "a loaded plate's peaks are marked as from the load until a new sequence",
+   "steps": [
+    {
+     "load": "plate-peaks"
+    },
+    {
+     "check": {
+      "peaksFromLoad": true
+     }
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "peaksFromLoad": false
+   }
+  },
+  {
+   "id": "DR6",
+   "note": "redoing a phase announces its peak cleared — once",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "listen": true
+    },
+    {
+     "redo": true
+    }
+   ],
+   "expect": {
+    "announced": {
+     "L": [
+      null
+     ]
+    }
+   }
+  },
+  {
+   "id": "DR7",
+   "only": "web",
+   "note": "each sequence start is counted, complete or not (the web's chart view resets on it)",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "sequenceStarts": 2
+   }
   }
  ]
 }

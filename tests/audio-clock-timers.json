@@ -1,0 +1,255 @@
+{
+ "slug": "test/audio-clock-timers",
+ "about": "The tap lifecycle's delays — the rest between material taps, the FLC hold, the capture window — run on the AUDIO clock, so file playback, which advances audio faster or slower than real time, moves them with the audio. Each case advances only audio, through the path audio takes, so a delay on the wall clock would not fire. Each starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, guitarTap, materialTap, accept, advance — with 'level' and 'extra' — and audioChunks, two loud chunks being a tap the analyzer detects), plus {\"fileEnd\": true} (the file ends: what the engine calls), {\"playingFile\": true} (the engine reports a file playing), {\"noteWarmup\": true} (remembers when the warm-up started) and {\"check\": {...}}. Fields: 'detecting', 'phase' (Swift's raw value), 'complete', 'gatedCapture' (a capture is filling), 'aboveThreshold' (the level latch is up), 'warmupAtLastChunk' (the warm-up started at the audio time of the last chunk), 'warmupUnchanged' (the warm-up start is the one noted). The safety timeout — on the wall clock by design — is not here yet. Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "AT1",
+   "note": "between taps of a plate phase, detection rests a tap cooldown of audio",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "phase": "Capturing Longitudinal",
+      "detecting": false
+     }
+    },
+    {
+     "advance": "tapCooldown",
+     "fraction": 0.5
+    },
+    {
+     "check": {
+      "detecting": false
+     }
+    },
+    {
+     "advance": "tapCooldown",
+     "fraction": 0.5
+    }
+   ],
+   "expect": {
+    "detecting": true
+   }
+  },
+  {
+   "id": "AT2",
+   "note": "after fC is accepted, the FLC phase arms a tap cooldown of audio later, its warm-up from the chunk that ended the hold",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "check": {
+      "phase": "Waiting for FLC Tap"
+     }
+    },
+    {
+     "advance": "tapCooldown",
+     "fraction": 0.5
+    },
+    {
+     "check": {
+      "phase": "Waiting for FLC Tap",
+      "detecting": false
+     }
+    },
+    {
+     "advance": "tapCooldown",
+     "fraction": 0.5
+    }
+   ],
+   "expect": {
+    "phase": "Capturing FLC",
+    "detecting": true,
+    "warmupAtLastChunk": true
+   }
+  },
+  {
+   "id": "AT3",
+   "note": "the file's end releases the pending capture window — the audio clock stops with the file",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "check": {
+      "complete": false
+     }
+    },
+    {
+     "fileEnd": true
+    }
+   ],
+   "expect": {
+    "complete": true
+   }
+  },
+  {
+   "id": "AT4",
+   "note": "the file's end does not release a pending rest — it ends when its audio has passed",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "fileEnd": true
+    },
+    {
+     "check": {
+      "detecting": false
+     }
+    },
+    {
+     "advance": "tapCooldown"
+    }
+   ],
+   "expect": {
+    "detecting": true
+   }
+  },
+  {
+   "id": "AT5",
+   "note": "a tap detected from the audio turns detection off",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "check": {
+      "detecting": true
+     }
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    }
+   ],
+   "expect": {
+    "detecting": false,
+    "gatedCapture": true
+   }
+  },
+  {
+   "id": "AT6",
+   "note": "playing a file, a phase's last tap advances to the next phase at once, latched above and without restarting the warm-up",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "playingFile": true
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    },
+    {
+     "noteWarmup": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    }
+   ],
+   "expect": {
+    "phase": "Capturing Cross-grain",
+    "detecting": true,
+    "aboveThreshold": true,
+    "warmupUnchanged": true
+   }
+  }
+ ]
+}

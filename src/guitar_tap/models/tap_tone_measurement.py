@@ -1142,7 +1142,8 @@ class TapToneMeasurement:
                     healed = True
 
         # --- Heal the guitar DEFINITIVE selection (Air/Top/Back at most one each) ---
-        # Guitar only. A file with no saved selection is auto-selected (strongest per mode via the
+        # Guitar only, and only with peaks: a record without any (a comparison) has nothing to select.
+        # A file with no saved selection is auto-selected (strongest per mode via the
         # EFFECTIVE mode); a file with >1 selected in a single-holder mode is pruned to the
         # strongest. Same `healed` re-save contract as the duplicate heal. Mirrors Swift init(from:).
         _mt_raw = d.get("measurementType")

@@ -1,25 +1,126 @@
 # @parity test/comparison
+"""Comparing saved measurements: the entries a comparison holds, their labels and range, the mode,
+detection standing down, the per-tap overlay giving way, each entry's Air/Top/Back taken from its
+source, and saving and loading a comparison. The shared cases in comparison.json (CM1-CM25), the same
+as Swift and the web. Below them, Python's own comparisonChanged signal.
 """
-Port of ComparisonModeTests.swift — comparison overlay loading and clearing.
-
-Mirrors Swift test plan coverage CP-U1–CP-U8 and DisplayModeTransitionTests.
-
-Every case runs on the real analyzer (TapToneAnalyzer.for_testing()), as Swift's run on a real
-TapToneAnalyzer — so a change to the analyzer is tested as it is, never through a copy.
-"""
-
 from __future__ import annotations
 
-import sys, os
-import uuid
+import json
+import os
+import sys
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))
 
 from PySide6 import QtWidgets
 
-_APP: QtWidgets.QApplication | None = None
+from analyzer_steps import make_steps_analyzer, run_analyzer_step  # noqa: E402
+
+from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode  # noqa: E402
+from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS  # noqa: E402
+from guitar_tap.views.tap_analysis_results_view import measurements_file, measurements_from_json  # noqa: E402
+
+_HERE = os.path.dirname(__file__)
+with open(os.path.join(_HERE, "comparison.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
+_PEAK_NAMES = {k.upper(): v for k, v in DATA["peakNames"].items()}
+
+
+@pytest.fixture(autouse=True)
+def _restore_type():
+    """The measurement type is global; put it back afterwards."""
+    saved = TDS.measurement_type()
+    yield
+    TDS.set_measurement_type(saved)
+
+
+def _measurement(name: str):
+    return measurements_from_json(json.dumps(DATA["files"][name]))[0]
+
+
+def _peak_name(pid) -> str:
+    return _PEAK_NAMES.get(str(pid).upper(), str(pid))
+
+
+def _check(fields: dict, sut, ranges: list) -> None:
+    entries = sut._comparison_data
+    for field, want in fields.items():
+        if field == "entries":
+            assert len(entries) == want, field
+        elif field == "labels":
+            assert [e["label"] for e in entries] == want, field
+        elif field == "mode":
+            assert (sut.display_mode == AnalysisDisplayMode.COMPARISON) is (want == "comparison"), field
+        elif field == "loadedRange":
+            assert ranges and ranges[-1] == pytest.approx(tuple(want)), f"{field}: {ranges[-1] if ranges else None}"
+        elif field == "detecting":
+            assert sut.is_detecting is want, field
+        elif field == "multiTap":
+            assert sut.showing_multi_tap_comparison is want, field
+        elif field == "tapEntries":
+            assert len(sut.tap_entries) == want, field
+        elif field == "savedComparison":
+            assert sut.is_saved_measurement_comparison is want, field
+        elif field == "modeIds":
+            got = {mode: _peak_name(pid) for mode, pid in (entries[0]["mode_ids"] if entries else {}).items()}
+            assert got == want, f"{field}: {got}"
+        elif field == "entryGuitarType":
+            assert (entries[0]["guitar_type"] if entries else None) == want, field
+        elif field == "entryPeaks":
+            got = sorted(_peak_name(p.id) for p in (entries[0]["peaks"] if entries else []))
+            assert got == sorted(want), f"{field}: {got}"
+        elif field == "savedRecord":
+            if want is None:
+                assert len(sut.saved_measurements) == 0, f"{field}: none added"
+            else:
+                assert len(sut.saved_measurements) == 1, f"{field}: a record added"
+                last = sut.saved_measurements[-1]
+                assert last.measurement_name == want["name"], f"{field} name"
+                assert len(last.comparison_entries or []) == want["entries"], f"{field} entries"
+        elif field == "phase":
+            assert sut.material_tap_phase.value == want, field
+        elif field == "complete":
+            assert sut.is_measurement_complete is want, field
+        else:
+            pytest.fail(f"unknown field {field}")
+
+
+@pytest.mark.parametrize("row", DATA["cases"], ids=lambda r: r["id"])
+def test_comparison(row, qapp):
+    if os.path.exists(measurements_file()):
+        os.remove(measurements_file())
+    sut = make_steps_analyzer()
+    sut.saved_measurements.clear()
+    ranges: list = []
+    sut.loadedAxisRangeChanged.connect(lambda *r: ranges.append(r))
+    for step in row["steps"]:
+        if "compare" in step:
+            sut.load_comparison([_measurement(n) for n in step["compare"]])
+        elif step.get("clearComparison"):
+            sut.clear_comparison()
+        elif "load" in step:
+            sut.load_measurement(_measurement(step["load"]))
+        elif "multiTap" in step:
+            sut.apply_multi_tap_comparison_overlays(enabled=step["multiTap"])  # the Taps toggle
+        elif "saveComparison" in step:
+            sut.save_comparison(measurement_name=step["saveComparison"])
+        elif step.get("loadSaved"):
+            sut.load_measurement(sut.saved_measurements[-1])
+        elif "check" in step:
+            _check(step["check"], sut, ranges)
+        else:
+            assert run_analyzer_step(step, sut), f"unknown step {step}"
+    _check(row["expect"], sut, ranges)
+
+
+# ---------------------------------------------------------------------------
+# Python's own: the comparisonChanged signal
+# ---------------------------------------------------------------------------
+
+_APP: "QtWidgets.QApplication | None" = None
 
 
 def _get_app() -> QtWidgets.QApplication:
@@ -76,122 +177,7 @@ def _make_measurement(
 # loadComparison tests  (CP-U1–CP-U5)
 # ---------------------------------------------------------------------------
 
-class TestComparisonLoad:
-    """Mirrors Swift ComparisonLoadTests (CP-U1–CP-U5)."""
-
-    def test_CP_U1_two_measurements_produce_two_entries(self):
-        """CP-U1: Loading 2 measurements populates _comparison_data with 2 entries."""
-        sut = _analyzer()
-        m1 = _make_measurement(measurement_name="Bridge")
-        m2 = _make_measurement(measurement_name="Neck")
-        sut.load_comparison([m1, m2])
-        assert len(sut._comparison_data) == 2
-        assert sut._display_mode == AnalysisDisplayMode.COMPARISON
-
-    def test_CP_U2_label_uses_measurement_name(self):
-        """CP-U2: Label uses measurementName when present."""
-        sut = _analyzer()
-        m = _make_measurement(measurement_name="Bridge Area")
-        sut.load_comparison([m])
-        assert sut._comparison_data[0]["label"] == "Bridge Area"
-
-    def test_CP_U3_skips_measurements_without_snapshot(self):
-        """CP-U3: Measurements without a spectrum snapshot are silently filtered out."""
-        sut = _analyzer()
-        with_snap    = _make_measurement(measurement_name="With",    with_snapshot=True)
-        without_snap = _make_measurement(measurement_name="Without", with_snapshot=False)
-        sut.load_comparison([with_snap, without_snap])
-        assert len(sut._comparison_data) == 1
-        assert sut._comparison_data[0]["label"] == "With"
-
-    def test_CP_U4_palette_wraps_for_more_than_5_entries(self):
-        """CP-U4: Colors cycle through the 5-color palette without crashing for >5 entries."""
-        sut = _analyzer()
-        measurements = [_make_measurement(measurement_name=f"M{i}") for i in range(1, 7)]
-        sut.load_comparison(measurements)   # must not raise
-        assert len(sut._comparison_data) == 6
-
-    def test_CP_U5_axis_bounds_set_to_union_of_snapshots(self):
-        """CP-U5: Axis bounds are set to the union of all snapshot ranges."""
-        sut = _analyzer()
-        axis_events: list[tuple] = []
-        sut.loadedAxisRangeChanged.connect(lambda lo, hi, _db0, _db1: axis_events.append((lo, hi)))
-
-        m1 = TapToneMeasurement.create(
-            peaks=[], measurement_name="A",
-            spectrum_snapshot=_make_snapshot(min_freq=50.0, max_freq=800.0),
-        )
-        m2 = TapToneMeasurement.create(
-            peaks=[], measurement_name="B",
-            spectrum_snapshot=_make_snapshot(min_freq=100.0, max_freq=1200.0),
-        )
-        sut.load_comparison([m1, m2])
-
-        assert len(axis_events) == 1, "Should publish the loaded range once"
-        lo, hi = axis_events[0]
-        assert lo == 50, f"minFreq should be 50, got {lo}"
-        assert hi == 1200, f"maxFreq should be 1200, got {hi}"
-
-
-# ---------------------------------------------------------------------------
-# clearComparison tests  (CP-U6–CP-U8)
-# ---------------------------------------------------------------------------
-
-class TestComparisonClear:
-    """Mirrors Swift ComparisonClearTests (CP-U6–CP-U8)."""
-
-    def test_CP_U6_clear_comparison_empties_data(self):
-        """CP-U6: clearComparison() empties _comparison_data."""
-        sut = _analyzer()
-        sut.load_comparison([_make_measurement(), _make_measurement()])
-        assert len(sut._comparison_data) == 2
-
-        sut.clear_comparison()
-
-        assert sut._comparison_data == []
-        assert sut._display_mode == AnalysisDisplayMode.LIVE
-
-    def test_CP_U7_load_empty_array_produces_empty_data(self):
-        """CP-U7: Loading an empty array also clears _comparison_data."""
-        sut = _analyzer()
-        sut.load_comparison([_make_measurement(), _make_measurement()])
-        sut.load_comparison([])
-        assert sut._comparison_data == []
-        assert sut._display_mode == AnalysisDisplayMode.LIVE
-
-    def test_CP_U8_no_snapshots_leaves_mode_as_live(self):
-        """CP-U8: All measurements lacking snapshots → mode stays LIVE."""
-        sut = _analyzer()
-        sut.load_comparison([
-            _make_measurement(with_snapshot=False),
-            _make_measurement(with_snapshot=False),
-        ])
-        assert sut._comparison_data == []
-        assert sut._display_mode == AnalysisDisplayMode.LIVE
-
-
-# ---------------------------------------------------------------------------
-# DisplayMode transition tests
-# ---------------------------------------------------------------------------
-
-class TestDisplayModeTransitions:
-    """Mirrors Swift DisplayModeTransitionTests."""
-
-    def test_initial_mode_is_live(self):
-        sut = _analyzer()
-        assert sut._display_mode == AnalysisDisplayMode.LIVE
-
-    def test_load_comparison_sets_mode_to_comparison(self):
-        sut = _analyzer()
-        sut.load_comparison([_make_measurement(), _make_measurement()])
-        assert sut._display_mode == AnalysisDisplayMode.COMPARISON
-
-    def test_clear_comparison_sets_mode_to_live(self):
-        sut = _analyzer()
-        sut.load_comparison([_make_measurement(), _make_measurement()])
-        sut.clear_comparison()
-        assert sut._display_mode == AnalysisDisplayMode.LIVE
-
+class TestComparisonChangedSignal:
     def test_comparison_changed_signal_emitted_on_load(self):
         sut = _analyzer()
         events: list[bool] = []
@@ -206,561 +192,3 @@ class TestDisplayModeTransitions:
         sut.comparisonChanged.connect(lambda v: events.append(v))
         sut.clear_comparison()
         assert events == [False], f"Should emit False on clear; got {events}"
-
-
-def _make_measurement_with_peaks(
-    measurement_name: str | None = "Bridge",
-    guitar_type: str | None = "Classical",
-) -> "TapToneMeasurement":
-    """Create a measurement carrying two peaks suitable for resolved_mode_peaks."""
-    from guitar_tap.models.resonant_peak import ResonantPeak
-    from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
-    # Create peaks near typical Air (100 Hz) and Top (200 Hz) frequency ranges
-    p_air = ResonantPeak(
-        frequency=100.0, magnitude=-30.0, quality=10.0,
-        bandwidth=10.0, id=str(uuid.uuid4()),
-    )
-    p_top = ResonantPeak(
-        frequency=195.0, magnitude=-28.0, quality=8.0,
-        bandwidth=12.0, id=str(uuid.uuid4()),
-    )
-    # Set guitar_type on the snapshot so load_comparison picks it up via snap.guitar_type
-    snap = SpectrumSnapshot(
-        frequencies=[100.0, 200.0, 300.0, 400.0],
-        magnitudes=[-40.0, -35.0, -45.0, -50.0],
-        min_freq=80.0, max_freq=1200.0,
-        min_db=-90.0, max_db=-10.0,
-        guitar_type=guitar_type,
-    )
-    return TapToneMeasurement.create(
-        peaks=[p_air, p_top],
-        measurement_name=measurement_name,
-        spectrum_snapshot=snap,
-        guitar_type=guitar_type,
-    )
-
-
-# ---------------------------------------------------------------------------
-# resolved_mode_peaks helper
-# ---------------------------------------------------------------------------
-
-class TestResolvedModePeaks:
-    """Mirrors Swift TapToneAnalyzerResolvedModePeaksTests."""
-
-    def test_returns_empty_for_no_peaks(self):
-        """No peaks → empty dict."""
-        from guitar_tap.models.tap_tone_analyzer_peak_analysis import (
-            TapToneAnalyzerPeakAnalysisMixin,
-        )
-        result = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks([], "Classical")
-        assert result == {}
-
-    def test_classifies_air_peak(self):
-        """A peak at a typical Air frequency should appear under GuitarMode.AIR."""
-        from guitar_tap.models.tap_tone_analyzer_peak_analysis import (
-            TapToneAnalyzerPeakAnalysisMixin,
-        )
-        from guitar_tap.models.resonant_peak import ResonantPeak
-        from guitar_tap.models.guitar_mode import GuitarMode
-        peak = ResonantPeak(
-            frequency=100.0, magnitude=-30.0, quality=10.0,
-            bandwidth=10.0, id=str(uuid.uuid4()),
-        )
-        result = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-            [peak], guitar_type="Classical"
-        )
-        assert GuitarMode.AIR in result
-        assert abs(result[GuitarMode.AIR].frequency - 100.0) < 1e-6
-
-    def test_highest_magnitude_peak_wins_per_mode(self):
-        """When two peaks fall in the same mode band, the higher-magnitude one wins."""
-        from guitar_tap.models.tap_tone_analyzer_peak_analysis import (
-            TapToneAnalyzerPeakAnalysisMixin,
-        )
-        from guitar_tap.models.resonant_peak import ResonantPeak
-        from guitar_tap.models.guitar_mode import GuitarMode
-        p1 = ResonantPeak(frequency=100.0, magnitude=-40.0, quality=10.0,
-                          bandwidth=10.0, id=str(uuid.uuid4()))
-        p2 = ResonantPeak(frequency=105.0, magnitude=-25.0, quality=10.0,
-                          bandwidth=10.0, id=str(uuid.uuid4()))
-        result = TapToneAnalyzerPeakAnalysisMixin.resolved_mode_peaks(
-            [p1, p2], guitar_type="Classical"
-        )
-        # p2 has higher magnitude — should win
-        if GuitarMode.AIR in result:
-            assert abs(result[GuitarMode.AIR].frequency - 105.0) < 1e-6
-
-    def test_comparison_data_carries_peaks_and_guitar_type(self):
-        """After load_comparison, each _comparison_data entry has 'peaks' and 'guitar_type'."""
-        sut = _analyzer()
-        m = _make_measurement_with_peaks(measurement_name="Bridge", guitar_type="Classical")
-        sut.load_comparison([m])
-        assert len(sut._comparison_data) == 1
-        entry = sut._comparison_data[0]
-        assert "peaks" in entry, "Entry should carry 'peaks'"
-        assert "guitar_type" in entry, "Entry should carry 'guitar_type'"
-        assert entry["guitar_type"] == "Classical"
-
-
-# ---------------------------------------------------------------------------
-# save_comparison / load comparison record
-# ---------------------------------------------------------------------------
-
-class TestSaveComparison:
-    """Mirrors Swift ComparisonSaveLoadTests."""
-
-    def test_save_comparison_creates_record(self):
-        """save_comparison() appends a measurement with is_comparison == True."""
-        sut = _analyzer()
-        m1 = _make_measurement(measurement_name="Bridge")
-        m2 = _make_measurement(measurement_name="Neck")
-        sut.load_comparison([m1, m2])
-        sut.save_comparison(measurement_name="My Comparison", notes=None)
-
-        assert len(sut.saved_measurements) == 1
-        saved = sut.saved_measurements[0]
-        assert saved.is_comparison
-
-    def test_save_comparison_entries_count_matches_comparison_data(self):
-        """Entry count in the saved record matches the number of loaded spectra."""
-        sut = _analyzer()
-        measurements = [_make_measurement(measurement_name=f"M{i}") for i in range(3)]
-        sut.load_comparison(measurements)
-        sut.save_comparison(measurement_name="Triple", notes=None)
-
-        saved = sut.saved_measurements[0]
-        assert saved.comparison_entries is not None
-        assert len(saved.comparison_entries) == 3
-
-    def test_save_comparison_noop_when_no_comparison_data(self):
-        """save_comparison() does nothing when _comparison_data is empty."""
-        sut = _analyzer()
-        sut.save_comparison(measurement_name="Empty", notes=None)
-        assert sut.saved_measurements == []
-
-    def test_save_comparison_measurement_name_stored(self):
-        """measurement_name argument is stored on the saved measurement."""
-        sut = _analyzer()
-        sut.load_comparison([_make_measurement(), _make_measurement()])
-        sut.save_comparison(measurement_name="My Label", notes="Some notes")
-        saved = sut.saved_measurements[0]
-        assert saved.measurement_name == "My Label"
-        assert saved.notes == "Some notes"
-
-    def test_save_comparison_color_components_normalised(self):
-        """color_components in each entry should be in [0, 1] range."""
-        sut = _analyzer()
-        sut.load_comparison([_make_measurement(), _make_measurement()])
-        sut.save_comparison()
-        saved = sut.saved_measurements[0]
-        for entry in saved.comparison_entries:
-            for c in entry.color_components:
-                assert 0.0 <= c <= 1.0, f"Component {c} out of [0,1] range"
-
-
-# ---------------------------------------------------------------------------
-# Multi-tap → saved comparison transition tests  (MT-SC-U1–MT-SC-U3)
-# ---------------------------------------------------------------------------
-#
-# Port of Swift MultiTapToSavedComparisonTransitionTests.
-#
-# The model's load_comparison() mirrors Swift loadComparison(measurements:):
-# it resets showing_multi_tap_comparison and tap_entries directly (without
-# emitting comparisonChanged(False)), then emits a single coherent
-# comparisonChanged(True).  Saved-measurement comparison is then identified
-# by the computed property is_saved_measurement_comparison (mirrors Swift
-# isSavedMeasurementComparison: displayMode == .comparison && !showingMultiTapComparison).
-
-class TestMultiTapToSavedComparisonTransition:
-    """MT-SC-U1–MT-SC-U3: model invariants when transitioning from multi-tap to
-    saved-measurement comparison.  Mirrors Swift MultiTapToSavedComparisonTransitionTests."""
-
-    def test_MT_SC_U1_load_comparison_while_multi_tap_active_resets_multi_tap_state(self):
-        """MT-SC-U1: load_comparison while multi-tap comparison is active resets
-        showing_multi_tap_comparison and tap_entries.
-
-        Mirrors Swift loadComparison_whileMultiTapActive_resetsMultiTapState.
-        """
-        sut = _analyzer()
-        # Simulate a completed multi-tap sequence.
-        sut.tap_entries = [object(), object()]   # two placeholder entries
-        sut.showing_multi_tap_comparison = True
-        sut._display_mode = AnalysisDisplayMode.COMPARISON
-        assert sut._display_mode == AnalysisDisplayMode.COMPARISON, "Precondition"
-        assert sut.showing_multi_tap_comparison is True, "Precondition"
-
-        sut.load_comparison([_make_measurement("A"), _make_measurement("B")])
-
-        assert sut.showing_multi_tap_comparison is False, (
-            "load_comparison should reset showing_multi_tap_comparison"
-        )
-        assert sut.tap_entries == [], (
-            "load_comparison should clear tap_entries"
-        )
-
-    def test_MT_SC_U2_load_comparison_while_multi_tap_active_sets_display_mode_and_data(self):
-        """MT-SC-U2: After load_comparison() while multi-tap was active, display mode
-        stays COMPARISON, is_saved_measurement_comparison is True, and
-        _comparison_data has the loaded entries.
-
-        Mirrors Swift loadComparison_whileMultiTapActive_setsIsSavedMeasurementComparison.
-        """
-        sut = _analyzer()
-        sut.tap_entries = [object(), object()]
-        sut.showing_multi_tap_comparison = True
-        sut._display_mode = AnalysisDisplayMode.COMPARISON
-
-        sut.load_comparison([_make_measurement("A"), _make_measurement("B")])
-
-        assert sut._display_mode == AnalysisDisplayMode.COMPARISON, (
-            "display mode should remain COMPARISON after saved-measurement load"
-        )
-        assert sut.is_saved_measurement_comparison is True, (
-            "is_saved_measurement_comparison should be True after transitioning from multi-tap"
-        )
-        assert len(sut._comparison_data) == 2, (
-            "_comparison_data should contain the two loaded measurements"
-        )
-
-    def test_MT_SC_U3_load_comparison_without_multi_tap_resets_are_no_op(self):
-        """MT-SC-U3: When multi-tap is NOT active, load_comparison leaves
-        showing_multi_tap_comparison False and populates comparison data normally.
-
-        Mirrors Swift loadComparison_withoutMultiTap_isSavedMeasurementComparison.
-        """
-        sut = _analyzer()
-        assert sut.showing_multi_tap_comparison is False, "Precondition: no multi-tap active"
-
-        sut.load_comparison([_make_measurement("X")])
-
-        assert sut.showing_multi_tap_comparison is False
-        assert sut.tap_entries == []
-        assert sut._display_mode == AnalysisDisplayMode.COMPARISON
-        assert len(sut._comparison_data) == 1
-
-
-# ---------------------------------------------------------------------------
-# Definitive modes persisted in a comparison (mode_peak_ids)
-# ---------------------------------------------------------------------------
-#
-# A comparison MEASUREMENT aggregates other measurements, so their override context is not otherwise
-# in this file. Each ComparisonEntry stores the resolved definitive Air/Top/Back as {mode name: peak
-# id}, computed from the source's selection AND overrides, so the saved file is self-describing: a
-# reader reproduces the table by peak-ID lookup, without re-running classify_all and without the
-# source's overrides (absent from the file). Mirrors Swift ComparisonModePersistenceTests.
-
-def _rp_cmp(freq, mag=-20.0):
-    from guitar_tap.models.resonant_peak import ResonantPeak
-    return ResonantPeak(frequency=freq, magnitude=mag, quality=10.0,
-                        bandwidth=freq / 10.0, id=str(uuid.uuid4()))
-
-
-def _cmp_entry(peaks, mode_peak_ids=None, guitar_type="Classical"):
-    from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-    return ComparisonEntry(
-        id=str(uuid.uuid4()), label="e",
-        color_components=[0.0, 0.0, 1.0, 1.0],
-        snapshot=_make_snapshot(),
-        peaks=peaks, guitar_type=guitar_type,
-        source_measurement_id=None,
-        mode_peak_ids=mode_peak_ids,
-    )
-
-
-def _cmp_round_trip(m):
-    import json
-    return TapToneMeasurement.from_dict(json.loads(json.dumps(m.to_dict())))
-
-
-class TestComparisonDefinitiveModes:
-    """ComparisonEntry.mode_peak_ids — the definitive Air/Top/Back stored as a
-    self-describing {mode name: peak id} map. Mirrors Swift ComparisonModePersistenceTests."""
-
-    def test_comparison_reflects_source_override(self):
-        # End-to-end: a source measurement whose Top is user-overridden onto a peak that is NOT the
-        # auto Top must have the comparison store THAT peak as Top (definitive: selection + override).
-        from guitar_tap.models.guitar_mode import GuitarMode
-        air = _rp_cmp(95, -28)
-        auto_top = _rp_cmp(210, -20)   # classical Top by position
-        far = _rp_cmp(400, -22)        # not Top by position
-        snap = SpectrumSnapshot(
-            frequencies=[100.0, 200.0], magnitudes=[-40.0, -35.0],
-            min_freq=50.0, max_freq=500.0, min_db=-100.0, max_db=0.0,
-            guitar_type="Classical",
-        )
-        source = TapToneMeasurement.create(
-            peaks=[air, auto_top, far],
-            spectrum_snapshot=snap,
-            selected_peak_ids=[air.id, far.id],            # far selected, auto_top NOT
-            peak_mode_overrides={far.id: GuitarMode.TOP.display_name},  # far renamed to Top
-            guitar_type="Classical",
-        )
-        sut = _analyzer()
-        sut.load_comparison([source])
-
-        mode_ids = sut._comparison_data[0].get("mode_ids") or {}
-        assert mode_ids.get(GuitarMode.TOP.value) == far.id, (
-            "the comparison's Top must be the user's overridden+selected peak, not the auto Top"
-        )
-        assert mode_ids.get(GuitarMode.AIR.value) == air.id
-
-    def test_saved_comparison_persists_and_round_trips_mode_ids(self):
-        # load → save → reload keeps the definitive map (self-describing file).
-        from guitar_tap.models.guitar_mode import GuitarMode
-        air = _rp_cmp(95, -28)
-        top = _rp_cmp(210, -20)
-        snap = SpectrumSnapshot(
-            frequencies=[100.0, 200.0], magnitudes=[-40.0, -35.0],
-            min_freq=50.0, max_freq=500.0, min_db=-100.0, max_db=0.0,
-            guitar_type="Classical",
-        )
-        source = TapToneMeasurement.create(
-            peaks=[air, top], spectrum_snapshot=snap,
-            selected_peak_ids=[air.id, top.id], guitar_type="Classical",
-        )
-        sut = _analyzer()
-        sut.load_comparison([source])
-        sut.save_comparison(measurement_name="C")
-        restored = _cmp_round_trip(sut.saved_measurements[0])
-        e = restored.comparison_entries[0]
-        assert e.mode_peak_ids[GuitarMode.AIR.value] == air.id
-        assert e.mode_peak_ids[GuitarMode.TOP.value] == top.id
-
-    def test_mode_frequency_reads_stored_map_not_classification(self):
-        # The stored map is authoritative: mode_frequency reads it, NOT a re-classification. Point
-        # Top deliberately at the AIR peak and expect Air's frequency back.
-        from guitar_tap.models.guitar_mode import GuitarMode
-        air = _rp_cmp(95, -28)
-        real_top = _rp_cmp(210, -20)   # classify_all would pick THIS as Top
-        entry = _cmp_entry([air, real_top], {GuitarMode.TOP.value: air.id})
-        assert entry.mode_frequency(GuitarMode.TOP) == 95.0, (
-            "the stored map wins — the file is authoritative, not re-classified at render"
-        )
-
-    def test_mode_peak_ids_round_trip(self):
-        from guitar_tap.models.guitar_mode import GuitarMode
-        air = _rp_cmp(95, -28)
-        top = _rp_cmp(210, -20)
-        entry = _cmp_entry([air, top], {GuitarMode.AIR.value: air.id, GuitarMode.TOP.value: top.id})
-        m = TapToneMeasurement.create(peaks=[], comparison_entries=[entry])
-        e = _cmp_round_trip(m).comparison_entries[0]
-        assert e.mode_peak_ids[GuitarMode.AIR.value] == air.id
-        assert e.mode_peak_ids[GuitarMode.TOP.value] == top.id
-
-    def test_mode_peak_ids_written_to_dict(self):
-        from guitar_tap.models.guitar_mode import GuitarMode
-        air = _rp_cmp(95, -28)
-        entry = _cmp_entry([air], {GuitarMode.AIR.value: air.id})
-        assert entry.to_dict()["modePeakIDs"][GuitarMode.AIR.value] == air.id
-
-    def test_none_mode_peak_ids_omitted_from_dict(self):
-        entry = _cmp_entry([_rp_cmp(100)], mode_peak_ids=None)
-        assert "modePeakIDs" not in entry.to_dict()
-
-    def test_legacy_comparison_entry_is_healed_on_decode(self):
-        # A pre-6b saved comparison (no modePeakIDs) is healed positionally on decode and flagged
-        # for re-save. air 95 → Air, top 210 → Top under Classical bands.
-        from guitar_tap.models.guitar_mode import GuitarMode
-        air = _rp_cmp(95, -28)
-        top = _rp_cmp(210, -20)
-        legacy = _cmp_entry([air, top], mode_peak_ids=None)
-        m = TapToneMeasurement.create(peaks=[], comparison_entries=[legacy])
-        restored = _cmp_round_trip(m)
-        assert restored.was_healed, "a legacy comparison entry must flag for re-save"
-        e = restored.comparison_entries[0]
-        assert e.mode_peak_ids[GuitarMode.AIR.value] == air.id, "healed Air (positional)"
-        assert e.mode_peak_ids[GuitarMode.TOP.value] == top.id, "healed Top (positional)"
-
-
-
-# ---------------------------------------------------------------------------
-# CP-U9 / CP-U10 — a comparison overlay stands the detector down
-# ---------------------------------------------------------------------------
-
-
-class TestComparisonDisarmsDetection:
-    """An overlay is frozen, like a loaded measurement.
-
-    Left armed, the analysis loop keeps overwriting the displayed peaks from live audio
-    underneath the overlay, and a tap captures and completes a measurement the user never
-    sees being made.
-
-    The behaviour under test is the detection-state property. Mirrors Swift CP-U9/CP-U10 and web's
-    pair.
-    """
-
-    def _sut(self):
-        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
-        _get_app()
-        return TapToneAnalyzer()
-
-    def test_CP_U9_load_comparison_while_detecting_disarms(self):
-        from guitar_tap.models.detection_state import DetectionState
-
-        sut = self._sut()
-        sut.detection_state = DetectionState.LISTENING
-
-        sut.load_comparison([_make_measurement("A"), _make_measurement("B")])
-
-        assert sut.is_comparing is True, "precondition: the overlay was built"
-        assert sut.detection_state is DetectionState.IDLE, (
-            "REGRESSION: a comparison overlay is frozen — leaving the detector armed lets live "
-            "audio overwrite the overlay's peaks and lets a tap complete a measurement invisibly."
-        )
-
-    def test_CP_U10_empty_comparison_leaves_detection_alone(self):
-        from guitar_tap.models.detection_state import DetectionState
-
-        sut = self._sut()
-        sut.detection_state = DetectionState.LISTENING
-
-        sut.load_comparison([])
-
-        assert sut.is_comparing is False, "an empty comparison stays live"
-        assert sut.detection_state is DetectionState.LISTENING, (
-            "nothing was frozen, so the detector must keep running"
-        )
-
-
-def _round_trip(m: TapToneMeasurement) -> TapToneMeasurement:
-    """Serialise to JSON then decode, producing an independent copy."""
-    import json
-    return TapToneMeasurement.from_dict(json.loads(json.dumps(m.to_dict())))
-
-
-def _make_peak(freq: float = 200.0, mag: float = -30.0, quality: float = 10.0):
-    from guitar_tap.models.resonant_peak import ResonantPeak
-    return ResonantPeak(
-        id=str(uuid.uuid4()),
-        frequency=freq,
-        magnitude=mag,
-        quality=quality,
-        bandwidth=freq / quality,
-        timestamp="2026-01-01T00:00:00+00:00",
-    )
-
-# ---------------------------------------------------------------------------
-# Comparison entries
-# ---------------------------------------------------------------------------
-
-class TestComparisonEntryCodable:
-    """JSON round-trip tests for ComparisonEntry and TapToneMeasurement.comparisonEntries.
-
-    Swift and the web keep theirs here too, in ComparisonModeTests and comparison.test.ts.
-    """
-
-    def _make_entry(
-        self,
-        label: str = "Bridge",
-        guitar_type: str | None = "Classical",
-    ):
-        """Create a minimal ComparisonEntry for testing."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        snap = _make_snapshot()
-        peak = _make_peak()
-        return ComparisonEntry(
-            id=str(uuid.uuid4()),
-            label=label,
-            color_components=[0.2, 0.4, 0.8, 1.0],
-            snapshot=snap,
-            peaks=[peak],
-            guitar_type=guitar_type,
-            source_measurement_id=None,
-        )
-
-    def test_comparison_entry_to_dict_has_required_keys(self):
-        """ComparisonEntry.to_dict() should include id, label, colorComponents, snapshot, peaks."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry()
-        d = entry.to_dict()
-        assert "id" in d
-        assert "label" in d
-        assert "colorComponents" in d
-        assert "snapshot" in d
-        assert "peaks" in d
-
-    def test_comparison_entry_round_trip_preserves_id(self):
-        """ComparisonEntry id survives to_dict() / from_dict() round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry()
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        assert restored.id == entry.id
-
-    def test_comparison_entry_round_trip_preserves_label(self):
-        """ComparisonEntry label survives round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry(label="Neck Joint")
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        assert restored.label == "Neck Joint"
-
-    def test_comparison_entry_round_trip_preserves_color_components(self):
-        """color_components [r,g,b,a] survive round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry()
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        for orig, rt in zip(entry.color_components, restored.color_components):
-            assert abs(orig - rt) < 1e-9
-
-    def test_comparison_entry_round_trip_preserves_guitar_type(self):
-        """guitar_type string survives round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry(guitar_type="Acoustic")
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        assert restored.guitar_type == "Acoustic"
-
-    def test_comparison_entry_none_guitar_type_omitted_from_dict(self):
-        """guitar_type=None should not write the 'guitarType' key to the dict."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        entry = self._make_entry(guitar_type=None)
-        d = entry.to_dict()
-        assert "guitarType" not in d
-
-    def test_comparison_entry_round_trip_preserves_peak_count(self):
-        """Peak list length is preserved through round-trip."""
-        from guitar_tap.models.tap_tone_measurement import ComparisonEntry
-        snap = _make_snapshot()
-        peaks = [_make_peak(freq=100.0 + i * 50.0) for i in range(3)]
-        entry = ComparisonEntry(
-            id=str(uuid.uuid4()), label="Multi",
-            color_components=[0.0, 0.0, 1.0, 1.0],
-            snapshot=snap, peaks=peaks, guitar_type="Classical",
-            source_measurement_id=None,
-        )
-        restored = ComparisonEntry.from_dict(entry.to_dict())
-        assert len(restored.peaks) == 3
-
-    def test_tap_tone_measurement_round_trip_with_comparison_entries(self):
-        """A TapToneMeasurement with comparisonEntries serialises and deserialises correctly."""
-        entry1 = self._make_entry(label="Bridge")
-        entry2 = self._make_entry(label="Neck")
-        m = TapToneMeasurement.create(
-            peaks=[],
-            measurement_name="My Comparison",
-            comparison_entries=[entry1, entry2],
-        )
-        restored = _round_trip(m)
-        assert restored.is_comparison
-        assert restored.comparison_entries is not None
-        assert len(restored.comparison_entries) == 2
-        labels = [e.label for e in restored.comparison_entries]
-        assert "Bridge" in labels
-        assert "Neck" in labels
-
-    def test_measurement_without_comparison_entries_has_none(self):
-        """A regular measurement (no comparisonEntries key in JSON) decodes with None."""
-        m = TapToneMeasurement.create(peaks=[])
-        d = m.to_dict()
-        assert "comparisonEntries" not in d
-        restored = TapToneMeasurement.from_dict(d)
-        assert restored.comparison_entries is None
-        assert not restored.is_comparison
-
-    def test_is_comparison_property_true_for_comparison_record(self):
-        """is_comparison returns True when comparison_entries is not None."""
-        m = TapToneMeasurement.create(peaks=[], comparison_entries=[self._make_entry()])
-        assert m.is_comparison
-
-    def test_is_comparison_property_false_for_regular_measurement(self):
-        """is_comparison returns False for a regular tap measurement."""
-        m = TapToneMeasurement.create(peaks=[])
-        assert not m.is_comparison

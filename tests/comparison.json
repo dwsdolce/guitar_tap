@@ -1,0 +1,991 @@
+{
+ "slug": "test/comparison",
+ "about": "Comparing saved measurements: the entries a comparison holds, their labels and range, the mode, detection standing down, the per-tap overlay giving way, each entry's Air/Top/Back taken from its source, and saving and loading a comparison. Each case starts a fresh analyzer (threshold −40, Taps 1) with an empty library and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, guitarTap, advance), and {\"compare\": [files]} (a comparison of those 'files' entries, as a multi-select in the list makes); {\"clearComparison\": true}; {\"load\": file} (loaded as a file); {\"multiTap\": bool} (the Taps toggle: the per-tap overlay of the measurement on screen, on or off); {\"saveComparison\": name} (saves the comparison shown); {\"loadSaved\": true} (loads the last saved record); {\"check\": {...}}. Fields: 'entries' (count), 'labels', 'mode' (live / comparison), 'loadedRange' ([minFreq, maxFreq, minDB, maxDB]), 'detecting', 'multiTap' (the per-tap overlay is showing), 'tapEntries' (count), 'savedComparison' (the comparison is of saved measurements), 'modeIds' (the first entry's stored map, mode display name → peak, by 'peakNames'), 'entryPeaks' (the first entry's peaks, by name, any order), 'entryGuitarType' (the first entry's guitar type), 'savedRecord' (the last saved record — {name, entries} — or null for none added), 'phase' (Swift's raw value), 'complete'. Expected values are Swift's.",
+ "files": {
+  "A": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C04",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "A",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 50,
+     "maxFreq": 800,
+     "minDB": -95,
+     "maxDB": -15,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "B": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C05",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "B",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 100,
+     "maxFreq": 1200,
+     "minDB": -80,
+     "maxDB": -5,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "Bridge": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C06",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "Bridge Area",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 80,
+     "maxFreq": 1200,
+     "minDB": -90,
+     "maxDB": -10,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "With": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C07",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "With",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 80,
+     "maxFreq": 1200,
+     "minDB": -90,
+     "maxDB": -10,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "Without": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C08",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "Without"
+   }
+  ],
+  "Without2": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C09",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "Without 2"
+   }
+  ],
+  "M1": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C0A",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "M1",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 80,
+     "maxFreq": 1200,
+     "minDB": -90,
+     "maxDB": -10,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "M2": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C0B",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "M2",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 80,
+     "maxFreq": 1200,
+     "minDB": -90,
+     "maxDB": -10,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "M3": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C0C",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "M3",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 80,
+     "maxFreq": 1200,
+     "minDB": -90,
+     "maxDB": -10,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "M4": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C0D",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "M4",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 80,
+     "maxFreq": 1200,
+     "minDB": -90,
+     "maxDB": -10,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "M5": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C0E",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "M5",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 80,
+     "maxFreq": 1200,
+     "minDB": -90,
+     "maxDB": -10,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "M6": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C0F",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "M6",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 80,
+     "maxFreq": 1200,
+     "minDB": -90,
+     "maxDB": -10,
+     "isLogarithmic": false,
+     "measurementType": "Generic Guitar",
+     "guitarType": "Generic"
+    }
+   }
+  ],
+  "source": [
+   {
+    "id": "00000000-0000-0000-0000-000000000C10",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [
+     {
+      "id": "00000000-0000-0000-0000-000000000C01",
+      "frequency": 95.0,
+      "magnitude": -28.0,
+      "quality": 10.0,
+      "bandwidth": 5.0,
+      "timestamp": "2026-01-01T00:00:00Z"
+     },
+     {
+      "id": "00000000-0000-0000-0000-000000000C02",
+      "frequency": 210.0,
+      "magnitude": -20.0,
+      "quality": 10.0,
+      "bandwidth": 5.0,
+      "timestamp": "2026-01-01T00:00:00Z"
+     },
+     {
+      "id": "00000000-0000-0000-0000-000000000C03",
+      "frequency": 400.0,
+      "magnitude": -22.0,
+      "quality": 10.0,
+      "bandwidth": 5.0,
+      "timestamp": "2026-01-01T00:00:00Z"
+     }
+    ],
+    "measurementName": "Source",
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0,
+      300.0,
+      400.0
+     ],
+     "magnitudes": [
+      -40.0,
+      -35.0,
+      -45.0,
+      -50.0
+     ],
+     "minFreq": 50,
+     "maxFreq": 500,
+     "minDB": -100,
+     "maxDB": 0,
+     "isLogarithmic": false,
+     "measurementType": "Classical Guitar",
+     "guitarType": "Classical"
+    },
+    "selectedPeakIDs": [
+     "00000000-0000-0000-0000-000000000C01",
+     "00000000-0000-0000-0000-000000000C03"
+    ],
+    "peakModeOverrides": [
+     "00000000-0000-0000-0000-000000000C03",
+     {
+      "label": "Top",
+      "type": "assigned"
+     }
+    ]
+   }
+  ]
+ },
+ "peakNames": {
+  "00000000-0000-0000-0000-000000000C01": "air",
+  "00000000-0000-0000-0000-000000000C02": "autoTop",
+  "00000000-0000-0000-0000-000000000C03": "far"
+ },
+ "cases": [
+  {
+   "id": "CM1",
+   "note": "comparing two measurements gives two entries and the comparison mode",
+   "steps": [
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "entries": 2,
+    "mode": "comparison"
+   }
+  },
+  {
+   "id": "CM2",
+   "note": "an entry is labelled with its measurement's name",
+   "steps": [
+    {
+     "compare": [
+      "Bridge"
+     ]
+    }
+   ],
+   "expect": {
+    "labels": [
+     "Bridge Area"
+    ]
+   }
+  },
+  {
+   "id": "CM3",
+   "note": "a measurement without a spectrum is left out",
+   "steps": [
+    {
+     "compare": [
+      "With",
+      "Without"
+     ]
+    }
+   ],
+   "expect": {
+    "labels": [
+     "With"
+    ]
+   }
+  },
+  {
+   "id": "CM4",
+   "note": "more entries than series colours: the colours wrap",
+   "steps": [
+    {
+     "compare": [
+      "M1",
+      "M2",
+      "M3",
+      "M4",
+      "M5",
+      "M6"
+     ]
+    }
+   ],
+   "expect": {
+    "entries": 6
+   }
+  },
+  {
+   "id": "CM5",
+   "note": "the chart range is the union of the entries' ranges",
+   "steps": [
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "loadedRange": [
+     50,
+     1200,
+     -95,
+     -5
+    ]
+   }
+  },
+  {
+   "id": "CM6",
+   "note": "clearing the comparison empties it and returns to live",
+   "steps": [
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "clearComparison": true
+    }
+   ],
+   "expect": {
+    "entries": 0,
+    "mode": "live"
+   }
+  },
+  {
+   "id": "CM7",
+   "note": "comparing nothing empties a comparison and stays live",
+   "steps": [
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "compare": []
+    }
+   ],
+   "expect": {
+    "entries": 0,
+    "mode": "live"
+   }
+  },
+  {
+   "id": "CM8",
+   "note": "comparing only measurements without spectra stays live",
+   "steps": [
+    {
+     "compare": [
+      "Without",
+      "Without2"
+     ]
+    }
+   ],
+   "expect": {
+    "entries": 0,
+    "mode": "live"
+   }
+  },
+  {
+   "id": "CM9",
+   "note": "comparing while armed stands detection down — a comparison is frozen",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "check": {
+      "detecting": true
+     }
+    },
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "mode": "comparison",
+    "detecting": false
+   }
+  },
+  {
+   "id": "CM10",
+   "note": "an empty comparison stays live and leaves detection armed",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "compare": []
+    }
+   ],
+   "expect": {
+    "mode": "live",
+    "detecting": true
+   }
+  },
+  {
+   "id": "CM11",
+   "note": "a fresh analyzer is live",
+   "steps": [],
+   "expect": {
+    "mode": "live"
+   }
+  },
+  {
+   "id": "CM12",
+   "note": "loading a measurement leaves the mode live — it shows because it is complete",
+   "steps": [
+    {
+     "load": "A"
+    }
+   ],
+   "expect": {
+    "mode": "live"
+   }
+  },
+  {
+   "id": "CM13",
+   "note": "loading a measurement during a comparison ends the comparison",
+   "steps": [
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "load": "A"
+    }
+   ],
+   "expect": {
+    "mode": "live",
+    "entries": 0
+   }
+  },
+  {
+   "id": "CM14",
+   "note": "entries with the same name are numbered",
+   "steps": [
+    {
+     "compare": [
+      "A",
+      "A"
+     ]
+    }
+   ],
+   "expect": {
+    "labels": [
+     "A (1)",
+     "A (2)"
+    ]
+   }
+  },
+  {
+   "id": "CM15",
+   "note": "comparing while the per-tap overlay is showing ends the overlay and its taps; the comparison is a saved-measurement one",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "multiTap": true
+    },
+    {
+     "check": {
+      "mode": "comparison",
+      "multiTap": true,
+      "savedComparison": false
+     }
+    },
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "multiTap": false,
+    "tapEntries": 0,
+    "savedComparison": true,
+    "entries": 2,
+    "mode": "comparison"
+   }
+  },
+  {
+   "id": "CM16",
+   "note": "comparing without the overlay: a saved-measurement comparison",
+   "steps": [
+    {
+     "compare": [
+      "A"
+     ]
+    }
+   ],
+   "expect": {
+    "multiTap": false,
+    "savedComparison": true,
+    "entries": 1
+   }
+  },
+  {
+   "id": "CM17",
+   "note": "an entry's Air/Top/Back are its source's — the user's Top label and selection, not the auto Top",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "compare": [
+      "source"
+     ]
+    }
+   ],
+   "expect": {
+    "modeIds": {
+     "Air (Helmholtz)": "air",
+     "Top": "far"
+    },
+    "entryPeaks": [
+     "air",
+     "far"
+    ],
+    "entryGuitarType": "Classical"
+   }
+  },
+  {
+   "id": "CM18",
+   "note": "saving a comparison adds a comparison record with its entries and name",
+   "steps": [
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "saveComparison": "Pair"
+    }
+   ],
+   "expect": {
+    "savedRecord": {
+     "name": "Pair",
+     "entries": 2
+    }
+   }
+  },
+  {
+   "id": "CM19",
+   "note": "with no comparison, saving one adds nothing",
+   "steps": [
+    {
+     "saveComparison": "Nothing"
+    }
+   ],
+   "expect": {
+    "savedRecord": null
+   }
+  },
+  {
+   "id": "CM20",
+   "note": "a saved comparison, loaded, keeps each entry's Air/Top/Back",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "compare": [
+      "source"
+     ]
+    },
+    {
+     "saveComparison": "Saved"
+    },
+    {
+     "clearComparison": true
+    },
+    {
+     "loadSaved": true
+    }
+   ],
+   "expect": {
+    "mode": "comparison",
+    "modeIds": {
+     "Air (Helmholtz)": "air",
+     "Top": "far"
+    }
+   }
+  },
+  {
+   "id": "CM21",
+   "note": "New Tap ends a comparison (guitar)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "mode": "live",
+    "entries": 0
+   }
+  },
+  {
+   "id": "CM22",
+   "note": "New Tap ends a comparison (plate) and the phases start again",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)"
+     }
+    },
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "mode": "live",
+    "entries": 0,
+    "phase": "Capturing Longitudinal"
+   }
+  },
+  {
+   "id": "CM23",
+   "note": "turning the per-tap overlay off returns to the measurement, still complete",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "multiTap": true
+    },
+    {
+     "check": {
+      "mode": "comparison",
+      "multiTap": true,
+      "savedComparison": false
+     }
+    },
+    {
+     "multiTap": false
+    }
+   ],
+   "expect": {
+    "mode": "live",
+    "complete": true
+   }
+  },
+  {
+   "id": "CM24",
+   "note": "loading a saved comparison while the per-tap overlay shows drops the overlay",
+   "steps": [
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "saveComparison": "Pair"
+    },
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "multiTap": true
+    },
+    {
+     "check": {
+      "mode": "comparison",
+      "multiTap": true,
+      "savedComparison": false
+     }
+    },
+    {
+     "loadSaved": true
+    }
+   ],
+   "expect": {
+    "mode": "comparison",
+    "multiTap": false,
+    "savedComparison": true
+   }
+  },
+  {
+   "id": "CM25",
+   "note": "the per-tap overlay holds each tap and the average, as the comparison the chart draws",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "multiTap": true
+    },
+    {
+     "check": {
+      "mode": "comparison",
+      "multiTap": true,
+      "savedComparison": false
+     }
+    }
+   ],
+   "expect": {
+    "labels": [
+     "Tap 1",
+     "Tap 2",
+     "Averaged"
+    ],
+    "entries": 3
+   }
+  }
+ ]
+}
