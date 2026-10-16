@@ -88,3 +88,14 @@ def _clear_test_sandbox():
             pass
     import shutil
     shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def pytest_terminal_summary(terminalreporter):
+    """List each skipped test and why at the end of the run, as the Swift and web runs do."""
+    skipped = terminalreporter.stats.get("skipped", [])
+    if not skipped:
+        return
+    terminalreporter.write_line(f"Skipped ({len(skipped)}):")
+    for report in skipped:
+        reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else str(report.longrepr)
+        terminalreporter.write_line(f"  {report.nodeid} — {reason.removeprefix('Skipped: ')}")
