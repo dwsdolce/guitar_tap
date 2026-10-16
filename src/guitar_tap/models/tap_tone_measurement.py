@@ -344,16 +344,15 @@ class TapToneMeasurement:
     # Mirrors Swift TapToneMeasurement.selectedPeakIDs.
     selected_peak_ids: list[str] | None = None
 
-    # Frequencies (Hz) of the selected peaks, parallel to selected_peak_ids.
-    # Used to re-match selections after findPeaks() re-runs with a new threshold
-    # (which generates new UUIDs). Frequencies are stable across re-analysis; UUIDs are not.
-    # Mirrors Swift TapToneMeasurement.selectedPeakFrequencies.
+    # Frequencies (Hz) of the selected peaks, parallel to selected_peak_ids. Written for a program reading
+    # the file that wants the selected peaks' frequencies without resolving the IDs or repeating the
+    # selection; GuitarTap itself does not read it back. Mirrors Swift
+    # TapToneMeasurement.selectedPeakFrequencies.
     selected_peak_frequencies: list[float] | None = None
 
     # Whether the saved peak selection was hand-modified (vs the automatic mode-priority selection).
-    # Restored on load so a loaded measurement behaves like a live one: an AUTOMATIC selection
-    # re-runs auto-selection when Peak Min changes; a MANUAL one is carried forward. None in files
-    # saved before this field — those default to True (manual), preserving prior behaviour.
+    # Restored on load, so a loaded measurement offers Reset to automatic selection as it did when
+    # saved. None in files saved before this field — those default to True (manual).
     # Never touches peak_mode_overrides (user-assigned mode labels). Mirrors Swift userModifiedSelection.
     user_modified_selection: bool | None = None
 

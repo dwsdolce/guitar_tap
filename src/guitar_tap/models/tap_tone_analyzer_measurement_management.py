@@ -369,9 +369,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
             annotation_offsets=offsets or None,
             selected_peak_ids=sel_ids,
             selected_peak_frequencies=sel_freqs,
-            # Persist whether the guitar selection was hand-modified, so a reloaded measurement
-            # re-runs auto-selection on Peak Min change (like live) when automatic, or carries it
-            # forward when manual. Guitar only. Mirrors Swift.
+            # Persist whether the guitar selection was hand-modified, so a reloaded measurement offers
+            # Reset to automatic selection as it did when saved. Guitar only. Mirrors Swift.
             user_modified_selection=(self.user_has_modified_peak_selection if mt.is_guitar else None),
             annotation_visibility_mode=ann_vis_str,
             tap_detection_threshold=getattr(self, "tap_detection_threshold", None),
@@ -404,8 +403,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         emitted here — ending with the peaks to show — tell them what changed.
         """
 
-        # Suppress recalculate_frozen_peaks_if_needed() for the duration of the
-        # load — mirrors Swift: isLoadingMeasurement = true / defer { = false }
+        # Mirrors Swift: isLoadingMeasurement = true / defer { = false }
         self.measurementLoadStarting.emit()
         self.is_loading_measurement = True
         try:
@@ -756,13 +754,11 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.selected_peak_ids = set(measurement.selected_peak_ids)
         else:
             self.selected_peak_ids = {p.id for p in self.all_peaks}
-        # Restore whether the selection was user-modified (default True for legacy files, which
-        # preserves prior behaviour). An automatic selection re-runs auto-selection on Peak Min
-        # change; a manual one carries forward. Mirrors Swift.
+        # Restore whether the selection was user-modified, which decides whether Reset to automatic
+        # selection is offered (default True for legacy files). Mirrors Swift.
         _ums = getattr(measurement, "user_modified_selection", None)
         self.user_has_modified_peak_selection = True if _ums is None else _ums
-        # Seed stable frequency cache — mirrors Swift selectedPeakFrequencies assignment. Over the
-        # DURABLE set so a selected sub-Peak-Min peak's frequency reaches the cache.
+        # The selected peaks' frequencies, kept with the selection. Mirrors Swift.
         self.selected_peak_frequencies = [
             p.frequency for p in self.all_peaks
             if p.id in self.selected_peak_ids

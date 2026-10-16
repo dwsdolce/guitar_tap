@@ -1,6 +1,6 @@
 {
  "slug": "test/scenario-trace",
- "about": "End-to-end scenarios, pinned by the state they pass through, not only where they end: the app's behaviour on screen follows each intermediate state. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, pause, resume, cancel, guitarTap, advance with an optional fraction), plus {\"snap\": label}, which records the state under that label, and {\"strayDetection\": true}, a detection the scenario simulates (the detection state set idle, as a detected tap sets it). 'expect.trace' is the recorded states in order: label, detecting, paused, complete, tapCount (taps counted this sequence), capturedTaps (taps held). Expected values are Swift's.",
+ "about": "End-to-end scenarios, pinned by the state they pass through, not only where they end: the app's behaviour on screen follows each intermediate state. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, pause, resume, cancel, guitarTap, advance with an optional fraction or extra, audioChunks), plus {\"snap\": label}, which records the state under that label. 'expect.trace' is the recorded states in order: label, detecting, paused, complete, tapCount (taps counted this sequence), capturedTaps (taps held). Expected values are Swift's.",
  "cases": [
   {
    "id": "S1",
@@ -72,7 +72,7 @@
   },
   {
    "id": "S2",
-   "note": "a stray detection straight after a sequence starts (as a measurement-type change starts one): the analyzer stays idle until the capture completes",
+   "note": "a tap detected from the audio: detection stands down at the detection and stays down until the capture completes",
    "steps": [
     {
      "settings": {
@@ -86,10 +86,21 @@
      "newTap": true
     },
     {
-     "strayDetection": true
+     "snap": "postStart"
     },
     {
-     "snap": "postStart"
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "snap": "postWarmUp"
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    },
+    {
+     "snap": "postDetect"
     },
     {
      "guitarTap": 100
@@ -116,6 +127,22 @@
      },
      {
       "label": "postStart",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postWarmUp",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postDetect",
       "detecting": false,
       "paused": false,
       "complete": false,
@@ -365,6 +392,72 @@
       "label": "postReArm",
       "detecting": true,
       "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postCancel",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     }
+    ]
+   }
+  },
+  {
+   "id": "S5",
+   "note": "Cancel from a paused sequence starts a fresh one listening, not paused (New Tap is disabled while paused; Cancel is the way out)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "snap": "postReArm"
+    },
+    {
+     "pause": true
+    },
+    {
+     "snap": "postPause"
+    },
+    {
+     "cancel": true
+    },
+    {
+     "snap": "postCancel"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "postReArm",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postPause",
+      "detecting": false,
+      "paused": true,
       "complete": false,
       "tapCount": 1,
       "capturedTaps": 1

@@ -791,7 +791,7 @@ class TapToneAnalyzerControlMixin:
         self.is_measurement_complete = False
         self.measurementComplete.emit(False)
 
-        # Clear per-sequence accumulated data (mirrors Swift startTapSequence async block).
+        # Clear per-sequence accumulated data, as Swift's startTapSequence does.
         self.captured_taps.clear()
         self.tap_entries = []
         self.showing_multi_tap_comparison = False

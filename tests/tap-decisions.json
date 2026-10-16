@@ -1,0 +1,883 @@
+{
+ "slug": "test/tap-decisions",
+ "about": "The tap detector's decisions — the rising edge, the threshold the application configured, the hysteresis latch and the re-arm rule, the warm-up and its sync chunk, relative detection and its noise floor, the confirmation a resume or a new sequence restarts — and the gated capture's onset alignment. 'cases': each starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps' — the shared steps of tooling/analyzer-steps, every chunk through the edition's per-chunk entry, and {\"check\": {...}}, which asserts those fields at that point; then 'expect'. A tap has fired when a capture has started. Fields: 'captureOpen' (a gated capture is active), 'aboveThreshold' (the hysteresis latch), 'justExitedWarmUp' (the next chunk is the sync chunk), 'inWarmUp' (the audio clock is still inside the warm-up), 'noiseFloor' (the estimate, within 0.01 dB), 'phase' (Swift's raw value), 'detecting', 'statusMessage'. 'confirmChunks': the chunks above the threshold that make a tap, which each edition's constant must equal — the cases' two-chunk taps are that many. 'onset': the gated capture's onset alignment on a 'buffer' ('impulse': zeros, 'value' at 'at'; 'constant'; 'ramp': start + step × i), as Float32, with 'windowSize' and 'preOnset'; 'expect' — the output 'length', the index of its largest magnitude 'argmax', and 'samples' (index → value, within 1e-6). Python's tests of its audio pipeline's delivery (each chunk's level and each frame reaching the analyzer exactly once, on the main thread) stay Python's own: its Qt signal connections can add a second receiver, where Swift's and the web's single-assignment callbacks cannot. Expected values are Swift's.",
+ "confirmChunks": 2,
+ "cases": [
+  {
+   "id": "T1",
+   "note": "a rising edge above the threshold is a tap",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 2,
+     "level": -35
+    }
+   ],
+   "expect": {
+    "captureOpen": true
+   }
+  },
+  {
+   "id": "T1c",
+   "note": "the detector uses the threshold the application configured: below it (but above the −40 default) is not a tap",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -30
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 2,
+     "level": -35
+    }
+   ],
+   "expect": {
+    "captureOpen": false
+   }
+  },
+  {
+   "id": "T1d",
+   "note": "the control for T1c: above the configured threshold is a tap",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -30
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 2,
+     "level": -25
+    }
+   ],
+   "expect": {
+    "captureOpen": true
+   }
+  },
+  {
+   "id": "T1e-lenient",
+   "note": "the same tap judged against two thresholds: −45 clears −50",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -50
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 2,
+     "level": -45
+    }
+   ],
+   "expect": {
+    "captureOpen": true
+   }
+  },
+  {
+   "id": "T1e-strict",
+   "note": "the same tap judged against two thresholds: −45 is too quiet for −35",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -35
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 2,
+     "level": -45
+    }
+   ],
+   "expect": {
+    "captureOpen": false
+   }
+  },
+  {
+   "id": "T1f",
+   "note": "the re-arm rule: while latched above, a ring-out that dips below the rising threshold (−40) but not below the falling one (−43) is the same tap still sounding, so its next rise is not a new tap",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": -0.001
+    },
+    {
+     "audioChunks": 1,
+     "level": -20
+    },
+    {
+     "audioChunks": 3,
+     "level": -42
+    },
+    {
+     "audioChunks": 3,
+     "level": -20
+    }
+   ],
+   "expect": {
+    "captureOpen": false
+   }
+  },
+  {
+   "id": "T1g",
+   "note": "the control for T1f: a dip below the falling threshold re-arms, and a second strike is a tap",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": -0.001
+    },
+    {
+     "audioChunks": 1,
+     "level": -20
+    },
+    {
+     "audioChunks": 3,
+     "level": -60
+    },
+    {
+     "audioChunks": 2,
+     "level": -20
+    }
+   ],
+   "expect": {
+    "captureOpen": true
+   }
+  },
+  {
+   "id": "T2",
+   "note": "a level below the threshold is not a tap",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 2,
+     "level": -50
+    }
+   ],
+   "expect": {
+    "captureOpen": false
+   }
+  },
+  {
+   "id": "T3",
+   "note": "the warm-up suppresses detection",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "audioChunks": 2,
+     "level": -20
+    }
+   ],
+   "expect": {
+    "inWarmUp": true,
+    "captureOpen": false
+   }
+  },
+  {
+   "id": "T5",
+   "note": "once latched above, a level between the falling and rising thresholds holds the latch",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": -0.001
+    },
+    {
+     "audioChunks": 1,
+     "level": -20
+    },
+    {
+     "audioChunks": 1,
+     "level": -42
+    }
+   ],
+   "expect": {
+    "aboveThreshold": true,
+    "captureOpen": false
+   }
+  },
+  {
+   "id": "T5b",
+   "note": "a level below the falling threshold clears the latch",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": -0.001
+    },
+    {
+     "audioChunks": 1,
+     "level": -20
+    },
+    {
+     "audioChunks": 1,
+     "level": -50
+    }
+   ],
+   "expect": {
+    "aboveThreshold": false
+   }
+  },
+  {
+   "id": "T6-control",
+   "note": "the control for T6: for a guitar, −38 clears the absolute −40 threshold",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 2,
+     "level": -38
+    }
+   ],
+   "expect": {
+    "captureOpen": true
+   }
+  },
+  {
+   "id": "T6",
+   "note": "plate detection is relative to the noise floor: with the floor at −45 and the threshold −40 the rising threshold is −35, so −38 is not a tap and −30 is",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "check": {
+      "phase": "Capturing Longitudinal"
+     }
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -45
+    },
+    {
+     "audioChunks": 1,
+     "level": -45
+    },
+    {
+     "check": {
+      "noiseFloor": -45
+     }
+    },
+    {
+     "audioChunks": 3,
+     "level": -38
+    },
+    {
+     "check": {
+      "captureOpen": false
+     }
+    },
+    {
+     "audioChunks": 2,
+     "level": -30
+    }
+   ],
+   "expect": {
+    "captureOpen": true
+   }
+  },
+  {
+   "id": "T7",
+   "note": "in plate mode the noise floor follows the ambient level while below the threshold",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -60
+    },
+    {
+     "audioChunks": 1,
+     "level": -60
+    },
+    {
+     "check": {
+      "noiseFloor": -60
+     }
+    },
+    {
+     "audioChunks": 50,
+     "level": -55
+    }
+   ],
+   "expect": {
+    "noiseFloor": -55.3847
+   }
+  },
+  {
+   "id": "T8",
+   "note": "the first chunk after the warm-up syncs the latch from its level, and does not fire",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": -0.001
+    },
+    {
+     "check": {
+      "justExitedWarmUp": true
+     }
+    },
+    {
+     "audioChunks": 1,
+     "level": -30
+    }
+   ],
+   "expect": {
+    "justExitedWarmUp": false,
+    "aboveThreshold": true,
+    "captureOpen": false
+   }
+  },
+  {
+   "id": "T9",
+   "note": "the settle — the latched ring-out falling below the falling threshold — leaves a plate's prompt alone",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -60
+    },
+    {
+     "audioChunks": 1,
+     "level": -60
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    },
+    {
+     "check": {
+      "captureOpen": true
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "statusMessage": "fL tap 1/2 captured. Tap again..."
+     }
+    },
+    {
+     "advance": "tapCooldown",
+     "level": -20
+    },
+    {
+     "check": {
+      "detecting": true,
+      "aboveThreshold": true
+     }
+    },
+    {
+     "audioChunks": 3,
+     "level": -60
+    }
+   ],
+   "expect": {
+    "aboveThreshold": false,
+    "statusMessage": "fL tap 1/2 captured. Tap again..."
+   }
+  },
+  {
+   "id": "T10",
+   "note": "the settle leaves a guitar's prompt alone",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    },
+    {
+     "check": {
+      "captureOpen": true
+     }
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "check": {
+      "statusMessage": "Tap 1/2 captured. Tap again..."
+     }
+    },
+    {
+     "advance": "tapCooldown",
+     "level": -20
+    },
+    {
+     "check": {
+      "detecting": true,
+      "aboveThreshold": true
+     }
+    },
+    {
+     "audioChunks": 3,
+     "level": -60
+    }
+   ],
+   "expect": {
+    "aboveThreshold": false,
+    "statusMessage": "Tap 1/2 captured. Tap again..."
+   }
+  },
+  {
+   "id": "T11",
+   "note": "a new sequence seeds the noise floor from the current input level, and from −100 when the warm-up is skipped (a guitar file's playback)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)"
+     }
+    },
+    {
+     "audioChunks": 1,
+     "level": -50
+    },
+    {
+     "newTap": true
+    },
+    {
+     "check": {
+      "noiseFloor": -50
+     }
+    },
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "newTapSkippingWarmUp": true
+    }
+   ],
+   "expect": {
+    "noiseFloor": -100
+   }
+  },
+  {
+   "id": "T12",
+   "note": "a resume restarts the tap confirmation: one chunk above the threshold before the pause and one after it are not a tap; a second after it is",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -35
+    },
+    {
+     "check": {
+      "captureOpen": false
+     }
+    },
+    {
+     "pause": true
+    },
+    {
+     "resume": true
+    },
+    {
+     "audioChunks": 1,
+     "level": -35
+    },
+    {
+     "check": {
+      "captureOpen": false
+     }
+    },
+    {
+     "audioChunks": 1,
+     "level": -35
+    }
+   ],
+   "expect": {
+    "captureOpen": true
+   }
+  },
+  {
+   "id": "T13",
+   "note": "a new sequence restarts the tap confirmation: a chunk counted before it cannot help confirm its first tap",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "audioChunks": 1,
+     "level": -35
+    },
+    {
+     "newTap": true
+    },
+    {
+     "audioChunks": 1,
+     "level": -35
+    },
+    {
+     "check": {
+      "captureOpen": false
+     }
+    },
+    {
+     "audioChunks": 1,
+     "level": -35
+    }
+   ],
+   "expect": {
+    "captureOpen": true
+   }
+  },
+  {
+   "id": "T14",
+   "note": "a resume keeps the noise floor and puts the latch down",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": -0.001
+    },
+    {
+     "audioChunks": 1,
+     "level": -20
+    },
+    {
+     "check": {
+      "noiseFloor": -20
+     }
+    },
+    {
+     "pause": true
+    },
+    {
+     "resume": true
+    }
+   ],
+   "expect": {
+    "noiseFloor": -20,
+    "aboveThreshold": false
+   }
+  }
+ ],
+ "onset": [
+  {
+   "id": "O1",
+   "note": "the transient lands at the pre-onset position plus the 32-sample backup, at full amplitude",
+   "buffer": {
+    "kind": "impulse",
+    "length": 10000,
+    "at": 5000,
+    "value": 0.5
+   },
+   "windowSize": 4096,
+   "preOnset": 1000,
+   "expect": {
+    "length": 4096,
+    "argmax": 1032,
+    "samples": {
+     "1032": 0.5
+    }
+   }
+  },
+  {
+   "id": "O2",
+   "note": "a buffer too short for the 2048-sample noise estimate: its start, zero-padded to the window",
+   "buffer": {
+    "kind": "constant",
+    "length": 1000,
+    "value": 0.25
+   },
+   "windowSize": 4096,
+   "preOnset": 1000,
+   "expect": {
+    "length": 4096,
+    "samples": {
+     "0": 0.25,
+     "999": 0.25,
+     "1000": 0,
+     "4095": 0
+    }
+   }
+  },
+  {
+   "id": "O3",
+   "note": "no onset (a level that never rises 10× above its own RMS): the start of the buffer, window-sized",
+   "buffer": {
+    "kind": "ramp",
+    "length": 10000,
+    "start": 0.1,
+    "step": 1e-05
+   },
+   "windowSize": 4096,
+   "preOnset": 1000,
+   "expect": {
+    "length": 4096,
+    "samples": {
+     "0": 0.1,
+     "4095": 0.14095
+    }
+   }
+  }
+ ]
+}

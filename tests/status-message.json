@@ -1,6 +1,6 @@
 {
  "slug": "test/status-message",
- "about": "The status line's words, each reached through the app's own path. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, setPeakMin, newTap, pause, resume, guitarTap, materialTap — at 0 Hz, a silent tap — accept, redo, advance with 'level' / 'extra', audioChunks), and {\"clipping\": bool} (the input starts or stops clipping), {\"deviceChange\": true} (the audio device changes), {\"load\": file}, {\"playingFile\": true} (the engine reports a file playing), {\"check\": {...}}. Fields: 'statusMessage' (exact), 'statusPrefix' / 'statusSuffix' / 'statusContains', 'statusUnchangedByLastStep', 'detecting', 'tapCount'. Expected values are Swift's.",
+ "about": "The status line's words, each reached through the app's own path. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, setPeakMin, newTap, pause, resume, guitarTap, materialTap — at 0 Hz, a silent tap — accept, redo, advance with 'level' / 'extra', audioChunks), and {\"clipping\": bool} (the input starts or stops clipping), {\"deviceChange\": true} (the audio device changes), {\"load\": file}, {\"playingFile\": true} (the engine reports a file playing), {\"drainMainQueue\": true} (whatever is queued on the main thread runs: ten passes, each waiting for everything queued before it — no time passes), {\"countStatusWrites\": true} (writes of the status are counted from here), {\"check\": {...}}. Fields: 'statusMessage' (exact), 'statusPrefix' / 'statusSuffix' / 'statusContains', 'statusUnchangedByLastStep', 'detecting', 'tapCount', 'statusWrites' (the writes counted since countStatusWrites: Swift's status publisher, Python's statusMessageChanged, the web's change notifications — its one signal). Expected values are Swift's.",
  "files": {
   "loaded": [
    {
@@ -871,6 +871,38 @@
    ],
    "expect": {
     "statusMessage": "Complete - check Results"
+   }
+  },
+  {
+   "id": "SM24",
+   "note": "arming straight after the analyzer is made writes the armed prompt in the same pass as the initial status; the status settles on the prompt and stays there (it once alternated between the two for good)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTapSkippingWarmUp": true
+    },
+    {
+     "drainMainQueue": true
+    },
+    {
+     "check": {
+      "statusMessage": "Tap the guitar..."
+     }
+    },
+    {
+     "countStatusWrites": true
+    },
+    {
+     "drainMainQueue": true
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap the guitar...",
+    "statusWrites": 0
    }
   }
  ]

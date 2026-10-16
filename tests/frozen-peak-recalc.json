@@ -1,0 +1,2016 @@
+{
+ "slug": "test/frozen-peak-recalc",
+ "about": "Frozen peaks: Re-analyze's re-detection, Peak Min's projection, and what a load, a live frame, a capture, Save and Redo do to a measurement's peaks and their per-peak state — each through the app's own path. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps; {\"load\": {...}} — a .guitartap document the runner writes and reads with the edition's own reader, then loads as the app does: 'type' (the saved measurement type), 'spectrum' (the frozen spectrum, as a peaks.json spectrum spec; absent: none saved), 'peaks' ([hz, dB] — the saved peaks), and optionally 'selected' (hz), 'userModified', 'overrides' (hz → name), 'offsets' (hz → [x, y], a dragged label's position) and 'tapEntries' ({'peaks', 'selected'}); {\"loadFixture\": file} (a fixture every edition carries, loaded as the app loads a file); {\"reanalyze\": true}; {\"toggleSelection\": hz}; {\"nameMode\": {\"at\": hz, \"label\": s}}; {\"dragLabel\": {\"at\": hz, \"to\": [x, y]}}; {\"liveFrame\": spec} (a frame from the running engine); {\"save\": true}; {\"loadSaved\": true} (the last saved measurement, loaded); {\"mark\": true} (records the peak ids, the selected ids and the per-tap entries); {\"check\": {...}}. A peak is named by its frequency: the peak within 1 Hz of it (a dragged label, a name or a selection is resolved to its peak's frequency the same way; one on no peak fails the check). Fields: 'peaks' (the measurement's peaks, ascending), 'shown' (those above Peak Min), 'selected' (the selected peaks), 'overrides' and 'offsets' (the whole map, by frequency), 'labels' (hz → the label the analyzer gives that peak — the name the results show), 'modes' (each peak's classified mode, the whole map), 'tapEntries' (each entry's peaks and selected peaks), 'idsAsMarked' / 'selectedIdsAsMarked' / 'tapEntriesAsMarked' (unchanged since the mark), 'idsAsLoaded' (the peak ids are the file's), 'canReanalyze', 'complete', 'phase' (Swift's raw value), 'fL' / 'fC' (the identified peak's frequency, null for none), 'materialPeaks' (the identified peaks), 'saved' (the last saved measurement: its 'peaks', and 'selectedAll'). 'tapEntryModes': a tap entry's Air/Top/Back, resolved from its 'peaks' ([hz, dB]) and 'selected' under 'guitarType' — mode → frequency. Retired: PR05, PR10, PR11 (guards no path reached, removed), PR26, PR27 (a carry-forward of a hand-made selection no path reached, removed), PR06, PR31. Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "PR01",
+   "note": "Re-analyze detects the frozen spectrum's peak, and it is shown above Peak Min",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        }
+       ]
+      }
+     }
+    },
+    {
+     "setPeakMin": -60
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "peaks": [
+     200
+    ],
+    "shown": [
+     200
+    ]
+   }
+  },
+  {
+   "id": "PR02",
+   "note": "Peak Min hides a weak re-detected peak from the display; the measurement keeps it",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -50,
+         "halfWidthHz": 7
+        }
+       ]
+      }
+     }
+    },
+    {
+     "setPeakMin": -60
+    },
+    {
+     "reanalyze": true
+    },
+    {
+     "check": {
+      "shown": [
+       200
+      ]
+     }
+    },
+    {
+     "setPeakMin": -40
+    }
+   ],
+   "expect": {
+    "shown": [],
+    "peaks": [
+     200
+    ]
+   }
+  },
+  {
+   "id": "PR03",
+   "note": "Peak Min projects the saved peaks for display and never shrinks the saved set",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -25
+       ],
+       [
+        330,
+        -65
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      }
+     }
+    },
+    {
+     "setPeakMin": -60
+    }
+   ],
+   "expect": {
+    "peaks": [
+     200,
+     330
+    ],
+    "shown": [
+     200
+    ]
+   }
+  },
+  {
+   "id": "PR04",
+   "note": "every saved peak below Peak Min: nothing is shown",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -70
+       ],
+       [
+        330,
+        -65
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      }
+     }
+    },
+    {
+     "setPeakMin": -60
+    }
+   ],
+   "expect": {
+    "shown": [],
+    "peaks": [
+     200,
+     330
+    ]
+   }
+  },
+  {
+   "id": "PR07",
+   "note": "Peak Min shows the peaks above it and hides those below",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        330,
+        -60
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      }
+     }
+    },
+    {
+     "setPeakMin": -40
+    }
+   ],
+   "expect": {
+    "shown": [
+     200
+    ]
+   }
+  },
+  {
+   "id": "PR08",
+   "note": "every peak below Peak Min: the display clears, but the saved peaks and their modes stay",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        100,
+        -60
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      }
+     }
+    },
+    {
+     "setPeakMin": -10
+    }
+   ],
+   "expect": {
+    "shown": [],
+    "peaks": [
+     100
+    ],
+    "modes": {
+     "100": "Air (Helmholtz)"
+    }
+   }
+  },
+  {
+   "id": "PR09",
+   "note": "Peak Min never hides a plate's identified peaks",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "setPeakMin": 0
+    }
+   ],
+   "expect": {
+    "complete": true,
+    "fL": 60,
+    "fC": 150
+   }
+  },
+  {
+   "id": "PR09-brace",
+   "note": "Peak Min never hides a brace's identified peak",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 300
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "setPeakMin": 0
+    }
+   ],
+   "expect": {
+    "complete": true,
+    "fL": 300
+   }
+  },
+  {
+   "id": "PR12",
+   "note": "a re-detection at the same frequency gives the peak a new id, and its dragged label follows it",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        250,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 250,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "offsets": {
+       "250": [
+        7,
+        13
+       ]
+      }
+     }
+    },
+    {
+     "mark": true
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "idsAsMarked": false,
+    "offsets": {
+     "250": [
+      7,
+      13
+     ]
+    }
+   }
+  },
+  {
+   "id": "PR13",
+   "note": "a Peak Min sweep keeps a peak's identity, selection, name and dragged label",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        300,
+        -50
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       300
+      ]
+     }
+    },
+    {
+     "setPeakMin": -60
+    },
+    {
+     "mark": true
+    },
+    {
+     "nameMode": {
+      "at": 300,
+      "label": "Wolf note"
+     }
+    },
+    {
+     "dragLabel": {
+      "at": 300,
+      "to": [
+       12,
+       34
+      ]
+     }
+    },
+    {
+     "setPeakMin": -40
+    },
+    {
+     "check": {
+      "shown": [
+       200
+      ],
+      "peaks": [
+       200,
+       300
+      ]
+     }
+    },
+    {
+     "setPeakMin": -60
+    }
+   ],
+   "expect": {
+    "idsAsMarked": true,
+    "shown": [
+     200,
+     300
+    ],
+    "selected": [
+     300
+    ],
+    "overrides": {
+     "300": "Wolf note"
+    },
+    "offsets": {
+     "300": [
+      12,
+      34
+     ]
+    }
+   }
+  },
+  {
+   "id": "PR14",
+   "note": "a peak the user deselected is not selected again by a Peak Min sweep",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        100,
+        -20
+       ],
+       [
+        200,
+        -25
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       100,
+       200
+      ]
+     }
+    },
+    {
+     "setPeakMin": -60
+    },
+    {
+     "toggleSelection": 200
+    },
+    {
+     "check": {
+      "selected": [
+       100
+      ]
+     }
+    },
+    {
+     "setPeakMin": -10
+    },
+    {
+     "setPeakMin": -60
+    }
+   ],
+   "expect": {
+    "selected": [
+     100
+    ]
+   }
+  },
+  {
+   "id": "PR15",
+   "note": "a Peak Min sweep leaves the per-tap peaks and their selection alone",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        300,
+        -50
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "tapEntries": [
+       {
+        "peaks": [
+         [
+          200,
+          -20
+         ],
+         [
+          300,
+          -50
+         ]
+        ],
+        "selected": [
+         300
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "setPeakMin": -60
+    },
+    {
+     "mark": true
+    },
+    {
+     "setPeakMin": -40
+    },
+    {
+     "setPeakMin": -60
+    }
+   ],
+   "expect": {
+    "tapEntriesAsMarked": true,
+    "tapEntries": [
+     {
+      "peaks": [
+       200,
+       300
+      ],
+      "selected": [
+       300
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "PR16",
+   "note": "Re-analyze leaves the per-tap peaks and their selection alone",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        300,
+        -50
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        },
+        {
+         "peakHz": 300,
+         "peakDB": -50,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "tapEntries": [
+       {
+        "peaks": [
+         [
+          200,
+          -20
+         ],
+         [
+          300,
+          -50
+         ]
+        ],
+        "selected": [
+         300
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "setPeakMin": -40
+    },
+    {
+     "mark": true
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "tapEntriesAsMarked": true
+   }
+  },
+  {
+   "id": "PR17",
+   "note": "a load restores the saved per-tap peaks and never re-detects them (777 Hz is not in the spectrum)",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "tapEntries": [
+       {
+        "peaks": [
+         [
+          777,
+          -30
+         ]
+        ],
+        "selected": [
+         777
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "tapEntries": [
+     {
+      "peaks": [
+       777
+      ],
+      "selected": [
+       777
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "PR18",
+   "note": "a selected peak hidden by Peak Min is still selected",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        100,
+        -20
+       ],
+       [
+        200,
+        -50
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       100,
+       200
+      ]
+     }
+    },
+    {
+     "setPeakMin": -60
+    },
+    {
+     "setPeakMin": -40
+    }
+   ],
+   "expect": {
+    "shown": [
+     100
+    ],
+    "selected": [
+     100,
+     200
+    ]
+   }
+  },
+  {
+   "id": "PR19",
+   "note": "Re-analyze keeps the dragged label and the name of a peak hidden by Peak Min",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        300,
+        -55
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        },
+        {
+         "peakHz": 300,
+         "peakDB": -55,
+         "halfWidthHz": 7
+        }
+       ]
+      }
+     }
+    },
+    {
+     "dragLabel": {
+      "at": 300,
+      "to": [
+       21,
+       42
+      ]
+     }
+    },
+    {
+     "nameMode": {
+      "at": 300,
+      "label": "Wolf note"
+     }
+    },
+    {
+     "setPeakMin": -40
+    },
+    {
+     "check": {
+      "shown": [
+       200
+      ]
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "peaks": [
+     200,
+     300
+    ],
+    "offsets": {
+     "300": [
+      21,
+      42
+     ]
+    },
+    "overrides": {
+     "300": "Wolf note"
+    }
+   }
+  },
+  {
+   "id": "PR20",
+   "note": "a dragged label follows its peak to the re-detected one within ±5 Hz (saved at 200, found at 203)",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -30
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 203,
+         "peakDB": -30,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "offsets": {
+       "200": [
+        5,
+        10
+       ]
+      }
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "peaks": [
+     203
+    ],
+    "offsets": {
+     "203": [
+      5,
+      10
+     ]
+    }
+   }
+  },
+  {
+   "id": "PR21",
+   "note": "Re-analyze keeps the dragged label of a peak hidden by Peak Min",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        330,
+        -60
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        },
+        {
+         "peakHz": 330,
+         "peakDB": -60,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "offsets": {
+       "200": [
+        1,
+        2
+       ],
+       "330": [
+        9,
+        9
+       ]
+      }
+     }
+    },
+    {
+     "setPeakMin": -40
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "offsets": {
+     "200": [
+      1,
+      2
+     ],
+     "330": [
+      9,
+      9
+     ]
+    }
+   }
+  },
+  {
+   "id": "PR22",
+   "note": "a dragged label whose peak is gone (saved at 200, found only at 300) is dropped, not moved to another peak",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 300,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "offsets": {
+       "200": [
+        12,
+        -8
+       ]
+      }
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "peaks": [
+     300
+    ],
+    "offsets": {}
+   }
+  },
+  {
+   "id": "PR23",
+   "note": "a peak's name follows it to the re-detected peak within ±5 Hz",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -30
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 203,
+         "peakDB": -30,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "overrides": {
+       "200": "Custom Label"
+      }
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "overrides": {
+     "203": "Custom Label"
+    }
+   }
+  },
+  {
+   "id": "PR24",
+   "note": "Re-analyze keeps the name of a peak hidden by Peak Min",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        330,
+        -60
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        },
+        {
+         "peakHz": 330,
+         "peakDB": -60,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "overrides": {
+       "200": "Keep",
+       "330": "Drop"
+      }
+     }
+    },
+    {
+     "setPeakMin": -40
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "overrides": {
+     "200": "Keep",
+     "330": "Drop"
+    }
+   }
+  },
+  {
+   "id": "PR25",
+   "note": "a name whose peak is gone is dropped, not given to another peak",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 300,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "overrides": {
+       "200": "Wolf note"
+      }
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "peaks": [
+     300
+    ],
+    "overrides": {}
+   }
+  },
+  {
+   "id": "PR28",
+   "note": "Re-analyze re-runs automatic selection, even over a hand-made one: of two Acoustic Air peaks the louder is selected",
+   "steps": [
+    {
+     "load": {
+      "type": "Acoustic Guitar",
+      "peaks": [
+       [
+        95,
+        -50
+       ],
+       [
+        112,
+        -25
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 95,
+         "peakDB": -50,
+         "halfWidthHz": 7
+        },
+        {
+         "peakHz": 112,
+         "peakDB": -25,
+         "halfWidthHz": 7
+        }
+       ]
+      },
+      "selected": [
+       95
+      ],
+      "userModified": true
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "selected": [
+     112
+    ]
+   }
+  },
+  {
+   "id": "PR29",
+   "note": "Re-analyze that finds nothing leaves no modes, and the selection as it was",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        100,
+        -30
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       100
+      ]
+     }
+    },
+    {
+     "mark": true
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "peaks": [],
+    "modes": {},
+    "selectedIdsAsMarked": true
+   }
+  },
+  {
+   "id": "PR30",
+   "note": "no names before a re-detection, none after",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 203,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        }
+       ]
+      }
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "peaks": [
+     203
+    ],
+    "overrides": {}
+   }
+  },
+  {
+   "id": "PR33",
+   "note": "a captured guitar measurement offers Re-analyze",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "check": {
+      "complete": true
+     }
+    }
+   ],
+   "expect": {
+    "canReanalyze": true
+   }
+  },
+  {
+   "id": "PR34",
+   "note": "a loaded guitar measurement offers Re-analyze",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "expect": {
+    "canReanalyze": true
+   }
+  },
+  {
+   "id": "PR35",
+   "note": "Re-analyze stays available after a press",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        }
+       ]
+      }
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "canReanalyze": true
+   }
+  },
+  {
+   "id": "PR36",
+   "note": "a plate never offers Re-analyze",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    }
+   ],
+   "expect": {
+    "complete": true,
+    "canReanalyze": false
+   }
+  },
+  {
+   "id": "PR36-brace",
+   "note": "a brace never offers Re-analyze",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 300
+     }
+    },
+    {
+     "accept": true
+    }
+   ],
+   "expect": {
+    "complete": true,
+    "canReanalyze": false
+   }
+  },
+  {
+   "id": "PR37",
+   "note": "a measurement with no spectrum does not offer Re-analyze",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "canReanalyze": false
+   }
+  },
+  {
+   "id": "PR37-incomplete",
+   "note": "a sequence still running does not offer Re-analyze",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "complete": false,
+    "canReanalyze": false
+   }
+  },
+  {
+   "id": "PR39",
+   "note": "a live frame never replaces a complete measurement's peaks",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      }
+     }
+    },
+    {
+     "liveFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "peaks": [
+     200
+    ]
+   }
+  },
+  {
+   "id": "PR39-running",
+   "note": "the control for PR39: while a sequence runs, a live frame sets the peaks",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "liveFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "peaks": [
+     150
+    ]
+   }
+  },
+  {
+   "id": "PR40",
+   "note": "a load puts the saved peaks in place, by identity",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        100,
+        -25
+       ],
+       [
+        330,
+        -30
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      }
+     }
+    }
+   ],
+   "expect": {
+    "peaks": [
+     100,
+     330
+    ],
+    "idsAsLoaded": true
+   }
+  },
+  {
+   "id": "PR41",
+   "note": "Re-analyze drops the loaded peaks and re-detects the spectrum (the saved 330 Hz is not in it)",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        330,
+        -30
+       ]
+      ],
+      "spectrum": {
+       "kind": "gaussians",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "noiseFloor": -100,
+       "peaks": [
+        {
+         "peakHz": 200,
+         "peakDB": -20,
+         "halfWidthHz": 7
+        }
+       ]
+      }
+     }
+    },
+    {
+     "reanalyze": true
+    }
+   ],
+   "expect": {
+    "peaks": [
+     200
+    ]
+   }
+  },
+  {
+   "id": "PR46",
+   "note": "a load classifies the saved peaks under the measurement's own guitar type: 88 Hz is Air for Generic, outside Acoustic's Air band",
+   "steps": [
+    {
+     "settings": {
+      "type": "Acoustic Guitar"
+     }
+    },
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        88,
+        -25
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      }
+     }
+    }
+   ],
+   "expect": {
+    "modes": {
+     "88": "Air (Helmholtz)"
+    }
+   }
+  },
+  {
+   "id": "PR32",
+   "note": "a captured brace peak owns its dragged label, which is saved with it and comes back on loading",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 300
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "dragLabel": {
+      "at": 300,
+      "to": [
+       12,
+       -3
+      ]
+     }
+    },
+    {
+     "check": {
+      "offsets": {
+       "300": [
+        12,
+        -3
+       ]
+      }
+     }
+    },
+    {
+     "save": true
+    },
+    {
+     "check": {
+      "saved": {
+       "peaks": [
+        300
+       ]
+      }
+     }
+    },
+    {
+     "loadSaved": true
+    }
+   ],
+   "expect": {
+    "fL": 300,
+    "offsets": {
+     "300": [
+      12,
+      -3
+     ]
+    }
+   }
+  },
+  {
+   "id": "PR42",
+   "note": "saving a material measurement writes its identified peaks, all selected",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 300
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "save": true
+    }
+   ],
+   "expect": {
+    "saved": {
+     "peaks": [
+      300
+     ],
+     "selectedAll": true
+    }
+   }
+  },
+  {
+   "id": "PR43",
+   "note": "loading a plate restores its identified peaks from the file, and no guitar peaks or selection",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "save": true
+    },
+    {
+     "loadSaved": true
+    }
+   ],
+   "expect": {
+    "fL": 60,
+    "fC": 150,
+    "peaks": [],
+    "selected": []
+   }
+  },
+  {
+   "id": "PR44",
+   "note": "a live frame during a material sequence leaves no peaks",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "liveFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 200,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "peaks": []
+   }
+  },
+  {
+   "id": "PR45",
+   "note": "Redo clears the redone phase's identified peak",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "phase": "Reviewing Longitudinal",
+      "fL": 60
+     }
+    },
+    {
+     "redo": true
+    }
+   ],
+   "expect": {
+    "fL": null,
+    "materialPeaks": []
+   }
+  },
+  {
+   "id": "PR47",
+   "note": "a live frame selects every peak it finds",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "liveFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       },
+       {
+        "peakHz": 250,
+        "peakDB": -30,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "peaks": [
+     150,
+     250
+    ],
+    "selected": [
+     150,
+     250
+    ]
+   }
+  },
+  {
+   "id": "PR49",
+   "note": "New Tap on a material measurement clears its dragged labels",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setTaps": 1
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 300
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "dragLabel": {
+      "at": 300,
+      "to": [
+       12,
+       -3
+      ]
+     }
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "offsets": {}
+   }
+  },
+  {
+   "id": "PR50",
+   "note": "a name given to a peak of a saved file (its ids and 32-bit frequencies as the file has them) is still the peak's label after Peak Min hides it, Re-analyze, and Peak Min shows it again",
+   "steps": [
+    {
+     "loadFixture": "contreras-classical-1774731564.guitartap"
+    },
+    {
+     "setPeakMin": -100
+    },
+    {
+     "nameMode": {
+      "at": 569,
+      "label": "Fred"
+     }
+    },
+    {
+     "check": {
+      "labels": {
+       "569": "Fred"
+      }
+     }
+    },
+    {
+     "setPeakMin": -50
+    },
+    {
+     "reanalyze": true
+    },
+    {
+     "setPeakMin": -100
+    }
+   ],
+   "expect": {
+    "labels": {
+     "569": "Fred"
+    },
+    "overrides": {
+     "569": "Fred"
+    }
+   }
+  }
+ ],
+ "tapEntryModes": [
+  {
+   "id": "PR38",
+   "note": "a tap's Air/Top/Back resolve over its selected peaks only: the selected Top is the weaker of two",
+   "guitarType": "Generic",
+   "peaks": [
+    [
+     100,
+     -25
+    ],
+    [
+     200,
+     -20
+    ],
+    [
+     220,
+     -30
+    ]
+   ],
+   "selected": [
+    100,
+    220
+   ],
+   "expect": {
+    "Air (Helmholtz)": 100,
+    "Top": 220
+   }
+  }
+ ]
+}

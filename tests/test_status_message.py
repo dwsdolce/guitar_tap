@@ -1,26 +1,22 @@
 # @parity test/status-message
 """The status line's words, each reached through the app's own path. The shared cases in
-status-message.json (SM1-SM23), the same as Swift and the web. Below them, the case that the status
-settles and stays settled, which needs a quiet period of real time.
+status-message.json (SM1-SM24), the same as Swift and the web.
 """
 from __future__ import annotations
 
 import json
 import os
 import sys
-import time
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from PySide6 import QtWidgets  # noqa: E402
 
 from analyzer_steps import make_steps_analyzer, run_analyzer_step  # noqa: E402
 
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS  # noqa: E402
-from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer  # noqa: E402
 from guitar_tap.views.tap_analysis_results_view import measurements_from_json  # noqa: E402
 
 _HERE = os.path.dirname(__file__)
@@ -37,7 +33,7 @@ def _restore_settings():
     TDS.set_measure_flc(saved[1])
 
 
-def _check(fields: dict, sut, before: str) -> None:
+def _check(fields: dict, sut, before: str, writes: list) -> None:
     status = sut.status_message
     for field, want in fields.items():
         if field == "statusMessage":
@@ -54,6 +50,8 @@ def _check(fields: dict, sut, before: str) -> None:
             assert sut.is_detecting is want, field
         elif field == "tapCount":
             assert sut.current_tap_count == want, field
+        elif field == "statusWrites":
+            assert len(writes) == want, f"{field}: {writes}"
         else:
             pytest.fail(f"unknown field {field}")
 
@@ -62,9 +60,10 @@ def _check(fields: dict, sut, before: str) -> None:
 def test_status(row, qapp):
     sut = make_steps_analyzer()
     before = sut.status_message
+    writes: list[str] = []
     for step in row["steps"]:
         if "check" in step:
-            _check(step["check"], sut, before)
+            _check(step["check"], sut, before, writes)
             continue
         before = sut.status_message
         if "clipping" in step:
@@ -75,25 +74,11 @@ def test_status(row, qapp):
             sut.load_measurement(measurements_from_json(json.dumps(DATA["files"][step["load"]]))[0])
         elif step.get("playingFile"):
             sut.mic.is_playing_file = True
+        elif step.get("drainMainQueue"):
+            for _ in range(10):  # each pass runs everything queued before it
+                qapp.processEvents()
+        elif step.get("countStatusWrites"):
+            sut.statusMessageChanged.connect(writes.append)
         else:
             assert run_analyzer_step(step, sut), f"unknown step {step}"
-    _check(row["expect"], sut, before)
-
-
-def test_two_writes_in_one_pass_settle_on_the_second_and_stay(qapp):
-    """Arming straight after the analyzer is made writes the armed prompt in the same pass as the
-    initial status. The status must settle on the prompt and stay there — it once alternated between
-    the two for good."""
-    sut = TapToneAnalyzer.for_testing()
-    sut.number_of_taps = 1
-    sut.start_tap_sequence(skip_warmup=True)
-    qapp.processEvents()
-    assert sut.status_message == "Tap the guitar..."
-
-    writes: list[str] = []
-    sut.statusMessageChanged.connect(writes.append)
-    deadline = time.monotonic() + 0.05
-    while time.monotonic() < deadline:
-        qapp.processEvents()
-    assert sut.status_message == "Tap the guitar..."
-    assert writes == [], f"the status kept changing with nothing happening: {len(writes)} writes"
+    _check(row["expect"], sut, before, writes)

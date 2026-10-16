@@ -3,7 +3,7 @@
 count and the taps held — not only where they end: the app's behaviour on screen follows each
 intermediate state, so two editions reaching the same result by different paths would differ. Every
 tap is a real capture finish and every wait is audio fed through the analyzer's clock. The shared
-cases in scenario-trace.json (S1-S4), the same as Swift and the web.
+cases in scenario-trace.json (S1-S5), the same as Swift and the web.
 """
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from analyzer_steps import make_steps_analyzer, run_analyzer_step  # noqa: E402
 
-from guitar_tap.models.detection_state import DetectionState  # noqa: E402
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS  # noqa: E402
 
 _HERE = os.path.dirname(__file__)
@@ -48,8 +47,6 @@ def test_scenario(row, qapp):
     for step in row["steps"]:
         if "snap" in step:
             trace.append(_snapshot(step["snap"], sut))
-        elif step.get("strayDetection"):
-            sut.detection_state = DetectionState.IDLE
         else:
             assert run_analyzer_step(step, sut), f"unknown step {step}"
     assert trace == row["expect"]["trace"]

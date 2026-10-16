@@ -56,6 +56,10 @@ class TapToneAnalyzerPeakAnalysisMixin:
         from .guitar_mode import GuitarMode
         from .tap_display_settings import TapDisplaySettings
 
+        # Nothing to analyze unless the engine is running. Mirrors Swift's guard fftAnalyzer.isRunning.
+        if self.mic is None or self.mic.is_stopped:
+            return
+
         # Only analyze when detection is active, paused (spectrum stays live),
         # or in a capture window; stop once the measurement is complete.
         # Mirrors Swift's guard on isDetecting || isDetectionPaused || captureTimer != nil.
@@ -105,26 +109,17 @@ class TapToneAnalyzerPeakAnalysisMixin:
     # ------------------------------------------------------------------ #
 
     def recalculate_frozen_peaks_if_needed(self) -> None:
-        """Re-analyze's re-detection: re-run peak finding on the frozen spectrum and carry per-peak
-        state (offsets, overrides, selection) onto the new peaks by frequency.
+        """Re-analyze's re-detection: re-run peak finding on the frozen spectrum, classify the new
+        peaks afresh and auto-select them, and carry each peak's dragged label position and custom
+        name onto the new peak by frequency.
 
-        Reached only through ``reanalyze_peaks`` (Peak Min only projects the durable set). A loaded
-        measurement's saved peaks are never re-detected here: Re-analyze drops them first. Mirrors
-        Swift recalculateFrozenPeaksIfNeeded().
+        Reached only through ``reanalyze_peaks``, which checks first that the measurement is complete
+        and its spectrum frozen (Peak Min only projects the durable set). Mirrors Swift
+        recalculateFrozenPeaksIfNeeded().
         """
-        if getattr(self, "is_loading_measurement", False):
-            return
-
         frozen_mag = self.frozen_magnitudes
         frozen_freq = self.frozen_frequencies
-        if (
-            not self.is_measurement_complete
-            or (hasattr(frozen_freq, "__len__") and len(frozen_freq) == 0)
-            or (hasattr(frozen_mag, "__len__") and len(frozen_mag) == 0)
-        ):
-            return
 
-        is_guitar = getattr(self._measurement_type, "is_guitar", True)
         tolerance = 5.0  # Hz — matches Swift tolerance constant
 
         # Snapshot frequency-keyed state BEFORE UUIDs change.
@@ -147,23 +142,6 @@ class TapToneAnalyzerPeakAnalysisMixin:
             if match is not None:
                 overrides_by_freq.append((match.frequency, label))
 
-        previously_selected_freqs: list = []
-        if is_guitar and self.user_has_modified_peak_selection:
-            if self.selected_peak_frequencies:
-                previously_selected_freqs = list(self.selected_peak_frequencies)
-            else:
-                previously_selected_freqs = [
-                    p.frequency
-                    for p in self.all_peaks
-                    if p.id in self.selected_peak_ids
-                ]
-
-        modes_by_freq = [
-            (entry["peak"].frequency, entry["mode"])
-            for entry in self.identified_modes
-            if "peak" in entry and "mode" in entry
-        ]
-
         # Mirrors Swift: allPeaks = findPeaks(frozen…, peakMinOverride: peakDetectionFloor)
         # — detect the FULL set at the -100 floor; peaks_above_peak_min is its Peak-Min projection.
         self.all_peaks = self.find_peaks(
@@ -178,11 +156,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
 
         self._apply_frozen_peak_state(
             peaks=peaks,
-            modes_by_freq=modes_by_freq,
             offsets_by_freq=offsets_by_freq,
             overrides_by_freq=overrides_by_freq,
-            previously_selected_freqs=previously_selected_freqs,
-            is_guitar=is_guitar,
             tolerance=tolerance,
         )
         # TapEntry peaks are computed once, at capture, and are durable; a display recalc never
@@ -210,9 +185,8 @@ class TapToneAnalyzerPeakAnalysisMixin:
         Re-analyze is a **reset**, not a dirty-flag indicator.  It is offered whenever
         it *could* do something, not only when we can prove it *will* — deliberately.
         What can leave the displayed analysis differing from a clean re-derivation is
-        open-ended: the peaks came from a file; mode assignments were carried forward
-        across Peak Min moves rather than re-claimed (``_apply_frozen_peak_state``); the
-        analysis range moved; selections were hand-edited.  Proving "it will definitely
+        open-ended: the peaks came from a file; the guitar type or the analysis range
+        moved; selections or mode names were hand-edited.  Proving "it will definitely
         change something" would mean enumerating all of those correctly, forever, with
         nothing to tell us when we got it wrong.  The two failure modes are not
         symmetric: a wrongly-DISABLED button is a dead end (the user cannot force the
@@ -252,10 +226,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         ``find_peaks()`` on the frozen spectrum, and the re-detected peaks replace the
         saved ones.
 
-        Also re-claims the mode assignments from scratch: ``identified_modes`` is
-        cleared, so the carry-forward in ``_apply_frozen_peak_state`` has nothing to
-        match and every peak is classified afresh.  This is the only route back to a
-        clean classification once assignments have drifted across Peak Min moves.
+        Also re-claims the mode assignments from scratch: every peak is classified afresh.
 
         What survives: user mode **overrides** (remapped onto the new peak ids by ±5 Hz
         frequency proximity) and annotation offsets.  What does not: the manual
@@ -319,8 +290,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
             return
         # Re-run guitar mode auto-selection.
         # Mirrors Swift exactly: only selected_peak_ids is set; selected_peak_frequencies
-        # stays empty (it was cleared above).  selected_peak_frequencies is a carry-forward
-        # cache used by threshold adjustments — not a UI signal.  The view layer pushes
+        # stays empty (it was cleared above); it is not a UI signal.  The view layer pushes
         # the selection to the model directly after calling this method.
         self.selected_peak_ids = self.guitar_mode_selected_peak_ids(peaks)
 
@@ -428,38 +398,25 @@ class TapToneAnalyzerPeakAnalysisMixin:
     def _apply_frozen_peak_state(
         self,
         peaks: list,
-        modes_by_freq: list,
         offsets_by_freq: list,
         overrides_by_freq: list,
-        previously_selected_freqs: list,
-        is_guitar: bool,
         tolerance: float,
     ) -> None:
-        """Remap annotation offsets, mode overrides, and selections to new peak UUIDs.
+        """Classify the new peaks afresh, remap annotation offsets and mode overrides to their UUIDs
+        by frequency proximity, and auto-select.
 
-        Mirrors Swift ``applyFrozenPeakState(peaks:modesByFrequency:...)``.
+        Mirrors Swift ``applyFrozenPeakState(peaks:offsetsByFrequency:...)``.
         """
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_afps
 
         from .guitar_mode import GuitarMode
 
-        # Mirrors Swift applyFrozenPeakState: freshModeMap = GuitarMode.classifyAll(peaks)
-        # Swift uses the claiming algorithm (all peaks together) not single-peak classify,
-        # so peaks in the TOP/BACK overlap zone (180–260 Hz) are correctly disambiguated.
-        fresh_mode_map = GuitarMode.classify_all(peaks, _tds_afps.guitar_type())
-
-        new_identified: list = []
-        for new_peak in peaks:
-            saved_mode = None
-            for freq_val, mode_val in modes_by_freq:
-                if abs(freq_val - new_peak.frequency) <= tolerance:
-                    saved_mode = mode_val
-                    break
-            mode = saved_mode if saved_mode is not None else (
-                fresh_mode_map.get(new_peak.id, GuitarMode.UNKNOWN)
-            )
-            new_identified.append({"peak": new_peak, "mode": mode})
-        self.identified_modes = new_identified
+        # The claiming algorithm (all peaks together), as Swift's classifyAll, so peaks in the
+        # TOP/BACK overlap zone (180–260 Hz) are disambiguated.
+        mode_map = GuitarMode.classify_all(peaks, _tds_afps.guitar_type())
+        self.identified_modes = [
+            {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)} for p in peaks
+        ]
 
         new_offsets: dict = {}
         for new_peak in peaks:
@@ -477,37 +434,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
                     break
         self.peak_mode_overrides = new_overrides
 
-        if not is_guitar:
-            # Plate/brace: selection is managed exclusively by the phase-completion handlers
-            # (only the identified peak is selected). Don't clobber it here.
-            self.selected_peak_frequencies = [
-                p.frequency for p in peaks if p.id in self.selected_peak_ids
-            ]
-        elif self.user_has_modified_peak_selection:
-            carried_ids: set = set()
-            carried_freqs: list = []
-            for old_freq in previously_selected_freqs:
-                candidates = [
-                    p for p in peaks
-                    if abs(p.frequency - old_freq) <= tolerance
-                ]
-                if candidates:
-                    closest = min(
-                        candidates, key=lambda p: abs(p.frequency - old_freq)
-                    )
-                    if closest.id not in carried_ids:
-                        carried_ids.add(closest.id)
-                        carried_freqs.append(closest.frequency)
-                else:
-                    carried_freqs.append(old_freq)
-            self.selected_peak_ids = carried_ids
-            self.selected_peak_frequencies = carried_freqs
-        else:
-            auto_ids = self.guitar_mode_selected_peak_ids(peaks)
-            self.selected_peak_ids = auto_ids
-            self.selected_peak_frequencies = [
-                p.frequency for p in peaks if p.id in auto_ids
-            ]
+        auto_ids = self.guitar_mode_selected_peak_ids(peaks)
+        self.selected_peak_ids = auto_ids
+        self.selected_peak_frequencies = [p.frequency for p in peaks if p.id in auto_ids]
 
     # ------------------------------------------------------------------ #
     # _make_peak  (private helper)

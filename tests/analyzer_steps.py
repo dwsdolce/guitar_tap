@@ -26,12 +26,14 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
     - ``{"setThreshold": dB}`` — the Threshold control
     - ``{"setPeakMin": dB}`` — the Peak Min control
     - ``{"newTap": true}``, ``{"pause": true}``, ``{"resume": true}``, ``{"cancel": true}``
+    - ``{"newTapSkippingWarmUp": true}`` — the start a guitar file's playback makes
     - ``{"guitarTap": hz}`` — a guitar capture finished on a synthetic tap one capture long
     - ``{"materialTap": {"phase": "L" | "C" | "FLC", "hz": hz}}`` — a material capture on a 0.5 s tap
     - ``{"accept": true}``, ``{"redo": true}`` — the phase under review
     - ``{"advance": "tapCooldown" | "captureWindow" | "warmupPeriod" | seconds, "fraction"?: f, "extra"?: s,
       "level"?: dB}`` — that much audio (quiet unless ``level`` is given)
-    - ``{"audioChunks": n, "level": dB}`` — n chunks of audio at that level (two loud ones are a tap)
+    - ``{"audioChunks": n, "level": dB}`` — exactly n chunks of audio at that level, each one chunk
+      after the last (two loud ones are a tap)
     """
     if "settings" in step:
         settings = step["settings"]
@@ -47,6 +49,8 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
         sut.peak_min_threshold = float(step["setPeakMin"])
     elif step.get("newTap"):
         sut.start_tap_sequence()
+    elif step.get("newTapSkippingWarmUp"):
+        sut.start_tap_sequence(skip_warmup=True)
     elif step.get("pause"):
         sut.pause_tap_detection()
     elif step.get("resume"):
@@ -68,7 +72,8 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
                    "warmupPeriod": sut.warmup_period}.get(advance, advance)
         advance_audio(sut, seconds * step.get("fraction", 1.0) + step.get("extra", 0.0), step.get("level", -90.0))
     elif "audioChunks" in step:
-        advance_audio(sut, step["audioChunks"] * AUDIO_FEED_CHUNK_SECONDS, step["level"])
+        for _ in range(step["audioChunks"]):
+            sut._on_chunk_level(float(step["level"]), sut.last_audio_time + AUDIO_FEED_CHUNK_SECONDS)
     else:
         return False
     return True

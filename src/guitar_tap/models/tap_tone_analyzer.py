@@ -427,8 +427,8 @@ class TapToneAnalyzer(
         # Whether the user has manually changed peak selection since last auto-run.
         # Mirrors Swift TapToneAnalyzer.userHasModifiedPeakSelection.
         self.user_has_modified_peak_selection: bool = False
-        # Suppresses recalculate_frozen_peaks_if_needed() during loadMeasurement.
-        # Mirrors Swift TapToneAnalyzer.isLoadingMeasurement.
+        # True while load_measurement restores a measurement, so completing it there is told apart
+        # from a capture completing. Mirrors Swift TapToneAnalyzer.isLoadingMeasurement.
         self.is_loading_measurement: bool = False
         # Store B — the current material measurement's own dimensions (plate/brace L·W·T·M + Gore
         # body dims + f_vs). None for guitar and before a material measurement completes. Seeded from
@@ -439,8 +439,8 @@ class TapToneAnalyzer(
         # Where the current result came from when it is not the live input — a played file or a loaded
         # measurement — or None while listening to the input. Mirrors Swift resultProvenance.
         self.result_provenance: "ResultProvenance | None" = None
-        # Frequencies of currently selected peaks — stable carry-forward for
-        # recalculate_frozen_peaks_if_needed(). Mirrors Swift selectedPeakFrequencies.
+        # Frequencies of the currently selected peaks, kept with the selection and saved with the
+        # measurement; nothing reads it back. Mirrors Swift selectedPeakFrequencies.
         self.selected_peak_frequencies: list = []
 
         # ── Multi-tap accumulator ─────────────────────────────────────────
@@ -1179,9 +1179,9 @@ class TapToneAnalyzer(
     @detection_state.setter
     def detection_state(self, value: DetectionState) -> None:
         old = self._detection_state
-        # Nothing to do for a same-value assignment — and in particular the re-confirmation
-        # in start_tap_sequence must not re-arm, so that a capture already started by the
-        # audio queue is not disrupted. Mirrors Swift's `guard oldValue != detectionState`.
+        # Nothing to do for a same-value assignment: re-asserting the state the detector is
+        # already in must not run the transition's work again. Mirrors Swift's
+        # `guard oldValue != detectionState`.
         if value is old:
             return
         self._detection_state = value

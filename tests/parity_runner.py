@@ -89,7 +89,8 @@ def _play(name: str) -> Any:
     sut.tap_detection_threshold = settings["tapDetectionThreshold"]
 
     measure_flc = bool(settings.get("measureFlc", False))
-    restore = TapDisplaySettings.measure_flc()
+    # The type and Measure FLC are global; the playback sets both, so both are put back.
+    restore = (TapDisplaySettings.measurement_type(), TapDisplaySettings.measure_flc())
     TapDisplaySettings.set_measure_flc(measure_flc)
     try:
         play_file_and_wait(
@@ -101,7 +102,8 @@ def _play(name: str) -> Any:
             calibration_path=calibration(name),
         )
     finally:
-        TapDisplaySettings.set_measure_flc(restore)
+        TapDisplaySettings.set_measurement_type(restore[0])
+        TapDisplaySettings.set_measure_flc(restore[1])
     return sut
 
 
