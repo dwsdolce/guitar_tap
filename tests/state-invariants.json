@@ -1,0 +1,292 @@
+{
+ "slug": "test/state-invariants",
+ "about": "State combinations the design forbids, checked after real sequences of steps, and the checker's own cases. The checker, in each edition's test code, returns the first rule broken (its id) or none: I1 — guitar: detecting while the measurement is complete; I2 — paused while complete; I3 — more captured taps than Taps; I4 — guitar: the tap count differs from the captured taps; I5 — progress outside 0…1; I6 — plate/brace: detecting while a phase is under review (Reviewing Longitudinal, Cross-grain or FLC). Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, setThreshold, newTap, pause, cancel, guitarTap, materialTap, advance), {\"check\": {...}}, which asserts those fields at that point, and {\"write\": {...}}, which sets state directly — used only to give the checker a forbidden state: detectionState (idle, listening, paused), complete, capturedTaps (that many captured taps), tapCount, tapProgress, phase (Swift's raw value). Fields checked: 'violation' (null, or the rule id the checker reports), 'complete', 'detecting', 'capturedTaps', 'phase'. Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "V1",
+   "note": "a fresh analyzer",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    }
+   ],
+   "expect": {
+    "violation": null
+   }
+  },
+  {
+   "id": "V2",
+   "note": "after New Tap",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "violation": null
+   }
+  },
+  {
+   "id": "V3",
+   "note": "a single-tap guitar measurement, completed",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    }
+   ],
+   "expect": {
+    "violation": null,
+    "complete": true
+   }
+  },
+  {
+   "id": "V4",
+   "note": "mid-way through three taps: resting after the first, then re-armed",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "check": {
+      "violation": null,
+      "detecting": false,
+      "capturedTaps": 1
+     }
+    },
+    {
+     "advance": "tapCooldown"
+    }
+   ],
+   "expect": {
+    "violation": null,
+    "detecting": true
+   }
+  },
+  {
+   "id": "V5",
+   "note": "Cancel mid-sequence",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "cancel": true
+    }
+   ],
+   "expect": {
+    "violation": null
+   }
+  },
+  {
+   "id": "V6",
+   "note": "paused",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "pause": true
+    }
+   ],
+   "expect": {
+    "violation": null
+   }
+  },
+  {
+   "id": "V7",
+   "note": "the checker flags I1: detecting with the measurement complete",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "write": {
+      "detectionState": "listening",
+      "complete": true
+     }
+    }
+   ],
+   "expect": {
+    "violation": "I1"
+   }
+  },
+  {
+   "id": "V8",
+   "note": "a plate reaches review through a real capture, not detecting — where I6 applies",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setThreshold": -90
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    }
+   ],
+   "expect": {
+    "violation": null,
+    "phase": "Reviewing Longitudinal",
+    "detecting": false
+   }
+  },
+  {
+   "id": "V9",
+   "note": "the checker flags I2: paused with the measurement complete",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "write": {
+      "detectionState": "paused",
+      "complete": true
+     }
+    }
+   ],
+   "expect": {
+    "violation": "I2"
+   }
+  },
+  {
+   "id": "V10",
+   "note": "the checker flags I3: more taps held than requested",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "write": {
+      "capturedTaps": 2
+     }
+    }
+   ],
+   "expect": {
+    "violation": "I3"
+   }
+  },
+  {
+   "id": "V11",
+   "note": "the checker flags I4: the tap count out of step with the taps held",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "write": {
+      "capturedTaps": 1,
+      "tapCount": 0
+     }
+    }
+   ],
+   "expect": {
+    "violation": "I4"
+   }
+  },
+  {
+   "id": "V12",
+   "note": "the checker flags I5: progress outside 0…1",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "write": {
+      "tapProgress": 1.5
+     }
+    }
+   ],
+   "expect": {
+    "violation": "I5"
+   }
+  },
+  {
+   "id": "V13",
+   "note": "the checker flags I6: detecting while a plate phase is under review",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "write": {
+      "phase": "Reviewing Longitudinal",
+      "detectionState": "listening"
+     }
+    }
+   ],
+   "expect": {
+    "violation": "I6"
+   }
+  }
+ ]
+}

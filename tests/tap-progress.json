@@ -1,0 +1,823 @@
+{
+ "slug": "test/tap-progress",
+ "about": "The values the status bar's progress bar shows: totalPlateTaps = Taps × (brace 1, plate 2, plate with FLC 3); tapProgress = min(1, tapCount ÷ (guitar: Taps, else totalPlateTaps)), stored at each capture; and the material tap count, cumulative across L → C → FLC and rebased to the earlier phases' taps on Redo. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, cancel, guitarTap, materialTap, accept, redo, advance), {\"load\": file} — an inline file below, or a fixture every edition carries — and {\"check\": {...}}, which asserts those fields at that point. Fields: 'totalPlateTaps', 'tapProgress' (within 0.0001), 'tapCount' (taps counted this sequence), 'phase' (Swift's raw value), 'complete', 'detecting'. Expected values are Swift's.",
+ "files": {
+  "inline-guitar": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000E1",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "numberOfTaps": 1,
+    "spectrumSnapshot": {
+     "frequencies": [
+      0.0,
+      31.25,
+      62.5,
+      93.75,
+      125.0,
+      156.25,
+      187.5,
+      218.75,
+      250.0,
+      281.25,
+      312.5,
+      343.75,
+      375.0,
+      406.25,
+      437.5,
+      468.75,
+      500.0,
+      531.25,
+      562.5,
+      593.75,
+      625.0,
+      656.25,
+      687.5,
+      718.75,
+      750.0,
+      781.25,
+      812.5,
+      843.75,
+      875.0,
+      906.25,
+      937.5,
+      968.75,
+      1000.0,
+      1031.25,
+      1062.5,
+      1093.75,
+      1125.0,
+      1156.25,
+      1187.5,
+      1218.75,
+      1250.0,
+      1281.25,
+      1312.5,
+      1343.75,
+      1375.0,
+      1406.25,
+      1437.5,
+      1468.75,
+      1500.0,
+      1531.25,
+      1562.5,
+      1593.75,
+      1625.0,
+      1656.25,
+      1687.5,
+      1718.75,
+      1750.0,
+      1781.25,
+      1812.5,
+      1843.75,
+      1875.0,
+      1906.25,
+      1937.5,
+      1968.75
+     ],
+     "magnitudes": [
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -30.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0
+     ],
+     "minFreq": 0,
+     "maxFreq": 2000,
+     "minDB": -90,
+     "maxDB": -20,
+     "isLogarithmic": false,
+     "measurementType": "Classical Guitar",
+     "guitarType": "Classical"
+    }
+   }
+  ]
+ },
+ "cases": [
+  {
+   "id": "TP1",
+   "note": "brace: the taps expected are Taps (one phase)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setTaps": 3
+    }
+   ],
+   "expect": {
+    "totalPlateTaps": 3
+   }
+  },
+  {
+   "id": "TP2",
+   "note": "plate without FLC: Taps × 2 (L, C)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 3
+    }
+   ],
+   "expect": {
+    "totalPlateTaps": 6
+   }
+  },
+  {
+   "id": "TP3",
+   "note": "plate with FLC: Taps × 3 (L, C, FLC)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "setTaps": 3
+    }
+   ],
+   "expect": {
+    "totalPlateTaps": 9
+   }
+  },
+  {
+   "id": "TP4",
+   "note": "a guitar measurement's bar advances by Taps as taps are captured",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 4
+    },
+    {
+     "newTap": true
+    },
+    {
+     "check": {
+      "tapProgress": 0
+     }
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "check": {
+      "tapProgress": 0.25
+     }
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "check": {
+      "tapProgress": 0.5
+     }
+    },
+    {
+     "guitarTap": 100
+    }
+   ],
+   "expect": {
+    "tapProgress": 0.75
+   }
+  },
+  {
+   "id": "TP5",
+   "note": "a new sequence starts its bar at 0",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "check": {
+      "complete": true,
+      "tapProgress": 1
+     }
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "tapProgress": 0
+   }
+  },
+  {
+   "id": "TP6",
+   "note": "plate with FLC, 2 taps a phase: the count accumulates across L → C and through the FLC wait — it does not restart at a phase boundary",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "check": {
+      "phase": "Capturing Longitudinal"
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "tapCount": 1,
+      "tapProgress": 0.16666666666666666
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "tapCount": 2,
+      "tapProgress": 0.3333333333333333
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "check": {
+      "tapCount": 2
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "check": {
+      "tapCount": 3,
+      "tapProgress": 0.5
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "check": {
+      "tapCount": 4,
+      "tapProgress": 0.6666666666666666
+     }
+    },
+    {
+     "accept": true
+    }
+   ],
+   "expect": {
+    "phase": "Waiting for FLC Tap",
+    "tapCount": 4,
+    "tapProgress": 0.6666666666666666
+   }
+  },
+  {
+   "id": "TP7",
+   "note": "brace: the bar fills 0 → 1 over its taps, and the last completes it",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 150
+     }
+    },
+    {
+     "check": {
+      "tapCount": 1,
+      "tapProgress": 0.5
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 150
+     }
+    }
+   ],
+   "expect": {
+    "tapCount": 2,
+    "tapProgress": 1,
+    "complete": true
+   }
+  },
+  {
+   "id": "TP8",
+   "note": "Redo C keeps L's taps counted",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "check": {
+      "phase": "Reviewing Cross-grain",
+      "tapCount": 4
+     }
+    },
+    {
+     "redo": true
+    }
+   ],
+   "expect": {
+    "phase": "Capturing Cross-grain",
+    "tapCount": 2,
+    "tapProgress": 0.3333333333333333
+   }
+  },
+  {
+   "id": "TP9",
+   "note": "Redo FLC keeps L and C counted",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "check": {
+      "phase": "Capturing FLC"
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "FLC",
+      "hz": 60
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "FLC",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "phase": "Reviewing FLC",
+      "tapCount": 6
+     }
+    },
+    {
+     "redo": true
+    }
+   ],
+   "expect": {
+    "phase": "Capturing FLC",
+    "tapCount": 4,
+    "tapProgress": 0.6666666666666666
+   }
+  },
+  {
+   "id": "TP10",
+   "note": "Redo L goes back to 0 (no phase precedes it)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "phase": "Reviewing Longitudinal",
+      "tapCount": 2
+     }
+    },
+    {
+     "redo": true
+    }
+   ],
+   "expect": {
+    "phase": "Capturing Longitudinal",
+    "tapCount": 0,
+    "tapProgress": 0
+   }
+  },
+  {
+   "id": "TP11",
+   "note": "Cancel during the FLC wait: the hold, when it ends, leaves the fresh sequence alone",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "check": {
+      "phase": "Waiting for FLC Tap"
+     }
+    },
+    {
+     "cancel": true
+    },
+    {
+     "check": {
+      "phase": "Capturing Longitudinal"
+     }
+    },
+    {
+     "advance": 0.8
+    }
+   ],
+   "expect": {
+    "phase": "Capturing Longitudinal"
+   }
+  },
+  {
+   "id": "TP12",
+   "note": "a plate sequence abandoned after L and C (FLC pending) is torn down by a load",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "check": {
+      "tapCount": 4,
+      "phase": "Waiting for FLC Tap"
+     }
+    },
+    {
+     "load": "inline-guitar"
+    }
+   ],
+   "expect": {
+    "tapCount": 0,
+    "tapProgress": 0,
+    "phase": "Complete",
+    "detecting": false,
+    "complete": true
+   }
+  },
+  {
+   "id": "TP13",
+   "note": "a load while detecting stops detection",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "check": {
+      "detecting": true,
+      "tapCount": 1
+     }
+    },
+    {
+     "load": "inline-guitar"
+    }
+   ],
+   "expect": {
+    "detecting": false,
+    "tapCount": 0,
+    "phase": "Complete"
+   }
+  },
+  {
+   "id": "TP14",
+   "note": "raising Taps after a measurement completes leaves its full bar — the bar records what was measured",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "check": {
+      "complete": true,
+      "tapProgress": 1
+     }
+    },
+    {
+     "setTaps": 3
+    }
+   ],
+   "expect": {
+    "tapProgress": 1
+   }
+  },
+  {
+   "id": "TP15",
+   "note": "a plate measurement loaded over a part-captured sequence shows no progress",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "check": {
+      "tapCount": 1
+     }
+    },
+    {
+     "load": "plate-umik-1-3-tap-swift-mac-1785359465.guitartap"
+    }
+   ],
+   "expect": {
+    "tapCount": 0,
+    "tapProgress": 0
+   }
+  }
+ ]
+}

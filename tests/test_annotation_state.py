@@ -1,680 +1,174 @@
 # @parity test/annotation-state
+"""The per-peak state the user edits and the views read: dragged label positions, selection, which
+peaks are annotated, mode labels (the user's own and the auto-detected), the one definitive
+Air/Top/Back and the tap-tone ratio, and what clears it all. The shared cases in annotation-state.json
+(AS1-AS41), the same as Swift and the web: each loads its peaks as the app loads a file and edits them
+as the views do.
 """
-Port of AnnotationStateTests.swift — live TapToneAnalyzer state:
-annotation offsets, peak selection, visibility filtering, mode overrides,
-plate peak selection, and update_measurement.
-
-All tests operate on TapToneAnalyzer instance state directly.
-TapToneMeasurement JSON round-trip tests live in test_measurement_codable.py.
-
-Mirrors Swift AnnotationStateTests covering:
-  D1–D2:   annotation offset storage on the live analyzer
-  D3/D3b:  toggle/select/clear/reset on the live analyzer
-  D4–D6:   visible_peaks on the live analyzer
-  D7–D8:   mode overrides on the live analyzer
-  CI5:     annotation_visibility_mode cycle on the live analyzer
-  UpdateMeasurement: update_measurement() on the live analyzer
-"""
-
 from __future__ import annotations
 
-import sys
+import json
 import os
-import uuid
+import sys
 
 import pytest
-from PySide6 import QtWidgets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
-from guitar_tap.models.guitar_mode import GuitarMode
-from guitar_tap.models.measurement_type import MeasurementType
-from guitar_tap.models.resonant_peak import ResonantPeak
-from guitar_tap.models.tap_display_settings import TapDisplaySettings
-from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_APP_LIVE: "QtWidgets.QApplication | None" = None
-
-
-def _get_app_live():
-    global _APP_LIVE
-    if _APP_LIVE is None:
-        _APP_LIVE = (
-            QtWidgets.QApplication.instance()
-            or QtWidgets.QApplication(sys.argv)
-        )
-    return _APP_LIVE
-
-
-def _make_sut():
-    _get_app_live()
-    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
-    return TapToneAnalyzer()
-
-
-def _make_peak_live(freq: float = 200.0, mag: float = -20.0) -> ResonantPeak:
-    return ResonantPeak(
-        id=str(uuid.uuid4()),
-        frequency=freq,
-        magnitude=mag,
-        quality=10.0,
-        bandwidth=freq / 10.0,
-    )
-
-
-def _classify_into(sut, peaks) -> None:
-    """Put *peaks* on the analyzer AND classify them, the way every production path does.
-
-    `all_peaks` and `identified_modes` are written together in the same pass everywhere in the app;
-    a test that assigns only the first leaves every peak UNKNOWN.
-    """
-    from guitar_tap.models.guitar_mode import GuitarMode
-    from guitar_tap.models.tap_display_settings import TapDisplaySettings
-
-    sut.all_peaks = list(peaks)
-    mode_map = GuitarMode.classify_all(list(peaks), TapDisplaySettings.guitar_type())
-    sut.identified_modes = [
-        {"peak": p, "mode": mode_map.get(p.id, GuitarMode.UNKNOWN)} for p in peaks
-    ]
-
-
-class TestAnnotationStateLive:
-    """Port of Swift AnnotationStateTests driving TapToneAnalyzer state directly.
-
-    Covers: D1–D2 (offsets), D3/D3b (toggle/select/clear/reset),
-    D4–D6 (visible_peaks), D7–D8 (mode overrides), CI5 (cycle),
-    """
-
-    # ── D1: updateAnnotationOffset stores offset by peak ID ──────────────
-
-    def test_D1_update_annotation_offset_stores_by_id(self):
-        """D1: update_annotation_offset stores (x,y) keyed by peak UUID."""
-        sut = _make_sut()
-        p = _make_peak_live()
-        sut.update_annotation_offset(p.id, (10.0, 20.0))
-        stored = sut.peak_annotation_offsets.get(p.id)
-        assert stored is not None
-        assert stored == (10.0, 20.0)
-
-    def test_D1b_update_annotation_offset_overwrites_previous(self):
-        """D1b: Updating an offset twice keeps the latest value."""
-        sut = _make_sut()
-        p = _make_peak_live()
-        sut.update_annotation_offset(p.id, (1.0, 2.0))
-        sut.update_annotation_offset(p.id, (99.0, 88.0))
-        stored = sut.peak_annotation_offsets.get(p.id)
-        assert stored == (99.0, 88.0)
-
-    # ── D2: apply_annotation_offsets bulk-populates the dict ─────────────
-
-    def test_D2_apply_annotation_offsets_populates_dictionary(self):
-        """D2: apply_annotation_offsets bulk-replaces peak_annotation_offsets."""
-        sut = _make_sut()
-        id1 = str(uuid.uuid4())
-        id2 = str(uuid.uuid4())
-        sut.apply_annotation_offsets({id1: (5.0, 10.0), id2: (15.0, 20.0)})
-        assert sut.peak_annotation_offsets[id1] == (5.0, 10.0)
-        assert sut.peak_annotation_offsets[id2] == (15.0, 20.0)
-
-    # ── D3: togglePeakSelection inserts then removes ──────────────────────
-
-    def test_D3_toggle_peak_selection_inserts_then_removes(self):
-        """D3: Toggling same peak ID twice results in empty selected_peak_ids."""
-        sut = _make_sut()
-        pid = str(uuid.uuid4())
-
-        sut.toggle_peak_selection(pid)
-        assert pid in sut.selected_peak_ids, "After first toggle peak should be selected"
-
-        sut.toggle_peak_selection(pid)
-        assert pid not in sut.selected_peak_ids, "After second toggle peak should be deselected"
-
-    def test_D3_select_no_peaks_clears_all(self):
-        """selectNoPeaks clears all selections."""
-        sut = _make_sut()
-        peaks = [_make_peak_live(100), _make_peak_live(200)]
-        sut.peaks_above_peak_min = peaks
-        # Select explicitly — there is no select-all (mirrors Swift).
-        sut.selected_peak_ids = {p.id for p in peaks}
-        sut.select_no_peaks()
-        assert len(sut.selected_peak_ids) == 0
-
-    # ── D3b: userHasModifiedPeakSelection flag ────────────────────────────
-
-    def test_D3b_toggle_peak_selection_sets_modified_flag(self):
-        """toggle_peak_selection sets user_has_modified_peak_selection."""
-        sut = _make_sut()
-        assert not sut.user_has_modified_peak_selection
-        sut.toggle_peak_selection(str(uuid.uuid4()))
-        assert sut.user_has_modified_peak_selection
-
-    def test_D3b_select_no_peaks_sets_modified_flag(self):
-        """select_no_peaks sets user_has_modified_peak_selection."""
-        sut = _make_sut()
-        sut.select_no_peaks()
-        assert sut.user_has_modified_peak_selection
-
-    def test_D3b_reset_to_auto_selection_clears_flag_and_selects_best_per_mode(self):
-        """reset_to_auto_selection clears the flag and auto-selects best per mode."""
-        sut = _make_sut()
-        # Two peaks in the acoustic Air range (90–120 Hz); louder one should win.
-        quiet_air = _make_peak_live(freq=98.0, mag=-50.0)
-        loud_air = _make_peak_live(freq=105.0, mag=-30.0)
-        # Auto-selection reads the DURABLE set now — seed all_peaks (projects to peaks_above_peak_min).
-        sut.all_peaks = [quiet_air, loud_air]
-        sut.user_has_modified_peak_selection = True
-        sut.selected_peak_ids = set()
-
-        sut.reset_to_auto_selection()
-
-        assert not sut.user_has_modified_peak_selection, (
-            "Flag should be cleared after reset_to_auto_selection"
-        )
-        assert loud_air.id in sut.selected_peak_ids, (
-            "Loudest Air peak should be auto-selected"
-        )
-        assert quiet_air.id not in sut.selected_peak_ids, (
-            "Quieter Air peak should not be selected"
-        )
-
-    def test_D3b_reset_to_auto_selection_empty_peaks_is_noop(self):
-        """reset_to_auto_selection on empty peaks_above_peak_min is a no-op (no crash)."""
-        sut = _make_sut()
-        sut.user_has_modified_peak_selection = True
-        sut.reset_to_auto_selection()
-        assert not sut.user_has_modified_peak_selection
-        assert len(sut.selected_peak_ids) == 0
-
-    # ── D4–D6: visible_peaks ──────────────────────────────────────────────
-
-    def test_D4_all_mode_returns_all_peaks_above_peak_min(self):
-        """D4: annotation_visibility_mode='all' → visible_peaks == peaks_above_peak_min."""
-        sut = _make_sut()
-        sut.annotation_visibility_mode = "all"
-        peaks = [_make_peak_live(100), _make_peak_live(200), _make_peak_live(300)]
-        sut.peaks_above_peak_min = peaks
-        assert len(sut.visible_peaks) == 3
-
-    def test_D5_selected_mode_filters_to_selected_peaks(self):
-        """D5: annotation_visibility_mode='selected' → only selected peaks visible."""
-        sut = _make_sut()
-        sut.annotation_visibility_mode = "selected"
-        p1 = _make_peak_live(100)
-        p2 = _make_peak_live(200)
-        p3 = _make_peak_live(300)
-        sut.peaks_above_peak_min = [p1, p2, p3]
-        sut.selected_peak_ids = {p1.id, p3.id}
-
-        visible = sut.visible_peaks
-        assert len(visible) == 2
-        assert any(abs(p.frequency - 100) < 1 for p in visible)
-        assert any(abs(p.frequency - 300) < 1 for p in visible)
-        assert not any(abs(p.frequency - 200) < 1 for p in visible)
-
-    def test_D6_none_mode_returns_empty(self):
-        """D6: annotation_visibility_mode='none' → visible_peaks is empty."""
-        sut = _make_sut()
-        sut.annotation_visibility_mode = "none"
-        peaks = [_make_peak_live(), _make_peak_live(300)]
-        sut.peaks_above_peak_min = peaks
-        # Select explicitly — there is no select-all (mirrors Swift).
-        sut.selected_peak_ids = {p.id for p in peaks}
-        assert sut.visible_peaks == []
-
-    # ── D7–D8: Mode overrides ─────────────────────────────────────────────
-
-    def test_D7_no_override_returns_auto_label(self):
-        """D7: No override → the label is the peak's auto-classified mode."""
-        sut = _make_sut()
-        # 100 Hz is in the Air (Helmholtz) range for classical/acoustic.
-        # The analyzer must KNOW the peak: effective_mode_label reads identified_modes and no longer
-        # classifies a stray peak on its own (one peak cannot compete for a band — see peak_mode).
-        p = _make_peak_live(freq=100.0)
-        _classify_into(sut, [p])
-        label = sut.effective_mode_label(p)
-        assert label == "Air (Helmholtz)", (
-            f"Expected 'Air (Helmholtz)' for 100 Hz, got '{label}'"
-        )
-
-    def test_D8_assigned_override_returns_custom_label(self):
-        """D8: set_mode_override with a label returns that label."""
-        sut = _make_sut()
-        p = _make_peak_live(freq=200.0)
-        sut.set_mode_override("My Label", p.id)
-        assert sut.effective_mode_label(p) == "My Label"
-
-    def test_D8b_has_manual_override_true_for_assigned_false_for_auto(self):
-        """has_manual_override is True only for assigned overrides."""
-        sut = _make_sut()
-        p = _make_peak_live()
-        sut.set_mode_override("auto", p.id)
-        assert not sut.has_manual_override(p.id), ".auto should not be a manual override"
-        sut.set_mode_override("Test", p.id)
-        assert sut.has_manual_override(p.id), "Assigned label should be a manual override"
-
-    def test_D8c_clear_override_reverts_to_auto_label(self):
-        """Clearing an override (set_mode_override None) reverts to auto-classification."""
-        sut = _make_sut()
-        p = _make_peak_live(freq=100.0)
-        _classify_into(sut, [p])
-        sut.set_mode_override("Temp", p.id)
-        sut.set_mode_override(None, p.id)
-        label = sut.effective_mode_label(p)
-        assert label == "Air (Helmholtz)"
-
-    # ── An unclassified peak has NO mode — it is not guessed at ──────────
-    #
-    # There is no fallback that classifies the peak ALONE (``classify_all([peak])``): one peak
-    # cannot compete for a band, and the Generic Top (140-260 Hz) and Back (180-300 Hz) ranges
-    # overlap, so such a fallback would call anything between 180 and 260 Hz TOP — including a
-    # plate/brace peak, which has no guitar mode at all. The web does not guess either.
-
-    # The CLEAR half of the store: each of these is unset as well as set, matching the BEHAVIOUR
-    # the web's `peak-state-store` tests pin.
-
-    def test_reset_mode_override_clears_only_that_peaks_override(self):
-        sut = _make_sut()
-        kept, cleared = _make_peak_live(freq=100.0), _make_peak_live(freq=200.0)
-        sut.set_mode_override("Wolf note", cleared.id)
-        sut.set_mode_override("Keep me", kept.id)
-
-        sut.reset_mode_override(cleared.id)
-
-        assert cleared.id not in sut.peak_mode_overrides, "the targeted override is gone"
-        assert sut.peak_mode_overrides.get(kept.id) == "Keep me", (
-            "the other peak's override is untouched"
-        )
-
-    def test_reset_annotation_offset_clears_only_that_peaks_offset(self):
-        sut = _make_sut()
-        kept, cleared = _make_peak_live(freq=100.0), _make_peak_live(freq=200.0)
-        sut.update_annotation_offset(cleared.id, (9.0, 9.0))
-        sut.update_annotation_offset(kept.id, (1.0, 2.0))
-
-        sut.reset_annotation_offset(cleared.id)
-
-        assert cleared.id not in sut.peak_annotation_offsets, "the dragged position is gone"
-        assert sut.peak_annotation_offsets.get(kept.id) == (1.0, 2.0), (
-            "the other peak keeps its dragged position"
-        )
-
-    def test_reset_all_annotation_offsets_empties_the_whole_store(self):
-        sut = _make_sut()
-        a, b = _make_peak_live(freq=100.0), _make_peak_live(freq=200.0)
-        sut.update_annotation_offset(a.id, (1.0, 2.0))
-        sut.update_annotation_offset(b.id, (3.0, 4.0))
-        assert len(sut.peak_annotation_offsets) == 2, "precondition"
-
-        sut.reset_all_annotation_offsets()
-
-        assert sut.peak_annotation_offsets == {}, (
-            "Reset Labels returns every callout to its anchor"
-        )
-
-    def test_D7b_unclassified_peak_has_no_mode_even_in_the_top_back_overlap(self):
-        """A peak absent from identified_modes resolves to UNKNOWN, never a guessed mode."""
-        from guitar_tap.models.guitar_mode import GuitarMode
-
-        sut = _make_sut()
-        # 220 Hz sits in BOTH the Generic Top and Back ranges — the band where classifying a lone
-        # peak cannot arbitrate, and where the old fallback always answered TOP.
-        stray = _make_peak_live(freq=220.0)
-        assert sut.identified_modes == [], "precondition: the analyzer knows nothing about it"
-
-        assert sut.peak_mode(stray) == GuitarMode.UNKNOWN
-        assert sut.auto_detected_mode(stray) == GuitarMode.UNKNOWN
-
-    def test_D7c_a_completed_material_capture_leaves_its_peak_unclassified(self):
-        """The real case the fallback mis-answered: material peaks have no guitar mode.
-
-        A completed plate/brace capture sets all_peaks but leaves identified_modes empty on
-        purpose — there is no guitar classification to make. UNKNOWN is the honest answer.
-        """
-        from guitar_tap.models.guitar_mode import GuitarMode
-
-        sut = _make_sut()
-        fl = _make_peak_live(freq=220.0)
-        sut.all_peaks = [fl]          # as the material capture handlers do — no classify pass
-        assert sut.identified_modes == []
-
-        assert sut.peak_mode(fl) == GuitarMode.UNKNOWN, (
-            "a material peak must not be labelled with a guitar mode"
-        )
-
-    # ── CI5: cycle_annotation_visibility ─────────────────────────────────
-
-    def test_CI5_cycle_annotation_visibility_traverses_all_modes(self):
-        """CI5: Three calls traverse all → selected → none → all."""
-        sut = _make_sut()
-        sut.annotation_visibility_mode = AnnotationVisibilityMode.ALL
-
-        sut.cycle_annotation_visibility()
-        assert sut.annotation_visibility_mode == AnnotationVisibilityMode.SELECTED
-
-        sut.cycle_annotation_visibility()
-        assert sut.annotation_visibility_mode == AnnotationVisibilityMode.NONE
-
-        sut.cycle_annotation_visibility()
-        assert sut.annotation_visibility_mode == AnnotationVisibilityMode.ALL
-
-# ---------------------------------------------------------------------------
-# Definitive Air/Top/Back uniqueness (D11-D16)
-# ---------------------------------------------------------------------------
-#
-# Classification and selection are independent. Classification is band membership: five peaks in the
-# Air band are five Air peaks. Selection picks which one is DEFINITIVE; Air/Top/Back may have at most
-# one each (single physical resonances). Dipole/Ring/Upper are clusters, unconstrained. Deselecting
-# never relabels: a displaced peak stays classified, it just stops being the definitive one.
-#
-# Generic bands: air 70-135, top 140-260, back 180-300, dipole 310-460. Top fixtures sit under 180 so
-# they cannot also be Back. Mirrors Swift DefinitiveModeUniquenessTests (D11-D16).
-
-
-class TestDefinitiveModeUniqueness:
-    @pytest.fixture(autouse=True)
-    def _generic(self):
-        saved = TapDisplaySettings.measurement_type()
-        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-        yield
-        TapDisplaySettings.set_measurement_type(saved)
-
-    def test_D11_selecting_a_second_top_displaces_the_first_without_reclassifying(self):
-        sut = _make_sut()
-        top_a = _make_peak_live(150, -30)
-        top_b = _make_peak_live(170, -25)
-        sut.all_peaks = [top_a, top_b]
-        sut.reclassify_peaks()
-
-        sut.toggle_peak_selection(top_a.id)
-        assert sut.selected_peak_ids == {top_a.id}
-
-        sut.toggle_peak_selection(top_b.id)
-        assert sut.selected_peak_ids == {top_b.id}, "only one definitive Top — selecting B displaces A"
-        assert sut.peak_mode(top_a) == GuitarMode.TOP, (
-            "the displaced peak is STILL a Top peak; deselecting does not relabel it"
-        )
-
-    def test_D12_dipole_allows_several_selected_peaks(self):
-        sut = _make_sut()
-        d1 = _make_peak_live(320, -30)
-        d2 = _make_peak_live(400, -25)
-        sut.all_peaks = [d1, d2]
-        sut.reclassify_peaks()
-        assert sut.peak_mode(d1) == GuitarMode.DIPOLE, "fixture precondition"
-
-        sut.toggle_peak_selection(d1.id)
-        sut.toggle_peak_selection(d2.id)
-        assert sut.selected_peak_ids == {d1.id, d2.id}, (
-            "Dipole is not a single-holder mode — both stay selected"
-        )
-
-    def test_D13_overriding_a_selected_peak_into_top_displaces_the_definitive_top(self):
-        sut = _make_sut()
-        top = _make_peak_live(150, -30)
-        air = _make_peak_live(90, -25)
-        sut.all_peaks = [top, air]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(top.id)
-        sut.toggle_peak_selection(air.id)
-        assert sut.selected_peak_ids == {top.id, air.id}, "one Air and one Top, both definitive"
-
-        sut.set_mode_override(GuitarMode.TOP.display_name, air.id)
-        assert sut.selected_peak_ids == {air.id}, (
-            "the relabelled peak becomes the definitive Top; the previous holder is displaced"
-        )
-        assert sut.peak_mode(top) == GuitarMode.TOP, (
-            "the displaced peak keeps its Top classification"
-        )
-
-    def test_D14_overriding_an_unselected_peak_into_top_changes_no_selection(self):
-        sut = _make_sut()
-        top = _make_peak_live(150, -30)
-        air = _make_peak_live(90, -25)
-        sut.all_peaks = [top, air]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(top.id)
-
-        sut.set_mode_override(GuitarMode.TOP.display_name, air.id)
-        assert sut.selected_peak_ids == {top.id}, (
-            "overriding an unselected peak must not touch selection"
-        )
-        assert sut.peak_mode(air) == GuitarMode.TOP, "…though it IS now a Top candidate"
-
-    def test_D15_overriding_the_definitive_top_away_leaves_top_with_no_holder(self):
-        sut = _make_sut()
-        top_a = _make_peak_live(150, -30)
-        top_b = _make_peak_live(170, -25)
-        sut.all_peaks = [top_a, top_b]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(top_a.id)
-
-        sut.set_mode_override("Wolf note", top_a.id)
-        assert sut.peak_mode(top_a) == GuitarMode.UNKNOWN, "freeform label, no longer Top"
-        assert top_b.id not in sut.selected_peak_ids, "top_b must NOT be auto-promoted to definitive Top"
-        assert sut.selected_peak_ids == {top_a.id}, (
-            "the relabelled peak stays selected — it is simply no longer a Top"
-        )
-
-    def test_D16_select_none_leaves_classification_intact(self):
-        sut = _make_sut()
-        top = _make_peak_live(150, -30)
-        air = _make_peak_live(90, -25)
-        sut.all_peaks = [top, air]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(top.id)
-        sut.toggle_peak_selection(air.id)
-
-        sut.select_no_peaks()
-        assert sut.selected_peak_ids == set(), "Select None clears every definitive peak"
-        assert sut.peak_mode(top) == GuitarMode.TOP, "classification survives Select None"
-        assert sut.peak_mode(air) == GuitarMode.AIR
-
-
-class TestAutoDetectedMode:
-    @pytest.fixture(autouse=True)
-    def _generic(self):
-        saved = TapDisplaySettings.measurement_type()
-        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-        yield
-        TapDisplaySettings.set_measurement_type(saved)
-
-    def test_auto_detected_mode_ignores_override(self):
-        """auto_detected_mode names the AUTO classification, never the override — the target of a
-        "Reset to Auto-Detected". Regression guard for the reset-menu label. Mirrors Swift
-        autoDetectedMode_ignoresOverride."""
-        sut = _make_sut()
-        air = _make_peak_live(100, -30)   # classifies Air for generic
-        sut.all_peaks = [air]
-        sut.reclassify_peaks()
-        assert sut.auto_detected_mode(air) == GuitarMode.AIR, "precondition: auto-detects Air"
-
-        sut.set_mode_override(GuitarMode.TOP.display_name, air.id)
-        assert sut.peak_mode(air) == GuitarMode.TOP, "override is in effect (current label)"
-        assert sut.auto_detected_mode(air) == GuitarMode.AIR, (
-            "auto_detected_mode ignores the override — it names the reset target"
-        )
-
-
-class TestDefinitivePeakAndRatio:
-    """get_peak / calculate_tap_tone_ratio read the DEFINITIVE peak — the SELECTED peak whose
-    override-aware mode is that mode. Mirrors Swift AnnotationStateTests."""
-
-    @pytest.fixture(autouse=True)
-    def _generic(self):
-        saved = TapDisplaySettings.measurement_type()
-        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-        yield
-        TapDisplaySettings.set_measurement_type(saved)
-
-    def test_get_peak_returns_selected_holder_not_strongest(self):
-        sut = _make_sut()
-        weak_top = _make_peak_live(150, -35)
-        loud_top = _make_peak_live(170, -20)
-        sut.all_peaks = [weak_top, loud_top]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(weak_top.id)   # select the WEAKER
-        got = sut.get_peak(GuitarMode.TOP)
-        assert got is not None and got.id == weak_top.id, (
-            "get_peak returns the SELECTED holder, not the strongest auto-classified peak"
-        )
-
-    def test_renaming_the_top_peak_drops_the_ratio(self):
-        sut = _make_sut()
-        air = _make_peak_live(100, -25)
-        top = _make_peak_live(150, -20)
-        sut.all_peaks = [air, top]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(air.id)
-        sut.toggle_peak_selection(top.id)
-        assert sut.calculate_tap_tone_ratio() is not None, "precondition: ratio exists"
-        sut.set_mode_override("Wolf note", top.id)   # freeform → no definitive Top
-        assert sut.calculate_tap_tone_ratio() is None, "no definitive Top → no ratio"
-
-    def test_deselecting_the_top_peak_drops_the_ratio(self):
-        sut = _make_sut()
-        air = _make_peak_live(100, -25)
-        top = _make_peak_live(150, -20)
-        sut.all_peaks = [air, top]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(air.id)
-        sut.toggle_peak_selection(top.id)
-        assert sut.calculate_tap_tone_ratio() is not None
-        sut.toggle_peak_selection(top.id)            # deselect Top
-        assert sut.calculate_tap_tone_ratio() is None
-
-    def test_overriding_a_peak_to_top_makes_it_definitive(self):
-        sut = _make_sut()
-        air = _make_peak_live(100, -25)
-        other = _make_peak_live(320, -20)            # dipole band, not Top
-        sut.all_peaks = [air, other]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(other.id)
-        sut.set_mode_override(GuitarMode.TOP.display_name, other.id)
-        got = sut.get_peak(GuitarMode.TOP)
-        assert got is not None and got.id == other.id, (
-            "overriding a selected peak to Top makes it the definitive Top"
-        )
-
-
-class TestDefinitiveModeInfo:
-    """definitive_mode_info() — the multi-tap Averaged row source. get_peak per mode plus
-    an override flag; the DEFINITIVE selected peak, NOT a strongest-per-mode re-classification.
-    Mirrors Swift AnnotationStateTests D21/D22."""
-
-    @pytest.fixture(autouse=True)
-    def _generic(self):
-        saved = TapDisplaySettings.measurement_type()
-        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-        yield
-        TapDisplaySettings.set_measurement_type(saved)
-
-    def test_D21_uses_overridden_definitive_top_and_flags_it(self):
-        # An out-of-band peak overridden to Top is the Top, tagged; the louder in-band 233 (which
-        # would win a strongest-per-mode re-classification) does not usurp it because it is not
-        # selected. This is the 233-as-Top / empty-Back bug the definitive rule closes.
-        sut = _make_sut()
-        air = _make_peak_live(100, -25)
-        below_top = _make_peak_live(138, -30)   # below the Top band → unknown by position
-        louder = _make_peak_live(233, -18)       # louder, in the Top band by position
-        sut.all_peaks = [air, below_top, louder]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(air.id)
-        sut.toggle_peak_selection(below_top.id)
-        sut.set_mode_override(GuitarMode.TOP.display_name, below_top.id)   # 138 → Top
-
-        info = sut.definitive_mode_info()
-        assert info[GuitarMode.TOP][0] == 138, (
-            "Top is the overridden+selected peak — not the louder 233, which is not selected"
-        )
-        assert info[GuitarMode.TOP][1] is True, "flagged as an override so the Averaged row can tag it"
-        assert info[GuitarMode.AIR][1] is False, "Air here is auto — not tagged"
-
-    def test_D22_omits_deselected_mode(self):
-        sut = _make_sut()
-        air = _make_peak_live(100, -25)
-        top = _make_peak_live(150, -20)
-        sut.all_peaks = [air, top]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(air.id)        # Top left unselected
-
-        info = sut.definitive_mode_info()
-        assert GuitarMode.TOP not in info, "an unselected Top is not the definitive Top"
-        assert info[GuitarMode.AIR][0] == 100
-
-
-class TestPhase7Triggers:
-    """A clean-slate guitar-type change + a new tap sequence clears ALL per-peak state.
-    Paired with Swift AnnotationStateTests (same behaviours pinned on both platforms)."""
-
-    @pytest.fixture(autouse=True)
-    def _generic(self):
-        saved = TapDisplaySettings.measurement_type()
-        TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-        yield
-        TapDisplaySettings.set_measurement_type(saved)
-
-    def test_reclassify_for_guitar_type_change_is_a_clean_slate(self):
-        # A guitar-type change re-derives for the new type: manual overrides cleared, selection reset
-        # to auto, peaks reclassified. NOT the wand (which keeps labels).
-        sut = _make_sut()
-        air = _make_peak_live(100, -25)
-        top = _make_peak_live(150, -20)
-        sut.all_peaks = [air, top]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(air.id)
-        sut.set_mode_override("Wolf note", top.id)     # a manual label made under the OLD type
-        assert sut.has_manual_override(top.id), "precondition: override in effect"
-
-        sut.reclassify_for_guitar_type_change()
-
-        assert sut.peak_mode_overrides == {}, "clean slate clears manual overrides"
-        assert not sut.user_has_modified_peak_selection, "selection reset to auto (not user-modified)"
-        assert sut.selected_peak_ids == set(sut.guitar_mode_selected_peak_ids(sut.all_peaks)), (
-            "selection is the fresh auto-selection for the new type"
-        )
-
-
-    def test_reclassify_for_guitar_type_change_reclassifies_the_peaks(self):
-        # A guitar-type change re-classifies the SAME peaks under the new type's bands (no
-        # re-detection). 160 Hz is below the Classical Top band (170-230) and inside the Acoustic one
-        # (150-210). Mirrors Swift reclassifyForGuitarTypeChange_reclassifiesThePeaks.
-        TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
-        sut = _make_sut()
-        peak160 = _make_peak_live(160, -20)
-        sut.all_peaks = [_make_peak_live(100, -25), peak160]
-        sut.reclassify_peaks()
-
-        def mode_of_160():
-            return next((m["mode"] for m in sut.identified_modes if m["peak"].id == peak160.id), None)
-
-        assert mode_of_160() != GuitarMode.TOP, "precondition: 160 Hz is not Top on a classical"
-
-        TapDisplaySettings.set_measurement_type(MeasurementType.ACOUSTIC)
-        sut.reclassify_for_guitar_type_change()
-
-        assert mode_of_160() == GuitarMode.TOP, "re-classified under the new type's bands"
-
-    def test_start_tap_sequence_clears_all_per_peak_state(self):
-        # A new sequence must leave nothing from the previous measurement to leak into the next file.
-        sut = _make_sut()
-        air = _make_peak_live(100, -25)
-        top = _make_peak_live(150, -20)
-        sut.all_peaks = [air, top]
-        sut.reclassify_peaks()
-        sut.toggle_peak_selection(air.id)
-        sut.set_mode_override("Wolf note", top.id)
-        sut.selected_peak_frequencies = [100.0]
-        assert sut.selected_peak_ids and sut.peak_mode_overrides, "precondition: state present"
-
-        sut.start_tap_sequence()
-
-        assert sut.selected_peak_ids == set()
-        assert sut.selected_peak_frequencies == []
-        assert sut.user_has_modified_peak_selection is False
-        assert sut.peak_mode_overrides == {}
+sys.path.insert(0, os.path.dirname(__file__))
+
+from analyzer_steps import make_steps_analyzer, run_analyzer_step  # noqa: E402
+
+from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode  # noqa: E402
+from guitar_tap.models.guitar_mode import GuitarMode  # noqa: E402
+from guitar_tap.models.measurement_type import MeasurementType  # noqa: E402
+from guitar_tap.models.resonant_peak import ResonantPeak  # noqa: E402
+from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS  # noqa: E402
+from guitar_tap.views.tap_analysis_results_view import measurements_from_json  # noqa: E402
+
+_HERE = os.path.dirname(__file__)
+with open(os.path.join(_HERE, "annotation-state.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
+
+# The modes by Swift's case names, as the case file names them.
+_MODES = {"air": GuitarMode.AIR, "top": GuitarMode.TOP, "back": GuitarMode.BACK, "dipole": GuitarMode.DIPOLE,
+          "ringMode": GuitarMode.RING_MODE, "upperModes": GuitarMode.UPPER_MODES, "unknown": GuitarMode.UNKNOWN}
+_MODE_NAMES = {mode: name for name, mode in _MODES.items()}
+
+
+@pytest.fixture(autouse=True)
+def _restore_settings():
+    """The type and Show Unknown Modes are global; put them back afterwards."""
+    from guitar_tap.views.utilities.tap_settings_view import AppSettings as AS
+    saved = (TDS.measurement_type(), AS.show_unknown_modes())
+    yield
+    TDS.set_measurement_type(saved[0])
+    AS.set_show_unknown_modes(saved[1])
+
+
+class _Case:
+    """One case's analyzer and the names it gives its peaks."""
+
+    def __init__(self, row: dict):
+        self.sut = make_steps_analyzer()
+        self.ids = {name: pid.upper() for name, pid in row["peakIds"].items()}
+        self.names = {pid: name for name, pid in self.ids.items()}
+        self.files = row["files"]
+
+    def peak(self, name: str):
+        """The analyzer's peak of that name, or — for a name the file does not hold — a peak at 220 Hz
+        with that id, which the analyzer does not know."""
+        pid = self.ids[name]
+        for p in self.sut.all_peaks:
+            if str(p.id).upper() == pid:
+                return p
+        return ResonantPeak(frequency=220.0, magnitude=-20.0, id=pid)
+
+    def peak_id(self, name: str) -> str:
+        """The id the analyzer holds for that name (its own spelling of it)."""
+        for p in self.sut.all_peaks:
+            if str(p.id).upper() == self.ids[name]:
+                return p.id
+        return self.ids[name]
+
+    def name_of(self, pid) -> str:
+        return self.names.get(str(pid).upper(), str(pid))
+
+    def run(self, step: dict) -> bool:
+        sut = self.sut
+        if "load" in step:
+            sut.load_measurement(measurements_from_json(json.dumps(self.files[step["load"]]))[0])
+        elif "toggle" in step:
+            sut.toggle_peak_selection(self.peak_id(step["toggle"]))
+        elif step.get("selectNone"):
+            sut.select_no_peaks()
+        elif step.get("resetToAuto"):
+            sut.reset_to_auto_selection()
+        elif "override" in step:
+            name, label = step["override"]
+            sut.set_mode_override(label, self.peak_id(name))
+        elif "resetOverride" in step:
+            sut.reset_mode_override(self.peak_id(step["resetOverride"]))
+        elif "offset" in step:
+            name, hz, db = step["offset"]
+            sut.update_annotation_offset(self.peak_id(name), (float(hz), float(db)))
+        elif "resetOffset" in step:
+            sut.reset_annotation_offset(self.peak_id(step["resetOffset"]))
+        elif step.get("resetAllOffsets"):
+            sut.reset_all_annotation_offsets()
+        elif "visibility" in step:
+            sut.annotation_visibility_mode = AnnotationVisibilityMode(step["visibility"])
+        elif step.get("cycleVisibility"):
+            sut.cycle_annotation_visibility()
+        elif "guitarTypeChange" in step:
+            TDS.set_measurement_type(MeasurementType(step["guitarTypeChange"]))
+            sut.reclassify_for_guitar_type_change()
+        else:
+            return run_analyzer_step(step, sut)
+        return True
+
+    def check(self, fields: dict) -> None:
+        sut = self.sut
+        for field, want in fields.items():
+            if field == "selected":
+                assert sorted(self.name_of(i) for i in sut.selected_peak_ids) == sorted(want), field
+            elif field == "userModified":
+                assert sut.user_has_modified_peak_selection is want, field
+            elif field == "visible":
+                assert sorted(float(p.frequency) for p in sut.visible_peaks) == [float(v) for v in want], field
+            elif field == "visibility":
+                assert sut.annotation_visibility_mode.value == want, field
+            elif field == "label":
+                for name, label in want.items():
+                    assert sut.effective_mode_label(self.peak(name)) == label, f"{field} {name}"
+            elif field == "mode":
+                for name, mode in want.items():
+                    assert _MODE_NAMES[sut.peak_mode(self.peak(name))] == mode, f"{field} {name}"
+            elif field == "autoMode":
+                for name, mode in want.items():
+                    assert _MODE_NAMES[sut.auto_detected_mode(self.peak(name))] == mode, f"{field} {name}"
+            elif field == "manualOverride":
+                for name, flag in want.items():
+                    assert sut.has_manual_override(self.peak_id(name)) is flag, f"{field} {name}"
+            elif field == "overrides":
+                got = {self.name_of(i): label for i, label in sut.peak_mode_overrides.items()}
+                assert got == want, f"{field}: {got}"
+            elif field == "offsets":
+                got = {self.name_of(i): [float(xy[0]), float(xy[1])] for i, xy in sut.peak_annotation_offsets.items()}
+                assert got == {n: [float(v) for v in xy] for n, xy in want.items()}, f"{field}: {got}"
+            elif field == "offsetCount":
+                assert len(sut.peak_annotation_offsets) == want, field
+            elif field == "getPeak":
+                for mode, name in want.items():
+                    peak = sut.get_peak(_MODES[mode])
+                    assert (self.name_of(peak.id) if peak else None) == name, f"{field} {mode}"
+            elif field == "hasRatio":
+                assert (sut.calculate_tap_tone_ratio() is not None) is want, field
+            elif field == "definitive":
+                info = sut.definitive_mode_info()
+                for mode, entry in want.items():
+                    got = info.get(_MODES[mode])
+                    if entry is None:
+                        assert got is None, f"{field} {mode}: {got}"
+                    else:
+                        assert got is not None and float(got[0]) == pytest.approx(entry["hz"]) \
+                            and got[1] is entry["isOverride"], f"{field} {mode}: {got}"
+            elif field == "selectedIsAuto":
+                auto = sut.guitar_mode_selected_peak_ids(sut.all_peaks)
+                assert (set(sut.selected_peak_ids) == set(auto)) is want, field
+            elif field == "materialPeakMode":
+                fl = sut.selected_longitudinal_peak
+                assert fl is not None, f"{field}: a captured fL peak"
+                assert _MODE_NAMES[sut.peak_mode(fl)] == want, field
+            else:
+                pytest.fail(f"unknown field {field}")
+
+
+@pytest.mark.parametrize("row", DATA["cases"], ids=lambda r: r["id"])
+def test_annotation_state(row, qapp):
+    case = _Case(row)
+    for step in row["steps"]:
+        if "check" in step:
+            case.check(step["check"])
+        else:
+            assert case.run(step), f"unknown step {step}"
+    case.check(row["expect"])

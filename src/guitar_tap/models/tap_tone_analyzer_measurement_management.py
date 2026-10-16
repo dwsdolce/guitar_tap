@@ -792,16 +792,19 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         # ── Restore analysis settings ─────────────────────────────────────────
         # Mirrors Swift: tapDetectionThreshold = ...; loadedTapDetectionThreshold = ...
-        # (Python has no separate loaded* properties; write directly to model attrs)
+        # Each restored value is also kept as the loaded one, as Swift's loadedTapDetectionThreshold /
+        # loadedNumberOfTaps, so a later change away from it ends the loaded-settings warning.
         if measurement.tap_detection_threshold is not None:
             val = float(measurement.tap_detection_threshold)
             # Exactly as saved, as Swift restores it; only the old 0–100 scale is converted to dB.
-            self.tap_detection_threshold = val if val < 0 else val - 100
+            self.loaded_tap_detection_threshold = val if val < 0 else val - 100
+            self.tap_detection_threshold = self.loaded_tap_detection_threshold
             gt_log(f"  🎯 Publishing tap threshold: {self.tap_detection_threshold} dB")
         else:
             gt_log("  ⚠️ No tap threshold in measurement")
         if measurement.number_of_taps is not None:
-            self.number_of_taps = int(measurement.number_of_taps)
+            self.loaded_number_of_taps = int(measurement.number_of_taps)
+            self.number_of_taps = self.loaded_number_of_taps
             gt_log(f"  🔢 Publishing number of taps: {self.number_of_taps}")
         else:
             gt_log("  ⚠️ No number of taps in measurement")
@@ -878,9 +881,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         # ── Arm loaded-settings warning ───────────────────────────────────────
         # Mirrors Swift: showLoadedSettingsWarning = true (last statement in loadMeasurement)
-        # Store sentinels so set_tap_threshold/set_tap_num can detect user-initiated changes.
-        self.loaded_tap_detection_threshold = self.tap_detection_threshold
-        self.loaded_number_of_taps = self.number_of_taps
         self.show_loaded_settings_warning = True
         self.showLoadedSettingsWarningChanged.emit(True)
 

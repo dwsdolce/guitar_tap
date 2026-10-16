@@ -1,220 +1,63 @@
 # @parity test/tap-count-change
+"""Changing Taps (Swift ``numberOfTaps.didSet``): while armed and waiting for the first tap the prompt
+follows the new count; otherwise it is left alone; and a change never completes a measurement or
+drops captured taps — there is no "lower the count mid-sequence -> finalise with the taps in hand"
+rule. The Taps spinner is disabled from the first captured tap, so the count cannot change
+mid-sequence in the app; these pin that the model would not finalise if it did. The shared cases in
+tap-count-change.json (TC1-TC10), the same as Swift and the web, through the app's own paths.
 """
-Pins the model-level tap-count-change behavior: when the tap count changes while
-armed-and-waiting for the first tap, the status prompt refreshes to the new count;
-an idle change does nothing.  Python's set_tap_num mirrors Swift numberOfTaps.didSet
-(and the web's TapToneAnalyzer.setNumberOfTaps).  The three suites assert identical
-strings; only the per-platform trigger differs (Swift property didSet, Python/web a
-setter method).
-
-There is no "reduce the count mid-sequence -> finalise with the taps already captured"
-branch in any edition.  The Taps stepper is disabled from the first captured tap
-(currentTapCount > 0 && !isMeasurementComplete) on every platform, so the count cannot change
-mid-sequence -- you cancel first.  TestNoImplicitFinalise below pins that a count change never
-finalises.
-"""
-
 from __future__ import annotations
 
+import json
 import os
 import sys
-import time
 
-import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))
 
-from PySide6 import QtWidgets
+from analyzer_steps import make_steps_analyzer, run_analyzer_step  # noqa: E402
 
-from guitar_tap.models.detection_state import DetectionState
-from guitar_tap.models.measurement_type import MeasurementType
-from guitar_tap.models.tap_display_settings import TapDisplaySettings
-from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS  # noqa: E402
 
-_APP: QtWidgets.QApplication | None = None
-
-
-def _get_app() -> QtWidgets.QApplication:
-    global _APP
-    if _APP is None:
-        _APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
-    return _APP
+_HERE = os.path.dirname(__file__)
+with open(os.path.join(_HERE, "tap-count-change.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def qt_app():
-    return _get_app()
+@pytest.fixture(autouse=True)
+def _restore_settings():
+    """The type and Measure FLC are global; put them back afterwards."""
+    saved = (TDS.measurement_type(), TDS.measure_flc())
+    yield
+    TDS.set_measurement_type(saved[0])
+    TDS.set_measure_flc(saved[1])
 
 
-def _make_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
-    _get_app()
-    sut = TapToneAnalyzer()
-    sut.number_of_taps = number_of_taps
-    sut.tap_detection_threshold = -40.0
-    sut.warmup_start_audio_time = -2.0
-    sut.just_exited_warmup = False
-    TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
-    sut.detection_state = DetectionState.IDLE
-    sut.is_measurement_complete = False
-    sut.freq = np.linspace(0, 2000, 256)
-    return sut
+@pytest.mark.parametrize("row", DATA["cases"], ids=lambda r: r["id"])
+def test_tap_count_change(row, qapp):
+    sut = make_steps_analyzer()
+    status_before_step = sut.status_message
+    for step in row["steps"]:
+        status_before_step = sut.status_message
+        assert run_analyzer_step(step, sut), f"unknown step {step}"
 
-
-class TestTapCountChange:
-
-    def setup_method(self):
-        TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
-
-    # Raising the count while armed-and-waiting refreshes the prompt.
-    def test_raising_count_while_armed_idle_refreshes_prompt(self):
-        sut = _make_sut(1)
-        sut.detection_state = DetectionState.LISTENING     # armed, waiting for the first tap
-        sut.captured_taps = []
-        sut.set_tap_num(3)
-        assert sut.status_message == "Tap the guitar 3 times..."
-
-    # Lowering it back also refreshes.
-    def test_lowering_count_while_armed_idle_refreshes_prompt(self):
-        sut = _make_sut(4)
-        sut.detection_state = DetectionState.LISTENING
-        sut.captured_taps = []
-        sut.set_tap_num(1)
-        assert sut.status_message == "Tap the guitar..."
-
-    # An idle change (before arming / a frozen loaded result) must NOT refresh.
-    def test_changing_count_while_idle_does_not_refresh(self):
-        sut = _make_sut(1)          # is_detecting = False
-        before = sut.status_message
-        sut.set_tap_num(5)
-        assert sut.status_message == before
-
-class TestTapCountChangeMaterial:
-    """The same hook, on a MATERIAL measurement.
-
-    Every case above is guitar, in all three editions, and the hook is shared by plate and brace.
-    At the start of a material sequence no tap has been captured, so the Taps spinner is still
-    unlocked (current_tap_count > 0 and not complete is False) and detection is listening: the count
-    CAN change here, and it is the one phase whose prompt names the count.
-    """
-
-    def teardown_method(self):
-        TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
-
-    def _plate_sut(self, number_of_taps: int, measure_flc: bool) -> TapToneAnalyzer:
-        from guitar_tap.models.material_tap_phase import MaterialTapPhase
-
-        sut = _make_sut(number_of_taps)   # NB: _make_sut forces CLASSICAL, so set the type AFTER it
-        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
-        TapDisplaySettings.set_measure_flc(measure_flc)
-        sut.material_tap_phase = MaterialTapPhase.CAPTURING_LONGITUDINAL
-        sut.current_tap_count = 0
-        sut.detection_state = DetectionState.LISTENING
-        return sut
-
-    def test_raising_count_at_plate_start_refreshes_the_material_arm_prompt(self):
-        sut = self._plate_sut(1, measure_flc=False)
-
-        sut.set_tap_num(3)
-
-        assert sut.status_message == "Ready for fL tap (×3 each for L, C)", (
-            "REGRESSION: the hook called the GUITAR prompt, so changing Taps during a plate "
-            'measurement said "Tap the guitar 3 times..."'
-        )
-
-    def test_raising_count_at_plate_start_with_flc_names_all_three_phases(self):
-        sut = self._plate_sut(1, measure_flc=True)
-
-        sut.set_tap_num(2)
-
-        assert sut.status_message == "Ready for fL tap (×2 each for L, C, FLC)"
-
-    def test_raising_count_at_brace_start_uses_the_brace_prompt(self):
-        from guitar_tap.models.material_tap_phase import MaterialTapPhase
-
-        sut = _make_sut(1)
-        TapDisplaySettings.set_measurement_type(MeasurementType.BRACE)
-        sut.material_tap_phase = MaterialTapPhase.CAPTURING_LONGITUDINAL
-        sut.current_tap_count = 0
-        sut.detection_state = DetectionState.LISTENING
-
-        sut.set_tap_num(4)
-
-        assert sut.status_message == "Ready for fL tap (×4)"
-
-    def test_count_change_at_a_later_phase_does_not_rewrite_the_instruction(self):
-        """The guard, not the prompt.
-
-        current_tap_count is CUMULATIVE across L -> C -> FLC while captured_taps is the within-phase
-        buffer, cleared at every phase completion -- so a guard written against the buffer reads
-        "nothing captured yet" at the start of every phase and would rewrite the fC instruction
-        mid-measurement.  This checks the guard reads the cumulative count.
-        """
-        from guitar_tap.models.material_tap_phase import MaterialTapPhase
-
-        sut = _make_sut(3)
-        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
-        TapDisplaySettings.set_measure_flc(False)
-        sut.material_tap_phase = MaterialTapPhase.CAPTURING_CROSS
-        sut.captured_taps = []      # the phase buffer is empty -- L's taps were consumed
-        sut.current_tap_count = 3   # but three taps ARE captured for this measurement
-        sut.detection_state = DetectionState.LISTENING
-        # The string a REDO leaves on screen -- deliberately NOT what the hook would derive for this
-        # phase, so "stayed silent" and "fired" are distinguishable.  Asserting the derived string
-        # here passes under both, which is an assertion true by construction.
-        sut._set_status_message("Ready for fC tap — tap again")
-
-        sut.set_tap_num(5)
-
-        assert sut.status_message == "Ready for fC tap — tap again", (
-            "REGRESSION: the guard read the within-phase buffer, which is empty at every phase "
-            "boundary, so the hook fired mid-measurement and overwrote the instruction"
-        )
-
-
-class TestNoImplicitFinalise:
-    """A count change with taps already in hand must NOT finalise the measurement.
-
-    set_tap_num neither truncates captured_taps nor calls process_multiple_taps() (see the module
-    docstring).
-    """
-
-    def setup_method(self):
-        TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
-
-    def _armed_with_taps(self, total: int, taps: int) -> TapToneAnalyzer:
-        import datetime as _dt
-        sut = _make_sut(total)
-        mags = np.full(64, -60.0, dtype=np.float64)
-        freqs = np.linspace(0, 2000, 64)
-        sut.captured_taps = [(mags, freqs, _dt.datetime.now()) for _ in range(taps)]
-        sut.current_tap_count = taps
-        sut.detection_state = DetectionState.LISTENING
-        return sut
-
-    def test_lowering_to_the_captured_count_does_not_complete(self):
-        sut = self._armed_with_taps(4, 2)  # 2 of 4 captured
-
-        sut.set_tap_num(2)  # count == captured — the old branch finalised here
-
-        assert sut.is_measurement_complete is False
-        assert sut.is_detecting is True
-        assert len(sut.captured_taps) == 2  # not truncated, not averaged away
-
-    def test_lowering_below_the_captured_count_does_not_complete_or_truncate(self):
-        sut = self._armed_with_taps(4, 3)
-
-        sut.set_tap_num(1)  # captured (3) > new total (1)
-
-        assert sut.is_measurement_complete is False
-        assert sut.is_detecting is True
-        assert len(sut.captured_taps) == 3, "set_tap_num used to `del captured_taps[new_num:]`"
-
-    def test_raising_the_count_keeps_captured_taps(self):
-        sut = self._armed_with_taps(3, 2)
-
-        sut.set_tap_num(5)
-
-        assert sut.is_measurement_complete is False
-        assert len(sut.captured_taps) == 2
-        assert sut.number_of_taps == 5
+    for field, want in row["expect"].items():
+        if field == "statusMessage":
+            assert sut.status_message == want, f"{field}: {sut.status_message!r}"
+        elif field == "statusUnchangedByLastStep":
+            assert (sut.status_message == status_before_step) is want, \
+                f"{field}: {status_before_step!r} -> {sut.status_message!r}"
+        elif field == "phase":
+            assert sut.material_tap_phase.value == want, f"{field}: {sut.material_tap_phase}"
+        elif field == "complete":
+            assert sut.is_measurement_complete is want, field
+        elif field == "detecting":
+            assert sut.is_detecting is want, field
+        elif field == "capturedTaps":
+            assert len(sut.captured_taps) == want, f"{field}: {len(sut.captured_taps)}"
+        elif field == "numberOfTaps":
+            assert sut.number_of_taps == want, field
+        else:
+            pytest.fail(f"unknown field {field}")

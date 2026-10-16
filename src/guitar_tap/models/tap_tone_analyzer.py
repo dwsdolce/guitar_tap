@@ -734,7 +734,6 @@ class TapToneAnalyzer(
         # Mirrors Swift numberOfTaps.didSet: clear the loaded-settings warning once the user
         # deviates from the value the measurement was saved with.
         if (self.show_loaded_settings_warning
-                and self.loaded_number_of_taps is not None
                 and self._number_of_taps != self.loaded_number_of_taps):
             self.show_loaded_settings_warning = False
             self.showLoadedSettingsWarningChanged.emit(False)
@@ -1063,7 +1062,6 @@ class TapToneAnalyzer(
             self.mic._level_crossing_threshold = self._tap_detection_threshold
         # A threshold moved off the loaded measurement's value ends the loaded-settings warning.
         if (getattr(self, "show_loaded_settings_warning", False)
-                and self.loaded_tap_detection_threshold is not None
                 and self._tap_detection_threshold != self.loaded_tap_detection_threshold):
             self.show_loaded_settings_warning = False
             self.showLoadedSettingsWarningChanged.emit(False)
@@ -1476,18 +1474,12 @@ class TapToneAnalyzer(
                 return entry["mode"]
         return GuitarMode.UNKNOWN
 
-    def set_mode_override(self, mode: "str | None", peak_id: str) -> None:
-        """Set or clear a mode-label override for a specific peak.
+    def set_mode_override(self, mode: str, peak_id: str) -> None:
+        """Give a peak a manual mode label. ``reset_mode_override`` removes one.
 
-        Passing ``None`` or the string ``"auto"`` clears any existing override.
-        Any other string is stored as a manual label.
-
-        Mirrors Swift ``setModeOverride(_ override: UserAssignedMode, for peakID: UUID)``.
+        Mirrors Swift ``setModeOverride(_:for:)``.
         """
-        if mode is None or mode == "auto":
-            self.peak_mode_overrides.pop(peak_id, None)
-        else:
-            self.peak_mode_overrides[peak_id] = mode
+        self.peak_mode_overrides[peak_id] = mode
         # A mode change on an ALREADY-SELECTED peak can leave two definitive peaks in one mode; that
         # is the only way an override touches selection. Relabelling an unselected peak just adds a
         # candidate (enforce early-returns for it). Mirrors Swift setModeOverride.

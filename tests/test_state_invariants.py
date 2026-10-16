@@ -1,94 +1,41 @@
 # @parity test/state-invariants
+"""State combinations the design forbids, checked after real sequences of steps. They are the rules
+Pause / New Tap / Cancel enablement and the audio-thread detection guards rest on, so a refactor that
+broke one would show up as a UI bug even where each function looks right on its own. The checker is
+below; the shared cases in state-invariants.json (V1-V13) run it after their steps and test it on each
+forbidden state, the same as Swift and the web.
 """
-State-machine invariants for TapToneAnalyzer.
-
-These tests don't drive a specific scenario — they verify that the analyzer's
-state, after any sequence of operations, never enters a combination the design
-forbids.
-
-Mirror of GuitarTapTests/StateInvariantTests.swift.  If either side's set of
-invariants changes, the other must follow.
-"""
-
 from __future__ import annotations
 
+import datetime
+import json
 import os
 import sys
-import time
 
 import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
-from audio_clock_feed import advance_audio  # noqa: E402
 
-from PySide6 import QtCore, QtWidgets
+from analyzer_steps import make_steps_analyzer, run_analyzer_step  # noqa: E402
 
-from guitar_tap.models.detection_state import DetectionState
-from guitar_tap.models.material_tap_phase import MaterialTapPhase
-from guitar_tap.models.measurement_type import MeasurementType
-from guitar_tap.models.tap_display_settings import TapDisplaySettings
-from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
-from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+from guitar_tap.models.detection_state import DetectionState  # noqa: E402
+from guitar_tap.models.material_tap_phase import MaterialTapPhase  # noqa: E402
+from guitar_tap.models.tap_display_settings import TapDisplaySettings  # noqa: E402
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer  # noqa: E402
 
-_APP = None
+_HERE = os.path.dirname(__file__)
+with open(os.path.join(_HERE, "state-invariants.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
 
-
-def _get_app():
-    global _APP
-    if _APP is None:
-        _APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
-    return _APP
-
-
-@pytest.fixture(scope="session", autouse=True)
-def qt_app():
-    return _get_app()
-
-
-def _make_sut(number_of_taps: int = 1, measurement_type=MeasurementType.GENERIC) -> TapToneAnalyzer:
-    _get_app()
-    sut = TapToneAnalyzer()
-    sut.number_of_taps = number_of_taps
-    sut.tap_detection_threshold = -40.0
-    sut.warmup_start_audio_time = -2.0
-    sut.just_exited_warmup = False
-    TapDisplaySettings.set_measurement_type(measurement_type)
-    sut.freq = np.linspace(0, 2000, 256)
-    return sut
-
-
-def _fake_tap(n: int = 64, peak_db: float = -30.0):
-    """Match the captured_taps entry shape used by the Python analyzer:
-    a (magnitudes, frequencies, datetime) tuple."""
-    import datetime as _dt
-    mags = np.full(n, -80.0, dtype=np.float32)
-    mags[n // 4] = peak_db
-    freqs = np.arange(n, dtype=np.float32) * 31.25
-    return (mags, freqs, _dt.datetime.now())
-
-
-def _tap_samples(freq_hz: float, count: int, sample_rate: float = 48000.0):
-    """A decaying sinusoid — a synthetic tap with one resonance at freq_hz."""
-    t = np.arange(count, dtype=np.float64) / sample_rate
-    return (0.5 * np.exp(-t * 6.0) * np.sin(2 * np.pi * freq_hz * t)).astype(np.float32)
-
-
-def _pump_events(seconds: float) -> None:
-    """Run the Qt event loop for `seconds`, so QTimer-scheduled work (the tap cooldown) fires."""
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        QtWidgets.QApplication.processEvents()
-        time.sleep(0.01)
+_DETECTION_STATES = {"idle": DetectionState.IDLE, "listening": DetectionState.LISTENING,
+                     "paused": DetectionState.PAUSED}
 
 
 def state_invariant_violation(a: TapToneAnalyzer) -> str | None:
-    """Return a string describing the first invariant violation found, or None.
-
-    Keep this list in sync with Swift's stateInvariantViolation in
-    GuitarTapTests/StateInvariantTests.swift.
-    """
+    """The first rule ``a`` breaks, described, or None. The rules are listed in state-invariants.json;
+    Swift's stateInvariantViolation and the web's stateInvariantViolation check the same ones."""
     is_guitar = TapDisplaySettings.measurement_type().is_guitar
 
     # I1: Guitar mode: is_detecting && is_measurement_complete is illegal.
@@ -129,112 +76,67 @@ def state_invariant_violation(a: TapToneAnalyzer) -> str | None:
     return None
 
 
-class TestStateInvariants:
-    """Python parity for Swift StateInvariantTests."""
+@pytest.fixture(autouse=True)
+def _restore_settings():
+    """The type and Measure FLC are global; put them back afterwards."""
+    saved = (TapDisplaySettings.measurement_type(), TapDisplaySettings.measure_flc())
+    yield
+    TapDisplaySettings.set_measurement_type(saved[0])
+    TapDisplaySettings.set_measure_flc(saved[1])
 
-    def test_V1_fresh_analyzer_holds_invariants(self):
-        sut = _make_sut()
-        assert state_invariant_violation(sut) is None
 
-    def test_V2_after_start_tap_sequence_holds_invariants(self):
-        sut = _make_sut()
-        sut.start_tap_sequence()
-        assert state_invariant_violation(sut) is None
+def _captured_tap():
+    """A captured tap for a ``write`` step: 64 bins at 31.25 Hz, -80 dB but bin 16 at -30."""
+    mags = np.full(64, -80.0)
+    mags[16] = -30.0
+    return (mags, np.arange(64) * 31.25, datetime.datetime.now())
 
-    def test_V3_after_single_tap_complete_holds_invariants(self):
-        sut = _make_sut(number_of_taps=1)
-        sut.start_tap_sequence()
-        sut.detection_state = DetectionState.IDLE
-        sut.captured_taps.append(_fake_tap())
-        sut.current_tap_count = 1
-        sut.process_multiple_taps()
-        assert state_invariant_violation(sut) is None, (
-            "Single-tap completion must leave the analyzer in a valid state"
-        )
 
-    def test_V4_mid_multi_tap_sequence_holds_invariants(self):
-        """Reached through the REAL capture path (finish_guitar_gated_capture), not by assigning
-        captured_taps / current_tap_count / detection_state by hand, so the state checked is one the
-        app reaches. Checked resting through the cooldown, and re-armed."""
-        sut = _make_sut(number_of_taps=3)
-        sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # the capture's FFT engine
-        sut.start_tap_sequence()
-        sut.finish_guitar_gated_capture(_tap_samples(100.0, sut.mic.fft_size), 48000.0)
-        assert len(sut.captured_taps) == 1
-        assert not sut.is_detecting, "detection rests through the tap cooldown"
-        assert state_invariant_violation(sut) is None, "mid-sequence, resting"
+def _write(fields: dict, sut: TapToneAnalyzer) -> None:
+    """Set the fields a ``write`` step names directly — only to give the checker a forbidden state."""
+    for field, value in fields.items():
+        if field == "detectionState":
+            sut.detection_state = _DETECTION_STATES[value]
+        elif field == "complete":
+            sut.is_measurement_complete = value
+        elif field == "capturedTaps":
+            sut.captured_taps = [_captured_tap() for _ in range(value)]
+        elif field == "tapCount":
+            sut.current_tap_count = value
+        elif field == "tapProgress":
+            sut.tap_progress = value
+        elif field == "phase":
+            sut.material_tap_phase = MaterialTapPhase(value)
+        else:
+            pytest.fail(f"unknown write field {field}")
 
-        advance_audio(sut, sut.tap_cooldown)   # the rest runs on the audio clock
-        assert sut.is_detecting, "re-armed for the next tap once the cooldown has passed"
-        assert state_invariant_violation(sut) is None, "mid-sequence, re-armed"
 
-    def test_V5_after_cancel_holds_invariants(self):
-        sut = _make_sut(number_of_taps=3)
-        sut.start_tap_sequence()
-        sut.cancel_tap_sequence()
-        assert state_invariant_violation(sut) is None
+def _check(fields: dict, sut: TapToneAnalyzer) -> None:
+    """Assert the fields an expectation names."""
+    for field, want in fields.items():
+        if field == "violation":
+            violation = state_invariant_violation(sut)
+            assert (violation[:2] if violation else None) == want, f"{field}: {violation}"
+        elif field == "complete":
+            assert sut.is_measurement_complete is want, field
+        elif field == "detecting":
+            assert sut.is_detecting is want, field
+        elif field == "capturedTaps":
+            assert len(sut.captured_taps) == want, field
+        elif field == "phase":
+            assert sut.material_tap_phase.value == want, f"{field}: {sut.material_tap_phase}"
+        else:
+            pytest.fail(f"unknown field {field}")
 
-    def test_V6_after_pause_holds_invariants(self):
-        sut = _make_sut(number_of_taps=3)
-        sut.start_tap_sequence()
-        sut.pause_tap_detection()
-        assert state_invariant_violation(sut) is None
 
-    def test_V7_impossible_state_detecting_and_complete_is_flagged(self):
-        """If this passes with violation == None, the checker itself has regressed."""
-        sut = _make_sut(number_of_taps=1)
-        sut.detection_state = DetectionState.LISTENING
-        sut.is_measurement_complete = True
-        assert state_invariant_violation(sut) is not None, (
-            "Invariant checker must reject (is_detecting && is_measurement_complete) in guitar mode"
-        )
-
-    def test_V8_plate_review_phase_holds_invariants(self):
-        """A plate capture reaches its REVIEW phase through the real gated path, and invariants hold
-        there — including I6, which no guitar case can reach."""
-        sut = _make_sut(number_of_taps=1, measurement_type=MeasurementType.PLATE)
-        try:
-            sut.mic = RealtimeFFTAnalyzer(parent=None, for_testing=True)  # gated-FFT engine
-            sut.tap_detection_threshold = -90.0  # accept the synthetic tap
-            sut.start_tap_sequence()
-            sut.finish_gated_fft_capture(_tap_samples(60.0, 24_000), 48000.0,
-                                         MaterialTapPhase.CAPTURING_LONGITUDINAL)
-            assert sut.material_tap_phase == MaterialTapPhase.REVIEWING_LONGITUDINAL
-            assert not sut.is_detecting
-            assert state_invariant_violation(sut) is None
-        finally:
-            TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-
-    # V9–V13: each invariant REPORTS its forbidden state (V7 covers I1).
-
-    def test_I2_paused_and_complete_is_flagged(self):
-        sut = _make_sut()
-        sut.detection_state = DetectionState.PAUSED
-        sut.is_measurement_complete = True
-        assert (state_invariant_violation(sut) or "").startswith("I2")
-
-    def test_I3_more_taps_than_requested_is_flagged(self):
-        sut = _make_sut(number_of_taps=1)
-        sut.captured_taps.extend([_fake_tap(), _fake_tap()])
-        assert (state_invariant_violation(sut) or "").startswith("I3")
-
-    def test_I4_count_out_of_step_with_taps_is_flagged(self):
-        sut = _make_sut(number_of_taps=3)
-        sut.captured_taps.append(_fake_tap())
-        sut.current_tap_count = 0
-        assert (state_invariant_violation(sut) or "").startswith("I4")
-
-    def test_I5_progress_out_of_range_is_flagged(self):
-        sut = _make_sut()
-        sut.tap_progress = 1.5
-        assert (state_invariant_violation(sut) or "").startswith("I5")
-
-    def test_I6_detecting_while_reviewing_is_flagged(self):
-        sut = _make_sut(measurement_type=MeasurementType.PLATE)
-        try:
-            sut._set_material_tap_phase(MaterialTapPhase.REVIEWING_LONGITUDINAL)
-            sut.detection_state = DetectionState.LISTENING
-            assert (state_invariant_violation(sut) or "").startswith("I6")
-        finally:
-            TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-
+@pytest.mark.parametrize("row", DATA["cases"], ids=lambda r: r["id"])
+def test_invariants(row, qapp):
+    sut = make_steps_analyzer()
+    for step in row["steps"]:
+        if "check" in step:
+            _check(step["check"], sut)
+        elif "write" in step:
+            _write(step["write"], sut)
+        else:
+            assert run_analyzer_step(step, sut), f"unknown step {step}"
+    _check(row["expect"], sut)

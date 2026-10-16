@@ -1,10 +1,8 @@
 # @parity test/session-pre-roll
-"""Pin the bounded pre-roll for the session WAV.
-
-The head is trimmed to ~2 s ONLY before the first tap; everything after — subsequent taps, plate
-phases, and the gaps between them — is completely live. How Dump Capture Audio decides whether the
-recording is saved, and what changing it does, are the shared cases in session-pre-roll.json
-(SR1–SR11). Three-way with Swift SessionPreRollTests.swift and web session-pre-roll.test.ts.
+"""The session WAV: its head is trimmed to a 2 s pre-roll only before the first tap — everything after,
+later taps and the gaps between them, is completely live — and Dump Capture Audio decides whether it
+is saved. The shared cases in session-pre-roll.json (SR1-SR14), the same as Swift and the web; and the
+capture probe's case, which runs only with the probe on.
 """
 
 from __future__ import annotations
@@ -20,78 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
-CHUNK = [0.0] * 1024  # one ~21 ms chunk at 48 kHz
-
-
-def _armed() -> TapToneAnalyzer:
-    a = TapToneAnalyzer()
-    a._session_recording_sample_rate = 48000.0
-    a._is_session_recording = True
-    a._is_session_recording_enabled = True
-    a._session_pre_roll_active = True
-    a._gated_capture_active = False
-    a._session_recording_buffer = []
-    return a
-
-
-# ── Before the first tap: the head is bounded ──────────────────────────────
-
-def test_idle_before_first_tap_is_bounded():
-    a = _armed()
-    for _ in range(300):  # ~6.4 s of idle, well over the 2 s pre-roll
-        a._maintain_session_recording(CHUNK)
-    assert len(a._session_recording_buffer) <= a.session_pre_roll_samples
-    assert len(a._session_recording_buffer) > a.session_pre_roll_samples - len(CHUNK)
-
-
-# ── The first tap freezes the latch ────────────────────────────────────────
-
-def test_first_tap_freezes_pre_roll():
-    a = _armed()
-    for _ in range(300):
-        a._maintain_session_recording(CHUNK)
-    assert a._session_pre_roll_active is True
-    a._gated_capture_active = True
-    a._maintain_session_recording(CHUNK)
-    assert a._session_pre_roll_active is False
-
-
-# ── THE INVARIANT: everything after the first tap is completely live ───────
-
-def test_multi_tap_multi_phase_after_first_tap_is_fully_live():
-    a = _armed()
-    for _ in range(300):
-        a._maintain_session_recording(CHUNK)
-    a._gated_capture_active = True
-    a._maintain_session_recording(CHUNK)  # freezes
-    expected = len(a._session_recording_buffer)
-
-    # Long multi-tap / multi-phase session with big idle GAPS between taps — none of it may be
-    # trimmed now that the latch is frozen.
-    for tap in range(5):
-        a._gated_capture_active = False
-        for _ in range(200):  # ~4 s gap, far more than the 2 s pre-roll
-            a._maintain_session_recording(CHUNK)
-            expected += len(CHUNK)
-        a._gated_capture_active = tap % 2 == 0
-        a._maintain_session_recording(CHUNK)
-        expected += len(CHUNK)
-
-    assert len(a._session_recording_buffer) == expected, (
-        "After the first tap the session must be COMPLETELY LIVE — no chunk trimmed"
-    )
-    assert a._session_pre_roll_active is False
-
-
-# ── The >= 0.5 s lead-in guarantee (playback fixtures) ─────────────────────
-
-def test_pre_roll_exceeds_warmup():
-    a = _armed()
-    assert a.session_pre_roll_samples / a._session_recording_sample_rate >= 0.5
-    assert TapToneAnalyzer.SESSION_PRE_ROLL_DURATION >= 0.5
-
-
-# ── Dump Capture Audio — the shared cases in session-pre-roll.json (SR1–SR11) ──
+# ── The shared cases in session-pre-roll.json (SR1–SR14) ──
 
 with open(os.path.join(os.path.dirname(__file__), "session-pre-roll.json"), encoding="utf-8") as _f:
     DATA = json.load(_f)
@@ -117,6 +44,8 @@ def test_dump_capture_audio(case):
             elif "tap" in step:
                 a._gated_capture_active = True
                 a._maintain_session_recording(samples)
+            elif "release" in step:
+                a._gated_capture_active = False
             elif "dump" in step:
                 TapDisplaySettings.set_dump_capture_audio(step["dump"])
                 a.apply_dump_capture_audio_setting()
@@ -125,11 +54,21 @@ def test_dump_capture_audio(case):
             elif "resume" in step:
                 a.resume_tap_detection()
         e = case["expect"]
-        assert a._is_session_recording_enabled is e["saved"], "saved"
-        assert a._is_session_recording is e["recording"], "recording"
-        assert len(a._session_recording_buffer) == e["samples"], "samples"
+        if "saved" in e:
+            assert a._is_session_recording_enabled is e["saved"], "saved"
+        if "recording" in e:
+            assert a._is_session_recording is e["recording"], "recording"
+        if "samples" in e:
+            assert len(a._session_recording_buffer) == e["samples"], f"samples: {len(a._session_recording_buffer)}"
+        if "preRoll" in e:
+            assert a._session_pre_roll_active is e["preRoll"], "preRoll"
     finally:
         TapDisplaySettings.set_dump_capture_audio(saved_dump)
+
+
+def test_pre_roll_length():
+    """The pre-roll's length: the file's ``preRollSeconds``."""
+    assert TapToneAnalyzer.SESSION_PRE_ROLL_DURATION == DATA["preRollSeconds"]
 
 
 # The capture probe's records follow the recording: a sequence saved because Dump Capture Audio was

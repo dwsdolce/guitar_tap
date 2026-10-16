@@ -1,0 +1,384 @@
+{
+ "slug": "test/scenario-trace",
+ "about": "End-to-end scenarios, pinned by the state they pass through, not only where they end: the app's behaviour on screen follows each intermediate state. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, pause, resume, cancel, guitarTap, advance with an optional fraction), plus {\"snap\": label}, which records the state under that label, and {\"strayDetection\": true}, a detection the scenario simulates (the detection state set idle, as a detected tap sets it). 'expect.trace' is the recorded states in order: label, detecting, paused, complete, tapCount (taps counted this sequence), capturedTaps (taps held). Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "S1",
+   "note": "a clean single-tap guitar measurement",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "snap": "init"
+    },
+    {
+     "newTap": true
+    },
+    {
+     "snap": "postStart"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "snap": "postCapture"
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "snap": "postProcess"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "init",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postStart",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postCapture",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postProcess",
+      "detecting": false,
+      "paused": false,
+      "complete": true,
+      "tapCount": 1,
+      "capturedTaps": 1
+     }
+    ]
+   }
+  },
+  {
+   "id": "S2",
+   "note": "a stray detection straight after a sequence starts (as a measurement-type change starts one): the analyzer stays idle until the capture completes",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "snap": "init"
+    },
+    {
+     "newTap": true
+    },
+    {
+     "strayDetection": true
+    },
+    {
+     "snap": "postStart"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "snap": "postCapture"
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "snap": "postProcess"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "init",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postStart",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postCapture",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postProcess",
+      "detecting": false,
+      "paused": false,
+      "complete": true,
+      "tapCount": 1,
+      "capturedTaps": 1
+     }
+    ]
+   }
+  },
+  {
+   "id": "S3",
+   "note": "three taps with a pause and resume mid-sequence",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "snap": "init"
+    },
+    {
+     "newTap": true
+    },
+    {
+     "snap": "postStart"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "snap": "postTap1"
+    },
+    {
+     "advance": "tapCooldown",
+     "fraction": 0.5
+    },
+    {
+     "snap": "midCooldown"
+    },
+    {
+     "advance": "tapCooldown",
+     "fraction": 0.5
+    },
+    {
+     "snap": "postReArm"
+    },
+    {
+     "pause": true
+    },
+    {
+     "snap": "postPause"
+    },
+    {
+     "resume": true
+    },
+    {
+     "snap": "postResume"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "snap": "postProcess"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "init",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postStart",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postTap1",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "midCooldown",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postReArm",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postPause",
+      "detecting": false,
+      "paused": true,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postResume",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postProcess",
+      "detecting": false,
+      "paused": false,
+      "complete": true,
+      "tapCount": 3,
+      "capturedTaps": 3
+     }
+    ]
+   }
+  },
+  {
+   "id": "S4",
+   "note": "three taps cancelled mid-sequence: Cancel starts a fresh sequence",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "snap": "init"
+    },
+    {
+     "newTap": true
+    },
+    {
+     "snap": "postStart"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "snap": "postTap1"
+    },
+    {
+     "advance": "tapCooldown",
+     "fraction": 0.5
+    },
+    {
+     "snap": "midCooldown"
+    },
+    {
+     "advance": "tapCooldown",
+     "fraction": 0.5
+    },
+    {
+     "snap": "postReArm"
+    },
+    {
+     "cancel": true
+    },
+    {
+     "snap": "postCancel"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "init",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postStart",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postTap1",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "midCooldown",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postReArm",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postCancel",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     }
+    ]
+   }
+  }
+ ]
+}

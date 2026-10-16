@@ -1,7 +1,7 @@
 # @parity test/decay-tracking
 """
-Ring-out time: ring_out_time on generated audio (DK1–DK8, the shared cases in decay-tracking.json),
-and that a new sequence clears the last ring-out (DK9).
+The shared cases in decay-tracking.json: ring-out time, ring_out_time on generated audio (DK1–DK8),
+and on the analyzer, that a new sequence clears the last ring-out (DK9).
 
 That a tap's ring-out is the same wherever the audio's chunk boundaries fall is
 test_guitar_capture_window GW3.
@@ -79,11 +79,20 @@ def test_ring_out_time(row):
         assert t is not None and abs(t - row["expect"]) < DATA["tolerance"], f"{row['id']}: got {t}"
 
 
-def test_DK9_a_new_sequence_clears_the_ring_out():
+@pytest.mark.parametrize("row", DATA["analyzer"], ids=lambda r: r["id"])
+def test_analyzer(row):
+    """The analyzer cases of ``decay-tracking.json`` (DK9), as steps on a fresh analyzer."""
     sut = _make_sut()
-    sut.current_decay_time = 0.1
-    sut.start_tap_sequence()
-    assert sut.current_decay_time is None
+    for step in row["steps"]:
+        if "decayTime" in step:
+            sut.current_decay_time = step["decayTime"]
+        elif step.get("newTap"):
+            sut.start_tap_sequence()
+    for field, want in row["expect"].items():
+        if field == "currentDecayTime":
+            assert sut.current_decay_time == want, f"{row['id']} {field}"
+        else:
+            pytest.fail(f"{row['id']}: unknown field {field}")
 
 
 class TestRingOutReachesTheView:

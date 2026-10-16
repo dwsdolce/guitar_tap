@@ -1,362 +1,156 @@
 # @parity test/measurement-complete
 """
-Tests for is_measurement_complete state transitions.
-
-Mirrors Swift TapDetectionTests / isMeasurementComplete didSet behaviour.
-
-`is_measurement_complete` is the single boolean that gates whether the spectrum
-display freezes or continues to paint live FFT frames.  It must be set True by
-every capture-completion path and False by every reset/cancel path.  Every path
-in and out of is_measurement_complete = True is exercised and asserted here.
-
-For `is_measurement_complete` (and any other critical state flag), EVERY code
-path that should set it True or False must have a corresponding test here.
-Adding a new completion path in Python without adding a test here is a gap.
+``is_measurement_complete`` gates whether the spectrum freezes or keeps showing live frames, so every
+path that should set it True or False is a case here — a new completion path without one is a gap —
+and so are the paths that move the loaded-settings warning with it. The shared cases in
+measurement-complete.json (MC1-MC18), the same as Swift and the web; below them, the cases about
+Python's own signal and setter.
 """
 
 from __future__ import annotations
 
+import datetime
+import json
 import os
 import sys
-import time
 
 import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from PySide6 import QtCore, QtWidgets
+from guitar_tap.models.measurement_type import MeasurementType  # noqa: E402
+from guitar_tap.models.tap_display_settings import TapDisplaySettings  # noqa: E402
+from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer  # noqa: E402
+from guitar_tap.views.tap_analysis_results_view import measurements_from_json  # noqa: E402
 
-from guitar_tap.models.detection_state import DetectionState
-from guitar_tap.models.measurement_type import MeasurementType
-from guitar_tap.models.tap_display_settings import TapDisplaySettings
-from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
-
-_APP: QtWidgets.QApplication | None = None
-
-
-def _get_app() -> QtWidgets.QApplication:
-    global _APP
-    if _APP is None:
-        _APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
-    return _APP
+_HERE = os.path.dirname(__file__)
+with open(os.path.join(_HERE, "measurement-complete.json"), encoding="utf-8") as _f:
+    DATA = json.load(_f)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def qt_app():
-    return _get_app()
+@pytest.fixture(autouse=True)
+def _restore_type():
+    """The measurement type is global; put it back afterwards."""
+    saved = TapDisplaySettings.measurement_type()
+    yield
+    TapDisplaySettings.set_measurement_type(saved)
 
 
-def _make_guitar_sut(number_of_taps: int = 1) -> TapToneAnalyzer:
-    """Return a TapToneAnalyzer primed for guitar-mode tap detection."""
-    _get_app()
-    sut = TapToneAnalyzer()
-    sut.number_of_taps = number_of_taps
+def _make_sut() -> TapToneAnalyzer:
+    """A fresh analyzer: Classical Guitar, 1 tap, threshold -40, warm-up passed."""
+    TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
+    sut = TapToneAnalyzer.for_testing()
+    sut.number_of_taps = 1
     sut.tap_detection_threshold = -40.0
-    # Defeat warm-up guard
     sut.warmup_start_audio_time = -2.0
     sut.just_exited_warmup = False
-    TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)
-    # Arm detection
-    sut.detection_state = DetectionState.LISTENING
-    sut.is_measurement_complete = False
-    # Pre-populate freq so _finish_capture / frozen_frequencies assignment works
-    sut.freq = np.linspace(0, 2000, 256)
     return sut
 
 
-def _fake_spectrum(n: int = 256, peak_db: float = -30.0):
-    """Return a (magnitudes, frequencies, captureTime) tuple with a single peak at bin n//4.
-
-    Production code stores 3-tuples in captured_taps — mirrors Swift:
-      capturedTaps.append((magnitudes: magnitudes, frequencies: frequencies, captureTime: time))
-    """
-    import datetime
-    mags = np.full(n, -80.0)
-    mags[n // 4] = peak_db
-    freqs = np.linspace(0, 2000, n)
-    return (mags, freqs, datetime.datetime.now())
+def _captured_tap(peak_db: float):
+    """A captured tap: 64 bins at 31.25 Hz, -80 dB but bin 16 at ``peak_db``."""
+    mags = np.full(64, -80.0)
+    mags[16] = peak_db
+    return (mags, np.arange(64) * 31.25, datetime.datetime.now())
 
 
-def _pump_events() -> None:
-    """Drain the Qt event loop so QTimer.singleShot callbacks fire."""
-    for _ in range(10):
-        _get_app().processEvents()
-        time.sleep(0.02)
-        _get_app().processEvents()
-
-
-# ---------------------------------------------------------------------------
-# Path 1: guitar single-tap → _finish_capture sets is_measurement_complete True
-# ---------------------------------------------------------------------------
-
-class TestGuitarSingleTapCompletion:
-    """Mirrors Swift processMultipleTaps() setting isMeasurementComplete = true."""
-
-    def test_finish_capture_sets_measurement_complete(self):
-        """After _finish_capture fires, is_measurement_complete must be True."""
-        sut = _make_guitar_sut(number_of_taps=1)
-        sut.captured_taps = [_fake_spectrum()]
-        sut._finish_capture()
-        assert sut.is_measurement_complete is True
-
-    def test_finish_capture_emits_measurementComplete_signal(self):
-        """measurementComplete(True) must be emitted by _finish_capture."""
-        sut = _make_guitar_sut(number_of_taps=1)
-        sut.captured_taps = [_fake_spectrum()]
-        received: list[bool] = []
-        sut.measurementComplete.connect(received.append)
-        sut._finish_capture()
-        assert True in received, "measurementComplete(True) was not emitted"
-
-    def test_finish_capture_freezes_spectrum(self):
-        """frozen_magnitudes must be populated when measurement completes."""
-        sut = _make_guitar_sut(number_of_taps=1)
-        mag = _fake_spectrum()
-        sut.captured_taps = [mag]
-        sut._finish_capture()
-        assert len(sut.frozen_magnitudes) > 0
-        assert len(sut.frozen_frequencies) > 0
-
-    def test_on_fft_frame_stops_live_updates_after_complete(self):
-        """After _finish_capture, on_fft_frame must not call analyze_magnitudes."""
-        sut = _make_guitar_sut(number_of_taps=1)
-        sut.captured_taps = [_fake_spectrum()]
-        sut._finish_capture()
-        assert sut.is_measurement_complete is True
-
-        # Track spectrum emissions — after complete, only frozen data should emit
-        spectra_received: list[tuple] = []
-        sut.spectrumUpdated.connect(lambda f, m: spectra_received.append((f, m)))
-
-        live_mag, _live_freqs, _live_ts = _fake_spectrum(peak_db=-20.0)  # distinctly different from frozen
-        sut.on_fft_frame(
-            mag_y_db=live_mag,
-            peak_db=-20.0,
-            fps=2.7,
-            sample_dt=0.37,
-            processing_dt=0.01,
-        )
-        # Every emitted spectrum must be the frozen one, not the live one
-        for freqs, mags in spectra_received:
-            assert np.array_equal(mags, sut.frozen_magnitudes), (
-                "Live FFT data painted over frozen spectrum after measurement complete"
-            )
+@pytest.mark.parametrize("row", DATA["cases"], ids=lambda r: r["id"])
+def test_transitions(row, qapp):
+    sut = _make_sut()
+    for step in row["steps"]:
+        if "numberOfTaps" in step:
+            sut.number_of_taps = step["numberOfTaps"]
+        elif "captureTaps" in step:
+            sut.captured_taps = [_captured_tap(db) for db in step["captureTaps"]]
+        elif step.get("processTaps"):
+            sut.process_multiple_taps()
+        elif step.get("newTap"):
+            sut.start_tap_sequence()
+        elif step.get("cancel"):
+            sut.cancel_tap_sequence()
+        elif "load" in step:
+            sut.load_measurement(measurements_from_json(json.dumps(DATA["files"][step["load"]]))[0])
+        elif step.get("warning"):
+            sut.show_loaded_settings_warning = True
+        elif "setTaps" in step:
+            sut.set_tap_num(step["setTaps"])
+        elif "setThreshold" in step:
+            sut.tap_detection_threshold = float(step["setThreshold"])
+    for field, want in row["expect"].items():
+        if field == "complete":
+            assert sut.is_measurement_complete is want, field
+        elif field == "frozenSpectrum":
+            assert (len(sut.frozen_magnitudes) > 0 and len(sut.frozen_frequencies) > 0) is want, field
+        elif field == "detecting":
+            assert sut.is_detecting is want, field
+        elif field == "loadedSettingsWarning":
+            assert sut.show_loaded_settings_warning is want, field
+        elif field == "numberOfTaps":
+            assert sut.number_of_taps == want, field
+        else:
+            pytest.fail(f"unknown field {field}")
 
 
 # ---------------------------------------------------------------------------
-# Path 2: guitar multi-tap → _finish_capture after N taps
+# Python only: the measurementComplete signal, the setter, and the live frame after completion
 # ---------------------------------------------------------------------------
 
-class TestGuitarMultiTapCompletion:
-    """Two captured taps averaged — is_measurement_complete must still be True."""
-
-    def test_two_tap_average_sets_measurement_complete(self):
-        sut = _make_guitar_sut(number_of_taps=2)
-        sut.captured_taps = [_fake_spectrum(peak_db=-32.0), _fake_spectrum(peak_db=-28.0)]
-        sut._finish_capture()
-        assert sut.is_measurement_complete is True
-
-    def test_two_tap_average_frozen_spectrum_populated(self):
-        sut = _make_guitar_sut(number_of_taps=2)
-        sut.captured_taps = [_fake_spectrum(peak_db=-32.0), _fake_spectrum(peak_db=-28.0)]
-        sut._finish_capture()
-        assert len(sut.frozen_magnitudes) == 256
+def _completed(qapp) -> TapToneAnalyzer:
+    sut = _make_sut()
+    sut.captured_taps = [_captured_tap(-30.0)]
+    sut.process_multiple_taps()
+    assert sut.is_measurement_complete is True
+    return sut
 
 
-# ---------------------------------------------------------------------------
-# Path 3: start_tap_sequence resets is_measurement_complete to False
-# ---------------------------------------------------------------------------
-
-class TestStartTapSequenceResetsComplete:
-    """start_tap_sequence must set is_measurement_complete = False (mirrors Swift)."""
-
-    def test_start_tap_sequence_clears_measurement_complete(self):
-        sut = _make_guitar_sut(number_of_taps=1)
-        # Simulate a completed measurement
-        sut.captured_taps = [_fake_spectrum()]
-        sut._finish_capture()
-        assert sut.is_measurement_complete is True
-
-        # Now start a new sequence — must reset the flag
-        sut.start_tap_sequence()
-        assert sut.is_measurement_complete is False
-
-    def test_start_tap_sequence_emits_measurementComplete_false(self):
-        sut = _make_guitar_sut(number_of_taps=1)
-        sut.captured_taps = [_fake_spectrum()]
-        sut._finish_capture()
-
-        received: list[bool] = []
-        sut.measurementComplete.connect(received.append)
-        sut.start_tap_sequence()
-        assert False in received, "measurementComplete(False) was not emitted by start_tap_sequence"
+def test_completing_emits_measurement_complete(qapp):
+    sut = _make_sut()
+    received: list[bool] = []
+    sut.measurementComplete.connect(received.append)
+    sut.captured_taps = [_captured_tap(-30.0)]
+    sut.process_multiple_taps()
+    assert True in received
 
 
-# ---------------------------------------------------------------------------
-# Path 4: cancel_tap_sequence clears frozen spectrum (is_measurement_complete stays True)
-# ---------------------------------------------------------------------------
-
-class TestCancelTapSequenceReArms:
-    """cancel_tap_sequence re-arms a fresh sequence (== New Tap): it clears the frozen
-    spectrum, resets is_measurement_complete to False, and re-arms detection.
-    Mirrors Swift cancelTapSequence(), which delegates to startTapSequence().
-    """
-
-    def test_cancel_re_arms_and_clears_frozen(self):
-        sut = _make_guitar_sut(number_of_taps=1)
-        sut.captured_taps = [_fake_spectrum()]
-        sut._finish_capture()
-        assert len(sut.frozen_magnitudes) > 0
-
-        sut.cancel_tap_sequence()
-        assert len(sut.frozen_magnitudes) == 0
-        assert len(sut.frozen_frequencies) == 0
-        assert sut.is_measurement_complete is False  # re-armed -> not complete
-        assert sut.is_detecting is True              # re-armed detection
+def test_a_new_sequence_emits_measurement_complete_false(qapp):
+    sut = _completed(qapp)
+    received: list[bool] = []
+    sut.measurementComplete.connect(received.append)
+    sut.start_tap_sequence()
+    assert False in received
 
 
-# ---------------------------------------------------------------------------
-# Path 5: set_measurement_complete(False) clears frozen spectrum and captured taps
-# ---------------------------------------------------------------------------
-
-class TestSetMeasurementCompleteDirectly:
-    """set_measurement_complete assigns the flag and emits — verify its contract.
-
-    It is not a reset.  Swift's isMeasurementComplete.didSet clears no taps, peaks,
-    annotation offsets, frozen arrays, comparison or material spectra; start_tap_sequence()
-    owns that work in both editions (see TestCancelRestartsSequence above, which covers it).
-    """
-
-    def test_set_false_does_not_reset_frozen_arrays(self):
-        """Leaving the complete state must not reset — mirrors Swift didSet.
-
-        This previously did clear the frozen spectrum, bundling a full reset into the
-        setter.  No production path relied on it: start_tap_sequence() is the only site
-        that drives completion False, and it clears the frozen spectrum itself.  The
-        bundling is what prevented the flag from becoming a property at all.
-        """
-        sut = _make_guitar_sut()
-        sut.captured_taps = [_fake_spectrum()]
-        sut._finish_capture()
-        assert len(sut.frozen_magnitudes) > 0
-
-        sut.set_measurement_complete(False)
-        assert sut.is_measurement_complete is False
-        assert len(sut.frozen_magnitudes) > 0
-        assert len(sut.frozen_frequencies) > 0
-
-    def test_set_true_emits_signal(self):
-        sut = _make_guitar_sut()
-        received: list[bool] = []
-        sut.measurementComplete.connect(received.append)
-        sut.set_measurement_complete(True)
-        assert True in received
-
-    def test_set_false_emits_signal(self):
-        sut = _make_guitar_sut()
-        received: list[bool] = []
-        sut.measurementComplete.connect(received.append)
-        sut.set_measurement_complete(False)
-        assert False in received
+def test_a_live_frame_after_completion_shows_only_the_frozen_spectrum(qapp):
+    sut = _completed(qapp)
+    spectra: list[tuple] = []
+    sut.spectrumUpdated.connect(lambda f, m: spectra.append((f, m)))
+    live = np.full(64, -20.0)
+    sut.on_fft_frame(mag_y_db=live, peak_db=-20.0, fps=2.7, sample_dt=0.37, processing_dt=0.01)
+    for _freqs, mags in spectra:
+        assert np.array_equal(mags, sut.frozen_magnitudes), "a live frame painted over the frozen spectrum"
 
 
-# ---------------------------------------------------------------------------
-# Path 6: load_measurement sets is_measurement_complete to True
-# ---------------------------------------------------------------------------
-
-class TestLoadMeasurementSetsComplete:
-    """Loading a saved measurement must freeze the display (mirrors Swift loadMeasurement)."""
-
-    def test_load_measurement_sets_measurement_complete(self):
-        from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
-        from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
-
-        sut = _make_guitar_sut()
-        assert sut.is_measurement_complete is False
-
-        # Build a minimal measurement with a spectrum snapshot.
-        # TapToneMeasurement.create() takes measurement_type as a str and
-        # generates its own timestamp — no timestamp parameter needed.
-        freqs = list(np.linspace(0, 2000, 64))
-        mags = list(_fake_spectrum(n=64)[0])  # [0] extracts magnitudes array from the (mags, freqs, time) tuple
-        snap = SpectrumSnapshot(
-            frequencies=freqs,
-            magnitudes=mags,
-            measurement_type="Classical Guitar",
-        )
-        m = TapToneMeasurement.create(
-            measurement_type="Classical Guitar",
-            guitar_type=None,
-            peaks=[],
-            spectrum_snapshot=snap,
-            number_of_taps=1,
-        )
-        sut.load_measurement(m)
-        assert sut.is_measurement_complete is True
+def test_leaving_completion_does_not_reset_the_frozen_spectrum(qapp):
+    """The setter only assigns the flag and emits, as Swift's didSet; start_tap_sequence() resets."""
+    sut = _completed(qapp)
+    sut.set_measurement_complete(False)
+    assert sut.is_measurement_complete is False
+    assert len(sut.frozen_magnitudes) > 0 and len(sut.frozen_frequencies) > 0
 
 
-# ---------------------------------------------------------------------------
-# MC6: process_multiple_taps with no captured taps does NOT complete
-# ---------------------------------------------------------------------------
-
-class TestEmptyTapsDoesNotComplete:
-    """An empty capture must bail out before freezing anything.
-
-    Mirrors Swift MC6 processMultipleTaps_emptyTaps_doesNotComplete and web MC6.
-    """
-
-    def test_process_multiple_taps_with_no_taps_does_not_complete(self):
-        sut = _make_guitar_sut(number_of_taps=1)
-        # captured_taps is empty — the guard should bail out.
-        sut.captured_taps = []
-        sut.process_multiple_taps()
-        assert sut.is_measurement_complete is False
+@pytest.mark.parametrize("value", [True, False])
+def test_the_setter_emits(value, qapp):
+    sut = _make_sut()
+    received: list[bool] = []
+    sut.measurementComplete.connect(received.append)
+    sut.set_measurement_complete(value)
+    assert value in received
 
 
-# ---------------------------------------------------------------------------
-# MC8: completing clears the loaded-settings warning (the didSet rule)
-# ---------------------------------------------------------------------------
-
-class TestCompletingClearsSettingsWarning:
-    """Completing a measurement clears show_loaded_settings_warning.
-
-    The rule lives in the is_measurement_complete property setter, which mirrors Swift's
-    isMeasurementComplete.didSet — so assigning the flag enforces it, exactly as it does in
-    Swift and in the web port's setter.  Mirrors Swift MC8 and web MC8.
-    """
-
-    def test_completing_clears_loaded_settings_warning(self):
-        sut = _make_guitar_sut()
-        sut.show_loaded_settings_warning = True
-        sut.captured_taps = [_fake_spectrum()]
-        sut.process_multiple_taps()
-        assert sut.show_loaded_settings_warning is False
-
-    def test_assigning_the_flag_clears_the_warning(self):
-        """A bare assignment enforces the rule — it is a property, not a plain attribute.
-
-        Before the property conversion this assertion could not be written in Python: the
-        rule lived in set_measurement_complete() and four production sites bypassed it.
-        """
-        sut = _make_guitar_sut()
-        sut.show_loaded_settings_warning = True
-        sut.is_measurement_complete = True
-        assert sut.show_loaded_settings_warning is False
-
-    # MC9-MC10: the other two rules that move this flag.  Paired with Swift and web.
-
-    def test_start_tap_sequence_clears_loaded_settings_warning(self):
-        """Starting a new sequence clears it -- the user's own Threshold/Taps now apply."""
-        sut = _make_guitar_sut()
-        sut.show_loaded_settings_warning = True
-        sut.start_tap_sequence()
-        assert sut.show_loaded_settings_warning is False
-
-    def test_tap_count_change_clears_loaded_settings_warning(self):
-        """Changing Taps clears it (Swift numberOfTaps.didSet)."""
-        sut = _make_guitar_sut()
-        sut.loaded_number_of_taps = 1
-        sut.show_loaded_settings_warning = True
-        sut.number_of_taps = 3
-        assert sut.show_loaded_settings_warning is False
+def test_assigning_the_flag_clears_the_warning(qapp):
+    """A bare assignment enforces the rule: the flag is a property, as Swift's didSet."""
+    sut = _make_sut()
+    sut.show_loaded_settings_warning = True
+    sut.is_measurement_complete = True
+    assert sut.show_loaded_settings_warning is False

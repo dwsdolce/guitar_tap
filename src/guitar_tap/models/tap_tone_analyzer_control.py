@@ -976,12 +976,6 @@ class TapToneAnalyzerControlMixin:
         # Raising the count mid-sequence does NOT clear what was already captured (mirrors Swift,
         # which never clears capturedTaps here) -- though the spinner lock means this cannot be
         # reached from the UI either.
-        # Mirrors Swift numberOfTaps.didSet: clear warning if user deviates from loaded value.
-        if (self.show_loaded_settings_warning
-                and self.loaded_number_of_taps is not None
-                and self.number_of_taps != self.loaded_number_of_taps):
-            self.show_loaded_settings_warning = False
-            self.showLoadedSettingsWarningChanged.emit(False)
         # Mirrors Swift numberOfTaps.didSet: update status message when waiting
         # for the first tap (isDetecting=True, currentTapCount=0).
         #

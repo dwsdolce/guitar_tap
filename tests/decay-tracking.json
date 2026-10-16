@@ -1,6 +1,6 @@
 {
  "slug": "test/decay-tracking",
- "about": "Ring-out time measured on given audio — ringOutTime(samples, from: start, to: end, sampleRate:, threshold:) — the same cases in every edition. Each case's audio is generated from 'signal': 'length' samples at 'sampleRate', silent before 'onset', then amplitude·exp(−n/(timeConstant·sampleRate)) (amplitude 0.5 unless given), scaled up linearly over the first 'attack' samples when given, stored as 32-bit floats. 'threshold' is the decay threshold in dB when given (else 'defaultThreshold', the analyzer's default); 'expect' is seconds, or null for no ring-out, within 'tolerance'. The level is the energy of every 'windowSamples'-sample window.",
+ "about": "Ring-out time measured on given audio — ringOutTime(samples, from: start, to: end, sampleRate:, threshold:) — the same cases in every edition. Each case's audio is generated from 'signal': 'length' samples at 'sampleRate', silent before 'onset', then amplitude·exp(−n/(timeConstant·sampleRate)) (amplitude 0.5 unless given), scaled up linearly over the first 'attack' samples when given, stored as 32-bit floats. 'threshold' is the decay threshold in dB when given (else 'defaultThreshold', the analyzer's default); 'expect' is seconds, or null for no ring-out, within 'tolerance'. The level is the energy of every 'windowSamples'-sample window. 'analyzer' holds cases on the analyzer itself, as steps on a fresh analyzer: {\"decayTime\": s} sets the ring-out shown; {\"newTap\": true} starts a new tap sequence. 'expect' is 'currentDecayTime' after the last step (null for none).",
  "defaultThreshold": 15,
  "windowSamples": 1024,
  "sampleRate": 48000,
@@ -104,6 +104,23 @@
    "start": 0,
    "end": 2500,
    "expect": null
+  }
+ ],
+ "analyzer": [
+  {
+   "id": "DK9",
+   "note": "a new sequence clears the last ring-out",
+   "steps": [
+    {
+     "decayTime": 0.1
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "currentDecayTime": null
+   }
   }
  ]
 }

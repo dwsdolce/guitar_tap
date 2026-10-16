@@ -1,0 +1,3398 @@
+{
+ "slug": "test/annotation-state",
+ "about": "The per-peak state the user edits and the views read: dragged label positions, selection, which peaks are annotated, mode labels (the user's own and the auto-detected), the one definitive Air/Top/Back and the tap-tone ratio, and what clears it all. Each case starts a fresh analyzer, sets its 'type' (a guitar type, by saved name) as Settings does, and loads its 'files.measurement' as the app loads a file — the peaks (classified by the analyzer under that type), their selection, Show Unknown Modes — then runs its 'steps'. 'peakIds' gives each case-local peak name its id (a name not in the file is a peak the analyzer does not know). Steps: the shared steps of tooling/analyzer-steps (settings, newTap), and {\"load\": file}; {\"toggle\": name} (a click on a peak); {\"selectNone\": true}; {\"resetToAuto\": true} (the wand); {\"override\": [name, label]} (a label of the user's); {\"resetOverride\": name} (Reset to Auto); {\"offset\": [name, Hz, dB]} (a dragged label); {\"resetOffset\": name}; {\"resetAllOffsets\": true} (Reset Labels); {\"visibility\": all | selected | none}; {\"cycleVisibility\": true} (the annotations button); {\"guitarTypeChange\": type} (Settings changes the guitar type and applies it); {\"check\": {...}} asserts those fields at that point. Fields: 'selected' (names, any order), 'userModified', 'visible' (the annotated peaks' Hz, ascending), 'visibility', 'label' / 'mode' / 'autoMode' / 'manualOverride' (per name; mode is override-aware, autoMode is not; modes by Swift's case name: air, top, back, dipole, ringMode, upperModes, unknown), 'overrides' (the whole map, name → label), 'offsets' (the whole map, name → [Hz, dB]), 'offsetCount', 'getPeak' (mode → name or null), 'hasRatio', 'definitive' (air/top/back → {hz, isOverride} or null), 'selectedIsAuto' (the selection is the automatic one), 'materialPeakMode' (the mode of a plate/brace capture's fL peak). AS41 starts from no file: a brace capture, through the shared steps. Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "AS1",
+   "note": "a dragged label's position is kept for its peak",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F01"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F02",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F01",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "offset": [
+      "p",
+      210,
+      -15
+     ]
+    }
+   ],
+   "expect": {
+    "offsets": {
+     "p": [
+      210,
+      -15
+     ]
+    }
+   }
+  },
+  {
+   "id": "AS2",
+   "note": "dragging it again keeps the latest position",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F03"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F04",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F03",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "offset": [
+      "p",
+      201,
+      -21
+     ]
+    },
+    {
+     "offset": [
+      "p",
+      299,
+      -12
+     ]
+    }
+   ],
+   "expect": {
+    "offsets": {
+     "p": [
+      299,
+      -12
+     ]
+    }
+   }
+  },
+  {
+   "id": "AS3",
+   "note": "Reset on one label returns only that label to its peak",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "k": "00000000-0000-0000-0000-000000000F05",
+    "c": "00000000-0000-0000-0000-000000000F06"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F07",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F05",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F06",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "offset": [
+      "c",
+      209,
+      -9
+     ]
+    },
+    {
+     "offset": [
+      "k",
+      101,
+      -12
+     ]
+    },
+    {
+     "resetOffset": "c"
+    }
+   ],
+   "expect": {
+    "offsets": {
+     "k": [
+      101,
+      -12
+     ]
+    }
+   }
+  },
+  {
+   "id": "AS4",
+   "note": "Reset Labels returns every label to its peak",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "a": "00000000-0000-0000-0000-000000000F08",
+    "b": "00000000-0000-0000-0000-000000000F09"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F0A",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F08",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F09",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "offset": [
+      "a",
+      101,
+      -12
+     ]
+    },
+    {
+     "offset": [
+      "b",
+      203,
+      -14
+     ]
+    },
+    {
+     "check": {
+      "offsetCount": 2
+     }
+    },
+    {
+     "resetAllOffsets": true
+    }
+   ],
+   "expect": {
+    "offsets": {}
+   }
+  },
+  {
+   "id": "AS5",
+   "note": "a load replaces the dragged positions with the measurement's own",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "a": "00000000-0000-0000-0000-000000000F0B",
+    "b": "00000000-0000-0000-0000-000000000F0C"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F0D",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F0B",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F0C",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ],
+    "withOffsets": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F0E",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F0B",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F0C",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      },
+      "peakAnnotationOffsets": [
+       "00000000-0000-0000-0000-000000000F0C",
+       {
+        "absFreqHz": 205,
+        "absDB": -11
+       }
+      ]
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "offset": [
+      "a",
+      101,
+      -12
+     ]
+    },
+    {
+     "load": "withOffsets"
+    }
+   ],
+   "expect": {
+    "offsets": {
+     "b": [
+      205,
+      -11
+     ]
+    }
+   }
+  },
+  {
+   "id": "AS6",
+   "note": "toggling a peak twice selects then deselects it",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "t": "00000000-0000-0000-0000-000000000F0F"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F10",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F0F",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "t"
+    },
+    {
+     "check": {
+      "selected": [
+       "t"
+      ]
+     }
+    },
+    {
+     "toggle": "t"
+    }
+   ],
+   "expect": {
+    "selected": []
+   }
+  },
+  {
+   "id": "AS7",
+   "note": "Select None clears the selection",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "a": "00000000-0000-0000-0000-000000000F11",
+    "b": "00000000-0000-0000-0000-000000000F12"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F13",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F11",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F12",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [
+       "00000000-0000-0000-0000-000000000F11",
+       "00000000-0000-0000-0000-000000000F12"
+      ],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "selectNone": true
+    }
+   ],
+   "expect": {
+    "selected": []
+   }
+  },
+  {
+   "id": "AS8",
+   "note": "a toggle marks the selection as the user's",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "x": "00000000-0000-0000-0000-000000000F14"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F15",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F14",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "check": {
+      "userModified": false
+     }
+    },
+    {
+     "toggle": "x"
+    }
+   ],
+   "expect": {
+    "userModified": true
+   }
+  },
+  {
+   "id": "AS9",
+   "note": "Select None marks the selection as the user's",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "x": "00000000-0000-0000-0000-000000000F16"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F17",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F16",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "selectNone": true
+    }
+   ],
+   "expect": {
+    "userModified": true
+   }
+  },
+  {
+   "id": "AS10",
+   "note": "the wand selects the loudest peak of each mode and clears the user's mark",
+   "type": "Acoustic Guitar",
+   "peakIds": {
+    "quiet": "00000000-0000-0000-0000-000000000F18",
+    "loud": "00000000-0000-0000-0000-000000000F19"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F1A",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F18",
+        "frequency": 98.0,
+        "magnitude": -50.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F19",
+        "frequency": 105.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": true,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Acoustic Guitar",
+       "guitarType": "Acoustic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Acoustic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "resetToAuto": true
+    }
+   ],
+   "expect": {
+    "userModified": false,
+    "selected": [
+     "loud"
+    ]
+   }
+  },
+  {
+   "id": "AS11",
+   "note": "the wand with no peaks selects nothing",
+   "type": "Generic Guitar",
+   "peakIds": {},
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F1B",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": true,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "resetToAuto": true
+    }
+   ],
+   "expect": {
+    "userModified": false,
+    "selected": []
+   }
+  },
+  {
+   "id": "AS12",
+   "note": "'All' annotates every peak",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "a": "00000000-0000-0000-0000-000000000F1C",
+    "b": "00000000-0000-0000-0000-000000000F1D",
+    "c": "00000000-0000-0000-0000-000000000F1E"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F1F",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F1C",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F1D",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F1E",
+        "frequency": 300.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "visibility": "all"
+    }
+   ],
+   "expect": {
+    "visible": [
+     100,
+     200,
+     300
+    ]
+   }
+  },
+  {
+   "id": "AS13",
+   "note": "'Selected' annotates only the selected peaks",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "a": "00000000-0000-0000-0000-000000000F20",
+    "b": "00000000-0000-0000-0000-000000000F21",
+    "c": "00000000-0000-0000-0000-000000000F22"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F23",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F20",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F21",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F22",
+        "frequency": 300.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [
+       "00000000-0000-0000-0000-000000000F20",
+       "00000000-0000-0000-0000-000000000F22"
+      ],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "visibility": "selected"
+    }
+   ],
+   "expect": {
+    "visible": [
+     100,
+     300
+    ]
+   }
+  },
+  {
+   "id": "AS14",
+   "note": "'None' annotates nothing",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "a": "00000000-0000-0000-0000-000000000F24",
+    "b": "00000000-0000-0000-0000-000000000F25"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F26",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F24",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F25",
+        "frequency": 300.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [
+       "00000000-0000-0000-0000-000000000F24",
+       "00000000-0000-0000-0000-000000000F25"
+      ],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "visibility": "none"
+    }
+   ],
+   "expect": {
+    "visible": []
+   }
+  },
+  {
+   "id": "AS15",
+   "note": "'Selected' with nothing selected annotates nothing — not all",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "a": "00000000-0000-0000-0000-000000000F27",
+    "b": "00000000-0000-0000-0000-000000000F28"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F29",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F27",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F28",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "visibility": "selected"
+    }
+   ],
+   "expect": {
+    "visible": []
+   }
+  },
+  {
+   "id": "AS16",
+   "note": "with Show Unknown Modes off, an unknown peak is not annotated unless the user named it",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "air": "00000000-0000-0000-0000-000000000F2A",
+    "odd": "00000000-0000-0000-0000-000000000F2B",
+    "named": "00000000-0000-0000-0000-000000000F2C"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F2D",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F2A",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F2B",
+        "frequency": 500.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F2C",
+        "frequency": 520.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": false
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "visibility": "all"
+    },
+    {
+     "override": [
+      "named",
+      "Wolf note"
+     ]
+    }
+   ],
+   "expect": {
+    "visible": [
+     100,
+     520
+    ]
+   }
+  },
+  {
+   "id": "AS17",
+   "note": "the visibility cycles All → Selected → None → All",
+   "type": "Generic Guitar",
+   "peakIds": {},
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F2E",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "visibility": "all"
+    },
+    {
+     "cycleVisibility": true
+    },
+    {
+     "check": {
+      "visibility": "selected"
+     }
+    },
+    {
+     "cycleVisibility": true
+    },
+    {
+     "check": {
+      "visibility": "none"
+     }
+    },
+    {
+     "cycleVisibility": true
+    }
+   ],
+   "expect": {
+    "visibility": "all"
+   }
+  },
+  {
+   "id": "AS18",
+   "note": "with no label of the user's, a peak shows its mode's name",
+   "type": "Acoustic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F2F"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F30",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F2F",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Acoustic Guitar",
+       "guitarType": "Acoustic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Acoustic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    }
+   ],
+   "expect": {
+    "label": {
+     "p": "Air (Helmholtz)"
+    }
+   }
+  },
+  {
+   "id": "AS19",
+   "note": "the auto-detected mode — what Reset to Auto restores — ignores the user's label",
+   "type": "Acoustic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F31"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F32",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F31",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Acoustic Guitar",
+       "guitarType": "Acoustic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Acoustic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "check": {
+      "autoMode": {
+       "p": "air"
+      }
+     }
+    },
+    {
+     "override": [
+      "p",
+      "Top"
+     ]
+    }
+   ],
+   "expect": {
+    "label": {
+     "p": "Top"
+    },
+    "autoMode": {
+     "p": "air"
+    }
+   }
+  },
+  {
+   "id": "AS20",
+   "note": "a label of the user's is shown as given",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F33"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F34",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F33",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "override": [
+      "p",
+      "My Label"
+     ]
+    }
+   ],
+   "expect": {
+    "label": {
+     "p": "My Label"
+    }
+   }
+  },
+  {
+   "id": "AS21",
+   "note": "a label set is a manual override; Reset to Auto removes it entirely",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F35"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F36",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F35",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "check": {
+      "manualOverride": {
+       "p": false
+      }
+     }
+    },
+    {
+     "override": [
+      "p",
+      "Test"
+     ]
+    },
+    {
+     "check": {
+      "manualOverride": {
+       "p": true
+      }
+     }
+    },
+    {
+     "resetOverride": "p"
+    }
+   ],
+   "expect": {
+    "manualOverride": {
+     "p": false
+    },
+    "overrides": {}
+   }
+  },
+  {
+   "id": "AS22",
+   "note": "Reset to Auto on one peak leaves the others' labels",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "k": "00000000-0000-0000-0000-000000000F37",
+    "c": "00000000-0000-0000-0000-000000000F38"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F39",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F37",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F38",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "override": [
+      "c",
+      "Wolf note"
+     ]
+    },
+    {
+     "override": [
+      "k",
+      "Keep me"
+     ]
+    },
+    {
+     "resetOverride": "c"
+    }
+   ],
+   "expect": {
+    "overrides": {
+     "k": "Keep me"
+    }
+   }
+  },
+  {
+   "id": "AS23",
+   "note": "Reset to Auto brings back the mode's name",
+   "type": "Acoustic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F3A"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F3B",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F3A",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Acoustic Guitar",
+       "guitarType": "Acoustic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Acoustic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "override": [
+      "p",
+      "Temp"
+     ]
+    },
+    {
+     "resetOverride": "p"
+    }
+   ],
+   "expect": {
+    "label": {
+     "p": "Air (Helmholtz)"
+    }
+   }
+  },
+  {
+   "id": "AS24",
+   "note": "a peak the analyzer has not classified has no mode — even at 220 Hz, in both the Top and Back bands",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "stray": "00000000-0000-0000-0000-000000000F3C"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F3D",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    }
+   ],
+   "expect": {
+    "mode": {
+     "stray": "unknown"
+    },
+    "autoMode": {
+     "stray": "unknown"
+    }
+   }
+  },
+  {
+   "id": "AS25",
+   "note": "a load replaces the user's labels with the measurement's own",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "a": "00000000-0000-0000-0000-000000000F3E",
+    "b": "00000000-0000-0000-0000-000000000F3F"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F40",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F3E",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F3F",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ],
+    "withLabels": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F41",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F3E",
+        "frequency": 100.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F3F",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      },
+      "peakModeOverrides": [
+       "00000000-0000-0000-0000-000000000F3F",
+       {
+        "label": "Saved",
+        "type": "assigned"
+       }
+      ]
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "override": [
+      "a",
+      "Mine"
+     ]
+    },
+    {
+     "load": "withLabels"
+    }
+   ],
+   "expect": {
+    "overrides": {
+     "b": "Saved"
+    }
+   }
+  },
+  {
+   "id": "AS26",
+   "note": "selecting a second Top displaces the first, which is still a Top",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "topA": "00000000-0000-0000-0000-000000000F42",
+    "topB": "00000000-0000-0000-0000-000000000F43"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F44",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F42",
+        "frequency": 150.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F43",
+        "frequency": 170.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "topA"
+    },
+    {
+     "check": {
+      "selected": [
+       "topA"
+      ]
+     }
+    },
+    {
+     "toggle": "topB"
+    }
+   ],
+   "expect": {
+    "selected": [
+     "topB"
+    ],
+    "mode": {
+     "topA": "top"
+    }
+   }
+  },
+  {
+   "id": "AS27",
+   "note": "Dipole allows several selected peaks",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "d1": "00000000-0000-0000-0000-000000000F45",
+    "d2": "00000000-0000-0000-0000-000000000F46"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F47",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F45",
+        "frequency": 320.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F46",
+        "frequency": 400.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "check": {
+      "mode": {
+       "d1": "dipole"
+      }
+     }
+    },
+    {
+     "toggle": "d1"
+    },
+    {
+     "toggle": "d2"
+    }
+   ],
+   "expect": {
+    "selected": [
+     "d1",
+     "d2"
+    ]
+   }
+  },
+  {
+   "id": "AS28",
+   "note": "relabelling a selected peak to Top displaces the selected Top, which stays a Top",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "top": "00000000-0000-0000-0000-000000000F48",
+    "air": "00000000-0000-0000-0000-000000000F49"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F4A",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F48",
+        "frequency": 150.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F49",
+        "frequency": 90.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "top"
+    },
+    {
+     "toggle": "air"
+    },
+    {
+     "check": {
+      "selected": [
+       "air",
+       "top"
+      ]
+     }
+    },
+    {
+     "override": [
+      "air",
+      "Top"
+     ]
+    }
+   ],
+   "expect": {
+    "selected": [
+     "air"
+    ],
+    "mode": {
+     "top": "top"
+    }
+   }
+  },
+  {
+   "id": "AS29",
+   "note": "relabelling an unselected peak to Top changes no selection",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "top": "00000000-0000-0000-0000-000000000F4B",
+    "air": "00000000-0000-0000-0000-000000000F4C"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F4D",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F4B",
+        "frequency": 150.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F4C",
+        "frequency": 90.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "top"
+    },
+    {
+     "override": [
+      "air",
+      "Top"
+     ]
+    }
+   ],
+   "expect": {
+    "selected": [
+     "top"
+    ],
+    "mode": {
+     "air": "top"
+    }
+   }
+  },
+  {
+   "id": "AS30",
+   "note": "relabelling the selected Top away leaves no Top — nothing is promoted",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "topA": "00000000-0000-0000-0000-000000000F4E",
+    "topB": "00000000-0000-0000-0000-000000000F4F"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F50",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F4E",
+        "frequency": 150.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F4F",
+        "frequency": 170.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "topA"
+    },
+    {
+     "override": [
+      "topA",
+      "Wolf note"
+     ]
+    }
+   ],
+   "expect": {
+    "mode": {
+     "topA": "unknown"
+    },
+    "selected": [
+     "topA"
+    ]
+   }
+  },
+  {
+   "id": "AS31",
+   "note": "Select None leaves the classification",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "top": "00000000-0000-0000-0000-000000000F51",
+    "air": "00000000-0000-0000-0000-000000000F52"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F53",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F51",
+        "frequency": 150.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F52",
+        "frequency": 90.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "top"
+    },
+    {
+     "selectNone": true
+    }
+   ],
+   "expect": {
+    "selected": [],
+    "mode": {
+     "top": "top",
+     "air": "air"
+    }
+   }
+  },
+  {
+   "id": "AS32",
+   "note": "the Top is the selected peak, not the loudest",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "loud": "00000000-0000-0000-0000-000000000F54",
+    "weak": "00000000-0000-0000-0000-000000000F55"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F56",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F54",
+        "frequency": 150.0,
+        "magnitude": -18.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F55",
+        "frequency": 165.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "weak"
+    }
+   ],
+   "expect": {
+    "getPeak": {
+     "top": "weak"
+    }
+   }
+  },
+  {
+   "id": "AS33",
+   "note": "relabelling the Top drops the ratio",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "air": "00000000-0000-0000-0000-000000000F57",
+    "top": "00000000-0000-0000-0000-000000000F58"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F59",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F57",
+        "frequency": 100.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F58",
+        "frequency": 150.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "air"
+    },
+    {
+     "toggle": "top"
+    },
+    {
+     "check": {
+      "hasRatio": true
+     }
+    },
+    {
+     "override": [
+      "top",
+      "Wolf note"
+     ]
+    }
+   ],
+   "expect": {
+    "getPeak": {
+     "top": null
+    },
+    "hasRatio": false
+   }
+  },
+  {
+   "id": "AS34",
+   "note": "deselecting the Top drops the ratio",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "air": "00000000-0000-0000-0000-000000000F5A",
+    "top": "00000000-0000-0000-0000-000000000F5B"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F5C",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F5A",
+        "frequency": 100.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F5B",
+        "frequency": 150.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "air"
+    },
+    {
+     "toggle": "top"
+    },
+    {
+     "check": {
+      "hasRatio": true
+     }
+    },
+    {
+     "toggle": "top"
+    }
+   ],
+   "expect": {
+    "hasRatio": false
+   }
+  },
+  {
+   "id": "AS35",
+   "note": "relabelling a selected peak to Top makes it the Top, and the ratio returns",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "air": "00000000-0000-0000-0000-000000000F5D",
+    "far": "00000000-0000-0000-0000-000000000F5E"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F5F",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F5D",
+        "frequency": 100.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F5E",
+        "frequency": 400.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "air"
+    },
+    {
+     "toggle": "far"
+    },
+    {
+     "check": {
+      "getPeak": {
+       "top": null
+      }
+     }
+    },
+    {
+     "override": [
+      "far",
+      "Top"
+     ]
+    }
+   ],
+   "expect": {
+    "getPeak": {
+     "top": "far"
+    },
+    "hasRatio": true
+   }
+  },
+  {
+   "id": "AS36",
+   "note": "the definitive Air/Top/Back, each flagged when it is the user's label",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "air": "00000000-0000-0000-0000-000000000F60",
+    "below": "00000000-0000-0000-0000-000000000F61",
+    "louder": "00000000-0000-0000-0000-000000000F62"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F63",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F60",
+        "frequency": 100.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F61",
+        "frequency": 138.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F62",
+        "frequency": 233.0,
+        "magnitude": -18.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "air"
+    },
+    {
+     "toggle": "below"
+    },
+    {
+     "override": [
+      "below",
+      "Top"
+     ]
+    }
+   ],
+   "expect": {
+    "definitive": {
+     "top": {
+      "hz": 138,
+      "isOverride": true
+     },
+     "air": {
+      "hz": 100,
+      "isOverride": false
+     }
+    }
+   }
+  },
+  {
+   "id": "AS37",
+   "note": "an unselected Top is not the definitive Top",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "air": "00000000-0000-0000-0000-000000000F64",
+    "top": "00000000-0000-0000-0000-000000000F65"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F66",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F64",
+        "frequency": 100.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F65",
+        "frequency": 150.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "air"
+    }
+   ],
+   "expect": {
+    "definitive": {
+     "top": null,
+     "air": {
+      "hz": 100,
+      "isOverride": false
+     }
+    }
+   }
+  },
+  {
+   "id": "AS38",
+   "note": "a guitar-type change is a clean slate: labels gone, selection automatic for the new type",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "air": "00000000-0000-0000-0000-000000000F67",
+    "top": "00000000-0000-0000-0000-000000000F68"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F69",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F67",
+        "frequency": 100.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F68",
+        "frequency": 150.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "air"
+    },
+    {
+     "override": [
+      "top",
+      "Wolf note"
+     ]
+    },
+    {
+     "check": {
+      "manualOverride": {
+       "top": true
+      }
+     }
+    },
+    {
+     "guitarTypeChange": "Classical Guitar"
+    }
+   ],
+   "expect": {
+    "overrides": {},
+    "userModified": false,
+    "selectedIsAuto": true
+   }
+  },
+  {
+   "id": "AS39",
+   "note": "a guitar-type change classifies the same peaks under the new type's bands",
+   "type": "Classical Guitar",
+   "peakIds": {
+    "low": "00000000-0000-0000-0000-000000000F6A",
+    "p160": "00000000-0000-0000-0000-000000000F6B"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F6C",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F6A",
+        "frequency": 100.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F6B",
+        "frequency": 160.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Classical Guitar",
+       "guitarType": "Classical",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "check": {
+      "autoMode": {
+       "p160": "unknown"
+      }
+     }
+    },
+    {
+     "guitarTypeChange": "Acoustic Guitar"
+    }
+   ],
+   "expect": {
+    "autoMode": {
+     "p160": "top"
+    }
+   }
+  },
+  {
+   "id": "AS40",
+   "note": "a new sequence clears every peak's state",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "air": "00000000-0000-0000-0000-000000000F6D",
+    "top": "00000000-0000-0000-0000-000000000F6E"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F6F",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F6D",
+        "frequency": 100.0,
+        "magnitude": -25.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F6E",
+        "frequency": 150.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "toggle": "air"
+    },
+    {
+     "override": [
+      "top",
+      "Wolf note"
+     ]
+    },
+    {
+     "offset": [
+      "air",
+      102,
+      -21
+     ]
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "selected": [],
+    "userModified": false,
+    "overrides": {},
+    "offsets": {}
+   }
+  },
+  {
+   "id": "AS41",
+   "note": "a completed brace capture leaves its peak with no guitar mode",
+   "type": "Material (Brace)",
+   "peakIds": {},
+   "files": {},
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 150
+     }
+    }
+   ],
+   "expect": {
+    "materialPeakMode": "unknown"
+   }
+  }
+ ]
+}

@@ -1,0 +1,743 @@
+{
+ "slug": "test/measurement-complete",
+ "about": "Every path that completes a measurement, and every one that clears it, and the loaded-settings warning those paths move. Each case starts a fresh analyzer (Classical Guitar, 1 tap, threshold −40, warm-up passed) and runs its 'steps' in order: {\"numberOfTaps\": n} sets the tap count before anything is captured; {\"captureTaps\": [dB, …]} holds one captured tap per entry — 64 bins at 31.25 Hz, −80 dB but bin 16 at that level; {\"processTaps\": true} processes the captured taps as the end of a capture does; {\"newTap\": true} starts a new sequence; {\"cancel\": true} cancels; {\"load\": file} loads that inline file; {\"warning\": true} raises the loaded-settings warning; {\"setTaps\": n} changes Taps as the user does; {\"setThreshold\": dB} changes the threshold as the user does. 'expect' after the last step: 'complete', 'frozenSpectrum' (a frozen spectrum is held), 'detecting', 'loadedSettingsWarning', 'numberOfTaps'. Expected values are Swift's.",
+ "files": {
+  "inline-guitar": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000D1",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "spectrumSnapshot": {
+     "frequencies": [
+      0.0,
+      31.25,
+      62.5,
+      93.75,
+      125.0,
+      156.25,
+      187.5,
+      218.75,
+      250.0,
+      281.25,
+      312.5,
+      343.75,
+      375.0,
+      406.25,
+      437.5,
+      468.75,
+      500.0,
+      531.25,
+      562.5,
+      593.75,
+      625.0,
+      656.25,
+      687.5,
+      718.75,
+      750.0,
+      781.25,
+      812.5,
+      843.75,
+      875.0,
+      906.25,
+      937.5,
+      968.75,
+      1000.0,
+      1031.25,
+      1062.5,
+      1093.75,
+      1125.0,
+      1156.25,
+      1187.5,
+      1218.75,
+      1250.0,
+      1281.25,
+      1312.5,
+      1343.75,
+      1375.0,
+      1406.25,
+      1437.5,
+      1468.75,
+      1500.0,
+      1531.25,
+      1562.5,
+      1593.75,
+      1625.0,
+      1656.25,
+      1687.5,
+      1718.75,
+      1750.0,
+      1781.25,
+      1812.5,
+      1843.75,
+      1875.0,
+      1906.25,
+      1937.5,
+      1968.75
+     ],
+     "magnitudes": [
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -30.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0
+     ],
+     "minFreq": 0,
+     "maxFreq": 2000,
+     "minDB": -90,
+     "maxDB": -20,
+     "isLogarithmic": false,
+     "measurementType": "Classical Guitar",
+     "guitarType": "Classical"
+    }
+   }
+  ],
+  "inline-guitar-3-taps": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000D2",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "spectrumSnapshot": {
+     "frequencies": [
+      0.0,
+      31.25,
+      62.5,
+      93.75,
+      125.0,
+      156.25,
+      187.5,
+      218.75,
+      250.0,
+      281.25,
+      312.5,
+      343.75,
+      375.0,
+      406.25,
+      437.5,
+      468.75,
+      500.0,
+      531.25,
+      562.5,
+      593.75,
+      625.0,
+      656.25,
+      687.5,
+      718.75,
+      750.0,
+      781.25,
+      812.5,
+      843.75,
+      875.0,
+      906.25,
+      937.5,
+      968.75,
+      1000.0,
+      1031.25,
+      1062.5,
+      1093.75,
+      1125.0,
+      1156.25,
+      1187.5,
+      1218.75,
+      1250.0,
+      1281.25,
+      1312.5,
+      1343.75,
+      1375.0,
+      1406.25,
+      1437.5,
+      1468.75,
+      1500.0,
+      1531.25,
+      1562.5,
+      1593.75,
+      1625.0,
+      1656.25,
+      1687.5,
+      1718.75,
+      1750.0,
+      1781.25,
+      1812.5,
+      1843.75,
+      1875.0,
+      1906.25,
+      1937.5,
+      1968.75
+     ],
+     "magnitudes": [
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -30.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0
+     ],
+     "minFreq": 0,
+     "maxFreq": 2000,
+     "minDB": -90,
+     "maxDB": -20,
+     "isLogarithmic": false,
+     "measurementType": "Classical Guitar",
+     "guitarType": "Classical"
+    },
+    "numberOfTaps": 3
+   }
+  ],
+  "inline-guitar-settings": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000D3",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "spectrumSnapshot": {
+     "frequencies": [
+      0.0,
+      31.25,
+      62.5,
+      93.75,
+      125.0,
+      156.25,
+      187.5,
+      218.75,
+      250.0,
+      281.25,
+      312.5,
+      343.75,
+      375.0,
+      406.25,
+      437.5,
+      468.75,
+      500.0,
+      531.25,
+      562.5,
+      593.75,
+      625.0,
+      656.25,
+      687.5,
+      718.75,
+      750.0,
+      781.25,
+      812.5,
+      843.75,
+      875.0,
+      906.25,
+      937.5,
+      968.75,
+      1000.0,
+      1031.25,
+      1062.5,
+      1093.75,
+      1125.0,
+      1156.25,
+      1187.5,
+      1218.75,
+      1250.0,
+      1281.25,
+      1312.5,
+      1343.75,
+      1375.0,
+      1406.25,
+      1437.5,
+      1468.75,
+      1500.0,
+      1531.25,
+      1562.5,
+      1593.75,
+      1625.0,
+      1656.25,
+      1687.5,
+      1718.75,
+      1750.0,
+      1781.25,
+      1812.5,
+      1843.75,
+      1875.0,
+      1906.25,
+      1937.5,
+      1968.75
+     ],
+     "magnitudes": [
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -30.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0,
+      -80.0
+     ],
+     "minFreq": 0,
+     "maxFreq": 2000,
+     "minDB": -90,
+     "maxDB": -20,
+     "isLogarithmic": false,
+     "measurementType": "Classical Guitar",
+     "guitarType": "Classical"
+    },
+    "numberOfTaps": 3,
+    "tapDetectionThreshold": -45
+   }
+  ]
+ },
+ "cases": [
+  {
+   "id": "MC1",
+   "note": "processing the captured taps completes the measurement",
+   "steps": [
+    {
+     "captureTaps": [
+      -30
+     ]
+    },
+    {
+     "processTaps": true
+    }
+   ],
+   "expect": {
+    "complete": true
+   }
+  },
+  {
+   "id": "MC2",
+   "note": "completing freezes the spectrum",
+   "steps": [
+    {
+     "captureTaps": [
+      -30
+     ]
+    },
+    {
+     "processTaps": true
+    }
+   ],
+   "expect": {
+    "frozenSpectrum": true
+   }
+  },
+  {
+   "id": "MC3",
+   "note": "two taps, averaged, complete it too",
+   "steps": [
+    {
+     "numberOfTaps": 2
+    },
+    {
+     "captureTaps": [
+      -32,
+      -28
+     ]
+    },
+    {
+     "processTaps": true
+    }
+   ],
+   "expect": {
+    "complete": true,
+    "frozenSpectrum": true
+   }
+  },
+  {
+   "id": "MC4",
+   "note": "a new sequence clears completion",
+   "steps": [
+    {
+     "captureTaps": [
+      -30
+     ]
+    },
+    {
+     "processTaps": true
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "complete": false
+   }
+  },
+  {
+   "id": "MC5",
+   "note": "Cancel re-arms: the frozen spectrum goes, not complete, detecting",
+   "steps": [
+    {
+     "captureTaps": [
+      -30
+     ]
+    },
+    {
+     "processTaps": true
+    },
+    {
+     "cancel": true
+    }
+   ],
+   "expect": {
+    "frozenSpectrum": false,
+    "complete": false,
+    "detecting": true
+   }
+  },
+  {
+   "id": "MC6",
+   "note": "no captured taps: processing does not complete",
+   "steps": [
+    {
+     "processTaps": true
+    }
+   ],
+   "expect": {
+    "complete": false
+   }
+  },
+  {
+   "id": "MC7",
+   "note": "a load completes the measurement",
+   "steps": [
+    {
+     "load": "inline-guitar"
+    }
+   ],
+   "expect": {
+    "complete": true
+   }
+  },
+  {
+   "id": "MC8",
+   "note": "completing clears the loaded-settings warning",
+   "steps": [
+    {
+     "warning": true
+    },
+    {
+     "captureTaps": [
+      -30
+     ]
+    },
+    {
+     "processTaps": true
+    }
+   ],
+   "expect": {
+    "loadedSettingsWarning": false
+   }
+  },
+  {
+   "id": "MC9",
+   "note": "a new sequence clears the loaded-settings warning",
+   "steps": [
+    {
+     "warning": true
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "loadedSettingsWarning": false
+   }
+  },
+  {
+   "id": "MC10",
+   "note": "changing Taps clears the loaded-settings warning",
+   "steps": [
+    {
+     "warning": true
+    },
+    {
+     "setTaps": 3
+    }
+   ],
+   "expect": {
+    "loadedSettingsWarning": false
+   }
+  },
+  {
+   "id": "MC11",
+   "note": "a load raises the loaded-settings warning, after its completion clears it",
+   "steps": [
+    {
+     "load": "inline-guitar"
+    }
+   ],
+   "expect": {
+    "complete": true,
+    "loadedSettingsWarning": true
+   }
+  },
+  {
+   "id": "MC12",
+   "note": "a load carrying a tap count applies it and still raises the warning",
+   "steps": [
+    {
+     "load": "inline-guitar-3-taps"
+    }
+   ],
+   "expect": {
+    "numberOfTaps": 3,
+    "loadedSettingsWarning": true
+   }
+  },
+  {
+   "id": "MC13",
+   "note": "with nothing loaded, changing the threshold clears the loaded-settings warning",
+   "steps": [
+    {
+     "warning": true
+    },
+    {
+     "setThreshold": -50
+    }
+   ],
+   "expect": {
+    "loadedSettingsWarning": false
+   }
+  },
+  {
+   "id": "MC14",
+   "note": "after a load, setting Taps to the loaded count keeps the warning",
+   "steps": [
+    {
+     "load": "inline-guitar-settings"
+    },
+    {
+     "setTaps": 3
+    }
+   ],
+   "expect": {
+    "loadedSettingsWarning": true
+   }
+  },
+  {
+   "id": "MC15",
+   "note": "after a load, a different Taps count clears the warning",
+   "steps": [
+    {
+     "load": "inline-guitar-settings"
+    },
+    {
+     "setTaps": 2
+    }
+   ],
+   "expect": {
+    "loadedSettingsWarning": false
+   }
+  },
+  {
+   "id": "MC16",
+   "note": "after a load, setting the threshold to the loaded one keeps the warning",
+   "steps": [
+    {
+     "load": "inline-guitar-settings"
+    },
+    {
+     "setThreshold": -45
+    }
+   ],
+   "expect": {
+    "loadedSettingsWarning": true
+   }
+  },
+  {
+   "id": "MC17",
+   "note": "after a load, a different threshold clears the warning",
+   "steps": [
+    {
+     "load": "inline-guitar-settings"
+    },
+    {
+     "setThreshold": -50
+    }
+   ],
+   "expect": {
+    "loadedSettingsWarning": false
+   }
+  },
+  {
+   "id": "MC18",
+   "note": "a load without a tap count leaves Taps as it was",
+   "steps": [
+    {
+     "setTaps": 4
+    },
+    {
+     "load": "inline-guitar"
+    }
+   ],
+   "expect": {
+    "numberOfTaps": 4
+   }
+  }
+ ]
+}

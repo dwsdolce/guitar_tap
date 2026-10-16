@@ -3393,10 +3393,13 @@ class MainWindow(QtWidgets.QMainWindow):
         peak into Air/Top/Back displaces the previous definitive holder. Mirrors Swift, where the mode
         picker binds to ``analyzer.setModeOverride``. The subsequent ``peaksChanged`` re-emits so the
         displaced peak's deselection and the new classification propagate to the widget and chart.
-        An empty label means "reset to auto".
+        An empty label means Reset to Auto: ``reset_mode_override``, as Swift's resetModeOverride.
         """
         analyzer = self.fft_canvas.analyzer
-        analyzer.set_mode_override(label if label else None, peak_id)
+        if label:
+            analyzer.set_mode_override(label, peak_id)
+        else:
+            analyzer.reset_mode_override(peak_id)
         analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_reset_auto_selection(self) -> None:

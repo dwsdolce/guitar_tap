@@ -1,0 +1,315 @@
+{
+ "slug": "test/tap-count-change",
+ "about": "Changing Taps: while armed and waiting for the first tap the prompt follows the new count (Swift numberOfTaps.didSet); otherwise it is left alone; and a change never completes a measurement or drops captured taps. Each case starts a fresh analyzer (1 tap, threshold −40) and runs its 'steps' through the app's own paths: {\"settings\": {type, measureFlc}} sets the measurement type (its saved name) and Measure FLC as Settings does; {\"setTaps\": n} changes Taps as the user does; {\"newTap\": true} starts a sequence; {\"guitarTap\": hz} finishes a guitar capture on a synthetic tap ringing at hz, one capture long (the analyzer's FFT size at 48 kHz); {\"materialTap\": {phase, hz}} finishes a material capture on a 0.5 s synthetic tap (phase L, C or FLC); {\"accept\": true} accepts the phase under review; {\"redo\": true} redoes it; {\"advance\": \"tapCooldown\" | \"captureWindow\" | seconds} feeds that much quiet audio. Synthetic taps are tooling/synthetic-tap. 'expect' after the last step: 'statusMessage', 'statusUnchangedByLastStep' (the last step left the status as it was), 'phase' (the material phase, by Swift's raw value), 'complete', 'detecting', 'capturedTaps' (taps held this sequence), 'numberOfTaps'. Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "TC1",
+   "note": "raising Taps while armed and waiting for the first tap refreshes the prompt",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "setTaps": 3
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap the guitar 3 times..."
+   }
+  },
+  {
+   "id": "TC2",
+   "note": "lowering it refreshes too",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 4
+    },
+    {
+     "newTap": true
+    },
+    {
+     "setTaps": 1
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap the guitar..."
+   }
+  },
+  {
+   "id": "TC3",
+   "note": "a change before any sequence leaves the prompt alone",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 5
+    }
+   ],
+   "expect": {
+    "statusMessage": "Tap the guitar to begin"
+   }
+  },
+  {
+   "id": "TC4",
+   "note": "at the start of a plate sequence the fL prompt names the new count",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "setTaps": 3
+    }
+   ],
+   "expect": {
+    "statusMessage": "Ready for fL tap (×3 each for L, C)"
+   }
+  },
+  {
+   "id": "TC5",
+   "note": "with FLC on, the prompt names all three phases",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": true
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "setTaps": 2
+    }
+   ],
+   "expect": {
+    "statusMessage": "Ready for fL tap (×2 each for L, C, FLC)"
+   }
+  },
+  {
+   "id": "TC6",
+   "note": "a brace gets the brace prompt, which names no phases",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "setTaps": 4
+    }
+   ],
+   "expect": {
+    "statusMessage": "Ready for fL tap (×4)"
+   }
+  },
+  {
+   "id": "TC7",
+   "note": "at a later phase (fC redone after L's taps) a change leaves the redo's instruction alone — a string the prompt for this phase would not be, so an overwrite shows",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "redo": true
+    },
+    {
+     "setTaps": 5
+    }
+   ],
+   "expect": {
+    "statusMessage": "Ready for fC tap — tap again",
+    "phase": "Capturing Cross-grain"
+   }
+  },
+  {
+   "id": "TC8",
+   "note": "lowering Taps to the number already captured does not complete the measurement",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 4
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "setTaps": 2
+    }
+   ],
+   "expect": {
+    "complete": false,
+    "detecting": true,
+    "capturedTaps": 2
+   }
+  },
+  {
+   "id": "TC9",
+   "note": "lowering it below the number captured neither completes nor drops taps",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 4
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "setTaps": 1
+    }
+   ],
+   "expect": {
+    "complete": false,
+    "detecting": true,
+    "capturedTaps": 3
+   }
+  },
+  {
+   "id": "TC10",
+   "note": "raising it keeps the taps already captured",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "setTaps": 5
+    }
+   ],
+   "expect": {
+    "complete": false,
+    "capturedTaps": 2,
+    "numberOfTaps": 5
+   }
+  }
+ ]
+}

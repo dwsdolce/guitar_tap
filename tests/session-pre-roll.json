@@ -1,74 +1,380 @@
 {
  "slug": "test/session-pre-roll",
- "about": "The session recording and Dump Capture Audio. A sequence keeps a bounded pre-roll (the last 2 s) until the first tap, whatever the setting. Whether the recording is saved is read from Dump Capture Audio when a sequence starts (launch, New Tap, Cancel, a measurement-type change, Play File — anything that starts one) and again when the setting is changed before the first tap. Turned on after the first tap, it takes effect from the next sequence; turned off, the sequence is not saved, and after the first tap the recording stops and what it held is dropped. Each case is a list of 'steps' run on a fresh analyzer at 48000 Hz with 1024-sample chunks: {\"start\": dump} starts a sequence with Dump Capture Audio on or off; {\"chunks\": n} feeds n chunks before or between taps; {\"tap\": true} starts a gated capture and feeds one chunk; {\"dump\": on} changes the setting and applies it to the analyzer; {\"pause\": true} / {\"resume\": true} pause and resume detection. 'expect' is the state after the last step: 'saved' (the recording will be saved), 'recording' (chunks are being kept) and 'samples' (the samples held). Expected values are Swift's.",
+ "about": "The session recording and Dump Capture Audio. A sequence keeps a bounded pre-roll (the last 2 s) until the first tap, whatever the setting. Whether the recording is saved is read from Dump Capture Audio when a sequence starts (launch, New Tap, Cancel, a measurement-type change, Play File — anything that starts one) and again when the setting is changed before the first tap. Turned on after the first tap, it takes effect from the next sequence; turned off, the sequence is not saved, and after the first tap the recording stops and what it held is dropped. Each case is a list of 'steps' run on a fresh analyzer at 48000 Hz with 1024-sample chunks: {\"start\": dump} starts a sequence with Dump Capture Audio on or off; {\"chunks\": n} feeds n chunks before or between taps; {\"tap\": true} starts a gated capture and feeds one chunk; {\"dump\": on} changes the setting and applies it to the analyzer; {\"release\": true} ends the gated capture (the tap's capture closes); {\"pause\": true} / {\"resume\": true} pause and resume detection. 'expect' is the state after the last step, each field checked only when named: 'saved' (the recording will be saved), 'recording' (chunks are being kept), 'samples' (the samples held) and 'preRoll' (the pre-roll latch is still armed — the first tap has not come). 'preRollSeconds' is the length of the pre-roll each edition keeps. Expected values are Swift's.",
  "rate": 48000,
  "chunk": 1024,
  "cases": [
   {
    "id": "SR1",
-   "steps": [{"start": false}, {"chunks": 10}],
-   "expect": {"saved": false, "recording": true, "samples": 10240},
+   "steps": [
+    {
+     "start": false
+    },
+    {
+     "chunks": 10
+    }
+   ],
+   "expect": {
+    "saved": false,
+    "recording": true,
+    "samples": 10240
+   },
    "note": "Dump off: the pre-roll is still kept before the first tap"
   },
   {
    "id": "SR2",
-   "steps": [{"start": false}, {"chunks": 100}],
-   "expect": {"saved": false, "recording": true, "samples": 96000},
+   "steps": [
+    {
+     "start": false
+    },
+    {
+     "chunks": 100
+    }
+   ],
+   "expect": {
+    "saved": false,
+    "recording": true,
+    "samples": 96000
+   },
    "note": "the pre-roll is bounded to 2 s (96000 samples) with Dump off, as with it on"
   },
   {
    "id": "SR3",
-   "steps": [{"start": false}, {"chunks": 100}, {"tap": true}, {"chunks": 5}],
-   "expect": {"saved": false, "recording": false, "samples": 0},
+   "steps": [
+    {
+     "start": false
+    },
+    {
+     "chunks": 100
+    },
+    {
+     "tap": true
+    },
+    {
+     "chunks": 5
+    }
+   ],
+   "expect": {
+    "saved": false,
+    "recording": false,
+    "samples": 0
+   },
    "note": "Dump off at the first tap: the recording stops and the pre-roll is dropped"
   },
   {
    "id": "SR4",
-   "steps": [{"start": true}, {"chunks": 100}, {"tap": true}, {"chunks": 5}],
-   "expect": {"saved": true, "recording": true, "samples": 102144},
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "chunks": 100
+    },
+    {
+     "tap": true
+    },
+    {
+     "chunks": 5
+    }
+   ],
+   "expect": {
+    "saved": true,
+    "recording": true,
+    "samples": 102144
+   },
    "note": "Dump on from the start: 2 s of pre-roll, then the tap and everything after it"
   },
   {
    "id": "SR5",
-   "steps": [{"start": false}, {"chunks": 100}, {"dump": true}, {"tap": true}, {"chunks": 5}],
-   "expect": {"saved": true, "recording": true, "samples": 102144},
+   "steps": [
+    {
+     "start": false
+    },
+    {
+     "chunks": 100
+    },
+    {
+     "dump": true
+    },
+    {
+     "tap": true
+    },
+    {
+     "chunks": 5
+    }
+   ],
+   "expect": {
+    "saved": true,
+    "recording": true,
+    "samples": 102144
+   },
    "note": "Dump turned on before the first tap: saved, and the same recording as SR4"
   },
   {
    "id": "SR6",
-   "steps": [{"start": false}, {"tap": true}, {"chunks": 2}, {"dump": true}, {"chunks": 3}],
-   "expect": {"saved": false, "recording": false, "samples": 0},
+   "steps": [
+    {
+     "start": false
+    },
+    {
+     "tap": true
+    },
+    {
+     "chunks": 2
+    },
+    {
+     "dump": true
+    },
+    {
+     "chunks": 3
+    }
+   ],
+   "expect": {
+    "saved": false,
+    "recording": false,
+    "samples": 0
+   },
    "note": "Dump turned on after the first tap: nothing until the next sequence"
   },
   {
    "id": "SR7",
-   "steps": [{"start": false}, {"tap": true}, {"chunks": 2}, {"dump": true}, {"start": true}, {"chunks": 3}],
-   "expect": {"saved": true, "recording": true, "samples": 3072},
+   "steps": [
+    {
+     "start": false
+    },
+    {
+     "tap": true
+    },
+    {
+     "chunks": 2
+    },
+    {
+     "dump": true
+    },
+    {
+     "start": true
+    },
+    {
+     "chunks": 3
+    }
+   ],
+   "expect": {
+    "saved": true,
+    "recording": true,
+    "samples": 3072
+   },
    "note": "SR6, then Cancel (or New Tap) starts a sequence with Dump on: it is saved from its start"
   },
   {
    "id": "SR8",
-   "steps": [{"start": true}, {"tap": true}, {"chunks": 2}, {"dump": false}],
-   "expect": {"saved": false, "recording": false, "samples": 0},
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "tap": true
+    },
+    {
+     "chunks": 2
+    },
+    {
+     "dump": false
+    }
+   ],
+   "expect": {
+    "saved": false,
+    "recording": false,
+    "samples": 0
+   },
    "note": "Dump turned off after the first tap: the recording stops and is dropped"
   },
   {
    "id": "SR9",
-   "steps": [{"start": true}, {"chunks": 10}, {"dump": false}, {"chunks": 10}],
-   "expect": {"saved": false, "recording": true, "samples": 20480},
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "chunks": 10
+    },
+    {
+     "dump": false
+    },
+    {
+     "chunks": 10
+    }
+   ],
+   "expect": {
+    "saved": false,
+    "recording": true,
+    "samples": 20480
+   },
    "note": "Dump turned off before the first tap: not saved, but the pre-roll is still kept"
   },
   {
    "id": "SR10",
-   "steps": [{"start": true}, {"chunks": 10}, {"dump": false}, {"chunks": 10}, {"dump": true}, {"tap": true}],
-   "expect": {"saved": true, "recording": true, "samples": 21504},
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "chunks": 10
+    },
+    {
+     "dump": false
+    },
+    {
+     "chunks": 10
+    },
+    {
+     "dump": true
+    },
+    {
+     "tap": true
+    }
+   ],
+   "expect": {
+    "saved": true,
+    "recording": true,
+    "samples": 21504
+   },
    "note": "off and on again before the first tap: saved, with the whole pre-roll"
   },
   {
    "id": "SR11",
-   "steps": [{"start": false}, {"chunks": 10}, {"pause": true}, {"chunks": 10}, {"dump": true}, {"resume": true}, {"chunks": 10}, {"tap": true}],
-   "expect": {"saved": true, "recording": true, "samples": 21504},
+   "steps": [
+    {
+     "start": false
+    },
+    {
+     "chunks": 10
+    },
+    {
+     "pause": true
+    },
+    {
+     "chunks": 10
+    },
+    {
+     "dump": true
+    },
+    {
+     "resume": true
+    },
+    {
+     "chunks": 10
+    },
+    {
+     "tap": true
+    }
+   ],
+   "expect": {
+    "saved": true,
+    "recording": true,
+    "samples": 21504
+   },
    "note": "Dump turned on while paused before the first tap: saved; the paused chunks are not kept"
+  },
+  {
+   "id": "SR12",
+   "note": "idle before the first tap stays bounded to the pre-roll, however long, and the latch stays armed",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "chunks": 300
+    }
+   ],
+   "expect": {
+    "saved": true,
+    "recording": true,
+    "samples": 96000,
+    "preRoll": true
+   }
+  },
+  {
+   "id": "SR13",
+   "note": "the first tap freezes the pre-roll latch",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "chunks": 300
+    },
+    {
+     "tap": true
+    }
+   ],
+   "expect": {
+    "preRoll": false
+   }
+  },
+  {
+   "id": "SR14",
+   "note": "after the first tap the recording is completely live: no chunk is trimmed across later taps and long gaps between them",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "chunks": 300
+    },
+    {
+     "tap": true
+    },
+    {
+     "release": true
+    },
+    {
+     "chunks": 200
+    },
+    {
+     "tap": true
+    },
+    {
+     "release": true
+    },
+    {
+     "chunks": 200
+    },
+    {
+     "tap": true
+    },
+    {
+     "release": true
+    },
+    {
+     "chunks": 200
+    },
+    {
+     "tap": true
+    },
+    {
+     "release": true
+    },
+    {
+     "chunks": 200
+    },
+    {
+     "tap": true
+    },
+    {
+     "release": true
+    },
+    {
+     "chunks": 200
+    },
+    {
+     "tap": true
+    }
+   ],
+   "expect": {
+    "samples": 1126144,
+    "preRoll": false
+   }
   }
- ]
+ ],
+ "preRollSeconds": 2.0
 }
