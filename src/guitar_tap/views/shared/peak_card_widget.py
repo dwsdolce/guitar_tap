@@ -582,7 +582,7 @@ class PeakListWidget(QtWidgets.QWidget):
             mode = self.model.mode_value(src_idx)
             auto_mode = self.model.peak_mode(src_idx)
             show = self.model.show_value(src_idx)
-            is_manual = freq in self.model.modes
+            is_manual = self.model.is_manual_value(src_idx)
 
             peak = self.model._peaks[int(i)] if int(i) < len(self.model._peaks) else None
             card = PeakCardWidget(
@@ -658,7 +658,7 @@ class PeakListWidget(QtWidgets.QWidget):
             elif col == pm.ColumnIndex.Modes.value:
                 mode = self.model.mode_value(src_idx)
                 auto_mode = self.model.peak_mode(src_idx)
-                card.set_mode(mode, auto_mode=auto_mode, is_manual=(freq in self.model.modes))
+                card.set_mode(mode, auto_mode=auto_mode, is_manual=self.model.is_manual_value(src_idx))
 
     def _on_model_layout_changed(self) -> None:
         """Refresh mode displays when guitar_type changes."""
@@ -678,7 +678,7 @@ class PeakListWidget(QtWidgets.QWidget):
             card.set_mode(
                 self.model.mode_value(src_idx),
                 auto_mode=self.model.peak_mode(src_idx),
-                is_manual=(card.freq in self.model.modes),
+                is_manual=self.model.is_manual_value(src_idx),
             )
 
     # ── card signal handlers ──────────────────────────────────────────────────

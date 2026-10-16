@@ -76,15 +76,15 @@ class PeaksModel(QtCore.QAbstractTableModel):
     def __init__(self, data: npt.NDArray, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
         self._peaks: list = []  # list[ResonantPeak] — authoritative peak objects
-        # Optional back-reference to the analyzer, set by the view (as it does for the annotation
-        # layer). Used ONLY to resolve the override-BLIND auto mode for the "Reset to Auto-Detected"
-        # label via analyzer.auto_detected_mode — the model source of truth (mirrors Swift).
+        # Back-reference to the analyzer, set by the view (as it does for the annotation layer). A
+        # peak's label, whether it is the user's, and the override-BLIND auto mode for the "Reset to
+        # Auto-Detected" label are read from it by peak id — the model source of truth, as Swift's
+        # rows read analyzer.effectiveModeLabel / hasManualOverride / autoDetectedMode.
         self._analyzer = None
         self._data: npt.NDArray = data
         self.pitch: pitch_c.Pitch = pitch_c.Pitch(440)
         self.modes_width: int = len(max(self.mode_strings, key=len))
         self.modes_column: int = ColumnIndex.Modes.value
-        self.modes: dict[float, str] = {}
         self.is_live: bool = True
         self.selected_peak_ids: set[str] = set()  # mirrors Swift selectedPeakIDs: Set<UUID>
         self.show_column: int = ColumnIndex.Show.value
@@ -170,7 +170,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if self._should_show_annotation(index):
             mag = self.magnitude_value(index)
             mode = self.mode_value(index)
-            html = self.annotation_html(freq, mag, mode, is_override=(freq in self.modes))
+            html = self.annotation_html(freq, mag, mode, is_override=self.is_manual_value(index))
             row = index.row()
             peak_id = self._peaks[row].id if row < len(self._peaks) else ""
             self.annotationUpdate.emit(peak_id, freq, mag, html, mode)
@@ -178,8 +178,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
             self.hideAnnotation.emit(freq)
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
-        """Sets the value of the mode."""
-        self.modes[self.freq_value(index)] = value
+        """Give the peak a label of the user's. The analyzer holds it; this routes it there."""
         # Route a USER mode change to the analyzer (Qt vs SwiftUI) so enforce runs; skip programmatic.
         if not getattr(self, "_programmatic_update", False):
             peak_id = self._peak_id_at(index)
@@ -187,8 +186,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 self.modeOverrideChanged.emit(peak_id, value)
 
     def reset_mode_value(self, index: QtCore.QModelIndex) -> None:
-        """Remove any manual mode override, reverting to auto-classification."""
-        self.modes.pop(self.freq_value(index), None)
+        """Remove any manual mode override, reverting to auto-classification (in the analyzer)."""
         if not getattr(self, "_programmatic_update", False):
             peak_id = self._peak_id_at(index)
             if peak_id:
@@ -245,18 +243,25 @@ class PeaksModel(QtCore.QAbstractTableModel):
         row = index.row()
         return self._peaks[row].id if 0 <= row < len(self._peaks) else ""
 
+    def is_manual_value(self, index: QtCore.QModelIndex) -> bool:
+        """Whether the peak's label is the user's: ``analyzer.has_manual_override`` by peak id, as
+        Swift's rows read ``analyzer.hasManualOverride(for:)``. Guitar only."""
+        if not self.is_guitar or self._analyzer is None:
+            return False
+        peak_id = self._peak_id_at(index)
+        return bool(peak_id) and self._analyzer.has_manual_override(peak_id)
+
     def mode_value(self, index: QtCore.QModelIndex) -> str:
-        """Return mode: manual override if set, else resolved by measurement type.
+        """Return the peak's label.
 
         For plate/brace measurements (non-guitar), mirrors Swift modeLabel in
         DraggablePeakAnnotation: checks peak.id against selectedLongitudinalPeakID,
         selectedCrossPeakID, selectedFlcPeakID, returning the matching label or "Peak".
 
-        For guitar measurements, uses manual override, then auto-classified GuitarMode.
+        For guitar measurements, ``analyzer.effective_mode_label`` by peak — the user's label, else the
+        auto-classified mode — as Swift's rows read ``analyzer.effectiveModeLabel(for:)``.
         """
         freq = self.freq_value(index)
-        if freq in self.modes:
-            return self.modes[freq]
         # Plate/brace: determine label by selected peak ID, mirrors Swift modeLabel.
         if not self.is_guitar:
             row = index.row()
@@ -269,6 +274,11 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 if peak_id == self.selected_flc_peak_id:
                     return "Diagonal"
             return "Peak"
+        row = index.row()
+        peak = self._peaks[row] if 0 <= row < len(self._peaks) else None
+        if peak is not None and self._analyzer is not None:
+            return self._analyzer.effective_mode_label(peak)
+        # No analyzer wired (isolated model tests): the auto-classified mode.
         mode = self._auto_mode_map.get(self._peak_id_at(index))
         if mode is not None:
             return mode.display_name
@@ -536,7 +546,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 peak_id = peaks[row].id if row < len(peaks) else ""
                 self.annotationUpdate.emit(
                     peak_id, freq, mag,
-                    self.annotation_html(freq, mag, mode, is_override=(freq in self.modes)),
+                    self.annotation_html(freq, mag, mode, is_override=self.is_manual_value(idx)),
                     mode,
                 )
         self.annotationsRefreshed.emit()
@@ -544,7 +554,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     def refresh_annotations(self) -> None:
         """Re-emit annotation signals for the current peaks and annotation_mode.
 
-        Call this after mutating mode labels (model.modes) without changing
+        Call this after a peak's label changes without changing
         the underlying peak data, so the canvas re-renders annotations with
         updated text.  Mirrors Swift where mutating peakModeOverrides (@Published)
         invalidates visiblePeaks and causes the chart to re-render.
@@ -563,7 +573,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
                 peak_id = self._peaks[row].id if row < len(self._peaks) else ""
                 self.annotationUpdate.emit(
                     peak_id, freq, mag,
-                    self.annotation_html(freq, mag, mode, is_override=(freq in self.modes)),
+                    self.annotation_html(freq, mag, mode, is_override=self.is_manual_value(idx)),
                     mode,
                 )
         self.annotationsRefreshed.emit()
@@ -759,7 +769,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """
         if not held:
             self.clear_annotations()
-            self.modes = {}
             self.selected_peak_ids = set()
             self._auto_mode_map = {}
             self.selected_longitudinal_peak_id = None

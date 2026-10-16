@@ -3516,11 +3516,6 @@ class MainWindow(QtWidgets.QMainWindow):
         elif guitar_type_changed:
             analyzer = self.fft_canvas.analyzer
             analyzer.reclassify_for_guitar_type_change()
-            # Clear the VIEW-side override map too: Qt has no @Published auto-refresh, so mirror the
-            # analyzer's cleared peak_mode_overrides here or the reclassified modes would still show
-            # the stale manual labels. The new auto classification is
-            # rebuilt by _refresh_results_peaks off the peaksChanged below.
-            self.peak_widget.model.modes = {}
             # Emit peaksChanged: triggers _on_peaks_changed_results which propagates
             # selected_peak_ids to the model — the Qt push Swift gets free via @Published.
             analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
@@ -4459,23 +4454,10 @@ class MainWindow(QtWidgets.QMainWindow):
             peaks_array = np.zeros((0, 3), dtype=np.float64)
         canvas.saved_peaks = peaks_array
 
-        # ── The peak list: the model's labels and manual flag ─────────────────
+        # ── The peak list: its labels are read from the analyzer by peak id ───
         # (Its selection comes with the model's peaksChanged, which follows this handler.)
         peak_model = self.peak_widget.model
         peak_model.is_live = False
-        if not _restored_mt.is_guitar:
-            _labels = (
-                (analyzer.selected_longitudinal_peak, "Longitudinal"),
-                (analyzer.selected_cross_peak, "Cross-grain"),
-                (analyzer.selected_flc_peak, "Diagonal"),
-            )
-            _by_id = {pk.id: label for pk, label in _labels if pk is not None}
-            peak_model.modes = {p.frequency: _by_id.get(p.id, "Peak") for p in (m.peaks or [])}
-        else:
-            peak_model.modes = {
-                p.frequency: analyzer.peak_mode_overrides[p.id]
-                for p in analyzer.all_peaks if p.id in analyzer.peak_mode_overrides
-            }
         peak_model._set_user_modified(analyzer.user_has_modified_peak_selection)
 
         # ── Restore annotation visibility mode into peak_model ────────────────

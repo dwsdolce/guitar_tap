@@ -136,3 +136,59 @@ class TestPeakCardIdentity:
             "one Air. A card must take its label from its own peak, not from whatever shares "
             "its frequency. This is the 'Back on the graph, Air in the table' divergence."
         )
+
+class TestPeakLabelsFromTheAnalyzer:
+    """The table shows each peak's label as the analyzer gives it, by peak id — Swift's rows read
+    analyzer.effectiveModeLabel / hasManualOverride. A copy kept in the table, keyed by frequency,
+    lost a peak's name after Re-analyze on a loaded measurement: the file's 32-bit frequency
+    (568.99994) is not the re-detected one (568.99996), so the copy no longer matched."""
+
+    def test_a_name_survives_reanalyze_on_a_loaded_measurement(self, qapp):
+        import os
+
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as TDS
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        from guitar_tap.views.shared import peaks_model as pm
+        from guitar_tap.views.shared.peak_card_widget import PeakListWidget
+        from guitar_tap.views.tap_analysis_results_view import measurements_from_json
+
+        saved_type = TDS.measurement_type()
+        try:
+            analyzer = TapToneAnalyzer.for_testing()
+            widget = PeakListWidget()
+            model = widget.model
+            model._analyzer = analyzer
+            model.is_live = False
+            # As the view routes a user's label change (_on_mode_override_changed).
+            model.modeOverrideChanged.connect(
+                lambda pid, label: analyzer.set_mode_override(label, pid) if label
+                else analyzer.reset_mode_override(pid)
+            )
+
+            def refresh():
+                widget.update_data_with_modes([(p, analyzer.peak_mode(p)) for p in analyzer.peaks_above_peak_min])
+
+            path = os.path.join(os.path.dirname(__file__), "contreras-classical-1774731564.guitartap")
+            with open(path, encoding="utf-8") as f:
+                analyzer.load_measurement(measurements_from_json(f.read())[0])
+            analyzer.peak_min_threshold = -100
+            refresh()
+
+            peak = next(p for p in analyzer.all_peaks
+                        if analyzer.peak_mode(p) == GuitarMode.UNKNOWN and not analyzer.has_manual_override(p.id))
+            row = next(r for r, p in enumerate(model._peaks) if p.id == peak.id)
+            model.setData(model.index(row, pm.ColumnIndex.Modes.value), "Fred")
+            assert model.mode_value(model.index(row, 0)) == "Fred"
+
+            analyzer.peak_min_threshold = peak.magnitude + 5   # hides it
+            refresh()
+            analyzer.reanalyze_peaks()
+            analyzer.peak_min_threshold = -100                 # and shows it again
+            refresh()
+
+            row = next(r for r, p in enumerate(model._peaks) if abs(p.frequency - peak.frequency) <= 1)
+            idx = model.index(row, 0)
+            assert model.mode_value(idx) == "Fred", "the name follows its peak through Re-analyze"
+            assert model.is_manual_value(idx), "and it is still the user's"
+        finally:
+            TDS.set_measurement_type(saved_type)
