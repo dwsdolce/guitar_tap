@@ -85,32 +85,6 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     # ── Mutation methods (mirror Swift TapToneAnalyzer+MeasurementManagement) ─
 
-    def import_measurements(self, json_str: str) -> bool:
-        """Decode a JSON string of measurements, append, and persist.
-
-        Mirrors Swift ``importMeasurements(json: String) -> Bool``.
-
-        Args:
-            json_str: UTF-8 JSON string representing ``[TapToneMeasurement]``.
-
-        Returns:
-            ``True`` if decoding succeeded and measurements were appended;
-            ``False`` otherwise.
-        """
-        import json as _json
-
-        from .tap_tone_measurement import TapToneMeasurement
-
-        try:
-            raw = _json.loads(json_str)
-            measurements = [TapToneMeasurement.from_dict(d) for d in raw]
-        except Exception:
-            return False
-
-        self.saved_measurements.extend(measurements)
-        self._persist_measurements()
-        return True
-
     def import_measurements_from_data(self, data: bytes) -> list:
         """Decode raw JSON bytes, append, and persist.
 

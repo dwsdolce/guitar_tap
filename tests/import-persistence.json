@@ -1,0 +1,384 @@
+{
+ "slug": "test/import-persistence",
+ "about": "The saved-measurement library: importing, editing and saving, and the message an import shows. Each case starts with an empty library and a fresh analyzer and runs its 'steps' in order: {\"import\": [names]} imports one .guitartap file holding those measurements (the 'measurements' entries), through the app's import (importAndLoadMeasurements — a single measurement is also loaded); {\"edit\": {entry, name, notes}} edits the library's entry at that position as the Edit sheet does; {\"save\": name} saves the result on screen under that name; {\"deleteAll\": true} deletes every saved measurement, as Delete All does; {\"warning\": text} puts up a microphone warning, as an earlier load would. 'expect' after the last step: 'library' (the entries' names, in order), 'notes' (their notes, null for none), 'persisted' (the names read back from storage — the natives' file, the web's IndexedDB), 'ids' (each entry's id: a measurement's name for that file's own id, 'new' for one minted since), 'message' / 'messageStartsWith' (the last import's message), 'microphoneWarning' (a warning is up), 'exportHasRowKey' (an exported file carries the library's row key). 'only' marks a case about something one side alone has ('natives' or 'web'). Expected values are Swift's.",
+ "measurements": {
+  "A": {
+   "id": "00000000-0000-0000-0000-0000000000A1",
+   "timestamp": "2026-01-01T00:00:00Z",
+   "peaks": [],
+   "measurementName": "A",
+   "spectrumSnapshot": {
+    "frequencies": [
+     100.0,
+     200.0
+    ],
+    "magnitudes": [
+     -60.0,
+     -60.0
+    ],
+    "minFreq": 50,
+    "maxFreq": 500,
+    "minDB": -100,
+    "maxDB": 0,
+    "isLogarithmic": false,
+    "measurementType": "Generic Guitar",
+    "guitarType": "Generic"
+   }
+  },
+  "B": {
+   "id": "00000000-0000-0000-0000-0000000000B1",
+   "timestamp": "2026-01-01T00:00:00Z",
+   "peaks": [],
+   "measurementName": "B",
+   "spectrumSnapshot": {
+    "frequencies": [
+     100.0,
+     200.0
+    ],
+    "magnitudes": [
+     -60.0,
+     -60.0
+    ],
+    "minFreq": 50,
+    "maxFreq": 500,
+    "minDB": -100,
+    "maxDB": 0,
+    "isLogarithmic": false,
+    "measurementType": "Generic Guitar",
+    "guitarType": "Generic"
+   }
+  },
+  "absent-mic": {
+   "id": "00000000-0000-0000-0000-0000000000C1",
+   "timestamp": "2026-01-01T00:00:00Z",
+   "peaks": [],
+   "measurementName": "Test",
+   "spectrumSnapshot": {
+    "frequencies": [
+     100.0,
+     200.0
+    ],
+    "magnitudes": [
+     -60.0,
+     -60.0
+    ],
+    "minFreq": 50,
+    "maxFreq": 500,
+    "minDB": -100,
+    "maxDB": 0,
+    "isLogarithmic": false,
+    "measurementType": "Generic Guitar",
+    "guitarType": "Generic"
+   },
+   "microphoneName": "No Such Microphone (test)",
+   "microphoneUID": "No Such Microphone (test)-uid"
+  }
+ },
+ "cases": [
+  {
+   "id": "IP1",
+   "note": "importing a file adds its measurement to the library, saved, with the file's own id",
+   "steps": [
+    {
+     "import": [
+      "A"
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A"
+    ],
+    "persisted": [
+     "A"
+    ],
+    "ids": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "IP2",
+   "note": "importing the same file again appends a second entry; both keep the file's id",
+   "steps": [
+    {
+     "import": [
+      "A"
+     ]
+    },
+    {
+     "import": [
+      "A"
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "A"
+    ],
+    "persisted": [
+     "A",
+     "A"
+    ],
+    "ids": [
+     "A",
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "IP3",
+   "note": "a file of two measurements adds both, in order",
+   "steps": [
+    {
+     "import": [
+      "A",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "B"
+    ],
+    "persisted": [
+     "A",
+     "B"
+    ],
+    "ids": [
+     "A",
+     "B"
+    ],
+    "message": "Successfully imported 2 measurements"
+   }
+  },
+  {
+   "id": "IP4",
+   "note": "editing an entry changes only that entry, in its place, and gives it a new id (amended data is a different dataset)",
+   "steps": [
+    {
+     "import": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "edit": {
+      "entry": 0,
+      "name": "Upper Bout",
+      "notes": "Edited"
+     }
+    }
+   ],
+   "expect": {
+    "library": [
+     "Upper Bout",
+     "B"
+    ],
+    "notes": [
+     "Edited",
+     null
+    ],
+    "persisted": [
+     "Upper Bout",
+     "B"
+    ],
+    "ids": [
+     "new",
+     "B"
+    ]
+   }
+  },
+  {
+   "id": "IP5",
+   "note": "editing one of two duplicate imports leaves the other, which keeps the shared id",
+   "steps": [
+    {
+     "import": [
+      "A"
+     ]
+    },
+    {
+     "import": [
+      "A"
+     ]
+    },
+    {
+     "edit": {
+      "entry": 1,
+      "name": "Back",
+      "notes": "Copy"
+     }
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "Back"
+    ],
+    "notes": [
+     null,
+     "Copy"
+    ],
+    "persisted": [
+     "A",
+     "Back"
+    ],
+    "ids": [
+     "A",
+     "new"
+    ]
+   }
+  },
+  {
+   "id": "IP6",
+   "note": "a save appends after the entries already there",
+   "steps": [
+    {
+     "import": [
+      "A"
+     ]
+    },
+    {
+     "import": [
+      "B"
+     ]
+    },
+    {
+     "save": "C"
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "B",
+     "C"
+    ],
+    "persisted": [
+     "A",
+     "B",
+     "C"
+    ],
+    "ids": [
+     "A",
+     "B",
+     "new"
+    ]
+   }
+  },
+  {
+   "id": "IP7",
+   "only": "natives",
+   "note": "editing an entry that is not there changes nothing (the natives address entries by position; the web by row key)",
+   "steps": [
+    {
+     "import": [
+      "A"
+     ]
+    },
+    {
+     "edit": {
+      "entry": 99,
+      "name": "Changed",
+      "notes": null
+     }
+    }
+   ],
+   "expect": {
+    "library": [
+     "A"
+    ],
+    "ids": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "IP8",
+   "only": "web",
+   "note": "the library's row key never reaches an exported file (only the web's library has row keys)",
+   "steps": [
+    {
+     "import": [
+      "A"
+     ]
+    }
+   ],
+   "expect": {
+    "exportHasRowKey": false
+   }
+  },
+  {
+   "id": "IP9",
+   "note": "Delete All empties the library and its saved copy",
+   "steps": [
+    {
+     "import": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "deleteAll": true
+    }
+   ],
+   "expect": {
+    "library": [],
+    "persisted": []
+   }
+  },
+  {
+   "id": "IM1",
+   "note": "a library import says nothing about microphones, even ones that are not connected",
+   "steps": [
+    {
+     "warning": "a warning from an earlier load"
+    },
+    {
+     "import": [
+      "absent-mic",
+      "absent-mic"
+     ]
+    }
+   ],
+   "expect": {
+    "message": "Successfully imported 2 measurements",
+    "microphoneWarning": false
+   }
+  },
+  {
+   "id": "IM2",
+   "note": "a single-file import carries the load's microphone warning in its one message, so no second warning shows",
+   "steps": [
+    {
+     "import": [
+      "absent-mic"
+     ]
+    }
+   ],
+   "expect": {
+    "messageStartsWith": "Successfully imported and loaded 1 measurement\n\n⚠️ This measurement was recorded with a microphone named 'No Such Microphone (test)'",
+    "microphoneWarning": false
+   }
+  },
+  {
+   "id": "IM3",
+   "note": "an earlier, acknowledged warning never rides along on a later import",
+   "steps": [
+    {
+     "warning": "a warning from an earlier load"
+    },
+    {
+     "import": [
+      "A"
+     ]
+    }
+   ],
+   "expect": {
+    "message": "Successfully imported and loaded 1 measurement"
+   }
+  }
+ ]
+}
