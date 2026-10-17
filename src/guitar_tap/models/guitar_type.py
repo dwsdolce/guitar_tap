@@ -1,3 +1,4 @@
+# @parity dsp/guitar-modes
 """
 Guitar type definitions with per-type frequency ranges and decay thresholds.
 

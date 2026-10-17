@@ -1,3 +1,4 @@
+# @parity state/annotation-management tests=test/annotation-state,test/frozen-peak-recalc
 """
 TapToneAnalyzer+AnnotationManagement — peak selection and annotation offset tracking.
 

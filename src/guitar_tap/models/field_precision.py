@@ -1,4 +1,4 @@
-# @parity util/field-precision
+# @parity util/field-precision tests=test/field-precision
 """Single source of truth for numeric precision (decimal places) per field.
 
 An input field's ``P`` limits what can be typed and rounds what is committed; a computed value's ``P``

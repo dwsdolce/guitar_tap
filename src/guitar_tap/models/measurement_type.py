@@ -1,3 +1,4 @@
+# @parity model/measurement-type tests=test/measurement-type-name
 """
 The kind of tap tone measurement being performed.
 

@@ -1,3 +1,4 @@
+# @parity model/measurement-management tests=test/measurement-load,test/import-persistence,test/comparison
 """
 TapToneAnalyzer+MeasurementManagement — freeze/unfreeze spectrum,
 comparison overlay loading, and measurement-complete state.

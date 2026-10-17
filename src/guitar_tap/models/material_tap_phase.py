@@ -1,3 +1,4 @@
+# @parity state/tap-tone-analyzer
 """
 Phase state machine for a multi-tap material measurement sequence.
 

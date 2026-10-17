@@ -1,3 +1,4 @@
+# @parity state/tap-tone-analyzer
 """
 The tap detector's state, held by the tap-tone analyzer as a single value.
 

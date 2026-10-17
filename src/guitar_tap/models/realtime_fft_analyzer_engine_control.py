@@ -278,6 +278,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             pass
         return frames
 
+    # @parity audio/engine-control tests=test/file-playback
     def start(self) -> None:
         """Start the audio stream.
 
@@ -686,6 +687,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
     _WATCHDOG_BACKOFFS = (0.5, 1.0, 2.0, 4.0)
 
 
+    # @parity audio/buffer-watchdog
     def start_buffer_watchdog(self, is_watchdog_recovery: bool = False) -> None:
         """(Re)start the buffer-delivery watchdog (main-thread QTimer)."""
         if getattr(self, "is_for_testing", False):

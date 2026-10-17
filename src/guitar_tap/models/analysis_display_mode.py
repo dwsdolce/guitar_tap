@@ -1,3 +1,4 @@
+# @parity state/button-enablement
 """
 AnalysisDisplayMode — authoritative display-mode enum for the main spectrum view.
 

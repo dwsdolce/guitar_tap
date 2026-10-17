@@ -1,3 +1,4 @@
+# @parity state/mode-overrides tests=test/frozen-peak-recalc,test/annotation-state
 """
 User-assigned mode override for a resonant peak.
 

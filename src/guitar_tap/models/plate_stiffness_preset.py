@@ -1,3 +1,4 @@
+# @parity model/material-measurement-inputs
 """
 Named vibrational stiffness (f_vs) presets for Gore Equation 4.5-7.
 

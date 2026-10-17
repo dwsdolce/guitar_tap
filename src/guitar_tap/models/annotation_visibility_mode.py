@@ -1,3 +1,4 @@
+# @parity state/visible-peaks
 """AnnotationVisibilityMode — Python mirror of Swift's AnnotationVisibilityMode enum.
 
 Swift definition (AnnotationVisibilityMode.swift):

@@ -1,3 +1,4 @@
+# @parity audio/device-management tests=test/mic-selection
 """
 AudioDevice — a lightweight, platform-agnostic representation of an audio input device.
 

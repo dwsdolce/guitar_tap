@@ -486,6 +486,7 @@ class TapToneMeasurement:
         return _snapshot_field(self.spectrum_snapshot, "measurement_type") or _snapshot_field(
             self.longitudinal_snapshot, "measurement_type")
 
+    # @parity model/measurement-type tests=test/measurement-type-name
     @property
     def measurement_type_short_name(self) -> str:
         """The measurement's type as the single word shown in the Details pane: Acoustic / Classical /
@@ -818,6 +819,7 @@ class TapToneMeasurement:
             labels[peak.id] = overrides.get(peak.id) or auto.display_name
         return labels
 
+    # @parity model/measurement-codable tests=test/measurement-codable,test/peak-heal,test/peak-selection-persistence
     def to_dict(self) -> dict[str, Any]:
         """Encode this measurement as a JSON-compatible dict using Swift field names.
 

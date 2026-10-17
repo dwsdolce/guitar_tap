@@ -1,3 +1,4 @@
+# @parity audio/device-management tests=test/mic-selection
 """
 RealtimeFFTAnalyzer — Device Management
 =========================================

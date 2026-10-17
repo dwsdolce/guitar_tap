@@ -1,3 +1,4 @@
+# @parity model/measurement-codable tests=test/measurement-codable,test/peak-heal,test/peak-selection-persistence
 """
 Serialisable spectrum data — mirrors Swift SpectrumSnapshot.swift.
 

@@ -1,3 +1,4 @@
+# @parity util/new-id tests=test/uuid-case
 """Single source of truth for minting UUID strings.
 
 **Uppercase**, because Swift's ``UUID().uuidString`` is uppercase and the web mints with

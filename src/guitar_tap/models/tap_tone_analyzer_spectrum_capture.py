@@ -1,5 +1,5 @@
 # @parity dsp/spectrum-average
-# @parity dsp/gated-capture tests=test/file-playback,test/tap-decisions,test/guitar-capture-window
+# @parity dsp/gated-capture tests=test/file-playback,test/tap-decisions,test/guitar-capture-window,test/self-regression
 # @parity dsp/gated-fft tests=test/gated-fft
 """
 TapToneAnalyzer+SpectrumCapture — gated-FFT capture pipeline for plate/brace
@@ -310,6 +310,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         """SESSION_PRE_ROLL_DURATION in samples at the current session rate."""
         return int(self._session_recording_sample_rate * self.SESSION_PRE_ROLL_DURATION)
 
+    # @parity dsp/session-recording tests=test/session-pre-roll
     def _maintain_session_recording(self, samples) -> None:
         """Append one audio chunk to the session WAV buffer and maintain the bounded pre-roll.
         Caller holds _gated_lock.

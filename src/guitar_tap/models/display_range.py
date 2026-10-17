@@ -2,7 +2,7 @@
 
 Mirrors Swift ``DisplayRange`` (Models/DisplayRange.swift).
 
-# @parity presentation/display-range
+# @parity presentation/display-range tests=test/display-range
 """
 
 from __future__ import annotations

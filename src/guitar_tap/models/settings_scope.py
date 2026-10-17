@@ -1,3 +1,4 @@
+# @parity util/test-sandbox
 """Where persistent state lives: the user's real scope, or a PER-PROCESS test sandbox.
 
 Mirrors Swift's ``XCTestConfigurationFilePath`` redirect — under test, QSettings and the saved

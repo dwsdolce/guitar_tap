@@ -1,3 +1,4 @@
+# @parity state/mode-lookup tests=test/measurement-codable,test/frozen-peak-recalc
 """
 TapToneAnalyzer+AnalysisHelpers — loaded-peak threshold filtering,
 spectrum averaging, and supporting query methods.

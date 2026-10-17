@@ -1,4 +1,4 @@
-# @parity state/tap-detection tests=test/tap-decisions,test/status-message
+# @parity state/tap-detection tests=test/tap-decisions,test/status-message,test/audio-clock-timers
 """
 TapToneAnalyzerTapDetectionHandlerMixin — detectTap, handleTapDetection,
 and all tap-detection stored state.

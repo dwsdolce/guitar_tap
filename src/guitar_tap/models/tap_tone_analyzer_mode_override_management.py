@@ -1,3 +1,4 @@
+# @parity state/mode-overrides tests=test/frozen-peak-recalc,test/annotation-state
 """
 TapToneAnalyzer+ModeOverrideManagement — guitar type and per-peak mode override control.
 
