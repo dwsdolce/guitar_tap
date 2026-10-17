@@ -26,7 +26,6 @@ rests before re-arming, the FLC hold, the capture window (after_audio).
 
 from __future__ import annotations
 
-import time
 
 from PySide6 import QtCore
 from PySide6.QtCore import Slot
@@ -571,7 +570,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # Mirrors Swift onRmsLevelChanged.
         self.last_audio_time = audio_time
         self.last_chunk_level_db = level_db
-        self.last_chunk_wall_time = time.monotonic()
+        self.last_chunk_wall_time = self.wall_clock.now()
         if self._run_due_audio_actions():
             return
 
@@ -645,12 +644,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         def check() -> None:
             if not relevant():
                 return
-            quiet = time.monotonic() - self.last_chunk_wall_time
+            quiet = self.wall_clock.now() - self.last_chunk_wall_time
             if quiet >= interval:
                 action()
             else:
                 self.after_audio_stall(interval - quiet, relevant, action)
-        self._main_async_after(int(interval * 1000), check)
+        self.wall_clock.after(interval, check)
 
     def _re_arm_from_current_chunk(self) -> None:
         """Re-arm detection from the chunk that made a rest due: re-anchor the hysteresis latch from THAT

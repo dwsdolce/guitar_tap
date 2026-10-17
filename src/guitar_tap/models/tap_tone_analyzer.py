@@ -70,6 +70,7 @@ from .tap_tone_analyzer_mode_override_management import TapToneAnalyzerModeOverr
 from .tap_tone_analyzer_peak_analysis import TapToneAnalyzerPeakAnalysisMixin
 from .tap_tone_analyzer_spectrum_capture import TapToneAnalyzerSpectrumCaptureMixin
 from .tap_tone_analyzer_tap_detection import TapToneAnalyzerTapDetectionHandlerMixin
+from .wall_clock import SystemWallClock, WallClock
 
 # ── TapToneAnalyzer ───────────────────────────────────────────────────────────
 # Mirrors the top-level Swift TapToneAnalyzer class declaration and its stored
@@ -238,10 +239,10 @@ class TapToneAnalyzer(
     # on the main thread in chunk order, as in Swift.
     _rmsLevelOnMain: QtCore.Signal = QtCore.Signal(float, float)
 
-    def __init__(self, fft_analyzer=None) -> None:
+    def __init__(self, fft_analyzer=None, wall_clock: "WallClock | None" = None) -> None:
         """Create a TapToneAnalyzer with all state at sensible defaults.
 
-        Mirrors Swift ``TapToneAnalyzer(fftAnalyzer: RealtimeFFTAnalyzer)``.
+        Mirrors Swift ``TapToneAnalyzer(fftAnalyzer: RealtimeFFTAnalyzer, wallClock:)``.
 
         When ``fft_analyzer`` is provided, pipeline signals are wired
         immediately (matching Swift's ``setupSubscriptions()`` called from
@@ -252,6 +253,8 @@ class TapToneAnalyzer(
             fft_analyzer: Optional RealtimeFFTAnalyzer.  None-safe — bare
                           instances (no mic) can be constructed for direct
                           analysis method testing.
+            wall_clock: The wall clock the capture's safety timeout reads and
+                        schedules on — the system's when None, as in the app.
         """
         import numpy as np
 
@@ -262,6 +265,8 @@ class TapToneAnalyzer(
         # Qt's metaclass does not participate in Python's cooperative super()
         # chain, so the QObject base must be initialised explicitly.
         QtCore.QObject.__init__(self, None)
+
+        self.wall_clock: WallClock = wall_clock if wall_clock is not None else SystemWallClock()
 
         # Wire the cross-thread asyncAfter signal.  AutoConnection means:
         #   - Same thread (test path): DirectConnection → slot fires inline
@@ -541,7 +546,7 @@ class TapToneAnalyzer(
         # The level (dBFS) of that chunk — a re-arm that falls due re-anchors the latch from it.
         # Mirrors Swift lastChunkLevelDB.
         self.last_chunk_level_db: float = -100.0
-        # The WALL time (time.monotonic) at which the latest chunk reached _on_rms_level_changed — what the
+        # The WALL time (wall_clock) at which the latest chunk reached _on_rms_level_changed — what the
         # capture safety timeout measures its silence from (after_audio_stall). Mirrors Swift
         # lastChunkWallTime.
         self.last_chunk_wall_time: float = 0.0
@@ -847,7 +852,7 @@ class TapToneAnalyzer(
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def for_testing(cls, sample_rate: int = 48000) -> "TapToneAnalyzer":
+    def for_testing(cls, sample_rate: int = 48000, wall_clock: "WallClock | None" = None) -> "TapToneAnalyzer":
         """Create a TapToneAnalyzer wired for file-playback testing.
 
         The returned instance has the full pipeline connected (signal wiring,
@@ -862,6 +867,7 @@ class TapToneAnalyzer(
 
         Args:
             sample_rate: Sample rate in Hz. Default 48000.
+            wall_clock: The analyzer's wall clock — the system's when None.
         """
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer as _Mic
 
@@ -870,7 +876,7 @@ class TapToneAnalyzer(
 
         # 2. Construct the analyzer — __init__ sets all state defaults,
         #    computes the frequency axis, and wires pipeline signals.
-        return cls(fft_analyzer=mic)
+        return cls(fft_analyzer=mic, wall_clock=wall_clock)
 
     # ------------------------------------------------------------------ #
     # _wire_pipeline_signals — shared by start() and for_testing()

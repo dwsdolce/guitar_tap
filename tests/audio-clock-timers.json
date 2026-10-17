@@ -1,6 +1,6 @@
 {
  "slug": "test/audio-clock-timers",
- "about": "The tap lifecycle's delays — the rest between material taps, the FLC hold, the capture window — run on the AUDIO clock, so file playback, which advances audio faster or slower than real time, moves them with the audio. Each case advances only audio, through the path audio takes, so a delay on the wall clock would not fire. Each starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, guitarTap, materialTap, accept, advance — with 'level' and 'extra' — and audioChunks, two loud chunks being a tap the analyzer detects), plus {\"fileEnd\": true} (the file ends: what the engine calls), {\"playingFile\": true} (the engine reports a file playing), {\"noteWarmup\": true} (remembers when the warm-up started) and {\"check\": {...}}. Fields: 'detecting', 'phase' (Swift's raw value), 'complete', 'gatedCapture' (a capture is filling), 'aboveThreshold' (the level latch is up), 'warmupAtLastChunk' (the warm-up started at the audio time of the last chunk), 'warmupUnchanged' (the warm-up start is the one noted). The safety timeout — on the wall clock by design — is not here yet. Expected values are Swift's.",
+ "about": "The tap lifecycle's delays — the rest between material taps, the FLC hold, the capture window — run on the AUDIO clock, so file playback, which advances audio faster or slower than real time, moves them with the audio. AT1–AT6 advance only audio, through the path audio takes, so a delay on the wall clock would not fire. AT7–AT8 are the capture's safety timeout, which runs on the WALL clock by design (it exists for when the audio stops, and the audio clock stops with it) and measures the silence since the last chunk: the analyzer's wall clock moves only at {\"stall\": seconds}, wall time with no audio. Each starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, guitarTap, materialTap, accept, advance — with 'level' and 'extra' — audioChunks, two loud chunks being a tap the analyzer detects, and stall), plus {\"fileEnd\": true} (the file ends: what the engine calls), {\"playingFile\": true} (the engine reports a file playing), {\"noteWarmup\": true} (remembers when the warm-up started) and {\"check\": {...}}. Fields: 'detecting', 'phase' (Swift's raw value), 'complete', 'gatedCapture' (a capture is filling), 'aboveThreshold' (the level latch is up), 'warmupAtLastChunk' (the warm-up started at the audio time of the last chunk), 'warmupUnchanged' (the warm-up start is the one noted). Expected values are Swift's.",
  "cases": [
   {
    "id": "AT1",
@@ -249,6 +249,128 @@
     "detecting": true,
     "aboveThreshold": true,
     "warmupUnchanged": true
+   }
+  },
+  {
+   "id": "AT7",
+   "note": "a capture the audio stops filling is closed by the safety timeout once 2 s pass with no audio; detection then rests and re-arms as after any capture",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    },
+    {
+     "check": {
+      "gatedCapture": true
+     }
+    },
+    {
+     "stall": 2.1
+    },
+    {
+     "check": {
+      "gatedCapture": false
+     }
+    },
+    {
+     "advance": "tapCooldown"
+    }
+   ],
+   "expect": {
+    "detecting": true
+   }
+  },
+  {
+   "id": "AT8",
+   "note": "the safety timeout measures the silence since the last chunk, not the time since the capture opened: one quiet chunk every 0.4 s, for 2.8 s, leaves the capture open",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod",
+     "extra": 0.1
+    },
+    {
+     "audioChunks": 2,
+     "level": -10
+    },
+    {
+     "check": {
+      "gatedCapture": true
+     }
+    },
+    {
+     "stall": 0.4
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "stall": 0.4
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "stall": 0.4
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "stall": 0.4
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "stall": 0.4
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "stall": 0.4
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    },
+    {
+     "stall": 0.4
+    },
+    {
+     "audioChunks": 1,
+     "level": -90
+    }
+   ],
+   "expect": {
+    "gatedCapture": true
    }
   }
  ]

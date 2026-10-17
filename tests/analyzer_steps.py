@@ -6,7 +6,7 @@ steps; this runs one. Mirrors Swift GuitarTapTests/AnalyzerSteps.swift and web t
 """
 from __future__ import annotations
 
-from audio_clock_feed import AUDIO_FEED_CHUNK_SECONDS, advance_audio
+from audio_clock_feed import AUDIO_FEED_CHUNK_SECONDS, ManualWallClock, advance_audio
 from synthetic_tap import synthetic_tap
 
 from guitar_tap.models.material_tap_phase import MaterialTapPhase
@@ -36,6 +36,7 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
       "level"?: dB}`` — that much audio (quiet unless ``level`` is given)
     - ``{"audioChunks": n, "level": dB}`` — exactly n chunks of audio at that level, each one chunk
       after the last (two loud ones are a tap)
+    - ``{"stall": seconds}`` — that much wall time with no audio
     """
     if "settings" in step:
         settings = step["settings"]
@@ -80,6 +81,8 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
         seconds = {"tapCooldown": sut.tap_cooldown, "captureWindow": sut.capture_window,
                    "warmupPeriod": sut.warmup_period}.get(advance, advance)
         advance_audio(sut, seconds * step.get("fraction", 1.0) + step.get("extra", 0.0), step.get("level", -90.0))
+    elif "stall" in step:
+        sut.wall_clock.advance(float(step["stall"]))
     elif "audioChunks" in step:
         for _ in range(step["audioChunks"]):
             sut._on_chunk_level(float(step["level"]), sut.last_audio_time + AUDIO_FEED_CHUNK_SECONDS)
@@ -89,8 +92,9 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
 
 
 def make_steps_analyzer() -> TapToneAnalyzer:
-    """A fresh analyzer as the shared scenario cases start one: threshold -40, Taps 1."""
-    sut = TapToneAnalyzer.for_testing()
+    """A fresh analyzer as the shared scenario cases start one: threshold -40, Taps 1, and a wall clock
+    that moves only when a step stalls it."""
+    sut = TapToneAnalyzer.for_testing(wall_clock=ManualWallClock())
     sut.set_tap_num(1)
     sut.tap_detection_threshold = -40.0
     return sut

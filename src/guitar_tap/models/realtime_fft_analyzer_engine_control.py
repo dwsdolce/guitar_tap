@@ -211,9 +211,13 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         Python-only — Swift delivers audio via an AVAudioInputNode installTap block
         that feeds ``processAudioBuffer(_:)`` on ``audioProcessingQueue``.
         """
+        # A stopping stream's chunks are dropped, not refused with CallbackStop: the thread that stops
+        # the stream is the only one that may stop it. CallbackStop makes PortAudio stop the audio unit
+        # from this audio thread, and that, at the same moment as the main thread's stop or abort,
+        # deadlocks both in CoreAudio.
         with self._stop_lock:
             if self.is_stopped:
-                raise sd.CallbackStop
+                return None
         self._last_buffer_time = time.monotonic()  # watchdog liveness stamp (audio thread)
         chunk = data[:, 0].copy()  # copy before queuing — PortAudio reuses the buffer
 

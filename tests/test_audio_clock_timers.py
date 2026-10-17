@@ -1,9 +1,8 @@
 # @parity test/audio-clock-timers
 """The tap lifecycle's delays — the rest between material taps, the FLC hold, the capture window — run
 on the AUDIO clock, so file playback, which advances audio faster or slower than real time, moves them
-with the audio. The shared cases in audio-clock-timers.json (AT1-AT6), the same as Swift and the web,
-advance only audio. Below them, the safety timeout, which runs on the wall clock by design and so waits
-in real time.
+with the audio; the capture's safety timeout runs on the wall clock, which a test moves by hand. The
+shared cases in audio-clock-timers.json (AT1-AT8), the same as Swift and the web.
 """
 from __future__ import annotations
 
@@ -16,12 +15,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from PySide6 import QtWidgets  # noqa: E402
-
 from analyzer_steps import make_steps_analyzer, run_analyzer_step  # noqa: E402
-from audio_clock_feed import advance_audio  # noqa: E402
 
-from guitar_tap.models.measurement_type import MeasurementType  # noqa: E402
 from guitar_tap.models.tap_display_settings import TapDisplaySettings  # noqa: E402
 
 _HERE = os.path.dirname(__file__)
@@ -75,56 +70,3 @@ def test_audio_clock(row, qapp):
             assert run_analyzer_step(step, sut), f"unknown step {step}"
     _check(row["expect"], sut, noted_warmup)
 
-
-class TestSafetyTimeout:
-    """The safety timeout runs on the wall clock: it exists for when the audio stops."""
-
-    def test_the_safety_timeout_closes_a_capture_the_audio_stopped_filling(self):
-        """T6: a capture the audio stops filling is closed on the WALL clock — it exists for when the
-        audio stops, and then the audio clock stops too. After it, detection rests and re-arms."""
-        import time
-        from audio_clock_feed import AUDIO_FEED_CHUNK_SECONDS
-        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
-        sut = make_steps_analyzer()
-        try:
-            sut.start_tap_sequence()
-            advance_audio(sut, sut.warmup_period + 0.1)
-            advance_audio(sut, 2 * AUDIO_FEED_CHUNK_SECONDS, level=-10.0)   # a tap opens the capture...
-            QtWidgets.QApplication.processEvents()
-            assert sut._gated_capture_active
-            # ...and then no more audio arrives.
-            deadline = time.monotonic() + 2.3
-            while time.monotonic() < deadline:
-                QtWidgets.QApplication.processEvents()
-                time.sleep(0.01)
-            assert not sut._gated_capture_active, "closed by the wall-clock safety timeout"
-
-            advance_audio(sut, sut.tap_cooldown)
-            assert sut.is_detecting, "and detection rests, then re-arms, as after any capture"
-        finally:
-            TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
-
-    def test_the_safety_timeout_does_not_fire_while_audio_keeps_arriving(self):
-        """T6 measures SILENCE, not time since the capture started: while audio keeps arriving —
-        however slowly, as under throttled playback — it does not fire."""
-        import time
-        from audio_clock_feed import AUDIO_FEED_CHUNK_SECONDS
-        TapDisplaySettings.set_measurement_type(MeasurementType.PLATE)
-        sut = make_steps_analyzer()
-        try:
-            sut.start_tap_sequence()
-            advance_audio(sut, sut.warmup_period + 0.1)
-            advance_audio(sut, 2 * AUDIO_FEED_CHUNK_SECONDS, level=-10.0)   # a tap opens the capture
-            QtWidgets.QApplication.processEvents()
-            assert sut._gated_capture_active
-            # Slow audio: one quiet chunk every 0.4 s of wall time, for 2.8 s — longer than the 2 s timeout.
-            for _ in range(7):
-                deadline = time.monotonic() + 0.4
-                while time.monotonic() < deadline:
-                    QtWidgets.QApplication.processEvents()
-                    time.sleep(0.01)
-                advance_audio(sut, AUDIO_FEED_CHUNK_SECONDS)
-            QtWidgets.QApplication.processEvents()
-            assert sut._gated_capture_active, "audio kept arriving, so the capture is still open"
-        finally:
-            TapDisplaySettings.set_measurement_type(MeasurementType.GENERIC)
