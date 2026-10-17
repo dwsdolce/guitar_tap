@@ -27,6 +27,8 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
     - ``{"setPeakMin": dB}`` — the Peak Min control
     - ``{"newTap": true}``, ``{"pause": true}``, ``{"resume": true}``, ``{"cancel": true}``
     - ``{"newTapSkippingWarmUp": true}`` — the start a guitar file's playback makes
+    - ``{"engineStarted": true}`` — what the engine coming up does (its guarded auto-start)
+    - ``{"loadFixture": file}`` — a fixture every edition carries, loaded as the app loads a file
     - ``{"guitarTap": hz}`` — a guitar capture finished on a synthetic tap one capture long
     - ``{"materialTap": {"phase": "L" | "C" | "FLC", "hz": hz}}`` — a material capture on a 0.5 s tap
     - ``{"accept": true}``, ``{"redo": true}`` — the phase under review
@@ -51,6 +53,13 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
         sut.start_tap_sequence()
     elif step.get("newTapSkippingWarmUp"):
         sut.start_tap_sequence(skip_warmup=True)
+    elif step.get("engineStarted"):
+        sut.auto_start_tap_sequence()
+    elif "loadFixture" in step:
+        import os
+        from guitar_tap.views.tap_analysis_results_view import measurements_from_json
+        with open(os.path.join(os.path.dirname(__file__), step["loadFixture"]), encoding="utf-8") as f:
+            sut.load_measurement(measurements_from_json(f.read())[0])
     elif step.get("pause"):
         sut.pause_tap_detection()
     elif step.get("resume"):

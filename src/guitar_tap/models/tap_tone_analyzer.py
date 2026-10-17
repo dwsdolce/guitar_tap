@@ -645,6 +645,9 @@ class TapToneAnalyzer(
         # Mirrors Swift pendingLevelCrossingPreRoll.
         self._pending_level_crossing_pre_roll: list | None = None
 
+        # Load any previously saved measurements. Mirrors Swift init calling loadPersistedMeasurements().
+        self.load_persisted_measurements()
+
         # ── Pipeline signal wiring ────────────────────────────────────────
         # Wire all signal/callback connections when the FFT analyzer is
         # provided.  Mirrors Swift init calling setupSubscriptions().
@@ -1257,21 +1260,18 @@ class TapToneAnalyzer(
         """
         return self._detection_state is DetectionState.PAUSED
 
-    def start(
+    def attach_to_view(
         self,
         parent_widget,
     ) -> None:
-        """Complete view-layer wiring and load persisted state.
+        """The Qt wiring that needs the view's widget, which Swift has no counterpart of.
 
-        Called by FftCanvas after construction.  The RealtimeFFTAnalyzer
-        (self.mic) and pipeline signals are already wired by ``__init__``.
-        This method handles the remaining view-layer integration that
-        requires the parent widget:
+        Called by FftCanvas after construction, before ``start``. The RealtimeFFTAnalyzer
+        (self.mic) and pipeline signals are already wired by ``__init__``. This makes the
+        rest, which needs the parent widget:
           - QObject re-parenting
           - Hotplug signal wiring
           - Calibration state
-          - Saved measurements
-          - Auto-start tap sequence
 
         Tests never call this — ``for_testing()`` provides everything
         ``__init__`` needs.
@@ -1320,7 +1320,8 @@ class TapToneAnalyzer(
         # Windows, and Linux.
         self.mic._start_hotplug_monitor()
 
-        # ── Saved measurements (view-layer import deferred until here) ────
+    def load_persisted_measurements(self) -> None:
+        """Load the saved measurements. Mirrors Swift ``loadPersistedMeasurements()``, called from init."""
         from guitar_tap.views.tap_analysis_results_view import load_all_measurements as _load
         self.saved_measurements = _load()
         if self.saved_measurements:
@@ -1340,15 +1341,29 @@ class TapToneAnalyzer(
             )
             self._persist_measurements()
 
-        # ── Auto-start tap sequence on first launch ────────────────────────
-        # Mirrors Swift start(): the guard is evaluated on the main loop after pending state changes
-        # have settled, and arms through request_start_tap_sequence so it gets the same dump-folder
-        # check as New Tap — launching the app is a user action, so it must prompt too rather than
-        # silently record to (or skip) an unreachable folder.
-        self._main_async_after(0, self._auto_start_tap_sequence)
+    def start(self) -> None:
+        """Start the engine, anchor the warm-up and, one main-loop pass later, make the guarded
+        auto-start. Mirrors Swift ``start()``.
 
-    def _auto_start_tap_sequence(self) -> None:
-        """Arm on a fresh launch only — not if a sequence is running, complete or paused."""
+        The engine is the processing thread and the input stream; each is started only if it is not
+        running already, the thread first, so a file can still be played when no input opens. Raises
+        what the stream's start raises (no input device, or one that cannot be opened), for the view
+        to report, as Swift's ``start()`` throws.
+        """
+        if not self.mic.proc_thread.isRunning():
+            self.mic.proc_thread.reset_state()
+            self.mic.proc_thread.start()
+        if self.mic.stream is None or not self.mic.stream.active:
+            self.mic.start()
+        self.warmup_start_audio_time = self._audio_now()  # begin the warm-up period for the new session
+        # Evaluate the auto-start guard on the main loop after pending state changes have settled.
+        self._main_async_after(0, self.auto_start_tap_sequence)
+
+    def auto_start_tap_sequence(self) -> None:
+        """What the engine coming up does: start a tap sequence — only when nothing is under way or on
+        screen (not detecting, not complete, not paused, no taps taken), so an engine start never
+        replaces a measurement. Through ``request_start_tap_sequence``, for its dump-folder check.
+        Mirrors Swift ``autoStartTapSequence()``."""
         if (not self.is_detecting and not self.is_measurement_complete
                 and not self.is_detection_paused and self.current_tap_count == 0):
             self.request_start_tap_sequence()

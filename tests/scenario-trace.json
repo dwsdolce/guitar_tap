@@ -1,6 +1,6 @@
 {
  "slug": "test/scenario-trace",
- "about": "End-to-end scenarios, pinned by the state they pass through, not only where they end: the app's behaviour on screen follows each intermediate state. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, pause, resume, cancel, guitarTap, advance with an optional fraction or extra, audioChunks), plus {\"snap\": label}, which records the state under that label. 'expect.trace' is the recorded states in order: label, detecting, paused, complete, tapCount (taps counted this sequence), capturedTaps (taps held). Expected values are Swift's.",
+ "about": "End-to-end scenarios, pinned by the state they pass through, not only where they end: the app's behaviour on screen follows each intermediate state. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, pause, resume, cancel, guitarTap, advance with an optional fraction or extra, audioChunks, engineStarted — what the engine coming up does, loadFixture), plus {\"snap\": label}, which records the state under that label. 'expect.trace' is the recorded states in order: label, detecting, paused, complete, tapCount (taps counted this sequence), capturedTaps (taps held). Expected values are Swift's.",
  "cases": [
   {
    "id": "S1",
@@ -469,6 +469,184 @@
       "complete": false,
       "tapCount": 0,
       "capturedTaps": 0
+     }
+    ]
+   }
+  },
+  {
+   "id": "S6",
+   "note": "the engine coming up with nothing under way starts a sequence",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "snap": "init"
+    },
+    {
+     "engineStarted": true
+    },
+    {
+     "snap": "postEngine"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "init",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postEngine",
+      "detecting": true,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     }
+    ]
+   }
+  },
+  {
+   "id": "S7",
+   "note": "the engine coming up leaves a loaded measurement on screen",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar"
+     }
+    },
+    {
+     "loadFixture": "contreras-classical-1774731564.guitartap"
+    },
+    {
+     "snap": "loaded"
+    },
+    {
+     "engineStarted": true
+    },
+    {
+     "snap": "postEngine"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "loaded",
+      "detecting": false,
+      "paused": false,
+      "complete": true,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postEngine",
+      "detecting": false,
+      "paused": false,
+      "complete": true,
+      "tapCount": 0,
+      "capturedTaps": 0
+     }
+    ]
+   }
+  },
+  {
+   "id": "S8",
+   "note": "the engine coming up leaves a paused sequence paused (paused before any tap)",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "pause": true
+    },
+    {
+     "snap": "paused"
+    },
+    {
+     "engineStarted": true
+    },
+    {
+     "snap": "postEngine"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "paused",
+      "detecting": false,
+      "paused": true,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postEngine",
+      "detecting": false,
+      "paused": true,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     }
+    ]
+   }
+  },
+  {
+   "id": "S9",
+   "note": "the engine coming up leaves a sequence with a tap taken to carry on",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "snap": "tapTaken"
+    },
+    {
+     "engineStarted": true
+    },
+    {
+     "snap": "postEngine"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "tapTaken",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
+     },
+     {
+      "label": "postEngine",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 1,
+      "capturedTaps": 1
      }
     ]
    }

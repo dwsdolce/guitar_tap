@@ -1982,6 +1982,26 @@
      "569": "Fred"
     }
    }
+  },
+  {
+   "id": "PR51",
+   "note": "New Tap clears a loaded measurement's peaks at once, so its dots do not stay until the first live frame",
+   "steps": [
+    {
+     "loadFixture": "contreras-classical-1774731564.guitartap"
+    },
+    {
+     "setPeakMin": -100
+    },
+    {
+     "newTap": true
+    }
+   ],
+   "expect": {
+    "peaks": [],
+    "shown": [],
+    "modes": {}
+   }
   }
  ],
  "tapEntryModes": [

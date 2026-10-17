@@ -285,8 +285,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         Swift starts AVAudioEngine and installs the input tap after checking
         microphone permission; Python opens the PortAudio InputStream when there is none
         (WASAPI RAW on Windows) and starts it. Raises sd.PortAudioError when no input
-        can be opened, as Swift's start() throws; the view reports it.
+        can be opened, as Swift's start() throws; the view reports it. A test instance has no
+        stream, and opens none.
         """
+        if self.is_for_testing:
+            return
         gt_log("🎤 === Starting Audio Engine ===")
         if self.stream is None:
             from .realtime_fft_analyzer_device_management import (

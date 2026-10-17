@@ -329,12 +329,13 @@ class FftCanvas(pg.PlotWidget):
             self,
             rate=sampling_rate,
             chunksize=1024,
-            on_devices_changed=None,       # wired by start() below
+            on_devices_changed=None,       # wired by attach_to_view() below
         )
 
         self.analyzer: td.TapToneAnalyzer = td.TapToneAnalyzer(fft_analyzer=_mic)
         # The engine applied the selected device's calibration when it selected the device.
-        self.analyzer.start(parent_widget=self)
+        # The Qt wiring that needs this widget; the engine starts with start_analyzer().
+        self.analyzer.attach_to_view(self)
         # Wire the analyzer into FftAnnotations so dragged positions are persisted
         # in the model and survive pan/zoom annotation rebuilds.
         self.annotations._analyzer = self.analyzer
@@ -532,20 +533,10 @@ class FftCanvas(pg.PlotWidget):
         import numpy as _np
         self._saved_peaks_array: "npt.NDArray" = _np.zeros((0, 3), dtype=_np.float64)
 
-        # Start the microphone (always running; processing thread gated by start_analyzer()). A
-        # start that fails — no input device, or one that cannot be opened — leaves the app running
+        # A start that fails — no input device, or one that cannot be opened — leaves the app running
         # without one, and the window reports it as Swift's view does (its engineStartError →
-        # "Audio Engine Error").
+        # "Audio Engine Error"). Set by start_analyzer().
         self.engine_start_error: str | None = None
-        try:
-            self.mic.start()
-        except Exception as exc:  # noqa: BLE001 — any start failure is reported, never fatal
-            code = exc.args[1] if len(exc.args) > 1 else -1
-            self.engine_start_error = (
-                f"The audio engine could not start (error {code}). Try switching the audio input "
-                f"device in Settings, or restart the app.\n\n"
-                f"Details: {exc.args[0] if exc.args else exc}")
-            gt_log(f"❌ Audio engine could not start: {exc}")
 
         # Draw in the scheme the app is drawn in, and again on every change of it.
         self._apply_scheme()
@@ -779,24 +770,31 @@ class FftCanvas(pg.PlotWidget):
         self._overlay_label.setPos(cx, cy)
 
     def start_analyzer(self) -> None:
-        """Start the processing thread and hide the idle overlay.
+        """Start the analyzer and hide the idle overlay.
 
-        Called only when the thread is NOT running: at startup, on the first file playback if it has not
-        started yet, and from restart_tap_sequence if it has died. Nothing stops the thread before
-        shutdown, so it is never started twice while running. The model-layer
-        auto-start is scheduled by analyzer.start(), so this method only
-        manages thread lifecycle and UI overlay.
+        Called at startup, on the first file playback if the processing thread has not started yet, and
+        from restart_tap_sequence if it has died. ``analyzer.start()`` starts what is not running (the
+        thread, the stream), anchors the warm-up and schedules the guarded auto-start, which leaves a
+        sequence already under way alone. A failure to open the input is recorded in
+        ``engine_start_error`` for the window to report.
 
         For New Tap while the thread is already running, use
         restart_tap_sequence() instead, which keeps the thread alive
         (no audio dropout) — mirrors Swift's AVAudioEngine running continuously.
         """
         self._overlay_label.setVisible(False)
-        # No tap sequence is armed here — analyzer.start() schedules the
-        # launch auto-arm on the main loop, as Swift's start() does via
-        # DispatchQueue.main.async.
-        self.analyzer.mic.proc_thread.reset_state()
-        self.analyzer.mic.proc_thread.start()
+        # The analyzer starts the engine (the processing thread and the stream, each if not running),
+        # anchors the warm-up and schedules the guarded auto-start, as Swift's view calls
+        # tapToneAnalyzer.start().
+        try:
+            self.analyzer.start()
+        except Exception as exc:  # noqa: BLE001 — any start failure is reported, never fatal
+            code = exc.args[1] if len(exc.args) > 1 else -1
+            self.engine_start_error = (
+                f"The audio engine could not start (error {code}). Try switching the audio input "
+                f"device in Settings, or restart the app.\n\n"
+                f"Details: {exc.args[0] if exc.args else exc}")
+            gt_log(f"❌ Audio engine could not start: {exc}")
 
     def restart_tap_sequence(self) -> None:
         """Request a new tap sequence while the processing thread is already running.

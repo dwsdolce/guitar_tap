@@ -205,9 +205,6 @@ def _check(fields: dict, sut, run: _Run, case_id: str) -> None:
 def _step(step: dict, sut, run: _Run, case_id: str) -> None:
     if "load" in step:
         sut.load_measurement(measurements_from_json(json.dumps([_document(step["load"], run)]))[0])
-    elif "loadFixture" in step:
-        with open(os.path.join(os.path.dirname(__file__), step["loadFixture"]), encoding="utf-8") as f:
-            sut.load_measurement(measurements_from_json(f.read())[0])
     elif step.get("reanalyze"):
         sut.reanalyze_peaks()
     elif "toggleSelection" in step:
