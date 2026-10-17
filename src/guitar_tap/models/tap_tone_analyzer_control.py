@@ -409,6 +409,7 @@ class TapToneAnalyzerControlMixin:
             # the actual hardware sample rate.
             self._update_frequency_bins()
 
+    # @parity state/route-change-settle tests=test/notification
     def handle_route_change_restart(self) -> None:
         """Respond to an audio-engine restart triggered by a device or route change.
 
@@ -421,17 +422,19 @@ class TapToneAnalyzerControlMixin:
         - If the display was live: blank the spectrum and clear peak annotations
           during the settle period so the view shows nothing rather than stale data.
 
-        The 3-second settle delay mirrors Swift's fftSettleTime constant (extended
-        from 2 s to absorb HALC/CoreAudio startup transients at ~2.5 s).
+        The 3-second settle mirrors Swift's fftSettleTime constant (extended from 2 s to absorb
+        HALC/CoreAudio startup transients at ~2.5 s): 3 s of audio after the last change, then the
+        next FFT frame. A later change inside the settle supersedes this one's restore.
         """
-        import numpy as np
-        from PySide6.QtCore import QTimer as _QTimer
-
         from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
 
         gt_log("🔄 TapToneAnalyzer: Handling route change restart - resetting detection state")
 
         was_detecting = self.detection_state is DetectionState.LISTENING
+        # The change that begins a settle decides whether its end re-arms; a later change inside it
+        # finds the detector already stood down.
+        if self._detecting_before_settle is None:
+            self._detecting_before_settle = was_detecting
 
         # Disable the is_ready_for_detection flag while reinitialising.
         # Mirrors Swift: isReadyForDetection = false, then IDLE only if it was listening —
@@ -476,73 +479,63 @@ class TapToneAnalyzerControlMixin:
         # Guarded so a route change during a settle does not capture the transient itself: a
         # captured ROUTE_CHANGE_STATUS would be put back by _restored_status() for every state whose
         # status is not re-derivable — a completed measurement, a material phase prompt — and stay
-        # up until something else writes a status. Every route change leaves its own restore
-        # behind, so the test is "is this already the transient". (Web tests
-        # `statusBeforeSettle === null`: its device-change timer is coalesced, so only one restore
-        # is ever pending.)
-        if self._latest_real_status != self.ROUTE_CHANGE_STATUS:
+        # up until something else writes a status. The settle's end clears it, so a value already
+        # here means a settle is in progress and the change that began it captured the real status.
+        if self._status_before_settle is None:
             self._status_before_settle = self._latest_real_status
         # Mirrors Swift: statusMessage = "Audio device changed - reinitializing...".
         self._set_status_message(self.ROUTE_CHANGE_STATUS)
 
         # Wait for the FFT pipeline to fill with valid post-restart data
         # (~1.36 s for 65 536 samples at 48 kHz).  Use 3 s to absorb HALC/CoreAudio
-        # startup transients that can arrive at ~2.5 s on the engine-recovery path.
-        # Mirrors Swift: fftSettleTime = 3.0 / DispatchQueue.main.asyncAfter.
-        self._main_async_after(
-            3000,
-            lambda: self._restore_detection_after_route_change(was_detecting, was_showing_live),
-        )
+        # startup transients that can arrive at ~2.5 s on the engine-recovery path. On the AUDIO
+        # clock: what has to pass is that much audio from the new device. A later change supersedes
+        # this one's restore, so the settle ends 3 s after the last change.
+        # Mirrors Swift: fftSettleTime = 3.0 / afterAudio.
+        self._route_change_generation += 1
+        generation = self._route_change_generation
 
-    def _restore_detection_after_route_change(self, was_detecting: bool, was_live: bool = False) -> None:
-        """Re-anchor threshold and restore detection state after the settle delay.
+        def _settled() -> None:
+            # Mirrors Swift: guard generation == routeChangeGeneration, fftAnalyzer.isRunning.
+            if generation != self._route_change_generation or self.mic is None or self.mic.is_stopped:
+                return
+            # Wait for the next FFT frame before re-anchoring detection and unfreezing the display,
+            # so both happen on the first frame the user sees. Mirrors Swift afterNextFrame.
+            self.after_next_frame(
+                lambda peak_db: self._restore_detection_after_route_change(generation, was_showing_live, peak_db))
 
-        This method is the structural equivalent of the combined
-        DispatchQueue.main.asyncAfter + $magnitudes.dropFirst().first() sink
-        closure in Swift's handleRouteChangeRestart().  It is a named method
-        rather than an inline lambda only because _main_async_after requires a
-        callable — it should not be called from anywhere else.
+        self.after_audio(3.0, _settled)
 
-        Mirrors Swift's inner sink:
-        - Guards that the stream is still running.
-        - Re-anchors is_above_threshold to the current FFT peak magnitude.
-        - Calls setFrozenSpectrum([], []) then restores displayMode to .live.
-        - Sets isReadyForDetection = true.
-        - Restores is_detecting and status message.
+    def _restore_detection_after_route_change(self, generation: int, was_live: bool, peak_db: float) -> None:
+        """End the device-change settle on the first FFT frame after it: re-anchor the level latch from
+        that frame's peak, unblank a live chart, set readiness, put detection back to listening if the
+        change that began the settle found it listening, and restore the status.
+
+        The body of Swift's ``afterNextFrame`` closure in ``handleRouteChangeRestart()``; a named
+        method only so it can be read on its own — it should not be called from anywhere else.
         """
-        import numpy as np
-
-        from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
-
-        # Guard: stream may have been stopped again before the timer fired, or the microphone
-        # released (None) since the route change.
-        # Mirrors Swift: guard self.fftAnalyzer.isRunning else { return }.
-        if self.mic is None or self.mic.is_stopped:
+        if generation != self._route_change_generation:
             return
 
-        # Re-anchor is_above_threshold to the current FFT peak magnitude.
-        # Mirrors Swift: let currentPeakMag = fftAnalyzer.peakMagnitude /
-        #                isAboveThreshold = (currentPeakMag > tapDetectionThreshold).
-        current_level = self._current_peak_magnitude_db
-        self.is_above_threshold = current_level > self.tap_detection_threshold
+        # Re-anchor is_above_threshold to the frame's peak. Mirrors Swift:
+        # isAboveThreshold = (peakMagnitude > tapDetectionThreshold).
+        self.is_above_threshold = peak_db > self.tap_detection_threshold
 
-        # Unfreeze the display now that valid FFT data is available.
-        # Mirrors Swift: setFrozenSpectrum([], []) / displayMode = .live.
         if was_live:
             self.is_settling = False
 
-        # Mirrors Swift: isReadyForDetection = true.
         self.is_ready_for_detection = True
 
-        # Mirrors Swift: detectionState / statusMessage restore block. Derive the status from the
-        # state we are now in, and leave it alone where it is a result announcement.
-        if was_detecting:
+        # Derive the status from the state we are now in, and leave it alone where it is a result
+        # announcement.
+        if self._detecting_before_settle:
             self.detection_state = DetectionState.LISTENING
-        before = getattr(self, "_status_before_settle", None) or "Ready"
-        self._set_status_message(self._restored_status(before))
+        self._detecting_before_settle = None
+        self._set_status_message(self._restored_status(self._status_before_settle or "Ready"))
+        self._status_before_settle = None
 
         gt_log(f"🔄 TapToneAnalyzer: Detection re-enabled after route change "
-               f"(current level: {current_level} dB, threshold: {self.tap_detection_threshold} dB, "
+               f"(current level: {peak_db} dB, threshold: {self.tap_detection_threshold} dB, "
                f"above threshold: {self.is_above_threshold})")
 
     # ------------------------------------------------------------------ #

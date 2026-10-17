@@ -6,8 +6,11 @@ steps; this runs one. Mirrors Swift GuitarTapTests/AnalyzerSteps.swift and web t
 """
 from __future__ import annotations
 
+import numpy as np
+
 from audio_clock_feed import AUDIO_FEED_CHUNK_SECONDS, ManualWallClock, advance_audio
 from synthetic_tap import synthetic_tap
+from test_peak_finding import _spectrum
 
 from guitar_tap.models.material_tap_phase import MaterialTapPhase
 from guitar_tap.models.measurement_type import MeasurementType
@@ -37,6 +40,9 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
     - ``{"audioChunks": n, "level": dB}`` — exactly n chunks of audio at that level, each one chunk
       after the last (two loud ones are a tap)
     - ``{"stall": seconds}`` — that much wall time with no audio
+    - ``{"routeChange": true}`` — the engine restarted on a device change
+    - ``{"spectrumFrame": spectrum}`` — one FFT frame from the running engine, a spectrum as
+      ``peaks.json`` describes one
     """
     if "settings" in step:
         settings = step["settings"]
@@ -81,6 +87,14 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
         seconds = {"tapCooldown": sut.tap_cooldown, "captureWindow": sut.capture_window,
                    "warmupPeriod": sut.warmup_period}.get(advance, advance)
         advance_audio(sut, seconds * step.get("fraction", 1.0) + step.get("extra", 0.0), step.get("level", -90.0))
+    elif step.get("routeChange"):
+        sut.handle_route_change_restart()
+    elif "spectrumFrame" in step:
+        mags, freqs = _spectrum(step["spectrumFrame"])
+        # The analyzer's frames carry no frequencies of their own — they are on its axis — so the
+        # frame's axis becomes the analyzer's.
+        sut.freq = np.asarray(freqs)
+        sut.on_fft_frame(np.asarray(mags), float(max(mags)), 0.0, 0.0, 0.0)
     elif "stall" in step:
         sut.wall_clock.advance(float(step["stall"]))
     elif "audioChunks" in step:

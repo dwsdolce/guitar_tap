@@ -1,0 +1,720 @@
+{
+ "slug": "test/notification",
+ "about": "A device change and the settle after it: the engine restarts on the new device, detection stands down and New Tap greys out (the view is told), a live chart is blanked, and the status says the device is reinitializing; once 3 s of AUDIO have passed since the LAST change and the next FFT frame has arrived, the level latch is re-anchored from that frame, readiness and listening come back, and the status is put back. Also the status overrides the settle has to see through. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, pause, guitarTap, materialTap, accept, advance, routeChange — the engine restarted on a device change — and spectrumFrame — one FFT frame from the running engine, a spectrum as peaks.json describes one), plus {\"note\": true} (remembers the status and the peaks), {\"watchNotifications\": true} (readiness notifications are watched from here), {\"clipping\": bool}, {\"inputDead\": bool} and {\"check\": {...}}. Fields: 'ready' (New Tap's readiness), 'readinessNotified' (the view was told of a readiness change since watchNotifications: Swift's objectWillChange, Python's readyForDetectionChanged, the web's subscribers), 'settling' (the chart is blanked), 'statusMessage' (exact), 'statusAsNoted', 'statusBeforeSettleAsNoted', 'statusIsArmedPrompt', 'detecting', 'paused', 'complete', 'phase' (Swift's raw value), 'aboveThreshold' (the level latch), 'hasPeaks', 'peaksAsNoted'. Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "N1",
+   "note": "a device change stands readiness down — New Tap greys out — and the view is told",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "watchNotifications": true
+    },
+    {
+     "routeChange": true
+    }
+   ],
+   "expect": {
+    "ready": false,
+    "readinessNotified": true,
+    "detecting": false,
+    "statusMessage": "Audio device changed - reinitializing..."
+   }
+  },
+  {
+   "id": "N2",
+   "note": "the settle's end restores readiness and the view is told: 3 s of audio after the change, then the next frame",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "watchNotifications": true
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "ready": true,
+    "readinessNotified": true,
+    "detecting": true,
+    "settling": false
+   }
+  },
+  {
+   "id": "N3",
+   "note": "the settle has not ended before 3 s of audio, whatever frames arrive",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 2.9
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "ready": false,
+    "settling": true,
+    "detecting": false,
+    "statusMessage": "Audio device changed - reinitializing..."
+   }
+  },
+  {
+   "id": "N4",
+   "note": "a completed measurement's result announcement is put back after the settle, not re-derived",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 150
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "check": {
+      "complete": true
+     }
+    },
+    {
+     "note": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "complete": true,
+    "statusAsNoted": true,
+    "ready": true
+   }
+  },
+  {
+   "id": "N5",
+   "note": "mid-sequence the settle puts back the progress, not the opening instruction",
+   "steps": [
+    {
+     "setTaps": 3
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 150
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "note": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "statusAsNoted": true,
+    "detecting": true
+   }
+  },
+  {
+   "id": "N6",
+   "note": "idle, with nothing captured, the settle ends on Ready and detection stays off",
+   "steps": [
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "statusMessage": "Ready",
+    "detecting": false,
+    "ready": true
+   }
+  },
+  {
+   "id": "N7",
+   "note": "a device change leaves a completed measurement's peaks and chart alone",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 150
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "note": true
+    },
+    {
+     "routeChange": true
+    }
+   ],
+   "expect": {
+    "settling": false,
+    "peaksAsNoted": true,
+    "complete": true
+   }
+  },
+  {
+   "id": "N8",
+   "note": "a device change blanks a live spectrum and clears its peaks, so no annotation floats on a blank chart",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    },
+    {
+     "check": {
+      "hasPeaks": true
+     }
+    },
+    {
+     "routeChange": true
+    }
+   ],
+   "expect": {
+    "settling": true,
+    "hasPeaks": false
+   }
+  },
+  {
+   "id": "N9",
+   "note": "a material phase instruction is put back after the settle, not reworded",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "check": {
+      "phase": "Capturing Cross-grain"
+     }
+    },
+    {
+     "note": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "statusAsNoted": true
+   }
+  },
+  {
+   "id": "N10",
+   "note": "dead input outranks clipping, and clearing both puts back the analyzer's own status",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "note": true
+    },
+    {
+     "clipping": true
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ Input clipping — reduce mic gain"
+     }
+    },
+    {
+     "inputDead": true
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ No audio input — check the microphone connection"
+     }
+    },
+    {
+     "inputDead": false
+    },
+    {
+     "clipping": false
+    }
+   ],
+   "expect": {
+    "statusAsNoted": true
+   }
+  },
+  {
+   "id": "N11",
+   "note": "the settle keeps the analyzer's real status, not the clipping warning showing over it",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "note": true
+    },
+    {
+     "clipping": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "check": {
+      "statusBeforeSettleAsNoted": true
+     }
+    },
+    {
+     "clipping": false
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "statusAsNoted": true
+   }
+  },
+  {
+   "id": "N12",
+   "note": "the material phase advance says the armed prompt, the one string the settle and Resume derive",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    }
+   ],
+   "expect": {
+    "phase": "Capturing Cross-grain",
+    "statusMessage": "Rotate 90° and tap for fC",
+    "statusIsArmedPrompt": true
+   }
+  },
+  {
+   "id": "N13",
+   "note": "a second change inside a settle does not take the transient for the real status",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)",
+      "measureFlc": false
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "note": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "check": {
+      "statusBeforeSettleAsNoted": true
+     }
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "statusAsNoted": true
+   }
+  },
+  {
+   "id": "N14",
+   "note": "a second change inside a settle restarts it: the settle ends 3 s of audio after the LAST change, and re-arms as the first change found it",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 2.0
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 1.1
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    },
+    {
+     "check": {
+      "ready": false,
+      "settling": true
+     }
+    },
+    {
+     "advance": 2.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "ready": true,
+    "detecting": true,
+    "settling": false
+   }
+  },
+  {
+   "id": "N15",
+   "note": "3 s of audio alone does not end the settle: it ends on the next frame",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.1
+    },
+    {
+     "check": {
+      "ready": false,
+      "settling": true
+     }
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "ready": true,
+    "settling": false,
+    "detecting": true
+   }
+  },
+  {
+   "id": "N16",
+   "note": "the settle's end re-anchors the level latch from that frame: a frame above the threshold leaves it up",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "aboveThreshold": true
+   }
+  },
+  {
+   "id": "N17",
+   "note": "the settle's end re-anchors the level latch from that frame: a frame below the threshold lowers it",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -60,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "aboveThreshold": false
+   }
+  },
+  {
+   "id": "N18",
+   "note": "a sequence paused before the change is still paused after the settle",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "pause": true
+    },
+    {
+     "routeChange": true
+    },
+    {
+     "advance": 3.0
+    },
+    {
+     "spectrumFrame": {
+      "kind": "gaussians",
+      "binCount": 601,
+      "binSpacingHz": 1,
+      "noiseFloor": -100,
+      "peaks": [
+       {
+        "peakHz": 150,
+        "peakDB": -20,
+        "halfWidthHz": 7
+       }
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "paused": true,
+    "detecting": false,
+    "ready": true
+   }
+  }
+ ]
+}

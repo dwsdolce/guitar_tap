@@ -553,6 +553,16 @@ class TapToneAnalyzer(
         # Tap-lifecycle actions waiting on the audio clock: (due, released_at_file_end, action).
         # See after_audio(). Mirrors Swift pendingAudioActions.
         self._pending_audio_actions: "list[tuple[float, bool, Callable[[], None]]]" = []
+        # Actions waiting for the next FFT frame, each given its peak magnitude. See after_next_frame().
+        # Mirrors Swift pendingFrameActions.
+        self._pending_frame_actions: "list[Callable[[float], None]]" = []
+        # The device-change settle: what the status said before it (Swift statusBeforeSettle), whether
+        # its end re-arms listening (Swift detectingBeforeSettle) — both None when no settle is in
+        # progress — and the count of changes, so a later change supersedes an earlier one's restore
+        # (Swift routeChangeGeneration).
+        self._status_before_settle: "str | None" = None
+        self._detecting_before_settle: "bool | None" = None
+        self._route_change_generation: int = 0
         # Exponential moving average of the input level, used as the ambient noise-floor
         # estimate for relative tap detection in plate/brace modes. Updated only when
         # the signal is below threshold (between taps) so tap energy does not

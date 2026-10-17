@@ -497,6 +497,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # to seed is_above_threshold, exactly as Swift handleTapDetection() does.
         # Distinct from _current_input_level_db (fftAnalyzer.inputLevelDB / RMS, ~43 Hz).
         self._current_peak_magnitude_db = peak_db
+        self._run_next_frame_actions(peak_db)
 
         # NOTE: decay tracking is NOT driven here. on_fft_frame fires at the FFT frame rate (~2.7 Hz),
         # far too coarse for ring-out timing. It now runs in _on_rms_level_changed at the per-chunk
@@ -630,6 +631,20 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self._pending_audio_actions = [a for a in self._pending_audio_actions if not a[1]]
         for _, _, action in released:
             action()
+
+    def after_next_frame(self, action) -> None:
+        """Run *action* on the next FFT frame, with that frame's peak magnitude — the device-change
+        settle's end, which re-anchors detection on the first frame the user sees. Mirrors Swift
+        afterNextFrame."""
+        self._pending_frame_actions.append(action)
+
+    def _run_next_frame_actions(self, peak_db: float) -> None:
+        """Run, in scheduling order, every action waiting for this frame. Mirrors Swift
+        runNextFrameActions."""
+        due = self._pending_frame_actions
+        self._pending_frame_actions = []
+        for action in due:
+            action(peak_db)
 
     def after_audio_stall(self, interval: float, relevant, action) -> None:
         """Run *action* once NO audio has arrived for *interval* seconds of WALL time — the gated

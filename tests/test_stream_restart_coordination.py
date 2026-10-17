@@ -186,13 +186,17 @@ def test_SR6_the_restart_opens_the_selected_device_at_its_rate(monkeypatch):
     assert reopened == [48000]
 
 
-def test_SR7_the_route_change_restore_does_nothing_once_the_microphone_is_released():
+def test_SR7_the_route_change_restore_does_nothing_once_the_microphone_is_released(qapp):
     """SR7: the restore a route change schedules returns quietly when, by the time it runs, the analyzer
     has no microphone — as Swift's returns when the stream is not running."""
+    from tests.audio_clock_feed import advance_audio
+
     from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
 
-    sut = TapToneAnalyzer()
+    sut = TapToneAnalyzer.for_testing()
+    sut.start_tap_sequence()
+    sut.handle_route_change_restart()
     sut.mic = None
-    before = sut.is_detecting
-    sut._restore_detection_after_route_change(True, True)
-    assert sut.is_detecting == before
+    advance_audio(sut, 3.1)
+    assert sut._pending_frame_actions == [], "the settle did not wait for a frame"
+    assert not sut.is_ready_for_detection, "and did not end"
