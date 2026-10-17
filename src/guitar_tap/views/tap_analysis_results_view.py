@@ -34,6 +34,7 @@ from guitar_tap.utilities.logging import gt_log
 
 __all__ = [
     "load_all_measurements",
+    "export_failure_message",
     "save_all_measurements",
     "measurements_to_json",
     "measurements_from_json",
@@ -154,6 +155,17 @@ def load_all_measurements() -> list[TapToneMeasurement]:
     except Exception as exc:
         gt_log(f"Failed to load measurements: {exc}")
         return []
+
+
+def export_failure_message(exc: BaseException, path: str) -> str:
+    """What the "Export Failed" alert says, the same in every edition: the chart could not be drawn (its
+    own words), or the file could not be saved and why."""
+    from guitar_tap.views.exportable_spectrum_chart import ExportRenderError
+
+    if isinstance(exc, ExportRenderError):
+        return str(exc)
+    reason = exc.strerror if isinstance(exc, OSError) and exc.strerror else str(exc)
+    return f'Could not save "{os.path.basename(path)}": {reason}.'
 
 
 def measurements_to_json(measurements: "list[TapToneMeasurement]") -> str:

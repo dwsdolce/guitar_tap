@@ -44,6 +44,7 @@ def qt_app():
     return _get_app()
 
 
+from guitar_tap.utilities.new_uuid import new_uuid
 from guitar_tap.models import realtime_fft_analyzer_device_management as dm
 from guitar_tap.models import tap_tone_analyzer_measurement_management as mm
 from guitar_tap.models.audio_device import AudioDevice
@@ -218,7 +219,6 @@ def test_MS13_global_default_when_the_host_api_has_none(monkeypatch):
 def _load(monkeypatch, mic: AudioDevice, calibration_name: str | None = None):
     """An analyzer on the built-in mic (saved) with a calibration, the USB mic connected, and a
     measurement recorded with *mic* and *calibration_name*, loaded."""
-    import uuid
 
     from guitar_tap.models.microphone_calibration import MicrophoneCalibration
     from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -229,12 +229,12 @@ def _load(monkeypatch, mic: AudioDevice, calibration_name: str | None = None):
     sut = TapToneAnalyzer.for_testing()
     sut.mic.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
     sut.mic.set_temporary_calibration(MicrophoneCalibration(
-        id=str(uuid.uuid4()), name="Built-in room", sensitivity_factor=None, reference_level=None,
+        id=new_uuid(), name="Built-in room", sensitivity_factor=None, reference_level=None,
         correction_points=[{"frequency": 20.0, "correction": 0.0},
                            {"frequency": 20000.0, "correction": 0.0}],
         import_date=""))
     sut.load_measurement(TapToneMeasurement(
-        id=str(uuid.uuid4()), timestamp="2026-01-01T00:00:00Z", peaks=[],
+        id=new_uuid(), timestamp="2026-01-01T00:00:00Z", peaks=[],
         measurement_name="Loaded", microphone_name=mic.name, microphone_uid=mic.fingerprint,
         calibration_name=calibration_name))
     return sut
@@ -286,7 +286,6 @@ def test_MS17_same_microphone_different_calibration_warns(monkeypatch):
 def _analyzer_with_stored_calibration():
     """An analyzer on the built-in mic with the USB mic connected, an empty calibration store, and
     "Room" saved in it."""
-    import uuid
 
     from guitar_tap.models.microphone_calibration import CalibrationStorage, MicrophoneCalibration
     from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -298,7 +297,7 @@ def _analyzer_with_stored_calibration():
         CalibrationStorage.set_calibration_for_device(device.name, None)
         CalibrationStorage.set_calibration_for_device(device.fingerprint, None)
     room = MicrophoneCalibration(
-        id=str(uuid.uuid4()), name="Room", sensitivity_factor=None, reference_level=None,
+        id=new_uuid(), name="Room", sensitivity_factor=None, reference_level=None,
         correction_points=[{"frequency": 20.0, "correction": 0.0},
                            {"frequency": 20000.0, "correction": 0.0}],
         import_date="")
@@ -347,7 +346,6 @@ def test_MS20_temporary_calibration_saves_nothing():
 
 def test_MS21_load_saves_the_thresholds_it_restores():
     """MS21: A load saves the thresholds it restores, so they are the settings at the next launch."""
-    import uuid
 
     from guitar_tap.models.tap_display_settings import TapDisplaySettings
     from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
@@ -357,7 +355,7 @@ def test_MS21_load_saves_the_thresholds_it_restores():
     TapDisplaySettings.set_peak_min_threshold(-60.0)
     sut = TapToneAnalyzer.for_testing()
     sut.load_measurement(TapToneMeasurement(
-        id=str(uuid.uuid4()), timestamp="2026-01-01T00:00:00Z", peaks=[],
+        id=new_uuid(), timestamp="2026-01-01T00:00:00Z", peaks=[],
         measurement_name="Loaded", tap_detection_threshold=-30.0, peak_min_threshold=-50.0))
     assert TapDisplaySettings.tap_detection_threshold() == -30.0
     assert TapDisplaySettings.peak_min_threshold() == -50.0
@@ -423,7 +421,6 @@ def test_MS24_failed_switch_while_running_reverts_and_reports(monkeypatch):
 def test_MS25_load_whose_switch_fails_keeps_the_input_and_says_so(monkeypatch):
     """MS25: A load whose recorded microphone is listed but cannot be opened keeps the current
     input (selected and saved) and its warning is the failed-open message."""
-    import uuid
 
     from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
     from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
@@ -433,7 +430,7 @@ def test_MS25_load_whose_switch_fails_keeps_the_input_and_says_so(monkeypatch):
     sut = TapToneAnalyzer.for_testing()
     sut.mic.apply_input_device_list([BUILT_IN, UMIK], BUILT_IN.fingerprint)
     sut.load_measurement(TapToneMeasurement(
-        id=str(uuid.uuid4()), timestamp="2026-01-01T00:00:00Z", peaks=[],
+        id=new_uuid(), timestamp="2026-01-01T00:00:00Z", peaks=[],
         measurement_name="Loaded", microphone_name=UMIK.name, microphone_uid=UMIK.fingerprint))
     assert sut.mic.selected_input_device == BUILT_IN
     assert _saved() == BUILT_IN.fingerprint
@@ -550,3 +547,33 @@ def test_MS33_the_index_of_the_selected_device_opens(monkeypatch):
     sut.set_device(UMIK)
     assert sut.selected_input_device == UMIK
     assert _StreamOn.opened[-1].device == UMIK.index and not _StreamOn.opened[-1].closed
+
+
+def test_unreadable_calibrations_are_kept_aside_and_not_written_over(qapp):
+    """The stored calibrations cannot be read: they are moved to a key of their own, the list starts
+    empty, and a later save leaves them as they were. Mirrors Swift's test of the same."""
+    from guitar_tap.models.microphone_calibration import CalibrationStorage, MicrophoneCalibration
+
+    s = CalibrationStorage._s()
+
+    def kept_keys() -> list[str]:
+        return [k for k in s.allKeys() if k.startswith(f"{CalibrationStorage._STORAGE_KEY}-unreadable-")]
+
+    for k in kept_keys():
+        s.remove(k)
+    damaged = json.dumps([{"id": "not-a-uuid", "name": "Room"}])
+    s.setValue(CalibrationStorage._STORAGE_KEY, damaged)
+
+    assert CalibrationStorage.load_all() == []
+    kept = kept_keys()
+    assert len(kept) == 1 and s.value(kept[0]) == damaged, "kept as it was"
+
+    CalibrationStorage.save(MicrophoneCalibration(
+        id=new_uuid(), name="Room", sensitivity_factor=None, reference_level=None,
+        correction_points=[], import_date="2026-01-01T00:00:00Z"))
+    assert len(CalibrationStorage.load_all()) == 1, "a new list is written"
+    assert s.value(kept[0]) == damaged, "and the kept one is not touched"
+    for k in kept_keys():
+        s.remove(k)
+    for c in CalibrationStorage.load_all():
+        CalibrationStorage.delete(c)

@@ -1,20 +1,13 @@
 # @parity test/uuid-case
-"""Minted UUIDs are UPPERCASE, and nothing mints outside the one helper.
+"""Ids are UUIDs, written UPPERCASE, and nothing mints outside the one helper.
 
-Swift's ``UUID().uuidString`` is uppercase, the web mints ``crypto.randomUUID().toUpperCase()``
-to match it, and this edition mints through ``new_uuid()`` the same way. ``id`` is the field that
-identifies a dataset, and anything comparing ids as strings would read two cases as two different
-things. Swift uppercases whatever it decodes while the ports preserve what the file holds, so
-nothing would normalise a lowercase id back.
+An id is a ``uuid.UUID`` — compared by value, so case never matters, as Swift's ``UUID`` — and is text
+only in a file, where it is written uppercase, as Swift's ``uuidString`` and the web write it.
 
-The second test is the one that prevents a regression. Checking that ``new_uuid()`` is uppercase
-proves the helper works; it does nothing about a new ``str(uuid.uuid4())`` added somewhere else
-later, which would pass every other test in this suite while quietly reintroducing the
-divergence. A rule with no test is a rule that drifts — so this scans the source instead of
-trusting it.
-
-Case has never affected correctness *within* one file: a file's internal references agree with its
-own ids whatever their case. It matters only when two editions compare ids for the same thing.
+The second test is the one that prevents a regression. Checking the helper proves the helper works;
+it does nothing about a new ``uuid.uuid4()`` added somewhere else later, which would pass every other
+test in this suite while quietly going around the rule. A rule with no test is a rule that drifts —
+so this scans the source instead of trusting it.
 """
 
 from __future__ import annotations
@@ -25,19 +18,20 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from guitar_tap.utilities.new_uuid import new_uuid  # noqa: E402
+import uuid  # noqa: E402
+
+from guitar_tap.utilities.new_uuid import new_uuid, uuid_text  # noqa: E402
 
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "guitar_tap")
 HELPER = os.path.join(SRC, "utilities", "new_uuid.py")
 
 
-def test_new_uuid_is_uppercase():
+def test_new_uuid_is_a_uuid_written_uppercase():
     """Many draws, because a lowercase hex digit only appears when the random bytes call for one."""
     minted = [new_uuid() for _ in range(2000)]
-    assert all(u == u.upper() for u in minted), "new_uuid() must mint uppercase"
-    # And it must still be a well-formed UUID, not merely an uppercase string.
+    assert all(isinstance(u, uuid.UUID) for u in minted), "new_uuid() mints a UUID, not text"
     pattern = re.compile(r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$")
-    assert all(pattern.match(u) for u in minted)
+    assert all(pattern.match(uuid_text(u)) for u in minted), "written uppercase, hyphenated"
     assert len(set(minted)) == len(minted), "minted ids must be distinct"
 
 
@@ -64,12 +58,14 @@ def test_no_module_mints_outside_the_helper():
     )
 
 
-def test_model_factories_mint_uppercase():
+def test_model_factories_mint_uuids_written_uppercase():
     """The rule where it actually reaches a file: measurement and peak ids."""
     from guitar_tap.models.resonant_peak import ResonantPeak
     from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
 
-    measurement = TapToneMeasurement.create(peaks=[])
     peak = ResonantPeak(frequency=200.0, magnitude=-30.0)
-    assert measurement.id == measurement.id.upper()
-    assert peak.id == peak.id.upper()
+    measurement = TapToneMeasurement.create(peaks=[peak])
+    assert isinstance(measurement.id, uuid.UUID) and isinstance(peak.id, uuid.UUID)
+    written = measurement.to_dict()
+    assert written["id"] == written["id"].upper()
+    assert written["peaks"][0]["id"] == written["peaks"][0]["id"].upper()

@@ -20,14 +20,15 @@ Mirrors Swift test suites:
 from __future__ import annotations
 
 import json
+import uuid
 import os
 import sys
-import uuid
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from guitar_tap.utilities.new_uuid import new_uuid
 from guitar_tap.models.spectrum_snapshot import SpectrumSnapshot
 from guitar_tap.models.resonant_peak import ResonantPeak
 from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
@@ -55,6 +56,12 @@ def _make_snapshot(
     )
 
 
+def _create(**fields) -> TapToneMeasurement:
+    """A measurement as the app saves one — with its spectrum — unless the test gives its own: a file
+    holding a measurement without a spectrum cannot be read."""
+    return TapToneMeasurement.create(**{"spectrum_snapshot": _make_snapshot(), **fields})
+
+
 def _make_peak(
     freq: float = 200.0,
     mag: float = -30.0,
@@ -64,7 +71,7 @@ def _make_peak(
     pitch_freq: float | None = None,
 ) -> ResonantPeak:
     return ResonantPeak(
-        id=str(uuid.uuid4()),
+        id=new_uuid(),
         frequency=freq,
         magnitude=mag,
         quality=quality,
@@ -155,7 +162,7 @@ class TestTapToneMeasurementCodable:
         """A measurement with peaks, snapshot, and metadata round-trips through JSON."""
         peak = _make_peak(freq=200.0, mag=-30.0)
         snap = _make_snapshot()
-        m = TapToneMeasurement.create(
+        m = _create(
             peaks=[peak],
             spectrum_snapshot=snap,
             measurement_name="Bridge",
@@ -178,20 +185,20 @@ class TestTapToneMeasurementCodable:
     def test_annotation_offsets_round_trip(self):
         """Annotation offsets survive a JSON round-trip using the Swift flat-array format."""
         peak = _make_peak()
-        offsets = {peak.id.upper(): [300.0, -45.0]}
-        m = TapToneMeasurement.create(peaks=[peak], annotation_offsets=offsets)
+        offsets = {peak.id: [300.0, -45.0]}
+        m = _create(peaks=[peak], annotation_offsets=offsets)
         restored = TapToneMeasurement.from_dict(m.to_dict())
 
         assert restored.annotation_offsets is not None
-        assert peak.id.upper() in restored.annotation_offsets
-        stored = restored.annotation_offsets[peak.id.upper()]
+        assert peak.id in restored.annotation_offsets
+        stored = restored.annotation_offsets[peak.id]
         assert abs(stored[0] - 300.0) < 0.01
         assert abs(stored[1] - (-45.0)) < 0.01
 
     def test_empty_annotation_offsets_round_trip(self):
         """None annotation_offsets omits the key (matches Swift encodeIfPresent(nil))
         and decodes back to None."""
-        m = TapToneMeasurement.create(peaks=[], annotation_offsets=None)
+        m = _create(peaks=[], annotation_offsets=None)
         d = m.to_dict()
         assert "peakAnnotationOffsets" not in d
         restored = TapToneMeasurement.from_dict(d)
@@ -205,6 +212,7 @@ class TestTapToneMeasurementCodable:
             "timestamp": "2026-01-01T00:00:00Z",
             "peaks": [],
             "peakAnnotationOffsets": [],
+            "spectrumSnapshot": _make_snapshot().to_dict(),
         }
         m = TapToneMeasurement.from_dict(src)
         assert m.annotation_offsets == {}
@@ -215,7 +223,7 @@ class TestTapToneMeasurementCodable:
         """per-peak mode overrides survive a JSON round-trip."""
         peak = _make_peak()
         overrides = {peak.id: "Top"}
-        m = TapToneMeasurement.create(peaks=[peak], peak_mode_overrides=overrides)
+        m = _create(peaks=[peak], peak_mode_overrides=overrides)
         restored = TapToneMeasurement.from_dict(m.to_dict())
         assert restored.peak_mode_overrides is not None
         assert restored.peak_mode_overrides.get(peak.id) == "Top"
@@ -244,22 +252,22 @@ class TestAnnotationOffsets:
         p1 = _make_peak(freq=200.0)
         p2 = _make_peak(freq=300.0)
         offsets = {
-            p1.id.upper(): [200.0, -40.0],
-            p2.id.upper(): [300.0, -35.0],
+            p1.id: [200.0, -40.0],
+            p2.id: [300.0, -35.0],
         }
-        m = TapToneMeasurement.create(peaks=[p1, p2], annotation_offsets=offsets)
+        m = _create(peaks=[p1, p2], annotation_offsets=offsets)
         assert m.annotation_offsets is not None
-        assert m.annotation_offsets[p1.id.upper()] == [200.0, -40.0]
-        assert m.annotation_offsets[p2.id.upper()] == [300.0, -35.0]
+        assert m.annotation_offsets[p1.id] == [200.0, -40.0]
+        assert m.annotation_offsets[p2.id] == [300.0, -35.0]
 
     def test_D2_annotation_offsets_survive_json_round_trip(self):
         """D2: annotation_offsets are preserved across a JSON round-trip."""
         p = _make_peak(freq=440.0)
-        offsets = {p.id.upper(): [440.0, -25.0]}
-        m = TapToneMeasurement.create(peaks=[p], annotation_offsets=offsets)
+        offsets = {p.id: [440.0, -25.0]}
+        m = _create(peaks=[p], annotation_offsets=offsets)
         restored = _round_trip(m)
         assert restored.annotation_offsets is not None
-        stored = restored.annotation_offsets.get(p.id.upper())
+        stored = restored.annotation_offsets.get(p.id)
         assert stored is not None, "Offset should survive round-trip"
         assert abs(stored[0] - 440.0) < 0.01
         assert abs(stored[1] - (-25.0)) < 0.01
@@ -282,7 +290,7 @@ class TestPeakSelection:
         """D3: selected_peak_ids is stored and round-trips through JSON."""
         p1 = _make_peak(freq=95.0)
         p2 = _make_peak(freq=195.0)
-        m = TapToneMeasurement.create(
+        m = _create(
             peaks=[p1, p2],
             selected_peak_ids=[p1.id],
             selected_peak_frequencies=[95.0],
@@ -305,14 +313,14 @@ class TestAnnotationVisibilityMode:
 
     def test_D4_visibility_mode_stored_as_string(self):
         """D4: annotation_visibility_mode is stored and round-trips."""
-        m = TapToneMeasurement.create(peaks=[], annotation_visibility_mode="showAll")
+        m = _create(peaks=[], annotation_visibility_mode="showAll")
         restored = _round_trip(m)
         assert restored.annotation_visibility_mode == "showAll"
 
     def test_D5_all_visibility_values_survive_round_trip(self):
         """D5: All three visibility mode strings encode/decode correctly."""
         for mode in ("showAll", "showSelected", "hideAll"):
-            m = TapToneMeasurement.create(peaks=[], annotation_visibility_mode=mode)
+            m = _create(peaks=[], annotation_visibility_mode=mode)
             restored = _round_trip(m)
             assert restored.annotation_visibility_mode == mode, (
                 f"Visibility mode '{mode}' did not survive round-trip"
@@ -322,7 +330,7 @@ class TestAnnotationVisibilityMode:
         """CI5: All three visibility mode strings can be stored on the measurement."""
         modes = ["showAll", "showSelected", "hideAll"]
         for mode in modes:
-            m = TapToneMeasurement.create(peaks=[], annotation_visibility_mode=mode)
+            m = _create(peaks=[], annotation_visibility_mode=mode)
             assert m.annotation_visibility_mode == mode
 
 
@@ -341,7 +349,7 @@ class TestModeOverrides:
         """D7: peak_mode_overrides keyed by peak UUID stores custom mode labels."""
         p = _make_peak(freq=200.0)
         overrides = {p.id: "Top"}
-        m = TapToneMeasurement.create(peaks=[p], peak_mode_overrides=overrides)
+        m = _create(peaks=[p], peak_mode_overrides=overrides)
         assert m.peak_mode_overrides is not None
         assert m.peak_mode_overrides[p.id] == "Top"
 
@@ -349,7 +357,7 @@ class TestModeOverrides:
         """D8: peak_mode_overrides are preserved across JSON round-trip."""
         p = _make_peak(freq=200.0)
         overrides = {p.id: "Dipole"}
-        m = TapToneMeasurement.create(peaks=[p], peak_mode_overrides=overrides)
+        m = _create(peaks=[p], peak_mode_overrides=overrides)
         restored = _round_trip(m)
         assert restored.peak_mode_overrides is not None
         assert restored.peak_mode_overrides.get(p.id) == "Dipole"
@@ -372,13 +380,13 @@ class TestPeakSelectionTracking:
         """PS1: selected_peak_ids is stored as a list of UUID strings."""
         peaks = [_make_peak() for _ in range(3)]
         ids = [peaks[0].id, peaks[1].id]
-        m = TapToneMeasurement.create(peaks=peaks, selected_peak_ids=ids)
+        m = _create(peaks=peaks, selected_peak_ids=ids)
         assert m.selected_peak_ids == ids
 
     def test_PS2_selected_peak_frequencies_parallel_to_ids(self):
         """PS2: selected_peak_frequencies is parallel to selected_peak_ids."""
         peaks = [_make_peak(freq=200.0), _make_peak(freq=300.0)]
-        m = TapToneMeasurement.create(
+        m = _create(
             peaks=peaks,
             selected_peak_ids=[peaks[0].id],
             selected_peak_frequencies=[200.0],
@@ -388,20 +396,20 @@ class TestPeakSelectionTracking:
     def test_PS3_both_none_means_all_selected(self):
         """PS3: None selected_peak_ids means all peaks are treated as selected."""
         peaks = [_make_peak() for _ in range(3)]
-        m = TapToneMeasurement.create(peaks=peaks, selected_peak_ids=None)
+        m = _create(peaks=peaks, selected_peak_ids=None)
         assert m.selected_peak_ids is None
 
     def test_PS4_selected_peak_ids_round_trip(self):
         """PS4: selected_peak_ids survives JSON round-trip."""
         p = _make_peak()
-        m = TapToneMeasurement.create(peaks=[p], selected_peak_ids=[p.id])
+        m = _create(peaks=[p], selected_peak_ids=[p.id])
         restored = _round_trip(m)
         assert restored.selected_peak_ids == [p.id]
 
     def test_PS5_selected_peak_frequencies_round_trip(self):
         """PS5: selected_peak_frequencies survives JSON round-trip."""
         p = _make_peak(freq=440.0)
-        m = TapToneMeasurement.create(
+        m = _create(
             peaks=[p], selected_peak_ids=[p.id], selected_peak_frequencies=[440.0],
         )
         restored = _round_trip(m)
@@ -409,7 +417,7 @@ class TestPeakSelectionTracking:
 
     def test_PS6_empty_selection_round_trips_as_select_none(self):
         """PS6: An empty selection is Select None — it reads back empty, not as 'no selection saved'."""
-        m = TapToneMeasurement.create(peaks=[], selected_peak_ids=[])
+        m = _create(peaks=[], selected_peak_ids=[])
         assert _round_trip(m).selected_peak_ids == []
 
 
@@ -478,7 +486,7 @@ class TestFixtureLoading:
         assert (s.min_freq, s.max_freq, s.min_db, s.max_db) == (75, 350, -100, 0)
         assert len(s.frequencies) == len(s.magnitudes) > 0
         p0 = m.peaks[0]
-        assert p0.id == "95037FB0-44FE-4163-9937-CBCD57BC1469"
+        assert p0.id == uuid.UUID("95037FB0-44FE-4163-9937-CBCD57BC1469")
         assert abs(p0.frequency - 212.24847) < 1e-3
         assert p0.pitch_note == "G#3"
 
@@ -518,7 +526,7 @@ with open(os.path.join(os.path.dirname(__file__), "measurement-codable.json"), e
 
 def _case_measurement(row: dict) -> "tuple[TapToneMeasurement, dict]":
     """A case's measurement, and its peaks by the case's peak ids."""
-    by_name = {p["id"]: ResonantPeak(id=str(uuid.uuid4()), frequency=p["frequency"], magnitude=p["magnitude"])
+    by_name = {p["id"]: ResonantPeak(id=new_uuid(), frequency=p["frequency"], magnitude=p["magnitude"])
                for p in row["peaks"]}
     peaks = [by_name[p["id"]] for p in row["peaks"]]
     selected = [by_name[n].id for n in row["selected"]] if row["selected"] is not None else None
@@ -526,8 +534,8 @@ def _case_measurement(row: dict) -> "tuple[TapToneMeasurement, dict]":
     material = row.get("material", False)
     guitar_type = None if material else LOGIC["guitarType"]
     measurement_type = None if material else LOGIC["measurementType"]
-    snapshot = SpectrumSnapshot(frequencies=[], magnitudes=[], min_freq=50, max_freq=500, min_db=-100, max_db=0,
-                                guitar_type=guitar_type, measurement_type=measurement_type)
+    snapshot = SpectrumSnapshot(frequencies=[100.0, 200.0], magnitudes=[-60.0, -60.0], min_freq=50, max_freq=500,
+                                min_db=-100, max_db=0, guitar_type=guitar_type, measurement_type=measurement_type)
     m = TapToneMeasurement.create(
         peaks=peaks,
         spectrum_snapshot=None if material else snapshot,
@@ -654,8 +662,40 @@ def test_snapshot_bytes(row):
     assert _f32(back.magnitudes) == _f32(row["magnitudes"])
 
 
+_UUID_TEXT = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+
+
+@pytest.mark.parametrize("row", LOGIC["ids"], ids=lambda r: r["id"])
+def test_id_rule(row):
+    if row.get("rejected"):
+        with pytest.raises(Exception):
+            measurements_from_json(json.dumps(row["file"]))
+        return
+    m = measurements_from_json(json.dumps(row["file"]))[0]
+    freq = {p.id: str(round(p.frequency)) for p in m.peaks}
+    for field, want in row["expect"].items():
+        if field == "selectedFrequencies":
+            got = [float(next(p.frequency for p in m.peaks if p.id == i)) for i in (m.selected_peak_ids or [])]
+            assert got == want, f"{row['id']} {field}: {got}"
+        elif field == "overrideLabels":
+            got = {freq[k]: v for k, v in (m.peak_mode_overrides or {}).items() if k in freq}
+            assert got == want, f"{row['id']} {field}: {got}"
+        elif field == "offsets":
+            got = {freq[k]: [float(v[0]), float(v[1])] for k, v in (m.annotation_offsets or {}).items() if k in freq}
+            assert got == want, f"{row['id']} {field}: {got}"
+        elif field == "writtenLowercaseIds":
+            lower = [u for u in _UUID_TEXT.findall(measurements_to_json([m])) if u != u.upper()]
+            assert len(lower) == want, f"{row['id']} {field}: {lower}"
+        else:
+            pytest.fail(f"{row['id']}: unknown field {field}")
+
+
 @pytest.mark.parametrize("row", LOGIC["decode"], ids=lambda r: r["id"])
 def test_decode(row):
+    if row.get("rejected"):
+        with pytest.raises(Exception):
+            measurements_from_json(json.dumps(row["file"]))
+        return
     m = measurements_from_json(json.dumps(row["file"]))[0]
     for field, want in row["expect"].items():
         if field == "measurementName":
@@ -669,8 +709,7 @@ def test_decode(row):
         elif field == "magnitudes":
             assert _f32(m.spectrum_snapshot.magnitudes) == _f32(want), field
         elif field == "overrides":
-            got = {k.lower(): v for k, v in (m.peak_mode_overrides or {}).items()}
-            assert got == {k.lower(): v for k, v in want.items()}, field
+            assert dict(m.peak_mode_overrides or {}) == {uuid.UUID(k): v for k, v in want.items()}, field
         elif field == "peakCount":
             assert len(m.peaks) == want, field
         elif field == "pitchNote":
@@ -719,7 +758,7 @@ def test_comparison(row):
             for e, w in zip(m.comparison_entries, want):
                 for key, value in w.items():
                     if key == "id":
-                        assert e.id.lower() == value.lower(), "entry id"
+                        assert e.id == uuid.UUID(value), "entry id"
                     elif key == "label":
                         assert e.label == value, "entry label"
                     elif key == "colorComponents":
@@ -729,8 +768,7 @@ def test_comparison(row):
                     elif key == "peakCount":
                         assert len(e.peaks) == value, "entry peakCount"
                     elif key == "modePeakIds":
-                        got = {k: v.lower() for k, v in (e.mode_peak_ids or {}).items()}
-                        assert got == {k: v.lower() for k, v in value.items()}, "entry modePeakIds"
+                        assert dict(e.mode_peak_ids or {}) == {k: uuid.UUID(v) for k, v in value.items()}, "entry modePeakIds"
                     else:
                         pytest.fail(f"unknown entry field {key}")
         elif field == "modeFrequency":
@@ -756,9 +794,9 @@ def test_fixture(row):
     assert m.sample_rate == row["sampleRate"]
     assert m.is_comparison == row["isComparison"]
     assert sorted((m.peak_mode_overrides or {}).values()) == sorted(row["overrideLabels"])
-    peak_ids = {p.id.lower() for p in m.peaks}
+    peak_ids = {p.id for p in m.peaks}
     for peak_id in (m.peak_mode_overrides or {}):
-        assert peak_id.lower() in peak_ids, "the override names a peak the file contains"
+        assert peak_id in peak_ids, "the override names a peak the file contains"
 
     text = measurements_to_json(ms)
     doc = json.loads(text)

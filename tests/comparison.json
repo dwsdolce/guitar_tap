@@ -89,51 +89,6 @@
     }
    }
   ],
-  "With": [
-   {
-    "id": "00000000-0000-0000-0000-000000000C07",
-    "timestamp": "2026-01-01T00:00:00Z",
-    "peaks": [],
-    "measurementName": "With",
-    "spectrumSnapshot": {
-     "frequencies": [
-      100.0,
-      200.0,
-      300.0,
-      400.0
-     ],
-     "magnitudes": [
-      -40.0,
-      -35.0,
-      -45.0,
-      -50.0
-     ],
-     "minFreq": 80,
-     "maxFreq": 1200,
-     "minDB": -90,
-     "maxDB": -10,
-     "isLogarithmic": false,
-     "measurementType": "Generic Guitar",
-     "guitarType": "Generic"
-    }
-   }
-  ],
-  "Without": [
-   {
-    "id": "00000000-0000-0000-0000-000000000C08",
-    "timestamp": "2026-01-01T00:00:00Z",
-    "peaks": [],
-    "measurementName": "Without"
-   }
-  ],
-  "Without2": [
-   {
-    "id": "00000000-0000-0000-0000-000000000C09",
-    "timestamp": "2026-01-01T00:00:00Z",
-    "peaks": [],
-    "measurementName": "Without 2"
-   }
-  ],
   "M1": [
    {
     "id": "00000000-0000-0000-0000-000000000C0A",
@@ -413,23 +368,6 @@
    }
   },
   {
-   "id": "CM3",
-   "note": "a measurement without a spectrum is left out",
-   "steps": [
-    {
-     "compare": [
-      "With",
-      "Without"
-     ]
-    }
-   ],
-   "expect": {
-    "labels": [
-     "With"
-    ]
-   }
-  },
-  {
    "id": "CM4",
    "note": "more entries than series colours: the colours wrap",
    "steps": [
@@ -499,22 +437,6 @@
     },
     {
      "compare": []
-    }
-   ],
-   "expect": {
-    "entries": 0,
-    "mode": "live"
-   }
-  },
-  {
-   "id": "CM8",
-   "note": "comparing only measurements without spectra stays live",
-   "steps": [
-    {
-     "compare": [
-      "Without",
-      "Without2"
-     ]
     }
    ],
    "expect": {
@@ -768,7 +690,8 @@
     },
     {
      "compare": [
-      "source"
+      "source",
+      "A"
      ]
     },
     {

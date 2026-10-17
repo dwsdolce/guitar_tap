@@ -400,13 +400,6 @@
     "selectedCrossPeakID": "00000000-0000-0000-0000-000000000D02",
     "selectedFlcPeakID": "00000000-0000-0000-0000-000000000D03"
    }
-  ],
-  "no-spectrum": [
-   {
-    "id": "00000000-0000-0000-0000-000000000D12",
-    "timestamp": "2026-01-01T00:00:00Z",
-    "peaks": []
-   }
   ]
  },
  "scenarios": [
@@ -425,18 +418,6 @@
      -75.5,
      -61.25
     ]
-   }
-  },
-  {
-   "id": "DR2",
-   "note": "loading a measurement with no spectrum publishes the saved range",
-   "steps": [
-    {
-     "load": "no-spectrum"
-    }
-   ],
-   "expect": {
-    "loadedRange": "saved"
    }
   },
   {

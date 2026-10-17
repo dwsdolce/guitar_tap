@@ -44,6 +44,7 @@ This file (tap_tone_analyzer.py) contains:
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from typing import NamedTuple, Callable
 
@@ -352,6 +353,11 @@ class TapToneAnalyzer(
         self.identified_modes: list = []                                   # mirrors identifiedModes
         self._current_decay_time: "float | None" = None                   # mirrors currentDecayTime
         self.saved_measurements: list = []                                 # mirrors savedMeasurements
+        # The library could not be read at launch and was kept aside: the message, shown once by the view
+        # and cleared (Swift libraryLoadFailure); and whether it could not be kept aside either, so the
+        # library is not written this session (Swift isLibraryWriteBlocked).
+        self.library_load_failure: str | None = None
+        self.is_library_write_blocked: bool = False
 
         # MARK: - Detection State
         # mirrors detectionState; is_detecting / is_detection_paused derive from it
@@ -1337,13 +1343,26 @@ class TapToneAnalyzer(
         self.mic._start_hotplug_monitor()
 
     def load_persisted_measurements(self) -> None:
-        """Load the saved measurements. Mirrors Swift ``loadPersistedMeasurements()``, called from init."""
-        from guitar_tap.views.tap_analysis_results_view import load_all_measurements as _load
-        self.saved_measurements = _load()
-        if self.saved_measurements:
-            gt_log(f"📂 Loaded {len(self.saved_measurements)} persisted measurements")
-        else:
+        """Load the saved measurements. Mirrors Swift ``loadPersistedMeasurements()``, called from init.
+
+        A library that cannot be read is kept aside, not written over — see
+        ``_set_aside_unreadable_library``."""
+        from guitar_tap.views.tap_analysis_results_view import measurements_file, measurements_from_json
+
+        path = measurements_file()
+        if not os.path.exists(path):
             gt_log("📂 No persisted measurements file found")
+            self.saved_measurements = []
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                self.saved_measurements = measurements_from_json(f.read())
+        except Exception as exc:
+            gt_log(f"❌ Failed to load persisted measurements: {exc}")
+            self.saved_measurements = []
+            self._set_aside_unreadable_library(path)
+            return
+        gt_log(f"📂 Loaded {len(self.saved_measurements)} persisted measurements")
 
         # Files written before the find_peaks duplicate fix carry one bit-identical twin per
         # capture; decoding repairs them in memory. The library is ours, so write the corrected
@@ -1356,6 +1375,34 @@ class TapToneAnalyzer(
                 f"🩹 Healed duplicate peaks in {healed_count} saved measurement(s) — forcing a save"
             )
             self._persist_measurements()
+
+    def _set_aside_unreadable_library(self, path: str) -> None:
+        """The library could not be read. It is kept — renamed ``<name>-unreadable-<date and time>.json``
+        beside itself — so no save writes over it, the library starts empty, and the user is told once
+        where it is: fixing the file and renaming it back restores it. If it cannot be renamed it stays
+        where it is and the library is not written this session. Mirrors Swift
+        ``setAsideUnreadableLibrary(at:)``."""
+        stem = os.path.splitext(os.path.basename(path))[0]
+        kept = os.path.join(os.path.dirname(path),
+                            f"{stem}-unreadable-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json")
+        try:
+            os.rename(path, kept)
+            gt_log(f"📂 Unreadable library kept as {kept}")
+            self.library_load_failure = self._unreadable_library_message(kept, path)
+        except OSError as exc:
+            gt_log(f"❌ Could not keep the unreadable library aside: {exc} — the library is not written this session")
+            self.is_library_write_blocked = True
+            self.library_load_failure = self._unreadable_library_message(path, path)
+
+    @staticmethod
+    def _unreadable_library_message(kept: str, original: str) -> str:
+        """The message for a library that could not be read and was kept as *kept*. Mirrors Swift
+        ``unreadableLibraryMessage(keptAs:original:)``."""
+        if kept == original:
+            return (f"Your saved measurements could not be read. The file was left as it is at {kept}, "
+                    "and new measurements will not be saved to it until it can be read.")
+        return (f"Your saved measurements could not be read, so the library starts empty. The file was kept "
+                f"as {kept} — fix it and rename it back to {os.path.basename(original)} to restore it.")
 
     def start(self) -> None:
         """Start the engine, anchor the warm-up and, one main-loop pass later, make the guarded

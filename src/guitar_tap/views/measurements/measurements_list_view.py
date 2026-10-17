@@ -397,7 +397,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
+            QtWidgets.QMessageBox.warning(self, "Export Failed", M.export_failure_message(exc, path))
 
     def _export_all(self) -> None:
         """Export the whole library to a chosen `.guitartap` file — the same content as the
@@ -421,7 +421,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(M.measurements_to_json(self._measurements))
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
+            QtWidgets.QMessageBox.warning(self, "Export Failed", M.export_failure_message(exc, path))
 
     def _export_spectrum(self, m: TapToneMeasurement) -> None:
         """Export the spectrum PNG for *m* — mirrors Swift exportSpectrumMeasurement(_:).
@@ -446,16 +446,15 @@ class MeasurementsDialog(QtWidgets.QDialog):
             else:
                 png_data = M.render_spectrum_image_for_measurement(m)
         except ExportRenderError as exc:
-            QtWidgets.QMessageBox.warning(self, "Export Failed", str(exc))
+            QtWidgets.QMessageBox.warning(self, "Export Failed", M.export_failure_message(exc, path))
             return
         if png_data is None:
-            QtWidgets.QMessageBox.warning(self, "Export Error", "This measurement has no spectrum snapshot.")
             return
         try:
             with open(path, "wb") as f:
                 f.write(png_data)
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
+            QtWidgets.QMessageBox.warning(self, "Export Failed", M.export_failure_message(exc, path))
 
     def _export_pdf(self, m: TapToneMeasurement) -> None:
         """Export the measurement's PDF report (``export_report_for_measurement`` picks the report for
@@ -472,7 +471,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         try:
             M.export_report_for_measurement(m, path)
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
+            QtWidgets.QMessageBox.warning(self, "Export Failed", M.export_failure_message(exc, path))
 
     def _delete_measurement(self, index: int, m: TapToneMeasurement) -> None:
         name = m.measurement_name or "Measurement"
@@ -531,6 +530,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
             # Swift importAndLoadMeasurements(from:). The main view follows the load by signal.
             msg = self._analyzer.import_and_load_measurements(data)
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Import Error", str(exc))
+            QtWidgets.QMessageBox.warning(
+                self, "Import Error", self._analyzer.import_error_message(exc, os.path.basename(path)))
             return
         QtWidgets.QMessageBox.information(self, "Import Successful", msg)

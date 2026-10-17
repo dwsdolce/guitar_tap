@@ -42,7 +42,8 @@ from datetime import datetime, timezone
 import numpy as np
 import numpy.typing as npt
 from PySide6 import QtCore
-from guitar_tap.utilities.new_uuid import new_uuid
+from guitar_tap.utilities.logging import gt_log
+from guitar_tap.utilities.new_uuid import InvalidIdError, new_uuid, parse_uuid, uuid_text
 
 # MARK: - CalibrationFileParser (module-level helpers)
 # Mirrors Swift CalibrationFileParser struct.
@@ -310,7 +311,7 @@ class MicrophoneCalibration:
 
     # MARK: - Properties
 
-    id: str                           # UUID string — mirrors Swift MicrophoneCalibration.id (UUID).
+    id: _uuid.UUID                    # Mirrors Swift MicrophoneCalibration.id (UUID).
     name: str                         # Human-readable display name (filename stem by default).
     sensitivity_factor: float | None  # From "Sens Factor" header, in dB.  None if absent.
     reference_level: float | None     # From "SESSION REF" / "SPL" header, in dBSPL.  None if absent.
@@ -374,7 +375,7 @@ class MicrophoneCalibration:
         Mirrors Swift MicrophoneCalibration Codable conformance.
         """
         return {
-            "id": self.id,
+            "id": uuid_text(self.id),
             "name": self.name,
             "sensitivityFactor": self.sensitivity_factor,
             "referenceLevel": self.reference_level,
@@ -397,7 +398,7 @@ class MicrophoneCalibration:
             correction_points = raw_points
 
         return cls(
-            id=d["id"],
+            id=parse_uuid(d.get("id"), "calibration id"),
             name=d["name"],
             sensitivity_factor=d.get("sensitivityFactor"),
             reference_level=d.get("referenceLevel"),
@@ -508,7 +509,20 @@ class CalibrationStorage:
         try:
             return [MicrophoneCalibration.from_dict(d) for d in _json.loads(raw)]
         except Exception:
+            cls._set_aside_unreadable(raw)
             return []
+
+    @classmethod
+    def _set_aside_unreadable(cls, raw) -> None:
+        """The stored calibrations could not be read. They are moved to ``<key>-unreadable-<date and
+        time>``, so no later save writes over them, and the list starts empty; a calibration can be
+        imported again. Mirrors Swift ``setAsideUnreadableCalibrations(_:)``."""
+        from datetime import datetime
+        kept_key = f"{cls._STORAGE_KEY}-unreadable-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        s = cls._s()
+        s.setValue(kept_key, raw)
+        s.remove(cls._STORAGE_KEY)
+        gt_log(f"❌ Stored calibrations could not be read — kept as {kept_key}; the list starts empty")
 
     @classmethod
     def delete(cls, calibration: MicrophoneCalibration) -> None:
@@ -524,22 +538,22 @@ class CalibrationStorage:
     # MARK: - Global Active Calibration
 
     @classmethod
-    def active_calibration_id(cls) -> "str | None":
+    def active_calibration_id(cls) -> "_uuid.UUID | None":
         """The UUID string of the global active calibration, persisted in QSettings.
 
         Mirrors Swift CalibrationStorage.activeCalibrationID.
         """
-        return cls._s().value(cls._ACTIVE_KEY, None) or None
+        return _uuid_or_none(cls._s().value(cls._ACTIVE_KEY, None))
 
     @classmethod
-    def set_active_calibration_id(cls, id_str: "str | None") -> None:
+    def set_active_calibration_id(cls, cal_id: "_uuid.UUID | None") -> None:
         """Set or clear the global active calibration UUID.
 
         Mirrors Swift CalibrationStorage.activeCalibrationID setter.
         """
         s = cls._s()
-        if id_str:
-            s.setValue(cls._ACTIVE_KEY, id_str)
+        if cal_id:
+            s.setValue(cls._ACTIVE_KEY, uuid_text(cal_id))
         else:
             s.remove(cls._ACTIVE_KEY)
 
@@ -561,7 +575,7 @@ class CalibrationStorage:
 
     @classmethod
     def set_calibration_for_device(
-        cls, device_name: str, cal_id: "str | None"
+        cls, device_name: str, cal_id: "_uuid.UUID | None"
     ) -> None:
         """Associate a calibration UUID with a device name (or clear it).
 
@@ -572,7 +586,7 @@ class CalibrationStorage:
         """
         mapping = cls._load_device_map()
         if cal_id:
-            mapping[device_name] = cal_id
+            mapping[device_name] = uuid_text(cal_id)
         else:
             mapping.pop(device_name, None)
         cls._s().setValue(cls._DEVICE_MAP_KEY, _json.dumps(mapping))
@@ -588,7 +602,7 @@ class CalibrationStorage:
         if not device_name:
             return None
         mapping = cls._load_device_map()
-        cal_id = mapping.get(device_name)
+        cal_id = _uuid_or_none(mapping.get(device_name))
         if not cal_id:
             return None
         return next((c for c in cls.load_all() if c.id == cal_id), None)
@@ -606,3 +620,12 @@ class CalibrationStorage:
             return _json.loads(raw)
         except Exception:
             return {}
+
+
+def _uuid_or_none(value) -> "_uuid.UUID | None":
+    """A stored calibration id read as a UUID — None when there is none or it is not one, as Swift's
+    ``UUID(uuidString:)`` gives nil."""
+    try:
+        return parse_uuid(value, "calibration id")
+    except InvalidIdError:
+        return None

@@ -80,6 +80,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         Python-only helper — Swift achieves the same effect via the
         @Published property observer + explicit save(context:) call.
         """
+        if self.is_library_write_blocked:
+            gt_log("📂 Library not written: it could not be read and is kept as it is")
+            return
         from guitar_tap.views import tap_analysis_results_view as M
         M.save_all_measurements(self.saved_measurements)
         self.savedMeasurementsChanged.emit()
@@ -102,11 +105,15 @@ class TapToneAnalyzerMeasurementManagementMixin:
         """
         import json as _json
 
+        from guitar_tap.utilities.new_uuid import InvalidIdError, NoSpectrumError
+
         from .tap_tone_measurement import TapToneMeasurement
 
         try:
             raw = _json.loads(data.decode("utf-8"))
             measurements = [TapToneMeasurement.from_dict(d) for d in raw]
+        except (InvalidIdError, NoSpectrumError):
+            raise  # says why, for the import's message
         except Exception as exc:
             raise ValueError(
                 f"import_measurements_from_data: decode failed: {exc}"
@@ -120,6 +127,21 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # microphone here, so importing an exported library warned about measurements the user had
         # not opened.) Mirrors Swift importMeasurements(from:).
         return measurements
+
+    @staticmethod
+    def import_error_message(exc: BaseException, file_name: str) -> str:
+        """The message an import that failed shows, the same in every edition: the file is not a valid
+        measurement (naming the id when that is why), the system denied access, or what went wrong.
+        Mirrors Swift ``importErrorMessage(for:fileName:)``."""
+        from guitar_tap.utilities.new_uuid import InvalidIdError, NoSpectrumError
+
+        if isinstance(exc, (InvalidIdError, NoSpectrumError)):
+            return f'Could not import "{file_name}": the file is not a valid GuitarTap measurement ({exc}).'
+        if isinstance(exc, PermissionError):
+            return f'Could not read "{file_name}": the system denied access (error {exc.errno}).'
+        if isinstance(exc, (ValueError, KeyError, TypeError, AttributeError, IndexError)):
+            return f'Could not import "{file_name}": the file is not a valid GuitarTap measurement.'
+        return f'Could not import "{file_name}": {exc}'
 
     def import_and_load_measurements(self, data: bytes) -> str:
         """Import a ``.guitartap`` file and return the one message the user sees for it.
@@ -662,7 +684,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 spectra.append(("Diagonal (fLC)", _FLC, list(f_freqs), list(f_mags)))
             self.set_material_spectra(spectra)
         else:
-            # Guitar (or no-snapshot) measurement: clear any stale material spectra
+            # Guitar measurement: clear any stale material spectra
             # from a previously loaded plate/brace measurement so the canvas redraws.
             self.set_material_spectra([])
             # A loaded measurement is complete. Mark the phase complete (mirrors the
@@ -670,14 +692,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # blank a guitar spectrum loaded while the previous type was plate/brace.
             from .material_tap_phase import MaterialTapPhase
             self.material_tap_phase = MaterialTapPhase.COMPLETE
-            if measurement.spectrum_snapshot is not None:
-                snap = measurement.spectrum_snapshot
+            snap = measurement.spectrum_snapshot
+            if snap is not None:
                 self.set_frozen_spectrum(
                     np.array(snap.frequencies, dtype=np.float64),
                     np.array(snap.magnitudes, dtype=np.float64),
                 )
-            else:
-                self.set_frozen_spectrum(np.array([]), np.array([]))
 
         # ── Store loaded-measurement metadata ─────────────────────────────────
         # Mirrors Swift: loadedMeasurementName = measurement.measurementName normalized (normalizedName)
@@ -695,16 +715,16 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # The only material peak state, by id from the saved peaks. Mirrors Swift:
         #   selectedLongitudinalPeak = measurement.selectedLongitudinalPeakID
         #       .flatMap { id in measurement.peaks.first(where: { $0.id == id }) }
-        _peak_by_id = {(p.id or "").upper(): p for p in (measurement.peaks or [])}
+        _peak_by_id = {p.id: p for p in (measurement.peaks or [])}
         self.material_peaks_from_load = True
         self.selected_longitudinal_peak = (
-            _peak_by_id.get((measurement.selected_longitudinal_peak_id or "").upper())
+            _peak_by_id.get(measurement.selected_longitudinal_peak_id)
         )
         self.selected_cross_peak = (
-            _peak_by_id.get((measurement.selected_cross_peak_id or "").upper())
+            _peak_by_id.get(measurement.selected_cross_peak_id)
         )
         self.selected_flc_peak = (
-            _peak_by_id.get((measurement.selected_flc_peak_id or "").upper())
+            _peak_by_id.get(measurement.selected_flc_peak_id)
         )
         # Mirrors Swift: userSelectedLongitudinalPeakID = nil (and cross/flc)
         gt_log(f"  🔵 Restored longitudinal peak: {self.selected_longitudinal_peak.frequency if self.selected_longitudinal_peak else -1} Hz")
@@ -737,7 +757,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.peak_annotation_offsets.clear()
         ann_offsets = measurement.annotation_offsets or {}
         for p in (measurement.peaks or []):
-            _off = ann_offsets.get(p.id) or ann_offsets.get((p.id or "").upper())
+            _off = ann_offsets.get(p.id)
             if _off:
                 self.peak_annotation_offsets[p.id] = (float(_off[0]), float(_off[1]))
         gt_log(f"  🏷️ Restored {len(self.peak_annotation_offsets)} annotation offsets")

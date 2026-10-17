@@ -84,6 +84,11 @@
 
 - Quitting is clean: no warnings, Ctrl+C in a terminal closes the app like the close button, and a quit while audio is still stopping no longer crashes.
 
+### Saved Measurements and Files
+
+- If your saved measurements cannot be read when Guitar Tap starts, they are never written over: the file is kept, renamed beside itself, and Guitar Tap tells you where it is. Correct it and rename it back to restore them.
+- A measurement file is read the same way by every edition: its ids may be in upper or lower case, and a file with an id that is missing or malformed is refused with a message rather than opened in part.
+
 ---
 
 ## Bug Fixes
@@ -100,6 +105,8 @@
 - **A stray peak in the Top / Back overlap, or a brace fL near 220 Hz, was labelled Top**; it is now unknown.
 - **Measurement Details could show an out-of-date mode name** read from the file.
 - **Edit Name & Notes offered Save when nothing had changed** if the notes had spaces at either end.
+- **Play File could, rarely, freeze Guitar Tap** — and hold up the microphone for other apps until it was quit.
+- **Exporting a measurement saved by Guitar Tap 1.0.x** put its dragged labels back in their default positions.
 
 ---
 

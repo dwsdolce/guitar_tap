@@ -1413,26 +1413,6 @@
    }
   },
   {
-   "id": "PR37",
-   "note": "a measurement with no spectrum does not offer Re-analyze",
-   "steps": [
-    {
-     "load": {
-      "type": "Generic Guitar",
-      "peaks": [
-       [
-        200,
-        -20
-       ]
-      ]
-     }
-    }
-   ],
-   "expect": {
-    "canReanalyze": false
-   }
-  },
-  {
    "id": "PR37-incomplete",
    "note": "a sequence still running does not offer Re-analyze",
    "steps": [

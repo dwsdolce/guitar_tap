@@ -67,3 +67,14 @@ def test_a_chart_that_cannot_be_drawn_stops_the_export(monkeypatch):
             reports.render_spectrum_image_for_comparison(measurement)
         else:
             reports.render_spectrum_image_for_measurement(measurement)
+
+
+def test_an_export_that_fails_says_why_in_every_editions_words():
+    """The "Export Failed" alert: the chart could not be drawn (its own sentence), or the file could not
+    be saved and why. The same words as the web's exportFailureMessage."""
+    from guitar_tap.views.exportable_spectrum_chart import EXPORT_RENDER_FAILED, ExportRenderError
+    from guitar_tap.views.tap_analysis_results_view import export_failure_message
+
+    assert export_failure_message(ExportRenderError(EXPORT_RENDER_FAILED), "/x/a.png") == EXPORT_RENDER_FAILED
+    denied = PermissionError(13, "Permission denied")
+    assert export_failure_message(denied, "/x/a.png") == 'Could not save "a.png": Permission denied.'

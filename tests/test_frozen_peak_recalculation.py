@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 
 import pytest
 
@@ -43,7 +44,7 @@ class _Run:
 
     def __init__(self):
         self.next_id = 1
-        self.loaded_ids: list[str] = []
+        self.loaded_ids: list[uuid.UUID] = []
         self.marked_ids: list[str] = []
         self.marked_selection: set = set()
         self.marked_tap_entries: list = []
@@ -100,7 +101,7 @@ def _document(load: dict, run: _Run) -> dict:
             entries.append({"id": run.new_id(), "tapIndex": i + 1, "snapshot": snap, "peaks": epeaks,
                             "selectedPeakIDs": [_id(hz, eids) for hz in e["selected"]]})
         doc["tapEntries"] = entries
-    run.loaded_ids = [pid for _, pid in ids]
+    run.loaded_ids = [uuid.UUID(pid) for _, pid in ids]
     return doc
 
 

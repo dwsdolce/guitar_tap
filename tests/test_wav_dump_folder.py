@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import pytest
 from PySide6 import QtWidgets
 
+from guitar_tap.utilities.new_uuid import new_uuid
 from guitar_tap.models.wav_dump_folder import WavDumpFolder
 
 
@@ -262,7 +263,6 @@ def test_saving_turned_on_after_the_first_tap_takes_effect_from_the_next_sequenc
 def test_loading_a_measurement_ends_the_recording():
     from guitar_tap.models.tap_display_settings import TapDisplaySettings
     from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
-    import uuid
 
     from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
     saved = TapDisplaySettings.dump_capture_audio()
@@ -275,7 +275,7 @@ def test_loading_a_measurement_ends_the_recording():
             sut._maintain_session_recording(_chunk())
         assert sut._session_recording_buffer
         sut.load_measurement(TapToneMeasurement(
-            id=str(uuid.uuid4()), timestamp="2026-01-01T00:00:00Z", peaks=[]))
+            id=new_uuid(), timestamp="2026-01-01T00:00:00Z", peaks=[]))
         assert not sut._is_session_recording
         assert sut._session_recording_buffer == []
         # Audio after the load is not kept.

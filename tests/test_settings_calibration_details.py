@@ -45,7 +45,8 @@ def test_details_follow_the_calibration_picker(qtbot, window):  # noqa: F811
         seen["opened"] = _details(dlg)
         combo.setCurrentIndex(0)                       # None
         seen["none"] = _details(dlg)
-        combo.setCurrentIndex(combo.findData(cal.id))  # the calibration again
+        # By equality, as the view does: Qt's findData matches a Python object only by identity.
+        combo.setCurrentIndex(next(i for i in range(combo.count()) if combo.itemData(i) == cal.id))  # the calibration again
         seen["chosen"] = _details(dlg)
         dlg.reject()
 

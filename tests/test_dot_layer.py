@@ -21,13 +21,13 @@ from __future__ import annotations
 import sys
 import os
 
-import uuid
 
 import pytest
 from PySide6 import QtWidgets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from guitar_tap.utilities.new_uuid import new_uuid
 from guitar_tap.models.guitar_mode import GuitarMode
 from guitar_tap.models.guitar_type import GuitarType
 from guitar_tap.models.measurement_type import MeasurementType
@@ -53,7 +53,7 @@ def _make_sut():
 
 def _make_peak_live(freq: float = 200.0, mag: float = -20.0) -> ResonantPeak:
     return ResonantPeak(
-        id=str(uuid.uuid4()),
+        id=new_uuid(),
         frequency=freq,
         magnitude=mag,
         quality=10.0,

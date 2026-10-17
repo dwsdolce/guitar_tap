@@ -36,7 +36,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
     accessing the underlying data model.
     """
 
-    annotationUpdate: QtCore.Signal = QtCore.Signal(str, float, float, str, str)  # (peak_id, freq, mag, html, mode_str)
+    annotationUpdate: QtCore.Signal = QtCore.Signal(object, float, float, str, str)  # (peak_id, freq, mag, html, mode_str)
     annotationsRefreshed: QtCore.Signal = QtCore.Signal()  # fired once after a batch of annotationUpdate emissions
     clearAnnotations: QtCore.Signal = QtCore.Signal()
     hideAnnotations: QtCore.Signal = QtCore.Signal()
@@ -45,12 +45,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
     # A USER per-peak show/selection toggle, carrying the peak id, so the view can route it to
     # the analyzer (mirrors Swift onToggleSelection -> togglePeakSelection). NOT emitted for
     # programmatic bulk updates (select_all/deselect_all).
-    selectionToggled: QtCore.Signal = QtCore.Signal(str)
+    selectionToggled: QtCore.Signal = QtCore.Signal(object)
     # A USER mode-override change carrying (peak_id, new_label); "" = reset to auto. The view routes
     # it to analyzer.set_mode_override (mirrors selectionToggled -> toggle_peak_selection), so the
     # definitive-mode uniqueness enforcement runs. Qt is imperative: SwiftUI binds the change to
     # setModeOverride reactively; Python must forward it. NOT emitted for programmatic/bulk updates.
-    modeOverrideChanged: QtCore.Signal = QtCore.Signal(str, str)
+    modeOverrideChanged: QtCore.Signal = QtCore.Signal(object, str)
     modeColorsChanged: QtCore.Signal = QtCore.Signal(object)  # dict[float, tuple[int,int,int]]
 
     mode_strings: list[str] = [

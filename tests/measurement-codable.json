@@ -1,6 +1,6 @@
 {
  "slug": "test/measurement-codable",
- "about": "A saved measurement's own logic — the same cases in every edition. Every case is a classical guitar measurement (guitarType 'Classical', measurementType 'Classical Guitar') holding 'peaks' (id, frequency in Hz, magnitude in dB), the 'selected' peak ids (null: no selection saved — a legacy file; []: Select None) and mode 'overrides' (peak id → label). tapToneRatio: the measurement's ratio, f(Top) / f(Air) over the definitive peaks — 'expect' within 'ratioTolerance', or null for none; 'live' rows are also given to a live analyzer with the same peaks, selection and overrides, which must give the same ratio. modeLabels: the label each peak is written with, in peak order — and the label the measurement gives it for display (the Details pane's), which must be the same; 'storedLabels' are labels the file already carries. selectionHeal: the measurement written and read back — whether the read flags it healed, and the selection it holds; 'material' rows are a material measurement (a longitudinal snapshot, no guitar spectrum). Expected values are Swift's. snapshotBytes: the spectrum written as base64 'frequenciesData' / 'magnitudesData' — exact text — and read back to the same float32 values. decode: a 'file' (the .guitartap array) and the fields it must read to: measurementName, peakMinThreshold, sampleRate (null: unknown), the snapshot's frequencies and magnitudes, overrides (peak id → label, ids compared ignoring case; {} for none), peakCount, the first peak's pitchNote, annotationVisibilityMode. write: a 'file' read and written again by the edition's writer — the keys that must be 'present' and 'absent' (a key anywhere in the document; 'peaks[].modeLabel' on every peak), the exact number 'text' written for a key, and text the output 'contains' once compact. fixtures: the real files every edition carries — each read to the facts given (the first measurement's name, peak count, sample rate, whether it is a comparison, its override labels), each override naming a peak the file contains, written again with no legacy key and with the spectrum's 'frequenciesData' / 'magnitudesData' exactly as the file has them, and read back with the same peaks and spectrum. comparison: a 'file' holding a comparison record, read (and, with 'roundTrip', written by the edition's writer and read again); 'expect' — 'isComparison', 'healed' (the reading healed something and flags the record to be saved again), 'entries' (per entry, in order, the fields named: id, label, colorComponents, guitarType — null for none — peakCount, modePeakIds: the stored map, mode display name → peak id, ids compared ignoring case; or null for no entries), 'modeFrequency' (the first entry's stored modes read back as frequencies), 'absent' (keys the written document does not contain).",
+ "about": "A saved measurement's own logic — the same cases in every edition. Every case is a classical guitar measurement (guitarType 'Classical', measurementType 'Classical Guitar') holding 'peaks' (id, frequency in Hz, magnitude in dB), the 'selected' peak ids (null: no selection saved — a legacy file; []: Select None) and mode 'overrides' (peak id → label). tapToneRatio: the measurement's ratio, f(Top) / f(Air) over the definitive peaks — 'expect' within 'ratioTolerance', or null for none; 'live' rows are also given to a live analyzer with the same peaks, selection and overrides, which must give the same ratio. modeLabels: the label each peak is written with, in peak order — and the label the measurement gives it for display (the Details pane's), which must be the same; 'storedLabels' are labels the file already carries. selectionHeal: the measurement written and read back — whether the read flags it healed, and the selection it holds; 'material' rows are a material measurement (a longitudinal snapshot, no guitar spectrum). Expected values are Swift's. snapshotBytes: the spectrum written as base64 'frequenciesData' / 'magnitudesData' — exact text — and read back to the same float32 values. decode: a 'file' (the .guitartap array) and the fields it must read to: measurementName, peakMinThreshold, sampleRate (null: unknown), the snapshot's frequencies and magnitudes, overrides (peak id → label, ids compared ignoring case; {} for none), peakCount, the first peak's pitchNote, annotationVisibilityMode; or 'rejected' — the file cannot be read (a measurement with no spectrum: no guitar spectrum, no plate/brace longitudinal one, or a comparison of fewer than two entries — and a spectrum with no points, or with frequencies and magnitudes that differ in number, is no spectrum, a comparison entry's included). write: a 'file' read and written again by the edition's writer — the keys that must be 'present' and 'absent' (a key anywhere in the document; 'peaks[].modeLabel' on every peak), the exact number 'text' written for a key, and text the output 'contains' once compact. fixtures: the real files every edition carries — each read to the facts given (the first measurement's name, peak count, sample rate, whether it is a comparison, its override labels), each override naming a peak the file contains, written again with no legacy key and with the spectrum's 'frequenciesData' / 'magnitudesData' exactly as the file has them, and read back with the same peaks and spectrum. comparison: a 'file' holding a comparison record, read (and, with 'roundTrip', written by the edition's writer and read again); 'expect' — 'isComparison', 'healed' (the reading healed something and flags the record to be saved again), 'entries' (per entry, in order, the fields named: id, label, colorComponents, guitarType — null for none — peakCount, modePeakIds: the stored map, mode display name → peak id, ids compared ignoring case; or null for no entries), 'modeFrequency' (the first entry's stored modes read back as frequencies), 'absent' (keys the written document does not contain). ids: the rule for ids — every id is a UUID (RFC 9562): read in either case and compared as the same id, written uppercase, and a file holding one that is missing or not in the hyphenated 8-4-4-4-12 form cannot be read. A 'file' read by the edition's reader; 'rejected': the reading fails; otherwise 'expect' — 'selectedFrequencies' (the selected peaks, by frequency), 'overrideLabels' (frequency → the mode name on that peak), 'offsets' (frequency → the label position for that peak, [Hz, dB]), 'writtenLowercaseIds' (written again by the edition's writer: how many UUID-form strings in it hold a lowercase letter).",
  "guitarType": "Classical",
  "measurementType": "Classical Guitar",
  "ratioTolerance": 1e-06,
@@ -478,7 +478,24 @@
      "id": "00000000-0000-0000-0000-0000000000AA",
      "timestamp": "2026-01-01T00:00:00Z",
      "peaks": [],
-     "tapLocation": "Contreras Classical"
+     "tapLocation": "Contreras Classical",
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
@@ -493,7 +510,24 @@
      "id": "00000000-0000-0000-0000-0000000000AA",
      "timestamp": "2026-01-01T00:00:00Z",
      "peaks": [],
-     "peakThreshold": -78
+     "peakThreshold": -78,
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
@@ -509,7 +543,24 @@
      "timestamp": "2026-01-01T00:00:00Z",
      "peaks": [],
      "peakMinThreshold": -60,
-     "peakThreshold": -78
+     "peakThreshold": -78,
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
@@ -523,7 +574,24 @@
     {
      "id": "00000000-0000-0000-0000-0000000000AA",
      "timestamp": "2026-01-01T00:00:00Z",
-     "peaks": []
+     "peaks": [],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
@@ -592,6 +660,23 @@
        "type": "assigned",
        "label": "Back"
       }
+     },
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
      }
     }
    ],
@@ -625,7 +710,24 @@
        "label": "Top"
       }
      ],
-     "peakMinThreshold": -60.0
+     "peakMinThreshold": -60.0,
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
@@ -657,7 +759,24 @@
       {
        "type": "auto"
       }
-     ]
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
@@ -680,7 +799,24 @@
        "bandwidth": 9.521484,
        "timestamp": "2026-01-01T00:00:00Z"
       }
-     ]
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
@@ -695,12 +831,351 @@
     {
      "id": "00000000-0000-0000-0000-0000000000AA",
      "timestamp": "2026-01-01T00:00:00Z",
-     "peaks": []
+     "peaks": [],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
     "annotationVisibilityMode": null
    }
+  },
+  {
+   "id": "DC11",
+   "note": "a measurement with no spectrum cannot be read: no edition saves one",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-0000000000B1",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": []
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "DC12",
+   "note": "a guitar measurement's spectrum makes it readable",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-0000000000B2",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "expect": {
+    "peakCount": 0
+   }
+  },
+  {
+   "id": "DC13",
+   "note": "a plate or brace's spectrum is its longitudinal one: readable without a guitar spectrum",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-0000000000B3",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "longitudinalSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "expect": {
+    "peakCount": 0
+   }
+  },
+  {
+   "id": "DC14",
+   "note": "a comparison of one entry cannot be read: comparing takes at least two",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F21",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "measurementName": "Pair",
+     "comparisonEntries": [
+      {
+       "id": "00000000-0000-0000-0000-000000000F11",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F02",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
+        "Top": "00000000-0000-0000-0000-000000000F02"
+       }
+      }
+     ]
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "DC15",
+   "note": "an empty spectrum is no spectrum: a measurement whose spectrum has no points cannot be read",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-0000000000B2",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "spectrumSnapshot": {
+      "frequencies": [],
+      "magnitudes": [],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false,
+      "guitarType": "Classical",
+      "measurementType": "Classical Guitar"
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "DC16",
+   "note": "frequencies and magnitudes that differ in number are not a spectrum: the measurement cannot be read",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-0000000000B3",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0
+      ],
+      "magnitudes": [
+       -60.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false,
+      "guitarType": "Classical",
+      "measurementType": "Classical Guitar"
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "DC17",
+   "note": "a plate/brace whose longitudinal spectrum has no points has no spectrum: it cannot be read",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-0000000000B4",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "longitudinalSnapshot": {
+      "frequencies": [],
+      "magnitudes": [],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false,
+      "guitarType": "Classical",
+      "measurementType": "Plate"
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "DC18",
+   "note": "a comparison is its entries' spectra: one with an entry whose spectrum has no points cannot be read",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F22",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "measurementName": "Pair",
+     "comparisonEntries": [
+      {
+       "id": "00000000-0000-0000-0000-000000000F11",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F02",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
+        "Top": "00000000-0000-0000-0000-000000000F02"
+       }
+      },
+      {
+       "id": "00000000-0000-0000-0000-000000000F12",
+       "label": "B",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [],
+        "magnitudes": [],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F02",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
+        "Top": "00000000-0000-0000-0000-000000000F02"
+       }
+      }
+     ]
+    }
+   ],
+   "rejected": true
   }
  ],
  "write": [
@@ -715,7 +1190,24 @@
      "tapLocation": "Old Name",
      "peakThreshold": -78,
      "hysteresisMargin": 3,
-     "maxPeaks": 10
+     "maxPeaks": 10,
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "present": [
@@ -736,7 +1228,24 @@
     {
      "id": "00000000-0000-0000-0000-0000000000AA",
      "timestamp": "2026-01-01T00:00:00Z",
-     "peaks": []
+     "peaks": [],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "present": [],
@@ -766,7 +1275,24 @@
        "timestamp": "2026-01-01T00:00:00Z"
       }
      ],
-     "tapDetectionThreshold": -49.03759765625
+     "tapDetectionThreshold": -49.03759765625,
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "present": [
@@ -804,7 +1330,24 @@
        "type": "assigned",
        "label": "Top"
       }
-     ]
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "present": [
@@ -1189,6 +1732,44 @@
        "modePeakIDs": {
         "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01"
        }
+      },
+      {
+       "id": "00000000-0000-0000-0000-000000000101",
+       "label": "A 2",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000102",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000102"
+       }
       }
      ]
     }
@@ -1201,7 +1782,8 @@
     "entries": [
      {
       "guitarType": null
-     }
+     },
+     {}
     ]
    }
   },
@@ -1260,6 +1842,52 @@
         }
        ],
        "guitarType": "Classical"
+      },
+      {
+       "id": "00000000-0000-0000-0000-000000000103",
+       "label": "legacy 2",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000104",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000105",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical"
       }
      ]
     }
@@ -1272,7 +1900,8 @@
        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
        "Top": "00000000-0000-0000-0000-000000000F02"
       }
-     }
+     },
+     {}
     ]
    }
   },
@@ -1334,6 +1963,55 @@
        "modePeakIDs": {
         "Top": "00000000-0000-0000-0000-000000000F01"
        }
+      },
+      {
+       "id": "00000000-0000-0000-0000-000000000106",
+       "label": "x 2",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000107",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000108",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Top": "00000000-0000-0000-0000-000000000107"
+       }
       }
      ]
     }
@@ -1351,13 +2029,1985 @@
     {
      "id": "00000000-0000-0000-0000-000000000F25",
      "timestamp": "2026-01-01T00:00:00Z",
-     "peaks": []
+     "peaks": [],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
     }
    ],
    "expect": {
     "isComparison": false,
     "entries": null
    }
+  }
+ ],
+ "ids": [
+  {
+   "id": "ID1",
+   "note": "a file whose ids are all lowercase — as Python wrote them before 2026-09-20 — reads with its selection, mode name and label position on their peak, and is written back uppercase",
+   "file": [
+    {
+     "id": "5e2a8c7d-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5e2a8c7d-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5e2a8c7d-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5e2a8c7d-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5e2a8c7d-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5e2a8c7d-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "expect": {
+    "selectedFrequencies": [
+     210
+    ],
+    "overrideLabels": {
+     "210": "Fred"
+    },
+    "offsets": {
+     "210": [
+      215,
+      -15
+     ]
+    },
+    "writtenLowercaseIds": 0
+   }
+  },
+  {
+   "id": "ID2",
+   "note": "ids that differ only in case still match: lowercase selection and mode-name key against uppercase peak ids, a lowercase measurement id",
+   "file": [
+    {
+     "id": "5e2a8c7d-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5e2a8c7d-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5e2a8c7d-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "expect": {
+    "selectedFrequencies": [
+     210
+    ],
+    "overrideLabels": {
+     "210": "Fred"
+    },
+    "offsets": {
+     "210": [
+      215,
+      -15
+     ]
+    },
+    "writtenLowercaseIds": 0
+   }
+  },
+  {
+   "id": "ID3",
+   "note": "a measurement id that is not a UUID: the file cannot be read",
+   "file": [
+    {
+     "id": "not-a-uuid",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID4",
+   "note": "a measurement with no id: the file cannot be read",
+   "file": [
+    {
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID5",
+   "note": "a peak id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "not-a-uuid",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID6",
+   "note": "a selected peak id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "not-a-uuid"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID7",
+   "note": "a plate/brace peak id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "selectedLongitudinalPeakID": "not-a-uuid",
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID8",
+   "note": "a mode-name key that is not a UUID, in the flat [key, value, …] form",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "not-a-uuid",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID9",
+   "note": "a mode-name key that is not a UUID, in the {key: value} form older writers used",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": {
+      "not-a-uuid": {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     },
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID10",
+   "note": "a label-position key that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "not-a-uuid",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID11",
+   "note": "a label-position key that is not a UUID, its value a legacy form that would itself be dropped: the key is still an id",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "not-a-uuid",
+      {
+       "hzOffset": 5,
+       "dbOffset": 3
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID12",
+   "note": "control: a tap entry with UUIDs reads",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "tapEntries": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000004",
+       "tapIndex": 1,
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-000000000001",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "selectedPeakIDs": [
+        "5E2A8C7D-0000-4000-8000-000000000001"
+       ]
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "expect": {
+    "selectedFrequencies": [
+     210
+    ]
+   }
+  },
+  {
+   "id": "ID13",
+   "note": "a tap entry id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "tapEntries": [
+      {
+       "id": "not-a-uuid",
+       "tapIndex": 1,
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-000000000001",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "selectedPeakIDs": [
+        "5E2A8C7D-0000-4000-8000-000000000001"
+       ]
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID14",
+   "note": "a tap entry's peak id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "tapEntries": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000004",
+       "tapIndex": 1,
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "not-a-uuid",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "selectedPeakIDs": [
+        "5E2A8C7D-0000-4000-8000-000000000001"
+       ]
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID15",
+   "note": "a tap entry's selected peak id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "tapEntries": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000004",
+       "tapIndex": 1,
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-000000000001",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "selectedPeakIDs": [
+        "not-a-uuid"
+       ]
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID16",
+   "note": "control: a comparison entry with UUIDs reads",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "comparisonEntries": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000005",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-000000000001",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "5E2A8C7D-0000-4000-8000-000000000001"
+       },
+       "sourceMeasurementID": "5E2A8C7D-0000-4000-8000-000000000006"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-0000000000E7",
+       "label": "B",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-0000000000E8",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical"
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "selectedFrequencies": [
+     210
+    ]
+   }
+  },
+  {
+   "id": "ID17",
+   "note": "a comparison entry id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "comparisonEntries": [
+      {
+       "id": "not-a-uuid",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-000000000001",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "5E2A8C7D-0000-4000-8000-000000000001"
+       },
+       "sourceMeasurementID": "5E2A8C7D-0000-4000-8000-000000000006"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-0000000000E7",
+       "label": "B",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-0000000000E8",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical"
+      }
+     ]
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID18",
+   "note": "a comparison entry's source measurement id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "comparisonEntries": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000005",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-000000000001",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "5E2A8C7D-0000-4000-8000-000000000001"
+       },
+       "sourceMeasurementID": "not-a-uuid"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-0000000000E7",
+       "label": "B",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-0000000000E8",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical"
+      }
+     ]
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID19",
+   "note": "a comparison entry's mode peak id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "comparisonEntries": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000005",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-000000000001",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "not-a-uuid"
+       },
+       "sourceMeasurementID": "5E2A8C7D-0000-4000-8000-000000000006"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-0000000000E7",
+       "label": "B",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-0000000000E8",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical"
+      }
+     ]
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID20",
+   "note": "a comparison entry's peak id that is not a UUID",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "comparisonEntries": [
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000005",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "not-a-uuid",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "5E2A8C7D-0000-4000-8000-000000000001"
+       },
+       "sourceMeasurementID": "5E2A8C7D-0000-4000-8000-000000000006"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-0000000000E7",
+       "label": "B",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "5E2A8C7D-0000-4000-8000-0000000000E8",
+         "frequency": 95,
+         "magnitude": -28,
+         "quality": 20,
+         "bandwidth": 10,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical"
+      }
+     ]
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID21",
+   "note": "only the hyphenated 8-4-4-4-12 form is a UUID here, as Swift reads one: in braces it is not",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "{5E2A8C7D-0000-4000-8000-000000000001}",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID22",
+   "note": "nor without its hyphens",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "5E2A8C7D000040008000000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
+  },
+  {
+   "id": "ID23",
+   "note": "nor as a urn:uuid: name",
+   "file": [
+    {
+     "id": "5E2A8C7D-0000-4000-8000-000000000003",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [
+      {
+       "id": "urn:uuid:5E2A8C7D-0000-4000-8000-000000000001",
+       "frequency": 95,
+       "magnitude": -28,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      },
+      {
+       "id": "5E2A8C7D-0000-4000-8000-000000000002",
+       "frequency": 210,
+       "magnitude": -20,
+       "quality": 20,
+       "bandwidth": 10,
+       "timestamp": "2026-01-01T00:00:00Z"
+      }
+     ],
+     "selectedPeakIDs": [
+      "5E2A8C7D-0000-4000-8000-000000000002"
+     ],
+     "peakModeOverrides": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "type": "assigned",
+       "label": "Fred"
+      }
+     ],
+     "peakAnnotationOffsets": [
+      "5E2A8C7D-0000-4000-8000-000000000002",
+      {
+       "absFreqHz": 215,
+       "absDB": -15
+      }
+     ],
+     "spectrumSnapshot": {
+      "frequencies": [
+       100.0,
+       200.0,
+       300.0
+      ],
+      "magnitudes": [
+       -20.0,
+       -30.0,
+       -40.0
+      ],
+      "minFreq": 50,
+      "maxFreq": 500,
+      "minDB": -100,
+      "maxDB": 0,
+      "isLogarithmic": false
+     }
+    }
+   ],
+   "rejected": true
   }
  ]
 }

@@ -2373,6 +2373,11 @@ class MainWindow(QtWidgets.QMainWindow):
         error = getattr(getattr(self, "fft_canvas", None), "engine_start_error", None)
         if error:
             QtWidgets.QMessageBox.warning(self, "Audio Engine Error", error)
+        # The library could not be read at launch; it was kept aside, not written over.
+        analyzer = getattr(getattr(self, "fft_canvas", None), "analyzer", None)
+        if analyzer is not None and analyzer.library_load_failure:
+            QtWidgets.QMessageBox.warning(self, "Saved Measurements Unreadable", analyzer.library_load_failure)
+            analyzer.library_load_failure = None
 
     # ================================================================
     # State update methods (formerly in PeakControls)
@@ -4732,7 +4737,8 @@ class MainWindow(QtWidgets.QMainWindow):
             with open(path, "wb") as f:
                 f.write(png_bytes)
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Export Failed", str(exc))
+            from guitar_tap.views.tap_analysis_results_view import export_failure_message
+            QtWidgets.QMessageBox.warning(self, "Export Failed", export_failure_message(exc, path))
         finally:
             self._loading_overlay.hide()
 
