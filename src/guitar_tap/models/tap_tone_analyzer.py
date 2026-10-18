@@ -774,6 +774,333 @@ class TapToneAnalyzer(
         if self.is_detecting and self.current_tap_count == 0:
             self._set_status_message(self._armed_prompt())
 
+    # ------------------------------------------------------------------ #
+    # Status derivation — mirrors Swift TapToneAnalyzer.swift's section of the same name
+    # ------------------------------------------------------------------ #
+
+    def _tap_prompt(self) -> str:
+        """The guitar resting prompt (post-warmup steady state) — the single source for the
+        'Tap the guitar…' / 'Tap the guitar N times…' strings.  Mirrors Swift tapPrompt()."""
+        return ("Tap the guitar..." if self.number_of_taps == 1
+                else f"Tap the guitar {self.number_of_taps} times...")
+
+    PAUSED_STATUS = "Detection paused – tap freely, then resume"
+
+    def _armed_prompt(self) -> str:
+        """The prompt for an ARMED analyzer — guitar count-aware, material phase-aware.
+
+        Extracted from resume_tap_detection(), which is where this logic lived as the only
+        "restore a context-appropriate prompt" in the app. Mirrors Swift armedPrompt().
+        """
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+
+        if _tds.measurement_type().is_guitar:
+            return self._guitar_loop_status(False)
+        return self._material_arm_prompt()
+
+    def _material_arm_prompt(self) -> str:
+        """The prompt a material (plate/brace) sequence shows while armed in its CURRENT phase —
+        the single source for these strings.
+
+        Three callers, which is the point: start_tap_sequence() (which sets the phase before the
+        status), the phase advances in accept_current_phase(), and _armed_prompt().  One set of
+        literals for all three, so resuming or changing the tap count never rewords the instruction
+        the user is following.
+
+        The fL branch is count-aware, because that is the phase whose prompt names the tap count and
+        the only phase where the Taps spinner is still unlocked.  Mirrors Swift materialArmPrompt().
+        """
+        from guitar_tap.models.material_tap_phase import MaterialTapPhase as _MTP
+        from guitar_tap.models.measurement_type import MeasurementType as _MT
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
+
+        phase = getattr(self, "material_tap_phase", _MTP.NOT_STARTED)
+        if phase == _MTP.CAPTURING_CROSS:
+            return "Rotate 90° and tap for fC"
+        if phase in (_MTP.CAPTURING_FLC, _MTP.WAITING_FOR_FLC_TAP):
+            return "Set up for fLC tap, then tap"
+        # CAPTURING_LONGITUDINAL / NOT_STARTED.
+        if self.number_of_taps <= 1:
+            return "Ready for fL tap"
+        if _tds.measurement_type() != _MT.PLATE:
+            return f"Ready for fL tap (×{self.number_of_taps})"
+        phases = "L, C, FLC" if _tds.measure_flc() else "L, C"
+        return f"Ready for fL tap (×{self.number_of_taps} each for {phases})"
+
+    def _status_after_settle(self) -> "str | None":
+        """The status to restore when a device/route-change settle ends, or None to leave it alone.
+
+        The status is a function of state, so it is derived rather than chosen from a fixed pair —
+        mid-sequence it reflects the taps already captured, and a finished measurement keeps its
+        "Analysis complete! N peaks…". It says nothing where the status is a RESULT announcement
+        rather than a live prompt, because a completed or loaded measurement's status is not
+        re-derivable and must not be thrown away. Mirrors Swift statusAfterSettle().
+        """
+        from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
+
+        if self.is_measurement_complete:
+            return None                      # "Analysis complete…" / "Loaded measurement…"
+        if self.display_mode == _ADM.COMPARISON:
+            return None                      # an overlay is not a tap prompt
+        if self.is_detection_paused:
+            return self.PAUSED_STATUS
+        if self.is_detecting:
+            # A material phase prompt is an INSTRUCTION tied to a transition that already happened
+            # -- "Rotate 90deg and tap for fC" -- not a description of the state the analyzer is in.
+            # It is therefore not re-derivable here: after a device swap the user has already
+            # rotated the plate, and a redo's "Ready for fC tap - tap again" is a different, equally
+            # correct string for the same phase.  Preserve it, exactly as a completed measurement's
+            # announcement is preserved.  Guitar's prompt IS a function of count and total, both of
+            # which the analyzer holds, so it is still derived.
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds2
+            if not _tds2.measurement_type().is_guitar:
+                return None
+            return self._armed_prompt()
+        return "Ready"
+
+    def _restored_status(self, before: str) -> str:
+        """The status to show when a settle ends, given what it said before the settle began.
+
+        The whole decision in one pure function, so every edition can pin it. Mirrors Swift
+        restoredStatus(before:).
+        """
+        derived = self._status_after_settle()
+        return derived if derived is not None else before
+
+    def _guitar_loop_status(self, capturing: bool) -> str:
+        """Guitar detection-loop status derived from state — the analyzer's equivalent of the
+        web setGuitarStatus(engineState).  capturing=False -> resting prompt (count 0) or the
+        between-taps '…captured. Tap again…'; capturing=True -> 'Tap n/N capturing…' or, on the
+        final tap, 'All taps captured. Processing…'.  (guitar mode keeps current_tap_count ==
+        len(captured_taps), so the provisional +1 matches the old len(captured_taps) + 1.)
+        Mirrors Swift guitarLoopStatus(capturing:)."""
+        if capturing:
+            prov = min(self.current_tap_count + 1, self.number_of_taps)
+            return (f"Tap {prov}/{self.number_of_taps} capturing..." if prov < self.number_of_taps
+                    else "All taps captured. Processing...")
+        return (self._tap_prompt() if self.current_tap_count == 0
+                else f"Tap {self.current_tap_count}/{self.number_of_taps} captured. Tap again...")
+
+    # ------------------------------------------------------------------ #
+    # _set_status_message
+    # ------------------------------------------------------------------ #
+
+    def _set_status_message(self, message: str) -> None:
+        """Assign status_message and notify the view via statusMessageChanged.
+
+        All writes to status_message must go through this helper so that the
+        status bar label is kept in sync.  Mirrors Swift @Published var
+        statusMessage: String whose every write auto-fires objectWillChange on
+        TapToneAnalyzer, causing SwiftUI to re-render the Text(tap.statusMessage)
+        label in TapToneAnalysisView+Controls.swift.
+
+        If an input condition is active -- a dead input, or clipping -- the displayed message is
+        overridden with a remediation warning while the analyzer's intended message is preserved in
+        _latest_real_status for restoration when the condition clears.  The precedence lives in
+        _resolved_status(), shared with _apply_status_overrides().  Mirrors Swift's identical
+        override pattern.
+        """
+        self._latest_real_status = message
+        # Resolve through the ONE precedence rule rather than re-deciding here, so a status write
+        # while the input is dead keeps the "no audio" warning -- as Swift's $statusMessage sink
+        # calls applyStatusOverrides() on every write and keeps it.
+        #
+        # The emit is UNCONDITIONAL, unlike _apply_status_overrides()'s: Swift's @Published fires on
+        # every write regardless of equality, and the view's slot re-applies the status COLOUR,
+        # which is a function of detection state rather than of the text.  Suppressing a same-text
+        # write would leave the colour stale.
+        self.status_message = self._resolved_status()
+        self.statusMessageChanged.emit(self.status_message)
+
+    # The device-change transient. Named because two places must agree on it: the write below, and
+    # the guard that keeps a second route change from capturing it as the pre-settle status.
+    ROUTE_CHANGE_STATUS = "Audio device changed - reinitializing..."
+
+    CLIPPING_WARNING_STATUS = "⚠ Input clipping — reduce mic gain"
+    DEAD_INPUT_STATUS = "⚠ No audio input — check the microphone connection"
+
+    def _set_clipping(self, clipping: bool) -> None:
+        """Update the input-clipping state and re-render the status message.
+
+        Called from a slot connected to the FFT thread's clippingChanged signal.
+        Mirrors Swift TapToneAnalyzer.setClipping(_:).
+        """
+        if clipping == getattr(self, "is_clipping", False):
+            return
+        self.is_clipping = clipping
+        self._apply_status_overrides()
+
+    def _set_input_appears_dead(self, dead: bool) -> None:
+        """Update the dead-input state and re-render the status message.
+
+        Called from a slot connected to the FFT thread's inputAppearsDeadChanged
+        signal.  Mirrors Swift's `$inputAppearsDead` sink.
+        """
+        if dead == getattr(self, "input_appears_dead", False):
+            return
+        self.input_appears_dead = dead
+        self._apply_status_overrides()
+
+    def _apply_status_overrides(self) -> None:
+        """Resolve the displayed status against the active input-condition overrides.
+
+        One place decides precedence — dead input, then clipping, then whatever the
+        analyzer last set — so the two overrides cannot fight each other or leave a
+        stale warning on screen after its condition clears.  Dead input outranks
+        clipping: a dead input cannot also be clipping, and "no audio" is the more
+        actionable message.  Mirrors Swift `applyStatusOverrides()`.
+        """
+        resolved = self._resolved_status()
+        if self.status_message != resolved:
+            self.status_message = resolved
+            self.statusMessageChanged.emit(self.status_message)
+
+    def _resolved_status(self) -> str:
+        """The status that SHOULD be displayed: dead input, then clipping, then the analyzer's own.
+
+        The precedence itself, with no assignment and no signal, so the write path and the override
+        toggles share one rule instead of each deciding.
+        """
+        if getattr(self, "input_appears_dead", False):
+            return self.DEAD_INPUT_STATUS
+        if getattr(self, "is_clipping", False):
+            return self.CLIPPING_WARNING_STATUS
+        return self._latest_real_status
+
+    # ------------------------------------------------------------------ #
+    # Route change handling — mirrors Swift TapToneAnalyzer.swift's section of the same name
+    # ------------------------------------------------------------------ #
+
+    # @parity state/route-change-settle tests=test/notification
+    def handle_route_change_restart(self) -> None:
+        """Respond to an audio-engine restart triggered by a device or route change.
+
+        Mirrors Swift TapToneAnalyzer.handleRouteChangeRestart():
+        - If detection was active: temporarily disable, reset warmup timer,
+          wait 3 s for the FFT buffer to refill (covering HALC startup transients),
+          then restore is_detecting.
+        - If is_measurement_complete (frozen result): leave it untouched.
+        - If idle (not detecting): stay idle.
+        - If the display was live: blank the spectrum and clear peak annotations
+          during the settle period so the view shows nothing rather than stale data.
+
+        The 3-second settle mirrors Swift's fftSettleTime constant (extended from 2 s to absorb
+        HALC/CoreAudio startup transients at ~2.5 s): 3 s of audio after the last change, then the
+        next FFT frame. A later change inside the settle supersedes this one's restore.
+        """
+        from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
+
+        gt_log("🔄 TapToneAnalyzer: Handling route change restart - resetting detection state")
+
+        was_detecting = self.detection_state is DetectionState.LISTENING
+        # The change that begins a settle decides whether its end re-arms; a later change inside it
+        # finds the detector already stood down.
+        if self._detecting_before_settle is None:
+            self._detecting_before_settle = was_detecting
+
+        # Disable the is_ready_for_detection flag while reinitialising.
+        # Mirrors Swift: isReadyForDetection = false, then IDLE only if it was listening —
+        # a sequence paused before the route change must still be paused after it.
+        self.is_ready_for_detection = False
+        if was_detecting:
+            self.detection_state = DetectionState.IDLE
+
+        # Reset the warmup timer so the new engine session starts cleanly.
+        # Mirrors Swift: warmupStartAudioTime = fftAnalyzer.audioElapsed.
+        self.warmup_start_audio_time = self._audio_now()
+
+        # Pre-set is_above_threshold = True so the first FFT frame does not fire a
+        # false rising edge.  The actual value is corrected after the settle delay.
+        # Mirrors Swift: isAboveThreshold = true.
+        self.is_above_threshold = True
+
+        # Blank only if a LIVE spectrum is on screen. `display_mode == LIVE` is not that test: a
+        # finished measurement is still LIVE. is_measurement_complete is the field that says whether
+        # what you are looking at is a result. Mirrors Swift wasShowingLive / is_settling.
+        was_showing_live = (not self.is_measurement_complete
+                            and self.display_mode != _ADM.COMPARISON)
+        if was_showing_live:
+            # The flag is the whole mechanism — no display_mode write, so a completed or loaded
+            # measurement is untouched.
+            self.is_settling = True
+            self.all_peaks = []
+            self.identified_modes = []
+            self.peaksChanged.emit([])
+
+        # Remember what the status said BEFORE the transient replaces it. When the settle ends,
+        # _status_after_settle() returns None for the states whose status is a result announcement
+        # rather than a prompt — and "leave it alone" means restoring THIS, not leaving the
+        # transient up.
+        #
+        # _latest_real_status, NOT status_message: the latter is the OVERRIDE-RESOLVED string, and
+        # during a route change while the input is clipping or dead it holds the warning sentinel;
+        # fed back through _set_status_message() it would be stored AS the real status, so clearing
+        # the condition would restore the warning.  The override layer re-resolves on its own, so
+        # the real status is what has to survive the settle.
+        #
+        # Guarded so a route change during a settle does not capture the transient itself: a
+        # captured ROUTE_CHANGE_STATUS would be put back by _restored_status() for every state whose
+        # status is not re-derivable — a completed measurement, a material phase prompt — and stay
+        # up until something else writes a status. The settle's end clears it, so a value already
+        # here means a settle is in progress and the change that began it captured the real status.
+        if self._status_before_settle is None:
+            self._status_before_settle = self._latest_real_status
+        # Mirrors Swift: statusMessage = "Audio device changed - reinitializing...".
+        self._set_status_message(self.ROUTE_CHANGE_STATUS)
+
+        # Wait for the FFT pipeline to fill with valid post-restart data
+        # (~1.36 s for 65 536 samples at 48 kHz).  Use 3 s to absorb HALC/CoreAudio
+        # startup transients that can arrive at ~2.5 s on the engine-recovery path. On the AUDIO
+        # clock: what has to pass is that much audio from the new device. A later change supersedes
+        # this one's restore, so the settle ends 3 s after the last change.
+        # Mirrors Swift: fftSettleTime = 3.0 / afterAudio.
+        self._route_change_generation += 1
+        generation = self._route_change_generation
+
+        def _settled() -> None:
+            # Mirrors Swift: guard generation == routeChangeGeneration, fftAnalyzer.isRunning.
+            if generation != self._route_change_generation or self.mic is None or self.mic.is_stopped:
+                return
+            # Wait for the next FFT frame before re-anchoring detection and unfreezing the display,
+            # so both happen on the first frame the user sees. Mirrors Swift afterNextFrame.
+            self.after_next_frame(
+                lambda peak_db: self._restore_detection_after_route_change(generation, was_showing_live, peak_db))
+
+        self.after_audio(3.0, _settled)
+
+    def _restore_detection_after_route_change(self, generation: int, was_live: bool, peak_db: float) -> None:
+        """End the device-change settle on the first FFT frame after it: re-anchor the level latch from
+        that frame's peak, unblank a live chart, set readiness, put detection back to listening if the
+        change that began the settle found it listening, and restore the status.
+
+        The body of Swift's ``afterNextFrame`` closure in ``handleRouteChangeRestart()``; a named
+        method only so it can be read on its own — it should not be called from anywhere else.
+        """
+        if generation != self._route_change_generation:
+            return
+
+        # Re-anchor is_above_threshold to the frame's peak. Mirrors Swift:
+        # isAboveThreshold = (peakMagnitude > tapDetectionThreshold).
+        self.is_above_threshold = peak_db > self.tap_detection_threshold
+
+        if was_live:
+            self.is_settling = False
+
+        self.is_ready_for_detection = True
+
+        # Derive the status from the state we are now in, and leave it alone where it is a result
+        # announcement.
+        if self._detecting_before_settle:
+            self.detection_state = DetectionState.LISTENING
+        self._detecting_before_settle = None
+        self._set_status_message(self._restored_status(self._status_before_settle or "Ready"))
+        self._status_before_settle = None
+
+        gt_log(f"🔄 TapToneAnalyzer: Detection re-enabled after route change "
+               f"(current level: {peak_db} dB, threshold: {self.tap_detection_threshold} dB, "
+               f"above threshold: {self.is_above_threshold})")
+
+    # ------------------------------------------------------------------ #
     # is_measurement_complete — mirrors Swift @Published var isMeasurementComplete
     # ------------------------------------------------------------------ #
 

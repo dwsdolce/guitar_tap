@@ -1,6 +1,6 @@
 {
  "slug": "test/material-measurement-inputs",
- "about": "A material measurement's own dimensions (Store B, the analyzer's material inputs) and its notes: taken from the Settings defaults (Store A) when the measurement completes, from the file on a load — which never writes the Settings defaults — and written by a save. Each case starts a fresh analyzer and runs its 'steps' in order: {\"settings\": {...}} sets those settings as Settings does (names as Swift's TapDisplaySettings; 'measurementType' and 'plateStiffnessPreset' by their saved names); {\"complete\": true} marks the measurement complete, as a capture does; {\"loading\": bool} sets whether a load is in progress; {\"clearInputs\": true} clears the measurement's dimensions; {\"hasInputs\": bool} checks whether it has them (a precondition); {\"load\": file, \"notes\"?: text} loads that inline file, with its notes replaced when 'notes' is given; {\"save\": true} builds the record a save writes. 'expect' after the last step: 'inputs' (null, or the measurement's dimensions — lengthMM, widthMM, thicknessMM, massG, bodyLengthMM, bodyWidthMM, stiffnessPreset by its saved name, customStiffness — only those named are checked), 'settings' (those settings' values), 'saved' (those fields of the saved record's longitudinal snapshot), 'loadedNotes' (the notes a re-save would start from, null for none). Expected values are Swift's.",
+ "about": "A material measurement's own dimensions (Store B, the analyzer's material inputs) and its notes: taken from the Settings defaults (Store A) when the measurement completes, from the file on a load — which never writes the Settings defaults — and written by a save. Each case starts a fresh analyzer and runs its 'steps' in order: {\"settings\": {...}} sets those settings as Settings does (names as Swift's TapDisplaySettings; 'measurementType' and 'plateStiffnessPreset' by their saved names); {\"complete\": true} marks the measurement complete, as a capture does; {\"loading\": bool} sets whether a load is in progress; {\"clearInputs\": true} clears the measurement's dimensions; {\"hasInputs\": bool} checks whether it has them (a precondition); {\"load\": file, \"notes\"?: text} loads that inline file, with its notes replaced when 'notes' is given; {\"save\": true} builds the record a save writes. 'expect' after the last step: 'inputs' (null, or the measurement's dimensions — lengthMM, widthMM, thicknessMM, massG, bodyLengthMM, bodyWidthMM, stiffnessPreset by its saved name, customStiffness — only those named are checked), 'settings' (those settings' values), 'saved' (those fields of the saved record's longitudinal snapshot, 'guitarType' by its saved name), 'loadedNotes' (the notes a re-save would start from, null for none). Expected values are Swift's.",
  "files": {
   "inline-plate": [
    {
@@ -84,6 +84,30 @@
      "plateWidth": 222,
      "plateThickness": 3.33,
      "plateMass": 44
+    }
+   }
+  ],
+  "inline-guitar-classical": [
+   {
+    "id": "00000000-0000-0000-0000-0000000000C9",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "spectrumSnapshot": {
+     "frequencies": [
+      100.0,
+      200.0
+     ],
+     "magnitudes": [
+      -10.0,
+      -20.0
+     ],
+     "minFreq": 50,
+     "maxFreq": 300,
+     "minDB": -100,
+     "maxDB": 0,
+     "isLogarithmic": false,
+     "guitarType": "Classical",
+     "measurementType": "Classical Guitar"
     }
    }
   ]
@@ -430,6 +454,43 @@
      "bodyWidthMM": 390,
      "stiffnessPreset": "Steel String Back",
      "customStiffness": 55
+    }
+   }
+  },
+  {
+   "id": "M14",
+   "note": "a plate saved with no guitar measurement loaded since the settings were new records guitar type Generic",
+   "steps": [
+    {
+     "load": "inline-plate"
+    },
+    {
+     "save": true
+    }
+   ],
+   "expect": {
+    "saved": {
+     "guitarType": "Generic"
+    }
+   }
+  },
+  {
+   "id": "M15",
+   "note": "a plate saved after a guitar measurement was loaded records that measurement's guitar type, which the load stored apart from the measurement type",
+   "steps": [
+    {
+     "load": "inline-guitar-classical"
+    },
+    {
+     "load": "inline-plate"
+    },
+    {
+     "save": true
+    }
+   ],
+   "expect": {
+    "saved": {
+     "guitarType": "Classical"
     }
    }
   }

@@ -3500,23 +3500,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_measurement_badge()
 
     def _on_measurement_type_changed(
-        self, _: str, crosses_boundary: bool = True, guitar_type_changed: bool = False
+        self, _: str, measurement_changed: bool = True, guitar_type_changed: bool = False
     ) -> None:
         """Handle a measurement-type change that originated from the settings UI.
 
         Mirrors Swift's ``onApply(measurementChanged:guitarTypeChanged:)`` callback,
         branching identically:
-        - **measurement changed** (``crosses_boundary`` — the guitar/material boundary flipped): restart
-          the tap sequence (guitar ↔ plate/brace need a fresh capture).
+        - **measurement changed** (``measurement_changed`` — a type change other than guitar to
+          guitar, or a Measure FLC change): start a new tap sequence, as Swift's
+          ``requestStartTapSequence()``.
         - **guitar type changed** (``guitar_type_changed`` — a guitar→guitar subtype switch, e.g.
           Generic → Classical): a **clean-slate** re-derivation for the new type — the mode bands
           changed, so reclassify, clear manual overrides, and re-auto-select via
           ``reclassify_for_guitar_type_change``. NOT the wand (which preserves labels).
-        - **else** (display-only Apply, or a material→material switch): leave peaks, modes and
-          selection alone.
+        - **else** (display-only Apply): leave peaks, modes and selection alone.
         """
         self._apply_measurement_type_to_ui()
-        if self._is_running and crosses_boundary:
+        if measurement_changed:
             self.fft_canvas.restart_tap_sequence()
         elif guitar_type_changed:
             analyzer = self.fft_canvas.analyzer
@@ -6719,16 +6719,11 @@ class MainWindow(QtWidgets.QMainWindow):
             unified = meas_type_combo.currentText()
             mt_val = MT.MeasurementType(unified)
 
-            # Cancel any in-progress plate/brace measurement if the measurement type
-            # or the FLC setting changes — mirrors Swift onApply(didChangeType:) which
-            # calls cancelTapSequence() when the new type differs.
+            # What changed, captured before anything is saved — as Swift's applySettings.
             _current_mt = TDS.measurement_type()
             _current_flc = AS.AppSettings.measure_flc()
             _type_changed = (mt_val != _current_mt)
             _flc_changed = (measure_flc_cb.isChecked() != _current_flc)
-            _needs_restart = (_type_changed or _flc_changed) and not _current_mt.is_guitar and self._is_running
-            if _needs_restart:
-                self.fft_canvas.cancel_tap_sequence()
 
             # Apply measurement type to TapDisplaySettings — mirrors Swift where
             # selectedMeasurementType (local @State) is written to TapDisplaySettings
@@ -6832,27 +6827,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Fire _on_measurement_type_changed exactly once after all settings are
             # persisted — mirrors Swift's onApply(measurementChanged:guitarTypeChanged:) callback
-            # which runs after applySettings() completes.
-            #   measurement_changed = crosses the guitar/material boundary (isGuitar flipped).
+            # which runs after applySettings() completes, with Swift's two flags:
+            #   measurement_changed = a type change other than guitar to guitar, or a Measure FLC
+            #     change — a new tap sequence.
             #   guitar_type_changed = a guitar→guitar subtype change (e.g. Generic → Classical) — the
             #     mode bands change, so it is a clean-slate re-derivation for the new type.
-            # A display-only Apply (same type) never reaches here (gated on _type_changed/_flc_changed).
+            # A display-only Apply never reaches here (gated on _type_changed/_flc_changed).
             if _type_changed or _flc_changed:
-                _measurement_changed = _current_mt.is_guitar != mt_val.is_guitar
-                _guitar_type_changed = (
-                    _type_changed and not _measurement_changed and mt_val.is_guitar
-                )
+                _both_guitar = _current_mt.is_guitar and mt_val.is_guitar
+                _measurement_changed = (_type_changed and not _both_guitar) or _flc_changed
+                _guitar_type_changed = _type_changed and _both_guitar
                 self._on_measurement_type_changed(
                     mt_val.short_name,
-                    crosses_boundary=_measurement_changed,
+                    measurement_changed=_measurement_changed,
                     guitar_type_changed=_guitar_type_changed,
                 )
-
-            # Restart the plate/brace capture state machine after all settings are
-            # saved so the new phase count (2 vs 3) is immediately active.
-            # Mirrors Swift: onApply?(measurementChanged) → startTapSequence().
-            if _needs_restart and not mt_val.is_guitar:
-                self.fft_canvas.start_plate_analysis()
 
             # If a brace/plate measurement is active, recalculate material properties
             # using the freshly saved dimensions.

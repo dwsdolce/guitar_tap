@@ -121,6 +121,8 @@ def test_material_inputs(row, qapp):
                 actual = getattr(snap, _snake(key))
                 if key == "plateStiffnessPreset":
                     assert _preset_name(actual) == value, key
+                elif key == "guitarType":
+                    assert actual == value, f"{key}: {actual}"
                 else:
                     assert actual == pytest.approx(value, abs=1e-4), key
         elif field == "loadedNotes":
