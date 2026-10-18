@@ -1,7 +1,9 @@
 """Audio-liveness decisions: threshold calibration and the watchdog truth table.
 
-@parity dead-input — paired with Swift GuitarTapTests/DeadInputThresholdTests.swift
-and web test/dead-input-threshold.test.ts.  All three pin the SAME table.
+@parity test/dead-input-threshold
+
+Paired with Swift GuitarTapTests/DeadInputThresholdTests.swift and web
+test/dead-input-threshold.test.ts.  All three pin the SAME table.
 
 Why these exist: the threshold is a FIELD CALIBRATION, not a derivation.  Set it too
 low and a genuinely dead stream (measured at ~-100 dBFS, NOT digital zero) is never

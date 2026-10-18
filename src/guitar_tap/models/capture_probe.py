@@ -18,7 +18,7 @@ measurement's records are written beside its session recording, where the first 
 capture buffer place it in that recording.
 
 Mirrors Swift ``CaptureProbe.swift``.
-@parity models/capture-probe
+@parity util/capture-probe
 """
 
 from __future__ import annotations

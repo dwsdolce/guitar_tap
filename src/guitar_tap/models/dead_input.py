@@ -9,7 +9,7 @@ defect found on 2026-09-01 — a watchdog that stopped watching after giving up,
 the app deaf until relaunch even after the user fixed the microphone — is a single row
 of the truth table here, and a unit test would have caught it immediately.
 
-@parity dead-input
+@parity audio/dead-input tests=test/dead-input-threshold
 """
 
 from enum import Enum
