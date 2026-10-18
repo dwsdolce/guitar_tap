@@ -1,0 +1,386 @@
+{
+ "slug": "test/buffer-watchdog",
+ "about": "The buffer watchdog's tick and recovery, around its decision (watchdogDecision, tested by test/dead-input-threshold) — the same cases in every edition, run on the engine with a wall clock moved by hand and a stand-in for the recovery's restart. Each case starts a fresh engine at time 0 and runs its 'steps' in order: {\"start\": true} is a deliberate start (the engine running, then startBufferWatchdog(isRecovery: false)); {\"run\": seconds, \"input\": \"signal\" | \"silence\" | \"none\"} moves the wall clock on in 0.5 s steps — after each, a buffer arrives that carries signal, or carries none, or no buffer arrives — and the tick runs at each whole second, as the 1 s timer does; {\"restart\": \"succeeds\" | \"fails\"} is what the restart stand-in does from then on (it succeeds until told otherwise; a success is what the edition's restart does for the watchdog: the engine running again and the watchdog re-armed as a recovery); {\"permissionDenied\": true} the engine's microphone permission flag raised; {\"playFile\": true} a file playing; {\"stop\": true} the engine not running; {\"check\": {...}} checks those fields now. 'expect' after the last step, and 'check': 'attempts' (the recovery's attempt count), 'recovering' (a recovery in progress), 'givenUp' (the recovery gave up), 'inputDead' (the dead-input warning), 'couldNotRestart' (the recovery gave up after restarts that failed), 'permissionDenied' (the engine's microphone permission flag), 'restarts' (how many times the restart ran), 'restartTimes' (the wall-clock time of each). Expected values are Swift's.",
+ "cases": [
+  {
+   "id": "BW1",
+   "note": "the start-up grace: no buffers for 4 s after a start does nothing",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "run": 4,
+     "input": "none"
+    }
+   ],
+   "expect": {
+    "attempts": 0,
+    "recovering": false,
+    "restarts": 0
+   }
+  },
+  {
+   "id": "BW2",
+   "note": "no buffers past the grace: a recovery starts, and its restart runs 0.5 s later",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "run": 5,
+     "input": "none"
+    },
+    {
+     "check": {
+      "attempts": 1,
+      "recovering": true,
+      "restarts": 0
+     }
+    },
+    {
+     "run": 0.5,
+     "input": "none"
+    }
+   ],
+   "expect": {
+    "attempts": 1,
+    "recovering": false,
+    "restartTimes": [
+     5.5
+    ]
+   }
+  },
+  {
+   "id": "BW3",
+   "note": "still no buffers: the restarts back off 0.5, 1, 2, 4, 4, 4 s; the seventh attempt gives up, but the watchdog keeps watching and warns of the dead input",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "run": 60,
+     "input": "none"
+    }
+   ],
+   "expect": {
+    "attempts": 7,
+    "givenUp": true,
+    "recovering": false,
+    "inputDead": true,
+    "restartTimes": [
+     5.5,
+     11,
+     18,
+     27,
+     36,
+     45
+    ]
+   }
+  },
+  {
+   "id": "BW4",
+   "note": "buffers with no signal for more than 15 s: the dead-input warning and a recovery",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "run": 15,
+     "input": "silence"
+    },
+    {
+     "check": {
+      "inputDead": false,
+      "attempts": 0
+     }
+    },
+    {
+     "run": 1,
+     "input": "silence"
+    }
+   ],
+   "expect": {
+    "inputDead": true,
+    "attempts": 1,
+    "recovering": true,
+    "restarts": 0
+   }
+  },
+  {
+   "id": "BW5",
+   "note": "a restart observes no signal: a permanently silent input keeps its warning and its attempt count until the recovery gives up (a BlackHole input)",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "run": 21,
+     "input": "silence"
+    },
+    {
+     "check": {
+      "inputDead": true,
+      "attempts": 2
+     }
+    },
+    {
+     "run": 41,
+     "input": "silence"
+    }
+   ],
+   "expect": {
+    "attempts": 7,
+    "givenUp": true,
+    "inputDead": true,
+    "recovering": false,
+    "restartTimes": [
+     16.5,
+     22,
+     29,
+     38,
+     47,
+     56
+    ]
+   }
+  },
+  {
+   "id": "BW6",
+   "note": "signal returning after the recovery gave up clears the warning, the count and the given-up latch",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "run": 62,
+     "input": "silence"
+    },
+    {
+     "check": {
+      "givenUp": true,
+      "inputDead": true
+     }
+    },
+    {
+     "run": 2,
+     "input": "signal"
+    }
+   ],
+   "expect": {
+    "inputDead": false,
+    "givenUp": false,
+    "attempts": 0,
+    "recovering": false
+   }
+  },
+  {
+   "id": "BW7",
+   "note": "a restart that fails retries at once, on the next backoff; when the attempts run out the input could not be restarted — said so, and the watchdog, re-armed, goes on watching and warns of the dead input",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "restart": "fails"
+    },
+    {
+     "run": 21,
+     "input": "none"
+    },
+    {
+     "check": {
+      "couldNotRestart": true,
+      "inputDead": false,
+      "givenUp": true
+     }
+    },
+    {
+     "run": 9,
+     "input": "none"
+    }
+   ],
+   "expect": {
+    "attempts": 7,
+    "givenUp": true,
+    "recovering": false,
+    "couldNotRestart": true,
+    "inputDead": true,
+    "restartTimes": [
+     5.5,
+     6.5,
+     8.5,
+     12.5,
+     16.5,
+     20.5
+    ]
+   }
+  },
+  {
+   "id": "BW8",
+   "note": "a file playing: no recovery, however long no buffers come",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "playFile": true
+    },
+    {
+     "run": 10,
+     "input": "none"
+    }
+   ],
+   "expect": {
+    "attempts": 0,
+    "recovering": false,
+    "restarts": 0
+   }
+  },
+  {
+   "id": "BW9",
+   "note": "the engine not running: no recovery",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "stop": true
+    },
+    {
+     "run": 10,
+     "input": "none"
+    }
+   ],
+   "expect": {
+    "attempts": 0,
+    "recovering": false,
+    "restarts": 0
+   }
+  },
+  {
+   "id": "BW10",
+   "note": "a deliberate start gives the watchdog a clean slate: the attempt count back to 0",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "run": 20,
+     "input": "none"
+    },
+    {
+     "check": {
+      "attempts": 3
+     }
+    },
+    {
+     "start": true
+    }
+   ],
+   "expect": {
+    "attempts": 0,
+    "givenUp": false
+   }
+  },
+  {
+   "id": "BW11",
+   "note": "buffers carrying signal: nothing to recover",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "run": 30,
+     "input": "signal"
+    }
+   ],
+   "expect": {
+    "attempts": 0,
+    "recovering": false,
+    "inputDead": false,
+    "restarts": 0
+   }
+  },
+  {
+   "id": "BW12",
+   "note": "signal returning after the restarts failed clears it all: the could-not-restart and dead-input warnings, the count and the given-up latch",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "restart": "fails"
+    },
+    {
+     "run": 30,
+     "input": "none"
+    },
+    {
+     "check": {
+      "couldNotRestart": true,
+      "inputDead": true
+     }
+    },
+    {
+     "run": 2,
+     "input": "signal"
+    }
+   ],
+   "expect": {
+    "couldNotRestart": false,
+    "inputDead": false,
+    "givenUp": false,
+    "attempts": 0
+   }
+  },
+  {
+   "id": "BW13",
+   "note": "a deliberate start after the restarts failed clears the could-not-restart warning",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "restart": "fails"
+    },
+    {
+     "run": 21,
+     "input": "none"
+    },
+    {
+     "check": {
+      "couldNotRestart": true
+     }
+    },
+    {
+     "start": true
+    }
+   ],
+   "expect": {
+    "couldNotRestart": false,
+    "givenUp": false,
+    "attempts": 0
+   }
+  },
+  {
+   "id": "BW14",
+   "note": "real audio disproves an earlier \"permission denied\" determination: a healthy tick clears it",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "permissionDenied": true
+    },
+    {
+     "run": 5,
+     "input": "signal"
+    }
+   ],
+   "expect": {
+    "permissionDenied": false,
+    "attempts": 0
+   }
+  }
+ ]
+}

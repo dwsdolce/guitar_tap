@@ -136,13 +136,18 @@ def test_SR3_the_watchdog_tick_retries_an_owed_reinit():
 def test_SR4_scheduling_a_recovery_closes_the_stream(monkeypatch):
     """SR4: scheduling a recovery restart closes the stream at once, as Swift's recovery stops the
     engine; the restart is scheduled."""
-    from PySide6 import QtCore
-
     mic = _mic()
     events: list = []
     monkeypatch.setattr(mic, "_close_stream_only", lambda: events.append("close"))
-    monkeypatch.setattr(QtCore.QTimer, "singleShot",
-                        staticmethod(lambda ms, fn: events.append("restart scheduled")))
+
+    class _Clock:
+        def now(self) -> float:
+            return 0.0
+
+        def after(self, seconds, action) -> None:
+            events.append("restart scheduled")
+
+    mic.wall_clock = _Clock()
     mic._is_recovering = True
     mic._attempt_watchdog_recovery()
     assert events == ["close", "restart scheduled"]

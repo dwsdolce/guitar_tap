@@ -72,7 +72,6 @@ import atexit
 import math
 
 # ── RealtimeFFTAnalyzer / device management ───────────────────────────────────
-import platform
 import queue
 import threading
 import time
@@ -89,12 +88,11 @@ from guitar_tap.models.input_level import InputLevel
 from guitar_tap.utilities.logging import gt_log
 
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
+from .wall_clock import SystemWallClock, WallClock
 from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
 
 from .realtime_fft_analyzer_fft_processing import RealtimeFFTAnalyzerFFTProcessingMixin
 
-if platform.system() == "Darwin":
-    from guitar_tap.views.utilities import platform_adapters as mac_access
 
 
 # ── _FftProcessingThread ──────────────────────────────────────────────────────
@@ -160,6 +158,18 @@ class _FftProcessingThread(QtCore.QThread):
     # signal. Lives here because RealtimeFFTAnalyzer is not a QObject, so the QThread owns
     # Qt signal delivery. (The input level and clipping have their own object, ``mic.level``.)
     inputAppearsDeadChanged: QtCore.Signal = QtCore.Signal(bool)
+
+    # Edge-triggered: True once the watchdog has given up after restarts that failed.
+    inputCouldNotRestartChanged: QtCore.Signal = QtCore.Signal(bool)
+
+    # Edge-triggered: True while the microphone permission is refused.
+    microphonePermissionDeniedChanged: QtCore.Signal = QtCore.Signal(bool)
+
+    # Edge-triggered: True once a deliberate start has failed for anything but the permission.
+    inputCouldNotStartChanged: QtCore.Signal = QtCore.Signal(bool)
+
+    # Edge-triggered: the engine started (True) or stopped (False). Mirrors Swift `@Published isRunning`.
+    runningChanged: QtCore.Signal = QtCore.Signal(bool)
 
     # Emitted when a gated capture window fills.
     gatedCaptureComplete: QtCore.Signal = QtCore.Signal(object, float, object)
@@ -388,7 +398,7 @@ class RealtimeFFTAnalyzer(
         This mirrors Swift's ``guard !forTesting else { return }`` pattern.
 
         Args:
-            parent:                  Parent QObject (used to anchor a MacAccess helper on macOS).
+            parent:                  Parent QObject.
             rate:                    Fallback sample rate in Hz; overridden by the selected
                                      device's sample rate.
             chunksize:               PortAudio block size in frames (Python-only; Swift uses 1024).
@@ -440,6 +450,12 @@ class RealtimeFFTAnalyzer(
         # Recovers from a silently-wedged stream (the PortAudio callback stops firing
         # with no error — e.g. mic contention / device reconfiguration). A QTimer
         # detects the silence and re-opens the stream with bounded backoff.
+        # The wall clock the watchdog reads its times from and schedules its restart on — the system's
+        # in the app, one moved by hand in a test. Mirrors Swift `wallClock`.
+        self.wall_clock: WallClock = SystemWallClock()
+        # The recovery's restart. None reopens the selected device (reinitialize_portaudio); a test
+        # stands in for it. Mirrors Swift `watchdogRestart`.
+        self.watchdog_restart: "Callable[[], None] | None" = None
         self._last_buffer_time: float = 0.0
         self._watchdog_timer = None  # QtCore.QTimer | None
         self._is_recovering: bool = False
@@ -482,6 +498,29 @@ class RealtimeFFTAnalyzer(
         # status line is then all that stands between the user and an app that looks
         # alive while deaf. Mirrors Swift `inputAppearsDead`.
         self.input_appears_dead: bool = False
+        # True once the recovery has given up after restarts that failed: the input could not be
+        # opened again. Surfaced in the status line, above the dead-input warning; cleared by a
+        # deliberate start or by signal returning. Mirrors Swift `inputCouldNotRestart`.
+        self.input_could_not_restart: bool = False
+        # Whether the last start or restart failed. Mirrors Swift `engineStartFailed`.
+        self.engine_start_failed: bool = False
+        # True while the microphone permission is refused: set by a start the system refuses, by a
+        # refusal of the request, and by the 3-second check after a start (macOS); cleared by a start
+        # that succeeds and by a healthy watchdog tick. Mirrors Swift `microphonePermissionDenied`.
+        self.microphone_permission_denied: bool = False
+        # True once a deliberate start has failed for anything but the permission: the input is
+        # unavailable until a start succeeds. Mirrors Swift `inputCouldNotStart`.
+        self.input_could_not_start: bool = False
+        # Whether the engine is running — on the microphone, or on a file. Set by a start that
+        # succeeds and a file's playback, cleared by a stop and by a recovery's close. Mirrors Swift
+        # `isRunning`; the view's indicators and the button rule read it.
+        self.is_running: bool = False
+        # Called on the main thread when the user grants the permission in the system's request, so
+        # the owner's full start runs (set by TapToneAnalyzer). Mirrors Swift `onPermissionGranted`.
+        self.on_permission_granted: "Callable[[], None] | None" = None
+        # Set when the permission has just been granted, so the 3-second check skips once. Mirrors
+        # Swift `permissionJustGranted`.
+        self._permission_just_granted: bool = False
 
         # MARK: - WAV File Playback (mirrors Swift RealtimeFFTAnalyzer.isPlayingFile)
         # True while a background thread is feeding a WAV file into self.queue.
@@ -632,9 +671,6 @@ class RealtimeFFTAnalyzer(
         if for_testing:
             self.stream = None  # type: ignore[assignment]
             return
-
-        if platform.system() == "Darwin":
-            mac_access.MacAccess(parent)
 
         # Enumerate the input devices and select the one to use — the saved choice when it is
         # present, else the system default, else the first. Mirrors Swift init calling

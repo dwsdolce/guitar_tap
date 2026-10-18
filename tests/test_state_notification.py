@@ -1,6 +1,6 @@
 # @parity test/notification
 """
-A device change and the settle after it, against the shared cases in notification.json (N1-N18), the
+A device change and the settle after it, against the shared cases in notification.json (N1-N21), the
 same as Swift and the web: detection stands down and New Tap greys out — and the view is told, which
 Python does with an explicit signal (``readyForDetectionChanged``), Swift with ``@Published`` and the
 web with its snapshot and ``notify()``, each of which an ordinary edit can break — a live chart is
@@ -65,6 +65,8 @@ def _check(fields: dict, sut, run: _Run, case_id: str) -> None:
             assert (sut._status_before_settle == run.noted_status) is want, f"{msg}: {sut._status_before_settle}"
         elif field == "statusIsArmedPrompt":
             assert (sut.status_message == sut._armed_prompt()) is want, msg
+        elif field == "statusIsMicrophoneAccessWarning":
+            assert (sut.status_message == sut.MICROPHONE_ACCESS_STATUS) is want, f"{msg}: {sut.status_message}"
         elif field == "detecting":
             assert sut.is_detecting is want, msg
         elif field == "paused":
@@ -98,6 +100,12 @@ def test_notification(row, qapp):
             sut._set_clipping(step["clipping"])
         elif "inputDead" in step:
             sut._set_input_appears_dead(step["inputDead"])
+        elif "couldNotRestart" in step:
+            sut._set_input_could_not_restart(step["couldNotRestart"])
+        elif "couldNotStart" in step:
+            sut._set_input_could_not_start(step["couldNotStart"])
+        elif "permissionDenied" in step:
+            sut._set_microphone_permission_denied(step["permissionDenied"])
         elif "check" in step:
             _check(step["check"], sut, run, row["id"])
         else:

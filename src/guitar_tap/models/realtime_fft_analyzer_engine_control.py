@@ -171,10 +171,11 @@ is needed.
 from __future__ import annotations
 
 import os
+import platform
 import queue
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 import numpy.typing as npt
@@ -185,9 +186,59 @@ from guitar_tap.models.dead_input import (
     DEAD_INPUT_DWELL,
     WatchdogDecision,
     chunk_carries_signal,
+    should_declare_permission_denied,
     watchdog_decision,
+    windows_microphone_access_denied,
 )
 from guitar_tap.utilities.logging import gt_log
+
+
+class MicrophonePermissionError(PermissionError):
+    """A start the system refused for the microphone permission. Mirrors Swift's own denied (code 1)
+    and restricted (code 2) errors."""
+
+
+def is_permission_error(error: BaseException) -> bool:
+    """Whether a start error is a microphone permission refusal. Mirrors Swift
+    ``RealtimeFFTAnalyzer.isPermissionError``."""
+    return isinstance(error, MicrophonePermissionError)
+
+
+def _mac_authorization_status() -> str:
+    """macOS's microphone authorization: "authorized", "not determined", "denied" or "restricted"."""
+    import AVFoundation  # macOS only
+
+    return {
+        AVFoundation.AVAuthorizationStatusAuthorized: "authorized",
+        AVFoundation.AVAuthorizationStatusNotDetermined: "not determined",
+        AVFoundation.AVAuthorizationStatusDenied: "denied",
+        AVFoundation.AVAuthorizationStatusRestricted: "restricted",
+    }.get(AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(AVFoundation.AVMediaTypeAudio),
+          "not determined")
+
+
+def _mac_request_access(answer: "Callable[[bool], None]") -> None:
+    """Ask macOS for the microphone; ``answer`` is called with the reply, on a background thread."""
+    import AVFoundation  # macOS only
+
+    AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+        AVFoundation.AVMediaTypeAudio, lambda granted: answer(bool(granted)))
+
+
+def _windows_microphone_consent() -> "tuple[str | None, str | None]":
+    """The two Windows consent values for the microphone: this device's, and desktop apps'."""
+    import winreg  # Windows only
+
+    key = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone"
+
+    def read(path: str) -> "str | None":
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as k:
+                return str(winreg.QueryValueEx(k, "Value")[0])
+        except OSError:
+            return None
+
+    return read(key), read(key + r"\NonPackaged")
 
 if TYPE_CHECKING:
     pass
@@ -218,7 +269,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         with self._stop_lock:
             if self.is_stopped:
                 return None
-        self._last_buffer_time = time.monotonic()  # watchdog liveness stamp (audio thread)
+        self._last_buffer_time = self.wall_clock.now()  # watchdog liveness stamp (audio thread)
         chunk = data[:, 0].copy()  # copy before queuing — PortAudio reuses the buffer
 
         # Dead-input watchdog liveness stamp. float(np.sqrt(chunk.dot(chunk) / n))
@@ -227,7 +278,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         if chunk.size:
             rms = float(np.sqrt(chunk.dot(chunk) / chunk.size))
             if chunk_carries_signal(rms):
-                self._last_signal_time = time.monotonic()
+                self._last_signal_time = self.wall_clock.now()
 
         self.queue.put(chunk)
 
@@ -288,14 +339,28 @@ class RealtimeFFTAnalyzerEngineControlMixin:
 
         Mirrors Swift RealtimeFFTAnalyzer.start() (+EngineControl.swift).
         Swift starts AVAudioEngine and installs the input tap after checking
-        microphone permission; Python opens the PortAudio InputStream when there is none
-        (WASAPI RAW on Windows) and starts it. Raises sd.PortAudioError when no input
-        can be opened, as Swift's start() throws; the view reports it. A test instance has no
-        stream, and opens none.
+        microphone permission; Python checks the permission too (macOS, Windows), then opens the
+        PortAudio InputStream when there is none (WASAPI RAW on Windows) and starts it. Raises
+        MicrophonePermissionError when the permission is refused, and sd.PortAudioError when no
+        input can be opened, as Swift's start() throws; the view reports it. Returns without
+        starting when it has asked for the permission — the start resumes through
+        ``on_permission_granted`` once granted. A test instance has no stream, and opens none.
         """
         if self.is_for_testing:
             return
+        try:
+            self._start_engine()
+        except Exception as exc:
+            # A start that fails for anything but the permission leaves the input unavailable until a
+            # start succeeds. Mirrors Swift start().
+            if not is_permission_error(exc):
+                self._set_input_could_not_start(True)
+            raise
+
+    def _start_engine(self) -> None:
         gt_log("🎤 === Starting Audio Engine ===")
+        if not self._check_microphone_permission():
+            return  # asked for it; the start resumes once granted
         if self.stream is None:
             from .realtime_fft_analyzer_device_management import (
                 _log_stream_diagnostics,
@@ -309,6 +374,10 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             # Verify the negotiated stream rate; warns if WASAPI resampled to a different rate.
             self.rate = _log_stream_diagnostics(self.stream, self.rate)
         self.stream.start()
+        self.engine_start_failed = False
+        self._set_microphone_permission_denied(False)
+        self._set_input_could_not_start(False)
+        self._set_running(True)
         gt_log("🎤 Audio engine started")
         gt_log(f"🎤 Hardware sample rate: {self.rate} Hz, hardware channels: 1 (tap will use mono)")
         gt_log("🎤 Audio tap installed")
@@ -316,6 +385,94 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # file playback (the file path feeds self.queue synthetically, not via new_frame).
         if not self.is_playing_file:
             self.start_buffer_watchdog()
+        # Re-check the permission 3 s on: macOS's status can read authorized for a while after it
+        # has blocked the input. As Swift's start.
+        if platform.system() == "Darwin":
+            self.wall_clock.after(3.0, self._post_start_permission_check)
+
+    # MARK: - Microphone permission (mirrors Swift start()'s permission check)
+
+    def _check_microphone_permission(self) -> bool:
+        """Whether the start may go on. macOS: authorized → yes; not determined → ask, and no — the
+        start resumes through ``on_permission_granted`` once granted; denied or restricted → the flag
+        and MicrophonePermissionError. Windows: either consent value "Deny" → the flag and the error.
+        Linux has no per-app permission. Mirrors Swift ``start()``."""
+        system = platform.system()
+        if system == "Darwin":
+            status = _mac_authorization_status()
+            gt_log(f"🎤 Microphone permission: {status.upper()}")
+            if status == "authorized":
+                return True
+            if status == "not determined":
+                # The reply comes on a background thread; the wall clock brings it to the main thread.
+                _mac_request_access(lambda granted: self.wall_clock.after(
+                    0, lambda: self._on_permission_answer(granted)))
+                return False
+            self._set_microphone_permission_denied(True)
+            raise MicrophonePermissionError(f"Microphone access {status}")
+        if system == "Windows":
+            device_access, desktop_apps_access = _windows_microphone_consent()
+            if windows_microphone_access_denied(device_access, desktop_apps_access):
+                gt_log(f"⚠️ Microphone permission: DENIED (device {device_access}, desktop apps "
+                       f"{desktop_apps_access})")
+                self._set_microphone_permission_denied(True)
+                raise MicrophonePermissionError("Microphone access denied")
+        return True
+
+    def _on_permission_answer(self, granted: bool) -> None:
+        """The reply to the request, on the main thread: granted → resume the start (the owner's
+        callback, for the full start); refused → the flag."""
+        if granted:
+            # The 3-second check must not read the input-acquisition moment as a denial.
+            self._permission_just_granted = True
+            (self.on_permission_granted or self.start)()
+        else:
+            self._set_microphone_permission_denied(True)
+
+    def _post_start_permission_check(self) -> None:
+        """3 s after a start (macOS): a status that now reads denied is a denial — the engine stops
+        and the flag goes up. Silence alone is never one (``should_declare_permission_denied``).
+        Right after a grant the check is skipped once. Mirrors Swift's 3-second check."""
+        if self.is_stopped:
+            return
+        status = _mac_authorization_status()
+        tcc_denied = status in ("denied", "restricted")
+        gt_log(f"🎤 3s TCC check — status: {status}")
+        if self._permission_just_granted:
+            self._permission_just_granted = False
+        elif should_declare_permission_denied(tcc_denied):
+            gt_log("⚠️ Microphone permission confirmed DENIED after 3s")
+            self.stop()
+            self._set_microphone_permission_denied(True)
+
+    def _set_running(self, running: bool) -> None:
+        """Set whether the engine is running, and emit the edge on the processing thread's signal."""
+        if self.is_running == running:
+            return
+        self.is_running = running
+        thread = getattr(self, "proc_thread", None)
+        if thread is not None:
+            thread.runningChanged.emit(running)
+
+    def _set_input_could_not_start(self, failed: bool) -> None:
+        """Set whether the input could not be started, and emit the edge on the processing thread's
+        signal."""
+        if self.input_could_not_start == failed:
+            return
+        self.input_could_not_start = failed
+        thread = getattr(self, "proc_thread", None)
+        if thread is not None:
+            thread.inputCouldNotStartChanged.emit(failed)
+
+    def _set_microphone_permission_denied(self, denied: bool) -> None:
+        """Set whether the microphone permission is refused, and emit the edge on the processing
+        thread's signal, as ``_set_input_could_not_restart`` does."""
+        if self.microphone_permission_denied == denied:
+            return
+        self.microphone_permission_denied = denied
+        thread = getattr(self, "proc_thread", None)
+        if thread is not None:
+            thread.microphonePermissionDeniedChanged.emit(denied)
 
     def stop(self) -> None:
         """Stop the audio stream.
@@ -328,6 +485,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self.stop_buffer_watchdog()
         with self._stop_lock:
             self.is_stopped = True
+        self._set_running(False)
         # Ends an in-flight playback worker at its next chunk (Swift: filePlaybackGeneration += 1).
         self._file_playback_generation += 1
         self.is_playing_file = False
@@ -586,6 +744,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self.rate = int(file_rate)
         self.is_playing_file = True
         self.playing_file_name = file_name
+        self._set_running(True)  # the engine runs on the file, as Swift's isRunning
 
         my_generation = self._file_playback_generation
 
@@ -664,8 +823,9 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 with self._stop_lock:
                     self.is_stopped = False
                 self.stream.start()
+                self._set_running(True)
             except Exception:
-                pass
+                self._set_running(False)
         _td("file_playback", "MIC_RESTART_DONE")
         cb = self._on_playback_finished
         self._on_playback_finished = None
@@ -691,15 +851,15 @@ class RealtimeFFTAnalyzerEngineControlMixin:
     _WATCHDOG_BACKOFFS = (0.5, 1.0, 2.0, 4.0)
 
 
-    # @parity audio/buffer-watchdog
+    # @parity audio/buffer-watchdog tests=test/buffer-watchdog
     def start_buffer_watchdog(self, is_watchdog_recovery: bool = False) -> None:
-        """(Re)start the buffer-delivery watchdog (main-thread QTimer)."""
-        if getattr(self, "is_for_testing", False):
-            return
+        """(Re)start the buffer-delivery watchdog: stamp its clocks from the wall clock, give a deliberate
+        start a clean slate, and start the 1 Hz tick (a main-thread QTimer). Called by a start and by a
+        recovery's successful restart. Mirrors Swift startBufferWatchdog(isRecovery:)."""
         from PySide6 import QtCore
         self.stop_buffer_watchdog()
-        self._watchdog_engine_start_time = time.monotonic()
-        self._last_buffer_time = time.monotonic()
+        self._watchdog_engine_start_time = self.wall_clock.now()
+        self._last_buffer_time = self.wall_clock.now()
         # Prime the dead-input clock too, so its window is measured from the start -- but ONLY for a
         # start the user asked for.
         #
@@ -710,10 +870,13 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # would restart every 15 s forever, strobing the warning, on any permanently silent input
         # (a BlackHole 2ch virtual input, for one).  Mirrors Swift start(isWatchdogRecovery:).
         if not is_watchdog_recovery:
-            self._last_signal_time = time.monotonic()
+            self._last_signal_time = self.wall_clock.now()
             # A deliberate (re)start gets a clean slate: full recovery attempts again.
             self._watchdog_recovery_exhausted = False
             self._watchdog_recovery_attempts = 0
+            self._set_input_could_not_restart(False)
+        if getattr(self, "is_for_testing", False):
+            return  # no timer in a test: the test calls the tick itself
         timer = QtCore.QTimer()
         timer.setInterval(1000)
         timer.timeout.connect(self._check_buffer_watchdog)
@@ -732,12 +895,13 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # A PortAudio re-initialise skipped for a pending stream close is retried from here once
         # the close is no longer pending.
         self._retry_owed_reinit()
-        if self.is_stopped or self.is_playing_file or self._is_recovering:
+        # Running — or given up, which still watches even when failed restarts left the stream closed.
+        if (self.is_stopped and not self._watchdog_recovery_exhausted) or self.is_playing_file or self._is_recovering:
             return
         started = self._watchdog_engine_start_time
-        if started is None or (time.monotonic() - started) <= 4.0:
+        now = self.wall_clock.now()
+        if started is None or (now - started) <= 4.0:
             return  # startup grace — let a freshly-(re)started stream deliver its first buffer
-        now = time.monotonic()
 
         # The rule itself lives in dead_input.py as a pure function, so the whole truth
         # table is unit-testable without a clock, a timer or audio hardware.  This tick
@@ -781,6 +945,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         if self.input_appears_dead:
             self.input_appears_dead = False
             self._emit_input_appears_dead(False)
+        self._set_input_could_not_restart(False)
+        # Real audio falsifies any earlier "permission denied" determination. Mirrors Swift.
+        if self.microphone_permission_denied:
+            gt_log("✅ Receiving audio — clearing the earlier permission-denied determination")
+            self._set_microphone_permission_denied(False)
         if self._watchdog_recovery_exhausted:
             gt_log("✅ Audio input returned — dead-input warning cleared, recovery re-armed")
             self._watchdog_recovery_exhausted = False
@@ -797,9 +966,18 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         if thread is not None:
             thread.inputAppearsDeadChanged.emit(dead)
 
+    def _set_input_could_not_restart(self, failed: bool) -> None:
+        """Set whether the input could not be restarted, and emit the edge on the processing thread's
+        signal, as ``_emit_input_appears_dead`` does."""
+        if self.input_could_not_restart == failed:
+            return
+        self.input_could_not_restart = failed
+        thread = getattr(self, "proc_thread", None)
+        if thread is not None:
+            thread.inputCouldNotRestartChanged.emit(failed)
+
     def _attempt_watchdog_recovery(self) -> None:
-        """Schedule one bounded, backed-off recovery restart."""
-        from PySide6 import QtCore
+        """Schedule one bounded, backed-off recovery restart, on the wall clock."""
         self._watchdog_recovery_attempts += 1
         if self._watchdog_recovery_attempts > self._watchdog_max_attempts:
             # Stop RESTARTING, but keep WATCHING.  Stopping the timer here left the app
@@ -812,6 +990,11 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                    f"will clear as soon as audio returns")
             self._is_recovering = False
             self._watchdog_recovery_exhausted = True
+            # The last restart failed, so the stream is closed: say so, and re-arm the watchdog, so it
+            # keeps watching — the dead-input warning follows, and signal returning clears both.
+            if self.engine_start_failed:
+                self._set_input_could_not_restart(True)
+                self.start_buffer_watchdog(is_watchdog_recovery=True)
             return
         idx = min(self._watchdog_recovery_attempts - 1, len(self._WATCHDOG_BACKOFFS) - 1)
         backoff = self._WATCHDOG_BACKOFFS[idx]
@@ -821,7 +1004,7 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # a device refresh while the restart is pending then only updates the selection, and the
         # restart opens whichever device is selected — one stream, opened once.
         self._close_stream_only()
-        QtCore.QTimer.singleShot(int(backoff * 1000), self._do_watchdog_restart)
+        self.wall_clock.after(backoff, self._do_watchdog_restart)
 
     def _do_watchdog_restart(self) -> None:
         """Re-open the selected device via ``reinitialize_portaudio``, then re-arm.
@@ -831,12 +1014,15 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         ``start()`` throws.
         """
         try:
-            self.reinitialize_portaudio()
+            (self.watchdog_restart or self.reinitialize_portaudio)()
         except Exception as e:  # noqa: BLE001 — last-resort recovery, never raise
             gt_log(f"⚠️ Buffer watchdog: restart could not open "
                    f"'{getattr(e, 'device_name', e)}' — retrying")
+            self.engine_start_failed = True
             self._attempt_watchdog_recovery()
             return
+        self.engine_start_failed = False
+        self._set_running(True)
         gt_log(f"✅ Buffer watchdog: stream restarted (attempt {self._watchdog_recovery_attempts})")
         self._is_recovering = False
         # re-arm; only REAL signal clears the streak

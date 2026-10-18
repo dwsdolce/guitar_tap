@@ -918,6 +918,17 @@ class TapToneAnalyzer(
 
     CLIPPING_WARNING_STATUS = "⚠ Input clipping — reduce mic gain"
     DEAD_INPUT_STATUS = "⚠ No audio input — check the microphone connection"
+    # Shown once the recovery has given up after restarts that failed. Outranks every other input
+    # warning. Mirrors Swift `couldNotRestartStatus`.
+    COULD_NOT_RESTART_STATUS = ("⚠ The microphone could not be restarted — check its connection, "
+                                "or choose it again in Settings")
+    # Shown while the microphone permission is refused. Outranks every other input warning. Mirrors
+    # Swift `microphoneAccessStatus`.
+    MICROPHONE_ACCESS_STATUS = "⚠ Microphone access required — enable it in Settings, then restart GuitarTap"
+    # Shown while the input could not be started. Ranks just below the permission warning. Mirrors
+    # Swift `couldNotStartStatus`.
+    COULD_NOT_START_STATUS = ("⚠ The audio input could not be started — check it, or choose another "
+                              "input in Settings")
 
     def _set_clipping(self, clipping: bool) -> None:
         """Update the input-clipping state and re-render the status message.
@@ -941,6 +952,39 @@ class TapToneAnalyzer(
         self.input_appears_dead = dead
         self._apply_status_overrides()
 
+    def _set_input_could_not_start(self, failed: bool) -> None:
+        """Update whether the input could not be started and re-render the status message.
+
+        Called from a slot connected to the FFT thread's inputCouldNotStartChanged signal. Mirrors
+        Swift's `$inputCouldNotStart` sink.
+        """
+        if failed == getattr(self, "input_could_not_start", False):
+            return
+        self.input_could_not_start = failed
+        self._apply_status_overrides()
+
+    def _set_microphone_permission_denied(self, denied: bool) -> None:
+        """Update whether the microphone permission is refused and re-render the status message.
+
+        Called from a slot connected to the FFT thread's microphonePermissionDeniedChanged signal.
+        Mirrors Swift's `$microphonePermissionDenied` sink.
+        """
+        if denied == getattr(self, "microphone_permission_denied", False):
+            return
+        self.microphone_permission_denied = denied
+        self._apply_status_overrides()
+
+    def _set_input_could_not_restart(self, failed: bool) -> None:
+        """Update whether the input could not be restarted and re-render the status message.
+
+        Called from a slot connected to the FFT thread's inputCouldNotRestartChanged signal. Mirrors
+        Swift's `$inputCouldNotRestart` sink.
+        """
+        if failed == getattr(self, "input_could_not_restart", False):
+            return
+        self.input_could_not_restart = failed
+        self._apply_status_overrides()
+
     def _apply_status_overrides(self) -> None:
         """Resolve the displayed status against the active input-condition overrides.
 
@@ -956,11 +1000,19 @@ class TapToneAnalyzer(
             self.statusMessageChanged.emit(self.status_message)
 
     def _resolved_status(self) -> str:
-        """The status that SHOULD be displayed: dead input, then clipping, then the analyzer's own.
+        """The status that SHOULD be displayed: the microphone permission refused, then an input that
+        could not be started, then one that could not be restarted, then dead input, then clipping, then
+        the analyzer's own.
 
         The precedence itself, with no assignment and no signal, so the write path and the override
         toggles share one rule instead of each deciding.
         """
+        if getattr(self, "microphone_permission_denied", False):
+            return self.MICROPHONE_ACCESS_STATUS
+        if getattr(self, "input_could_not_start", False):
+            return self.COULD_NOT_START_STATUS
+        if getattr(self, "input_could_not_restart", False):
+            return self.COULD_NOT_RESTART_STATUS
         if getattr(self, "input_appears_dead", False):
             return self.DEAD_INPUT_STATUS
         if getattr(self, "is_clipping", False):
@@ -1255,6 +1307,12 @@ class TapToneAnalyzer(
         # Swift: fftAnalyzer.level.$isClipping sink.
         self.mic.level.clippingChanged.connect(self._set_clipping)
         self.mic.proc_thread.inputAppearsDeadChanged.connect(self._set_input_appears_dead)
+        self.mic.proc_thread.inputCouldNotRestartChanged.connect(self._set_input_could_not_restart)
+        self.mic.proc_thread.microphonePermissionDeniedChanged.connect(self._set_microphone_permission_denied)
+        self.mic.proc_thread.inputCouldNotStartChanged.connect(self._set_input_could_not_start)
+        # The user granted the permission in the system's request: the full start, as Swift's
+        # onPermissionGranted. A failure is the engine's to report (its flag) or the log's.
+        self.mic.on_permission_granted = self._start_after_permission_granted
 
         # ── Raw-sample handler ───────────────────────────────────────────
         self.mic.raw_sample_handler = self._accumulate_gated_samples
@@ -1730,6 +1788,14 @@ class TapToneAnalyzer(
                     "and new measurements will not be saved to it until it can be read.")
         return (f"Your saved measurements could not be read, so the library starts empty. The file was kept "
                 f"as {kept} — fix it and rename it back to {os.path.basename(original)} to restore it.")
+
+    def _start_after_permission_granted(self) -> None:
+        """The start the engine resumes once the user grants the permission. Mirrors Swift's
+        ``onPermissionGranted`` closure."""
+        try:
+            self.start()
+        except Exception as exc:  # noqa: BLE001 — a start failure here has no caller to report it
+            gt_log(f"❌ Start after the permission was granted failed: {exc}")
 
     def start(self) -> None:
         """Start the engine, anchor the warm-up and, one main-loop pass later, make the guarded

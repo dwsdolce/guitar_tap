@@ -374,6 +374,12 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.captureRecordingHeld.connect(self.captureRecordingHeld)
         self.analyzer.captureAudioSavedChanged.connect(self.captureAudioSavedChanged)
         self.analyzer.measurementLoadStarting.connect(self.measurementLoadStarting)
+        # The placeholder follows the engine: hidden while it runs; "Audio input unavailable" when
+        # the permission is refused or a start failed, as Swift's.
+        thread = self.analyzer.mic.proc_thread
+        thread.runningChanged.connect(self._update_overlay)
+        thread.microphonePermissionDeniedChanged.connect(self._update_overlay)
+        thread.inputCouldNotStartChanged.connect(self._update_overlay)
         self.analyzer.measurementLoaded.connect(self.measurementLoaded)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
         self.analyzer.loadedAxisRangeChanged.connect(self._on_loaded_axis_range_changed)
@@ -475,9 +481,10 @@ class FftCanvas(pg.PlotWidget):
         # Initialise mode bands for the saved guitar type
         self.set_guitar_type_bands(guitar_type_str)
 
-        # Overlay text shown when analyzer is not running
+        # Overlay text shown while the engine is not running — "Starting...", or why the input is
+        # unavailable. Mirrors Swift's chart placeholder.
         self._overlay_label = pg.TextItem(
-            text="Press Start to begin",
+            text="Starting...",
             anchor=(0.5, 0.5),
         )
         self._overlay_label.setZValue(300)
@@ -769,6 +776,13 @@ class FftCanvas(pg.PlotWidget):
         cy = (y_range[0] + y_range[1]) / 2
         self._overlay_label.setPos(cx, cy)
 
+    def _update_overlay(self, *_args) -> None:
+        """Show the not-running placeholder from the engine's state."""
+        mic = self.analyzer.mic
+        unavailable = mic.microphone_permission_denied or mic.input_could_not_start
+        self._overlay_label.setText("Audio input unavailable" if unavailable else "Starting...")
+        self._overlay_label.setVisible(not mic.is_running)
+
     def start_analyzer(self) -> None:
         """Start the analyzer and hide the idle overlay.
 
@@ -782,13 +796,17 @@ class FftCanvas(pg.PlotWidget):
         restart_tap_sequence() instead, which keeps the thread alive
         (no audio dropout) — mirrors Swift's AVAudioEngine running continuously.
         """
-        self._overlay_label.setVisible(False)
         # The analyzer starts the engine (the processing thread and the stream, each if not running),
         # anchors the warm-up and schedules the guarded auto-start, as Swift's view calls
         # tapToneAnalyzer.start().
         try:
             self.analyzer.start()
         except Exception as exc:  # noqa: BLE001 — any start failure is reported, never fatal
+            from guitar_tap.models.realtime_fft_analyzer_engine_control import is_permission_error
+            if is_permission_error(exc):
+                # The engine has raised its permission flag; the window shows that alert.
+                gt_log(f"❌ Audio engine could not start: {exc}")
+                return
             code = exc.args[1] if len(exc.args) > 1 else -1
             self.engine_start_error = (
                 f"The audio engine could not start (error {code}). Try switching the audio input "

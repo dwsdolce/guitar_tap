@@ -1,6 +1,6 @@
 {
  "slug": "test/notification",
- "about": "A device change and the settle after it: the engine restarts on the new device, detection stands down and New Tap greys out (the view is told), a live chart is blanked, and the status says the device is reinitializing; once 3 s of AUDIO have passed since the LAST change and the next FFT frame has arrived, the level latch is re-anchored from that frame, readiness and listening come back, and the status is put back. Also the status overrides the settle has to see through. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, pause, guitarTap, materialTap, accept, advance, routeChange — the engine restarted on a device change — and spectrumFrame — one FFT frame from the running engine, a spectrum as peaks.json describes one), plus {\"note\": true} (remembers the status and the peaks), {\"watchNotifications\": true} (readiness notifications are watched from here), {\"clipping\": bool}, {\"inputDead\": bool} and {\"check\": {...}}. Fields: 'ready' (New Tap's readiness), 'readinessNotified' (the view was told of a readiness change since watchNotifications: Swift's objectWillChange, Python's readyForDetectionChanged, the web's subscribers), 'settling' (the chart is blanked), 'statusMessage' (exact), 'statusAsNoted', 'statusBeforeSettleAsNoted', 'statusIsArmedPrompt', 'detecting', 'paused', 'complete', 'phase' (Swift's raw value), 'aboveThreshold' (the level latch), 'hasPeaks', 'peaksAsNoted'. Expected values are Swift's.",
+ "about": "A device change and the settle after it: the engine restarts on the new device, detection stands down and New Tap greys out (the view is told), a live chart is blanked, and the status says the device is reinitializing; once 3 s of AUDIO have passed since the LAST change and the next FFT frame has arrived, the level latch is re-anchored from that frame, readiness and listening come back, and the status is put back. Also the status overrides the settle has to see through. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, pause, guitarTap, materialTap, accept, advance, routeChange — the engine restarted on a device change — and spectrumFrame — one FFT frame from the running engine, a spectrum as peaks.json describes one), plus {\"note\": true} (remembers the status and the peaks), {\"watchNotifications\": true} (readiness notifications are watched from here), {\"clipping\": bool}, {\"inputDead\": bool}, {\"couldNotRestart\": bool} (the engine's recovery gave up after failed restarts), {\"permissionDenied\": bool} (the engine reports the microphone permission refused), {\"couldNotStart\": bool} (the engine reports a start failed for anything but the permission) and {\"check\": {...}}. Fields: 'ready' (New Tap's readiness), 'readinessNotified' (the view was told of a readiness change since watchNotifications: Swift's objectWillChange, Python's readyForDetectionChanged, the web's subscribers), 'settling' (the chart is blanked), 'statusMessage' (exact), 'statusAsNoted', 'statusBeforeSettleAsNoted', 'statusIsArmedPrompt', 'statusIsMicrophoneAccessWarning' (the status is the edition's microphone-access warning — the natives say to restart GuitarTap, the web to reload the page), 'detecting', 'paused', 'complete', 'phase' (Swift's raw value), 'aboveThreshold' (the level latch), 'hasPeaks', 'peaksAsNoted'. Expected values are Swift's.",
  "cases": [
   {
    "id": "N1",
@@ -714,6 +714,151 @@
     "paused": true,
     "detecting": false,
     "ready": true
+   }
+  },
+  {
+   "id": "N19",
+   "note": "an input that could not be restarted outranks dead input and clipping, and clearing all three puts back the analyzer's own status",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "note": true
+    },
+    {
+     "clipping": true
+    },
+    {
+     "inputDead": true
+    },
+    {
+     "couldNotRestart": true
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ The microphone could not be restarted — check its connection, or choose it again in Settings"
+     }
+    },
+    {
+     "couldNotRestart": false
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ No audio input — check the microphone connection"
+     }
+    },
+    {
+     "inputDead": false
+    },
+    {
+     "clipping": false
+    }
+   ],
+   "expect": {
+    "statusAsNoted": true
+   }
+  },
+  {
+   "id": "N20",
+   "note": "the microphone permission refused outranks every other input warning, and clearing it shows the next",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "note": true
+    },
+    {
+     "clipping": true
+    },
+    {
+     "inputDead": true
+    },
+    {
+     "couldNotRestart": true
+    },
+    {
+     "permissionDenied": true
+    },
+    {
+     "check": {
+      "statusIsMicrophoneAccessWarning": true
+     }
+    },
+    {
+     "permissionDenied": false
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ The microphone could not be restarted — check its connection, or choose it again in Settings"
+     }
+    },
+    {
+     "couldNotRestart": false
+    },
+    {
+     "inputDead": false
+    },
+    {
+     "clipping": false
+    }
+   ],
+   "expect": {
+    "statusAsNoted": true
+   }
+  },
+  {
+   "id": "N21",
+   "note": "an input that could not be started ranks just below the permission warning and above every other",
+   "steps": [
+    {
+     "newTap": true
+    },
+    {
+     "note": true
+    },
+    {
+     "couldNotRestart": true
+    },
+    {
+     "couldNotStart": true
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ The audio input could not be started — check it, or choose another input in Settings"
+     }
+    },
+    {
+     "permissionDenied": true
+    },
+    {
+     "check": {
+      "statusIsMicrophoneAccessWarning": true
+     }
+    },
+    {
+     "permissionDenied": false
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ The audio input could not be started — check it, or choose another input in Settings"
+     }
+    },
+    {
+     "couldNotStart": false
+    },
+    {
+     "check": {
+      "statusMessage": "⚠ The microphone could not be restarted — check its connection, or choose it again in Settings"
+     }
+    },
+    {
+     "couldNotRestart": false
+    }
+   ],
+   "expect": {
+    "statusAsNoted": true
    }
   }
  ]

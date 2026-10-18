@@ -92,3 +92,30 @@ def watchdog_decision(
     if (now - last_buffer_time) > silence_threshold:
         return WatchdogDecision.STARVED
     return WatchdogDecision.DEAD_INPUT if dead else WatchdogDecision.HEALTHY
+
+
+# ---------------------------------------------------------------------------
+# Permission decision
+# ---------------------------------------------------------------------------
+
+def should_declare_permission_denied(tcc_denied: bool) -> bool:
+    """Whether the post-start check should declare the microphone permission denied.
+
+    **Only the platform's own answer counts.** Silence is never evidence of a denial, so this is
+    ``tcc_denied`` and nothing else. A silent input device — a muted mic, or a virtual device like
+    BlackHole with nothing routed into it — is not a permissions problem; it belongs to the dead-input
+    watchdog, which says "no audio input", keeps watching, and clears itself when signal returns.
+    Mirrors Swift ``shouldDeclarePermissionDenied(tccDenied:)``.
+    """
+    return tcc_denied
+
+
+def windows_microphone_access_denied(device_access: "str | None", desktop_apps_access: "str | None") -> bool:
+    """Whether Windows' privacy settings refuse this app the microphone, from the two consent values
+    under ``HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\
+    microphone``: ``Value`` (microphone access on this device) and its ``NonPackaged`` subkey's
+    ``Value`` ("Let desktop apps access your microphone", which governs an installed desktop app).
+    Either "Deny" refuses; a value that is missing or anything else does not — Windows then decides
+    as it opens the device. With access refused, PortAudio reports the input as an invalid device, so
+    the setting is the only way to tell a denial from a missing microphone. Windows only."""
+    return device_access == "Deny" or desktop_apps_access == "Deny"

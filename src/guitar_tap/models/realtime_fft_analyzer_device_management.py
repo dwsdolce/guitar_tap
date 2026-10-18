@@ -434,6 +434,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             self.stream = _open_input_stream(self.device_index, self.rate, self.chunksize, self.new_frame,
                                              expected_name=device.name)
             self.stream.start()
+            self._set_running(True)
         except sd.PortAudioError:
             self.stream = None
             raise
@@ -476,6 +477,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             self.stream = _open_input_stream(self.device_index, self.rate, self.chunksize, self.new_frame,
                                              expected_name=fresh.name)
             self.stream.start()
+            self._set_running(True)
         except sd.PortAudioError as exc:
             self.stream = None
             raise InputDeviceOpenError(fresh.name) from exc
@@ -555,6 +557,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         """
         with self._stop_lock:
             self.is_stopped = True
+        self._set_running(False)
 
         stream = self.stream
 

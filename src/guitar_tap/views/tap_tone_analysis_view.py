@@ -434,7 +434,6 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
 
         self.saved_path: str = ""
-        self._is_running: bool = False
         self._is_measurement_complete: bool = False
         self._tap_count_captured: int = 0
         self._tap_count_total: int = 1
@@ -2283,6 +2282,34 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tap accumulator
         self.tap_num_spin.valueChanged.connect(self._on_tap_num_changed)
 
+        # Microphone permission: the engine decides; the alert shows when it is refused. Mirrors
+        # Swift's onChange.
+        self.fft_canvas.analyzer.mic.proc_thread.microphonePermissionDeniedChanged.connect(
+            self._on_microphone_permission_denied_changed)
+        # The engine's running state drives the status bar and the buttons, as Swift's fft.isRunning.
+        self.fft_canvas.analyzer.mic.proc_thread.runningChanged.connect(self.set_running)
+
+    def _on_microphone_permission_denied_changed(self, denied: bool) -> None:
+        if denied:
+            # After the current event, so an alert raised during a start shows once the window is up.
+            QtCore.QTimer.singleShot(0, self._show_microphone_permission_alert)
+
+    def _show_microphone_permission_alert(self) -> None:
+        """"Microphone Access Required" — Open Settings, Cancel. A permission granted while the app runs
+        takes effect when it next starts, so the message says to restart. Mirrors Swift's alert."""
+        from guitar_tap.views.utilities import platform_adapters
+
+        box = QtWidgets.QMessageBox(self)
+        box.setWindowTitle("Microphone Access Required")
+        box.setText("GuitarTap needs microphone access to analyse tap tones. Please enable it in "
+                    f"{platform_adapters.microphone_settings_path()}, then restart GuitarTap.")
+        open_btn = (box.addButton("Open Settings", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+                    if platform_adapters.can_open_microphone_settings() else None)
+        box.addButton(QtWidgets.QMessageBox.StandardButton.Cancel)
+        box.exec()
+        if open_btn is not None and box.clickedButton() is open_btn:
+            platform_adapters.open_microphone_settings()
+
     def _init_state(self, f_range: dict[str, float]) -> None:
         """Restore saved values and initialise display state."""
         canvas = self.fft_canvas
@@ -2383,19 +2410,23 @@ class MainWindow(QtWidgets.QMainWindow):
     # State update methods (formerly in PeakControls)
     # ================================================================
 
+    @property
+    def _is_running(self) -> bool:
+        """Whether the audio engine is running — the engine's own state (Swift ``fft.isRunning``),
+        so a start that failed never reads as running."""
+        canvas = getattr(self, "fft_canvas", None)
+        return bool(canvas is not None and canvas.analyzer.mic.is_running)
+
     def set_running(self, running: bool) -> None:
-        if running:
-            # SYNC the status-bar message to the analyzer's CURRENT status_message.
-            # statusMessageChanged fires only on CHANGE, so if the arm prompt was set before
-            # the view connected the signal (app startup), the label would keep its init
-            # "Stopped".  Pull it here — single-sourced from analyzer.status_message like Swift
-            # Text(tap.statusMessage), NOT a hardcoded "Listening for tap…".
-            self._sb_detect_msg.setText(self.fft_canvas.analyzer.status_message)
-            self._apply_status_message_color()
-        else:
-            palette.tag(self._sb_detect_dot, color=palette.Role.STATUS_PAUSED)
-            self._sb_detect_msg.setText("Stopped")
-            palette.tag(self._sb_detect_msg, color=palette.Role.STATUS_WARNING)
+        """The engine started or stopped: the status bar shows the analyzer's status — a warning
+        when the input is unavailable — and the buttons follow (New Tap needs the engine running,
+        as Swift's button rule)."""
+        # SYNC the status-bar message to the analyzer's CURRENT status_message. statusMessageChanged
+        # fires only on CHANGE, so if the status was set before the view connected the signal (app
+        # startup), the label would keep its init text. Single-sourced from analyzer.status_message,
+        # as Swift's Text(tap.statusMessage).
+        self._sb_detect_msg.setText(self.fft_canvas.analyzer.status_message)
+        self._apply_status_message_color()
         self._update_tap_buttons()
 
     def _on_detection_state_changed(self, _state: object) -> None:
@@ -3055,7 +3086,7 @@ class MainWindow(QtWidgets.QMainWindow):
         is_complete = analyzer.is_measurement_complete
         in_review = self._is_in_review_phase()
         # fft running + past the post-tap/route-change reinit window. `_is_running` is the
-        # audio-engine-running flag (the analog of Swift fft.isRunning); is_ready_for_detection
+        # engine's running state (Swift fft.isRunning); is_ready_for_detection
         # mirrors Swift isReadyForDetection. Together == Swift `fft.isRunning && isReadyForDetection`.
         ready = self._is_running and analyzer.is_ready_for_detection
 
@@ -3173,8 +3204,6 @@ class MainWindow(QtWidgets.QMainWindow):
     # ================================================================
 
     def _start_analyzer(self) -> None:
-        self._is_running = True
-        self.set_running(True)
         self.fft_canvas.start_analyzer()
 
     def _open_audio_file(self) -> None:
@@ -3225,9 +3254,6 @@ class MainWindow(QtWidgets.QMainWindow):
             # which calls set_loaded_measurement_name and would overwrite the title.
             # Mirrors Swift: fft.playingFileName (@Published) drives chartTitle computed var.
             analyzer.playingFileNameChanged.emit(analyzer.mic.playing_file_name)
-
-            self._is_running = True
-            self.set_running(True)
         except Exception as exc:
             # play_file has already restored the calibration.
             QtWidgets.QMessageBox.warning(

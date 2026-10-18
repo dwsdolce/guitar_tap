@@ -14,7 +14,11 @@ near -90 dBFS in a silent room, which is what makes the upper bound real.
 Source of the numbers: the silent-input incidents of 2026-07-16 and 2026-08-21.
 """
 
+import pytest
+
 from guitar_tap.models.dead_input import (
+    should_declare_permission_denied,
+    windows_microphone_access_denied,
     BUFFER_DELIVERY_TIMEOUT,
     DEAD_INPUT_DWELL,
     DEAD_INPUT_RMS_THRESHOLD,
@@ -134,3 +138,28 @@ def test_exhausted_never_restarts_even_when_starved():
     d = decide(BUFFER_DELIVERY_TIMEOUT + 1, DEAD_INPUT_DWELL + 1, exhausted=True)
     assert d is WatchdogDecision.DEAD_INPUT_EXHAUSTED
     assert d is not WatchdogDecision.STARVED
+
+
+# MARK: - Permission decision (mirrors Swift PermissionDecisionTests)
+
+def test_tcc_denied_is_a_denial():
+    assert should_declare_permission_denied(tcc_denied=True)
+
+
+def test_authorized_is_not_a_denial_however_silent_the_input():
+    # Silence on an authorized device is a dead or muted INPUT, which the dead-input watchdog
+    # reports accurately and recovers from.
+    assert should_declare_permission_denied(tcc_denied=False) is False
+
+
+@pytest.mark.parametrize("device, desktop_apps, denied", [
+    ("Allow", "Allow", False),
+    ("Deny", "Allow", True),      # microphone access off for the device
+    ("Allow", "Deny", True),      # "Let desktop apps access your microphone" off
+    ("Deny", "Deny", True),
+    (None, None, False),          # never set: Windows decides as it opens the device
+    ("Allow", None, False),
+])
+def test_windows_consent(device, desktop_apps, denied):
+    """Python only — Windows' microphone privacy settings, which no other edition runs under."""
+    assert windows_microphone_access_denied(device, desktop_apps) is denied
