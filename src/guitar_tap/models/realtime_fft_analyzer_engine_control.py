@@ -1037,8 +1037,12 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         try:
             (self.watchdog_restart or self._reopen_input_for_watchdog)()
         except Exception as e:  # noqa: BLE001 — last-resort recovery, never raise
-            gt_log(f"⚠️ Buffer watchdog: restart could not open "
-                   f"'{getattr(e, 'device_name', e)}' — retrying")
+            # A device that could not be opened is named; any other failure is logged as Swift's.
+            device_name = getattr(e, "device_name", None)
+            if device_name is not None:
+                gt_log(f"⚠️ Buffer watchdog: restart could not open '{device_name}' — retrying")
+            else:
+                gt_log(f"⚠️ Buffer watchdog: restart failed ({e}) — retrying")
             self.engine_start_failed = True
             self._attempt_watchdog_recovery()
             return
