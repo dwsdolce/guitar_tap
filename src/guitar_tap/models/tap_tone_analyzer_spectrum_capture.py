@@ -499,6 +499,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     # Mirrors Swift TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:)
     # ------------------------------------------------------------------ #
 
+    # @parity dsp/gated-capture tests=test/file-playback,test/tap-decisions,test/guitar-capture-window,test/self-regression
     def _accumulate_gated_samples(self, chunk: "npt.NDArray[np.float32]", sample_rate: float) -> None:
         """Maintain the pre-roll ring buffer and accumulate a gated capture window.
 
