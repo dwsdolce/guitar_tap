@@ -9,6 +9,7 @@ touch the user's measurements.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -147,20 +148,35 @@ def test_an_unreadable_library_is_kept_aside_and_not_written_over(kind, _library
         assert f.read() == damaged, "and the kept one is not touched"
 
 
+@contextlib.contextmanager
+def _unmovable(folder: str):
+    """The library cannot be renamed while inside: its folder read-only on macOS and Linux; on
+    Windows, which ignores a folder's read-only flag, the file held open, which Windows will not
+    rename."""
+    if sys.platform == "win32":
+        with open(measurements_file(), "rb"):
+            yield
+    else:
+        os.chmod(folder, 0o555)
+        try:
+            yield
+        finally:
+            os.chmod(folder, 0o755)
+
+
 @pytest.mark.parametrize("kind", _UNREADABLE_KINDS)
 def test_an_unreadable_library_that_cannot_be_moved_is_not_written(kind, _library_folder, qapp):
-    """The library could not be read and could not be renamed (its folder is read-only): it stays where it
-    is, the user is told, and nothing is written over it this session."""
+    """The library could not be read and could not be renamed: it stays where it is, the user is told,
+    and nothing is written over it this session."""
     damaged = _unreadable_library(kind)
     with open(measurements_file(), "wb") as f:
         f.write(damaged)
-    os.chmod(_library_folder, 0o555)
 
-    sut = TapToneAnalyzer.for_testing()
-    assert sut.library_load_failure
-    assert sut.is_library_write_blocked
+    with _unmovable(_library_folder):
+        sut = TapToneAnalyzer.for_testing()
+        assert sut.library_load_failure
+        assert sut.is_library_write_blocked
 
-    os.chmod(_library_folder, 0o755)
     sut.import_and_load_measurements(json.dumps([MEASUREMENTS["A"]]).encode("utf-8"))
     with open(measurements_file(), "rb") as f:
         assert f.read() == damaged, "REGRESSION: a save wrote over the only copy"
