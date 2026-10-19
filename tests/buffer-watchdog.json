@@ -1,6 +1,6 @@
 {
  "slug": "test/buffer-watchdog",
- "about": "The buffer watchdog's tick and recovery, around its decision (watchdogDecision, tested by test/dead-input-threshold) — the same cases in every edition, run on the engine with a wall clock moved by hand and a stand-in for the recovery's restart. Each case starts a fresh engine at time 0 and runs its 'steps' in order: {\"start\": true} is a deliberate start (the engine running, then startBufferWatchdog(isRecovery: false)); {\"run\": seconds, \"input\": \"signal\" | \"silence\" | \"none\"} moves the wall clock on in 0.5 s steps — after each, a buffer arrives that carries signal, or carries none, or no buffer arrives — and the tick runs at each whole second, as the 1 s timer does; {\"restart\": \"succeeds\" | \"fails\"} is what the restart stand-in does from then on (it succeeds until told otherwise; a success is what the edition's restart does for the watchdog: the engine running again and the watchdog re-armed as a recovery); {\"permissionDenied\": true} the engine's microphone permission flag raised; {\"playFile\": true} a file playing; {\"stop\": true} the engine not running; {\"check\": {...}} checks those fields now. 'expect' after the last step, and 'check': 'attempts' (the recovery's attempt count), 'recovering' (a recovery in progress), 'givenUp' (the recovery gave up), 'inputDead' (the dead-input warning), 'couldNotRestart' (the recovery gave up after restarts that failed), 'permissionDenied' (the engine's microphone permission flag), 'restarts' (how many times the restart ran), 'restartTimes' (the wall-clock time of each). Expected values are Swift's.",
+ "about": "The buffer watchdog's tick and recovery, around its decision (watchdogDecision, tested by test/dead-input-threshold) — the same cases in every edition, run on the engine with a wall clock moved by hand and a stand-in for the recovery's restart. Each case starts a fresh engine at time 0 and runs its 'steps' in order: {\"start\": true} is a deliberate start (the engine running, then startBufferWatchdog(isRecovery: false)); {\"run\": seconds, \"input\": \"signal\" | \"silence\" | \"none\"} moves the wall clock on in 0.5 s steps — after each, a buffer arrives that carries signal, or carries none, or no buffer arrives — and the tick runs at each whole second, as the 1 s timer does; {\"restart\": \"succeeds\" | \"fails\"} is what the restart stand-in does from then on (it succeeds until told otherwise; a success is what the edition's restart does for the watchdog: the engine running again and the watchdog re-armed as a recovery); {\"permissionDenied\": true} the engine's microphone permission flag raised; {\"authorized\": false} macOS reporting the microphone not authorized from then on (a case marked \"only\": \"natives\" runs in Swift and Python — the web has no such report); {\"playFile\": true} a file playing; {\"stop\": true} the engine not running; {\"check\": {...}} checks those fields now. 'expect' after the last step, and 'check': 'attempts' (the recovery's attempt count), 'recovering' (a recovery in progress), 'givenUp' (the recovery gave up), 'inputDead' (the dead-input warning), 'couldNotRestart' (the recovery gave up after restarts that failed), 'inputUnavailable' (the engine's input is unavailable — its permission refused, a start failed, or its restarts failed — what the not-running placeholders say), 'permissionDenied' (the engine's microphone permission flag), 'restarts' (how many times the restart ran), 'restartTimes' (the wall-clock time of each). Expected values are Swift's.",
  "cases": [
   {
    "id": "BW1",
@@ -191,7 +191,8 @@
      "check": {
       "couldNotRestart": true,
       "inputDead": false,
-      "givenUp": true
+      "givenUp": true,
+      "inputUnavailable": true
      }
     },
     {
@@ -212,7 +213,8 @@
      12.5,
      16.5,
      20.5
-    ]
+    ],
+    "inputUnavailable": true
    }
   },
   {
@@ -318,7 +320,8 @@
     {
      "check": {
       "couldNotRestart": true,
-      "inputDead": true
+      "inputDead": true,
+      "inputUnavailable": true
      }
     },
     {
@@ -330,7 +333,8 @@
     "couldNotRestart": false,
     "inputDead": false,
     "givenUp": false,
-    "attempts": 0
+    "attempts": 0,
+    "inputUnavailable": false
    }
   },
   {
@@ -349,7 +353,8 @@
     },
     {
      "check": {
-      "couldNotRestart": true
+      "couldNotRestart": true,
+      "inputUnavailable": true
      }
     },
     {
@@ -359,7 +364,8 @@
    "expect": {
     "couldNotRestart": false,
     "givenUp": false,
-    "attempts": 0
+    "attempts": 0,
+    "inputUnavailable": false
    }
   },
   {
@@ -380,6 +386,28 @@
    "expect": {
     "permissionDenied": false,
     "attempts": 0
+   }
+  },
+  {
+   "id": "BW15",
+   "only": "natives",
+   "note": "while macOS reports the microphone not authorized, the tick leaves it to the permission check: no recovery, however long no buffers come",
+   "steps": [
+    {
+     "start": true
+    },
+    {
+     "authorized": false
+    },
+    {
+     "run": 12,
+     "input": "none"
+    }
+   ],
+   "expect": {
+    "attempts": 0,
+    "recovering": false,
+    "restarts": 0
    }
   }
  ]

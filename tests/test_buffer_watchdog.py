@@ -40,6 +40,8 @@ class _Run:
         self.restart_fails = False
         self.restart_times: list[float] = []
         self.mic.watchdog_restart = self._restart
+        # The test host may not be authorized for the microphone (a CI runner is not).
+        self.mic.microphone_authorized = lambda: True
 
     def _restart(self) -> None:
         """The stand-in for reopening the device: on success the stream is open again (closing it
@@ -73,6 +75,8 @@ class _Run:
                 assert mic.input_appears_dead is want, msg
             elif field == "couldNotRestart":
                 assert mic.input_could_not_restart is want, msg
+            elif field == "inputUnavailable":
+                assert mic.input_unavailable is want, msg
             elif field == "permissionDenied":
                 assert mic.microphone_permission_denied is want, msg
             elif field == "restarts":
@@ -83,7 +87,8 @@ class _Run:
                 pytest.fail(f"{case_id}: unknown field {field}")
 
 
-@pytest.mark.parametrize("row", DATA["cases"], ids=lambda r: r["id"])
+@pytest.mark.parametrize("row", [r for r in DATA["cases"] if r.get("only") != "web"],
+                         ids=lambda r: r["id"])
 def test_buffer_watchdog(row, qapp):
     run = _Run()
     for step in row["steps"]:
@@ -94,6 +99,8 @@ def test_buffer_watchdog(row, qapp):
             run.run(step["run"], step["input"])
         elif "restart" in step:
             run.restart_fails = step["restart"] == "fails"
+        elif step.get("authorized") is False:
+            run.mic.microphone_authorized = lambda: False
         elif step.get("permissionDenied"):
             run.mic._set_microphone_permission_denied(True)
         elif step.get("playFile"):
@@ -105,3 +112,24 @@ def test_buffer_watchdog(row, qapp):
         else:
             pytest.fail(f"{row['id']}: unknown step {step}")
     run.check(row["expect"], row["id"])
+
+
+def test_a_refused_permission_stops_the_recovery_reopening_the_input(qapp, monkeypatch):
+    """Python's own restart (no stand-in): with Windows' microphone access turned off while
+    running, the recovery's restart checks the permission first, as Swift's restarts through
+    start() — the flag goes up and the device is never reopened, so the status asks for the access,
+    not the connection."""
+    from guitar_tap.models import realtime_fft_analyzer_engine_control as engine_control
+
+    monkeypatch.setattr(engine_control.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(engine_control, "_windows_microphone_consent", lambda: ("Allow", "Deny"))
+    run = _Run()
+    run.mic.watchdog_restart = None
+    reopened: list[bool] = []
+    monkeypatch.setattr(run.mic, "reinitialize_portaudio", lambda: reopened.append(True))
+    run.mic.is_stopped = False
+    run.mic.start_buffer_watchdog()
+    run.run(5, "signal")
+    run.run(4, "none")
+    assert run.mic.microphone_permission_denied is True
+    assert reopened == []

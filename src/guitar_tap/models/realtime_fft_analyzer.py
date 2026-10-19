@@ -89,7 +89,10 @@ from guitar_tap.utilities.logging import gt_log
 
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
 from .wall_clock import SystemWallClock, WallClock
-from .realtime_fft_analyzer_engine_control import RealtimeFFTAnalyzerEngineControlMixin
+from .realtime_fft_analyzer_engine_control import (
+    RealtimeFFTAnalyzerEngineControlMixin,
+    microphone_authorized,
+)
 
 from .realtime_fft_analyzer_fft_processing import RealtimeFFTAnalyzerFFTProcessingMixin
 
@@ -456,6 +459,10 @@ class RealtimeFFTAnalyzer(
         # The recovery's restart. None reopens the selected device (reinitialize_portaudio); a test
         # stands in for it. Mirrors Swift `watchdogRestart`.
         self.watchdog_restart: "Callable[[], None] | None" = None
+        # Whether macOS reports the microphone authorized — the watchdog acts only when it is. A
+        # test, whose host may not be authorized, stands in for it. Mirrors Swift
+        # `microphoneAuthorized`.
+        self.microphone_authorized: "Callable[[], bool]" = microphone_authorized
         self._last_buffer_time: float = 0.0
         self._watchdog_timer = None  # QtCore.QTimer | None
         self._is_recovering: bool = False
@@ -689,6 +696,14 @@ class RealtimeFFTAnalyzer(
         self._start_hotplug_monitor()
 
         atexit.register(self.close)
+
+    @property
+    def input_unavailable(self) -> bool:
+        """The engine is not running because its input is unavailable — refused the permission, a
+        start failed, or the recovery's restarts failed — rather than because it is starting: what
+        the not-running placeholders say. Mirrors Swift `inputUnavailable`."""
+        return (self.microphone_permission_denied or self.input_could_not_start
+                or self.input_could_not_restart)
 
     # MARK: - Selected Input Device Property
     # Mirrors Swift @Published var selectedInputDevice: AVAudioDevice? { didSet { ... } }

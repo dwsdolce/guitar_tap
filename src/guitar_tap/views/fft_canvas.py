@@ -397,11 +397,12 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.captureAudioSavedChanged.connect(self.captureAudioSavedChanged)
         self.analyzer.measurementLoadStarting.connect(self.measurementLoadStarting)
         # The placeholder follows the engine: hidden while it runs; "Audio input unavailable" when
-        # the permission is refused or a start failed, as Swift's.
+        # the permission is refused, a start failed or the recovery's restarts failed, as Swift's.
         thread = self.analyzer.mic.proc_thread
         thread.runningChanged.connect(self._update_overlay)
         thread.microphonePermissionDeniedChanged.connect(self._update_overlay)
         thread.inputCouldNotStartChanged.connect(self._update_overlay)
+        thread.inputCouldNotRestartChanged.connect(self._update_overlay)
         self.analyzer.measurementLoaded.connect(self.measurementLoaded)
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
         self.analyzer.loadedAxisRangeChanged.connect(self._on_loaded_axis_range_changed)
@@ -503,17 +504,24 @@ class FftCanvas(pg.PlotWidget):
         # Initialise mode bands for the saved guitar type
         self.set_guitar_type_bands(guitar_type_str)
 
-        # Overlay text shown while the engine is not running — "Starting...", or why the input is
-        # unavailable. Mirrors Swift's chart placeholder.
-        self._overlay_label = pg.TextItem(
-            text="Starting...",
-            anchor=(0.5, 0.5),
-        )
-        self._overlay_label.setZValue(300)
-        font = QtGui.QFont()
-        font.setPointSize(18)
-        self._overlay_label.setFont(font)
-        self.addItem(self._overlay_label)
+        # The placeholder shown while the engine is not running: the waveform image over
+        # "Starting...", or why the input is unavailable. Mirrors Swift's chart overlay.
+        self._overlay = QtWidgets.QWidget(self)
+        self._overlay.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        overlay_layout = QtWidgets.QVBoxLayout(self._overlay)
+        overlay_layout.setContentsMargins(0, 0, 0, 0)
+        overlay_layout.setSpacing(4)
+        overlay_icon = QtWidgets.QLabel()
+        overlay_icon.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        palette.set_icon(overlay_icon, "mdi.waveform", palette.Role.TEXT_SECONDARY, 48)
+        overlay_layout.addWidget(overlay_icon)
+        self._overlay_label = QtWidgets.QLabel("Starting...")
+        self._overlay_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        caption = QtGui.QFont()
+        caption.setPointSize(12)
+        self._overlay_label.setFont(caption)
+        palette.tag(self._overlay_label, color=palette.Role.TEXT_SECONDARY)
+        overlay_layout.addWidget(self._overlay_label)
         # Position the overlay after the view is fully set up
         QtCore.QTimer.singleShot(0, self._center_overlay)
 
@@ -615,7 +623,6 @@ class FftCanvas(pg.PlotWidget):
             style.crosshair_width, style.crosshair_dash)
         self._crosshair_v.setPen(crosshair)
         self._crosshair_h.setPen(crosshair)
-        self._overlay_label.setColor(palette.color(palette.Role.TEXT_SECONDARY))
         button_style = (
             "QToolButton { border: none; background: transparent;"
             f" color: {palette.qss(palette.Role.TEXT_SECONDARY)}; font-size: 15px; }}"
@@ -791,19 +798,21 @@ class FftCanvas(pg.PlotWidget):
     # ------------------------------------------------------------------ #
 
     def _center_overlay(self) -> None:
-        """Position the overlay label in the centre of the view."""
-        vb = self.getPlotItem().vb
-        x_range, y_range = vb.viewRange()
-        cx = (x_range[0] + x_range[1]) / 2
-        cy = (y_range[0] + y_range[1]) / 2
-        self._overlay_label.setPos(cx, cy)
+        """Centre the not-running placeholder on the chart, as Swift's overlay."""
+        if not hasattr(self, "_overlay"):
+            return  # a resize while the canvas is still being built
+        self._overlay.adjustSize()
+        self._overlay.move((self.width() - self._overlay.width()) // 2,
+                           (self.height() - self._overlay.height()) // 2)
+        self._overlay.raise_()
 
     def _update_overlay(self, *_args) -> None:
         """Show the not-running placeholder from the engine's state."""
         mic = self.analyzer.mic
-        unavailable = mic.microphone_permission_denied or mic.input_could_not_start
-        self._overlay_label.setText("Audio input unavailable" if unavailable else "Starting...")
-        self._overlay_label.setVisible(not mic.is_running)
+        self._overlay_label.setText(
+            "Audio input unavailable" if mic.input_unavailable else "Starting...")
+        self._overlay.setVisible(not mic.is_running)
+        self._center_overlay()
 
     def start_analyzer(self) -> None:
         """Start the analyzer and hide the idle overlay.
@@ -1237,8 +1246,10 @@ class FftCanvas(pg.PlotWidget):
         leg.raise_()
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
-        """Reposition the info button and comparison legend when the canvas resizes."""
+        """Reposition the placeholder, the info button and the comparison legend when the canvas
+        resizes."""
         super().resizeEvent(event)
+        self._center_overlay()
         self._reposition_info_btn()
         self._reposition_comparison_legend()
 

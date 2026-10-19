@@ -127,6 +127,10 @@ def window(qtbot, edges):
         qtbot.waitUntil(lambda: hasattr(w, "fft_canvas"), timeout=20_000)
         # With no microphone the app starts and reports it, as Swift's view does.
         assert any(title == "Audio Engine Error" for title, _ in edges.messages), edges.messages
+        # ... and the status bar and the chart say why the engine is not running, as Swift's.
+        assert w._sb_peak_lbl.text() == "Audio input unavailable"
+        assert not w.fft_canvas._overlay.isHidden()
+        assert w.fft_canvas._overlay_label.text() == "Audio input unavailable"
         yield w
     finally:
         # Delete the window, not just close it: in the app, closing it quits, but here the process

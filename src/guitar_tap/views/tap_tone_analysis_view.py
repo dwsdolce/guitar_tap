@@ -2288,9 +2288,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_microphone_permission_denied_changed)
         # The engine's running state drives the status bar and the buttons, as Swift's fft.isRunning.
         self.fft_canvas.analyzer.mic.proc_thread.runningChanged.connect(self.set_running)
+        # What the status bar's peak readout says while the engine is not running, as Swift's.
+        for changed in (self.fft_canvas.analyzer.mic.proc_thread.microphonePermissionDeniedChanged,
+                        self.fft_canvas.analyzer.mic.proc_thread.inputCouldNotStartChanged,
+                        self.fft_canvas.analyzer.mic.proc_thread.inputCouldNotRestartChanged):
+            changed.connect(self._on_input_flag_changed)
         # A start that failed after its kAUStartIO retry, as Swift's engineStartError alert.
-        self.fft_canvas.engineStartFailedMessage.connect(
-            lambda message: QtWidgets.QMessageBox.warning(self, "Audio Engine Error", message))
+        self.fft_canvas.engineStartFailedMessage.connect(self._on_engine_start_failed)
 
     def _on_microphone_permission_denied_changed(self, denied: bool) -> None:
         if denied:
@@ -2432,6 +2436,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_status_message_color()
         self._update_tap_buttons()
         self._update_running_indicators()
+        self._update_peak_readout()
+
+    def _on_input_flag_changed(self, _flag: bool) -> None:
+        """An engine input flag changed (on the processing thread; delivered here on the GUI
+        thread): the not-running readout may now say why."""
+        self._update_peak_readout()
+
+    def _on_engine_start_failed(self, message: str) -> None:
+        """A start failed after its kAUStartIO retry: the Audio Engine Error, as Swift's alert."""
+        QtWidgets.QMessageBox.warning(self, "Audio Engine Error", message)
+
+    def _update_peak_readout(self) -> None:
+        """The status bar's peak readout: while the engine runs, the live peak (written per frame by
+        _on_peak_info); while it does not, why — "Audio input unavailable" or "Starting...". As
+        Swift's status bar, `fft.isRunning ? Peak… : (fft.inputUnavailable ? … : "Starting...")`."""
+        mic = self.fft_canvas.analyzer.mic
+        if mic.is_running:
+            palette.tag(self._sb_peak_lbl, color=palette.Role.STATUS_PEAK_READOUT)
+            return
+        self._sb_peak_lbl.setText(
+            "Audio input unavailable" if mic.input_unavailable else "Starting...")
+        palette.tag(self._sb_peak_lbl, color=palette.Role.TEXT_SECONDARY)
 
     def _on_detection_state_changed(self, _state: object) -> None:
         """Detection state changed → re-evaluate the status-bar tap count, progress and colours.

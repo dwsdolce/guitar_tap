@@ -217,6 +217,14 @@ def _mac_authorization_status() -> str:
           "not determined")
 
 
+def microphone_authorized() -> bool:
+    """Whether macOS reports the microphone authorized; True elsewhere (Windows' consent is checked
+    at each start, Linux has none). Mirrors Swift's `microphoneAuthorized`."""
+    if platform.system() != "Darwin":
+        return True
+    return _mac_authorization_status() == "authorized"
+
+
 def _mac_request_access(answer: "Callable[[bool], None]") -> None:
     """Ask macOS for the microphone; ``answer`` is called with the reply, on a background thread."""
     import AVFoundation  # macOS only
@@ -898,6 +906,10 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         # Running — or given up, which still watches even when failed restarts left the stream closed.
         if (self.is_stopped and not self._watchdog_recovery_exhausted) or self.is_playing_file or self._is_recovering:
             return
+        # A permission problem (not a wedge) is the permission check's; don't fight it. Only recover
+        # when macOS reports the microphone authorized. As Swift's tick.
+        if not self.microphone_authorized():
+            return
         started = self._watchdog_engine_start_time
         now = self.wall_clock.now()
         if started is None or (now - started) <= 4.0:
@@ -1006,15 +1018,24 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self._close_stream_only()
         self.wall_clock.after(backoff, self._do_watchdog_restart)
 
+    def _reopen_input_for_watchdog(self) -> None:
+        """The recovery's restart: the permission checked first, then the selected device
+        reopened. A refused permission raises the flag and MicrophonePermissionError, so the status
+        says the microphone access is required rather than that the input could not be restarted.
+        As Swift's recovery, which restarts through start() and its permission check."""
+        if not self._check_microphone_permission():
+            raise MicrophonePermissionError("Microphone access not determined")
+        self.reinitialize_portaudio()
+
     def _do_watchdog_restart(self) -> None:
-        """Re-open the selected device via ``reinitialize_portaudio``, then re-arm.
+        """Re-open the selected device via ``_reopen_input_for_watchdog``, then re-arm.
 
         A restart that cannot open the device is a failed attempt: it retries at once through
         ``_attempt_watchdog_recovery`` (bounded by max attempts), as Swift's recovery does when
         ``start()`` throws.
         """
         try:
-            (self.watchdog_restart or self.reinitialize_portaudio)()
+            (self.watchdog_restart or self._reopen_input_for_watchdog)()
         except Exception as e:  # noqa: BLE001 — last-resort recovery, never raise
             gt_log(f"⚠️ Buffer watchdog: restart could not open "
                    f"'{getattr(e, 'device_name', e)}' — retrying")

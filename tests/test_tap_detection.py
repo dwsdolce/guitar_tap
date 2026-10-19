@@ -207,7 +207,7 @@ class TestPipelineDeliversOnceAndExact:
         from guitar_tap.views.fft_canvas import FftCanvas
 
         sut = self._sut()
-        view = SimpleNamespace(analyzer=sut, _overlay_label=SimpleNamespace(setVisible=lambda _v: None))
+        view = SimpleNamespace(analyzer=sut)
         assert not sut.mic.proc_thread.isRunning()
         try:
             FftCanvas.start_analyzer(view)
