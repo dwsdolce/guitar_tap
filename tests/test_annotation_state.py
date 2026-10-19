@@ -117,6 +117,8 @@ class _Case:
                 assert sorted(float(p.frequency) for p in sut.visible_peaks) == [float(v) for v in want], field
             elif field == "visibility":
                 assert sut.annotation_visibility_mode.value == want, field
+            elif field == "savedVisibility":
+                assert TDS.annotation_visibility_mode().value == want, field
             elif field == "label":
                 for name, label in want.items():
                     assert sut.effective_mode_label(self.peak(name)) == label, f"{field} {name}"

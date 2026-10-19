@@ -63,9 +63,11 @@ def _mode_color(mode_str: str) -> QtGui.QColor:
 class PeakCardWidget(QtWidgets.QFrame):
     """One card representing one resonant peak."""
 
-    showChanged = QtCore.Signal(float, str)   # (freq, "on"/"off")
-    modeChanged = QtCore.Signal(float, str)   # (freq, mode_string)
-    modeReset  = QtCore.Signal(float)          # (freq) — reverted to auto
+    # Each names the card's peak by its id: two peaks can share a frequency. As Swift's rows act on
+    # the peak's id.
+    showChanged = QtCore.Signal(object, str)  # (peak id, "on"/"off")
+    modeChanged = QtCore.Signal(object, str)  # (peak id, mode_string)
+    modeReset  = QtCore.Signal(object)        # (peak id) — reverted to auto
     cardClicked = QtCore.Signal(float)         # (freq)
 
     def __init__(
@@ -104,7 +106,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._show_pitch = show_pitch
         self._is_selected = False
         # Identity of the peak this card represents; frequency is not unique.
-        self.peak_id: str = ""
+        self.peak_id = ""
         self._is_manual = False
 
         self.setObjectName("PeakCard")
@@ -359,7 +361,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         new_val = "off" if self._show == "on" else "on"
         self._show = new_val
         self._refresh_star()
-        self.showChanged.emit(self._freq, new_val)
+        self.showChanged.emit(self.peak_id, new_val)
 
     def _open_mode_menu(self) -> None:
         if not self._is_held or self._read_only:
@@ -409,7 +411,7 @@ class PeakCardWidget(QtWidgets.QFrame):
             self._is_manual = False
             self._refresh_mode()
             self._refresh_bg()
-            self.modeReset.emit(self._freq)
+            self.modeReset.emit(self.peak_id)
             return
 
         if chosen is custom_action:
@@ -431,7 +433,7 @@ class PeakCardWidget(QtWidgets.QFrame):
             self._is_manual = True
             self._refresh_mode()
             self._refresh_bg()
-            self.modeChanged.emit(self._freq, new_mode)
+            self.modeChanged.emit(self.peak_id, new_mode)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         """Emit ``cardClicked`` on a left mouse press (row selection)."""
@@ -664,14 +666,9 @@ class PeakListWidget(QtWidgets.QWidget):
         """Refresh mode displays when guitar_type changes."""
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _gt = _tds.guitar_type()
-        rows_by_id = {p.id: r for r, p in enumerate(self.model._peaks)}
         for card in self._cards:
             card.set_guitar_type(_gt)
-            row = rows_by_id.get(getattr(card, "peak_id", ""), -1)
-            if row < 0:
-                # No identity recorded (or the peak is gone) — fall back to frequency, which
-                # is only ambiguous when duplicates exist.
-                row = int(self.model.freq_index(card.freq))
+            row = self.model.row_of(card.peak_id)
             if row < 0:
                 continue
             src_idx = self.model.index(row, 0)
@@ -683,22 +680,22 @@ class PeakListWidget(QtWidgets.QWidget):
 
     # ── card signal handlers ──────────────────────────────────────────────────
 
-    def _on_show_changed(self, freq: float, value: str) -> None:
-        idx = self.model.freq_index(freq)
+    def _on_show_changed(self, peak_id, value: str) -> None:
+        idx = self.model.row_of(peak_id)
         if idx >= 0:
             self.model.setData(
                 self.model.index(int(idx), pm.ColumnIndex.Show.value), value
             )
 
-    def _on_mode_changed(self, freq: float, mode: str) -> None:
-        idx = self.model.freq_index(freq)
+    def _on_mode_changed(self, peak_id, mode: str) -> None:
+        idx = self.model.row_of(peak_id)
         if idx >= 0:
             self.model.setData(
                 self.model.index(int(idx), pm.ColumnIndex.Modes.value), mode
             )
 
-    def _on_mode_reset(self, freq: float) -> None:
-        idx = self.model.freq_index(freq)
+    def _on_mode_reset(self, peak_id) -> None:
+        idx = self.model.row_of(peak_id)
         if idx >= 0:
             src_idx = self.model.index(int(idx), pm.ColumnIndex.Modes.value)
             self.model.reset_mode_value(src_idx)

@@ -61,7 +61,7 @@ makeExportableSpectrumView:
 - SeeAlso: tap_analysis_results_view.py, tap_tone_analysis_view.py
 """
 
-# @parity view/spectrum-export tests=test/spectrum-export
+# @parity view/spectrum-export tests=test/spectrum-export,test/export-e2e
 
 from __future__ import annotations
 
@@ -831,6 +831,7 @@ def make_exportable_spectrum_view(
     min_db: float,
     max_db: float,
     peaks: list,
+    show_mode_boundaries: bool = True,
     annotation_positions: dict | None = None,
     show_unknown_modes: bool | None = None,
     measurement_type_str: str | None = None,
@@ -950,7 +951,7 @@ def make_exportable_spectrum_view(
         min_db=min_db,
         max_db=max_db,
         peaks=peaks,
-        show_mode_boundaries=True,
+        show_mode_boundaries=show_mode_boundaries,
         annotation_positions=annotation_positions,
         show_unknown_modes=show_unknown_modes,
         measurement_type_str=measurement_type_str,

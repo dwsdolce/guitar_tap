@@ -1,6 +1,6 @@
 {
  "slug": "test/calibration",
- "about": "The engine's calibration corrections — the same cases in every edition. The engine holds the active calibration (the file 'calibrationFile') and computes its per-bin dB corrections from its own bins: bin i is at i × sampleRate / fftSize Hz, its exact frequency. Each case: the engine at 'sampleRate' (after 'fromSampleRate', when given — the corrections must follow a rate change), with the calibration applied; 'bins' are bin indices and 'expect' the correction at each, within 'tolerance' dB. Expected values are the calibration file interpolated at the exact bin frequency; a correction taken at the whole hertz below (the fault this guards) is 1.06 dB away at bin 15.",
+ "about": "The engine's calibration corrections — the same cases in every edition. The engine holds the active calibration (the file 'calibrationFile') and computes its per-bin dB corrections from its own bins: bin i is at i × sampleRate / fftSize Hz, its exact frequency. Each case: the engine at 'sampleRate' (after 'fromSampleRate', when given — the corrections must follow a rate change), with the calibration applied; 'bins' are bin indices and 'expect' the correction at each, within 'tolerance' dB. Expected values are the calibration file interpolated at the exact bin frequency; a correction taken at the whole hertz below (the fault this guards) is 1.06 dB away at bin 15. 'parse' cases read a calibration file's text as the import does: 'file' names a fixture, or 'content' gives the text (lines joined with newlines). 'expect' fields: 'pointCount', 'first' and 'last' ([Hz, dB], after sorting by frequency; within 0.001), 'points' (all of them, when few; within 0.001), 'sensitivity' and 'referenceLevel' (dB, or null when the header gives none), or 'error': true when the text holds no data point. Header lines start with \" (UMIK-1) or * (REW); the header names are read as Swift reads them — spelled as written, in any case; a data line is a frequency and a correction separated by tabs, spaces or commas, both numbers in full, kept when the frequency is 1–24000 Hz. 'details' cases: what Settings shows for a calibration read from 'file' or 'content' — 'sensitivity' (null when the header gives none), 'dataPoints' and 'range' (null when it has no points), each the text shown.",
  "calibrationFile": "7108913.txt",
  "fftSize": 65536,
  "tolerance": 0.0001,
@@ -47,6 +47,167 @@
     0.042555,
     -0.033284
    ]
+  },
+  {
+   "id": "CAL3",
+   "note": "outside the file's range the correction is flat: the first point's below 10.054 Hz (bins at 0.73 and 9.52 Hz), the last point's above 20016.816 Hz (bins at 20017.8 and 23999.3 Hz)",
+   "sampleRate": 48000,
+   "bins": [
+    1,
+    13,
+    27331,
+    32767
+   ],
+   "expect": [
+    -3.674,
+    -3.674,
+    -1.1427,
+    -1.1427
+   ]
+  }
+ ],
+ "parse": [
+  {
+   "id": "CP1",
+   "note": "a UMIK-1 file: its points, sorted, and the Sens Factor; no reference level",
+   "file": "7108913.txt",
+   "expect": {
+    "pointCount": 615,
+    "first": [
+     10.054,
+     -3.674
+    ],
+    "last": [
+     20016.816,
+     -1.1427
+    ],
+    "sensitivity": -0.524,
+    "referenceLevel": null
+   }
+  },
+  {
+   "id": "CP2",
+   "note": "a UMIK-1 header's Sens Factor (with a + sign) and SESSION REF",
+   "content": "\"Sens Factor =+1.5dB, AGain =18dB, SERNO: 7000000\"\n\"SESSION REF=94.0dBSPL\"\n100\t1.5\n1000\t0.0",
+   "expect": {
+    "pointCount": 2,
+    "sensitivity": 1.5,
+    "referenceLevel": 94.0
+   }
+  },
+  {
+   "id": "CP3",
+   "note": "a REW header's SPL is the reference level",
+   "content": "* SPL 94 dB\n100 1.0",
+   "expect": {
+    "pointCount": 1,
+    "sensitivity": null,
+    "referenceLevel": 94.0
+   }
+  },
+  {
+   "id": "CP4",
+   "note": "tabs, spaces or commas separate; frequencies outside 1–24000 Hz are dropped",
+   "content": "\"x\"\n0.5,1.0\n100,2.0\n200 3.0\n300\t4.0\n30000\t1.0",
+   "expect": {
+    "points": [
+     [
+      100,
+      2.0
+     ],
+     [
+      200,
+      3.0
+     ],
+     [
+      300,
+      4.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "CP5",
+   "note": "header names are read in any case",
+   "content": "\"sens factor = -1.0dB\"\n\"session ref=94.0dbspl\"\n100 1.0",
+   "expect": {
+    "pointCount": 1,
+    "sensitivity": -1.0,
+    "referenceLevel": 94.0
+   }
+  },
+  {
+   "id": "CP6",
+   "note": "\"Sensitivity Factor\" is not \"Sens Factor\", and a factor with no dB is not read",
+   "content": "\"Sensitivity Factor = -2.0dB\"\n\"Sens Factor = -3.0\"\n100 1.0",
+   "expect": {
+    "pointCount": 1,
+    "sensitivity": null
+   }
+  },
+  {
+   "id": "CP7",
+   "note": "a number that is not one in full drops the line",
+   "content": "100abc 1.0\n150 2.0x\n200 2.0",
+   "expect": {
+    "points": [
+     [
+      200,
+      2.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "CP8",
+   "note": "points out of order are sorted by frequency",
+   "content": "300 3.0\n100 1.0\n200 2.0",
+   "expect": {
+    "points": [
+     [
+      100,
+      1.0
+     ],
+     [
+      200,
+      2.0
+     ],
+     [
+      300,
+      3.0
+     ]
+    ]
+   }
+  },
+  {
+   "id": "CP9",
+   "note": "no data point is an error",
+   "content": "\"Sens Factor =-0.5dB\"\nnot a data line",
+   "expect": {
+    "error": true
+   }
+  }
+ ],
+ "details": [
+  {
+   "id": "CD1",
+   "note": "a UMIK-1 file: its sensitivity, its points, the frequencies they span",
+   "file": "7108913.txt",
+   "expect": {
+    "sensitivity": "Sensitivity: -0.52 dB",
+    "dataPoints": "Data points: 615",
+    "range": "10-20017 Hz"
+   }
+  },
+  {
+   "id": "CD2",
+   "note": "no Sens Factor: no sensitivity line",
+   "content": "* SPL 94 dB\n100 1.0\n200 2.0",
+   "expect": {
+    "sensitivity": null,
+    "dataPoints": "Data points: 2",
+    "range": "100-200 Hz"
+   }
   }
  ]
 }

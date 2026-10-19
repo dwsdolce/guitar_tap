@@ -3,12 +3,15 @@
 
 Default folder, reachability, the acquire/release write helper, and a custom folder that is in
 place, renamed, or deleted. The custom folder is stored in the isolated test settings. The folder
-picker is checked by hand. Two-way with Swift WavDumpFolderTests.swift (the web has no counterpart
-— a page can only download to Downloads).
+picker is checked by hand. Two-way with Swift WavDumpFolderTests.swift (the web has no counterpart —
+a page can only download to Downloads). The file's format (WD1–WD2, the shared cases in
+wav-dump-folder.json) is three-way: the web's test/wav-dump.test.ts checks the file it hands the
+browser.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -323,3 +326,38 @@ def test_saved_notice_not_shown_when_saving_is_off():
         assert sut.capture_audio_saved is None
     finally:
         TapDisplaySettings.set_dump_capture_audio(saved)
+
+
+# The file written: the shared cases in wav-dump-folder.json.
+
+with open(os.path.join(os.path.dirname(__file__), "wav-dump-folder.json"), encoding="utf-8") as _f:
+    _FORMAT = json.load(_f)
+
+
+@pytest.mark.parametrize("row", _FORMAT["cases"], ids=lambda r: r["id"])
+def test_written_file_is_mono_float_at_the_capture_rate(row, dump_on):
+    import struct
+
+    import numpy as np
+
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+    label = f"format-{uuid.uuid4()}"
+    folder = WavDumpFolder.default_folder()
+    try:
+        TapToneAnalyzer.for_testing()._dump_capture_wav(
+            np.array(row["samples"], dtype=np.float32), row["sampleRate"], label)
+        written = _wavs(label, folder)
+        assert written, f"{row['id']}: no file written"
+        data = written[0].read_bytes()
+        fmt, channels, rate = struct.unpack_from("<HHI", data, 20)
+        bits = struct.unpack_from("<H", data, 34)[0]
+        size = struct.unpack_from("<I", data, 40)[0]
+        expect = row["expect"]
+        assert (fmt, channels, rate, bits) == (
+            expect["format"], expect["channels"], expect["sampleRate"],
+            expect["bitsPerSample"]), row["id"]
+        read = struct.unpack_from(f"<{size // 4}f", data, 44)
+        assert read == pytest.approx(row["samples"], abs=1e-6), f"{row['id']} samples: {read}"
+    finally:
+        for path in _wavs(label, folder):
+            path.unlink()

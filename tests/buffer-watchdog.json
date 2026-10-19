@@ -1,6 +1,6 @@
 {
  "slug": "test/buffer-watchdog",
- "about": "The buffer watchdog's tick and recovery, around its decision (watchdogDecision, tested by test/dead-input-threshold) — the same cases in every edition, run on the engine with a wall clock moved by hand and a stand-in for the recovery's restart. Each case starts a fresh engine at time 0 and runs its 'steps' in order: {\"start\": true} is a deliberate start (the engine running, then startBufferWatchdog(isRecovery: false)); {\"run\": seconds, \"input\": \"signal\" | \"silence\" | \"none\"} moves the wall clock on in 0.5 s steps — after each, a buffer arrives that carries signal, or carries none, or no buffer arrives — and the tick runs at each whole second, as the 1 s timer does; {\"restart\": \"succeeds\" | \"fails\"} is what the restart stand-in does from then on (it succeeds until told otherwise; a success is what the edition's restart does for the watchdog: the engine running again and the watchdog re-armed as a recovery); {\"permissionDenied\": true} the engine's microphone permission flag raised; {\"authorized\": false} macOS reporting the microphone not authorized from then on (a case marked \"only\": \"natives\" runs in Swift and Python — the web has no such report); {\"playFile\": true} a file playing; {\"stop\": true} the engine not running; {\"check\": {...}} checks those fields now. 'expect' after the last step, and 'check': 'attempts' (the recovery's attempt count), 'recovering' (a recovery in progress), 'givenUp' (the recovery gave up), 'inputDead' (the dead-input warning), 'couldNotRestart' (the recovery gave up after restarts that failed), 'inputUnavailable' (the engine's input is unavailable — its permission refused, a start failed, or its restarts failed — what the not-running placeholders say), 'permissionDenied' (the engine's microphone permission flag), 'restarts' (how many times the restart ran), 'restartTimes' (the wall-clock time of each). Expected values are Swift's.",
+ "about": "The buffer watchdog's tick and recovery, around its decision (watchdogDecision, tested by test/dead-input-threshold) — the same cases in every edition, run on the engine with a wall clock moved by hand and a stand-in for the recovery's restart. Each case starts a fresh engine at time 0 and runs its 'steps' in order: {\"start\": true} is a deliberate start (the engine running, then startBufferWatchdog(isRecovery: false)); {\"run\": seconds, \"input\": \"signal\" | \"silence\" | \"none\"} moves the wall clock on in 0.5 s steps — after each, a buffer arrives that carries signal, or carries none, or no buffer arrives — and the tick runs at each whole second, as the 1 s timer does; {\"restart\": \"succeeds\" | \"fails\"} is what the restart stand-in does from then on (it succeeds until told otherwise; a success is what the edition's restart does for the watchdog: the engine running again and the watchdog re-armed as a recovery); {\"permissionDenied\": true} the engine's microphone permission flag raised; {\"authorized\": false} macOS reporting the microphone not authorized from then on (a case marked \"only\": \"natives\" runs in Swift and Python — the web has no such report); {\"playFile\": true} a file playing; {\"stop\": true} the engine not running; {\"check\": {...}} checks those fields now. 'expect' after the last step, and 'check': 'attempts' (the recovery's attempt count), 'recovering' (a recovery in progress), 'givenUp' (the recovery gave up), 'inputDead' (the dead-input warning), 'couldNotRestart' (the recovery gave up after restarts that failed), 'inputUnavailable' (the engine's input is unavailable — its permission refused, a start failed, or its restarts failed — what the not-running placeholders say), 'notRunningMessage' (the text those placeholders show), 'permissionDenied' (the engine's microphone permission flag), 'inputOpen' (the input is open — the engine running, the stream open: a recovery closes it when it schedules its restart), 'restarts' (how many times the restart ran), 'restartTimes' (the wall-clock time of each). Expected values are Swift's.",
  "cases": [
   {
    "id": "BW1",
@@ -22,10 +22,15 @@
   },
   {
    "id": "BW2",
-   "note": "no buffers past the grace: a recovery starts, and its restart runs 0.5 s later",
+   "note": "no buffers past the grace: a recovery starts, and its restart runs 0.5 s later; the input is closed as soon as the restart is scheduled",
    "steps": [
     {
      "start": true
+    },
+    {
+     "check": {
+      "inputOpen": true
+     }
     },
     {
      "run": 5,
@@ -35,7 +40,8 @@
      "check": {
       "attempts": 1,
       "recovering": true,
-      "restarts": 0
+      "restarts": 0,
+      "inputOpen": false
      }
     },
     {
@@ -192,7 +198,8 @@
       "couldNotRestart": true,
       "inputDead": false,
       "givenUp": true,
-      "inputUnavailable": true
+      "inputUnavailable": true,
+      "notRunningMessage": "Audio input unavailable"
      }
     },
     {
@@ -214,7 +221,8 @@
      16.5,
      20.5
     ],
-    "inputUnavailable": true
+    "inputUnavailable": true,
+    "notRunningMessage": "Audio input unavailable"
    }
   },
   {
@@ -321,7 +329,8 @@
      "check": {
       "couldNotRestart": true,
       "inputDead": true,
-      "inputUnavailable": true
+      "inputUnavailable": true,
+      "notRunningMessage": "Audio input unavailable"
      }
     },
     {
@@ -334,7 +343,8 @@
     "inputDead": false,
     "givenUp": false,
     "attempts": 0,
-    "inputUnavailable": false
+    "inputUnavailable": false,
+    "notRunningMessage": "Starting..."
    }
   },
   {
@@ -354,7 +364,8 @@
     {
      "check": {
       "couldNotRestart": true,
-      "inputUnavailable": true
+      "inputUnavailable": true,
+      "notRunningMessage": "Audio input unavailable"
      }
     },
     {
@@ -365,7 +376,8 @@
     "couldNotRestart": false,
     "givenUp": false,
     "attempts": 0,
-    "inputUnavailable": false
+    "inputUnavailable": false,
+    "notRunningMessage": "Starting..."
    }
   },
   {

@@ -1,6 +1,6 @@
 {
  "slug": "test/measurement-load",
- "about": "Loading a saved measurement: the whole load is the model's. Each case starts a fresh analyzer and runs its 'steps' in order: {\"newTap\": true} starts a tap sequence (detection armed); {\"peakMin\": dB} sets Peak Min as the user would; {\"load\": file, \"name\"?: text} loads a measurement — a fixture every edition carries, or 'inline' (the 'files' entry of that name, a .guitartap array) — with its name replaced when 'name' is given; {\"compare\": [files]} compares those fixtures, as a multi-select in the measurements list does; {\"highlightFirstPeak\": true} highlights the first peak shown, as a click on its dot or card does. 'expect' is what the analyzer holds after the last step: 'measurementType' (the file's type name, e.g. 'Generic Guitar', 'Material (Plate)'), 'peakMinThreshold', 'tapDetectionThreshold' and 'showUnknownModes' (the settings now in effect — the measurement's own), 'shownPeaks' (the peaks shown: for a guitar those at or above Peak Min, for a plate or brace its identified L/C/FLC), 'frozenSpectrum' (a guitar spectrum is held), 'phaseSpectra' (the plate/brace phase spectra held), 'complete' (the measurement is complete), 'detecting' (tap detection is armed), 'comparison' (a comparison is shown), 'microphoneWarning' (a microphone warning is up — no fixture's microphone is connected in a test, so a fixture that names one warns), 'labelPositions' (dragged label positions held), 'recordedMicrophone' (the result carries a recorded microphone — a comparison has none of its own), 'highlightedPeak' (a peak is highlighted), 'loadedName' (the name a re-save would start from, null for none). Expected values are Swift's.",
+ "about": "Loading a saved measurement: the whole load is the model's. Each case starts a fresh analyzer and runs its 'steps' in order: {\"newTap\": true} starts a tap sequence (detection armed); {\"peakMin\": dB} sets Peak Min as the user would; {\"load\": file, \"name\"?: text} loads a measurement — a fixture every edition carries, or 'inline' (the 'files' entry of that name, a .guitartap array) — with its name replaced when 'name' is given; {\"compare\": [files]} compares those fixtures, as a multi-select in the measurements list does; {\"highlightFirstPeak\": true} highlights the first peak shown, as a click on its dot or card does. 'expect' is what the analyzer holds after the last step: 'measurementType' (the file's type name, e.g. 'Generic Guitar', 'Material (Plate)'), 'peakMinThreshold', 'tapDetectionThreshold' and 'showUnknownModes' (the settings now in effect — the measurement's own), 'shownPeaks' (the peaks shown: for a guitar those at or above Peak Min, for a plate or brace its identified L/C/FLC), 'frozenSpectrum' (a guitar spectrum is held), 'phaseSpectra' (the plate/brace phase spectra held), 'complete' (the measurement is complete), 'detecting' (tap detection is armed), 'comparison' (a comparison is shown), 'microphoneWarning' (a microphone warning is up — no fixture's microphone is connected in a test, so a fixture that names one warns), 'labelPositions' (dragged label positions held), 'recordedMicrophone' (the result carries a recorded microphone — a comparison has none of its own), 'highlightedPeak' (a peak is highlighted), 'loadedName' (the name a re-save would start from, null for none), 'annotationVisibility' and 'savedAnnotationVisibility' (the annotation mode in effect, and the one the settings hold). Expected values are Swift's.",
  "files": {
   "inline-no-microphone": [
    {
@@ -226,6 +226,54 @@
    ],
    "expect": {
     "loadedName": "Spruce top"
+   }
+  },
+  {
+   "id": "LD12",
+   "note": "a guitar loaded after a plate keeps none of the plate's phase spectra",
+   "steps": [
+    {
+     "load": "plate-umik-1-swift-mac-1785359486.guitartap"
+    },
+    {
+     "load": "dws-2024-umik-1-python-mac-1784225140.guitartap"
+    }
+   ],
+   "expect": {
+    "measurementType": "Generic Guitar",
+    "phaseSpectra": 0,
+    "frozenSpectrum": true,
+    "complete": true,
+    "detecting": false
+   }
+  },
+  {
+   "id": "LD13",
+   "note": "the annotation mode is the file's, and saved",
+   "steps": [
+    {
+     "load": "annotation-override-1790037028.guitartap"
+    }
+   ],
+   "expect": {
+    "annotationVisibility": "selected",
+    "savedAnnotationVisibility": "selected"
+   }
+  },
+  {
+   "id": "LD14",
+   "note": "a file with no annotation mode loads as All, saved",
+   "steps": [
+    {
+     "load": "annotation-override-1790037028.guitartap"
+    },
+    {
+     "load": "inline-no-microphone"
+    }
+   ],
+   "expect": {
+    "annotationVisibility": "all",
+    "savedAnnotationVisibility": "all"
    }
   }
  ]

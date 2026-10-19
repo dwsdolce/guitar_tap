@@ -80,6 +80,8 @@ def _id(hz, ids) -> str:
 def _document(load: dict, run: _Run) -> dict:
     mtype = load["type"]
     snap = _snapshot(load.get("spectrum"), mtype)
+    if "showUnknownModes" in load:
+        snap["showUnknownModes"] = load["showUnknownModes"]
     peaks, ids = _peaks(load["peaks"], run)
     doc = {"id": run.new_id(), "timestamp": "2026-01-01T00:00:00Z", "peaks": peaks}
     if "spectrum" in load:
@@ -122,12 +124,13 @@ def _same_freqs(got, want) -> bool:
     return len(g) == len(w) and all(abs(a - b) <= 1 for a, b in zip(g, w))
 
 
-def _same_map(got: dict, want: dict, sut, equal) -> bool:
-    """An id-keyed map, by its peaks' frequencies, against the case's frequency-keyed one."""
-    if len(got) != len(want):
+def _same_map(got: dict, want: dict, sut, equal, peaks=None) -> bool:
+    """An id-keyed map, by its peaks' frequencies (the analyzer's, or ``peaks``), against the case's
+    frequency-keyed one."""
+    if len(got or {}) != len(want):
         return False
-    for pid, value in got.items():
-        p = next((q for q in _known(sut) if q.id == pid), None)
+    for pid, value in (got or {}).items():
+        p = next((q for q in (peaks if peaks is not None else _known(sut)) if q.id == pid), None)
         key = None if p is None else next((k for k in want if abs(float(k) - p.frequency) <= 1), None)
         if key is None or not equal(value, want[key]):
             return False
@@ -135,6 +138,62 @@ def _same_map(got: dict, want: dict, sut, equal) -> bool:
 
 
 # ── Steps and checks ────────────────────────────────────────────────────────────────────────────
+
+
+def _check_saved(saved, want: dict, sut, msg: str) -> None:
+    """The last saved measurement against the case's 'saved' fields."""
+    snap = saved.spectrum_snapshot or saved.longitudinal_snapshot
+    for key, w in want.items():
+        m = f"{msg} {key}"
+        if key == "peaks":
+            assert _same_freqs([p.frequency for p in saved.peaks], w), m
+        elif key == "selectedAll":
+            assert (set(saved.selected_peak_ids or []) == {p.id for p in saved.peaks}) is w, m
+        elif key == "selected":
+            ids = set(saved.selected_peak_ids or [])
+            got = [p.frequency for p in saved.peaks if p.id in ids]
+            assert _same_freqs(got, w), f"{m}: {got}"
+        elif key == "overrides":
+            assert _same_map(saved.peak_mode_overrides, w, sut, lambda v, x: v == x, saved.peaks), \
+                f"{m}: {saved.peak_mode_overrides}"
+        elif key == "offsets":
+            assert _same_map(saved.annotation_offsets, w, sut,
+                             lambda v, x: (float(v[0]), float(v[1])) == (float(x[0]), float(x[1])), saved.peaks), \
+                f"{m}: {saved.annotation_offsets}"
+        elif key == "name":
+            assert saved.measurement_name == w, f"{m}: {saved.measurement_name}"
+        elif key == "notes":
+            assert saved.notes == w, f"{m}: {saved.notes}"
+        elif key == "tapThreshold":
+            assert saved.tap_detection_threshold == pytest.approx(w), f"{m}: {saved.tap_detection_threshold}"
+        elif key == "peakMin":
+            assert saved.peak_min_threshold == pytest.approx(w), f"{m}: {saved.peak_min_threshold}"
+        elif key == "numberOfTaps":
+            assert saved.number_of_taps == w, f"{m}: {saved.number_of_taps}"
+        elif key == "measurementType":
+            assert snap is not None and snap.measurement_type == w, f"{m}: {snap and snap.measurement_type}"
+        elif key == "guitarType":
+            assert snap is not None and snap.guitar_type == w, f"{m}: {snap and snap.guitar_type}"
+        elif key == "showUnknownModes":
+            assert snap is not None and snap.show_unknown_modes is w, f"{m}: {snap and
+            snap.show_unknown_modes}"
+        elif key == "phaseSpectra":
+            got = [n for n, sp in (("L", saved.longitudinal_snapshot), ("C", saved.cross_snapshot),
+                                   ("FLC", saved.flc_snapshot)) if sp is not None]
+            assert got == w, f"{m}: {got}"
+        elif key == "tapEntries":
+            assert len(saved.tap_entries or []) == w, f"{m}: {len(saved.tap_entries or [])}"
+        elif key == "offsetsInFile":
+            from guitar_tap.views.tap_analysis_results_view import measurements_to_json
+            file = json.loads(measurements_to_json([saved]))
+            assert ("peakAnnotationOffsets" in file[0]) is w, \
+                f"{m}: {file[0].get('peakAnnotationOffsets')}"
+        elif key == "comparisonColors":
+            got = [list(e.color_components) for e in saved.multi_tap_comparison_entries]
+            assert len(got) == len(w) and all(g == pytest.approx(x, abs=1e-6) for g, x in zip(got, w)), \
+                f"{m}: {got}"
+        else:
+            pytest.fail(f"{msg}: unknown saved field {key}")
 
 
 def _check(fields: dict, sut, run: _Run, case_id: str) -> None:
@@ -182,6 +241,8 @@ def _check(fields: dict, sut, run: _Run, case_id: str) -> None:
             assert sut.can_reanalyze is want, msg
         elif field == "complete":
             assert sut.is_measurement_complete is want, msg
+        elif field == "tapCount":
+            assert sut.current_tap_count == want, f"{msg}: {sut.current_tap_count}"
         elif field == "phase":
             assert sut.material_tap_phase.value == want, f"{msg}: {sut.material_tap_phase}"
         elif field in ("fL", "fC"):
@@ -193,12 +254,7 @@ def _check(fields: dict, sut, run: _Run, case_id: str) -> None:
         elif field == "materialPeaks":
             assert _same_freqs([p.frequency for p in sut.material_identified_peaks], want), msg
         elif field == "saved":
-            saved = sut.saved_measurements[-1]
-            if "peaks" in want:
-                assert _same_freqs([p.frequency for p in saved.peaks], want["peaks"]), f"{msg} peaks"
-            if "selectedAll" in want:
-                assert (set(saved.selected_peak_ids or []) == {p.id for p in saved.peaks}) is want["selectedAll"], \
-                    f"{msg} selectedAll"
+            _check_saved(sut.saved_measurements[-1], want, sut, msg)
         else:
             pytest.fail(f"{case_id}: unknown field {field}")
 
@@ -219,7 +275,8 @@ def _step(step: dict, sut, run: _Run, case_id: str) -> None:
         mags, freqs = _spectrum(step["liveFrame"])
         sut.analyze_magnitudes(list(mags), list(freqs), max(mags))
     elif step.get("save"):
-        sut.save_measurement()
+        given = step["save"] if isinstance(step["save"], dict) else {}
+        sut.save_measurement(measurement_name=given.get("name"), notes=given.get("notes"))
     elif step.get("loadSaved"):
         sut.load_measurement(sut.saved_measurements[-1])
     elif step.get("mark"):

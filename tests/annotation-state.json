@@ -1,6 +1,6 @@
 {
  "slug": "test/annotation-state",
- "about": "The per-peak state the user edits and the views read: dragged label positions, selection, which peaks are annotated, mode labels (the user's own and the auto-detected), the one definitive Air/Top/Back and the tap-tone ratio, and what clears it all. Each case starts a fresh analyzer, sets its 'type' (a guitar type, by saved name) as Settings does, and loads its 'files.measurement' as the app loads a file — the peaks (classified by the analyzer under that type), their selection, Show Unknown Modes — then runs its 'steps'. 'peakIds' gives each case-local peak name its id (a name not in the file is a peak the analyzer does not know). Steps: the shared steps of tooling/analyzer-steps (settings, newTap), and {\"load\": file}; {\"toggle\": name} (a click on a peak); {\"selectNone\": true}; {\"resetToAuto\": true} (the wand); {\"override\": [name, label]} (a label of the user's); {\"resetOverride\": name} (Reset to Auto); {\"offset\": [name, Hz, dB]} (a dragged label); {\"resetOffset\": name}; {\"resetAllOffsets\": true} (Reset Labels); {\"visibility\": all | selected | none}; {\"cycleVisibility\": true} (the annotations button); {\"guitarTypeChange\": type} (Settings changes the guitar type and applies it); {\"check\": {...}} asserts those fields at that point. Fields: 'selected' (names, any order), 'userModified', 'visible' (the annotated peaks' Hz, ascending), 'visibility', 'label' / 'mode' / 'autoMode' / 'manualOverride' (per name; mode is override-aware, autoMode is not; modes by Swift's case name: air, top, back, dipole, ringMode, upperModes, unknown), 'overrides' (the whole map, name → label), 'offsets' (the whole map, name → [Hz, dB]), 'offsetCount', 'getPeak' (mode → name or null), 'hasRatio', 'definitive' (air/top/back → {hz, isOverride} or null), 'selectedIsAuto' (the selection is the automatic one), 'materialPeakMode' (the mode of a plate/brace capture's fL peak). AS41 starts from no file: a brace capture, through the shared steps. Expected values are Swift's.",
+ "about": "The per-peak state the user edits and the views read: dragged label positions, selection, which peaks are annotated, mode labels (the user's own and the auto-detected), the one definitive Air/Top/Back and the tap-tone ratio, and what clears it all. Each case starts a fresh analyzer, sets its 'type' (a guitar type, by saved name) as Settings does, and loads its 'files.measurement' as the app loads a file — the peaks (classified by the analyzer under that type), their selection, Show Unknown Modes — then runs its 'steps'. 'peakIds' gives each case-local peak name its id (a name not in the file is a peak the analyzer does not know). Steps: the shared steps of tooling/analyzer-steps (settings, newTap), and {\"load\": file}; {\"toggle\": name} (a click on a peak); {\"selectNone\": true}; {\"resetToAuto\": true} (the wand); {\"override\": [name, label]} (a label of the user's); {\"resetOverride\": name} (Reset to Auto); {\"offset\": [name, Hz, dB]} (a dragged label); {\"resetOffset\": name}; {\"resetAllOffsets\": true} (Reset Labels); {\"visibility\": all | selected | none}; {\"cycleVisibility\": true} (the annotations button); {\"guitarTypeChange\": type} (Settings changes the guitar type and applies it); {\"check\": {...}} asserts those fields at that point. Fields: 'selected' (names, any order), 'userModified', 'visible' (the annotated peaks' Hz, ascending), 'visibility', 'savedVisibility' (the visibility the settings hold — what the next launch uses), 'label' / 'mode' / 'autoMode' / 'manualOverride' (per name; mode is override-aware, autoMode is not; modes by Swift's case name: air, top, back, dipole, ringMode, upperModes, unknown), 'overrides' (the whole map, name → label), 'offsets' (the whole map, name → [Hz, dB]), 'offsetCount', 'getPeak' (mode → name or null), 'hasRatio', 'definitive' (air/top/back → {hz, isOverride} or null), 'selectedIsAuto' (the selection is the automatic one), 'materialPeakMode' (the mode of a plate/brace capture's fL peak). AS41 starts from no file: a brace capture, through the shared steps. Expected values are Swift's.",
  "cases": [
   {
    "id": "AS1",
@@ -1323,7 +1323,7 @@
   },
   {
    "id": "AS17",
-   "note": "the visibility cycles All → Selected → None → All",
+   "note": "the visibility cycles All → Selected → None → All, and each step is saved to the settings",
    "type": "Generic Guitar",
    "peakIds": {},
    "files": {
@@ -1375,7 +1375,8 @@
     },
     {
      "check": {
-      "visibility": "selected"
+      "visibility": "selected",
+      "savedVisibility": "selected"
      }
     },
     {
@@ -1383,7 +1384,8 @@
     },
     {
      "check": {
-      "visibility": "none"
+      "visibility": "none",
+      "savedVisibility": "none"
      }
     },
     {
@@ -1391,7 +1393,8 @@
     }
    ],
    "expect": {
-    "visibility": "all"
+    "visibility": "all",
+    "savedVisibility": "all"
    }
   },
   {

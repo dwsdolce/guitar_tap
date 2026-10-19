@@ -77,6 +77,10 @@ class _Run:
                 assert mic.input_could_not_restart is want, msg
             elif field == "inputUnavailable":
                 assert mic.input_unavailable is want, msg
+            elif field == "notRunningMessage":
+                assert mic.not_running_message == want, msg
+            elif field == "inputOpen":
+                assert mic.is_running is want, msg
             elif field == "permissionDenied":
                 assert mic.microphone_permission_denied is want, msg
             elif field == "restarts":
@@ -94,6 +98,7 @@ def test_buffer_watchdog(row, qapp):
     for step in row["steps"]:
         if step.get("start"):
             run.mic.is_stopped = False
+            run.mic._set_running(True)
             run.mic.start_buffer_watchdog()
         elif "run" in step:
             run.run(step["run"], step["input"])

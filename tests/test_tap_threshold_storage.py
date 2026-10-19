@@ -1,19 +1,15 @@
+# @parity none — Python stores the tap threshold on the slider's 0–100 scale (AppSettings); Swift
+# and the web store dBFS. Saving and reading a threshold back is MS21–MS22 (test/mic-selection).
 """
-TapDisplaySettings round-trip and helper tests (D18, D19).
-
-D18: Verifies the tap_detection_threshold getter/setter are mutual inverses.
-     The setter must convert dBFS → 0-100 scale before persisting, matching
-     what the getter expects when it reads back (0-100 → dBFS).
-
-D19: Verifies validate_frequency_range and validate_magnitude_range behave
-     identically to Swift's equivalents. reset_to_defaults() smoke test.
+The tap threshold's storage: the setting stores dBFS + 100 and reads it back as dBFS, so a value set
+is the value read.
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6 import QtWidgets
@@ -36,12 +32,12 @@ def _get_app():
 
 
 # ---------------------------------------------------------------------------
-# D18 — tap_detection_threshold round-trip (getter/setter are inverses)
+# The tap threshold read back as set
 # ---------------------------------------------------------------------------
 
-class TestD18TapDetectionThresholdRoundTrip:
-    """D18: set_tap_detection_threshold(v) followed by tap_detection_threshold()
-    must return a value equal to v (within floating-point precision).
+class TestTapDetectionThresholdRoundTrip:
+    """set_tap_detection_threshold(v) followed by tap_detection_threshold()
+    returns v (within floating-point precision).
 
     The setter must convert dBFS → 0-100 scale (add 100) before persisting.
     The getter converts 0-100 → dBFS (subtract 100) when reading back.

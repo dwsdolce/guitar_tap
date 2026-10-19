@@ -19,8 +19,11 @@ import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import guitar_mode as gm
-from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 from guitar_tap.views.utilities import chart_style, palette
+
+# The chart's stacking: the curves and dots at 0, the mode labels over them, the peak labels over those.
+MODE_LABEL_Z = 1
+PEAK_LABEL_Z = 2
 
 # Type alias for the annotation dict stored in FftAnnotations.annotations
 _AnnDict = dict[str, Any]
@@ -291,6 +294,9 @@ class FftAnnotations(QtCore.QObject):
         color = self._mode_color(mode_str)
         text_item  = self._make_text_item(html, xy_text, color)
         arrow_line = self._make_arrow_line(freq, mag, xy_text, color)
+        # Over the mode labels, as Swift's peak labels.
+        arrow_line.setZValue(PEAK_LABEL_Z)
+        text_item.setZValue(PEAK_LABEL_Z)
         self.plot_item.addItem(arrow_line)
         self.plot_item.addItem(text_item)
         # `_default_pos` is the TRUE default (computed from the peak), IGNORING any stored offset —
@@ -304,11 +310,6 @@ class FftAnnotations(QtCore.QObject):
         self, peak_id: str, freq: float, mag: float, html: str, mode_str: str
     ) -> None:
         """Create a new annotation or update an existing one for *freq*."""
-        # Reactively suppress annotations while a comparison overlay is shown — mirrors
-        # Swift `annotationPeaks: isComparing ? nil`. Gating at the source (rather than a
-        # one-shot hide_annotations) keeps labels gone regardless of which signal re-emits.
-        if self._analyzer is not None and self._analyzer.display_mode == AnalysisDisplayMode.COMPARISON:
-            return
         idx = self.find_annotation_index(freq)
         color = self._mode_color(mode_str)
 

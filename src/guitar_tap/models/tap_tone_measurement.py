@@ -50,6 +50,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# @parity model/measurement-codable tests=test/measurement-codable,test/peak-heal,test/peak-selection-persistence
 @dataclass
 class TapEntry:
     """One individual tap's spectrum and detected peaks within a multi-tap guitar sequence.
@@ -448,6 +449,12 @@ class TapToneMeasurement:
     # Additive and backward-compatible: existing measurements decode with None and are unaffected.
     # Mirrors Swift TapToneMeasurement.comparisonEntries ([ComparisonEntry]?).
     comparison_entries: list[ComparisonEntry] | None = None
+
+    # A saved comparison's chart range when it was saved — (min Hz, max Hz, min dB, max dB); loading
+    # it shows this range, as loading a measurement shows its own. Comparisons saved before this field
+    # existed have none; loading one spans its entries' ranges, as a new comparison does. Mirrors Swift
+    # TapToneMeasurement.comparisonRange.
+    comparison_range: tuple[float, float, float, float] | None = None
 
     # MARK: - Multi-Tap Entries
 
@@ -937,6 +944,11 @@ class TapToneMeasurement:
         # Mirrors Swift TapToneMeasurement.encode(to:) comparisonEntries.
         if self.comparison_entries is not None:
             d["comparisonEntries"] = [e.to_dict() for e in self.comparison_entries]
+        # Omitted when None, with a spectrum snapshot's keys for its range. Mirrors Swift
+        # comparisonRange.
+        if self.comparison_range is not None:
+            min_hz, max_hz, min_db, max_db = self.comparison_range
+            d["comparisonRange"] = {"minFreq": min_hz, "maxFreq": max_hz, "minDB": min_db, "maxDB": max_db}
 
         # Multi-tap entries — omitted (encodeIfPresent) when None.
         # Mirrors Swift TapToneMeasurement.encode(to:) tapEntries.
@@ -1085,6 +1097,15 @@ class TapToneMeasurement:
         comparison_entries = (
             [ComparisonEntry.from_dict(e) for e in comp_entries_raw]
             if comp_entries_raw is not None
+            else None
+        )
+
+        # A saved comparison's range — None when absent (backward-compatible).
+        range_d = d.get("comparisonRange")
+        comparison_range = (
+            (float(range_d["minFreq"]), float(range_d["maxFreq"]),
+             float(range_d["minDB"]), float(range_d["maxDB"]))
+            if range_d is not None
             else None
         )
 
@@ -1262,6 +1283,7 @@ class TapToneMeasurement:
             measurement_type=d.get("measurementType"),
             guitar_type=d.get("guitarType"),
             comparison_entries=comparison_entries,
+            comparison_range=comparison_range,
             tap_entries=tap_entries,
             was_healed=healed,
         )
@@ -1295,6 +1317,7 @@ class TapToneMeasurement:
         measurement_type: str | None = None,
         guitar_type: str | None = None,
         comparison_entries: list[ComparisonEntry] | None = None,
+        comparison_range: tuple[float, float, float, float] | None = None,
         tap_entries: list[TapEntry] | None = None,
     ) -> "TapToneMeasurement":
         """Factory method — creates a new measurement with a fresh UUID and current timestamp.
@@ -1337,6 +1360,7 @@ class TapToneMeasurement:
             measurement_type=measurement_type,
             guitar_type=guitar_type,
             comparison_entries=comparison_entries,
+            comparison_range=comparison_range,
             tap_entries=tap_entries,
         )
 

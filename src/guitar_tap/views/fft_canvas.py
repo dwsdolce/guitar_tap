@@ -30,15 +30,6 @@ from guitar_tap.views.utilities.extensions import formatted_as_frequency
 
 from guitar_tap.models import display_range as dr  # noqa: E402
 
-# The narrowest span a zoom gesture may leave — the chart's limits (display_range).
-FREQ_MIN_SPAN = dr.MIN_FREQUENCY_SPAN_HZ
-DB_MIN_SPAN = dr.MIN_MAGNITUDE_SPAN_DB
-
-
-def zoom_keeps_minimum_span(lo: float, hi: float, scale: float, min_span: float) -> bool:
-    """Whether zooming [lo, hi] by *scale* (new span = span × scale) leaves at least *min_span* —
-    a zoom step that does not is refused, as Swift's ``if newMax - newMin >= minSpan``."""
-    return (hi - lo) * scale >= min_span
 
 class _SceneMouseReleaseFilter(QtCore.QObject):
     """Event filter that emits a signal on QGraphicsScene mouse release."""
@@ -124,6 +115,73 @@ class _ZoomPanPopup(QtWidgets.QFrame):
         y = global_pos.y()
         self.move(x, y)
         self.show()
+
+
+class _ModeChip(pg.InfLineLabel):
+    """A guitar mode's name at the lower line of its range, as Swift's mode-boundary annotation: a chip
+    centred on the line just inside the plot's top (`.annotation(position: .top, overflowResolution:
+    .fit(to: .plot))`), kept inside the plot at either side — caption2 semibold in the mode's colour,
+    padded 4 / 2, on the mode's colour at 15 %, corner 4."""
+
+    _PAD_X = 4.0
+    _PAD_Y = 2.0
+    _CORNER = 4.0
+
+    def __init__(self, line: pg.InfiniteLine, text: str, rgb: tuple[int, int, int]) -> None:
+        super().__init__(line, text=text, position=1.0, anchors=[(0.5, 0), (0.5, 0)],
+                         color=rgb, fill=QtGui.QColor(*rgb, round(255 * 0.15)))
+        font = QtGui.QFont()
+        font.setPointSizeF(10)
+        font.setWeight(QtGui.QFont.Weight.DemiBold)
+        self.setFont(font)
+        self.textItem.document().setDocumentMargin(0)
+        self.updateTextPos()
+
+    def _chip_rect(self) -> QtCore.QRectF:
+        return self.textItem.boundingRect().adjusted(-self._PAD_X, -self._PAD_Y, self._PAD_X, self._PAD_Y)
+
+    def boundingRect(self) -> QtCore.QRectF:
+        return self.textItem.mapRectToParent(self._chip_rect())
+
+    def updateTextPos(self) -> None:
+        # The chip's padding is outside the text: anchor the padded chip, not the text.
+        r = self._chip_rect()
+        tl = QtCore.QPointF(r.left() + r.width() * self.anchor.x(), r.top() + r.height() * self.anchor.y())
+        self.textItem.setPos(-tl)
+
+    def updatePosition(self) -> None:
+        super().updatePosition()
+        vb = self.getViewBox()
+        if vb is None:
+            return
+        (x0, x1), _ = vb.viewRange()
+        width_px = vb.width()
+        if x1 <= x0 or width_px <= 0:
+            return
+        # Only a line inside the chart's range is labelled, as Swift's visibleModeBoundaries. Shown and
+        # hidden by its opacity: a visibility change here would re-enter this update.
+        inside = x0 <= self.line.value() <= x1
+        if self.opacity() != (1.0 if inside else 0.0):
+            self.setOpacity(1.0 if inside else 0.0)
+        if not inside:
+            return
+        # Keep the chip inside the plot: near a side, slide it along rather than centre it.
+        w = self._chip_rect().width()
+        x_px = (self.line.value() - x0) / (x1 - x0) * width_px
+        left = min(max(x_px - w / 2, 0.0), max(width_px - w, 0.0))
+        self.setAnchor(((x_px - left) / w if w > 0 else 0.5, 0))
+
+    def paint(self, p, *args) -> None:
+        # TextItem fills a square box: hand it no fill (it still keeps its transform), then draw the
+        # rounded chip under the text.
+        fill = self.fill
+        self.fill = QtGui.QBrush(QtCore.Qt.BrushStyle.NoBrush)
+        super().paint(p, *args)
+        self.fill = fill
+        p.setPen(QtCore.Qt.PenStyle.NoPen)
+        p.setBrush(fill)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        p.drawRoundedRect(self.textItem.mapRectToParent(self._chip_rect()), self._CORNER, self._CORNER)
 
 
 class _PlateCaptureAdapter:
@@ -308,25 +366,31 @@ class FftCanvas(pg.PlotWidget):
         vb = self.getPlotItem().vb
         vb.setLimits(xMin=dr.MIN_FREQUENCY_HZ, xMax=dr.MAX_FREQUENCY_HZ,
                      yMin=dr.MIN_MAGNITUDE_DB, yMax=dr.MAX_MAGNITUDE_DB)
-        _scale_by = vb.scaleBy
-
-        def _scale_by_refusing_narrow(s=None, center=None, x=None, y=None):
-            """pyqtgraph's zoom (wheel, drag, axis scroll), refusing a step that would leave the span
-            narrower than the minimum — Swift applyFrequencyZoom / applyMagnitudeZoom."""
+        def _scale_by_within_limits(s=None, center=None, x=None, y=None):
+            """pyqtgraph's zoom (wheel, drag, axis scroll) as Swift's: each axis by
+            display_range.zoomed_range — about the gesture's centre, within the chart's limits, a
+            step that would leave the span narrower than the minimum refused (Swift
+            applyFrequencyZoom / applyMagnitudeZoom). pyqtgraph's factor is the new span over the
+            old."""
             if s is not None:
                 sx, sy = (s, s) if not isinstance(s, (list, tuple)) else (s[0], s[1])
             else:
                 sx, sy = x, y
             (x0, x1), (y0, y1) = vb.viewRange()
-            if sx is not None and not zoom_keeps_minimum_span(x0, x1, sx, FREQ_MIN_SPAN):
-                sx = None
-            if sy is not None and not zoom_keeps_minimum_span(y0, y1, sy, DB_MIN_SPAN):
-                sy = None
-            if sx is None and sy is None:
-                return
-            _scale_by(center=center, x=sx, y=sy)
+            c = pg.Point(center) if center is not None else pg.Point((x0 + x1) / 2, (y0 + y1) / 2)
+            cx, cy = c.x(), c.y()
+            if sx is not None and sx > 0:
+                r = dr.zoomed_range(x0, x1, cx, 1 / sx, dr.MIN_FREQUENCY_HZ, dr.MAX_FREQUENCY_HZ,
+                                    dr.MIN_FREQUENCY_SPAN_HZ)
+                if r is not None:
+                    vb.setXRange(*r, padding=0)
+            if sy is not None and sy > 0:
+                r = dr.zoomed_range(y0, y1, cy, 1 / sy, dr.MIN_MAGNITUDE_DB, dr.MAX_MAGNITUDE_DB,
+                                    dr.MIN_MAGNITUDE_SPAN_DB)
+                if r is not None:
+                    vb.setYRange(*r, padding=0)
 
-        vb.scaleBy = _scale_by_refusing_narrow
+        vb.scaleBy = _scale_by_within_limits
 
         # Canvas-local display viewport — tracks the visible frequency range for
         # pan/zoom and peak display.  Separate from analyzer.min_frequency/
@@ -784,7 +848,6 @@ class FftCanvas(pg.PlotWidget):
         mag_db risk receiving mismatched arrays when the flag changes between
         the two reads.
         """
-        from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode as _ADM
         if self.analyzer.is_measurement_complete:
             return (self.analyzer.frozen_frequencies, self.analyzer.frozen_magnitudes)
         # A device/route change is settling — show nothing. The settle says so directly, through
@@ -809,8 +872,7 @@ class FftCanvas(pg.PlotWidget):
     def _update_overlay(self, *_args) -> None:
         """Show the not-running placeholder from the engine's state."""
         mic = self.analyzer.mic
-        self._overlay_label.setText(
-            "Audio input unavailable" if mic.input_unavailable else "Starting...")
+        self._overlay_label.setText(mic.not_running_message)
         self._overlay.setVisible(not mic.is_running)
         self._center_overlay()
 
@@ -934,20 +996,25 @@ class FftCanvas(pg.PlotWidget):
                 (r, g, b), style.mode_boundary_width, style.mode_boundary_dash,
                 style.mode_boundary_opacity)
             abbrev = gm.GuitarMode.from_display_name(mode_name).abbreviation
-            lbl_opts = {"position": 0.96, "color": (r, g, b), "anchors": [(0, 1), (0, 1)]}
 
-            lo_line = pg.InfiniteLine(
-                pos=lo, angle=90, movable=False, pen=pen,
-                label=abbrev, labelOpts=lbl_opts,
-            )
+            lo_line = pg.InfiniteLine(pos=lo, angle=90, movable=False, pen=pen)
             lo_line.setZValue(-10)
-            lo_line.setVisible(self._mode_bands_visible and is_guitar)
+            lo_line.setVisible(self._mode_bands_shown(is_guitar))
             self.addItem(lo_line)
             self._mode_band_items.append(lo_line)
 
+            # The label is drawn over the curves and dots, under the peak labels, as Swift's
+            # annotation: it rides an undrawn line of its own above them, the dashed line staying behind.
+            chip_line = pg.InfiniteLine(pos=lo, angle=90, movable=False, pen=pg.mkPen(None))
+            chip_line.label = _ModeChip(chip_line, abbrev, (r, g, b))
+            chip_line.setZValue(fft_a.MODE_LABEL_Z)
+            chip_line.setVisible(self._mode_bands_shown(is_guitar))
+            self.addItem(chip_line)
+            self._mode_band_items.append(chip_line)
+
             hi_line = pg.InfiniteLine(pos=hi, angle=90, movable=False, pen=pen)
             hi_line.setZValue(-10)
-            hi_line.setVisible(self._mode_bands_visible and is_guitar)
+            hi_line.setVisible(self._mode_bands_shown(is_guitar))
             self.addItem(hi_line)
             self._mode_band_items.append(hi_line)
 
@@ -969,7 +1036,13 @@ class FftCanvas(pg.PlotWidget):
         is_guitar = _tds.measurement_type().is_guitar
         self._mode_bands_visible = visible
         for item in self._mode_band_items:
-            item.setVisible(visible and is_guitar)
+            item.setVisible(self._mode_bands_shown(is_guitar))
+
+    def _mode_bands_shown(self, is_guitar: bool) -> bool:
+        """The mode bands show for a guitar when the analyzer has the chart draw them (not for a
+        comparison of saved measurements) — Swift's ``showModeBoundaries: tap.showsModeBoundaries``
+        with ``measurementType.isGuitar``."""
+        return self._mode_bands_visible and is_guitar and self.analyzer.shows_mode_boundaries
 
     # ------------------------------------------------------------------ #
     # Hot-plug device detection (forwarded from analyzer signals)
@@ -1140,7 +1213,7 @@ class FftCanvas(pg.PlotWidget):
         # Mode bands and peak threshold line are guitar-only — mirrors Swift's
         # showModeBoundaries && measurementType.isGuitar and isGuitar threshold line guard.
         for item in self._mode_band_items:
-            item.setVisible(is_guitar and self._mode_bands_visible)
+            item.setVisible(self._mode_bands_shown(is_guitar))
         self.line_threshold.setVisible(is_guitar and not self.is_comparing)
         # Clear stale guitar mode colours when switching to plate/brace so
         # _peak_brushes doesn't use leftover guitar colours on new peaks.
@@ -1283,18 +1356,20 @@ class FftCanvas(pg.PlotWidget):
             return
 
         if mods & Mod.ShiftModifier:
-            # Pan X: shift by 10% of current span (limits enforced by setLimits).
+            # Pan X: shift by 10% of current span, within the chart's limits (Swift handlePan).
             x0, x1 = vb.viewRange()[0]
             shift = (x1 - x0) * 0.10 * (1 if delta > 0 else -1)
-            vb.setXRange(x0 + shift, x1 + shift, padding=0)
+            vb.setXRange(*dr.panned_range(x0, x1, shift, dr.MIN_FREQUENCY_HZ, dr.MAX_FREQUENCY_HZ),
+                         padding=0)
             self._refresh_peaks_for_viewport()
             ev.accept()
 
         elif mods & Mod.AltModifier:
-            # Pan Y: shift by 10% of current span (limits enforced by setLimits).
+            # Pan Y: shift by 10% of current span, within the chart's limits (Swift handlePan).
             y0, y1 = vb.viewRange()[1]
             shift = (y1 - y0) * 0.10 * (1 if delta > 0 else -1)
-            vb.setYRange(y0 + shift, y1 + shift, padding=0)
+            vb.setYRange(*dr.panned_range(y0, y1, shift, dr.MIN_MAGNITUDE_DB, dr.MAX_MAGNITUDE_DB),
+                         padding=0)
             ev.accept()
 
         elif mods & (Mod.ControlModifier | Mod.MetaModifier):
@@ -1303,13 +1378,14 @@ class FftCanvas(pg.PlotWidget):
             factor = 1.15 ** (delta / 120.0)
             x0, x1 = vb.viewRange()[0]
             y0, y1 = vb.viewRange()[1]
-            xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
-            if zoom_keeps_minimum_span(x0, x1, 1 / factor, FREQ_MIN_SPAN):
-                xh = (x1 - x0) / 2 / factor
-                vb.setXRange(xc - xh, xc + xh, padding=0)
-            if zoom_keeps_minimum_span(y0, y1, 1 / factor, DB_MIN_SPAN):
-                yh = (y1 - y0) / 2 / factor
-                vb.setYRange(yc - yh, yc + yh, padding=0)
+            rx = dr.zoomed_range(x0, x1, (x0 + x1) / 2, factor, dr.MIN_FREQUENCY_HZ,
+                                 dr.MAX_FREQUENCY_HZ, dr.MIN_FREQUENCY_SPAN_HZ)
+            if rx is not None:
+                vb.setXRange(*rx, padding=0)
+            ry = dr.zoomed_range(y0, y1, (y0 + y1) / 2, factor, dr.MIN_MAGNITUDE_DB,
+                                 dr.MAX_MAGNITUDE_DB, dr.MIN_MAGNITUDE_SPAN_DB)
+            if ry is not None:
+                vb.setYRange(*ry, padding=0)
             self._refresh_peaks_for_viewport()
             ev.accept()
 
@@ -1440,13 +1516,10 @@ class FftCanvas(pg.PlotWidget):
             return
         self._minFreq = fmin
         self._maxFreq = fmax
-        if self.display_mode != AnalysisDisplayMode.COMPARISON:
-            # The measurement's peaks: the Peak-Min projection (guitar) or the identified L/C/FLC
-            # (material) — mirrors Swift's views reading the same two.
-            self.analyzer.peaksChanged.emit(
-                self.analyzer.peaks_above_peak_min if _tds.measurement_type().is_guitar
-                else self.analyzer.material_identified_peaks
-            )
+        # The peaks the chart marks — none while comparing — as Swift's view reads tap.chartPeaks.
+        chart_peaks = self.analyzer.chart_peaks
+        if chart_peaks is not None:
+            self.analyzer.peaksChanged.emit(chart_peaks)
         self.freqRangeChanged.emit(fmin, fmax)
 
     # ------------------------------------------------------------------ #
@@ -1551,11 +1624,16 @@ class FftCanvas(pg.PlotWidget):
 
         Also relays the signal outward so external observers can react.
         """
-        showing = not is_comparing
+        # The dots show when the analyzer gives the chart peaks (none while comparing), as Swift's
+        # tap.chartPeaks.
+        showing = self.analyzer.chart_peaks is not None
         self.points.setVisible(showing)
         self.selected_point.setVisible(showing)
         # Peak threshold line is guitar-only; hide during comparison regardless.
         self.line_threshold.setVisible(showing and self.analyzer._measurement_type.is_guitar)
+        shown = self._mode_bands_shown(self.analyzer._measurement_type.is_guitar)
+        for item in self._mode_band_items:
+            item.setVisible(shown)
         # Tap-trigger / Reset lines no longer exist (the threshold is now
         # an RMS-domain trigger displayed on the ThresholdSlider widget;
         # rendering it on the FFT chart was misleading).

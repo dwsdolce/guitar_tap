@@ -464,8 +464,8 @@ class TapToneAnalyzerControlMixin:
         self.is_measurement_complete = False
         self.measurementComplete.emit(False)
 
-        # Clear per-sequence accumulated data, as Swift's startTapSequence does.
-        self.captured_taps.clear()
+        # Clear per-sequence accumulated data, as Swift's startTapSequence does (the captured taps
+        # go with the capture, below).
         self.tap_entries = []
         self.showing_multi_tap_comparison = False
         self.current_tap_count = 0
@@ -487,22 +487,10 @@ class TapToneAnalyzerControlMixin:
         # first phase has a truncation anchor — without it, redoing the first
         # phase (or the same phase repeatedly) would leave the rejected tap's
         # audio in the saved WAV.  See accept_current_phase / redo_current_phase.
+        # Cancel any in-flight gated capture from a previous sequence and reset the pre-roll before
+        # arming the crossing handler, as Swift's startTapSequence.
+        self.abandon_capture()
         with self._gated_lock:
-            self._gated_capture_active = False
-            self._gated_accum = []
-            self._pre_roll_buf = []
-            # Clear the audio-queue fast-start markers so the first tap of this
-            # sequence cannot mistake a stale "already handled" equality
-            # (_gated_capture_id == _last_level_crossing_capture_id) for a real
-            # fast-start capture.  A material (plate/brace) completion leaves
-            # these two IDs equal — unlike the guitar re-enable paths, it never
-            # resets them — so a material→guitar switch would otherwise make
-            # start_guitar_gated_capture bail out (accum 0 samples) without
-            # capturing or completing, stranding the analyzer with all tap
-            # controls disabled.  Mirrors _on_post_engine_stop /
-            # re_enable_detection_for_next_plate_tap.
-            self._gated_capture_id = 0
-            self._last_level_crossing_capture_id = -1
             # Session recording: clear the buffer and begin recording. With Dump Capture Audio off
             # only the bounded pre-roll is kept, and it is dropped at the first tap unless the
             # setting has been turned on by then.
@@ -1001,13 +989,6 @@ class TapToneAnalyzerControlMixin:
         # All phase spectra cleared — mirrors Swift's @Published vars becoming nil,
         # which causes materialSpectra to return [] and SpectrumView to restore the live curve.
         self.set_material_spectra([])
-
-        # Cancel any in-flight gated capture when resetting phase state.
-        # Mirrors Swift which simply clears gatedCaptureActive in resetMaterialPhaseState.
-        # Gated state now lives on self (TapToneAnalyzer), not on proc_thread.
-        with self._gated_lock:
-            self._gated_capture_active = False
-            self._gated_accum = []
 
     # ------------------------------------------------------------------ #
     # Plate / brace tap sequence entry points

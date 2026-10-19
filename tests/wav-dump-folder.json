@@ -1,0 +1,47 @@
+{
+ "slug": "test/wav-dump-folder",
+ "about": "The capture WAV the app writes when Dump Capture Audio is on — the same cases in every edition: the natives' recording written to the dump folder, the web's the file it hands the browser to download. Each case writes 'samples' recorded at 'sampleRate' and reads the file back: 'expect' is its header — 'format' (3, IEEE float), 'channels', 'bitsPerSample', 'sampleRate' — and its samples, which equal those written (within 1e-6).",
+ "cases": [
+  {
+   "id": "WD1",
+   "note": "a recording is one channel of 32-bit floats at its own rate, its samples as recorded",
+   "samples": [
+    0,
+    0.5,
+    -0.5,
+    1,
+    -1,
+    0.123456,
+    -0.9999
+   ],
+   "sampleRate": 44100,
+   "expect": {
+    "format": 3,
+    "channels": 1,
+    "bitsPerSample": 32,
+    "sampleRate": 44100
+   }
+  },
+  {
+   "id": "WD2",
+   "note": "the rate is the capture's (48 kHz)",
+   "samples": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "sampleRate": 48000,
+   "expect": {
+    "format": 3,
+    "channels": 1,
+    "bitsPerSample": 32,
+    "sampleRate": 48000
+   }
+  }
+ ]
+}

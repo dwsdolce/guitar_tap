@@ -99,5 +99,10 @@ def test_load(row, qapp):
             assert sut.loaded_measurement_name == want, f"{field}: {sut.loaded_measurement_name!r}"
         elif field == "labelPositions":
             assert len(sut.peak_annotation_offsets) == want, field
+        elif field == "annotationVisibility":
+            assert sut.annotation_visibility_mode.value == want, field
+        elif field == "savedAnnotationVisibility":
+            from guitar_tap.models.tap_display_settings import TapDisplaySettings
+            assert TapDisplaySettings.annotation_visibility_mode().value == want, field
         else:
             pytest.fail(f"unknown field {field}")

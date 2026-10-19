@@ -1,3 +1,4 @@
+# @parity view/file-exporter tests=test/export-directory
 """
 Measurement persistence and file I/O.
 

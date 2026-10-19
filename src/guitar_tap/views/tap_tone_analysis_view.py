@@ -539,10 +539,12 @@ class MainWindow(QtWidgets.QMainWindow):
             file_menu.addAction(close_action)
             file_menu.addSeparator()
 
-        play_file_action = QtGui.QAction("Play Audio File…", self)
-        play_file_action.setShortcut(QtGui.QKeySequence("Ctrl+Alt+O"))
-        play_file_action.triggered.connect(self._open_audio_file)
-        file_menu.addAction(play_file_action)
+        self._menu_play_file_action = QtGui.QAction("Play Audio File…", self)
+        self._menu_play_file_action.setShortcut(QtGui.QKeySequence("Ctrl+Alt+O"))
+        # Enabled while the audio engine runs (set_running), as the Play File button.
+        self._menu_play_file_action.setEnabled(False)
+        self._menu_play_file_action.triggered.connect(self._open_audio_file)
+        file_menu.addAction(self._menu_play_file_action)
 
         file_menu.addSeparator()
 
@@ -878,6 +880,9 @@ class MainWindow(QtWidgets.QMainWindow):
             "(WAV, AIFF, FLAC \u2014 same pipeline as microphone, for cross-platform comparison)"
         )
         self._play_file_btn.clicked.connect(self._open_audio_file)
+        # Enabled while the audio engine runs (set_running), as every edition's: not before it has
+        # started, nor when the microphone is refused or cannot be opened.
+        self._play_file_btn.setEnabled(False)
         hl.addWidget(self._play_file_btn)
 
         hl.addSpacing(4)
@@ -2426,8 +2431,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def set_running(self, running: bool) -> None:
         """The engine started or stopped: the status bar shows the analyzer's status — a warning
-        when the input is unavailable — and the buttons follow (New Tap needs the engine running,
-        as Swift's button rule)."""
+        when the input is unavailable — and the buttons follow (New Tap and Play File need the engine
+        running, as Swift's)."""
         # SYNC the status-bar message to the analyzer's CURRENT status_message. statusMessageChanged
         # fires only on CHANGE, so if the status was set before the view connected the signal (app
         # startup), the label would keep its init text. Single-sourced from analyzer.status_message,
@@ -2435,6 +2440,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_detect_msg.setText(self.fft_canvas.analyzer.status_message)
         self._apply_status_message_color()
         self._update_tap_buttons()
+        self._play_file_btn.setEnabled(running)
+        self._menu_play_file_action.setEnabled(running)
         self._update_running_indicators()
         self._update_peak_readout()
 
@@ -2455,8 +2462,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if mic.is_running:
             palette.tag(self._sb_peak_lbl, color=palette.Role.STATUS_PEAK_READOUT)
             return
-        self._sb_peak_lbl.setText(
-            "Audio input unavailable" if mic.input_unavailable else "Starting...")
+        self._sb_peak_lbl.setText(mic.not_running_message)
         palette.tag(self._sb_peak_lbl, color=palette.Role.TEXT_SECONDARY)
 
     def _on_detection_state_changed(self, _state: object) -> None:
@@ -4097,6 +4103,7 @@ class MainWindow(QtWidgets.QMainWindow):
     # Measurements save / load / export
     # ================================================================
 
+    # @parity view/main
     def save_measurement(
         self,
         measurement_name: str | None = None,
@@ -4176,9 +4183,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if is_comparing:
             # Route to save_comparison() — mirrors Swift saveComparison(measurementName:notes:).
             try:
+                min_hz, max_hz, min_db, max_db = self._chart_range()
                 self.fft_canvas.analyzer.save_comparison(
                     measurement_name=self._measurement_name or None,
                     notes=self._notes or None,
+                    min_freq=min_hz, max_freq=max_hz, min_db=min_db, max_db=max_db,
                 )
             except OSError as exc:
                 QtWidgets.QMessageBox.warning(
@@ -4617,6 +4626,75 @@ class MainWindow(QtWidgets.QMainWindow):
         ``notes.isEmpty ? tap.loadedNotes : notes``."""
         return self._notes or self.fft_canvas.analyzer.loaded_notes or None
 
+    def _chart_range(self) -> tuple[float, float, float, float]:
+        """The chart's range: min Hz, max Hz, min dB, max dB. Swift's view state minFreq / maxFreq /
+        minDB / maxDB."""
+        canvas = self.fft_canvas
+        _, (min_db, max_db) = canvas.getPlotItem().getViewBox().viewRange()
+        return float(canvas.minFreq), float(canvas.maxFreq), float(min_db), float(max_db)
+
+    def _chart_overlay_spectra(self) -> list:
+        """The curves the chart draws over (or instead of) the measurement's: a comparison's
+        entries — the saved measurements, or a multi-tap's taps — whatever the measurement type; a
+        plate's or brace's phases; none for a guitar. Swift's ``materialSpectra``."""
+        az = self.fft_canvas.analyzer
+        if az.display_mode == AnalysisDisplayMode.COMPARISON:
+            return [{"frequencies": list(e["freqs"]), "magnitudes": list(e["mags"]),
+                     "color": tuple(e["color"]), "label": e["label"]} for e in az._comparison_data]
+        mt = TDS.measurement_type()
+        if mt.is_guitar:
+            return []
+        result: list = []
+        phases = [(az.longitudinal_spectrum, _FL, "Longitudinal (fL)")]
+        if mt == MT.MeasurementType.PLATE:
+            phases += [(az.cross_spectrum, _FC, "Cross-grain (fC)"),
+                       (az.flc_spectrum, _FLC, "Diagonal (fLC)")]
+        for spectrum, role, label in phases:
+            if spectrum is not None:
+                mags, freqs = spectrum
+                result.append({"frequencies": list(freqs), "magnitudes": list(mags),
+                               "color": role, "label": label})
+        return result
+
+    def _create_exportable_spectrum_view(self) -> bytes:
+        """The chart's image every main-view export uses — Export Spectrum, the PDF report and the
+        comparison PDF: the measurement's spectrum, peaks and labels (none for a comparison of saved
+        measurements, which draws its entries, with no mode lines), at the chart's range. Swift's
+        ``createExportableSpectrumView()``."""
+        from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
+        az = self.fft_canvas.analyzer
+        is_comparing = az.is_saved_measurement_comparison
+        subtitle = self._measurement_name or az.loaded_measurement_name or "New"
+        # The frozen spectrum: an export is offered only for a complete measurement or a comparison,
+        # whose overlays the image draws instead (Swift passes the live spectrum otherwise, never
+        # drawn).
+        freqs, mags = az.frozen_frequencies, az.frozen_magnitudes
+        min_hz, max_hz, min_db, max_db = self._chart_range()
+        mt = TDS.measurement_type()
+        return make_exportable_spectrum_view(
+            frequencies=list(freqs),
+            magnitudes=list(mags),
+            min_freq=min_hz,
+            max_freq=max_hz,
+            min_db=min_db,
+            max_db=max_db,
+            peaks=[] if is_comparing else list(az.visible_peaks),
+            show_mode_boundaries=az.shows_mode_boundaries,
+            annotation_positions=({} if is_comparing else
+                                  {pid: [float(x), float(y)]
+                                   for pid, (x, y) in az.peak_annotation_offsets.items()}),
+            show_unknown_modes=TDS.show_unknown_modes(),
+            measurement_type_str=mt.value,
+            selected_longitudinal_peak_id=az.effective_longitudinal_peak_id,
+            selected_cross_peak_id=az.effective_cross_peak_id,
+            selected_flc_peak_id=az.effective_flc_peak_id,
+            mode_overrides=dict(az.peak_mode_overrides),
+            material_spectra=self._chart_overlay_spectra() or None,
+            date_label=self._export_timestamp(),
+            chart_title=f"FFT Peaks \u2014 {subtitle}",
+            type_label="Comparison" if is_comparing else None,
+        )
+
     def _on_export_spectrum(self) -> None:
 
         # Name: live name → loaded name → "spectrum" default. Mirrors Swift exportCurrentSpectrum().
@@ -4639,164 +4717,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._loading_overlay.show_message("Exporting spectrum…")
         try:
-            canvas = self.fft_canvas
-
-            # ── Saved-measurement comparison: render overlay chart from _comparison_data ───
-            # Multi-tap comparison also sets display_mode=COMPARISON but is still a guitar
-            # measurement — its frozen averaged spectrum should be exported, not the overlay.
-            # Mirrors Swift createExportableSpectrumView(): isSavedMeasurementComparison.
-            if canvas.analyzer.is_saved_measurement_comparison:
-                from guitar_tap.views.exportable_spectrum_chart import (
-                    make_exportable_spectrum_view as _mev,
-                )
-                analyzer = canvas.analyzer
-                comparison_spectra = []
-                for entry in analyzer._comparison_data:
-                    r, g, b = entry["color"]
-                    comparison_spectra.append({
-                        "frequencies": list(entry["freqs"]),
-                        "magnitudes":  list(entry["mags"]),
-                        "color": (r, g, b),
-                        "label": entry["label"],
-                    })
-                snaps = [e["snapshot"] for e in analyzer._comparison_data if e.get("snapshot")]
-                min_freq = float(min(s.min_freq for s in snaps)) if snaps else 50.0
-                max_freq = float(max(s.max_freq for s in snaps)) if snaps else 1000.0
-                min_db   = float(min(s.min_db   for s in snaps)) if snaps else -100.0
-                max_db   = float(max(s.max_db   for s in snaps)) if snaps else 0.0
-                _loc = (analyzer.loaded_measurement_name or self._measurement_name or "").strip()
-                # The live chart's title, as Swift's createExportableSpectrumView.
-                chart_title = f"FFT Peaks \u2014 {_loc or 'New'}"
-                date_label = self._export_timestamp()
-                png_bytes = _mev(
-                    frequencies=[], magnitudes=[],
-                    min_freq=min_freq, max_freq=max_freq,
-                    min_db=min_db, max_db=max_db,
-                    peaks=[],
-                    material_spectra=comparison_spectra if comparison_spectra else None,
-                    chart_title=chart_title,
-                    date_label=date_label,
-                    # A comparison may hold different guitar types — Swift's typeLabel.
-                    type_label="Comparison",
-                )
-                with open(path, "wb") as f:
-                    f.write(png_bytes)
-                return
-
-            # ── Single-spectrum path ──────────────────────────────────────────
-            saved_freq = canvas.analyzer.frozen_frequencies
-            freqs = saved_freq.tolist() if hasattr(saved_freq, "tolist") else list(saved_freq)
-            mags  = (canvas.saved_mag_y_db.tolist()
-                     if hasattr(canvas.saved_mag_y_db, "tolist")
-                     else list(canvas.saved_mag_y_db))
-
-            mt = TDS.measurement_type()
-            is_guitar = mt.is_guitar
-
-            date_label = self._export_timestamp()
-
-            # Mirror Swift createExportableSpectrumView() exactly:
-            #   peaks: isComparing ? [] : tap.visiblePeaks
-            #   annotationOffsets: isComparing ? [:] : tap.peakAnnotationOffsets
-            #   selectedLongitudinalPeakID: tap.effectiveLongitudinalPeakID
-            #   selectedCrossPeakID: tap.effectiveCrossPeakID
-            #   selectedFlcPeakID: tap.effectiveFlcPeakID
-            #   modeOverrides: tap.peakModeOverrides
-            # The analyzer's visible_peaks property already applies the
-            # annotation-visibility-mode + show-unknown-modes filters, and
-            # works for both fresh captures and loaded measurements (since
-            # _on_measurement_loaded populates peaks_above_peak_min, selected_peak_ids,
-            # and annotation_visibility_mode from the loaded measurement).
-            # The earlier inline re-implementation manually filtered peaks
-            # and was wrapped in `try / except: pass` that silently swallowed
-            # any error and fell through with peaks_list = [] (no annotations
-            # rendered).  It also mis-keyed annotation positions by frequency
-            # instead of peak-id.  All of that is replaced by the Swift-style
-            # direct property reads below.
-            _az = canvas.analyzer
-            _is_comparing = bool(_az.is_saved_measurement_comparison)
-            peaks_list: list = [] if _is_comparing else list(_az.visible_peaks)
-            _annotation_positions: dict = (
-                {} if _is_comparing
-                else {pid: [float(x), float(y)]
-                      for pid, (x, y) in _az.peak_annotation_offsets.items()}
-            )
-            _sel_long_id  = _az.effective_longitudinal_peak_id
-            _sel_cross_id = _az.effective_cross_peak_id
-            _sel_flc_id   = _az.effective_flc_peak_id
-            _mode_overrides = dict(_az.peak_mode_overrides)
-
-            _gt = TDS.measurement_type().guitar_type
-            gt_str = _gt.value if _gt else None
-
-            # Mirrors Swift chartTitle computed property:
-            # fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
-            chart_title = canvas.chart_title
-
-            # Read the actual Y axis range from the ViewBox — mirrors Swift's
-            # minDB/maxDB which come from the chart's current axis domain.
-            try:
-                _, y_range = canvas.getPlotItem().getViewBox().viewRange()
-                export_min_db = float(y_range[0])
-                export_max_db = float(y_range[1])
-            except Exception:
-                export_min_db = float(self.peak_min_slider.value())
-                export_max_db = float(max(mags)) + 10.0 if mags else 0.0
-
-            # Build material_spectra — mirrors Swift's materialSpectra computed property
-            # (TapToneAnalysisView+SpectrumViews.swift), which reads tap.longitudinalSpectrum,
-            # tap.crossSpectrum, tap.flcSpectrum for both live and loaded measurements.
-            # For loaded measurements: snapshots come from _loaded_measurement.
-            # For live measurements: spectra come from analyzer._material_spectra
-            # (set by set_material_spectra() at capture completion).
-            _material_spectra = None
-            if not is_guitar:
-                _ms: list = []
-                if self._loaded_measurement is not None:
-                    m_exp = self._loaded_measurement
-                    if m_exp.longitudinal_snapshot is not None:
-                        ls = m_exp.longitudinal_snapshot
-                        _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                    "color": _FL, "label": "Longitudinal (fL)"})
-                    if m_exp.cross_snapshot is not None:
-                        cs = m_exp.cross_snapshot
-                        _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                    "color": _FC, "label": "Cross-grain (fC)"})
-                    if m_exp.flc_snapshot is not None:
-                        fs = m_exp.flc_snapshot
-                        _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                    "color": _FLC, "label": "Diagonal (fLC)"})
-                else:
-                    # Live measurement: read per-phase spectra from the analyzer.
-                    # _material_spectra is a list of (label, colour role, freqs, mags) tuples.
-                    _phases = getattr(canvas.analyzer, "_material_spectra", [])
-                    for _label, _color, _mfreqs, _mmags in _phases:
-                        _ms.append({"frequencies": list(_mfreqs), "magnitudes": list(_mmags),
-                                    "color": _color, "label": _label})
-                if _ms:
-                    _material_spectra = _ms
-
-            # Mirrors Swift TapToneAnalysisView+Export.createExportableSpectrumView()
-            # calling makeExportableSpectrumView(...) directly.
-            png_bytes = make_exportable_spectrum_view(
-                frequencies=freqs,
-                magnitudes=mags,
-                min_freq=float(canvas.minFreq),
-                max_freq=float(canvas.maxFreq),
-                min_db=export_min_db,
-                max_db=export_max_db,
-                peaks=peaks_list,
-                annotation_positions=_annotation_positions,
-                measurement_type_str=mt.value,
-                selected_longitudinal_peak_id=_sel_long_id,
-                selected_cross_peak_id=_sel_cross_id,
-                selected_flc_peak_id=_sel_flc_id,
-                mode_overrides=_mode_overrides,
-                material_spectra=_material_spectra,
-                guitar_type_str=gt_str,
-                date_label=date_label,
-                chart_title=chart_title,
-            )
+            png_bytes = self._create_exportable_spectrum_view()
             with open(path, "wb") as f:
                 f.write(png_bytes)
         except Exception as exc:
@@ -4847,7 +4768,6 @@ class MainWindow(QtWidgets.QMainWindow):
             canvas   = self.fft_canvas
             analyzer = canvas.analyzer
             mt       = TDS.measurement_type()
-            is_guitar = mt.is_guitar
 
             # ── measurementName / notes — mirrors Swift: measurementName.isEmpty ? tap.loadedMeasurementName : measurementName ──
             loc = self._measurement_name if self._measurement_name else None
@@ -4855,16 +4775,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 loc = analyzer.loaded_measurement_name or None
             notes_val = self._export_notes()
 
-            # ── Frequency / dB range from visible axis — mirrors Swift minFreq/maxFreq ────────
-            min_freq_val = float(canvas.minFreq)
-            max_freq_val = float(canvas.maxFreq)
-            try:
-                _, y_range = canvas.getPlotItem().getViewBox().viewRange()
-                min_db_val = float(y_range[0])
-                max_db_val = float(y_range[1])
-            except Exception:
-                min_db_val = float(self.peak_min_slider.value())
-                max_db_val = 0.0
+            # ── Frequency range from the chart — mirrors Swift minFreq/maxFreq ────────
+            min_freq_val, max_freq_val, _, _ = self._chart_range()
 
             # ── Peaks — use stored ResonantPeak objects when available, fall back to live analyzer ─
             all_peaks: list = []
@@ -4963,56 +4875,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 _body_l = TDS.guitar_body_length()
                 _body_w = TDS.guitar_body_width()
 
-            # ── Render spectrum PNG — mirrors Swift createExportableSpectrumView() ─────────────
-            saved_freq = analyzer.frozen_frequencies
-            freqs = saved_freq.tolist() if hasattr(saved_freq, "tolist") else list(saved_freq)
-            mags  = (canvas.saved_mag_y_db.tolist()
-                     if hasattr(canvas.saved_mag_y_db, "tolist")
-                     else list(canvas.saved_mag_y_db))
-
-            # Mirrors Swift exportPDFReport()'s embedded image, which calls
-            # createExportableSpectrumView() → uses tap.visiblePeaks.  The
-            # cycle-annotation button now syncs analyzer.annotation_visibility_mode
-            # so analyzer.visible_peaks is authoritative for both the live
-            # chart and the export.  Replaces the previous re-implementation
-            # that read from view-side _ann_mode_idx and filtered manually.
-            vis_peaks = list(analyzer.visible_peaks)
-
-            # Build material_spectra — mirrors Swift's materialSpectra computed property
-            # (TapToneAnalysisView+SpectrumViews.swift), which reads tap.longitudinalSpectrum,
-            # tap.crossSpectrum, tap.flcSpectrum for both live and loaded measurements.
-            _material_spectra = None
-            if not is_guitar:
-                _ms: list = []
-                if self._loaded_measurement is not None:
-                    m_exp = self._loaded_measurement
-                    if m_exp.longitudinal_snapshot is not None:
-                        ls = m_exp.longitudinal_snapshot
-                        _ms.append({"frequencies": list(ls.frequencies), "magnitudes": list(ls.magnitudes),
-                                    "color": _FL, "label": "Longitudinal (fL)"})
-                    if m_exp.cross_snapshot is not None:
-                        cs = m_exp.cross_snapshot
-                        _ms.append({"frequencies": list(cs.frequencies), "magnitudes": list(cs.magnitudes),
-                                    "color": _FC, "label": "Cross-grain (fC)"})
-                    if m_exp.flc_snapshot is not None:
-                        fs = m_exp.flc_snapshot
-                        _ms.append({"frequencies": list(fs.frequencies), "magnitudes": list(fs.magnitudes),
-                                    "color": _FLC, "label": "Diagonal (fLC)"})
-                else:
-                    # Live measurement: read per-phase spectra from the analyzer.
-                    _phases = getattr(analyzer, "_material_spectra", [])
-                    for _label, _color, _mfreqs, _mmags in _phases:
-                        _ms.append({"frequencies": list(_mfreqs), "magnitudes": list(_mmags),
-                                    "color": _color, "label": _label})
-                if _ms:
-                    _material_spectra = _ms
-
             _gt = TDS.measurement_type().guitar_type
             gt_str = _gt.value if _gt else None
-
-            # Mirrors Swift chartTitle computed property:
-            # fft.playingFileName ?? tap.loadedMeasurementName ?? "New"
-            chart_title = canvas.chart_title
 
             from datetime import datetime
             from datetime import timezone as _tz
@@ -5033,28 +4897,7 @@ class MainWindow(QtWidgets.QMainWindow):
             mic_name: str | None = analyzer.capture_microphone_name
             _active_cal_name: str | None = analyzer.capture_calibration_name
 
-            # Mirror Swift createExportableSpectrumView(): always call make_exportable_spectrum_view.
-            # For plate/brace, frozenFrequencies is intentionally empty — the spectrum renders
-            # via material_spectra (per-phase overlays). Swift has no "if freqs and mags" guard.
-            png_data: bytes | None = None
-            if freqs or _material_spectra:
-                png_data = make_exportable_spectrum_view(
-                    frequencies=freqs, magnitudes=mags,
-                    min_freq=min_freq_val, max_freq=max_freq_val,
-                    min_db=min_db_val,    max_db=max_db_val,
-                    peaks=vis_peaks,
-                    annotation_positions=annotation_positions,
-                    measurement_type_str=mt.value,
-                    selected_longitudinal_peak_id=sel_long_id,
-                    selected_cross_peak_id=sel_cross_id,
-                    selected_flc_peak_id=sel_flc_id,
-                    mode_overrides=mode_overrides,
-                    peak_modes=peak_modes,
-                    material_spectra=_material_spectra,
-                    guitar_type_str=gt_str,
-                    date_label=date_label,
-                    chart_title=chart_title,
-                )
+            png_data = self._create_exportable_spectrum_view()
 
             # ── Build PDFReportData directly — mirrors Swift PDFReportData(...) init ─────────
             report_data = M.PDFReportData(
@@ -5129,40 +4972,11 @@ class MainWindow(QtWidgets.QMainWindow):
             canvas   = self.fft_canvas
             analyzer = canvas.analyzer
 
-            # Render the comparison overlay chart image from live comparison data.
-            from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_view
-            comparison_spectra = []
-            for entry in analyzer._comparison_data:
-                r, g, b = entry["color"]
-                comparison_spectra.append({
-                    "frequencies": list(entry["freqs"]),
-                    "magnitudes":  list(entry["mags"]),
-                    "color": (r, g, b),
-                    "label": entry["label"],
-                })
-
-            snaps = [e["snapshot"] for e in analyzer._comparison_data if e.get("snapshot")]
-            min_freq = float(min(s.min_freq for s in snaps)) if snaps else 50.0
-            max_freq = float(max(s.max_freq for s in snaps)) if snaps else 1000.0
-            min_db   = float(min(s.min_db   for s in snaps)) if snaps else -100.0
-            max_db   = float(max(s.max_db   for s in snaps)) if snaps else 0.0
-
             loc = self._measurement_name or None
             if loc is None and analyzer.loaded_measurement_name:
                 loc = analyzer.loaded_measurement_name
-            # The live chart's title, as Swift's main-view export.
-            chart_title = f"FFT Peaks — {loc or 'New'}"
-
-            png_data = make_exportable_spectrum_view(
-                frequencies=[], magnitudes=[],
-                min_freq=min_freq, max_freq=max_freq,
-                min_db=min_db,     max_db=max_db,
-                peaks=[],
-                material_spectra=comparison_spectra if comparison_spectra else None,
-                date_label=self._export_timestamp(),
-                chart_title=chart_title,
-                type_label="Comparison",
-            )
+            # The chart's image, as every main-view export: Swift's createExportableSpectrumView.
+            png_data = self._create_exportable_spectrum_view()
 
             # Build mode_frequencies list from live _comparison_data.
             from guitar_tap.models.guitar_mode import GuitarMode
@@ -6523,14 +6337,11 @@ class MainWindow(QtWidgets.QMainWindow):
             if cal is None:
                 cal_meta_widget.setVisible(False)
                 return
-            if cal.sensitivity_factor is not None:
-                cal_meta_sens_lbl.setText(f"Sensitivity: {cal.sensitivity_factor:.2f} dB")
-                cal_meta_sens_lbl.setVisible(True)
-            else:
-                cal_meta_sens_lbl.setVisible(False)
-            cal_meta_points_lbl.setText(f"Data points: {len(cal.correction_points)}")
-            fr = cal.freq_range
-            cal_meta_range_lbl.setText(f"{fr[0]:.0f}–{fr[1]:.0f} Hz" if fr else "")
+            sensitivity, data_points, rng = cal.details
+            cal_meta_sens_lbl.setText(sensitivity or "")
+            cal_meta_sens_lbl.setVisible(sensitivity is not None)
+            cal_meta_points_lbl.setText(data_points)
+            cal_meta_range_lbl.setText(rng or "")
             cal_meta_widget.setVisible(True)
 
         # The picker and the details, once both exist; every later change refreshes them the same way.

@@ -1,28 +1,13 @@
-# @parity none
+# @parity none — Python's peak card list finds each card's peak in its table model; Swift's rows and
+# the web's cards are keyed by peak id by construction, so they have nothing to resolve.
 """
-The duplicate-peak defect: card identity.
+Peak cards and their peaks: each card shows its own peak's state and acts on its own peak, even when
+two peaks share a frequency.
 
-Python-only: the Analysis Results card list resolves each card back to its model row
-**by frequency**, and ``PeaksModel.freq_index`` returns ``-1`` when a frequency is not
-unique (peaks_model.py:296-301). The ``-1`` is never checked, and Python's negative
-indexing makes it a *valid* index — ``self._peaks[-1]`` — so the star, mode label and
-pitch of every affected card are read from the LAST peak in the list, an unrelated
-resonance.
-
-Observed in the field: loading an iPad-saved measurement showed two 235.8 Hz rows
-labelled "Air" while the graph annotated the same peak as "Back", and neither row was
-starred although one was in ``selectedPeakIDs``. Annotations were correct because they
-iterate rows directly (``self._peaks[row].id``); the cards were not.
-
-Swift and the web index by peak identity and have no equivalent defect, so this file is
-outside the ``test/peaks`` parity group.
-
-This matters beyond the findPeaks fix: loaded peaks are authoritative and are never
-re-derived, so every ``.guitartap`` file already written still contains duplicate peaks
-(see section 7b — heal on load). Until both land, this defect is reachable from any
-saved measurement.
-
-Authored against the UNFIXED code; expected to fail.
+A table row is not found by frequency: two peaks can share one, and a lookup by frequency then found
+neither (or, before that was checked, the last peak in the list). Seen in the field: loading an
+iPad-saved measurement showed two 235.8 Hz rows labelled "Air" while the graph labelled the peak
+"Back", and neither row was starred though one was selected.
 """
 
 from __future__ import annotations
@@ -65,7 +50,7 @@ def _peaks_like_the_corrupt_file() -> list[ResonantPeak]:
 class TestPeakCardIdentity:
     """Cards must resolve to their own peak, not to whatever shares their frequency."""
 
-    def test_D7_duplicate_frequency_does_not_corrupt_card_state(self, qapp):
+    def test_duplicate_frequency_cards_show_their_own_star(self, qapp):
         from guitar_tap.views.shared.peak_card_widget import PeakListWidget
 
         peaks = _peaks_like_the_corrupt_file()
@@ -103,7 +88,7 @@ class TestPeakCardIdentity:
         assert by_freq[196.447]._show == "on", "the selected Top peak lost its star"
         assert by_freq[231.877]._show == "off", "an unselected peak gained a star"
 
-    def test_D7b_duplicate_frequency_does_not_corrupt_mode_labels(self, qapp):
+    def test_duplicate_frequency_cards_show_their_own_mode(self, qapp):
         """Mode labels must come from each card's own peak.
 
         In the field this surfaced as two cards labelled "Air" for a peak the graph
@@ -136,6 +121,49 @@ class TestPeakCardIdentity:
             "one Air. A card must take its label from its own peak, not from whatever shares "
             "its frequency. This is the 'Back on the graph, Air in the table' divergence."
         )
+
+    def _twins(self):
+        """A card list holding two peaks at one frequency, neither selected."""
+        from guitar_tap.views.shared.peak_card_widget import PeakListWidget
+
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+
+        peaks = _peaks_like_the_corrupt_file()
+        widget = PeakListWidget()
+        analyzer = TapToneAnalyzer.for_testing()
+        widget.model._analyzer = analyzer
+        # As the view routes a user's label change (_on_mode_override_changed).
+        widget.model.modeOverrideChanged.connect(
+            lambda pid, label: analyzer.set_mode_override(label, pid) if label
+            else analyzer.reset_mode_override(pid))
+        widget.model.selected_peak_ids = set()
+        widget.model.is_live = False
+        widget.update_data_with_modes([(p, GuitarMode.BACK) for p in peaks])
+        twins = [c for c in widget._cards if abs(c.freq - 239.244433) < 1e-6]
+        return widget, peaks, twins
+
+    def test_starring_one_of_two_same_frequency_cards_stars_its_own_peak(self, qapp):
+        widget, peaks, twins = self._twins()
+        twins[1].showChanged.emit(twins[1].peak_id, "on")
+        starred = [p for p in peaks if widget.model.show_value_bool(widget.model.index(widget.model.row_of(p.id), 0))]
+        assert [p.id for p in starred] == [twins[1].peak_id], "only the starred card's peak is selected"
+
+    def test_naming_one_of_two_same_frequency_cards_names_its_own_peak(self, qapp):
+        widget, peaks, twins = self._twins()
+        twins[0].modeChanged.emit(twins[0].peak_id, "Wolf")
+        rows = [widget.model.row_of(c.peak_id) for c in twins]
+        modes = [widget.model.mode_value(widget.model.index(r, 0)) for r in rows]
+        assert modes[0] == "Wolf" and modes[1] != "Wolf", f"only the named card's peak is named: {modes}"
+
+    def test_resetting_one_of_two_same_frequency_cards_resets_its_own_peak(self, qapp):
+        widget, peaks, twins = self._twins()
+        for card in twins:
+            card.modeChanged.emit(card.peak_id, "Wolf")
+        twins[1].modeReset.emit(twins[1].peak_id)
+        rows = [widget.model.row_of(c.peak_id) for c in twins]
+        manual = [widget.model.is_manual_value(widget.model.index(r, 0)) for r in rows]
+        assert manual == [True, False], f"only the reset card's peak lost its name: {manual}"
+
 
 class TestPeakLabelsFromTheAnalyzer:
     """The table shows each peak's label as the analyzer gives it, by peak id — Swift's rows read

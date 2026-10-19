@@ -1,4 +1,7 @@
-# @parity none
+# @parity none — PortAudio's re-initialise around a stuck stream close (SR1–SR3) and a released
+# microphone (SR7) are Python's alone; its recovery's ordering (SR4–SR6) is shared — BW2's inputOpen
+# (test/buffer-watchdog), Swift's MS31 and the web's pending-restart device-change tests
+# (test/mic-selection).
 """
 How the PortAudio stream is restarted after a close hangs, and how the watchdog's recovery and the hot-plug
 refresh share the stream. Python only: PortAudio must be re-initialised to see device changes, and

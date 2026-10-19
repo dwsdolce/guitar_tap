@@ -1,3 +1,4 @@
+# @parity tooling/material-cases
 """Reading a material case file (plate.json, brace.json): samples, and the shared tolerance."""
 
 from __future__ import annotations

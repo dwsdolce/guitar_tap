@@ -1,6 +1,6 @@
 {
  "slug": "test/display-range",
- "about": "The chart's display range: widening onto a newly identified plate / brace peak (10% padding, never below 1 Hz or above 5 kHz, never narrowed), and when the chart's range moves (Settings Done, a new measurement, a widening while showing a load). Ranges are [minFreq, maxFreq, minDB, maxDB]; null is no range. Measurement types are Swift's case names. Expected values are Swift's. expandedToInclude rows: [hz, min, max, expected min, expected max]; widenedOnto rows: [hz, type, fromLoad, min, max, expected min, expected max]. 'scenarios' are cases on the analyzer, each from a fresh one (threshold −40, Taps 1), as steps: the shared steps of tooling/analyzer-steps, {\"load\": file} — a 'files' entry, loaded as the app loads a file — {\"listen\": true}, from which the material peaks' announcements are recorded, and {\"check\": {...}}. Fields: 'loadedRange' (the range a load publishes for the chart, [minFreq, maxFreq, minDB, maxDB], or 'saved' — the saved display range in the settings), 'analysisRange' ([min, max] Hz peaks are searched in), 'lastAnnounced' (each phase's last announced peak frequency), 'announced' (each phase's announcements since listening, in order — a frequency, or null for cleared), 'peaksFromLoad', 'sequenceStarts' (the web's own count). 'only' marks a case for one edition.",
+ "about": "The chart's display range: widening onto a newly identified plate / brace peak (10% padding, never below 1 Hz or above 5 kHz, never narrowed), and when the chart's range moves (Settings Done, a new measurement, a widening while showing a load). Ranges are [minFreq, maxFreq, minDB, maxDB]; null is no range. Measurement types are Swift's case names. Expected values are Swift's. expandedToInclude rows: [hz, min, max, expected min, expected max]; widenedOnto rows: [hz, type, fromLoad, min, max, expected min, expected max]. 'scenarios' are cases on the analyzer, each from a fresh one (threshold −40, Taps 1), as steps: the shared steps of tooling/analyzer-steps, {\"load\": file} — a 'files' entry, loaded as the app loads a file — {\"listen\": true}, from which the material peaks' announcements are recorded, and {\"check\": {...}}. Fields: 'loadedRange' (the range a load publishes for the chart, [minFreq, maxFreq, minDB, maxDB], or 'saved' — the saved display range in the settings), 'analysisRange' ([min, max] Hz peaks are searched in), 'lastAnnounced' (each phase's last announced peak frequency), 'announced' (each phase's announcements since listening, in order — a frequency, or null for cleared), 'peaksFromLoad', 'sequenceStarts' (the web's own count). 'only' marks a case for one edition. 'zoom' cases are one zoom step of an axis (the chart's gesture): 'axis' (frequency — within 1–5000 Hz, no narrower than 10 Hz — or magnitude — within −120–20 dB, no narrower than 10 dB), its 'range' [lo, hi], the 'anchor' kept in place and the 'scale' (> 1 zooms in); 'expect' is the new range, or null when the step is refused. 'pan' cases move an axis's 'range' by 'delta' (added to both ends); 'expect' is the new range — a move past a bound stops there, the span kept. Within 1e-3. 'drawnIndices' cases: the spectrum points drawn for a range — every point inside it plus the one just beyond each edge — as [first, end) indices into 'frequencies'; Swift and the web only (pyqtgraph is given the whole spectrum and clips it).",
  "expandedToInclude": [
   [
    1000,
@@ -523,6 +523,327 @@
    "expect": {
     "sequenceStarts": 2
    }
+  }
+ ],
+ "zoom": [
+  {
+   "id": "Z1",
+   "note": "zooming in narrows the range about the anchor",
+   "axis": "frequency",
+   "range": [
+    100,
+    1000
+   ],
+   "anchor": 550,
+   "scale": 2,
+   "expect": [
+    325,
+    775
+   ]
+  },
+  {
+   "id": "Z2",
+   "note": "zooming out widens it",
+   "axis": "frequency",
+   "range": [
+    400,
+    800
+   ],
+   "anchor": 600,
+   "scale": 0.5,
+   "expect": [
+    200,
+    1000
+   ]
+  },
+  {
+   "id": "Z3",
+   "note": "a step that would leave less than 10 Hz is refused",
+   "axis": "frequency",
+   "range": [
+    495,
+    505
+   ],
+   "anchor": 500,
+   "scale": 1.5,
+   "expect": null
+  },
+  {
+   "id": "Z4",
+   "note": "a step leaving exactly 10 Hz is allowed",
+   "axis": "frequency",
+   "range": [
+    20,
+    40
+   ],
+   "anchor": 30,
+   "scale": 2,
+   "expect": [
+    25,
+    35
+   ]
+  },
+  {
+   "id": "Z5",
+   "note": "a range at the minimum can be zoomed out",
+   "axis": "frequency",
+   "range": [
+    20,
+    30
+   ],
+   "anchor": 25,
+   "scale": 0.8695652173913044,
+   "expect": [
+    19.25,
+    30.75
+   ]
+  },
+  {
+   "id": "Z6",
+   "note": "a scale of 1 changes nothing",
+   "axis": "frequency",
+   "range": [
+    200,
+    1800
+   ],
+   "anchor": 1000,
+   "scale": 1,
+   "expect": [
+    200,
+    1800
+   ]
+  },
+  {
+   "id": "Z7",
+   "note": "a zoom out stays within 1–5000 Hz",
+   "axis": "frequency",
+   "range": [
+    1,
+    5000
+   ],
+   "anchor": 2500,
+   "scale": 0.5,
+   "expect": [
+    1,
+    5000
+   ]
+  },
+  {
+   "id": "Z8",
+   "note": "the magnitude axis zooms in about its anchor",
+   "axis": "magnitude",
+   "range": [
+    -100,
+    0
+   ],
+   "anchor": -50,
+   "scale": 2,
+   "expect": [
+    -75,
+    -25
+   ]
+  },
+  {
+   "id": "Z9",
+   "note": "30 dB to 15 dB is allowed",
+   "axis": "magnitude",
+   "range": [
+    -60,
+    -30
+   ],
+   "anchor": -45,
+   "scale": 2,
+   "expect": [
+    -52.5,
+    -37.5
+   ]
+  },
+  {
+   "id": "Z10",
+   "note": "a step that would leave less than 10 dB is refused",
+   "axis": "magnitude",
+   "range": [
+    -55,
+    -45
+   ],
+   "anchor": -50,
+   "scale": 1.5,
+   "expect": null
+  },
+  {
+   "id": "Z11",
+   "note": "a magnitude range at the minimum can be zoomed out",
+   "axis": "magnitude",
+   "range": [
+    -55,
+    -45
+   ],
+   "anchor": -50,
+   "scale": 0.8695652173913044,
+   "expect": [
+    -55.75,
+    -44.25
+   ]
+  },
+  {
+   "id": "Z12",
+   "note": "a scale of 1 changes nothing (magnitude)",
+   "axis": "magnitude",
+   "range": [
+    -80,
+    -10
+   ],
+   "anchor": -40,
+   "scale": 1,
+   "expect": [
+    -80,
+    -10
+   ]
+  }
+ ],
+ "pan": [
+  {
+   "id": "P1",
+   "note": "a pan past 1 Hz stops there, the span kept",
+   "axis": "frequency",
+   "range": [
+    50,
+    300
+   ],
+   "delta": -1000000,
+   "expect": [
+    1,
+    251
+   ]
+  },
+  {
+   "id": "P2",
+   "note": "a pan past 5 kHz stops there, the span kept",
+   "axis": "frequency",
+   "range": [
+    4000,
+    4800
+   ],
+   "delta": 1000000,
+   "expect": [
+    4200,
+    5000
+   ]
+  },
+  {
+   "id": "P3",
+   "note": "a pan past −120 dB stops there, the span kept",
+   "axis": "magnitude",
+   "range": [
+    -115,
+    -60
+   ],
+   "delta": -1000000,
+   "expect": [
+    -120,
+    -65
+   ]
+  },
+  {
+   "id": "P4",
+   "note": "a pan past 20 dB stops there, the span kept",
+   "axis": "magnitude",
+   "range": [
+    -30,
+    10
+   ],
+   "delta": 1000000,
+   "expect": [
+    -20,
+    20
+   ]
+  },
+  {
+   "id": "P5",
+   "note": "a pan within the bounds moves the range",
+   "axis": "frequency",
+   "range": [
+    200,
+    800
+   ],
+   "delta": 100,
+   "expect": [
+    300,
+    900
+   ]
+  },
+  {
+   "id": "P6",
+   "note": "a pan of nothing changes nothing",
+   "axis": "magnitude",
+   "range": [
+    -80,
+    -10
+   ],
+   "delta": 0,
+   "expect": [
+    -80,
+    -10
+   ]
+  }
+ ],
+ "drawnIndices": [
+  {
+   "id": "DP1",
+   "note": "the point just beyond each edge is drawn",
+   "frequencies": [
+    10,
+    20,
+    30,
+    40,
+    50
+   ],
+   "range": [
+    25,
+    35
+   ],
+   "expect": [
+    1,
+    4
+   ]
+  },
+  {
+   "id": "DP2",
+   "note": "a range between two points draws the segment across it",
+   "frequencies": [
+    10,
+    20,
+    30,
+    40,
+    50
+   ],
+   "range": [
+    31,
+    39
+   ],
+   "expect": [
+    2,
+    4
+   ]
+  },
+  {
+   "id": "DP3",
+   "note": "a range wider than the spectrum draws every point",
+   "frequencies": [
+    10,
+    20,
+    30,
+    40,
+    50
+   ],
+   "range": [
+    5,
+    100
+   ],
+   "expect": [
+    0,
+    5
+   ]
   }
  ]
 }

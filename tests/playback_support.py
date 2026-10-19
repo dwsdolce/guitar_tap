@@ -1,3 +1,4 @@
+# @parity tooling/playback-support
 """Drive the app's own Play File path from a test and wait for it.
 
 There is no test-only copy of the pipeline: ``TapToneAnalyzer.play_file`` is what the view calls, so

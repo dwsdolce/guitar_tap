@@ -1358,6 +1358,250 @@
     "\"type\":\"assigned\"",
     "\"label\":\"Top\""
    ]
+  },
+  {
+   "id": "WR5",
+   "note": "a saved comparison's range is read and written back",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F21",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "measurementName": "Pair",
+     "comparisonEntries": [
+      {
+       "id": "00000000-0000-0000-0000-000000000F11",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F02",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
+        "Top": "00000000-0000-0000-0000-000000000F02"
+       }
+      },
+      {
+       "id": "00000000-0000-0000-0000-000000000F12",
+       "label": "B",
+       "colorComponents": [
+        1,
+        0.5,
+        0,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F03",
+         "frequency": 98.0,
+         "magnitude": -26.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F04",
+         "frequency": 205.0,
+         "magnitude": -22.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F03",
+        "Top": "00000000-0000-0000-0000-000000000F04"
+       }
+      }
+     ],
+     "comparisonRange": {
+      "minFreq": 120,
+      "maxFreq": 260,
+      "minDB": -70,
+      "maxDB": -20
+     }
+    }
+   ],
+   "present": [
+    "comparisonRange"
+   ],
+   "absent": []
+  },
+  {
+   "id": "WR6",
+   "note": "a comparison saved before comparisons kept their range is written back without one",
+   "file": [
+    {
+     "id": "00000000-0000-0000-0000-000000000F21",
+     "timestamp": "2026-01-01T00:00:00Z",
+     "peaks": [],
+     "measurementName": "Pair",
+     "comparisonEntries": [
+      {
+       "id": "00000000-0000-0000-0000-000000000F11",
+       "label": "A",
+       "colorComponents": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F01",
+         "frequency": 95.0,
+         "magnitude": -28.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F02",
+         "frequency": 210.0,
+         "magnitude": -20.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F01",
+        "Top": "00000000-0000-0000-0000-000000000F02"
+       }
+      },
+      {
+       "id": "00000000-0000-0000-0000-000000000F12",
+       "label": "B",
+       "colorComponents": [
+        1,
+        0.5,
+        0,
+        1
+       ],
+       "snapshot": {
+        "frequencies": [
+         90.0,
+         210.0
+        ],
+        "magnitudes": [
+         -28.0,
+         -20.0
+        ],
+        "minFreq": 50,
+        "maxFreq": 500,
+        "minDB": -100,
+        "maxDB": 0,
+        "isLogarithmic": false,
+        "guitarType": "Classical",
+        "measurementType": "Classical Guitar"
+       },
+       "peaks": [
+        {
+         "id": "00000000-0000-0000-0000-000000000F03",
+         "frequency": 98.0,
+         "magnitude": -26.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        },
+        {
+         "id": "00000000-0000-0000-0000-000000000F04",
+         "frequency": 205.0,
+         "magnitude": -22.0,
+         "quality": 10.0,
+         "bandwidth": 5.0,
+         "timestamp": "2026-01-01T00:00:00Z"
+        }
+       ],
+       "guitarType": "Classical",
+       "modePeakIDs": {
+        "Air (Helmholtz)": "00000000-0000-0000-0000-000000000F03",
+        "Top": "00000000-0000-0000-0000-000000000F04"
+       }
+      }
+     ]
+    }
+   ],
+   "present": [
+    "comparisonEntries"
+   ],
+   "absent": [
+    "comparisonRange"
+   ]
   }
  ],
  "fixtures": [

@@ -432,8 +432,12 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             f"Scheduling re-enable after cooldown={self.tap_cooldown}s"
         )
 
-        # tap_cooldown of AUDIO.
-        self.after_audio(self.tap_cooldown, self._do_reenable_detection)
+        # tap_cooldown of AUDIO — nothing, if the capture was abandoned meanwhile.
+        generation = self._capture_generation
+        self.after_audio(
+            self.tap_cooldown,
+            lambda: (self._do_reenable_detection()
+                     if generation == self._capture_generation else None))
 
     @Slot()
     def _do_reenable_detection(self) -> None:

@@ -122,7 +122,8 @@ class CalibrationFileParser:
 
         Mirrors Swift CalibrationFileParser.parse(content:name:).
         """
-        _SENS = re.compile(r"Sens\s+Factor\s*=\s*([-+]?\d+\.?\d*)\s*dB", re.IGNORECASE)
+        # The header names as Swift reads them: spelled as written, in any case.
+        _SENS = re.compile(r"Sens Factor\s*=\s*([+-]?[\d.]+)\s*dB", re.IGNORECASE)
         _REF  = re.compile(r"SESSION REF\s*=\s*([\d.]+)\s*dBSPL", re.IGNORECASE)
         _SPL  = re.compile(r"SPL\s+([\d.]+)\s*dB", re.IGNORECASE)
 
@@ -179,118 +180,6 @@ class CalibrationFileParser:
             correction_points=correction_points,
             import_date=datetime.now(timezone.utc).isoformat(),
         )
-
-
-def parse_cal_metadata(path: str) -> dict:
-    """Return metadata from a calibration file without loading correction data.
-
-    Python-only helper (no Swift equivalent — Swift uses CalibrationFileParser.parse()).
-
-    Returns a dict with keys:
-      'sensitivity_db' : float | None  — from header (e.g. "Sens Factor = -18.39 dB")
-      'data_points'    : int           — number of frequency/correction pairs
-      'freq_min'       : float | None  — lowest frequency in the file
-      'freq_max'       : float | None  — highest frequency in the file
-    """
-    sensitivity: float | None = None
-    data_points = 0
-    freq_min: float | None = None
-    freq_max: float | None = None
-
-    _SENS_RE = re.compile(r"([-+]?\d+\.?\d*)\s*dB", re.IGNORECASE)
-
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        for raw in fh:
-            line = raw.strip()
-            if not line:
-                continue
-            if line.startswith('"') or line.startswith("*"):
-                lower = line.lower()
-                if "sens" in lower:
-                    m = _SENS_RE.search(line)
-                    if m:
-                        sensitivity = float(m.group(1))
-                continue
-            parts = line.split()
-            if len(parts) < 2:
-                continue
-            try:
-                freq = float(parts[0])
-                float(parts[1])
-                if freq > 0:
-                    data_points += 1
-                    if freq_min is None or freq < freq_min:
-                        freq_min = freq
-                    if freq_max is None or freq > freq_max:
-                        freq_max = freq
-            except ValueError:
-                continue
-
-    return {
-        "sensitivity_db": sensitivity,
-        "data_points": data_points,
-        "freq_min": freq_min,
-        "freq_max": freq_max,
-    }
-
-
-def parse_cal_file(path: str) -> npt.NDArray[np.float64]:
-    """Parse a UMIK-1/REW calibration file.
-
-    Returns an (N, 2) float64 array: column 0 = Hz, column 1 = dB correction.
-    Raises ValueError if no valid data points are found.
-
-    Python-only helper for callers that need the raw numpy array without a
-    MicrophoneCalibration wrapper.  Use CalibrationFileParser.parse() for
-    the full profile.
-    """
-    points: list[tuple[float, float]] = []
-
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        for raw in fh:
-            line = raw.strip()
-            if not line or line.startswith('"') or line.startswith("*"):
-                continue
-            parts = line.split()
-            if len(parts) < 2:
-                continue
-            try:
-                freq = float(parts[0])
-                db   = float(parts[1])
-                if freq > 0:
-                    points.append((freq, db))
-            except ValueError:
-                continue  # header text or malformed line
-
-    if not points:
-        raise ValueError(f"No calibration data found in '{path}'")
-
-    arr = np.array(points, dtype=np.float64)
-    # Sort by frequency (required by np.interp)
-    arr = arr[arr[:, 0].argsort()]
-    return arr
-
-
-def interpolate_to_bins(
-    cal_data: npt.NDArray[np.float64],
-    bin_freqs: npt.NDArray[np.float64],
-) -> npt.NDArray[np.float64]:
-    """Interpolate calibration corrections onto FFT bin frequencies.
-
-    Uses flat extrapolation at the edges (first/last correction value), matching
-    Swift MicrophoneCalibration.correction(at:) behaviour.
-
-    Returns a 1-D array of dB corrections, same length as *bin_freqs*.
-
-    Python-only module-level helper (Swift uses MicrophoneCalibration.corrections(for:)).
-    """
-    return np.interp(
-        bin_freqs,
-        cal_data[:, 0],
-        cal_data[:, 1],
-        left=float(cal_data[0, 1]),    # flat extrapolation below range
-        right=float(cal_data[-1, 1]),  # flat extrapolation above range
-    )
 
 
 # MARK: - MicrophoneCalibration
@@ -358,6 +247,17 @@ class MicrophoneCalibration:
         )
 
     @property
+    def details(self) -> "tuple[str | None, str, str | None]":
+        """The details Settings shows: (sensitivity, data points, range) — the sensitivity when the
+        file gives one, the range when there are points. Mirrors Swift
+        ``MicrophoneCalibration.details``."""
+        sensitivity = (f"Sensitivity: {self.sensitivity_factor:.2f} dB"
+                       if self.sensitivity_factor is not None else None)
+        fr = self.freq_range
+        rng = f"{fr[0]:.0f}-{fr[1]:.0f} Hz" if fr else None
+        return sensitivity, f"Data points: {len(self.correction_points)}", rng
+
+    @property
     def freq_range(self) -> "tuple[float, float] | None":
         """(min_hz, max_hz) of the correction data, or None if empty.
 
@@ -416,10 +316,9 @@ class CalibrationStorage:
     allowing the FFT analyzer to automatically apply the correct profile when the user
     selects a measurement microphone.
 
-    Lookup Priority:
-      1. A device-specific mapping set via set_calibration_for_device().
-      2. The global active_calibration (the last manually-selected calibration).
-      3. No correction (flat 0 dB offset applied to all bins).
+    The analyzer applies a device's profile whenever that device is selected: its mapping
+    (set_calibration_for_device()), or no correction when it has none. The global
+    active_calibration_id records the last calibration chosen.
 
     NOTE — Storage backend: Swift uses UserDefaults; Python uses QSettings.
     Both backends persist a JSON-encoded calibration array under the same logical keys.

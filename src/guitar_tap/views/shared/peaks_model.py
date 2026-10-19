@@ -150,10 +150,15 @@ class PeaksModel(QtCore.QAbstractTableModel):
         ``update_data_with_modes``.  The rule mirrors Swift's
         ``visiblePeaks`` computed property:
 
+        * comparing    → never show: the analyzer gives the chart no peaks to label
+                         (``chart_annotation_peaks`` is None), as Swift's
+                         ``tap.chartAnnotationPeaks``
         * ``NONE``     → never show
         * ``ALL``      → always show
         * ``SELECTED`` → show only if the peak's show/selected flag is set
         """
+        if self._analyzer is not None and self._analyzer.chart_annotation_peaks is None:
+            return False
         if self._annotation_mode == AVM.NONE:
             return False
         if self._annotation_mode == AVM.ALL:
@@ -350,12 +355,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
         """Return the show for the row as "on" or "off"."""
         return "on" if self.show_value_bool(index) else "off"
 
-    def freq_index(self, freq: float) -> QtCore.QModelIndex:
-        """From a frequency return the index in the data array."""
-        index = np.where(self._data[:, 0] == freq)
-        if len(index[0]) == 1:
-            return index[0][0]
-        return -1
+    def row_of(self, peak_id) -> int:
+        """The row of the peak with ``peak_id``, or -1 when no row holds it. A peak is named by its
+        id: two peaks can share a frequency."""
+        return next((row for row, p in enumerate(self._peaks) if str(p.id) == str(peak_id)), -1)
 
     def freq_value(self, index: QtCore.QModelIndex) -> float:
         """Return the frequency value from the correct column for the row"""

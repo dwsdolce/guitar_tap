@@ -484,14 +484,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
                 self.comparison_labels.append((entry.label, color))
                 self.comparison_snapshots.append(snap)
 
-            snaps = [e.snapshot for e in entries]
-            if snaps:
-                self.set_loaded_axis_range(
-                    float(min(s.min_freq for s in snaps)),
-                    float(max(s.max_freq for s in snaps)),
-                    float(min(s.min_db  for s in snaps)),
-                    float(max(s.max_db  for s in snaps)),
-                )
+            # A saved comparison shows the range it was saved with, as a measurement does; one saved
+            # before comparisons kept their range spans its entries' ranges, as a new comparison does.
+            from .display_range import spanning_range
+            saved_range = measurement.comparison_range or spanning_range(e.snapshot for e in entries)
+            if saved_range is not None:
+                self.set_loaded_axis_range(*saved_range)
 
             from .tap_tone_measurement import TapToneMeasurement
             _name = measurement.measurement_name
@@ -514,6 +512,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             self.result_provenance = None  # a comparison has no microphone of its own
             self.set_highlighted_peak(None)
             self.detection_state = DetectionState.IDLE
+            self.abandon_capture()
             self.cancel_session_recording()
             self.comparisonChanged.emit(True)
             return
@@ -743,6 +742,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         # re-render until run-loop end.  This is why the assignment is used directly rather
         # than set_measurement_complete(), which emits immediately.
         self.detection_state = DetectionState.IDLE
+        # A capture under way when the load came is dropped, with all it scheduled — it would
+        # otherwise land on the loaded measurement. As Swift's load.
+        self.abandon_capture()
         self.cancel_session_recording()
         self.is_measurement_complete = True  # set early; signal fires at end of method
         self.current_tap_count = 0
@@ -791,6 +793,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.annotation_visibility_mode = AnnotationVisibilityMode.from_string(
             measurement.annotation_visibility_mode or "all"
         )
+        # Saved, as Swift's load writes TapDisplaySettings.annotationVisibilityMode.
+        from .tap_display_settings import TapDisplaySettings as _TDS_AV
+        _TDS_AV.set_annotation_visibility_mode(self.annotation_visibility_mode)
         gt_log(f"  👁️ Restored annotation visibility: {self.annotation_visibility_mode.value}")
 
         # ── Restore peak mode overrides ───────────────────────────────────────
@@ -951,13 +956,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
         self.showing_multi_tap_comparison = enabled
         if not enabled:
-            self._comparison_data = []
-            self.comparison_labels = []
-            self.comparison_snapshots = []
             # Leave comparison; the chart returns to the averaged spectrum on its own, because the
             # measurement is complete.
-            self._display_mode = AnalysisDisplayMode.LIVE
-            self.comparisonChanged.emit(False)
+            self.clear_comparison()
             return
 
         # Mirrors Swift: guard !tapEntries.isEmpty else { return }
@@ -1147,18 +1148,12 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.source_measurement_timestamp = None
         self.loadedMeasurementNameChanged.emit(None)
 
-        if with_snapshots:
-            snaps = [m.spectrum_snapshot for m in with_snapshots]
-            # Broadcast the union axis ranges — mirrors Swift loadComparison(measurements:)
-            # which calls setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:) so all four
-            # bounds are published atomically. Using set_loaded_axis_range() here keeps
-            # the model as the single source of truth (vs computing the union in the canvas).
-            self.set_loaded_axis_range(
-                float(min(s.min_freq for s in snaps)),
-                float(max(s.max_freq for s in snaps)),
-                float(min(s.min_db  for s in snaps)),
-                float(max(s.max_db  for s in snaps)),
-            )
+        # A comparison spans its entries' ranges, whatever was shown before — through
+        # set_loaded_axis_range so all four bounds are published at once, as Swift's setLoadedAxisRange.
+        from .display_range import spanning_range
+        spanned = spanning_range(m.spectrum_snapshot for m in with_snapshots)
+        if spanned is not None:
+            self.set_loaded_axis_range(*spanned)
         # Mirrors Swift: displayMode = comparisonSpectra.isEmpty ? .live : .comparison
         was_comparing = self._display_mode == AnalysisDisplayMode.COMPARISON
         if self._comparison_data:
@@ -1170,6 +1165,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
             # Empty data means we stayed LIVE, so there is nothing to freeze and nothing to
             # disarm. Mirrors Swift load_comparison / web loadComparison.
             self.detection_state = DetectionState.IDLE
+            self.abandon_capture()
             self.cancel_session_recording()
             self.comparisonChanged.emit(True)
         else:
@@ -1180,7 +1176,9 @@ class TapToneAnalyzerMeasurementManagementMixin:
         return result
 
     def clear_comparison(self) -> None:
-        """Clear comparison overlay state."""
+        """Ends a comparison: its overlay entries and their snapshots go, and the chart is live. The
+        one place a comparison ends — a load, New Tap, and turning the per-tap overlay off call it.
+        Mirrors Swift ``clearComparison``."""
         was_comparing = self.is_comparing
         self._display_mode = AnalysisDisplayMode.LIVE
         self._comparison_data.clear()
@@ -1193,11 +1191,17 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self,
         measurement_name: "str | None" = None,
         notes: "str | None" = None,
+        min_freq: "float | None" = None,
+        max_freq: "float | None" = None,
+        min_db: "float | None" = None,
+        max_db: "float | None" = None,
     ) -> None:
         """Save the current live comparison as a TapToneMeasurement with comparisonEntries.
 
         Creates a new TapToneMeasurement whose comparisonEntries hold a snapshot of the
-        current comparison data, then appends it to saved_measurements and persists.
+        current comparison data, then appends it to saved_measurements and persists. The chart's
+        range (``min_freq`` … ``max_db``) is saved with it and shown when it is loaded, as a
+        measurement's; ``None`` uses the range a new comparison shows.
 
         Mirrors Swift TapToneAnalyzer.saveComparison(measurementName:notes:)
         (TapToneAnalyzer+MeasurementManagement.swift).
@@ -1227,11 +1231,21 @@ class TapToneAnalyzerMeasurementManagementMixin:
             )
             entries.append(ce)
 
+        from .display_range import spanning_range
+        default_range = spanning_range(self.comparison_snapshots)
+        if default_range is None:
+            return
         m = TapToneMeasurement.create(
             peaks=[],
             measurement_name=measurement_name,
             notes=notes,
             comparison_entries=entries,
+            comparison_range=(
+                float(min_freq if min_freq is not None else default_range[0]),
+                float(max_freq if max_freq is not None else default_range[1]),
+                float(min_db if min_db is not None else default_range[2]),
+                float(max_db if max_db is not None else default_range[3]),
+            ),
         )
         self.saved_measurements.append(m)
         # The comparison on screen is now this saved one: its exports show its date and are named by

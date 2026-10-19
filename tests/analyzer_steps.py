@@ -21,10 +21,15 @@ _MATERIAL_PHASES = {"L": MaterialTapPhase.CAPTURING_LONGITUDINAL, "C": MaterialT
                     "FLC": MaterialTapPhase.CAPTURING_FLC}
 
 
+
+# The sample count liveAudio has fed, so its tone runs on across steps.
+_LIVE_AUDIO = {"sample": 0}
+
 def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
     """Run ``step`` on ``sut`` if it is one of the shared steps, and say whether it was.
 
-    - ``{"settings": {"type": saved name, "measureFlc": bool}}`` — as Settings writes them
+    - ``{"settings": {"type": saved name, "measureFlc": bool, "range": [min Hz, max Hz, min dB, max dB]}}``
+      — as Settings writes them (``range``: the measurement type's display range and the dB range)
     - ``{"setTaps": n}`` — the Taps control
     - ``{"setThreshold": dB}`` — the Threshold control
     - ``{"setPeakMin": dB}`` — the Peak Min control
@@ -43,6 +48,8 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
     - ``{"routeChange": true}`` — the engine restarted on a device change
     - ``{"spectrumFrame": spectrum}`` — one FFT frame from the running engine, a spectrum as
       ``peaks.json`` describes one
+    - ``{"liveAudio": seconds, "level": dB}`` — that much real audio (a 200 Hz tone at that level)
+      through the microphone's path: each chunk's samples to the gated capture, then its level
     """
     if "settings" in step:
         settings = step["settings"]
@@ -50,6 +57,12 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
             TDS.set_measurement_type(MeasurementType(settings["type"]))
         if "measureFlc" in settings:
             TDS.set_measure_flc(settings["measureFlc"])
+        if "range" in settings:
+            min_hz, max_hz, min_db, max_db = settings["range"]
+            TDS.set_min_frequency(min_hz)
+            TDS.set_max_frequency(max_hz)
+            TDS.set_min_magnitude(min_db)
+            TDS.set_max_magnitude(max_db)
     elif "setTaps" in step:
         sut.set_tap_num(step["setTaps"])
     elif "setThreshold" in step:
@@ -100,6 +113,16 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
     elif "audioChunks" in step:
         for _ in range(step["audioChunks"]):
             sut._on_chunk_level(float(step["level"]), sut.last_audio_time + AUDIO_FEED_CHUNK_SECONDS)
+    elif "liveAudio" in step:
+        # Real audio through the microphone's path: each chunk's samples to the capture, then its level.
+        level = float(step["level"])
+        amplitude = np.sqrt(2) * 10 ** (level / 20)
+        for _ in range(round(step["liveAudio"] / AUDIO_FEED_CHUNK_SECONDS)):
+            n = np.arange(_LIVE_AUDIO["sample"], _LIVE_AUDIO["sample"] + 1024)
+            _LIVE_AUDIO["sample"] += 1024
+            chunk = (amplitude * np.sin(2 * np.pi * 200 * n / 48000)).astype(np.float32)
+            sut._accumulate_gated_samples(chunk, 48000.0)
+            sut._on_chunk_level(level, sut.last_audio_time + AUDIO_FEED_CHUNK_SECONDS)
     else:
         return False
     return True

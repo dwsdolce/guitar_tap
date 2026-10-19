@@ -2,7 +2,7 @@
 
 Mirrors Swift ``DisplayRange`` (Models/DisplayRange.swift).
 
-# @parity presentation/display-range tests=test/display-range
+# @parity presentation/display-range tests=test/display-range,test/comparison
 """
 
 from __future__ import annotations
@@ -118,3 +118,38 @@ def entered_value(text: str, stored: float, decimals: int) -> "float | None":
     except ValueError:
         return None
 
+
+def spanning_range(snapshots) -> "tuple[float, float, float, float] | None":
+    """The range that spans every one of *snapshots* — (min Hz, max Hz, min dB, max dB), the lowest of
+    their lower bounds and the highest of their upper ones — or None for none. A comparison with no
+    range of its own shows this, and a saved comparison's or multi-tap's image from the measurements
+    list spans its spectra. Mirrors Swift ``DisplayRange.spanning``."""
+    snapshots = list(snapshots)
+    if not snapshots:
+        return None
+    return (float(min(s.min_freq for s in snapshots)), float(max(s.max_freq for s in snapshots)),
+            float(min(s.min_db for s in snapshots)), float(max(s.max_db for s in snapshots)))
+
+
+def zoomed_range(lo: float, hi: float, anchor: float, scale: float, lower: float, upper: float,
+                 min_span: float) -> "tuple[float, float] | None":
+    """One zoom step of an axis [lo, hi] about *anchor* (*scale* > 1 zooms in), kept within
+    [lower, upper]: the new range, or None — the step is refused — if it would leave the range
+    narrower than *min_span*. Mirrors Swift ``DisplayRange.zoomed``."""
+    new_lo = max(lower, anchor - (anchor - lo) / scale)
+    new_hi = min(upper, anchor + (hi - anchor) / scale)
+    return (new_lo, new_hi) if new_hi - new_lo >= min_span else None
+
+
+def panned_range(lo: float, hi: float, delta: float, lower: float,
+                 upper: float) -> "tuple[float, float]":
+    """An axis [lo, hi] moved by *delta*, kept within [lower, upper]: a move past a bound stops
+    there, the span kept. Mirrors Swift ``DisplayRange.panned``."""
+    new_lo, new_hi = lo + delta, hi + delta
+    if new_lo < lower:
+        new_hi += lower - new_lo
+        new_lo = lower
+    if new_hi > upper:
+        new_lo -= new_hi - upper
+        new_hi = upper
+    return max(lower, new_lo), min(upper, new_hi)

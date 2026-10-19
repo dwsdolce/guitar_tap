@@ -1,3 +1,4 @@
+# @parity test/export-e2e
 """
 Export regression: drive the real main window as a user does.
 

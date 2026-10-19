@@ -1,4 +1,4 @@
-# @parity none
+# @parity none — Qt closes every open popup when a window is shown; SwiftUI and the browser do not.
 """
 A captured tap must not open a window, or Qt closes every open popup and menu.
 

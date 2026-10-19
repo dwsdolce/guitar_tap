@@ -1,4 +1,4 @@
-# @parity none
+# @parity none — how Python's own modules import each other; nothing like it in Swift or the web.
 """Every internal import is package-absolute or explicitly relative — never bare.
 
 ``__main__.py`` used to insert ``src/guitar_tap`` onto ``sys.path`` so that ``models/`` and

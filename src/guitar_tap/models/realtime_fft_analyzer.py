@@ -705,6 +705,12 @@ class RealtimeFFTAnalyzer(
         return (self.microphone_permission_denied or self.input_could_not_start
                 or self.input_could_not_restart)
 
+    @property
+    def not_running_message(self) -> str:
+        """What the not-running placeholders say: why the engine is not running. Mirrors Swift
+        `notRunningMessage`."""
+        return "Audio input unavailable" if self.input_unavailable else "Starting..."
+
     # MARK: - Selected Input Device Property
     # Mirrors Swift @Published var selectedInputDevice: AVAudioDevice? { didSet { ... } }
     # The setter mirrors Swift's didSet: saves the device and auto-loads its calibration on

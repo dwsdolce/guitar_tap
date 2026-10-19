@@ -1,5 +1,6 @@
-# @parity none — Python's Settings dialog fills the calibration details itself; Swift and the web derive
-# them from the active calibration in the view, so the bug this guards against cannot arise there.
+# @parity none — Python's Settings dialog sets its details labels itself, so they must be refreshed
+# when the picker changes; Swift's and the web's views are bound to the active calibration. The
+# details' text is shared: CD1–CD2 (test/calibration).
 """
 Settings: the active calibration's details follow the Calibration picker while the dialog is open.
 

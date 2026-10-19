@@ -913,7 +913,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
     def _guitar_gated_capture_failed(self) -> None:
         """Re-arm detection without storing a tap when guitar capture fails."""
         self._set_status_message("No signal detected — tap again")
-        self.after_audio(self.tap_cooldown, self._do_reenable_guitar)   # the rest, in AUDIO
+        self._schedule_guitar_re_enable()
 
     def finish_guitar_gated_capture(self, samples, sample_rate: float) -> None:
         """Compute FFT for a guitar gated capture and append to captured_taps.
@@ -1044,6 +1044,19 @@ class TapToneAnalyzerSpectrumCaptureMixin:
             f"specHash={_diag_spec_hash:.4f} sampleHash={_diag_sample_hash:.6f}"
         )
 
+        # The tap's own peaks, shown until the next tap or the average: all selected, classified — as
+        # Swift's finishGuitarGatedCapture.
+        peaks = self.find_peaks(magnitudes_db, freqs, peak_min_override=self.PEAK_DETECTION_FLOOR)
+        self.all_peaks = peaks
+        self.selected_peak_ids = {p.id for p in peaks}
+        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds_tap
+
+        from .guitar_mode import GuitarMode as _GM_tap
+        _tap_modes = _GM_tap.classify_all(peaks, _tds_tap.guitar_type())
+        self.identified_modes = [
+            {"peak": p, "mode": _tap_modes.get(p.id, _GM_tap.UNKNOWN)} for p in peaks
+        ]
+
         self.current_tap_count = len(self.captured_taps)
         self.tap_progress = min(
             1.0, float(self.current_tap_count) / max(self.number_of_taps, 1)
@@ -1052,13 +1065,47 @@ class TapToneAnalyzerSpectrumCaptureMixin:
 
         if self.current_tap_count < self.number_of_taps:
             self._set_status_message(self._guitar_loop_status(capturing=False))
-            self.after_audio(self.tap_cooldown, self._do_reenable_guitar)   # the rest, in AUDIO
+            self._schedule_guitar_re_enable()
         else:
             self._set_status_message("All taps captured. Processing...")
             self.capture_timer_active = False
             # capture_window of AUDIO. Released at file end: when the last capture ends with
             # the file, the audio clock stops and would never make it due.
-            self.after_audio(self.capture_window, self._finish_capture, released_at_file_end=True)
+            generation = self._capture_generation
+            self.after_audio(
+                self.capture_window,
+                lambda: self._finish_capture() if generation == self._capture_generation else None,
+                released_at_file_end=True)
+
+    def _schedule_guitar_re_enable(self) -> None:
+        """Re-arm guitar tap detection after the rest: tap_cooldown seconds of AUDIO. After each
+        captured tap of a multi-tap sequence, and when a capture timed out with no audio. Mirrors
+        Swift scheduleGuitarReEnable."""
+        generation = self._capture_generation
+        self.after_audio(
+            self.tap_cooldown,
+            lambda: self._do_reenable_guitar() if generation == self._capture_generation else None)
+
+    def abandon_capture(self) -> None:
+        """Ends any capture in progress and drops what the sequence has gathered: the gate closes,
+        the window's samples, the pre-roll and the waiting pre-roll go, the captured taps go, the
+        fast-start markers reset — so a pending timeout finds its capture gone — and what a capture
+        scheduled (its processing, the next tap's re-arm) does nothing when it comes due. New Tap
+        and a load call it, so a capture under way when either happens cannot land after it. Mirrors
+        Swift abandonCapture."""
+        self._capture_generation += 1
+        with self._gated_lock:
+            self._gated_capture_active = False
+            self._gated_accum = []
+            self._pre_roll_buf = []
+            self._pending_level_crossing_pre_roll = None
+            # A material (plate/brace) completion leaves these two ids equal — unlike the guitar
+            # re-enable paths, it never resets them — so a stale "already handled" equality would
+            # make the next sequence's first capture bail out. Mirrors _on_post_engine_stop /
+            # re_enable_detection_for_next_plate_tap.
+            self._gated_capture_id = 0
+            self._last_level_crossing_capture_id = -1
+        self.captured_taps = []
 
     @Slot()
     def _do_start_flc(self) -> None:

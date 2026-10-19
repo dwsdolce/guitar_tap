@@ -1,6 +1,6 @@
 {
  "slug": "test/comparison",
- "about": "Comparing saved measurements: the entries a comparison holds, their labels and range, the mode, detection standing down, the per-tap overlay giving way, each entry's Air/Top/Back taken from its source, and saving and loading a comparison. Each case starts a fresh analyzer (threshold −40, Taps 1) with an empty library and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, guitarTap, advance), and {\"compare\": [files]} (a comparison of those 'files' entries, as a multi-select in the list makes); {\"clearComparison\": true}; {\"load\": file} (loaded as a file); {\"multiTap\": bool} (the Taps toggle: the per-tap overlay of the measurement on screen, on or off); {\"saveComparison\": name} (saves the comparison shown); {\"loadSaved\": true} (loads the last saved record); {\"check\": {...}}. Fields: 'entries' (count), 'labels', 'mode' (live / comparison), 'loadedRange' ([minFreq, maxFreq, minDB, maxDB]), 'detecting', 'multiTap' (the per-tap overlay is showing), 'tapEntries' (count), 'savedComparison' (the comparison is of saved measurements), 'modeIds' (the first entry's stored map, mode display name → peak, by 'peakNames'), 'entryPeaks' (the first entry's peaks, by name, any order), 'entryGuitarType' (the first entry's guitar type), 'savedRecord' (the last saved record — {name, entries} — or null for none added), 'phase' (Swift's raw value), 'complete'. Expected values are Swift's.",
+ "about": "Comparing saved measurements: the entries a comparison holds, their labels and range, the mode, detection standing down, the per-tap overlay giving way, each entry's Air/Top/Back taken from its source, and saving and loading a comparison. Each case starts a fresh analyzer (threshold −40, Taps 1) with an empty library and runs its 'steps': the shared steps of tooling/analyzer-steps (settings, setTaps, newTap, guitarTap, advance), and {\"compare\": [files]} (a comparison of those 'files' entries, as a multi-select in the list makes); {\"load\": file} (loaded as a file); {\"multiTap\": bool} (the Taps toggle: the per-tap overlay of the measurement on screen, on or off); {\"saveComparison\": name, \"view\"?: [minFreq, maxFreq, minDB, maxDB]} (saves the comparison shown, with the chart's range 'view'); {\"loadSaved\": true} (loads the last saved record); {\"check\": {...}}. Fields: 'entries' (count), 'labels', 'mode' (live / comparison), 'loadedRange' ([minFreq, maxFreq, minDB, maxDB] — the range the load gives the chart), 'detecting', 'multiTap' (the per-tap overlay is showing), 'tapEntries' (count), 'savedComparison' (the comparison is of saved measurements), 'modeIds' (the first entry's stored map, mode display name → peak, by 'peakNames'), 'entryPeaks' (the first entry's peaks, by name, any order), 'entryGuitarType' (the first entry's guitar type), 'chartPeaks' / 'chartLabels' (whether the analyzer gives the chart the measurement's peaks to mark / to label — none while a comparison is shown), 'modeLines' (whether the chart draws the guitar mode lines — not for a comparison of saved measurements), 'savedRange' (the last saved record's range, [minFreq, maxFreq, minDB, maxDB]), 'savedRecord' (the last saved record — {name, entries} — or null for none added), 'phase' (Swift's raw value), 'complete'. Expected values are Swift's.",
  "files": {
   "A": [
    {
@@ -327,6 +327,82 @@
      }
     ]
    }
+  ],
+  "oldPair": [
+   {
+    "id": "00000000-0000-0000-0000-0000000E0F00",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "peaks": [],
+    "measurementName": "Old pair",
+    "comparisonEntries": [
+     {
+      "id": "00000000-0000-0000-0000-0000000E0001",
+      "label": "A",
+      "colorComponents": [
+       0,
+       0,
+       1,
+       1
+      ],
+      "snapshot": {
+       "frequencies": [
+        100.0,
+        200.0,
+        300.0,
+        400.0
+       ],
+       "magnitudes": [
+        -40.0,
+        -35.0,
+        -45.0,
+        -50.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 800,
+       "minDB": -95,
+       "maxDB": -15,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic"
+      },
+      "peaks": [],
+      "guitarType": "Generic"
+     },
+     {
+      "id": "00000000-0000-0000-0000-0000000E0002",
+      "label": "B",
+      "colorComponents": [
+       1,
+       0.5,
+       0,
+       1
+      ],
+      "snapshot": {
+       "frequencies": [
+        100.0,
+        200.0,
+        300.0,
+        400.0
+       ],
+       "magnitudes": [
+        -40.0,
+        -35.0,
+        -45.0,
+        -50.0
+       ],
+       "minFreq": 100,
+       "maxFreq": 1200,
+       "minDB": -80,
+       "maxDB": -5,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic"
+      },
+      "peaks": [],
+      "guitarType": "Generic"
+     }
+    ]
+   }
   ]
  },
  "peakNames": {
@@ -388,8 +464,19 @@
   },
   {
    "id": "CM5",
-   "note": "the chart range is the union of the entries' ranges",
+   "note": "a comparison spans its entries' ranges, whatever Settings holds (a guitar type's range here)",
    "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar",
+      "range": [
+       80,
+       300,
+       -90,
+       -10
+      ]
+     }
+    },
     {
      "compare": [
       "A",
@@ -408,7 +495,7 @@
   },
   {
    "id": "CM6",
-   "note": "clearing the comparison empties it and returns to live",
+   "note": "New Tap during a comparison ends it: empty, and back to live",
    "steps": [
     {
      "compare": [
@@ -417,7 +504,7 @@
      ]
     },
     {
-     "clearComparison": true
+     "newTap": true
     }
    ],
    "expect": {
@@ -698,7 +785,7 @@
      "saveComparison": "Saved"
     },
     {
-     "clearComparison": true
+     "newTap": true
     },
     {
      "loadSaved": true
@@ -908,6 +995,279 @@
      "Averaged"
     ],
     "entries": 3
+   }
+  },
+  {
+   "id": "CM26",
+   "note": "the chart marks and labels the measurement's peaks, none while a comparison is shown (it draws its entries' own), and again once a measurement is loaded",
+   "steps": [
+    {
+     "load": "A"
+    },
+    {
+     "check": {
+      "chartPeaks": true,
+      "chartLabels": true
+     }
+    },
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "check": {
+      "chartPeaks": false,
+      "chartLabels": false
+     }
+    },
+    {
+     "load": "A"
+    }
+   ],
+   "expect": {
+    "chartPeaks": true,
+    "chartLabels": true
+   }
+  },
+  {
+   "id": "CM27",
+   "note": "the chart draws the guitar mode lines for a measurement, not for a comparison of saved measurements (its entries need not be of one guitar type), fresh or saved, and again after New Tap",
+   "steps": [
+    {
+     "load": "A"
+    },
+    {
+     "check": {
+      "modeLines": true
+     }
+    },
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "check": {
+      "modeLines": false
+     }
+    },
+    {
+     "saveComparison": "Pair"
+    },
+    {
+     "newTap": true
+    },
+    {
+     "check": {
+      "modeLines": true
+     }
+    },
+    {
+     "loadSaved": true
+    }
+   ],
+   "expect": {
+    "modeLines": false
+   }
+  },
+  {
+   "id": "CM28",
+   "note": "a multi-tap guitar's per-tap overlay is a display of one measurement, not a comparison: the chart keeps its mode lines",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "tapCooldown"
+    },
+    {
+     "guitarTap": 100
+    },
+    {
+     "advance": "captureWindow"
+    },
+    {
+     "multiTap": true
+    },
+    {
+     "check": {
+      "mode": "comparison",
+      "multiTap": true,
+      "savedComparison": false
+     }
+    }
+   ],
+   "expect": {
+    "modeLines": true
+   }
+  },
+  {
+   "id": "CM29",
+   "note": "…and the same with Settings on a plate",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "range": [
+       20,
+       200,
+       -80,
+       -20
+      ]
+     }
+    },
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "loadedRange": [
+     50,
+     1200,
+     -95,
+     -5
+    ]
+   }
+  },
+  {
+   "id": "CM30",
+   "note": "a saved comparison keeps the chart's range it was saved with (a zoom included), and loading it shows that range, as a measurement's, whatever the settings at the load",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar",
+      "range": [
+       80,
+       300,
+       -90,
+       -10
+      ]
+     }
+    },
+    {
+     "compare": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "saveComparison": "Pair",
+     "view": [
+      120,
+      260,
+      -70,
+      -20
+     ]
+    },
+    {
+     "check": {
+      "savedRange": [
+       120,
+       260,
+       -70,
+       -20
+      ]
+     }
+    },
+    {
+     "settings": {
+      "range": [
+       90,
+       320,
+       -95,
+       -5
+      ]
+     }
+    },
+    {
+     "newTap": true
+    },
+    {
+     "loadSaved": true
+    }
+   ],
+   "expect": {
+    "loadedRange": [
+     120,
+     260,
+     -70,
+     -20
+    ]
+   }
+  },
+  {
+   "id": "CM31",
+   "note": "a comparison saved before comparisons kept their range spans its entries' ranges, as a new comparison does, whatever Settings holds",
+   "steps": [
+    {
+     "settings": {
+      "type": "Classical Guitar",
+      "range": [
+       80,
+       300,
+       -90,
+       -10
+      ]
+     }
+    },
+    {
+     "load": "oldPair"
+    }
+   ],
+   "expect": {
+    "mode": "comparison",
+    "loadedRange": [
+     50,
+     1200,
+     -95,
+     -5
+    ]
+   }
+  },
+  {
+   "id": "CM32",
+   "note": "…and the same with Settings on a plate",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "range": [
+       20,
+       200,
+       -80,
+       -20
+      ]
+     }
+    },
+    {
+     "load": "oldPair"
+    }
+   ],
+   "expect": {
+    "mode": "comparison",
+    "loadedRange": [
+     50,
+     1200,
+     -95,
+     -5
+    ]
    }
   }
  ]

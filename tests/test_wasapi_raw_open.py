@@ -1,4 +1,5 @@
-# @parity none
+# @parity none — Windows' WASAPI RAW mode; Swift's iOS audio session turns input processing off with
+# the .measurement mode and the web with its capture constraints, each the platform's own.
 """
 How the input stream is opened: on Windows, a WASAPI device is opened in RAW mode, which bypasses
 the Windows audio effects that gate taps as noise; a device that refuses RAW is opened plainly.

@@ -1,3 +1,5 @@
+# @parity none — pytest's hook into the test sandbox (util/test-sandbox, settings_scope.py); Swift's
+# applies itself under XCTest, and the web's is test/setup.ts.
 """
 pytest configuration for GuitarTap test suite.
 

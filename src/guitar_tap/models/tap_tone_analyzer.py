@@ -569,6 +569,10 @@ class TapToneAnalyzer(
         self._status_before_settle: "str | None" = None
         self._detecting_before_settle: "bool | None" = None
         self._route_change_generation: int = 0
+        # Counts abandoned captures (abandon_capture). What a capture schedules — its processing,
+        # the next tap's re-arm — runs only if no abandon has come since. Mirrors Swift
+        # captureGeneration.
+        self._capture_generation: int = 0
         # Exponential moving average of the input level, used as the ambient noise-floor
         # estimate for relative tap detection in plate/brace modes. Updated only when
         # the signal is below threshold (between taps) so tap energy does not
@@ -2103,7 +2107,7 @@ class TapToneAnalyzer(
         moves it. Mirrors Swift's dot and row taps (both toggle) and the web's toggleHighlightedPeak."""
         self.set_highlighted_peak(None if self.highlighted_peak_id == peak_id else peak_id)
 
-    # @parity state/visible-peaks tests=test/annotation-state
+    # @parity state/visible-peaks tests=test/annotation-state,test/comparison
     def cycle_annotation_visibility(self) -> None:
         """Advance annotation_visibility_mode: all → selected → none → all.
 
@@ -2114,6 +2118,32 @@ class TapToneAnalyzer(
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _tds.set_annotation_visibility_mode(self.annotation_visibility_mode)
         # mirrors cycleAnnotationVisibility() → TapDisplaySettings.annotationVisibilityMode in Swift
+
+    @property
+    def chart_peaks(self) -> "list | None":
+        """The peaks the chart marks: a guitar's above Peak Min, a plate's or brace's identified
+        ones — None while a comparison is shown, which draws its entries' own. Mirrors Swift
+        ``chartPeaks``."""
+        from .analysis_display_mode import AnalysisDisplayMode
+        from .tap_display_settings import TapDisplaySettings as _tds_cp
+        if self.display_mode == AnalysisDisplayMode.COMPARISON:
+            return None
+        return (self.peaks_above_peak_min if _tds_cp.measurement_type().is_guitar
+                else self.material_identified_peaks)
+
+    @property
+    def chart_annotation_peaks(self) -> "list | None":
+        """The peaks the chart labels: ``visible_peaks`` — None while a comparison is shown. Mirrors
+        Swift ``chartAnnotationPeaks``."""
+        from .analysis_display_mode import AnalysisDisplayMode
+        return None if self.display_mode == AnalysisDisplayMode.COMPARISON else self.visible_peaks
+
+    @property
+    def shows_mode_boundaries(self) -> bool:
+        """Whether the chart draws the guitar mode lines: not for a comparison of saved
+        measurements, whose entries need not be of one guitar type. A multi-tap guitar's per-tap
+        overlay keeps them. Mirrors Swift ``showsModeBoundaries``."""
+        return not self.is_saved_measurement_comparison
 
     @property
     def visible_peaks(self) -> list:

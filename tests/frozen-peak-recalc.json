@@ -1,6 +1,6 @@
 {
  "slug": "test/frozen-peak-recalc",
- "about": "Frozen peaks: Re-analyze's re-detection, Peak Min's projection, and what a load, a live frame, a capture, Save and Redo do to a measurement's peaks and their per-peak state — each through the app's own path. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps; {\"load\": {...}} — a .guitartap document the runner writes and reads with the edition's own reader, then loads as the app does: 'type' (the saved measurement type), 'spectrum' (the frozen spectrum, as a peaks.json spectrum spec; absent: none saved), 'peaks' ([hz, dB] — the saved peaks), and optionally 'selected' (hz), 'userModified', 'overrides' (hz → name), 'offsets' (hz → [x, y], a dragged label's position) and 'tapEntries' ({'peaks', 'selected'}); {\"loadFixture\": file} (a fixture every edition carries, loaded as the app loads a file); {\"reanalyze\": true}; {\"toggleSelection\": hz}; {\"nameMode\": {\"at\": hz, \"label\": s}}; {\"dragLabel\": {\"at\": hz, \"to\": [x, y]}}; {\"liveFrame\": spec} (a frame from the running engine); {\"save\": true}; {\"loadSaved\": true} (the last saved measurement, loaded); {\"mark\": true} (records the peak ids, the selected ids and the per-tap entries); {\"check\": {...}}. A peak is named by its frequency: the peak within 1 Hz of it (a dragged label, a name or a selection is resolved to its peak's frequency the same way; one on no peak fails the check). Fields: 'peaks' (the measurement's peaks, ascending), 'shown' (those above Peak Min), 'selected' (the selected peaks), 'overrides' and 'offsets' (the whole map, by frequency), 'labels' (hz → the label the analyzer gives that peak — the name the results show), 'modes' (each peak's classified mode, the whole map), 'tapEntries' (each entry's peaks and selected peaks), 'idsAsMarked' / 'selectedIdsAsMarked' / 'tapEntriesAsMarked' (unchanged since the mark), 'idsAsLoaded' (the peak ids are the file's), 'canReanalyze', 'complete', 'phase' (Swift's raw value), 'fL' / 'fC' (the identified peak's frequency, null for none), 'materialPeaks' (the identified peaks), 'saved' (the last saved measurement: its 'peaks', and 'selectedAll'). 'tapEntryModes': a tap entry's Air/Top/Back, resolved from its 'peaks' ([hz, dB]) and 'selected' under 'guitarType' — mode → frequency. Retired: PR05, PR10, PR11 (guards no path reached, removed), PR26, PR27 (a carry-forward of a hand-made selection no path reached, removed), PR06, PR31. Expected values are Swift's.",
+ "about": "Frozen peaks: Re-analyze's re-detection, Peak Min's projection, and what a load, a live frame, a capture, Save and Redo do to a measurement's peaks and their per-peak state — each through the app's own path. Each case starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps': the shared steps of tooling/analyzer-steps; {\"load\": {...}} — a .guitartap document the runner writes and reads with the edition's own reader, then loads as the app does: 'type' (the saved measurement type), 'spectrum' (the frozen spectrum, as a peaks.json spectrum spec; absent: none saved), 'peaks' ([hz, dB] — the saved peaks), and optionally 'showUnknownModes' (the saved spectrum's), 'selected' (hz), 'userModified', 'overrides' (hz → name), 'offsets' (hz → [x, y], a dragged label's position) and 'tapEntries' ({'peaks', 'selected'}); {\"loadFixture\": file} (a fixture every edition carries, loaded as the app loads a file); {\"reanalyze\": true}; {\"toggleSelection\": hz}; {\"nameMode\": {\"at\": hz, \"label\": s}}; {\"dragLabel\": {\"at\": hz, \"to\": [x, y]}}; {\"liveFrame\": spec} (a frame from the running engine); {\"save\": true} (or {\"save\": {\"name\": s, \"notes\": s}}, as the Save sheet passes them); {\"loadSaved\": true} (the last saved measurement, loaded); {\"mark\": true} (records the peak ids, the selected ids and the per-tap entries); {\"check\": {...}}. A peak is named by its frequency: the peak within 1 Hz of it (a dragged label, a name or a selection is resolved to its peak's frequency the same way; one on no peak fails the check). Fields: 'peaks' (the measurement's peaks, ascending), 'shown' (those above Peak Min), 'selected' (the selected peaks), 'overrides' and 'offsets' (the whole map, by frequency), 'labels' (hz → the label the analyzer gives that peak — the name the results show), 'modes' (each peak's classified mode, the whole map), 'tapEntries' (each entry's peaks and selected peaks), 'idsAsMarked' / 'selectedIdsAsMarked' / 'tapEntriesAsMarked' (unchanged since the mark), 'idsAsLoaded' (the peak ids are the file's), 'canReanalyze', 'complete', 'tapCount' (the taps counted in the sequence), 'phase' (Swift's raw value), 'fL' / 'fC' (the identified peak's frequency, null for none), 'materialPeaks' (the identified peaks), 'saved' (the last saved measurement: its 'peaks', 'selectedAll', 'selected' (hz), 'overrides' and 'offsets' (by frequency, as above), 'name', 'notes', 'tapThreshold', 'peakMin', 'numberOfTaps', 'measurementType' and 'guitarType' (the saved spectrum's, by raw value), 'showUnknownModes' (the saved spectrum's), 'phaseSpectra' (which per-phase spectra it holds, of L, C and FLC) 'tapEntries' (how many), 'offsetsInFile' (whether the file the edition writes for it holds the 'peakAnnotationOffsets' key) and 'comparisonColors' (the colour each entry of its tap comparison stores — each tap, then the average — as [r, g, b, a], within 1e-6)). 'tapEntryModes': a tap entry's Air/Top/Back, resolved from its 'peaks' ([hz, dB]) and 'selected' under 'guitarType' — mode → frequency. Retired: PR05, PR10, PR11 (guards no path reached, removed), PR26, PR27 (a carry-forward of a hand-made selection no path reached, removed), PR06, PR31. Expected values are Swift's.",
  "cases": [
   {
    "id": "PR01",
@@ -1981,6 +1981,461 @@
     "peaks": [],
     "shown": [],
     "modes": {}
+   }
+  },
+  {
+   "id": "PR52",
+   "note": "a guitar save writes each peak's own state — its selection, its name and its dragged label — and the name and notes given",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        300,
+        -50
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       300
+      ]
+     }
+    },
+    {
+     "setPeakMin": -60
+    },
+    {
+     "toggleSelection": 200
+    },
+    {
+     "nameMode": {
+      "at": 300,
+      "label": "Wolf note"
+     }
+    },
+    {
+     "dragLabel": {
+      "at": 300,
+      "to": [
+       12,
+       34
+      ]
+     }
+    },
+    {
+     "save": {
+      "name": "Martin D-28",
+      "notes": "After bracing"
+     }
+    }
+   ],
+   "expect": {
+    "saved": {
+     "peaks": [
+      200,
+      300
+     ],
+     "selected": [
+      200,
+      300
+     ],
+     "overrides": {
+      "300": "Wolf note"
+     },
+     "offsets": {
+      "300": [
+       12,
+       34
+      ]
+     },
+     "name": "Martin D-28",
+     "notes": "After bracing"
+    }
+   }
+  },
+  {
+   "id": "PR53",
+   "note": "a guitar save writes the settings it was measured with: the thresholds, the tap count, Show Unknown Modes (restored off by the load), the measurement and guitar type — and no per-tap entries for a single tap",
+   "steps": [
+    {
+     "load": {
+      "type": "Classical Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       200
+      ],
+      "showUnknownModes": false
+     }
+    },
+    {
+     "setThreshold": -35
+    },
+    {
+     "setPeakMin": -60
+    },
+    {
+     "setTaps": 3
+    },
+    {
+     "save": true
+    }
+   ],
+   "expect": {
+    "saved": {
+     "tapThreshold": -35,
+     "peakMin": -60,
+     "numberOfTaps": 3,
+     "measurementType": "Classical Guitar",
+     "guitarType": "Classical",
+     "showUnknownModes": false,
+     "tapEntries": 0
+    }
+   }
+  },
+  {
+   "id": "PR54",
+   "note": "a plate save writes each phase's spectrum, the real tap count (two taps a phase), Peak Min, and the name and notes given",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)",
+      "measureFlc": false
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "setPeakMin": -70
+    },
+    {
+     "newTap": true
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "L",
+      "hz": 60
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "materialTap": {
+      "phase": "C",
+      "hz": 150
+     }
+    },
+    {
+     "accept": true
+    },
+    {
+     "save": {
+      "name": "Top Plate",
+      "notes": "spruce"
+     }
+    }
+   ],
+   "expect": {
+    "saved": {
+     "peaks": [
+      60,
+      150
+     ],
+     "phaseSpectra": [
+      "L",
+      "C"
+     ],
+     "numberOfTaps": 2,
+     "measurementType": "Material (Plate)",
+     "peakMin": -70,
+     "name": "Top Plate",
+     "notes": "spruce"
+    }
+   }
+  },
+  {
+   "id": "PR55",
+   "note": "a multi-tap save writes its per-tap entries, as they are, its tap comparison stores each tap's series colour and the average's, and the entries come back on loading",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        300,
+        -50
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       300
+      ],
+      "tapEntries": [
+       {
+        "peaks": [
+         [
+          200,
+          -20
+         ],
+         [
+          300,
+          -50
+         ]
+        ],
+        "selected": [
+         300
+        ]
+       },
+       {
+        "peaks": [
+         [
+          210,
+          -22
+         ]
+        ],
+        "selected": [
+         210
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "mark": true
+    },
+    {
+     "save": true
+    },
+    {
+     "check": {
+      "saved": {
+       "tapEntries": 2,
+       "comparisonColors": [
+        [
+         0,
+         0.47843137254901963,
+         1,
+         1
+        ],
+        [
+         0.8784313725490196,
+         0.47058823529411764,
+         0,
+         1
+        ],
+        [
+         0.9215686274509803,
+         0.7647058823529411,
+         0,
+         1
+        ]
+       ]
+      }
+     }
+    },
+    {
+     "loadSaved": true
+    }
+   ],
+   "expect": {
+    "tapEntriesAsMarked": true,
+    "tapEntries": [
+     {
+      "peaks": [
+       200,
+       300
+      ],
+      "selected": [
+       300
+      ]
+     },
+     {
+      "peaks": [
+       210
+      ],
+      "selected": [
+       210
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "PR56",
+   "note": "with no label dragged, a save writes no label positions — the key is left out of the file, as an unset optional",
+   "steps": [
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       200
+      ]
+     }
+    },
+    {
+     "save": true
+    },
+    {
+     "check": {
+      "saved": {
+       "offsets": {},
+       "offsetsInFile": false
+      }
+     }
+    },
+    {
+     "dragLabel": {
+      "at": 200,
+      "to": [
+       5,
+       -5
+      ]
+     }
+    },
+    {
+     "save": true
+    }
+   ],
+   "expect": {
+    "saved": {
+     "offsets": {
+      "200": [
+       5,
+       -5
+      ]
+     },
+     "offsetsInFile": true
+    }
+   }
+  },
+  {
+   "id": "PR57",
+   "note": "a load while a tap is being captured drops the capture: the audio after it — the rest of the window, the rest, another tap — changes nothing of the loaded measurement",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "setTaps": 2
+    },
+    {
+     "newTap": true
+    },
+    {
+     "advance": "warmupPeriod"
+    },
+    {
+     "liveAudio": 0.1,
+     "level": -10
+    },
+    {
+     "load": {
+      "type": "Generic Guitar",
+      "peaks": [
+       [
+        200,
+        -20
+       ],
+       [
+        300,
+        -50
+       ]
+      ],
+      "spectrum": {
+       "kind": "flat",
+       "binCount": 601,
+       "binSpacingHz": 1,
+       "value": -100
+      },
+      "selected": [
+       300
+      ]
+     }
+    },
+    {
+     "liveAudio": 2.0,
+     "level": -10
+    },
+    {
+     "advance": "tapCooldown",
+     "level": -60
+    },
+    {
+     "liveAudio": 2.0,
+     "level": -10
+    },
+    {
+     "advance": "captureWindow",
+     "level": -60
+    }
+   ],
+   "expect": {
+    "peaks": [
+     200,
+     300
+    ],
+    "selected": [
+     300
+    ],
+    "complete": true,
+    "tapCount": 0
    }
   }
  ],

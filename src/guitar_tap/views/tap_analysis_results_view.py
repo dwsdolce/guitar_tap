@@ -19,7 +19,7 @@ JSON format:
   - Format is cross-compatible with Swift GuitarTap .guitartap files
 """
 
-# @parity view/pdf-report tests=test/pdf-report
+# @parity view/pdf-report tests=test/pdf-report,test/export-e2e
 
 from __future__ import annotations
 
@@ -86,8 +86,13 @@ _EXPORT_DIR_KEY = "GuitarTap/lastUsedExportDirectory"
 
 
 def default_export_dir() -> str:
-    """Return ~/Documents/GuitarTap, creating it if needed."""
-    path = os.path.join(os.path.expanduser("~"), "Documents", "GuitarTap")
+    """Return the user's Documents/GuitarTap, creating it if needed — Documents as the system names
+    it, so a Documents folder moved elsewhere (OneDrive on Windows) is the one used, as the dump
+    folder's. Mirrors Swift MeasurementFileExporter.defaultSaveDirectory (the real home's
+    Documents)."""
+    from PySide6.QtCore import QStandardPaths
+    docs = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+    path = os.path.join(docs or os.path.join(os.path.expanduser("~"), "Documents"), "GuitarTap")
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -1325,11 +1330,11 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
             "label": entry.label,
         })
 
-    snaps = [e.snapshot for e in entries]
-    min_freq = float(min(s.min_freq for s in snaps))
-    max_freq = float(max(s.max_freq for s in snaps))
-    min_db   = float(min(s.min_db   for s in snaps))
-    max_db   = float(max(s.max_db   for s in snaps))
+    # The range it was saved with, as a measurement's image; one saved before comparisons kept their
+    # range spans its entries', as loading it does. Mirrors Swift renderSpectrumImageForComparison.
+    from guitar_tap.models.display_range import spanning_range
+    min_freq, max_freq, min_db, max_db = (measurement.comparison_range
+                                          or spanning_range(e.snapshot for e in entries))
 
     loc = measurement.measurement_name
     # The live chart's title, so the image reads the same from the list as from the main view.
@@ -1344,6 +1349,8 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
         min_db=min_db,
         max_db=max_db,
         peaks=[],
+        # A comparison's entries need not be of one guitar type: no mode lines.
+        show_mode_boundaries=False,
         material_spectra=comparison_spectra,
         date_label=date_label,
         chart_title=chart_title,
@@ -1374,12 +1381,8 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
     ]
 
     # The chart's range spans the taps' spectra.
-    tap_entries = measurement.tap_entries
-    snaps = [e.snapshot for e in tap_entries]
-    min_freq = float(min(s.min_freq for s in snaps))
-    max_freq = float(max(s.max_freq for s in snaps))
-    min_db   = float(min(s.min_db   for s in snaps))
-    max_db   = float(max(s.max_db   for s in snaps))
+    from guitar_tap.models.display_range import spanning_range
+    min_freq, max_freq, min_db, max_db = spanning_range(e.snapshot for e in measurement.tap_entries)
 
     loc = measurement.measurement_name
     # Mirrors Swift: "Tap Comparison — \(measurement.measurementName ?? "Multi-Tap")"

@@ -31,10 +31,19 @@ _PEAK_NAMES = {k.upper(): v for k, v in DATA["peakNames"].items()}
 
 @pytest.fixture(autouse=True)
 def _restore_type():
-    """The measurement type is global; put it back afterwards."""
+    """The measurement type, and the display ranges a case's settings step writes, are global; put
+    them back afterwards."""
+    from guitar_tap.models.measurement_type import MeasurementType
     saved = TDS.measurement_type()
+    saved_ranges = [(t, TDS.min_frequency_for(t), TDS.max_frequency_for(t)) for t in MeasurementType]
+    saved_db = (TDS.min_magnitude(), TDS.max_magnitude())
     yield
     TDS.set_measurement_type(saved)
+    for t, min_hz, max_hz in saved_ranges:
+        TDS.set_min_frequency_for(min_hz, t)
+        TDS.set_max_frequency_for(max_hz, t)
+    TDS.set_min_magnitude(saved_db[0])
+    TDS.set_max_magnitude(saved_db[1])
 
 
 def _measurement(name: str):
@@ -52,6 +61,12 @@ def _check(fields: dict, sut, ranges: list) -> None:
             assert len(entries) == want, field
         elif field == "labels":
             assert [e["label"] for e in entries] == want, field
+        elif field == "chartPeaks":
+            assert (sut.chart_peaks is not None) is want, field
+        elif field == "chartLabels":
+            assert (sut.chart_annotation_peaks is not None) is want, field
+        elif field == "modeLines":
+            assert sut.shows_mode_boundaries is want, field
         elif field == "mode":
             assert (sut.display_mode == AnalysisDisplayMode.COMPARISON) is (want == "comparison"), field
         elif field == "loadedRange":
@@ -72,6 +87,8 @@ def _check(fields: dict, sut, ranges: list) -> None:
         elif field == "entryPeaks":
             got = sorted(_peak_name(p.id) for p in (entries[0]["peaks"] if entries else []))
             assert got == sorted(want), f"{field}: {got}"
+        elif field == "savedRange":
+            assert sut.saved_measurements[-1].comparison_range == pytest.approx(tuple(want)), field
         elif field == "savedRecord":
             if want is None:
                 assert len(sut.saved_measurements) == 0, f"{field}: none added"
@@ -99,14 +116,14 @@ def test_comparison(row, qapp):
     for step in row["steps"]:
         if "compare" in step:
             sut.load_comparison([_measurement(n) for n in step["compare"]])
-        elif step.get("clearComparison"):
-            sut.clear_comparison()
         elif "load" in step:
             sut.load_measurement(_measurement(step["load"]))
         elif "multiTap" in step:
             sut.apply_multi_tap_comparison_overlays(enabled=step["multiTap"])  # the Taps toggle
         elif "saveComparison" in step:
-            sut.save_comparison(measurement_name=step["saveComparison"])
+            view = step.get("view") or [None] * 4
+            sut.save_comparison(measurement_name=step["saveComparison"], min_freq=view[0],
+                                max_freq=view[1], min_db=view[2], max_db=view[3])
         elif step.get("loadSaved"):
             sut.load_measurement(sut.saved_measurements[-1])
         elif "check" in step:
