@@ -577,3 +577,39 @@ def test_unreadable_calibrations_are_kept_aside_and_not_written_over(qapp):
         s.remove(k)
     for c in CalibrationStorage.load_all():
         CalibrationStorage.delete(c)
+
+
+# MARK: - Windows: the inputs listed (Python only — no other edition enumerates Windows' host APIs)
+
+def _dev(index: int, name: str, api: int, api_name: "str | None") -> dict:
+    d = {"index": index, "name": name, "hostapi": api, "max_input_channels": 2, "default_samplerate": 48000.0}
+    if api_name is not None:
+        d["_hostapi_name"] = api_name
+    return d
+
+
+def test_windows_lists_one_api_and_never_wdm_ks(monkeypatch):
+    """WASAPI's inputs only: the same microphones under MME and DirectSound, and WDM-KS's capture pins
+    ("PC Speaker …", "Microphone Array 1 ()"), are not listed."""
+    from guitar_tap.models.audio_device import filter_input_devices
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    raw = [
+        _dev(0, "Microphone (Realtek HD Audio Mic input)", 0, "MME"),
+        _dev(1, "Microphone (Realtek HD Audio Mic input)", 1, "Windows DirectSound"),
+        _dev(2, "Microphone (Realtek HD Audio Mic input)", 2, "Windows WASAPI"),
+        _dev(3, "PC Speaker (Realtek HD Audio output with SST)", 3, "Windows WDM-KS"),
+        _dev(4, "Microphone Array 1 ()", 3, "Windows WDM-KS"),
+    ]
+    assert [d["index"] for d in filter_input_devices(raw)] == [2]
+
+
+def test_windows_never_lists_wdm_ks_when_no_api_is_preferred(monkeypatch):
+    """With none of WASAPI, DirectSound or MME present, WDM-KS is still not listed."""
+    from guitar_tap.models.audio_device import filter_input_devices
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    raw = [
+        _dev(3, "PC Speaker (Realtek HD Audio output with SST)", 3, "Windows WDM-KS"),
+        _dev(4, "Microphone Array 1 ()", 3, "Windows WDM-KS"),
+        _dev(5, "Microphone (USB)", 5, "ASIO"),
+    ]
+    assert [d["index"] for d in filter_input_devices(raw)] == [5]

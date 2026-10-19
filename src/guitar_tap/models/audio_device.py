@@ -247,6 +247,11 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
             continue
         if "loopback" in name_l:
             continue
+        # WDM-KS is never listed, whichever API is preferred — or when none could be (the names
+        # unread): its streams open but deliver zeros, and it lists capture pins that are not
+        # microphones ("PC Speaker …", "Microphone Array 1 ()").
+        if "WDM-KS" in api_names.get(int(d.get("hostapi", -1)), ""):
+            continue
         if preferred_api is not None and int(d.get("hostapi", -1)) != preferred_api:
             continue
         out.append(d)

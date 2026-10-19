@@ -2288,6 +2288,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._on_microphone_permission_denied_changed)
         # The engine's running state drives the status bar and the buttons, as Swift's fft.isRunning.
         self.fft_canvas.analyzer.mic.proc_thread.runningChanged.connect(self.set_running)
+        # A start that failed after its kAUStartIO retry, as Swift's engineStartError alert.
+        self.fft_canvas.engineStartFailedMessage.connect(
+            lambda message: QtWidgets.QMessageBox.warning(self, "Audio Engine Error", message))
 
     def _on_microphone_permission_denied_changed(self, denied: bool) -> None:
         if denied:
@@ -2428,6 +2431,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sb_detect_msg.setText(self.fft_canvas.analyzer.status_message)
         self._apply_status_message_color()
         self._update_tap_buttons()
+        self._update_running_indicators()
 
     def _on_detection_state_changed(self, _state: object) -> None:
         """Detection state changed → re-evaluate the status-bar tap count, progress and colours.
@@ -2587,7 +2591,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 is_running=self._is_running,
             )
 
-        # Update the results-panel running / stopped status indicator
+        self._update_running_indicators()
+
+    def _update_running_indicators(self) -> None:
+        """The results panel's running / stopped indicator, and the metrics dialog's when it is
+        open: the engine's running state, as Swift's analyzer.isRunning. Called on each frame-rate
+        update and when the engine starts or stops — the updates stop with the engine."""
+        if self._metrics_dialog and self._metrics_dialog.isVisible():
+            self._metrics_dialog.set_running(self._is_running)
         if self._is_running:
             palette.tag(self._results_status_dot, color=palette.Role.STATUS_RUNNING)
             self._results_status_lbl.setText("Analyzing")

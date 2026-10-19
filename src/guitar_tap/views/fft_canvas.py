@@ -192,6 +192,26 @@ class _PlateCaptureAdapter:
 
 
 # pylint: disable=too-many-instance-attributes
+
+# Core Audio's 'iost' (kAUStartIO): the I/O unit could not start — typically for a moment while a
+# Continuity Audio device connects or disconnects.
+_K_AU_START_IO = 1937010544
+
+
+def _is_io_start_race(exc: BaseException) -> bool:
+    """Whether a start failed with Core Audio's transient kAUStartIO, which PortAudio reports as an
+    unanticipated host error carrying the OSStatus. Mirrors Swift's check of the error code."""
+    info = exc.args[2] if len(getattr(exc, "args", ())) > 2 else None
+    return isinstance(info, tuple) and len(info) > 1 and info[1] == _K_AU_START_IO
+
+
+def _engine_start_error_message(exc: BaseException) -> str:
+    """The "Audio Engine Error" text for a start that failed. As Swift's engineStartError."""
+    code = exc.args[1] if len(exc.args) > 1 else -1
+    return (f"The audio engine could not start (error {code}). Try switching the audio input "
+            f"device in Settings, or restart the app.\n\n"
+            f"Details: {exc.args[0] if exc.args else exc}")
+
 class FftCanvas(pg.PlotWidget):
     """Sample the audio stream and display the FFT
 
@@ -235,6 +255,8 @@ class FftCanvas(pg.PlotWidget):
     captureRecordingHeld: QtCore.Signal = QtCore.Signal()                  # relays TapToneAnalyzer.captureRecordingHeld
     captureAudioSavedChanged: QtCore.Signal = QtCore.Signal(object)        # file name or None — relays TapToneAnalyzer.captureAudioSavedChanged
     measurementLoadStarting: QtCore.Signal = QtCore.Signal()               # relays TapToneAnalyzer.measurementLoadStarting
+    # A start that failed after its retry — the window shows it as an "Audio Engine Error".
+    engineStartFailedMessage: QtCore.Signal = QtCore.Signal(str)
     measurementLoaded: QtCore.Signal = QtCore.Signal(object)               # relays TapToneAnalyzer.measurementLoaded
     peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
     comparisonChanged: QtCore.Signal = QtCore.Signal(bool)         # True=entering, False=leaving
@@ -807,12 +829,27 @@ class FftCanvas(pg.PlotWidget):
                 # The engine has raised its permission flag; the window shows that alert.
                 gt_log(f"❌ Audio engine could not start: {exc}")
                 return
-            code = exc.args[1] if len(exc.args) > 1 else -1
-            self.engine_start_error = (
-                f"The audio engine could not start (error {code}). Try switching the audio input "
-                f"device in Settings, or restart the app.\n\n"
-                f"Details: {exc.args[0] if exc.args else exc}")
+            if _is_io_start_race(exc):
+                # kAUStartIO ('iost') — a transient Core Audio I/O start failure, typically a
+                # Continuity Audio device connecting or disconnecting at the same moment. Retry once
+                # after a short settle; report only if the retry fails too. As Swift's view does.
+                gt_log("⚠️ kAUStartIO race detected — retrying engine start in 1 s")
+                QtCore.QTimer.singleShot(1000, self._retry_start_after_io_race)
+                return
+            self.engine_start_error = _engine_start_error_message(exc)
             gt_log(f"❌ Audio engine could not start: {exc}")
+
+    def _retry_start_after_io_race(self) -> None:
+        """The one retry after a kAUStartIO failure; a second failure is reported."""
+        try:
+            self.analyzer.start()
+            gt_log("✅ Engine started successfully on kAUStartIO retry")
+        except Exception as exc:  # noqa: BLE001 — reported, never fatal
+            gt_log(f"❌ Engine start retry failed: {exc}")
+            from guitar_tap.models.realtime_fft_analyzer_engine_control import is_permission_error
+            if not is_permission_error(exc):
+                self.engine_start_error = _engine_start_error_message(exc)
+                self.engineStartFailedMessage.emit(self.engine_start_error)
 
     def restart_tap_sequence(self) -> None:
         """Request a new tap sequence while the processing thread is already running.

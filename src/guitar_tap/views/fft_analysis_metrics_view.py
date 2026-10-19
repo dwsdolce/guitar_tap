@@ -325,8 +325,12 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
             f"{fp.string(mic.peak_magnitude, fp.PEAK_MAGNITUDE_DB)} dB"
         )
 
-        # ── Status indicator ───────────────────────────────────────────────
-        # Mirrors Swift Circle().fill(analyzer.isRunning ? .statusRunning : .statusStopped)
+        self.set_running(is_running)
+
+    def set_running(self, is_running: bool) -> None:
+        """The status indicator: the engine's running state, as Swift's
+        Circle().fill(analyzer.isRunning ? .statusRunning : .statusStopped). Also called when the
+        engine starts or stops, since the frame-rate updates that drive the rows stop with it."""
         if is_running:
             palette.tag(self._status_dot, color=palette.Role.STATUS_RUNNING)
             self._status_label.setText("Analyzing")

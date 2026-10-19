@@ -244,6 +244,23 @@ def _system_default_fingerprint(inputs: "list[dict]") -> "str | None":
     return None
 
 
+def _devices_with_host_api_names() -> "list[dict]":
+    """PortAudio's devices, each annotated with its host API's name (``_hostapi_name``), so
+    filter_input_devices can drop WDM-KS and keep one API even if a later query_hostapis() call
+    fails during a Windows device-enumeration cascade. Every listing goes through it — the
+    launch's and a refresh's alike."""
+    raw = list(sd.query_devices())
+    try:
+        apis = list(sd.query_hostapis())
+        for d in raw:
+            idx = int(d.get("hostapi", -1))
+            if 0 <= idx < len(apis):
+                d["_hostapi_name"] = apis[idx].get("name", "")
+    except Exception:
+        pass
+    return raw
+
+
 def failed_open_message(name: str) -> str:
     """The message shown when an input device cannot be opened. Mirrors Swift
     ``RealtimeFFTAnalyzer.failedOpenMessage(for:)``."""
@@ -291,27 +308,17 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         from .audio_device import AudioDevice as _AD
         from .audio_device import filter_input_devices as _filter
         try:
-            raw = list(sd.query_devices())
+            raw = _devices_with_host_api_names()
         except Exception:
             return
-
-        # Annotate each device dict with its host API name so filter_input_devices
-        # can exclude WDM-KS reliably even if a subsequent query_hostapis() call
-        # inside the filter fails during a Windows device-enumeration cascade.
-        try:
-            apis = list(sd.query_hostapis())
-            for d in raw:
-                idx = int(d.get("hostapi", -1))
-                if 0 <= idx < len(apis):
-                    d["_hostapi_name"] = apis[idx].get("name", "")
-        except Exception:
-            pass
 
         inputs = _filter(raw)
         devices: list[AudioDevice] = [_AD.from_sounddevice_dict(d) for d in inputs]
 
-        for d in devices:
-            gt_log(f"🎤 Found input device: {d.name} @ {d.sample_rate} Hz")
+        for d, info in zip(devices, inputs):
+            api = info.get("_hostapi_name")
+            suffix = f" ({api})" if api else ""
+            gt_log(f"🎤 Found input device: {d.name} @ {d.sample_rate} Hz{suffix}")
         gt_log(f"🎤 Found {len(devices)} audio input device(s) total")
 
         self.apply_input_device_list(devices, _system_default_fingerprint(inputs))
@@ -529,7 +536,7 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
         from .audio_device import AudioDevice as _AD
         from .audio_device import filter_input_devices as _filter
         try:
-            for d in _filter(list(sd.query_devices())):
+            for d in _filter(_devices_with_host_api_names()):
                 device = _AD.from_sounddevice_dict(d)
                 if device.fingerprint == fingerprint:
                     return device
