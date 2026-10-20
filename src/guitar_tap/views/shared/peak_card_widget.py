@@ -236,7 +236,7 @@ class PeakCardWidget(QtWidgets.QFrame):
 
     # A highlighted row's fill under its tint, and its border — mirrors Swift
     # TapAnalysisResultsView.
-    _HIGHLIGHT_OPACITY = 0.12
+    _HIGHLIGHT_OPACITY = palette.opacity(palette.Opacity.PEAK_ROW_HIGHLIGHT)
     _HIGHLIGHT_BORDER_WIDTH = 2
 
     def _refresh_bg(self) -> None:

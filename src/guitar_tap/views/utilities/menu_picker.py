@@ -52,7 +52,7 @@ class MenuPicker(QtWidgets.QComboBox):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         if not self.isEnabled():
-            p.setOpacity(0.5)
+            p.setOpacity(palette.opacity(palette.Opacity.CONTROL_DIMMED))
         rect = QtCore.QRectF(self.rect())
         p.setPen(QtCore.Qt.PenStyle.NoPen)
         p.setBrush(palette.color(palette.Role.BACKGROUND_PICKER))

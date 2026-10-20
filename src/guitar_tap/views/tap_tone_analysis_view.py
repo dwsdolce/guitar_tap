@@ -1068,10 +1068,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 "(shown as green line on the spectrum)",
                 palette.Role.CHART_PEAK_MIN,
             )
-        # Disabled, the whole field is drawn at 40% opacity, as Swift's .opacity(... ? 1 : 0.4) — Qt's
-        # own disabled look leaves a coloured label crisp.
+        # Disabled, the whole field is drawn at the control.notApplicable opacity, as Swift's — Qt's own
+        # disabled look leaves a coloured label crisp.
         self._peak_min_dim = QtWidgets.QGraphicsOpacityEffect(self._peak_min_group)
-        self._peak_min_dim.setOpacity(0.4)
+        self._peak_min_dim.setOpacity(palette.opacity(palette.Opacity.CONTROL_NOT_APPLICABLE))
         self._peak_min_dim.setEnabled(False)
         self._peak_min_group.setGraphicsEffect(self._peak_min_dim)
         self.peak_min_reset_btn.clicked.connect(lambda: self.peak_min_slider.setValue(-60))
@@ -1995,7 +1995,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._warn_pulse_t: float = 0.0
         def _pulse_tick() -> None:
             self._warn_pulse_t += 0.05 / 0.6     # advance phase; full period = 0.6 s
-            opacity = 0.2 + 0.8 * (0.5 + 0.5 * _math.cos(_math.pi * self._warn_pulse_t))
+            low = palette.opacity(palette.Opacity.STATUS_WARNING_PULSE_LOW)
+            opacity = low + (1 - low) * (0.5 + 0.5 * _math.cos(_math.pi * self._warn_pulse_t))
             self._warn_opacity_effect.setOpacity(opacity)
         self._warn_pulse_timer.timeout.connect(_pulse_tick)
 
@@ -5815,7 +5816,7 @@ class MainWindow(QtWidgets.QMainWindow):
             brace_widget.setVisible(mt_val is MT.MeasurementType.BRACE)
             show_unknown_widget.setVisible(is_guitar)
             peak_thresh_widget.setEnabled(is_guitar)
-            # The whole row dims when off, as Swift's .opacity(0.4) — its label and note are
+            # The whole row dims when off, at the control.notApplicable opacity, as Swift's — its label and note are
             # palette-coloured, so disabling alone leaves them looking active.
             peak_thresh_dim.setEnabled(not is_guitar)
             if is_guitar:
@@ -6011,7 +6012,7 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_layout.addWidget(pt_desc)
         # peak_thresh persisted on Apply only
         peak_thresh_dim = QtWidgets.QGraphicsOpacityEffect(peak_thresh_widget)
-        peak_thresh_dim.setOpacity(0.4)
+        peak_thresh_dim.setOpacity(palette.opacity(palette.Opacity.CONTROL_NOT_APPLICABLE))
         peak_thresh_dim.setEnabled(False)
         peak_thresh_widget.setGraphicsEffect(peak_thresh_dim)
         an.addWidget(peak_thresh_widget)

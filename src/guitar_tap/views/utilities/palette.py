@@ -156,10 +156,27 @@ class Role(Enum):
 
 
 class Opacity(Enum):
-    """An opacity applied to another role's colour (the peak-row tint over its mode colour)."""
+    """An opacity the app applies: to another role's colour (the peak-row tint over its mode colour) or to a
+    whole widget (a control that cannot act now). The value is its name in the theme table. Mirrors Swift
+    ``Palette.Opacity``."""
 
     PEAK_ROW_TINT = "peak.rowTint"
     STATUS_MESSAGE_BACKGROUND = "status.messageBackground"
+    CONTROL_DIMMED = "control.dimmed"
+    CONTROL_NOT_APPLICABLE = "control.notApplicable"
+    BUTTON_TINT_FILL = "button.tintFill"
+    BUTTON_TINT_HOVER = "button.tintHover"
+    BUTTON_TINT_PRESSED = "button.tintPressed"
+    BUTTON_TINT_ON = "button.tintOn"
+    BUTTON_TINT_ON_HOVER = "button.tintOnHover"
+    BUTTON_PROMINENT_HOVER = "button.prominentHover"
+    BUTTON_PLAIN_HOVER = "button.plainHover"
+    PEAK_ROW_HIGHLIGHT = "peak.rowHighlight"
+    MODE_CHIP_FILL = "mode.chipFill"
+    PEAK_PITCH_CENTS = "peak.pitchCents"
+    EXPORT_SUMMARY_CHIP_FILL = "export.summaryChipFill"
+    EXPORT_CARD_SHADOW = "export.cardShadow"
+    STATUS_WARNING_PULSE_LOW = "status.warningPulseLow"
 
 
 PAIRS: dict[Role, ColorPair] = {
@@ -285,6 +302,21 @@ PAIRS: dict[Role, ColorPair] = {
 OPACITIES: dict[Opacity, tuple[float, float]] = {
     Opacity.PEAK_ROW_TINT: (0.10, 0.20),
     Opacity.STATUS_MESSAGE_BACKGROUND: (0.12, 0.12),
+    Opacity.CONTROL_DIMMED: (0.45, 0.45),
+    Opacity.CONTROL_NOT_APPLICABLE: (0.4, 0.4),
+    Opacity.BUTTON_TINT_FILL: (0.05, 0.05),
+    Opacity.BUTTON_TINT_HOVER: (0.15, 0.15),
+    Opacity.BUTTON_TINT_PRESSED: (0.22, 0.22),
+    Opacity.BUTTON_TINT_ON: (0.28, 0.28),
+    Opacity.BUTTON_TINT_ON_HOVER: (0.38, 0.38),
+    Opacity.BUTTON_PROMINENT_HOVER: (0.85, 0.85),
+    Opacity.BUTTON_PLAIN_HOVER: (0.1, 0.1),
+    Opacity.PEAK_ROW_HIGHLIGHT: (0.12, 0.12),
+    Opacity.MODE_CHIP_FILL: (0.15, 0.15),
+    Opacity.PEAK_PITCH_CENTS: (0.8, 0.8),
+    Opacity.EXPORT_SUMMARY_CHIP_FILL: (0.1, 0.1),
+    Opacity.EXPORT_CARD_SHADOW: (0.5, 0.5),
+    Opacity.STATUS_WARNING_PULSE_LOW: (0.2, 0.2),
 }
 
 
@@ -493,9 +525,8 @@ def _update() -> None:
 COLOR_PROPERTY = "colorRole"
 BACKGROUND_PROPERTY = "backgroundRole"
 # A bordered button tinted by a role — Swift's .buttonStyle(.bordered) with .tint(role): the role's
-# colour as text and at TINT_FILL as the fill (measured from Swift's), with no outline.
+# colour as text and at the button.tintFill opacity as the fill, with no outline.
 TINT_PROPERTY = "tintRole"
-TINT_FILL = 0.05
 # A tinted button that is a two-state toggle but not a checkable QPushButton (its state lives in the
 # model, as Swift's Toggle binds to it) marks itself on with this property; drawn as :checked.
 ON_PROPERTY = "toggleOn"
@@ -591,24 +622,24 @@ def _application_stylesheet() -> str:
         rules.append(
             f'{prominent} {{ color: {on_color.name()}; background-color: {value}; border: none;'
             f' border-radius: 6px; padding: 4px 10px; }}')
-        rules.append(f'{prominent}:hover {{ background-color: {_rgba(color(role), 0.85)}; }}')
+        rules.append(f'{prominent}:hover {{ background-color: {_rgba(color(role), opacity(Opacity.BUTTON_PROMINENT_HOVER))}; }}')
         rules.append(
             f'{prominent}:disabled {{ background-color: {_rgba(color(role), 0.30)};'
             f' color: {_rgba(on_color, 0.70)}; }}')
         c = color(role)
         tinted = f'QPushButton[{TINT_PROPERTY}="{role.value}"]'
         rules.append(
-            f'{tinted} {{ color: {value}; background-color: {_rgba(c, TINT_FILL)};'
+            f'{tinted} {{ color: {value}; background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_FILL))};'
             f' border: 1px solid transparent; border-radius: 6px; padding: 3px 8px; }}')
         # Hover lifts the fill by 10 points, on or off — as Swift's wash over its button.
-        rules.append(f'{tinted}:hover {{ background-color: {_rgba(c, 0.15)}; }}')
-        rules.append(f'{tinted}:pressed {{ background-color: {_rgba(c, 0.22)}; }}')
+        rules.append(f'{tinted}:hover {{ background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_HOVER))}; }}')
+        rules.append(f'{tinted}:pressed {{ background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_PRESSED))}; }}')
         rules.append(
             f'{tinted}:checked, {tinted}[{ON_PROPERTY}="true"] {{'
-            f' background-color: {_rgba(c, 0.28)}; }}')
+            f' background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_ON))}; }}')
         rules.append(
             f'{tinted}:checked:hover, {tinted}[{ON_PROPERTY}="true"]:hover {{'
-            f' background-color: {_rgba(c, 0.38)}; }}')
+            f' background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_ON_HOVER))}; }}')
         rules.append(
             f'{tinted}:disabled {{ background-color: {_rgba(c, 0.03)};'
             f' color: {_rgba(c, 0.40)}; }}')

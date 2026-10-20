@@ -415,9 +415,10 @@ class PeaksModel(QtCore.QAbstractTableModel):
             note  = self.pitch.note(freq)
             cents = self.pitch.cents(freq)
             pitch_color = palette.qss(palette.Role.PEAK_PITCH)
+            cents_color = palette.qss(palette.Role.PEAK_PITCH, palette.Opacity.PEAK_PITCH_CENTS)
             rows.append(
-                f'<span style="color:{pitch_color};">'
-                f'&#9834; {note}&nbsp;&nbsp;{cents:+.0f}&#162;</span>'
+                f'<span style="color:{pitch_color};">&#9834; {note}</span>&nbsp;&nbsp;'
+                f'<span style="color:{cents_color};">{cents:+.0f}&#162;</span>'
             )
 
         freq_color = palette.qss(palette.Role.CHART_TITLE)

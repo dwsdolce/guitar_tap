@@ -129,7 +129,7 @@ class _ModeChip(pg.InfLineLabel):
 
     def __init__(self, line: pg.InfiniteLine, text: str, rgb: tuple[int, int, int]) -> None:
         super().__init__(line, text=text, position=1.0, anchors=[(0.5, 0), (0.5, 0)],
-                         color=rgb, fill=QtGui.QColor(*rgb, round(255 * 0.15)))
+                         color=rgb, fill=QtGui.QColor(*rgb, round(255 * palette.opacity(palette.Opacity.MODE_CHIP_FILL))))
         font = QtGui.QFont()
         font.setPointSizeF(10)
         font.setWeight(QtGui.QFont.Weight.DemiBold)
@@ -1833,7 +1833,7 @@ class FftCanvas(pg.PlotWidget):
         brushes = []
         for f in freqs:
             r, g, b = self._mode_color_map.get(float(f), palette.rgb(palette.Role.MODE_UNKNOWN))
-            brushes.append(pg.mkBrush(r, g, b, 200))
+            brushes.append(pg.mkBrush(r, g, b))
         return brushes
 
     def update_mode_colors(self, color_map: dict) -> None:

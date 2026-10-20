@@ -710,7 +710,7 @@ class ExportableSpectrumChart:
                 chip_h = abbrev_fm.height() + chip_pad_v * 2
                 chip_x = bx - chip_w // 2
                 # Background chip — mirrors .background(mode.color.opacity(0.15)).cornerRadius(6)
-                bg = QtGui.QColor(r, g, b, 38)   # opacity 0.15 ≈ 38/255
+                bg = QtGui.QColor(r, g, b, round(255 * palette.opacity(palette.Opacity.MODE_CHIP_FILL, palette.Scheme.LIGHT)))
                 painter.setBrush(QtGui.QBrush(bg))
                 painter.setPen(QtCore.Qt.PenStyle.NoPen)
                 painter.drawRoundedRect(chip_x, chip_y, chip_w, chip_h, 6 * SCALE, 6 * SCALE)
@@ -744,7 +744,7 @@ class ExportableSpectrumChart:
             if self.is_guitar and pitch_note is not None:
                 purple = _light(palette.Role.PEAK_PITCH)
                 faded = QtGui.QColor(purple)
-                faded.setAlphaF(0.8)
+                faded.setAlphaF(palette.opacity(palette.Opacity.PEAK_PITCH_CENTS, palette.Scheme.LIGHT))
                 row = [(annot_font_pitch_icon, purple, "\u266a"),
                        (annot_font_pitch, purple, pitch_note)]
                 if pitch_cents is not None:
@@ -786,7 +786,7 @@ class ExportableSpectrumChart:
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             for spread in range(4, 0, -1):
                 layer = QtGui.QColor(shadow)
-                layer.setAlphaF(shadow.alphaF() * 0.5 / 4)
+                layer.setAlphaF(shadow.alphaF() * palette.opacity(palette.Opacity.EXPORT_CARD_SHADOW, palette.Scheme.LIGHT) / 4)
                 painter.setBrush(QtGui.QBrush(layer))
                 grow = spread * SCALE
                 painter.drawRoundedRect(
@@ -1168,7 +1168,7 @@ def make_exportable_spectrum_view(
             inner_w = max(QtGui.QFontMetrics(f).horizontalAdvance(t) for f, _c, t in rows)
             card_w = inner_w + CARD_PAD * 2
             bg = QtGui.QColor(color)
-            bg.setAlphaF(0.1)
+            bg.setAlphaF(palette.opacity(palette.Opacity.EXPORT_SUMMARY_CHIP_FILL, palette.Scheme.LIGHT))
             painter.setBrush(QtGui.QBrush(bg))
             painter.setPen(QtCore.Qt.PenStyle.NoPen)
             painter.drawRoundedRect(x_card, card_top, card_w, CARD_H, 6 * SCALE, 6 * SCALE)

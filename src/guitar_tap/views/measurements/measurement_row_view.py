@@ -181,7 +181,7 @@ class MeasurementRowView(QtWidgets.QWidget):
 
         if compare_mode and not compare_eligible:
             eff = QtWidgets.QGraphicsOpacityEffect(self)
-            eff.setOpacity(0.4)
+            eff.setOpacity(palette.opacity(palette.Opacity.CONTROL_NOT_APPLICABLE))
             self.setGraphicsEffect(eff)
 
     def setCompareSelected(self, selected: bool) -> None:
