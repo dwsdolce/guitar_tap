@@ -182,6 +182,11 @@ def test_SR6_the_restart_opens_the_selected_device_at_its_rate(monkeypatch):
     monkeypatch.setattr(dm.sd, "_terminate", lambda: None)
     monkeypatch.setattr(dm.sd, "_initialize", lambda: None)
     monkeypatch.setattr(dm.sd, "InputStream", _FakeStream)
+    # The opened device is checked by name against the device list, and on Windows its host API is read
+    # (WASAPI or not): the list is the test's, not the machine's, whose device at the same index is another one.
+    monkeypatch.setattr(dm.sd, "query_devices", lambda index=None, kind=None: {
+        "name": UMIK.name if index == UMIK.index else "?", "hostapi": 0})
+    monkeypatch.setattr(dm.sd, "query_hostapis", lambda index=None: {"name": "a test host API"})
     mic = _mic()
     mic._selected_input_device = UMIK
     mic.rate = 44100

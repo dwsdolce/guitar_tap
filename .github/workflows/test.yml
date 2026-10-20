@@ -41,6 +41,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libportaudio2 libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
 
+      # A sound server, as a Linux desktop has one: PipeWire with its PulseAudio service, on a session bus,
+      # with a dummy output and input. PortAudio cannot start without one.
+      - name: Sound server (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y pipewire pipewire-pulse wireplumber pulseaudio-utils dbus-daemon
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg"
+          mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+          dbus-daemon --session --fork --address="unix:path=$XDG_RUNTIME_DIR/bus"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          (pipewire &) ; sleep 1
+          (wireplumber &) ; (pipewire-pulse &)
+          for _ in $(seq 20); do pactl info >/dev/null 2>&1 && break; sleep 0.5; done
+          pactl load-module module-null-sink sink_name=ci_sink
+          pactl info | grep -E "Server Name|Default Sink|Default Source"
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+
       - name: Python environment
         run: |
           python -m venv .venv
