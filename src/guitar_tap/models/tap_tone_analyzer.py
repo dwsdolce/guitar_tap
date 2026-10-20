@@ -45,6 +45,7 @@ This file (tap_tone_analyzer.py) contains:
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime
 from typing import NamedTuple, Callable
 
@@ -1734,9 +1735,10 @@ class TapToneAnalyzer(
     def load_persisted_measurements(self) -> None:
         """Load the saved measurements. Mirrors Swift ``loadPersistedMeasurements()``, called from init.
 
-        A library that cannot be read is kept aside, not written over — see
-        ``_set_aside_unreadable_library``."""
-        from guitar_tap.views.tap_analysis_results_view import measurements_file, measurements_from_json
+        Entries that cannot be read are left out: the file is first copied aside as it was —
+        ``_keep_copy_of_library`` — and the library is then saved without them. A file that cannot be
+        read at all is set aside — ``_set_aside_unreadable_library``."""
+        from guitar_tap.views.tap_analysis_results_view import decode_library, measurements_file
 
         path = measurements_file()
         if not os.path.exists(path):
@@ -1745,13 +1747,20 @@ class TapToneAnalyzer(
             return
         try:
             with open(path, "r", encoding="utf-8") as f:
-                self.saved_measurements = measurements_from_json(f.read())
+                library = decode_library(f.read())
         except Exception as exc:
             gt_log(f"❌ Failed to load persisted measurements: {exc}")
             self.saved_measurements = []
             self._set_aside_unreadable_library(path)
             return
+        self.saved_measurements = library.measurements
         gt_log(f"📂 Loaded {len(self.saved_measurements)} persisted measurements")
+
+        if library.unreadable:
+            gt_log(f"❌ {len(library.unreadable)} persisted measurement(s) could not be read: {library.unreadable}")
+            self._keep_copy_of_library(path, len(library.unreadable))
+            self._persist_measurements()
+            return
 
         # Files written before the find_peaks duplicate fix carry one bit-identical twin per
         # capture; decoding repairs them in memory. The library is ours, so write the corrected
@@ -1765,15 +1774,57 @@ class TapToneAnalyzer(
             )
             self._persist_measurements()
 
+    def _keep_copy_of_library(self, path: str, unreadable_count: int) -> None:
+        """The library holds entries that cannot be read. Before it is saved without them, it is copied —
+        ``<name>-unreadable-<date and time>.json`` beside itself, as it was — and the user is told once
+        how many were left out and where the copy is. If it cannot be copied, the library is not
+        written this session, so the only copy of those entries is not replaced. Mirrors Swift
+        ``keepCopyOfLibrary(at:unreadableCount:)``."""
+        import shutil
+
+        kept = self._unreadable_library_path(path)
+        count = "1 saved measurement" if unreadable_count == 1 else f"{unreadable_count} saved measurements"
+        was = "was" if unreadable_count == 1 else "were"
+        try:
+            shutil.copyfile(path, kept)
+            gt_log(f"📂 Library with unreadable entries copied to {kept}")
+            self.library_load_failure = (
+                f"{count} could not be read and {was} removed from the list. The original file was kept as "
+                f"{os.path.basename(kept)} {self._where_to_find(kept)}.")
+        except OSError as exc:
+            gt_log(f"❌ Could not copy the library aside: {exc} — the library is not written this session")
+            self.is_library_write_blocked = True
+            self.library_load_failure = (
+                f"{count} could not be read and {was} left out of the list. The file, {os.path.basename(path)}, "
+                f"was left as it is {self._where_to_find(path)}, and new measurements will not be saved to it "
+                "this session.")
+
+    @staticmethod
+    def _unreadable_library_path(path: str) -> str:
+        """Where an unreadable library, or a copy of one, is kept: ``<name>-unreadable-<date and
+        time>.json`` beside it. Mirrors Swift ``unreadableLibraryURL(for:)``."""
+        stem = os.path.splitext(os.path.basename(path))[0]
+        return os.path.join(os.path.dirname(path),
+                            f"{stem}-unreadable-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json")
+
+    @staticmethod
+    def _where_to_find(path: str) -> str:
+        """Where a file of the library's is, in the words a user finds it by: its folder's path — from
+        the home folder on macOS and Linux, whole on Windows, where Explorer does not read ``~``.
+        Mirrors Swift ``whereToFind(_:)``."""
+        folder = os.path.dirname(path)
+        home = os.path.expanduser("~")
+        if sys.platform != "win32" and folder.startswith(home + os.sep):
+            folder = "~" + folder[len(home):]
+        return f"in GuitarTap's data folder, {folder}"
+
     def _set_aside_unreadable_library(self, path: str) -> None:
         """The library could not be read. It is kept — renamed ``<name>-unreadable-<date and time>.json``
         beside itself — so no save writes over it, the library starts empty, and the user is told once
         where it is: fixing the file and renaming it back restores it. If it cannot be renamed it stays
         where it is and the library is not written this session. Mirrors Swift
         ``setAsideUnreadableLibrary(at:)``."""
-        stem = os.path.splitext(os.path.basename(path))[0]
-        kept = os.path.join(os.path.dirname(path),
-                            f"{stem}-unreadable-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json")
+        kept = self._unreadable_library_path(path)
         try:
             os.rename(path, kept)
             gt_log(f"📂 Unreadable library kept as {kept}")
@@ -1788,10 +1839,12 @@ class TapToneAnalyzer(
         """The message for a library that could not be read and was kept as *kept*. Mirrors Swift
         ``unreadableLibraryMessage(keptAs:original:)``."""
         if kept == original:
-            return (f"Your saved measurements could not be read. The file was left as it is at {kept}, "
-                    "and new measurements will not be saved to it until it can be read.")
+            return (f"Your saved measurements could not be read. The file, {os.path.basename(kept)}, was left "
+                    f"as it is {TapToneAnalyzer._where_to_find(kept)}, and new measurements will not be saved "
+                    "to it until it can be read.")
         return (f"Your saved measurements could not be read, so the library starts empty. The file was kept "
-                f"as {kept} — fix it and rename it back to {os.path.basename(original)} to restore it.")
+                f"as {os.path.basename(kept)} {TapToneAnalyzer._where_to_find(kept)} — fix it and rename it "
+                f"back to {os.path.basename(original)} to restore it.")
 
     def _start_after_permission_granted(self) -> None:
         """The start the engine resumes once the user grants the permission. Mirrors Swift's

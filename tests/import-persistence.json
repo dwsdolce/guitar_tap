@@ -1,6 +1,6 @@
 {
  "slug": "test/import-persistence",
- "about": "The saved-measurement library: importing, editing and saving, and the message an import shows. Each case starts with an empty library and a fresh analyzer and runs its 'steps' in order: {\"import\": [names]} imports one .guitartap file holding those measurements (the 'measurements' entries), through the app's import (importAndLoadMeasurements — a single measurement is also loaded); {\"edit\": {entry, name, notes}} edits the library's entry at that position as the Edit sheet does; {\"save\": name} saves the result on screen under that name; {\"deleteAll\": true} deletes every saved measurement, as Delete All does; {\"warning\": text} puts up a microphone warning, as an earlier load would; {\"importFails\": [names], \"file\"?: name, \"message\"?: text} imports a file holding those measurements, as {\"import\"} does, and the import fails (the reading refuses the file); with \"message\", the failed import's message for a file of that name — the words the \"Import Error\" alert shows — is exactly that text. 'expect' after the last step: 'library' (the entries' names, in order), 'notes' (their notes, null for none), 'persisted' (the names read back from storage — the natives' file, the web's IndexedDB), 'ids' (each entry's id: a measurement's name for that file's own id, 'new' for one minted since), 'message' / 'messageStartsWith' (the last import's message), 'microphoneWarning' (a warning is up), 'exportHasRowKey' (an exported file carries the library's row key). 'only' marks a case about something one side alone has ('natives' or 'web'). Expected values are Swift's.",
+ "about": "The saved-measurement library: importing, editing and saving, and the message an import shows. Each case starts with an empty library and a fresh analyzer and runs its 'steps' in order: {\"import\": [names]} imports one .guitartap file holding those measurements (the 'measurements' entries), through the app's import (importAndLoadMeasurements — a single measurement is also loaded); {\"edit\": {entry, name, notes}} edits the library's entry at that position as the Edit sheet does; {\"save\": name} saves the result on screen under that name; {\"deleteAll\": true} deletes every saved measurement, as Delete All does; {\"warning\": text} puts up a microphone warning, as an earlier load would; {\"importFails\": [names], \"file\"?: name, \"message\"?: text} imports a file holding those measurements, as {\"import\"} does, and the import fails (no entry in it can be read); with \"message\", the failed import's message for a file of that name — the words the \"Import Error\" alert shows — is exactly that text. {\"importFailsBare\": name, \"file\"?, \"message\"?} imports a file that is that measurement on its own, not a list of them, and the import fails, as {\"importFails\"}; {\"libraryHolds\": [names]} — the first step — stores a library holding those measurements, as it would be on disk (the web: stored records), and loads it as the app does at launch. 'expect' after the last step: 'library' (the entries' names, in order), 'notes' (their notes, null for none), 'persisted' (the names read back from storage — the natives' file, the web's IndexedDB), 'ids' (each entry's id: a measurement's name for that file's own id, 'new' for one minted since), 'message' / 'messageStartsWith' (the last import's message), 'microphoneWarning' (a warning is up), 'exportHasRowKey' (an exported file carries the library's row key), 'libraryMessageStartsWith' / 'libraryMessage' (what the launch's \"Saved Measurements Unreadable\" alert says; null for no alert), 'keptCopy' (a copy of the library as it was is kept aside — the natives: a file beside it; the web: a storage key). 'only' marks a case about something one side alone has ('natives' or 'web'). Expected values are Swift's.",
  "measurements": {
   "A": {
    "id": "00000000-0000-0000-0000-0000000000A1",
@@ -476,7 +476,7 @@
   },
   {
    "id": "IP11",
-   "note": "a file is imported whole or not at all: a good measurement beside one with a bad id is not added either",
+   "note": "an entry that cannot be read is skipped and the rest of the file imported; the message names the skipped one and why",
    "steps": [
     {
      "import": [
@@ -484,7 +484,7 @@
      ]
     },
     {
-     "importFails": [
+     "import": [
       "B",
       "bad-id"
      ]
@@ -492,11 +492,18 @@
    ],
    "expect": {
     "library": [
-     "A"
+     "A",
+     "B"
     ],
     "persisted": [
-     "A"
-    ]
+     "A",
+     "B"
+    ],
+    "ids": [
+     "A",
+     "B"
+    ],
+    "message": "Successfully imported and loaded 1 measurement\n\n1 measurement in the file could not be read and was not imported (\"not-a-uuid\" in id is not a UUID)."
    }
   },
   {
@@ -575,6 +582,143 @@
     "persisted": [
      "A"
     ]
+   }
+  },
+  {
+   "id": "IP15",
+   "note": "a measurement with no spectrum among readable ones is skipped, and the message says why",
+   "steps": [
+    {
+     "import": [
+      "A",
+      "no-spectrum",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "B"
+    ],
+    "persisted": [
+     "A",
+     "B"
+    ],
+    "message": "Successfully imported 2 measurements\n\n1 measurement in the file could not be read and was not imported (no spectrum)."
+   }
+  },
+  {
+   "id": "IP16",
+   "note": "with more than one skipped, the message gives only how many",
+   "steps": [
+    {
+     "import": [
+      "no-id",
+      "A",
+      "empty-spectrum"
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A"
+    ],
+    "persisted": [
+     "A"
+    ],
+    "message": "Successfully imported and loaded 1 measurement\n\n2 measurements in the file could not be read and were not imported."
+   }
+  },
+  {
+   "id": "IP17",
+   "note": "a file is a list of measurements: one measurement on its own, not in a list, is not a .guitartap file",
+   "steps": [
+    {
+     "import": [
+      "A"
+     ]
+    },
+    {
+     "importFailsBare": "B",
+     "file": "bare.guitartap",
+     "message": "Could not import \"bare.guitartap\": the file is not a valid GuitarTap measurement."
+    }
+   ],
+   "expect": {
+    "library": [
+     "A"
+    ],
+    "persisted": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "IL1",
+   "note": "a library holding an entry that cannot be read loads the rest; a copy of it as it was is kept aside, the library is saved without the entry, and the user is told once",
+   "steps": [
+    {
+     "libraryHolds": [
+      "A",
+      "empty-spectrum",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "B"
+    ],
+    "persisted": [
+     "A",
+     "B"
+    ],
+    "libraryMessageStartsWith": "1 saved measurement could not be read and was removed from the list.",
+    "keptCopy": true
+   }
+  },
+  {
+   "id": "IL2",
+   "note": "a library that can be read loads whole, with no alert and no copy",
+   "steps": [
+    {
+     "libraryHolds": [
+      "A",
+      "B"
+     ]
+    }
+   ],
+   "expect": {
+    "library": [
+     "A",
+     "B"
+    ],
+    "persisted": [
+     "A",
+     "B"
+    ],
+    "libraryMessage": null,
+    "keptCopy": false
+   }
+  },
+  {
+   "id": "IL3",
+   "note": "a library none of whose entries can be read starts empty, and the copy keeps them",
+   "steps": [
+    {
+     "libraryHolds": [
+      "bad-id",
+      "no-spectrum"
+     ]
+    }
+   ],
+   "expect": {
+    "library": [],
+    "persisted": [],
+    "libraryMessageStartsWith": "2 saved measurements could not be read and were removed from the list.",
+    "keptCopy": true
    }
   }
  ]

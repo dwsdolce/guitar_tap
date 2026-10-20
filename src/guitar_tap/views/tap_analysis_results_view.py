@@ -38,6 +38,8 @@ __all__ = [
     "save_all_measurements",
     "measurements_to_json",
     "measurements_from_json",
+    "decode_library",
+    "DecodedLibrary",
     "export_measurement_json",
     "import_measurements_from_json",
     "export_pdf",
@@ -203,22 +205,47 @@ def export_measurement_json(m: TapToneMeasurement) -> str:
     return measurements_to_json([m])
 
 
-def measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]:
-    """Decode canonical `.guitartap` JSON into measurements.
+@dataclass
+class DecodedLibrary:
+    """A library or ``.guitartap`` file as read: the measurements that could be read, in the file's
+    order, and why each of the others could not. Mirrors Swift ``TapToneAnalyzer.DecodedLibrary``."""
 
-    Accepts a JSON array or a single measurement object.  THE deserializer:
-    both persistence load (load_all_measurements) and file import go through it,
-    so reading saved_measurements.json and importing a shared file are one path
-    (mirrors Swift's single TapToneAnalyzer.decodeMeasurements).
+    measurements: list[TapToneMeasurement]
+    unreadable: list[Exception]
+
+
+def decode_library(data: str | bytes) -> DecodedLibrary:
+    """Decode canonical `.guitartap` JSON — THE deserializer.
+
+    Both persistence load and file import go through it, so reading saved_measurements.json and
+    importing a shared file are one path. The file must be a JSON list of measurements; anything else
+    raises. Each entry is decoded on its own, so one that cannot be read — an id that is not a UUID,
+    no spectrum — costs only itself: its reason is returned in ``unreadable`` and the rest are read.
+    Mirrors Swift ``TapToneAnalyzer.decodeLibrary(_:)``.
     """
     raw = json.loads(data)
-    if isinstance(raw, list):
-        return [TapToneMeasurement.from_dict(d) for d in raw]
-    return [TapToneMeasurement.from_dict(raw)]
+    if not isinstance(raw, list):
+        raise ValueError("A .guitartap file is a list of measurements.")
+    library = DecodedLibrary(measurements=[], unreadable=[])
+    for entry in raw:
+        try:
+            library.measurements.append(TapToneMeasurement.from_dict(entry))
+        except Exception as exc:  # noqa: BLE001 — any failure makes the entry unreadable
+            library.unreadable.append(exc)
+    return library
+
+
+def measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]:
+    """The file's measurements, every one of them: ``decode_library``, raising the first unreadable
+    entry's reason if there is one. Mirrors Swift ``TapToneAnalyzer.decodeMeasurements(_:)``."""
+    library = decode_library(data)
+    if library.unreadable:
+        raise library.unreadable[0]
+    return library.measurements
 
 
 def import_measurements_from_json(data: str | bytes) -> list[TapToneMeasurement]:
-    """Import measurements from a .guitartap or .json file (array or single object).
+    """Import measurements from a .guitartap or .json file (a list of measurements).
 
     Thin alias kept for the import UI; delegates to the shared
     ``measurements_from_json`` decoder."""

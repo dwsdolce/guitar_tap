@@ -1231,11 +1231,10 @@ class TapToneMeasurement:
                     selected_ids_raw = _pruned
                     healed = True
 
-        # No edition saves a measurement without its spectrum, so a file that holds one is not a
-        # measurement the app made: a comparison of at least two entries, or a guitar spectrum or a
-        # plate/brace's longitudinal one. A spectrum with no points — or with frequencies and
-        # magnitudes that differ in number — is no spectrum, a comparison entry's included. Mirrors
-        # Swift's decoder.
+        # A measurement without its spectrum has nothing to show or compare, so it is not read: it
+        # needs a comparison of at least two entries, or a guitar spectrum or a plate/brace's
+        # longitudinal one. A spectrum with no points — or with frequencies and magnitudes that
+        # differ in number — is no spectrum, a comparison entry's included. Mirrors Swift's decoder.
         def holds_spectrum(s: SpectrumSnapshot | None) -> bool:
             return s is not None and len(s.frequencies) > 0 and len(s.frequencies) == len(s.magnitudes)
 

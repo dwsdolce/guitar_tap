@@ -29,8 +29,8 @@ _UUID_FORM = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-
 
 class NoSpectrumError(ValueError):
     """A measurement in a file with no spectrum — no guitar spectrum, no plate/brace longitudinal one, or a
-    comparison of fewer than two entries; a spectrum with no points is none: no edition makes one, so the
-    file cannot be read. Mirrors Swift ``NoSpectrumError``."""
+    comparison of fewer than two entries; a spectrum with no points is none. The entry cannot be read; the
+    rest of its file can. Mirrors Swift ``NoSpectrumError``."""
 
     def __init__(self) -> None:
         super().__init__("no spectrum")

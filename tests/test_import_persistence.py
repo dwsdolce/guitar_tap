@@ -1,7 +1,7 @@
 # @parity test/import-persistence
 """The saved-measurement library: importing through the app's import (``import_and_load_measurements``),
 editing an entry, saving, and the message an import shows. The shared cases in import-persistence.json
-(IP1-IP9, IM1-IM3), the same as Swift and the web; IP8 is the web's alone. Mirrors Swift
+(IP1-IP17, IM1-IM3, IL1-IL3), the same as Swift and the web; IP8 is the web's alone. Mirrors Swift
 ImportPersistenceTests.
 
 The library file is redirected to a temporary file under pytest (measurements_file()), so these never
@@ -38,12 +38,25 @@ def test_library(row, qapp):
     sut = TapToneAnalyzer.for_testing()
     sut.saved_measurements.clear()
     message = None
+    stored = None
     for step in row["steps"]:
-        if "import" in step:
+        if "libraryHolds" in step:
+            stored = json.dumps([MEASUREMENTS[n] for n in step["libraryHolds"]]).encode("utf-8")
+            with open(measurements_file(), "wb") as f:
+                f.write(stored)
+            sut.load_persisted_measurements()
+        elif "import" in step:
             data = json.dumps([MEASUREMENTS[n] for n in step["import"]]).encode("utf-8")
             message = sut.import_and_load_measurements(data)
         elif "importFails" in step:
             data = json.dumps([MEASUREMENTS[n] for n in step["importFails"]]).encode("utf-8")
+            with pytest.raises(Exception) as failure:
+                sut.import_and_load_measurements(data)
+            if "message" in step:
+                got = sut.import_error_message(failure.value, step["file"])
+                assert got == step["message"], f"{row['id']}: message {got}"
+        elif "importFailsBare" in step:
+            data = json.dumps(MEASUREMENTS[step["importFailsBare"]]).encode("utf-8")
             with pytest.raises(Exception) as failure:
                 sut.import_and_load_measurements(data)
             if "message" in step:
@@ -83,6 +96,24 @@ def test_library(row, qapp):
             assert message is not None and message.startswith(want), f"{field}: {message!r}"
         elif field == "microphoneWarning":
             assert (sut.microphone_warning is not None) is want, field
+        elif field == "libraryMessage":
+            assert sut.library_load_failure == want, f"{field}: {sut.library_load_failure!r}"
+        elif field == "libraryMessageStartsWith":
+            got = sut.library_load_failure
+            assert got is not None and got.startswith(want), f"{field}: {got!r}"
+        elif field == "keptCopy":
+            folder = os.path.dirname(measurements_file())
+            kept = _kept_files(folder)
+            try:
+                if want:
+                    assert len(kept) == 1, f"{field}: one copy"
+                    with open(os.path.join(folder, kept[0]), "rb") as f:
+                        assert f.read() == stored, f"{field}: as it was"
+                else:
+                    assert kept == [], f"{field}: no copy"
+            finally:
+                for name in kept:
+                    os.remove(os.path.join(folder, name))
         else:
             pytest.fail(f"unknown field {field}")
 
@@ -90,16 +121,20 @@ def test_library(row, qapp):
 # ── A library that cannot be read ───────────────────────────────────────────────────────────────
 
 
-# The shared measurement a whole library holds that makes it unreadable.
-_UNREADABLE_MEASUREMENT = {"bad id": "bad-id", "no spectrum": "no-spectrum", "empty spectrum": "empty-spectrum"}
-_UNREADABLE_KINDS = ["cut short", *_UNREADABLE_MEASUREMENT]
+# A library none of which can be read — cut short mid-write, or one measurement on its own rather than a
+# list of them.
+_UNREADABLE_KINDS = ["cut short", "not a list"]
+# A library some of whose entries cannot be read — an id that is not a UUID, no spectrum, a spectrum with
+# no points — beside one that can.
+_UNREADABLE_ENTRY_KINDS = ["bad-id", "no-spectrum", "empty-spectrum"]
 
 
 def _unreadable_library(kind: str) -> bytes:
-    """A library that cannot be read: one cut short mid-write, or whole but holding an id that is not a UUID
-    or a measurement with no spectrum, or one whose spectrum has no points."""
-    if kind in _UNREADABLE_MEASUREMENT:
-        return json.dumps([MEASUREMENTS[_UNREADABLE_MEASUREMENT[kind]]]).encode("utf-8")
+    """A library that cannot be read, or holding an entry that cannot be, of that kind."""
+    if kind in _UNREADABLE_ENTRY_KINDS:
+        return json.dumps([MEASUREMENTS["B"], MEASUREMENTS[kind]]).encode("utf-8")
+    if kind == "not a list":
+        return json.dumps(MEASUREMENTS["A"]).encode("utf-8")
     whole = json.dumps([MEASUREMENTS["A"]]).encode("utf-8")
     return whole[: len(whole) // 2]
 
@@ -150,11 +185,17 @@ def test_an_unreadable_library_is_kept_aside_and_not_written_over(kind, _library
 
 @contextlib.contextmanager
 def _unmovable(folder: str):
-    """The library cannot be renamed while inside: its folder read-only on macOS and Linux; on
-    Windows, which ignores a folder's read-only flag, the file held open, which Windows will not
-    rename."""
+    """The library cannot be renamed or copied aside while inside: its folder read-only on macOS and
+    Linux; on Windows, which ignores a folder's read-only flag, the file held open, which Windows will
+    not rename, and copying refused, since an open file can still be copied."""
     if sys.platform == "win32":
-        with open(measurements_file(), "rb"):
+        import shutil
+        from unittest import mock
+
+        def refuse(*_args, **_kwargs):
+            raise PermissionError("the folder is read-only")
+
+        with open(measurements_file(), "rb"), mock.patch.object(shutil, "copyfile", refuse):
             yield
     else:
         os.chmod(folder, 0o555)
@@ -164,10 +205,10 @@ def _unmovable(folder: str):
             os.chmod(folder, 0o755)
 
 
-@pytest.mark.parametrize("kind", _UNREADABLE_KINDS)
-def test_an_unreadable_library_that_cannot_be_moved_is_not_written(kind, _library_folder, qapp):
-    """The library could not be read and could not be renamed: it stays where it is, the user is told,
-    and nothing is written over it this session."""
+@pytest.mark.parametrize("kind", _UNREADABLE_KINDS + _UNREADABLE_ENTRY_KINDS)
+def test_an_unreadable_library_that_cannot_be_kept_aside_is_not_written(kind, _library_folder, qapp):
+    """The library, or an entry in it, could not be read and it could not be kept aside: it stays where
+    it is, the user is told, and nothing is written over it this session."""
     damaged = _unreadable_library(kind)
     with open(measurements_file(), "wb") as f:
         f.write(damaged)

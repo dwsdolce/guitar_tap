@@ -89,59 +89,77 @@ class TapToneAnalyzerMeasurementManagementMixin:
 
     # ── Mutation methods (mirror Swift TapToneAnalyzer+MeasurementManagement) ─
 
-    def import_measurements_from_data(self, data: bytes) -> list:
+    def import_measurements_from_data(self, data: bytes):
         """Decode raw JSON bytes, append, and persist.
 
-        Mirrors Swift ``importMeasurements(from: Data) throws -> [TapToneMeasurement]``.
+        An entry that cannot be read is skipped and the rest are imported; the file must hold at least
+        one that can be read. Mirrors Swift ``importMeasurements(from:)``.
 
         Args:
             data: Raw UTF-8 JSON bytes representing ``[TapToneMeasurement]``.
 
         Returns:
-            The list of newly decoded measurements.
+            The ``DecodedLibrary``: the newly decoded measurements, and why each skipped entry could
+            not be read.
 
         Raises:
-            ValueError: If ``data`` cannot be decoded as valid measurement JSON.
+            ValueError: If ``data`` is not a JSON list of measurements.
+            InvalidIdError, NoSpectrumError: The first entry's reason, if none can be read.
         """
-        import json as _json
-
-        from guitar_tap.utilities.new_uuid import InvalidIdError, NoSpectrumError
-
-        from .tap_tone_measurement import TapToneMeasurement
+        from guitar_tap.views.tap_analysis_results_view import decode_library
 
         try:
-            raw = _json.loads(data.decode("utf-8"))
-            measurements = [TapToneMeasurement.from_dict(d) for d in raw]
-        except (InvalidIdError, NoSpectrumError):
-            raise  # says why, for the import's message
+            library = decode_library(data.decode("utf-8"))
         except Exception as exc:
             raise ValueError(
                 f"import_measurements_from_data: decode failed: {exc}"
             ) from exc
+        if not library.measurements and library.unreadable:
+            raise library.unreadable[0]
 
-        self.saved_measurements.extend(measurements)
+        self.saved_measurements.extend(library.measurements)
         self._persist_measurements()
         # A library operation only: nothing about microphones. Nothing is on screen yet, so there is
         # nothing for a microphone difference to affect — the check belongs to load_measurement(),
-        # which shows the user data. (It used to list every imported measurement's missing
-        # microphone here, so importing an exported library warned about measurements the user had
-        # not opened.) Mirrors Swift importMeasurements(from:).
-        return measurements
+        # which shows the user data. Mirrors Swift importMeasurements(from:).
+        return library
+
+    @staticmethod
+    def unreadable_reason(exc: BaseException) -> str | None:
+        """Why one entry of a file could not be read, in the words an import's message uses: the id
+        that is not a UUID, or "no spectrum"; None for any other reason. Mirrors Swift
+        ``unreadableReason(_:)``."""
+        from guitar_tap.utilities.new_uuid import InvalidIdError, NoSpectrumError
+
+        if isinstance(exc, (InvalidIdError, NoSpectrumError)):
+            return str(exc)
+        return None
 
     @staticmethod
     def import_error_message(exc: BaseException, file_name: str) -> str:
         """The message an import that failed shows, the same in every edition: the file is not a valid
         measurement (naming the id when that is why), the system denied access, or what went wrong.
         Mirrors Swift ``importErrorMessage(for:fileName:)``."""
-        from guitar_tap.utilities.new_uuid import InvalidIdError, NoSpectrumError
-
-        if isinstance(exc, (InvalidIdError, NoSpectrumError)):
-            return f'Could not import "{file_name}": the file is not a valid GuitarTap measurement ({exc}).'
+        reason = TapToneAnalyzerMeasurementManagementMixin.unreadable_reason(exc)
+        if reason is not None:
+            return f'Could not import "{file_name}": the file is not a valid GuitarTap measurement ({reason}).'
         if isinstance(exc, PermissionError):
             return f'Could not read "{file_name}": the system denied access (error {exc.errno}).'
         if isinstance(exc, (ValueError, KeyError, TypeError, AttributeError, IndexError)):
             return f'Could not import "{file_name}": the file is not a valid GuitarTap measurement.'
         return f'Could not import "{file_name}": {exc}'
+
+    @staticmethod
+    def skipped_entries_message(unreadable: list) -> str | None:
+        """What an import's message says about the entries it skipped — None when none were: how many,
+        and why when there was one. Mirrors Swift ``skippedEntriesMessage(_:)``."""
+        if not unreadable:
+            return None
+        if len(unreadable) > 1:
+            return f"{len(unreadable)} measurements in the file could not be read and were not imported."
+        reason = TapToneAnalyzerMeasurementManagementMixin.unreadable_reason(unreadable[0])
+        reason_text = f" ({reason})" if reason is not None else ""
+        return f"1 measurement in the file could not be read and was not imported{reason_text}."
 
     def import_and_load_measurements(self, data: bytes) -> str:
         """Import a ``.guitartap`` file and return the one message the user sees for it.
@@ -149,7 +167,8 @@ class TapToneAnalyzerMeasurementManagementMixin:
         Mirrors Swift ``importAndLoadMeasurements(from:)``. A single measurement is also loaded —
         so, and only then, the message carries the LOAD's microphone warning, folded in so one
         dialog appears rather than two, and consumed. A library import (Export All) only adds to
-        the library and says nothing about microphones.
+        the library and says nothing about microphones. Entries that could not be read and were
+        skipped are named in the message.
 
         The warning is cleared first, so the message can only ever describe THIS import — whatever
         mechanism the view uses to clear an acknowledged warning, a stale one cannot ride along.
@@ -158,20 +177,25 @@ class TapToneAnalyzerMeasurementManagementMixin:
             ValueError: If ``data`` is not a valid ``.guitartap`` array.
         """
         self.microphone_warning = None
-        imported = self.import_measurements_from_data(data)
-        if len(imported) != 1:
-            return f"Successfully imported {len(imported)} measurements"
-        # Loading sets microphone_warning, whose signal would raise the main view's warning dialog
-        # synchronously — a second dialog for the same import. Suppress it; the warning is folded
-        # into this message instead. Swift needs no flag: its view clears the field before the
-        # alert can render.
-        self._suppress_mic_warning_signal = True
-        try:
-            self.load_measurement(imported[0])
-        finally:
-            self._suppress_mic_warning_signal = False
-        message = "Successfully imported and loaded 1 measurement"
-        if self.microphone_warning:
+        library = self.import_measurements_from_data(data)
+        imported = library.measurements
+        if len(imported) == 1:
+            # Loading sets microphone_warning, whose signal would raise the main view's warning dialog
+            # synchronously — a second dialog for the same import. Suppress it; the warning is folded
+            # into this message instead. Swift needs no flag: its view clears the field before the
+            # alert can render.
+            self._suppress_mic_warning_signal = True
+            try:
+                self.load_measurement(imported[0])
+            finally:
+                self._suppress_mic_warning_signal = False
+            message = "Successfully imported and loaded 1 measurement"
+        else:
+            message = f"Successfully imported {len(imported)} measurements"
+        skipped = self.skipped_entries_message(library.unreadable)
+        if skipped is not None:
+            message += f"\n\n{skipped}"
+        if len(imported) == 1 and self.microphone_warning:
             message += f"\n\n⚠️ {self.microphone_warning}"
             self.microphone_warning = None
         return message
