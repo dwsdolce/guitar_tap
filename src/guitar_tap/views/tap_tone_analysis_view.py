@@ -1022,13 +1022,15 @@ class MainWindow(QtWidgets.QMainWindow):
             return group, slider, readout, reset_btn
 
         # ── Taps ──────────────────────────────────────────────────────────
-        # The label is kept as an attribute so it can be dimmed WITH the spinner. SwiftUI's
-        # .disabled() propagates down the view tree, so Swift's `.disabledDimmed(tapCountLocked)`
-        # greys the label, the value and the stepper as one field; Qt does not propagate to a
-        # sibling QLabel, so without this the word "Taps:" would stay crisp beside a greyed-out
-        # box — the label looking live while the thing it labels looks dead.
+        # The label and the spinner in one widget, dimmed as one field while a sequence runs, as
+        # Swift's `.disabledDimmed(tapCountLocked)` on its group.
+        self._taps_group = QtWidgets.QWidget()
+        taps_layout = QtWidgets.QHBoxLayout(self._taps_group)
+        taps_layout.setContentsMargins(0, 0, 0, 0)
+        taps_layout.setSpacing(4)
+        hl.addWidget(self._taps_group)
         self.tap_num_label = _lbl("Taps:")
-        hl.addWidget(self.tap_num_label)
+        taps_layout.addWidget(self.tap_num_label)
         self.tap_num_spin = QtWidgets.QSpinBox()
         self.tap_num_spin.setMinimum(1)
         self.tap_num_spin.setMaximum(10)
@@ -1037,7 +1039,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tap_num_spin.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.tap_num_spin.setMinimumWidth(60)
         self.tap_num_spin.setMaximumWidth(65)
-        hl.addWidget(self.tap_num_spin)
+        taps_layout.addWidget(self.tap_num_spin)
 
         hl.addWidget(_vsep())
 
@@ -1068,12 +1070,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 "(shown as green line on the spectrum)",
                 palette.Role.CHART_PEAK_MIN,
             )
-        # Disabled, the whole field is drawn at the control.notApplicable opacity, as Swift's — Qt's own
-        # disabled look leaves a coloured label crisp.
-        self._peak_min_dim = QtWidgets.QGraphicsOpacityEffect(self._peak_min_group)
-        self._peak_min_dim.setOpacity(palette.opacity(palette.Opacity.CONTROL_NOT_APPLICABLE))
-        self._peak_min_dim.setEnabled(False)
-        self._peak_min_group.setGraphicsEffect(self._peak_min_dim)
         self.peak_min_reset_btn.clicked.connect(lambda: self.peak_min_slider.setValue(-60))
 
         hl.addStretch()
@@ -3145,9 +3141,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # analyzer here. The mirror serves the LABEL, which is legitimately push-fed by the
         # signal's payload.
         _taps_enabled = not (analyzer.current_tap_count > 0 and not is_complete)
-        self.tap_num_spin.setEnabled(_taps_enabled)
-        # Dim the LABEL with the control — the whole field is unavailable, not just its box.
-        self.tap_num_label.setEnabled(_taps_enabled)
+        _ext.disabled_dimmed(self._taps_group, not _taps_enabled)
 
         # ── Enablement — the shared canonical rule (models/button_enablement.py) ──
         # `ready` folds Swift's `fft.isRunning && isReadyForDetection` into one flag, so it is
@@ -3522,8 +3516,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _set_peak_min_enabled(self, enabled: bool) -> None:
         """Enable or disable the whole Peak Min field — label, slider, value and reset — dimming it when
         disabled. Mirrors Swift's .disabled / .opacity pair on the Peak Min HStack."""
-        self._peak_min_group.setEnabled(enabled)
-        self._peak_min_dim.setEnabled(not enabled)
+        _ext.not_applicable_dimmed(self._peak_min_group, not enabled)
 
     def _apply_measurement_type_to_ui(self) -> None:
         """Bring every widget that depends on the measurement type up to the current type (the
@@ -5815,10 +5808,8 @@ class MainWindow(QtWidgets.QMainWindow):
             plate_widget.setVisible(mt_val is MT.MeasurementType.PLATE)
             brace_widget.setVisible(mt_val is MT.MeasurementType.BRACE)
             show_unknown_widget.setVisible(is_guitar)
-            peak_thresh_widget.setEnabled(is_guitar)
-            # The whole row dims when off, at the control.notApplicable opacity, as Swift's — its label and note are
-            # palette-coloured, so disabling alone leaves them looking active.
-            peak_thresh_dim.setEnabled(not is_guitar)
+            # The whole row has no meaning for a plate or brace, as Swift's notApplicableDimmed.
+            _ext.not_applicable_dimmed(peak_thresh_widget, not is_guitar)
             if is_guitar:
                 _update_mode_ranges(unified)
             # Reload the frequency text fields from the stored values for the newly
@@ -6011,10 +6002,6 @@ class MainWindow(QtWidgets.QMainWindow):
         pt_desc.setWordWrap(True)
         pt_layout.addWidget(pt_desc)
         # peak_thresh persisted on Apply only
-        peak_thresh_dim = QtWidgets.QGraphicsOpacityEffect(peak_thresh_widget)
-        peak_thresh_dim.setOpacity(palette.opacity(palette.Opacity.CONTROL_NOT_APPLICABLE))
-        peak_thresh_dim.setEnabled(False)
-        peak_thresh_widget.setGraphicsEffect(peak_thresh_dim)
         an.addWidget(peak_thresh_widget)
 
         # Separator above Dump Capture Audio (mirrors Swift Divider())

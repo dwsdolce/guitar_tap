@@ -1,0 +1,24 @@
+{
+ "slug": "test/dimming",
+ "about": "How a control that cannot be used shows it, the same in every edition: the whole group — its label, the control and its value — is disabled and drawn at one opacity, named in theme.json. 'kind' is why: 'cannotActNow' (the Taps field while a sequence runs; Swift disabledDimmed, Python disabled_dimmed, the web's .field.is-disabled) or 'doesNotApply' (Peak Min for a plate or brace, or in a comparison; Swift notApplicableDimmed, Python not_applicable_dimmed, the web's .field.is-faded), or 'available'. 'opacity' is the theme opacity the group is drawn at (null: drawn as it is) and 'enabled' whether it still takes input.",
+ "cases": [
+  {
+   "id": "DM1",
+   "kind": "cannotActNow",
+   "opacity": "control.dimmed",
+   "enabled": false
+  },
+  {
+   "id": "DM2",
+   "kind": "doesNotApply",
+   "opacity": "control.notApplicable",
+   "enabled": false
+  },
+  {
+   "id": "DM3",
+   "kind": "available",
+   "opacity": null,
+   "enabled": true
+  }
+ ]
+}
