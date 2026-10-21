@@ -174,8 +174,8 @@ class ComparisonResultsView(QtWidgets.QWidget):
                 text = self._freq_text(freq)
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-                if freq is None:
-                    item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
+                item.setForeground(palette.color(
+                    palette.Role.TEXT_SECONDARY if freq is None else palette.Role.TEXT_PRIMARY))
                 self._table.setItem(row, col, item)
 
 

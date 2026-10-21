@@ -154,7 +154,9 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             peaks_vbox.setSpacing(4)
 
             if not shown:
-                peaks_vbox.addWidget(QtWidgets.QLabel("No identified peaks"))
+                none_lbl = QtWidgets.QLabel("No identified peaks")
+                palette.tag(none_lbl, color=palette.Role.TEXT_SECONDARY)
+                peaks_vbox.addWidget(none_lbl)
             else:
                 # The measurement's own modes and labels — classified among all its peaks, as the
                 # file is written and the live view showed them, not among the shown ones.

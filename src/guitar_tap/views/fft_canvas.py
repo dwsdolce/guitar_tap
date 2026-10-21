@@ -113,28 +113,20 @@ class _ZoomPanPopup(QtWidgets.QFrame):
         self.show()
 
 
-class _ModeChip(pg.InfLineLabel):
-    """A guitar mode's name at the lower line of its range, as Swift's mode-boundary annotation: a chip
-    centred on the line just inside the plot's top (`.annotation(position: .top, overflowResolution:
-    .fit(to: .plot))`), kept inside the plot at either side — caption2 semibold in the mode's colour,
-    padded 4 / 2, on the mode's colour at 15 %, corner 4."""
+class _ChipLabel(pg.InfLineLabel):
+    """A line's label on a rounded chip — Swift's annotation with `.padding(.horizontal, x)`,
+    `.padding(.vertical, y)`, a background and `.cornerRadius(corner)`."""
 
-    _PAD_X = 4.0
-    _PAD_Y = 2.0
-    _CORNER = 4.0
-
-    def __init__(self, line: pg.InfiniteLine, text: str, rgb: tuple[int, int, int]) -> None:
-        super().__init__(line, text=text, position=1.0, anchors=[(0.5, 0), (0.5, 0)],
-                         color=rgb, fill=QtGui.QColor(*rgb, round(255 * palette.opacity(palette.Opacity.MODE_CHIP_FILL))))
-        font = QtGui.QFont()
-        font.setPointSizeF(10)
-        font.setWeight(QtGui.QFont.Weight.DemiBold)
-        self.setFont(font)
+    def __init__(self, line: pg.InfiniteLine, text: str, padding: tuple[float, float], corner: float,
+                 **opts) -> None:
+        self._pad_x, self._pad_y = padding
+        self._corner = corner
+        super().__init__(line, text=text, **opts)
         self.textItem.document().setDocumentMargin(0)
         self.updateTextPos()
 
     def _chip_rect(self) -> QtCore.QRectF:
-        return self.textItem.boundingRect().adjusted(-self._PAD_X, -self._PAD_Y, self._PAD_X, self._PAD_Y)
+        return self.textItem.boundingRect().adjusted(-self._pad_x, -self._pad_y, self._pad_x, self._pad_y)
 
     def boundingRect(self) -> QtCore.QRectF:
         return self.textItem.mapRectToParent(self._chip_rect())
@@ -144,6 +136,34 @@ class _ModeChip(pg.InfLineLabel):
         r = self._chip_rect()
         tl = QtCore.QPointF(r.left() + r.width() * self.anchor.x(), r.top() + r.height() * self.anchor.y())
         self.textItem.setPos(-tl)
+
+    def paint(self, p, *args) -> None:
+        # TextItem fills a square box: hand it no fill (it still keeps its transform), then draw the
+        # rounded chip under the text.
+        fill = self.fill
+        self.fill = QtGui.QBrush(QtCore.Qt.BrushStyle.NoBrush)
+        super().paint(p, *args)
+        self.fill = fill
+        p.setPen(QtCore.Qt.PenStyle.NoPen)
+        p.setBrush(fill)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        p.drawRoundedRect(self.textItem.mapRectToParent(self._chip_rect()), self._corner, self._corner)
+
+
+class _ModeChip(_ChipLabel):
+    """A guitar mode's name at the lower line of its range, as Swift's mode-boundary annotation: a chip
+    centred on the line just inside the plot's top (`.annotation(position: .top, overflowResolution:
+    .fit(to: .plot))`), kept inside the plot at either side — caption2 semibold in the mode's colour,
+    padded 4 / 2, on the mode's colour at 15 %, corner 4."""
+
+    def __init__(self, line: pg.InfiniteLine, text: str, rgb: tuple[int, int, int]) -> None:
+        super().__init__(line, text, (4.0, 2.0), 4.0, position=1.0, anchors=[(0.5, 0), (0.5, 0)],
+                         color=rgb, fill=QtGui.QColor(*rgb, round(255 * palette.opacity(palette.Opacity.MODE_CHIP_FILL))))
+        font = QtGui.QFont()
+        font.setPointSizeF(10)
+        font.setWeight(QtGui.QFont.Weight.DemiBold)
+        self.setFont(font)
+        self.updateTextPos()
 
     def updatePosition(self) -> None:
         super().updatePosition()
@@ -166,18 +186,6 @@ class _ModeChip(pg.InfLineLabel):
         x_px = (self.line.value() - x0) / (x1 - x0) * width_px
         left = min(max(x_px - w / 2, 0.0), max(width_px - w, 0.0))
         self.setAnchor(((x_px - left) / w if w > 0 else 0.5, 0))
-
-    def paint(self, p, *args) -> None:
-        # TextItem fills a square box: hand it no fill (it still keeps its transform), then draw the
-        # rounded chip under the text.
-        fill = self.fill
-        self.fill = QtGui.QBrush(QtCore.Qt.BrushStyle.NoBrush)
-        super().paint(p, *args)
-        self.fill = fill
-        p.setPen(QtCore.Qt.PenStyle.NoPen)
-        p.setBrush(fill)
-        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-        p.drawRoundedRect(self.textItem.mapRectToParent(self._chip_rect()), self._CORNER, self._CORNER)
 
 
 class _PlateCaptureAdapter:
@@ -498,14 +506,12 @@ class FftCanvas(pg.PlotWidget):
         # Right-aligned, above the line, at the right edge — matches Swift's .trailing/.top.
         _lbl_opts_peak = {"position": 0.99, "anchors": [(1, 1), (1, 1)]}
 
-        # Peak-minimum line (green dashed) — "Peak: x dB", right, above (matches Swift's
-        # thresholdLinesContent RuleMark: green, width 1.5, dash [8, 3], label .top/.trailing).
-        self.line_threshold = pg.InfiniteLine(
-            pos=_peak_y, angle=0,
-            pen=pg.mkPen(None),
-            label=f"Peak: {_peak_y} dB",
-            labelOpts=_lbl_opts_peak,
-        )
+        # Peak-minimum line (green dashed) — "Peak: x dB", right, above, on a chip of
+        # chart.readout.background, padded 6 / 2, corner 4 (matches Swift's thresholdLinesContent RuleMark:
+        # green, width 1.5, dash [8, 3], label .top/.trailing).
+        self.line_threshold = pg.InfiniteLine(pos=_peak_y, angle=0, pen=pg.mkPen(None))
+        self.line_threshold.label = _ChipLabel(
+            self.line_threshold, f"Peak: {_peak_y} dB", (6.0, 2.0), 4.0, **_lbl_opts_peak)
         self.addItem(self.line_threshold)
 
         # Tap-trigger / Reset lines removed — the threshold now compares
@@ -674,6 +680,8 @@ class FftCanvas(pg.PlotWidget):
         self.line_threshold.setPen(chart_style.pen(
             peak_min, style.peak_min_width, style.peak_min_dash, style.peak_min_opacity))
         self.line_threshold.label.setColor(peak_min)
+        self.line_threshold.label.fill = pg.mkBrush(palette.color(palette.Role.CHART_READOUT_BACKGROUND))
+        self.line_threshold.label.update()
         self._cursor_label.fill = pg.mkBrush(palette.color(palette.Role.CHART_READOUT_BACKGROUND))
         self._cursor_label.update()
         crosshair = chart_style.pen(

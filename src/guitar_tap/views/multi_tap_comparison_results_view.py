@@ -149,8 +149,8 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
                 freq = peak.frequency if peak is not None else None
                 item = QtWidgets.QTableWidgetItem(self._freq_text(freq))
                 item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-                if freq is None:
-                    item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
+                item.setForeground(palette.color(
+                    palette.Role.TEXT_SECONDARY if freq is None else palette.Role.TEXT_PRIMARY))
                 self._table.setItem(row, col, item)
 
         # Averaged row — bold yellow indicator + semibold text.
@@ -172,8 +172,8 @@ class MultiTapComparisonResultsView(QtWidgets.QWidget):
                 text = f"{text} *"
             item = QtWidgets.QTableWidgetItem(text)
             item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            if freq is None:
-                item.setForeground(palette.color(palette.Role.TEXT_SECONDARY))
+            item.setForeground(palette.color(
+                palette.Role.TEXT_SECONDARY if freq is None else palette.Role.TEXT_PRIMARY))
             _f = item.font()
             _f.setBold(True)
             _f.setItalic(is_override)

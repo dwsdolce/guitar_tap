@@ -5503,9 +5503,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         _mode_name_labels: list[QtWidgets.QLabel] = []
         _mode_range_labels: list[QtWidgets.QLabel] = []
+        # The mode's name secondary, its range primary — Swift modeRangeRow.
         for _ in range(5):
             nl = QtWidgets.QLabel()
             nl.setFont(small)
+            palette.tag(nl, color=palette.Role.TEXT_SECONDARY)
             rl = QtWidgets.QLabel()
             rl.setFont(small)
             _mode_name_labels.append(nl)
@@ -6270,14 +6272,18 @@ class MainWindow(QtWidgets.QMainWindow):
         cal_meta_layout.setSpacing(4)
         cal_meta_left = QtWidgets.QVBoxLayout()
         cal_meta_left.setSpacing(1)
+        # The details in text.secondary, as Swift's.
         cal_meta_sens_lbl = QtWidgets.QLabel()
         cal_meta_sens_lbl.setFont(small)
+        palette.tag(cal_meta_sens_lbl, color=palette.Role.TEXT_SECONDARY)
         cal_meta_points_lbl = QtWidgets.QLabel()
         cal_meta_points_lbl.setFont(small)
+        palette.tag(cal_meta_points_lbl, color=palette.Role.TEXT_SECONDARY)
         cal_meta_left.addWidget(cal_meta_sens_lbl)
         cal_meta_left.addWidget(cal_meta_points_lbl)
         cal_meta_range_lbl = QtWidgets.QLabel()
         cal_meta_range_lbl.setFont(small)
+        palette.tag(cal_meta_range_lbl, color=palette.Role.TEXT_SECONDARY)
         cal_meta_range_lbl.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
         )

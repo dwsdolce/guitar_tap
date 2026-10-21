@@ -26,6 +26,7 @@ from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
 from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
+from guitar_tap.views.save_measurement_sheet import notes_box
 from guitar_tap.views.utilities import palette
 
 
@@ -106,7 +107,7 @@ class EditMeasurementView(QtWidgets.QDialog):
         self._notes_edit = QtWidgets.QPlainTextEdit()
         self._notes_edit.setPlainText(self._measurement.notes or "")
         self._notes_edit.setMinimumHeight(80)
-        notes_group.addWidget(self._notes_edit)
+        notes_group.addWidget(notes_box(self._notes_edit))
 
         caption = QtWidgets.QLabel("Add any observations about this measurement")
         caption_font = caption.font()

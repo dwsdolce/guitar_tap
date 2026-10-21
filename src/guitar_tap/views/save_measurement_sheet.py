@@ -29,6 +29,22 @@ def caption_label(text: str) -> QtWidgets.QLabel:
     return label
 
 
+def notes_box(editor: QtWidgets.QPlainTextEdit) -> QtWidgets.QFrame:
+    """The notes editor in its box — Swift's: background.control inside a separator line, radius 4. The box draws
+    them, not the editor: a stylesheet rule on the editor (a scroll area) would have macOS draw its scroll bar's
+    handle as an outline."""
+    box = QtWidgets.QFrame()
+    box.setObjectName("notes_box")
+    box.setStyleSheet("#notes_box { border-width: 1px; border-style: solid; border-radius: 4px; }")
+    palette.tag(box, background=palette.Role.BACKGROUND_CONTROL, border=palette.Role.SEPARATOR)
+    editor.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+    editor.viewport().setAutoFillBackground(False)
+    layout = QtWidgets.QVBoxLayout(box)
+    layout.setContentsMargins(2, 2, 2, 2)
+    layout.addWidget(editor)
+    return box
+
+
 class SaveMeasurementDialog(QtWidgets.QDialog):
     """Gather the measurement name and notes before saving — Swift's SaveMeasurementSheet: a bold
     title above each field, the notes hint under its box, Cancel and Save at the bottom right."""
@@ -50,9 +66,9 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         layout.addSpacing(10)
 
         layout.addWidget(section_label("Notes (Optional)"))
-        self._notes_edit = QtWidgets.QTextEdit()
+        self._notes_edit = QtWidgets.QPlainTextEdit()
         self._notes_edit.setMinimumHeight(100)
-        layout.addWidget(self._notes_edit, 1)
+        layout.addWidget(notes_box(self._notes_edit), 1)
         layout.addWidget(caption_label("Add any observations about this measurement"))
         layout.addSpacing(10)
 
