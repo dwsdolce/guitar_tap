@@ -1,5 +1,5 @@
 """
-Colour guard — refuses to run when a colour is written outside the palette.
+Colour guard — refuses to run when a colour or an opacity is written outside the palette.
 
 Mirrors the Swift edition's Tooling/check-colours.sh and the web edition's
 tooling/check-colours.mjs — same rule.
@@ -9,6 +9,11 @@ own light and dark value. A colour written anywhere else — a hex or numeric rg
 literal, a QColor built from numbers or a name, a named colour in a stylesheet or a
 qtawesome call, a Qt palette(...) role, a pyqtgraph colour shorthand — does not follow
 the Appearance setting and differs from the Swift and web editions.
+
+The same for an opacity: every opacity the app applies is a named one in the palette (shared in theme.json). A
+number given to setOpacity / setAlphaF / _rgba, a fraction of 255, or a fourth (alpha) number to mkBrush, anywhere
+else is refused — 0 and 1 (shown / hidden) excepted. The chart-style opacities in views/utilities/chart_style.py
+(shared in chart-style.json) are allowed.
 
 DEVELOPMENT CHECKOUTS ONLY, as _release_guard.py: a shipped (frozen) build carries no
 source to scan, so the guard allows it.
@@ -33,8 +38,12 @@ PATTERNS = {
     "palette()": r"palette\([a-z-]+\)",
     "pyqtgraph": (r"""mkPen\(\s*["'][rgbcmykw]["']|mkBrush\(\s*["'][rgbcmykw]["']"""
                   r"""|\b(?:pen|brush)\s*=\s*["'][rgbcmykw]["']"""),
+    "opacity": (r"(?:setOpacity|setAlphaF)\(\s*0?\.\d*[1-9]|_rgba\([^,]+,\s*0?\.\d*[1-9]"
+                r"|255\s*\*\s*0?\.\d*[1-9]|mkBrush\([^()]*,[^()]*,[^()]*,\s*\d+\s*\)"),
 }
 PALETTE = "views/utilities/palette.py"
+# The chart-style module holds the chart's shared opacities (chart-style.json) — opacities only.
+CHART_STYLE = "views/utilities/chart_style.py"
 
 
 def _package_root() -> str:
@@ -64,6 +73,8 @@ def failures(root: str | None = None) -> list[str]:
                     if line.lstrip().startswith("#"):
                         continue
                     for kind, pattern in patterns.items():
+                        if kind == "opacity" and rel == CHART_STYLE:
+                            continue
                         if pattern.search(line):
                             found.append(f"{rel}:{number} [{kind}] {line.strip()}")
     return found
@@ -74,7 +85,7 @@ def enforce() -> None:
     found = failures()
     if not found:
         return
-    print("BLOCKED — a colour is written outside the palette (views/utilities/palette.py):",
+    print("BLOCKED — a colour or an opacity is written outside the palette (views/utilities/palette.py):",
           file=sys.stderr)
     for line in found:
         print(f"  {line}", file=sys.stderr)

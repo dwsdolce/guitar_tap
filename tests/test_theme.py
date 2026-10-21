@@ -177,3 +177,10 @@ def test_a_saved_comparison_is_drawn_by_slot():
     assert palette.comparison_role(11, "Back") is palette.Role.SERIES_2
     assert palette.comparison_role(3, "Averaged") is palette.Role.SERIES_AVERAGE
 
+
+
+def test_button_shape():
+    """The shape of a button the app draws. Mirrors Swift ThemeTests.buttonShape."""
+    assert palette.BUTTON_CORNER_RADIUS == DATA["button"]["cornerRadius"]
+    assert list(palette.BUTTON_PADDING) == DATA["button"]["padding"]
+    assert list(palette.BUTTON_PROMINENT_PADDING) == DATA["button"]["prominentPadding"]

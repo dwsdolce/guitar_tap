@@ -13,6 +13,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from enum import Enum
+from typing import NamedTuple
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -539,13 +540,21 @@ MESSAGE_PROPERTY = "messageRole"
 # A button filled with a role — Swift's .buttonStyle(.borderedProminent): the role as the fill,
 # text.onColor as the text.
 PROMINENT_PROPERTY = "prominentRole"
+# A plain button the app draws — an action with no particular meaning: text.primary on background.control, a
+# separator border, an accent wash at button.plainHover under the pointer.
+PLAIN_PROPERTY = "plainButton"
+# The shape of a button the app draws: its corner radius, and its padding (vertical, horizontal) in points — a
+# prominent button's a little larger. Mirrors Swift Palette.ButtonShape.
+BUTTON_CORNER_RADIUS = 6
+BUTTON_PADDING = (3, 8)
+BUTTON_PROMINENT_PADDING = (4, 10)
 _stylesheet_scheme: Scheme | None = None
 
 
 def tag(
     widget: QtWidgets.QWidget, color: Role | None = None, background: Role | None = None,
     tint: Role | None = None, border: Role | None = None, prominent: Role | None = None,
-    message: Role | None = None,
+    message: Role | None = None, plain: bool = False,
 ) -> None:
     """Give ``widget``'s text and / or background a role, or tint a button with one. The
     application stylesheet colours it in the current scheme, and again on every change of it.
@@ -556,6 +565,7 @@ def tag(
     widget.setProperty(BORDER_PROPERTY, border.value if border is not None else "")
     widget.setProperty(PROMINENT_PROPERTY, prominent.value if prominent is not None else "")
     widget.setProperty(MESSAGE_PROPERTY, message.value if message is not None else "")
+    widget.setProperty(PLAIN_PROPERTY, "true" if plain else "")
     style = widget.style()
     style.unpolish(widget)
     style.polish(widget)
@@ -604,11 +614,83 @@ def _rgba(c: QtGui.QColor, alpha: float) -> str:
     return f"rgba({c.red()}, {c.green()}, {c.blue()}, {round(c.alpha() * alpha)})"
 
 
+def _mix(base: QtGui.QColor, over: QtGui.QColor, alpha: float) -> QtGui.QColor:
+    """``over`` at ``alpha`` laid on ``base`` — a wash a stylesheet cannot layer."""
+    a = over.alphaF() * alpha
+    return QtGui.QColor.fromRgbF(*(b * (1 - a) + o * a for b, o in
+                                   ((base.redF(), over.redF()), (base.greenF(), over.greenF()),
+                                    (base.blueF(), over.blueF()))), base.alphaF())
+
+
+# @parity view/button-style tests=test/button-style — button_look, the button rules
+class ButtonLook(NamedTuple):
+    """What a button the app draws looks like in a state. Mirrors Swift ``AppButtonLook``."""
+
+    text: Role
+    fill: Role
+    fill_opacity: "Opacity | None"
+    wash_role: "Role | None"
+    wash_opacity: "Opacity | None"
+    border: "Role | None"
+    drawn_at: "Opacity | None"
+    prominent_padding: bool = False
+
+
+def button_look(kind: str, role: "Role | None", state: str) -> ButtonLook:
+    """The look of a ``kind`` button ("plain", "tinted", "prominent") in ``role``, in ``state`` ("rest",
+    "hover", "pressed", "on", "onHover", "cannotAct") — the one rule the stylesheet follows. Mirrors Swift
+    ``AppButtonLook.of``."""
+    dimmed = Opacity.CONTROL_DIMMED if state == "cannotAct" else None
+    hover = state == "hover"
+    plain = ButtonLook(Role.TEXT_PRIMARY, Role.BACKGROUND_CONTROL, None,
+                       Role.ACCENT if hover else None, Opacity.BUTTON_PLAIN_HOVER if hover else None,
+                       Role.SEPARATOR, dimmed)
+    if kind == "tinted":
+        fill = {"hover": Opacity.BUTTON_TINT_HOVER, "pressed": Opacity.BUTTON_TINT_PRESSED,
+                "on": Opacity.BUTTON_TINT_ON, "onHover": Opacity.BUTTON_TINT_ON_HOVER}.get(state, Opacity.BUTTON_TINT_FILL)
+        return ButtonLook(role, role, fill, None, None, None, dimmed)
+    if kind == "prominent":
+        # A prominent button that cannot act is drawn as a plain one, dimmed.
+        if state == "cannotAct":
+            return plain._replace(prominent_padding=True)
+        return ButtonLook(Role.TEXT_ON_COLOR, role, Opacity.BUTTON_PROMINENT_HOVER if hover else None,
+                          None, None, None, None, True)
+    return plain
+
+
+def _button_rule(selector: str, look: ButtonLook) -> str:
+    """``look`` as a stylesheet rule for ``selector`` — a whole button drawn at an opacity has its colours at it,
+    and a wash is laid on its fill, since a stylesheet cannot do either."""
+    whole = opacity(look.drawn_at) if look.drawn_at else 1.0
+    fill = color(look.fill)
+    fill_alpha = opacity(look.fill_opacity) if look.fill_opacity else 1.0
+    if look.wash_role is not None:
+        fill = _mix(fill, color(look.wash_role), opacity(look.wash_opacity))
+    border = (f"1px solid {_rgba(color(look.border), whole)}" if look.border is not None
+              else "1px solid transparent")
+    pad = BUTTON_PROMINENT_PADDING if look.prominent_padding else BUTTON_PADDING
+    return (f'{selector} {{ color: {_rgba(color(look.text), whole)}; background-color: {_rgba(fill, fill_alpha * whole)};'
+            f' border: {border}; border-radius: {BUTTON_CORNER_RADIUS}px; padding: {pad[0]}px {pad[1]}px; }}')
+
+
+def _button_rules(base: str, kind: str, role: "Role | None") -> list[str]:
+    """Every state's rule for the buttons ``base`` selects."""
+    states = {"rest": base, "hover": f"{base}:hover", "cannotAct": f"{base}:disabled"}
+    if kind == "tinted":
+        states |= {"pressed": f"{base}:pressed", "on": f"{base}:checked, {base}[{ON_PROPERTY}=\"true\"]",
+                   "onHover": f"{base}:checked:hover, {base}[{ON_PROPERTY}=\"true\"]:hover"}
+        order = ("rest", "hover", "pressed", "on", "onHover", "cannotAct")
+    else:
+        order = ("rest", "hover", "cannotAct")
+    return [_button_rule(states[state], button_look(kind, role, state)) for state in order]
+
+
 def _application_stylesheet() -> str:
     """One rule per role: a widget tagged with it takes the role's value in the current scheme. A
     label's text is text.primary unless tagged otherwise — text the app draws is never left to the
     platform."""
     rules = [f"QLabel {{ color: {qss(Role.TEXT_PRIMARY)}; }}"]
+    rules += _button_rules(f'QPushButton[{PLAIN_PROPERTY}="true"]', "plain", None)
     for role in Role:
         value = qss(role)
         rules.append(f'*[{COLOR_PROPERTY}="{role.value}"] {{ color: {value}; }}')
@@ -617,32 +699,9 @@ def _application_stylesheet() -> str:
         rules.append(
             f'*[{MESSAGE_PROPERTY}="{role.value}"] {{ background-color:'
             f' {qss(role, Opacity.STATUS_MESSAGE_BACKGROUND)}; border-radius: 6px; }}')
-        on_color = color(Role.TEXT_ON_COLOR)
-        prominent = f'QPushButton[{PROMINENT_PROPERTY}="{role.value}"]'
-        rules.append(
-            f'{prominent} {{ color: {on_color.name()}; background-color: {value}; border: none;'
-            f' border-radius: 6px; padding: 4px 10px; }}')
-        rules.append(f'{prominent}:hover {{ background-color: {_rgba(color(role), opacity(Opacity.BUTTON_PROMINENT_HOVER))}; }}')
-        rules.append(
-            f'{prominent}:disabled {{ background-color: {_rgba(color(role), 0.30)};'
-            f' color: {_rgba(on_color, 0.70)}; }}')
-        c = color(role)
-        tinted = f'QPushButton[{TINT_PROPERTY}="{role.value}"]'
-        rules.append(
-            f'{tinted} {{ color: {value}; background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_FILL))};'
-            f' border: 1px solid transparent; border-radius: 6px; padding: 3px 8px; }}')
-        # Hover lifts the fill by 10 points, on or off — as Swift's wash over its button.
-        rules.append(f'{tinted}:hover {{ background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_HOVER))}; }}')
-        rules.append(f'{tinted}:pressed {{ background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_PRESSED))}; }}')
-        rules.append(
-            f'{tinted}:checked, {tinted}[{ON_PROPERTY}="true"] {{'
-            f' background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_ON))}; }}')
-        rules.append(
-            f'{tinted}:checked:hover, {tinted}[{ON_PROPERTY}="true"]:hover {{'
-            f' background-color: {_rgba(c, opacity(Opacity.BUTTON_TINT_ON_HOVER))}; }}')
-        rules.append(
-            f'{tinted}:disabled {{ background-color: {_rgba(c, 0.03)};'
-            f' color: {_rgba(c, 0.40)}; }}')
+        rules += _button_rules(f'QPushButton[{PROMINENT_PROPERTY}="{role.value}"]', "prominent", role)
+        for base in (f'QPushButton[{TINT_PROPERTY}="{role.value}"]', f'QToolButton[{TINT_PROPERTY}="{role.value}"]'):
+            rules += _button_rules(base, "tinted", role)
         bar = f'QProgressBar[{TINT_PROPERTY}="{role.value}"]'
         rules.append(
             f'{bar} {{ border: none; border-radius: 3px;'

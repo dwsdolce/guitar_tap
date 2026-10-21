@@ -1170,11 +1170,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # the user retune a saved measurement without re-tapping.  Mirrors reanalyzePeaks().
         self._reanalyze_btn = QtWidgets.QToolButton()
         palette.set_icon(self._reanalyze_btn, "mdi.refresh", palette.Role.TEXT_SECONDARY)
-        # Swift's small bordered button: a grey rounded square.
-        self._reanalyze_btn.setStyleSheet("QToolButton { border: none; border-radius: 5px; }")
-        palette.tag(self._reanalyze_btn, background=palette.Role.BACKGROUND_SUBTLE)
+        # A tinted button in text.secondary, as Swift\'s.
+        palette.tag(self._reanalyze_btn, tint=palette.Role.TEXT_SECONDARY)
         self._reanalyze_btn.setIconSize(QtCore.QSize(14, 14))
-        self._reanalyze_btn.setFixedSize(22, 22)
         self._reanalyze_btn.setToolTip(
             "Re-analyze peaks from the spectrum using the current settings"
         )
@@ -1200,11 +1198,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.deselect_all_btn = QtWidgets.QToolButton()
         palette.set_icon(
             self.deselect_all_btn, "mdi.close-circle-outline", palette.Role.TEXT_SECONDARY)
-        # Swift's small bordered button: a grey rounded square.
-        self.deselect_all_btn.setStyleSheet("QToolButton { border: none; border-radius: 5px; }")
-        palette.tag(self.deselect_all_btn, background=palette.Role.BACKGROUND_SUBTLE)
+        # A tinted button in text.secondary, as Swift\'s.
+        palette.tag(self.deselect_all_btn, tint=palette.Role.TEXT_SECONDARY)
         self.deselect_all_btn.setIconSize(QtCore.QSize(14, 14))
-        self.deselect_all_btn.setFixedSize(22, 22)
         self.deselect_all_btn.setToolTip("Deselect all peaks")
         self.deselect_all_btn.setEnabled(False)
         self.deselect_all_btn.setVisible(False)
@@ -1212,11 +1208,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.reset_auto_selection_btn = QtWidgets.QToolButton()
         palette.set_icon(self.reset_auto_selection_btn, "mdi.auto-fix", palette.Role.TEXT_SECONDARY)
-        # Swift's small bordered button: a grey rounded square.
-        self.reset_auto_selection_btn.setStyleSheet("QToolButton { border: none; border-radius: 5px; }")
-        palette.tag(self.reset_auto_selection_btn, background=palette.Role.BACKGROUND_SUBTLE)
+        # A tinted button in text.secondary, as Swift\'s.
+        palette.tag(self.reset_auto_selection_btn, tint=palette.Role.TEXT_SECONDARY)
         self.reset_auto_selection_btn.setIconSize(QtCore.QSize(14, 14))
-        self.reset_auto_selection_btn.setFixedSize(22, 22)
         self.reset_auto_selection_btn.setToolTip("Reset to automatic mode selection")
         self.reset_auto_selection_btn.setEnabled(False)
         self.reset_auto_selection_btn.setVisible(False)
@@ -1759,6 +1753,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Swift: Label(…, systemImage:) at .controlSize(.small).
         self.export_spectrum_btn = QtWidgets.QPushButton("Export Spectrum")
+        palette.tag(self.export_spectrum_btn, plain=True)
         self.export_spectrum_btn.setFont(small_font)
         palette.set_icon(self.export_spectrum_btn, "mdi.chart-line", palette.Role.TEXT_PRIMARY)
         self.export_spectrum_btn.setEnabled(False)
@@ -1766,6 +1761,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _footer_row.addWidget(self.export_spectrum_btn)
 
         self.export_pdf_btn = QtWidgets.QPushButton("Export PDF")
+        palette.tag(self.export_pdf_btn, plain=True)
         self.export_pdf_btn.setFont(small_font)
         palette.set_icon(
             self.export_pdf_btn, "mdi.file-document-outline", palette.Role.TEXT_PRIMARY)
@@ -6041,6 +6037,8 @@ class MainWindow(QtWidgets.QMainWindow):
         df_open_btn = QtWidgets.QPushButton("Open Folder")
         df_change_btn = QtWidgets.QPushButton("Change…")
         df_use_default_btn = QtWidgets.QPushButton("Use Default")
+        for _btn in (df_open_btn, df_change_btn, df_use_default_btn):
+            palette.tag(_btn, tint=palette.Role.ACCENT)
 
         def _refresh_df_path() -> None:
             df_path_lbl.setText(f"Saved to: {_WDF.current_folder()}")

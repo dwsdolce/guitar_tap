@@ -1,0 +1,174 @@
+{
+ "slug": "test/button-style",
+ "about": "What a button the app draws looks like, by kind and state, in every edition (the style guide, §1.3 and §5). 'kind' is plain, tinted (by 'role') or prominent (filled with 'role'); 'state' is rest, hover, pressed, on (a toggle), onHover, or cannotAct. Each case gives the label's role ('text'), the fill as [role, opacity] (opacity null: the role as it is), any wash laid over the fill as [role, opacity] ('wash', null for none), the border's role ('border', null for none), and the opacity the whole button is drawn at ('drawnAt', null: as it is). A prominent button that cannot act is drawn as a plain one, dimmed. Roles and opacities are theme.json's.",
+ "cases": [
+  {
+   "id": "BS1",
+   "kind": "plain",
+   "state": "rest",
+   "text": "text.primary",
+   "fill": [
+    "background.control",
+    null
+   ],
+   "border": "separator",
+   "drawnAt": null,
+   "wash": null
+  },
+  {
+   "id": "BS2",
+   "kind": "plain",
+   "state": "hover",
+   "text": "text.primary",
+   "fill": [
+    "background.control",
+    null
+   ],
+   "border": "separator",
+   "drawnAt": null,
+   "wash": [
+    "accent",
+    "button.plainHover"
+   ]
+  },
+  {
+   "id": "BS3",
+   "kind": "tinted",
+   "role": "accent",
+   "state": "rest",
+   "text": "accent",
+   "fill": [
+    "accent",
+    "button.tintFill"
+   ],
+   "border": null,
+   "drawnAt": null,
+   "wash": null
+  },
+  {
+   "id": "BS4",
+   "kind": "tinted",
+   "role": "accent",
+   "state": "hover",
+   "text": "accent",
+   "fill": [
+    "accent",
+    "button.tintHover"
+   ],
+   "border": null,
+   "drawnAt": null,
+   "wash": null
+  },
+  {
+   "id": "BS5",
+   "kind": "tinted",
+   "role": "accent",
+   "state": "pressed",
+   "text": "accent",
+   "fill": [
+    "accent",
+    "button.tintPressed"
+   ],
+   "border": null,
+   "drawnAt": null,
+   "wash": null
+  },
+  {
+   "id": "BS6",
+   "kind": "tinted",
+   "role": "accent",
+   "state": "on",
+   "text": "accent",
+   "fill": [
+    "accent",
+    "button.tintOn"
+   ],
+   "border": null,
+   "drawnAt": null,
+   "wash": null
+  },
+  {
+   "id": "BS7",
+   "kind": "tinted",
+   "role": "accent",
+   "state": "onHover",
+   "text": "accent",
+   "fill": [
+    "accent",
+    "button.tintOnHover"
+   ],
+   "border": null,
+   "drawnAt": null,
+   "wash": null
+  },
+  {
+   "id": "BS8",
+   "kind": "tinted",
+   "role": "status.warning",
+   "state": "cannotAct",
+   "text": "status.warning",
+   "fill": [
+    "status.warning",
+    "button.tintFill"
+   ],
+   "border": null,
+   "drawnAt": "control.dimmed",
+   "wash": null
+  },
+  {
+   "id": "BS9",
+   "kind": "prominent",
+   "role": "accent",
+   "state": "rest",
+   "text": "text.onColor",
+   "fill": [
+    "accent",
+    null
+   ],
+   "border": null,
+   "drawnAt": null,
+   "wash": null
+  },
+  {
+   "id": "BS10",
+   "kind": "prominent",
+   "role": "accent",
+   "state": "hover",
+   "text": "text.onColor",
+   "fill": [
+    "accent",
+    "button.prominentHover"
+   ],
+   "border": null,
+   "drawnAt": null,
+   "wash": null
+  },
+  {
+   "id": "BS11",
+   "kind": "prominent",
+   "role": "accent",
+   "state": "cannotAct",
+   "text": "text.primary",
+   "fill": [
+    "background.control",
+    null
+   ],
+   "border": "separator",
+   "drawnAt": "control.dimmed",
+   "wash": null
+  },
+  {
+   "id": "BS12",
+   "kind": "plain",
+   "state": "cannotAct",
+   "text": "text.primary",
+   "fill": [
+    "background.control",
+    null
+   ],
+   "border": "separator",
+   "drawnAt": "control.dimmed",
+   "wash": null
+  }
+ ]
+}
