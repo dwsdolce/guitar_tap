@@ -36,8 +36,8 @@ from guitar_tap.views.exportable_spectrum_chart import make_exportable_spectrum_
 from guitar_tap.views.material_dimensions_editor import MaterialDimensionsEditor
 from guitar_tap.views.multi_tap_comparison_results_view import MultiTapComparisonResultsView
 from guitar_tap.views.plate_body_dimensions_editor import PlateBodyDimensionsEditor
-from guitar_tap.views.shared.loading_overlay import LoadingOverlay
 from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
+from guitar_tap.views.shared.value_stepper import ValueStepper
 from guitar_tap.views.utilities import extensions as _ext
 from guitar_tap.views.utilities import palette
 from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole, phase_badge
@@ -651,7 +651,12 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addWidget(self._update_banner)
 
         root.addWidget(self._build_toolbar())
-        root.addWidget(self._build_controls_bar())
+        # The tap controls' rounded box sits inset from the window's edges, as Swift's.
+        controls_row = QtWidgets.QWidget()
+        controls_layout = QtWidgets.QHBoxLayout(controls_row)
+        controls_layout.setContentsMargins(6, 0, 6, 0)
+        controls_layout.addWidget(self._build_controls_bar())
+        root.addWidget(controls_row)
 
         # Content row: canvas (stretch) + divider + results panel (content-sized, always visible)
         content = QtWidgets.QWidget()
@@ -693,11 +698,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Bottom status bar
         root.addWidget(self._build_status_bar())
-
-        # Loading overlay — shown while FftCanvas initialises.
-        # Mirrors Swift LoadingOverlay placed via .overlay on the root content view.
-        self._loading_overlay = LoadingOverlay(main_widget)
-        self._loading_overlay.show_message("Starting audio…")
 
         # Defer FftCanvas construction (audio device query + analyzer start) until
         # after the window is shown so the user sees the UI immediately.
@@ -851,10 +851,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """Top button bar: display toggles, save, measurements."""
         bar = QtWidgets.QWidget()
         bar.setObjectName("toolbar")
-        # Its buttons are Swift's .buttonStyle(.bordered).tint(.accent) — tagged below — and its bottom
-        # edge is the separator.
-        bar.setStyleSheet("#toolbar { border-bottom-width: 1px; border-bottom-style: solid; }")
-        palette.tag(bar, border=palette.Role.SEPARATOR)
+        # Its buttons are Swift's .buttonStyle(.bordered).tint(.accent) — tagged below. The row has no
+        # surface of its own, as Swift's.
         hl = QtWidgets.QHBoxLayout(bar)
         hl.setContentsMargins(8, 4, 8, 4)
         hl.setSpacing(6)
@@ -934,17 +932,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_controls_bar(self) -> QtWidgets.QWidget:
         """Controls bar: Taps | Threshold | Peak Min || New Tap | Pause | Cancel"""
-        bar = QtWidgets.QWidget()
+        # Swift's tap controls: a rounded box on background.subtle, no border. The objectName selector keeps
+        # the shape to this frame, not the frames inside it.
+        bar = QtWidgets.QFrame()
         bar.setObjectName("controls_bar")
-        bar.setStyleSheet("#controls_bar { border-bottom-width: 1px; border-bottom-style: solid; }")
-        palette.tag(bar, border=palette.Role.SEPARATOR)
+        bar.setStyleSheet("#controls_bar { border-radius: 8px; }")
+        palette.tag(bar, background=palette.Role.BACKGROUND_SUBTLE)
         hl = QtWidgets.QHBoxLayout(bar)
-        hl.setContentsMargins(6, 2, 6, 2)
+        hl.setContentsMargins(8, 4, 8, 4)
         hl.setSpacing(4)
 
         app_pt = QtWidgets.QApplication.font().pointSize()
         caption_font = QtGui.QFont(bar.font())
-        caption_font.setPointSize(max(8, (app_pt if app_pt > 0 else 13) - 2))
+        # Swift's caption: 10 pt beside a 13 pt body on macOS.
+        caption_font.setPointSize(max(8, (app_pt if app_pt > 0 else 13) - 3))
 
         def _lbl(text: str) -> QtWidgets.QLabel:
             w = QtWidgets.QLabel(text)
@@ -957,7 +958,6 @@ class MainWindow(QtWidgets.QMainWindow):
             min_db: int,
             max_db: int,
             current_val: int,   # canvas 0-100 scale
-            default_val: int,   # canvas 0-100 scale
             tip: str,
             value_role: palette.Role,
             with_level_meter: bool = False,
@@ -1003,14 +1003,14 @@ class MainWindow(QtWidgets.QMainWindow):
             reset_btn = QtWidgets.QToolButton()
             palette.set_icon(reset_btn, "mdi.restore", palette.Role.TEXT_SECONDARY)
             reset_btn.setStyleSheet("border: none")
-            reset_btn.setToolTip(f"Reset to default ({default_val - 100} dB)")
+            reset_btn.setToolTip("Reset to default")
             reset_btn.setFixedSize(18, 18)
             gl.addWidget(reset_btn)
 
             return group, slider, readout, reset_btn
 
         # ── Taps ──────────────────────────────────────────────────────────
-        # The label and the spinner in one widget, dimmed as one field while a sequence runs, as
+        # The label, the count and its stepper in one widget, dimmed as one field while a sequence runs, as
         # Swift's `.disabledDimmed(tapCountLocked)` on its group.
         self._taps_group = QtWidgets.QWidget()
         taps_layout = QtWidgets.QHBoxLayout(self._taps_group)
@@ -1019,15 +1019,9 @@ class MainWindow(QtWidgets.QMainWindow):
         hl.addWidget(self._taps_group)
         self.tap_num_label = _lbl("Taps:")
         taps_layout.addWidget(self.tap_num_label)
-        self.tap_num_spin = QtWidgets.QSpinBox()
-        self.tap_num_spin.setMinimum(1)
-        self.tap_num_spin.setMaximum(10)
-        self.tap_num_spin.setValue(1)
-        self.tap_num_spin.setToolTip("Number of taps to accumulate and average")
-        self.tap_num_spin.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self.tap_num_spin.setMinimumWidth(60)
-        self.tap_num_spin.setMaximumWidth(65)
-        taps_layout.addWidget(self.tap_num_spin)
+        self.tap_num_stepper = ValueStepper(1, 10, caption_font)
+        self.tap_num_stepper.setToolTip("Number of taps to accumulate and average")
+        taps_layout.addWidget(self.tap_num_stepper)
 
         hl.addWidget(palette.divider(vertical=True))
 
@@ -1038,7 +1032,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tap_thresh_val = AS.AppSettings.tap_threshold()   # 0-100 scale
         _, self.tap_threshold_slider, self.tap_threshold_readout, self.tap_threshold_reset_btn = \
             _db_slider_group(
-                "Threshold:", -80, -20, tap_thresh_val, 60,
+                "Threshold:", -80, -20, tap_thresh_val,
                 "Signal level that triggers tap detection.\n"
                 "Bar shows live input RMS level; amber dot is peak-hold;\n"
                 "right edge turns red when input is clipping.",
@@ -1053,7 +1047,7 @@ class MainWindow(QtWidgets.QMainWindow):
         peak_min_val = int(AS.AppSettings.peak_min_threshold()) + 100   # 0-100 scale
         self._peak_min_group, self.peak_min_slider, self.peak_min_readout, self.peak_min_reset_btn = \
             _db_slider_group(
-                "Peak Min:", -100, -20, peak_min_val, 40,
+                "Peak Min:", -100, -20, peak_min_val,
                 "Minimum magnitude a spectral peak must have to be reported\n"
                 "(shown as green line on the spectrum)",
                 palette.Role.CHART_PEAK_MIN,
@@ -1293,29 +1287,12 @@ class MainWindow(QtWidgets.QMainWindow):
         bs_vbox.setContentsMargins(0, 0, 0, 0)
         bs_vbox.setSpacing(2)
 
-        # Placeholder shown when no L peak is assigned
-        self._brace_placeholder = QtWidgets.QWidget()
-        _bp_vbox = QtWidgets.QVBoxLayout(self._brace_placeholder)
-        _bp_vbox.setContentsMargins(0, 8, 0, 8)
-        _bp_p1 = QtWidgets.QLabel("Select the fL (L) peak above to calculate properties")
-        _bp_p1.setWordWrap(True)
-        palette.tag(_bp_p1, color=palette.Role.TEXT_SECONDARY)
-        _bp_p1.setFont(small_font)
-        _bp_vbox.addWidget(_bp_p1)
-        _bp_p2 = QtWidgets.QLabel("Tip: The dominant peak is auto-selected after tapping")
-        _bp_p2.setWordWrap(True)
-        palette.tag(_bp_p2, color=palette.Role.TEXT_SECONDARY)
-        _bp_p2.setFont(small_font)
-        _bp_vbox.addWidget(_bp_p2)
-        bs_vbox.addWidget(self._brace_placeholder)
-
-        # Content shown when L peak IS assigned — titled boxes in Swift's order:
+        # The brace's properties — titled boxes in Swift's order:
         # Sample Dimensions -> Brace Properties.
         self._brace_content = QtWidgets.QWidget()
         bc_vbox = QtWidgets.QVBoxLayout(self._brace_content)
         bc_vbox.setContentsMargins(0, 0, 0, 0)
         bc_vbox.setSpacing(12)
-        self._brace_content.setVisible(False)
         bs_vbox.addWidget(self._brace_content)
 
         # Sample Dimensions box (editable, Store B) — mirrors Swift sampleDimensionsSection. The fL
@@ -1368,32 +1345,11 @@ class MainWindow(QtWidgets.QMainWindow):
         ps_vbox.setContentsMargins(0, 0, 0, 0)
         ps_vbox.setSpacing(2)
 
-        # Placeholder shown when L or C peak not yet assigned
-        self._plate_placeholder = QtWidgets.QWidget()
-        _pp_vbox = QtWidgets.QVBoxLayout(self._plate_placeholder)
-        _pp_vbox.setContentsMargins(0, 8, 0, 8)
-        self._plate_placeholder_lbl = QtWidgets.QLabel(
-            "Select peaks above to calculate properties"
-        )
-        self._plate_placeholder_lbl.setWordWrap(True)
-        palette.tag(self._plate_placeholder_lbl, color=palette.Role.TEXT_SECONDARY)
-        self._plate_placeholder_lbl.setFont(small_font)
-        _pp_vbox.addWidget(self._plate_placeholder_lbl)
-        _pp_p2 = QtWidgets.QLabel(
-            "Tip: The longitudinal mode is typically the higher frequency peak"
-        )
-        _pp_p2.setWordWrap(True)
-        palette.tag(_pp_p2, color=palette.Role.TEXT_SECONDARY)
-        _pp_p2.setFont(small_font)
-        _pp_vbox.addWidget(_pp_p2)
-        ps_vbox.addWidget(self._plate_placeholder)
-
-        # Content shown when L and C are assigned
+        # The plate's properties
         self._plate_content = QtWidgets.QWidget()
         pc_vbox = QtWidgets.QVBoxLayout(self._plate_content)
         pc_vbox.setContentsMargins(0, 0, 0, 0)
         pc_vbox.setSpacing(2)
-        self._plate_content.setVisible(False)
         ps_vbox.addWidget(self._plate_content)
 
         pc_vbox.setSpacing(12)  # gap between titled boxes
@@ -2256,7 +2212,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_pdf_btn.clicked.connect(self._on_export_pdf)
 
         # Tap accumulator
-        self.tap_num_spin.valueChanged.connect(self._on_tap_num_changed)
+        self.tap_num_stepper.valueChanged.connect(self._on_tap_num_changed)
 
         # Microphone permission: the engine decides; the alert shows when it is refused. Mirrors
         # Swift's onChange.
@@ -2344,42 +2300,39 @@ class MainWindow(QtWidgets.QMainWindow):
         Mirrors Swift's .task { } modifier which defers async work until after
         the first render pass.
         """
-        try:
-            # Deferred heavy imports — pyqtgraph (~4 s) and sounddevice (~0.4 s)
-            # load here, after the window is already visible.
-            # Inject into the module namespace so all other methods can use them
-            # as if they were top-level imports.
-            import sys as _sys
+        # Deferred heavy imports — pyqtgraph (~4 s) and sounddevice (~0.4 s)
+        # load here, after the window is already visible.
+        # Inject into the module namespace so all other methods can use them
+        # as if they were top-level imports.
+        import sys as _sys
 
-            import guitar_tap.views.fft_analysis_metrics_view as FMV
-            import guitar_tap.views.fft_canvas as fft_c
-            import guitar_tap.views.help_view as HD
-            import guitar_tap.views.measurements.measurements_list_view as MD
-            import guitar_tap.views.save_measurement_sheet as SMD
-            _m = _sys.modules[__name__]
-            _m.fft_c = fft_c
-            _m.MD = MD
-            _m.SMD = SMD
-            _m.HD = HD
-            _m.FMV = FMV
+        import guitar_tap.views.fft_analysis_metrics_view as FMV
+        import guitar_tap.views.fft_canvas as fft_c
+        import guitar_tap.views.help_view as HD
+        import guitar_tap.views.measurements.measurements_list_view as MD
+        import guitar_tap.views.save_measurement_sheet as SMD
+        _m = _sys.modules[__name__]
+        _m.fft_c = fft_c
+        _m.MD = MD
+        _m.SMD = SMD
+        _m.HD = HD
+        _m.FMV = FMV
 
-            self.fft_canvas = fft_c.FftCanvas(
-                self._sampling_rate,
-                self._f_range,
-                self.threshold,
-            )
-            self.fft_canvas.setMinimumSize(500, 350)
+        self.fft_canvas = fft_c.FftCanvas(
+            self._sampling_rate,
+            self._f_range,
+            self.threshold,
+        )
+        self.fft_canvas.setMinimumSize(500, 350)
 
-            # Swap the placeholder out and insert the real canvas at index 0
-            # (the placeholder occupies stretch index 0; material panel is index 1).
-            placeholder = self._canvas_placeholder
-            self._cv.replaceWidget(placeholder, self.fft_canvas)
-            placeholder.deleteLater()
+        # Swap the placeholder out and insert the real canvas at index 0
+        # (the placeholder occupies stretch index 0; material panel is index 1).
+        placeholder = self._canvas_placeholder
+        self._cv.replaceWidget(placeholder, self.fft_canvas)
+        placeholder.deleteLater()
 
-            self._connect_signals()
-            self._init_state(self._f_range)
-        finally:
-            self._loading_overlay.hide()
+        self._connect_signals()
+        self._init_state(self._f_range)
         error = getattr(getattr(self, "fft_canvas", None), "engine_start_error", None)
         if error:
             QtWidgets.QMessageBox.warning(self, "Audio Engine Error", error)
@@ -3076,7 +3029,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         from guitar_tap.models.button_enablement import ButtonState, button_rule
 
-        tap_num = self.tap_num_spin.value()
+        tap_num = self.tap_num_stepper.value()
         mt = TDS.measurement_type()
         analyzer = self.fft_canvas.analyzer
 
@@ -3881,8 +3834,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._brace_quality_lbl.setText(props.quality)
         palette.tag(self._brace_quality_lbl, color=q_role)
         self._brace_rad_ratio.setText(f"{fp.string(props.radiation_ratio, fp.RADIATION_RATIO)}")
-        self._brace_placeholder.setVisible(False)
-        self._brace_content.setVisible(True)
         self._brace_section.setVisible(True)
         self._plate_section.setVisible(False)
         self._material_section.setVisible(True)
@@ -3952,8 +3903,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._gore_section.setVisible(False)
         except Exception:
             self._gore_section.setVisible(False)
-        self._plate_placeholder.setVisible(False)
-        self._plate_content.setVisible(True)
         self._brace_section.setVisible(False)
         self._plate_section.setVisible(True)
         self._material_section.setVisible(True)
@@ -4510,7 +4459,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # ── Analysis settings sliders/spinners, from the model, without writing back ──
         for _w, _v in ((self.tap_threshold_slider, int(analyzer.tap_detection_threshold)),
                        (self.peak_min_slider, int(analyzer.peak_min_threshold)),
-                       (self.tap_num_spin, analyzer.number_of_taps)):
+                       (self.tap_num_stepper, analyzer.number_of_taps)):
             _w.blockSignals(True)
             _w.setValue(_v)
             _w.blockSignals(False)
@@ -4667,7 +4616,6 @@ class MainWindow(QtWidgets.QMainWindow):
             path += ".png"
         M.update_export_dir(path)
 
-        self._loading_overlay.show_message("Exporting spectrum…")
         try:
             png_bytes = self._create_exportable_spectrum_view()
             with open(path, "wb") as f:
@@ -4675,8 +4623,6 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             from guitar_tap.views.tap_analysis_results_view import export_failure_message
             QtWidgets.QMessageBox.warning(self, "Export Failed", export_failure_message(exc, path))
-        finally:
-            self._loading_overlay.hide()
 
     def _on_export_pdf(self) -> None:
 
@@ -4713,7 +4659,6 @@ class MainWindow(QtWidgets.QMainWindow):
             path += ".pdf"
         M.update_export_dir(path)
 
-        self._loading_overlay.show_message("Generating PDF report…")
         try:
             # Mirrors Swift exportPDFReport() which reads live analyzer state
             # directly — no TapToneMeasurement is constructed at any point.
@@ -4886,8 +4831,6 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export PDF:\n{exc}"
             )
-        finally:
-            self._loading_overlay.hide()
 
     def _on_export_comparison_pdf(self) -> None:
         """Export a comparison PDF report from the live comparison state.
@@ -4919,7 +4862,6 @@ class MainWindow(QtWidgets.QMainWindow):
             path += ".pdf"
         M.update_export_dir(path)
 
-        self._loading_overlay.show_message("Generating comparison PDF report…")
         try:
             canvas   = self.fft_canvas
             analyzer = canvas.analyzer
@@ -4994,8 +4936,6 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export comparison PDF:\n{exc}"
             )
-        finally:
-            self._loading_overlay.hide()
 
     def _on_export_multi_tap_pdf(self) -> None:
         """Export a two-page multi-tap PDF report from live multi-tap state.
@@ -5025,7 +4965,6 @@ class MainWindow(QtWidgets.QMainWindow):
             path += ".pdf"
         M.update_export_dir(path)
 
-        self._loading_overlay.show_message("Generating multi-tap PDF report…")
         try:
             canvas   = self.fft_canvas
             analyzer = canvas.analyzer
@@ -5234,8 +5173,6 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(
                 self, "Export Error", f"Could not export multi-tap PDF:\n{exc}"
             )
-        finally:
-            self._loading_overlay.hide()
 
     # ================================================================
     # Device management

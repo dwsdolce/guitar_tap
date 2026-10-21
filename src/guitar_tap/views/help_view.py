@@ -819,15 +819,8 @@ class HelpDialog(QtWidgets.QDialog):
         palette.surface(self, Role.BACKGROUND_PANEL)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 8)
+        layout.setContentsMargins(0, 0, 0, 0)
 
+        # Closed by the window's own close, as Swift's.
         browser = HelpBrowser()
         layout.addWidget(browser)
-
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(self.close)
-        btn_layout = QtWidgets.QHBoxLayout()
-        btn_layout.addStretch()
-        btn_layout.addWidget(close_btn)
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)

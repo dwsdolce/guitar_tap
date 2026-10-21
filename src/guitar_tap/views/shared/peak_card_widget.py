@@ -533,6 +533,12 @@ class PeakListWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
+        # Shown while the list is empty, at its top, as Swift's.
+        self._empty_lbl = QtWidgets.QLabel("No peaks detected in visible range")
+        self._empty_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._empty_lbl.setContentsMargins(0, 12, 0, 12)
+        palette.tag(self._empty_lbl, color=palette.Role.TEXT_SECONDARY)
+        layout.addWidget(self._empty_lbl)
         layout.addWidget(scroll, 1)
 
         # Ensure the right panel is never narrower than a readable card width
@@ -561,6 +567,7 @@ class PeakListWidget(QtWidgets.QWidget):
                 item.widget().deleteLater()
         self._cards.clear()
 
+        self._empty_lbl.setVisible(data.shape[0] == 0)
         if data.shape[0] == 0:
             self.updateGeometry()
             return

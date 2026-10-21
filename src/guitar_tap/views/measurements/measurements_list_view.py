@@ -20,7 +20,7 @@ Right-click    → context menu: Load into View | View Details | Edit Name & Not
 
 import os
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from guitar_tap.models import TapToneMeasurement
 from guitar_tap.views import tap_analysis_results_view as M
@@ -28,6 +28,7 @@ from guitar_tap.views.exportable_spectrum_chart import ExportRenderError
 from guitar_tap.views.measurements import edit_measurement_view as EMV
 from guitar_tap.views.measurements import measurement_detail_view as MDD
 from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
+from guitar_tap.views.shared.empty_state_view import EmptyStateView
 from guitar_tap.views.utilities import palette
 
 # ── Main dialog ───────────────────────────────────────────────────────────────
@@ -90,13 +91,13 @@ class MeasurementsDialog(QtWidgets.QDialog):
         root.addWidget(self._list)
 
         # ── Empty state ───────────────────────────────────────────────────────
-        self._empty_lbl = QtWidgets.QLabel(
-            "No Saved Measurements\n\n"
-            "Tap the guitar and click Save to store measurements for comparison."
+        # Swift's EmptyStateView: the tray icon (the nearest Material Design icon), the title and the message.
+        self._empty_lbl = EmptyStateView(
+            icon="mdi.inbox-outline",
+            title="No Saved Measurements",
+            message="Tap the guitar and click Save to store measurements for comparison.",
         )
-        self._empty_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        palette.tag(self._empty_lbl, color=palette.Role.TEXT_SECONDARY)
-        root.addWidget(self._empty_lbl)
+        root.addWidget(self._empty_lbl, 1)
 
         # ── Bottom button bar ─────────────────────────────────────────────────
         # Layout: [Compare…] [Import] [Delete All]  ···  [Done / Cancel]

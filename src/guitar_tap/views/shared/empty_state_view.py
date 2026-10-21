@@ -1,14 +1,15 @@
 """
-Empty state placeholder widget.
+Empty state — shown where a list has no items: an icon, a title and a message, centred.
 
-Mirrors Swift's EmptyStateView.swift — a centred label shown when a list
-has no items, with a title and an optional subtitle.
+Mirrors Swift's EmptyStateView.swift: the icon at 60 pt in text.secondary, the title semibold and larger in
+text.primary, the message in text.secondary.
 
 Usage::
 
     empty = EmptyStateView(
+        icon="mdi.inbox-outline",
         title="No Saved Measurements",
-        subtitle="Tap the guitar and click Save to store measurements for comparison.",
+        message="Tap the guitar and click Save to store measurements for comparison.",
     )
     layout.addWidget(empty)
     empty.setVisible(not has_items)
@@ -22,26 +23,31 @@ from guitar_tap.views.utilities import palette
 
 
 class EmptyStateView(QtWidgets.QWidget):
-    """Centred placeholder shown when a list is empty."""
+    """An empty list's placeholder: an icon, a title and a message. Mirrors Swift ``EmptyStateView``."""
 
-    def __init__(
-        self,
-        title: str = "No Items",
-        subtitle: str = "",
-        parent: QtWidgets.QWidget | None = None,
-    ) -> None:
+    def __init__(self, icon: str, title: str, message: str, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
-
         layout = QtWidgets.QVBoxLayout(self)
         layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(8)
+        layout.setSpacing(20)
 
-        text = title
-        if subtitle:
-            text = f"{title}\n\n{subtitle}"
+        icon_lbl = QtWidgets.QLabel()
+        icon_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        palette.set_icon(icon_lbl, icon, palette.Role.TEXT_SECONDARY, 60)
+        layout.addWidget(icon_lbl)
 
-        label = QtWidgets.QLabel(text)
-        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        label.setWordWrap(True)
-        palette.tag(label, color=palette.Role.TEXT_SECONDARY)
-        layout.addWidget(label)
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        font = title_lbl.font()
+        font.setPointSizeF(font.pointSizeF() + 4)  # Swift's .title2 beside .body
+        font.setWeight(font.Weight.DemiBold)
+        title_lbl.setFont(font)
+        palette.tag(title_lbl, color=palette.Role.TEXT_PRIMARY)
+        layout.addWidget(title_lbl)
+
+        message_lbl = QtWidgets.QLabel(message)
+        message_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        message_lbl.setWordWrap(True)
+        message_lbl.setContentsMargins(40, 0, 40, 0)
+        palette.tag(message_lbl, color=palette.Role.TEXT_SECONDARY)
+        layout.addWidget(message_lbl)
