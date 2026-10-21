@@ -160,6 +160,16 @@ if __name__ == "__main__":
     # "<org>/" path component, and all QSettings call sites already pass org/app.
     QtCore.QCoreApplication.setApplicationName("guitar-tap")
 
+    # Draw "⚠" plain on Windows. Qt ignores the U+FE0E that asks for the text form: Segoe UI has
+    # no ⚠, so Qt falls back to the first font that does, the colour Segoe UI Emoji. Segoe UI
+    # Symbol's ⚠ is single-colour; listed after the app font, it is found first. Every font in the
+    # app is a copy of this one, so the status line, the device label, the import alert and the
+    # Quick Start all follow; Segoe UI is still tried first for every other character.
+    if os.name == "nt":
+        _app_font = qapp.font()
+        _app_font.setFamilies(list(_app_font.families()) + ["Segoe UI Symbol"])
+        qapp.setFont(_app_font)
+
     # Install an unhandled-exception hook so background thread crashes also
     # get logged rather than silently swallowed on Windows (console=False build).
     def _excepthook(exc_type, exc_value, exc_tb):
