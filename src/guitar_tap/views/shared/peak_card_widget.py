@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
-import qtawesome as qta
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import field_precision as fp
@@ -292,7 +291,7 @@ class PeakCardWidget(QtWidgets.QFrame):
             icon_name = gm.GuitarMode.USER_DEFINED_ICON
         else:
             icon_name = (guitar_mode or gm.GuitarMode.UNKNOWN).icon
-        pixmap = qta.icon(icon_name, color=QtGui.QColor(r, g, b)).pixmap(
+        pixmap = palette.icon(icon_name, QtGui.QColor(r, g, b)).pixmap(
             QtCore.QSize(18, 18)
         )
         self._chip.setPixmap(pixmap)
@@ -312,16 +311,14 @@ class PeakCardWidget(QtWidgets.QFrame):
         )
         self._mode_btn.setEnabled(self._is_held)
 
-        # Range badge — mirrors Swift, which shows it only for a classified mode that
-        # is neither Unknown nor Upper Modes, and keys it off the AUTO-classified mode
-        # (analyzer.peakMode(for:) -> self._auto_mode), NOT any manual override label.
+        # Classified mark — mirrors Swift: a check for a peak the analyzer classified, neither
+        # Unknown nor Upper Modes, keyed off the AUTO-classified mode (analyzer.peakMode(for:) ->
+        # self._auto_mode), not a manual label. A classified peak is always inside its mode's
+        # range: classification assigns a mode only to a peak within it.
         auto_gmode = gm.GuitarMode.from_display_name(self._auto_mode)
         if auto_gmode not in (None, gm.GuitarMode.UNKNOWN, gm.GuitarMode.UPPER_MODES):
-            in_range = gm.in_mode_range(self._freq, self._auto_mode, self._guitar_type)
-            self._badge.setText("✓" if in_range else "⚠")
-            badge_role = (
-                palette.Role.PEAK_IN_RANGE if in_range else palette.Role.PEAK_OUT_OF_RANGE)
-            self._badge.setStyleSheet(f"color: {palette.qss(badge_role)};")
+            self._badge.setText("✓")
+            self._badge.setStyleSheet(f"color: {palette.qss(palette.Role.PEAK_IN_RANGE)};")
             self._badge.setVisible(True)
         else:
             self._badge.setVisible(False)
@@ -335,7 +332,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._pitch_lbl.setText(f"{note} ({'+' if cents >= 0 else ''}{cents:.0f} ¢)")
         self._pitch_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.PEAK_PITCH)};")
         self._note_icon.setPixmap(
-            qta.icon("mdi.music-note", color=palette.color(palette.Role.PEAK_PITCH)).pixmap(10, 12))
+            palette.icon("mdi.music-note", palette.color(palette.Role.PEAK_PITCH)).pixmap(10, 12))
 
     def _refresh_qbw(self) -> None:
         self._qbw_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.TEXT_SECONDARY)};")

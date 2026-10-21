@@ -59,6 +59,8 @@ _spec = _ilu.spec_from_file_location("help_view", _help_view_path)
 _mod  = _ilu.module_from_spec(_spec)   # type: ignore[arg-type]
 _spec.loader.exec_module(_mod)         # type: ignore[union-attr]
 
+# One PDF serves every desktop platform: write each shortcut in both forms.
+_mod.KEY_STYLE = "both"
 get_help_html = _mod.get_help_html
 
 

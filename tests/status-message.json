@@ -228,7 +228,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ Input clipping — reduce mic gain"
+      "statusMessage": "⚠︎ Input clipping — reduce mic gain"
      }
     },
     {
@@ -236,7 +236,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ Input clipping — reduce mic gain"
+      "statusMessage": "⚠︎ Input clipping — reduce mic gain"
      }
     },
     {

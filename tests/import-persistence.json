@@ -427,7 +427,7 @@
     }
    ],
    "expect": {
-    "messageStartsWith": "Successfully imported and loaded 1 measurement\n\n⚠️ This measurement was recorded with a microphone named 'No Such Microphone (test)'",
+    "messageStartsWith": "Successfully imported and loaded 1 measurement\n\n⚠︎ This measurement was recorded with a microphone named 'No Such Microphone (test)'",
     "microphoneWarning": false
    }
   },

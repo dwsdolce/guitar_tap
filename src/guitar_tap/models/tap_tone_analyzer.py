@@ -915,18 +915,18 @@ class TapToneAnalyzer(
     # the guard that keeps a second route change from capturing it as the pre-settle status.
     ROUTE_CHANGE_STATUS = "Audio device changed - reinitializing..."
 
-    CLIPPING_WARNING_STATUS = "⚠ Input clipping — reduce mic gain"
-    DEAD_INPUT_STATUS = "⚠ No audio input — check the microphone connection"
+    CLIPPING_WARNING_STATUS = "⚠\ufe0e Input clipping — reduce mic gain"
+    DEAD_INPUT_STATUS = "⚠\ufe0e No audio input — check the microphone connection"
     # Shown once the recovery has given up after restarts that failed. Outranks every other input
     # warning. Mirrors Swift `couldNotRestartStatus`.
-    COULD_NOT_RESTART_STATUS = ("⚠ The microphone could not be restarted — check its connection, "
+    COULD_NOT_RESTART_STATUS = ("⚠\ufe0e The microphone could not be restarted — check its connection, "
                                 "or choose it again in Settings")
     # Shown while the microphone permission is refused. Outranks every other input warning. Mirrors
     # Swift `microphoneAccessStatus`.
-    MICROPHONE_ACCESS_STATUS = "⚠ Microphone access required — enable it in Settings, then restart GuitarTap"
+    MICROPHONE_ACCESS_STATUS = "⚠\ufe0e Microphone access required — enable it in Settings, then restart GuitarTap"
     # Shown while the input could not be started. Ranks just below the permission warning. Mirrors
     # Swift `couldNotStartStatus`.
-    COULD_NOT_START_STATUS = ("⚠ The audio input could not be started — check it, or choose another "
+    COULD_NOT_START_STATUS = ("⚠\ufe0e The audio input could not be started — check it, or choose another "
                               "input in Settings")
 
     def _set_clipping(self, clipping: bool) -> None:

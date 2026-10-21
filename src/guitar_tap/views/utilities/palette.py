@@ -88,7 +88,6 @@ class Role(Enum):
     PEAK_SELECTED_STAR = "peak.selectedStar"
     PEAK_UNSELECTED_STAR = "peak.unselectedStar"
     PEAK_IN_RANGE = "peak.inRange"
-    PEAK_OUT_OF_RANGE = "peak.outOfRange"
     QUALITY_GRAY = "quality.gray"
     QUALITY_ORANGE = "quality.orange"
     QUALITY_YELLOW = "quality.yellow"
@@ -232,7 +231,6 @@ PAIRS: dict[Role, ColorPair] = {
     Role.PEAK_SELECTED_STAR: ColorPair("#007AFF", "#0A84FF"),
     Role.PEAK_UNSELECTED_STAR: ColorPair("#6B7785", "#8A96A5"),
     Role.PEAK_IN_RANGE: ColorPair("#34C759", "#30D158"),
-    Role.PEAK_OUT_OF_RANGE: ColorPair("#FF9500", "#FF9F0A"),
     Role.QUALITY_GRAY: ColorPair("#8E8E93", "#8E8E93"),
     Role.QUALITY_ORANGE: ColorPair("#FF9500", "#FF9F0A"),
     Role.QUALITY_YELLOW: ColorPair("#FFCC00", "#FFD60A"),
@@ -635,19 +633,73 @@ def set_on(widget: QtWidgets.QWidget, on: bool) -> None:
     style.polish(widget)
 
 
-def set_icon(widget: QtWidgets.QWidget, name: str, role: Role, size: int | None = None) -> None:
-    """Draw the qtawesome icon ``name`` in ``role`` on a button (its icon) or a label (a pixmap of
-    ``size``), and again on every change of scheme. On a button that cannot act, the role at control.dimmed — the
-    button is drawn whole at that opacity (style guide §1.3)."""
+class _SvgIconEngine(QtGui.QIconEngine):
+    """Draws one of the app's own SVG icons (stroked in currentColor) in a colour, at any size and pixel ratio."""
+
+    def __init__(self, svg: str, color: QtGui.QColor, color_disabled: QtGui.QColor | None) -> None:
+        super().__init__()
+        self._svg = svg
+        self._color = QtGui.QColor(color)
+        self._color_disabled = QtGui.QColor(color_disabled) if color_disabled is not None else None
+
+    def paint(self, painter: QtGui.QPainter, rect: QtCore.QRect, mode: QtGui.QIcon.Mode,
+              state: QtGui.QIcon.State) -> None:
+        from PySide6 import QtSvg
+
+        c = self._color_disabled if mode == QtGui.QIcon.Mode.Disabled and self._color_disabled is not None \
+            else self._color
+        svg = self._svg.replace("currentColor", c.name(QtGui.QColor.NameFormat.HexRgb))
+        # Drawn whole, then made translucent once, so overlapping strokes are no darker than the rest.
+        layer = QtGui.QImage(rect.size() * max(1.0, painter.device().devicePixelRatioF()),
+                             QtGui.QImage.Format.Format_ARGB32_Premultiplied)
+        layer.fill(QtCore.Qt.GlobalColor.transparent)
+        inner = QtGui.QPainter(layer)
+        inner.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        QtSvg.QSvgRenderer(QtCore.QByteArray(svg.encode())).render(inner, QtCore.QRectF(layer.rect()))
+        inner.end()
+        painter.save()
+        painter.setOpacity(painter.opacity() * c.alphaF())
+        painter.drawImage(QtCore.QRectF(rect), layer)
+        painter.restore()
+
+    def pixmap(self, size: QtCore.QSize, mode: QtGui.QIcon.Mode, state: QtGui.QIcon.State) -> QtGui.QPixmap:
+        image = QtGui.QImage(size, QtGui.QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(QtCore.Qt.GlobalColor.transparent)
+        painter = QtGui.QPainter(image)
+        self.paint(painter, QtCore.QRect(QtCore.QPoint(0, 0), size), mode, state)
+        painter.end()
+        return QtGui.QPixmap.fromImage(image)
+
+    def clone(self) -> "QtGui.QIconEngine":
+        return _SvgIconEngine(self._svg, self._color, self._color_disabled)
+
+
+def icon(name: str, color: QtGui.QColor, color_disabled: QtGui.QColor | None = None) -> QtGui.QIcon:
+    """The icon ``name`` in ``color`` (and ``color_disabled`` when it cannot act): a Material Design icon from
+    qtawesome ("mdi.…"), or one of the app's own ("gt.…", from custom_icons — for the SF Symbols with no Material
+    Design equivalent). Every icon the edition draws comes through here."""
+    if name.startswith("gt."):
+        from guitar_tap.views.utilities.custom_icons import SVG
+
+        return QtGui.QIcon(_SvgIconEngine(SVG[name], color, color_disabled))
     import qtawesome as qta
 
+    if color_disabled is None:
+        return qta.icon(name, color=color)
+    return qta.icon(name, color=color, color_disabled=color_disabled)
+
+
+def set_icon(widget: QtWidgets.QWidget, name: str, role: Role, size: int | None = None) -> None:
+    """Draw the icon ``name`` (see ``icon``) in ``role`` on a button (its icon) or a label (a pixmap of
+    ``size``), and again on every change of scheme. On a button that cannot act, the role at control.dimmed — the
+    button is drawn whole at that opacity (style guide §1.3)."""
     dimmed = QtGui.QColor(color(role))
     dimmed.setAlphaF(dimmed.alphaF() * opacity(Opacity.CONTROL_DIMMED))
-    icon = qta.icon(name, color=color(role), color_disabled=dimmed)
+    drawn = icon(name, color(role), dimmed)
     if isinstance(widget, QtWidgets.QAbstractButton):
-        widget.setIcon(icon)
+        widget.setIcon(drawn)
     else:
-        widget.setPixmap(icon.pixmap(size or 16, size or 16))
+        widget.setPixmap(drawn.pixmap(size or 16, size or 16))
     key = id(widget)
     if key not in _icons:
         widget.destroyed.connect(lambda *_: _icons.pop(key, None))
@@ -674,12 +726,9 @@ _MENU_ICON_PROPERTY = "menuIcon"
 
 
 def _menu_icon(menu: QtWidgets.QMenu, name: str, highlighted: bool) -> QtGui.QIcon:
-    import qtawesome as qta
-
     pal = menu.palette()
     role = QtGui.QPalette.ColorRole.HighlightedText if highlighted else QtGui.QPalette.ColorRole.Text
-    return qta.icon(name, color=pal.color(role),
-                    color_disabled=pal.color(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Text))
+    return icon(name, pal.color(role), pal.color(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Text))
 
 
 def _follow_menu_highlight(menu: QtWidgets.QMenu, highlighted: "QtGui.QAction | None") -> None:

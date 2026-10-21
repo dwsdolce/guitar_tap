@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import qtawesome as qta
 from PySide6 import QtCore, QtWidgets
 
 from guitar_tap.views.utilities import palette
@@ -20,8 +19,8 @@ from guitar_tap.views.utilities.palette import Role, Scheme
 # ---------------------------------------------------------------------------
 
 def _icon_img(name: str, size: int, role: Role) -> str:
-    """Render a qtawesome icon in ``role`` and return an inline <img> data-URI tag."""
-    pixmap = qta.icon(name, color=palette.color(role)).pixmap(size, size)
+    """Render the icon ``name`` in ``role`` and return an inline <img> data-URI tag."""
+    pixmap = palette.icon(name, palette.color(role)).pixmap(size, size)
     ba = QtCore.QByteArray()
     buf = QtCore.QBuffer(ba)
     buf.open(QtCore.QIODevice.OpenModeFlag.WriteOnly)
@@ -67,6 +66,32 @@ def _row(title: str, body: str, icons: list[str] | None = None) -> str:
 # ---------------------------------------------------------------------------
 # HTML builder
 # ---------------------------------------------------------------------------
+
+# How the help writes a shortcut: "platform" — this platform's form only, as the app shows it; "both" — both forms,
+# for the Quick-Start PDF, which one build makes for every desktop platform.
+KEY_STYLE = "platform"
+
+
+def _keys(apple: str, other: str) -> str:
+    """A shortcut as the help writes it — Apple's symbols on a Mac, "Ctrl / Alt / Shift" elsewhere, as the chart
+    help does (``chart_help.current``); with ``KEY_STYLE`` "both", both forms, as the user manual writes them.
+    Swift writes the Apple form."""
+    if KEY_STYLE == "both":
+        return f"{apple} on macOS; {other} on Windows / Linux"
+    from guitar_tap.views import chart_help
+
+    return apple if chart_help.current().apple_keys else other
+
+
+def _scroll_keys() -> str:
+    """The chart's modifier keys as the help writes them (see ``_keys``)."""
+    apple = "⇧ Scroll &mdash; pan frequency; ⌥ Scroll &mdash; pan magnitude; ⌘/⌃ Scroll &mdash; zoom both axes"
+    other = ("Shift+Scroll &mdash; pan frequency; Alt+Scroll &mdash; pan magnitude; Ctrl+Scroll &mdash; "
+             "zoom both axes")
+    if KEY_STYLE == "both":
+        return f"on macOS, {apple}; on Windows / Linux, {other}"
+    return _keys(apple, other)
+
 
 def _build_help_html() -> str:
     primary = palette.qss(Role.TEXT_PRIMARY)
@@ -405,9 +430,9 @@ def _build_help_html() -> str:
         "detection fires automatically, peaks are found, and results appear in the panel. "
         "The chart title shows the filename while the file plays. After playback the "
         "microphone restarts automatically. Access via File menu &rarr; "
-        "Play Audio File&hellip; (Ctrl+Alt+O).<br>"
-        "&#9888;&#65039; <b>Plate and brace files need half a second of room tone before the "
-        "first tap.</b> Those modes measure the room&rsquo;s noise floor from the audio ahead of "
+        f"Play Audio File&hellip; ({_keys('⌘⌥O', 'Ctrl+Alt+O')}).<br><br>"
+        "&#9888;&#65038; Plate and brace files need half a second of room tone before the "
+        "first tap. Those modes measure the room&rsquo;s noise floor from the audio ahead of "
         "the tap and detect relative to it, so the file must actually contain that lead-in. "
         "Recordings made by Guitar Tap always do. A file recorded elsewhere may not: if its first "
         "tap falls inside that opening half-second the tap is treated as part of the settling "
@@ -468,22 +493,22 @@ def _build_help_html() -> str:
         "The menu bar has four menus:<br><br>"
         "<b>GuitarTap menu:</b><br>"
         "&bull; <b>About Guitar Tap…</b> &mdash; shows app description<br>"
-        "&bull; <b>Settings…</b> &mdash; Ctrl+, (⌘, on macOS)<br>"
+        f"&bull; <b>Settings…</b> &mdash; {_keys('⌘,', 'Ctrl+,')}<br>"
         "On macOS these items are automatically moved to the system Application menu.<br><br>"
         "<b>File menu:</b><br>"
-        "&bull; <b>Close</b> &mdash; Ctrl+W (⌘W on macOS) &mdash; closes the window<br>"
-        "&bull; <b>Play Audio File…</b> &mdash; Ctrl+Alt+O &mdash; feeds a WAV or audio file through the FFT pipeline instead of the microphone<br>"
-        "&bull; <b>Save Measurement…</b> &mdash; Ctrl+S<br>"
-        "&bull; <b>Export Spectrum Image…</b> &mdash; Ctrl+E<br>"
-        "&bull; <b>Export PDF Report…</b> &mdash; Ctrl+Shift+E<br>"
+        f"&bull; <b>Close</b> &mdash; {_keys('⌘W', 'Ctrl+W')} &mdash; closes the window<br>"
+        f"&bull; <b>Play Audio File…</b> &mdash; {_keys('⌘⌥O', 'Ctrl+Alt+O')} &mdash; feeds a WAV or audio file through the FFT pipeline instead of the microphone<br>"
+        f"&bull; <b>Save Measurement…</b> &mdash; {_keys('⌘S', 'Ctrl+S')}<br>"
+        f"&bull; <b>Export Spectrum Image…</b> &mdash; {_keys('⌘E', 'Ctrl+E')}<br>"
+        f"&bull; <b>Export PDF Report…</b> &mdash; {_keys('⇧⌘E', 'Ctrl+Shift+E')}<br>"
         "Save and Export items are disabled until a measurement is complete.<br><br>"
         "<b>View menu:</b><br>"
-        "&bull; <b>Auto dB</b> &mdash; Ctrl+0 &mdash; toggles auto-scaling of the dB axis<br>"
-        "&bull; <b>Cycle Annotations</b> &mdash; Ctrl+` &mdash; cycles Selected → None → All<br>"
-        "&bull; <b>Show Metrics</b> &mdash; Ctrl+M &mdash; opens the FFT diagnostics panel<br>"
-        "&bull; <b>Show Measurements</b> &mdash; Ctrl+L &mdash; opens the saved measurements browser<br><br>"
+        f"&bull; <b>Auto dB</b> &mdash; {_keys('⌘0', 'Ctrl+0')} &mdash; toggles auto-scaling of the dB axis<br>"
+        f"&bull; <b>Cycle Annotations</b> &mdash; {_keys('⌘`', 'Ctrl+`')} &mdash; cycles Selected → None → All<br>"
+        f"&bull; <b>Show Metrics</b> &mdash; {_keys('⌘M', 'Ctrl+M')} &mdash; opens the FFT diagnostics panel<br>"
+        f"&bull; <b>Show Measurements</b> &mdash; {_keys('⌘L', 'Ctrl+L')} &mdash; opens the saved measurements browser<br><br>"
         "<b>Help menu:</b><br>"
-        "&bull; <b>Quick Start Guide</b> &mdash; F1 (⌘? on macOS) &mdash; opens this window<br>"
+        f"&bull; <b>Quick Start Guide</b> &mdash; {_keys('⌘?', 'F1')} &mdash; opens this window<br>"
         "&bull; <b>User Manual</b> &mdash; opens the full User Manual at "
         "dolcesfogato.com in your default browser"
     ))
@@ -510,8 +535,7 @@ def _build_help_html() -> str:
         "and pan that work on this computer. Scroll and drag act by where the pointer is: over the "
         "plot on both axes, over the frequency axis (bottom) on frequency only, or over the "
         "magnitude axis (left) on magnitude only; on a Mac a trackpad pinch acts the same way by "
-        "where it starts. Modifier keys: Shift+Scroll &mdash; pan frequency; Alt+Scroll &mdash; pan "
-        "magnitude; Cmd/Ctrl+Scroll &mdash; zoom both axes. Right-click the chart for the chart "
+        f"where it starts. Modifier keys: {_scroll_keys()}. Right-click the chart for the chart "
         "menu; right-click a label to reset just that label&rsquo;s position.",
         ["mdi.information-outline"]
     ))
@@ -653,8 +677,7 @@ def _build_help_html() -> str:
         "over the plot area it zooms both axes; over the frequency axis (bottom) it zooms "
         "frequency only; over the magnitude axis (left) it zooms magnitude only. "
         "Drag to pan, and on a Mac pinch on a trackpad to zoom, the same way. Modifier keys: "
-        "Shift+Scroll &mdash; pan frequency; Alt+Scroll &mdash; pan magnitude; Cmd/Ctrl+Scroll "
-        "&mdash; zoom both axes. To reset the axes, click the &#8943; button in the top-right "
+        f"{_scroll_keys()}. To reset the axes, click the &#8943; button in the top-right "
         "corner of the spectrum, or right-click inside the chart, and choose a reset.",
         ["mdi.information-outline"]
     ))

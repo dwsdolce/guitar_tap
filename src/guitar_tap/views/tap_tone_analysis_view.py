@@ -1523,8 +1523,11 @@ class MainWindow(QtWidgets.QMainWindow):
             lbl = QtWidgets.QLabel(label)
             lbl.setFont(small_font)
             row.addWidget(lbl)
+            # The value bold, its hint regular, as Swift's.
             val = QtWidgets.QLabel("—")
-            val.setFont(small_font)
+            val_font = QtGui.QFont(small_font)
+            val_font.setBold(True)
+            val.setFont(val_font)
             hint_lbl = QtWidgets.QLabel(hint)
             hint_lbl.setFont(small_font)
             palette.tag(hint_lbl, color=palette.Role.TEXT_SECONDARY)
@@ -5216,7 +5219,7 @@ class MainWindow(QtWidgets.QMainWindow):
         selected = getattr(selected, "selected_input_device", None) if selected else None
 
         if selected is None:
-            self.device_status_lbl.setText("⚠ No audio input device available")
+            self.device_status_lbl.setText("⚠\ufe0e No audio input device available")
             return
 
         self.device_status_lbl.setText(selected.name)

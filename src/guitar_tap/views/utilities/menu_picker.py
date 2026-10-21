@@ -46,7 +46,6 @@ class MenuPicker(QtWidgets.QComboBox):
         return QtCore.QSize(TEXT_INSET + ellipsis + TRAILING, HEIGHT)
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
-        import qtawesome as qta
 
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
@@ -65,7 +64,7 @@ class MenuPicker(QtWidgets.QComboBox):
         align = QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter
         p.drawText(text_rect, int(align), text)
 
-        chevron = qta.icon("mdi.unfold-more-horizontal", color=text_color)
+        chevron = palette.icon("mdi.unfold-more-horizontal", text_color)
         x = self.width() - CHEVRON_INSET - CHEVRON_SIZE
         y = (self.height() - CHEVRON_SIZE) // 2
         chevron.paint(p, QtCore.QRect(x, y, CHEVRON_SIZE, CHEVRON_SIZE))

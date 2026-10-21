@@ -358,7 +358,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ Input clipping — reduce mic gain"
+      "statusMessage": "⚠︎ Input clipping — reduce mic gain"
      }
     },
     {
@@ -366,7 +366,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ No audio input — check the microphone connection"
+      "statusMessage": "⚠︎ No audio input — check the microphone connection"
      }
     },
     {
@@ -737,7 +737,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ The microphone could not be restarted — check its connection, or choose it again in Settings"
+      "statusMessage": "⚠︎ The microphone could not be restarted — check its connection, or choose it again in Settings"
      }
     },
     {
@@ -745,7 +745,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ No audio input — check the microphone connection"
+      "statusMessage": "⚠︎ No audio input — check the microphone connection"
      }
     },
     {
@@ -791,7 +791,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ The microphone could not be restarted — check its connection, or choose it again in Settings"
+      "statusMessage": "⚠︎ The microphone could not be restarted — check its connection, or choose it again in Settings"
      }
     },
     {
@@ -826,7 +826,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ The audio input could not be started — check it, or choose another input in Settings"
+      "statusMessage": "⚠︎ The audio input could not be started — check it, or choose another input in Settings"
      }
     },
     {
@@ -842,7 +842,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ The audio input could not be started — check it, or choose another input in Settings"
+      "statusMessage": "⚠︎ The audio input could not be started — check it, or choose another input in Settings"
      }
     },
     {
@@ -850,7 +850,7 @@
     },
     {
      "check": {
-      "statusMessage": "⚠ The microphone could not be restarted — check its connection, or choose it again in Settings"
+      "statusMessage": "⚠︎ The microphone could not be restarted — check its connection, or choose it again in Settings"
      }
     },
     {

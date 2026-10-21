@@ -196,7 +196,7 @@ class TapToneAnalyzerMeasurementManagementMixin:
         if skipped is not None:
             message += f"\n\n{skipped}"
         if len(imported) == 1 and self.microphone_warning:
-            message += f"\n\n⚠️ {self.microphone_warning}"
+            message += f"\n\n⚠\ufe0e {self.microphone_warning}"
             self.microphone_warning = None
         return message
 

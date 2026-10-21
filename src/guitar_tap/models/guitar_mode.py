@@ -443,7 +443,7 @@ class GuitarMode(Enum):
           arrow.up.and.down → mdi.arrow-up-down
           square.fill → mdi.square
           circle.lefthalf.filled → mdi.circle-half-full
-          circle.dashed → fa5s.circle-notch (no dashed circle in qtawesome)
+          circle.dashed → gt.ring-mode (the app's own: no dashed circle in Material Design)
           waveform → mdi.waveform
           questionmark.circle → mdi.help-circle-outline
 
@@ -454,7 +454,7 @@ class GuitarMode(Enum):
             GuitarMode.TOP:         "mdi.arrow-up-down",
             GuitarMode.BACK:        "mdi.square",
             GuitarMode.DIPOLE:      "mdi.circle-half-full",
-            GuitarMode.RING_MODE:   "fa5s.circle-notch",
+            GuitarMode.RING_MODE:   "gt.ring-mode",
             GuitarMode.UPPER_MODES: "mdi.waveform",
             GuitarMode.UNKNOWN:     "mdi.help-circle-outline",
         }
