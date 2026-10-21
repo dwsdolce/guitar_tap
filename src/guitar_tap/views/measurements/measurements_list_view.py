@@ -20,7 +20,6 @@ Right-click    → context menu: Load into View | View Details | Edit Name & Not
 
 import os
 
-import qtawesome as qta
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import TapToneMeasurement
@@ -346,23 +345,18 @@ class MeasurementsDialog(QtWidgets.QDialog):
         right-click handler and the row's ``⋯`` button (see MeasurementRowView)."""
         menu = QtWidgets.QMenu(self)
 
-        # The qtawesome glyphs in text.primary so they read in either scheme. Icons mirror the
-        # Swift SF Symbols on the same actions.
-        c = palette.color(palette.Role.TEXT_PRIMARY)
+        # Icons mirror the Swift SF Symbols on the same actions, in the menu's own colours.
 
-        def _ico(name: str) -> QtGui.QIcon:
-            return qta.icon(name, color=c)
-
-        load_act        = menu.addAction(_ico("mdi.file-download-outline"), "Load into View")
+        load_act        = palette.add_menu_item(menu, "mdi.file-download-outline", "Load into View")
         menu.addSeparator()
-        details_act     = menu.addAction(_ico("mdi.eye-outline"), "View Details")
+        details_act     = palette.add_menu_item(menu, "mdi.eye-outline", "View Details")
         # "&&" so Qt renders a literal ampersand instead of consuming it as a mnemonic.
-        edit_act        = menu.addAction(_ico("mdi.pencil-outline"), "Edit Name && Notes")
-        export_act      = menu.addAction(_ico("mdi.file-export-outline"), "Export Measurement")
-        export_spec_act = menu.addAction(_ico("mdi.chart-line"), "Export Spectrum")
-        export_pdf_act  = menu.addAction(_ico("mdi.file-pdf-box"), "Export PDF Report")
+        edit_act        = palette.add_menu_item(menu, "mdi.pencil-outline", "Edit Name && Notes")
+        export_act      = palette.add_menu_item(menu, "mdi.file-export-outline", "Export Measurement")
+        export_spec_act = palette.add_menu_item(menu, "mdi.chart-line", "Export Spectrum")
+        export_pdf_act  = palette.add_menu_item(menu, "mdi.file-pdf-box", "Export PDF Report")
         menu.addSeparator()
-        delete_act      = menu.addAction(_ico("mdi.trash-can-outline"), "Delete")
+        delete_act      = palette.add_menu_item(menu, "mdi.trash-can-outline", "Delete")
 
         action = menu.exec(global_pos)
 

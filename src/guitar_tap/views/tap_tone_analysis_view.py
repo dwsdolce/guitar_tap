@@ -6445,7 +6445,6 @@ class MainWindow(QtWidgets.QMainWindow):
         ab.addWidget(copyright_lbl)
 
         help_row = QtWidgets.QWidget()
-        help_row.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         hr_layout = QtWidgets.QHBoxLayout(help_row)
         hr_layout.setContentsMargins(0, 4, 0, 4)
         hr_icon = QtWidgets.QLabel()
@@ -6460,7 +6459,6 @@ class MainWindow(QtWidgets.QMainWindow):
         ab.addWidget(help_row)
 
         user_manual_row = QtWidgets.QWidget()
-        user_manual_row.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         um_layout = QtWidgets.QHBoxLayout(user_manual_row)
         um_layout.setContentsMargins(0, 4, 0, 4)
         um_icon = QtWidgets.QLabel()
@@ -6500,7 +6498,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # the right edge (down closed, up open); a click anywhere on the row toggles it.
         adv_box, adv_box_layout = _settings_box()
         adv_row = QtWidgets.QWidget()
-        adv_row.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         adv_hl = QtWidgets.QHBoxLayout(adv_row)
         adv_hl.setContentsMargins(0, 2, 0, 2)
         adv_hl.setSpacing(6)

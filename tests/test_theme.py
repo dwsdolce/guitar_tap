@@ -184,3 +184,4 @@ def test_button_shape():
     assert palette.BUTTON_CORNER_RADIUS == DATA["button"]["cornerRadius"]
     assert list(palette.BUTTON_PADDING) == DATA["button"]["padding"]
     assert list(palette.BUTTON_PROMINENT_PADDING) == DATA["button"]["prominentPadding"]
+    assert list(palette.BUTTON_ICON_PADDING) == DATA["button"]["iconPadding"]

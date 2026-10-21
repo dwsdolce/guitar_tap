@@ -33,8 +33,9 @@ def test_look(row):
     look = palette.button_look(row["kind"], _role(row.get("role")) or palette.Role.ACCENT, row["state"])
     wash = row["wash"] or [None, None]
     assert look.text is _role(row["text"]), "text"
-    assert look.fill is _role(row["fill"][0]), "fill"
-    assert look.fill_opacity is _opacity(row["fill"][1]), "fill opacity"
+    fill = row["fill"] or [None, None]
+    assert look.fill is _role(fill[0]), "fill"
+    assert look.fill_opacity is _opacity(fill[1]), "fill opacity"
     assert look.wash_role is _role(wash[0]), "wash"
     assert look.wash_opacity is _opacity(wash[1]), "wash opacity"
     assert look.border is _role(row["border"]), "border"

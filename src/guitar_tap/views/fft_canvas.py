@@ -23,6 +23,7 @@ from guitar_tap.models import microphone_calibration as _mc_mod
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 from guitar_tap.utilities.logging import gt_log
+from guitar_tap.views import chart_menu
 from guitar_tap.views import peak_annotations as fft_a
 from guitar_tap.views.utilities.extensions import formatted_as_frequency
 
@@ -588,9 +589,10 @@ class FftCanvas(pg.PlotWidget):
 
         # ⓘ Info button — upper-right overlay, shows Zoom & Pan help popup
         self._info_btn = QtWidgets.QToolButton(self)
-        self._info_btn.setText("ⓘ")
+        palette.tag(self._info_btn, icon=True)
+        palette.set_icon(self._info_btn, "mdi.information-outline", palette.Role.TEXT_SECONDARY)  # Swift info.circle
+        self._info_btn.setIconSize(QtCore.QSize(15, 15))
         self._info_btn.setFixedSize(22, 22)
-        self._info_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._info_btn.setToolTip("Zoom & Pan Controls")
         self._info_btn.clicked.connect(self._show_zoom_help)
         self._zoom_popup = _ZoomPanPopup(self)
@@ -598,9 +600,11 @@ class FftCanvas(pg.PlotWidget):
         # ⋯ Chart Options button — opens the same reset menu as right-click (the
         # web/touch affordance; matches the ⋯ in the Swift/web chart's upper-right).
         self._options_btn = QtWidgets.QToolButton(self)
-        self._options_btn.setText("⋯")
+        palette.tag(self._options_btn, icon=True)
+        palette.set_icon(self._options_btn, "mdi.dots-horizontal-circle-outline",  # Swift ellipsis.circle
+                         palette.Role.TEXT_SECONDARY)
+        self._options_btn.setIconSize(QtCore.QSize(15, 15))
         self._options_btn.setFixedSize(22, 22)
-        self._options_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._options_btn.setToolTip("Chart options")
         self._options_btn.clicked.connect(self._show_chart_options)
 
@@ -689,13 +693,6 @@ class FftCanvas(pg.PlotWidget):
             style.crosshair_width, style.crosshair_dash)
         self._crosshair_v.setPen(crosshair)
         self._crosshair_h.setPen(crosshair)
-        button_style = (
-            "QToolButton { border: none; background: transparent;"
-            f" color: {palette.qss(palette.Role.TEXT_SECONDARY)}; font-size: 15px; }}"
-            f"QToolButton:hover {{ color: {palette.qss(palette.Role.TEXT_PRIMARY)}; }}"
-        )
-        self._info_btn.setStyleSheet(button_style)
-        self._options_btn.setStyleSheet(button_style)
         if getattr(self, "_bands_guitar_type", None):
             self.set_guitar_type_bands(self._bands_guitar_type)
         for curve, color in zip(self._comparison_curves, self._comparison_curve_colors):
@@ -1053,8 +1050,29 @@ class FftCanvas(pg.PlotWidget):
     # Screen-distance threshold (pixels) for locking crosshair to a comparison curve.
     _CURVE_GRAVITY_PX: float = 12.0
 
+    def _pointer_cursor(self, scene_pos) -> QtCore.Qt.CursorShape:
+        """Swift's cursors over the chart: the open hand over a peak label (the closed hand while dragging one, which
+        the label holds itself), the crosshair over the plot, left-right over the frequency axis, up-down over the
+        magnitude axis, the arrow elsewhere."""
+        Shape = QtCore.Qt.CursorShape
+        if any(isinstance(item, fft_a.DraggableTextItem) and item.isVisible()
+               for item in self.scene().items(scene_pos)):
+            return Shape.OpenHandCursor
+        plot = self.getPlotItem()
+        if plot.vb.sceneBoundingRect().contains(scene_pos):
+            return Shape.CrossCursor
+        # An axis's layout cell, not its drawn area, which takes in its grid lines across the plot.
+        if plot.mapRectToScene(plot.getAxis("bottom").geometry()).contains(scene_pos):
+            return Shape.SizeHorCursor
+        if plot.mapRectToScene(plot.getAxis("left").geometry()).contains(scene_pos):
+            return Shape.SizeVerCursor
+        return Shape.ArrowCursor
+
     def _on_mouse_moved(self, scene_pos) -> None:
         """Track the cursor: snaps to FFT curve when results are held, free otherwise."""
+        shape = self._pointer_cursor(scene_pos)
+        if self.viewport().cursor().shape() != shape:
+            self.viewport().setCursor(shape)
         vb = self.getPlotItem().vb
         if not vb.sceneBoundingRect().contains(scene_pos):
             self._cursor_label.setVisible(False)
@@ -1399,16 +1417,22 @@ class FftCanvas(pg.PlotWidget):
     def _build_reset_menu(self) -> QtWidgets.QMenu:
         """The chart reset / options menu, shared by right-click and the ⋯ button."""
         menu = QtWidgets.QMenu(self)
-        menu.addAction("Reset Both Axes to Saved", self._reset_both_to_saved)
-        menu.addAction("Reset Frequency Axis to Saved", self._reset_freq_to_saved)
-        menu.addAction("Reset Magnitude Axis to Saved", self._reset_mag_to_saved)
-        menu.addSeparator()
-        menu.addAction("Reset Both Axes to Defaults", self._reset_both_to_defaults)
-        menu.addAction("Reset Frequency Axis to Defaults", self._reset_freq_to_defaults)
-        menu.addAction("Reset Magnitude Axis to Defaults", self._reset_mag_to_defaults)
-        menu.addSeparator()
-        act = menu.addAction("Reset Labels", self.annotations.reset_all_positions)
-        act.setEnabled(self.annotations.has_moved_annotations)
+        handlers = {
+            "resetBothToSaved": self._reset_both_to_saved,
+            "resetFrequencyToSaved": self._reset_freq_to_saved,
+            "resetMagnitudeToSaved": self._reset_mag_to_saved,
+            "resetBothToDefaults": self._reset_both_to_defaults,
+            "resetFrequencyToDefaults": self._reset_freq_to_defaults,
+            "resetMagnitudeToDefaults": self._reset_mag_to_defaults,
+            "resetLabels": self.annotations.reset_all_positions,
+        }
+        for i, group in enumerate(chart_menu.GROUPS):
+            if i:
+                menu.addSeparator()
+            for entry in group:
+                act = palette.add_menu_item(menu, f"mdi.{entry.mdi}", entry.title, handlers[entry.action])
+                if entry.action == "resetLabels":
+                    act.setEnabled(self.annotations.has_moved_annotations)
         return menu
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:

@@ -142,7 +142,6 @@ class MeasurementRowView(QtWidgets.QWidget):
             self._ellipsis_btn.setText("⋯")
             self._ellipsis_btn.setAutoRaise(True)
             self._ellipsis_btn.setToolTip("Actions")
-            self._ellipsis_btn.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
             self._ellipsis_btn.setStyleSheet(_ELLIPSIS_IDLE_QSS)
             palette.tag(self._ellipsis_btn, color=palette.Role.TEXT_SECONDARY)
             self._ellipsis_btn.clicked.connect(self._on_ellipsis_clicked)

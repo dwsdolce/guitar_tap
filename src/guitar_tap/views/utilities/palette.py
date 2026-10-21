@@ -564,7 +564,8 @@ PLAIN_PROPERTY = "plainButton"
 # A group box in palette roles — Swift's PaletteGroupBoxStyle: the title in text.primary above its content on
 # background.subtle, corner radius 8.
 GROUP_PROPERTY = "paletteGroup"
-# An icon button — Swift's .buttonStyle(.icon(role)): the icon in its role (set_icon), no frame and no fill.
+# An icon button — Swift's .buttonStyle(.icon(role)): the icon in its role (set_icon), no frame and no fill; under the
+# pointer the plain button's wash on a patch behind it.
 ICON_PROPERTY = "iconButton"
 # The root of a window, dialog or popover — Swift's paletteSurface(_:): its background in a role, and the lists,
 # scroll areas and help pages inside it on that background rather than the platform's; "outlined" adds a
@@ -575,6 +576,7 @@ SURFACE_PROPERTY = "paletteSurface"
 BUTTON_CORNER_RADIUS = 6
 BUTTON_PADDING = (3, 8)
 BUTTON_PROMINENT_PADDING = (4, 10)
+BUTTON_ICON_PADDING = (3, 3)
 _stylesheet_scheme: Scheme | None = None
 
 
@@ -635,10 +637,13 @@ def set_on(widget: QtWidgets.QWidget, on: bool) -> None:
 
 def set_icon(widget: QtWidgets.QWidget, name: str, role: Role, size: int | None = None) -> None:
     """Draw the qtawesome icon ``name`` in ``role`` on a button (its icon) or a label (a pixmap of
-    ``size``), and again on every change of scheme."""
+    ``size``), and again on every change of scheme. On a button that cannot act, the role at control.dimmed — the
+    button is drawn whole at that opacity (style guide §1.3)."""
     import qtawesome as qta
 
-    icon = qta.icon(name, color=color(role))
+    dimmed = QtGui.QColor(color(role))
+    dimmed.setAlphaF(dimmed.alphaF() * opacity(Opacity.CONTROL_DIMMED))
+    icon = qta.icon(name, color=color(role), color_disabled=dimmed)
     if isinstance(widget, QtWidgets.QAbstractButton):
         widget.setIcon(icon)
     else:
@@ -647,6 +652,60 @@ def set_icon(widget: QtWidgets.QWidget, name: str, role: Role, size: int | None 
     if key not in _icons:
         widget.destroyed.connect(lambda *_: _icons.pop(key, None))
     _icons[key] = (widget, name, role, size)
+
+
+def add_menu_item(menu: QtWidgets.QMenu, icon: str, text: str, slot=None) -> QtGui.QAction:
+    """Add an item to ``menu`` with the qtawesome icon ``icon``, in the menu's own colours: its text colour, and its
+    highlighted text's on the item under the pointer or the keys — a menu is the platform's, and its items carry no
+    colour of their own (style guide S1a), as Swift's SF Symbols take their item's colour. Qt's styles draw a menu
+    icon in its normal state even when its item is highlighted, so the menu's highlight is followed here."""
+    action = menu.addAction(_menu_icon(menu, icon, highlighted=False), text)
+    if slot is not None:
+        action.triggered.connect(slot)
+    action.setProperty(_MENU_ICON_PROPERTY, icon)
+    if not menu.property(_MENU_ICON_PROPERTY):
+        menu.setProperty(_MENU_ICON_PROPERTY, True)
+        menu.hovered.connect(lambda hovered, m=menu: _follow_menu_highlight(m, hovered))
+        menu.installEventFilter(_menu_leave_filter())
+    return action
+
+
+_MENU_ICON_PROPERTY = "menuIcon"
+
+
+def _menu_icon(menu: QtWidgets.QMenu, name: str, highlighted: bool) -> QtGui.QIcon:
+    import qtawesome as qta
+
+    pal = menu.palette()
+    role = QtGui.QPalette.ColorRole.HighlightedText if highlighted else QtGui.QPalette.ColorRole.Text
+    return qta.icon(name, color=pal.color(role),
+                    color_disabled=pal.color(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Text))
+
+
+def _follow_menu_highlight(menu: QtWidgets.QMenu, highlighted: "QtGui.QAction | None") -> None:
+    for action in menu.actions():
+        name = action.property(_MENU_ICON_PROPERTY)
+        if name:
+            action.setIcon(_menu_icon(menu, name, highlighted=action is highlighted and action.isEnabled()))
+
+
+class _MenuLeaveFilter(QtCore.QObject):
+    """The pointer leaving a menu takes its highlight away: every icon back to the menu's text colour."""
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 — Qt's name
+        if event.type() == QtCore.QEvent.Type.Leave and isinstance(obj, QtWidgets.QMenu) and obj.activeAction() is None:
+            _follow_menu_highlight(obj, None)
+        return False
+
+
+_leave_filter: _MenuLeaveFilter | None = None
+
+
+def _menu_leave_filter() -> _MenuLeaveFilter:
+    global _leave_filter
+    if _leave_filter is None:
+        _leave_filter = _MenuLeaveFilter()
+    return _leave_filter
 
 
 def _redraw_icons() -> None:
@@ -676,7 +735,7 @@ class ButtonLook(NamedTuple):
     """What a button the app draws looks like in a state. Mirrors Swift ``AppButtonLook``."""
 
     text: Role
-    fill: Role
+    fill: "Role | None"  # None for none (an icon button)
     fill_opacity: "Opacity | None"
     wash_role: "Role | None"
     wash_opacity: "Opacity | None"
@@ -686,7 +745,7 @@ class ButtonLook(NamedTuple):
 
 
 def button_look(kind: str, role: "Role | None", state: str) -> ButtonLook:
-    """The look of a ``kind`` button ("plain", "tinted", "prominent") in ``role``, in ``state`` ("rest",
+    """The look of a ``kind`` button ("plain", "tinted", "prominent", "icon") in ``role``, in ``state`` ("rest",
     "hover", "pressed", "on", "onHover", "cannotAct") — the one rule the stylesheet follows. Mirrors Swift
     ``AppButtonLook.of``."""
     dimmed = Opacity.CONTROL_DIMMED if state == "cannotAct" else None
@@ -698,6 +757,8 @@ def button_look(kind: str, role: "Role | None", state: str) -> ButtonLook:
         fill = {"hover": Opacity.BUTTON_TINT_HOVER, "pressed": Opacity.BUTTON_TINT_PRESSED,
                 "on": Opacity.BUTTON_TINT_ON, "onHover": Opacity.BUTTON_TINT_ON_HOVER}.get(state, Opacity.BUTTON_TINT_FILL)
         return ButtonLook(role, role, fill, None, None, None, dimmed)
+    if kind == "icon":
+        return ButtonLook(role, None, None, plain.wash_role, plain.wash_opacity, None, dimmed)
     if kind == "prominent":
         # A prominent button that cannot act is drawn as a plain one, dimmed.
         if state == "cannotAct":
@@ -711,14 +772,21 @@ def _button_rule(selector: str, look: ButtonLook) -> str:
     """``look`` as a stylesheet rule for ``selector`` — a whole button drawn at an opacity has its colours at it,
     and a wash is laid on its fill, since a stylesheet cannot do either."""
     whole = opacity(look.drawn_at) if look.drawn_at else 1.0
-    fill = color(look.fill)
-    fill_alpha = opacity(look.fill_opacity) if look.fill_opacity else 1.0
-    if look.wash_role is not None:
-        fill = _mix(fill, color(look.wash_role), opacity(look.wash_opacity))
+    if look.fill is None:
+        # An icon button: no fill — only the wash, on the patch its padding makes.
+        background = (_rgba(color(look.wash_role), opacity(look.wash_opacity) * whole) if look.wash_role is not None
+                      else "transparent")
+        pad = BUTTON_ICON_PADDING
+    else:
+        fill = color(look.fill)
+        fill_alpha = opacity(look.fill_opacity) if look.fill_opacity else 1.0
+        if look.wash_role is not None:
+            fill = _mix(fill, color(look.wash_role), opacity(look.wash_opacity))
+        background = _rgba(fill, fill_alpha * whole)
+        pad = BUTTON_PROMINENT_PADDING if look.prominent_padding else BUTTON_PADDING
     border = (f"1px solid {_rgba(color(look.border), whole)}" if look.border is not None
               else "1px solid transparent")
-    pad = BUTTON_PROMINENT_PADDING if look.prominent_padding else BUTTON_PADDING
-    return (f'{selector} {{ color: {_rgba(color(look.text), whole)}; background-color: {_rgba(fill, fill_alpha * whole)};'
+    return (f'{selector} {{ color: {_rgba(color(look.text), whole)}; background-color: {background};'
             f' border: {border}; border-radius: {BUTTON_CORNER_RADIUS}px; padding: {pad[0]}px {pad[1]}px; }}')
 
 
@@ -740,9 +808,9 @@ def _application_stylesheet() -> str:
     platform."""
     rules = [f"QLabel {{ color: {qss(Role.TEXT_PRIMARY)}; }}"]
     rules += _button_rules(f'QPushButton[{PLAIN_PROPERTY}="true"]', "plain", None)
-    rules.append(", ".join(f'{w}[{ICON_PROPERTY}="true"]{s}' for w in ("QPushButton", "QToolButton")
-                           for s in ("", ":hover", ":pressed"))
-                 + " { background: transparent; border: none; padding: 0px; }")
+    for widget in ("QPushButton", "QToolButton"):
+        # The icon's own colour is set_icon's; the role here colours no glyph.
+        rules += _button_rules(f'{widget}[{ICON_PROPERTY}="true"]', "icon", Role.TEXT_SECONDARY)
     rules.append(f'*[{SURFACE_PROPERTY}="outlined"] {{ border: 1px solid {qss(Role.SEPARATOR)}; }}')
     group = f'QGroupBox[{GROUP_PROPERTY}="true"]'
     rules.append(f'{group} {{ background-color: {qss(Role.BACKGROUND_SUBTLE)}; border: none; border-radius: 8px;'

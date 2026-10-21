@@ -812,6 +812,10 @@
   "prominentPadding": [
    4,
    10
+  ],
+  "iconPadding": [
+   3,
+   3
   ]
  }
 }

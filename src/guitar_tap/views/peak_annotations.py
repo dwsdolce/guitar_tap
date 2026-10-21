@@ -19,6 +19,7 @@ import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import guitar_mode as gm
+from guitar_tap.views import chart_menu
 from guitar_tap.views.utilities import chart_style, palette
 
 # The chart's stacking: the curves and dots at 0, the mode labels over them, the peak labels over those.
@@ -56,6 +57,19 @@ class DraggableTextItem(pg.TextItem):
         self._default_pos: QtCore.QPointF | None = None
         self._peak_id: str = ""
         self._analyzer = None
+
+    def mousePressEvent(self, ev) -> None:
+        # The closed hand while the label is dragged, as Swift's — held over the canvas's own cursor.
+        if ev.button() == QtCore.Qt.MouseButton.LeftButton:
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
+            self._holds_cursor = True
+        super().mousePressEvent(ev)
+
+    def mouseReleaseEvent(self, ev) -> None:
+        if getattr(self, "_holds_cursor", False):
+            QtWidgets.QApplication.restoreOverrideCursor()
+            self._holds_cursor = False
+        super().mouseReleaseEvent(ev)
 
     def paint(
         self,
@@ -164,7 +178,8 @@ class DraggableTextItem(pg.TextItem):
             )
         )
         menu = QtWidgets.QMenu()
-        reset_action = menu.addAction("Reset Position")
+        entry = chart_menu.LABEL_MENU[0]
+        reset_action = palette.add_menu_item(menu, f"mdi.{entry.mdi}", entry.title)
         reset_action.setEnabled(has_moved)
         chosen = menu.exec(screen_pos)
         if chosen is reset_action and self._default_pos is not None:
