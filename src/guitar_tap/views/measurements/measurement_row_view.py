@@ -188,9 +188,14 @@ class MeasurementRowView(QtWidgets.QWidget):
             return
         _draw_compare_circle(self._compare_circle, selected)
 
+    # The row handles its own left clicks and does not pass them up: the list would make the row its current item,
+    # which some styles (Linux desktop themes) paint in the system's highlight colour. Swift's rows show nothing
+    # on a click.
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self._pressed = True
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -198,13 +203,16 @@ class MeasurementRowView(QtWidgets.QWidget):
             self._pressed = False
             if self.rect().contains(event.pos()):
                 self.clicked.emit()
-        else:
-            self._pressed = False
+            event.accept()
+            return
+        self._pressed = False
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.doubleClicked.emit()
+            event.accept()
+            return
         super().mouseDoubleClickEvent(event)
 
     def _on_ellipsis_clicked(self) -> None:

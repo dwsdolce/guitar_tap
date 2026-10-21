@@ -84,6 +84,8 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self._list.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.NoSelection
         )
+        # No keyboard focus, so no row becomes the list's current item (some styles paint it).
+        self._list.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self._list.setContextMenuPolicy(
             QtCore.Qt.ContextMenuPolicy.CustomContextMenu
         )
