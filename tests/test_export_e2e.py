@@ -17,7 +17,9 @@ from pathlib import Path
 
 import pytest
 import sounddevice
-from PySide6 import QtCore, QtTest, QtWidgets
+from PySide6 import QtCore, QtGui, QtTest, QtWidgets
+
+from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
 
 FIXTURES = Path(__file__).parent
 
@@ -228,6 +230,11 @@ def _row_menu_export(qtbot, window, edges: _Edges, item: str) -> None:
             QtCore.QTimer.singleShot(0, lambda: _close_list(dlg))
 
         _when(qtbot, _menu, in_menu)
+        # The row's ⋯ shows while the pointer is over the row, as a user's would be.
+        row = dlg.findChild(MeasurementRowView)
+        assert row is not None, "no measurement row"
+        centre = QtCore.QPointF(row.rect().center())
+        QtWidgets.QApplication.sendEvent(row, QtGui.QEnterEvent(centre, centre, QtCore.QPointF(row.mapToGlobal(centre))))
         _click(_button(dlg, "⋯"))
 
     _when(qtbot, _modal_list, in_list)

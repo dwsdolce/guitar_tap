@@ -1,0 +1,238 @@
+{
+ "slug": "test/chart-help",
+ "about": "The chart's help (its ⓘ), in every edition: the same lines, words and groups, and on each device only the lines that work there (#32 F8). 'groups' are the help's lines between separators, in order; each gives the gesture ('gesture', with Apple's key symbols), its words on Windows, Linux and other non-Apple systems where they differ ('otherKeys'), what it does ('effect'), and what the device needs for it to work ('needs': a pointer — a mouse or trackpad —, a keyboard, pinch — a trackpad or touch; none for a drag, which a finger does too). 'devices' are cases: what a device has, and the gestures its help shows, by group (empty groups left out).",
+ "title": "Zoom & Pan Controls",
+ "groups": [
+  [
+   {
+    "id": "CH1",
+    "gesture": "Scroll over plot",
+    "effect": "Zoom both axes around cursor",
+    "needs": [
+     "pointer"
+    ]
+   },
+   {
+    "id": "CH2",
+    "gesture": "Scroll over freq axis",
+    "effect": "Zoom frequency only",
+    "needs": [
+     "pointer"
+    ]
+   },
+   {
+    "id": "CH3",
+    "gesture": "Scroll over mag axis",
+    "effect": "Zoom magnitude only",
+    "needs": [
+     "pointer"
+    ]
+   },
+   {
+    "id": "CH4",
+    "gesture": "⇧ + Scroll",
+    "otherKeys": "Shift + Scroll",
+    "effect": "Pan frequency axis",
+    "needs": [
+     "pointer",
+     "keyboard"
+    ]
+   },
+   {
+    "id": "CH5",
+    "gesture": "⌥ + Scroll",
+    "otherKeys": "Alt + Scroll",
+    "effect": "Pan magnitude axis",
+    "needs": [
+     "pointer",
+     "keyboard"
+    ]
+   },
+   {
+    "id": "CH6",
+    "gesture": "⌘/⌃ + Scroll",
+    "otherKeys": "Ctrl + Scroll",
+    "effect": "Zoom both axes",
+    "needs": [
+     "pointer",
+     "keyboard"
+    ]
+   }
+  ],
+  [
+   {
+    "id": "CH7",
+    "gesture": "Pinch over plot",
+    "effect": "Zoom both axes",
+    "needs": [
+     "pinch"
+    ]
+   },
+   {
+    "id": "CH8",
+    "gesture": "Pinch over freq axis",
+    "effect": "Zoom frequency only",
+    "needs": [
+     "pinch"
+    ]
+   },
+   {
+    "id": "CH9",
+    "gesture": "Pinch over mag axis",
+    "effect": "Zoom magnitude only",
+    "needs": [
+     "pinch"
+    ]
+   }
+  ],
+  [
+   {
+    "id": "CH10",
+    "gesture": "Drag over plot",
+    "effect": "Pan both axes",
+    "needs": []
+   },
+   {
+    "id": "CH11",
+    "gesture": "Drag over freq axis",
+    "effect": "Pan frequency only",
+    "needs": []
+   },
+   {
+    "id": "CH12",
+    "gesture": "Drag over mag axis",
+    "effect": "Pan magnitude only",
+    "needs": []
+   },
+   {
+    "id": "CH13",
+    "gesture": "Right-click",
+    "effect": "Chart menu",
+    "needs": [
+     "pointer"
+    ]
+   }
+  ]
+ ],
+ "devices": [
+  {
+   "id": "CD1",
+   "about": "a Mac: a pointer, a keyboard, a trackpad",
+   "pointer": true,
+   "keyboard": true,
+   "pinch": true,
+   "appleKeys": true,
+   "shows": [
+    [
+     "Scroll over plot",
+     "Scroll over freq axis",
+     "Scroll over mag axis",
+     "⇧ + Scroll",
+     "⌥ + Scroll",
+     "⌘/⌃ + Scroll"
+    ],
+    [
+     "Pinch over plot",
+     "Pinch over freq axis",
+     "Pinch over mag axis"
+    ],
+    [
+     "Drag over plot",
+     "Drag over freq axis",
+     "Drag over mag axis",
+     "Right-click"
+    ]
+   ]
+  },
+  {
+   "id": "CD2",
+   "about": "an iPhone or iPad, touch alone",
+   "pointer": false,
+   "keyboard": false,
+   "pinch": true,
+   "appleKeys": true,
+   "shows": [
+    [
+     "Pinch over plot",
+     "Pinch over freq axis",
+     "Pinch over mag axis"
+    ],
+    [
+     "Drag over plot",
+     "Drag over freq axis",
+     "Drag over mag axis"
+    ]
+   ]
+  },
+  {
+   "id": "CD3",
+   "about": "an iPad with a mouse or trackpad, no keyboard",
+   "pointer": true,
+   "keyboard": false,
+   "pinch": true,
+   "appleKeys": true,
+   "shows": [
+    [
+     "Scroll over plot",
+     "Scroll over freq axis",
+     "Scroll over mag axis"
+    ],
+    [
+     "Pinch over plot",
+     "Pinch over freq axis",
+     "Pinch over mag axis"
+    ],
+    [
+     "Drag over plot",
+     "Drag over freq axis",
+     "Drag over mag axis",
+     "Right-click"
+    ]
+   ]
+  },
+  {
+   "id": "CD4",
+   "about": "Windows or Linux: a pointer and a keyboard; a trackpad's pinch arrives as Ctrl + Scroll",
+   "pointer": true,
+   "keyboard": true,
+   "pinch": false,
+   "appleKeys": false,
+   "shows": [
+    [
+     "Scroll over plot",
+     "Scroll over freq axis",
+     "Scroll over mag axis",
+     "Shift + Scroll",
+     "Alt + Scroll",
+     "Ctrl + Scroll"
+    ],
+    [
+     "Drag over plot",
+     "Drag over freq axis",
+     "Drag over mag axis",
+     "Right-click"
+    ]
+   ]
+  },
+  {
+   "id": "CD5",
+   "about": "a phone or tablet in a browser, not Apple's: touch alone",
+   "pointer": false,
+   "keyboard": false,
+   "pinch": true,
+   "appleKeys": false,
+   "shows": [
+    [
+     "Pinch over plot",
+     "Pinch over freq axis",
+     "Pinch over mag axis"
+    ],
+    [
+     "Drag over plot",
+     "Drag over freq axis",
+     "Drag over mag axis"
+    ]
+   ]
+  }
+ ]
+}

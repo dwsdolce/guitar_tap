@@ -25,9 +25,6 @@ from guitar_tap.models import field_precision as fp
 from guitar_tap.utilities.date_format import format_display_datetime
 from guitar_tap.views.utilities import palette
 
-# "⋯" actions button: transparent text when idle, text.secondary on hover (no layout shift).
-_ELLIPSIS_IDLE_QSS = "QToolButton { color: transparent; border: none; font-size: 11px; padding: 0 2px; }"
-_ELLIPSIS_HOVER_QSS = "QToolButton { border: none; font-size: 11px; padding: 0 2px; }"
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -133,17 +130,19 @@ class MeasurementRowView(QtWidgets.QWidget):
         line1.addWidget(chevron)
 
         if not compare_mode:
-            # Ellipsis hint — transparent when idle, visible on hover to signal RMB menu
-            # Matches Image(systemName: "ellipsis.circle").opacity(isHovered ? 1 : 0) in Swift
-            # Always occupies space (no layout shift) — only color alpha changes.
-            # Clicking it opens the per-row action menu (the web/touch affordance);
-            # right-click on the row still works too.
+            # The row's ⋯: an icon button shown while the row is under the pointer, keeping its space when hidden
+            # (no layout shift) — Swift's ellipsis.circle Menu at .opacity(isHovered ? 1 : 0). It opens the row's
+            # action menu, as a right-click on the row does.
             self._ellipsis_btn = QtWidgets.QToolButton()
-            self._ellipsis_btn.setText("⋯")
-            self._ellipsis_btn.setAutoRaise(True)
+            self._ellipsis_btn.setText("⋯")  # its name; a tool button shows only its icon
+            palette.tag(self._ellipsis_btn, icon=True)
+            palette.set_icon(self._ellipsis_btn, "mdi.dots-horizontal-circle-outline", palette.Role.TEXT_SECONDARY)
+            self._ellipsis_btn.setIconSize(QtCore.QSize(13, 13))
             self._ellipsis_btn.setToolTip("Actions")
-            self._ellipsis_btn.setStyleSheet(_ELLIPSIS_IDLE_QSS)
-            palette.tag(self._ellipsis_btn, color=palette.Role.TEXT_SECONDARY)
+            keep_space = self._ellipsis_btn.sizePolicy()
+            keep_space.setRetainSizeWhenHidden(True)
+            self._ellipsis_btn.setSizePolicy(keep_space)
+            self._ellipsis_btn.setVisible(False)
             self._ellipsis_btn.clicked.connect(self._on_ellipsis_clicked)
             line1.addWidget(self._ellipsis_btn)
         else:
@@ -220,12 +219,12 @@ class MeasurementRowView(QtWidgets.QWidget):
         p.setColor(self.backgroundRole(), palette.color(palette.Role.BACKGROUND_SUBTLE))
         self.setPalette(p)
         if self._ellipsis_btn is not None:
-            self._ellipsis_btn.setStyleSheet(_ELLIPSIS_HOVER_QSS)
+            self._ellipsis_btn.setVisible(True)
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
         self._pressed = False
         self.setAutoFillBackground(False)
         if self._ellipsis_btn is not None:
-            self._ellipsis_btn.setStyleSheet(_ELLIPSIS_IDLE_QSS)
+            self._ellipsis_btn.setVisible(False)
         super().leaveEvent(event)

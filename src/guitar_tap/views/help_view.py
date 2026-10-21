@@ -396,8 +396,7 @@ def _build_help_html() -> str:
         "Peak Labels",
         "Drag any peak label to reposition it and avoid overlaps. "
         "To reset an individual label: right-click it and choose &ldquo;Reset Position&rdquo;. "
-        "To reset all labels at once: right-click the chart area (not a label) and choose "
-        "&ldquo;Reset Labels&rdquo;."
+        "To reset all labels at once: choose &ldquo;Reset Labels&rdquo; from the chart menu."
     ))
     parts.append(_row(
         "Play Audio File",
@@ -497,25 +496,23 @@ def _build_help_html() -> str:
         ["mdi.book-open-variant"]
     ))
     parts.append(_row(
-        "Chart Options",
-        "The ellipsis (&#8943;) button in the top-right corner of the spectrum opens the "
-        "Chart Options menu. From here you can reset either or both axes to the values you "
-        "last saved in Settings (&ldquo;Reset to Saved&rdquo;), or restore the factory "
-        "defaults (&ldquo;Reset to Defaults&rdquo;). If peak labels have been dragged from "
-        "their auto-positions, &ldquo;Reset Labels&rdquo; moves them back. Right-clicking "
-        "the chart opens the same menu.",
-        ["mdi.dots-horizontal"]
+        "Chart Menu",
+        "The &#8943; button in the top-right corner of the spectrum opens the chart menu; "
+        "right-clicking the chart opens the same menu. It resets either or both axes to the values "
+        "you last saved in Settings (&ldquo;Reset &hellip; to Saved&rdquo;) or to the factory "
+        "defaults (&ldquo;Reset &hellip; to Defaults&rdquo;). If peak labels have been dragged from "
+        "their auto-positions, &ldquo;Reset Labels&rdquo; moves them back.",
+        ["mdi.dots-horizontal-circle-outline"]
     ))
     parts.append(_row(
         "Zoom &amp; Pan Help",
-        "The info (&#9432;) button in the top-right corner of the spectrum shows a full "
-        "reference card for navigating the chart. Scroll wheel and drag gestures are "
-        "context-sensitive: position the pointer over the plot to operate on both axes, over "
-        "the frequency axis (bottom) to operate on frequency only, or over the magnitude axis "
-        "(left) to operate on magnitude only. Modifier-key shortcuts are also available: "
-        "Shift+Scroll &mdash; pan frequency; Alt+Scroll &mdash; pan magnitude; "
-        "Cmd/Ctrl+Scroll &mdash; zoom both axes. Right-click the chart area to reset axes and "
-        "labels; right-click a label to reset just that label&rsquo;s position.",
+        "The info (&#9432;) button in the top-right corner of the spectrum lists the ways to zoom "
+        "and pan that work on this computer. Scroll and drag act by where the pointer is: over the "
+        "plot on both axes, over the frequency axis (bottom) on frequency only, or over the "
+        "magnitude axis (left) on magnitude only; on a Mac a trackpad pinch acts the same way by "
+        "where it starts. Modifier keys: Shift+Scroll &mdash; pan frequency; Alt+Scroll &mdash; pan "
+        "magnitude; Cmd/Ctrl+Scroll &mdash; zoom both axes. Right-click the chart for the chart "
+        "menu; right-click a label to reset just that label&rsquo;s position.",
         ["mdi.information-outline"]
     ))
 
@@ -655,10 +652,10 @@ def _build_help_html() -> str:
         "Scroll over the chart to zoom &mdash; the axis depends on where the pointer is: "
         "over the plot area it zooms both axes; over the frequency axis (bottom) it zooms "
         "frequency only; over the magnitude axis (left) it zooms magnitude only. "
-        "Drag to pan the same way. Modifier keys: Shift+Scroll &mdash; pan frequency; "
-        "Alt+Scroll &mdash; pan magnitude; Cmd/Ctrl+Scroll &mdash; zoom both axes. "
-        "To reset the axes, click the &#8943; Chart Options button (top-right) or "
-        "right-click anywhere inside the chart.",
+        "Drag to pan, and on a Mac pinch on a trackpad to zoom, the same way. Modifier keys: "
+        "Shift+Scroll &mdash; pan frequency; Alt+Scroll &mdash; pan magnitude; Cmd/Ctrl+Scroll "
+        "&mdash; zoom both axes. To reset the axes, click the &#8943; button in the top-right "
+        "corner of the spectrum, or right-click inside the chart, and choose a reset.",
         ["mdi.information-outline"]
     ))
 

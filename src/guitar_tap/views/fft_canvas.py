@@ -3,6 +3,7 @@
 """
 
 
+import html
 import math
 
 import numpy as np
@@ -23,7 +24,7 @@ from guitar_tap.models import microphone_calibration as _mc_mod
 from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 from guitar_tap.utilities.logging import gt_log
-from guitar_tap.views import chart_menu
+from guitar_tap.views import chart_help, chart_menu
 from guitar_tap.views import peak_annotations as fft_a
 from guitar_tap.views.utilities.extensions import formatted_as_frequency
 
@@ -46,25 +47,9 @@ class _SceneMouseReleaseFilter(QtCore.QObject):
 # ── Zoom & Pan help popup ─────────────────────────────────────────────────────
 
 class _ZoomPanPopup(QtWidgets.QFrame):
-    """Floating popover listing zoom/pan keyboard+mouse controls.
-
-    Matches the Swift SpectrumView 'Zoom & Pan Controls' popover.
-    Uses Qt.Popup so it auto-dismisses when the user clicks outside.
-    """
-
-    _ROWS: list[tuple[str, str] | None] = [
-        ("Scroll over plot",    "Zoom both axes around cursor"),
-        ("Scroll over freq axis", "Zoom frequency only"),
-        ("Scroll over mag axis",  "Zoom magnitude only"),
-        ("⇧ + Scroll",          "Pan frequency axis"),
-        ("⌥ + Scroll",          "Pan magnitude axis"),
-        ("⌘ / ⌃ + Scroll",      "Zoom both axes"),
-        None,
-        ("Drag over plot",      "Pan both axes"),
-        ("Drag over freq axis", "Pan frequency only"),
-        ("Drag over mag axis",  "Pan magnitude only"),
-        ("Right-click",         "Reset axes & labels"),
-    ]
+    """The chart's help, below its ⓘ: the lines that work on the device in use (chart_help), each "gesture: effect"
+    with the effect in text.secondary, groups divided by a line. It scrolls when the screen is too short to show it
+    whole. Uses Qt.Popup so it closes on a click outside. Mirrors Swift's ChartHelpView."""
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(
@@ -72,45 +57,49 @@ class _ZoomPanPopup(QtWidgets.QFrame):
             QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint,
         )
         palette.surface(self, palette.Role.BACKGROUND_PANEL, outlined=True)
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._scroll = QtWidgets.QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(self._scroll)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 10)
-        layout.setSpacing(3)
-
-        title = QtWidgets.QLabel("<b>Zoom &amp; Pan Controls</b>")
+    def _content(self) -> QtWidgets.QWidget:
+        """The help's lines, built when it opens — in the current scheme's roles."""
+        content = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(content)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setSpacing(4)
+        title = QtWidgets.QLabel(chart_help.TITLE)
+        title_font = title.font()
+        title_font.setBold(True)
+        title.setFont(title_font)
         layout.addWidget(title)
         layout.addSpacing(2)
-
-        _key_font = QtGui.QFont()
-        _key_font.setBold(True)
-        _key_font.setPointSize(10)
-        _desc_font = QtGui.QFont()
-        _desc_font.setPointSize(10)
-
-        for row in self._ROWS:
-            if row is None:
+        line_font = QtGui.QFont()
+        line_font.setPointSize(11)
+        secondary = palette.qss(palette.Role.TEXT_SECONDARY)
+        for index, group in enumerate(chart_help.shown(chart_help.current())):
+            if index:
                 layout.addWidget(palette.divider())
-            else:
-                key, desc = row
-                hl = QtWidgets.QHBoxLayout()
-                hl.setSpacing(10)
-                hl.setContentsMargins(0, 0, 0, 0)
-                key_lbl = QtWidgets.QLabel(key)
-                key_lbl.setFont(_key_font)
-                key_lbl.setMinimumWidth(130)
-                desc_lbl = QtWidgets.QLabel(desc)
-                desc_lbl.setFont(_desc_font)
-                palette.tag(desc_lbl, color=palette.Role.TEXT_SECONDARY)
-                hl.addWidget(key_lbl)
-                hl.addWidget(desc_lbl, 1)
-                layout.addLayout(hl)
+            for gesture, effect in group:
+                line = QtWidgets.QLabel(f'{html.escape(gesture)}<span style="color: {secondary}">: '
+                                        f'{html.escape(effect)}</span>')
+                line.setFont(line_font)
+                layout.addWidget(line)
+        return content
 
     def show_near(self, global_pos: QtCore.QPoint) -> None:
-        """Show the popup with its top-right corner near *global_pos*."""
-        self.adjustSize()
-        x = global_pos.x() - self.width()
-        y = global_pos.y()
-        self.move(x, y)
+        """Show the help below the ⓘ, its top-right corner at *global_pos*, no taller than the screen allows."""
+        self._scroll.setWidget(self._content())
+        content = self._scroll.widget()
+        content.adjustSize()
+        screen = QtGui.QGuiApplication.screenAt(global_pos) or QtGui.QGuiApplication.primaryScreen()
+        room = screen.availableGeometry().bottom() - global_pos.y() - 8
+        height = min(content.sizeHint().height(), max(room, 120))
+        self.resize(content.sizeHint().width() + self._scroll.verticalScrollBar().sizeHint().width(), height)
+        self.move(global_pos.x() - self.width(), global_pos.y())
         self.show()
 
 
@@ -597,8 +586,7 @@ class FftCanvas(pg.PlotWidget):
         self._info_btn.clicked.connect(self._show_zoom_help)
         self._zoom_popup = _ZoomPanPopup(self)
 
-        # ⋯ Chart Options button — opens the same reset menu as right-click (the
-        # web/touch affordance; matches the ⋯ in the Swift/web chart's upper-right).
+        # ⋯ — the chart menu, the same as a right-click; Swift's and the web's ⋯ in the chart's upper-right.
         self._options_btn = QtWidgets.QToolButton(self)
         palette.tag(self._options_btn, icon=True)
         palette.set_icon(self._options_btn, "mdi.dots-horizontal-circle-outline",  # Swift ellipsis.circle
@@ -1058,15 +1046,21 @@ class FftCanvas(pg.PlotWidget):
         if any(isinstance(item, fft_a.DraggableTextItem) and item.isVisible()
                for item in self.scene().items(scene_pos)):
             return Shape.OpenHandCursor
+        return {"plot": Shape.CrossCursor, "xAxis": Shape.SizeHorCursor,
+                "yAxis": Shape.SizeVerCursor}.get(self._pointer_region(scene_pos), Shape.ArrowCursor)
+
+    def _pointer_region(self, scene_pos) -> str:
+        """Where a point is on the chart — "plot", "xAxis" (the frequency axis), "yAxis" (the magnitude axis) or
+        "outside". Mirrors Swift pointerRegion(at:plotFrame:)."""
         plot = self.getPlotItem()
         if plot.vb.sceneBoundingRect().contains(scene_pos):
-            return Shape.CrossCursor
+            return "plot"
         # An axis's layout cell, not its drawn area, which takes in its grid lines across the plot.
         if plot.mapRectToScene(plot.getAxis("bottom").geometry()).contains(scene_pos):
-            return Shape.SizeHorCursor
+            return "xAxis"
         if plot.mapRectToScene(plot.getAxis("left").geometry()).contains(scene_pos):
-            return Shape.SizeVerCursor
-        return Shape.ArrowCursor
+            return "yAxis"
+        return "outside"
 
     def _on_mouse_moved(self, scene_pos) -> None:
         """Track the cursor: snaps to FFT curve when results are held, free otherwise."""
@@ -1357,10 +1351,11 @@ class FftCanvas(pg.PlotWidget):
     def wheelEvent(self, ev: QtGui.QWheelEvent) -> None:
         """Scroll-wheel zoom/pan with modifier keys matching Swift SpectrumView.
 
-        No modifier  — pyqtgraph default (zoom around cursor)
+        No modifier  — pyqtgraph default by region (zoom around cursor; over an axis that axis only);
+                       outside the plot and its axes, pan magnitude
         ⇧ Shift      — pan frequency (X) axis
         ⌥ Alt/Option — pan magnitude (Y) axis
-        ⌘ Cmd / ⌃ Ctrl — zoom both axes around centre
+        ⌘ Cmd / ⌃ Ctrl — zoom both axes around the cursor
         """
         mods = ev.modifiers()
         Mod = QtCore.Qt.KeyboardModifier
@@ -1393,24 +1388,59 @@ class FftCanvas(pg.PlotWidget):
             ev.accept()
 
         elif mods & (Mod.ControlModifier | Mod.MetaModifier):
-            # Zoom both axes around centre; a step that would leave a span narrower than the minimum
-            # is refused for that axis, as in Swift.
-            factor = 1.15 ** (delta / 120.0)
-            x0, x1 = vb.viewRange()[0]
+            # Zoom both axes around the cursor, as Swift's handleZoom.
+            self._zoom_axes(1.15 ** (delta / 120.0), self.mapToScene(ev.position().toPoint()))
+            ev.accept()
+
+        elif self._pointer_region(self.mapToScene(ev.position().toPoint())) == "outside":
+            # Outside the plot and its axes: pan the magnitude axis, as Swift's.
             y0, y1 = vb.viewRange()[1]
-            rx = dr.zoomed_range(x0, x1, (x0 + x1) / 2, factor, dr.MIN_FREQUENCY_HZ,
-                                 dr.MAX_FREQUENCY_HZ, dr.MIN_FREQUENCY_SPAN_HZ)
-            if rx is not None:
-                vb.setXRange(*rx, padding=0)
-            ry = dr.zoomed_range(y0, y1, (y0 + y1) / 2, factor, dr.MIN_MAGNITUDE_DB,
-                                 dr.MAX_MAGNITUDE_DB, dr.MIN_MAGNITUDE_SPAN_DB)
-            if ry is not None:
-                vb.setYRange(*ry, padding=0)
-            self._refresh_peaks_for_viewport()
+            shift = (y1 - y0) * 0.10 * (1 if delta > 0 else -1)
+            vb.setYRange(*dr.panned_range(y0, y1, shift, dr.MIN_MAGNITUDE_DB, dr.MAX_MAGNITUDE_DB),
+                         padding=0)
             ev.accept()
 
         else:
             super().wheelEvent(ev)
+
+    def _zoom_axes(self, factor: float, scene_pos, freq: bool = True, mag: bool = True) -> None:
+        """One zoom step (*factor* > 1 zooms in) of the frequency and / or magnitude axis about the point under
+        *scene_pos* — the view's centre when that point is outside the plot. A step that would leave a span narrower
+        than the minimum is refused for that axis, as in Swift."""
+        vb = self.getPlotItem().vb
+        (x0, x1), (y0, y1) = vb.viewRange()
+        if vb.sceneBoundingRect().contains(scene_pos):
+            point = vb.mapSceneToView(scene_pos)
+            ax, ay = float(point.x()), float(point.y())
+        else:
+            ax, ay = (x0 + x1) / 2, (y0 + y1) / 2
+        if freq:
+            rx = dr.zoomed_range(x0, x1, ax, factor, dr.MIN_FREQUENCY_HZ, dr.MAX_FREQUENCY_HZ,
+                                 dr.MIN_FREQUENCY_SPAN_HZ)
+            if rx is not None:
+                vb.setXRange(*rx, padding=0)
+        if mag:
+            ry = dr.zoomed_range(y0, y1, ay, factor, dr.MIN_MAGNITUDE_DB, dr.MAX_MAGNITUDE_DB,
+                                 dr.MIN_MAGNITUDE_SPAN_DB)
+            if ry is not None:
+                vb.setYRange(*ry, padding=0)
+        self._refresh_peaks_for_viewport()
+
+    def viewportEvent(self, ev: QtCore.QEvent) -> bool:
+        """A trackpad pinch (macOS) zooms by where it starts, as Swift's: over the plot both axes, over the frequency
+        axis frequency only, over the magnitude axis magnitude only. On Windows and Linux a pinch arrives as
+        Ctrl + Scroll instead."""
+        if ev.type() == QtCore.QEvent.Type.NativeGesture:
+            kind = ev.gestureType()
+            Gesture = QtCore.Qt.NativeGestureType
+            scene_pos = self.mapToScene(ev.position().toPoint())
+            if kind == Gesture.BeginNativeGesture:
+                self._pinch_region = self._pointer_region(scene_pos)
+            elif kind == Gesture.ZoomNativeGesture:
+                region = getattr(self, "_pinch_region", "plot")
+                self._zoom_axes(1.0 + ev.value(), scene_pos, freq=region != "yAxis", mag=region != "xAxis")
+                return True
+        return super().viewportEvent(ev)
 
     # ── context menu (replaces pyqtgraph default) ─────────────────────────────
 
