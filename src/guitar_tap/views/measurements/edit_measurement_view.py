@@ -52,6 +52,7 @@ class EditMeasurementView(QtWidgets.QDialog):
         self.setMinimumWidth(450)
         self.setMinimumHeight(250)
         self.resize(500, 350)
+        palette.surface(self, palette.Role.BACKGROUND_PANEL)
 
         self._build_ui()
 
@@ -129,8 +130,6 @@ class EditMeasurementView(QtWidgets.QDialog):
 
         self._save_btn = QtWidgets.QPushButton("Save")
         self._save_btn.setDefault(True)
-        # The main action, prominent; while it cannot save it is drawn as a plain button, dimmed.
-        palette.tag(self._save_btn, prominent=palette.Role.ACCENT)
         self._save_btn.clicked.connect(self.accept)
         btn_row.addWidget(self._save_btn)
 

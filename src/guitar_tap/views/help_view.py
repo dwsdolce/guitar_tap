@@ -819,6 +819,7 @@ class HelpDialog(QtWidgets.QDialog):
         super().__init__(parent, QtCore.Qt.WindowType.Tool)
         self.setWindowTitle("Quick Start Guide")
         self.resize(640, 700)
+        palette.surface(self, Role.BACKGROUND_PANEL)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 8)

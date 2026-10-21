@@ -498,8 +498,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         self._file_playback_generation += 1
         self.is_playing_file = False
         self.playing_file_name = None  # Mirrors Swift stop(): self?.playingFileName = nil
-        self.peak_magnitude = -100.0   # Mirrors Swift stop(): peakMagnitude = -100 (silent state)
-        self.peak_frequency = 0.0      # Mirrors Swift stop(): peakFrequency = 0
+        self.frame.peak_magnitude = -100.0   # Mirrors Swift stop(): peakMagnitude = -100 (silent state)
+        self.frame.peak_frequency = 0.0      # Mirrors Swift stop(): peakFrequency = 0
         if self.stream is not None:
             self.stream.abort()
 
@@ -605,11 +605,10 @@ class RealtimeFFTAnalyzerEngineControlMixin:
                 # any active gated capture with duplicate/zero data.  The gated
                 # capture is flushed separately by _on_pre_mic_restart below.
                 _td("file_playback", f"PARTIAL_FLUSH_EMIT | emitting FFT frame with {len(partial)} samples")
-                mag_y_db, peak_db = self.perform_fft(partial)
+                mag_y_db, _peak_db = self.perform_fft(partial)
 
-                # One delivery, as every frame — mirrors Swift performFFT(on:) publishing the magnitudes
-                # for the analyzer's main-thread sink.
-                self.proc_thread.fftFrameReady.emit(mag_y_db, peak_db, 0.0, 0.0, 0.0)
+                # Announced as every frame — mirrors Swift performFFT(on:) publishing the frame.
+                self.publish_frame(mag_y_db, 0.0)
                 _td("file_playback", "PARTIAL_FLUSH_DONE")
             # Clear the input buffer so the caller starts from a clean slate.
             self._input_buffer = []

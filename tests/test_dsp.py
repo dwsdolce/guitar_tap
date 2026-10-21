@@ -101,8 +101,8 @@ def test_signal(row):
     elif path == "performFFT":
         a.rate = 48000
         a.perform_fft(samples)
-        assert _close(a.peak_frequency, e["peakFrequency"]), f"peak_frequency {a.peak_frequency}"
-        assert _close(a.peak_magnitude, e["peakMagnitude"]), f"peak_magnitude {a.peak_magnitude}"
+        assert _close(a.frame.peak_frequency, e["peakFrequency"]), f"peak_frequency {a.frame.peak_frequency}"
+        assert _close(a.frame.peak_magnitude, e["peakMagnitude"]), f"peak_magnitude {a.frame.peak_magnitude}"
     elif path == "processRawSamples":
         a.process_raw_samples(samples)
         assert _close(a.level.input_level_db, e["inputLevelDB"]), f"input_level_db {a.level.input_level_db}"

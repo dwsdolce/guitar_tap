@@ -54,7 +54,11 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        # The window in background.window, its footer in background.panel, as Swift's.
+        palette.surface(self, palette.Role.BACKGROUND_WINDOW)
         root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
@@ -62,7 +66,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         inner = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(inner)
-        vbox.setContentsMargins(8, 8, 8, 8)
+        vbox.setContentsMargins(16, 16, 16, 16)
         vbox.setSpacing(12)
         scroll.setWidget(inner)
         root.addWidget(scroll)
@@ -73,6 +77,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         # Swift's GroupBox rows: a small secondary "Label:" then the value at body size, left to
         # right; the box fits its content.
         info_group = QtWidgets.QGroupBox("Measurement Info")
+        palette.tag(info_group, group=True)
         info_group.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Preferred)
         info_rows = QtWidgets.QVBoxLayout(info_group)
@@ -128,6 +133,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
             cmp_group = QtWidgets.QGroupBox(
                 f"Compared Spectra ({len(m.comparison_entries or [])})"
             )
+            palette.tag(cmp_group, group=True)
             cmp_vbox = QtWidgets.QVBoxLayout(cmp_group)
             cmp_view = ComparisonResultsView()
             cmp_view.set_comparison_data(_comparison_data(m))
@@ -143,6 +149,7 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
                 key=lambda p: p.frequency,
             )
             peaks_group = QtWidgets.QGroupBox("Identified Peaks")
+            palette.tag(peaks_group, group=True)
             peaks_vbox = QtWidgets.QVBoxLayout(peaks_group)
             peaks_vbox.setSpacing(4)
 
@@ -196,9 +203,14 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         # The detail view is read-only.  Load / Export / Export PDF Report
         # are all available from the row's popup menu in the Measurements
         # list (see MeasurementsListView), so no duplicate controls are
-        # presented here.  Only Done remains: bottom right, a plain button since it only closes
-        # (Swift's Done).
-        btn_row = QtWidgets.QHBoxLayout()
+        # presented here.  Only Done remains: bottom right, the platform's button, not the default
+        # since it only closes (Swift's Done).
+        footer = QtWidgets.QWidget()
+        footer.setObjectName("detail_footer")
+        footer.setStyleSheet("#detail_footer { border-top-width: 1px; border-top-style: solid; }")
+        palette.tag(footer, background=palette.Role.BACKGROUND_PANEL, border=palette.Role.SEPARATOR)
+        btn_row = QtWidgets.QHBoxLayout(footer)
+        btn_row.setContentsMargins(16, 10, 16, 10)
         btn_row.addStretch()
 
         close_btn = QtWidgets.QPushButton("Done")
@@ -206,4 +218,4 @@ class MeasurementDetailDialog(QtWidgets.QDialog):
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
 
-        root.addLayout(btn_row)
+        root.addWidget(footer)

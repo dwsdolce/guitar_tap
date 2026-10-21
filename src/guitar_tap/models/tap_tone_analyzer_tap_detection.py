@@ -466,34 +466,23 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
     # on_fft_frame — main-thread FFT frame receiver
     # ------------------------------------------------------------------ #
 
-    def on_fft_frame(
-        self,
-        mag_y_db,
-        peak_db: float,
-        fps: float,
-        sample_dt: float,
-        processing_dt: float,
-    ) -> None:
-        """Receive a processed FFT frame (main thread slot).
+    def _on_live_frame(self) -> None:
+        """A frame announced on ``mic.frame`` — taken here, on the main thread. Mirrors Swift's sink on
+        ``fftAnalyzer.frame.$magnitudes``."""
+        frame = self.mic.frame
+        self.on_fft_frame(frame.magnitudes, frame.peak_magnitude)
 
-        Mirrors Swift setupSubscriptions() Combine sinks on fftAnalyzer.$magnitudes
-        (guitar tap detection + peak analysis) and fftAnalyzer.$inputLevelDB
-        (plate/brace tap detection + decay tracking).
+    def on_fft_frame(self, mag_y_db, peak_db: float) -> None:
+        """Receive a processed FFT frame (main thread).
 
-        The processing thread no longer runs detect_tap(); it only delivers
-        raw FFT and level data.  detect_tap() is called here on the main thread,
-        exactly as Swift's Combine subscriptions do.
+        Mirrors Swift ``onFftFrame(magnitudes:frequencies:peakMagnitude:)``: the next frame's actions, and
+        the live peaks while a sequence runs. The frame is drawn by the views that listen to ``mic.frame``;
+        the analyzer announces only what changes in it.
 
         Args:
-            mag_y_db:     FFT magnitude spectrum in dBFS (ndarray).
-            peak_db:      The spectrum's peak in dBFS, as a float (Swift ``peakMagnitude``).
-            fps, sample_dt, processing_dt: Diagnostics.
+            mag_y_db: FFT magnitude spectrum in dBFS (ndarray).
+            peak_db:  The spectrum's peak in dBFS, as a float (Swift ``peakMagnitude``).
         """
-        import numpy as np
-
-        from guitar_tap.models.measurement_type import MeasurementType as _MT
-        from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-
         self._current_mag_y_db = mag_y_db
 
         # Cache instantaneous FFT peak magnitude — mirrors Swift fftAnalyzer.peakMagnitude.
@@ -503,44 +492,14 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         self._current_peak_magnitude_db = peak_db
         self._run_next_frame_actions(peak_db)
 
-        # NOTE: decay tracking is NOT driven here. on_fft_frame fires at the FFT frame rate (~2.7 Hz),
-        # far too coarse for ring-out timing. It now runs in _on_rms_level_changed at the per-chunk
-        # RMS rate (~43 Hz), matching Swift fftAnalyzer.$inputLevelDB → trackDecayFast(inputLevel:).
+        # Decay tracking and tap detection are not driven here: they run per chunk, in
+        # _on_rms_level_changed (~43 Hz), as Swift's on fftAnalyzer.$inputLevelDB.
 
-        # Tap detection for ALL modes is now driven by _on_rms_level_changed
-        # (~43 Hz, per-chunk RMS).  Earlier the guitar path detected via FFT
-        # peak here (~2.7 Hz), but that resolution was coarser than the
-        # inter-tap interval for closely-spaced taps and produced unreliable
-        # rising/falling edges. Spectrum capture is now triggered by RMS edges
-        # and the captured window is a full fft_size buffer aligned to the
-        # tap onset (see start_guitar_gated_capture).
-
-        # Emit spectrum for the view to draw.
-        # A device/route change is settling: show nothing rather than the new device's
-        # not-yet-valid audio. The settle says so directly, through is_settling, and leaves the
-        # frozen arrays (a completed or loaded measurement's data) alone.
-        if self.is_settling:
-            self.spectrumUpdated.emit(np.array([]), np.array([]))
-        elif self._display_mode == AnalysisDisplayMode.LIVE:
-            if self.is_measurement_complete:
-                self.spectrumUpdated.emit(self.frozen_frequencies, self.frozen_magnitudes)
-            else:
-                # Delegate to analyze_magnitudes — mirrors Swift setupSubscriptions()
-                # Combine sink at TapToneAnalyzer.swift:876 which calls
-                # self?.analyzeMagnitudes(magnitudes, frequencies:, peakMagnitude:).
-                # analyze_magnitudes updates peaks_above_peak_min, selected_peak_ids,
-                # identified_modes, and emits peaksChanged via its internal logic.
-                self.analyze_magnitudes(list(mag_y_db), list(self.freq), peak_db)
-                self.spectrumUpdated.emit(self.freq, mag_y_db)
-        # COMPARISON: skip spectrum update — only overlay curves shown.
-        # A loaded or completed measurement is complete, so the is_measurement_complete check above
-        # is what shows its frozen arrays.
-
-        self.framerateUpdate.emit(float(fps), float(sample_dt), float(processing_dt))
-        peak_idx = int(np.argmax(mag_y_db))
-        if peak_idx < len(self.freq):
-            peak_freq = float(self.freq[peak_idx])
-            self.peakInfoChanged.emit(peak_freq, float(mag_y_db[peak_idx]))
+        # The live peaks, while a sequence runs and is not complete — mirrors Swift's sink calling
+        # analyzeMagnitudes(magnitudes, frequencies:, peakMagnitude:).
+        if (not self.is_settling and self._display_mode == AnalysisDisplayMode.LIVE
+                and not self.is_measurement_complete):
+            self.analyze_magnitudes(list(mag_y_db), list(self.freq), peak_db)
 
     # ------------------------------------------------------------------ #
     # _on_rms_level_changed — tap detection for all modes at ~43 Hz

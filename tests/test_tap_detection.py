@@ -188,7 +188,8 @@ class TestPipelineDeliversOnceAndExact:
     def test_one_frame_is_analysed_once(self):
         sut = self._sut()
         frames: list = []
-        sut.framerateUpdate.connect(lambda *a: frames.append(a))  # emitted once per on_fft_frame
+        original = sut.on_fft_frame   # analysis: runs once per frame delivered
+        sut.on_fft_frame = lambda *a, **k: (frames.append(a), original(*a, **k))
         sut.mic.process_raw_samples(self._tone(-50.0, n=sut.mic.fft_size))
         QtWidgets.QApplication.processEvents()
         assert len(frames) == 1, f"one FFT frame was analysed {len(frames)} times"
@@ -225,7 +226,8 @@ class TestPipelineDeliversOnceAndExact:
 
             # The frame, once.
             frames: list = []
-            sut.framerateUpdate.connect(lambda *a: frames.append(a))
+            original = sut.on_fft_frame
+            sut.on_fft_frame = lambda *a, **k: (frames.append(a), original(*a, **k))
             sut.mic.process_raw_samples(self._tone(-50.0, n=sut.mic.fft_size))
             QtWidgets.QApplication.processEvents()
             assert len(frames) == 1, f"one FFT frame was analysed {len(frames)} times"

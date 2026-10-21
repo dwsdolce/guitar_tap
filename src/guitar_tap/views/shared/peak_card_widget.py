@@ -800,7 +800,3 @@ class PeakListWidget(QtWidgets.QWidget):
         for card in self._cards:
             card.set_held(held)
         self.model.data_held(held)
-
-    def new_data(self, held: bool) -> None:
-        """Reset the model for a fresh capture."""
-        self.model.new_data(held)

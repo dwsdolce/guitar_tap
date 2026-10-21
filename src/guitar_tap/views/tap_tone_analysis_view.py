@@ -57,22 +57,6 @@ basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 
-def _vsep() -> QtWidgets.QFrame:
-    """Thin vertical separator for horizontal toolbars."""
-    sep = QtWidgets.QFrame()
-    sep.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-    sep.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-    return sep
-
-
-def _hsep() -> QtWidgets.QFrame:
-    """Thin horizontal separator."""
-    sep = QtWidgets.QFrame()
-    sep.setFrameShape(QtWidgets.QFrame.Shape.HLine)
-    sep.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-    return sep
-
-
 def _section_sep() -> QtWidgets.QFrame:
     """The line between the plate / brace panel's sections — divider.section, plain enough to group
     the sections without competing with them."""
@@ -655,6 +639,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Root layout (vertical) ───────────────────────────────────────
         main_widget = QtWidgets.QWidget()
+        palette.surface(main_widget, palette.Role.BACKGROUND_WINDOW)
         self.setCentralWidget(main_widget)
         root = QtWidgets.QVBoxLayout(main_widget)
         root.setSpacing(0)
@@ -700,7 +685,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._cv.addWidget(self._material_instr_panel)
 
         ch.addWidget(canvas_widget, stretch=1)
-        ch.addWidget(_vsep())
+        ch.addWidget(palette.divider(vertical=True))
 
         # Right: results panel — sizes to its content, never hidden
         self._right_panel = self._build_right_panel(self._f_range)
@@ -754,14 +739,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         view_btn = QtWidgets.QPushButton("View Release")
         view_btn.clicked.connect(self._open_update_url)
+        palette.tag(view_btn, plain=True)
         row.addWidget(view_btn)
 
         skip_btn = QtWidgets.QPushButton("Skip This Version")
         skip_btn.clicked.connect(self._skip_update_version)
+        palette.tag(skip_btn, plain=True)
         row.addWidget(skip_btn)
 
         later_btn = QtWidgets.QPushButton("Later")
         later_btn.clicked.connect(banner.hide)
+        palette.tag(later_btn, plain=True)
         row.addWidget(later_btn)
 
         banner.hide()
@@ -930,7 +918,7 @@ class MainWindow(QtWidgets.QMainWindow):
         metrics_btn.clicked.connect(self._show_metrics)
         hl.addWidget(metrics_btn)
 
-        hl.addWidget(_vsep())
+        hl.addWidget(palette.divider(vertical=True))
 
         settings_btn = QtWidgets.QPushButton("Settings")
         palette.set_icon(settings_btn, "mdi.cog-outline", palette.Role.ACCENT)
@@ -1041,7 +1029,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tap_num_spin.setMaximumWidth(65)
         taps_layout.addWidget(self.tap_num_spin)
 
-        hl.addWidget(_vsep())
+        hl.addWidget(palette.divider(vertical=True))
 
         # ── Threshold (tap detection) ──────────────────────────────────────
         # Uses ThresholdSlider with integrated level meter, peak-hold dot, and
@@ -1059,7 +1047,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         self.tap_threshold_reset_btn.clicked.connect(lambda: self.tap_threshold_slider.setValue(-40))
 
-        hl.addWidget(_vsep())
+        hl.addWidget(palette.divider(vertical=True))
 
         # ── Peak Min ──────────────────────────────────────────────────────
         peak_min_val = int(AS.AppSettings.peak_min_threshold()) + 100   # 0-100 scale
@@ -1699,10 +1687,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _gsum_hl.addLayout(_ro_col)
 
         # Vertical divider
-        _vdiv = QtWidgets.QFrame()
-        _vdiv.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-        _vdiv.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-        _gsum_hl.addWidget(_vdiv)
+        _gsum_hl.addWidget(palette.divider(vertical=True))
 
         # Tap ratio column (Top / Air)
         _ratio_col = QtWidgets.QVBoxLayout()
@@ -1973,7 +1958,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _saved_close = QtWidgets.QToolButton()
         palette.set_icon(_saved_close, "mdi.close", palette.Role.TEXT_SECONDARY)
         _saved_close.setToolTip("Dismiss")
-        _saved_close.setAutoRaise(True)
+        palette.tag(_saved_close, icon=True)
         _saved_close.clicked.connect(lambda: self.fft_canvas.analyzer.dismiss_capture_audio_saved())
         _saved_hl.addWidget(_saved_close)
         self._sb_saved_wgt.setVisible(False)
@@ -2008,13 +1993,11 @@ class MainWindow(QtWidgets.QMainWindow):
           Row 2: [icon]  [title]
                          [description]
         """
+        # Swift's GroupBox in palette roles: background.subtle, corner radius 8.
         frame = QtWidgets.QFrame()
         frame.setObjectName("material_instr_panel")
-        frame.setStyleSheet(
-            "#material_instr_panel { border-top-width: 1px; border-top-style: solid; }"
-        )
-        palette.tag(frame, color=palette.Role.TEXT_PRIMARY, background=palette.Role.BACKGROUND_PANEL,
-                    border=palette.Role.SEPARATOR)
+        frame.setStyleSheet("#material_instr_panel { border-radius: 8px; }")
+        palette.tag(frame, color=palette.Role.TEXT_PRIMARY, background=palette.Role.BACKGROUND_SUBTLE)
         vl = QtWidgets.QVBoxLayout(frame)
         vl.setContentsMargins(8, 6, 8, 6)
         vl.setSpacing(4)
@@ -2025,7 +2008,7 @@ class MainWindow(QtWidgets.QMainWindow):
         _title_font.setBold(True)
         self._mip_group_title_lbl = QtWidgets.QLabel("Plate Measurement")
         self._mip_group_title_lbl.setFont(_title_font)
-        palette.tag(self._mip_group_title_lbl, color=palette.Role.TEXT_SECONDARY)
+        palette.tag(self._mip_group_title_lbl, color=palette.Role.TEXT_PRIMARY)
         vl.addWidget(self._mip_group_title_lbl)
 
         # ── Row 1: dot + shortStatus + spacer + step counter ────────────
@@ -2066,10 +2049,7 @@ class MainWindow(QtWidgets.QMainWindow):
         vl.addLayout(row1)
 
         # ── Divider ──────────────────────────────────────────────────────
-        div = QtWidgets.QFrame()
-        div.setFrameShape(QtWidgets.QFrame.Shape.HLine)
-        div.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-        vl.addWidget(div)
+        vl.addWidget(palette.divider())
 
         # ── Row 2: icon + (title / description) ─────────────────────────
         row2 = QtWidgets.QHBoxLayout()
@@ -2194,9 +2174,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # The highlighted peak is the model's: a dot or card click toggles it, and the chart's star and
         # the highlighted card both draw from it. Mirrors Swift's highlightedPeakID.
         canvas.analyzer.highlightedPeakChanged.connect(self.peak_widget.show_highlight)
-        canvas.framerateUpdate.connect(self._on_framerate_update)
-        canvas.peakInfoChanged.connect(self._on_peak_info)
-        canvas.newSample.connect(self.peak_widget.new_data)
+        canvas.analyzer.mic.frame.frameChanged.connect(self._on_live_frame)
         canvas.annotations.restoreFocus.connect(self.peak_widget.restore_focus)
         canvas.comparisonChanged.connect(self._on_comparison_changed)
 
@@ -2449,7 +2427,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_peak_readout(self) -> None:
         """The status bar's peak readout: while the engine runs, the live peak (written per frame by
-        _on_peak_info); while it does not, why — "Audio input unavailable" or "Starting...". As
+        _on_live_frame); while it does not, why — "Audio input unavailable" or "Starting...". As
         Swift's status bar, `fft.isRunning ? Peak… : (fft.inputUnavailable ? … : "Starting...")`."""
         mic = self.fft_canvas.analyzer.mic
         if mic.is_running:
@@ -2560,17 +2538,20 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.cal_status.setText("Calibration: none")
 
-    def _on_peak_info(self, peak_hz: float, peak_db: float) -> None:
+    def _on_live_frame(self) -> None:
+        """A frame announced on the engine's live frame: the status bar's readouts. Mirrors Swift's
+        FrameReader around them."""
         if self._is_running:
-            # The left readout, per FFT frame — Swift's one choice: guitar shows fft.peakMagnitude,
-            # material shows fft.displayLevelDB (the RMS input level, -inf on true silence).
-            peak_text = fp.string(peak_db, fp.PEAK_MAGNITUDE_DB)
+            frame = self.fft_canvas.analyzer.mic.frame
+            # The left readout — Swift's one choice: guitar shows frame.peakMagnitude, material shows
+            # frame.displayLevelDB (the RMS input level, -inf on true silence).
+            peak_text = fp.string(frame.peak_magnitude, fp.PEAK_MAGNITUDE_DB)
             if TDS.measurement_type().is_guitar:
                 self._sb_avg_lbl.setText(f"{peak_text} dB")
             else:
-                level = self.fft_canvas.analyzer.mic.display_level_db
-                self._sb_avg_lbl.setText(f"{fp.string(level, fp.PEAK_MAGNITUDE_DB)} dB")
-            self._sb_peak_lbl.setText(f"Peak: {peak_text} dB @ {fp.string(peak_hz, fp.PEAK_FREQUENCY_HZ)} Hz")
+                self._sb_avg_lbl.setText(f"{fp.string(frame.display_level_db, fp.PEAK_MAGNITUDE_DB)} dB")
+            self._sb_peak_lbl.setText(
+                f"Peak: {peak_text} dB @ {fp.string(frame.peak_frequency, fp.PEAK_FREQUENCY_HZ)} Hz")
 
     def _sb_update_frozen_state(self, frozen: bool) -> None:
         if frozen:
@@ -2599,29 +2580,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # Keep the View menu checkmark in sync with the toolbar button state.
         self._menu_auto_db_action.setChecked(enabled)
 
-    def _on_framerate_update(
-        self, framerate: float, _sampletime: float, processingtime: float
-    ) -> None:
-        """Handle a frame-rate update from the FFT processing thread.
-
-        Mirrors Swift's @ObservedObject auto-refresh of FFTAnalysisMetricsView —
-        forwards live metrics to the dialog when it is open, and updates the
-        results-panel status indicator regardless.
-        """
-        # Forward to FFTAnalysisMetricsView (mirrors SwiftUI @ObservedObject re-render)
-        if self._metrics_dialog and self._metrics_dialog.isVisible():
-            self._metrics_dialog.update_metrics(
-                framerate=framerate,
-                processing_time=processingtime,
-                is_running=self._is_running,
-            )
-
-        self._update_running_indicators()
-
     def _update_running_indicators(self) -> None:
         """The results panel's running / stopped indicator, and the metrics dialog's when it is
-        open: the engine's running state, as Swift's analyzer.isRunning. Called on each frame-rate
-        update and when the engine starts or stops — the updates stop with the engine."""
+        open: the engine's running state, as Swift's analyzer.isRunning. Called when the engine starts or
+        stops."""
         if self._metrics_dialog and self._metrics_dialog.isVisible():
             self._metrics_dialog.set_running(self._is_running)
         if self._is_running:
@@ -5367,6 +5329,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("Tap Settings")
+        # The Settings window in background.panel, as Swift's.
+        palette.surface(dlg, palette.Role.BACKGROUND_PANEL)
         dlg.setMinimumWidth(460)
 
         # Top-level layout contains a QStackedWidget:
@@ -5401,6 +5365,7 @@ class MainWindow(QtWidgets.QMainWindow):
         help_layout.setContentsMargins(8, 8, 8, 8)
         help_layout.setSpacing(6)
         back_btn = QtWidgets.QPushButton("← Settings")
+        palette.tag(back_btn, plain=True)
         back_btn.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
         )
@@ -6027,9 +5992,13 @@ class MainWindow(QtWidgets.QMainWindow):
         df_layout.setContentsMargins(16, 2, 0, 0)
         df_layout.setSpacing(2)
 
+        # "Saved to" in text.secondary above the path in text.primary, as Swift's.
+        df_saved_lbl = QtWidgets.QLabel("Saved to")
+        df_saved_lbl.setFont(caption)
+        palette.tag(df_saved_lbl, color=palette.Role.TEXT_SECONDARY)
         df_path_lbl = QtWidgets.QLabel()
         df_path_lbl.setFont(caption)
-        palette.tag(df_path_lbl, color=palette.Role.TEXT_SECONDARY)
+        palette.tag(df_path_lbl, color=palette.Role.TEXT_PRIMARY)
         df_path_lbl.setContentsMargins(0, 0, 0, 2)
         df_path_lbl.setWordWrap(True)
         df_path_lbl.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -6041,7 +6010,7 @@ class MainWindow(QtWidgets.QMainWindow):
             palette.tag(_btn, tint=palette.Role.ACCENT)
 
         def _refresh_df_path() -> None:
-            df_path_lbl.setText(f"Saved to: {_WDF.current_folder()}")
+            df_path_lbl.setText(str(_WDF.current_folder()))
             # Disabled (not removed) when already on the default — button-visibility principle.
             df_use_default_btn.setEnabled(_WDF.has_custom_folder())
 
@@ -6064,6 +6033,7 @@ class MainWindow(QtWidgets.QMainWindow):
         df_btn_row.addWidget(df_change_btn)
         df_btn_row.addWidget(df_use_default_btn)
         df_btn_row.addStretch()
+        df_layout.addWidget(df_saved_lbl)
         df_layout.addWidget(df_path_lbl)
         df_layout.addLayout(df_btn_row)
         _refresh_df_path()
@@ -6730,9 +6700,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cancel_btn.clicked.connect(_cancel_settings)
         apply_btn = QtWidgets.QPushButton("Done")
         apply_btn.setDefault(True)
-        # Done commits the changes beside Cancel: Swift's .confirmationAction — the accent with
-        # white text.
-        palette.tag(apply_btn, prominent=palette.Role.ACCENT)
+        # Done commits the changes beside Cancel: the default button, Swift's .confirmationAction.
         apply_btn.clicked.connect(_apply_settings)
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(apply_btn)
@@ -6843,16 +6811,12 @@ class _PlayFileDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Play Audio File")
         self.setMinimumWidth(500)
+        palette.surface(self, palette.Role.BACKGROUND_PANEL)
 
         # Swift's PlayFileSheet: a bold title above each row; the file's name (secondary while
         # there is none) with Browse… at the right — and Clear once a calibration is chosen;
         # the hint under the calibration; Cancel and Play at the bottom right.
-        from guitar_tap.views.save_measurement_sheet import (
-            caption_label,
-            section_label,
-            set_commit_enabled,
-        )
-        self._set_commit_enabled = set_commit_enabled
+        from guitar_tap.views.save_measurement_sheet import caption_label, section_label
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 16)
@@ -6864,6 +6828,7 @@ class _PlayFileDialog(QtWidgets.QDialog):
         audio_row.addWidget(self._audio_name, 1)
         audio_browse = QtWidgets.QPushButton("Browse\u2026")
         audio_browse.setAutoDefault(False)
+        palette.tag(audio_browse, plain=True)
         audio_browse.clicked.connect(self._browse_audio)
         audio_row.addWidget(audio_browse)
         layout.addLayout(audio_row)
@@ -6875,10 +6840,12 @@ class _PlayFileDialog(QtWidgets.QDialog):
         cal_row.addWidget(self._cal_name, 1)
         self._cal_clear = QtWidgets.QPushButton("Clear")
         self._cal_clear.setAutoDefault(False)
+        palette.tag(self._cal_clear, plain=True)
         self._cal_clear.clicked.connect(self._clear_calibration)
         cal_row.addWidget(self._cal_clear)
         cal_browse = QtWidgets.QPushButton("Browse\u2026")
         cal_browse.setAutoDefault(False)
+        palette.tag(cal_browse, plain=True)
         cal_browse.clicked.connect(self._browse_calibration)
         cal_row.addWidget(cal_browse)
         layout.addLayout(cal_row)
@@ -6911,7 +6878,7 @@ class _PlayFileDialog(QtWidgets.QDialog):
             role = palette.Role.TEXT_PRIMARY if path else palette.Role.TEXT_SECONDARY
             palette.tag(label, color=role)
         self._cal_clear.setVisible(bool(self._cal_path))
-        self._set_commit_enabled(self._ok_btn, bool(self._audio_path))
+        self._ok_btn.setEnabled(bool(self._audio_path))
 
     # -- Public accessors --
 

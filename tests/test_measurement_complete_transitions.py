@@ -121,14 +121,16 @@ def test_a_new_sequence_emits_measurement_complete_false(qapp):
     assert False in received
 
 
-def test_a_live_frame_after_completion_shows_only_the_frozen_spectrum(qapp):
+def test_a_live_frame_after_completion_leaves_the_frozen_spectrum(qapp):
+    """The chart draws each frame from the engine's live frame and shows the frozen spectrum once the
+    measurement is complete; the analyzer neither changes the frozen spectrum for a frame nor announces one."""
     sut = _completed(qapp)
+    frozen = np.array(sut.frozen_magnitudes, copy=True)
     spectra: list[tuple] = []
     sut.spectrumUpdated.connect(lambda f, m: spectra.append((f, m)))
-    live = np.full(64, -20.0)
-    sut.on_fft_frame(mag_y_db=live, peak_db=-20.0, fps=2.7, sample_dt=0.37, processing_dt=0.01)
-    for _freqs, mags in spectra:
-        assert np.array_equal(mags, sut.frozen_magnitudes), "a live frame painted over the frozen spectrum"
+    sut.on_fft_frame(mag_y_db=np.full(64, -20.0), peak_db=-20.0)
+    assert np.array_equal(sut.frozen_magnitudes, frozen), "a live frame changed the frozen spectrum"
+    assert spectra == [], "the analyzer announced a spectrum for a live frame"
 
 
 def test_leaving_completion_does_not_reset_the_frozen_spectrum(qapp):

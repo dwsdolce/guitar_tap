@@ -107,7 +107,7 @@ class RealtimeFFTAnalyzerFFTProcessingMixin:
 
         peak_bin = int(np.argmax(magnitudes_db))  # first maximum on ties, as Swift's max(by:)
         peak_db = float(magnitudes_db[peak_bin])
-        self.peak_frequency = peak_bin * float(self.rate) / self.fft_size
-        self.peak_magnitude = peak_db
-        self.display_level_db = self.readout_level_db
+        self.frame.peak_frequency = peak_bin * float(self.rate) / self.fft_size
+        self.frame.peak_magnitude = peak_db
+        self.frame.display_level_db = self.readout_level_db
         return magnitudes_db, peak_db

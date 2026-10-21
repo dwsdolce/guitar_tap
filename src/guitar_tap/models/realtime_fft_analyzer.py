@@ -85,6 +85,7 @@ from PySide6 import QtCore
 
 from guitar_tap.models.dead_input import BUFFER_DELIVERY_TIMEOUT, DEAD_INPUT_DWELL
 from guitar_tap.models.input_level import InputLevel
+from guitar_tap.models.live_frame import LiveFrame
 from guitar_tap.utilities.logging import gt_log
 
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
@@ -128,8 +129,8 @@ class _FftProcessingThread(QtCore.QThread):
     For file playback, ``process_file_data`` calls ``process_raw_samples``
     inline without using this thread or the queue.
 
-    It also carries the pipeline's Qt signals (``fftFrameReady``, ``gatedCaptureComplete`` and the
-    rest — the input level's are on ``mic.level``): ``RealtimeFFTAnalyzer`` is not a QObject, so it cannot own
+    It also carries the pipeline's Qt signals (``gatedCaptureComplete`` and the rest — the input
+    level's are on ``mic.level``, the frame's on ``mic.frame``): ``RealtimeFFTAnalyzer`` is not a QObject, so it cannot own
     signals, and this thread object does. So the object is created once, with the mic, and never
     replaced: a replacement would start with no connections. And each ``connect()`` ADDS a receiver, so
     connecting a signal twice delivers every emission twice. Both are guarded by the pipeline
@@ -150,12 +151,6 @@ class _FftProcessingThread(QtCore.QThread):
     # a blocking emit from the main thread would wait on itself.
     runOnMainBlocking: QtCore.Signal = QtCore.Signal(object)
     runOnMain: QtCore.Signal = QtCore.Signal(object)
-
-    # (mag_y_db, peak_db, fps, sample_dt, processing_dt). The ONE delivery of a frame to the
-    # analyzer: connected to on_fft_frame, which therefore runs on the main thread — Swift's analyzer
-    # takes frames through a Combine sink `.receive(on: DispatchQueue.main)`. The peak travels as float
-    # dB (Swift's `peakMagnitude`), unrounded.
-    fftFrameReady: QtCore.Signal = QtCore.Signal(np.ndarray, float, float, float, float)
 
     # Edge-triggered dead-input signal: True while buffers arrive carrying no
     # signal. Lives here because RealtimeFFTAnalyzer is not a QObject, so the QThread owns
@@ -619,6 +614,11 @@ class RealtimeFFTAnalyzer(
         # The latest buffer's input level — level, clipping, recent peak — on an object of its own so
         # that only the threshold meter observes it. Swift `level`.
         self.level = InputLevel()
+        # The latest frame — its spectrum, peak, readout level and processing times — announced once per
+        # frame. An object of its own so that only what draws a frame, and the analyzer, hear of it.
+        self.frame = LiveFrame()
+        # The last frames' processing times in ms, for the frame's average. Swift processingTimeHistory.
+        self.processing_time_history: list[float] = []
 
         # Recent peak level (`level.recent_peak_level_db`) — Swift recentPeakLevelDB: latch the running
         # max, release to the current level only after `_recent_peak_window` seconds without a higher
@@ -627,17 +627,10 @@ class RealtimeFFTAnalyzer(
         self._recent_peak_window: float = 2.0
         self._recent_peak_time: float = 0.0
 
-        # The live spectrum's loudest bin — Swift peakFrequency / peakMagnitude. Set on every frame
-        # by perform_fft; read by the Metrics panel. Starts at, and stop() returns it to, Swift's
-        # silent state (-100 dB @ 0 Hz).
-        self.peak_frequency: float = 0.0
-        self.peak_magnitude: float = -100.0
-
-        # The material level readout — Swift readoutLevelDB (per chunk) and displayLevelDB (the
-        # same, published at the frame rate by perform_fft). True silence is -inf on the readout;
-        # detection reads the per-chunk level, which stays -100 on silence.
+        # The material level readout — Swift readoutLevelDB (per chunk), published at the frame rate as
+        # frame.display_level_db by perform_fft. True silence is -inf on the readout; detection reads the
+        # per-chunk level, which stays -100 on silence.
         self.readout_level_db: float = -100.0
-        self.display_level_db: float = -100.0
 
         # Level-crossing detection.
         self._level_crossing_handler: "Callable[[], None] | None" = None
@@ -665,9 +658,6 @@ class RealtimeFFTAnalyzer(
         # the setup before the first chunk took. Mirrors Swift RealtimeFFTAnalyzer.audio_elapsed.
         self.audio_elapsed: float = 0.0
         self._diag_total_samples: int = 0
-
-        # Timing for FFT frame rate.
-        self._last_fft_time: float = time.time()
 
         # Python-only: off-main-thread DSP worker (for live mic queue draining).
         # Mirrors Swift's AVAudioEngine audio processing queue.
@@ -774,7 +764,7 @@ class RealtimeFFTAnalyzer(
         5. rms_level_handler callback + level.inputLevelChanged Qt signal
         6. Clipping detection → level.clippingChanged Qt signal
         7. Recent peak history update
-        8. Input buffer accumulation → FFT → fftFrameReady Qt signal (the analyzer's one frame delivery)
+        8. Input buffer accumulation → FFT → frame.frameChanged Qt signal (the frame, announced once)
         """
         enter_now = time.time()
         chunk_f32 = chunk.astype(np.float32)
@@ -919,20 +909,31 @@ class RealtimeFFTAnalyzer(
             self._input_buffer = [remainder] if len(remainder) else []
             self._input_buffer_len = len(remainder)
 
-            sample_dt = enter_now - self._last_fft_time
-            self._last_fft_time = enter_now
-
             # FFT + post-processing (calibration, the live peak).
-            mag_y_db, peak_db = self.perform_fft(samples)
+            mag_y_db, _peak_db = self.perform_fft(samples)
 
-            exit_now = time.time()
-            processing_dt = exit_now - enter_now
-            fps = 1.0 / max(sample_dt, 1e-12)
+            processing_dt = time.time() - enter_now
+            self.publish_frame(mag_y_db, processing_dt * 1000.0)
 
-            # The ONE delivery of this frame to the analyzer (see fftFrameReady). Live, it is queued to
-            # the main thread; in tests and inline file playback the emitter and receiver share a thread,
-            # so Qt delivers it synchronously.
-            self.proc_thread.fftFrameReady.emit(mag_y_db, peak_db, fps, sample_dt, processing_dt)
+    def publish_frame(self, magnitudes_db: np.ndarray, processing_time_ms: float) -> None:
+        """Announce a frame on ``frame``: its spectrum and processing times (perform_fft set its peak and
+        readout level). Live, the analyzer and the views hear it on the main thread; in tests and inline
+        file playback the emitter and the analyzer share a thread, so Qt delivers it synchronously.
+        Mirrors Swift performFFT(on:) publishing the frame."""
+        history = self.processing_time_history
+        history.append(processing_time_ms)
+        if len(history) > 30:
+            del history[0]
+        frame = self.frame
+        frame.magnitudes = magnitudes_db
+        frame.processing_time_ms = processing_time_ms
+        frame.avg_processing_time_ms = sum(history) / len(history)
+        frame.frameChanged.emit()
+
+    @property
+    def frame_rate(self) -> float:
+        """FFT frames per second: one per fft_size samples (no overlap). Swift ``frameRate``."""
+        return float(self.rate) / self.fft_size if self.fft_size else 0.0
 
     # MARK: - Calibration
     #

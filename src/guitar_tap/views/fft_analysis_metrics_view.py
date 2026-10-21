@@ -18,14 +18,12 @@ status indicator:
 | Peak Detection        | Dominant frequency (Hz), magnitude (dB)              |
 | Status                | Running / Stopped indicator                          |
 
-All dynamic values are updated via update() which is called from the
-framerateUpdate signal emitted by FftCanvas (mirrors @ObservedObject binding
-that keeps the SwiftUI view live while the analyzer is running).
+The dynamic values follow the engine's live frame (``mic.frame``), which the view listens to itself,
+as Swift's observes ``analyzer.frame``.
 """
 
 from __future__ import annotations
 
-from collections import deque
 from typing import TYPE_CHECKING
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -101,19 +99,16 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
     Mirrors Swift ``FFTAnalysisMetricsView``.
 
     In Python the view is a non-modal QDialog rather than a SwiftUI sheet.
-    Dynamic values are updated by calling ``update_metrics()`` from the
-    ``framerateUpdate`` signal handler in MainWindow, mirroring the reactive
-    @ObservedObject binding in the Swift implementation.
+    Its dynamic values follow the engine's live frame, which it listens to itself, as Swift's
+    observes ``analyzer.frame``; the running state follows the engine's start and stop.
     """
 
     def __init__(self, canvas: "FftCanvas", parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._canvas = canvas
 
-        # Rolling 30-frame average of processing time (mirrors Swift avgProcessingTimeMs)
-        self._proc_times: deque[float] = deque(maxlen=30)
-
         self.setWindowTitle("FFT Analysis Metrics")
+        palette.surface(self, palette.Role.BACKGROUND_PANEL)
         self.setMinimumWidth(380)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
 
@@ -199,6 +194,7 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         status_row = QtWidgets.QHBoxLayout()
         self._status_dot = QtWidgets.QLabel("●")
         self._status_dot.setFont(self._sub_font)
+        palette.tag(self._status_dot, color=palette.Role.STATUS_STOPPED)
         status_row.addWidget(self._status_dot)
         self._status_label = QtWidgets.QLabel("Stopped")
         self._status_label.setFont(self._sub_font)
@@ -208,10 +204,14 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         outer.addLayout(status_row)
 
         close_btn = QtWidgets.QPushButton("Done")
-        # Done only closes: a plain button, not the dialog's default (Swift's .cancellationAction).
+        # Done only closes: the platform's button, not the dialog's default (Swift's .cancellationAction).
         close_btn.setAutoDefault(False)
         close_btn.clicked.connect(self.accept)
         outer.addWidget(close_btn)
+
+        # The rows that follow a frame, and the running state as it is now.
+        self._canvas.analyzer.mic.frame.frameChanged.connect(self._on_live_frame)
+        self.set_running(self._canvas.analyzer.mic.is_running)
 
     def _group(self, title: str, rows: list[MetricRow]) -> QtWidgets.QGroupBox:
         """Build a titled QGroupBox from a list of MetricRows with dividers.
@@ -219,16 +219,14 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         Mirrors Swift GroupBox(title) { VStack { ... Divider() ... } }.
         """
         grp = QtWidgets.QGroupBox(title)
+        palette.tag(grp, group=True)
         vl = QtWidgets.QVBoxLayout(grp)
         vl.setContentsMargins(8, 8, 8, 8)
         vl.setSpacing(4)
         for i, row in enumerate(rows):
             vl.addLayout(row.layout)
             if i < len(rows) - 1:
-                div = QtWidgets.QFrame()
-                div.setFrameShape(QtWidgets.QFrame.Shape.HLine)
-                div.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-                vl.addWidget(div)
+                vl.addWidget(palette.divider())
         return grp
 
     # MARK: - Helper Functions
@@ -267,37 +265,17 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
 
     # MARK: - Reactive Update
 
-    def update_metrics(
-        self,
-        framerate: float,
-        processing_time: float,
-        is_running: bool,
-    ) -> None:
-        """Refresh all dynamic metric values.
-
-        Called from the ``framerateUpdate`` signal handler, mirroring the
-        automatic re-render triggered by @ObservedObject in SwiftUI.
-
-        Args:
-            framerate:       Current FFT frame rate in Hz.
-                             Mirrors Swift ``analyzer.frameRate``.
-            processing_time: Last-frame processing time in seconds.
-                             Mirrors Swift ``analyzer.processingTimeMs / 1000``.
-            is_running:      Whether the analyzer is currently capturing.
-                             Mirrors Swift ``analyzer.isRunning``.
-
-        The Peak Detection rows read the live peak off the FFT analyzer
-        (``analyzer.mic.peak_frequency`` / ``peak_magnitude``), as Swift reads
-        ``analyzer.peakFrequency`` / ``analyzer.peakMagnitude`` — the same value
-        the status bar shows.
-        """
+    def _on_live_frame(self) -> None:
+        """A frame announced on the engine's live frame: refresh the rows that follow it — the frame rate,
+        the processing times and the CPU share, and the live peak (the value the status bar shows).
+        Mirrors Swift's view observing ``analyzer.frame``."""
         if not self.isVisible():
             return
-
-        # Maintain rolling 30-frame average (mirrors Swift avgProcessingTimeMs)
-        proc_ms = processing_time * 1000
-        self._proc_times.append(proc_ms)
-        avg_ms = sum(self._proc_times) / len(self._proc_times)
+        mic = self._canvas.analyzer.mic
+        frame = mic.frame
+        framerate = mic.frame_rate
+        proc_ms = frame.processing_time_ms
+        avg_ms = frame.avg_processing_time_ms
 
         frame_time_ms = (1000.0 / framerate) if framerate > 0 else 100.0
 
@@ -317,20 +295,17 @@ class FFTAnalysisMetricsView(QtWidgets.QDialog):
         self._row_cpu.set_value(f"{cpu_pct:.1f}%", cpu_color)
 
         # ── Peak Detection ─────────────────────────────────────────────────
-        # Mirrors Swift formatFrequency(analyzer.peakFrequency) and
-        # FieldPrecision.string(analyzer.peakMagnitude, peakMagnitudeDB) + " dB".
-        mic = self._canvas.analyzer.mic
-        self._row_peak_freq.set_value(formatted_as_frequency(mic.peak_frequency))
+        # Mirrors Swift formatFrequency(frame.peakFrequency) and
+        # FieldPrecision.string(frame.peakMagnitude, peakMagnitudeDB) + " dB".
+        self._row_peak_freq.set_value(formatted_as_frequency(frame.peak_frequency))
         self._row_peak_mag.set_value(
-            f"{fp.string(mic.peak_magnitude, fp.PEAK_MAGNITUDE_DB)} dB"
+            f"{fp.string(frame.peak_magnitude, fp.PEAK_MAGNITUDE_DB)} dB"
         )
-
-        self.set_running(is_running)
 
     def set_running(self, is_running: bool) -> None:
         """The status indicator: the engine's running state, as Swift's
         Circle().fill(analyzer.isRunning ? .statusRunning : .statusStopped). Also called when the
-        engine starts or stops, since the frame-rate updates that drive the rows stop with it."""
+        engine starts or stops."""
         if is_running:
             palette.tag(self._status_dot, color=palette.Role.STATUS_RUNNING)
             self._status_label.setText("Analyzing")

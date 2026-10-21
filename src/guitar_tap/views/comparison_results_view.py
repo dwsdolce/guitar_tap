@@ -141,7 +141,8 @@ class ComparisonResultsView(QtWidgets.QWidget):
         for row, entry in enumerate(comparison_data):
             label = entry.get("label", "")
             role = entry.get("role")
-            color_rgb = palette.rgb(role) if role is not None else entry.get("color", (0, 122, 255))
+            color_rgb = (palette.rgb(role) if role is not None
+                         else entry.get("color") or palette.rgb(palette.comparison_role(row, label)))
             peaks = entry.get("peaks", [])
             guitar_type = entry.get("guitar_type")
             mode_ids = entry.get("mode_ids") or {}

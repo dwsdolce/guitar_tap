@@ -29,13 +29,6 @@ def caption_label(text: str) -> QtWidgets.QLabel:
     return label
 
 
-def set_commit_enabled(button: QtWidgets.QPushButton, enabled: bool) -> None:
-    """A button that commits (Save, Play) — Swift's .confirmationAction: the accent with white
-    text while it can act, a plain grey button while it cannot."""
-    button.setEnabled(enabled)
-    palette.tag(button, prominent=palette.Role.ACCENT if enabled else None)
-
-
 class SaveMeasurementDialog(QtWidgets.QDialog):
     """Gather the measurement name and notes before saving — Swift's SaveMeasurementSheet: a bold
     title above each field, the notes hint under its box, Cancel and Save at the bottom right."""
@@ -44,6 +37,7 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Save Measurement")
         self.setMinimumSize(450, 250)
+        palette.surface(self, palette.Role.BACKGROUND_PANEL)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 16)
@@ -81,8 +75,7 @@ class SaveMeasurementDialog(QtWidgets.QDialog):
 
     def _update_save_enabled(self) -> None:
         from guitar_tap.models.tap_tone_measurement import TapToneMeasurement
-        set_commit_enabled(
-            self._save_btn, TapToneMeasurement.is_valid_name(self._location_edit.text()))
+        self._save_btn.setEnabled(TapToneMeasurement.is_valid_name(self._location_edit.text()))
 
     @property
     def measurement_name(self) -> str:

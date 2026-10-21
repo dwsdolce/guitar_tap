@@ -142,10 +142,6 @@ class TapToneAnalyzer(
     # `@Published var currentDecayTime` re-renders the Ring-Out box on every change; Python has no such
     # binding, so the property below emits this.
     currentDecayTimeChanged: QtCore.Signal = QtCore.Signal(object)
-    # FFT frame diagnostics: (fps, sample_dt, processing_dt).
-    framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
-    # Emitted on every live FFT frame (for average-enable logic).
-    newSample: QtCore.Signal = QtCore.Signal(bool)
     # Display mode changed: emits the new DisplayMode enum value.
     displayModeChanged: QtCore.Signal = QtCore.Signal(object)
     # Measurement complete state changed.
@@ -182,8 +178,6 @@ class TapToneAnalyzer(
     # Mirrors Swift TapToneAnalyzer.setLoadedAxisRange(minFreq:maxFreq:minDB:maxDB:) which
     # publishes loadedAxisRange so TapToneAnalysisView can apply all four bounds in one pass.
     loadedAxisRangeChanged: QtCore.Signal = QtCore.Signal(float, float, float, float)
-    # Peak info for status bar: (peak_hz, peak_db).
-    peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)
     # Human-readable status string for the status bar (mirrors Swift @Published var statusMessage).
     statusMessageChanged: QtCore.Signal = QtCore.Signal(str)
     # Emitted when loadedMeasurementName changes (mirrors Swift @Published var loadedMeasurementName).
@@ -1288,8 +1282,8 @@ class TapToneAnalyzer(
         Direct handlers on the mic: ``rms_level_handler`` (the queued ``_rmsLevelOnMain``, so each
         chunk's level reaches detection on the main thread), ``raw_sample_handler`` and
         ``_level_crossing_handler``. Signals on the processing thread object: ``gatedCaptureComplete``,
-        ``inputAppearsDeadChanged`` and ``fftFrameReady``; on the mic's input level (``mic.level``):
-        ``clippingChanged``.
+        ``inputAppearsDeadChanged``; on the mic's input level (``mic.level``): ``clippingChanged``; on the
+        mic's frame (``mic.frame``): ``frameChanged``.
 
         The signals are connected once. The processing thread object and the input level are created
         with the mic and never replaced, so these connections hold for the whole run. A second ``connect()`` on it would
@@ -1430,12 +1424,12 @@ class TapToneAnalyzer(
                 self._pending_level_crossing_pre_roll = None
         self.mic._on_post_engine_stop = _clear_pre_roll
 
-        # ── FFT frame → peak analysis: ONE delivery, the Qt signal ───────
-        # So on_fft_frame runs on the main thread, as Swift's analyzer takes frames through a Combine
-        # sink `.receive(on: DispatchQueue.main)`. Each frame arrives once, by this signal alone.
+        # ── FFT frame → peak analysis: the frame's signal ────────────────
+        # Connected to a method of this object, so it runs on the main thread, as Swift's analyzer takes
+        # frames from fft.frame through a Combine sink `.receive(on: DispatchQueue.main)`.
         # level.inputLevelChanged is not connected here: it is the UI's copy of the level (the threshold
         # meter).
-        self.mic.proc_thread.fftFrameReady.connect(self.on_fft_frame)
+        self.mic.frame.frameChanged.connect(self._on_live_frame)
 
     # The pre-roll buffer starts empty (cleared by start_tap_sequence) and fills
     # with real audio as chunks arrive. It is not pre-filled with zeros, which

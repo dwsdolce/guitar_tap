@@ -107,7 +107,7 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
         # The analyzer's frames carry no frequencies of their own — they are on its axis — so the
         # frame's axis becomes the analyzer's.
         sut.freq = np.asarray(freqs)
-        sut.on_fft_frame(np.asarray(mags), float(max(mags)), 0.0, 0.0, 0.0)
+        sut.on_fft_frame(np.asarray(mags), float(max(mags)))
     elif "stall" in step:
         sut.wall_clock.advance(float(step["stall"]))
     elif "audioChunks" in step:

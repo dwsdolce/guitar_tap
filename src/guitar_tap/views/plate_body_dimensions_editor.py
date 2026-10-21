@@ -21,6 +21,7 @@ from guitar_tap.models import field_precision as fp
 from guitar_tap.models.plate_stiffness_preset import PlateStiffnessPreset
 from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
 from guitar_tap.views.utilities import palette
+from guitar_tap.views.utilities.menu_picker import MenuPicker
 
 
 class PlateBodyDimensionsEditor(QtWidgets.QWidget):
@@ -54,7 +55,7 @@ class PlateBodyDimensionsEditor(QtWidgets.QWidget):
         vbox.addLayout(self._dim_row("Lower Bout Width (b):", self._body_wid_field, "mm"))
 
         # Panel Stiffness (f_vs): preset combo (all presets by short name) + optional custom value.
-        self._preset_combo = QtWidgets.QComboBox()
+        self._preset_combo = MenuPicker()
         self._preset_combo.setFont(small_font)
         for preset in PlateStiffnessPreset:
             self._preset_combo.addItem(preset.short_name, preset)

@@ -54,6 +54,7 @@ class MeasurementsDialog(QtWidgets.QDialog):
         self.setWindowTitle("Saved Measurements")
         self.resize(640, 480)
         self.setMinimumSize(520, 340)
+        palette.surface(self, palette.Role.BACKGROUND_PANEL)
 
         self._compare_mode: bool = False
         self._compare_indices: set[int] = set()  # mirrors Swift selectedCompareIndices: Set<Int>

@@ -70,8 +70,7 @@ class _ZoomPanPopup(QtWidgets.QFrame):
             parent,
             QtCore.Qt.WindowType.Popup | QtCore.Qt.WindowType.FramelessWindowHint,
         )
-        self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
-        self.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
+        palette.surface(self, palette.Role.BACKGROUND_PANEL, outlined=True)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 10)
@@ -89,10 +88,7 @@ class _ZoomPanPopup(QtWidgets.QFrame):
 
         for row in self._ROWS:
             if row is None:
-                sep = QtWidgets.QFrame()
-                sep.setFrameShape(QtWidgets.QFrame.Shape.HLine)
-                sep.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-                layout.addWidget(sep)
+                layout.addWidget(palette.divider())
             else:
                 key, desc = row
                 hl = QtWidgets.QHBoxLayout()
@@ -290,8 +286,6 @@ class FftCanvas(pg.PlotWidget):
     hold: bool = False
 
     peaksChanged: QtCore.Signal = QtCore.Signal(np.ndarray)
-    framerateUpdate: QtCore.Signal = QtCore.Signal(float, float, float)
-    newSample: QtCore.Signal = QtCore.Signal(bool)
     currentDecayTimeChanged: QtCore.Signal = QtCore.Signal(object)  # ring-out seconds, or None
     tapCountChanged: QtCore.Signal = QtCore.Signal(int, int)  # (captured, total)
     detectionStateChanged: QtCore.Signal = QtCore.Signal(object)  # new DetectionState
@@ -316,7 +310,6 @@ class FftCanvas(pg.PlotWidget):
     # A start that failed after its retry — the window shows it as an "Audio Engine Error".
     engineStartFailedMessage: QtCore.Signal = QtCore.Signal(str)
     measurementLoaded: QtCore.Signal = QtCore.Signal(object)               # relays TapToneAnalyzer.measurementLoaded
-    peakInfoChanged: QtCore.Signal = QtCore.Signal(float, float)  # (peak_hz, peak_db)
     comparisonChanged: QtCore.Signal = QtCore.Signal(bool)         # True=entering, False=leaving
     freqRangeChanged: QtCore.Signal = QtCore.Signal(float, float)  # (fmin, fmax) — pan/zoom
 
@@ -437,8 +430,6 @@ class FftCanvas(pg.PlotWidget):
         # ── Connect analyzer signals → FftCanvas signals (forwarding) ────
         # This allows guitar_tap.py to connect to FftCanvas signals as before.
         self.analyzer.peaksChanged.connect(self.peaksChanged)
-        self.analyzer.framerateUpdate.connect(self.framerateUpdate)
-        self.analyzer.newSample.connect(self.newSample)
         self.analyzer.tapCountChanged.connect(self.tapCountChanged)
         self.analyzer.detectionStateChanged.connect(self.detectionStateChanged)
         self.analyzer.readyForDetectionChanged.connect(self.readyForDetectionChanged)
@@ -471,10 +462,10 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.comparisonChanged.connect(self._on_comparison_changed_from_analyzer)
         self.analyzer.loadedAxisRangeChanged.connect(self._on_loaded_axis_range_changed)
         self.analyzer.materialSpectraChanged.connect(self.load_material_spectra)
-        self.analyzer.peakInfoChanged.connect(self.peakInfoChanged)
-        # spectrumUpdated drives the spectrum line rendering path.
-        # peaksChanged drives the scatter plot — single authoritative source for
-        # both the scatter plot and the results panel.
+        # The spectrum line: drawn on every frame from the engine's live frame (_on_live_frame), and
+        # when the analyzer's own spectrum changes (spectrumUpdated). peaksChanged drives the scatter
+        # plot — single authoritative source for both the scatter plot and the results panel.
+        self.analyzer.mic.frame.frameChanged.connect(self._on_live_frame)
         self.analyzer.spectrumUpdated.connect(self._on_spectrum_updated)
         self.analyzer.peaksChanged.connect(self._on_peaks_changed_scatter)
         self.analyzer.highlightedPeakChanged.connect(lambda _id: self._draw_highlight())
@@ -667,6 +658,9 @@ class FftCanvas(pg.PlotWidget):
             axis = plot.getAxis(name)
             axis.setPen(chart_style.pen(palette.color(palette.Role.CHART_GRID), style.grid_width))
             axis.setTextPen(pg.mkPen(palette.color(palette.Role.CHART_AXIS)))
+        # The top and right axes draw no values, only a line along the plot's border: in the border's role.
+        for name in ("top", "right"):
+            plot.getAxis(name).setPen(chart_style.pen(palette.color(palette.Role.CHART_BORDER), 1))
         axis_color = palette.qss(palette.Role.CHART_AXIS)
         self.setLabel("left", "FFT Magnitude (dB)", color=axis_color)
         self.setLabel("bottom", "Frequency (Hz)", color=axis_color)
@@ -1954,6 +1948,20 @@ class FftCanvas(pg.PlotWidget):
     # -{66} #
     # Spectrum handler (TapToneAnalyzer.spectrumUpdated)
     # -{66} #
+
+    def _on_live_frame(self) -> None:
+        """A frame announced on the engine's live frame: draw the spectrum the chart shows with it — nothing
+        while a device change settles, the frozen spectrum once the measurement is complete, the live one
+        otherwise; in comparison only the overlays. Mirrors Swift's FrameReader around the chart, with
+        displaySpectrum(live:)."""
+        analyzer = self.analyzer
+        if analyzer.is_settling:
+            self.set_draw_data(np.array([]), freqs=np.array([]))
+        elif analyzer.display_mode == AnalysisDisplayMode.LIVE:
+            if analyzer.is_measurement_complete:
+                self.set_draw_data(analyzer.frozen_magnitudes, freqs=analyzer.frozen_frequencies)
+            else:
+                self.set_draw_data(analyzer.mic.frame.magnitudes, freqs=analyzer.freq)
 
     def _on_spectrum_updated(self, freqs, mag_y_db) -> None:
         """Receive spectrum data from the analyzer and update the view.

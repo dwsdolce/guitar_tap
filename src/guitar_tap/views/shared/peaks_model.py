@@ -763,18 +763,3 @@ class PeaksModel(QtCore.QAbstractTableModel):
             self.setData(show_idx, "on")
 
         self._programmatic_update = False
-
-    def new_data(self, held: bool) -> None:
-        """
-        This is called if there is new data availble (as upposed to an
-        update of data from redrawing more or less data in the data).
-        This is used to clear the modes since they are not cleared until
-        the underlying data is completely replaced.
-        """
-        if not held:
-            self.clear_annotations()
-            self.selected_peak_ids = set()
-            self._auto_mode_map = {}
-            self.selected_longitudinal_peak_id = None
-            self.selected_cross_peak_id = None
-            self.selected_flc_peak_id = None

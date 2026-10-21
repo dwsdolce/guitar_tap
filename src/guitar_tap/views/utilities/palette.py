@@ -467,6 +467,8 @@ class _PaletteFollower(QtCore.QObject):
         self._applied_palette: tuple | None = None
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 — Qt's name
+        if event.type() == QtCore.QEvent.Type.Polish and isinstance(obj, _SURFACE_SCROLL_AREAS):
+            _clear_within_surface(obj)
         if (event.type() == QtCore.QEvent.Type.ApplicationPaletteChange
                 and not self._pending and obj is QtWidgets.QApplication.instance()):
             self._pending = True
@@ -481,6 +483,22 @@ class _PaletteFollower(QtCore.QObject):
         app.setStyleSheet("")
         app.setStyleSheet(_application_stylesheet())
         self._applied_palette = _palette_key(app.palette())
+
+
+# The scroll areas a surface shows its own background through.
+_SURFACE_SCROLL_AREAS = (QtWidgets.QScrollArea, QtWidgets.QListWidget, QtWidgets.QTextBrowser)
+
+
+def _clear_within_surface(area: QtWidgets.QAbstractScrollArea) -> None:
+    """A list, scroll area or help page inside a surface draws no background of its own. Done on the viewport,
+    not by a stylesheet rule: a rule matching the scroll area would have macOS draw its scroll bar's handle as an
+    outline."""
+    parent = area.parentWidget()
+    while parent is not None:
+        if parent.property(SURFACE_PROPERTY):
+            area.viewport().setAutoFillBackground(False)
+            return
+        parent = parent.parentWidget()
 
 
 def _palette_key(p: QtGui.QPalette) -> tuple:
@@ -543,6 +561,15 @@ PROMINENT_PROPERTY = "prominentRole"
 # A plain button the app draws — an action with no particular meaning: text.primary on background.control, a
 # separator border, an accent wash at button.plainHover under the pointer.
 PLAIN_PROPERTY = "plainButton"
+# A group box in palette roles — Swift's PaletteGroupBoxStyle: the title in text.primary above its content on
+# background.subtle, corner radius 8.
+GROUP_PROPERTY = "paletteGroup"
+# An icon button — Swift's .buttonStyle(.icon(role)): the icon in its role (set_icon), no frame and no fill.
+ICON_PROPERTY = "iconButton"
+# The root of a window, dialog or popover — Swift's paletteSurface(_:): its background in a role, and the lists,
+# scroll areas and help pages inside it on that background rather than the platform's; "outlined" adds a
+# separator border, for a popup with no window frame.
+SURFACE_PROPERTY = "paletteSurface"
 # The shape of a button the app draws: its corner radius, and its padding (vertical, horizontal) in points — a
 # prominent button's a little larger. Mirrors Swift Palette.ButtonShape.
 BUTTON_CORNER_RADIUS = 6
@@ -554,7 +581,7 @@ _stylesheet_scheme: Scheme | None = None
 def tag(
     widget: QtWidgets.QWidget, color: Role | None = None, background: Role | None = None,
     tint: Role | None = None, border: Role | None = None, prominent: Role | None = None,
-    message: Role | None = None, plain: bool = False,
+    message: Role | None = None, plain: bool = False, group: bool = False, icon: bool = False,
 ) -> None:
     """Give ``widget``'s text and / or background a role, or tint a button with one. The
     application stylesheet colours it in the current scheme, and again on every change of it.
@@ -566,9 +593,31 @@ def tag(
     widget.setProperty(PROMINENT_PROPERTY, prominent.value if prominent is not None else "")
     widget.setProperty(MESSAGE_PROPERTY, message.value if message is not None else "")
     widget.setProperty(PLAIN_PROPERTY, "true" if plain else "")
+    widget.setProperty(GROUP_PROPERTY, "true" if group else "")
+    widget.setProperty(ICON_PROPERTY, "true" if icon else "")
     style = widget.style()
     style.unpolish(widget)
     style.polish(widget)
+
+
+def surface(widget: QtWidgets.QWidget, role: Role, outlined: bool = False) -> None:
+    """Make ``widget`` the root of a window, dialog or popover on ``role``: nothing inside falls back to the
+    platform's colours (a label's text is text.primary already, by the application stylesheet). Mirrors Swift
+    ``paletteSurface(_:)``."""
+    widget.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+    widget.setProperty(SURFACE_PROPERTY, "outlined" if outlined else "true")
+    tag(widget, background=role)
+
+
+def divider(vertical: bool = False) -> QtWidgets.QFrame:
+    """A one-point line in the separator role, horizontal or vertical. Mirrors Swift ``PaletteDivider``."""
+    line = QtWidgets.QFrame()
+    if vertical:
+        line.setFixedWidth(1)
+    else:
+        line.setFixedHeight(1)
+    tag(line, background=Role.SEPARATOR)
+    return line
 
 
 # Icons drawn in a role: qtawesome bakes the colour into the image, so every one set through
@@ -691,6 +740,15 @@ def _application_stylesheet() -> str:
     platform."""
     rules = [f"QLabel {{ color: {qss(Role.TEXT_PRIMARY)}; }}"]
     rules += _button_rules(f'QPushButton[{PLAIN_PROPERTY}="true"]', "plain", None)
+    rules.append(", ".join(f'{w}[{ICON_PROPERTY}="true"]{s}' for w in ("QPushButton", "QToolButton")
+                           for s in ("", ":hover", ":pressed"))
+                 + " { background: transparent; border: none; padding: 0px; }")
+    rules.append(f'*[{SURFACE_PROPERTY}="outlined"] {{ border: 1px solid {qss(Role.SEPARATOR)}; }}')
+    group = f'QGroupBox[{GROUP_PROPERTY}="true"]'
+    rules.append(f'{group} {{ background-color: {qss(Role.BACKGROUND_SUBTLE)}; border: none; border-radius: 8px;'
+                 f' margin-top: 1.5em; padding: 10px; }}')
+    rules.append(f'{group}::title {{ subcontrol-origin: margin; subcontrol-position: top left; left: 0px;'
+                 f' padding: 0px; color: {qss(Role.TEXT_PRIMARY)}; }}')
     for role in Role:
         value = qss(role)
         rules.append(f'*[{COLOR_PROPERTY}="{role.value}"] {{ color: {value}; }}')
