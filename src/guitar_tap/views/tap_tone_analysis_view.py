@@ -985,6 +985,12 @@ class MainWindow(QtWidgets.QMainWindow):
             palette.tag(w, color=palette.Role.TEXT_SECONDARY)
             return w
 
+        def _fixed_width(group: QtWidgets.QWidget) -> None:
+            """Keep a field no wider than its own width, as Swift's HStack: a slider's default policy is to expand,
+            which made its whole field take a share of the bar's spare width and spread the label, value and reset
+            apart. The spare width goes to the stretch before New Tap; a narrow window still shrinks the field."""
+            group.setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Preferred)
+
         def _db_slider_group(
             label: str,
             min_db: int,
@@ -1008,6 +1014,7 @@ class MainWindow(QtWidgets.QMainWindow):
             gl = QtWidgets.QHBoxLayout(group)
             gl.setContentsMargins(0, 0, 0, 0)
             gl.setSpacing(4)
+            _fixed_width(group)
             hl.addWidget(group)
             gl.addWidget(_lbl(label))
             if with_level_meter:
@@ -1048,6 +1055,7 @@ class MainWindow(QtWidgets.QMainWindow):
         taps_layout = QtWidgets.QHBoxLayout(self._taps_group)
         taps_layout.setContentsMargins(0, 0, 0, 0)
         taps_layout.setSpacing(4)
+        _fixed_width(self._taps_group)
         hl.addWidget(self._taps_group)
         self.tap_num_label = _lbl("Taps:")
         taps_layout.addWidget(self.tap_num_label)
