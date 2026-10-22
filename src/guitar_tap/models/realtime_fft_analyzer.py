@@ -50,7 +50,9 @@ Python ↔ Swift correspondence:
     _start_coreaudio_monitor ↔  AudioObjectAddPropertyListener block
     _start_windows_monitor   ↔  CM_Register_Notification
     _start_linux_monitor     ↔  (Linux-only; no Swift equivalent)
-    get_frames / queue       ↔  rawSampleHandler / inputBuffer [in engine_control mixin]
+    get_frames / queue       ↔  (Python-only drain of the PortAudio callback's chunks;
+                                 Swift's tap hands each buffer to audioProcessingQueue)
+    hand_over / take_chunk   ↔  handOver / takeChunk
     proc_thread              ↔  (no direct equivalent — Swift AVAudioEngine taps
                                  deliver audio on a dedicated audio thread; Python
                                  uses an explicit QThread for the same purpose)
@@ -281,7 +283,7 @@ class RealtimeFFTAnalyzer(
       downstream FFT processing is done by _FftProcessingThread (owned by this class).
 
     Python-only properties:
-      queue              — audio chunk queue; Swift has rawSampleHandler + inputBuffer
+      queue              — audio chunk queue; Swift's tap hands each buffer to audioProcessingQueue
       device_index       — PortAudio device index; Swift has selectedInputDevice (AVAudioDevice)
       chunksize          — PortAudio block size; Swift uses 1024-sample AVAudioEngine tap
       stream             — sounddevice.InputStream; Swift has audioEngine + inputNode
@@ -299,12 +301,12 @@ class RealtimeFFTAnalyzer(
       h_fft_size  —  Python-only fft_size // 2 convenience field
 
     Swift-only properties (no Python equivalent):
-      audioEngine, inputNode, audioProcessingQueue, bufferAccessQueue
+      audioEngine, inputNode, audioProcessingQueue
       magnitudes, frequencies, peakFrequency, peakMagnitude (@Published)
       inputLevelDB, displayLevelDB, recentPeakLevelDB, recentPeakTime
       actualSampleRate, frequencyResolution, bandwidth
       sampleLengthSeconds, frameRate, processingTimeMs, avgProcessingTimeMs
-      activeCalibration, calibrationCorrections, rawSampleHandler
+      activeCalibration, calibrationCorrections
       fftSetup
       isRunning, microphonePermissionDenied, routeChangeRestartCount
       firstBufferReceived, fftCount, engineStartTime
@@ -443,7 +445,7 @@ class RealtimeFFTAnalyzer(
         self.window_fcn = np.ones(fft_size)
 
         # Python-only: audio chunk delivery via Queue
-        # Swift delivers audio via rawSampleHandler callback + inputBuffer accumulation
+        # Swift's tap hands each buffer to audioProcessingQueue directly
         self._stop_lock: threading.Lock = threading.Lock()
         self.is_stopped: bool = False
         self.queue: queue.Queue[npt.NDArray[np.float32]] = queue.Queue()
@@ -629,15 +631,10 @@ class RealtimeFFTAnalyzer(
         self._clip_hold_seconds: float = 1.5
         self._last_clip_time: float | None = None
 
-        # Diagnostic counters.
-        self._fft_frame_counter: int = 0
-        self._samples_consumed: int = 0
-
         # Seconds of AUDIO processed — the audio clock. The detection warm-up is measured against
         # this, not the wall clock: the warm-up must cover the first 0.5 s of AUDIO, however long
         # the setup before the first chunk took. Mirrors Swift RealtimeFFTAnalyzer.audio_elapsed.
         self.audio_elapsed: float = 0.0
-        self._diag_total_samples: int = 0
 
         # Python-only: off-main-thread DSP worker (for live mic queue draining).
         # Mirrors Swift's AVAudioEngine audio processing queue.
@@ -737,9 +734,6 @@ class RealtimeFFTAnalyzer(
         """
         enter_now = time.time()
         chunk_f32 = chunk.astype(np.float32)
-
-        # DIAG: running total of samples consumed from the audio source
-        self._diag_total_samples += len(chunk_f32)
 
         # Advance the AUDIO clock — seconds of audio processed, not wall-clock seconds. The detection
         # warm-up is measured against this so it always covers the first 0.5 s of AUDIO, however long

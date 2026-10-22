@@ -437,9 +437,9 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         """Return a per-segment RMS / peak breakdown of a sample buffer.
 
         Each segment is ``segment_size`` samples (default 1024).  Used by
-        diagnostic TAP_DEBUG log lines (SEED, CAPTURE COMPLETE,
-        FASTSTART_PREROLL, DEFERRED_PREROLL, CAPTURED_WINDOW) so the energy
-        distribution within the capture window is visible.
+        diagnostic TAP_DEBUG log lines (SEED_BUFFER, ACCUM_COMPLETE,
+        CAPTURED_WINDOW) so the energy distribution within the capture window
+        is visible.
 
         Mirrors Swift TapToneAnalyzer.captureWindowProfile(_:label:segmentSize:).
         """
@@ -548,9 +548,6 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self._gated_accum = []
 
         # DIAG: log capture completion details
-        _diag_consumed = 0
-        if self.mic is not None:
-            _diag_consumed = getattr(self.mic, '_diag_total_samples', 0)
         _cap_arr = np.array(captured, dtype=np.float32)
         _diag_rms = float(np.sqrt(np.mean(_cap_arr ** 2))) if len(captured) > 0 else 0.0
         _diag_hash = float(np.sum(_cap_arr[:16])) if len(captured) >= 16 else 0.0
@@ -560,7 +557,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         from guitar_tap.utilities.logging import TAP_DEBUG as _td2
         _td2("gatedAccum",
              f"CAPTURE COMPLETE | samples={len(captured)} "
-             f"fileSamplePos={_diag_consumed} "
+             f"audioTime={self.last_audio_time:.3f}s "
              f"captureRMS={20*np.log10(max(_diag_rms,1e-10)):.2f}dB "
              f"first16hash={_diag_hash:.6f}\n{_complete_profile}")
 

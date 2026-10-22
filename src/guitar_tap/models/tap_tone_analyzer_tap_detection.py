@@ -512,8 +512,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             level_db:   Per-chunk RMS level in dBFS, exact (Swift ``levelDB``; −100 on true silence).
             audio_time: The AUDIO clock value for THIS chunk (see detect_tap).
 
-        Called ONCE per chunk, on the main thread, by _on_chunk_level — the body of Swift's
-        rmsLevelHandler hop — with the level as an unrounded float.
+        Called ONCE per chunk, on the main thread, by _on_chunk_level — after the chunk's capture
+        filling in process_audio_frame, as Swift's onRmsLevelChanged — with the level as an
+        unrounded float.
         """
 
         # Cache instantaneous level — mirrors Swift fftAnalyzer.inputLevelDB.

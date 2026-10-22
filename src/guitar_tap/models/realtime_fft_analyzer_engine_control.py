@@ -18,7 +18,7 @@ Swift ↔ Python method correspondence:
   startFromFile(_:completion:)      ↔  start_from_file(path)
   deinit / close()                  ↔  close()
   AVAudioInputNode tap callback     ↔  new_frame()   [Python-only callback form]
-  rawSampleHandler / inputBuffer    ↔  get_frames()  [Python-only drain helper]
+  (no Swift equivalent)             ↔  get_frames()  [Python-only drain helper]
 
 ---
 
@@ -87,7 +87,7 @@ Swift ``stop()`` (~35 lines) does:
 
 1. Calls ``unregisterSampleRateListener()`` (macOS).
 2. If ``audioEngine.isRunning``: removes the input tap, stops the engine.
-3. Clears ``inputBuffer`` on ``bufferAccessQueue``.
+3. Clears ``inputBuffer`` on the main thread, which owns it.
 4. Resets ``firstBufferReceived``, ``fftCount``, ``engineStartTime``.
 5. On the main thread: sets ``isRunning = false``, resets ``peakMagnitude``
    to -100 dB, resets ``peakFrequency`` to 0.
@@ -330,8 +330,8 @@ class RealtimeFFTAnalyzerEngineControlMixin:
     def get_frames(self) -> list[npt.NDArray[np.float32]]:
         """Non-blocking drain: returns all audio chunks currently in the queue.
 
-        Python-only — Swift exposes audio via ``rawSampleHandler`` and the
-        ``inputBuffer`` accumulation inside ``processAudioBuffer(_:)``.
+        Python-only — Swift's tap hands each buffer to ``processAudioBuffer(_:)`` on its audio
+        processing queue.
         """
         frames: list[npt.NDArray[np.float32]] = []
         try:
@@ -665,7 +665,6 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         #   1. audioEngine.stop()           → stop audio delivery
         #   2. audioProcessingQueue.sync {} → drain in-flight processing
         #   3. inputBuffer.removeAll()      → clear FFT accumulator
-        #   4. fftFrameCounter = 0          → reset frame counters
         #
         # The drain barrier (step 2) is critical: after stopping the mic,
         # the processing thread may still be mid-way through processing a
@@ -700,14 +699,10 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self.queue.put(None)
             proc._drain_ack.wait(timeout=0.5)
 
-            # 4. Clear the FFT accumulator and reset frame counters. A mic chunk still queued for the main
-            #    thread is dropped when it arrives (its playback generation is stale).
-            #    Mirrors Swift: inputBuffer.removeAll() and fftFrameCounter = 0; samplesConsumed = 0.
+            # 4. Clear the FFT accumulator. A mic chunk still queued for the main thread is dropped when
+            #    it arrives (its playback generation is stale). Mirrors Swift: inputBuffer.removeAll().
             self._input_buffer = []
             self._input_buffer_len = 0
-            self._fft_frame_counter = 0
-            self._samples_consumed = 0
-            self._diag_total_samples = 0  # DIAG: reset sample counter for file playback
 
             # Release the processing thread so it resumes pulling from the queue.
             proc._drain_event.clear()

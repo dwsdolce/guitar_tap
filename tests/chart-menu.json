@@ -1,6 +1,6 @@
 {
  "slug": "test/chart-menu",
- "about": "The chart's menu — opened from its ⋯ and by a right-click, on every device (#32 decision 13, style guide S1a) — and a peak label's own menu, in every edition: the same items, words, order and icons. 'groups' are the chart menu's items between separators, in order; each item names what it does ('action'), its words ('title'), Swift's SF Symbol ('sfSymbol') and the Material Design icon Python and the web draw ('mdi', as Python names it without 'mdi.'). 'Reset Labels' can act only while a label has been moved. 'labelMenu' is a peak label's menu, which can act only while that label has been moved.",
+ "about": "The chart's menu — opened from its ⋯ and by a right-click, on every device — and a peak label's own menu, in every edition: the same items, words, order and icons. 'groups' are the chart menu's items between separators, in order; each item names what it does ('action'), its words ('title'), Swift's SF Symbol ('sfSymbol') and the Material Design icon Python and the web draw ('mdi', as Python names it without 'mdi.'). 'Reset Labels' can act only while a label has been moved. 'labelMenu' is a peak label's menu, which can act only while that label has been moved.",
  "groups": [
   [
    {

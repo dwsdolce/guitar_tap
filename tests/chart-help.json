@@ -1,6 +1,6 @@
 {
  "slug": "test/chart-help",
- "about": "The chart's help (its ⓘ), in every edition: the same lines, words and groups, and on each device only the lines that work there (#32 F8). 'groups' are the help's lines between separators, in order; each gives the gesture ('gesture', with Apple's key symbols), its words on Windows, Linux and other non-Apple systems where they differ ('otherKeys'), what it does ('effect'), and what the device needs for it to work ('needs': a pointer — a mouse or trackpad —, a keyboard, pinch — a trackpad or touch; none for a drag, which a finger does too). 'devices' are cases: what a device has, and the gestures its help shows, by group (empty groups left out).",
+ "about": "The chart's help (its ⓘ), in every edition: the same lines, words and groups, and on each device only the lines that work there. 'groups' are the help's lines between separators, in order; each gives the gesture ('gesture', with Apple's key symbols), its words on Windows, Linux and other non-Apple systems where they differ ('otherKeys'), what it does ('effect'), and what the device needs for it to work ('needs': a pointer — a mouse or trackpad —, a keyboard, pinch — a trackpad or touch; none for a drag, which a finger does too). 'devices' are cases: what a device has, and the gestures its help shows, by group (empty groups left out).",
  "title": "Zoom & Pan Controls",
  "groups": [
   [
