@@ -12,6 +12,7 @@ from guitar_tap.models import guitar_mode as gm
 from guitar_tap.views.utilities import palette
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models import pitch as pitch_c
+from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
 from guitar_tap.views.utilities.extensions import formatted_as_frequency
 
@@ -157,7 +158,9 @@ class PeaksModel(QtCore.QAbstractTableModel):
         * ``ALL``      → always show
         * ``SELECTED`` → show only if the peak's show/selected flag is set
         """
-        if self._analyzer is not None and self._analyzer.chart_annotation_peaks is None:
+        # chart_annotation_peaks is None exactly while a comparison is shown; tested directly, so a label's check
+        # does not build the whole visible-peak list.
+        if self._analyzer is not None and self._analyzer.display_mode == AnalysisDisplayMode.COMPARISON:
             return False
         if self._annotation_mode == AVM.NONE:
             return False

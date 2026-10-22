@@ -39,7 +39,7 @@ from guitar_tap.views.plate_body_dimensions_editor import PlateBodyDimensionsEdi
 from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
 from guitar_tap.views.shared.value_stepper import ValueStepper
 from guitar_tap.views.utilities import extensions as _ext
-from guitar_tap.views.utilities import palette
+from guitar_tap.views.utilities import palette, view_update
 from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole, phase_badge
 from guitar_tap.views.utilities.menu_picker import MenuPicker
 
@@ -1217,6 +1217,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Peaks table — the main content for guitar mode
         self.peak_widget = PT.PeakListWidget()
+        # The list is shown from the analyzer's state once per event-loop turn, however many changes came — as
+        # Swift's results view is redrawn once per screen update.
+        self._results_refresh = view_update.Invalidator(self, self._refresh_results_peaks)
         vbox.addWidget(self.peak_widget, stretch=1)
 
         # Material peak list — replaces peak_widget for plate/brace mode
@@ -2755,7 +2758,7 @@ class MainWindow(QtWidgets.QMainWindow):
             pm.selected_cross_peak_id        = az.effective_cross_peak_id
             pm.selected_flc_peak_id          = az.effective_flc_peak_id
 
-        self._refresh_results_peaks()
+        self._results_refresh.invalidate()
 
     def _refresh_results_peaks(self) -> None:
         """Re-apply the viewport filter and pair each peak with its mode.
@@ -2835,7 +2838,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_canvas_freq_range_changed(self, fmin: float, fmax: float) -> None:
         """Update freq label and re-filter the results panel when viewport changes."""
         self.freq_range_label.setText(_ext.display_range_label(fmin, fmax))
-        self._refresh_results_peaks()
+        self._results_refresh.invalidate()
 
     def _update_freq_range_label(self) -> None:
         self.freq_range_label.setText(
@@ -4220,7 +4223,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_material_instructions()
         # The results list is empty during a saved-measurement comparison; rebuild it as one starts
         # or ends (this also refreshes the selection buttons).
-        self._refresh_results_peaks()
+        self._results_refresh.invalidate()
         # Guitar summary (Ring-Out, Tap Ratio) — mirrors
         # `measurementType.isGuitar && (displayMode != .comparison || showingMultiTapComparison)` in Swift.
         # Show during multi-tap comparison (analyzer is in COMPARISON for chart purposes but

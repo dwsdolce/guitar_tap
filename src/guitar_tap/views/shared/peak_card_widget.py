@@ -23,7 +23,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
-from guitar_tap.views.utilities import palette
+from guitar_tap.views.utilities import palette, view_update
 from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole, phase_badge
 from guitar_tap.models import guitar_type as gt
 from guitar_tap.models import pitch as pitch_c
@@ -108,6 +108,8 @@ class PeakCardWidget(QtWidgets.QFrame):
         self.peak_id = ""
         self._is_manual = False
 
+        self._chip_key: tuple | None = None
+        self._note_key: str | None = None
         self.setObjectName("PeakCard")
         self._build_ui()
         self._refresh()
@@ -251,7 +253,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         else:
             border = "transparent"
         r, g, b, a = tint.red(), tint.green(), tint.blue(), tint.alpha()
-        self.setStyleSheet(
+        view_update.set_style_sheet(self, 
             f"QFrame#PeakCard {{"
             f"  background: rgba({r},{g},{b},{a});"
             f"  border: {self._HIGHLIGHT_BORDER_WIDTH}px solid {border};"
@@ -276,7 +278,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._star_btn.setText("★" if on else "☆")
         star_color = palette.qss(
             palette.Role.PEAK_SELECTED_STAR if on else palette.Role.PEAK_UNSELECTED_STAR)
-        self._star_btn.setStyleSheet(
+        view_update.set_style_sheet(self._star_btn, 
             f"QToolButton {{ border: none; background: transparent; color: {star_color}; }}"
         )
         self._star_btn.setEnabled(self._is_held)
@@ -291,11 +293,10 @@ class PeakCardWidget(QtWidgets.QFrame):
             icon_name = gm.GuitarMode.USER_DEFINED_ICON
         else:
             icon_name = (guitar_mode or gm.GuitarMode.UNKNOWN).icon
-        pixmap = palette.icon(icon_name, QtGui.QColor(r, g, b)).pixmap(
-            QtCore.QSize(18, 18)
-        )
-        self._chip.setPixmap(pixmap)
-        self._chip.setStyleSheet("")
+        chip_key = (icon_name, r, g, b)
+        if self._chip_key != chip_key:
+            self._chip_key = chip_key
+            self._chip.setPixmap(palette.icon(icon_name, QtGui.QColor(r, g, b)).pixmap(QtCore.QSize(18, 18)))
 
         # Mode button label — a manual override is shown italic with a trailing " *",
         # the one convention used everywhere (list, annotation, PDF, tables). No glyph:
@@ -305,7 +306,7 @@ class PeakCardWidget(QtWidgets.QFrame):
             display = f"{display} *"
         italic = "italic" if self._is_manual else "normal"
         self._mode_btn.setText(display)
-        self._mode_btn.setStyleSheet(
+        view_update.set_style_sheet(self._mode_btn, 
             f"QToolButton {{ border: none; background: transparent; padding: 0 2px;"
             f" color: rgb({r},{g},{b}); font-style: {italic}; }}"
         )
@@ -318,7 +319,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         auto_gmode = gm.GuitarMode.from_display_name(self._auto_mode)
         if auto_gmode not in (None, gm.GuitarMode.UNKNOWN, gm.GuitarMode.UPPER_MODES):
             self._badge.setText("✓")
-            self._badge.setStyleSheet(f"color: {palette.qss(palette.Role.PEAK_IN_RANGE)};")
+            view_update.set_style_sheet(self._badge, f"color: {palette.qss(palette.Role.PEAK_IN_RANGE)};")
             self._badge.setVisible(True)
         else:
             self._badge.setVisible(False)
@@ -330,12 +331,15 @@ class PeakCardWidget(QtWidgets.QFrame):
         cents = self._pitch.cents(self._freq)
         # Mirrors Swift ResonantPeak.formattedPitch: "G2 (-10 ¢)".
         self._pitch_lbl.setText(f"{note} ({'+' if cents >= 0 else ''}{cents:.0f} ¢)")
-        self._pitch_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.PEAK_PITCH)};")
-        self._note_icon.setPixmap(
-            palette.icon("mdi.music-note", palette.color(palette.Role.PEAK_PITCH)).pixmap(10, 12))
+        view_update.set_style_sheet(self._pitch_lbl, f"color: {palette.qss(palette.Role.PEAK_PITCH)};")
+        note_key = palette.qss(palette.Role.PEAK_PITCH)
+        if self._note_key != note_key:
+            self._note_key = note_key
+            self._note_icon.setPixmap(
+                palette.icon("mdi.music-note", palette.color(palette.Role.PEAK_PITCH)).pixmap(10, 12))
 
     def _refresh_qbw(self) -> None:
-        self._qbw_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.TEXT_SECONDARY)};")
+        view_update.set_style_sheet(self._qbw_lbl, f"color: {palette.qss(palette.Role.TEXT_SECONDARY)};")
         if self._q > 0:
             # The peak's own bandwidth, as Swift and the web show it.
             self._qbw_lbl.setText(
@@ -347,8 +351,8 @@ class PeakCardWidget(QtWidgets.QFrame):
     def _refresh_mag(self) -> None:
         self._mag_lbl.setText(f"{fp.string(self._mag_db, fp.PEAK_MAGNITUDE_DB)} dB")
         role = palette.magnitude_role(self._mag_db)
-        self._mag_lbl.setStyleSheet(f"color: {palette.qss(role)};")
-        self._freq_lbl.setStyleSheet(f"color: {palette.qss(palette.Role.TEXT_PRIMARY)};")
+        view_update.set_style_sheet(self._mag_lbl, f"color: {palette.qss(role)};")
+        view_update.set_style_sheet(self._freq_lbl, f"color: {palette.qss(palette.Role.TEXT_PRIMARY)};")
 
     # ── event handlers ────────────────────────────────────────────────────────
 
@@ -446,7 +450,11 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._refresh_star()
 
     def set_mode(self, mode: str, auto_mode: str | None = None, is_manual: bool = False) -> None:
-        """Set the effective mode label (with optional auto label + manual flag) and refresh."""
+        """Set the effective mode label (with optional auto label + manual flag) and refresh — nothing when it is
+        what the card shows already."""
+        if (mode, auto_mode if auto_mode is not None else self._auto_mode, is_manual) == \
+                (self._mode, self._auto_mode, self._is_manual):
+            return
         self._mode = mode
         if auto_mode is not None:
             self._auto_mode = auto_mode
@@ -466,9 +474,47 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._refresh_bg()
 
     def set_guitar_type(self, guitar_type: gt.GuitarType) -> None:
-        """Change the guitar type used for mode-range classification and refresh."""
+        """Change the guitar type used for mode-range classification and refresh — nothing when it is unchanged."""
+        if guitar_type == self._guitar_type:
+            return
         self._guitar_type = guitar_type
         self._refresh_mode()
+
+    def can_show(self, mode: str, show_pitch: bool, read_only: bool) -> bool:
+        """Whether this card can be reused for a peak shown this way: its layout is fixed when it is built — a
+        plate / brace role's badge in place of the mode icon, the pitch row, the star and menu."""
+        return (MaterialPeakRole.from_display_name(self._mode) is None) == \
+            (MaterialPeakRole.from_display_name(mode) is None) \
+            and self._show_pitch == show_pitch and self._read_only == read_only
+
+    def apply(self, *, peak_id: str, freq: float, mag_db: float, q: float, bandwidth: float,
+              guitar_type: gt.GuitarType, mode: str, auto_mode: str, show: str, is_manual: bool,
+              is_held: bool) -> None:
+        """Show this peak: change only what differs from what the card shows now — the part of SwiftUI's
+        updating a row that Qt leaves to the app."""
+        self.peak_id = peak_id
+        if freq != self._freq:
+            self._freq = freq
+            self._freq_lbl.setText(f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz")
+            self._refresh_pitch()
+        if mag_db != self._mag_db:
+            self._mag_db = mag_db
+            self._refresh_mag()
+        if (q, bandwidth) != (self._q, self._bandwidth):
+            self._q, self._bandwidth = q, bandwidth
+            self._refresh_qbw()
+        star = show != self._show or is_held != self._is_held
+        marked = (mode, auto_mode, is_manual, is_held, guitar_type) != \
+            (self._mode, self._auto_mode, self._is_manual, self._is_held, self._guitar_type)
+        mode_changed = mode != self._mode
+        self._show, self._mode, self._auto_mode = show, mode, auto_mode
+        self._is_manual, self._is_held, self._guitar_type = is_manual, is_held, guitar_type
+        if star:
+            self._refresh_star()
+        if marked:
+            self._refresh_mode()
+        if mode_changed:
+            self._refresh_bg()
 
     @property
     def freq(self) -> float:
@@ -556,69 +602,78 @@ class PeakListWidget(QtWidgets.QWidget):
     # ── card management ───────────────────────────────────────────────────────
 
     def _rebuild_cards(self, data: npt.NDArray) -> None:
-        """Rebuild all cards from *data* (shape [N, 2] or [N, 3])."""
-        # Remove existing cards (not the trailing stretch)
-        while self._vbox.count() > 1:
-            item = self._vbox.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self._cards.clear()
-
+        """Show *data* (shape [N, 2] or [N, 3], one row per model peak): the cards updated in place, by peak id,
+        as Swift's ``ForEach(sortedPeaksWithModes, id: \\.peak.id)`` — a card kept for a peak it already shows,
+        others reused or added, the rest removed (``view_update.sync_children``)."""
         self._empty_lbl.setVisible(data.shape[0] == 0)
-        if data.shape[0] == 0:
-            self.updateGeometry()
-            return
 
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         _gt = _tds.guitar_type()
 
-        # Sort by frequency ascending
-        order = np.argsort(data[:, 0])
-        for i in order:
-            freq   = float(data[i, 0])
-            mag_db = float(data[i, 1])
-            q      = float(data[i, 2]) if data.shape[1] > 2 else 0.0
-
-            # Resolve by ROW, never by frequency. `i` from argsort IS the model row, so this
-            # is peak identity. Going through model.freq_index(freq) was a defect: it returns
-            # -1 for a non-unique frequency, and -1 is a VALID Python index, so both cards of a
-            # duplicated peak silently read _peaks[-1] — an unrelated resonance — and showed its
-            # star, mode label and pitch.
+        def item(i: int) -> dict:
+            # Resolve by ROW, never by frequency: `i` from argsort IS the model row, so this is peak identity.
+            # Going through model.freq_index(freq) was a defect: it returns -1 for a non-unique frequency, and -1
+            # is a VALID Python index, so both cards of a duplicated peak read _peaks[-1].
+            freq = float(data[i, 0])
+            q = float(data[i, 2]) if data.shape[1] > 2 else 0.0
             src_idx = self.model.index(int(i), 0)
-            mode = self.model.mode_value(src_idx)
-            auto_mode = self.model.peak_mode(src_idx)
-            show = self.model.show_value(src_idx)
-            is_manual = self.model.is_manual_value(src_idx)
-
             peak = self.model._peaks[int(i)] if int(i) < len(self.model._peaks) else None
-            card = PeakCardWidget(
+            return dict(
+                peak_id=peak.id if peak is not None else "",
                 freq=freq,
-                mag_db=mag_db,
+                mag_db=float(data[i, 1]),
                 q=q,
-                bandwidth=(float(peak.bandwidth) if peak is not None
-                           else (freq / q if q > 0 else 0.0)),
+                bandwidth=(float(peak.bandwidth) if peak is not None else (freq / q if q > 0 else 0.0)),
                 guitar_type=_gt,
-                mode=mode,
-                auto_mode=auto_mode,
-                show=show,
+                mode=self.model.mode_value(src_idx),
+                auto_mode=self.model.peak_mode(src_idx),
+                show=self.model.show_value(src_idx),
+                is_manual=self.model.is_manual_value(src_idx),
                 is_held=self._is_held,
-                pitch_obj=self._pitch,
-                show_pitch=self._is_guitar,
-                parent=self._container,
             )
-            card._is_manual = is_manual
+
+        items = [item(int(i)) for i in np.argsort(data[:, 0])] if data.shape[0] else []
+
+        def make(it: dict) -> PeakCardWidget:
+            card = PeakCardWidget(
+                freq=it["freq"], mag_db=it["mag_db"], q=it["q"], bandwidth=it["bandwidth"],
+                guitar_type=it["guitar_type"], mode=it["mode"], auto_mode=it["auto_mode"], show=it["show"],
+                is_held=it["is_held"], pitch_obj=self._pitch, show_pitch=self._is_guitar, parent=self._container,
+            )
+            card._is_manual = it["is_manual"]
+            if it["is_manual"]:
+                card._refresh_mode()
             # Identity for later syncs — frequency is not unique.
-            card.peak_id = (
-                self.model._peaks[int(i)].id if int(i) < len(self.model._peaks) else ""
-            )
+            card.peak_id = it["peak_id"]
             card.showChanged.connect(self._on_show_changed)
             card.modeChanged.connect(self._on_mode_changed)
             card.modeReset.connect(self._on_mode_reset)
             card.cardClicked.connect(lambda _freq, c=card: self._on_card_clicked(c))
+            return card
 
-            self._vbox.insertWidget(len(self._cards), card)
-            self._cards.append(card)
+        def remove(card: PeakCardWidget) -> None:
+            self._vbox.removeWidget(card)
+            card.deleteLater()
 
+        cards = view_update.sync_children(
+            self._cards, items,
+            item_key=lambda it: it["peak_id"],
+            child_key=lambda card: card.peak_id,
+            make=make,
+            update=lambda card, it: card.apply(**it),
+            remove=remove,
+            can_reuse=lambda card, it: card.can_show(it["mode"], self._is_guitar, False),
+            distance=lambda card, it: abs(card.freq - it["freq"]),
+        )
+
+        # The cards in the peaks' order, ahead of the trailing stretch; moved only when out of place.
+        in_place = [self._vbox.itemAt(k) for k in range(len(cards))]
+        if [item.widget() if item is not None else None for item in in_place] != cards:
+            for card in cards:
+                self._vbox.removeWidget(card)
+            for k, card in enumerate(cards):
+                self._vbox.insertWidget(k, card)
+        self._cards = cards
         self.updateGeometry()
 
     def _card_for_freq(self, freq: float) -> PeakCardWidget | None:

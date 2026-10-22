@@ -2,9 +2,8 @@
 """The chart's display range against the shared case file ``display-range.json`` — the same cases the Swift
 and web suites run: widening onto a newly identified plate / brace peak (a guitar's range is the
 user's analysis window and is never widened; a load shows the range it was saved with), when the
-chart's range moves, and a zoom or pan step of an axis. The analyzer's announcing each peak is
-tested in test_material_peak_announcement.py. (The points drawn for a range are Swift's and the
-web's: pyqtgraph is given the whole spectrum.)
+chart's range moves, a zoom or pan step of an axis, and the spectrum points drawn for a range. The
+analyzer's announcing each peak is tested in test_material_peak_announcement.py.
 """
 
 from __future__ import annotations
@@ -81,3 +80,8 @@ def test_pan(row):
     lower, upper, _span = _axis(row["axis"])
     got = panned_range(*row["range"], row["delta"], lower, upper)
     assert got == pytest.approx(tuple(row["expect"]), abs=1e-3), got
+
+
+@pytest.mark.parametrize("row", DATA["drawnIndices"], ids=lambda r: r["id"])
+def test_drawn_indices(row):
+    assert list(dr.drawn_indices(row["frequencies"], *row["range"])) == row["expect"]

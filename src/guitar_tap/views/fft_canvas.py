@@ -5,10 +5,17 @@
 
 import html
 import math
+import os
 
 import numpy as np
 import numpy.typing as npt
 import pyqtgraph as pg
+
+# The chart drawn through OpenGL (on the GPU) when GT_OPENGL=1 — off by default. Drawing the live spectrum in
+# software holds the main thread about 30 ms a frame; through OpenGL about 3 ms. Off until it has been tried on every
+# platform's graphics drivers.
+if os.environ.get("GT_OPENGL") == "1":
+    pg.setConfigOptions(useOpenGL=True)
 from PySide6 import QtCore, QtGui, QtWidgets
 
 import guitar_tap.models.tap_tone_analyzer as td
@@ -469,8 +476,10 @@ class FftCanvas(pg.PlotWidget):
         self.analyzer.highlightedPeakChanged.connect(lambda _id: self._draw_highlight())
 
         # FFT line
+        # Not antialiased: the spectrum is straight segments, which look the same either way, and an antialiased
+        # jagged line costs Qt's software renderer about 30 ms a frame, 4 without.
         self.fft_line: pg.PlotDataItem = self.plot(
-            [], [], pen=pg.mkPen(None), antialias=True
+            [], [], pen=pg.mkPen(None), antialias=False
         )
 
         # Peak scatter points
@@ -1544,6 +1553,19 @@ class FftCanvas(pg.PlotWidget):
             self._maxFreq = float(fmax)
             self.setXRange(fmin, fmax, padding=0)
 
+    def _draw_spectrum(self) -> None:
+        """Give the spectrum line only the points drawn for the visible range — as Swift's and the web's chart, by
+        the shared ``drawn_indices``: a frame's whole spectrum is 32,768 points, of which the chart shows a few
+        hundred."""
+        spectrum = getattr(self, "_spectrum", None)
+        if spectrum is None:
+            return
+        freqs, mags = spectrum
+        n = min(len(freqs), len(mags))
+        x0, x1 = (float(v) for v in self.getPlotItem().vb.viewRange()[0])
+        lo, hi = dr.drawn_indices(freqs[:n], x0, x1)
+        self.fft_line.setData(freqs[lo:hi], mags[lo:hi])
+
     def _refresh_peaks_for_viewport(self, _vb=None, x_range=None) -> None:
         """Re-emit the existing peaks and update the freq-range label whenever the
         viewport x-range changes (pan, zoom, or explicit wheel-scroll gestures).
@@ -1572,6 +1594,7 @@ class FftCanvas(pg.PlotWidget):
             return
         self._minFreq = fmin
         self._maxFreq = fmax
+        self._draw_spectrum()
         # The peaks the chart marks — none while comparing — as Swift's view reads tap.chartPeaks.
         chart_peaks = self.analyzer.chart_peaks
         if chart_peaks is not None:
@@ -1649,6 +1672,7 @@ class FftCanvas(pg.PlotWidget):
                 [entry["label"] for entry in self.analyzer._comparison_data], font_size=10)
 
         # Clear the main spectrum line — only comparison curves should be visible.
+        self._spectrum = None
         self.fft_line.setData([], [])
         self.points.setData(x=[], y=[])
 
@@ -1830,6 +1854,7 @@ class FftCanvas(pg.PlotWidget):
         # Mirrors Swift SpectrumView: spectrumLineContent is excluded from the
         # chart entirely when isReviewingMaterialPhase is true.
         if self.analyzer.material_tap_phase.is_reviewing:
+            self._spectrum = None
             self.fft_line.setData([], [])
 
         for label, role, freq_list, mag_list in spectra:
@@ -1979,9 +2004,11 @@ class FftCanvas(pg.PlotWidget):
         )
         if not is_user_comparison and not is_reviewing:
             if np.any(mag_db):
-                self.fft_line.setData(freq_axis, mag_db)
+                self._spectrum = (np.asarray(freq_axis), np.asarray(mag_db))
+                self._draw_spectrum()
             elif mag_db is not None and len(mag_db) == 0:
                 # Blank spectrum during device-change settle — clear the line.
+                self._spectrum = None
                 self.fft_line.setData([], [])
         if self.analyzer._auto_scale_db and np.any(mag_db):
             valid = mag_db[(mag_db > -100) & (mag_db < 20)]

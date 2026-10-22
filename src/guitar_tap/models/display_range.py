@@ -153,3 +153,18 @@ def panned_range(lo: float, hi: float, delta: float, lower: float,
         new_lo -= new_hi - upper
         new_hi = upper
     return max(lower, new_lo), min(upper, new_hi)
+
+
+def drawn_indices(frequencies, min_hz: float, max_hz: float) -> "tuple[int, int]":
+    """The spectrum points drawn for a range, as ``[first, end)`` indices into *frequencies* (ascending): every
+    point inside ``[min_hz, max_hz]`` plus the one just beyond each edge, so the line reaches both edges of the plot,
+    which clips it. Mirrors Swift ``DisplayRange.drawnIndices``."""
+    import numpy as np
+
+    freqs = np.asarray(frequencies)
+    n = len(freqs)
+    first_inside = int(np.searchsorted(freqs, min_hz, side="left"))
+    first_beyond = int(np.searchsorted(freqs, max_hz, side="right"))
+    lo = max(0, first_inside - 1)
+    hi = min(n, first_beyond + 1)
+    return (lo, hi) if lo < hi else (lo, lo)

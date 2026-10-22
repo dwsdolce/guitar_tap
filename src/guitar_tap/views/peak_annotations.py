@@ -107,10 +107,16 @@ class DraggableTextItem(pg.TextItem):
 
     def set_html(self, html: str) -> None:
         """Update the label content and reflow the text bounding rect."""
+        # The label's size follows its text; Qt must be told before it changes, or it repaints only the old area
+        # and what was under the new part (a leader, the curve) stays on screen over the label.
+        self.prepareGeometryChange()
         self.textItem.setHtml(html)
         # Qt only centres text when the document has a fixed width; set it to
-        # the natural (widest-line) width so text-align:center is honoured.
+        # the natural (widest-line) width so text-align:center is honoured. The width is cleared first: Qt
+        # measures the ideal width within the width already set, so a label given longer text would keep the
+        # old, narrower width and wrap.
         doc = self.textItem.document()
+        doc.setTextWidth(-1)
         doc.setTextWidth(doc.idealWidth())
         self.updateTextPos()
 
@@ -211,6 +217,10 @@ class FftAnnotations(QtCore.QObject):
         super().__init__(plot_widget)
         self.plot_item = plot_widget.getPlotItem()
         self.annotations: list[_AnnDict] = []
+        # The labels of the last refresh, kept on the chart until the next one has taken what it can reuse —
+        # Qt cannot afford SwiftUI's recreating every label whose peak got a new id (a live frame's).
+        self._retiring: list[_AnnDict] = []
+        self._retire_due = False
         # Reference to the TapToneAnalyzer — used to persist dragged annotation
         # offsets across pan/zoom rebuilds (mirrors Swift peakAnnotationOffsets).
         self._analyzer = analyzer
@@ -326,15 +336,13 @@ class FftAnnotations(QtCore.QObject):
     ) -> None:
         """Create a new annotation or update an existing one for *freq*."""
         idx = self.find_annotation_index(freq)
-        color = self._mode_color(mode_str)
 
         if idx >= 0:
             ann_dict = self.annotations[idx]
-            ann_dict["html"]     = html
-            ann_dict["mode_str"] = mode_str
-            ann_dict["peak_id"]  = peak_id
-
             if ann_dict["annotation"] is None:
+                ann_dict["html"] = html
+                ann_dict["mode_str"] = mode_str
+                ann_dict["peak_id"] = peak_id
                 xy_text = ann_dict["xytext"]
                 ann, arrow_line = self.create_annotation(
                     freq, mag, html, mode_str, xy_text, peak_id
@@ -342,36 +350,82 @@ class FftAnnotations(QtCore.QObject):
                 ann_dict["annotation"] = ann
                 ann_dict["arrow_line"] = arrow_line
             else:
-                ann_dict["annotation"].set_html(html)
-                ann_dict["annotation"].restyle(color)
-                r, g, b = color
-                ann_dict["arrow_line"].setPen(chart_style.pen(
-                    (r, g, b), chart_style.SCREEN.leader_width, chart_style.SCREEN.leader_dash,
-                    chart_style.SCREEN.leader_opacity))
-        else:
-            # Restore saved offset from the analyzer if the user previously dragged
-            # this annotation — keyed by peak_id (UUID), mirrors Swift peakAnnotationOffsets.
-            saved = (
-                self._analyzer.peak_annotation_offsets.get(peak_id)
-                if self._analyzer is not None and peak_id
-                else None
-            )
-            xy_text = saved if saved is not None else (freq, mag + self._LABEL_OFFSET_DB)
-            ann, arrow_line = self.create_annotation(
-                freq, mag, html, mode_str, xy_text, peak_id
-            )
-            self.annotations.append(
-                {
-                    "peak_id":    peak_id,
-                    "freq":       freq,
-                    "annotation": ann,
-                    "arrow_line": arrow_line,
-                    "mag":        mag,
-                    "html":       html,
-                    "mode_str":   mode_str,
-                    "xytext":     xy_text,
-                }
-            )
+                self._refit(ann_dict, peak_id, freq, mag, html, mode_str, ann_dict["xytext"])
+            return
+        # Restore saved offset from the analyzer if the user previously dragged this annotation — keyed by
+        # peak_id (UUID), mirrors Swift peakAnnotationOffsets.
+        saved = (
+            self._analyzer.peak_annotation_offsets.get(peak_id)
+            if self._analyzer is not None and peak_id
+            else None
+        )
+        xy_text = saved if saved is not None else (freq, mag + self._LABEL_OFFSET_DB)
+        reused = self._take_retired(peak_id, freq)
+        if reused is not None:
+            self._refit(reused, peak_id, freq, mag, html, mode_str, xy_text)
+            self.annotations.append(reused)
+            return
+        ann, arrow_line = self.create_annotation(freq, mag, html, mode_str, xy_text, peak_id)
+        self.annotations.append(
+            {
+                "peak_id":    peak_id,
+                "freq":       freq,
+                "annotation": ann,
+                "arrow_line": arrow_line,
+                "mag":        mag,
+                "html":       html,
+                "mode_str":   mode_str,
+                "xytext":     xy_text,
+                "style_key":  self._style_key(mode_str),
+            }
+        )
+
+    def _style_key(self, mode_str: str) -> tuple:
+        return (self._mode_color(mode_str), palette.rgb(palette.Role.CHART_READOUT_BACKGROUND))
+
+    def _take_retired(self, peak_id: str, freq: float) -> "_AnnDict | None":
+        """A label of the last refresh to show this peak: its own, else the nearest in frequency left — so it goes on
+        showing much what it showed, and little about it changes."""
+        shown = [d for d in self._retiring if d["annotation"] is not None]
+        for d in shown:
+            if peak_id and d["peak_id"] == peak_id:
+                self._retiring.remove(d)
+                return d
+        if shown:
+            nearest = min(shown, key=lambda d: abs(d["freq"] - freq))
+            self._retiring.remove(nearest)
+            return nearest
+        return None
+
+    def _refit(self, ann_dict: "_AnnDict", peak_id: str, freq: float, mag: float, html: str, mode_str: str,
+               xy_text: tuple[float, float]) -> None:
+        """Show this peak on an existing label, changing only what differs."""
+        text_item = ann_dict["annotation"]
+        arrow_line = ann_dict["arrow_line"]
+        if html != ann_dict["html"]:
+            text_item.set_html(html)
+        style_key = self._style_key(mode_str)
+        if ann_dict.get("style_key") != style_key:
+            color = style_key[0]
+            text_item.restyle(color)
+            arrow_line.setPen(chart_style.pen(
+                color, chart_style.SCREEN.leader_width, chart_style.SCREEN.leader_dash,
+                chart_style.SCREEN.leader_opacity))
+        text_item.connect_arrow(arrow_line, freq, mag, (freq, mag + self._LABEL_OFFSET_DB), peak_id,
+                                self._analyzer)
+        text_item.setPos(xy_text[0], xy_text[1])
+        text_item._update_arrow()
+        ann_dict.update(peak_id=peak_id, freq=freq, mag=mag, html=html, mode_str=mode_str, xytext=xy_text,
+                        style_key=style_key)
+
+    def _drop_retired(self) -> None:
+        """Remove the labels of the last refresh that the new one did not take."""
+        self._retire_due = False
+        for ann_dict in self._retiring:
+            if ann_dict["annotation"] is not None:
+                self.plot_item.removeItem(ann_dict["annotation"])
+                self.plot_item.removeItem(ann_dict["arrow_line"])
+        self._retiring = []
 
     # ── selection helpers ─────────────────────────────────────────────────────
 
@@ -423,15 +477,18 @@ class FftAnnotations(QtCore.QObject):
                 ann_dict["arrow_line"] = arrow_line
 
     def clear_annotations(self) -> None:
-        """Remove all annotations from the plot and clear the list."""
-        for ann_dict in self.annotations:
-            if ann_dict["annotation"] is not None:
-                self.plot_item.removeItem(ann_dict["annotation"])
-                self.plot_item.removeItem(ann_dict["arrow_line"])
+        """Clear the list. Its labels stay on the chart until the refresh that follows has reused what it can
+        (``update_annotation``); the rest go when it ends (``refresh_display``), or at the end of this event-loop
+        turn if no refresh follows."""
+        self._retiring.extend(self.annotations)
         self.annotations = []
+        if not self._retire_due:
+            self._retire_due = True
+            QtCore.QTimer.singleShot(0, self, self._drop_retired)
 
     def refresh_display(self) -> None:
-        """Force the plot viewport to repaint after a batch of annotation changes."""
+        """A refresh's labels are all in: remove the old ones it did not reuse, and repaint."""
+        self._drop_retired()
         self.plot_item.vb.update()
 
     # ── drag completion ───────────────────────────────────────────────────────
