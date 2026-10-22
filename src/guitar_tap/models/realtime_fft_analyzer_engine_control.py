@@ -583,45 +583,30 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             if self._file_playback_generation != my_generation:
                 return
 
-            # Force-flush any partial audio still in the input buffer.
-            # Mirrors Swift processFileData partial flush.
-            if self._input_buffer:
-                partial = np.concatenate(self._input_buffer)
-            else:
-                partial = np.zeros(0, dtype=np.float32)
-            _td("file_playback", f"PARTIAL_FLUSH | partialSamples={len(partial)} fftSize={fft_size}")
-            if len(partial) > 0:
-                if len(partial) < fft_size:
-                    partial = np.concatenate(
-                        [partial, np.zeros(fft_size - len(partial), dtype=np.float32)]
-                    )
-                else:
-                    partial = partial[:fft_size]
-                # Emit the final FFT frame via perform_fft ONLY — do NOT call
-                # process_raw_samples.  Mirrors Swift processFileData which calls
-                # performFFT(on: partial), NOT processRawSamples.  This is critical
-                # because process_raw_samples would feed the zero-padded partial
-                # into raw_sample_handler → _accumulate_gated_samples, corrupting
-                # any active gated capture with duplicate/zero data.  The gated
-                # capture is flushed separately by _on_pre_mic_restart below.
-                _td("file_playback", f"PARTIAL_FLUSH_EMIT | emitting FFT frame with {len(partial)} samples")
-                mag_y_db, _peak_db = self.perform_fft(partial)
-
-                # Announced as every frame — mirrors Swift performFFT(on:) publishing the frame.
-                self.publish_frame(mag_y_db, 0.0)
-                _td("file_playback", "PARTIAL_FLUSH_DONE")
-            # Clear the input buffer so the caller starts from a clean slate.
-            self._input_buffer = []
-            self._input_buffer_len = 0
-
-            # Flush any active gated capture by zero-padding the remaining window — BEFORE the mic
-            # restarts. The flush, the capture's finish and the release of the pending audio actions are
-            # one step on the main thread, and this worker waits for it (Swift: DispatchQueue.main.sync).
-            # Stopped meanwhile? Then the capture belongs to a playback the user abandoned, and the
-            # sequence now running must not receive it.
+            # On the main thread, after the file's last chunk (handed over there ahead of this): the partial
+            # FFT frame, zero-padded, then any capture the file stopped filling — before the mic restarts. The
+            # flush, the capture's finish and the release of the pending audio actions are one step on the
+            # main thread, and this worker waits for it (Swift: DispatchQueue.main.sync). Stopped meanwhile?
+            # Then the capture belongs to a playback the user abandoned, and the sequence now running must not
+            # receive it.
             def _flush_and_clear() -> None:
                 if self._file_playback_generation != my_generation:
                     return
+                partial = (np.concatenate(self._input_buffer) if self._input_buffer
+                           else np.zeros(0, dtype=np.float32))
+                self._input_buffer = []
+                self._input_buffer_len = 0
+                _td("file_playback", f"PARTIAL_FLUSH | partialSamples={len(partial)} fftSize={fft_size}")
+                if len(partial) > 0:
+                    if len(partial) < fft_size:
+                        partial = np.concatenate(
+                            [partial, np.zeros(fft_size - len(partial), dtype=np.float32)]
+                        )
+                    else:
+                        partial = partial[:fft_size]
+                    # The final FFT frame, announced as every frame — mirrors Swift performFFT(on:).
+                    mag_y_db, _peak_db = self.perform_fft(partial)
+                    self.publish_frame(mag_y_db, 0.0)
                 pre_restart = self._on_pre_mic_restart
                 _td("file_playback", f"PRE_MIC_RESTART | handler={'set' if pre_restart else 'None'}")
                 if pre_restart is not None:
@@ -715,9 +700,9 @@ class RealtimeFFTAnalyzerEngineControlMixin:
             self.queue.put(None)
             proc._drain_ack.wait(timeout=0.5)
 
-            # 4. Clear the FFT accumulator and reset frame counters.
-            #    Mirrors Swift: bufferAccessQueue.sync { inputBuffer.removeAll() }
-            #    and fftFrameCounter = 0; samplesConsumed = 0.
+            # 4. Clear the FFT accumulator and reset frame counters. A mic chunk still queued for the main
+            #    thread is dropped when it arrives (its playback generation is stale).
+            #    Mirrors Swift: inputBuffer.removeAll() and fftFrameCounter = 0; samplesConsumed = 0.
             self._input_buffer = []
             self._input_buffer_len = 0
             self._fft_frame_counter = 0

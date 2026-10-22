@@ -15,6 +15,7 @@ import json
 import os
 import sys
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -39,6 +40,19 @@ def test_calibration_corrections(row):
     for index, expected in zip(row["bins"], row["expect"]):
         assert abs(float(corrections[index]) - expected) <= DATA["tolerance"], (
             f"{row['id']}: bin {index} — {float(corrections[index])} dB, expected {expected} — {row['note']}")
+
+
+def test_corrections_for_all_bins_are_each_bins_correction():
+    """Every bin's correction, computed for all the FFT's bins at once, is the one ``correction_at`` gives
+    that bin alone — exactly, for the bins of 48 kHz and of 44.1 kHz and for unsorted frequencies. Mirrors
+    Swift ``correctionsForAllBins_areEachBinsCorrection``."""
+    calibration = MicrophoneCalibration.from_path(os.path.join(_HERE, DATA["calibrationFile"]))
+    fft_size = DATA["fftSize"]
+    for rate in (48000.0, 44100.0):
+        bins = np.arange(fft_size // 2, dtype=np.float64) * rate / fft_size
+        assert list(calibration.interpolate_to_bins(bins)) == [calibration.correction_at(f) for f in bins], rate
+    unsorted = np.array([1000, 20, 5000, 20, 19000, 3], dtype=np.float64)
+    assert list(calibration.interpolate_to_bins(unsorted)) == [calibration.correction_at(f) for f in unsorted]
 
 
 @pytest.mark.parametrize("row", DATA["parse"], ids=lambda r: r["id"])

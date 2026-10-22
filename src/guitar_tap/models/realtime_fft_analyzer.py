@@ -115,9 +115,8 @@ from .realtime_fft_analyzer_fft_processing import RealtimeFFTAnalyzerFFTProcessi
 # Gated capture state (pre-roll buffer, accumulator, active flag) was previously
 # owned here.  It has been moved to TapToneAnalyzer to match Swift's ownership
 # model where TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:) owns those
-# buffers.  This thread now calls mic.raw_sample_handler(chunk, rate) on every
-# chunk so TapToneAnalyzer can accumulate directly.
-# The gatedCaptureComplete Qt signal remains here as the delivery mechanism.
+# buffers. Each chunk reaches it on the main thread, in order, through this thread object's
+# chunkHandedOver signal (RealtimeFFTAnalyzer.hand_over).
 
 class _FftProcessingThread(QtCore.QThread):
     """Queue-draining thread for live mic audio.
@@ -130,7 +129,7 @@ class _FftProcessingThread(QtCore.QThread):
     For file playback, ``process_file_data`` calls ``process_raw_samples``
     inline without using this thread or the queue.
 
-    It also carries the pipeline's Qt signals (``gatedCaptureComplete`` and the rest — the input
+    It also carries the pipeline's Qt signals (``chunkHandedOver`` and the rest — the input
     level's are on ``mic.level``, the frame's on ``mic.frame``): ``RealtimeFFTAnalyzer`` is not a QObject, so it cannot own
     signals, and this thread object does. So the object is created once, with the mic, and never
     replaced: a replacement would start with no connections. And each ``connect()`` ADDS a receiver, so
@@ -170,8 +169,9 @@ class _FftProcessingThread(QtCore.QThread):
     # Edge-triggered: the engine started (True) or stopped (False). Mirrors Swift `@Published isRunning`.
     runningChanged: QtCore.Signal = QtCore.Signal(bool)
 
-    # Emitted when a gated capture window fills.
-    gatedCaptureComplete: QtCore.Signal = QtCore.Signal(object, float, object)
+    # One chunk handed to the main thread — (samples, level_db, audio_time, playback generation) — and
+    # taken there, in order (RealtimeFFTAnalyzer.hand_over). Swift `DispatchQueue.main.async` in handOver.
+    chunkHandedOver: QtCore.Signal = QtCore.Signal(object, float, float, int)
 
     # MARK: - Initialization
 
@@ -179,6 +179,13 @@ class _FftProcessingThread(QtCore.QThread):
     def _run_callable(self, fn) -> None:
         """Slot for runOnMainBlocking / runOnMain: runs *fn* on the main thread."""
         fn()
+
+    @QtCore.Slot(object, float, float, int)
+    def _take_chunk(self, samples, level_db: float, audio_time: float, generation: int) -> None:
+        """Slot for chunkHandedOver: the chunk, on the main thread."""
+        mic = self._mic_ref()
+        if mic is not None:
+            mic.take_handed_over_chunk(samples, level_db, audio_time, generation)
 
     def __init__(
         self,
@@ -188,6 +195,7 @@ class _FftProcessingThread(QtCore.QThread):
         super().__init__(parent)
         self.runOnMainBlocking.connect(self._run_callable, QtCore.Qt.ConnectionType.BlockingQueuedConnection)
         self.runOnMain.connect(self._run_callable, QtCore.Qt.ConnectionType.QueuedConnection)
+        self.chunkHandedOver.connect(self._take_chunk, QtCore.Qt.ConnectionType.QueuedConnection)
 
         # Weak back-reference to the owning analyzer.  A strong ref here would
         # form a QObject reference cycle (analyzer.proc_thread → thread._mic →
@@ -336,10 +344,10 @@ class RealtimeFFTAnalyzer(
             for_testing=True,
         )
 
-    # MARK: - Level-Crossing Confirmation
+    # MARK: - Tap Confirmation
     #
-    # Number of consecutive above-threshold audio chunks required to
-    # confirm a level crossing before ``_level_crossing_handler`` fires.
+    # Number of consecutive above-threshold audio chunks the tap detector
+    # (``TapToneAnalyzer.detect_tap``) requires to confirm a rising edge.
     #
     # At a 1024-sample chunk and 48 kHz sample rate each chunk is ~21 ms,
     # so the default of ``2`` requires ~43 ms of sustained signal above
@@ -360,21 +368,16 @@ class RealtimeFFTAnalyzer(
     # is a single-chunk excursion (RMS -46.78 dB then -53.55 dB), so 2
     # already rejects it.
     #
-    # The trade-off vs ``1`` (legacy fire-on-first-crossing):
-    # - Pros: filters single-chunk noise events that previously triggered
-    #   bogus gated captures — especially during file playback, which
-    #   has no human review-time gap between phases.
-    # - Cons: trigger fires ``LEVEL_CROSSING_CONFIRMATION_CHUNKS - 1``
-    #   chunks later than before.  ``align_capture_to_onset`` compensates
-    #   by anchoring the FFT window to the sample-precise tap onset, so
-    #   the FFT input is unchanged.  A bump spanning 2+ chunks could
-    #   still slip through; a higher value would start cutting into
-    #   weak marginal taps like the brace example above.
-    #
-    # This constant is also consulted by the main-thread tap detector
-    # (``TapToneAnalyzer.detect_tap``) so both rising-edge paths apply
-    # the same confirmation logic — otherwise a bump rejected here can
-    # still fire the main-thread detector and start a bogus capture.
+    # The trade-off vs ``1`` (fire on the first crossing):
+    # - Pros: filters single-chunk noise events that would otherwise start
+    #   bogus gated captures — especially during file playback, which has
+    #   no human review-time gap between phases.
+    # - Cons: the tap is confirmed ``LEVEL_CROSSING_CONFIRMATION_CHUNKS - 1``
+    #   chunks later. The capture is seeded from the pre-roll and
+    #   ``align_capture_to_onset`` anchors the FFT window to the
+    #   sample-precise tap onset, so the FFT input is unchanged. A bump
+    #   spanning 2+ chunks could still slip through; a higher value would
+    #   start cutting into weak marginal taps like the brace example above.
     #
     # Mirrors Swift ``RealtimeFFTAnalyzer.levelCrossingConfirmationChunks``.
     LEVEL_CROSSING_CONFIRMATION_CHUNKS: int = 2
@@ -580,21 +583,10 @@ class RealtimeFFTAnalyzer(
         self._mm_client: object | None = None
         self._mm_enumerator: object | None = None
 
-        # Raw-sample handler callback.
-        # Mirrors Swift RealtimeFFTAnalyzer.rawSampleHandler.
-        # Set by TapToneAnalyzer._wire_pipeline_signals() to _accumulate_gated_samples.
-        self.raw_sample_handler: "Callable[[np.ndarray, float], None] | None" = None
-
-        # MARK: - Direct callback properties (mirrors Swift handlers)
-        # These are called directly by process_raw_samples — no Qt signal dispatch.
-        # For file playback this is the only delivery path (no event loop).
-        # For live mic the Qt signals are emitted in parallel for UI updates.
-        # (level_db, audio_time) — audio_time is audio_elapsed AT THE MOMENT THIS CHUNK WAS
-        # PROCESSED. It travels WITH the sample rather than being read later by the consumer:
-        # the handler may be delivered across a thread hop, and the audio side races ahead, so
-        # reading audio_elapsed at the consumer would give the CURRENT audio time, not this
-        # chunk's — which silently skips the detection warm-up. Mirrors Swift rmsLevelHandler.
-        self.rms_level_handler: "Callable[[float, float], None] | None" = None
+        # Takes each chunk on the main thread, in order: (samples, level_db, audio_time) — audio_time is
+        # audio_elapsed at the end of the chunk, carried with it. TapToneAnalyzer keeps the pre-roll, fills
+        # the capture, advances its clock and detects taps from it. Swift `audioFrameHandler`.
+        self.audio_frame_handler: "Callable[[np.ndarray, float, float], None] | None" = None
 
         # MARK: - Processing State (formerly on _FftProcessingThread)
         # Moved here so process_raw_samples can access them directly.
@@ -632,19 +624,6 @@ class RealtimeFFTAnalyzer(
         # frame.display_level_db by perform_fft. True silence is -inf on the readout; detection reads the
         # per-chunk level, which stays -100 on silence.
         self.readout_level_db: float = -100.0
-
-        # Level-crossing detection.
-        self._level_crossing_handler: "Callable[[], None] | None" = None
-        self._level_crossing_threshold: float = -100.0
-        self._level_crossing_armed: bool = False
-        self._previous_level_db: float = -100.0
-        # Running count of consecutive above-threshold chunks in the
-        # current candidate rising-edge run.  Reset to 0 when arming
-        # changes (handled at the assignment sites) or when the level
-        # falls back below threshold.  Once it reaches
-        # LEVEL_CROSSING_CONFIRMATION_CHUNKS the handler fires and the
-        # level crossing is disarmed.
-        self._level_crossing_consecutive_above: int = 0
 
         # Input clipping detection.
         self._clip_hold_seconds: float = 1.5
@@ -750,34 +729,17 @@ class RealtimeFFTAnalyzer(
     # MARK: - process_raw_samples (mirrors Swift processRawSamples)
 
     def process_raw_samples(self, chunk: npt.NDArray) -> None:
-        """Process a single audio chunk through the full DSP pipeline.
+        """Process one audio chunk: its level, clipping and audio time here, then its hand-over to the
+        main thread, where the FFT and the analyzer take it in order (``hand_over``).
 
-        This is the single processing method for ALL audio — live mic and
-        file playback both call this identically.  Mirrors Swift
-        ``processRawSamples(_ samples: [Float])`` in
-        ``RealtimeFFTAnalyzer+FFTProcessing.swift``.
-
-        Steps (matches Swift processRawSamples ordering):
-        1. float32 cast, diagnostic counter
-        2. raw_sample_handler (gated sample delivery)
-        3. RMS calculation
-        4. Level-crossing detection → _level_crossing_handler callback
-        5. rms_level_handler callback + level.inputLevelChanged Qt signal
-        6. Clipping detection → level.clippingChanged Qt signal
-        7. Recent peak history update
-        8. Input buffer accumulation → FFT → frame.frameChanged Qt signal (the frame, announced once)
+        The single processing method for ALL audio — live mic and file playback both call it. Mirrors
+        Swift ``processRawSamples(_ samples: [Float])`` in ``RealtimeFFTAnalyzer+FFTProcessing.swift``.
         """
         enter_now = time.time()
         chunk_f32 = chunk.astype(np.float32)
 
         # DIAG: running total of samples consumed from the audio source
         self._diag_total_samples += len(chunk_f32)
-
-        # Deliver every raw audio chunk to the raw_sample_handler if set.
-        # Mirrors Swift rawSampleHandler?(samples, actualSampleRate)
-        handler = self.raw_sample_handler
-        if handler is not None:
-            handler(chunk_f32, float(self.rate))
 
         # Advance the AUDIO clock — seconds of audio processed, not wall-clock seconds. The detection
         # warm-up is measured against this so it always covers the first 0.5 s of AUDIO, however long
@@ -786,9 +748,7 @@ class RealtimeFFTAnalyzer(
             self.audio_elapsed += len(chunk_f32) / float(self.rate)
 
         # Per-chunk RMS level — mirrors Swift vDSP_rmsqv → levelDB calculation.
-        # Silence is -100, exactly as Swift (`rms > 0 ? 20*log10(rms) : -100`). This was
-        # `max(rms, 1e-10)`, i.e. -200 — written independently of Swift, so detection saw a
-        # different level on true digital silence than Swift's did.
+        # Silence is -100, exactly as Swift (`rms > 0 ? 20*log10(rms) : -100`).
         rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
         level_db = 20.0 * math.log10(rms) if rms > 0 else -100.0
         self.level.input_level_db = level_db
@@ -796,87 +756,8 @@ class RealtimeFFTAnalyzer(
         # because -100 dB is a real level a quiet UMIK-1 reaches. Detection keeps level_db.
         self.readout_level_db = level_db if rms > 0 else float("-inf")
 
-        # ── Level-crossing detection (audio-queue fast-start) ────
-        # MUST run BEFORE rms_level_handler.  Mirrors Swift processRawSamples
-        # where the level-crossing check fires before rmsLevelHandler.  The
-        # rms_level_handler callback triggers tap detection →
-        # start_guitar_gated_capture which disarms the level-crossing.  If
-        # rms_level_handler fires first, the crossing never gets a chance
-        # to fire and the gated capture starts via the slower main-thread
-        # fallback path with fewer pre-roll samples.
-        #
-        # Requires ``LEVEL_CROSSING_CONFIRMATION_CHUNKS`` consecutive
-        # above-threshold chunks (default 2 = ~43 ms) before firing.  This
-        # rejects brief noise bumps that would otherwise consume a phase's
-        # gated capture window — especially during file playback where
-        # there is no human review-time gap between phases.
-        # ``align_capture_to_onset`` re-anchors the FFT window to the
-        # sample-precise onset, so the few chunks of trigger delay
-        # introduced here are invisible downstream.
-        if self.is_playing_file:
-            from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc
-            _td_lc("processRawSamples",
-                   f"LEVEL_CHECK | armed={self._level_crossing_armed} "
-                   f"levelDB={level_db:.1f} threshold={self._level_crossing_threshold:.1f} "
-                   f"prevDB={self._previous_level_db:.1f} chunkLen={len(chunk_f32)} "
-                   f"fileSamplePos={self._diag_total_samples}")
-        if self._level_crossing_armed:
-            above_threshold = level_db > self._level_crossing_threshold
-            prev_above_threshold = self._previous_level_db > self._level_crossing_threshold
-            confirm_target = self.LEVEL_CROSSING_CONFIRMATION_CHUNKS
-            if above_threshold:
-                if self._level_crossing_consecutive_above > 0:
-                    # Already counting — extend the run.
-                    self._level_crossing_consecutive_above += 1
-                elif not prev_above_threshold:
-                    # Fresh rising edge — start a new candidate run.
-                    self._level_crossing_consecutive_above = 1
-                    if self.is_playing_file and confirm_target > 1:
-                        from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc_pend
-                        _td_lc_pend("processRawSamples",
-                                    f"LEVEL_CROSSING_PENDING | rmsDB={level_db:.1f} "
-                                    f"prevDB={self._previous_level_db:.1f} "
-                                    f"need={confirm_target - 1} more")
-                # If above && counter == 0 && prev_above, signal was
-                # already above when arming happened — wait for a fall
-                # + rise (handled when the level drops then climbs).
-                if self._level_crossing_consecutive_above >= confirm_target:
-                    self._level_crossing_armed = False
-                    self._level_crossing_consecutive_above = 0
-                    if self.is_playing_file:
-                        from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc2
-                        _td_lc2("processRawSamples",
-                                f"LEVEL_CROSSING_FIRED | rmsDB={level_db:.1f} "
-                                f"prevDB={self._previous_level_db:.1f} "
-                                f"confirmedBy={confirm_target}")
-                    lc_handler = self._level_crossing_handler
-                    if lc_handler is not None:
-                        lc_handler()
-            else:
-                # Below threshold — abort any in-progress candidate run.
-                if self._level_crossing_consecutive_above > 0 and self.is_playing_file:
-                    from guitar_tap.utilities.logging import TAP_DEBUG as _td_lc_cancel
-                    _td_lc_cancel("processRawSamples",
-                                  f"LEVEL_CROSSING_CANCELED | rmsDB={level_db:.1f} "
-                                  f"(signal fell below after "
-                                  f"{self._level_crossing_consecutive_above}/{confirm_target} chunks)")
-                self._level_crossing_consecutive_above = 0
-        self._previous_level_db = level_db
-
-        # ── RMS level callbacks (tap detection runs from here) ────
-        # Direct callback (works without Qt event loop — for file playback and tests).
-        # Mirrors Swift rmsLevelHandler?(levelDB)
-        rms_handler = self.rms_level_handler
-        if rms_handler is not None:
-            rms_handler(level_db, self.audio_elapsed)
-
-        # Qt signal — the UI's copy (threshold meter). Detection used the direct handler above.
+        # Qt signal — the threshold meter's.
         self.level.inputLevelChanged.emit(level_db)
-
-        # Accumulate samples — mirrors Swift bufferAccessQueue.sync { inputBuffer.append }.
-        # In Swift this comes after the level-crossing and rmsLevelHandler blocks.
-        self._input_buffer.append(chunk_f32)
-        self._input_buffer_len += len(chunk_f32)
 
         # ── Input-clipping detection ─────────────────────────────
         peak_abs = float(np.max(np.abs(chunk.astype(np.float64))))
@@ -901,21 +782,58 @@ class RealtimeFFTAnalyzer(
                 self.level.recent_peak_level_db = level_db
                 self._recent_peak_time = enter_now
 
-        # Fire an FFT for each complete fft_size-sample chunk available.
+        self.hand_over(chunk_f32, level_db, self.audio_elapsed)
+
+    def hand_over(self, samples: np.ndarray, level_db: float, audio_time: float) -> None:
+        """Hand one chunk to the main thread, which takes every chunk in order (``take_chunk``).
+        ``audio_time`` is this chunk's audio time, carried with it: the audio side runs ahead of the main
+        thread.
+
+        A chunk from a source that has since been replaced — a microphone chunk still queued when a file
+        starts, a file's when its playback is stopped — is dropped when it arrives. On the main thread itself
+        (a test, a file pumped there) the chunk is taken at once, so it is in place before the next one.
+        Mirrors Swift ``handOver(_:levelDB:audioTime:)``.
+        """
+        generation = self._file_playback_generation
+        app = QtCore.QCoreApplication.instance()
+        if app is None or QtCore.QThread.currentThread() is app.thread():
+            self.take_handed_over_chunk(samples, level_db, audio_time, generation)
+        else:
+            _slack_probe.hand_over()
+            self.proc_thread.chunkHandedOver.emit(samples, level_db, audio_time, generation)
+
+    def take_handed_over_chunk(self, samples: np.ndarray, level_db: float, audio_time: float,
+                               generation: int) -> None:
+        """A handed-over chunk, on the main thread: taken unless its playback generation is stale."""
+        _slack_probe.taken()
+        if generation != self._file_playback_generation:
+            return
+        self.take_chunk(samples, level_db, audio_time)
+
+    def take_chunk(self, samples: np.ndarray, level_db: float, audio_time: float) -> None:
+        """On the main thread: one chunk into the FFT's input — a full window is transformed at once — then
+        to ``audio_frame_handler``, as the web's ``processRawSamples`` feeds its FFT, then hands the chunk
+        up. Mirrors Swift ``takeChunk(_:levelDB:audioTime:)``."""
+        self._input_buffer.append(samples)
+        self._input_buffer_len += len(samples)
         fft_size = self.fft_size
         while self._input_buffer_len >= fft_size:
+            started = time.time()
             flat = np.concatenate(self._input_buffer)
-            samples = flat[:fft_size]
+            window = flat[:fft_size]
             remainder = flat[fft_size:]
             self._input_buffer = [remainder] if len(remainder) else []
             self._input_buffer_len = len(remainder)
 
             # FFT + post-processing (calibration, the live peak).
-            mag_y_db, _peak_db = self.perform_fft(samples)
+            mag_y_db, _peak_db = self.perform_fft(window)
 
-            processing_dt = time.time() - enter_now
+            processing_dt = time.time() - started
             _slack_probe.record("fft", processing_dt * 1000.0)
             self.publish_frame(mag_y_db, processing_dt * 1000.0)
+        handler = self.audio_frame_handler
+        if handler is not None:
+            handler(samples, level_db, audio_time)
 
     def publish_frame(self, magnitudes_db: np.ndarray, processing_time_ms: float) -> None:
         """Announce a frame on ``frame``: its spectrum and processing times (perform_fft set its peak and

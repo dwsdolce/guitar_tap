@@ -47,11 +47,13 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
       after the last (two loud ones are a tap)
     - ``{"stall": seconds}`` — that much wall time with no audio
     - ``{"routeChange": true}`` — the engine restarted on a device change
+    - ``{"engineRunning": bool}`` — the engine stopped or started again, as a retry after a failed start does
     - ``{"spectrumFrame": spectrum}`` — one FFT frame from the running engine, a spectrum as
       ``peaks.json`` describes one
     - ``{"liveAudio": seconds, "level": dB}`` — that much real audio (a 200 Hz tone at that level)
-      through the microphone's path: each chunk through the engine's per-chunk processing, which queues the
-      main thread's part as the app's does; then the main thread takes the queue, in order
+      through the microphone's path: each chunk through the engine's per-chunk processing and its hand-over,
+      which on the main thread takes the chunk at once — the FFT's input, then the analyzer's
+      ``process_audio_frame``
     """
     if "settings" in step:
         settings = step["settings"]
@@ -102,6 +104,8 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
         seconds = {"tapCooldown": sut.tap_cooldown, "captureWindow": sut.capture_window,
                    "warmupPeriod": sut.warmup_period}.get(advance, advance)
         advance_audio(sut, seconds * step.get("fraction", 1.0) + step.get("extra", 0.0), step.get("level", -90.0))
+    elif "engineRunning" in step:
+        sut.mic.is_stopped = not step["engineRunning"]
     elif step.get("routeChange"):
         sut.handle_route_change_restart()
     elif "spectrumFrame" in step:
@@ -126,7 +130,7 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
             # The engine's audio clock follows the analyzer's, so this audio continues the steps before it.
             sut.mic.audio_elapsed = sut.last_audio_time
             sut.mic.process_raw_samples(chunk)
-        # The engine queues its chunks' main-thread part (a queued signal): the main thread takes it, in order.
+        # Anything the chunks queued for the main thread (none, run there), taken.
         QtCore.QCoreApplication.processEvents()
     else:
         return False

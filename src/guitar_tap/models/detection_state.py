@@ -43,7 +43,7 @@ class DetectionState(Enum):
     # Mirrors Swift DetectionState.idle.
     IDLE = "idle"
 
-    # Actively listening for taps.  The audio-queue level-crossing detector is armed.
+    # Actively listening for taps.
     # Mirrors Swift DetectionState.listening.
     LISTENING = "listening"
 

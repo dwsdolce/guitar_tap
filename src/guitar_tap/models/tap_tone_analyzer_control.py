@@ -224,8 +224,8 @@ class TapToneAnalyzerControlMixin:
     # ------------------------------------------------------------------ #
 
     def set_tap_threshold(self, value: int) -> None:
-        """Update tap-trigger threshold (0-100 scale → dBFS). The property setter saves it, syncs
-        the level-crossing threshold and ends the loaded-settings warning (Swift's didSet)."""
+        """Update tap-trigger threshold (0-100 scale → dBFS). The property setter saves it and ends the
+        loaded-settings warning (Swift's didSet)."""
         self.tap_detection_threshold = float(value - 100)
 
     def pause_tap_detection(self) -> None:
@@ -471,8 +471,7 @@ class TapToneAnalyzerControlMixin:
         self.current_tap_count = 0
         self.tap_progress = 0.0
         # No pause-clear here: DetectionState.LISTENING further down leaves PAUSED on its
-        # own, and clearing to IDLE at this point would disarm a level crossing that a
-        # restart-while-listening is relying on staying armed. Mirrors Swift startTapSequence.
+        # own. Mirrors Swift startTapSequence.
 
         # Cancel any in-flight gated capture from a previous sequence and drop
         # the pre-roll ring buffer.  Without this, a gated capture that was
@@ -487,21 +486,20 @@ class TapToneAnalyzerControlMixin:
         # first phase has a truncation anchor — without it, redoing the first
         # phase (or the same phase repeatedly) would leave the rejected tap's
         # audio in the saved WAV.  See accept_current_phase / redo_current_phase.
-        # Cancel any in-flight gated capture from a previous sequence and reset the pre-roll before
-        # arming the crossing handler, as Swift's startTapSequence.
+        # Cancel any in-flight gated capture from a previous sequence and reset the pre-roll, as Swift's
+        # startTapSequence.
         self.abandon_capture()
-        with self._gated_lock:
-            # Session recording: clear the buffer and begin recording. With Dump Capture Audio off
-            # only the bounded pre-roll is kept, and it is dropped at the first tap unless the
-            # setting has been turned on by then.
-            self._session_recording_buffer = []
-            self._session_checkpoints = [0]
-            self._is_session_recording_enabled = _tds.dump_capture_audio()
-            self._is_session_recording = True
-            self._session_pre_roll_active = True  # bound the pre-first-tap audio to ~2 s
-            self._session_recording_sample_rate = (
-                self._mpm_sample_rate if self._mpm_sample_rate > 0 else 48000.0
-            )
+        # Session recording: clear the buffer and begin recording. With Dump Capture Audio off
+        # only the bounded pre-roll is kept, and it is dropped at the first tap unless the
+        # setting has been turned on by then.
+        self._session_recording_buffer = []
+        self._session_checkpoints = [0]
+        self._is_session_recording_enabled = _tds.dump_capture_audio()
+        self._is_session_recording = True
+        self._session_pre_roll_active = True  # bound the pre-first-tap audio to ~2 s
+        self._session_recording_sample_rate = (
+            self._mpm_sample_rate if self._mpm_sample_rate > 0 else 48000.0
+        )
         from . import capture_probe
         capture_probe.begin_live_session(_tds.dump_capture_audio())  # diagnostic
 
@@ -698,8 +696,7 @@ class TapToneAnalyzerControlMixin:
         # Session recording: checkpoint the current buffer position so that
         # if a subsequent phase is redone, we can truncate back to here.
         # Mirrors Swift acceptCurrentPhase checkpoint append.
-        with self._gated_lock:
-            self._session_checkpoints.append(len(self._session_recording_buffer))
+        self._session_checkpoints.append(len(self._session_recording_buffer))
 
         phase = self.material_tap_phase
 
@@ -755,15 +752,14 @@ class TapToneAnalyzerControlMixin:
         # Peek (don't pop) — the anchor must remain in place so that a second
         # redo of the same phase truncates to the same position, not to the
         # start of the *previous* accepted phase.  Mirrors Swift redoCurrentPhase.
-        with self._gated_lock:
-            if self._session_checkpoints:
-                phase_start = self._session_checkpoints[-1]
-                if len(self._session_recording_buffer) > phase_start:
-                    del self._session_recording_buffer[phase_start:]
-                    # Redoing the FIRST phase empties the buffer back to the pre-first-tap state,
-                    # so re-arm the bounded pre-roll. Later phases keep the latch frozen.
-                    if phase_start == 0:
-                        self._session_pre_roll_active = True
+        if self._session_checkpoints:
+            phase_start = self._session_checkpoints[-1]
+            if len(self._session_recording_buffer) > phase_start:
+                del self._session_recording_buffer[phase_start:]
+                # Redoing the FIRST phase empties the buffer back to the pre-first-tap state,
+                # so re-arm the bounded pre-roll. Later phases keep the latch frozen.
+                if phase_start == 0:
+                    self._session_pre_roll_active = True
 
         phase = self.material_tap_phase
 

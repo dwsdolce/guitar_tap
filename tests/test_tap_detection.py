@@ -86,22 +86,7 @@ def test_confirm_chunks():
     assert RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS == DATA["confirmChunks"]
 
 
-# The audio thread's fast-start opens a capture the detector has not confirmed: a sound the detector does not count
-# as a tap completes the measurement on what follows (T15, T16), and with the main thread a capture window behind the
-# audio, a real tap's capture completes before the detector sees the tap, leaving detection armed (T17). Python takes
-# audio in two steps today, the fast-start on the audio thread and detection on the main thread; these cases pass
-# once every chunk is taken in one sequence, as the web's.
-_KNOWN_FAILURES = {"T15", "T16", "T17"}
-
-
-def _case(row):
-    if row["id"] in _KNOWN_FAILURES:
-        return pytest.param(row, marks=pytest.mark.xfail(
-            strict=True, reason="the fast-start opens a capture the detector did not confirm"))
-    return row
-
-
-@pytest.mark.parametrize("row", [_case(r) for r in DATA["cases"]], ids=lambda r: r["id"])
+@pytest.mark.parametrize("row", DATA["cases"], ids=lambda r: r["id"])
 def test_decision(row, _restore_measurement_type):
     sut = make_steps_analyzer()
     for step in row["steps"]:
@@ -144,14 +129,14 @@ def test_onset(row):
 class TestPipelineDeliversOnceAndExact:
     """What the analyzer receives from the audio pipeline — through the real process_raw_samples.
 
-    Each chunk's level arrives once (rmsLevelHandler, called on the audio queue, hopping to the
-    main thread) and each FFT frame once (a Combine sink on the main thread), both as unrounded
+    Each chunk arrives once (the engine's hand-over to the main thread, carrying its level) and each
+    FFT frame once (a Combine sink on the main thread in Swift, a signal here), both as unrounded
     Float dB — in Swift and here. A second delivery would double the "N consecutive chunks"
     confirmation.
 
     Python-only, because the risk is Python's: its outlets are Qt signals on its own processing thread,
     where each connect() ADDS a receiver and a replacement thread object would have none. Swift's
-    rmsLevelHandler and the web's callbacks are single assignments, which a second assignment replaces.
+    audioFrameHandler and the web's callbacks are single assignments, which a second assignment replaces.
     """
 
     @staticmethod
@@ -180,8 +165,7 @@ class TestPipelineDeliversOnceAndExact:
 
     def test_detection_runs_on_the_main_thread_when_the_chunk_is_processed_off_it(self):
         """A chunk processed on another thread reaches detection on the MAIN thread, as Swift's does
-        (rmsLevelHandler hops with DispatchQueue.main.async) — the thread a capture's finish arrives
-        on, so the audio time seen at a finish does not depend on thread timing."""
+        (its hand-over hops with DispatchQueue.main.async) — where every chunk is taken, in order."""
         import threading
         sut = self._sut()
         seen: list = []

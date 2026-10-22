@@ -509,6 +509,9 @@ class ExportableSpectrumChart:
                 tick_font.setPixelSize(12)
                 pi_setup.getAxis(name).setStyle(tickFont=tick_font)
         plot.showGrid(x=True, y=True, alpha=1.0)
+        # The axes draw the grid; beneath the plot area, so the peak labels cover it, as Swift's.
+        for side in ("left", "bottom", "right", "top"):
+            plot.getAxis(side).setZValue(plot.getPlotItem().vb.zValue() - 1)
         visible = [
             t for t in atg.generate_ticks(self.min_freq, self.max_freq, max_ticks=8)
             if self.min_freq <= t <= self.max_freq

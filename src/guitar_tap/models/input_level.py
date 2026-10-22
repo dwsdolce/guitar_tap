@@ -18,8 +18,8 @@ class InputLevel(QtCore.QObject):
     """The latest audio buffer's input level. Mirrors Swift ``InputLevel``."""
 
     # The per-buffer RMS level in dB — Swift's published ``inputLevelDB``. For the UI (the threshold
-    # meter) ONLY: tap detection takes the level from the engine's direct ``rms_level_handler``, as
-    # Swift's does from ``rmsLevelHandler``, so each chunk reaches detection exactly once.
+    # meter) ONLY: tap detection takes the level from the engine's hand-over (``audio_frame_handler``),
+    # as Swift's does from ``audioFrameHandler``, so each chunk reaches detection exactly once.
     inputLevelChanged: QtCore.Signal = QtCore.Signal(float)
 
     # Edge-triggered clipping — Swift's published ``isClipping``.

@@ -230,11 +230,6 @@ class TapToneAnalyzer(
     # main thread.  Payload: (delay_ms: int, callable: object).
     # Mirrors Swift DispatchQueue.main.asyncAfter(deadline:execute:).
     _mainAsyncAfterRequest: QtCore.Signal = QtCore.Signal(int, object)
-    # Internal: each chunk's (level_db, audio_time), carried from the thread that processed the chunk
-    # to the main thread — Swift's rmsLevelHandler hop, `DispatchQueue.main.async { onRmsLevelChanged }`.
-    # Connected QUEUED, so detection, the audio-clock lifecycle actions and a capture's finish all run
-    # on the main thread in chunk order, as in Swift.
-    _rmsLevelOnMain: QtCore.Signal = QtCore.Signal(float, float)
 
     def __init__(self, fft_analyzer=None, wall_clock: "WallClock | None" = None) -> None:
         """Create a TapToneAnalyzer with all state at sensible defaults.
@@ -275,9 +270,6 @@ class TapToneAnalyzer(
         self._mainAsyncAfterRequest.connect(
             self._on_main_async_after_request,
         )
-        # Always queued — even from the main thread, as Swift's main.async is — so a chunk's level is
-        # handled after anything the same chunk already queued (a completed capture's finish).
-        self._rmsLevelOnMain.connect(self._on_chunk_level, QtCore.Qt.ConnectionType.QueuedConnection)
 
         self._np = np
         self._gm = _gm
@@ -316,14 +308,8 @@ class TapToneAnalyzer(
         self.min_frequency: float = float(_tds.analysis_min_frequency())   # mirrors minFrequency
         self.max_frequency: float = float(_tds.analysis_max_frequency())   # mirrors maxFrequency
         self._peak_min_threshold: float = float(_tds.peak_min_threshold())   # backing store for the peak_min_threshold property (mirrors peakMinThreshold)
-        # Backing store for the ``tap_detection_threshold`` property.  The
-        # property setter mirrors Swift's ``didSet`` on ``tapDetectionThreshold``:
-        # it syncs ``mic._level_crossing_threshold`` so the audio-queue
-        # fast-path uses the same rising threshold as the main-thread
-        # detector.  Without this sync, callers that change the threshold
-        # after construction (e.g. unit tests) leave the level-crossing
-        # threshold stuck at its default, causing the audio-queue to fire
-        # on signals the main thread would correctly reject (or vice versa).
+        # Backing store for the ``tap_detection_threshold`` property (Swift's ``didSet`` on
+        # ``tapDetectionThreshold``: it saves the value and ends the loaded-settings warning).
         self._tap_detection_threshold: float = float(_tds.tap_detection_threshold())
         # Minimum decay level below the tap peak for ring-out measurement, in dB.
         # Ring-out is measured from the peak to the first moment the signal drops
@@ -523,10 +509,7 @@ class TapToneAnalyzer(
         # ``RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS``.  Once
         # the counter reaches the target, ``is_above_threshold`` latches to
         # True and the rising-edge actions run.  Mirrors Swift
-        # ``TapToneAnalyzer.detectTapConsecutiveAbove`` — both rising-edge
-        # paths must apply the same confirmation logic or a bump that's
-        # rejected by the audio queue can still fire here and start a
-        # bogus gated capture.
+        # ``TapToneAnalyzer.detectTapConsecutiveAbove``.
         self.detect_tap_consecutive_above: int = 0
         # True for the single FFT frame right after warm-up ends, so is_above_threshold
         # can be re-anchored to the real signal level without firing a spurious tap.
@@ -583,14 +566,10 @@ class TapToneAnalyzer(
         #   gatedCaptureSamples: Int   — target window size in samples
         #   gatedCapturePhase: ...     — phase at capture start
         #
-        # Previously lived on _FftProcessingThread; moved here so that
-        # _accumulate_gated_samples (called via mic.raw_sample_handler) owns
-        # this state directly — matching Swift where
-        # TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:) owns the buffers.
-        import threading as _threading
+        # Owned here, as Swift's TapToneAnalyzer.accumulateGatedSamples(_:sampleRate:) owns its buffers;
+        # main thread only — every chunk reaches the analyzer there, in order (process_audio_frame).
         self._pre_roll_seconds: float = 0.2         # 200 ms pre-roll (mirrors Swift preRollDuration)
         self._pre_roll_buf: list = []               # raw PCM samples (float32)
-        self._gated_lock = _threading.Lock()
         self._gated_capture_active: bool = False
         self._gated_capture_samples: int = 0        # target window size in samples (snapshot at capture-open)
         self._gated_capture_phase: object = None    # MaterialTapPhase at capture start
@@ -603,8 +582,6 @@ class TapToneAnalyzer(
         # identically through the pipeline.  Mirrors Swift TapToneAnalyzer
         # sessionRecordingBuffer / isSessionRecording / sessionCheckpoints /
         # sessionRecordingSampleRate.
-        #
-        # Access is protected by _gated_lock (shared with the gated-capture state).
         self._session_recording_buffer: list = []
         # True from the start of a sequence, whatever Dump Capture Audio says — the bounded pre-roll
         # is kept either way. False during pause, at the first tap when the sequence is not being
@@ -649,23 +626,6 @@ class TapToneAnalyzer(
         # the capture window from fft_size samples to whatever fragment was
         # collected.  Mirrors Swift `gatedCaptureID`.
         self._gated_capture_id: int = 0
-        # The _gated_capture_id set by the most recent audio-queue
-        # level-crossing fast-start.  start_gated_capture() and
-        # start_guitar_gated_capture() check this: if it matches
-        # _gated_capture_id, the fast-start handled this tap (whether
-        # still running or already completed) — skip re-seeding.
-        self._last_level_crossing_capture_id: int = -1
-
-        # Pre-roll snapshot captured by the level-crossing handler on the
-        # audio thread when it fires during file playback but a previous
-        # capture's completion is still pending on the main thread.  In this
-        # "deferred" case the handler does NOT start _gated_capture_active
-        # (which would cascade), but snapshots the pre-roll so the main-
-        # thread start_gated_capture can seed from the correct audio position.
-        # Cleared by start_gated_capture after consumption.
-        # Mirrors Swift pendingLevelCrossingPreRoll.
-        self._pending_level_crossing_pre_roll: list | None = None
-
         # Load any previously saved measurements. Mirrors Swift init calling loadPersistedMeasurements().
         self.load_persisted_measurements()
 
@@ -1110,8 +1070,14 @@ class TapToneAnalyzer(
         generation = self._route_change_generation
 
         def _settled() -> None:
-            # Mirrors Swift: guard generation == routeChangeGeneration, fftAnalyzer.isRunning.
-            if generation != self._route_change_generation or self.mic is None or self.mic.is_stopped:
+            # Mirrors Swift scheduleRouteChangeSettleEnd: a later change supersedes this one; and if the
+            # engine is restarting again when the settle is due — a retry after a start that failed — the
+            # settle waits that much audio from the restarted engine instead of ending without it, so it
+            # cannot be left waiting for good.
+            if generation != self._route_change_generation or self.mic is None:
+                return
+            if self.mic.is_stopped:
+                self.after_audio(3.0, _settled)
                 return
             # Wait for the next FFT frame before re-anchoring detection and unfreezing the display,
             # so both happen on the first frame the user sees. Mirrors Swift afterNextFrame.
@@ -1250,8 +1216,8 @@ class TapToneAnalyzer(
     def for_testing(cls, sample_rate: int = 48000, wall_clock: "WallClock | None" = None) -> "TapToneAnalyzer":
         """Create a TapToneAnalyzer wired for file-playback testing.
 
-        The returned instance has the full pipeline connected (signal wiring,
-        raw-sample handler, level-crossing handler) but no audio hardware.
+        The returned instance has the full pipeline connected (signal wiring, the engine's
+        ``audio_frame_handler``) but no audio hardware.
         Tests play a file through it with ``tests/playback_support.play_file_and_wait``,
         which runs the app's own ``play_file``.
 
@@ -1280,11 +1246,9 @@ class TapToneAnalyzer(
     def _wire_pipeline_signals(self) -> None:
         """Connect this analyzer to the mic's pipeline. Called once, from ``__init__``.
 
-        Direct handlers on the mic: ``rms_level_handler`` (the queued ``_rmsLevelOnMain``, so each
-        chunk's level reaches detection on the main thread), ``raw_sample_handler`` and
-        ``_level_crossing_handler``. Signals on the processing thread object: ``gatedCaptureComplete``,
-        ``inputAppearsDeadChanged``; on the mic's input level (``mic.level``): ``clippingChanged``; on the
-        mic's frame (``mic.frame``): ``frameChanged``.
+        A handler on the mic: ``audio_frame_handler``, which takes every chunk on the main thread, in order.
+        Signals on the processing thread object: ``inputAppearsDeadChanged`` and the rest; on the mic's input
+        level (``mic.level``): ``clippingChanged``; on the mic's frame (``mic.frame``): ``frameChanged``.
 
         The signals are connected once. The processing thread object and the input level are created
         with the mic and never replaced, so these connections hold for the whole run. A second ``connect()`` on it would
@@ -1292,16 +1256,9 @@ class TapToneAnalyzer(
 
         Mirrors Swift ``TapToneAnalyzer.setupSubscriptions()``.
         """
-        # ── Per-chunk level → tap detection: ONE delivery, queued to the main thread ─────
-        # process_raw_samples calls rms_level_handler on whatever thread processed the chunk — as
-        # Swift's rmsLevelHandler is called on the audio queue — and, as Swift's does, it hops to the
-        # main thread before detection, so detection and a capture's finish — also queued to the main
-        # thread — run on the same thread, and the audio time seen at a finish does not depend on
-        # thread timing. The float dB goes straight in.
-        self.mic.rms_level_handler = self._hand_chunk_level_to_main
-
-        # ── Gated-FFT capture signal (Qt — for cross-thread delivery) ────
-        self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
+        # ── Every chunk, on the main thread, in order: the pre-roll, the capture, the clock, detection ──
+        self.mic.audio_frame_handler = self._on_audio_frame
+        _slack_probe.start()
 
         # ── Input-clipping signal (Qt — UI only) ────────────────────────
         # Swift: fftAnalyzer.level.$isClipping sink.
@@ -1314,116 +1271,15 @@ class TapToneAnalyzer(
         # onPermissionGranted. A failure is the engine's to report (its flag) or the log's.
         self.mic.on_permission_granted = self._start_after_permission_granted
 
-        # ── Raw-sample handler ───────────────────────────────────────────
-        self.mic.raw_sample_handler = self._accumulate_timed
-        _slack_probe.start()
-
-        # ── Level-crossing handler (audio-queue fast-start) ──────────────
-        def _level_crossing_handler() -> None:
-            import math
-
-            from guitar_tap.models.measurement_type import MeasurementType as _MT
-            from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
-            from guitar_tap.utilities.logging import TAP_DEBUG
-            mt = _tds.measurement_type()
-            with self._gated_lock:
-                if mt == _MT.PLATE or mt == _MT.BRACE:
-                    # Guard: only start a capture when we're actually in a
-                    # capturing phase.  Before file playback starts the phase
-                    # is still NOT_STARTED — mic audio can trigger a spurious
-                    # level crossing in that window.  After playback ends the
-                    # phase is COMPLETE — mic restart can trigger another.
-                    phase = self.material_tap_phase
-                    if not phase.is_capturing:
-                        TAP_DEBUG("levelCrossing",
-                            f"SKIPPED — phase {phase} is not capturing")
-                        return
-
-                    # File-playback deferred path: if a previous capture has
-                    # completed on the audio thread and its finish_gated_fft_capture
-                    # dispatch is still pending on the main thread, starting a
-                    # new _gated_capture_active here would cascade — the new capture
-                    # fills before the main thread can advance the phase, so it
-                    # runs under the stale phase.  Instead, just snapshot the
-                    # pre-roll so the main-thread start_gated_capture can seed
-                    # from the correct audio position when it eventually runs.
-                    # Mirrors Swift levelCrossingHandler deferred path.
-                    if (self.mic is not None
-                            and self.mic.is_playing_file
-                            and self._pending_level_crossing_pre_roll is None
-                            and not self._gated_capture_active
-                            and self._last_level_crossing_capture_id == self._gated_capture_id):
-                        self._pending_level_crossing_pre_roll = list(self._pre_roll_buf)
-                        pre_roll_count = len(self._pre_roll_buf)
-                        deferred_profile = self.capture_window_profile(
-                            self._pre_roll_buf, label="DEFERRED_PREROLL"
-                        )
-                        TAP_DEBUG("levelCrossing",
-                            f"DEFERRED — snapshot pre-roll ({pre_roll_count} samples) "
-                            f"for main-thread start_gated_capture\n{deferred_profile}")
-                        return
-
-                self._gated_capture_id += 1
-                self._last_level_crossing_capture_id = self._gated_capture_id
-                self._gated_accum = list(self._pre_roll_buf)
-                if mt == _MT.PLATE or mt == _MT.BRACE:
-                    # Plate/brace: use the current phase and 500 ms capture
-                    # window (with a 400 ms FFT input extracted from it after
-                    # onset alignment — see GATED_CAPTURE_DURATION /
-                    # GATED_FFT_WINDOW_DURATION).
-                    self._gated_capture_phase = self.material_tap_phase
-                    self._gated_capture_samples = int(
-                        float(self._gated_sample_rate) * self.GATED_CAPTURE_DURATION
-                    )
-                    # Keep the pre-roll even when it contains digital silence
-                    # (e.g. inter-tap gaps in a concatenated playback file).
-                    # The pre-roll positions the tap transient at ~sample 4800
-                    # of the 32768-sample Hann window, matching the live-capture
-                    # weighting.  Discarding it shifts the transient to sample 0
-                    # where the Hann weight is ~0, distorting magnitudes by
-                    # several dB.
-                else:
-                    # Guitar: None phase sentinel, fft_size window.
-                    self._gated_capture_phase = None
-                    self._gated_capture_samples = self.mic.fft_size
-                self._gated_capture_active = True
-                self._pending_level_crossing_pre_roll = None  # consumed by direct start
-                pre_roll_count = len(self._gated_accum)
-                target = self._gated_capture_samples
-                faststart_profile = self.capture_window_profile(
-                    self._gated_accum, label="FASTSTART_PREROLL"
-                )
-            TAP_DEBUG("levelCrossing",
-                f"Gated capture started on audio queue | "
-                f"mode={mt} pre-roll {pre_roll_count} samples, target {target}\n"
-                f"{faststart_profile}")
-
-        self.mic._level_crossing_handler = _level_crossing_handler
-        self.mic._level_crossing_threshold = self.tap_detection_threshold
-
         # ── Pre-mic-restart handler ─────────────────────────────────────
         self.mic._on_pre_mic_restart = self._flush_gated_capture_on_file_end
 
         # ── Post-engine-stop handler ──────────────────────────────────
-        # Wipe both the pre-roll ring buffer AND any in-flight gated
-        # capture.  Without resetting _gated_accum/_gated_capture_active,
-        # a level-crossing that fired on live-mic noise just before the
-        # source switch would persist, causing file chunks to be appended
-        # onto a buffer already seeded with mic samples — the captured
-        # window then mixes mic noise into the FFT input.
+        # Clear the pre-roll after the engine stops, so mic noise that leaked in between
+        # start_tap_sequence (which clears it) and the engine stop is flushed; a mic chunk still queued
+        # for the main thread is dropped when it arrives. Mirrors Swift postEngineStopHandler.
         def _clear_pre_roll():
-            with self._gated_lock:
-                self._pre_roll_buf = []
-                self._gated_accum = []
-                self._gated_capture_active = False
-                self._gated_capture_phase = None
-                # Reset capture IDs so the deferred level-crossing guard
-                # (_last_level_crossing_capture_id == _gated_capture_id) won't
-                # match on the first file tap due to stale IDs from a prior
-                # live capture.  Mirrors Swift postEngineStopHandler.
-                self._last_level_crossing_capture_id = -1
-                self._gated_capture_id = 0
-                self._pending_level_crossing_pre_roll = None
+            self._pre_roll_buf = []
         self.mic._on_post_engine_stop = _clear_pre_roll
 
         # ── FFT frame → peak analysis: the frame's signal ────────────────
@@ -1437,30 +1293,29 @@ class TapToneAnalyzer(
     # with real audio as chunks arrive. It is not pre-filled with zeros, which
     # would dilute the gated capture signal by ~50% (~6 dB of spectral magnitude).
 
-    def _hand_chunk_level_to_main(self, level_db: float, audio_time: float) -> None:
-        """On the audio thread: hand one chunk's level to the main thread (the queued ``_rmsLevelOnMain``)."""
-        _slack_probe.hand_over()
-        self._rmsLevelOnMain.emit(level_db, audio_time)
+    def _on_audio_frame(self, samples, level_db: float, audio_time: float) -> None:
+        """The mic's ``audio_frame_handler``: one chunk, on the main thread, timed by the slack probe when it is
+        on."""
+        with _slack_probe.timed("main/chunk"):
+            self.process_audio_frame(samples, level_db, audio_time, float(self.mic.rate))
 
-    def _accumulate_timed(self, samples, sample_rate: float) -> None:
-        """On the audio thread: the capture filling, timed by the slack probe when it is on."""
+    def process_audio_frame(self, samples, level_db: float, audio_time: float, sample_rate: float) -> None:
+        """One chunk, on the main thread, in order — the per-chunk entry, as the web's ``processAudioFrame``:
+        its samples into the pre-roll, the session recording and any capture under way (a capture that fills
+        is finished there and then), then its level to the detector (``_on_chunk_level``). Mirrors Swift
+        ``processAudioFrame(_:levelDB:audioTime:sampleRate:)``."""
         _slack_probe.set_chunk_period(len(samples), sample_rate)
         with _slack_probe.timed("accumulate"):
             self._accumulate_gated_samples(samples, sample_rate)
+        self._on_chunk_level(level_db, audio_time)
 
     def _on_chunk_level(self, level_db: float, audio_time: float) -> None:
-        """One chunk's level, on the main thread — the per-chunk entry.
-
-        Swift ``onChunkLevel`` (the body of its rmsLevelHandler hop), the web's ``processAudioFrame``;
-        tests feed audio through it.
-        """
-        _slack_probe.taken()
-        with _slack_probe.timed("main/chunk"):
-            self._on_rms_level_changed(level_db, audio_time)
+        """One chunk's level, on the main thread — the detector's part of ``process_audio_frame``, after the
+        chunk's samples have fed the capture. Tests feed levels through it: Swift ``onChunkLevel``."""
+        self._on_rms_level_changed(level_db, audio_time)
 
     # ------------------------------------------------------------------ #
-    # is_detecting property — mirrors Swift @Published var isDetecting
-    # with didSet that arms/disarms the level-crossing detector.
+    # tap_detection_threshold — mirrors Swift @Published var tapDetectionThreshold
     # ------------------------------------------------------------------ #
 
     @property
@@ -1468,8 +1323,7 @@ class TapToneAnalyzer(
         """Rising-edge threshold (dBFS) for the main-thread tap detector.
 
         Mirrors Swift ``TapToneAnalyzer.tapDetectionThreshold`` and its ``didSet``: setting it
-        saves it, syncs ``mic._level_crossing_threshold`` so the audio-queue fast-path fires at the
-        same threshold, and clears the loaded-settings warning when it moves off the loaded value.
+        saves it and clears the loaded-settings warning when it moves off the loaded value.
         """
         return self._tap_detection_threshold
 
@@ -1479,11 +1333,6 @@ class TapToneAnalyzer(
 
         self._tap_detection_threshold = float(value)
         _tds.set_tap_detection_threshold(self._tap_detection_threshold)
-        # Keep the audio-queue level-crossing threshold in sync with the
-        # main-thread detection threshold, so both rising-edge detectors
-        # see the same signal as "above threshold".
-        if self.mic is not None:
-            self.mic._level_crossing_threshold = self._tap_detection_threshold
         # A threshold moved off the loaded measurement's value ends the loaded-settings warning.
         if (getattr(self, "show_loaded_settings_warning", False)
                 and self._tap_detection_threshold != self.loaded_tap_detection_threshold):
@@ -1590,8 +1439,7 @@ class TapToneAnalyzer(
     def detection_state(self) -> DetectionState:
         """Whether the detector is listening, paused mid-sequence, or neither.
 
-        Setting it arms (on entry to LISTENING) or disarms (on exit) the audio-queue
-        level-crossing detector. Mirrors Swift `detectionState`.
+        Mirrors Swift `detectionState`.
 
         One value rather than the ``is_detecting`` / ``is_detection_paused`` pair it
         replaced: that pair could express "detecting AND paused", and every site touching
@@ -1609,35 +1457,6 @@ class TapToneAnalyzer(
         if value is old:
             return
         self._detection_state = value
-        was_detecting = old is DetectionState.LISTENING
-        is_detecting = value is DetectionState.LISTENING
-        # Mirrors Swift detectionState.didSet — arm the audio-queue level-crossing
-        # detector on entry to LISTENING; disarm on exit.
-        if self.mic is not None:
-            if is_detecting and not was_detecting:
-                # → LISTENING: arm crossing and sync previous level.
-                # Reset the consecutive-above counter so arming starts a
-                # fresh candidate run — mirrors Swift didSet on
-                # ``levelCrossingArmed`` (see RealtimeFFTAnalyzer.swift).
-                self.mic._level_crossing_consecutive_above = 0
-                self.mic._level_crossing_armed = True
-                # During file playback the audio queue is already tracking
-                # _previous_level_db naturally.  Resetting it to -100 would
-                # create a false rising-edge on the next chunk if the
-                # previous tap's ring-out tail is still above threshold,
-                # causing a spurious capture of silence/decay instead of
-                # waiting for the real next tap's attack.
-                if not self.mic.is_playing_file:
-                    self.mic._previous_level_db = -100.0
-            elif not is_detecting:
-                # left LISTENING: disarm crossing.
-                # During file playback, the audio queue manages its own
-                # re-arming cycle (_accumulate_gated_samples re-arms after
-                # each capture completes).  Disarming here would undo that
-                # re-arm before the next tap's audio arrives on the queue.
-                if not self.mic.is_playing_file:
-                    self.mic._level_crossing_consecutive_above = 0
-                    self.mic._level_crossing_armed = False
 
         # Swift's `detectionState` is @Published, so every view bound to it re-evaluates on ANY
         # change — that is how the status bar's tap-count label tracks it. Python has no such

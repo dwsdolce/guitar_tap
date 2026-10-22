@@ -185,15 +185,10 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
 
 
         # Hysteresis: rising edge ALSO requires N consecutive chunks above
-        # the rising threshold to confirm — mirrors the audio-queue level
-        # crossing detector in RealtimeFFTAnalyzer.  Without confirmation
-        # here, a brief noise bump that the audio-queue rejected can still
-        # fire the main-thread rising-edge detector and start a bogus
-        # gated capture (see test failure on
-        # plate-umik-1-swift-mac-1778816330 where the FLC bump at
-        # -46.78 dB was rejected by the audio queue but caught here,
-        # capturing 26.4 Hz @ -78.9 dB instead of the real 35.4 Hz FLC
-        # tap that arrived a few seconds later).
+        # the rising threshold to confirm. Without it a brief noise bump
+        # starts a bogus gated capture (plate-umik-1-swift-mac-1778816330:
+        # an FLC bump at -46.78 dB captured 26.4 Hz @ -78.9 dB instead of
+        # the real 35.4 Hz FLC tap that arrived a few seconds later).
         confirm_target = RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS
         is_file_playback = (
             self.mic is not None and getattr(self.mic, "is_playing_file", False)
@@ -299,9 +294,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # rendering the live spectrum during the ring-out window.
         self.capture_timer_active = True
 
-        # Open the guitar gated capture. _accumulate_gated_samples will fill the
-        # accumulator over the next fft_size samples and emit gatedCaptureComplete,
-        # which routes to finish_guitar_gated_capture (in spectrum_capture mixin).
+        # Open the guitar gated capture. _accumulate_gated_samples fills the accumulator over the next
+        # fft_size samples and finishes it through finish_guitar_gated_capture (in the spectrum_capture
+        # mixin).
         self.start_guitar_gated_capture()
 
     # ------------------------------------------------------------------ #
@@ -343,8 +338,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # message was set when the tap was captured (the loop prompt) and stays as it is: Swift's
         # scheduleGuitarReEnable and the web's touch only the latch and the detection state.
         self._re_arm_from_current_chunk()
-        with self._gated_lock:
-            self._last_level_crossing_capture_id = -1
 
     # ------------------------------------------------------------------ #
     # totalPlateTaps — mirrors Swift var totalPlateTaps: Int
@@ -402,7 +395,7 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
             TAP_DEBUG("handlePlateTapDetection", f"Starting gated capture for phase={phase}")
             # Mirrors Swift startGatedCapture(phase:): seeds the pre-roll PCM buffer
             # into the gated accumulator and collects raw samples until the window fills,
-            # then calls finishGatedFFTCapture via the gatedCaptureComplete signal.
+            # then calls finish_gated_fft_capture.
             self.start_gated_capture(phase)
         else:
             # Covers .notStarted, .complete, .reviewingLongitudinal, .reviewingCross,
@@ -451,11 +444,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         # Re-anchored from the chunk that made the rest due — its level, not a peak-hold: the
         # 2.0 s peak-hold stays elevated after a tap and would latch is_above_threshold True.
         self._re_arm_from_current_chunk()
-        # Clear stale fast-start marker so the next tap's main-thread
-        # start_gated_capture correctly falls back to pre-roll seeding
-        # if the audio-queue level crossing doesn't fire in time.
-        with self._gated_lock:
-            self._last_level_crossing_capture_id = -1
         TAP_DEBUG(
             "reEnableDetectionForNextPlateTap",
             f"Re-enabled | chunkLevel={self.last_chunk_level_db:.2f} "

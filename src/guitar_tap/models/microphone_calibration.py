@@ -221,13 +221,19 @@ class MicrophoneCalibration:
 
     # MARK: - Correction Interpolation
 
+    def correction_at(self, frequency: float) -> float:
+        """The correction at one frequency: the bracketing points' corrections interpolated linearly,
+        flat past either end. Mirrors Swift MicrophoneCalibration.correction(at:)."""
+        return float(self.interpolate_to_bins(np.array([frequency], dtype=np.float64))[0])
+
     def interpolate_to_bins(
         self, bin_freqs: "npt.NDArray[np.float64]"
     ) -> "npt.NDArray[np.float64]":
         """Interpolate this profile's corrections onto FFT bin frequencies.
 
-        Uses flat extrapolation at the edges (matches Swift MicrophoneCalibration.correction(at:)
-        behaviour where frequencies below/above the calibrated range use the first/last value).
+        Uses flat extrapolation at the edges (frequencies below/above the calibrated range use the
+        first/last value). numpy's interp is the one pass Swift makes: for ascending frequencies, as an
+        FFT's bins are, it looks first at the previous frequency's pair of points, then the next.
 
         - Parameter bin_freqs: Array of FFT bin centre frequencies, in Hz.
         - Returns: Array of additive dB corrections, parallel to bin_freqs.

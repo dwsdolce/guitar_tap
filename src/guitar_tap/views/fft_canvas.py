@@ -331,6 +331,10 @@ class FftCanvas(pg.PlotWidget):
         # Colours come from the palette's chart roles in _apply_scheme (end of __init__ and on every
         # scheme change); grid alpha 1 so the grid is chart.grid exactly.
         self.showGrid(x=True, y=True, alpha=1.0)
+        # The axes draw the grid. pyqtgraph stacks them above the plot area, so the grid was drawn over the
+        # peak labels and readouts; beneath it, the grid shows only where the plot area is empty, as Swift's.
+        for side in ("left", "bottom", "right", "top"):
+            self.getAxis(side).setZValue(self.getPlotItem().vb.zValue() - 1)
         self._title_text = "FFT Peaks"
         # Restore persisted dB range — mirrors Swift's @State minDB/maxDB initialized
         # from TapDisplaySettings.minMagnitude / TapDisplaySettings.maxMagnitude.
