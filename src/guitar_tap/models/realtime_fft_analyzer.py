@@ -87,6 +87,7 @@ from guitar_tap.models.dead_input import BUFFER_DELIVERY_TIMEOUT, DEAD_INPUT_DWE
 from guitar_tap.models.input_level import InputLevel
 from guitar_tap.models.live_frame import LiveFrame
 from guitar_tap.utilities.logging import gt_log
+from guitar_tap.utilities import slack_probe as _slack_probe
 
 from .realtime_fft_analyzer_device_management import RealtimeFFTAnalyzerDeviceManagementMixin
 from .wall_clock import SystemWallClock, WallClock
@@ -913,6 +914,7 @@ class RealtimeFFTAnalyzer(
             mag_y_db, _peak_db = self.perform_fft(samples)
 
             processing_dt = time.time() - enter_now
+            _slack_probe.record("fft", processing_dt * 1000.0)
             self.publish_frame(mag_y_db, processing_dt * 1000.0)
 
     def publish_frame(self, magnitudes_db: np.ndarray, processing_time_ms: float) -> None:

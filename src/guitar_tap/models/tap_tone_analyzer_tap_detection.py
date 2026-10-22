@@ -31,6 +31,7 @@ from PySide6 import QtCore
 from PySide6.QtCore import Slot
 
 from guitar_tap.utilities.logging import TAP_DEBUG, gt_log
+from guitar_tap.utilities import slack_probe as _slack_probe
 
 from .analysis_display_mode import AnalysisDisplayMode
 from .detection_state import DetectionState
@@ -470,7 +471,9 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         """A frame announced on ``mic.frame`` — taken here, on the main thread. Mirrors Swift's sink on
         ``fftAnalyzer.frame.$magnitudes``."""
         frame = self.mic.frame
-        self.on_fft_frame(frame.magnitudes, frame.peak_magnitude)
+        with _slack_probe.timed("frame"):
+            self.on_fft_frame(frame.magnitudes, frame.peak_magnitude)
+            _slack_probe.simulate_fft_on_main()
 
     def on_fft_frame(self, mag_y_db, peak_db: float) -> None:
         """Receive a processed FFT frame (main thread).

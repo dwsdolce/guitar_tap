@@ -54,6 +54,7 @@ from PySide6 import QtCore
 
 from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode
 from guitar_tap.utilities.logging import gt_log
+from guitar_tap.utilities import slack_probe as _slack_probe
 
 # ── AnalysisDisplayMode ───────────────────────────────────────────────────────
 # Mirrors Swift AnalysisDisplayMode enum defined in TapToneAnalyzer.swift.
@@ -1297,7 +1298,7 @@ class TapToneAnalyzer(
         # main thread before detection, so detection and a capture's finish — also queued to the main
         # thread — run on the same thread, and the audio time seen at a finish does not depend on
         # thread timing. The float dB goes straight in.
-        self.mic.rms_level_handler = self._rmsLevelOnMain.emit
+        self.mic.rms_level_handler = self._hand_chunk_level_to_main
 
         # ── Gated-FFT capture signal (Qt — for cross-thread delivery) ────
         self.mic.proc_thread.gatedCaptureComplete.connect(self.finish_gated_fft_capture)
@@ -1314,7 +1315,8 @@ class TapToneAnalyzer(
         self.mic.on_permission_granted = self._start_after_permission_granted
 
         # ── Raw-sample handler ───────────────────────────────────────────
-        self.mic.raw_sample_handler = self._accumulate_gated_samples
+        self.mic.raw_sample_handler = self._accumulate_timed
+        _slack_probe.start()
 
         # ── Level-crossing handler (audio-queue fast-start) ──────────────
         def _level_crossing_handler() -> None:
@@ -1435,13 +1437,26 @@ class TapToneAnalyzer(
     # with real audio as chunks arrive. It is not pre-filled with zeros, which
     # would dilute the gated capture signal by ~50% (~6 dB of spectral magnitude).
 
+    def _hand_chunk_level_to_main(self, level_db: float, audio_time: float) -> None:
+        """On the audio thread: hand one chunk's level to the main thread (the queued ``_rmsLevelOnMain``)."""
+        _slack_probe.hand_over()
+        self._rmsLevelOnMain.emit(level_db, audio_time)
+
+    def _accumulate_timed(self, samples, sample_rate: float) -> None:
+        """On the audio thread: the capture filling, timed by the slack probe when it is on."""
+        _slack_probe.set_chunk_period(len(samples), sample_rate)
+        with _slack_probe.timed("accumulate"):
+            self._accumulate_gated_samples(samples, sample_rate)
+
     def _on_chunk_level(self, level_db: float, audio_time: float) -> None:
         """One chunk's level, on the main thread — the per-chunk entry.
 
         Swift ``onChunkLevel`` (the body of its rmsLevelHandler hop), the web's ``processAudioFrame``;
         tests feed audio through it.
         """
-        self._on_rms_level_changed(level_db, audio_time)
+        _slack_probe.taken()
+        with _slack_probe.timed("main/chunk"):
+            self._on_rms_level_changed(level_db, audio_time)
 
     # ------------------------------------------------------------------ #
     # is_detecting property — mirrors Swift @Published var isDetecting
