@@ -7,6 +7,7 @@ steps; this runs one. Mirrors Swift GuitarTapTests/AnalyzerSteps.swift and web t
 from __future__ import annotations
 
 import numpy as np
+from PySide6 import QtCore
 
 from audio_clock_feed import AUDIO_FEED_CHUNK_SECONDS, ManualWallClock, advance_audio
 from synthetic_tap import synthetic_tap
@@ -49,7 +50,8 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
     - ``{"spectrumFrame": spectrum}`` — one FFT frame from the running engine, a spectrum as
       ``peaks.json`` describes one
     - ``{"liveAudio": seconds, "level": dB}`` — that much real audio (a 200 Hz tone at that level)
-      through the microphone's path: each chunk's samples to the gated capture, then its level
+      through the microphone's path: each chunk through the engine's per-chunk processing, which queues the
+      main thread's part as the app's does; then the main thread takes the queue, in order
     """
     if "settings" in step:
         settings = step["settings"]
@@ -121,8 +123,11 @@ def run_analyzer_step(step: dict, sut: TapToneAnalyzer) -> bool:
             n = np.arange(_LIVE_AUDIO["sample"], _LIVE_AUDIO["sample"] + 1024)
             _LIVE_AUDIO["sample"] += 1024
             chunk = (amplitude * np.sin(2 * np.pi * 200 * n / 48000)).astype(np.float32)
-            sut._accumulate_gated_samples(chunk, 48000.0)
-            sut._on_chunk_level(level, sut.last_audio_time + AUDIO_FEED_CHUNK_SECONDS)
+            # The engine's audio clock follows the analyzer's, so this audio continues the steps before it.
+            sut.mic.audio_elapsed = sut.last_audio_time
+            sut.mic.process_raw_samples(chunk)
+        # The engine queues its chunks' main-thread part (a queued signal): the main thread takes it, in order.
+        QtCore.QCoreApplication.processEvents()
     else:
         return False
     return True

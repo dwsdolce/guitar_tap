@@ -5,8 +5,9 @@ hysteresis latch and the re-arm rule, the warm-up and its sync chunk, relative d
 floor, the confirmation a resume or a new sequence restarts — the gated capture's onset alignment, and
 what the audio pipeline delivers to the analyzer.
 
-Every chunk goes through ``_on_chunk_level``, the per-chunk entry audio takes, after arming the way the
-app does; no case sets the detector's state by hand. The shared cases in tap-decisions.json (T1–T14,
+Every chunk goes through ``_on_chunk_level``, the per-chunk entry audio takes — a ``liveAudio`` step's through
+the engine's per-chunk processing first, as the microphone's — after arming the way the app does; no case sets
+the detector's state by hand. The shared cases in tap-decisions.json (T1–T17,
 O1–O3), the same as Swift and the web. The pipeline's delivery cases below them are Python's own (the
 case file says why).
 """
@@ -66,6 +67,8 @@ def _check(fields: dict, sut, case_id: str) -> None:
             assert sut.material_tap_phase.value == want, f"{case_id} {field}: {sut.material_tap_phase}"
         elif field == "detecting":
             assert sut.is_detecting is want, f"{case_id} {field}"
+        elif field == "complete":
+            assert sut.is_measurement_complete is want, f"{case_id} {field}"
         elif field == "statusMessage":
             assert sut.status_message == want, f"{case_id} {field}: {sut.status_message}"
         else:
@@ -83,7 +86,22 @@ def test_confirm_chunks():
     assert RealtimeFFTAnalyzer.LEVEL_CROSSING_CONFIRMATION_CHUNKS == DATA["confirmChunks"]
 
 
-@pytest.mark.parametrize("row", DATA["cases"], ids=lambda r: r["id"])
+# The audio thread's fast-start opens a capture the detector has not confirmed: a sound the detector does not count
+# as a tap completes the measurement on what follows (T15, T16), and with the main thread a capture window behind the
+# audio, a real tap's capture completes before the detector sees the tap, leaving detection armed (T17). Python takes
+# audio in two steps today, the fast-start on the audio thread and detection on the main thread; these cases pass
+# once every chunk is taken in one sequence, as the web's.
+_KNOWN_FAILURES = {"T15", "T16", "T17"}
+
+
+def _case(row):
+    if row["id"] in _KNOWN_FAILURES:
+        return pytest.param(row, marks=pytest.mark.xfail(
+            strict=True, reason="the fast-start opens a capture the detector did not confirm"))
+    return row
+
+
+@pytest.mark.parametrize("row", [_case(r) for r in DATA["cases"]], ids=lambda r: r["id"])
 def test_decision(row, _restore_measurement_type):
     sut = make_steps_analyzer()
     for step in row["steps"]:

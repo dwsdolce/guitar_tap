@@ -1,6 +1,6 @@
 {
  "slug": "test/tap-decisions",
- "about": "The tap detector's decisions — the rising edge, the threshold the application configured, the hysteresis latch and the re-arm rule, the warm-up and its sync chunk, relative detection and its noise floor, the confirmation a resume or a new sequence restarts — and the gated capture's onset alignment. 'cases': each starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps' — the shared steps of tooling/analyzer-steps, every chunk through the edition's per-chunk entry, and {\"check\": {...}}, which asserts those fields at that point; then 'expect'. A tap has fired when a capture has started. Fields: 'captureOpen' (a gated capture is active), 'aboveThreshold' (the hysteresis latch), 'justExitedWarmUp' (the next chunk is the sync chunk), 'inWarmUp' (the audio clock is still inside the warm-up), 'noiseFloor' (the estimate, within 0.01 dB), 'phase' (Swift's raw value), 'detecting', 'statusMessage'. 'confirmChunks': the chunks above the threshold that make a tap, which each edition's constant must equal — the cases' two-chunk taps are that many. 'onset': the gated capture's onset alignment on a 'buffer' ('impulse': zeros, 'value' at 'at'; 'constant'; 'ramp': start + step × i), as Float32, with 'windowSize' and 'preOnset'; 'expect' — the output 'length', the index of its largest magnitude 'argmax', and 'samples' (index → value, within 1e-6). Python's tests of its audio pipeline's delivery (each chunk's level and each frame reaching the analyzer exactly once, on the main thread) stay Python's own: its Qt signal connections can add a second receiver, where Swift's and the web's single-assignment callbacks cannot. Expected values are Swift's.",
+ "about": "The tap detector's decisions — the rising edge, the threshold the application configured, the hysteresis latch and the re-arm rule, the warm-up and its sync chunk, relative detection and its noise floor, the confirmation a resume or a new sequence restarts — and the gated capture's onset alignment. 'cases': each starts a fresh analyzer (threshold −40, Taps 1) and runs its 'steps' — the shared steps of tooling/analyzer-steps, every chunk through the edition's per-chunk entry, and {\"check\": {...}}, which asserts those fields at that point; then 'expect'. A tap has fired when a capture has started. Fields: 'captureOpen' (a gated capture is active), 'aboveThreshold' (the hysteresis latch), 'justExitedWarmUp' (the next chunk is the sync chunk), 'inWarmUp' (the audio clock is still inside the warm-up), 'noiseFloor' (the estimate, within 0.01 dB), 'phase' (Swift's raw value), 'detecting', 'complete' (the measurement is complete), 'statusMessage'. 'confirmChunks': the chunks above the threshold that make a tap, which each edition's constant must equal — the cases' two-chunk taps are that many. 'onset': the gated capture's onset alignment on a 'buffer' ('impulse': zeros, 'value' at 'at'; 'constant'; 'ramp': start + step × i), as Float32, with 'windowSize' and 'preOnset'; 'expect' — the output 'length', the index of its largest magnitude 'argmax', and 'samples' (index → value, within 1e-6). Python's tests of its audio pipeline's delivery (each chunk's level and each frame reaching the analyzer exactly once, on the main thread) stay Python's own: its Qt signal connections can add a second receiver, where Swift's and the web's single-assignment callbacks cannot. Expected values are Swift's.",
  "confirmChunks": 2,
  "cases": [
   {
@@ -817,6 +817,112 @@
    "expect": {
     "noiseFloor": -20,
     "aboveThreshold": false
+   }
+  },
+  {
+   "id": "T15",
+   "note": "a sound in the warm-up, through the microphone's path (liveAudio), opens no capture: the measurement does not complete on the room's noise after it, and detection still listens",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "liveAudio": 0.2,
+     "level": -60
+    },
+    {
+     "liveAudio": 0.1,
+     "level": -10
+    },
+    {
+     "check": {
+      "inWarmUp": true
+     }
+    },
+    {
+     "liveAudio": 1.5,
+     "level": -60
+    }
+   ],
+   "expect": {
+    "captureOpen": false,
+    "complete": false,
+    "detecting": true
+   }
+  },
+  {
+   "id": "T16",
+   "note": "plate, through the microphone's path (liveAudio): with the floor at −45, a sound at −38 clears the −40 threshold but not the detector's −35, so it opens no capture and the phase stays capturing",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Plate)"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "liveAudio": 1.0,
+     "level": -45
+    },
+    {
+     "liveAudio": 0.2,
+     "level": -38
+    },
+    {
+     "liveAudio": 1.5,
+     "level": -45
+    }
+   ],
+   "expect": {
+    "captureOpen": false,
+    "phase": "Capturing Longitudinal",
+    "detecting": true
+   }
+  },
+  {
+   "id": "T17",
+   "note": "the control for T15: a tap after the warm-up, through the microphone's path (liveAudio), is captured and completes the measurement, detection no longer listening",
+   "steps": [
+    {
+     "settings": {
+      "type": "Material (Brace)"
+     }
+    },
+    {
+     "setThreshold": -40
+    },
+    {
+     "newTap": true
+    },
+    {
+     "liveAudio": 1.0,
+     "level": -60
+    },
+    {
+     "liveAudio": 0.1,
+     "level": -10
+    },
+    {
+     "liveAudio": 1.5,
+     "level": -60
+    }
+   ],
+   "expect": {
+    "complete": true,
+    "detecting": false
    }
   }
  ],
