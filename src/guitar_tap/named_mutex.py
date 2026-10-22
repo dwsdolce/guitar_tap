@@ -1,3 +1,5 @@
+# @parity none — Windows' single-instance lock; macOS and iOS keep an app to one instance
+# themselves, and a web page has none to keep.
 """Named mutex handling (for Win32)."""
 
 import ctypes

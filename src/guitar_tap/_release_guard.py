@@ -1,3 +1,5 @@
+# @parity none — Swift and the web run the same check as tooling scripts outside their source
+# (check-release-ready.sh); Python runs it at start and in its build.
 """
 Release-readiness guard — refuses to run or build against a stale release identity.
 

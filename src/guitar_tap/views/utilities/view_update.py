@@ -1,4 +1,5 @@
-# @parity none — the part of SwiftUI's and React's view updating that Qt Widgets leaves to the app: gathering the
+# @parity none — the part of SwiftUI's and React's view updating that Qt Widgets leaves to the app:
+# gathering the
 # changes of one moment into one refresh, updating a list's children in place, and applying a style only when it
 # changes. Swift and the web get it from their frameworks, so there is no counterpart to mirror. Justified
 # platform-only.

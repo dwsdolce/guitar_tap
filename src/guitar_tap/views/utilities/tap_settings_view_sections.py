@@ -1,3 +1,4 @@
+# @parity view/settings
 """
 Settings view section builders.
 

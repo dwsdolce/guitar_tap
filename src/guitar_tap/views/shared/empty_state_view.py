@@ -1,3 +1,4 @@
+# @parity view/empty-state
 """
 Empty state — shown where a list has no items: an icon, a title and a message, centred.
 

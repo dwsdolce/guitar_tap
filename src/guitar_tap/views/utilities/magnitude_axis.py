@@ -1,3 +1,4 @@
+# @parity view/spectrum-chart
 """The magnitude (dB) axis of the spectrum chart, on screen and in the exported image.
 
 pyqtgraph drops a tick label that reaches past the area its axis covers, and with the grid on that

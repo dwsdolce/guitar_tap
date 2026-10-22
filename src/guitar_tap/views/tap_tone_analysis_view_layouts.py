@@ -1,3 +1,4 @@
+# @parity view/main
 """
 MainWindow layout builders.
 

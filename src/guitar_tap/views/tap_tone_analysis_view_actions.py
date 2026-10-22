@@ -1,3 +1,4 @@
+# @parity view/main
 """
 MainWindow action handlers (button callbacks, menu actions).
 

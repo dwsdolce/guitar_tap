@@ -1,3 +1,5 @@
+# @parity none — Qt widgets and chart items reused across updates; SwiftUI and React recreate their light views
+# and have no reuse to test.
 """The results list and the chart's peak labels are updated in place: a live frame (the same number of peaks, every
 one with a new id) and a range change (a subset of the same peaks) build no new cards or labels; those left over
 are removed."""
@@ -100,3 +102,30 @@ class TestLabels:
         labels.clear_annotations()
         QtWidgets.QApplication.processEvents()
         assert labels.annotations == [] and self._on_chart(labels) == []
+
+
+class TestHeld:
+    def _model(self):
+        widget = peak_card_widget.PeakListWidget()
+        widget.model.is_live = True
+        widget.update_data_with_modes([(p, GuitarMode.AIR) for p in _frame([100.0, 200.0])])
+        signals = []
+        widget.model.clearAnnotations.connect(lambda: signals.append("clear"))
+        widget.model.hideAnnotations.connect(lambda: signals.append("hide"))
+        return widget, signals
+
+    def test_held_with_its_labels_left_to_the_callers_refresh_emits_no_label_change(self, qapp):
+        widget, signals = self._model()
+        widget.data_held(True, refresh_labels=False)
+        assert signals == [] and not widget.model.is_live
+
+    def test_held_refreshes_the_labels_by_default(self, qapp):
+        widget, signals = self._model()
+        widget.data_held(True)
+        assert signals == ["clear"]
+
+    def test_released_hides_the_labels(self, qapp):
+        widget, signals = self._model()
+        widget.data_held(True, refresh_labels=False)
+        widget.data_held(False, refresh_labels=False)
+        assert signals == ["hide"]

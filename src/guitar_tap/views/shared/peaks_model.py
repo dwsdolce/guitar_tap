@@ -1,3 +1,5 @@
+# @parity none — Qt's table model behind the results list and its labels; SwiftUI's and React's
+# lists read the analyzer directly.
 """
     The data model for the Peaks table.
 """
@@ -707,17 +709,19 @@ class PeaksModel(QtCore.QAbstractTableModel):
                         )
         return flag
 
-    def data_held(self, held: bool) -> None:
+    def data_held(self, held: bool, refresh_labels: bool = True) -> None:
         """Transition between live mode (held=False) and frozen mode (held=True).
 
         In live mode (is_live=True) the table is read-only and show_value_bool
         returns True for every peak.  In frozen mode (is_live=False) the table
         is interactive and show_value_bool consults selected_peak_ids.
+        ``refresh_labels=False`` leaves the chart's labels to a refresh the caller has due.
         """
         self.layoutAboutToBeChanged.emit()
         self.is_live = not held
         if held:
-            self.refresh_annotations()
+            if refresh_labels:
+                self.refresh_annotations()
         else:
             self.hideAnnotations.emit()
         self.layoutChanged.emit()

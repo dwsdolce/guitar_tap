@@ -33,6 +33,7 @@ from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
 from guitar_tap.utilities.logging import gt_log
 from guitar_tap.views import chart_help, chart_menu
 from guitar_tap.views import peak_annotations as fft_a
+from guitar_tap.views import spectrum_view_snap_interpolation as snap
 from guitar_tap.views.utilities.extensions import formatted_as_frequency
 
 
@@ -613,6 +614,8 @@ class FftCanvas(pg.PlotWidget):
         # Each comparison / material curve's colour: a palette role (drawn in the current scheme) or
         # a stored (r, g, b), in the same order as _comparison_curves.
         self._comparison_curve_colors: list = []
+        # The comparison / material curve the crosshair follows (-1: none) — Swift's lockedSeriesIndex.
+        self._locked_series_index = -1
         self._comparison_legend: QtWidgets.QWidget | None = None
         # True when _comparison_curves contains material phase overlays (L/C/FLC)
         # rather than user-loaded comparison files.  When True, fft_line must still
@@ -1044,9 +1047,6 @@ class FftCanvas(pg.PlotWidget):
     # Hot-plug device detection (forwarded from analyzer signals)
     # ------------------------------------------------------------------ #
 
-    # Screen-distance threshold (pixels) for locking crosshair to a comparison curve.
-    _CURVE_GRAVITY_PX: float = 12.0
-
     def _pointer_cursor(self, scene_pos) -> QtCore.Qt.CursorShape:
         """Swift's cursors over the chart: the open hand over a peak label (the closed hand while dragging one, which
         the label holds itself), the crosshair over the plot, left-right over the frequency axis, up-down over the
@@ -1081,6 +1081,7 @@ class FftCanvas(pg.PlotWidget):
             self._cursor_label.setVisible(False)
             self._crosshair_v.setVisible(False)
             self._crosshair_h.setVisible(False)
+            self._locked_series_index = -1
             return
         view_pos = vb.mapSceneToView(scene_pos)
         mouse_freq = float(view_pos.x())
@@ -1095,62 +1096,32 @@ class FftCanvas(pg.PlotWidget):
         has_material_curves = bool(self._comparison_curves)
 
         if self.is_comparing or has_material_curves:
-            # Snap to the nearest comparison/material curve by screen-Y distance (mirrors
-            # Swift's nearestSeriesIndex() with curveGravityThreshold = 12 pt).
-            best_idx   = getattr(self, "_locked_series_index", 0)
-            best_px_dy = float("inf")
+            # Follow the nearest comparison / material curve on screen, kept until another is
+            # CURVE_GRAVITY_PX nearer, and read it at the pointer's frequency — mirrors Swift
+            # resolveSnapState → nearestSeriesIndex, snapToWaveform.
+            series = [curve.getOriginalDataset() for curve in self._comparison_curves]
+            series = [(y, x) for x, y in series if x is not None and y is not None]
 
-            for i, curve in enumerate(self._comparison_curves):
-                xdata, ydata = curve.getData()
-                if xdata is None or len(xdata) == 0:
-                    continue
-                bin_idx = int(np.searchsorted(xdata, mouse_freq))
-                bin_idx = max(0, min(bin_idx, len(xdata) - 1))
-                curve_db = float(ydata[bin_idx])
-                # Convert dB difference to screen pixels for apples-to-apples comparison
-                curve_scene = vb.mapViewToScene(
-                    QtCore.QPointF(float(xdata[bin_idx]), curve_db)
-                )
-                px_dy = abs(scene_pos.y() - curve_scene.y())
-                if px_dy < best_px_dy:
-                    best_px_dy = px_dy
-                    best_idx   = i
+            def screen_y(db: float) -> float:
+                return vb.mapViewToScene(QtCore.QPointF(mouse_freq, db)).y()
 
-            # Apply hysteresis: only switch curves when outside gravity threshold
-            locked = getattr(self, "_locked_series_index", 0)
-            if best_px_dy < self._CURVE_GRAVITY_PX or locked >= len(self._comparison_curves):
-                self._locked_series_index = best_idx
-            locked = self._locked_series_index
-
-            # Re-evaluate display values for the locked curve
-            curve = self._comparison_curves[locked]
-            xdata, ydata = curve.getData()
-            if xdata is not None and len(xdata) > 0:
-                bin_idx = int(np.searchsorted(xdata, mouse_freq))
-                bin_idx = max(0, min(bin_idx, len(xdata) - 1))
-                display_freq = float(xdata[bin_idx])
-                display_db   = float(ydata[bin_idx])
-            else:
-                display_freq = mouse_freq
-                display_db   = mouse_db
-
-            r, g, b = self._curve_rgb(self._comparison_curve_colors[locked])
-            freq_color = f"rgb({r},{g},{b})"
+            locked = snap.nearest_series_index(
+                mouse_freq, scene_pos.y(), screen_y, series, self._locked_series_index)
+            self._locked_series_index = locked
+            snapped = (snap.snap_to_waveform(mouse_freq, *series[locked])
+                       if 0 <= locked < len(series) else None)
+            display_freq, display_db = snapped if snapped is not None else (mouse_freq, mouse_db)
+            if 0 <= locked < len(self._comparison_curve_colors):
+                r, g, b = self._curve_rgb(self._comparison_curve_colors[locked])
+                freq_color = f"rgb({r},{g},{b})"
 
         elif self.is_measurement_complete and np.any(self.saved_mag_y_db):
-            # Snap to nearest FFT bin on the frozen curve.
-            # Use frozen_frequencies (not self.freq): a Swift-saved plate measurement has
-            # 16 384 bins while the live self.freq has 32 769.  Indexing frozen_magnitudes
-            # with an index derived from self.freq would go out of bounds.
-            frozen_freq = self.analyzer.frozen_frequencies
-            if len(frozen_freq) > 0:
-                idx = int(np.searchsorted(frozen_freq, mouse_freq))
-                idx = max(0, min(idx, len(frozen_freq) - 1))
-                display_freq = float(frozen_freq[idx])
-                display_db   = float(self.saved_mag_y_db[idx])
-            else:
-                display_freq = mouse_freq
-                display_db   = mouse_db
+            # The frozen curve read at the pointer's frequency — mirrors Swift snapToWaveform. Its own
+            # frequencies (frozen_frequencies), not self.freq: a Swift-saved plate measurement has
+            # 16 384 bins while the live self.freq has 32 769.
+            snapped = snap.snap_to_waveform(
+                mouse_freq, self.saved_mag_y_db, self.analyzer.frozen_frequencies)
+            display_freq, display_db = snapped if snapped is not None else (mouse_freq, mouse_db)
         else:
             # Free mouse tracking — no curve snap
             display_freq = mouse_freq
@@ -1676,7 +1647,7 @@ class FftCanvas(pg.PlotWidget):
         self.fft_line.setData([], [])
         self.points.setData(x=[], y=[])
 
-        self._locked_series_index = 0
+        self._locked_series_index = -1
 
     def _clear_comparison_curves(self) -> None:
         """Remove canvas-side comparison curves and legend without touching model state.
@@ -1685,7 +1656,7 @@ class FftCanvas(pg.PlotWidget):
         comparisonChanged(False) — the model's load_comparison() resets its own
         state and emits a single comparisonChanged(True).
         """
-        self._locked_series_index = 0
+        self._locked_series_index = -1
         for curve in self._comparison_curves:
             self.removeItem(curve)
         self._comparison_curves.clear()
@@ -1809,7 +1780,7 @@ class FftCanvas(pg.PlotWidget):
 
     def _clear_comparison_view(self) -> None:
         """Remove comparison view curves (called when returning to live mode)."""
-        self._locked_series_index = 0
+        self._locked_series_index = -1
         for curve in self._comparison_curves:
             self.removeItem(curve)
         self._comparison_curves.clear()

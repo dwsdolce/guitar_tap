@@ -1,3 +1,4 @@
+# @parity model/measurement-codable
 """Float32 JSON serialization helpers for cross-implementation parity.
 
 The Swift GuitarTap app stores most scalar measurements as ``Float`` (IEEE-754

@@ -1,3 +1,5 @@
+# @parity none — a Qt widget standing in for SwiftUI's Stepper, which Swift has built in; the web's
+# stepper is markup in App.tsx.
 """
 Value stepper — a whole number shown as text, then a stepper of two stacked arrows, in a rounded outline, that
 raise and lower it.

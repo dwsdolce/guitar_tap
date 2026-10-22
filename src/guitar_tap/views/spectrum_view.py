@@ -1,3 +1,4 @@
+# @parity view/spectrum-chart
 """
 Spectrum chart view — chart content and axis configuration.
 

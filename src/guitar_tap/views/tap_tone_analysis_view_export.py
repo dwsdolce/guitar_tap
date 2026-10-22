@@ -1,3 +1,4 @@
+# @parity view/main
 """
 MainWindow export and save triggers.
 

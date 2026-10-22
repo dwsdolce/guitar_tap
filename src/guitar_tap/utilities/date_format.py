@@ -1,3 +1,4 @@
+# @parity util/date-display
 """Single source of truth for user-facing date/time display.
 
 Locale-aware, in the user's local time: medium date + short time

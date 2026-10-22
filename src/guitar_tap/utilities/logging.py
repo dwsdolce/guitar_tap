@@ -1,3 +1,4 @@
+# @parity util/logging
 """
 Debug logging utility — mirrors Swift GuitarTap/Utilities/Logging.swift.
 

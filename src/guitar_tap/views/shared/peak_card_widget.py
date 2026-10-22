@@ -133,6 +133,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         self._star_btn = QtWidgets.QToolButton()
         self._star_btn.setFixedSize(24, 24)
         self._star_btn.setFont(_font(14))
+        self._star_btn.setStyleSheet("QToolButton { border: none; background: transparent; }")
         self._star_btn.clicked.connect(self._toggle_show)
         # Shown only once it is in the layout: shown with no parent it is a window of its own for
         # a moment, and a window appearing closes any open popup or menu.
@@ -175,6 +176,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         # HStack { label Spacer() freq }.
         self._mode_btn = QtWidgets.QToolButton()
         self._mode_btn.setFont(_font(10, bold=True))
+        self._mode_btn.setStyleSheet("QToolButton { border: none; background: transparent; padding: 0 2px; }")
         # As tall as its text, as Swift's label is — a tool button's own padding made the card
         # taller.
         self._mode_btn.setFixedHeight(QtGui.QFontMetrics(self._mode_btn.font()).height())
@@ -276,11 +278,8 @@ class PeakCardWidget(QtWidgets.QFrame):
     def _refresh_star(self) -> None:
         on = self._show == "on"
         self._star_btn.setText("★" if on else "☆")
-        star_color = palette.qss(
-            palette.Role.PEAK_SELECTED_STAR if on else palette.Role.PEAK_UNSELECTED_STAR)
-        view_update.set_style_sheet(self._star_btn, 
-            f"QToolButton {{ border: none; background: transparent; color: {star_color}; }}"
-        )
+        view_update.tag(self._star_btn,
+                        color=palette.Role.PEAK_SELECTED_STAR if on else palette.Role.PEAK_UNSELECTED_STAR)
         self._star_btn.setEnabled(self._is_held)
 
     def _refresh_mode(self) -> None:
@@ -304,12 +303,12 @@ class PeakCardWidget(QtWidgets.QFrame):
         display = _mode_name(self._mode)
         if self._is_manual:
             display = f"{display} *"
-        italic = "italic" if self._is_manual else "normal"
         self._mode_btn.setText(display)
-        view_update.set_style_sheet(self._mode_btn, 
-            f"QToolButton {{ border: none; background: transparent; padding: 0 2px;"
-            f" color: rgb({r},{g},{b}); font-style: {italic}; }}"
-        )
+        if self._mode_btn.font().italic() != self._is_manual:
+            font = self._mode_btn.font()
+            font.setItalic(self._is_manual)
+            self._mode_btn.setFont(font)
+        view_update.tag(self._mode_btn, color=self._mode_role())
         self._mode_btn.setEnabled(self._is_held)
 
         # Classified mark — mirrors Swift: a check for a peak the analyzer classified, neither
@@ -319,7 +318,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         auto_gmode = gm.GuitarMode.from_display_name(self._auto_mode)
         if auto_gmode not in (None, gm.GuitarMode.UNKNOWN, gm.GuitarMode.UPPER_MODES):
             self._badge.setText("✓")
-            view_update.set_style_sheet(self._badge, f"color: {palette.qss(palette.Role.PEAK_IN_RANGE)};")
+            view_update.tag(self._badge, color=palette.Role.PEAK_IN_RANGE)
             self._badge.setVisible(True)
         else:
             self._badge.setVisible(False)
@@ -331,7 +330,7 @@ class PeakCardWidget(QtWidgets.QFrame):
         cents = self._pitch.cents(self._freq)
         # Mirrors Swift ResonantPeak.formattedPitch: "G2 (-10 ¢)".
         self._pitch_lbl.setText(f"{note} ({'+' if cents >= 0 else ''}{cents:.0f} ¢)")
-        view_update.set_style_sheet(self._pitch_lbl, f"color: {palette.qss(palette.Role.PEAK_PITCH)};")
+        view_update.tag(self._pitch_lbl, color=palette.Role.PEAK_PITCH)
         note_key = palette.qss(palette.Role.PEAK_PITCH)
         if self._note_key != note_key:
             self._note_key = note_key
@@ -339,7 +338,7 @@ class PeakCardWidget(QtWidgets.QFrame):
                 palette.icon("mdi.music-note", palette.color(palette.Role.PEAK_PITCH)).pixmap(10, 12))
 
     def _refresh_qbw(self) -> None:
-        view_update.set_style_sheet(self._qbw_lbl, f"color: {palette.qss(palette.Role.TEXT_SECONDARY)};")
+        view_update.tag(self._qbw_lbl, color=palette.Role.TEXT_SECONDARY)
         if self._q > 0:
             # The peak's own bandwidth, as Swift and the web show it.
             self._qbw_lbl.setText(
@@ -350,9 +349,8 @@ class PeakCardWidget(QtWidgets.QFrame):
 
     def _refresh_mag(self) -> None:
         self._mag_lbl.setText(f"{fp.string(self._mag_db, fp.PEAK_MAGNITUDE_DB)} dB")
-        role = palette.magnitude_role(self._mag_db)
-        view_update.set_style_sheet(self._mag_lbl, f"color: {palette.qss(role)};")
-        view_update.set_style_sheet(self._freq_lbl, f"color: {palette.qss(palette.Role.TEXT_PRIMARY)};")
+        view_update.tag(self._mag_lbl, color=palette.magnitude_role(self._mag_db))
+        view_update.tag(self._freq_lbl, color=palette.Role.TEXT_PRIMARY)
 
     # ── event handlers ────────────────────────────────────────────────────────
 
@@ -853,9 +851,10 @@ class PeakListWidget(QtWidgets.QWidget):
             return child
         return None
 
-    def data_held(self, held: bool) -> None:
-        """Set the held state on every card (enables stars/menus when held)."""
+    def data_held(self, held: bool, refresh_labels: bool = True) -> None:
+        """Set the held state on every card (enables stars/menus when held). ``refresh_labels=False`` leaves the
+        chart's labels to a refresh the caller has due."""
         self._is_held = held
         for card in self._cards:
             card.set_held(held)
-        self.model.data_held(held)
+        self.model.data_held(held, refresh_labels)

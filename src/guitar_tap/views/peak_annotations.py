@@ -1,3 +1,4 @@
+# @parity view/peak-annotations
 """
     Annotations displayed on the FFT canvas plot.
 

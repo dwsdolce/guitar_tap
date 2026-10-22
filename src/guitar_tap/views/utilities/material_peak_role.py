@@ -10,7 +10,7 @@ from enum import Enum
 
 from PySide6 import QtGui, QtWidgets
 
-from guitar_tap.views.utilities import palette
+from guitar_tap.views.utilities import palette, view_update
 
 
 class MaterialPeakRole(Enum):
@@ -59,9 +59,14 @@ def phase_badge(role: MaterialPeakRole, active: bool = True) -> QtWidgets.QPushB
     btn.setFont(fnt)
     btn.setFixedSize(role.badge_width, 32)
     btn.setStyleSheet("QPushButton {border-radius: 6px; border: none;}")
-    palette.tag(
+    set_phase_badge_active(btn, role, active)
+    return btn
+
+
+def set_phase_badge_active(btn: QtWidgets.QPushButton, role: MaterialPeakRole, active: bool) -> None:
+    """Show a badge made by :func:`phase_badge` as active or not, restyled only when that changes."""
+    view_update.tag(
         btn,
         color=palette.Role.TEXT_ON_COLOR if active else palette.Role.TEXT_PRIMARY,
         background=role.palette_role if active else palette.Role.MATERIAL_PHASE_INACTIVE,
     )
-    return btn

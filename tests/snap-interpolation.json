@@ -1,0 +1,306 @@
+{
+ "slug": "test/snap-interpolation",
+ "about": "The crosshair's snap to a curve. 'snapToWaveform': the point on a curve at 'targetHz' \u2014 frequency and magnitude interpolated linearly between the two bins either side (past an end, along the last two bins; below the first bin, the first bin); 'expect' is [frequency, magnitude], or null when the arrays are empty or of different lengths. Within 1e-3. 'lockedSeries': the curve the crosshair follows, from each curve's [index, on-screen distance to the pointer] in 'candidates' and the curve it follows now ('locked', -1 for none): the nearest, unless the locked curve is within 12 of it; the first of equally near curves; with no candidates, the lock is kept. Expected values are Swift's.",
+ "snapToWaveform": [
+  {
+   "id": "SI1",
+   "about": "between two bins",
+   "targetHz": 105.0,
+   "frequencies": [
+    100.0,
+    110.0,
+    120.0,
+    130.0
+   ],
+   "magnitudes": [
+    -10.0,
+    -20.0,
+    -40.0,
+    -35.0
+   ],
+   "expect": [
+    105.0,
+    -15.0
+   ]
+  },
+  {
+   "id": "SI2",
+   "about": "on a bin",
+   "targetHz": 110.0,
+   "frequencies": [
+    100.0,
+    110.0,
+    120.0,
+    130.0
+   ],
+   "magnitudes": [
+    -10.0,
+    -20.0,
+    -40.0,
+    -35.0
+   ],
+   "expect": [
+    110.0,
+    -20.0
+   ]
+  },
+  {
+   "id": "SI3",
+   "about": "nearer the upper of two bins",
+   "targetHz": 118.0,
+   "frequencies": [
+    100.0,
+    110.0,
+    120.0,
+    130.0
+   ],
+   "magnitudes": [
+    -10.0,
+    -20.0,
+    -40.0,
+    -35.0
+   ],
+   "expect": [
+    118.0,
+    -36.0
+   ]
+  },
+  {
+   "id": "SI4",
+   "about": "below the first bin: the first bin",
+   "targetHz": 90.0,
+   "frequencies": [
+    100.0,
+    110.0,
+    120.0,
+    130.0
+   ],
+   "magnitudes": [
+    -10.0,
+    -20.0,
+    -40.0,
+    -35.0
+   ],
+   "expect": [
+    100.0,
+    -10.0
+   ]
+  },
+  {
+   "id": "SI5",
+   "about": "above the last bin: along the last two bins",
+   "targetHz": 135.0,
+   "frequencies": [
+    100.0,
+    110.0,
+    120.0,
+    130.0
+   ],
+   "magnitudes": [
+    -10.0,
+    -20.0,
+    -40.0,
+    -35.0
+   ],
+   "expect": [
+    135.0,
+    -32.5
+   ]
+  },
+  {
+   "id": "SI6",
+   "about": "on the first bin",
+   "targetHz": 100.0,
+   "frequencies": [
+    100.0,
+    110.0,
+    120.0,
+    130.0
+   ],
+   "magnitudes": [
+    -10.0,
+    -20.0,
+    -40.0,
+    -35.0
+   ],
+   "expect": [
+    100.0,
+    -10.0
+   ]
+  },
+  {
+   "id": "SI7",
+   "about": "one bin",
+   "targetHz": 150.0,
+   "frequencies": [
+    100.0
+   ],
+   "magnitudes": [
+    -12.0
+   ],
+   "expect": [
+    100.0,
+    -12.0
+   ]
+  },
+  {
+   "id": "SI8",
+   "about": "two bins at one frequency",
+   "targetHz": 100.0,
+   "frequencies": [
+    100.0,
+    100.0
+   ],
+   "magnitudes": [
+    -1.0,
+    -2.0
+   ],
+   "expect": [
+    100.0,
+    -1.0
+   ]
+  },
+  {
+   "id": "SI9",
+   "about": "no bins",
+   "targetHz": 100.0,
+   "frequencies": [],
+   "magnitudes": [],
+   "expect": null
+  },
+  {
+   "id": "SI10",
+   "about": "magnitudes and frequencies of different lengths",
+   "targetHz": 100.0,
+   "frequencies": [
+    100.0,
+    110.0
+   ],
+   "magnitudes": [
+    -1.0
+   ],
+   "expect": null
+  }
+ ],
+ "lockedSeries": [
+  {
+   "id": "LS1",
+   "about": "another curve 25 nearer: it is followed",
+   "candidates": [
+    [
+     0,
+     30.0
+    ],
+    [
+     1,
+     5.0
+    ]
+   ],
+   "locked": 0,
+   "expect": 1
+  },
+  {
+   "id": "LS2",
+   "about": "another curve 5 nearer: the locked one is kept",
+   "candidates": [
+    [
+     0,
+     10.0
+    ],
+    [
+     1,
+     5.0
+    ]
+   ],
+   "locked": 0,
+   "expect": 0
+  },
+  {
+   "id": "LS3",
+   "about": "none locked: the nearest",
+   "candidates": [
+    [
+     0,
+     10.0
+    ],
+    [
+     1,
+     5.0
+    ]
+   ],
+   "locked": -1,
+   "expect": 1
+  },
+  {
+   "id": "LS4",
+   "about": "no curves: the lock is kept",
+   "candidates": [],
+   "locked": 2,
+   "expect": 2
+  },
+  {
+   "id": "LS5",
+   "about": "the locked curve is the nearest",
+   "candidates": [
+    [
+     0,
+     5.0
+    ],
+    [
+     1,
+     20.0
+    ]
+   ],
+   "locked": 0,
+   "expect": 0
+  },
+  {
+   "id": "LS6",
+   "about": "another curve exactly 12 nearer: it is followed",
+   "candidates": [
+    [
+     0,
+     17.0
+    ],
+    [
+     1,
+     5.0
+    ]
+   ],
+   "locked": 0,
+   "expect": 1
+  },
+  {
+   "id": "LS7",
+   "about": "equally near: the first",
+   "candidates": [
+    [
+     0,
+     5.0
+    ],
+    [
+     1,
+     5.0
+    ]
+   ],
+   "locked": -1,
+   "expect": 0
+  },
+  {
+   "id": "LS8",
+   "about": "the locked curve has no point here: the nearest",
+   "candidates": [
+    [
+     1,
+     9.0
+    ],
+    [
+     2,
+     4.0
+    ]
+   ],
+   "locked": 0,
+   "expect": 2
+  }
+ ]
+}

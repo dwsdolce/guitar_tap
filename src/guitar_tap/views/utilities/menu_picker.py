@@ -1,3 +1,4 @@
+# @parity view/menu-picker
 """A menu picker drawn as Swift's on macOS: a filled rounded box with no border, the value at its
 left and a ⌃⌄ at its right — the same on every OS. The menu that opens is Qt's own.
 

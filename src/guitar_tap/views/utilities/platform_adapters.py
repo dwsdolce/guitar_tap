@@ -1,3 +1,4 @@
+# @parity view/platform-adapters
 """
 Platform-specific helpers. Mirrors Swift's PlatformAdapters.swift.
 

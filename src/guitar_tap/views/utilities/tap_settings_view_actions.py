@@ -1,3 +1,4 @@
+# @parity view/settings
 """
 Settings view action handlers.
 

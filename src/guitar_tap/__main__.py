@@ -1,3 +1,4 @@
+# @parity app/entry
 """
 Guitar Tap — application entry point.
 

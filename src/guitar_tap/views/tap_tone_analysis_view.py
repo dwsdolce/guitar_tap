@@ -40,7 +40,7 @@ from guitar_tap.views.shared.validated_number_field import ValidatedNumberField
 from guitar_tap.views.shared.value_stepper import ValueStepper
 from guitar_tap.views.utilities import extensions as _ext
 from guitar_tap.views.utilities import palette, view_update
-from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole, phase_badge
+from guitar_tap.views.utilities.material_peak_role import MaterialPeakRole, phase_badge, set_phase_badge_active
 from guitar_tap.views.utilities.menu_picker import MenuPicker
 
 # The plate/brace phase colours, by role.
@@ -75,6 +75,77 @@ def _header_footer_sep() -> QtWidgets.QFrame:
     return sep
 
 
+class _MaterialPeakRow(QtWidgets.QWidget):
+    """One row of the plate / brace peak list: star | frequency over magnitude | its phase badges. Updated in
+    place by :meth:`apply`, which changes only what differs. Mirrors Swift MaterialPeakRowView."""
+
+    def __init__(self, roles: tuple[MaterialPeakRole, ...]) -> None:
+        super().__init__()
+        self.roles = roles
+        self.key: object = None
+        self._state: tuple | None = None
+        hl = QtWidgets.QHBoxLayout(self)
+        hl.setContentsMargins(0, 2, 0, 2)
+        hl.setSpacing(8)
+
+        # Star indicator — display-only, mirrors Swift MaterialPeakRowView which renders
+        # a plain Image(systemName:) with no onToggleSelection callback in plate/brace mode.
+        self._star = QtWidgets.QLabel()
+        self._star.setFixedSize(24, 24)
+        self._star.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        star_fnt = QtGui.QFont()
+        star_fnt.setPointSize(14)
+        self._star.setFont(star_fnt)
+        hl.addWidget(self._star)
+
+        # Frequency + magnitude labels
+        txt = QtWidgets.QWidget()
+        tv  = QtWidgets.QVBoxLayout(txt)
+        tv.setContentsMargins(0, 0, 0, 0)
+        tv.setSpacing(0)
+        # Centred at their own height, as Swift's VStack, not spread over the badges' height.
+        tv.addStretch()
+        self._freq = QtWidgets.QLabel()
+        f_fnt = QtGui.QFont()
+        f_fnt.setBold(True)
+        f_fnt.setPointSize(11)
+        self._freq.setFont(f_fnt)
+        tv.addWidget(self._freq)
+        self._mag = QtWidgets.QLabel()
+        m_fnt = QtGui.QFont()
+        m_fnt.setPointSize(9)
+        self._mag.setFont(m_fnt)
+        palette.tag(self._mag, color=palette.Role.TEXT_SECONDARY)
+        tv.addWidget(self._mag)
+        tv.addStretch()
+        hl.addWidget(txt, stretch=1)
+
+        # The phase badges — display-only, each active when this row's peak is its phase's.
+        self._badges = [phase_badge(role, False) for role in roles]
+        for badge in self._badges:
+            hl.addWidget(badge)
+
+    def apply(self, *, key: object, selected: bool, freq_text: str, pending: bool, mag_text: str,
+              active: tuple[bool, ...]) -> None:
+        """Show this row's peak: ``pending`` greys a frequency not yet captured; ``active`` is per badge."""
+        self.key = key
+        state = (selected, freq_text, pending, mag_text, active)
+        if state == self._state:
+            return
+        self._state = state
+        self._star.setText("\u2605" if selected else "\u2606")
+        view_update.tag(self._star, color=palette.Role.PEAK_SELECTED_STAR if selected
+                        else palette.Role.PEAK_UNSELECTED_STAR)
+        self._freq.setText(freq_text)
+        if pending:
+            view_update.tag(self._freq, color=palette.Role.TEXT_SECONDARY)
+        else:
+            view_update.tag(self._freq)
+        self._mag.setText(mag_text)
+        for badge, role, on in zip(self._badges, self.roles, active):
+            set_phase_badge_active(badge, role, on)
+
+
 class MaterialPeakListWidget(QtWidgets.QWidget):
     """Plate/brace peak list with L/C/FLC mode indicators.
 
@@ -83,6 +154,10 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
     The L/C/FLC badges are display-only — they show which peak was auto-identified
     for each phase. Assignment is driven entirely by the analyzer; Redo is the
     only way to change it.
+
+    Every setter only invalidates the list; its one refresh runs at the end of the event-loop turn, and only while
+    the list is shown — as Swift builds the rows only for a plate or brace measurement. A list hidden when it changed
+    refreshes when it is shown.
     """
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
@@ -99,6 +174,9 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._show_flc:   bool  = False
         self._selected:   set[float] = set()
         self._complete:   bool = False   # final (all-peaks) layout vs live slot rows
+        self._rows:       list[_MaterialPeakRow] = []
+        self._refresh = view_update.Invalidator(self, self._refresh_rows)
+        self._stale = True
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -117,13 +195,13 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
     def set_mode(self, show_cross: bool, show_flc: bool) -> None:
         self._show_cross = show_cross
         self._show_flc   = show_flc
-        self._rebuild_rows()
+        self._refresh.invalidate()
 
     def set_complete(self, complete: bool) -> None:
         """Live capture shows fixed dashed slot rows; complete/loaded shows the final layout."""
         if complete != self._complete:
             self._complete = complete
-            self._rebuild_rows()
+            self._refresh.invalidate()
 
     def update_peaks(self, peaks) -> None:
         """Refresh from a list[ResonantPeak]."""
@@ -143,7 +221,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         # MaterialPeakRowView where isSelected reflects selectedPeakIDs which contains
         # only the dominant peak(s) set by phase-completion handlers.
         self._selected = {f for f in (self._long_freq, self._cross_freq, self._flc_freq) if f > 0.0}
-        self._rebuild_rows()
+        self._refresh.invalidate()
 
     def set_assignment(self, long_freq: float, cross_freq: float = 0.0,
                        flc_freq: float = 0.0) -> None:
@@ -152,7 +230,7 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
         self._flc_freq   = flc_freq
         # Keep selected set in sync with identified peaks.
         self._selected = {f for f in (self._long_freq, self._cross_freq, self._flc_freq) if f > 0.0}
-        self._rebuild_rows()
+        self._refresh.invalidate()
 
     def long_freq(self)  -> float: return self._long_freq
     def cross_freq(self) -> float: return self._cross_freq
@@ -160,132 +238,86 @@ class MaterialPeakListWidget(QtWidgets.QWidget):
 
     # ── private helpers ─────────────────────────────────────────────────
 
-    def _rebuild_rows(self) -> None:
-        # Remove all rows (everything before the trailing stretch)
-        while self._peak_layout.count() > 1:
-            item = self._peak_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+    def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802 — Qt's name
+        super().showEvent(event)
+        if self._stale:
+            self._refresh.invalidate()
+
+    def _refresh_rows(self) -> None:
+        """The rows for the list's state, updated in place by key (``view_update.sync_children``)."""
+        if not self.isVisible():
+            self._stale = True
+            return
+        self._stale = False
+        roles = (MaterialPeakRole.LONGITUDINAL,)
+        if self._show_cross:
+            roles += (MaterialPeakRole.CROSS,)
+        if self._show_flc:
+            roles += (MaterialPeakRole.FLC,)
         if self._complete:
             # Final layout: one row per captured peak, sorted by frequency (unchanged).
-            for freq, mag in sorted(self._peaks, key=lambda x: x[0]):
-                row = self._make_row(freq, mag)
-                self._peak_layout.insertWidget(self._peak_layout.count() - 1, row)
+            phase_freqs = {MaterialPeakRole.LONGITUDINAL: self._long_freq, MaterialPeakRole.CROSS: self._cross_freq,
+                           MaterialPeakRole.FLC: self._flc_freq}
+            items = [
+                dict(key=("peak", freq), selected=freq in self._selected,
+                     freq_text=f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz", pending=False,
+                     mag_text=f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB",
+                     active=tuple(freq == phase_freqs[r] for r in roles))
+                for freq, mag in sorted(self._peaks, key=lambda x: x[0])
+            ]
         else:
             # Live capture: fixed per-phase slot rows (L, C, [FLC] for plate; fL for brace) —
             # the layout matches the final display, but a slot shows a dash + unselected bubble
             # until its phase's peak is captured.
-            slots: list[tuple[str, float]] = [("L", self._long_freq)]
+            slots = [(MaterialPeakRole.LONGITUDINAL, self._long_freq)]
             if self._show_cross:
-                slots.append(("C", self._cross_freq))
+                slots.append((MaterialPeakRole.CROSS, self._cross_freq))
             if self._show_flc:
-                slots.append(("FLC", self._flc_freq))
+                slots.append((MaterialPeakRole.FLC, self._flc_freq))
+            items = []
             for role, freq in slots:
-                row = self._make_slot_row(role, freq)
-                self._peak_layout.insertWidget(self._peak_layout.count() - 1, row)
+                found = freq > 0.0
+                mag = next((m for f, m in self._peaks if f == freq), None) if found else None
+                items.append(dict(
+                    key=("slot", role), selected=found,
+                    freq_text=f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz" if found else "\u2014",
+                    pending=not found,
+                    mag_text=f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB" if mag is not None else "\u2014",
+                    active=tuple(r == role and found for r in roles)))
 
-    def _make_row(self, freq: float, mag: float) -> QtWidgets.QWidget:
-        w  = QtWidgets.QWidget()
-        hl = QtWidgets.QHBoxLayout(w)
-        hl.setContentsMargins(0, 2, 0, 2)
-        hl.setSpacing(8)
+        def make(item: dict) -> _MaterialPeakRow:
+            row = _MaterialPeakRow(roles)
+            row.apply(**item)
+            return row
 
-        # Star indicator — display-only, mirrors Swift MaterialPeakRowView which renders
-        # a plain Image(systemName:) with no onToggleSelection callback in plate/brace mode.
-        is_sel = freq in self._selected
-        star = QtWidgets.QLabel("★" if is_sel else "☆")
-        star.setFixedSize(24, 24)
-        star.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        star_fnt = QtGui.QFont()
-        star_fnt.setPointSize(14)
-        star.setFont(star_fnt)
-        palette.tag(star, color=palette.Role.PEAK_SELECTED_STAR if is_sel
-                    else palette.Role.PEAK_UNSELECTED_STAR)
-        hl.addWidget(star)
+        def remove(row: _MaterialPeakRow) -> None:
+            self._peak_layout.removeWidget(row)
+            row.deleteLater()
 
-        # Frequency + magnitude labels
-        txt = QtWidgets.QWidget()
-        tv  = QtWidgets.QVBoxLayout(txt)
-        tv.setContentsMargins(0, 0, 0, 0)
-        tv.setSpacing(0)
-        # Centred at their own height, as Swift's VStack, not spread over the badges' height.
-        tv.addStretch()
-        f_lbl = QtWidgets.QLabel(f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz")
-        f_fnt = QtGui.QFont()
-        f_fnt.setBold(True)
-        f_fnt.setPointSize(11)
-        f_lbl.setFont(f_fnt)
-        tv.addWidget(f_lbl)
-        m_lbl = QtWidgets.QLabel(f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB")
-        m_fnt = QtGui.QFont()
-        m_fnt.setPointSize(9)
-        m_lbl.setFont(m_fnt)
-        palette.tag(m_lbl, color=palette.Role.TEXT_SECONDARY)
-        tv.addWidget(m_lbl)
-        tv.addStretch()
-        hl.addWidget(txt, stretch=1)
+        # Rows with other badges (the mode changed) cannot show these items.
+        keep = []
+        for row in self._rows:
+            if row.roles == roles:
+                keep.append(row)
+            else:
+                remove(row)
+        rows = view_update.sync_children(
+            keep, items,
+            item_key=lambda item: item["key"],
+            child_key=lambda row: row.key,
+            make=make,
+            update=lambda row, item: row.apply(**item),
+            remove=remove,
+        )
 
-        # L badge (always shown) — display-only, shows auto-identified peak
-        is_l = (freq == self._long_freq)
-        hl.addWidget(phase_badge(MaterialPeakRole.LONGITUDINAL, is_l))
-
-        # C badge (plate only)
-        if self._show_cross:
-            is_c = (freq == self._cross_freq)
-            hl.addWidget(phase_badge(MaterialPeakRole.CROSS, is_c))
-
-        # FLC badge (plate + FLC only)
-        if self._show_flc:
-            is_flc = (freq == self._flc_freq)
-            hl.addWidget(phase_badge(MaterialPeakRole.FLC, is_flc))
-
-        return w
-
-    def _make_slot_row(self, role: str, freq: float) -> QtWidgets.QWidget:
-        found = freq > 0.0
-        mag = next((m for f, m in self._peaks if f == freq), None) if found else None
-        w  = QtWidgets.QWidget()
-        hl = QtWidgets.QHBoxLayout(w)
-        hl.setContentsMargins(0, 2, 0, 2)
-        hl.setSpacing(8)
-
-        # Star — filled once this phase's peak is captured, outline while pending.
-        star = QtWidgets.QLabel("\u2605" if found else "\u2606")
-        star.setFixedSize(24, 24)
-        star.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        _sf = QtGui.QFont(); _sf.setPointSize(14)
-        star.setFont(_sf)
-        palette.tag(star, color=palette.Role.PEAK_SELECTED_STAR if found
-                    else palette.Role.PEAK_UNSELECTED_STAR)
-        hl.addWidget(star)
-
-        # Frequency + magnitude — dashes until captured.
-        txt = QtWidgets.QWidget()
-        tv  = QtWidgets.QVBoxLayout(txt)
-        tv.setContentsMargins(0, 0, 0, 0)
-        tv.setSpacing(0)
-        tv.addStretch()
-        f_lbl = QtWidgets.QLabel(f"{fp.string(freq, fp.PEAK_FREQUENCY_HZ)} Hz" if found else "\u2014")
-        _f = QtGui.QFont(); _f.setBold(True); _f.setPointSize(11)
-        f_lbl.setFont(_f)
-        if not found:
-            palette.tag(f_lbl, color=palette.Role.TEXT_SECONDARY)
-        tv.addWidget(f_lbl)
-        m_lbl = QtWidgets.QLabel(f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB" if mag is not None else "\u2014")
-        _m = QtGui.QFont(); _m.setPointSize(9)
-        m_lbl.setFont(_m)
-        palette.tag(m_lbl, color=palette.Role.TEXT_SECONDARY)
-        tv.addWidget(m_lbl)
-        tv.addStretch()
-        hl.addWidget(txt, stretch=1)
-
-        # Phase badges — this row's bubble is active only once its peak is found.
-        hl.addWidget(phase_badge(MaterialPeakRole.LONGITUDINAL, role == "L" and found))
-        if self._show_cross:
-            hl.addWidget(phase_badge(MaterialPeakRole.CROSS, role == "C" and found))
-        if self._show_flc:
-            hl.addWidget(phase_badge(MaterialPeakRole.FLC, role == "FLC" and found))
-        return w
+        # The rows in order, ahead of the trailing stretch; moved only when out of place.
+        in_place = [self._peak_layout.itemAt(k) for k in range(len(rows))]
+        if [item.widget() if item is not None else None for item in in_place] != rows:
+            for row in rows:
+                self._peak_layout.removeWidget(row)
+            for k, row in enumerate(rows):
+                self._peak_layout.insertWidget(k, row)
+        self._rows = rows
 
 class MaterialInstructionsWidget(QtWidgets.QWidget):
     """Process instructions shown at the bottom of the material scroll view.
@@ -2588,7 +2620,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     color=palette.Role.STATUS_WARNING if checked else palette.Role.TEXT_PRIMARY)
         self._update_mic_name_label()
 
-        self.peak_widget.data_held(checked)
+        # Held, the results' one refresh shows the held peaks and derives their labels. Refreshing the labels here
+        # too would show the selection against the live peaks still listed — none of them — and drop every label
+        # only for that refresh to make them again.
+        self.peak_widget.data_held(checked, refresh_labels=not checked)
+        if checked:
+            self._results_refresh.invalidate()
         mt = TDS.measurement_type()
         if not mt.is_guitar:
             self._material_section.setVisible(checked)
@@ -6737,6 +6774,7 @@ class MainWindow(QtWidgets.QMainWindow):
 # Play File Dialog — audio file + optional calibration selection
 # ---------------------------------------------------------------------------
 
+# @parity view/play-file-sheet
 class _PlayFileDialog(QtWidgets.QDialog):
     """Modal dialog for selecting an audio file and an optional calibration file.
 

@@ -1,3 +1,4 @@
+# @parity diagnostics/slack-probe
 """
 A diagnostic: how much time the main thread has to spare while audio runs. Off unless the environment variable
 ``GT_SLACK_PROBE`` is ``1``. Every 5 s it prints one line, in the same form in every edition:

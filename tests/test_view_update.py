@@ -1,3 +1,5 @@
+# @parity none — tests views/utilities/view_update.py, the part of SwiftUI's and React's view updating that Qt
+# Widgets leaves to the app; Swift and the web get it from their frameworks.
 """The view-update layer (views/utilities/view_update.py): one refresh per event-loop turn, children updated in
 place, styles and roles applied only when they change."""
 

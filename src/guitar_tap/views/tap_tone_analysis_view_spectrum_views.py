@@ -1,3 +1,4 @@
+# @parity view/material-instructions
 """
 Spectrum sub-views and plate/decay area rendering.
 

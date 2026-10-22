@@ -1,3 +1,5 @@
+# @parity none — Python's version and build number come from its version file, git or the
+# PyInstaller bundle; Swift's from its bundle, the web's from its build.
 """
 Application version and build number.
 

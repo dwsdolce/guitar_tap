@@ -1,3 +1,4 @@
+# @parity view/main
 """
 MainWindow signal wiring and control-state update methods.
 

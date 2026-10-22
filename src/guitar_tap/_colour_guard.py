@@ -1,3 +1,5 @@
+# @parity none — Swift and the web run the same rule as tooling scripts outside their source
+# (check-colours.sh, check-colours.mjs); Python runs it at start.
 """
 Colour guard — refuses to run when a colour or an opacity is written outside the palette.
 
