@@ -14,9 +14,9 @@ finds it once it can start.
 
 Where no PortAudio library can be found or loaded at all, ``sounddevice`` fails before it defines
 anything; ``sd`` is then a stand-in whose every audio call raises ``PortAudioError``, so the input
-is unavailable in the same way. The Linux app carries its own PortAudio (``libportaudio.so.2`` beside
-the bundled Python), which ``sounddevice`` — which looks only where the system keeps its libraries —
-is pointed at.
+is unavailable in the same way. The Linux app carries its own PortAudio (``libportaudio.so.2``
+beside the bundled Python), and ``sounddevice``, which looks only where the system keeps its
+libraries, is pointed at it.
 
 Every module takes ``sd`` from here rather than importing ``sounddevice`` itself.
 """
