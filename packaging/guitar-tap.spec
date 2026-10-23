@@ -35,11 +35,12 @@ package_version = f'{version}.{build}'
 
 print(f'Creating build for version {package_version}')
 
+# The icons and fonts go where the app reads them: beside its package, as in the source tree.
 added_files = [
     (os.path.join(project_root, 'src/guitar_tap/icons/guitar-tap.ico'), '.'),
-    (os.path.join(project_root, 'src/guitar_tap/icons'), 'icons'),
+    (os.path.join(project_root, 'src/guitar_tap/icons'), 'guitar_tap/icons'),
     # Liberation Sans, the font Linux draws the export in (SIL Open Font License).
-    (os.path.join(project_root, 'src/guitar_tap/fonts'), 'fonts'),
+    (os.path.join(project_root, 'src/guitar_tap/fonts'), 'guitar_tap/fonts'),
     (os.path.join(project_root, 'src/guitar_tap/version'), '.'),
 ]
 
@@ -73,7 +74,23 @@ if sys.platform.startswith('linux'):
     # PipeWire and PulseAudio bridges), which must match it — the AppImage exclusion list leaves it out
     # likewise. Every Linux with sound has it. (JACK's client library stays: PortAudio cannot load
     # without it, and it is harmless where no JACK server runs.)
-    a.binaries = [b for b in a.binaries if not os.path.basename(b[0]).startswith('libasound.so')]
+    #
+    # GTK and the libraries under it are the system's too. Qt draws the file dialogs with GTK, which
+    # loads the system's GIO modules (GVFS: the network and remote places); those are built against
+    # the system's GLib and do not load into an older bundled one. GTK, GLib and what GTK draws with
+    # (Pango, Cairo, HarfBuzz, fontconfig, FreeType) are all present on a Linux desktop, at the build
+    # machine's versions or newer, which run what was built against the older ones.
+    system_libraries = (
+        'libasound.so',
+        'libglib-2.0.so', 'libgobject-2.0.so', 'libgio-2.0.so', 'libgmodule-2.0.so', 'libgthread-2.0.so',
+        'libgtk-3.so', 'libgdk-3.so', 'libgdk_pixbuf-2.0.so',
+        'libatk-1.0.so', 'libatk-bridge-2.0.so', 'libatspi.so',
+        'libpango-1.0.so', 'libpangocairo-1.0.so', 'libpangoft2-1.0.so',
+        'libcairo.so', 'libcairo-gobject.so', 'libpixman-1.so', 'libepoxy.so',
+        'libharfbuzz.so', 'libgraphite2.so', 'libfribidi.so', 'libthai.so', 'libdatrie.so',
+        'libfontconfig.so', 'libfreetype.so',
+    )
+    a.binaries = [b for b in a.binaries if not os.path.basename(b[0]).startswith(system_libraries)]
 pyz = PYZ(a.pure)
 
 exe_args = [pyz, a.scripts, []]

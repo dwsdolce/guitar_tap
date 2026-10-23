@@ -89,13 +89,20 @@ jobs:
           echo "Newest glibc needed: $newest"
           printf '%s\n%s\n' "$newest" "GLIBC_2.35" | sort -V -C || { echo "Needs more than glibc 2.35"; exit 1; }
 
-      # The bundled audio libraries: PortAudio, and what the build pulled in with it.
-      - name: Bundled audio libraries
+      # The bundled audio libraries (PortAudio, and what the build pulled in with it); none of the libraries
+      # that must be the system's (packaging/guitar-tap.spec); the icons and fonts where the app reads them.
+      - name: Bundled libraries and files
         run: |
-          ls -l dist/guitar-tap/_internal | grep -i -E "portaudio|asound|jack|pulse" || true
-          if ls dist/guitar-tap/_internal | grep -q "^libasound"; then
-              echo "ALSA's library is bundled; it must be the system's"; exit 1
+          internal=dist/guitar-tap/_internal
+          ls -l "$internal" | grep -i -E "portaudio|asound|jack|pulse" || true
+          bundled=$(ls "$internal" | grep -E "^lib(asound|glib-2|gobject-2|gio-2|gmodule-2|gthread-2|gtk-3|gdk-3|gdk_pixbuf|atk|atspi|pango|cairo|pixman|epoxy|harfbuzz|graphite2|fribidi|thai|datrie|fontconfig|freetype)" || true)
+          if [ -n "$bundled" ]; then
+              echo "Bundled, but must be the system's:"; echo "$bundled"; exit 1
           fi
+          for file in guitar_tap/icons/guitar-tap.svg guitar_tap/icons/guitar-tap-splash.png \
+                      guitar_tap/fonts/LiberationSans-Regular.ttf; do
+              [ -f "$internal/$file" ] || { echo "Missing: $file"; exit 1; }
+          done
 
       # It starts and stays up, with no error — off-screen, in a settings sandbox of its own, with no sound
       # server and no PortAudio on the system: the bundled one is used.
