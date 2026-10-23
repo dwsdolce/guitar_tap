@@ -2,16 +2,14 @@
 
 import os
 import sys
-import platform
 
 # Resolve the project root relative to this spec file's location (packaging/).
 project_root = os.path.abspath(os.path.join(SPECPATH, '..'))
 
+# PortAudio: on macOS and Windows the sounddevice package carries its own, which PyInstaller's hook
+# collects; on Linux it carries none, so the build machine's is bundled.
 added_binaries = []
-if sys.platform == 'darwin':
-    if platform.machine() == 'x86_64':
-        added_binaries = [ ('/Users/dws/portaudio/lib/libportaudio.2.dylib', '.') ]
-elif sys.platform.startswith('linux'):
+if sys.platform.startswith('linux'):
     # The build machine's PortAudio (libportaudio2), carried beside the bundled Python so the app
     # needs no PortAudio on the user's system; models/audio_backend.py points sounddevice at it.
     # GT_PORTAUDIO_LIB names another; none found, the app relies on the system's.

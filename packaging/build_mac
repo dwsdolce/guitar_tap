@@ -52,7 +52,7 @@ fi
 MACSIGN_ENV="${MACSIGN_ENV:-$HOME/.config/macsign.env}"
 [[ -f "$MACSIGN_ENV" ]] && source "$MACSIGN_ENV"
 
-echo "Running build for `arch` architecure"
+echo "Running build for `arch` architecture"
 
 #===============================================
 # Clean-up

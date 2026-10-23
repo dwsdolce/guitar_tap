@@ -50,10 +50,10 @@ modern browser — all three are open source (see [Related projects](#related-pr
 
 ## Running from Installer
 
-Prebuilt installers for macOS and Windows are on the
-[releases page](https://github.com/dwsdolce/guitar_tap/releases).
-Please note that the macOS installer only runs on systems newer than Big Sur (11.0), due
-to the end of life of the earlier systems.
+Prebuilt installers for macOS (Apple Silicon), Windows and Linux (an AppImage) are on the
+[releases page](https://github.com/dwsdolce/guitar_tap/releases). An installed app needs nothing else on any
+platform: Python, Qt and PortAudio are inside it. The macOS installer runs on systems newer than Big Sur (11.0), due
+to the end of life of the earlier systems; the AppImage on Linux as old as Ubuntu 22.04.
 
 ## Setting up on a new machine
 
@@ -65,10 +65,11 @@ commands say `.venv/bin/`.
 
 ### 1. Prerequisites
 * Python 3.14 or later from https://www.python.org/, and git.
-* System packages:
-	- macOS: `brew install portaudio`
-	- Linux (Debian/Ubuntu): `sudo apt update && sudo apt install portaudio19-dev libxcb-cursor-dev`
-	- Windows: none.
+* System packages, to run from source:
+	- macOS: none — the `sounddevice` package carries its own PortAudio.
+	- Linux (Debian/Ubuntu): `sudo apt update && sudo apt install libportaudio2 libxcb-cursor-dev` — the Linux
+	  `sounddevice` package carries no PortAudio and uses the system's.
+	- Windows: none — as macOS.
 * For the Quick Start Guide (testing and installers only): a native Pango library — macOS `brew install pango`,
   Linux `sudo apt install libpango-1.0-0 libpangoft2-1.0-0`, Windows the GTK runtime (see
   `packaging/generate_guide.py`). For the release-notes PDF (macOS installer): `brew install pandoc` and
