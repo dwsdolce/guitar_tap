@@ -6,11 +6,8 @@ A diagnostic: how much time the main thread has to spare while audio runs. Off u
 - **lag** — a timer asks the main thread for a call every 5 ms; each call's lateness is the time the thread was
   busy with something else.
 - **latency** — from the audio thread handing a chunk to the main thread to the main thread taking it.
-- **busy time** per kind of work: the main thread's per-chunk work (``main/chunk``), the capture filling done on
-  the audio thread (``accumulate``), the FFT (``fft``), the main thread's work on each FFT frame (``frame``).
-
-With ``GT_SLACK_PROBE_FFT_ON_MAIN=1`` as well, the main thread also spins for the last FFT's duration after each
-frame — the cost it would carry if the FFT ran there.
+- **busy time** per kind of work: the main thread's per-chunk work (``main/chunk``), the capture filling within
+  it (``accumulate``), the FFT (``fft``), the work on each FFT frame (``frame``).
 
 Mirrors Swift ``SlackProbe`` and the web's ``slackProbe``.
 """
@@ -24,7 +21,6 @@ import time
 from contextlib import contextmanager
 
 ENABLED = os.environ.get("GT_SLACK_PROBE") == "1"
-FFT_ON_MAIN = os.environ.get("GT_SLACK_PROBE_FFT_ON_MAIN") == "1"
 
 _INTERVAL = 0.005
 _REPORT_EVERY = 5.0
@@ -33,7 +29,6 @@ _KINDS = ("main/chunk", "accumulate", "fft", "frame")
 _lock = threading.Lock()
 _samples: dict[str, list[float]] = collections.defaultdict(list)
 _handovers: collections.deque[float] = collections.deque()
-_last_fft_ms = 0.0
 _chunk_period_ms = 0.0
 _timer = None
 _expected = 0.0
@@ -46,13 +41,10 @@ def now() -> float:
 
 def record(kind: str, ms: float) -> None:
     """Record one duration (ms) of a kind of work; safe from any thread."""
-    global _last_fft_ms
     if not ENABLED:
         return
     with _lock:
         _samples[kind].append(ms)
-        if kind == "fft":
-            _last_fft_ms = ms
 
 
 @contextmanager
@@ -84,18 +76,6 @@ def taken() -> None:
     """On the main thread, as it takes the chunk handed over first (Qt delivers them in order)."""
     if ENABLED and _handovers:
         record("latency", (now() - _handovers.popleft()) * 1000)
-
-
-def simulate_fft_on_main() -> None:
-    """On the main thread after each FFT frame, with ``GT_SLACK_PROBE_FFT_ON_MAIN=1``: spin for the last FFT's
-    duration."""
-    if not (ENABLED and FFT_ON_MAIN):
-        return
-    with _lock:
-        ms = _last_fft_ms
-    until = now() + ms / 1000
-    while now() < until:
-        pass
 
 
 def start() -> None:
@@ -146,10 +126,8 @@ def _report(seconds: float) -> None:
     for kind in _KINDS:
         v = window.get(kind, [])
         total = sum(v)
-        if kind in ("main/chunk", "frame"):
+        if kind != "accumulate":  # accumulate is within main/chunk
             busy += total
         parts.append(f"{kind} avg {total / len(v) if v else 0:.2f} max {max(v, default=0):.2f} n {len(v)}")
     parts.append(f"main busy {busy / (seconds * 1000) * 100:.1f}%")
-    if FFT_ON_MAIN:
-        parts.append("(FFT simulated on main)")
     print(" | ".join(parts), flush=True)

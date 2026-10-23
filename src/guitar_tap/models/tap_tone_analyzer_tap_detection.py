@@ -461,7 +461,6 @@ class TapToneAnalyzerTapDetectionHandlerMixin:
         frame = self.mic.frame
         with _slack_probe.timed("frame"):
             self.on_fft_frame(frame.magnitudes, frame.peak_magnitude)
-            _slack_probe.simulate_fft_on_main()
 
     def on_fft_frame(self, mag_y_db, peak_db: float) -> None:
         """Receive a processed FFT frame (main thread).
