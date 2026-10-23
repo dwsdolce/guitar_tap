@@ -47,12 +47,13 @@ jobs:
         with:
           python-version: "3.14"
 
-      # The libraries Qt needs to start, as a Linux desktop has them, and PortAudio, which the build bundles
-      # (packaging/guitar-tap.spec) and the start test then removes.
+      # The libraries Qt needs to start, as a Linux desktop has them; and the two the build bundles
+      # (packaging/build_linux checks both): libxcb-cursor0, which Qt needs to open a window under X11 and not
+      # every desktop has, and PortAudio, which the start test then removes.
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libportaudio2
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libxcb-cursor0 libportaudio2
 
       - name: Python environment
         run: |
@@ -95,7 +96,7 @@ jobs:
         run: |
           internal=dist/guitar-tap/_internal
           ls -l "$internal" | grep -i -E "portaudio|asound|jack|pulse" || true
-          bundled=$(ls "$internal" | grep -E "^lib(asound|glib-2|gobject-2|gio-2|gmodule-2|gthread-2|gtk-3|gdk-3|gdk_pixbuf|atk|atspi|pango|cairo|pixman|epoxy|harfbuzz|graphite2|fribidi|thai|datrie|fontconfig|freetype)" || true)
+          bundled=$(ls "$internal" | grep -E "^lib(asound|glib-2|gobject-2|gio-2|gmodule-2|gthread-2|gtk-3|gdk-3|gdk_pixbuf|atk|atspi|pango|cairo|pixman|epoxy|harfbuzz|graphite2|fribidi|thai|datrie|fontconfig|freetype|mvec|stdc\+\+|gcc_s)" || true)
           if [ -n "$bundled" ]; then
               echo "Bundled, but must be the system's:"; echo "$bundled"; exit 1
           fi

@@ -41,6 +41,21 @@ fi
 "$PYTHON" src/guitar_tap/_release_guard.py || exit 1
 
 #===============================================
+# The system libraries the build bundles, which the user's system may not have:
+# PortAudio, and libxcb-cursor, which Qt needs to open a window under X11.
+# PyInstaller bundles only what this machine has, and leaves out the rest
+# without a word.
+#===============================================
+BUNDLED_SYSTEM_LIBS="libportaudio.so.2:libportaudio2 libxcb-cursor.so.0:libxcb-cursor0"
+for entry in $BUNDLED_SYSTEM_LIBS; do
+    lib="${entry%%:*}"
+    if ! PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | grep -qF "$lib ("; then
+        echo "$lib is not on this machine: install ${entry##*:} (sudo apt install ${entry##*:})"
+        exit 1
+    fi
+done
+
+#===============================================
 # Run pyinstaller
 #===============================================
 # Get the full version (e.g. 1.0.245) matching what the spec file produces
@@ -53,6 +68,13 @@ if [ $? -ne 0 ]; then
     echo "Running pyinstaller failed"
     exit 1
 fi
+for entry in $BUNDLED_SYSTEM_LIBS; do
+    lib="${entry%%:*}"
+    if [ ! -f "dist/guitar-tap/_internal/$lib" ]; then
+        echo "$lib was not bundled"
+        exit 1
+    fi
+done
 
 #===============================================
 # Assemble AppDir

@@ -67,8 +67,9 @@ commands say `.venv/bin/`.
 * Python 3.14 or later from https://www.python.org/, and git.
 * System packages, to run from source:
 	- macOS: none — the `sounddevice` package carries its own PortAudio.
-	- Linux (Debian/Ubuntu): `sudo apt update && sudo apt install libportaudio2 libxcb-cursor-dev` — the Linux
-	  `sounddevice` package carries no PortAudio and uses the system's.
+	- Linux (Debian/Ubuntu): `sudo apt update && sudo apt install libportaudio2 libxcb-cursor0` — the Linux
+	  `sounddevice` package carries no PortAudio and uses the system's; Qt needs `libxcb-cursor0` to open a window
+	  under X11.
 	- Windows: none — as macOS.
 * For the Quick Start Guide (testing and installers only): a native Pango library — macOS `brew install pango`,
   Linux `sudo apt install libpango-1.0-0 libpangoft2-1.0-0`, Windows the GTK runtime (see
@@ -140,7 +141,8 @@ runtime needs no `libfuse2` on the user's system:
 	- `wget -O ~/bin/appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage`
 	- `chmod +x ~/bin/appimagetool`
 	- If `appimagetool` is elsewhere, set `APPIMAGETOOL=/path/to/appimagetool` before running `build_linux`.
-	- `sudo apt install libportaudio2`: the build bundles it, so the app needs no PortAudio on the user's system.
+	- `sudo apt install libportaudio2 libxcb-cursor0`: the build bundles both, so the app needs neither on the user's
+	  system; `build_linux` stops if either is missing.
 
 **Windows:** the installer step uses [Inno Setup 6](https://jrsoftware.org/isinfo.php) — install it in its default folder (`C:\Program Files (x86)\Inno Setup 6`), where `build_win` runs `ISCC.exe`. The Windows build is not code-signed.
 

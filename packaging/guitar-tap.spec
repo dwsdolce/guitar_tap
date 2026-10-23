@@ -89,6 +89,9 @@ if sys.platform.startswith('linux'):
         'libcairo.so', 'libcairo-gobject.so', 'libpixman-1.so', 'libepoxy.so',
         'libharfbuzz.so', 'libgraphite2.so', 'libfribidi.so', 'libthai.so', 'libdatrie.so',
         'libfontconfig.so', 'libfreetype.so',
+        # Part of the C library, and the C++ and GCC runtimes: the system's graphics drivers load into the
+        # app and need the system's own, which are at the build machine's versions or newer.
+        'libmvec.so', 'libstdc++.so', 'libgcc_s.so',
     )
     a.binaries = [b for b in a.binaries if not os.path.basename(b[0]).startswith(system_libraries)]
 pyz = PYZ(a.pure)
