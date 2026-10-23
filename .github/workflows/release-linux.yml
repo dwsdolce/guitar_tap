@@ -91,7 +91,11 @@ jobs:
 
       # The bundled audio libraries: PortAudio, and what the build pulled in with it.
       - name: Bundled audio libraries
-        run: ls -l dist/guitar-tap/_internal | grep -i -E "portaudio|asound|jack|pulse" || true
+        run: |
+          ls -l dist/guitar-tap/_internal | grep -i -E "portaudio|asound|jack|pulse" || true
+          if ls dist/guitar-tap/_internal | grep -q "^libasound"; then
+              echo "ALSA's library is bundled; it must be the system's"; exit 1
+          fi
 
       # It starts and stays up, with no error — off-screen, in a settings sandbox of its own, with no sound
       # server and no PortAudio on the system: the bundled one is used.

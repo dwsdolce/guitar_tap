@@ -16,17 +16,19 @@ import subprocess
 import sys
 import textwrap
 
+import pytest
+
 SRC = os.path.join(os.path.dirname(__file__), "..", "src")
 
-# PortAudio's start fails while state["fail"], and no PortAudio library is found while state["missing"]
-# (as on Linux without libportaudio2): sounddevice opens its library through _sounddevice.ffi.dlopen,
-# which the wrapper replaces.
+# PortAudio's start fails while state["fail"]; while state["missing"] names an error, PortAudio's library
+# cannot be loaded, with that error (as on Linux without libportaudio2, or without a library it needs):
+# sounddevice opens its library through _sounddevice.ffi.dlopen, which the wrapper replaces.
 PRELUDE = textwrap.dedent("""
     import os, sys
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     sys.path.insert(0, {src!r})
     import _sounddevice
-    state = {{"fail": True, "missing": False}}
+    state = {{"fail": True, "missing": None}}
 
     class Lib:
         def __init__(self, lib): self._real = lib
@@ -37,7 +39,7 @@ PRELUDE = textwrap.dedent("""
         def __init__(self, ffi): self._real = ffi
         def dlopen(self, name):
             if state["missing"]:
-                raise OSError("PortAudio library not found")
+                raise OSError(state["missing"])
             return Lib(self._real.dlopen(name))
         def __getattr__(self, name): return getattr(self._real, name)
 
@@ -105,16 +107,20 @@ def test_portaudio_starts_once_it_can():
     assert out.split() == ["True", "True", "list"]
 
 
-def test_with_no_portaudio_library_the_input_is_unavailable():
-    """No PortAudio library at all (Linux without libportaudio2): sounddevice fails before it defines
-    anything; a stand-in takes its place, the app's modules load, and a start leaves the input
-    unavailable — the app is not broken."""
-    out = run("""
-        state["missing"] = True
+@pytest.mark.parametrize("error", [
+    "PortAudio library not found",                                      # no libportaudio2
+    "libjack.so.0: cannot open shared object file: No such file or directory",  # a library it needs missing
+])
+def test_with_no_portaudio_library_the_input_is_unavailable(error):
+    """No PortAudio library that loads (Linux without libportaudio2, or without a library it needs):
+    sounddevice fails before it defines anything; a stand-in takes its place, the app's modules load, and
+    a start leaves the input unavailable — the app is not broken."""
+    out = run(f"""
+        state["missing"] = {error!r}
         from guitar_tap.models import audio_backend
         from guitar_tap.models.realtime_fft_analyzer import RealtimeFFTAnalyzer
         print("loaded", audio_backend.portaudio_started(),
-              audio_backend.NO_LIBRARY in str(audio_backend.start_error))
+              {error!r} in str(audio_backend.start_error))
         analyzer = RealtimeFFTAnalyzer.for_testing()
         analyzer.is_for_testing = False
         analyzer._check_microphone_permission = lambda: True

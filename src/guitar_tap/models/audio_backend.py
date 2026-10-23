@@ -12,9 +12,9 @@ analyzer reports as "Audio input unavailable" — and PortAudio is started again
 (``ensure_portaudio_started``) at each start and each device listing, so a later start or listing
 finds it once it can start.
 
-Where no PortAudio library can be found at all, ``sounddevice`` fails before it defines anything;
-``sd`` is then a stand-in whose every audio call raises ``PortAudioError``, so the input is
-unavailable in the same way. The Linux app carries its own PortAudio (``libportaudio.so.2`` beside
+Where no PortAudio library can be found or loaded at all, ``sounddevice`` fails before it defines
+anything; ``sd`` is then a stand-in whose every audio call raises ``PortAudioError``, so the input
+is unavailable in the same way. The Linux app carries its own PortAudio (``libportaudio.so.2`` beside
 the bundled Python), which ``sounddevice`` — which looks only where the system keeps its libraries —
 is pointed at.
 
@@ -31,9 +31,6 @@ from types import ModuleType
 
 #: The error PortAudio gave the last time it could not start, or ``None``.
 start_error: Exception | None = None
-
-#: The message of the error a missing PortAudio library gives.
-NO_LIBRARY = "PortAudio library not found"
 
 
 def _bundled_portaudio() -> str | None:
@@ -72,8 +69,8 @@ def _stand_in(error: Exception) -> ModuleType:
 
 def _load() -> ModuleType:
     """Load ``sounddevice``, keeping the module when only its PortAudio start fails, and standing
-    in for it when no PortAudio library can be found. Any other failure is raised, as an import
-    would."""
+    in for it when no PortAudio library can be found or loaded. Any other failure is raised, as an
+    import would."""
     global start_error
     existing = sys.modules.get("sounddevice")
     if existing is not None:
@@ -93,9 +90,8 @@ def _load() -> ModuleType:
     try:
         spec.loader.exec_module(module)
     except OSError as exc:
-        if NO_LIBRARY not in str(exc):
-            sys.modules.pop("sounddevice", None)
-            raise
+        # sounddevice raises OSError only as it loads PortAudio: no library found, or one that
+        # cannot be loaded (a library it needs missing).
         start_error = exc
         module = _stand_in(exc)
         sys.modules["sounddevice"] = module

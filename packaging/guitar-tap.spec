@@ -70,6 +70,12 @@ a = Analysis(
     excludes=['scipy'],
     noarchive=False,
 )
+if sys.platform.startswith('linux'):
+    # ALSA's library is the system's: it reads the system's ALSA configuration and loads its plugins (the
+    # PipeWire and PulseAudio bridges), which must match it — the AppImage exclusion list leaves it out
+    # likewise. Every Linux with sound has it. (JACK's client library stays: PortAudio cannot load
+    # without it, and it is harmless where no JACK server runs.)
+    a.binaries = [b for b in a.binaries if not os.path.basename(b[0]).startswith('libasound.so')]
 pyz = PYZ(a.pure)
 
 exe_args = [pyz, a.scripts, []]
