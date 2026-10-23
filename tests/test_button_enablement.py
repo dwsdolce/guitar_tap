@@ -54,7 +54,8 @@ def _state(s: dict) -> ButtonState:
 @pytest.mark.parametrize("row", CASES, ids=lambda r: r["id"])
 def test_button_rule(row):
     out = button_rule(_state(row["state"]))
-    names = {"pauseEnabled": "pause_enabled", "newTapDisabled": "new_tap_disabled", "cancelEnabled": "cancel_enabled"}
+    names = {"pauseEnabled": "pause_enabled", "newTapDisabled": "new_tap_disabled", "cancelEnabled": "cancel_enabled",
+             "typeMenuEnabled": "type_menu_enabled"}
     for key, expected in row["expect"].items():
         assert getattr(out, names[key]) is expected, key
 

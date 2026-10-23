@@ -142,8 +142,9 @@ def _build_help_html() -> str:
     ))
     parts.append(_row(
         "Choose a Measurement Type",
-        "In Settings, the Measurement Type section is directly below Audio Input. "
-        "Pick Generic Guitar (the default, with broad ranges that work for any guitar), "
+        "Use the type button beside New Tap &mdash; it shows the current type, and choosing "
+        "another starts a new tap of it &mdash; or the Measurement Type section in Settings, "
+        "directly below Audio Input. Pick Generic Guitar (the default, with broad ranges that work for any guitar), "
         "Acoustic / Steel String, Classical, Flamenco, Material (Plate), or "
         "Material (Brace). The right choice determines which mode-frequency ranges are "
         "used and which measurements are calculated."
@@ -361,6 +362,13 @@ def _build_help_html() -> str:
         "other times, including after a measurement completes (use Cancel to abandon one "
         "in progress). A green indicator shows when a tap has been registered.",
         ["mdi.gesture-tap"]
+    ))
+    parts.append(_row(
+        "Measurement Type (beside New Tap)",
+        "Shows the current measurement type. Its menu lists the six types; choosing one makes "
+        "it the measurement type and starts a new tap of it, as choosing it in Settings does. "
+        "Disabled only while a file plays.",
+        ["mdi.chevron-down"]
     ))
     parts.append(_row(
         "Pause / Resume &bull; Accept (plate/brace review)",

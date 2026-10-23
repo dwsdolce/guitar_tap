@@ -1104,6 +1104,29 @@ class MainWindow(QtWidgets.QMainWindow):
         self.new_tap_btn.setEnabled(False)
         hl.addWidget(self.new_tap_btn)
 
+        # ── Measurement type, beside New Tap ──────────────────────────────
+        # Shows the current type; its menu lists the six types, and choosing one makes it the
+        # measurement type and starts a new tap of it — the same change as the Settings picker, without
+        # the dialog. Enabled by the button rule (type_menu_enabled). Comparisons are made in Saved
+        # Measurements, so they are not offered here. Mirrors Swift TapToneAnalysisView.newTapButton.
+        self.type_btn = QtWidgets.QPushButton()
+        palette.tag(self.type_btn, tint=palette.Role.ACCENT)
+        self.type_btn.setStyleSheet("QPushButton::menu-indicator { image: none; width: 0px; }")
+        self.type_btn.setToolTip("Measurement type: choose one to start a new tap of it")
+        type_menu = QtWidgets.QMenu(self.type_btn)
+        for section, members in (("Guitar", [t for t in MT.MeasurementType if t.is_guitar]),
+                                 ("Material", [t for t in MT.MeasurementType if not t.is_guitar])):
+            type_menu.addSection(section)
+            for t in members:
+                action = type_menu.addAction(t.value)
+                action.setCheckable(True)
+                action.setData(t)
+                action.triggered.connect(lambda _checked=False, t=t: self._start_new_tap_of(t))
+        type_menu.aboutToShow.connect(self._tick_current_type)
+        self.type_btn.setMenu(type_menu)
+        self._update_type_button()
+        hl.addWidget(self.type_btn)
+
         # ── Pause / Resume ────────────────────────────────────────────────
         self.pause_tap_btn = QtWidgets.QPushButton("Pause")
         palette.set_icon(self.pause_tap_btn, "mdi.pause-circle-outline", palette.Role.ACCENT)
@@ -3100,6 +3123,8 @@ class MainWindow(QtWidgets.QMainWindow):
             is_playing_file=analyzer.mic.is_playing_file,
         ))
         self.new_tap_btn.setEnabled(not out.new_tap_disabled)
+        self.type_btn.setEnabled(out.type_menu_enabled)
+        self._update_type_button()
         self.pause_tap_btn.setEnabled(out.pause_enabled)
         self.cancel_tap_btn.setEnabled(out.cancel_enabled)
 
@@ -3302,6 +3327,26 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.fft_canvas.restart_tap_sequence()
 
+    def _start_new_tap_of(self, mt: "MT.MeasurementType") -> None:
+        """Make ``mt`` the measurement type — the chart moving to that type's saved range, as when the
+        Settings picker changes it — and start a new tap of it. Mirrors Swift ``startNewTap(of:)``."""
+        if mt != TDS.measurement_type():
+            AS.AppSettings.set_measurement_type(mt)
+            self.fft_canvas.apply_chart_range(self.fft_canvas.saved_chart_range(mt))
+            self._apply_measurement_type_to_ui()
+        self._on_new_tap()
+
+    def _update_type_button(self) -> None:
+        """The type button shows the current type's short name."""
+        self.type_btn.setText(f"{TDS.measurement_type().short_name} \u25BE")
+
+    def _tick_current_type(self) -> None:
+        """Tick the current type in the type button's menu as it opens."""
+        current = TDS.measurement_type()
+        for action in self.type_btn.menu().actions():
+            if action.isCheckable():
+                action.setChecked(action.data() == current)
+
     def _on_dump_folder_unreachable(self) -> None:
         """Arming was refused: Dump Capture Audio is on but its folder can't be reached. Prompt
         before capturing rather than losing the write at completion. Change Location retries the
@@ -3467,6 +3512,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Called after a load (_on_measurement_loaded) and after Settings changes the type
         (_on_measurement_type_changed); neither restarts the tap sequence here.
         """
+        self._update_type_button()
         mt = TDS.measurement_type()
         self.fft_canvas.apply_measurement_type(mt)
         # The chart's range is not touched here: a load shows the measurement's range, and Settings'

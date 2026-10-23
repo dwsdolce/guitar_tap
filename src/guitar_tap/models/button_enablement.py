@@ -55,6 +55,10 @@ class ButtonOutput:
     pause_enabled: bool
     new_tap_disabled: bool
     cancel_enabled: bool
+    # The measurement-type button beside New Tap. Choosing a type restarts with it, as the Settings picker
+    # does, so it is enabled whenever that is — during a sequence too — except during a file playback,
+    # which Cancel stops first.
+    type_menu_enabled: bool
 
 
 def button_rule(s: ButtonState) -> ButtonOutput:
@@ -63,7 +67,8 @@ def button_rule(s: ButtonState) -> ButtonOutput:
     # delivers taps back to back, so pausing detection while the file plays on would only let taps
     # go by, and a new sequence would be fed the rest of the file.
     if s.is_playing_file:
-        return ButtonOutput(pause_enabled=False, new_tap_disabled=True, cancel_enabled=True)
+        return ButtonOutput(pause_enabled=False, new_tap_disabled=True, cancel_enabled=True,
+                            type_menu_enabled=False)
 
     is_guitar = s.measurement_type.is_guitar
 
@@ -113,4 +118,5 @@ def button_rule(s: ButtonState) -> ButtonOutput:
         pause_enabled=pause_enabled,
         new_tap_disabled=new_tap_disabled,
         cancel_enabled=cancel_enabled,
+        type_menu_enabled=True,
     )

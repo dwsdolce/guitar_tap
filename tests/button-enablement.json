@@ -1,6 +1,6 @@
 {
  "slug": "test/button-enablement",
- "about": "The Pause / New Tap / Cancel enablement rule (buttonRule), B1–B16, the same cases in every edition. 'state' gives only the fields a case sets; the rest take each edition's defaults (isReadyForDetection true, fftIsRunning true, measurementType generic, materialTapPhase notStarted, numberOfTaps 1, isPlayingFile false), so the run also checks the defaults agree. 'expect' lists the outputs a case checks. Names are Swift's. Expected values are Swift's.",
+ "about": "The Pause / New Tap / Cancel / measurement-type enablement rule (buttonRule), B1–B16, the same cases in every edition. 'state' gives only the fields a case sets; the rest take each edition's defaults (isReadyForDetection true, fftIsRunning true, measurementType generic, materialTapPhase notStarted, numberOfTaps 1, isPlayingFile false), so the run also checks the defaults agree. 'expect' lists the outputs a case checks. Names are Swift's. Expected values are Swift's.",
  "buttonRule": [
   {
    "id": "B1",
@@ -28,7 +28,8 @@
    "expect": {
     "pauseEnabled": true,
     "newTapDisabled": true,
-    "cancelEnabled": false
+    "cancelEnabled": false,
+    "typeMenuEnabled": true
    }
   },
   {
@@ -72,7 +73,8 @@
    "expect": {
     "pauseEnabled": true,
     "newTapDisabled": true,
-    "cancelEnabled": true
+    "cancelEnabled": true,
+    "typeMenuEnabled": true
    }
   },
   {
@@ -103,7 +105,8 @@
    "expect": {
     "pauseEnabled": true,
     "newTapDisabled": true,
-    "cancelEnabled": true
+    "cancelEnabled": true,
+    "typeMenuEnabled": true
    }
   },
   {
@@ -132,7 +135,8 @@
     "displayMode": "live"
    },
    "expect": {
-    "newTapDisabled": true
+    "newTapDisabled": true,
+    "typeMenuEnabled": true
    }
   },
   {
@@ -144,7 +148,8 @@
     "displayMode": "comparison"
    },
    "expect": {
-    "newTapDisabled": false
+    "newTapDisabled": false,
+    "typeMenuEnabled": true
    }
   },
   {
@@ -209,7 +214,8 @@
    "expect": {
     "pauseEnabled": false,
     "newTapDisabled": true,
-    "cancelEnabled": true
+    "cancelEnabled": true,
+    "typeMenuEnabled": false
    }
   },
   {
@@ -225,7 +231,8 @@
    "expect": {
     "pauseEnabled": false,
     "newTapDisabled": true,
-    "cancelEnabled": true
+    "cancelEnabled": true,
+    "typeMenuEnabled": false
    }
   },
   {
@@ -242,7 +249,8 @@
    "expect": {
     "pauseEnabled": false,
     "newTapDisabled": true,
-    "cancelEnabled": true
+    "cancelEnabled": true,
+    "typeMenuEnabled": false
    }
   }
  ]
