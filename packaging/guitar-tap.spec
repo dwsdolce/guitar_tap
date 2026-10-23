@@ -11,6 +11,18 @@ added_binaries = []
 if sys.platform == 'darwin':
     if platform.machine() == 'x86_64':
         added_binaries = [ ('/Users/dws/portaudio/lib/libportaudio.2.dylib', '.') ]
+elif sys.platform.startswith('linux'):
+    # The build machine's PortAudio (libportaudio2), carried beside the bundled Python so the app
+    # needs no PortAudio on the user's system; models/audio_backend.py points sounddevice at it.
+    # GT_PORTAUDIO_LIB names another; none found, the app relies on the system's.
+    import glob
+    if os.environ.get('GT_PORTAUDIO_LIB'):
+        candidates = [os.environ['GT_PORTAUDIO_LIB']]
+    else:
+        candidates = sorted(glob.glob('/usr/lib/*/libportaudio.so.2')
+                            + glob.glob('/usr/lib/libportaudio.so.2'))
+    if candidates:
+        added_binaries = [ (candidates[0], '.') ]
 
 with open(os.path.join(project_root, 'src/guitar_tap/version'), 'r') as f:
     version = f.read().strip()

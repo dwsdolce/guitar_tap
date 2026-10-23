@@ -47,12 +47,12 @@ jobs:
         with:
           python-version: "3.14"
 
-      # The libraries Qt needs to start, as a Linux desktop has them. No PortAudio and no sound server: the
-      # start test below sees what a user without them sees.
+      # The libraries Qt needs to start, as a Linux desktop has them, and PortAudio, which the build bundles
+      # (packaging/guitar-tap.spec) and the start test then removes.
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libportaudio2
 
       - name: Python environment
         run: |
@@ -89,13 +89,20 @@ jobs:
           echo "Newest glibc needed: $newest"
           printf '%s\n%s\n' "$newest" "GLIBC_2.35" | sort -V -C || { echo "Needs more than glibc 2.35"; exit 1; }
 
-      # It starts and stays up — off-screen, in a settings sandbox of its own, with no sound server.
+      # The bundled audio libraries: PortAudio, and what the build pulled in with it.
+      - name: Bundled audio libraries
+        run: ls -l dist/guitar-tap/_internal | grep -i -E "portaudio|asound|jack|pulse" || true
+
+      # It starts and stays up, with no error — off-screen, in a settings sandbox of its own, with no sound
+      # server and no PortAudio on the system: the bundled one is used.
       - name: Start test
         env:
           QT_QPA_PLATFORM: offscreen
           GT_TEST_SANDBOX: "1"
+          GT_AUDIO_BACKEND_REPORT: "1"
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
+          sudo apt-get remove -y libportaudio2
           set +e
           timeout 20 "$(ls dist/guitar-tap-*.AppImage)" > start.log 2>&1
           code=$?
@@ -103,6 +110,9 @@ jobs:
           echo "exit code $code (124: still running when stopped, as wanted)"
           [ "$code" = 124 ] || exit 1
           if grep -q "Traceback" start.log; then echo "An error was raised while starting"; exit 1; fi
+          grep "audio backend:" start.log
+          grep -q "audio backend: library .*/_internal/libportaudio.so.2" start.log \
+              || { echo "The bundled PortAudio was not the one loaded"; exit 1; }
 
       - uses: actions/upload-artifact@v7
         with:

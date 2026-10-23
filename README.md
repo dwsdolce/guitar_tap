@@ -131,12 +131,15 @@ Then run the platform script from the repository root:
 
 ### Platform-specific tooling
 
-**Linux (AppImage):** the build script invokes `appimagetool`. Install it once:
-	- `wget -O ~/bin/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage`
+**Linux (AppImage):** the release's AppImage is built by GitHub Actions (`.github/workflows/release-linux.yml`) on
+Ubuntu 22.04, the oldest supported LTS, and attached to the release when it is published — an AppImage starts only
+on Linux as new as the machine it was built on. The workflow can also be run by hand for a tag or branch (Actions →
+Linux AppImage → Run workflow). To build one locally, `build_linux` invokes the current `appimagetool`, whose
+runtime needs no `libfuse2` on the user's system:
+	- `wget -O ~/bin/appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage`
 	- `chmod +x ~/bin/appimagetool`
 	- If `appimagetool` is elsewhere, set `APPIMAGETOOL=/path/to/appimagetool` before running `build_linux`.
-	- On Ubuntu 22.04+ you may also need `sudo apt install libfuse2` for `appimagetool` to run.
-	- For broadest compatibility, build inside a container running the oldest glibc you want to support (e.g. Ubuntu 22.04 LTS).
+	- `sudo apt install libportaudio2`: the build bundles it, so the app needs no PortAudio on the user's system.
 
 **Windows:** the installer step uses [Inno Setup 6](https://jrsoftware.org/isinfo.php) — install it in its default folder (`C:\Program Files (x86)\Inno Setup 6`), where `build_win` runs `ISCC.exe`. The Windows build is not code-signed.
 
