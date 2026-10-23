@@ -82,8 +82,9 @@ from typing import Callable
 
 import numpy as np
 import numpy.typing as npt
-import sounddevice as sd
 from PySide6 import QtCore
+
+from guitar_tap.models.audio_backend import sd
 
 from guitar_tap.models.dead_input import BUFFER_DELIVERY_TIMEOUT, DEAD_INPUT_DWELL
 from guitar_tap.models.input_level import InputLevel

@@ -37,8 +37,8 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
-import sounddevice as sd
 
+from guitar_tap.models.audio_backend import ensure_portaudio_started, portaudio_started, sd
 from guitar_tap.utilities.logging import gt_log
 
 # ── Timeout-protected PortAudio exit handler (POSIX only) ─────────────
@@ -248,7 +248,9 @@ def _devices_with_host_api_names() -> "list[dict]":
     """PortAudio's devices, each annotated with its host API's name (``_hostapi_name``), so
     filter_input_devices can drop WDM-KS and keep one API even if a later query_hostapis() call
     fails during a Windows device-enumeration cascade. Every listing goes through it — the
-    launch's and a refresh's alike."""
+    launch's and a refresh's alike. Starts PortAudio first if it has not started (no sound server
+    when the app did); raises ``sd.PortAudioError`` while it cannot."""
+    ensure_portaudio_started()
     raw = list(sd.query_devices())
     try:
         apis = list(sd.query_hostapis())
@@ -507,7 +509,8 @@ class RealtimeFFTAnalyzerDeviceManagementMixin:
             self._portaudio_reinit_owed = True
             return False
         try:
-            sd._terminate()
+            if portaudio_started():
+                sd._terminate()
             sd._initialize()
         except Exception:
             pass

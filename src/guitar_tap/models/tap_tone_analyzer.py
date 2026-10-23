@@ -1519,9 +1519,8 @@ class TapToneAnalyzer(
         Args:
             parent_widget: The FftCanvas (QObject parent).
         """
-        import sounddevice as _sd
-
         from guitar_tap.models import microphone_calibration as _mc_mod
+        from guitar_tap.models.audio_backend import sd as _sd
 
         self._sd = _sd
         self._mc_mod = _mc_mod

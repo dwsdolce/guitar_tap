@@ -16,9 +16,9 @@ import time
 from pathlib import Path
 
 import pytest
-import sounddevice
 from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 
+from guitar_tap.models.audio_backend import sd as sounddevice
 from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
 
 FIXTURES = Path(__file__).parent

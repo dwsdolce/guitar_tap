@@ -2241,8 +2241,7 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas.devicesChanged.connect(self._on_devices_changed)
         canvas.currentDeviceLost.connect(self._on_device_lost)
         try:
-            import sounddevice as sd  # lazy: defers ~400 ms cold-import cost
-
+            from guitar_tap.models.audio_backend import sd
             from guitar_tap.models.audio_device import filter_input_devices as _filt
             self._known_input_device_names: set[str] = {
                 str(d["name"]) for d in _filt(list(sd.query_devices()))

@@ -179,8 +179,8 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 import numpy.typing as npt
-import sounddevice as sd
 
+from guitar_tap.models.audio_backend import ensure_portaudio_started, portaudio_started, sd
 from guitar_tap.models.dead_input import (
     BUFFER_DELIVERY_TIMEOUT,
     DEAD_INPUT_DWELL,
@@ -369,6 +369,13 @@ class RealtimeFFTAnalyzerEngineControlMixin:
         gt_log("🎤 === Starting Audio Engine ===")
         if not self._check_microphone_permission():
             return  # asked for it; the start resumes once granted
+        # PortAudio may not have started when the app did (no sound server); it is started here,
+        # and a PortAudioError leaves the input unavailable. Started now, its devices are listed
+        # first.
+        started_now = not portaudio_started()
+        ensure_portaudio_started()
+        if started_now:
+            self.load_available_input_devices()
         if self.stream is None:
             from .realtime_fft_analyzer_device_management import (
                 _log_stream_diagnostics,

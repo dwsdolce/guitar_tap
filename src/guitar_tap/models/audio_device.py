@@ -158,7 +158,7 @@ class AudioDevice:
 
         Python-only — Swift resolves devices via CoreAudio/AVAudioSession enumeration.
         """
-        import sounddevice as _sd
+        from guitar_tap.models.audio_backend import sd as _sd
         try:
             devs = devices if devices is not None else list(_sd.query_devices())
         except Exception:
@@ -205,7 +205,7 @@ def filter_input_devices(raw: "list[dict]") -> "list[dict]":
     """
     import platform
 
-    import sounddevice as _sd
+    from guitar_tap.models.audio_backend import sd as _sd
 
     inputs = [d for d in raw if int(d["max_input_channels"]) > 0]
     if platform.system() != "Windows":
