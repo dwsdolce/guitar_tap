@@ -82,10 +82,13 @@ chmod +x "$APPDIR/AppRun"
 #===============================================
 # Build the AppImage
 #===============================================
+# The current appimagetool (github.com/AppImage/appimagetool), whose static runtime needs no libfuse2 on the
+# user's system — not the old AppImageKit one. Releases are built by .github/workflows/release-linux.yml on the
+# oldest supported Ubuntu LTS; a build here starts only on Linux as new as this machine's.
 APPIMAGETOOL="${APPIMAGETOOL:-$HOME/bin/appimagetool}"
 if [ ! -x "$APPIMAGETOOL" ]; then
     echo "appimagetool not found at $APPIMAGETOOL"
-    echo "Download it from https://github.com/AppImage/AppImageKit/releases"
+    echo "Download appimagetool-x86_64.AppImage from https://github.com/AppImage/appimagetool/releases"
     echo "or set APPIMAGETOOL=/path/to/appimagetool"
     exit 1
 fi

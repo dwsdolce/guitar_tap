@@ -1,0 +1,115 @@
+# The Linux AppImage, built on the oldest supported Ubuntu LTS so it starts on every supported Linux, and
+# attached to the GitHub release.
+#
+# An AppImage uses the system's C library, so the machine it is built on sets the oldest Linux it runs on:
+# here Ubuntu 22.04 (glibc 2.35), with the Python that setup-python builds for it. The current appimagetool
+# embeds a static runtime, which needs no libfuse2 on the user's system.
+#
+# Runs when a release is published (the AppImage of its tag is attached to it), or by hand for a tag or
+# branch — attached to that tag's release only when asked, otherwise kept as the run's artifact.
+name: Linux AppImage
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or branch to build"
+        required: true
+        default: main
+      upload:
+        description: "Attach the AppImage to the release of that tag"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+    env:
+      REF: ${{ github.event.release.tag_name || inputs.ref }}
+      APPIMAGETOOL_VERSION: "1.9.1"
+    steps:
+      # The whole history: the build number is the commit count, and the release guard compares the version
+      # with the last release's tag.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.REF }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      # The libraries Qt needs to start, as a Linux desktop has them. No PortAudio and no sound server: the
+      # start test below sees what a user without them sees.
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+      - name: Python environment
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-packaging.txt
+          .venv/bin/python -m pip install -e . --no-deps
+
+      - name: appimagetool
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
+            "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+
+      # appimagetool is itself an AppImage; extracted and run, it needs no FUSE on the runner.
+      - name: Build
+        env:
+          APPIMAGETOOL: ${{ runner.temp }}/appimagetool
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: ./packaging/build_linux
+
+      # The oldest Linux it starts on: the newest glibc symbol any bundled library needs, and a runtime that
+      # does not link libfuse2.
+      - name: Check what it needs from the system
+        run: |
+          image=$(ls dist/guitar-tap-*.AppImage)
+          echo "Built $image"
+          if ldd "$image" 2>&1 | grep -q "libfuse"; then
+              echo "The runtime links libfuse:"; ldd "$image"; exit 1
+          fi
+          newest=$(find dist/AppDir -type f \( -name '*.so*' -o -perm -u+x \) -exec objdump -T {} + 2>/dev/null \
+              | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "Newest glibc needed: $newest"
+          printf '%s\n%s\n' "$newest" "GLIBC_2.35" | sort -V -C || { echo "Needs more than glibc 2.35"; exit 1; }
+
+      # It starts and stays up — off-screen, in a settings sandbox of its own, with no sound server.
+      - name: Start test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          GT_TEST_SANDBOX: "1"
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set +e
+          timeout 20 "$(ls dist/guitar-tap-*.AppImage)" > start.log 2>&1
+          code=$?
+          tail -30 start.log
+          echo "exit code $code (124: still running when stopped, as wanted)"
+          [ "$code" = 124 ]
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: guitar-tap-appimage
+          path: dist/guitar-tap-*.AppImage
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: github.event_name == 'release' || inputs.upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$REF" dist/guitar-tap-*.AppImage --clobber
