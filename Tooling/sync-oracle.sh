@@ -13,11 +13,7 @@
 # Sources, in the order tried:
 #   ORACLE_SRC       a hub working copy (directory or file), when set explicitly — always wins
 #   ../guitar-tap-project   the hub directory beside this repo, read only if it is there
-#   ORACLE_URL       a raw URL — the long-term source once the hub is public
-#
-# The middle rung was added in #17. Before it, a machine with the hub sitting right next to the
-# repo still fell through to the URL, which 404s while the hub is private — so the staleness
-# check skipped everywhere and the vendored oracle was never actually checked for drift.
+#   ORACLE_URL       the hub's published copy (a raw GitHub URL), for a working copy with no hub beside it
 #
 # --publish deliberately does NOT use the middle rung: it WRITES, and inferring a destination is
 # a different risk from inferring a source. Publishing stays explicit about where it is going.
@@ -59,10 +55,6 @@ trap 'rm -f "$tmp"' EXIT
 #      toolchain already resolves the repos this way (gen_parity_map.py: "the code repos are
 #      siblings of the hub").
 #   3. The published URL, for a working copy with no hub beside it.
-#
-# Rung 2 was missing at first. Without it the staleness check fell straight through to a URL
-# that 404s while the hub is private, so it skipped on every machine that had the hub sitting
-# right next to it — the vendored oracle was never actually checked for drift anywhere.
 #
 # Rungs 1 and 2 read a WORKING COPY, not a published artifact, so what they compare against is
 # whatever is on disk — including edits nobody has committed yet. That is usually what you want

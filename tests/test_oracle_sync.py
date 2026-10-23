@@ -9,11 +9,10 @@ against the stale copy — they are measuring agreement with yesterday.
 ``Tooling/sync-oracle.sh --check`` is the existing answer, and it has always had to be run
 by hand. This puts it in the suite, where it runs without being remembered.
 
-It cannot always run. While the hub is private the published URL 404s, so canonical is only
-reachable through ``ORACLE_SRC`` pointing at a local hub checkout — which most machines do
-not have. Rather than fail everywhere for a condition nobody can fix locally, an unreachable
-canonical **skips loudly**. Once the hub is public the URL resolves on its own
-and this starts checking everywhere with no change here.
+Canonical is the hub beside this repo, or the hub's published copy online. With neither in
+reach — offline, with no hub checkout beside the repo — there is nothing to compare against,
+and rather than fail for a condition nobody can fix locally, an unreachable canonical
+**skips loudly**.
 
   exit 0 → in sync            exit 1 → drift, and the diff is the message
   exit 2 → could not reach canonical → skip, or a misconfigured script → fail
@@ -59,7 +58,7 @@ def test_vendored_oracle_matches_canonical():
     if result.returncode == 2 and any(p in output for p in UNREACHABLE):
         pytest.skip(
             "CANONICAL ORACLE UNREACHABLE — the vendored copy is NOT being checked for "
-            "staleness. While the hub is private this needs ORACLE_SRC=<hub checkout>. "
+            "staleness. It needs the network, a hub checkout beside this repo, or ORACLE_SRC=<hub checkout>. "
             f"Script said: {output.splitlines()[0] if output else '(no output)'}"
         )
 
