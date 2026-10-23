@@ -46,7 +46,9 @@ a = Analysis(
     pathex=[os.path.join(project_root, 'src')],
     binaries=added_binaries,
     datas=added_files,
-    hiddenimports=[],
+    # models/audio_backend.py loads sounddevice by name (so a failed PortAudio start does not fail the
+    # import), which PyInstaller's import scan cannot see.
+    hiddenimports=['sounddevice'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
