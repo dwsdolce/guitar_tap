@@ -1992,8 +1992,10 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # tap_entries is already fully built above, so the Taps button check works too.
         self.measurementComplete.emit(True)
 
-        # Now emit peaksChanged with _is_measurement_complete already True in the view.
-        self.peaksChanged.emit(peaks)
+        # Now emit peaksChanged with _is_measurement_complete already True in the view: the peaks above
+        # Peak Min (the full set, all_peaks, is detected at the floor), as Swift's view reads
+        # peaksAbovePeakMin.
+        self.peaksChanged.emit(list(self.peaks_above_peak_min))
 
         # Do NOT clear captured_taps here — mirrors Swift processMultipleTaps() which
         # leaves capturedTaps intact until resetForNewSequence()/reset() clears them.

@@ -24,6 +24,9 @@ from guitar_tap.models.tap_display_settings import TapDisplaySettings  # noqa: E
 from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer  # noqa: E402
 from guitar_tap.views.tap_analysis_results_view import measurements_from_json  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(__file__))
+from test_peak_finding import _spectrum  # noqa: E402
+
 _HERE = os.path.dirname(__file__)
 with open(os.path.join(_HERE, "measurement-complete.json"), encoding="utf-8") as _f:
     DATA = json.load(_f)
@@ -93,7 +96,8 @@ def test_transitions(row, qapp):
 
 
 # ---------------------------------------------------------------------------
-# Python only: the measurementComplete signal, the setter, and the live frame after completion
+# Python only: the measurementComplete signal, the setter, the live frame after completion, and the peaks
+# announced on completion
 # ---------------------------------------------------------------------------
 
 def _completed(qapp) -> TapToneAnalyzer:
@@ -156,3 +160,26 @@ def test_assigning_the_flag_clears_the_warning(qapp):
     sut.show_loaded_settings_warning = True
     sut.is_measurement_complete = True
     assert sut.show_loaded_settings_warning is False
+
+
+def test_completing_announces_the_peaks_above_peak_min(qapp):
+    """Completion detects every peak down to the floor (all_peaks) and announces only those at or above
+    Peak Min — the projection the results list and the chart show, as Swift's view reads
+    peaksAbovePeakMin."""
+    saved = TapDisplaySettings.peak_min_threshold()
+    try:
+        sut = _make_sut()
+        sut.peak_min_threshold = -50.0
+        mags, freqs = _spectrum({"kind": "peaks", "binCount": 2049, "sampleRate": 6000, "noiseFloor": -95,
+                                 "peaks": [{"peakHz": 110, "peakDB": -30, "halfWidthHz": 6},    # above Peak Min
+                                           {"peakHz": 220, "peakDB": -70, "halfWidthHz": 6}]})  # below it
+        sut.captured_taps = [(np.array(mags), np.array(freqs), datetime.datetime.now())]
+        announced: list[list] = []
+        sut.peaksChanged.connect(announced.append)
+        sut.process_multiple_taps()
+        assert any(p.magnitude < -50.0 for p in sut.all_peaks), "the capture found no peak below Peak Min"
+        assert announced, "completion announced no peaks"
+        assert [p.id for p in announced[-1]] == [p.id for p in sut.peaks_above_peak_min]
+        assert all(p.magnitude >= -50.0 for p in announced[-1])
+    finally:
+        TapDisplaySettings.set_peak_min_threshold(saved)
