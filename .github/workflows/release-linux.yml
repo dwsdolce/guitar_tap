@@ -83,7 +83,8 @@ jobs:
           if ldd "$image" 2>&1 | grep -q "libfuse"; then
               echo "The runtime links libfuse:"; ldd "$image"; exit 1
           fi
-          newest=$(find dist/AppDir -type f \( -name '*.so*' -o -perm -u+x \) -exec objdump -T {} + 2>/dev/null \
+          # objdump fails on bundled files that are not ELF (scripts, data marked executable); those are skipped.
+          newest=$( { find dist/AppDir -type f \( -name '*.so*' -o -perm -u+x \) -exec objdump -T {} + 2>/dev/null || true; } \
               | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
           echo "Newest glibc needed: $newest"
           printf '%s\n%s\n' "$newest" "GLIBC_2.35" | sort -V -C || { echo "Needs more than glibc 2.35"; exit 1; }
