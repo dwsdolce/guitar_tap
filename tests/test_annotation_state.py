@@ -2,7 +2,7 @@
 """The per-peak state the user edits and the views read: dragged label positions, selection, which
 peaks are annotated, mode labels (the user's own and the auto-detected), the one definitive
 Air/Top/Back and the tap-tone ratio, and what clears it all. The shared cases in annotation-state.json
-(AS1-AS41), the same as Swift and the web: each loads its peaks as the app loads a file and edits them
+(AS1-AS44), the same as Swift and the web: each loads its peaks as the app loads a file and edits them
 as the views do.
 """
 from __future__ import annotations
@@ -139,6 +139,10 @@ class _Case:
                 assert got == {n: [float(v) for v in xy] for n, xy in want.items()}, f"{field}: {got}"
             elif field == "offsetCount":
                 assert len(sut.peak_annotation_offsets) == want, field
+            elif field == "centre":
+                for name, xy in want.items():
+                    got = sut.annotation_centre(self.peak(name))
+                    assert list(got) == [float(v) for v in xy], f"{field} {name}: {got}"
             elif field == "getPeak":
                 for mode, name in want.items():
                     peak = sut.get_peak(_MODES[mode])
@@ -174,3 +178,9 @@ def test_annotation_state(row, qapp):
         else:
             assert case.run(step), f"unknown step {step}"
     case.check(row["expect"])
+
+
+def test_default_annotation_offset_is_the_shared_offset():
+    """Where an undragged label's centre sits from its peak: the shared case file's labelOffset."""
+    from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+    assert list(TapToneAnalyzer.DEFAULT_ANNOTATION_OFFSET) == [float(v) for v in DATA["labelOffset"]]

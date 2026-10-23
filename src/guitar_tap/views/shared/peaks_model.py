@@ -1,5 +1,5 @@
-# @parity none — Qt's table model behind the results list and its labels; SwiftUI's and React's
-# lists read the analyzer directly.
+# @parity none — Qt's table model behind the results list; SwiftUI's and React's lists read the
+# analyzer directly.
 """
     The data model for the Peaks table.
 """
@@ -12,11 +12,8 @@ from PySide6 import QtCore
 
 from guitar_tap.models import guitar_mode as gm
 from guitar_tap.views.utilities import palette
-from guitar_tap.models import field_precision as fp
 from guitar_tap.models import pitch as pitch_c
-from guitar_tap.models.analysis_display_mode import AnalysisDisplayMode
-from guitar_tap.models.annotation_visibility_mode import AnnotationVisibilityMode as AVM
-from guitar_tap.views.utilities.extensions import formatted_as_frequency
+from guitar_tap.views.peak_annotations import MATERIAL_LABEL_ROLES
 
 
 class ColumnIndex(Enum):
@@ -39,11 +36,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
     accessing the underlying data model.
     """
 
-    annotationUpdate: QtCore.Signal = QtCore.Signal(object, float, float, str, str)  # (peak_id, freq, mag, html, mode_str)
-    annotationsRefreshed: QtCore.Signal = QtCore.Signal()  # fired once after a batch of annotationUpdate emissions
-    clearAnnotations: QtCore.Signal = QtCore.Signal()
-    hideAnnotations: QtCore.Signal = QtCore.Signal()
-    hideAnnotation: QtCore.Signal = QtCore.Signal(float)
     userModifiedSelectionChanged: QtCore.Signal = QtCore.Signal(bool)
     # A USER per-peak show/selection toggle, carrying the peak id, so the view can route it to
     # the analyzer (mirrors Swift onToggleSelection -> togglePeakSelection). NOT emitted for
@@ -93,8 +85,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.show_column: int = ColumnIndex.Show.value
         self.user_has_modified_peak_selection: bool = False
         self._programmatic_update: bool = False
-        # Current annotation visibility mode.
-        self._annotation_mode: AVM = AVM.SELECTED
         # peak id → mode, from classify_all. Keyed by IDENTITY, never by frequency: two peaks
         # can share a frequency, and a frequency-keyed map silently collapses them so the last
         # one's label wins for both.
@@ -108,84 +98,12 @@ class PeaksModel(QtCore.QAbstractTableModel):
         # Whether this model is displaying guitar peaks or plate/brace peaks.
         # Mirrors Swift measurementType.isGuitar guard in modeLabel / modeColor.
         self.is_guitar: bool = True
-        # The peak dots and annotation cards are drawn here, not by a stylesheet: redraw them in
-        # every new scheme.
+        # The peak dots are drawn here, not by a stylesheet: redraw them in every new scheme.
         palette.notifier().scheme_changed.connect(self._on_scheme_changed)
 
     def _on_scheme_changed(self, _scheme) -> None:
-        """Redraw the peak dots and annotation cards in the new scheme's colours."""
+        """Redraw the peak dots in the new scheme's colours."""
         self._emit_mode_colors()
-        self.refresh_annotations()
-
-    # MARK: - Annotation mode (reactive, mirrors Swift @Published annotationVisibilityMode)
-
-    @property
-    def annotation_mode(self) -> AVM:
-        """Current annotation visibility mode."""
-        return self._annotation_mode
-
-    @annotation_mode.setter
-    def annotation_mode(self, mode: AVM) -> None:
-        """Set the annotation visibility mode and re-apply it to the current peaks.
-
-        Mirrors Swift's behaviour where changing annotationVisibilityMode on
-        TapToneAnalyzer automatically re-evaluates visiblePeaks (a computed
-        property), causing the chart to re-render with the correct subset.
-        Uses refresh_annotations() so the pre-installed _auto_mode_map (from
-        update_data_with_modes) is preserved — only annotation emission changes,
-        not mode classification.
-        """
-        if self._annotation_mode == mode:
-            return
-        self._annotation_mode = mode
-        if self._peaks:
-            self.refresh_annotations()
-
-    # MARK: - Centralised annotation helpers
-    # Mirrors Swift's visiblePeaks computed property: a single place that
-    # decides whether a peak should have a visible annotation.
-
-    def _should_show_annotation(self, index: QtCore.QModelIndex) -> bool:
-        """Return True if *index* should have a visible annotation.
-
-        Centralises the visibility decision that was previously duplicated in
-        ``update_annotation``, ``refresh_annotations`` and
-        ``update_data_with_modes``.  The rule mirrors Swift's
-        ``visiblePeaks`` computed property:
-
-        * comparing    → never show: the analyzer gives the chart no peaks to label
-                         (``chart_annotation_peaks`` is None), as Swift's
-                         ``tap.chartAnnotationPeaks``
-        * ``NONE``     → never show
-        * ``ALL``      → always show
-        * ``SELECTED`` → show only if the peak's show/selected flag is set
-        """
-        # chart_annotation_peaks is None exactly while a comparison is shown; tested directly, so a label's check
-        # does not build the whole visible-peak list.
-        if self._analyzer is not None and self._analyzer.display_mode == AnalysisDisplayMode.COMPARISON:
-            return False
-        if self._annotation_mode == AVM.NONE:
-            return False
-        if self._annotation_mode == AVM.ALL:
-            return True
-        return self.show_value_bool(index)
-
-    def _emit_annotation(self, index: QtCore.QModelIndex) -> None:
-        """Emit the correct annotation signal for *index*.
-
-        If the peak should be visible (per ``_should_show_annotation``),
-        emits ``annotationUpdate``; otherwise emits ``hideAnnotation``.
-        """
-        freq = self.freq_value(index)
-        if self._should_show_annotation(index):
-            mag = self.magnitude_value(index)
-            mode = self.mode_value(index)
-            html = self.annotation_html(freq, mag, mode, is_override=self.is_manual_value(index))
-            row = index.row()
-            peak_id = self._peaks[row].id if row < len(self._peaks) else ""
-            self.annotationUpdate.emit(peak_id, freq, mag, html, mode)
-        else:
-            self.hideAnnotation.emit(freq)
 
     def set_mode_value(self, index: QtCore.QModelIndex, value: str) -> None:
         """Give the peak a label of the user's. The analyzer holds it; this routes it there."""
@@ -375,63 +293,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
         return self._data[index.row()][1]
 
     # Material (plate/brace) mode label → colour role, matching Swift PeakAnnotations.swift
-    _MATERIAL_MODE_ROLES: dict[str, palette.Role] = {
-        "Longitudinal": palette.Role.MATERIAL_LONGITUDINAL,
-        "Cross-grain":  palette.Role.MATERIAL_CROSS,
-        "Diagonal":     palette.Role.MATERIAL_FLC,
-        "Peak":         palette.Role.MATERIAL_UNSELECTED,
-    }
-
-    def annotation_html(self, freq: float, mag: float, mode: str,
-                        is_override: bool = False) -> str:
-        """Build the HTML label for an annotation, matching Swift PeakAnnotationLabel.
-
-        Layout (top to bottom):
-          • Mode name  — bold, mode colour (italic + trailing " *" when manually overridden)
-          • Pitch / cents  — purple  (guitar only)
-          • Frequency (Hz) — dark
-          • Magnitude (dB) — grey
-
-        ``is_override`` marks the mode as a user override — shown italic with a trailing " *",
-        the one convention used everywhere (list, annotation, PDF, tables). Mirrors Swift/web.
-        """
-        rows: list[str] = []
-
-        if mode in self._MATERIAL_MODE_ROLES:
-            # Plate / brace: label by phase (no pitch row — not meaningful for material)
-            r, g, b = palette.rgb(self._MATERIAL_MODE_ROLES[mode])
-            rows.append(f'<b style="color:rgb({r},{g},{b});">{mode}</b>')
-        else:
-            # Guitar: use GuitarMode classifier for colour and display name.
-            # Freeform user-defined labels → distinct teal colour.
-            guitar_mode = gm.GuitarMode.from_display_name(mode)
-            if guitar_mode is None and mode:
-                r, g, b = palette.rgb(palette.Role.MODE_USER_DEFINED)
-            else:
-                r, g, b = palette.rgb(palette.mode_role(guitar_mode or gm.GuitarMode.UNKNOWN))
-            display = gm.mode_display_name(mode) or ""
-            if display:
-                if is_override:
-                    rows.append(
-                        f'<b style="color:rgb({r},{g},{b});"><i>{display} *</i></b>'
-                    )
-                else:
-                    rows.append(f'<b style="color:rgb({r},{g},{b});">{display}</b>')
-            note  = self.pitch.note(freq)
-            cents = self.pitch.cents(freq)
-            pitch_color = palette.qss(palette.Role.PEAK_PITCH)
-            cents_color = palette.qss(palette.Role.PEAK_PITCH, palette.Opacity.PEAK_PITCH_CENTS)
-            rows.append(
-                f'<span style="color:{pitch_color};">&#9834; {note}</span>&nbsp;&nbsp;'
-                f'<span style="color:{cents_color};">{cents:+.0f}&#162;</span>'
-            )
-
-        freq_color = palette.qss(palette.Role.CHART_TITLE)
-        db_color = palette.qss(palette.Role.CHART_AXIS)
-        rows.append(f'<span style="color:{freq_color};">{formatted_as_frequency(freq)}</span>')
-        db_text = f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB"
-        rows.append(f'<span style="color:{db_color};">{db_text}</span>')
-        return '<center>' + '<br/>'.join(rows) + '</center>'
+    # A plate's or brace's phase colours, the same as its labels'.
+    _MATERIAL_MODE_ROLES = MATERIAL_LABEL_ROLES
 
     def data(
         self, index: QtCore.QModelIndex, role: QtCore.Qt.ItemDataRole
@@ -544,55 +407,8 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._emit_mode_colors()
         self.layoutChanged.emit()
 
-        # Refresh annotations using the centralised visibility check.
-        self.clearAnnotations.emit()
-        for row in range(self._data.shape[0]):
-            idx = self.index(row, 0)
-            if self._should_show_annotation(idx):
-                freq = self.freq_value(idx)
-                mag  = self.magnitude_value(idx)
-                mode = self.mode_value(idx)
-                peak_id = peaks[row].id if row < len(peaks) else ""
-                self.annotationUpdate.emit(
-                    peak_id, freq, mag,
-                    self.annotation_html(freq, mag, mode, is_override=self.is_manual_value(idx)),
-                    mode,
-                )
-        self.annotationsRefreshed.emit()
-
-    def refresh_annotations(self) -> None:
-        """Re-emit annotation signals for the current peaks and annotation_mode.
-
-        Call this after a peak's label changes without changing
-        the underlying peak data, so the canvas re-renders annotations with
-        updated text.  Mirrors Swift where mutating peakModeOverrides (@Published)
-        invalidates visiblePeaks and causes the chart to re-render.
-
-        Uses ``_should_show_annotation`` so visibility logic is centralised.
-        """
-        if self._data is None or self._data.shape[0] == 0:
-            return
-        self.clearAnnotations.emit()
-        for row in range(self._data.shape[0]):
-            idx = self.index(row, 0)
-            if self._should_show_annotation(idx):
-                freq = self.freq_value(idx)
-                mag  = self.magnitude_value(idx)
-                mode = self.mode_value(idx)
-                peak_id = self._peaks[row].id if row < len(self._peaks) else ""
-                self.annotationUpdate.emit(
-                    peak_id, freq, mag,
-                    self.annotation_html(freq, mag, mode, is_override=self.is_manual_value(idx)),
-                    mode,
-                )
-        self.annotationsRefreshed.emit()
-
-    def clear_annotations(self) -> None:
-        """Clear all annotations."""
-        self.clearAnnotations.emit()
-
     def select_all_peaks(self) -> None:
-        """Set the show/selected flag on every peak and show its annotation."""
+        """Set the show/selected flag on every peak."""
         self._programmatic_update = True
         try:
             for row in range(self.rowCount(QtCore.QModelIndex())):
@@ -603,7 +419,7 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self._set_user_modified(True)
 
     def deselect_all_peaks(self) -> None:
-        """Clear the show/selected flag on every peak and hide its annotation."""
+        """Clear the show/selected flag on every peak."""
         self._programmatic_update = True
         try:
             for row in range(self.rowCount(QtCore.QModelIndex())):
@@ -617,14 +433,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
         if self.user_has_modified_peak_selection != value:
             self.user_has_modified_peak_selection = value
             self.userModifiedSelectionChanged.emit(value)
-
-    def update_annotation(self, index: QtCore.QModelIndex) -> None:
-        """Update the annotation for a single peak at *index*.
-
-        Delegates to ``_emit_annotation`` which uses the centralised
-        ``_should_show_annotation`` visibility check.
-        """
-        self._emit_annotation(index)
 
     def setData(
         self,
@@ -644,7 +452,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     self.dataChanged.emit(
                         index, index, [QtCore.Qt.ItemDataRole.DisplayRole]
                     )
-                    self.update_annotation(index)
                     if not self._programmatic_update:
                         self._set_user_modified(True)
                     return True
@@ -653,7 +460,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
                     self.dataChanged.emit(
                         index, index, [QtCore.Qt.ItemDataRole.DisplayRole]
                     )
-                    self.update_annotation(index)
                     self._emit_mode_colors()
                     return True
         return False
@@ -709,21 +515,16 @@ class PeaksModel(QtCore.QAbstractTableModel):
                         )
         return flag
 
-    def data_held(self, held: bool, refresh_labels: bool = True) -> None:
+    def data_held(self, held: bool) -> None:
         """Transition between live mode (held=False) and frozen mode (held=True).
 
         In live mode (is_live=True) the table is read-only and show_value_bool
         returns True for every peak.  In frozen mode (is_live=False) the table
-        is interactive and show_value_bool consults selected_peak_ids.
-        ``refresh_labels=False`` leaves the chart's labels to a refresh the caller has due.
+        is interactive and show_value_bool consults selected_peak_ids. (The chart's labels follow the
+        analyzer.)
         """
         self.layoutAboutToBeChanged.emit()
         self.is_live = not held
-        if held:
-            if refresh_labels:
-                self.refresh_annotations()
-        else:
-            self.hideAnnotations.emit()
         self.layoutChanged.emit()
 
     def auto_select_peaks_by_mode(self) -> None:
@@ -741,7 +542,6 @@ class PeaksModel(QtCore.QAbstractTableModel):
         self.selected_peak_ids = set()
         self._programmatic_update = True
         self._set_user_modified(False)
-        self.clearAnnotations.emit()
         # Notify the view that all show-column cells may have changed.
         rows = self.rowCount(QtCore.QModelIndex())
         if rows > 0:

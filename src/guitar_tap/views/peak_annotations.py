@@ -14,14 +14,89 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pyqtgraph as pg
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
+from guitar_tap.models import pitch as pitch_c
+
+# The label rule, from the module that keeps the analyzer's dragged positions: it imports no views,
+# where the analyzer's own module does, so importing it here makes no cycle.
+from guitar_tap.models.tap_tone_analyzer_annotation_management import (
+    TapToneAnalyzerAnnotationManagementMixin as _LabelRule,
+)
 from guitar_tap.views import chart_menu
-from guitar_tap.views.utilities import chart_style, palette
+from guitar_tap.views.utilities import chart_style, palette, view_update
+from guitar_tap.views.utilities.extensions import formatted_as_frequency
+
+#: A plate's or brace's label names its phase, in that phase's colour.
+MATERIAL_LABEL_ROLES: dict[str, palette.Role] = {
+    "Longitudinal": palette.Role.MATERIAL_LONGITUDINAL,
+    "Cross-grain":  palette.Role.MATERIAL_CROSS,
+    "Diagonal":     palette.Role.MATERIAL_FLC,
+    "Peak":         palette.Role.MATERIAL_UNSELECTED,
+}
+
+_PITCH = pitch_c.Pitch(440)
+
+
+def label_html(freq: float, mag: float, mode: str, is_override: bool = False) -> str:
+    """A peak label's text, as Swift's ``PeakAnnotationLabel``, top to bottom: the mode name —
+    bold, in the mode's colour (italic with a trailing " *" when it is the user's own); the pitch
+    and cents (guitar only); the frequency; the magnitude."""
+    rows: list[str] = []
+    if mode in MATERIAL_LABEL_ROLES:
+        # Plate / brace: label by phase (no pitch row — not meaningful for material)
+        r, g, b = palette.rgb(MATERIAL_LABEL_ROLES[mode])
+        rows.append(f'<b style="color:rgb({r},{g},{b});">{mode}</b>')
+    else:
+        # Guitar: the mode's colour and display name; a freeform label of the user's in its own
+        # colour.
+        guitar_mode = gm.GuitarMode.from_display_name(mode)
+        if guitar_mode is None and mode:
+            r, g, b = palette.rgb(palette.Role.MODE_USER_DEFINED)
+        else:
+            r, g, b = palette.rgb(palette.mode_role(guitar_mode or gm.GuitarMode.UNKNOWN))
+        display = gm.mode_display_name(mode) or ""
+        if display:
+            if is_override:
+                rows.append(f'<b style="color:rgb({r},{g},{b});"><i>{display} *</i></b>')
+            else:
+                rows.append(f'<b style="color:rgb({r},{g},{b});">{display}</b>')
+        note = _PITCH.note(freq)
+        cents = _PITCH.cents(freq)
+        pitch_color = palette.qss(palette.Role.PEAK_PITCH)
+        cents_color = palette.qss(palette.Role.PEAK_PITCH, palette.Opacity.PEAK_PITCH_CENTS)
+        rows.append(
+            f'<span style="color:{pitch_color};">&#9834; {note}</span>&nbsp;&nbsp;'
+            f'<span style="color:{cents_color};">{cents:+.0f}&#162;</span>'
+        )
+    freq_color = palette.qss(palette.Role.CHART_TITLE)
+    db_color = palette.qss(palette.Role.CHART_AXIS)
+    rows.append(f'<span style="color:{freq_color};">{formatted_as_frequency(freq)}</span>')
+    db_text = f"{fp.string(mag, fp.PEAK_MAGNITUDE_DB)} dB"
+    rows.append(f'<span style="color:{db_color};">{db_text}</span>')
+    return '<center>' + '<br/>'.join(rows) + '</center>'
+
+
+def peak_label(analyzer, peak) -> tuple[str, bool]:
+    """A peak label's mode name and whether it is the user's own: a plate's or brace's phase by the
+    analyzer's effective L / C / FLC peak, else "Peak"; a guitar's ``effective_mode_label``. Mirrors
+    Swift ``DraggablePeakAnnotation``'s ``modeLabel`` and override check."""
+    from guitar_tap.models.tap_display_settings import TapDisplaySettings
+    if not TapDisplaySettings.measurement_type().is_guitar:
+        if peak.id == analyzer.effective_longitudinal_peak_id:
+            return "Longitudinal", False
+        if peak.id == analyzer.effective_cross_peak_id:
+            return "Cross-grain", False
+        if peak.id == analyzer.effective_flc_peak_id:
+            return "Diagonal", False
+        return "Peak", False
+    return analyzer.effective_mode_label(peak), analyzer.has_manual_override(peak.id)
 
 # The chart's stacking: the curves and dots at 0, the mode labels over them, the peak labels over those.
 MODE_LABEL_Z = 1
@@ -142,11 +217,11 @@ class DraggableTextItem(pg.TextItem):
         peak_id: str = "",
         analyzer=None,
     ) -> None:
-        """Associate the dashed connection line and record the TRUE default position.
+        """Associate the dashed connection line and record where the label sits undragged.
 
-        `default_pos` is the computed default (70pt-above-peak equivalent), IGNORING any stored
-        offset — mirrors Swift `calculateChartPosition()`. `peak_id`/`analyzer` let "Reset
-        Position" clear the stored offset (Swift `resetAnnotationOffset(for:)`).
+        `default_pos` is the peak plus the default offset, ignoring any stored position — where
+        "Reset Position" returns the label. `peak_id`/`analyzer` let "Reset Position" clear the
+        stored position (Swift `resetAnnotationOffset(for:)`).
         """
         self._arrow_line  = line
         self._peak_freq   = freq
@@ -172,18 +247,12 @@ class DraggableTextItem(pg.TextItem):
     def _show_context_menu(self, screen_pos: QtCore.QPoint) -> None:
         """RMB menu — matches Swift DraggablePeakAnnotation context menu.
 
-        "moved" = the label sits off its TRUE default (`_default_pos` is the computed default,
-        ignoring any stored offset — mirrors Swift `isMoved` / `calculateChartPosition`). Reset
-        clears the stored offset via the analyzer (Swift `resetAnnotationOffset(for:)`) so it
-        also survives the next annotation rebuild.
+        "moved" = the label has a stored position (Swift `isMoved`). Reset clears it via the
+        analyzer (Swift `resetAnnotationOffset(for:)`) and returns the label to its peak plus the
+        default offset (`_default_pos`).
         """
-        has_moved = (
-            self._default_pos is not None
-            and (
-                abs(self.pos().x() - self._default_pos.x()) > 1e-6
-                or abs(self.pos().y() - self._default_pos.y()) > 1e-6
-            )
-        )
+        has_moved = (self._analyzer is not None and bool(self._peak_id)
+                     and self._peak_id in self._analyzer.peak_annotation_offsets)
         menu = QtWidgets.QMenu()
         entry = chart_menu.LABEL_MENU[0]
         reset_action = palette.add_menu_item(menu, f"mdi.{entry.mdi}", entry.title)
@@ -210,9 +279,6 @@ class FftAnnotations(QtCore.QObject):
 
     restoreFocus: QtCore.Signal = QtCore.Signal()
 
-    # Vertical offset (in dB) from peak to default label position.
-    _LABEL_OFFSET_DB: float = 14.0
-
     def __init__(self, plot_widget: pg.PlotWidget, analyzer=None):
         # Owned by the chart, so it is deleted with it and its connections go too.
         super().__init__(plot_widget)
@@ -231,6 +297,44 @@ class FftAnnotations(QtCore.QObject):
         self._plot_view = plot_widget
         plot_widget.installEventFilter(self)
         plot_widget.viewport().installEventFilter(self)
+        # The chart's labels are the analyzer's to decide (chart_annotation_peaks), read once per
+        # event-loop turn however many changes came — as Swift's chart reads
+        # tap.chartAnnotationPeaks.
+        self._labels = view_update.Invalidator(self, self._refresh_labels)
+
+    # ── the labels, from the analyzer ─────────────────────────────────────
+
+    def attach(self, analyzer) -> None:
+        """Take the analyzer whose peaks are labelled, and follow it: a change to its peaks, their
+        selection or labels, the display mode, the plate / brace phases, or a load brings the labels
+        up to date. Mirrors Swift's ``SpectrumView`` observing the analyzer."""
+        self._analyzer = analyzer
+        for signal in (analyzer.peaksChanged, analyzer.displayModeChanged,
+                       analyzer.comparisonChanged, analyzer.selectedLongitudinalPeakChanged,
+                       analyzer.selectedCrossPeakChanged, analyzer.selectedFlcPeakChanged,
+                       analyzer.measurementLoaded):
+            signal.connect(self.invalidate_labels)
+        # To this object's own slot, so the connections end with it.
+        palette.notifier().scheme_changed.connect(self.invalidate_labels)
+        self._labels.invalidate()
+
+    def invalidate_labels(self, *_args: object) -> None:
+        """Bring the labels up to date at the end of this event-loop turn — for a change the
+        analyzer does not announce (its annotation visibility, a setting)."""
+        self._labels.invalidate()
+
+    def _refresh_labels(self) -> None:
+        """The labels for the analyzer's ``chart_annotation_peaks`` — none while a comparison is
+        shown — each from its peak: its mode name, pitch and override mark from the analyzer, its
+        place by ``annotation_centre_from``. Labels whose peak is kept are reused in place."""
+        analyzer = self._analyzer
+        peaks = (analyzer.chart_annotation_peaks or []) if analyzer is not None else []
+        self.clear_annotations()
+        for peak in peaks:
+            mode, is_override = peak_label(analyzer, peak)
+            html = label_html(peak.frequency, peak.magnitude, mode, is_override)
+            self.update_annotation(peak.id, peak.frequency, peak.magnitude, html, mode)
+        self.refresh_display()
 
     # ── widget-level context menu interception ────────────────────────────────
 
@@ -325,10 +429,11 @@ class FftAnnotations(QtCore.QObject):
         text_item.setZValue(PEAK_LABEL_Z)
         self.plot_item.addItem(arrow_line)
         self.plot_item.addItem(text_item)
-        # `_default_pos` is the TRUE default (computed from the peak), IGNORING any stored offset —
-        # mirrors Swift calculateChartPosition. The label is positioned at xy_text (saved offset or
-        # default), but "Reset Position" must return to the true default, not the saved offset.
-        default_pos = (freq, mag + self._LABEL_OFFSET_DB)
+        # `_default_pos` is where the label sits undragged — its peak plus the default offset,
+        # ignoring any stored position — where "Reset Position" returns it. The label is at
+        # xy_text.
+        default_pos = _LabelRule.annotation_centre_from(
+            SimpleNamespace(id=peak_id, frequency=freq, magnitude=mag), None)
         text_item.connect_arrow(arrow_line, freq, mag, default_pos, peak_id, self._analyzer)
         return text_item, arrow_line
 
@@ -353,14 +458,12 @@ class FftAnnotations(QtCore.QObject):
             else:
                 self._refit(ann_dict, peak_id, freq, mag, html, mode_str, ann_dict["xytext"])
             return
-        # Restore saved offset from the analyzer if the user previously dragged this annotation — keyed by
-        # peak_id (UUID), mirrors Swift peakAnnotationOffsets.
-        saved = (
-            self._analyzer.peak_annotation_offsets.get(peak_id)
-            if self._analyzer is not None and peak_id
-            else None
-        )
-        xy_text = saved if saved is not None else (freq, mag + self._LABEL_OFFSET_DB)
+        # The label's centre: where the user dragged it (the analyzer's stored positions, keyed by
+        # peak id), else its peak plus the default offset — Swift's
+        # annotationCentre(for:offsets:).
+        xy_text = _LabelRule.annotation_centre_from(
+            SimpleNamespace(id=peak_id, frequency=freq, magnitude=mag),
+            self._analyzer.peak_annotation_offsets if self._analyzer is not None else None)
         reused = self._take_retired(peak_id, freq)
         if reused is not None:
             self._refit(reused, peak_id, freq, mag, html, mode_str, xy_text)
@@ -412,8 +515,9 @@ class FftAnnotations(QtCore.QObject):
             arrow_line.setPen(chart_style.pen(
                 color, chart_style.SCREEN.leader_width, chart_style.SCREEN.leader_dash,
                 chart_style.SCREEN.leader_opacity))
-        text_item.connect_arrow(arrow_line, freq, mag, (freq, mag + self._LABEL_OFFSET_DB), peak_id,
-                                self._analyzer)
+        default_pos = _LabelRule.annotation_centre_from(
+            SimpleNamespace(id=peak_id, frequency=freq, magnitude=mag), None)
+        text_item.connect_arrow(arrow_line, freq, mag, default_pos, peak_id, self._analyzer)
         text_item.setPos(xy_text[0], xy_text[1])
         text_item._update_arrow()
         ann_dict.update(peak_id=peak_id, freq=freq, mag=mag, html=html, mode_str=mode_str, xytext=xy_text,
@@ -442,40 +546,6 @@ class FftAnnotations(QtCore.QObject):
         )
 
     # ── show / hide ───────────────────────────────────────────────────────────
-
-    def hide_annotation(self, freq: float) -> None:
-        """Hide the annotation for *freq* without removing it from the list."""
-        idx = self.find_annotation_index(freq)
-        if idx >= 0:
-            ann_dict = self.annotations[idx]
-            if ann_dict["annotation"] is not None:
-                self.plot_item.removeItem(ann_dict["annotation"])
-                self.plot_item.removeItem(ann_dict["arrow_line"])
-                ann_dict["annotation"] = None
-                ann_dict["arrow_line"] = None
-
-    def hide_annotations(self) -> None:
-        """Hide all annotations."""
-        for ann_dict in self.annotations:
-            if ann_dict["annotation"] is not None:
-                self.plot_item.removeItem(ann_dict["annotation"])
-                self.plot_item.removeItem(ann_dict["arrow_line"])
-                ann_dict["annotation"] = None
-                ann_dict["arrow_line"] = None
-
-    def show_all_annotations(self) -> None:
-        """Re-add all hidden annotations to the plot (inverse of hide_annotations)."""
-        for ann_dict in self.annotations:
-            if ann_dict["annotation"] is None:
-                ann, arrow_line = self.create_annotation(
-                    ann_dict["freq"],
-                    ann_dict["mag"],
-                    ann_dict["html"],
-                    ann_dict["mode_str"],
-                    ann_dict["xytext"],
-                )
-                ann_dict["annotation"] = ann
-                ann_dict["arrow_line"] = arrow_line
 
     def clear_annotations(self) -> None:
         """Clear the list. Its labels stay on the chart until the refresh that follows has reused what it can
@@ -515,16 +585,9 @@ class FftAnnotations(QtCore.QObject):
 
     @property
     def has_moved_annotations(self) -> bool:
-        """True if any visible annotation label has been dragged from its default position."""
-        for ann_dict in self.annotations:
-            ann = ann_dict["annotation"]
-            if ann is None or ann._default_pos is None:
-                continue
-            dp = ann._default_pos
-            pos = ann.pos()
-            if abs(pos.x() - dp.x()) > 1e-6 or abs(pos.y() - dp.y()) > 1e-6:
-                return True
-        return False
+        """True if any label has a stored position — what Reset Labels clears. Mirrors Swift's
+        ``!peakAnnotationOffsets.isEmpty``."""
+        return self._analyzer is not None and bool(self._analyzer.peak_annotation_offsets)
 
     def reset_all_positions(self) -> None:
         """Reset every visible annotation label to its default (auto-placed) position.

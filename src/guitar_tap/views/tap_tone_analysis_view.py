@@ -2189,13 +2189,9 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         )
 
-        # Peaks table → canvas annotations
+        # The peaks table's mode colours → the chart's dots. (The chart's labels follow the
+        # analyzer.)
         model = self.peak_widget.model
-        model.annotationUpdate.connect(canvas.annotations.update_annotation)
-        model.annotationsRefreshed.connect(canvas.annotations.refresh_display)
-        model.clearAnnotations.connect(canvas.annotations.clear_annotations)
-        model.hideAnnotation.connect(canvas.annotations.hide_annotation)
-        model.hideAnnotations.connect(canvas.annotations.hide_annotations)
         model.modeColorsChanged.connect(canvas.update_mode_colors)
 
         # A click on the list's background clears the highlight.
@@ -2315,7 +2311,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.set_measurement_complete(False)
 
-        # Seed the model's annotation_mode so the live FFT path respects the saved setting
+        # Seed the analyzer's annotation visibility from the saved setting
         self._apply_annotation_mode(self._ANN_MODES[self._ann_mode_idx])
 
         # Restore calibration status label and device name in status bar
@@ -2627,10 +2623,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     color=palette.Role.STATUS_WARNING if checked else palette.Role.TEXT_PRIMARY)
         self._update_mic_name_label()
 
-        # Held, the results' one refresh shows the held peaks and derives their labels. Refreshing the labels here
-        # too would show the selection against the live peaks still listed — none of them — and drop every label
-        # only for that refresh to make them again.
-        self.peak_widget.data_held(checked, refresh_labels=not checked)
+        # Held, the results' one refresh shows the held peaks. (The chart's labels follow the
+        # analyzer.)
+        self.peak_widget.data_held(checked)
         if checked:
             self._results_refresh.invalidate()
         mt = TDS.measurement_type()
@@ -2840,10 +2835,6 @@ class MainWindow(QtWidgets.QMainWindow):
             # Plate/brace: no guitar mode classification, no frequency filtering.
             # Mirrors Swift where peakModeMap returns [:] for non-guitar types.
             self.peak_widget.model.update_data(list(peaks))
-            # update_data() (unlike the guitar update_data_with_modes) does NOT emit annotations, so
-            # the material L/C/FLC labels wouldn't appear on the chart until a manual visibility cycle.
-            # Emit them here so annotations update live per FFT frame, matching guitar.
-            self.peak_widget.model.refresh_annotations()
         else:
             fmin = self.fft_canvas.minFreq
             fmax = self.fft_canvas.maxFreq
@@ -2934,24 +2925,15 @@ class MainWindow(QtWidgets.QMainWindow):
             "Click to cycle: Selected → None → All"
         )
         TDS.set_annotation_visibility_mode(next_mode)
-        # Mirrors Swift TapToneAnalyzer.cycleAnnotationVisibility() which
-        # sets `annotationVisibilityMode` on the analyzer.  Without this,
-        # `analyzer.visible_peaks` returns peaks under the init-time mode and
-        # the export paths render annotations that don't match the user's
-        # current toggle.
-        self.fft_canvas.analyzer.annotation_visibility_mode = next_mode
         self._apply_annotation_mode(next_mode)
 
     def _apply_annotation_mode(self, mode: AnnotationVisibilityMode) -> None:
-        """Set the annotation visibility mode.
-
-        Setting annotation_mode on the model is reactive: its property setter
-        calls update_data() which re-emits exactly the right annotation signals
-        for the current peaks and mode — mirroring Swift where changing
-        annotationVisibilityMode (a @Published property) automatically
-        re-evaluates the visiblePeaks computed property.
-        """
-        self.peak_widget.model.annotation_mode = mode
+        """Set the analyzer's annotation visibility — Swift
+        ``TapToneAnalyzer.cycleAnnotationVisibility()`` sets ``annotationVisibilityMode`` — and bring
+        the chart's labels up to date: the analyzer's ``visible_peaks`` follow it, and the export with
+        them."""
+        self.fft_canvas.analyzer.annotation_visibility_mode = mode
+        self.fft_canvas.annotations.invalidate_labels()
 
     # ================================================================
     # Threshold / hysteresis
@@ -3603,7 +3585,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 for p in (az.selected_longitudinal_peak, az.selected_cross_peak, az.selected_flc_peak)
                 if p is not None
             }
-            pm.refresh_annotations()
+            self.fft_canvas.annotations.invalidate_labels()
 
     def _plate_step_label(self, phase_step: int, total: int) -> str:
         """Return the status bar phase label (brace uses the guitar-style "Tap X/N" counter).
@@ -3864,7 +3846,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_widget.model.selected_cross_peak_id        = az.effective_cross_peak_id
         self.peak_widget.model.selected_flc_peak_id         = az.effective_flc_peak_id
 
-        self.peak_widget.model.refresh_annotations()
+        self.fft_canvas.annotations.invalidate_labels()
 
         self._show_material_properties(mt)
 
@@ -4282,17 +4264,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # frames cannot overwrite the overlay — no need to touch is_measurement_complete here.
 
         # ── Annotations ───────────────────────────────────────────────────────
-        # Hide annotations during any comparison mode (saved-measurement or multi-tap).
-        # Mirrors Swift: isComparing = tap.displayMode == .comparison, so annotations
-        # are suppressed whenever comparison curves are displayed. The button is also
-        # disabled (mirrors Swift `.disabled(isComparing)`) so a stray cycle can't
-        # re-emit annotation signals; FftAnnotations.update_annotation additionally
-        # no-ops in COMPARISON mode so the suppression is reactive, not one-shot.
+        # No labels during any comparison (saved-measurement or multi-tap): the analyzer's
+        # chart_annotation_peaks is None then, as Swift's tap.chartAnnotationPeaks. The button is
+        # also disabled (mirrors Swift `.disabled(isComparing)`).
         self._refresh_annotations_enabled()
-        if is_comparing:
-            canvas.annotations.hide_annotations()
-        else:
-            self.peak_widget.model.refresh_annotations()
+        canvas.annotations.invalidate_labels()
 
         # ── Badge ──────────────────────────────────────────────────────────────
         self._update_measurement_badge()
@@ -4488,7 +4464,8 @@ class MainWindow(QtWidgets.QMainWindow):
         peak_model.is_live = False
         peak_model._set_user_modified(analyzer.user_has_modified_peak_selection)
 
-        # ── Restore annotation visibility mode into peak_model ────────────────
+        # ── The annotations button shows the loaded annotation visibility ──────
+        # (The analyzer holds it; the chart's labels follow the load.)
         target_mode = analyzer.annotation_visibility_mode
         target_idx = next(
             (i for i, mode in enumerate(self._ANN_MODES) if mode == target_mode),
@@ -4497,9 +4474,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._ann_mode_idx = target_idx
         palette.set_icon(
             self.annotations_btn, self._ANN_MODES[target_idx].icon_name, palette.Role.ACCENT)
-        # Set annotation mode directly on the private attribute so the public setter's
-        # no-op guard and premature update_data call are both bypassed.
-        peak_model._annotation_mode = target_mode
 
         # ── Draw the model's frozen spectrum (none for plate/brace, whose phase spectra the
         # model has already published) ──────────────────────────────────────────

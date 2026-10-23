@@ -42,25 +42,33 @@ class TapToneAnalyzerAnnotationManagementMixin:
 
         Args:
             peak_id: ``ResonantPeak.id`` (UUID string) — the dictionary key.
-            offset:  (x, y) position in data-space: x = Hz, y = dB.
-                     (0.0, 0.0) represents «no saved position»; the default
-                     anchor (70 pt above the peak) is used at render time.
+            offset:  (x, y) position in data-space: x = Hz, y = dB. A peak with no stored
+                     position has its label at its peak plus DEFAULT_ANNOTATION_OFFSET
+                     (``annotation_centre``).
         """
         self.peak_annotation_offsets[peak_id] = offset
 
-    def get_annotation_offset(self, peak_id: str) -> tuple[float, float]:
-        """Return the stored label position for *peak_id*, or (0.0, 0.0) if none.
+    #: Where an undragged peak label's centre sits from its peak, in chart units: (Hz, dB).
+    #: Mirrors Swift ``TapToneAnalyzer.defaultAnnotationOffset``.
+    DEFAULT_ANNOTATION_OFFSET: tuple[float, float] = (0.0, 14.0)
 
-        Mirrors Swift ``getAnnotationOffset(for peakID: UUID) -> CGPoint``.
+    def annotation_centre(self, peak) -> tuple[float, float]:
+        """A peak label's centre in chart units (Hz, dB): where the label was dragged, else the
+        peak plus ``DEFAULT_ANNOTATION_OFFSET``. It depends on the peak alone — the chart's range,
+        zoom and the annotation visibility do not move it. Mirrors Swift
+        ``annotationCentre(for:)``."""
+        return self.annotation_centre_from(peak, self.peak_annotation_offsets)
 
-        Args:
-            peak_id: ``ResonantPeak.id`` (UUID string).
-
-        Returns:
-            (x, y) data-space offset, or (0.0, 0.0) when the label has
-            never been dragged or its offset was cleared.
-        """
-        return self.peak_annotation_offsets.get(peak_id, (0.0, 0.0))
+    @classmethod
+    def annotation_centre_from(cls, peak, offsets) -> tuple[float, float]:
+        """``annotation_centre`` from a given map of dragged positions — for the views, which may
+        have no analyzer. *peak* needs ``id``, ``frequency`` and ``magnitude``. Mirrors Swift
+        ``annotationCentre(for:offsets:)``."""
+        stored = offsets.get(peak.id) if offsets else None
+        if stored is not None:
+            return (float(stored[0]), float(stored[1]))
+        dx, dy = cls.DEFAULT_ANNOTATION_OFFSET
+        return (float(peak.frequency) + dx, float(peak.magnitude) + dy)
 
     def reset_annotation_offset(self, peak_id: str) -> None:
         """Remove the stored offset for a single peak, returning it to its default position.

@@ -1656,7 +1656,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.captured_taps.clear()
 
         # Emit peaks BEFORE the phase transition so the view's peaks model has
-        # up-to-date data when plateStatusChanged triggers refresh_annotations().
+        # up-to-date data when plateStatusChanged reaches the view.
         self._emit_peaks_array(self.peaks_above_peak_min)
 
         if self.mic.is_playing_file:
@@ -1750,7 +1750,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         self.captured_taps.clear()
 
         # Emit peaks BEFORE the phase transition so the view's peaks model has
-        # up-to-date data when plateStatusChanged triggers refresh_annotations().
+        # up-to-date data when plateStatusChanged reaches the view.
         self._emit_peaks_array(self.peaks_above_peak_min)
 
         if self.mic.is_playing_file:

@@ -1,6 +1,10 @@
 {
  "slug": "test/annotation-state",
- "about": "The per-peak state the user edits and the views read: dragged label positions, selection, which peaks are annotated, mode labels (the user's own and the auto-detected), the one definitive Air/Top/Back and the tap-tone ratio, and what clears it all. Each case starts a fresh analyzer, sets its 'type' (a guitar type, by saved name) as Settings does, and loads its 'files.measurement' as the app loads a file — the peaks (classified by the analyzer under that type), their selection, Show Unknown Modes — then runs its 'steps'. 'peakIds' gives each case-local peak name its id (a name not in the file is a peak the analyzer does not know). Steps: the shared steps of tooling/analyzer-steps (settings, newTap), and {\"load\": file}; {\"toggle\": name} (a click on a peak); {\"selectNone\": true}; {\"resetToAuto\": true} (the wand); {\"override\": [name, label]} (a label of the user's); {\"resetOverride\": name} (Reset to Auto); {\"offset\": [name, Hz, dB]} (a dragged label); {\"resetOffset\": name}; {\"resetAllOffsets\": true} (Reset Labels); {\"visibility\": all | selected | none}; {\"cycleVisibility\": true} (the annotations button); {\"guitarTypeChange\": type} (Settings changes the guitar type and applies it); {\"check\": {...}} asserts those fields at that point. Fields: 'selected' (names, any order), 'userModified', 'visible' (the annotated peaks' Hz, ascending), 'visibility', 'savedVisibility' (the visibility the settings hold — what the next launch uses), 'label' / 'mode' / 'autoMode' / 'manualOverride' (per name; mode is override-aware, autoMode is not; modes by Swift's case name: air, top, back, dipole, ringMode, upperModes, unknown), 'overrides' (the whole map, name → label), 'offsets' (the whole map, name → [Hz, dB]), 'offsetCount', 'getPeak' (mode → name or null), 'hasRatio', 'definitive' (air/top/back → {hz, isOverride} or null), 'selectedIsAuto' (the selection is the automatic one), 'materialPeakMode' (the mode of a plate/brace capture's fL peak). AS41 starts from no file: a brace capture, through the shared steps. Expected values are Swift's.",
+ "about": "The per-peak state the user edits and the views read: dragged label positions, selection, which peaks are annotated, mode labels (the user's own and the auto-detected), the one definitive Air/Top/Back and the tap-tone ratio, and what clears it all. Each case starts a fresh analyzer, sets its 'type' (a guitar type, by saved name) as Settings does, and loads its 'files.measurement' as the app loads a file \u2014 the peaks (classified by the analyzer under that type), their selection, Show Unknown Modes \u2014 then runs its 'steps'. 'peakIds' gives each case-local peak name its id (a name not in the file is a peak the analyzer does not know). Steps: the shared steps of tooling/analyzer-steps (settings, newTap), and {\"load\": file}; {\"toggle\": name} (a click on a peak); {\"selectNone\": true}; {\"resetToAuto\": true} (the wand); {\"override\": [name, label]} (a label of the user's); {\"resetOverride\": name} (Reset to Auto); {\"offset\": [name, Hz, dB]} (a dragged label); {\"resetOffset\": name}; {\"resetAllOffsets\": true} (Reset Labels); {\"visibility\": all | selected | none}; {\"cycleVisibility\": true} (the annotations button); {\"guitarTypeChange\": type} (Settings changes the guitar type and applies it); {\"check\": {...}} asserts those fields at that point. 'labelOffset' is where an undragged label's centre sits from its peak, [Hz, dB]: each edition's constant is checked against it. Fields: 'selected' (names, any order), 'userModified', 'visible' (the annotated peaks' Hz, ascending), 'visibility', 'savedVisibility' (the visibility the settings hold \u2014 what the next launch uses), 'label' / 'mode' / 'autoMode' / 'manualOverride' (per name; mode is override-aware, autoMode is not; modes by Swift's case name: air, top, back, dipole, ringMode, upperModes, unknown), 'overrides' (the whole map, name \u2192 label), 'offsets' (the whole map, name \u2192 [Hz, dB]), 'offsetCount', 'centre' (per name: the label's centre, [Hz, dB] \u2014 where it was dragged, else its peak plus 'labelOffset'; the range, zoom and annotation visibility do not move it), 'getPeak' (mode \u2192 name or null), 'hasRatio', 'definitive' (air/top/back \u2192 {hz, isOverride} or null), 'selectedIsAuto' (the selection is the automatic one), 'materialPeakMode' (the mode of a plate/brace capture's fL peak). AS41 starts from no file: a brace capture, through the shared steps. Expected values are Swift's.",
+ "labelOffset": [
+  0,
+  14
+ ],
  "cases": [
   {
    "id": "AS1",
@@ -1157,7 +1161,7 @@
   },
   {
    "id": "AS15",
-   "note": "'Selected' with nothing selected annotates nothing — not all",
+   "note": "'Selected' with nothing selected annotates nothing \u2014 not all",
    "type": "Generic Guitar",
    "peakIds": {
     "a": "00000000-0000-0000-0000-000000000F27",
@@ -1323,7 +1327,7 @@
   },
   {
    "id": "AS17",
-   "note": "the visibility cycles All → Selected → None → All, and each step is saved to the settings",
+   "note": "the visibility cycles All \u2192 Selected \u2192 None \u2192 All, and each step is saved to the settings",
    "type": "Generic Guitar",
    "peakIds": {},
    "files": {
@@ -1463,7 +1467,7 @@
   },
   {
    "id": "AS19",
-   "note": "the auto-detected mode — what Reset to Auto restores — ignores the user's label",
+   "note": "the auto-detected mode \u2014 what Reset to Auto restores \u2014 ignores the user's label",
    "type": "Acoustic Guitar",
    "peakIds": {
     "p": "00000000-0000-0000-0000-000000000F31"
@@ -1862,7 +1866,7 @@
   },
   {
    "id": "AS24",
-   "note": "a peak the analyzer has not classified has no mode — even at 220 Hz, in both the Top and Back bands",
+   "note": "a peak the analyzer has not classified has no mode \u2014 even at 220 Hz, in both the Top and Back bands",
    "type": "Generic Guitar",
    "peakIds": {
     "stray": "00000000-0000-0000-0000-000000000F3C"
@@ -2413,7 +2417,7 @@
   },
   {
    "id": "AS30",
-   "note": "relabelling the selected Top away leaves no Top — nothing is promoted",
+   "note": "relabelling the selected Top away leaves no Top \u2014 nothing is promoted",
    "type": "Generic Guitar",
    "peakIds": {
     "topA": "00000000-0000-0000-0000-000000000F4E",
@@ -3395,6 +3399,330 @@
    ],
    "expect": {
     "materialPeakMode": "unknown"
+   }
+  },
+  {
+   "id": "AS42",
+   "note": "an undragged label's centre is its peak plus the offset: 14 dB above it",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F01"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F02",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F01",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    }
+   ],
+   "expect": {
+    "offsetCount": 0,
+    "centre": {
+     "p": [
+      200,
+      -6
+     ]
+    }
+   }
+  },
+  {
+   "id": "AS43",
+   "note": "a dragged label's centre is where it was dragged; Reset Position and Reset Labels put it back on its peak plus the offset",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F01"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F02",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F01",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "offset": [
+      "p",
+      230,
+      -40
+     ]
+    },
+    {
+     "check": {
+      "centre": {
+       "p": [
+        230,
+        -40
+       ]
+      }
+     }
+    },
+    {
+     "resetOffset": "p"
+    },
+    {
+     "check": {
+      "centre": {
+       "p": [
+        200,
+        -6
+       ]
+      }
+     }
+    },
+    {
+     "offset": [
+      "p",
+      180,
+      -60
+     ]
+    },
+    {
+     "check": {
+      "centre": {
+       "p": [
+        180,
+        -60
+       ]
+      }
+     }
+    },
+    {
+     "resetAllOffsets": true
+    }
+   ],
+   "expect": {
+    "offsetCount": 0,
+    "centre": {
+     "p": [
+      200,
+      -6
+     ]
+    }
+   }
+  },
+  {
+   "id": "AS44",
+   "note": "the annotation visibility does not move a label, dragged or not",
+   "type": "Generic Guitar",
+   "peakIds": {
+    "p": "00000000-0000-0000-0000-000000000F01",
+    "q": "00000000-0000-0000-0000-000000000F03"
+   },
+   "files": {
+    "measurement": [
+     {
+      "id": "00000000-0000-0000-0000-000000000F02",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "peakMinThreshold": -100,
+      "peaks": [
+       {
+        "id": "00000000-0000-0000-0000-000000000F01",
+        "frequency": 200.0,
+        "magnitude": -20.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       },
+       {
+        "id": "00000000-0000-0000-0000-000000000F03",
+        "frequency": 300.0,
+        "magnitude": -30.0,
+        "quality": 10.0,
+        "bandwidth": 5.0,
+        "timestamp": "2026-01-01T00:00:00Z"
+       }
+      ],
+      "selectedPeakIDs": [],
+      "userModifiedSelection": false,
+      "spectrumSnapshot": {
+       "frequencies": [
+        50.0,
+        500.0,
+        1000.0
+       ],
+       "magnitudes": [
+        -90.0,
+        -90.0,
+        -90.0
+       ],
+       "minFreq": 50,
+       "maxFreq": 1000,
+       "minDB": -100,
+       "maxDB": 0,
+       "isLogarithmic": false,
+       "measurementType": "Generic Guitar",
+       "guitarType": "Generic",
+       "showUnknownModes": true
+      }
+     }
+    ]
+   },
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "load": "measurement"
+    },
+    {
+     "offset": [
+      "q",
+      320,
+      -50
+     ]
+    },
+    {
+     "check": {
+      "centre": {
+       "p": [
+        200,
+        -6
+       ],
+       "q": [
+        320,
+        -50
+       ]
+      }
+     }
+    },
+    {
+     "visibility": "none"
+    },
+    {
+     "check": {
+      "centre": {
+       "p": [
+        200,
+        -6
+       ],
+       "q": [
+        320,
+        -50
+       ]
+      }
+     }
+    },
+    {
+     "cycleVisibility": true
+    },
+    {
+     "check": {
+      "centre": {
+       "p": [
+        200,
+        -6
+       ],
+       "q": [
+        320,
+        -50
+       ]
+      }
+     }
+    },
+    {
+     "visibility": "all"
+    }
+   ],
+   "expect": {
+    "centre": {
+     "p": [
+      200,
+      -6
+     ],
+     "q": [
+      320,
+      -50
+     ]
+    }
    }
   }
  ]

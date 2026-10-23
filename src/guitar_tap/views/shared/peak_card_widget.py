@@ -757,7 +757,6 @@ class PeakListWidget(QtWidgets.QWidget):
             src_idx = self.model.index(int(idx), pm.ColumnIndex.Modes.value)
             self.model.reset_mode_value(src_idx)
             self.model.dataChanged.emit(src_idx, src_idx, [QtCore.Qt.ItemDataRole.DisplayRole])
-            self.model.update_annotation(src_idx)
 
     def _on_card_clicked(self, card: "PeakCardWidget") -> None:
         """A click on a card toggles the model's highlighted peak (Swift's results-row tap)."""
@@ -851,10 +850,9 @@ class PeakListWidget(QtWidgets.QWidget):
             return child
         return None
 
-    def data_held(self, held: bool, refresh_labels: bool = True) -> None:
-        """Set the held state on every card (enables stars/menus when held). ``refresh_labels=False`` leaves the
-        chart's labels to a refresh the caller has due."""
+    def data_held(self, held: bool) -> None:
+        """Set the held state on every card (enables stars/menus when held)."""
         self._is_held = held
         for card in self._cards:
             card.set_held(held)
-        self.model.data_held(held, refresh_labels)
+        self.model.data_held(held)

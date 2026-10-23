@@ -47,7 +47,7 @@ correctly in all contexts.
     var peakModeMap                          .peak_mode_map (property)
     func peakColor(for:)                     .peak_color(peak, idx)
     func peakModeLabel(for:)                 .peak_mode_label(peak, idx)
-    func isStartOfModeRange(_:for:)          .is_start_of_mode_range(freq, mode)
+    ModeChipsLayer (the chips)               .mode_chip_starts (property)
     func seriesData(frequencies:magnitudes:) .series_data(frequencies, magnitudes)
     var body: some View                      .render() -> QImage
   // MARK: - Shared Export View Builder     # MARK: - Shared Export View Builder
@@ -163,7 +163,7 @@ class ExportableSpectrumChart:
         show_mode_boundaries: bool = True,      # Whether to draw guitar mode boundary lines.
         # Absolute label-center positions in data-space ({uuid: [abs_freq_hz, abs_db]}).
         # Mirrors Swift annotationOffsets: [UUID: CGPoint] where x=absFreqHz, y=absDB.
-        # When absent for a peak, the default (ANNOT_OFFS_Y px above peak) is used.
+        # When absent for a peak, the label sits at its peak plus the default offset.
         annotation_positions: dict | None = None,
         show_unknown_modes: bool | None = None, # Override for TapDisplaySettings.showUnknownModes. None = use default.
         measurement_type_str: str | None = None,              # Measurement type string: controls colour coding and boundary visibility.
@@ -269,10 +269,28 @@ class ExportableSpectrumChart:
                 (ranges.dipole[1],    GuitarMode.DIPOLE),
                 (ranges.ring_mode[0], GuitarMode.RING_MODE),
                 (ranges.ring_mode[1], GuitarMode.RING_MODE),
+                (ranges.upper_modes[0], GuitarMode.UPPER_MODES),
+                (ranges.upper_modes[1], GuitarMode.UPPER_MODES),
             ]
             return [(f, m) for f, m in all_bounds if self.min_freq <= f <= self.max_freq]
         except Exception:
             return []
+
+    @property
+    def mode_chip_starts(self) -> list:
+        """The start of every guitar mode's range, (Hz, mode), whether or not it is on the chart —
+        each a chip, cut at the plot's edges. Mirrors Swift ``ModeChipsLayer``."""
+        if not self.is_guitar or self._GuitarMode is None:
+            return []
+        try:
+            ranges = self._guitar_type_enum.mode_ranges
+        except Exception:
+            return []
+        GuitarMode = self._GuitarMode
+        return [(ranges.air[0], GuitarMode.AIR), (ranges.top[0], GuitarMode.TOP),
+                (ranges.back[0], GuitarMode.BACK), (ranges.dipole[0], GuitarMode.DIPOLE),
+                (ranges.ring_mode[0], GuitarMode.RING_MODE),
+                (ranges.upper_modes[0], GuitarMode.UPPER_MODES)]
 
     @property
     def visible_peaks(self) -> list:
@@ -290,12 +308,14 @@ class ExportableSpectrumChart:
             show_unknown = True   # default — mirrors TapDisplaySettings default
         GuitarMode = self._GuitarMode
         if GuitarMode is None:
-            # Import unavailable — fall back to a plain range filter (no mode classification).
-            return [p for p in self.peaks if self.min_freq <= p.frequency <= self.max_freq]
+            # Import unavailable — every peak (no mode classification).
+            return list(self.peaks)
+        # Every frequency: a label whose peak is off the chart is drawn too, cut at the plot's
+        # edges; the dots take the ones inside the range.
         return GuitarMode.peaks_in_display_range(
             self.peaks,
-            self.min_freq,
-            self.max_freq,
+            float("-inf"),
+            float("inf"),
             self.is_guitar,
             show_unknown,
             set(self.mode_overrides.keys()),
@@ -368,14 +388,6 @@ class ExportableSpectrumChart:
                 return "Diagonal"
             return "Peak"
 
-    def is_start_of_mode_range(self, frequency: float, mode) -> bool:
-        """Mirrors ``private func isStartOfModeRange(_:for:) -> Bool``."""
-        try:
-            lo, _ = mode.mode_range(self._guitar_type_enum)
-            return abs(frequency - lo) < 0.1
-        except Exception:
-            return False
-
     def series_data(self, frequencies: list, magnitudes: list) -> list:
         """Mirrors ``private func seriesData(frequencies:magnitudes:)``."""
         return [
@@ -383,36 +395,14 @@ class ExportableSpectrumChart:
             if self.min_freq <= f <= self.max_freq
         ]
 
-    def annotation_position(
-        self,
-        peak,
-        peak_position: tuple[float, float],
-        freq_to_x,
-        db_to_y,
-        default_offset_y: int,
-    ) -> tuple[float, float]:
-        """Compute annotation center in pixel-space for *peak*.
-
-        Mirrors ``private func annotationPosition(for:peakPosition:frame:)``
-        in ExportableSpectrumChart.swift.
-
-        Returns the pixel coordinate for the annotation card center.
-        When ``annotation_positions`` has no entry for the peak, the default
-        position (``default_offset_y`` px above the peak marker) is returned.
-
-        Args:
-            peak:             ResonantPeak whose position is being resolved.
-            peak_position:    (px, py) pixel coords of the peak dot.
-            freq_to_x:        Callable mapping a frequency (Hz) to a pixel x.
-            db_to_y:          Callable mapping a magnitude (dB) to a pixel y.
-            default_offset_y: Pixels above the peak dot for the default position.
-        """
-        peak_id = getattr(peak, "id", None)
-        abs_pos = self.annotation_positions.get(peak_id)
-        if abs_pos is not None:
-            return (freq_to_x(float(abs_pos[0])), db_to_y(float(abs_pos[1])))
-        px, py = peak_position
-        return (px, py - default_offset_y)
+    def annotation_position(self, peak, freq_to_x, db_to_y) -> tuple[float, float]:
+        """The label's centre in pixel-space for *peak*: its centre in chart units — where it was
+        dragged, else its peak plus the default offset
+        (``TapToneAnalyzer.annotation_centre_from``) — placed by the axis ranges. Mirrors Swift's
+        export, through ``annotationCentre(for:offsets:)``."""
+        from guitar_tap.models.tap_tone_analyzer import TapToneAnalyzer
+        hz, db = TapToneAnalyzer.annotation_centre_from(peak, self.annotation_positions)
+        return (freq_to_x(hz), db_to_y(db))
 
     def render(self) -> "QImage":
         """Mirrors ``var body: some View`` — renders the chart to a QImage.
@@ -558,8 +548,10 @@ class ExportableSpectrumChart:
                     style.mode_boundary_opacity, pixels_per_point=SCALE)
                 plot.addItem(pg.InfiniteLine(pos=freq_b, angle=90, pen=pen_b))
 
-        # Mirrors: ForEach(visiblePeaks) { PointMark(...).foregroundStyle(peakColor(for:)) }
+        # Mirrors: ForEach(visiblePeaks inside the frequency range) { PointMark(...) }
         for idx, peak in enumerate(self.visible_peaks):
+            if not self.min_freq <= peak.frequency <= self.max_freq:
+                continue
             color = self.peak_color(peak, idx)
             plot.plot(
                 [peak.frequency], [peak.magnitude],
@@ -646,14 +638,12 @@ class ExportableSpectrumChart:
             return AXIS_TOP + int(frac * PLOT_H)
 
         # Card geometry — mirrors Swift's annotation VStack(spacing: 6) .padding(10): the card fits
-        # its text and is centred 70 pt above the peak (annotationPosition). All pixel dimensions
+        # its text and is centred on the label's centre (annotation_position). All pixel dimensions
         # AND font sizes scale with SCALE: setPixelSize() sets the font height in device pixels, so
         # * SCALE gives the apparent size on the 2x canvas, as Swift's ImageRenderer(scale: 2.0).
-        ANNOT_OFFS_Y  = int(70 * SCALE)
         ANNOT_PAD     = int(10 * SCALE)
         ANNOT_SPACING = int(6 * SCALE)
         ANNOT_CORNER  = int(10 * SCALE)
-        LEADER_FROM   = int(50 * SCALE)   # ConnectionLineShape from: annotation centre + 50
 
         annot_font_mode = _export_font()
         annot_font_mode.setPixelSize(16 * SCALE)  # mirrors .font(.system(size: 16, weight: .bold))
@@ -689,10 +679,13 @@ class ExportableSpectrumChart:
         painter.setPen(border_pen)
         painter.drawLine(right_x, AXIS_TOP, right_x, AXIS_TOP + PLOT_H)
 
-        # ── Mode boundary labels — mirrors RuleMark .annotation(position:.top) ──────────────────
-        # Swift draws Text(mode.abbreviation) chips at the top of each boundary line.
-        # We paint them directly onto the chart image at the correct x position, just below AXIS_TOP.
-        # Guitar-only — mirrors Swift's guard measurementType.isGuitar else { return [] }.
+        # The mode chips, the labels and their lines are cut at the plot's edges, never moved
+        # inside — mirrors Swift's ModeChipsLayer and the export's clipped label overlay.
+        painter.setClipRect(AXIS_LEFT, AXIS_TOP, PLOT_W, PLOT_H)
+
+        # ── Mode chips — mirrors Swift's ModeChipsLayer(exporting: true): a chip centred on the
+        # start of each range, just below AXIS_TOP, whether or not the start is on the chart.
+        # Guitar-only.
         if self.show_mode_boundaries and self.is_guitar:
             abbrev_font = _export_font()
             abbrev_font.setPixelSize(14 * SCALE)   # mirrors .font(.system(size: 14, weight: .semibold))
@@ -701,9 +694,7 @@ class ExportableSpectrumChart:
             chip_pad_h = int(4 * SCALE)
             chip_pad_v = int(3 * SCALE)
             chip_y = AXIS_TOP + int(4 * SCALE)   # just inside the top border
-            for freq_b, mode_b in self.visible_mode_boundaries:
-                if not self.is_start_of_mode_range(freq_b, mode_b):
-                    continue
+            for freq_b, mode_b in self.mode_chip_starts:
                 abbrev = mode_b.abbreviation
                 bx = _freq_to_x(freq_b)
                 r, g, b = palette.rgb(palette.mode_role(mode_b), Scheme.LIGHT)
@@ -764,13 +755,12 @@ class ExportableSpectrumChart:
             row_h = [max(_height(f) for f, _c, _t in r) for r in rows]
             card_w = max(row_w) + ANNOT_PAD * 2
             card_h = sum(row_h) + ANNOT_SPACING * (len(rows) - 1) + ANNOT_PAD * 2
-            ann_cx, ann_cy = self.annotation_position(
-                peak, (px, py), _freq_to_x, _db_to_y, ANNOT_OFFS_Y)
+            ann_cx, ann_cy = self.annotation_position(peak, _freq_to_x, _db_to_y)
             cards.append((peak, color, rows, row_w, row_h, card_w, card_h,
                           int(ann_cx), int(ann_cy), px, py))
 
-        # Leaders first, beneath every card — mirrors the connection-lines layer: from 50 pt below
-        # the card's centre to the peak, in the peak's colour.
+        # Leaders first, beneath every card — mirrors the connection-lines layer: from the card's
+        # centre to the peak, in the peak's colour; the card covers its end.
         leader = chart_style.EXPORT
         for _peak, color, _rows, _rw, _rh, _w, _h, cx, cy, px, py in cards:
             line_color = QtGui.QColor(color)
@@ -778,7 +768,7 @@ class ExportableSpectrumChart:
             line_pen = QtGui.QPen(line_color, leader.leader_width * SCALE)
             line_pen.setDashPattern([d / leader.leader_width for d in leader.leader_dash])
             painter.setPen(line_pen)
-            painter.drawLine(cx, cy + LEADER_FROM, px, py)
+            painter.drawLine(cx, cy, px, py)
 
         # Cards — mirrors .padding(10).background(chart.readout.background).cornerRadius(10)
         # .shadow(color: scrim.opacity(0.5), radius: 4, x: 0, y: 2): no border.

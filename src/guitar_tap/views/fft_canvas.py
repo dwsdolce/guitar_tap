@@ -149,10 +149,10 @@ class _ChipLabel(pg.InfLineLabel):
 
 
 class _ModeChip(_ChipLabel):
-    """A guitar mode's name at the lower line of its range, as Swift's mode-boundary annotation: a chip
-    centred on the line just inside the plot's top (`.annotation(position: .top, overflowResolution:
-    .fit(to: .plot))`), kept inside the plot at either side — caption2 semibold in the mode's colour,
-    padded 4 / 2, on the mode's colour at 15 %, corner 4."""
+    """A guitar mode's name at the lower line of its range: a chip centred on the line just inside the
+    plot's top — caption2 semibold in the mode's colour, padded 4 / 2, on the mode's colour at 15 %,
+    corner 4. Never moved to stay inside: the plot cuts it at its edges, so a chip whose range starts
+    just off the chart shows the part inside — as Swift's ``ModeChipsLayer``."""
 
     def __init__(self, line: pg.InfiniteLine, text: str, rgb: tuple[int, int, int]) -> None:
         super().__init__(line, text, (4.0, 2.0), 4.0, position=1.0, anchors=[(0.5, 0), (0.5, 0)],
@@ -162,28 +162,6 @@ class _ModeChip(_ChipLabel):
         font.setWeight(QtGui.QFont.Weight.DemiBold)
         self.setFont(font)
         self.updateTextPos()
-
-    def updatePosition(self) -> None:
-        super().updatePosition()
-        vb = self.getViewBox()
-        if vb is None:
-            return
-        (x0, x1), _ = vb.viewRange()
-        width_px = vb.width()
-        if x1 <= x0 or width_px <= 0:
-            return
-        # Only a line inside the chart's range is labelled, as Swift's visibleModeBoundaries. Shown and
-        # hidden by its opacity: a visibility change here would re-enter this update.
-        inside = x0 <= self.line.value() <= x1
-        if self.opacity() != (1.0 if inside else 0.0):
-            self.setOpacity(1.0 if inside else 0.0)
-        if not inside:
-            return
-        # Keep the chip inside the plot: near a side, slide it along rather than centre it.
-        w = self._chip_rect().width()
-        x_px = (self.line.value() - x0) / (x1 - x0) * width_px
-        left = min(max(x_px - w / 2, 0.0), max(width_px - w, 0.0))
-        self.setAnchor(((x_px - left) / w if w > 0 else 0.5, 0))
 
 
 class _PlateCaptureAdapter:
@@ -425,9 +403,9 @@ class FftCanvas(pg.PlotWidget):
         # The engine applied the selected device's calibration when it selected the device.
         # The Qt wiring that needs this widget; the engine starts with start_analyzer().
         self.analyzer.attach_to_view(self)
-        # Wire the analyzer into FftAnnotations so dragged positions are persisted
-        # in the model and survive pan/zoom annotation rebuilds.
-        self.annotations._analyzer = self.analyzer
+        # The labels follow the analyzer: which peaks it labels, their text, and their dragged positions,
+        # which it keeps across pan/zoom rebuilds.
+        self.annotations.attach(self.analyzer)
         # Display mode is initialised to AnalysisDisplayMode.LIVE in TapToneAnalyzer.__init__.
         # Set initial peak threshold on the analyzer.
         # peak_min_threshold is stored as dBFS; threshold input is 0-100 scale.

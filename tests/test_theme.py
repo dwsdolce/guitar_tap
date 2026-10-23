@@ -112,18 +112,15 @@ def test_a_burst_of_palette_changes_restyles_the_app_once(monkeypatch):
 
 def test_peak_label_follows_the_scheme(monkeypatch):
     """A peak label is drawn in the scheme's chart roles: pitch, frequency and dB."""
-    import numpy as np
-
-    from guitar_tap.views.shared.peaks_model import PeaksModel
+    from guitar_tap.views import peak_annotations
 
     QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     monkeypatch.setattr(palette, "os_scheme", lambda: Scheme.LIGHT)
     monkeypatch.setattr(palette, "_apply_linux_fallback", lambda *_: None)
-    model = PeaksModel(np.zeros((0, 3)))
     try:
         for appearance, scheme in ((Appearance.DARK, "dark"), (Appearance.LIGHT, "light")):
             palette.apply(appearance)
-            html = model.annotation_html(196.0, -32.0, "Top")
+            html = peak_annotations.label_html(196.0, -32.0, "Top")
             for role in (
                 palette.Role.PEAK_PITCH, palette.Role.CHART_TITLE, palette.Role.CHART_AXIS,
             ):

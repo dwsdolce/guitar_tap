@@ -67,7 +67,7 @@ class TestLabels:
         return peak_annotations.FftAnnotations(pg.PlotWidget())
 
     def _refresh(self, labels, peaks):
-        """As PeaksModel's refresh: clear, one update per label, then refreshed."""
+        """As the labels' refresh from the analyzer: clear, one update per label, then refreshed."""
         labels.clear_annotations()
         for p in peaks:
             labels.update_annotation(p.id, p.frequency, p.magnitude, f"<b>{p.frequency:.0f}</b>", "Air (Helmholtz)")
@@ -105,27 +105,13 @@ class TestLabels:
 
 
 class TestHeld:
-    def _model(self):
+    def test_held_and_released_set_the_lists_state(self, qapp):
+        """Held, the list is interactive; released, live. (The chart's labels follow the analyzer, not the
+        list.)"""
         widget = peak_card_widget.PeakListWidget()
         widget.model.is_live = True
         widget.update_data_with_modes([(p, GuitarMode.AIR) for p in _frame([100.0, 200.0])])
-        signals = []
-        widget.model.clearAnnotations.connect(lambda: signals.append("clear"))
-        widget.model.hideAnnotations.connect(lambda: signals.append("hide"))
-        return widget, signals
-
-    def test_held_with_its_labels_left_to_the_callers_refresh_emits_no_label_change(self, qapp):
-        widget, signals = self._model()
-        widget.data_held(True, refresh_labels=False)
-        assert signals == [] and not widget.model.is_live
-
-    def test_held_refreshes_the_labels_by_default(self, qapp):
-        widget, signals = self._model()
         widget.data_held(True)
-        assert signals == ["clear"]
-
-    def test_released_hides_the_labels(self, qapp):
-        widget, signals = self._model()
-        widget.data_held(True, refresh_labels=False)
-        widget.data_held(False, refresh_labels=False)
-        assert signals == ["hide"]
+        assert not widget.model.is_live
+        widget.data_held(False)
+        assert widget.model.is_live
