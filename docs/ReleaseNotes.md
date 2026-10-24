@@ -5,11 +5,15 @@
 ## Version {{version}} · Build {{build}}
 ### What's New Since Build {{since}}
 
-<!-- Notes reviewed through commit 7c01f74 (2026-10-07). The next update reads only `git log 7c01f74..HEAD`, then moves this line to the newest commit it covered. -->
+<!-- Notes reviewed through commit 10c139c (2026-10-23). The next update reads only `git log 10c139c..HEAD`, then moves this line to the newest commit it covered. -->
 
 ---
 
 ## New Features
+
+### Measurement Type Beside New Tap
+
+- A new button beside **New Tap** shows the current measurement type (Generic, Acoustic, Classical, Flamenco, Plate or Brace). Choose another from its menu and Guitar Tap switches to it and starts a new tap of it, just as choosing it in Settings does — without opening Settings. It always shows the same type as Settings, and is disabled only while a file plays.
 
 ### Appearance: Light, Dark or System
 
@@ -24,10 +28,18 @@
 ### Microphone Unavailable
 
 - If a microphone you choose in Settings, plug in, or that a loaded measurement asks for cannot be opened, Guitar Tap keeps the input you were using and tells you so, instead of leaving a dead device selected.
+- With no input device, or one that cannot be started, Guitar Tap still opens and works: you can load, import, compare and export; Play File needs the input running. The chart and status bar read "Audio input unavailable" (or "Starting..." while the input starts), and New Tap stays disabled until there is input. If the input stops and cannot be restarted, the status bar says so, and Guitar Tap keeps watching for it to come back.
+- If Guitar Tap is not allowed to use the microphone (macOS Privacy & Security, or Windows' microphone privacy settings), it says so in a **Microphone Access Required** message, and the status bar says so too. Restart Guitar Tap after allowing access.
 
 ---
 
 ## Improvements
+
+### The Linux AppImage
+
+- The AppImage now runs on Ubuntu 22.04 and later (and other distributions of that age) and needs nothing installed — not libfuse2, PortAudio or libxcb-cursor0. It uses your system's own sound setup (PipeWire or PulseAudio), and its file dialogs show network and remote places.
+- Guitar Tap starts even on a system with no sound server, and reports the audio input as unavailable.
+- The AppImage is attached to each release on GitHub.
 
 ### Windows: Taps No Longer Suppressed by Audio Enhancements
 
@@ -43,28 +55,38 @@
 - **Save Measurement** and **Play Audio File** put a bold title above each field; Save and Play are highlighted only when they can act.
 - **The status bar** matches the other editions, and its indicators follow detection exactly.
 - **Done** buttons follow one rule: a Done that applies changes (Settings) is highlighted; one that only closes a window is plain.
+- Dialogs use your system's own buttons. The tap count is a stepper whose label greys with it during a measurement, the Peak Min value sits on a small chip, peak dots are solid, menu icons stay visible on a highlighted item, and a saved measurement's menu button appears when the pointer is over its row. No overlay covers the window while exporting or starting, and warning signs are drawn as plain text, no longer as colour emoji on Windows.
 
 ### Quick Start Guide
 
-- Renamed **Quick Start Guide** and brought in line with the other editions: the same sections, wording and icons, the current section's title stays at the top as you scroll, and it describes the new Appearance setting.
+- Brought in line with the other editions: the same sections, wording and icons, the current section's title stays at the top as you scroll, and it describes the new Appearance setting.
 
 ### The Chart
 
 - The chart's range now changes only when you move it, when you load a measurement (its saved range), when a newly found plate or brace peak would fall off the chart (it widens to show it), or when you change the measurement type. New Tap or Play File after a load returns to your saved view unless you had moved the chart.
 - Reset to Saved no longer makes a completed plate's peaks vanish, and a comparison's range is no longer cut short.
 - The 0 and −100 dB labels are drawn, the lines are smooth on high-resolution screens, and the tick spacing matches the other editions.
+- A peak's label sits 14 dB above its peak unless you drag it, and stays where you put it as you zoom or pan. A label stays with its peak when you pan the peak off the chart, and labels and mode chips are cut at the chart's edges rather than squeezed inside.
+- A comparison of saved measurements shows no mode lines, on screen or in its exports; a multi-tap comparison keeps them. A comparison opens at a range spanning all its measurements, and a saved comparison remembers its own range.
+- The crosshair follows the curve smoothly between points, and keeps to the curve it is on until you move clearly closer to another.
+- The chart's help button lists the gestures for your computer: Ctrl+Scroll (Command+Scroll on macOS) zooms around the pointer, a trackpad pinch on macOS zooms, and scrolling outside the plot pans. The pointer shows what a drag will do: a crosshair over the plot, arrows over each axis, a hand over a label.
+- The grid lies beneath the curves and labels, and "No peaks detected in visible range" shows when the chart's range holds none.
 
 ### Exports
 
 - Exported images and PDF reports use the same layout as the other editions; the report's footer reads "Generated by GuitarTap Python …" with the export time, and long comparison names wrap instead of being cut off.
-- A saved comparison's image and report are labelled **Comparison**, titled "FFT Peaks — *name*", show the guitar mode bands, and the report lists the frequency range — from the main window and from the measurement list alike.
-- A plate's report shows all of its peaks.
+- A saved comparison's image and report are labelled **Comparison**, titled "FFT Peaks — *name*", and the report lists the frequency range — from the main window and from the measurement list alike.
+- A plate's report shows all of its peaks, and exported reports show the Upper Modes band.
+- On Linux, exports use a bundled font, so they lay out the same as on macOS and Windows.
+- The default export folder is Documents/GuitarTap wherever Windows keeps Documents, including OneDrive.
+- If the chart cannot be drawn, the export stops with **Export Failed** rather than saving a file without the chart.
 
 ### Microphones
 
 - On launch, the microphone you chose is used if it is connected; otherwise the system default, then the first device. A virtual device such as BlackHole no longer replaces your chosen microphone after a relaunch, and on Windows the correct system default is used.
 - Loading a measurement switches to the microphone it was recorded with, and its warnings now say what they mean: **Microphone Not Found** names both microphones (a measurement from another computer or OS usually won't find its own); **Recording Setup Differs** lists each calibration or sample-rate difference. The warning appears once the load has finished.
 - Importing measurements no longer raises microphone warnings; importing a single measurement loads it, with one combined message.
+- The selected calibration's details in Settings update as you pick one.
 
 ### Play Audio File
 
@@ -73,12 +95,20 @@
 
 ### Measurements
 
-- Guitar taps are analysed from the tap's onset, as in the other editions, so the same recording gives the same peaks everywhere.
+- Guitar taps are analysed from the tap's onset, as in the other editions, so the same recording gives the same peaks everywhere — wherever the tap falls in the audio stream.
+- Ring-out is measured from the tap itself, to a fraction of a millisecond rather than in steps of about 21 ms, so the same tap reads the same ring-out in every edition. Expect ring-out values to differ slightly from earlier versions. A ring-out longer than about 1.2 s is not measured.
+- With a microphone calibration loaded, its corrections are applied at each frequency exactly, as in the other editions (an Air peak could read 88.3 Hz instead of 88.4).
+- Re-analyze keeps the names and label positions of the peaks it finds again.
+- In Settings, Done after changing the measurement type or Measure FLC starts a new tap of the new kind; changing between guitar types re-labels the current peaks.
 - Plate and brace measurements no longer end with "Missing Dimensions" or "Calculation Error" pop-ups; the properties appear once the dimensions are entered in the Results panel.
 - **Generic Guitar** is the default measurement type for a new installation.
 - The Ring-Out / Tap Ratio box shows a placeholder until there is a value, and "Unknown" for an invalid one.
 - Every value is shown at the same precision as the other editions; sample rate and bandwidth read in whole hertz; digital silence reads "−∞"; a note exactly halfway between two pitches is named the same way everywhere.
 - Mode colours match the other editions, so Upper Modes and Unknown are no longer the same grey.
+
+### Faster
+
+- The window does far less work while listening, a guitar measurement appears in a fraction of the time it did, and the chart draws only the range on screen.
 
 ### Quitting
 
@@ -86,8 +116,9 @@
 
 ### Saved Measurements and Files
 
-- If your saved measurements cannot be read when Guitar Tap starts, they are never written over: the file is kept, renamed beside itself, and Guitar Tap tells you where it is. Correct it and rename it back to restore them.
-- A measurement file is read the same way by every edition: its ids may be in upper or lower case, and a file with an id that is missing or malformed is refused with a message rather than opened in part.
+- If one measurement in your saved list cannot be read when Guitar Tap starts, only that one is left out: the rest load, a copy of the original file is kept beside it, and Guitar Tap tells you where. If the file cannot be read at all, it is renamed beside itself — correct it and rename it back to restore it. Your saved measurements are never written over.
+- Importing a file with an unreadable measurement imports the rest and tells you which were skipped.
+- A measurement file is read the same way by every edition: its ids may be in upper or lower case. A measurement with a missing or malformed id, or with no spectrum, is not opened.
 
 ---
 
@@ -107,6 +138,11 @@
 - **Edit Name & Notes offered Save when nothing had changed** if the notes had spaces at either end.
 - **Play File could, rarely, freeze Guitar Tap** — and hold up the microphone for other apps until it was quit.
 - **Exporting a measurement saved by Guitar Tap 1.0.x** put its dragged labels back in their default positions.
+- **Opening a menu or pop-up during a measurement** — in Settings, Saved Measurements or the main window — could close it as the peaks appeared.
+- **A sound during the warm-up could end a measurement on the room's noise** that followed.
+- **New Tap could stay disabled** if the microphone restarted again while settling after a device change.
+- **After the input restarted, choosing a microphone could open a different one.** Guitar Tap now checks the device it opened.
+- **On macOS, a microphone that failed to start at the first attempt** is now tried once more before an error is shown; on Windows, duplicate "WDM-KS" inputs are no longer listed.
 
 ---
 
