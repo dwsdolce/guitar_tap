@@ -1061,6 +1061,33 @@ class TapToneAnalyzerMeasurementManagementMixin:
         self.saved_measurements.pop(at)
         self._persist_measurements()
 
+    def delete_measurements(self, indices: "set[int]") -> None:
+        """Delete the measurements at ``indices`` (positions in ``saved_measurements``) and persist once.
+
+        Mirrors Swift ``deleteMeasurements(at:)``.
+        """
+        doomed = {i for i in indices if 0 <= i < len(self.saved_measurements)}
+        if not doomed:
+            return
+        self.saved_measurements[:] = [m for i, m in enumerate(self.saved_measurements) if i not in doomed]
+        self._persist_measurements()
+
+    @property
+    def duplicate_measurement_indices(self) -> "set[int]":
+        """The positions of the duplicates — every later copy of a measurement already in the library.
+
+        Mirrors Swift ``duplicateMeasurementIndices``.
+        """
+        from .saved_measurements_order import duplicates
+        return set(duplicates([str(m.id) for m in self.saved_measurements]))
+
+    def delete_duplicate_measurements(self) -> None:
+        """Delete the duplicates, keeping the first copy of each measurement.
+
+        Mirrors Swift ``deleteDuplicateMeasurements()``.
+        """
+        self.delete_measurements(self.duplicate_measurement_indices)
+
     def delete_all_measurements(self) -> None:
         """Clear all saved measurements, persist, and notify.
 

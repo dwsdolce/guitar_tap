@@ -281,6 +281,34 @@ class AppSettings:
         cls._set("analysis/show_unknown_modes", v)
 
     # ------------------------------------------------------------------ #
+    # Saved Measurements order  (mirrors Swift TapDisplaySettings.savedMeasurements*)
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def saved_measurements_sort(cls) -> str:
+        return str(cls._get("measurements/sort", "asAdded"))
+
+    @classmethod
+    def set_saved_measurements_sort(cls, v: str) -> None:
+        cls._set("measurements/sort", v)
+
+    @classmethod
+    def saved_measurements_ascending(cls) -> bool:
+        return cls._get_bool("measurements/ascending", True)
+
+    @classmethod
+    def set_saved_measurements_ascending(cls, v: bool) -> None:
+        cls._set("measurements/ascending", v)
+
+    @classmethod
+    def saved_measurements_filter(cls) -> str:
+        """The one type shown, or "" for all."""
+        return str(cls._get("measurements/filter", ""))
+
+    @classmethod
+    def set_saved_measurements_filter(cls, v: str) -> None:
+        cls._set("measurements/filter", v)
+
+    # ------------------------------------------------------------------ #
     # Appearance  (mirrors Swift TapDisplaySettings.appearance)
     # ------------------------------------------------------------------ #
     @classmethod

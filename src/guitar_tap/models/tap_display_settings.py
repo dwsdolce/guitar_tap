@@ -428,6 +428,41 @@ class TapDisplaySettings:
     def set_show_unknown_modes(cls, v: bool) -> None:
         _app_settings().set_show_unknown_modes(v)
 
+    # MARK: - Saved Measurements order
+
+    @classmethod
+    def saved_measurements_sort(cls) -> "SavedMeasurementsSort":
+        """How Saved Measurements is sorted; As Added (the library's own order) until one is chosen.
+        Mirrors Swift TapDisplaySettings.savedMeasurementsSort."""
+        from .saved_measurements_order import SavedMeasurementsSort
+        try:
+            return SavedMeasurementsSort(_app_settings().saved_measurements_sort())
+        except ValueError:
+            return SavedMeasurementsSort.AS_ADDED
+
+    @classmethod
+    def set_saved_measurements_sort(cls, v: "SavedMeasurementsSort") -> None:
+        _app_settings().set_saved_measurements_sort(v.value)
+
+    @classmethod
+    def saved_measurements_ascending(cls) -> bool:
+        """The sort's direction. Mirrors Swift TapDisplaySettings.savedMeasurementsAscending."""
+        return _app_settings().saved_measurements_ascending()
+
+    @classmethod
+    def set_saved_measurements_ascending(cls, v: bool) -> None:
+        _app_settings().set_saved_measurements_ascending(v)
+
+    @classmethod
+    def saved_measurements_filter(cls) -> "str | None":
+        """The one type Saved Measurements shows, or None for all.
+        Mirrors Swift TapDisplaySettings.savedMeasurementsFilter."""
+        return _app_settings().saved_measurements_filter() or None
+
+    @classmethod
+    def set_saved_measurements_filter(cls, v: "str | None") -> None:
+        _app_settings().set_saved_measurements_filter(v or "")
+
     # MARK: - Dump Capture Audio
 
     @classmethod

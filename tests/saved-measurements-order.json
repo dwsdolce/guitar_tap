@@ -1,0 +1,280 @@
+{
+ "slug": "test/saved-measurements-order",
+ "about": "The order Saved Measurements shows the library in (savedMeasurementsOrder): the measurements as the library keeps them, in the order added, each by its name, the date it was made (timestamp) and its type (the short name the list shows: Generic, Acoustic, Classical, Flamenco, Plate, Brace, Comparison, or — for a file with no type); then cases of a sort (asAdded, date, name, type), a direction and a filter (a type, or null for all), each expecting the positions in the library to show, in order. Ties go by date, oldest first, then by position. Names compare case-insensitively. Type order is the type menu's, then Comparison, then —. 'duplicates' cases: the library's measurement ids in the order added, expecting the positions of the later copies of an id already seen (ids compare case-insensitively; the first copy of each stays) — same id means same content, since an edited measurement gets a new id.",
+ "measurements": [
+  {
+   "name": "Martin",
+   "timestamp": "2026-03-10T10:00:00Z",
+   "type": "Classical"
+  },
+  {
+   "name": "alpha",
+   "timestamp": "2025-12-01T09:00:00Z",
+   "type": "Plate"
+  },
+  {
+   "name": "Martin",
+   "timestamp": "2026-01-05T08:00:00Z",
+   "type": "Generic"
+  },
+  {
+   "name": "Brace 1",
+   "timestamp": "2026-02-01T12:00:00Z",
+   "type": "Brace"
+  },
+  {
+   "name": "Cmp A",
+   "timestamp": "2026-04-01T00:00:00Z",
+   "type": "Comparison"
+  },
+  {
+   "name": "",
+   "timestamp": "2026-02-01T12:00:00Z",
+   "type": "Classical"
+  },
+  {
+   "name": "Old file",
+   "timestamp": "2025-01-01T00:00:00Z",
+   "type": "—"
+  }
+ ],
+ "cases": [
+  {
+   "id": "SO1",
+   "name": "as added, oldest first: the library's order",
+   "sort": "asAdded",
+   "ascending": true,
+   "filter": null,
+   "expect": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ]
+  },
+  {
+   "id": "SO2",
+   "name": "as added, newest first",
+   "sort": "asAdded",
+   "ascending": false,
+   "filter": null,
+   "expect": [
+    6,
+    5,
+    4,
+    3,
+    2,
+    1,
+    0
+   ]
+  },
+  {
+   "id": "SO3",
+   "name": "date, oldest first; a shared date by position",
+   "sort": "date",
+   "ascending": true,
+   "filter": null,
+   "expect": [
+    6,
+    1,
+    2,
+    3,
+    5,
+    0,
+    4
+   ]
+  },
+  {
+   "id": "SO4",
+   "name": "date, newest first; a shared date still by position",
+   "sort": "date",
+   "ascending": false,
+   "filter": null,
+   "expect": [
+    4,
+    0,
+    3,
+    5,
+    2,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "SO5",
+   "name": "name, A to Z, case-insensitive; no name first; a shared name by date",
+   "sort": "name",
+   "ascending": true,
+   "filter": null,
+   "expect": [
+    5,
+    1,
+    3,
+    4,
+    2,
+    0,
+    6
+   ]
+  },
+  {
+   "id": "SO6",
+   "name": "name, Z to A; a shared name still by date, oldest first",
+   "sort": "name",
+   "ascending": false,
+   "filter": null,
+   "expect": [
+    6,
+    2,
+    0,
+    4,
+    3,
+    1,
+    5
+   ]
+  },
+  {
+   "id": "SO7",
+   "name": "type, in the type menu's order, then Comparison, then —; one type by date",
+   "sort": "type",
+   "ascending": true,
+   "filter": null,
+   "expect": [
+    2,
+    5,
+    0,
+    1,
+    3,
+    4,
+    6
+   ]
+  },
+  {
+   "id": "SO8",
+   "name": "type, reversed; one type still by date, oldest first",
+   "sort": "type",
+   "ascending": false,
+   "filter": null,
+   "expect": [
+    6,
+    4,
+    3,
+    1,
+    5,
+    0,
+    2
+   ]
+  },
+  {
+   "id": "SO9",
+   "name": "only Classical, as added",
+   "sort": "asAdded",
+   "ascending": true,
+   "filter": "Classical",
+   "expect": [
+    0,
+    5
+   ]
+  },
+  {
+   "id": "SO10",
+   "name": "only comparisons, by date",
+   "sort": "date",
+   "ascending": false,
+   "filter": "Comparison",
+   "expect": [
+    4
+   ]
+  },
+  {
+   "id": "SO11",
+   "name": "a type with none: nothing shown",
+   "sort": "asAdded",
+   "ascending": true,
+   "filter": "Flamenco",
+   "expect": []
+  },
+  {
+   "id": "SO12",
+   "name": "only plates, by name",
+   "sort": "name",
+   "ascending": true,
+   "filter": "Plate",
+   "expect": [
+    1
+   ]
+  }
+ ],
+ "duplicates": [
+  {
+   "id": "SD1",
+   "name": "no duplicates",
+   "ids": [
+    "a1",
+    "b2",
+    "c3"
+   ],
+   "expect": []
+  },
+  {
+   "id": "SD2",
+   "name": "a measurement imported twice: the later copy",
+   "ids": [
+    "a1",
+    "b2",
+    "a1"
+   ],
+   "expect": [
+    2
+   ]
+  },
+  {
+   "id": "SD3",
+   "name": "three copies: all but the first",
+   "ids": [
+    "a1",
+    "a1",
+    "b2",
+    "a1"
+   ],
+   "expect": [
+    1,
+    3
+   ]
+  },
+  {
+   "id": "SD4",
+   "name": "two measurements each imported twice",
+   "ids": [
+    "a1",
+    "b2",
+    "a1",
+    "b2",
+    "c3"
+   ],
+   "expect": [
+    2,
+    3
+   ]
+  },
+  {
+   "id": "SD5",
+   "name": "ids differing only in case are the same id",
+   "ids": [
+    "AB12",
+    "ab12"
+   ],
+   "expect": [
+    1
+   ]
+  },
+  {
+   "id": "SD6",
+   "name": "an empty library",
+   "ids": [],
+   "expect": []
+  }
+ ]
+}
