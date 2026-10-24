@@ -5,7 +5,7 @@
 ## Version {{version}} · Build {{build}}
 ### What's New Since Build {{since}}
 
-<!-- Notes reviewed through commit 10c139c (2026-10-23). The next update reads only `git log 10c139c..HEAD`, then moves this line to the newest commit it covered. -->
+<!-- Notes reviewed through commit 088f14b (2026-10-24). The next update reads only `git log 088f14b..HEAD`, then moves this line to the newest commit it covered. -->
 
 ---
 
@@ -14,6 +14,10 @@
 ### Measurement Type Beside New Tap
 
 - A new button beside **New Tap** shows the current measurement type (Generic, Acoustic, Classical, Flamenco, Plate or Brace). Choose another from its menu and Guitar Tap switches to it and starts a new tap of it, just as choosing it in Settings does — without opening Settings. It always shows the same type as Settings, and is disabled only while a file plays.
+
+### Sort, Filter and Delete in Saved Measurements
+
+- A new **Sort & Filter** menu sorts the list as added, by date, name or type (choose the same again to reverse it), or shows one type only — comparisons included. Your choice is remembered. **Delete All** is now a **Delete** menu: **All**, **Duplicates** (every later copy of a measurement, keeping the first) or **Selected** (tick the measurements to delete). The list itself always keeps the order the measurements were added.
 
 ### Appearance: Light, Dark or System
 
