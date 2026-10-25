@@ -5,7 +5,7 @@
 ## Version {{version}} · Build {{build}}
 ### What's New Since Build {{since}}
 
-<!-- Notes reviewed through commit 088f14b (2026-10-24). The next update reads only `git log 088f14b..HEAD`, then moves this line to the newest commit it covered. -->
+<!-- Notes reviewed through commit b6bd987 (2026-10-24). The next update reads only `git log b6bd987..HEAD`, then moves this line to the newest commit it covered. -->
 
 ---
 
@@ -18,6 +18,10 @@
 ### Sort, Filter and Delete in Saved Measurements
 
 - A new **Sort & Filter** menu sorts the list as added, by date, name or type (choose the same again to reverse it), or shows one type only — comparisons included. Your choice is remembered. **Delete All** is now a **Delete** menu: **All**, **Duplicates** (every later copy of a measurement, keeping the first) or **Selected** (tick the measurements to delete). The list itself always keeps the order the measurements were added.
+
+### Chart Menu for a Comparison
+
+- While a comparison is shown, the chart's menu resets either or both axes to the comparison range — the span of the compared measurements, where the comparison opened — in place of Saved and Defaults, which mean nothing for measurements of many guitars.
 
 ### Appearance: Light, Dark or System
 
