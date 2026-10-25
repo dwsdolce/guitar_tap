@@ -1728,11 +1728,12 @@ class TapToneAnalyzer(
 
     def auto_start_tap_sequence(self) -> None:
         """What the engine coming up does: start a tap sequence — only when nothing is under way or on
-        screen (not detecting, not complete, not paused, no taps taken), so an engine start never
-        replaces a measurement. Through ``request_start_tap_sequence``, for its dump-folder check.
-        Mirrors Swift ``autoStartTapSequence()``."""
+        screen (not detecting, not complete, not paused, no taps taken, no comparison shown), so an engine
+        start never replaces a measurement or a comparison. Through ``request_start_tap_sequence``, for its
+        dump-folder check. Mirrors Swift ``autoStartTapSequence()``."""
         if (not self.is_detecting and not self.is_measurement_complete
-                and not self.is_detection_paused and self.current_tap_count == 0):
+                and not self.is_detection_paused and self.current_tap_count == 0
+                and self.display_mode != AnalysisDisplayMode.COMPARISON):
             self.request_start_tap_sequence()
 
     # ------------------------------------------------------------------ #

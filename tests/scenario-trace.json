@@ -650,6 +650,49 @@
      }
     ]
    }
+  },
+  {
+   "id": "S10",
+   "note": "the engine coming up leaves a loaded comparison on screen",
+   "steps": [
+    {
+     "settings": {
+      "type": "Generic Guitar"
+     }
+    },
+    {
+     "loadFixture": "5-guitar-comparison-1776708138.guitartap"
+    },
+    {
+     "snap": "loaded"
+    },
+    {
+     "engineStarted": true
+    },
+    {
+     "snap": "postEngine"
+    }
+   ],
+   "expect": {
+    "trace": [
+     {
+      "label": "loaded",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     },
+     {
+      "label": "postEngine",
+      "detecting": false,
+      "paused": false,
+      "complete": false,
+      "tapCount": 0,
+      "capturedTaps": 0
+     }
+    ]
+   }
   }
  ]
 }
