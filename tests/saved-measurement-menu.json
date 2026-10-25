@@ -1,0 +1,69 @@
+{
+ "slug": "test/saved-measurement-menu",
+ "about": "A saved measurement's menu — from its ⋯ or a right-click in Saved Measurements — in every edition: the same items, words, order and icons. 'groups' are its items between separators, in order; each item names what it does ('action'), its words ('title'), Swift's SF Symbol ('sfSymbol') and the Material Design icon Python and the web draw ('mdi', as Python names it without 'mdi.'). 'macOSOnly' marks the item only the Mac edition has (it saves the file through a save dialog; the others' Export Measurement already does).",
+ "groups": [
+  [
+   {
+    "id": "SM1",
+    "action": "load",
+    "title": "Load into View",
+    "sfSymbol": "arrow.down.doc",
+    "mdi": "file-download-outline"
+   }
+  ],
+  [
+   {
+    "id": "SM2",
+    "action": "details",
+    "title": "View Details",
+    "sfSymbol": "eye",
+    "mdi": "eye-outline"
+   },
+   {
+    "id": "SM3",
+    "action": "edit",
+    "title": "Edit Name & Notes",
+    "sfSymbol": "pencil",
+    "mdi": "pencil-outline"
+   },
+   {
+    "id": "SM4",
+    "action": "exportMeasurement",
+    "title": "Export Measurement",
+    "sfSymbol": "doc.badge.arrow.up",
+    "mdi": "file-export-outline"
+   },
+   {
+    "id": "SM5",
+    "action": "saveToDisk",
+    "title": "Save Measurement to Disk…",
+    "sfSymbol": "arrow.down.doc",
+    "mdi": null,
+    "macOSOnly": true
+   },
+   {
+    "id": "SM6",
+    "action": "exportSpectrum",
+    "title": "Export Spectrum",
+    "sfSymbol": "chart.line.uptrend.xyaxis",
+    "mdi": "chart-line"
+   },
+   {
+    "id": "SM7",
+    "action": "exportPDF",
+    "title": "Export PDF Report",
+    "sfSymbol": "doc.richtext",
+    "mdi": "file-pdf-box"
+   }
+  ],
+  [
+   {
+    "id": "SM8",
+    "action": "delete",
+    "title": "Delete",
+    "sfSymbol": "trash",
+    "mdi": "trash-can-outline"
+   }
+  ]
+ ]
+}

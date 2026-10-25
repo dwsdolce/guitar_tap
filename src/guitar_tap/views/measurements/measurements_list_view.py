@@ -30,6 +30,7 @@ from guitar_tap.views.exportable_spectrum_chart import ExportRenderError
 from guitar_tap.views.measurements import edit_measurement_view as EMV
 from guitar_tap.views.measurements import measurement_detail_view as MDD
 from guitar_tap.views.measurements.measurement_row_view import MeasurementRowView
+from guitar_tap.views.measurements import saved_measurement_menu
 from guitar_tap.views.shared.empty_state_view import EmptyStateView
 from guitar_tap.views.utilities import palette
 
@@ -515,35 +516,28 @@ class MeasurementsDialog(QtWidgets.QDialog):
         right-click handler and the row's ``⋯`` button (see MeasurementRowView)."""
         menu = QtWidgets.QMenu(self)
 
-        # Icons mirror the Swift SF Symbols on the same actions, in the menu's own colours.
-
-        load_act        = palette.add_menu_item(menu, "mdi.file-download-outline", "Load into View")
-        menu.addSeparator()
-        details_act     = palette.add_menu_item(menu, "mdi.eye-outline", "View Details")
-        # "&&" so Qt renders a literal ampersand instead of consuming it as a mnemonic.
-        edit_act        = palette.add_menu_item(menu, "mdi.pencil-outline", "Edit Name && Notes")
-        export_act      = palette.add_menu_item(menu, "mdi.file-export-outline", "Export Measurement")
-        export_spec_act = palette.add_menu_item(menu, "mdi.chart-line", "Export Spectrum")
-        export_pdf_act  = palette.add_menu_item(menu, "mdi.file-pdf-box", "Export PDF Report")
-        menu.addSeparator()
-        delete_act      = palette.add_menu_item(menu, "mdi.trash-can-outline", "Delete")
+        # From its groups (saved_measurement_menu), a separator between them; the icons mirror Swift's SF Symbols,
+        # in the menu's own colours. "&&" so Qt renders a literal ampersand instead of a mnemonic.
+        handlers = {
+            "load": lambda: self._load_and_close(m),
+            "details": lambda: self._open_detail(m),
+            "edit": lambda: self._open_edit(row, m),
+            "exportMeasurement": lambda: self._export_json(m),
+            "exportSpectrum": lambda: self._export_spectrum(m),
+            "exportPDF": lambda: self._export_pdf(m),
+            "delete": lambda: self._delete_measurement(row, m),
+        }
+        chosen: dict = {}
+        for i, group in enumerate(saved_measurement_menu.GROUPS):
+            if i:
+                menu.addSeparator()
+            for entry in group:
+                act = palette.add_menu_item(menu, f"mdi.{entry.mdi}", entry.title.replace("&", "&&"))
+                chosen[act] = handlers[entry.action]
 
         action = menu.exec(global_pos)
-
-        if action == load_act:
-            self._load_and_close(m)
-        elif action == details_act:
-            self._open_detail(m)
-        elif action == edit_act:
-            self._open_edit(row, m)
-        elif action == export_act:
-            self._export_json(m)
-        elif action == export_spec_act:
-            self._export_spectrum(m)
-        elif action == export_pdf_act:
-            self._export_pdf(m)
-        elif action == delete_act:
-            self._delete_measurement(row, m)
+        if action in chosen:
+            chosen[action]()
 
     # ── Export / delete ───────────────────────────────────────────────────────
 
