@@ -175,7 +175,7 @@ def test_completing_announces_the_peaks_above_peak_min(qapp):
                                            {"peakHz": 220, "peakDB": -70, "halfWidthHz": 6}]})  # below it
         sut.captured_taps = [(np.array(mags), np.array(freqs), datetime.datetime.now())]
         announced: list[list] = []
-        sut.peaksChanged.connect(announced.append)
+        sut.peaks.peaksChanged.connect(announced.append)
         sut.process_multiple_taps()
         assert any(p.magnitude < -50.0 for p in sut.all_peaks), "the capture found no peak below Peak Min"
         assert announced, "completion announced no peaks"

@@ -101,7 +101,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # Notify observers — mirrors Swift @Published var currentPeaks which
         # automatically publishes to all subscribers including the peaks display. (Material returned
         # above: its identified L/C/FLC are emitted at phase completion via _emit_peaks_array.)
-        self.peaksChanged.emit(peaks)
+        self.peaks.peaksChanged.emit(peaks)
 
     # ------------------------------------------------------------------ #
     # recalculate_frozen_peaks_if_needed / _apply_frozen_peak_state
@@ -151,7 +151,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         peaks = self.all_peaks
         if not peaks:
             self.identified_modes = []
-            self.peaksChanged.emit([])
+            self.peaks.peaksChanged.emit([])
             return
 
         self._apply_frozen_peak_state(
@@ -162,7 +162,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         )
         # TapEntry peaks are computed once, at capture, and are durable; a display recalc never
         # re-derives them.
-        self.peaksChanged.emit(self.peaks_above_peak_min)
+        self.peaks.peaksChanged.emit(self.peaks_above_peak_min)
 
     # A TapEntry's peaks are computed ONCE, at capture, over the full set (see the per-tap block in
     # tap_tone_analyzer_spectrum_capture.py) and are never re-derived — not by a recalc, not on load,
@@ -567,7 +567,7 @@ class TapToneAnalyzerPeakAnalysisMixin:
         # Python requires an explicit signal emission so the scatter plot and results
         # panel receive the reclassified peaks.  Mirrors the pattern used in
         # recalculate_frozen_peaks_if_needed() and analyze_magnitudes().
-        self.peaksChanged.emit(list(self.peaks_above_peak_min))
+        self.peaks.peaksChanged.emit(list(self.peaks_above_peak_min))
 
     # ------------------------------------------------------------------ #
     # remove_duplicate_peaks
@@ -704,9 +704,9 @@ class TapToneAnalyzerPeakAnalysisMixin:
         Mirrors Swift's views reading ``peaksAbovePeakMin`` / ``materialIdentifiedPeaks``.
         """
         if not self._tds.measurement_type().is_guitar:
-            self.peaksChanged.emit(list(self.material_identified_peaks))
+            self.peaks.peaksChanged.emit(list(self.material_identified_peaks))
             return
-        self.peaksChanged.emit(self.peaks_above_peak_min)
+        self.peaks.peaksChanged.emit(self.peaks_above_peak_min)
 
     @staticmethod
     def resolved_mode_peaks(

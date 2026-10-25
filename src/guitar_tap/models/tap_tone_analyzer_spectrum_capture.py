@@ -1995,7 +1995,7 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # Now emit peaksChanged with _is_measurement_complete already True in the view: the peaks above
         # Peak Min (the full set, all_peaks, is detected at the floor), as Swift's view reads
         # peaksAbovePeakMin.
-        self.peaksChanged.emit(list(self.peaks_above_peak_min))
+        self.peaks.peaksChanged.emit(list(self.peaks_above_peak_min))
 
         # Do NOT clear captured_taps here — mirrors Swift processMultipleTaps() which
         # leaves capturedTaps intact until resetForNewSequence()/reset() clears them.
@@ -2022,5 +2022,5 @@ class TapToneAnalyzerSpectrumCaptureMixin:
         # unchanged. Mirrors Swift's view reading materialIdentifiedPeaks.
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         emit_peaks = peaks if _tds.measurement_type().is_guitar else self.material_identified_peaks
-        self.peaksChanged.emit(emit_peaks)  # list[ResonantPeak] — mirrors Swift currentPeaks
+        self.peaks.peaksChanged.emit(emit_peaks)  # list[ResonantPeak] — mirrors Swift currentPeaks
 

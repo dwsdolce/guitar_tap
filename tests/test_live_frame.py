@@ -33,7 +33,8 @@ def _quiet_frame(n: int) -> np.ndarray:
 
 def test_frame_is_announced_on_the_live_frame_alone():
     """LF1: a frame, while a completed measurement is on screen, is announced on the live frame and by
-    nothing else. (While a sequence runs the analyzer announces its live peaks each frame, as it should.)
+    nothing else. (While a sequence runs, a frame's live peaks are announced on the detected peaks —
+    test_detected_peaks.py.)
     Mirrors Swift frame_isAnnouncedOnTheLiveFrameAlone."""
     app = _app()
     TapDisplaySettings.set_measurement_type(MeasurementType.CLASSICAL)

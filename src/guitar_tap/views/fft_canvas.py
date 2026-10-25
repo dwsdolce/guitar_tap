@@ -417,7 +417,7 @@ class FftCanvas(pg.PlotWidget):
         self.mic: Microphone = self.analyzer.mic
         # ── Connect analyzer signals → FftCanvas signals (forwarding) ────
         # This allows guitar_tap.py to connect to FftCanvas signals as before.
-        self.analyzer.peaksChanged.connect(self.peaksChanged)
+        self.analyzer.peaks.peaksChanged.connect(self.peaksChanged)
         self.analyzer.tapCountChanged.connect(self.tapCountChanged)
         self.analyzer.detectionStateChanged.connect(self.detectionStateChanged)
         self.analyzer.readyForDetectionChanged.connect(self.readyForDetectionChanged)
@@ -455,7 +455,7 @@ class FftCanvas(pg.PlotWidget):
         # plot — single authoritative source for both the scatter plot and the results panel.
         self.analyzer.mic.frame.frameChanged.connect(self._on_live_frame)
         self.analyzer.spectrumUpdated.connect(self._on_spectrum_updated)
-        self.analyzer.peaksChanged.connect(self._on_peaks_changed_scatter)
+        self.analyzer.peaks.peaksChanged.connect(self._on_peaks_changed_scatter)
         self.analyzer.highlightedPeakChanged.connect(lambda _id: self._draw_highlight())
 
         # FFT line
@@ -1551,7 +1551,7 @@ class FftCanvas(pg.PlotWidget):
         # The peaks the chart marks — none while comparing — as Swift's view reads tap.chartPeaks.
         chart_peaks = self.analyzer.chart_peaks
         if chart_peaks is not None:
-            self.analyzer.peaksChanged.emit(chart_peaks)
+            self.analyzer.peaks.peaksChanged.emit(chart_peaks)
         self.freqRangeChanged.emit(fmin, fmax)
 
     # ------------------------------------------------------------------ #
@@ -1847,7 +1847,7 @@ class FftCanvas(pg.PlotWidget):
         # (property setter, mirroring Swift peakMinThreshold.didSet). peaks_above_peak_min is a plain
         # attr, not @Published, so the view must be told explicitly. Safe here: display-only,
         # all other state already set (unlike the capture path).
-        self.analyzer.peaksChanged.emit(list(
+        self.analyzer.peaks.peaksChanged.emit(list(
             self.analyzer.peaks_above_peak_min if _tds.measurement_type().is_guitar
             else self.analyzer.material_identified_peaks
         ))
@@ -1885,7 +1885,7 @@ class FftCanvas(pg.PlotWidget):
         """Update the scatter plot whenever the analyzer emits peaksChanged.
 
         This is the single authoritative path for updating peak scatter points.
-        Connected to analyzer.peaksChanged so both the scatter plot and the
+        Connected to analyzer.peaks.peaksChanged so both the scatter plot and the
         results panel (also connected to peaksChanged) are always in sync —
         mirrors how Swift's SpectrumView.allPeaksInRange reactively re-filters
         currentPeaks on every render rather than keeping a separate state.
@@ -1933,7 +1933,7 @@ class FftCanvas(pg.PlotWidget):
         """Update the spectrum line and auto-scale the Y axis if enabled.
 
         The scatter plot is driven separately via _on_peaks_changed_scatter,
-        which is connected to analyzer.peaksChanged.
+        which is connected to analyzer.peaks.peaksChanged.
 
         Args:
             mag_db: Magnitude data (dB) to render.
@@ -1983,7 +1983,7 @@ class FftCanvas(pg.PlotWidget):
         """Delegate peak finding to the analyzer.
 
         Returns (triggered, peaks) for call sites that need the return value.
-        The analyzer emits peaksChanged, which is forwarded to FftCanvas.peaksChanged.
+        The analyzer's detected peaks emit peaksChanged, which is forwarded to FftCanvas.peaksChanged.
         """
         return self.analyzer.find_peaks(mag_y_db, list(self.analyzer.freq))
 

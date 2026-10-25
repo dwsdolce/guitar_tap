@@ -309,7 +309,7 @@ class FftAnnotations(QtCore.QObject):
         selection or labels, the display mode, the plate / brace phases, or a load brings the labels
         up to date. Mirrors Swift's ``SpectrumView`` observing the analyzer."""
         self._analyzer = analyzer
-        for signal in (analyzer.peaksChanged, analyzer.displayModeChanged,
+        for signal in (analyzer.peaks.peaksChanged, analyzer.displayModeChanged,
                        analyzer.comparisonChanged, analyzer.selectedLongitudinalPeakChanged,
                        analyzer.selectedCrossPeakChanged, analyzer.selectedFlcPeakChanged,
                        analyzer.measurementLoaded):

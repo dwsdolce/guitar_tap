@@ -3430,7 +3430,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_deselect_all_peaks(self) -> None:
         analyzer = self.fft_canvas.analyzer
         analyzer.select_no_peaks()
-        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
+        analyzer.peaks.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_peak_selection_toggled(self, peak_id: str) -> None:
         """Route a user per-peak toggle to the analyzer.
@@ -3441,7 +3441,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         analyzer = self.fft_canvas.analyzer
         analyzer.toggle_peak_selection(peak_id)
-        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
+        analyzer.peaks.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_mode_override_changed(self, peak_id: str, label: str) -> None:
         """Route a user mode-override change to the analyzer (the Qt counterpart of a SwiftUI binding).
@@ -3457,7 +3457,7 @@ class MainWindow(QtWidgets.QMainWindow):
             analyzer.set_mode_override(label, peak_id)
         else:
             analyzer.reset_mode_override(peak_id)
-        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
+        analyzer.peaks.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_reset_auto_selection(self) -> None:
         # Delegate to the analyzer (mirrors Swift resetToAutoSelection()), which
@@ -3471,7 +3471,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Emit peaksChanged: updates the scatter plot annotations AND triggers
         # _on_peaks_changed_results which propagates selected_peak_ids to the
         # model directly — mirrors Swift @Published selectedPeakIDs propagation.
-        analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
+        analyzer.peaks.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _on_user_modified_selection_changed(self, _modified: bool) -> None:
         self._refresh_selection_buttons()
@@ -3575,7 +3575,7 @@ class MainWindow(QtWidgets.QMainWindow):
             analyzer.reclassify_for_guitar_type_change()
             # Emit peaksChanged: triggers _on_peaks_changed_results which propagates
             # selected_peak_ids to the model — the Qt push Swift gets free via @Published.
-            analyzer.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
+            analyzer.peaks.peaksChanged.emit(list(analyzer.peaks_above_peak_min))
 
     def _update_measurement_badge(self) -> None:
         """Refresh the badge in the Analysis Results panel.
@@ -4394,7 +4394,7 @@ class MainWindow(QtWidgets.QMainWindow):
             _shown = (analyzer.peaks_above_peak_min if TDS.measurement_type().is_guitar
                       else analyzer.material_identified_peaks)
             if _shown:
-                analyzer.peaksChanged.emit(_shown)
+                analyzer.peaks.peaksChanged.emit(_shown)
 
         # _on_comparison_changed will fire from apply_multi_tap_comparison_overlays
         # via comparisonChanged.emit — it handles all widget visibility updates.
@@ -6616,7 +6616,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # Python requires an explicit re-emission of peaksChanged to push the new
             # filtered list through _on_peaks_changed_scatter and _on_peaks_changed_results.
             AS.AppSettings.set_show_unknown_modes(show_unknown_cb.isChecked())
-            self.fft_canvas.analyzer.peaksChanged.emit(
+            self.fft_canvas.analyzer.peaks.peaksChanged.emit(
                 list(self.fft_canvas.analyzer.peaks_above_peak_min)
             )
 

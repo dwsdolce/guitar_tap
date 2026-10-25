@@ -588,7 +588,7 @@ class TapToneAnalyzerControlMixin:
         # currentPeaks = []; mirrors the device-change path above). Without it the previous
         # measurement's dots linger until the first tap of the new sequence — e.g. leftover
         # guitar dots after switching to a plate measurement via Settings.
-        self.peaksChanged.emit([])
+        self.peaks.peaksChanged.emit([])
 
         # Mirrors Swift startTapSequence: loadedMeasurementName = nil; loadedNotes = nil
         self.loaded_measurement_name = None
@@ -941,7 +941,7 @@ class TapToneAnalyzerControlMixin:
         from guitar_tap.models.tap_display_settings import TapDisplaySettings as _tds
         # Notify the view the projection changed (peaks_above_peak_min is a plain attr, not @Published).
         # The measurement's peaks: the projection (guitar) or the identified L/C/FLC (material).
-        self.peaksChanged.emit(list(
+        self.peaks.peaksChanged.emit(list(
             self.peaks_above_peak_min if _tds.measurement_type().is_guitar else self.material_identified_peaks
         ))
 
