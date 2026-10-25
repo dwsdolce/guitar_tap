@@ -1,13 +1,14 @@
 {
  "about": "Swift's exports, measured by check_exports.py mint. Regenerate when Swift's exports change on purpose.",
  "tolerances": {
-  "about": "Points, and 0\u20131 for a PDF line's colour. Set from measured differences between the editions' exports, tight enough that a moved, missing or resized part, a wrong argument on an export path, a wrong weight or a wrong colour fails.",
+  "about": "Points, and 0\u20131 for a PDF line's colour. Set from measured differences between the editions' exports, tight enough that a moved, missing or resized part, a wrong argument on an export path, a wrong weight or a wrong colour fails; a legend's lines may differ by legend_lines, since each system's font breaks the names differently.",
   "size": 2,
   "position": 3,
   "label_centring": 1,
   "pdf_line": 3,
   "pdf_image": 2,
-  "pdf_colour": 0.02
+  "pdf_colour": 0.02,
+  "legend_lines": 1
  },
  "files": {
   "brace/main/pdf": {
@@ -160,7 +161,7 @@
        ]
       ],
       [
-       661.0,
+       639.0,
        "Detected Peaks",
        [
         [
@@ -174,7 +175,7 @@
        ]
       ],
       [
-       681.0,
+       659.0,
        "Frequency Magnitude Note Q Factor Role",
        [
         [
@@ -188,7 +189,7 @@
        ]
       ],
       [
-       704.0,
+       682.0,
        "513.0 Hz -63.3 dB C5 87.5 Longitudinal (fL)",
        [
         [
@@ -210,7 +211,7 @@
        ]
       ],
       [
-       736.0,
+       714.0,
        "Sample Dimensions",
        [
         [
@@ -224,7 +225,7 @@
        ]
       ],
       [
-       750.0,
+       728.0,
        "Length: 556.00 mm Width: 20.38 mm Thickness: 29.35 mm",
        [
         [
@@ -278,7 +279,7 @@
        ]
       ],
       [
-       764.0,
+       742.0,
        "Mass: 128.0 g Density: 0.385 g/cm3",
        [
         [
@@ -316,7 +317,7 @@
        ]
       ],
       [
-       811.0,
+       789.0,
        "Brace Properties",
        [
         [
@@ -330,7 +331,7 @@
        ]
       ],
       [
-       832.0,
+       810.0,
        "Speed of Sound: 5257 m/s Specific Modulus: 27.6 (Excellent)",
        [
         [
@@ -376,7 +377,7 @@
        ]
       ],
       [
-       848.0,
+       826.0,
        "Young's Modulus (E): 10.64 GPa Radiation Ratio: 13.7",
        [
         [
@@ -414,7 +415,7 @@
        ]
       ],
       [
-       878.0,
+       856.0,
        "Overall Quality: Excellent",
        [
         [
@@ -436,7 +437,7 @@
        ]
       ],
       [
-       916.0,
+       894.0,
        "Single-Tap Measurement (fL only):",
        [
         [
@@ -450,7 +451,7 @@
        ]
       ],
       [
-       932.0,
+       910.0,
        "1. Longitudinal (fL) Tap",
        [
         [
@@ -464,7 +465,7 @@
        ]
       ],
       [
-       942.0,
+       920.0,
        "Hold brace at 22% from one end along the length. Tap center.",
        [
         [
@@ -478,7 +479,7 @@
        ]
       ],
       [
-       957.0,
+       935.0,
        "The strongest peak is auto-selected.",
        [
         [
@@ -492,7 +493,7 @@
        ]
       ],
       [
-       1005.0,
+       983.0,
        "<generated>",
        [
         [
@@ -511,7 +512,7 @@
        36.0,
        184.0,
        540.0,
-       438.0
+       416.0
       ]
      ]
     }
@@ -522,7 +523,7 @@
    "kind": "png",
    "size": [
     1464.0,
-    1188.0
+    1127.0
    ],
    "header_title": [
     36.0,
@@ -553,7 +554,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -561,10 +562,13 @@
     974.5
    ],
    "legend": [
-    1145.5,
-    1154.5
+    243.0,
+    245.5
    ],
+   "legend_lines": 1,
    "legend_entries": 1,
+   "legend_in_plot": true,
+   "legend_past_left_edge": false,
    "summary_rows": [
     [
      1019.0,
@@ -575,7 +579,7 @@
      1057.5
     ],
     [
-     1067.0,
+     1067.5,
      1076.5
     ],
     [
@@ -738,7 +742,7 @@
        ]
       ],
       [
-       661.0,
+       639.0,
        "Detected Peaks",
        [
         [
@@ -752,7 +756,7 @@
        ]
       ],
       [
-       681.0,
+       659.0,
        "Frequency Magnitude Note Q Factor Role",
        [
         [
@@ -766,7 +770,7 @@
        ]
       ],
       [
-       704.0,
+       682.0,
        "513.0 Hz -63.3 dB C5 87.5 Longitudinal (fL)",
        [
         [
@@ -788,7 +792,7 @@
        ]
       ],
       [
-       736.0,
+       714.0,
        "Sample Dimensions",
        [
         [
@@ -802,7 +806,7 @@
        ]
       ],
       [
-       750.0,
+       728.0,
        "Length: 556.00 mm Width: 20.38 mm Thickness: 29.35 mm",
        [
         [
@@ -856,7 +860,7 @@
        ]
       ],
       [
-       764.0,
+       742.0,
        "Mass: 128.0 g Density: 0.385 g/cm3",
        [
         [
@@ -894,7 +898,7 @@
        ]
       ],
       [
-       811.0,
+       789.0,
        "Brace Properties",
        [
         [
@@ -908,7 +912,7 @@
        ]
       ],
       [
-       832.0,
+       810.0,
        "Speed of Sound: 5257 m/s Specific Modulus: 27.6 (Excellent)",
        [
         [
@@ -954,7 +958,7 @@
        ]
       ],
       [
-       848.0,
+       826.0,
        "Young's Modulus (E): 10.64 GPa Radiation Ratio: 13.7",
        [
         [
@@ -992,7 +996,7 @@
        ]
       ],
       [
-       878.0,
+       856.0,
        "Overall Quality: Excellent",
        [
         [
@@ -1014,7 +1018,7 @@
        ]
       ],
       [
-       916.0,
+       894.0,
        "Single-Tap Measurement (fL only):",
        [
         [
@@ -1028,7 +1032,7 @@
        ]
       ],
       [
-       932.0,
+       910.0,
        "1. Longitudinal (fL) Tap",
        [
         [
@@ -1042,7 +1046,7 @@
        ]
       ],
       [
-       942.0,
+       920.0,
        "Hold brace at 22% from one end along the length. Tap center.",
        [
         [
@@ -1056,7 +1060,7 @@
        ]
       ],
       [
-       957.0,
+       935.0,
        "The strongest peak is auto-selected.",
        [
         [
@@ -1070,7 +1074,7 @@
        ]
       ],
       [
-       1005.0,
+       983.0,
        "<generated>",
        [
         [
@@ -1089,7 +1093,7 @@
        36.0,
        184.0,
        540.0,
-       438.0
+       416.0
       ]
      ]
     }
@@ -1100,7 +1104,7 @@
    "kind": "png",
    "size": [
     1464.0,
-    1188.0
+    1127.0
    ],
    "header_title": [
     36.0,
@@ -1131,7 +1135,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -1139,10 +1143,13 @@
     974.5
    ],
    "legend": [
-    1145.5,
-    1154.5
+    243.0,
+    245.5
    ],
+   "legend_lines": 1,
    "legend_entries": 1,
+   "legend_in_plot": true,
+   "legend_past_left_edge": false,
    "summary_rows": [
     [
      1019.0,
@@ -1153,7 +1160,7 @@
      1057.5
     ],
     [
-     1067.0,
+     1067.5,
      1076.5
     ],
     [
@@ -1316,7 +1323,7 @@
        ]
       ],
       [
-       617.0,
+       595.0,
        "Peak Mode Comparison",
        [
         [
@@ -1330,7 +1337,7 @@
        ]
       ],
       [
-       638.0,
+       616.0,
        "Spectrum Air Top Back",
        [
         [
@@ -1344,7 +1351,7 @@
        ]
       ],
       [
-       662.0,
+       640.0,
        "DWS 2011 96.8 Hz 199.3 Hz 225.1 Hz",
        [
         [
@@ -1358,7 +1365,7 @@
        ]
       ],
       [
-       686.0,
+       664.0,
        "DWS 2024 96.7 Hz 199.8 Hz 241.1 Hz",
        [
         [
@@ -1372,7 +1379,7 @@
        ]
       ],
       [
-       710.0,
+       688.0,
        "Contreras Classical 103.0 Hz 212.2 Hz 275.5 Hz",
        [
         [
@@ -1386,7 +1393,7 @@
        ]
       ],
       [
-       734.0,
+       712.0,
        "Gore 95.0 Hz 188.0 Hz 238.8 Hz",
        [
         [
@@ -1400,7 +1407,7 @@
        ]
       ],
       [
-       758.0,
+       736.0,
        "Cordoba LH 104.0 Hz 213.8 Hz 241.6 Hz",
        [
         [
@@ -1414,7 +1421,7 @@
        ]
       ],
       [
-       796.0,
+       774.0,
        "<generated>",
        [
         [
@@ -1433,7 +1440,7 @@
        36.0,
        184.0,
        540.0,
-       394.0
+       372.0
       ]
      ]
     }
@@ -1444,7 +1451,7 @@
    "kind": "png",
    "size": [
     1464.0,
-    1069.0
+    1008.0
    ],
    "header_title": [
     36.0,
@@ -1475,7 +1482,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -1483,10 +1490,13 @@
     974.5
    ],
    "legend": [
-    1026.5,
-    1033.5
+    243.0,
+    245.5
    ],
+   "legend_lines": 1,
    "legend_entries": 5,
+   "legend_in_plot": true,
+   "legend_past_left_edge": false,
    "summary_rows": [],
    "label_offset_max": 0.5,
    "labels": 5,
@@ -1643,7 +1653,7 @@
        ]
       ],
       [
-       617.0,
+       595.0,
        "Peak Mode Comparison",
        [
         [
@@ -1657,7 +1667,7 @@
        ]
       ],
       [
-       638.0,
+       616.0,
        "Spectrum Air Top Back",
        [
         [
@@ -1671,7 +1681,7 @@
        ]
       ],
       [
-       662.0,
+       640.0,
        "DWS 2011 96.8 Hz 199.3 Hz 225.1 Hz",
        [
         [
@@ -1685,7 +1695,7 @@
        ]
       ],
       [
-       686.0,
+       664.0,
        "DWS 2024 96.7 Hz 199.8 Hz 241.1 Hz",
        [
         [
@@ -1699,7 +1709,7 @@
        ]
       ],
       [
-       710.0,
+       688.0,
        "Contreras Classical 103.0 Hz 212.2 Hz 275.5 Hz",
        [
         [
@@ -1713,7 +1723,7 @@
        ]
       ],
       [
-       734.0,
+       712.0,
        "Gore 95.0 Hz 188.0 Hz 238.8 Hz",
        [
         [
@@ -1727,7 +1737,7 @@
        ]
       ],
       [
-       758.0,
+       736.0,
        "Cordoba LH 104.0 Hz 213.8 Hz 241.6 Hz",
        [
         [
@@ -1741,7 +1751,7 @@
        ]
       ],
       [
-       796.0,
+       774.0,
        "<generated>",
        [
         [
@@ -1760,7 +1770,7 @@
        36.0,
        184.0,
        540.0,
-       394.0
+       372.0
       ]
      ]
     }
@@ -1771,7 +1781,7 @@
    "kind": "png",
    "size": [
     1464.0,
-    1069.0
+    1008.0
    ],
    "header_title": [
     36.0,
@@ -1802,7 +1812,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -1810,10 +1820,13 @@
     974.5
    ],
    "legend": [
-    1026.5,
-    1033.5
+    243.0,
+    245.5
    ],
+   "legend_lines": 1,
    "legend_entries": 5,
+   "legend_in_plot": true,
+   "legend_past_left_edge": false,
    "summary_rows": [],
    "label_offset_max": 0.5,
    "labels": 5,
@@ -2227,7 +2240,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -2238,7 +2251,10 @@
     1143.5,
     1155.0
    ],
+   "legend_lines": 1,
    "legend_entries": 5,
+   "legend_in_plot": false,
+   "legend_past_left_edge": false,
    "summary_rows": [
     [
      1019.0,
@@ -2249,7 +2265,7 @@
      1057.5
     ],
     [
-     1067.0,
+     1067.5,
      1076.5
     ],
     [
@@ -2669,7 +2685,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -2680,7 +2696,10 @@
     1143.5,
     1155.0
    ],
+   "legend_lines": 1,
    "legend_entries": 5,
+   "legend_in_plot": false,
+   "legend_past_left_edge": false,
    "summary_rows": [
     [
      1019.0,
@@ -2691,7 +2710,7 @@
      1057.5
     ],
     [
-     1067.0,
+     1067.5,
      1076.5
     ],
     [
@@ -2703,6 +2722,986 @@
    "labels": 5,
    "labels_past_edge": 0,
    "name": "dws-2024-umik-1-swift-mac-1784225155.png"
+  },
+  "large-comparison/main/pdf": {
+   "kind": "pdf",
+   "pages": [
+    {
+     "lines": [
+      [
+       44.0,
+       "Oct 25, 2026, 4:06 PM",
+       [
+        [
+         "regular",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ],
+      [
+       53.0,
+       "GuitarTap",
+       [
+        [
+         "bold",
+         [
+          0.149,
+          0.349,
+          0.749
+         ]
+        ]
+       ]
+      ],
+      [
+       70.0,
+       "Comparison Report",
+       [
+        [
+         "regular",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ],
+      [
+       104.0,
+       "Comparison: 18 compare",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ],
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       119.0,
+       "Spectra: 18 spectra compared",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ],
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       134.0,
+       "Frequency Range: 63.8 Hz \u2013 350.1 Hz",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ],
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       160.0,
+       "Frequency Spectrum",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ],
+      [
+       580.0,
+       "Peak Mode Comparison",
+       [
+        [
+         "bold",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       601.0,
+       "Spectrum Air Top Back",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ],
+      [
+       625.0,
+       "DWS 2024 UMIK-1 3 Tap Swift iPad 97.2 Hz 196.4 Hz 233.0 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       649.0,
+       "DWS 2024 UMIK-1 3 Tap Swift iPhone 98.7 Hz 196.0 Hz 234.6 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       673.0,
+       "DWS 2024 UMIK-1 3 Tap Swift Mac 97.4 Hz 197.4 Hz 239.6 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       697.0,
+       "DWS 2024 UMIK-1 Swift iPhone 126.6 Hz 196.4 Hz 239.2 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       721.0,
+       "DWS 2024 UMIK-1 Swift Mac 97.3 Hz 197.9 Hz 240.1 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       745.0,
+       "DWS 2024 UMIK-1 Swift iPad 96.8 Hz 195.6 Hz 235.8 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       769.0,
+       "David Smith Closed Box with No Bridge 103.6 Hz 229.7 Hz 250.0 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       793.0,
+       "Brad Clark Closed Box with No Bridge 98.0 Hz 231.3 Hz 239.9 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       817.0,
+       "Steve Garn Closed Box with No Bridge 100.3 Hz 223.6 Hz 238.9 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       841.0,
+       "John Gunn Closed Box with No Bridge 98.8 Hz 227.4 Hz 242.4 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       865.0,
+       "Max Pinkterton Closed Box with No Bridge 100.7 Hz 228.0 Hz 253.7 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       889.0,
+       "David Smith With Bridge but no strings 103.5 Hz 208.0 Hz 238.7 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       913.0,
+       "David Smith with Bridge 103.6 Hz 211.0 Hz 240.6 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       937.0,
+       "Brad Clark with Bridge 97.9 Hz 209.3 Hz 233.2 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       961.0,
+       "Steve Garn with Bridge 101.0 Hz 202.0 Hz 235.8 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       985.0,
+       "John Gunn with Bridge 98.1 Hz 203.1 Hz 228.2 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       1009.0,
+       "Max Pinkerton with Bridge 100.2 Hz 206.5 Hz 235.7 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       1033.0,
+       "Bernie Paniccia with Bridge 100.4 Hz 204.6 Hz 234.9 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       1071.0,
+       "<generated>",
+       [
+        [
+         "regular",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ]
+     ],
+     "images": [
+      [
+       36.0,
+       169.0,
+       540.0,
+       372.0
+      ]
+     ]
+    }
+   ],
+   "name": "18-compare-1792944381.pdf"
+  },
+  "large-comparison/main/png": {
+   "kind": "png",
+   "size": [
+    1464.0,
+    1008.0
+   ],
+   "header_title": [
+    36.0,
+    56.5
+   ],
+   "header_rows": [
+    [
+     69.5,
+     79.5
+    ],
+    [
+     93.5,
+     103.5
+    ],
+    [
+     116.5,
+     126.5
+    ]
+   ],
+   "chart_title": [
+    181.5,
+    202.5
+   ],
+   "plot": [
+    91.0,
+    220.0,
+    1431.5,
+    929.5
+   ],
+   "tick_labels": [
+    937.0,
+    945.5
+   ],
+   "axis_title": [
+    960.0,
+    974.5
+   ],
+   "legend": [
+    243.0,
+    314.5
+   ],
+   "legend_lines": 4,
+   "legend_entries": 18,
+   "legend_in_plot": true,
+   "legend_past_left_edge": false,
+   "summary_rows": [],
+   "label_offset_max": 0.5,
+   "labels": 5,
+   "labels_past_edge": 0,
+   "name": "18-compare-1792944381.png"
+  },
+  "large-comparison/saved/pdf": {
+   "kind": "pdf",
+   "pages": [
+    {
+     "lines": [
+      [
+       44.0,
+       "Oct 25, 2026, 4:06 PM",
+       [
+        [
+         "regular",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ],
+      [
+       53.0,
+       "GuitarTap",
+       [
+        [
+         "bold",
+         [
+          0.149,
+          0.349,
+          0.749
+         ]
+        ]
+       ]
+      ],
+      [
+       70.0,
+       "Comparison Report",
+       [
+        [
+         "regular",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ],
+      [
+       104.0,
+       "Comparison: 18 compare",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ],
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       119.0,
+       "Spectra: 18 spectra compared",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ],
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       134.0,
+       "Frequency Range: 63.8 Hz \u2013 350.1 Hz",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ],
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       160.0,
+       "Frequency Spectrum",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ],
+      [
+       580.0,
+       "Peak Mode Comparison",
+       [
+        [
+         "bold",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       601.0,
+       "Spectrum Air Top Back",
+       [
+        [
+         "bold",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ],
+      [
+       625.0,
+       "DWS 2024 UMIK-1 3 Tap Swift iPad 97.2 Hz 196.4 Hz 233.0 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       649.0,
+       "DWS 2024 UMIK-1 3 Tap Swift iPhone 98.7 Hz 196.0 Hz 234.6 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       673.0,
+       "DWS 2024 UMIK-1 3 Tap Swift Mac 97.4 Hz 197.4 Hz 239.6 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       697.0,
+       "DWS 2024 UMIK-1 Swift iPhone 126.6 Hz 196.4 Hz 239.2 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       721.0,
+       "DWS 2024 UMIK-1 Swift Mac 97.3 Hz 197.9 Hz 240.1 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       745.0,
+       "DWS 2024 UMIK-1 Swift iPad 96.8 Hz 195.6 Hz 235.8 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       769.0,
+       "David Smith Closed Box with No Bridge 103.6 Hz 229.7 Hz 250.0 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       793.0,
+       "Brad Clark Closed Box with No Bridge 98.0 Hz 231.3 Hz 239.9 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       817.0,
+       "Steve Garn Closed Box with No Bridge 100.3 Hz 223.6 Hz 238.9 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       841.0,
+       "John Gunn Closed Box with No Bridge 98.8 Hz 227.4 Hz 242.4 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       865.0,
+       "Max Pinkterton Closed Box with No Bridge 100.7 Hz 228.0 Hz 253.7 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       889.0,
+       "David Smith With Bridge but no strings 103.5 Hz 208.0 Hz 238.7 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       913.0,
+       "David Smith with Bridge 103.6 Hz 211.0 Hz 240.6 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       937.0,
+       "Brad Clark with Bridge 97.9 Hz 209.3 Hz 233.2 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       961.0,
+       "Steve Garn with Bridge 101.0 Hz 202.0 Hz 235.8 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       985.0,
+       "John Gunn with Bridge 98.1 Hz 203.1 Hz 228.2 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       1009.0,
+       "Max Pinkerton with Bridge 100.2 Hz 206.5 Hz 235.7 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       1033.0,
+       "Bernie Paniccia with Bridge 100.4 Hz 204.6 Hz 234.9 Hz",
+       [
+        [
+         "regular",
+         [
+          0.11,
+          0.11,
+          0.118
+         ]
+        ]
+       ]
+      ],
+      [
+       1071.0,
+       "<generated>",
+       [
+        [
+         "regular",
+         [
+          0.471,
+          0.471,
+          0.502
+         ]
+        ]
+       ]
+      ]
+     ],
+     "images": [
+      [
+       36.0,
+       169.0,
+       540.0,
+       372.0
+      ]
+     ]
+    }
+   ],
+   "name": "18-compare-1792944381.pdf"
+  },
+  "large-comparison/saved/png": {
+   "kind": "png",
+   "size": [
+    1464.0,
+    1008.0
+   ],
+   "header_title": [
+    36.0,
+    56.5
+   ],
+   "header_rows": [
+    [
+     69.5,
+     79.5
+    ],
+    [
+     93.5,
+     103.5
+    ],
+    [
+     116.5,
+     126.5
+    ]
+   ],
+   "chart_title": [
+    181.5,
+    202.5
+   ],
+   "plot": [
+    91.0,
+    220.0,
+    1431.5,
+    929.5
+   ],
+   "tick_labels": [
+    937.0,
+    945.5
+   ],
+   "axis_title": [
+    960.0,
+    974.5
+   ],
+   "legend": [
+    243.0,
+    314.5
+   ],
+   "legend_lines": 4,
+   "legend_entries": 18,
+   "legend_in_plot": true,
+   "legend_past_left_edge": false,
+   "summary_rows": [],
+   "label_offset_max": 0.5,
+   "labels": 5,
+   "labels_past_edge": 0,
+   "name": "18-compare-1792944381.png"
   },
   "multi-tap/main/pdf": {
    "kind": "pdf",
@@ -3198,7 +4197,7 @@
        ]
       ],
       [
-       602.0,
+       580.0,
        "Peak Mode Comparison",
        [
         [
@@ -3212,7 +4211,7 @@
        ]
       ],
       [
-       623.0,
+       601.0,
        "Spectrum Air Top Back",
        [
         [
@@ -3226,7 +4225,7 @@
        ]
       ],
       [
-       647.0,
+       625.0,
        "Tap 1 97.5 Hz 197.3 Hz 237.7 Hz",
        [
         [
@@ -3240,7 +4239,7 @@
        ]
       ],
       [
-       671.0,
+       649.0,
        "Tap 2 97.3 Hz 197.4 Hz 240.0 Hz",
        [
         [
@@ -3254,7 +4253,7 @@
        ]
       ],
       [
-       695.0,
+       673.0,
        "Tap 3 97.5 Hz 197.5 Hz 240.1 Hz",
        [
         [
@@ -3268,7 +4267,7 @@
        ]
       ],
       [
-       719.0,
+       697.0,
        "Averaged 97.4 Hz 197.4 Hz 239.6 Hz",
        [
         [
@@ -3282,7 +4281,7 @@
        ]
       ],
       [
-       757.0,
+       735.0,
        "<generated>",
        [
         [
@@ -3301,7 +4300,7 @@
        36.0,
        169.0,
        540.0,
-       394.0
+       372.0
       ]
      ]
     }
@@ -3343,7 +4342,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -3354,7 +4353,10 @@
     1143.5,
     1155.0
    ],
+   "legend_lines": 1,
    "legend_entries": 5,
+   "legend_in_plot": false,
+   "legend_past_left_edge": false,
    "summary_rows": [
     [
      1019.0,
@@ -3365,7 +4367,7 @@
      1057.5
     ],
     [
-     1067.0,
+     1067.5,
      1076.5
     ],
     [
@@ -3872,7 +4874,7 @@
        ]
       ],
       [
-       602.0,
+       580.0,
        "Peak Mode Comparison",
        [
         [
@@ -3886,7 +4888,7 @@
        ]
       ],
       [
-       623.0,
+       601.0,
        "Spectrum Air Top Back",
        [
         [
@@ -3900,7 +4902,7 @@
        ]
       ],
       [
-       647.0,
+       625.0,
        "Tap 1 97.5 Hz 197.3 Hz 237.7 Hz",
        [
         [
@@ -3914,7 +4916,7 @@
        ]
       ],
       [
-       671.0,
+       649.0,
        "Tap 2 97.3 Hz 197.4 Hz 240.0 Hz",
        [
         [
@@ -3928,7 +4930,7 @@
        ]
       ],
       [
-       695.0,
+       673.0,
        "Tap 3 97.5 Hz 197.5 Hz 240.1 Hz",
        [
         [
@@ -3942,7 +4944,7 @@
        ]
       ],
       [
-       719.0,
+       697.0,
        "Averaged 97.4 Hz 197.4 Hz 239.6 Hz",
        [
         [
@@ -3956,7 +4958,7 @@
        ]
       ],
       [
-       757.0,
+       735.0,
        "<generated>",
        [
         [
@@ -3975,7 +4977,7 @@
        36.0,
        169.0,
        540.0,
-       394.0
+       372.0
       ]
      ]
     }
@@ -4017,7 +5019,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -4028,7 +5030,10 @@
     1143.5,
     1155.0
    ],
+   "legend_lines": 1,
    "legend_entries": 5,
+   "legend_in_plot": false,
+   "legend_past_left_edge": false,
    "summary_rows": [
     [
      1019.0,
@@ -4039,7 +5044,7 @@
      1057.5
     ],
     [
-     1067.0,
+     1067.5,
      1076.5
     ],
     [
@@ -4202,7 +5207,7 @@
        ]
       ],
       [
-       661.0,
+       639.0,
        "Detected Peaks",
        [
         [
@@ -4216,7 +5221,7 @@
        ]
       ],
       [
-       681.0,
+       659.0,
        "Frequency Magnitude Note Q Factor Role",
        [
         [
@@ -4230,7 +5235,7 @@
        ]
       ],
       [
-       704.0,
+       682.0,
        "35.9 Hz -59.0 dB D1 8.0 Diagonal (fLC)",
        [
         [
@@ -4252,7 +5257,7 @@
        ]
       ],
       [
-       724.0,
+       702.0,
        "66.9 Hz -49.6 dB C2 15.3 Longitudinal (fL)",
        [
         [
@@ -4274,7 +5279,7 @@
        ]
       ],
       [
-       744.0,
+       722.0,
        "117.3 Hz -55.4 dB A#2 20.0 Cross-grain (fC)",
        [
         [
@@ -4296,7 +5301,7 @@
        ]
       ],
       [
-       776.0,
+       754.0,
        "Sample Dimensions",
        [
         [
@@ -4310,7 +5315,7 @@
        ]
       ],
       [
-       790.0,
+       768.0,
        "Length: 557.50 mm Width: 220.50 mm Thickness: 4.85 mm",
        [
         [
@@ -4364,7 +5369,7 @@
        ]
       ],
       [
-       804.0,
+       782.0,
        "Mass: 208.0 g Density: 0.349 g/cm3",
        [
         [
@@ -4402,7 +5407,7 @@
        ]
       ],
       [
-       855.0,
+       833.0,
        "Body Dimensions",
        [
         [
@@ -4416,7 +5421,7 @@
        ]
       ],
       [
-       869.0,
+       847.0,
        "Body Length (a): 490 mm Lower Bout Width (b): 368 mm",
        [
         [
@@ -4454,7 +5459,7 @@
        ]
       ],
       [
-       883.0,
+       861.0,
        "Panel Stiffness: f_vs = 60 (Classical Top)",
        [
         [
@@ -4476,7 +5481,7 @@
        ]
       ],
       [
-       934.0,
+       912.0,
        "Gore Target Thickness",
        [
         [
@@ -4490,7 +5495,7 @@
        ]
       ],
       [
-       952.0,
+       930.0,
        "2.81 mm",
        [
         [
@@ -4504,7 +5509,7 @@
        ]
       ],
       [
-       1001.0,
+       979.0,
        "Plate Properties",
        [
         [
@@ -4518,7 +5523,7 @@
        ]
       ],
       [
-       1022.0,
+       1000.0,
        "Speed of Sound (L): 4174 m/s Specific Modulus (L): 17.4 (Fair)",
        [
         [
@@ -4564,7 +5569,7 @@
        ]
       ],
       [
-       1038.0,
+       1016.0,
        "Speed of Sound (C): 1144 m/s Specific Modulus (C): 1.3 (Very Good)",
        [
         [
@@ -4610,7 +5615,7 @@
        ]
       ],
       [
-       1054.0,
+       1032.0,
        "Young's Modulus (L): 6.08 GPa Radiation Ratio (L): 12.0",
        [
         [
@@ -4648,7 +5653,7 @@
        ]
       ],
       [
-       1070.0,
+       1048.0,
        "Young's Modulus (C): 0.46 GPa Radiation Ratio (C): 3.3",
        [
         [
@@ -4686,7 +5691,7 @@
        ]
       ],
       [
-       1090.0,
+       1068.0,
        "GLC (Shear Modulus): 0.350 GPa",
        [
         [
@@ -4708,7 +5713,7 @@
        ]
       ],
       [
-       1110.0,
+       1088.0,
        "Cross/Long Ratio: 0.075 Long/Cross Ratio: 13.3",
        [
         [
@@ -4746,7 +5751,7 @@
        ]
       ],
       [
-       1121.0,
+       1099.0,
        "typical: 0.04\u20130.08 typical: 12\u201325",
        [
         [
@@ -4760,7 +5765,7 @@
        ]
       ],
       [
-       1151.0,
+       1129.0,
        "Overall Quality: Good",
        [
         [
@@ -4782,7 +5787,7 @@
        ]
       ],
       [
-       1189.0,
+       1167.0,
        "Three-Tap Measurement Process:",
        [
         [
@@ -4796,7 +5801,7 @@
        ]
       ],
       [
-       1205.0,
+       1183.0,
        "1. Longitudinal (fL) Tap",
        [
         [
@@ -4810,7 +5815,7 @@
        ]
       ],
       [
-       1215.0,
+       1193.0,
        "Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center.",
        [
         [
@@ -4824,7 +5829,7 @@
        ]
       ],
       [
-       1231.0,
+       1209.0,
        "2. Cross-grain (fC) Tap",
        [
         [
@@ -4838,7 +5843,7 @@
        ]
       ],
       [
-       1241.0,
+       1219.0,
        "Rotate 90\u00b0. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center.",
        [
         [
@@ -4852,7 +5857,7 @@
        ]
       ],
       [
-       1257.0,
+       1235.0,
        "3. Diagonal (fLC) Tap",
        [
         [
@@ -4866,7 +5871,7 @@
        ]
       ],
       [
-       1267.0,
+       1245.0,
        "Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures",
        [
         [
@@ -4880,7 +5885,7 @@
        ]
       ],
       [
-       1276.0,
+       1254.0,
        "shear stiffness.",
        [
         [
@@ -4894,7 +5899,7 @@
        ]
       ],
       [
-       1291.0,
+       1269.0,
        "The strongest peak from each tap is auto-selected.",
        [
         [
@@ -4908,7 +5913,7 @@
        ]
       ],
       [
-       1339.0,
+       1317.0,
        "<generated>",
        [
         [
@@ -4927,7 +5932,7 @@
        36.0,
        184.0,
        540.0,
-       438.0
+       416.0
       ]
      ]
     }
@@ -4938,7 +5943,7 @@
    "kind": "png",
    "size": [
     1464.0,
-    1188.0
+    1127.0
    ],
    "header_title": [
     36.0,
@@ -4969,7 +5974,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -4977,10 +5982,13 @@
     974.5
    ],
    "legend": [
-    1145.5,
-    1154.5
+    243.0,
+    245.5
    ],
+   "legend_lines": 1,
    "legend_entries": 3,
+   "legend_in_plot": true,
+   "legend_past_left_edge": false,
    "summary_rows": [
     [
      1019.0,
@@ -4991,7 +5999,7 @@
      1057.5
     ],
     [
-     1067.0,
+     1067.5,
      1076.5
     ],
     [
@@ -4999,7 +6007,7 @@
      1091.5
     ]
    ],
-   "label_offset_max": 0.2,
+   "label_offset_max": 0.5,
    "labels": 3,
    "labels_past_edge": 0,
    "name": "plate-umik-1-swift-mac-1785359486.png"
@@ -5154,7 +6162,7 @@
        ]
       ],
       [
-       661.0,
+       639.0,
        "Detected Peaks",
        [
         [
@@ -5168,7 +6176,7 @@
        ]
       ],
       [
-       681.0,
+       659.0,
        "Frequency Magnitude Note Q Factor Role",
        [
         [
@@ -5182,7 +6190,7 @@
        ]
       ],
       [
-       704.0,
+       682.0,
        "35.9 Hz -59.0 dB D1 8.0 Diagonal (fLC)",
        [
         [
@@ -5204,7 +6212,7 @@
        ]
       ],
       [
-       724.0,
+       702.0,
        "66.9 Hz -49.6 dB C2 15.3 Longitudinal (fL)",
        [
         [
@@ -5226,7 +6234,7 @@
        ]
       ],
       [
-       744.0,
+       722.0,
        "117.3 Hz -55.4 dB A#2 20.0 Cross-grain (fC)",
        [
         [
@@ -5248,7 +6256,7 @@
        ]
       ],
       [
-       776.0,
+       754.0,
        "Sample Dimensions",
        [
         [
@@ -5262,7 +6270,7 @@
        ]
       ],
       [
-       790.0,
+       768.0,
        "Length: 557.50 mm Width: 220.50 mm Thickness: 4.85 mm",
        [
         [
@@ -5316,7 +6324,7 @@
        ]
       ],
       [
-       804.0,
+       782.0,
        "Mass: 208.0 g Density: 0.349 g/cm3",
        [
         [
@@ -5354,7 +6362,7 @@
        ]
       ],
       [
-       855.0,
+       833.0,
        "Body Dimensions",
        [
         [
@@ -5368,7 +6376,7 @@
        ]
       ],
       [
-       869.0,
+       847.0,
        "Body Length (a): 490 mm Lower Bout Width (b): 368 mm",
        [
         [
@@ -5406,7 +6414,7 @@
        ]
       ],
       [
-       883.0,
+       861.0,
        "Panel Stiffness: f_vs = 60 (Classical Top)",
        [
         [
@@ -5428,7 +6436,7 @@
        ]
       ],
       [
-       934.0,
+       912.0,
        "Gore Target Thickness",
        [
         [
@@ -5442,7 +6450,7 @@
        ]
       ],
       [
-       952.0,
+       930.0,
        "2.81 mm",
        [
         [
@@ -5456,7 +6464,7 @@
        ]
       ],
       [
-       1001.0,
+       979.0,
        "Plate Properties",
        [
         [
@@ -5470,7 +6478,7 @@
        ]
       ],
       [
-       1022.0,
+       1000.0,
        "Speed of Sound (L): 4174 m/s Specific Modulus (L): 17.4 (Fair)",
        [
         [
@@ -5516,7 +6524,7 @@
        ]
       ],
       [
-       1038.0,
+       1016.0,
        "Speed of Sound (C): 1144 m/s Specific Modulus (C): 1.3 (Very Good)",
        [
         [
@@ -5562,7 +6570,7 @@
        ]
       ],
       [
-       1054.0,
+       1032.0,
        "Young's Modulus (L): 6.08 GPa Radiation Ratio (L): 12.0",
        [
         [
@@ -5600,7 +6608,7 @@
        ]
       ],
       [
-       1070.0,
+       1048.0,
        "Young's Modulus (C): 0.46 GPa Radiation Ratio (C): 3.3",
        [
         [
@@ -5638,7 +6646,7 @@
        ]
       ],
       [
-       1090.0,
+       1068.0,
        "GLC (Shear Modulus): 0.350 GPa",
        [
         [
@@ -5660,7 +6668,7 @@
        ]
       ],
       [
-       1110.0,
+       1088.0,
        "Cross/Long Ratio: 0.075 Long/Cross Ratio: 13.3",
        [
         [
@@ -5698,7 +6706,7 @@
        ]
       ],
       [
-       1121.0,
+       1099.0,
        "typical: 0.04\u20130.08 typical: 12\u201325",
        [
         [
@@ -5712,7 +6720,7 @@
        ]
       ],
       [
-       1151.0,
+       1129.0,
        "Overall Quality: Good",
        [
         [
@@ -5734,7 +6742,7 @@
        ]
       ],
       [
-       1189.0,
+       1167.0,
        "Three-Tap Measurement Process:",
        [
         [
@@ -5748,7 +6756,7 @@
        ]
       ],
       [
-       1205.0,
+       1183.0,
        "1. Longitudinal (fL) Tap",
        [
         [
@@ -5762,7 +6770,7 @@
        ]
       ],
       [
-       1215.0,
+       1193.0,
        "Hold plate at 22% from one end along the length, near one long edge (not at the width node). Tap center.",
        [
         [
@@ -5776,7 +6784,7 @@
        ]
       ],
       [
-       1231.0,
+       1209.0,
        "2. Cross-grain (fC) Tap",
        [
         [
@@ -5790,7 +6798,7 @@
        ]
       ],
       [
-       1241.0,
+       1219.0,
        "Rotate 90\u00b0. Hold plate at 22% from one end along the width, near one short edge (not at the length node). Tap center.",
        [
         [
@@ -5804,7 +6812,7 @@
        ]
       ],
       [
-       1257.0,
+       1235.0,
        "3. Diagonal (fLC) Tap",
        [
         [
@@ -5818,7 +6826,7 @@
        ]
       ],
       [
-       1267.0,
+       1245.0,
        "Hold plate at the midpoint of one long edge. Tap near the opposite corner (~22% from both the end and the side). Measures",
        [
         [
@@ -5832,7 +6840,7 @@
        ]
       ],
       [
-       1276.0,
+       1254.0,
        "shear stiffness.",
        [
         [
@@ -5846,7 +6854,7 @@
        ]
       ],
       [
-       1291.0,
+       1269.0,
        "The strongest peak from each tap is auto-selected.",
        [
         [
@@ -5860,7 +6868,7 @@
        ]
       ],
       [
-       1339.0,
+       1317.0,
        "<generated>",
        [
         [
@@ -5879,7 +6887,7 @@
        36.0,
        184.0,
        540.0,
-       438.0
+       416.0
       ]
      ]
     }
@@ -5890,7 +6898,7 @@
    "kind": "png",
    "size": [
     1464.0,
-    1188.0
+    1127.0
    ],
    "header_title": [
     36.0,
@@ -5921,7 +6929,7 @@
     930.0
    ],
    "tick_labels": [
-    937.5,
+    937.0,
     945.5
    ],
    "axis_title": [
@@ -5929,10 +6937,13 @@
     974.5
    ],
    "legend": [
-    1145.5,
-    1154.5
+    243.0,
+    245.5
    ],
+   "legend_lines": 1,
    "legend_entries": 3,
+   "legend_in_plot": true,
+   "legend_past_left_edge": false,
    "summary_rows": [
     [
      1019.0,
@@ -5943,7 +6954,7 @@
      1057.5
     ],
     [
-     1067.0,
+     1067.5,
      1076.5
     ],
     [
@@ -5951,7 +6962,7 @@
      1091.5
     ]
    ],
-   "label_offset_max": 0.2,
+   "label_offset_max": 0.5,
    "labels": 3,
    "labels_past_edge": 0,
    "name": "plate-umik-1-swift-mac-1785359486.png"

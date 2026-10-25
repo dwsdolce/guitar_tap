@@ -4998,6 +4998,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 notes=self._export_notes(),
                 spectrum_image_data=png_data,
                 entries=live_entries,
+                # The range the chart image above shows: the chart's on screen.
+                min_freq=float(canvas.minFreq),
+                max_freq=float(canvas.maxFreq),
                 mode_frequencies=mode_frequencies,
             )
 

@@ -22,6 +22,7 @@ import guitar_tap.models.tap_tone_analyzer as td
 import guitar_tap.views.utilities.tap_settings_view as _as
 from guitar_tap.models import field_precision as fp
 from guitar_tap.models import guitar_mode as gm
+from guitar_tap.views.chart_legend import ChartLegend
 from guitar_tap.views.utilities import axis_tick_generator as atg
 from guitar_tap.views.utilities import chart_style
 from guitar_tap.views.utilities.magnitude_axis import MagnitudeAxis
@@ -599,6 +600,8 @@ class FftCanvas(pg.PlotWidget):
         # The comparison / material curve the crosshair follows (-1: none) — Swift's lockedSeriesIndex.
         self._locked_series_index = -1
         self._comparison_legend: QtWidgets.QWidget | None = None
+        # The legend is laid out in the plot area: re-placed whenever the plot's size changes.
+        self.getPlotItem().vb.sigResized.connect(lambda _vb: self._reposition_comparison_legend())
         # True when _comparison_curves contains material phase overlays (L/C/FLC)
         # rather than user-loaded comparison files.  When True, fft_line must still
         # be updated so the live waveform is visible underneath the overlays —
@@ -703,33 +706,15 @@ class FftCanvas(pg.PlotWidget):
         plot.getAxis("right").setGrid(False)
 
     def _build_comparison_legend(self, labels: list[str], font_size: int) -> None:
-        """The horizontal legend over the top-right of the plot: one swatch and label per
-        comparison / material curve, in the curve's colour, on the readout background."""
+        """The legend in the plot's upper-right corner (``ChartLegend``): one line and label per comparison /
+        material curve, in the curve's colour, on the readout background."""
         if self._comparison_legend is not None:
             self._comparison_legend.deleteLater()
-        legend = QtWidgets.QWidget(self)
-        legend.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        legend.setStyleSheet(
-            f"background: {palette.qss(palette.Role.CHART_READOUT_BACKGROUND)}; border-radius: 6px;"
-        )
-        row = QtWidgets.QHBoxLayout(legend)
-        row.setContentsMargins(8, 4, 8, 4)
-        row.setSpacing(12)
-        for label, color in zip(labels, self._comparison_curve_colors):
-            r, g, b = self._curve_rgb(color)
-            swatch = QtWidgets.QLabel()
-            swatch.setFixedSize(16, 2)
-            swatch.setStyleSheet(f"background: rgb({r},{g},{b}); border-radius: 1px;")
-            text = QtWidgets.QLabel(label)
-            text.setStyleSheet(
-                f"color: rgb({r},{g},{b}); font-size: {font_size}px; background: transparent;"
-            )
-            entry = QtWidgets.QHBoxLayout()
-            entry.setSpacing(4)
-            entry.addWidget(swatch, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
-            entry.addWidget(text,   0, QtCore.Qt.AlignmentFlag.AlignVCenter)
-            row.addLayout(entry)
-        legend.adjustSize()
+        legend = ChartLegend(
+            [(QtGui.QColor(*self._curve_rgb(color)), label)
+             for label, color in zip(labels, self._comparison_curve_colors)],
+            background=palette.color(palette.Role.CHART_READOUT_BACKGROUND),
+            font_size=font_size, parent=self)
         legend.show()
         self._comparison_legend = legend
         self._comparison_legend_labels = list(labels)
@@ -1281,17 +1266,11 @@ class FftCanvas(pg.PlotWidget):
         leg = getattr(self, "_comparison_legend", None)
         if leg is None or not leg.isVisible():
             return
-        leg.adjustSize()
-        # Position inside the plot area — 8px below the viewbox top edge, 12px
-        # from the right edge. Mirrors Swift's .padding(.top, 8).padding(.trailing, 12)
-        # applied *inside* the chart overlay, so the legend sits within the axes.
+        # Laid out in the plot area, 8 in from its upper-right corner, so it wraps within the plot and never
+        # crosses its axes; over everything in the chart — mirrors the ChartLegend placed in Swift's chart overlay.
         vb = self.getPlotItem().vb
-        scene_rect = vb.sceneBoundingRect()
-        vb_top  = int(self.mapFromScene(scene_rect.topLeft()).y())
-        vb_right = int(self.mapFromScene(scene_rect.topRight()).x())
-        x = vb_right - leg.width() - 12
-        y = vb_top + 8
-        leg.move(x, y)
+        plot = self.mapFromScene(vb.sceneBoundingRect()).boundingRect()
+        leg.place(QtCore.QPoint(plot.right() + 1 - 8, plot.top() + 8), plot.width() - 16)
         leg.raise_()
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
@@ -1421,7 +1400,7 @@ class FftCanvas(pg.PlotWidget):
             "resetMagnitudeToComparison": self._reset_mag_to_comparison,
             "resetLabels": self.annotations.reset_all_positions,
         }
-        groups = chart_menu.GROUPS if self.analyzer.comparison_range is None else chart_menu.COMPARISON_GROUPS
+        groups = chart_menu.GROUPS if self.analyzer.compared_span is None else chart_menu.COMPARISON_GROUPS
         for i, group in enumerate(groups):
             if i:
                 menu.addSeparator()
@@ -1503,18 +1482,18 @@ class FftCanvas(pg.PlotWidget):
         )
 
     def _reset_both_to_comparison(self) -> None:
-        r = self.analyzer.comparison_range
+        r = self.analyzer.compared_span
         if r is not None:
             self._apply_axis_range(*r)
 
     def _reset_freq_to_comparison(self) -> None:
-        r = self.analyzer.comparison_range
+        r = self.analyzer.compared_span
         if r is not None:
             _, (db_min, db_max) = self.getPlotItem().vb.viewRange()
             self._apply_axis_range(r[0], r[1], db_min, db_max)
 
     def _reset_mag_to_comparison(self) -> None:
-        r = self.analyzer.comparison_range
+        r = self.analyzer.compared_span
         if r is not None:
             (fmin, fmax), _ = self.getPlotItem().vb.viewRange()
             self._apply_axis_range(fmin, fmax, r[2], r[3])

@@ -1797,10 +1797,11 @@ class TapToneAnalyzer(
         return self.is_comparing and not self.showing_multi_tap_comparison
 
     @property
-    def comparison_range(self) -> "tuple[float, float, float, float] | None":
-        """The comparison range while a comparison measurement is shown — the span of the compared
-        measurements' saved views (min Hz, max Hz, min dB, max dB), the range a comparison opens at — else
-        None. The chart's menu resets to it. Mirrors Swift ``comparisonRange``."""
+    def compared_span(self) -> "tuple[float, float, float, float] | None":
+        """The compared span while a comparison measurement is shown — the span of the compared
+        measurements' saved views (min Hz, max Hz, min dB, max dB), the range a new comparison opens at — else
+        None. The chart's menu resets to it ("Comparison Range"). Not a saved comparison's own range
+        (``TapToneMeasurement.comparison_range``), the view it was saved with. Mirrors Swift ``comparedSpan``."""
         if not self.is_saved_measurement_comparison:
             return None
         from .display_range import spanning_range

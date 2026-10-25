@@ -1357,11 +1357,7 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
             "label": entry.label,
         })
 
-    # The range it was saved with, as a measurement's image; one saved before comparisons kept their
-    # range spans its entries', as loading it does. Mirrors Swift renderSpectrumImageForComparison.
-    from guitar_tap.models.display_range import spanning_range
-    min_freq, max_freq, min_db, max_db = (measurement.comparison_range
-                                          or spanning_range(e.snapshot for e in entries))
+    min_freq, max_freq, min_db, max_db = comparison_chart_range(measurement)
 
     loc = measurement.measurement_name
     # The live chart's title, so the image reads the same from the list as from the main view.
@@ -1383,6 +1379,26 @@ def render_spectrum_image_for_comparison(measurement: TapToneMeasurement) -> "by
         chart_title=chart_title,
         type_label="Comparison",
     )
+
+
+def multi_tap_chart_range(measurement: TapToneMeasurement) -> "tuple[float, float, float, float]":
+    """A multi-tap measurement's tap comparison chart range (min Hz, max Hz, min dB, max dB): the measurement's own,
+    as on screen, where the taps overlay the measurement's chart. Its image and its PDF page's Frequency Range both
+    use it. Mirrors Swift ``multiTapChartRange``."""
+    snap = measurement.spectrum_snapshot
+    if snap is None:
+        return (50.0, 1000.0, -100.0, 0.0)
+    return (snap.min_freq, snap.max_freq, snap.min_db, snap.max_db)
+
+
+def comparison_chart_range(measurement: TapToneMeasurement) -> "tuple[float, float, float, float]":
+    """A saved comparison's chart range (min Hz, max Hz, min dB, max dB): the range it was saved with, as a
+    measurement's; one saved before comparisons kept their range spans its entries', as loading it does. Its image
+    and its PDF's Frequency Range both use it. Mirrors Swift ``comparisonChartRange``."""
+    from guitar_tap.models.display_range import spanning_range
+    return (measurement.comparison_range
+            or spanning_range(e.snapshot for e in (measurement.comparison_entries or []))
+            or (50.0, 1000.0, -100.0, 0.0))
 
 
 def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "bytes | None":
@@ -1407,9 +1423,7 @@ def render_spectrum_image_for_multi_tap(measurement: TapToneMeasurement) -> "byt
         for idx, entry in enumerate(entries)
     ]
 
-    # The chart's range spans the taps' spectra.
-    from guitar_tap.models.display_range import spanning_range
-    min_freq, max_freq, min_db, max_db = spanning_range(e.snapshot for e in measurement.tap_entries)
+    min_freq, max_freq, min_db, max_db = multi_tap_chart_range(measurement)
 
     loc = measurement.measurement_name
     # Mirrors Swift: "Tap Comparison — \(measurement.measurementName ?? "Multi-Tap")"
@@ -1466,6 +1480,11 @@ class ComparisonPDFReportData:
     # Mirrors Swift ComparisonPDFReportData.entries ([ComparisonEntry]).
     entries: list   # list[ComparisonEntry]
 
+    # The chart's frequency range: the one the spectrum image shows.
+    # Mirrors Swift ComparisonPDFReportData.minFreq / maxFreq.
+    min_freq: float
+    max_freq: float
+
     # Resolved Air/Top/Back frequencies per entry.
     # Each tuple: (label, color_rgb, air_hz, top_hz, back_hz, override_modes) where *_hz may be None
     # and override_modes is a set of GuitarMode whose value is a user override (marked "*"/italic in
@@ -1508,12 +1527,15 @@ def comparison_pdf_report_data_from_measurement(
             set(),
         ))
 
+    min_freq, max_freq, _, _ = comparison_chart_range(measurement)
     return ComparisonPDFReportData(
         timestamp=measurement.timestamp,
         comparison_label=measurement.measurement_name or None,
         notes=measurement.notes or None,
         spectrum_image_data=spectrum_image_data,
         entries=entries,
+        min_freq=min_freq,
+        max_freq=max_freq,
         mode_frequencies=mode_frequencies,
     )
 
@@ -1563,12 +1585,15 @@ def multi_tap_comparison_pdf_report_data_from_measurement(
             set(),
         ))
 
+    min_freq, max_freq, _, _ = multi_tap_chart_range(measurement)
     return ComparisonPDFReportData(
         timestamp=measurement.timestamp,
         comparison_label=measurement.measurement_name or None,
         notes=measurement.notes or None,
         spectrum_image_data=spectrum_image_data,
         entries=cmp_entries,
+        min_freq=min_freq,
+        max_freq=max_freq,
         mode_frequencies=mode_frequencies,
     )
 
@@ -1631,19 +1656,10 @@ def _build_comparison_story(data: ComparisonPDFReportData) -> list:
     # Use mode_frequencies count for live exports (entries is empty); fall back to entries.
     n = len(data.mode_frequencies) if data.mode_frequencies else len(data.entries)
     meta.append(("Spectra", f"{n} spectra compared"))
-
-    # Frequency range from entries
-    if data.entries:
-        snaps = [e.snapshot for e in data.entries]
-        try:
-            min_f = min(s.min_freq for s in snaps)
-            max_f = max(s.max_freq for s in snaps)
-            meta.append((
-                "Frequency Range",
-                f"{_ext.formatted_as_frequency(min_f)} – {_ext.formatted_as_frequency(max_f)}",
-            ))
-        except Exception:
-            pass
+    meta.append((
+        "Frequency Range",
+        f"{_ext.formatted_as_frequency(data.min_freq)} – {_ext.formatted_as_frequency(data.max_freq)}",
+    ))
     # The comparison report's label frame is 100 pt (the measurement report's is 120).
     story += _meta_rows(meta, 100, SECONDARY, DARK, CONTENT_W)
     story.append(Spacer(1, 14))

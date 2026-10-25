@@ -1,0 +1,28 @@
+0	44.0	<date>
+0	53.0	GuitarTap
+0	70.0	Comparison Report
+0	104.0	Comparison: 18 compare
+0	119.0	Spectra: 18 spectra compared
+0	134.0	Frequency Range: 63.8 Hz – 350.1 Hz
+0	160.0	Frequency Spectrum
+0	580.0	Peak Mode Comparison
+0	601.0	Spectrum Air Top Back
+0	625.0	DWS 2024 UMIK-1 3 Tap Swift iPad 97.2 Hz 196.4 Hz 233.0 Hz
+0	649.0	DWS 2024 UMIK-1 3 Tap Swift iPhone 98.7 Hz 196.0 Hz 234.6 Hz
+0	673.0	DWS 2024 UMIK-1 3 Tap Swift Mac 97.4 Hz 197.4 Hz 239.6 Hz
+0	697.0	DWS 2024 UMIK-1 Swift iPhone 126.6 Hz 196.4 Hz 239.2 Hz
+0	721.0	DWS 2024 UMIK-1 Swift Mac 97.3 Hz 197.9 Hz 240.1 Hz
+0	745.0	DWS 2024 UMIK-1 Swift iPad 96.8 Hz 195.6 Hz 235.8 Hz
+0	769.0	David Smith Closed Box with No Bridge 103.6 Hz 229.7 Hz 250.0 Hz
+0	793.0	Brad Clark Closed Box with No Bridge 98.0 Hz 231.3 Hz 239.9 Hz
+0	817.0	Steve Garn Closed Box with No Bridge 100.3 Hz 223.6 Hz 238.9 Hz
+0	841.0	John Gunn Closed Box with No Bridge 98.8 Hz 227.4 Hz 242.4 Hz
+0	865.0	Max Pinkterton Closed Box with No Bridge 100.7 Hz 228.0 Hz 253.7 Hz
+0	889.0	David Smith With Bridge but no strings 103.5 Hz 208.0 Hz 238.7 Hz
+0	913.0	David Smith with Bridge 103.6 Hz 211.0 Hz 240.6 Hz
+0	937.0	Brad Clark with Bridge 97.9 Hz 209.3 Hz 233.2 Hz
+0	961.0	Steve Garn with Bridge 101.0 Hz 202.0 Hz 235.8 Hz
+0	985.0	John Gunn with Bridge 98.1 Hz 203.1 Hz 228.2 Hz
+0	1009.0	Max Pinkerton with Bridge 100.2 Hz 206.5 Hz 235.7 Hz
+0	1033.0	Bernie Paniccia with Bridge 100.4 Hz 204.6 Hz 234.9 Hz
+0	1071.0	<generated>

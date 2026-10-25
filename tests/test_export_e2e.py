@@ -30,6 +30,7 @@ CASES = [
     ("plate", "plate-umik-1-swift-mac-1785359486.guitartap"),
     ("brace", "brace-umik-1-swift-mac-1785359411.guitartap"),
     ("comparison", "5-guitar-comparison-1776708138.guitartap"),
+    ("large-comparison", "18-compare-1792944381.guitartap"),
 ]
 
 

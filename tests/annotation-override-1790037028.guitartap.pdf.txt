@@ -23,12 +23,12 @@
 1	70.0	Comparison Report
 1	104.0	Comparison: Annotation override
 1	119.0	Spectra: 4 spectra compared
-1	134.0	Frequency Range: 70.7 Hz – 350.0 Hz
+1	134.0	Frequency Range: 70.7 Hz – 345.7 Hz
 1	160.0	Frequency Spectrum
-1	602.0	Peak Mode Comparison
-1	623.0	Spectrum Air Top Back
-1	647.0	Tap 1 99.2 Hz 208.9 Hz 236.9 Hz
-1	671.0	Tap 2 99.2 Hz 209.0 Hz 250.2 Hz
-1	695.0	Tap 3 99.2 Hz 209.0 Hz 250.2 Hz
-1	719.0	Averaged 99.2 Hz 208.9 Hz 236.9 Hz
-1	757.0	<generated>
+1	580.0	Peak Mode Comparison
+1	601.0	Spectrum Air Top Back
+1	625.0	Tap 1 99.2 Hz 208.9 Hz 236.9 Hz
+1	649.0	Tap 2 99.2 Hz 209.0 Hz 250.2 Hz
+1	673.0	Tap 3 99.2 Hz 209.0 Hz 250.2 Hz
+1	697.0	Averaged 99.2 Hz 208.9 Hz 236.9 Hz
+1	735.0	<generated>

@@ -7,13 +7,13 @@
 0	145.0	Spectra: 5 spectra compared
 0	160.0	Frequency Range: 75.0 Hz – 350.0 Hz
 0	186.0	Frequency Spectrum
-0	628.0	Peak Mode Comparison
-0	649.0	Spectrum Air Top Back
-0	673.0	DWS 2011 96.8 Hz 199.3 Hz 225.1 Hz
-0	697.0	DWS 2024 dreadnought, Adirondack spruce top 96.7 Hz 199.8 Hz 241.1 Hz
-0	707.0	with scalloped X bracing, Indian rosewood back
-0	717.0	and sides
-0	741.0	Contreras Classical 103.0 Hz 212.2 Hz 275.5 Hz
-0	765.0	Gore 95.0 Hz 188.0 Hz 238.8 Hz
-0	789.0	Cordoba LH 104.0 Hz 213.8 Hz 241.6 Hz
-0	827.0	<generated>
+0	606.0	Peak Mode Comparison
+0	627.0	Spectrum Air Top Back
+0	651.0	DWS 2011 96.8 Hz 199.3 Hz 225.1 Hz
+0	675.0	DWS 2024 dreadnought, Adirondack spruce top 96.7 Hz 199.8 Hz 241.1 Hz
+0	685.0	with scalloped X bracing, Indian rosewood back
+0	695.0	and sides
+0	719.0	Contreras Classical 103.0 Hz 212.2 Hz 275.5 Hz
+0	743.0	Gore 95.0 Hz 188.0 Hz 238.8 Hz
+0	767.0	Cordoba LH 104.0 Hz 213.8 Hz 241.6 Hz
+0	805.0	<generated>

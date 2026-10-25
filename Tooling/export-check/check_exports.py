@@ -12,7 +12,8 @@ tolerances:
 
   PNG  the image size; the header title and its rows; the chart title; the plot's top and bottom; the
        frequency labels, each centred on its grid line and none past the plot's edge; the x-axis title;
-       the summary below the chart; the legend and its entries.
+       the summary below the chart; the legend — inside the plot for overlaid curves, its lines and entries; else the
+       guitar mode key below the chart — and its entries.
   PDF  every text line's position and text (dates, versions and the platform normalised); the chart
        image's rectangle on each page.
 
@@ -55,6 +56,23 @@ def _runs(mask) -> list[tuple[int, int]]:
     return out
 
 
+def _swatches(mask, left: int, top: int, right: int, bottom: int, scale: float) -> list[tuple[int, int, int, int]]:
+    """The legend's entry lines inside the plot: solid coloured bars 19–25 pt wide and 2.5–4.5 pt high, each
+    (x0, y0, x1, y1) in pixels. A row's run of colour that long, repeated over the bar's height, is one bar."""
+    runs: dict[tuple[int, int], list[int]] = {}
+    for y in range(top + 1, bottom):
+        for x0, x1 in _runs(mask[y, left + 1:right]):
+            if 19 * scale <= x1 - x0 + 1 <= 25 * scale:
+                key = next((k for k in runs if abs(k[0] - x0) <= 1 and abs(k[1] - x1) <= 1
+                            and runs[k][-1] == y - 1), (x0, x1))
+                runs.setdefault(key, []).append(y)
+    bars = []
+    for (x0, x1), rows in runs.items():
+        if 2.5 * scale <= len(rows) <= 4.5 * scale:
+            bars.append((left + 1 + x0, rows[0], left + 1 + x1, rows[-1]))
+    return bars
+
+
 def measure_png(path: Path) -> dict:
     """The parts of an exported spectrum image, in points from the top-left corner."""
     im = Image.open(path)
@@ -80,14 +98,10 @@ def measure_png(path: Path) -> dict:
     bands = _runs((darkest < 160).sum(axis=1) > 0)
     above = [b for b in bands if b[1] < plot_top - 4]
     below = [b for b in bands if b[0] > plot_bottom + 4]
-    if len(above) < 2 or len(below) < 3:
+    if len(above) < 2 or len(below) < 2:
         raise ValueError(f"{path.name}: header, title or axis not found")
     header_title, chart_title = above[0], above[-1]
     header_rows = above[1:-1]
-    # Below the plot, top to bottom: the frequency labels, the axis title, any summary (a measurement's
-    # detected peaks or a material's properties), and the legend last.
-    tick_labels, axis_title, legend = below[0], below[1], below[-1]
-    summary_rows = below[2:-1]
 
     # Plot's left and right: its border's vertical lines — the first and last narrow columns marked over the
     # plot's whole height. (Not the top grid line's extent: the magnitude axis's "0" label sits on that line.)
@@ -96,6 +110,45 @@ def measure_png(path: Path) -> dict:
     if len(borders) < 2:
         raise ValueError(f"{path.name}: plot border not found")
     plot_left, plot_right = borders[0][0], borders[-1][1]
+
+    # Overlaid curves have their legend inside the plot: each entry's line, a solid bar 22 × 3 pt in its colour (a
+    # grey series' too, so any dark pixel counts; the grid's lines are lighter). The legend's background hides the
+    # curves beneath it, so the bars stand alone.
+    marks = ((spread > 60) & (darkest < 230)) | (darkest < 200)
+    swatches = _swatches(marks, plot_left, plot_top, plot_right, plot_bottom, scale)
+    if swatches:
+        # Below the plot, top to bottom: the frequency labels, the axis title, any summary (a measurement's
+        # detected peaks or a material's properties).
+        tick_labels, axis_title = below[0], below[1]
+        summary_rows = below[2:]
+        # The legend is one block from its top line down: lines a line's height apart (the export's lines are
+        # 23 pt apart); a bar further down is a piece of curve that happens to look like one.
+        tops = sorted({y0 for _x0, y0, _x1, _y1 in swatches})
+        lines = [[tops[0]]]
+        for y in tops[1:]:
+            if y - lines[-1][-1] <= 2 * scale:
+                lines[-1].append(y)
+            elif y - lines[-1][-1] <= 30 * scale:
+                lines.append([y])
+            else:
+                break
+        swatches = [w for w in swatches if w[1] <= lines[-1][-1]]
+        legend = (min(y0 for _x0, y0, _x1, _y1 in swatches), max(y1 for _x0, _y0, _x1, y1 in swatches))
+        legend_lines = len(lines)
+        entries = len(swatches)
+        legend_left = min(x0 for x0, _y0, _x1, _y1 in swatches)
+    else:
+        if len(below) < 3:
+            raise ValueError(f"{path.name}: no legend found")
+        # Below the plot, top to bottom: the frequency labels, the axis title, any summary, and the guitar
+        # mode key last; its entries are runs of coloured columns (each mode's dot).
+        tick_labels, axis_title, legend = below[0], below[1], below[-1]
+        summary_rows = below[2:-1]
+        legend_rows = slice(max(legend[0] - 4, 0), legend[1] + 5)
+        coloured = ((spread[legend_rows] > 60) & (darkest[legend_rows] < 230)).any(axis=0)
+        entries = len([r for r in _runs(coloured) if r[1] - r[0] >= 3 * scale])
+        legend_lines = 1
+        legend_left = None
 
     # Vertical grid lines: narrow columns marked over most of the plot's height. A mode band's tint over a
     # grid line changes its colour, not its coverage, and the tint itself is wide, so it is left out; a peak
@@ -122,10 +175,6 @@ def measure_png(path: Path) -> dict:
         if plot_left - 4 * scale <= centre <= plot_right + 4 * scale:
             offsets.append(min(abs(centre - g) for g in grid_x))
 
-    # Legend entries: runs of coloured columns (each entry's line or dot) in the legend band.
-    legend_rows = slice(max(legend[0] - 4, 0), legend[1] + 5)
-    coloured = ((spread[legend_rows] > 60) & (darkest[legend_rows] < 230)).any(axis=0)
-    entries = len([r for r in _runs(coloured) if r[1] - r[0] >= 3 * scale])
 
     return {
         "kind": "png",
@@ -137,7 +186,10 @@ def measure_png(path: Path) -> dict:
         "tick_labels": [pt(tick_labels[0]), pt(tick_labels[1])],
         "axis_title": [pt(axis_title[0]), pt(axis_title[1])],
         "legend": [pt(legend[0]), pt(legend[1])],
+        "legend_lines": legend_lines,
         "legend_entries": entries,
+        "legend_in_plot": bool(swatches),
+        "legend_past_left_edge": legend_left is not None and legend_left < plot_left,
         "summary_rows": [[pt(a), pt(b)] for a, b in summary_rows],
         "label_offset_max": pt(max(offsets)) if offsets else None,
         "labels": len(offsets),
@@ -258,16 +310,29 @@ def _compare_png(got: dict, want: dict, tol: dict) -> list[str]:
             problems.append(f"{name} {a} (Swift {b}, ±{t})")
 
     near("size", got["size"], want["size"], tol["size"])
-    for part in ("header_title", "chart_title", "plot", "tick_labels", "axis_title", "legend"):
+    for part in ("header_title", "chart_title", "plot", "tick_labels", "axis_title"):
         near(part, got[part], want[part], tol["position"])
+    # A legend inside the plot: its top; its height follows its lines, which may differ (below).
+    if got["legend_in_plot"] and want["legend_in_plot"]:
+        near("legend top", got["legend"][0], want["legend"][0], tol["position"])
+    else:
+        near("legend", got["legend"], want["legend"], tol["position"])
     for rows in ("header_rows", "summary_rows"):
         if len(got[rows]) != len(want[rows]):
             problems.append(f"{rows} {len(got[rows])} (Swift {len(want[rows])})")
         else:
             for i, (a, b) in enumerate(zip(got[rows], want[rows])):
                 near(f"{rows}[{i}]", a, b, tol["position"])
+    if got["legend_in_plot"] != want["legend_in_plot"]:
+        problems.append(f"legend {'inside' if got['legend_in_plot'] else 'below'} the plot "
+                        f"(Swift {'inside' if want['legend_in_plot'] else 'below'})")
+    # Each system's font breaks the names onto lines differently; the entries are the same everywhere.
+    if abs(got["legend_lines"] - want["legend_lines"]) > tol["legend_lines"]:
+        problems.append(f"legend lines {got['legend_lines']} (Swift {want['legend_lines']}, ±{tol['legend_lines']})")
     if got["legend_entries"] != want["legend_entries"]:
         problems.append(f"legend entries {got['legend_entries']} (Swift {want['legend_entries']})")
+    if got.get("legend_past_left_edge"):
+        problems.append("the legend reaches past the plot's left edge")
     if got["labels"] != want["labels"]:
         problems.append(f"frequency labels {got['labels']} (Swift {want['labels']})")
     if got.get("labels_past_edge"):

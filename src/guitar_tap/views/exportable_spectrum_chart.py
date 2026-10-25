@@ -800,6 +800,22 @@ class ExportableSpectrumChart:
                     run_x += _width(font, text) + int(4 * SCALE)
                 row_y += h + ANNOT_SPACING
 
+        # ── The legend, drawn last, over the labels, laid out in the plot so it wraps within it and never crosses
+        # its axes; not cut at the plot's edges — mirrors the ChartLegend placed in Swift's chart overlay,
+        # 10 in, in the image's sizes.
+        if self.material_spectra:
+            from guitar_tap.views.chart_legend import ChartLegend
+            painter.setClipping(False)
+            legend = ChartLegend(
+                [(QtGui.QColor(*_series_rgb(series)), series.get("label", "?")) for series in self.material_spectra],
+                background=_light(palette.Role.CHART_READOUT_BACKGROUND),
+                font=_export_font(), font_size=14, swatch=(22, 3), spacing=16, line_spacing=6,
+                padding=(6, 10, 6, 10), corner_radius=8, scale=SCALE)
+            legend_pad = 10 * SCALE
+            legend.place(QtCore.QPoint(AXIS_LEFT + PLOT_W - legend_pad, AXIS_TOP + legend_pad),
+                         PLOT_W - 2 * legend_pad)
+            legend.render(painter, legend.pos())
+
         painter.end()
         return chart_img
 
@@ -857,7 +873,7 @@ def make_exportable_spectrum_view(
       Text(chartTitle)                   ← chart title, center-aligned
       ExportableSpectrumChart(...)       ← chart image via ExportableSpectrumChart.render()
       Peak summary HStack                ← Detected Peaks Summary cards
-      Legend HStack                      ← Guitar Modes or Measurements
+      Mode-key HStack                    ← Guitar Modes, when no curves are overlaid
 
     :param frequencies: FFT frequency bins (Hz).
     :param magnitudes: FFT magnitude values (dBFS).
@@ -918,12 +934,14 @@ def make_exportable_spectrum_view(
     CARD_ROW_GAP  = 4    * SCALE
     CARD_H        = CARD_PAD * 2 + CAPTION_LINE * 3 + CARD_ROW_GAP * 2
     SUMMARY_H     = (8 * SCALE + HEADLINE_LINE + 8 * SCALE + CARD_H + 8 * SCALE) if peaks else 0
-    # The legend: one caption line padded 16 all round; then the image's 16 pt bottom margin.
-    LEGEND_BLOCK_H = 16 * SCALE + CAPTION_LINE + 16 * SCALE
+    # The mode key: one caption line padded 16 all round; then the image's 16 pt bottom margin. Overlaid curves
+    # have their legend on the chart, so no key. With no block below the chart, its 16 pt spacing goes too.
+    LEGEND_BLOCK_H = 0 if material_spectra else 16 * SCALE + CAPTION_LINE + 16 * SCALE
+    blocks = [h for h in (SUMMARY_H if peaks else 0, LEGEND_BLOCK_H) if h]
     BOTTOM        = 16   * SCALE
     TOTAL_W       = 1464 * SCALE
-    TOTAL_H       = (FRAME_TOP + FRAME_H + BELOW_CHART + (SUMMARY_H + BLOCK_GAP if peaks else 0)
-                     + LEGEND_BLOCK_H + BOTTOM)
+    TOTAL_H       = (FRAME_TOP + FRAME_H + BELOW_CHART - BLOCK_GAP + sum(BLOCK_GAP + h for h in blocks)
+                     + BOTTOM)
     SIDE_PAD      = (TOTAL_W - CHART_W) // 2   # left / right
 
     # Guitar mode legend entries — mirrors ForEach([.air,.top,.back,.dipole,.ringMode])
@@ -1176,8 +1194,9 @@ def make_exportable_spectrum_view(
 
         y += SUMMARY_H + BLOCK_GAP
 
-    # ── Legend — mirrors makeExportableSpectrumView legend HStack ─────────────
-    # Swift's legend row is .padding()-ed: one caption line, 16 pt inside its block.
+    # ── The guitar mode key — mirrors makeExportableSpectrumView's mode-key HStack ─────────────
+    # Overlaid curves have their legend on the chart, as on screen. Swift's key row is .padding()-ed: one
+    # caption line, 16 pt inside its block.
     y += 16 * SCALE
     legend_font = _export_font()
     legend_font.setPixelSize(10 * SCALE)  # mirrors .font(.caption).fontWeight(.semibold)
@@ -1190,31 +1209,10 @@ def make_exportable_spectrum_view(
 
     ROW_H = CAPTION_LINE   # the legend's line
 
-    if material_spectra:
-        # Swift: HStack { Text("Measurements:") ForEach(materialSpectra) { RoundedRect + label } }
-        # Each entry fits its text, 20 pt apart: a 24 x 4 pt bar, 4 pt, the label.
-        heading = "Measurements:"
-        painter.drawText(SIDE_PAD, y, 160 * SCALE, ROW_H,
-                         QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
-                         heading)
-        x_leg = SIDE_PAD + QtGui.QFontMetrics(legend_font).horizontalAdvance(heading) + 20 * SCALE
-        painter.setFont(label_font)
-        for series in material_spectra:
-            r, g, b = _series_rgb(series)
-            lbl = series.get("label", "?")
-            painter.setBrush(QtGui.QBrush(QtGui.QColor(r, g, b)))
-            painter.setPen(QtCore.Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(
-                x_leg, y + ROW_H // 2 - 2 * SCALE, 24 * SCALE, 4 * SCALE, 2 * SCALE, 2 * SCALE)
-            painter.setPen(_light(palette.Role.TEXT_PRIMARY))
-            text_w = QtGui.QFontMetrics(label_font).horizontalAdvance(lbl)
-            painter.drawText(x_leg + 28 * SCALE, y, text_w, ROW_H,
-                             QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter, lbl)
-            x_leg += 28 * SCALE + text_w + 20 * SCALE
-    elif chart.is_guitar:
+    if not material_spectra and chart.is_guitar:
         # Swift: HStack { Text("Guitar Modes:") ForEach([.air,.top,.back,.dipole,.ringMode]) { Circle + label } }
-        # Guitar-mode only — mirrors Swift's else branch gated implicitly by measurementType.isGuitar
-        # (for plate/brace, materialSpectra is always populated so this branch is never reached in Swift).
+        # Guitar-mode only — Swift's key is gated implicitly by measurementType.isGuitar (for plate/brace,
+        # materialSpectra is always populated, so Swift never shows the key for them).
         # Each entry fits its text, 20 pt apart: a 12 pt circle, 4 pt, the name.
         heading = "Guitar Modes:"
         painter.drawText(SIDE_PAD, y, 160 * SCALE, ROW_H,

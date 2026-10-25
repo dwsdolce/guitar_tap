@@ -24,10 +24,10 @@
 1	119.0	Spectra: 4 spectra compared
 1	134.0	Frequency Range: 75.0 Hz – 350.0 Hz
 1	160.0	Frequency Spectrum
-1	602.0	Peak Mode Comparison
-1	623.0	Spectrum Air Top Back
-1	647.0	Tap 1 97.5 Hz 197.3 Hz 237.7 Hz
-1	671.0	Tap 2 97.3 Hz 197.4 Hz 240.0 Hz
-1	695.0	Tap 3 97.5 Hz 197.5 Hz 240.1 Hz
-1	719.0	Averaged 97.4 Hz 197.4 Hz 239.6 Hz
-1	757.0	<generated>
+1	580.0	Peak Mode Comparison
+1	601.0	Spectrum Air Top Back
+1	625.0	Tap 1 97.5 Hz 197.3 Hz 237.7 Hz
+1	649.0	Tap 2 97.3 Hz 197.4 Hz 240.0 Hz
+1	673.0	Tap 3 97.5 Hz 197.5 Hz 240.1 Hz
+1	697.0	Averaged 97.4 Hz 197.4 Hz 239.6 Hz
+1	735.0	<generated>
