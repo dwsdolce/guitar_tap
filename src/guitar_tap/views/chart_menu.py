@@ -35,6 +35,17 @@ GROUPS: list[list[ChartMenuEntry]] = [
     ],
 ]
 
+# The chart's menu while a comparison measurement is shown, in place of GROUPS: Settings' range and the app's
+# defaults mean nothing for measurements of many guitars, so it resets to the comparison range — the span of the
+# compared measurements' saved views, the range a comparison opens at. Mirrors Swift ``comparisonGroups``.
+COMPARISON_GROUPS: list[list[ChartMenuEntry]] = [
+    [
+        ChartMenuEntry("resetBothToComparison", "Reset Both Axes to Comparison Range", "restore"),
+        ChartMenuEntry("resetFrequencyToComparison", "Reset Frequency Axis to Comparison Range", "restore"),
+        ChartMenuEntry("resetMagnitudeToComparison", "Reset Magnitude Axis to Comparison Range", "restore"),
+    ],
+]
+
 # A peak label's menu: it can act only while the label has been moved.
 LABEL_MENU: list[ChartMenuEntry] = [
     ChartMenuEntry("resetPosition", "Reset Position", "restore"),

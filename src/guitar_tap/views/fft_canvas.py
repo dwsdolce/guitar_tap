@@ -1416,9 +1416,13 @@ class FftCanvas(pg.PlotWidget):
             "resetBothToDefaults": self._reset_both_to_defaults,
             "resetFrequencyToDefaults": self._reset_freq_to_defaults,
             "resetMagnitudeToDefaults": self._reset_mag_to_defaults,
+            "resetBothToComparison": self._reset_both_to_comparison,
+            "resetFrequencyToComparison": self._reset_freq_to_comparison,
+            "resetMagnitudeToComparison": self._reset_mag_to_comparison,
             "resetLabels": self.annotations.reset_all_positions,
         }
-        for i, group in enumerate(chart_menu.GROUPS):
+        groups = chart_menu.GROUPS if self.analyzer.comparison_range is None else chart_menu.COMPARISON_GROUPS
+        for i, group in enumerate(groups):
             if i:
                 menu.addSeparator()
             for entry in group:
@@ -1497,6 +1501,23 @@ class FftCanvas(pg.PlotWidget):
             _as.AppSettings.default_f_min(mt), _as.AppSettings.default_f_max(mt),
             _as.AppSettings.default_db_min(), _as.AppSettings.default_db_max(),
         )
+
+    def _reset_both_to_comparison(self) -> None:
+        r = self.analyzer.comparison_range
+        if r is not None:
+            self._apply_axis_range(*r)
+
+    def _reset_freq_to_comparison(self) -> None:
+        r = self.analyzer.comparison_range
+        if r is not None:
+            _, (db_min, db_max) = self.getPlotItem().vb.viewRange()
+            self._apply_axis_range(r[0], r[1], db_min, db_max)
+
+    def _reset_mag_to_comparison(self) -> None:
+        r = self.analyzer.comparison_range
+        if r is not None:
+            (fmin, fmax), _ = self.getPlotItem().vb.viewRange()
+            self._apply_axis_range(fmin, fmax, r[2], r[3])
 
     def update_axis(self, fmin: float, fmax: float) -> None:
         """Set the x-axis frequency range. A display change only: the peaks are not re-detected, as

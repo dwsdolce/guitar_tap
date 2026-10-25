@@ -470,7 +470,7 @@ def _build_help_html() -> str:
         "key again to reverse it), or to show one type only; the choice is "
         "remembered. Delete removes all measurements, the duplicates (keeping the "
         "first copy of each), or the ones you select. Use "
-        "Compare to enter multi-select mode and overlay 2&ndash;5 saved guitar "
+        "Compare to enter multi-select mode and overlay two or more saved guitar "
         "measurements on the main chart for side-by-side comparison. The measurement "
         "name and notes can also be edited from the Edit button in the Measurement "
         "Details dialog.",
@@ -479,7 +479,7 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Compare Measurements",
         "In the Measurements list, click Compare to enter selection mode. "
-        "Select 2&ndash;5 saved guitar measurements (plate and brace measurements cannot "
+        "Select two or more saved guitar measurements (plate and brace measurements cannot "
         "be compared). Click Compare Selected to overlay all selected spectra on the main "
         "chart as colour-coded curves with a legend. The chart, cursor, zoom, and pan all "
         "work normally. Press New Tap to exit comparison and return to single-measurement "
@@ -538,7 +538,10 @@ def _build_help_html() -> str:
         "right-clicking the chart opens the same menu. It resets either or both axes to the values "
         "you last saved in Settings (&ldquo;Reset &hellip; to Saved&rdquo;) or to the factory "
         "defaults (&ldquo;Reset &hellip; to Defaults&rdquo;). If peak labels have been dragged from "
-        "their auto-positions, &ldquo;Reset Labels&rdquo; moves them back.",
+        "their auto-positions, &ldquo;Reset Labels&rdquo; moves them back. While a comparison "
+        "measurement is shown, the menu instead resets either or both axes to the comparison "
+        "range &mdash; the span of the compared measurements, where the comparison opened "
+        "(&ldquo;Reset &hellip; to Comparison Range&rdquo;).",
         ["mdi.dots-horizontal-circle-outline"]
     ))
     parts.append(_row(
@@ -668,7 +671,7 @@ def _build_help_html() -> str:
     parts.append(_row(
         "Comparing Guitar Measurements",
         "Save a measurement for each build stage or measurement name with a descriptive label. "
-        "Use the Measurements list Compare button to overlay 2&ndash;5 saved guitar "
+        "Use the Measurements list Compare button to overlay two or more saved guitar "
         "measurements as colour-coded spectra on the main chart &mdash; ideal for tracking "
         "how bracing or finishing changes the resonant modes over time. Export "
         "measurements as .guitartap files for transfer between devices."

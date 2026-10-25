@@ -1,6 +1,6 @@
 {
  "slug": "test/chart-menu",
- "about": "The chart's menu — opened from its ⋯ and by a right-click, on every device — and a peak label's own menu, in every edition: the same items, words, order and icons. 'groups' are the chart menu's items between separators, in order; each item names what it does ('action'), its words ('title'), Swift's SF Symbol ('sfSymbol') and the Material Design icon Python and the web draw ('mdi', as Python names it without 'mdi.'). 'Reset Labels' can act only while a label has been moved. 'labelMenu' is a peak label's menu, which can act only while that label has been moved.",
+ "about": "The chart's menu — opened from its ⋯ and by a right-click, on every device — and a peak label's own menu, in every edition: the same items, words, order and icons. 'groups' are the chart menu's items between separators, in order; each item names what it does ('action'), its words ('title'), Swift's SF Symbol ('sfSymbol') and the Material Design icon Python and the web draw ('mdi', as Python names it without 'mdi.'). 'Reset Labels' can act only while a label has been moved. 'comparisonGroups' is the chart menu while a comparison measurement is shown, in place of 'groups': it resets to the comparison range — the span of the compared measurements' saved views, the range a comparison opens at. 'labelMenu' is a peak label's menu, which can act only while that label has been moved.",
  "groups": [
   [
    {
@@ -55,6 +55,31 @@
     "title": "Reset Labels",
     "sfSymbol": "arrow.uturn.backward",
     "mdi": "undo"
+   }
+  ]
+ ],
+ "comparisonGroups": [
+  [
+   {
+    "id": "CM9",
+    "action": "resetBothToComparison",
+    "title": "Reset Both Axes to Comparison Range",
+    "sfSymbol": "arrow.counterclockwise",
+    "mdi": "restore"
+   },
+   {
+    "id": "CM10",
+    "action": "resetFrequencyToComparison",
+    "title": "Reset Frequency Axis to Comparison Range",
+    "sfSymbol": "arrow.counterclockwise",
+    "mdi": "restore"
+   },
+   {
+    "id": "CM11",
+    "action": "resetMagnitudeToComparison",
+    "title": "Reset Magnitude Axis to Comparison Range",
+    "sfSymbol": "arrow.counterclockwise",
+    "mdi": "restore"
    }
   ]
  ],

@@ -24,5 +24,9 @@ def test_chart_menu():
     assert chart_menu.GROUPS == [_entries(g) for g in DATA["groups"]]
 
 
+def test_comparison_menu():
+    assert chart_menu.COMPARISON_GROUPS == [_entries(g) for g in DATA["comparisonGroups"]]
+
+
 def test_label_menu():
     assert chart_menu.LABEL_MENU == _entries(DATA["labelMenu"])
