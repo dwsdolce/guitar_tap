@@ -1,0 +1,31 @@
+#!/bin/bash
+# Check a release build reports the version and build number it was made from: the version file's version (a release
+# tag's name, when REF is a tag) and the commit count (version_build, written by the build), both in the built file's
+# name — e.g. Guitar_Tap_V1.1.0.390.exe, guitar-tap-1.1.0.390-x86_64.AppImage.
+#
+# Usage: packaging/check_release_build "<glob of the built file>"   (REF: the tag, branch or commit built)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+version="$(tr -d '\r\n' < src/guitar_tap/version)"
+build="$(tr -d '\r\n' < src/guitar_tap/version_build)"
+count="$(git rev-list --count HEAD)"
+
+if [ -n "${REF:-}" ] && git rev-parse -q --verify "refs/tags/$REF" >/dev/null && [ "$REF" != "$version" ]; then
+    echo "The tag $REF builds version $version." >&2
+    exit 1
+fi
+if [ "$build" != "$count" ]; then
+    echo "The build number is $build; the commit count is $count." >&2
+    exit 1
+fi
+# shellcheck disable=SC2086 # the glob is expanded here
+files=( $1 )
+if [ "${#files[@]}" -ne 1 ] || [ ! -f "${files[0]}" ]; then
+    echo "Expected one built file for $1, found: ${files[*]}" >&2
+    exit 1
+fi
+case "$(basename "${files[0]}")" in
+    *"$version.$build"*) echo "Built $version ($build): ${files[0]}" ;;
+    *) echo "${files[0]} does not carry $version.$build." >&2; exit 1 ;;
+esac

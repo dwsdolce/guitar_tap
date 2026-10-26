@@ -133,10 +133,11 @@ Then run the platform script from the repository root:
 
 ### Platform-specific tooling
 
-**Linux (AppImage):** the release's AppImage is built by GitHub Actions (`.github/workflows/release-linux.yml`) on
-Ubuntu 22.04, the oldest supported LTS, and attached to the release when it is published — an AppImage starts only
-on Linux as new as the machine it was built on. The workflow can also be run by hand for a tag or branch (Actions →
-Linux AppImage → Run workflow). To build one locally, `build_linux` invokes the current `appimagetool`, whose
+**Linux (AppImage) and Windows (installer):** a release's AppImage and Windows installer are built by GitHub
+Actions (`.github/workflows/release.yml`, run by hand for the tag: Actions → Release → Run workflow) and attached to
+its draft release — the AppImage on Ubuntu 22.04, the oldest supported LTS, since an AppImage starts only on Linux as
+new as the machine it was built on. Run for a branch or commit, it keeps them as the run's artifacts, or puts them on
+a test draft (`release-test-<n>`) to delete. To build one locally, `build_linux` invokes the current `appimagetool`, whose
 runtime needs no `libfuse2` on the user's system:
 	- `wget -O ~/bin/appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage`
 	- `chmod +x ~/bin/appimagetool`
