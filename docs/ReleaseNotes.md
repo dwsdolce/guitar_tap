@@ -5,7 +5,7 @@
 ## Version {{version}} · Build {{build}}
 ### What's New Since Build {{since}}
 
-<!-- Notes reviewed through commit af8e075 (2026-10-25). The next update reads only `git log af8e075..HEAD`, then moves this line to the newest commit it covered. -->
+<!-- Notes reviewed through commit b3a98dd (2026-10-25). The next update reads only `git log b3a98dd..HEAD`, then moves this line to the newest commit it covered. -->
 
 ---
 
@@ -91,6 +91,8 @@
 - On Linux, exports use a bundled font, so they lay out the same as on macOS and Windows.
 - The default export folder is Documents/GuitarTap wherever Windows keeps Documents, including OneDrive.
 - If the chart cannot be drawn, the export stops with **Export Failed** rather than saving a file without the chart.
+- Export Spectrum and Export PDF Report give the same file from the main window and from Saved Measurements. A multi-tap measurement's image is its averaged spectrum, also while the Taps view is on.
+- The report's peak table and the summary under an exported chart are titled **Selected Peaks** and list the selected peaks in view, whatever the annotation setting; "Detected Peaks: N" counts the peaks at or above Peak Min in view. Measurement Details' peak list is titled Selected Peaks too.
 
 ### Microphones
 
@@ -120,6 +122,7 @@
 ### Faster
 
 - The window does far less work while listening, a guitar measurement appears in a fraction of the time it did, and the chart draws only the range on screen.
+- Resizing, zooming and panning a large comparison is much faster: the chart draws only the part of each curve in view.
 
 ### Quitting
 
@@ -154,6 +157,9 @@
 - **New Tap could stay disabled** if the microphone restarted again while settling after a device change.
 - **After the input restarted, choosing a microphone could open a different one.** Guitar Tap now checks the device it opened.
 - **On macOS, a microphone that failed to start at the first attempt** is now tried once more before an error is shown; on Windows, duplicate "WDM-KS" inputs are no longer listed.
+- **A selected peak below Peak Min appeared in a measurement's image and PDF report** exported from Saved Measurements, though not on screen.
+- **A plate's or brace's exported image read "Comparing N measurements"** under its header.
+- **After a comparison, switching to Plate or Brace showed an empty guitar peak list** in Analysis Results, pushing the plate's rows to the bottom.
 
 ---
 
